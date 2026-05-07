@@ -4,14 +4,16 @@ from typing import Any, Dict, Optional
 from fastapi import Request
 from fastapi.responses import ORJSONResponse
 
+from __init__ import __version__
 from config.loader import ConfigManager
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Helpers
+# Helpers (resolved once, cached for the lifetime of the process)
 # ─────────────────────────────────────────────────────────────────────────────
 
-_SERVER_VERSION = "1.0.2"
+_SERVER_VERSION: str = __version__
 _SERVER_HOST_CACHE: Optional[str] = None
+_RESPONSE_CACHE_TTL: Optional[int] = None
 _TIMESTAMP_CACHE: str = ""
 _TIMESTAMP_CACHE_LAST: float = 0
 
@@ -22,6 +24,14 @@ def _get_server_name() -> str:
     if _SERVER_HOST_CACHE is None:
         _SERVER_HOST_CACHE = ConfigManager.get().server.host
     return _SERVER_HOST_CACHE
+
+
+def _get_response_cache_ttl() -> int:
+    """Cached response cache TTL from config."""
+    global _RESPONSE_CACHE_TTL
+    if _RESPONSE_CACHE_TTL is None:
+        _RESPONSE_CACHE_TTL = ConfigManager.get().cache.response_cache_ttl
+    return _RESPONSE_CACHE_TTL
 
 
 def _get_timestamp() -> str:
@@ -94,11 +104,15 @@ def error_response(
 def cacheable_response(
     request: Request,
     data: Any,
-    max_age: int = 30,
+    max_age: Optional[int] = None,
     links: Optional[Dict[str, str]] = None,
     start_time: Optional[float] = None,
 ) -> ORJSONResponse:
-    """Returns a JSON response with Cache-Control headers for GET endpoints."""
+    """Returns a JSON response with Cache-Control headers for GET endpoints.
+    max_age defaults to config.cache.response_cache_ttl if not specified."""
+    if max_age is None:
+        max_age = _get_response_cache_ttl()
     resp = success_response(request, data, links, start_time)
     resp.headers["Cache-Control"] = f"public, max-age={max_age}"
     return resp
+

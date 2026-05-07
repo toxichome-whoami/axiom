@@ -60,7 +60,8 @@ class RateLimitConfig(BaseModel):
     window: int = 60
     max_requests: int = 100
     burst: int = 20
-    penalty_cooldown: int = 300
+    penalty_threshold: int = 10  # Consecutive violations before IP ban
+    penalty_cooldown: int = 300  # Seconds IP ban lasts
 
 
 class CacheConfig(BaseModel):
@@ -73,13 +74,23 @@ class CacheConfig(BaseModel):
     default_ttl: int = 60
     query_cache: bool = True
     fs_cache: bool = True
+    idempotency_ttl: int = 86400  # Seconds before idempotency keys expire (24h)
+    response_cache_ttl: int = 30  # Default max-age for cacheable GET responses
+
+
+class PerformanceConfig(BaseModel):
+    """Tuning knobs for internal caches and hot-path algorithms."""
+
+    query_cache_size: int = 2048    # LRU slots for parsed query AST cache
+    transpiler_cache_size: int = 4096  # LRU slots for SQL dialect transpilation
+    rate_limit_cache_size: int = 256   # LRU slots for rate-limit lookups
 
 
 class MCPConfig(BaseModel):
     """Configuration for the Model Context Protocol (MCP) server."""
 
     server_name: str = "nexusgate"
-    server_version: str = "1.0.2"
+    server_version: str = "1.0.2"  # Mirrors src/__init__.py __version__
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -209,6 +220,7 @@ class NexusGateConfig(BaseModel):
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
     rate_limit: RateLimitConfig = Field(default_factory=RateLimitConfig)
     cache: CacheConfig = Field(default_factory=CacheConfig)
+    performance: PerformanceConfig = Field(default_factory=PerformanceConfig)
     mcp: MCPConfig = Field(default_factory=MCPConfig)
     webhooks: WebhookGlobalConfig = Field(default_factory=WebhookGlobalConfig)
     webhook: Dict[str, WebhookDefConfig] = Field(default_factory=dict)

@@ -4,6 +4,7 @@ import time
 import psutil
 from fastapi import APIRouter, Request
 
+from __init__ import __version__
 from api.responses import success_response
 from cache.memory import MemoryCache
 from cache.redis_backend import RedisCache
@@ -81,7 +82,7 @@ async def root(request: Request):
         {
             "status": "online",
             "name": "NexusGate",
-            "version": "1.0.2",
+            "version": __version__,
             "uptime_seconds": int(time.time() - uptime_start),
             "features": config.features.model_dump(),
         },

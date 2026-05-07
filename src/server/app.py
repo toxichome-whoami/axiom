@@ -12,6 +12,7 @@ from api.admin import router as admin_router
 # Routers
 from api.core import health
 from api.core.metrics import router as metrics_router
+from __init__ import __version__
 from config.loader import ConfigManager
 from server.lifespan import lifespan
 from server.middleware.cors import setup_cors
@@ -177,7 +178,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="NexusGate",
         description="High-Performance Unified API Gateway with Dynamic Federation, Webhooks, MCP & Storage Management",
-        version="1.0.2",
+        version=__version__,
         lifespan=lifespan,
         docs_url="/api/docs",
         redoc_url=None,

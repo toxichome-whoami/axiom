@@ -395,7 +395,7 @@ async def list_databases(
         if tasks:
             await asyncio.gather(*tasks)
 
-    return cacheable_response(request, {"databases": active_dbs}, max_age=30)
+    return cacheable_response(request, {"databases": active_dbs})
 
 
 @router.get("/{db_name}/tables")
@@ -436,7 +436,7 @@ async def list_tables(
             }
         )
 
-    return cacheable_response(request, {"database": db_name, "tables": formatted_tables}, max_age=30)
+    return cacheable_response(request, {"database": db_name, "tables": formatted_tables})
 
 
 @router.post("/{db_name}/query")

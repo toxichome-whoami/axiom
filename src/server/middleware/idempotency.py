@@ -11,11 +11,11 @@ import structlog
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from cache import CacheManager
+from config.loader import ConfigManager
 
 logger = structlog.get_logger()
 
 IDEMPOTENCY_PREFIX = "idempotency:"
-IDEMPOTENCY_TTL = 86400  # 24 hours
 
 # Use a frozenset for O(1) method checking
 _IDEMPOTENT_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
@@ -28,10 +28,11 @@ _IDEM_HEADER = b"x-idempotency-key"
 class IdempotencyMiddleware:
     """Safeguards mutation endpoints against duplicate retry requests."""
 
-    __slots__ = ("app",)
+    __slots__ = ("app", "_idempotency_ttl")
 
     def __init__(self, app: ASGIApp):
         self.app = app
+        self._idempotency_ttl = ConfigManager.get().cache.idempotency_ttl
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != _HTTP:
@@ -129,7 +130,7 @@ class IdempotencyMiddleware:
             await CacheManager.set(
                 cache_key,
                 orjson.dumps(payload),
-                ttl=IDEMPOTENCY_TTL,
+                ttl=self._idempotency_ttl,
             )
         except Exception:
             pass

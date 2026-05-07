@@ -94,11 +94,11 @@ class SecurityStorage:
                 engine TEXT NOT NULL,
                 url TEXT NOT NULL,
                 mode TEXT NOT NULL,
-                pool_min INTEGER DEFAULT 2,
-                pool_max INTEGER DEFAULT 20,
-                connection_timeout INTEGER DEFAULT 5,
-                idle_timeout INTEGER DEFAULT 300,
-                max_lifetime INTEGER DEFAULT 1800,
+                pool_min INTEGER DEFAULT 5,
+                pool_max INTEGER DEFAULT 50,
+                connection_timeout INTEGER DEFAULT 30,
+                idle_timeout INTEGER DEFAULT 600,
+                max_lifetime INTEGER DEFAULT 3600,
                 dangerous_operations BOOLEAN DEFAULT 0
             )
         """)
@@ -435,11 +435,11 @@ class SecurityStorage:
                 cfg["engine"],
                 cfg["url"],
                 cfg.get("mode", "readwrite"),
-                cfg.get("pool_min", 2),
-                cfg.get("pool_max", 20),
-                cfg.get("connection_timeout", 5),
-                cfg.get("idle_timeout", 300),
-                cfg.get("max_lifetime", 1800),
+                cfg.get("pool_min", 5),
+                cfg.get("pool_max", 50),
+                cfg.get("connection_timeout", 30),
+                cfg.get("idle_timeout", 600),
+                cfg.get("max_lifetime", 3600),
                 int(cfg.get("dangerous_operations", False)),
             )
             await db.execute(query, params)
