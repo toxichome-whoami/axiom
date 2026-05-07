@@ -203,7 +203,13 @@ class SQLiteCache:
 
                     if count >= limit + burst:
                         await _enforce_rate_penalty(
-                            db, limits_key, penalty_key, now, window, penalty_cooldown, penalty_threshold
+                            db,
+                            limits_key,
+                            penalty_key,
+                            now,
+                            window,
+                            penalty_cooldown,
+                            penalty_threshold,
                         )
                         await db.commit()
                         return True, count

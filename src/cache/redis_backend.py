@@ -50,7 +50,12 @@ return {0, current_count + 1}
 
 
 async def _handle_penalty_application(
-    client: Any, limits_key: str, penalty_key: str, window: int, penalty_cooldown: int, penalty_threshold: int
+    client: Any,
+    limits_key: str,
+    penalty_key: str,
+    window: int,
+    penalty_cooldown: int,
+    penalty_threshold: int,
 ) -> None:
     """Manages atomic incrementation and expiration configurations for rate limit penalties."""
     violation_key = f"rl:violations:{limits_key.split(':')[-1]}"
@@ -171,7 +176,12 @@ class RedisCache:
 
             if violated == 1:
                 await _handle_penalty_application(
-                    client, limits_key, penalty_key, window, penalty_cooldown, penalty_threshold
+                    client,
+                    limits_key,
+                    penalty_key,
+                    window,
+                    penalty_cooldown,
+                    penalty_threshold,
                 )
                 return True, count
 

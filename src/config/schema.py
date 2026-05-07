@@ -76,16 +76,16 @@ class CacheConfig(BaseModel):
     fs_cache: bool = True
     idempotency_ttl: int = 86400  # Seconds before idempotency keys expire (24h)
     response_cache_ttl: int = 30  # Default max-age for cacheable GET responses
-    query_results_ttl: int = 5    # Max-age for SQL row data results
-    upload_session_ttl: int = 3600 # Seconds before chunked upload session expires (1h)
+    query_results_ttl: int = 5  # Max-age for SQL row data results
+    upload_session_ttl: int = 3600  # Seconds before chunked upload session expires (1h)
 
 
 class PerformanceConfig(BaseModel):
     """Tuning knobs for internal caches and hot-path algorithms."""
 
-    query_cache_size: int = 2048    # LRU slots for parsed query AST cache
+    query_cache_size: int = 2048  # LRU slots for parsed query AST cache
     transpiler_cache_size: int = 4096  # LRU slots for SQL dialect transpilation
-    rate_limit_cache_size: int = 256   # LRU slots for rate-limit lookups
+    rate_limit_cache_size: int = 256  # LRU slots for rate-limit lookups
 
 
 class MCPConfig(BaseModel):

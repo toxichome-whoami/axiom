@@ -1,18 +1,19 @@
 import os
 
-from fastapi import APIRouter, FastAPI, Request
+import orjson
+from fastapi import APIRouter, FastAPI, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import FileResponse, JSONResponse, ORJSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from __init__ import __version__
 from api import database, federation, storage
 from api.admin import router as admin_router
 
 # Routers
 from api.core import health
 from api.core.metrics import router as metrics_router
-from __init__ import __version__
 from config.loader import ConfigManager
 from server.lifespan import lifespan
 from server.middleware.cors import setup_cors
@@ -92,18 +93,19 @@ def _attach_middlewares(app: FastAPI):
 
 def _build_error_response(
     request: Request, status_code: int, code: str, message: str, details=None
-) -> ORJSONResponse:
+) -> Response:
     """Standardizes JSON response structures for server errors."""
-    return ORJSONResponse(
+    return Response(
         status_code=status_code,
-        content={
+        content=orjson.dumps({
             "success": False,
             "error": {"code": code, "message": message, "details": details},
             "meta": {
                 "request_id": getattr(request.state, "request_id", "-"),
                 "version": request.app.version,
             },
-        },
+        }),
+        media_type="application/json"
     )
 
 

@@ -1,8 +1,8 @@
 import time
 from typing import Any, Dict, Optional
 
-from fastapi import Request
-from fastapi.responses import ORJSONResponse
+import orjson
+from fastapi import Request, Response
 
 from __init__ import __version__
 from config.loader import ConfigManager
@@ -70,7 +70,7 @@ def success_response(
     data: Any,
     links: Optional[Dict[str, str]] = None,
     start_time: Optional[float] = None,
-) -> ORJSONResponse:
+) -> Response:
     """Fast response builder — plain dict, zero Pydantic allocation."""
     resp = {
         "success": True,
@@ -79,7 +79,7 @@ def success_response(
     }
     if links:
         resp["links"] = links
-    return ORJSONResponse(content=resp)
+    return Response(content=orjson.dumps(resp), media_type="application/json")
 
 
 def error_response(
@@ -88,17 +88,22 @@ def error_response(
     message: str,
     details: Optional[Any] = None,
     start_time: Optional[float] = None,
-) -> ORJSONResponse:
+) -> Response:
     """Fast error response builder — plain dict, zero Pydantic allocation."""
     error = {"code": error_code, "message": message}
     if details is not None:
         error["details"] = details
 
-    return ORJSONResponse(content={
-        "success": False,
-        "error": error,
-        "meta": _build_meta(request, start_time),
-    })
+    return Response(
+        content=orjson.dumps(
+            {
+                "success": False,
+                "error": error,
+                "meta": _build_meta(request, start_time),
+            }
+        ),
+        media_type="application/json",
+    )
 
 
 def cacheable_response(
@@ -107,7 +112,7 @@ def cacheable_response(
     max_age: Optional[int] = None,
     links: Optional[Dict[str, str]] = None,
     start_time: Optional[float] = None,
-) -> ORJSONResponse:
+) -> Response:
     """Returns a JSON response with Cache-Control headers for GET endpoints.
     max_age defaults to config.cache.response_cache_ttl if not specified."""
     if max_age is None:
@@ -115,4 +120,3 @@ def cacheable_response(
     resp = success_response(request, data, links, start_time)
     resp.headers["Cache-Control"] = f"public, max-age={max_age}"
     return resp
-

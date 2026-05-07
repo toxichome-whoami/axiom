@@ -125,7 +125,6 @@ class WAFMiddleware:
 
         return await self.app(scope, receive, send)
 
-
     async def _send_error(
         self, send: Send, status_code: int, code: str, message: str
     ) -> None:

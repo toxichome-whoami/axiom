@@ -4,7 +4,7 @@ import time
 import psutil
 from fastapi import APIRouter, Request
 
-from __init__ import __version__
+from api.responses import _SERVER_VERSION as __version__
 from api.responses import success_response
 from cache.memory import MemoryCache
 from cache.redis_backend import RedisCache
