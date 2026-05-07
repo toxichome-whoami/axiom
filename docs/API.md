@@ -627,7 +627,7 @@ curl -X GET "http://localhost:4500/api/v1/fed/servers" \
 ## MCP API `/api/v1/mcp`
 
 > [!NOTE]
-> MCP (Model Context Protocol) must be enabled via `features.mcp = true` in `config.toml`. When disabled, these endpoints do not exist and consume zero resources.
+> MCP (Model Context Protocol) must be enabled via `features.mcp = true` in `config.toml`. When disabled, these endpoints do not exist and consume zero resources. See [`docs/MCP.md`](MCP.md) for the full guide.
 
 The MCP API exposes NexusGate's database and storage tools to AI models (like Claude, Gemini) securely through standard Server-Sent Events (SSE).
 
@@ -639,17 +639,20 @@ Both endpoints require `Authorization: Bearer <TOKEN>` using standard NexusGate 
 
 ### Available Tools (Functions)
 Once connected, the AI model gains access to the following bounded tools:
-- **`list_databases()`**: Returns configured and permitted database aliases.
-- **`list_tables(database)`**: Extracts introspection schema.
-- **`describe_table(database, table)`**: Dumps full column definitions.
-- **`query_database(database, sql)`**: Executes an AST-validated SQL block natively through the gateway driver.
-- **`list_storages()`**: Returns allowed file system aliases.
-- **`list_files(storage, path)`**: Lists directory contents.
-- **`read_file(storage, path)`**: Reads safely capped text documents.
+
+| Tool | Parameters | Description |
+|------|-----------|-------------|
+| `list_databases` | _(none)_ | Returns configured and permitted database aliases |
+| `list_tables` | `database: str` | Extracts introspection schema |
+| `describe_table` | `database: str, table: str` | Dumps full column definitions |
+| `query_database` | `database: str, sql: str` | Executes AST-validated SQL through the gateway |
+| `list_storages` | _(none)_ | Returns allowed file system aliases |
+| `list_files` | `storage: str, path: str` | Lists directory contents |
+| `read_file` | `storage: str, path: str` | Reads safely capped text documents |
 
 ### Available Resources (Context)
-- `nexusgate://db/{alias}/schema`: Provides full structure read-in natively.
-- `nexusgate://fs/{alias}/info`: Provides volume config/limits logically.
+- `nexusgate://db/{alias}/schema`: Full database schema (tables, columns, types, PKs)
+- `nexusgate://fs/{alias}/info`: Storage volume configuration and limits
 
 ---
 

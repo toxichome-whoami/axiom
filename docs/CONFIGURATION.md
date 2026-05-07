@@ -205,3 +205,17 @@ Outgoing connections to remote NexusGate servers.
 | `node_id` | yes | Your identity on the remote server |
 | `trust_mode` | `"verify"` | `verify` (TLS) or `trust` (skip TLS check) |
 
+---
+
+## `[mcp]`
+
+Model Context Protocol server configuration. Enables AI assistants to interact with databases and storage.
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `server_name` | `"nexusgate"` | Server identity sent to MCP clients |
+| `server_version` | `"1.0.2"` | Version advertised in initialization |
+| `max_result_rows` | `50` | Max rows returned per query |
+| `max_directory_entries` | `100` | Max files listed per directory |
+| `max_file_read_bytes` | `1048576` | Max file read size (bytes) |
+
