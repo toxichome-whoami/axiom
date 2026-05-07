@@ -17,18 +17,19 @@ logger = structlog.get_logger()
 
 _FED_CLIENTS: dict = {}
 _CIRCUIT_STATE: dict = {}
+_FED_SECRET_CACHE: dict = {}
 
 
 async def shutdown_fed_clients():
-    """Close all shared federation HTTP clients on shutdown."""
     for key, client in list(_FED_CLIENTS.items()):
         await client.aclose()
     _FED_CLIENTS.clear()
+    _CIRCUIT_STATE.clear()
 
 
 def _get_fed_client(trust_mode: str) -> httpx.AsyncClient:
     if trust_mode not in _FED_CLIENTS:
-        limits = httpx.Limits(max_connections=50, max_keepalive_connections=10)
+        limits = httpx.Limits(max_connections=10, max_keepalive_connections=5)
         _FED_CLIENTS[trust_mode] = httpx.AsyncClient(
             limits=limits,
             timeout=httpx.Timeout(5.0, connect=3.0),
@@ -38,10 +39,14 @@ def _get_fed_client(trust_mode: str) -> httpx.AsyncClient:
 
 
 def _build_fed_headers(srv_config) -> dict:
-    encoded_secret = base64.b64encode(srv_config.secret.encode("utf-8")).decode("utf-8")
+    node_id = srv_config.node_id
+    if node_id not in _FED_SECRET_CACHE:
+        _FED_SECRET_CACHE[node_id] = base64.b64encode(
+            srv_config.secret.encode("utf-8")
+        ).decode("utf-8")
     return {
-        "X-Federation-Secret": encoded_secret,
-        "X-Federation-Node": srv_config.node_id,
+        "X-Federation-Secret": _FED_SECRET_CACHE[node_id],
+        "X-Federation-Node": node_id,
     }
 
 

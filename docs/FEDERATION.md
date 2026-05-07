@@ -26,7 +26,10 @@ federation = true
 
 [federation]
 enabled = true
-sync_interval = 30
+sync_interval = 30            # Seconds between health heartbeats
+per_node_timeout = 5.0        # Max seconds to wait per node health check
+backoff_max = 300.0           # Max exponential backoff for failed nodes (5 min)
+circuit_breaker_threshold = 3 # Consecutive failures before marking node "down"
 
 # Each block = ONE remote node. Create more blocks for more servers.
 [federation.incoming.us_east_node]
@@ -62,6 +65,14 @@ url = "https://server-b.example.com"
 secret = "gK8xPmW2qR7nY4vB9cT1jL6hF3dA0sE"    # Must match Server B's incoming key
 node_id = "us_east_node"                         # Your identity on Server B
 trust_mode = "verify"                            # verify | trust (skip TLS check)
+
+# ─── Federation Alias Mapping ─────────────────────
+# Expose a remote database as if it were local.
+[database.node_b_main_db]
+engine = "mysql"
+url = "mysql://user:pass@localhost:3306/main_db"  # Local connection string (unused for federated)
+mode = "readwrite"
+federated_alias = "node_b_main_db"               # Routes all requests to Server B's "main_db"
 ```
 
 > **Important:** The `secret` on Server A must be the **exact same string** as the `secret` on Server B's `[federation.incoming.us_east_node]` block. The `node_id` must match the incoming block name.
@@ -115,10 +126,13 @@ Call `GET /api/federation/servers` (requires `full_admin` API key) to see:
 
 ## 6. Resilience
 
-- **Circuit Breaker**: Each federation link is protected. If a remote node goes down, it returns `FED_CIRCUIT_OPEN` immediately instead of waiting for timeouts.
-- **Health Syncing**: The connector periodically pings remote servers. Unhealthy servers have their resources temporarily hidden.
-- **Timeouts**: Federation requests have their own timeout to prevent slow remotes from exhausting connection pools.
-- **Connection Pool Lifecycle**: `httpx.AsyncClient` instances are stored in `app.state.http_clients` (keyed by TLS trust mode). They are lazily initialized on first use, reused across all requests within the same process, and **cleanly closed during server shutdown** via the `lifespan` teardown hook — preventing dangling sockets or resource leaks when restarting or redeploying.
+- **Parallel Polling**: All remote nodes are health-checked concurrently via `asyncio.gather` — one slow node never blocks the others.
+- **Exponential Backoff**: Failed nodes are retried with `2^failures` seconds delay (capped at `backoff_max`, default 5 min). Healthy nodes are polled at `sync_interval` as normal.
+- **Per-Node Circuit Breaker**: Each federation link is independently tracked. After `circuit_breaker_threshold` consecutive failures, the node is marked "down" and skipped until its backoff window expires — preventing wasted resources.
+- **SQLite State Persistence**: Node health state is persisted to `data/federation.db`. After a server restart, previously "down" nodes honor their remaining backoff window instead of being hammered immediately.
+- **Timeouts**: Federation health checks use `per_node_timeout` (default 5s) — a slow remote never blocks the sync cycle.
+- **Shared HTTP Clients**: All federation traffic uses persistent `httpx.AsyncClient` pools (with `max_keepalive_connections=5`), avoiding TCP handshake overhead. Proxy clients are stored on `app.state.http_clients` and **cleanly closed during server shutdown**.
+- **Adaptive Sleep**: If any node is in "degraded" state, the sync loop wakes every 5s instead of 30s — enabling faster recovery without busy-waiting.
 
 ## 7. Security
 

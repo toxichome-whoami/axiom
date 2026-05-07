@@ -97,6 +97,8 @@ full_admin = true                # Bypass all scope checks
 
 # ─── Database Backends ────────────────────────────────
 # Configure your SQL targets (PostgreSQL, MySQL, SQLite, etc.)
+# Use federated_alias to expose a database from a remote node as a local alias.
+# Format: "<federation_server_alias>_<remote_db_name>"
 [database.main_db]
 engine = "postgres"              # postgres | mysql | sqlite | mariadb | mssql
 url = "postgresql://user:pass@localhost:5432/dbname"
@@ -108,6 +110,7 @@ idle_timeout = 600               # Seconds to keep an idle connection alive
 max_lifetime = 3600              # Maximum age of a connection
 query_blacklist = ["DROP", "TRUNCATE", "ALTER"]
 dangerous_operations = false     # Allow/Disallow raw SQL outside of NexusGate dialect
+federated_alias = ""             # e.g. "edge_node_production_db" — federation only
 
 # ─── Storage Volumes ──────────────────────────────────
 # Mount local or network directories as virtual storage aliases.
@@ -130,12 +133,27 @@ enabled = true
 
 # ─── Federation (Optional) ────────────────────────────
 # Connect multiple NexusGate nodes into a unified cluster.
+# State is persisted to data/federation.db (SQLite) for crash recovery.
 [federation]
-enabled = true
-sync_interval = 60             # Seconds between health heartbeats
+enabled = false                # Master toggle
+sync_interval = 30             # Seconds between health heartbeats
+per_node_timeout = 5.0         # Max seconds to wait per node health check
+backoff_max = 300.0            # Max exponential backoff for failed nodes (5 min)
+circuit_breaker_threshold = 3  # Consecutive failures before marking node "down"
 
-# [federation.server.edge_node]
+# ─── Federation: Outgoing Servers ────────────────────
+# Nodes this server will connect to. Each server gets a unique alias key.
+[federation.server.edge_node]
 url = "https://other-nexusgate-node.com/"
 secret = "FEDERATION_SECRET_KEY"
 node_id = "local_identity"
 trust_mode = "verify"          # verify (strict SSL) | trust (skip cert check)
+
+# ─── Federation: Incoming Keys ───────────────────────
+# Define keys that remote nodes use to authenticate to this instance.
+[federation.incoming.edge_node]
+secret = "REMOTE_NODE_SECRET"
+mode = "readonly"
+db_scope = ["*"]
+fs_scope = ["*"]
+description = "Remote datacenter edge node"

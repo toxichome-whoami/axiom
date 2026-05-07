@@ -10,17 +10,19 @@ from starlette.responses import StreamingResponse
 from api.errors import ErrorCodes, NexusGateException
 from config.provider import GlobalConfigProvider
 
+_PROXY_SLIM_LIMITS = httpx.Limits(max_connections=10, max_keepalive_connections=5)
+
 
 def get_proxy_client(request: Request, verify_ssl: bool = True) -> httpx.AsyncClient:
-    """Manages globally persistent proxy connections mapping trust states attached to the ASGI app."""
     if not hasattr(request.app.state, "http_clients"):
         request.app.state.http_clients = {}
 
     clients = request.app.state.http_clients
     if verify_ssl not in clients:
-        limits = httpx.Limits(max_connections=50, max_keepalive_connections=10)
         clients[verify_ssl] = httpx.AsyncClient(
-            limits=limits, timeout=httpx.Timeout(30.0, connect=5.0), verify=verify_ssl
+            limits=_PROXY_SLIM_LIMITS,
+            timeout=httpx.Timeout(30.0, connect=5.0),
+            verify=verify_ssl,
         )
     return clients[verify_ssl]
 
@@ -92,15 +94,21 @@ def _build_remote_url(
     return f"{remote_url}?{query}" if query else remote_url
 
 
+_PROXY_SECRET_CACHE: dict = {}
+
+
 def _build_proxy_headers(request: Request, srv_config) -> dict:
-    """Constructs transmission limits erasing native Host overlays."""
     headers = dict(request.headers)
     headers.pop("host", None)
     headers.pop("content-length", None)
 
-    encoded_secret = base64.b64encode(srv_config.secret.encode("utf-8")).decode("utf-8")
-    headers["X-Federation-Secret"] = encoded_secret
-    headers["X-Federation-Node"] = srv_config.node_id
+    node_id = srv_config.node_id
+    if node_id not in _PROXY_SECRET_CACHE:
+        _PROXY_SECRET_CACHE[node_id] = base64.b64encode(
+            srv_config.secret.encode("utf-8")
+        ).decode("utf-8")
+    headers["X-Federation-Secret"] = _PROXY_SECRET_CACHE[node_id]
+    headers["X-Federation-Node"] = node_id
     headers["X-Request-ID"] = getattr(request.state, "request_id", "-")
 
     return headers
