@@ -291,10 +291,7 @@ class QueryExecutionPipeline:
             if cached is not None:
                 return cached
 
-        if db_cfg.engine.value == engine.dialect:
-            transpiled_sql = safe_sql
-        else:
-            transpiled_sql = transpile_sql(safe_sql, to_dialect=engine.dialect)
+        transpiled_sql = transpile_sql(safe_sql, to_dialect=engine.dialect)
 
         result = await engine.execute(transpiled_sql, params)
 

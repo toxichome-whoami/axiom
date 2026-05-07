@@ -49,6 +49,7 @@ def main():
         http="httptools",
         loop=loop_strategy,
         limit_concurrency=config.server.max_connections,
+        access_log=False,
     )
 
 

@@ -1,7 +1,9 @@
 import contextvars
 import datetime
 import logging
+import logging.handlers
 import os
+import queue
 import sys
 
 import structlog
@@ -68,11 +70,17 @@ def setup_logging():
 
     os.makedirs(config.logging.directory, exist_ok=True)
 
+    raw_handlers = _build_log_handlers(config)
+    log_queue = queue.Queue(-1)
+    queue_handler = logging.handlers.QueueHandler(log_queue)
+    listener = logging.handlers.QueueListener(log_queue, *raw_handlers)
+    listener.start()
+
     # 1. Apply StdLib Native Handlers
     logging.basicConfig(
         format="%(message)s",
         level=_resolve_log_level(config.logging.level),
-        handlers=_build_log_handlers(config),
+        handlers=[queue_handler],
     )
 
     # 2. Inject Structlog Pipeline
