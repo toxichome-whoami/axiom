@@ -69,10 +69,12 @@ class SecurityStorage:
                 created_at REAL NOT NULL
             )
         """)
-        
+
         # Migration: add salt column if it doesn't exist
         try:
-            await db.execute("ALTER TABLE api_keys ADD COLUMN salt TEXT NOT NULL DEFAULT ''")
+            await db.execute(
+                "ALTER TABLE api_keys ADD COLUMN salt TEXT NOT NULL DEFAULT ''"
+            )
         except aiosqlite.OperationalError:
             pass  # Column already exists
         await db.execute("""

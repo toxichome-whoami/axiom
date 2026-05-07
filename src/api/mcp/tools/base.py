@@ -19,7 +19,6 @@ from mcp.types import TextContent
 # Prevents large payloads from blowing up the model's context window or RAM.
 
 
-
 class EngineResolver:
     """Resolves database engines and configs by alias through the shared pool."""
 

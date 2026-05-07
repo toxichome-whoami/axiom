@@ -6,6 +6,7 @@ Only accessible with a key that has admin-level privileges.
 
 import base64
 import hashlib
+import os
 import secrets
 import string
 
@@ -38,12 +39,14 @@ def _require_fields(mapping: dict, *fields: str) -> None:
 
 def _generate_secure_secret() -> tuple[str, str, str]:
     """Generates a cryptographically secure random secret and its PBKDF2 hash."""
-    import os
+
     alphabet = string.ascii_letters + string.digits
     length = secrets.choice(range(32, 65))
     raw_secret = "".join(secrets.choice(alphabet) for _ in range(length))
     salt = os.urandom(16).hex()
-    secret_hash = hashlib.pbkdf2_hmac("sha256", raw_secret.encode("utf-8"), salt.encode("utf-8"), 100000).hex()
+    secret_hash = hashlib.pbkdf2_hmac(
+        "sha256", raw_secret.encode("utf-8"), salt.encode("utf-8"), 100000
+    ).hex()
     return raw_secret, salt, secret_hash
 
 
@@ -459,7 +462,7 @@ async def create_webhook(
             ErrorCodes.INPUT_SCHEMA_INVALID, "Webhook name must be a valid string", 400
         )
 
-    raw_secret, _ = _generate_secure_secret()
+    raw_secret, _, _ = _generate_secure_secret()
 
     await SecurityStorage.add_webhook(
         name,

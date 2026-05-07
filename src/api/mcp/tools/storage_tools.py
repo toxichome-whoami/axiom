@@ -64,12 +64,17 @@ def _read_secure(file_path: str, max_bytes: int, storage_root: str) -> str:
     try:
         st = os.fstat(fd)
         if st.st_size > max_bytes:
-            raise ValueError(f"File too large ({st.st_size:,} bytes). Max: {max_bytes:,}.")
+            raise ValueError(
+                f"File too large ({st.st_size:,} bytes). Max: {max_bytes:,}."
+            )
 
         if hasattr(os, "O_NOFOLLOW") and os.name != "nt":
             actual_path = os.path.realpath(f"/proc/self/fd/{fd}")
             canonical_root = os.path.realpath(storage_root)
-            if not actual_path.startswith(canonical_root + os.sep) and actual_path != canonical_root:
+            if (
+                not actual_path.startswith(canonical_root + os.sep)
+                and actual_path != canonical_root
+            ):
                 raise PermissionError("Path traversal detected")
 
         content_bytes = os.read(fd, max_bytes)
@@ -104,7 +109,12 @@ async def _list_storages() -> list[TextContent]:
 
 async def _list_files(storage: str, path: str = "/") -> list[TextContent]:
     if not _check_storage_scope(storage):
-        return [TextContent(type="text", text="Access denied: the requested resource is not available")]
+        return [
+            TextContent(
+                type="text",
+                text="Access denied: the requested resource is not available",
+            )
+        ]
 
     config = GlobalConfigProvider().get_config()
     storage_config = config.storage.get(storage)
@@ -113,7 +123,9 @@ async def _list_files(storage: str, path: str = "/") -> list[TextContent]:
 
     target_dir = _resolve_safe_path(storage_config.path, path)
     if target_dir is None:
-        return [TextContent(type="text", text="Access denied: path traversal detected.")]
+        return [
+            TextContent(type="text", text="Access denied: path traversal detected.")
+        ]
 
     is_dir = await asyncio.to_thread(os.path.isdir, target_dir)
     if not is_dir:
@@ -136,12 +148,21 @@ async def _list_files(storage: str, path: str = "/") -> list[TextContent]:
     if has_overflow:
         lines.append(f"  ... and {overflow_count} more")
 
-    return [TextContent(type="text", text=f"Contents of '{storage}:{path}':\n" + "\n".join(lines))]
+    return [
+        TextContent(
+            type="text", text=f"Contents of '{storage}:{path}':\n" + "\n".join(lines)
+        )
+    ]
 
 
 async def _read_file(storage: str, path: str) -> list[TextContent]:
     if not _check_storage_scope(storage):
-        return [TextContent(type="text", text="Access denied: the requested resource is not available")]
+        return [
+            TextContent(
+                type="text",
+                text="Access denied: the requested resource is not available",
+            )
+        ]
 
     config = GlobalConfigProvider().get_config()
     storage_config = config.storage.get(storage)
@@ -150,7 +171,9 @@ async def _read_file(storage: str, path: str) -> list[TextContent]:
 
     file_path = _resolve_safe_path(storage_config.path, path)
     if file_path is None:
-        return [TextContent(type="text", text="Access denied: path traversal detected.")]
+        return [
+            TextContent(type="text", text="Access denied: path traversal detected.")
+        ]
 
     is_file = await asyncio.to_thread(os.path.isfile, file_path)
     if not is_file:
@@ -158,14 +181,22 @@ async def _read_file(storage: str, path: str) -> list[TextContent]:
 
     max_bytes = config.mcp.max_file_read_bytes
     try:
-        content = await asyncio.to_thread(_read_secure, file_path, max_bytes, storage_config.path)
+        content = await asyncio.to_thread(
+            _read_secure, file_path, max_bytes, storage_config.path
+        )
         return [TextContent(type="text", text=content)]
     except ValueError as ve:
         return [TextContent(type="text", text=str(ve))]
     except PermissionError:
-        return [TextContent(type="text", text="Access denied: path traversal detected.")]
+        return [
+            TextContent(type="text", text="Access denied: path traversal detected.")
+        ]
     except Exception:
-        return [TextContent(type="text", text="Failed to read file due to an internal error.")]
+        return [
+            TextContent(
+                type="text", text="Failed to read file due to an internal error."
+            )
+        ]
 
 
 # -- Registration ----------------------------------------------------------
