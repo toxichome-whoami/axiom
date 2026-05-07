@@ -17,6 +17,9 @@ An open-source, industrial-grade, unified API gateway for databases and file sto
 - High performance multi-tier rate limiting with DDoS protection.
 - Cache-Aside SQLite persistent state layer for sub-millisecond API Key and Ban validations.
 
+## Documentation
+For comprehensive guides, API references, architecture overviews, and deployment instructions, please read the documentation in the [docs/](./docs/) directory of this repository.
+
 ## Quick Start
 1. `pip install -r requirements.txt`
 2. Run via: `python src/main.py`
