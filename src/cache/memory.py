@@ -28,9 +28,11 @@ def _apply_penalty_violation(
     violations = cache.get(violation_tracker_key, 0) + 1
     cache[violation_tracker_key] = violations
 
-    if violations >= 10:
+    if violations == 10:
         cache[penalty_key] = True
         logger.warning("Applied IP penalty in memory boundary", key=penalty_key)
+    elif violations > 10:
+        cache[penalty_key] = True
 
 
 # ─────────────────────────────────────────────────────────────────────────────

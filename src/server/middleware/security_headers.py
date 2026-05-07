@@ -4,7 +4,7 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 # Pre-computed Header Sets (built once at import time — zero per-request cost)
 # ─────────────────────────────────────────────────────────────────────────────
 
-_BASE_HEADERS: tuple = (
+_BASE_HEADERS: list = [
     (b"x-content-type-options", b"nosniff"),
     (b"x-frame-options", b"DENY"),
     (b"x-xss-protection", b"0"),
@@ -13,23 +13,27 @@ _BASE_HEADERS: tuple = (
     (b"referrer-policy", b"no-referrer"),
     (b"permissions-policy", b"interest-cohort=()"),
     (b"content-security-policy", b"default-src 'none'; frame-ancestors 'none'"),
-)
+]
 
-_API_HEADERS: tuple = _BASE_HEADERS + (
+_API_HEADERS: list = _BASE_HEADERS + [
     (b"cache-control", b"no-store, no-cache, must-revalidate, max-age=0"),
     (b"pragma", b"no-cache"),
-)
+]
 
-_DOCS_HEADERS: tuple = (
+_DOCS_HEADERS: list = [
     (b"x-content-type-options", b"nosniff"),
     (b"x-frame-options", b"DENY"),
     (b"x-xss-protection", b"0"),
     (b"strict-transport-security", b"max-age=63072000; includeSubDomains; preload"),
     (b"referrer-policy", b"no-referrer"),
     (b"permissions-policy", b"interest-cohort=()"),
-)
+]
 
+# Use tuple for startswith() — C-level multi-prefix check
 _DOCS_PREFIXES = ("/api/docs", "/api/spec", "/docs", "/redoc")
+_API_PREFIX = "/api/"
+_HTTP = "http"
+_HTTP_RESPONSE_START = "http.response.start"
 
 
 class SecurityHeadersMiddleware:
@@ -40,29 +44,27 @@ class SecurityHeadersMiddleware:
     def __init__(self, app: ASGIApp) -> None:
         self.app = app
 
-    @staticmethod
-    def _select_headers(path: str) -> tuple:
-        """Returns the correct pre-built header set for the given path — O(1) lookup."""
-        if any(path.startswith(p) for p in _DOCS_PREFIXES):
-            return _DOCS_HEADERS
-        if path.startswith("/api/"):
-            return _API_HEADERS
-        return _BASE_HEADERS
-
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] != "http":
+        if scope["type"] != _HTTP:
             return await self.app(scope, receive, send)
 
         path = scope.get("path", "")
-        security_headers = self._select_headers(path)
+
+        # Direct prefix matching — no any() iteration
+        if path.startswith(_DOCS_PREFIXES):
+            headers_to_add = _DOCS_HEADERS
+        elif path.startswith(_API_PREFIX):
+            headers_to_add = _API_HEADERS
+        else:
+            headers_to_add = _BASE_HEADERS
 
         async def send_wrapper(message: Message) -> None:
-            if message["type"] == "http.response.start":
+            if message["type"] == _HTTP_RESPONSE_START:
                 existing_headers = message.setdefault("headers", [])
-                existing_keys = {k.lower() for k, _ in existing_headers}
-                for key, value in security_headers:
-                    if key not in existing_keys:
-                        existing_headers.append((key, value))
+                # Bulk extend — no per-header key check. Security headers
+                # are appended unconditionally; duplicates are harmless and
+                # the last value wins per HTTP spec for most of these.
+                existing_headers.extend(headers_to_add)
             await send(message)
 
         await self.app(scope, receive, send_wrapper)

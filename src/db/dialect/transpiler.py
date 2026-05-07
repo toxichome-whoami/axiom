@@ -1,3 +1,4 @@
+import functools
 from typing import Optional
 
 import sqlglot
@@ -15,6 +16,7 @@ def _resolve_target_dialect(to_dialect: str) -> str:
     return to_dialect
 
 
+@functools.lru_cache(maxsize=4096)
 def _execute_ast_conversion(
     sql: str, to_dialect: str, from_dialect: Optional[str] = None
 ) -> str:

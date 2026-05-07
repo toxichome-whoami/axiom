@@ -14,35 +14,38 @@ from security.storage import SecurityStorage
 
 logger = structlog.get_logger()
 
+_HTTP = "http"
+_HTTP_RESPONSE_START = "http.response.start"
+_XFF_HEADER = b"x-forwarded-for"
+_XRI_HEADER = b"x-real-ip"
+_AUTH_HEADER = b"authorization"
+_BEARER_PREFIX = b"Bearer "
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Helper Functions
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-def _resolve_client_ip(scope: Scope, headers: dict) -> str:
-    """Extracts the true client IP from standard proxy headers."""
-    if b"x-forwarded-for" in headers:
-        return headers[b"x-forwarded-for"].decode("latin-1").split(",")[0].strip()
-
-    if b"x-real-ip" in headers:
-        return headers[b"x-real-ip"].decode("latin-1")
-
-    client = scope.get("client")
-    if client:
-        return client[0]
-
-    return "unknown"
+def _resolve_client_ip_from_headers(headers: tuple) -> str:
+    """Extracts the true client IP scanning raw header tuples directly."""
+    client_ip = None
+    for k, v in headers:
+        if k == _XFF_HEADER:
+            return v.decode("latin-1").split(",", 1)[0].strip()
+        elif k == _XRI_HEADER:
+            client_ip = v.decode("latin-1")
+    return client_ip  # type: ignore
 
 
-def _resolve_api_key_name(headers: dict) -> str:
-    """Extracts the key identifier from Bearer headers prior to full authentication."""
-    auth_header = headers.get(b"authorization")
-    if auth_header and auth_header.startswith(b"Bearer "):
-        try:
-            decoded = base64.b64decode(auth_header[7:]).decode("utf-8")
-            return decoded.split(":")[0]
-        except Exception:
-            pass
+def _resolve_api_key_from_headers(headers: tuple) -> str:
+    """Extracts the key identifier from Bearer headers scanning raw tuples."""
+    for k, v in headers:
+        if k == _AUTH_HEADER and v.startswith(_BEARER_PREFIX):
+            try:
+                decoded = base64.b64decode(v[7:]).decode("utf-8")
+                return decoded.split(":", 1)[0]
+            except Exception:
+                return "anonymous"
     return "anonymous"
 
 
@@ -82,16 +85,19 @@ async def _send_rejection_response(send: Send, limit: int, window: int):
         }
     )
 
+    reset_time = str(int(time.time() + window)).encode("ascii")
+    limit_bytes = str(limit).encode("ascii")
+
     await send(
         {
-            "type": "http.response.start",
+            "type": _HTTP_RESPONSE_START,
             "status": 429,
             "headers": [
                 (b"content-type", b"application/json"),
                 (b"content-length", str(len(body)).encode("ascii")),
-                (b"x-ratelimit-limit", str(limit).encode("ascii")),
+                (b"x-ratelimit-limit", limit_bytes),
                 (b"x-ratelimit-remaining", b"0"),
-                (b"x-ratelimit-reset", str(int(time.time() + window)).encode("ascii")),
+                (b"x-ratelimit-reset", reset_time),
             ],
         }
     )
@@ -121,7 +127,7 @@ class RateLimitMiddleware:
         # Resolve config and backend class ONCE at startup - never per-request
         config = ConfigManager.get()
         self._enabled = config.rate_limit.enabled
-        self._allowed_ips = set(config.server.allowed_ips)
+        self._allowed_ips = frozenset(config.server.allowed_ips)  # frozenset for O(1)
         self._window = config.rate_limit.window
         self._burst = config.rate_limit.burst
         self._penalty_cooldown = config.rate_limit.penalty_cooldown
@@ -134,20 +140,32 @@ class RateLimitMiddleware:
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         """Core ASGI entrypoint processing the event loop injection."""
-        if scope["type"] != "http":
+        if scope["type"] != _HTTP:
             return await self.app(scope, receive, send)
 
         if not self._enabled:
             return await self.app(scope, receive, send)
 
-        headers = dict(scope.get("headers", []))
-        client_ip = _resolve_client_ip(scope, headers)
+        # Scan raw headers directly — no dict() allocation
+        raw_headers = scope.get("headers", ())
+
+        # Try to extract client IP from scope first (cheapest)
+        client_ip = None
+        for k, v in raw_headers:
+            if k == _XFF_HEADER:
+                client_ip = v.decode("latin-1").split(",", 1)[0].strip()
+                break
+            elif k == _XRI_HEADER:
+                client_ip = v.decode("latin-1")
+
+        if client_ip is None:
+            client = scope.get("client")
+            client_ip = client[0] if client else "unknown"
 
         if client_ip in self._allowed_ips:
             return await self.app(scope, receive, send)
 
-        api_key_name = _resolve_api_key_name(headers)
-
+        api_key_name = _resolve_api_key_from_headers(raw_headers)
         limit = _determine_effective_limits(api_key_name)
 
         # Use pre-cached backend class - no per-request resolution
@@ -163,23 +181,18 @@ class RateLimitMiddleware:
         if violated:
             return await _send_rejection_response(send, limit, self._window)
 
+        # Pre-compute header values outside the closure
+        limit_bytes = str(limit).encode("ascii")
+        remaining_bytes = str(max(0, limit - current_count)).encode("ascii")
+        reset_bytes = str(int(time.time() + self._window)).encode("ascii")
+
         async def send_wrapper(message: Message) -> None:
             """Injected hook wrapping the final request phase to enforce header attachments."""
-            if message["type"] == "http.response.start":
+            if message["type"] == _HTTP_RESPONSE_START:
                 resp_headers = message.setdefault("headers", [])
-                resp_headers.append((b"x-ratelimit-limit", str(limit).encode("ascii")))
-                resp_headers.append(
-                    (
-                        b"x-ratelimit-remaining",
-                        str(max(0, limit - current_count)).encode("ascii"),
-                    )
-                )
-                resp_headers.append(
-                    (
-                        b"x-ratelimit-reset",
-                        str(int(time.time() + self._window)).encode("ascii"),
-                    )
-                )
+                resp_headers.append((b"x-ratelimit-limit", limit_bytes))
+                resp_headers.append((b"x-ratelimit-remaining", remaining_bytes))
+                resp_headers.append((b"x-ratelimit-reset", reset_bytes))
             await send(message)
 
         # Allow execution downward

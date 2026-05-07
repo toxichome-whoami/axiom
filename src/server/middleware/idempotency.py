@@ -4,7 +4,7 @@ Duplicate requests with the same key return the cached response without
 re-executing the handler. Keys expire after a configurable TTL.
 """
 
-from typing import Any, Optional
+from typing import Any
 
 import orjson
 import structlog
@@ -16,7 +16,13 @@ logger = structlog.get_logger()
 
 IDEMPOTENCY_PREFIX = "idempotency:"
 IDEMPOTENCY_TTL = 86400  # 24 hours
-IDEMPOTENT_METHODS = {b"POST", b"PUT", b"PATCH", b"DELETE"}
+
+# Use a frozenset for O(1) method checking
+_IDEMPOTENT_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+_HTTP = "http"
+_HTTP_RESPONSE_START = "http.response.start"
+_HTTP_RESPONSE_BODY = "http.response.body"
+_IDEM_HEADER = b"x-idempotency-key"
 
 
 class IdempotencyMiddleware:
@@ -27,29 +33,64 @@ class IdempotencyMiddleware:
     def __init__(self, app: ASGIApp):
         self.app = app
 
-    # ─────────────────────────────────────────────────────────────────────────────
-    # Internal Handlers
-    # ─────────────────────────────────────────────────────────────────────────────
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != _HTTP:
+            return await self.app(scope, receive, send)
 
-    async def _extract_idempotency_key(self, scope: Scope) -> Optional[str]:
-        """Validates if the request warrants state tracking."""
-        method = scope.get("method", "").encode("ascii")
-        if method not in IDEMPOTENT_METHODS:
-            return None
+        # Fast-path: skip entirely for non-mutation methods (GET, HEAD, OPTIONS)
+        method = scope.get("method", "")
+        if method not in _IDEMPOTENT_METHODS:
+            return await self.app(scope, receive, send)
 
-        headers = dict(scope.get("headers", []))
-        idem_key = headers.get(b"x-idempotency-key")
+        # Scan headers for idempotency key — avoid dict() allocation
+        idem_key_str = None
+        for k, v in scope.get("headers", ()):
+            if k == _IDEM_HEADER:
+                idem_key_str = v.decode("latin-1")
+                break
 
-        if not idem_key:
-            return None
+        if idem_key_str is None:
+            return await self.app(scope, receive, send)
 
-        return idem_key.decode("latin-1")
+        cache_key = f"{IDEMPOTENCY_PREFIX}{idem_key_str}"
+
+        # 1. Check for Cached Hit
+        cached = await CacheManager.get(cache_key)
+        if cached is not None:
+            served = await self._serve_cached_response(send, idem_key_str, cached)
+            if served:
+                return
+
+        # 2. Intercept Response Live
+        res_status = 200
+        res_headers = []
+        res_body = bytearray()
+
+        async def send_wrapper(message: Message) -> None:
+            nonlocal res_status, res_headers
+
+            msg_type = message["type"]
+            if msg_type == _HTTP_RESPONSE_START:
+                res_status = message["status"]
+                res_headers = message.get("headers", [])
+            elif msg_type == _HTTP_RESPONSE_BODY:
+                if res_status < 500:
+                    body = message.get("body")
+                    if body:
+                        res_body.extend(body)
+
+            await send(message)
+
+        await self.app(scope, receive, send_wrapper)
+
+        # 3. Cache Result
+        if res_status < 500 and len(res_body) > 0:
+            await self._cache_response(cache_key, res_status, res_headers, res_body)
 
     async def _serve_cached_response(
         self, send: Send, idem_key_str: str, cached: Any
     ) -> bool:
         """Parses and transmits a previously cached response."""
-        logger.debug("Returning cached idempotent response", key=idem_key_str)
         try:
             if isinstance(cached, str):
                 cached = orjson.loads(cached)
@@ -63,15 +104,14 @@ class IdempotencyMiddleware:
 
             await send(
                 {
-                    "type": "http.response.start",
+                    "type": _HTTP_RESPONSE_START,
                     "status": status_code,
                     "headers": resp_headers,
                 }
             )
-            await send({"type": "http.response.body", "body": body_bytes})
+            await send({"type": _HTTP_RESPONSE_BODY, "body": body_bytes})
             return True
-        except Exception as e:
-            logger.warning("Failed to parse cached idempotent response", error=str(e))
+        except Exception:
             return False
 
     async def _cache_response(
@@ -79,7 +119,6 @@ class IdempotencyMiddleware:
     ):
         """Constructs and pushes a compact layout to the cache backend."""
         try:
-            # Format: [status, [[k, v]], hex_body]
             serializable_headers = [
                 [k.decode("latin-1"), v.decode("latin-1")]
                 for k, v in res_headers
@@ -92,52 +131,5 @@ class IdempotencyMiddleware:
                 orjson.dumps(payload),
                 ttl=IDEMPOTENCY_TTL,
             )
-        except Exception as e:
-            logger.warning("Failed to cache idempotent response", error=str(e))
-
-    # ─────────────────────────────────────────────────────────────────────────────
-    # Core Injection
-    # ─────────────────────────────────────────────────────────────────────────────
-
-    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] != "http":
-            return await self.app(scope, receive, send)
-
-        idem_key_str = await self._extract_idempotency_key(scope)
-        if not idem_key_str:
-            return await self.app(scope, receive, send)
-
-        cache_key = f"{IDEMPOTENCY_PREFIX}{idem_key_str}"
-
-        # 1. Check for Cached Hit
-        cached = await CacheManager.get(cache_key)
-        if cached is not None:
-            served = await self._serve_cached_response(send, idem_key_str, cached)
-            if served:
-                return
-
-        # 2. Intercept Response Live
-        response_started = False
-        res_status = 200
-        res_headers = []
-        res_body = bytearray()
-
-        async def send_wrapper(message: Message) -> None:
-            nonlocal response_started, res_status, res_headers
-
-            if message["type"] == "http.response.start":
-                res_status = message["status"]
-                res_headers = message.get("headers", [])
-                response_started = True
-
-            elif message["type"] == "http.response.body":
-                if res_status < 500:
-                    res_body.extend(message.get("body", b""))
-
-            await send(message)
-
-        await self.app(scope, receive, send_wrapper)
-
-        # 3. Cache Result Asynchronously
-        if response_started and res_status < 500 and len(res_body) > 0:
-            await self._cache_response(cache_key, res_status, res_headers, res_body)
+        except Exception:
+            pass

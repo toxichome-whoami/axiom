@@ -87,12 +87,11 @@ class WAFMiddleware:
         # Fast-path: skip WAF for internal API routes where input is
         # already validated by route handlers (query parser, auth, etc.)
         path = scope.get("path", "")
-        if path.startswith("/api/v1/db") or path.startswith("/api/v1/fs"):
+        if path.startswith(("/api/v1/db", "/api/v1/fs")):
             return await self.app(scope, receive, send)
 
         raw_path = scope.get("raw_path", b"")
         query_string = scope.get("query_string", b"")
-        headers = dict(scope.get("headers", []))
 
         # Check validations in fast-fail order
         error = (
@@ -100,14 +99,32 @@ class WAFMiddleware:
             or self._validate_null_bytes(raw_path, query_string)
             or self._validate_path_traversal(raw_path, query_string)
             or self._validate_query_params(query_string)
-            or self._validate_body_size(headers)
         )
+
+        # Only scan headers for content-length if needed (avoid dict() allocation)
+        if error is None:
+            content_length = None
+            for k, v in scope.get("headers", ()):
+                if k == b"content-length":
+                    content_length = v
+                    break
+            if content_length:
+                try:
+                    if int(content_length) > self.body_limit_bytes:
+                        error = (
+                            413,
+                            "WAF_BODY_TOO_LARGE",
+                            f"Request body too large. Limit is {self.config.server.body_limit}",
+                        )
+                except ValueError:
+                    error = (400, "WAF_INVALID_HEADER", "Invalid Content-Length header")
 
         if error:
             status_code, code, message = error
             return await self._send_error(send, status_code, code, message)
 
         return await self.app(scope, receive, send)
+
 
     async def _send_error(
         self, send: Send, status_code: int, code: str, message: str

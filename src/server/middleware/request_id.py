@@ -2,38 +2,43 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from utils.uuid7 import uuid7
 
+_HTTP = "http"
+_HTTP_RESPONSE_START = "http.response.start"
+_REQ_ID_HEADER = b"x-request-id"
+_REQ_ID_PREFIX = "req_"
+
 
 class RequestIDMiddleware:
     """Middleware to ensure every request has an X-Request-ID (UUID v7)."""
 
+    __slots__ = ("app",)
+
     def __init__(self, app: ASGIApp) -> None:
         self.app = app
 
-    def _resolve_request_id(self, headers: dict) -> str:
-        """Extracts existing tracing ID or generates a new chronological UUIDv7."""
-        req_id_bytes = headers.get(b"x-request-id", b"")
-        if req_id_bytes:
-            return req_id_bytes.decode("ascii")
-        return f"req_{uuid7().hex}"
-
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] != "http":
+        if scope["type"] != _HTTP:
             return await self.app(scope, receive, send)
 
-        headers = dict(scope.get("headers", []))
-        req_id = self._resolve_request_id(headers)
+        # Scan headers directly — avoid dict() allocation over the full header list
+        req_id = None
+        for k, v in scope.get("headers", ()):
+            if k == _REQ_ID_HEADER:
+                req_id = v.decode("ascii")
+                break
 
-        # Attach securely for downstream processors (logging)
+        if req_id is None:
+            req_id = f"{_REQ_ID_PREFIX}{uuid7().hex}"
+
         scope.setdefault("state", {})["request_id"] = req_id
 
+        # Encode once, reuse in closure
+        req_id_bytes = req_id.encode("ascii")
+
         async def send_wrapper(message: Message) -> None:
-            if message["type"] == "http.response.start":
+            if message["type"] == _HTTP_RESPONSE_START:
                 resp_headers = message.setdefault("headers", [])
-                existing_keys = {k for k, v in resp_headers}
-
-                if b"x-request-id" not in existing_keys:
-                    resp_headers.append((b"x-request-id", req_id.encode("ascii")))
-
+                resp_headers.append((_REQ_ID_HEADER, req_id_bytes))
             await send(message)
 
         await self.app(scope, receive, send_wrapper)

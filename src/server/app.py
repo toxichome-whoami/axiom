@@ -47,26 +47,26 @@ class PlaygroundSecurityMiddleware:
 
     def __init__(self, app):
         self.app = app
+        self._playground_enabled = ConfigManager.get().features.playground
 
     async def __call__(self, scope, receive, send):
         if scope["type"] != "http":
             return await self.app(scope, receive, send)
 
-        request_path = scope.get("path", "")
-        playground_enabled = ConfigManager.get().features.playground
-
-        if _is_playground_route(request_path) and not playground_enabled:
-            response = JSONResponse(
-                status_code=404,
-                content={
-                    "success": False,
-                    "error": {
-                        "code": "FEATURE_DISABLED",
-                        "message": "Playground is currently disabled",
+        if not self._playground_enabled:
+            request_path = scope.get("path", "")
+            if _is_playground_route(request_path):
+                response = JSONResponse(
+                    status_code=404,
+                    content={
+                        "success": False,
+                        "error": {
+                            "code": "FEATURE_DISABLED",
+                            "message": "Playground is currently disabled",
+                        },
                     },
-                },
-            )
-            return await response(scope, receive, send)
+                )
+                return await response(scope, receive, send)
 
         return await self.app(scope, receive, send)
 
