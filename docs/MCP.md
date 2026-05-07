@@ -66,26 +66,26 @@ MCP uses a **bidirectional SSE** (Server-Sent Events) transport:
 
 ```mermaid
 sequenceDiagram
-    participant Client as AI Client<br/>(Claude, Gemini)
-    participant SSE as GET /api/v1/mcp/sse
+    participant Client as AI Client (Claude, Gemini)
+    participant SSE as SSE Endpoint
     participant Auth as Auth Layer
     participant MCP as MCP Server
-    participant RPC as POST /api/v1/mcp/messages
-    participant DB as Database/Storage
+    participant RPC as Messages Endpoint
+    participant DB as Database or Storage
 
-    Client->>SSE: 1. Open SSE connection<br/>Authorization: Bearer &lt;token&gt;
-    SSE->>Auth: 2. Authenticate request
-    Auth-->>SSE: 3. AuthContext bound to session
-    SSE-->>Client: 4. SSE stream open (bidirectional)
+    Client->>SSE: 1. Open SSE (Bearer token)
+    SSE->>Auth: 2. Authenticate
+    Auth-->>SSE: 3. AuthContext bound
+    SSE-->>Client: 4. SSE stream open
 
-    Note over Client,MCP: Session established — tool calls begin
+    Note over Client,MCP: Session active
 
-    Client->>RPC: 5. JSON-RPC: tools/list, tools/call
-    RPC->>MCP: 6. Dispatch to handler
-    MCP->>DB: 7. Execute query / read file
-    DB-->>MCP: 8. Result set / file content
-    MCP-->>RPC: 9. Format as TextContent
-    RPC-->>Client: 10. JSON-RPC response over SSE
+    Client->>RPC: 5. JSON-RPC call
+    RPC->>MCP: 6. Dispatch handler
+    MCP->>DB: 7. Execute / read
+    DB-->>MCP: 8. Result
+    MCP-->>RPC: 9. Format response
+    RPC-->>Client: 10. JSON-RPC response
 ```
 
 ### Step-by-Step
