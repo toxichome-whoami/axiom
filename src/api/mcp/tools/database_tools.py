@@ -18,7 +18,7 @@ from api.database.query_parser import validate_query
 from api.mcp.session_auth import get_mcp_auth
 from api.mcp.tools.base import EngineResolver, ResultFormatter
 from api.mcp.tools.registry import mcp_tool_registry
-from config.loader import ConfigManager
+from config.provider import GlobalConfigProvider
 from db.dialect.transpiler import transpile_sql
 from mcp.types import TextContent
 
@@ -45,7 +45,7 @@ def _check_database_scope(alias: str) -> bool:
 async def _list_databases() -> list[TextContent]:
     """Lists database aliases visible to the authenticated session."""
     auth = get_mcp_auth()
-    all_aliases = list(ConfigManager.get().database.keys())
+    all_aliases = list(GlobalConfigProvider().get_config().database.keys())
 
     # Filter by scope if restrictions exist and it's not a global wildcard
     if auth.db_scope and "*" not in auth.db_scope:

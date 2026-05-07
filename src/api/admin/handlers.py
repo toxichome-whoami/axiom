@@ -13,7 +13,7 @@ from fastapi import APIRouter, Body, Depends, Path, Request
 
 from api.errors import ErrorCodes, NexusGateException
 from api.responses import success_response
-from config.loader import ConfigManager
+from config.provider import GlobalConfigProvider
 from db.pool import DatabasePoolManager
 from security.ban_list import BanList
 from security.circuit_breaker import CircuitBreaker
@@ -62,18 +62,20 @@ def _extract_remote_databases(alias: str, db_list: dict, local_dbs: dict) -> Non
         }
 
 
-def _enrich_federated_databases(local_dbs: dict, config) -> None:
+async def _enrich_federated_databases(local_dbs: dict, config) -> None:
     """Appends federated remote alias databases to the local payload."""
     if not config.features.federation or not config.federation.enabled:
         return
 
-    from api.federation.sync import FederationState
+    from api.federation.state import FederationStateManager
 
-    state = FederationState()
+    state_mgr = FederationStateManager()
+    await state_mgr.load()
 
-    for alias, srv_state in state.servers.items():
-        if srv_state.get("status") == "up":
-            _extract_remote_databases(alias, srv_state.get("databases", {}), local_dbs)
+    for alias in config.federation.server:
+        node_state = await state_mgr.get_state(alias)
+        if node_state and node_state.status == "up":
+            _extract_remote_databases(alias, node_state.databases, local_dbs)
 
 
 def _redact_sensitive_payloads(data: dict) -> None:
@@ -96,7 +98,7 @@ def _redact_sensitive_payloads(data: dict) -> None:
 @router.get("/keys")
 async def list_api_keys(request: Request, auth=Depends(require_admin)):
     """Lists static (TOML) and dynamic (SQLite) API Keys masking signatures."""
-    config = ConfigManager.get()
+    config = GlobalConfigProvider().get_config()
 
     static_keys = [
         {
@@ -182,7 +184,7 @@ async def revoke_api_key(
     deleted = await SecurityStorage.delete_api_key(key_name)
     banned = False
 
-    if key_name in ConfigManager.get().api_key:
+    if key_name in GlobalConfigProvider().get_config().api_key:
         await BanList.ban_key(
             key_name, reason="Revoked via admin API", duration_seconds=None
         )
@@ -208,7 +210,7 @@ async def update_api_key(
             ErrorCodes.INPUT_SCHEMA_INVALID, "Key name must be a valid string", 400
         )
 
-    if name in ConfigManager.get().api_key:
+    if name in GlobalConfigProvider().get_config().api_key:
         raise NexusGateException(
             ErrorCodes.INPUT_VALUE_INVALID,
             f"Static key '{name}' cannot be modified",
@@ -335,7 +337,7 @@ async def reset_circuit_breaker(
 
 @router.get("/databases")
 async def view_databases(request: Request, auth=Depends(require_admin)):
-    config = ConfigManager.get()
+    config = GlobalConfigProvider().get_config()
 
     dbs = {
         name: {
@@ -349,7 +351,7 @@ async def view_databases(request: Request, auth=Depends(require_admin)):
         for name, db_cfg in config.database.items()
     }
 
-    _enrich_federated_databases(dbs, config)
+    await _enrich_federated_databases(dbs, config)
     return success_response(request, {"databases": dbs})
 
 
@@ -439,7 +441,7 @@ async def view_webhooks(request: Request, auth=Depends(require_admin)):
             "enabled": hook.enabled,
             "secret": "***REDACTED***",
         }
-        for name, hook in ConfigManager.get().webhook.items()
+        for name, hook in GlobalConfigProvider().get_config().webhook.items()
     }
     return success_response(request, {"webhooks": wh})
 
@@ -514,14 +516,14 @@ async def update_webhook(
 
 @router.get("/config")
 async def view_config(request: Request, auth=Depends(require_admin)):
-    data = ConfigManager.get().model_dump()
+    data = GlobalConfigProvider().get_config().model_dump()
     _redact_sensitive_payloads(data)
     return success_response(request, {"config": data})
 
 
 @router.get("/rate-limits")
 async def view_rate_limits(request: Request, auth=Depends(require_admin)):
-    config = ConfigManager.get()
+    config = GlobalConfigProvider().get_config()
 
     overrides = {
         name: {"rate_limit_override": cfg.rate_limit_override, "source": "config"}

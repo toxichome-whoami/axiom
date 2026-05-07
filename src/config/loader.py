@@ -2,16 +2,17 @@ import asyncio
 import os
 import sys
 import tomllib
-from typing import Optional
+from typing import List, Optional
 
 import structlog
 from pydantic import ValidationError
-from watchfiles import awatch
 
 from config.defaults import generate_default_config
 from config.schema import NexusGateConfig
 
 logger = structlog.get_logger()
+
+_ENV = os.environ.get("NEXUSGATE_ENV", "development")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Helper Procedures
@@ -25,6 +26,14 @@ def _ensure_file_exists(path: str) -> None:
         generate_default_config(path)
 
 
+def _resolve_config_paths(base_path: str) -> List[str]:
+    paths = [base_path]
+    env_path = base_path.replace(".toml", f".{_ENV}.toml")
+    if os.path.exists(env_path):
+        paths.append(env_path)
+    return paths
+
+
 def _parse_toml_file(path: str, exit_on_error: bool = True) -> dict:
     """Safely decodes raw disk bytes preventing corrupted config structures."""
     try:
@@ -35,6 +44,17 @@ def _parse_toml_file(path: str, exit_on_error: bool = True) -> dict:
             logger.error("Failed to parse config.toml syntax", error=str(toml_error))
             sys.exit(1)
         raise toml_error
+
+
+def _load_merged_config(paths: List[str], exit_on_error: bool = True) -> dict:
+    """Load base config + environment override (latter wins)."""
+    merged = {}
+    for p in paths:
+        data = _parse_toml_file(p, exit_on_error)
+        merged.update(
+            data
+        )  # Simple merge; consider deep merge for dicts later if needed
+    return merged
 
 
 def _validate_schema(config_dict: dict, path: str) -> NexusGateConfig:
@@ -71,7 +91,8 @@ class ConfigManager:
         cls._config_path = path
 
         _ensure_file_exists(path)
-        config_payload = _parse_toml_file(path)
+        paths = _resolve_config_paths(path)
+        config_payload = _load_merged_config(paths)
 
         cls._config = _validate_schema(config_payload, path)
         return cls._config
@@ -84,23 +105,32 @@ class ConfigManager:
         return cls._config
 
     @classmethod
-    async def watch(cls):
-        """Asynchronously monitors target targets for hot-reloads dynamically."""
+    async def watch(cls, interval: int = 5):
+        """Poll-based config watcher — no inotify, no thread panics."""
         if not cls._config_path:
             return
 
-        config_dir = os.path.dirname(os.path.abspath(cls._config_path))
-        target_file = os.path.basename(cls._config_path)
-
         logger.info("Starting config watcher daemon", path=cls._config_path)
 
+        paths = _resolve_config_paths(cls._config_path)
+        last_mtimes = {p: os.path.getmtime(p) for p in paths if os.path.exists(p)}
+
         try:
-            async for changes in awatch(config_dir):
-                for change, path in changes:
-                    if os.path.basename(path) == target_file:
-                        logger.info("Config file modification detected, refreshing")
-                        await cls._handle_hot_reload()
-                        break
+            while True:
+                await asyncio.sleep(interval)
+                changed = False
+                for p in paths:
+                    try:
+                        current_mtime = os.path.getmtime(p)
+                        if current_mtime != last_mtimes.get(p):
+                            last_mtimes[p] = current_mtime
+                            changed = True
+                    except (OSError, FileNotFoundError):
+                        pass
+
+                if changed:
+                    logger.info("Config file modification detected, refreshing")
+                    await cls._handle_hot_reload()
 
         except asyncio.CancelledError:
             logger.info("Config watcher daemon stopped gracefully")
@@ -109,9 +139,8 @@ class ConfigManager:
     async def _handle_hot_reload(cls):
         """Attempts isolated validation bypass of new file state before replacing memory."""
         try:
-            new_payload = await asyncio.to_thread(
-                _parse_toml_file, cls._config_path, False
-            )
+            paths = _resolve_config_paths(cls._config_path)
+            new_payload = await asyncio.to_thread(_load_merged_config, paths, False)
             new_validated = NexusGateConfig(**new_payload)
 
             cls._config = new_validated

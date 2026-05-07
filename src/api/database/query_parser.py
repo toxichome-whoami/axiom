@@ -89,9 +89,27 @@ def _extract_target_table(expr: Any) -> str:
 class QueryValidator:
     """Enterprise-grade AST parser with deterministic caching for high-performance throughput."""
 
+    _parser_cache = None
+
+    @classmethod
+    def _get_parser_cache(cls):
+        if cls._parser_cache is None:
+            from config.provider import GlobalConfigProvider
+
+            config = GlobalConfigProvider().get_config()
+            # If not configured, default to 2048
+            maxsize = 2048
+            if hasattr(config, "performance") and hasattr(
+                config.performance, "query_cache_size"
+            ):
+                maxsize = config.performance.query_cache_size
+            cls._parser_cache = functools.lru_cache(maxsize=maxsize)(
+                cls._parse_and_extract_impl
+            )
+        return cls._parser_cache
+
     @staticmethod
-    @functools.lru_cache(maxsize=2048)
-    def _parse_and_extract(sql: str) -> Tuple[Any, str, str]:
+    def _parse_and_extract_impl(sql: str) -> Tuple[Any, str, str]:
         """Deterministically parses SQL into an AST. Extremely CPU heavy, hence cached."""
         try:
             expressions = sqlglot.parse(sql)
@@ -124,7 +142,8 @@ class QueryValidator:
         cls, sql: str, db_config: DatabaseDefConfig, user_mode: str
     ) -> tuple[str, str, str]:
         """Validates the cached AST against dynamic configuration and user constraints."""
-        expr, query_type, target_table = cls._parse_and_extract(sql)
+        cache_fn = cls._get_parser_cache()
+        expr, query_type, target_table = cache_fn(sql)
 
         _enforce_user_mode(expr, user_mode)
         _enforce_query_policy(expr, db_config, query_type)

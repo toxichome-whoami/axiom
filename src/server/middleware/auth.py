@@ -6,7 +6,8 @@ from fastapi import Depends, Request, Security
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from api.errors import ErrorCodes, NexusGateException
-from config.loader import ConfigManager
+from config.provider import get_config_dependency
+from config.schema import NexusGateConfig
 from security.ban_list import BanList
 from security.storage import SecurityStorage
 from utils.types import AuthContext, ServerMode
@@ -186,13 +187,12 @@ def _parse_bearer_token(credentials: HTTPAuthorizationCredentials) -> tuple[str,
 async def get_auth_context(
     request: Request,
     credentials: HTTPAuthorizationCredentials = Security(security),
+    config: NexusGateConfig = Depends(get_config_dependency),
 ) -> AuthContext:
     """Resolves security context for a request by combining all available mechanisms."""
     cached = getattr(request.state, "auth_context", None)
     if cached is not None:
         return cached
-
-    config = ConfigManager.get()
 
     # 1. Routing Edge Case: Handle native federation node bypasses
     if request.headers.get("X-Federation-Secret") and request.headers.get(

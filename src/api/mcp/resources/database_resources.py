@@ -14,7 +14,7 @@ from pydantic import AnyUrl
 
 from api.mcp.resources.registry import build_error_text_resource, mcp_resource_registry
 from api.mcp.tools.base import ResultFormatter
-from config.loader import ConfigManager
+from config.provider import GlobalConfigProvider
 from db.pool import DatabasePoolManager
 from mcp.types import Resource, TextResourceContents
 
@@ -85,7 +85,7 @@ async def _read_database_schema(uri: str) -> list[TextResourceContents]:
 def register_database_resources() -> None:
     """Configures the unified resource definitions directly into the global map."""
 
-    active_configurations = ConfigManager.get().database
+    active_configurations = GlobalConfigProvider().get_config().database
 
     for database_alias in active_configurations:
         target_uri = f"{URI_PROTOCOL_PREFIX}{database_alias}{URI_SCHEMA_SUFFIX}"

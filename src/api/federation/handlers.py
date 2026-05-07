@@ -1,29 +1,42 @@
 from fastapi import Depends, Request
 
 from api.errors import ErrorCodes, NexusGateException
-from api.federation.sync import FederationState
+from api.federation.state import FederationStateManager
 from api.responses import success_response
-from config.loader import ConfigManager
+from config.provider import get_config_dependency
+from config.schema import NexusGateConfig
 from server.middleware.auth import require_admin
 from utils.types import AuthContext
 
 from .router import router
 
 
-def _build_outgoing_federation(config, state: FederationState) -> list:
+async def _build_outgoing_federation(config, state_mgr: FederationStateManager) -> list:
     """Builds the list of outgoing remote connections the current node maintains."""
     outgoing = []
     for alias, srv_config in config.federation.server.items():
-        srv_state = state.servers.get(alias, {"status": "unknown"})
+        node_state = await state_mgr.get_state(alias)
+
+        if node_state:
+            status = node_state.status
+            latency_ms = node_state.latency_ms
+            databases = node_state.databases
+            storages = node_state.storages
+        else:
+            status = "unknown"
+            latency_ms = 0.0
+            databases = {}
+            storages = {}
+
         outgoing.append(
             {
                 "alias": alias,
                 "url": srv_config.url,
                 "node_id": srv_config.node_id,
-                "status": srv_state.get("status"),
-                "latency_ms": srv_state.get("latency_ms"),
-                "databases": srv_state.get("databases", {}),
-                "storages": srv_state.get("storages", {}),
+                "status": status,
+                "latency_ms": latency_ms,
+                "databases": databases,
+                "storages": storages,
             }
         )
     return outgoing
@@ -47,18 +60,22 @@ def _build_incoming_federation(config) -> list:
 
 
 @router.get("/servers")
-async def list_servers(request: Request, auth: AuthContext = Depends(require_admin)):
+async def list_servers(
+    request: Request,
+    auth: AuthContext = Depends(require_admin),
+    config: NexusGateConfig = Depends(get_config_dependency),
+):
     """Show full federation status: outgoing connections + incoming keys."""
-    config = ConfigManager.get()
 
     if not config.features.federation:
         raise NexusGateException(
             ErrorCodes.SERVER_INTERNAL, "Federation is disabled on this instance.", 501
         )
 
-    state = FederationState()
+    state_mgr = FederationStateManager()
+    await state_mgr.load()
 
-    outgoing_list = _build_outgoing_federation(config, state)
+    outgoing_list = await _build_outgoing_federation(config, state_mgr)
     incoming_list = _build_incoming_federation(config)
 
     return success_response(

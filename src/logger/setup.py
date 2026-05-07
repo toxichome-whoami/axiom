@@ -8,7 +8,7 @@ import sys
 
 import structlog
 
-from config.loader import ConfigManager
+from config.provider import GlobalConfigProvider
 
 # Context var for storing request id across async functions optionally
 request_id_ctx = contextvars.ContextVar("request_id", default="-")
@@ -64,7 +64,7 @@ def _build_formatter(format_type: str):
 def setup_logging():
     """Initializes the global python logging and structlog infrastructure."""
     try:
-        config = ConfigManager.get()
+        config = GlobalConfigProvider().get_config()
     except RuntimeError:
         return
 

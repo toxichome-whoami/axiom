@@ -14,7 +14,7 @@ import structlog
 from api.mcp.session_auth import get_mcp_auth
 from api.mcp.tools.base import MAX_DIRECTORY_ENTRIES, MAX_FILE_READ_BYTES
 from api.mcp.tools.registry import mcp_tool_registry
-from config.loader import ConfigManager
+from config.provider import GlobalConfigProvider
 from mcp.types import TextContent
 
 logger = structlog.get_logger()
@@ -61,7 +61,7 @@ def _check_storage_scope(alias: str) -> bool:
 async def _list_storages() -> list[TextContent]:
     """Lists storage aliases visible to the authenticated session."""
     auth = get_mcp_auth()
-    all_aliases = list(ConfigManager.get().storage.keys())
+    all_aliases = list(GlobalConfigProvider().get_config().storage.keys())
 
     # Filter by scope if restrictions exist and it's not a global wildcard
     if auth.fs_scope and "*" not in auth.fs_scope:
@@ -82,7 +82,7 @@ async def _list_files(storage: str, path: str = "/") -> list[TextContent]:
             )
         ]
 
-    storage_config = ConfigManager.get().storage.get(storage)
+    storage_config = GlobalConfigProvider().get_config().storage.get(storage)
     if not storage_config:
         return [TextContent(type="text", text=f"Storage '{storage}' not found.")]
 
@@ -122,7 +122,7 @@ async def _read_file(storage: str, path: str) -> list[TextContent]:
             )
         ]
 
-    storage_config = ConfigManager.get().storage.get(storage)
+    storage_config = GlobalConfigProvider().get_config().storage.get(storage)
     if not storage_config:
         return [TextContent(type="text", text=f"Storage '{storage}' not found.")]
 

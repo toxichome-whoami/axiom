@@ -7,7 +7,7 @@ import aiosqlite
 import orjson
 import structlog
 
-from config.loader import ConfigManager
+from config.provider import GlobalConfigProvider
 
 logger = structlog.get_logger()
 
@@ -138,7 +138,7 @@ class SQLiteCache:
 
     @classmethod
     async def set(cls, key: str, value: Any, ttl: Optional[float] = None) -> None:
-        config = ConfigManager.get()
+        config = GlobalConfigProvider().get_config()
         ttl_val = float(ttl) if ttl is not None else float(config.cache.default_ttl)
         expires_at = time.time() + ttl_val
 

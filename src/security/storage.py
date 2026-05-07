@@ -7,7 +7,7 @@ from typing import Dict, Optional, Tuple
 import aiosqlite
 import structlog
 
-from config.loader import ConfigManager
+from config.provider import GlobalConfigProvider
 from config.schema import DatabaseDefConfig, WebhookDefConfig
 
 logger = structlog.get_logger()
@@ -94,12 +94,12 @@ class SecurityStorage:
                 engine TEXT NOT NULL,
                 url TEXT NOT NULL,
                 mode TEXT NOT NULL,
-                pool_min INTEGER DEFAULT 5,
-                pool_max INTEGER DEFAULT 50,
-                connection_timeout INTEGER DEFAULT 30,
-                idle_timeout INTEGER DEFAULT 600,
-                max_lifetime INTEGER DEFAULT 3600,
-                dangerous_operations BOOLEAN DEFAULT 0
+                pool_min INTEGER,
+                pool_max INTEGER,
+                connection_timeout INTEGER,
+                idle_timeout INTEGER,
+                max_lifetime INTEGER,
+                dangerous_operations BOOLEAN
             )
         """)
         await db.execute("""
@@ -178,7 +178,7 @@ class SecurityStorage:
     @classmethod
     async def _sync_dynamic_config(cls, db: aiosqlite.Connection):
         """Injects SQLite-defined databases and webhooks straight into the master config."""
-        config = ConfigManager.get()
+        config = GlobalConfigProvider().get_config()
 
         db_query = "SELECT name, engine, url, mode, pool_min, pool_max, connection_timeout, idle_timeout, max_lifetime, dangerous_operations FROM databases"
         async with db.execute(db_query) as cursor:
@@ -434,13 +434,15 @@ class SecurityStorage:
                 name,
                 cfg["engine"],
                 cfg["url"],
-                cfg.get("mode", "readwrite"),
-                cfg.get("pool_min", 5),
-                cfg.get("pool_max", 50),
-                cfg.get("connection_timeout", 30),
-                cfg.get("idle_timeout", 600),
-                cfg.get("max_lifetime", 3600),
-                int(cfg.get("dangerous_operations", False)),
+                cfg.get("mode"),
+                cfg.get("pool_min"),
+                cfg.get("pool_max"),
+                cfg.get("connection_timeout"),
+                cfg.get("idle_timeout"),
+                cfg.get("max_lifetime"),
+                int(cfg.get("dangerous_operations", False))
+                if cfg.get("dangerous_operations") is not None
+                else None,
             )
             await db.execute(query, params)
             await db.commit()
@@ -453,7 +455,7 @@ class SecurityStorage:
             cursor = await db.execute("DELETE FROM databases WHERE name = ?", (name,))
             await db.commit()
             if cursor.rowcount > 0:
-                config = ConfigManager.get()
+                config = GlobalConfigProvider().get_config()
                 config.database.pop(name, None)
                 return True
         return False
@@ -523,7 +525,7 @@ class SecurityStorage:
             cursor = await db.execute("DELETE FROM webhooks WHERE name = ?", (name,))
             await db.commit()
             if cursor.rowcount > 0:
-                config = ConfigManager.get()
+                config = GlobalConfigProvider().get_config()
                 config.webhook.pop(name, None)
                 return True
         return False

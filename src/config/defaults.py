@@ -37,8 +37,8 @@ file_prefix = "nexusgate"
 engine = "sqlite"
 url    = "./data/cache.db"
 mode   = "readwrite"
-pool_min = 1
-pool_max = 5
+pool_min = 5
+pool_max = 50
 dangerous_operations = false
 
 [storage.media]
@@ -52,6 +52,11 @@ secret    = "{admin_secret}"
 db_scope  = ["*"]
 fs_scope  = ["*"]
 rate_limit_override = 0
+
+[performance]
+query_cache_size = 2048
+transpiler_cache_size = 4096
+rate_limit_cache_size = 256
 """
 
 # ─────────────────────────────────────────────────────────────────────────────

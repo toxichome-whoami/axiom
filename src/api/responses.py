@@ -5,7 +5,7 @@ import orjson
 from fastapi import Request, Response
 
 from __init__ import __version__
-from config.loader import ConfigManager
+from config.provider import GlobalConfigProvider
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Helpers (resolved once, cached for the lifetime of the process)
@@ -19,10 +19,10 @@ _TIMESTAMP_CACHE_LAST: float = 0
 
 
 def _get_server_name() -> str:
-    """Cached server name to avoid ConfigManager.get() on every response."""
+    """Cached server name to avoid GlobalConfigProvider().get_config() on every response."""
     global _SERVER_HOST_CACHE
     if _SERVER_HOST_CACHE is None:
-        _SERVER_HOST_CACHE = ConfigManager.get().server.host
+        _SERVER_HOST_CACHE = GlobalConfigProvider().get_config().server.host
     return _SERVER_HOST_CACHE
 
 
@@ -30,7 +30,9 @@ def _get_response_cache_ttl() -> int:
     """Cached response cache TTL from config."""
     global _RESPONSE_CACHE_TTL
     if _RESPONSE_CACHE_TTL is None:
-        _RESPONSE_CACHE_TTL = ConfigManager.get().cache.response_cache_ttl
+        _RESPONSE_CACHE_TTL = (
+            GlobalConfigProvider().get_config().cache.response_cache_ttl
+        )
     return _RESPONSE_CACHE_TTL
 
 

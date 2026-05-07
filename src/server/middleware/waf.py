@@ -4,7 +4,7 @@ from typing import Optional, Tuple
 import orjson
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from config.loader import ConfigManager
+from config.provider import GlobalConfigProvider
 from utils.size_parser import parse_size
 
 
@@ -15,7 +15,7 @@ class WAFMiddleware:
 
     def __init__(self, app: ASGIApp):
         self.app = app
-        self.config = ConfigManager.get()
+        self.config = GlobalConfigProvider().get_config()
         self.body_limit_bytes = parse_size(self.config.server.body_limit)
 
         # Highly optimized traversal pattern for urlencodings and literal slashes

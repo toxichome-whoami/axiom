@@ -10,7 +10,7 @@ from typing import Optional
 
 import structlog
 
-from config.loader import ConfigManager
+from config.provider import GlobalConfigProvider
 from mcp.server import Server
 
 logger = structlog.get_logger()
@@ -42,7 +42,7 @@ class MCPServerManager:
     @classmethod
     def _build(cls) -> Server:
         """Constructs a fresh Server and attaches all handlers."""
-        config = ConfigManager.get()
+        config = GlobalConfigProvider().get_config()
 
         server = Server(
             name=config.mcp.server_name,

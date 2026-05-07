@@ -8,7 +8,7 @@ from api.responses import _SERVER_VERSION as __version__
 from api.responses import success_response
 from cache.memory import MemoryCache
 from cache.redis_backend import RedisCache
-from config.loader import ConfigManager
+from config.provider import GlobalConfigProvider
 from db.pool import DatabasePoolManager
 
 router = APIRouter()
@@ -76,7 +76,7 @@ def _evaluate_storage_health(config) -> dict:
 @router.get("/")
 async def root(request: Request):
     """Base application heartbeat."""
-    config = ConfigManager.get()
+    config = GlobalConfigProvider().get_config()
     return success_response(
         request,
         {
@@ -98,7 +98,7 @@ async def ready(request: Request):
 @router.get("/health")
 async def health(request: Request):
     """Detailed synchronous orchestration of all underlying infrastructure states."""
-    config = ConfigManager.get()
+    config = GlobalConfigProvider().get_config()
 
     db_status, all_dbs_up = await _evaluate_database_health(config)
     cache_status = await _evaluate_cache_health(config)

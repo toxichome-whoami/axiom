@@ -1,21 +1,19 @@
 import asyncio
-import base64
 import hashlib
 import os
 import time
 from typing import Optional
 
 import aiofiles
-import httpx
 import structlog
 from fastapi import Depends, Path, Query, Request
 
 from api.errors import ErrorCodes, NexusGateException
-from api.federation.proxy import proxy_request
-from api.federation.sync import FederationState
+from api.federation.proxy import _resolve_server, proxy_request
 from api.responses import success_response
 from api.storage.chunked_upload import ChunkedUploadManager
-from config.loader import ConfigManager
+from config.provider import get_config_dependency
+from config.schema import NexusGateConfig
 from server.middleware.auth import get_auth_context
 from utils.size_parser import format_size, normalize_size, parse_size
 from utils.types import AuthContext, ServerMode
@@ -54,7 +52,9 @@ _USAGE_CACHE_TTL: int = 30
 
 def _refresh_feature_flags():
     global _FEDERATION_ENABLED, _FEDERATION_SERVERS, _STORAGE_CONFIGS, _USAGE_CACHE_TTL
-    config = ConfigManager.get()
+    from config.provider import GlobalConfigProvider
+
+    config = GlobalConfigProvider().get_config()
     _FEDERATION_ENABLED = bool(config.features.federation and config.federation.enabled)
     _FEDERATION_SERVERS = (
         tuple(config.federation.server.keys()) if _FEDERATION_ENABLED else ()
@@ -74,7 +74,8 @@ _refresh_feature_flags()
 def _is_federated(alias: str) -> bool:
     if not _FEDERATION_ENABLED:
         return False
-    return any(alias.startswith(f"{srv}_") for srv in _FEDERATION_SERVERS)
+
+    return _resolve_server(alias) is not None
 
 
 def _get_storage_path(alias: str, rel_path: Optional[str], auth: AuthContext) -> str:
@@ -150,39 +151,11 @@ def _append_remote_storages(
         }
 
 
-async def _fetch_remote_storages(
-    alias: str, server_state: dict, active_storages: list, auth: AuthContext
+# Removed _fetch_remote_storages since state is now local
+async def _append_cached_remote_storages(
+    alias: str, info_dict: dict, active_storages: list, auth: AuthContext
 ):
-    config = ConfigManager.get()
-    if server_state.get("status") != "up" or alias not in config.federation.server:
-        return
-
-    srv_config = config.federation.server[alias]
-    remote_storages_map = server_state.get("storages", {})
-    url, encoded_secret = (
-        srv_config.url.rstrip("/"),
-        base64.b64encode(srv_config.secret.encode("utf-8")).decode("utf-8"),
-    )
-    headers = {
-        "X-Federation-Secret": encoded_secret,
-        "X-Federation-Node": srv_config.node_id,
-    }
-
-    try:
-        async with httpx.AsyncClient(
-            verify=(srv_config.trust_mode == "verify"), timeout=5
-        ) as client:
-            resp = await client.get(f"{url}/api/v1/fs/storages", headers=headers)
-            if resp.status_code == 200:
-                _append_remote_storages(
-                    alias,
-                    resp.json().get("data", {}).get("storages", []),
-                    remote_storages_map,
-                )
-    except Exception:
-        pass
-
-    for storage_name, info in remote_storages_map.items():
+    for storage_name, info in info_dict.items():
         federated_name = f"{alias}_{storage_name}"
         if "*" not in auth.fs_scope and federated_name not in auth.fs_scope:
             continue
@@ -576,9 +549,11 @@ async def _calculate_storage_usage(storage_path: str, limit_str: str) -> dict:
 
 @router.get("/storages")
 async def list_storages(
-    request: Request, auth: AuthContext = Depends(get_auth_context)
+    request: Request,
+    auth: AuthContext = Depends(get_auth_context),
+    config: NexusGateConfig = Depends(get_config_dependency),
 ):
-    config, storages = ConfigManager.get(), []
+    storages = []
     for name, storage_cfg in config.storage.items():
         if "*" in auth.fs_scope or name in auth.fs_scope:
             usage = await _calculate_storage_usage(storage_cfg.path, storage_cfg.limit)
@@ -598,12 +573,20 @@ async def list_storages(
             )
 
     if _FEDERATION_ENABLED:
-        tasks = [
-            _fetch_remote_storages(alias, server_state, storages, auth)
-            for alias, server_state in FederationState().servers.items()
-        ]
-        if tasks:
-            await asyncio.gather(*tasks)
+        try:
+            from api.federation.state import FederationStateManager
+
+            state_mgr = FederationStateManager()
+            await state_mgr.load()
+
+            for alias in config.federation.server:
+                node_state = await state_mgr.get_state(alias)
+                if node_state and node_state.status == "up":
+                    await _append_cached_remote_storages(
+                        alias, node_state.storages, storages, auth
+                    )
+        except Exception as e:
+            logger.error("Failed to append federated storages", error=str(e))
 
     return success_response(request, {"storages": storages})
 

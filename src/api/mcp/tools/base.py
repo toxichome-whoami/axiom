@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import List
 
-from config.loader import ConfigManager
+from config.provider import GlobalConfigProvider
 from config.schema import DatabaseDefConfig
 from db.engines.base import DatabaseEngine, QueryResult
 from db.pool import DatabasePoolManager
@@ -39,7 +39,7 @@ class EngineResolver:
         alias: str,
     ) -> tuple[DatabaseEngine, DatabaseDefConfig]:
         """Returns both engine and its config. Raises on missing alias."""
-        config = ConfigManager.get()
+        config = GlobalConfigProvider().get_config()
         db_config = config.database.get(alias)
         if not db_config:
             raise RuntimeError(f"Database '{alias}' is not configured.")

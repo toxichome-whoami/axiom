@@ -129,6 +129,7 @@ class DatabaseDefConfig(BaseModel):
     engine: DbEngineType
     url: str
     mode: ServerMode = ServerMode.READWRITE
+    federated_alias: Optional[str] = None
     pool_min: int = 5
     pool_max: int = 50
     connection_timeout: int = 30
@@ -195,11 +196,25 @@ class FedServerConfig(BaseModel):
     trust_mode: Literal["verify", "trust"] = "verify"
 
 
+class FederationNodeState(BaseModel):
+    status: Literal["unknown", "up", "degraded", "down"] = "unknown"
+    latency_ms: float = 0.0
+    last_check: float = 0.0
+    consecutive_failures: int = 0
+    next_retry_at: float = 0.0
+    databases: dict = Field(default_factory=dict)
+    storages: dict = Field(default_factory=dict)
+
+
 class FederationConfig(BaseModel):
     enabled: bool = False
     sync_interval: int = 30
+    per_node_timeout: float = 5.0
+    backoff_max: float = 300.0
+    circuit_breaker_threshold: int = 3
     incoming: Dict[str, FederationIncomingKeyConfig] = Field(default_factory=dict)
     server: Dict[str, FedServerConfig] = Field(default_factory=dict)
+    alias_map: Dict[str, str] = Field(default_factory=dict)
 
 
 class CircuitBreakerConfig(BaseModel):
@@ -218,6 +233,7 @@ class NexusGateConfig(BaseModel):
     """The absolute Master Layout tracking all active operational parameters per-boot."""
 
     server: ServerConfig = Field(default_factory=ServerConfig)
+    __version__: str = "1.0.0"
     features: FeaturesConfig = Field(default_factory=FeaturesConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
     rate_limit: RateLimitConfig = Field(default_factory=RateLimitConfig)

@@ -16,8 +16,27 @@ def _resolve_target_dialect(to_dialect: str) -> str:
     return to_dialect
 
 
-@functools.lru_cache(maxsize=4096)
-def _execute_ast_conversion(
+_ast_conversion_cache = None
+
+
+def _get_ast_conversion_cache():
+    global _ast_conversion_cache
+    if _ast_conversion_cache is None:
+        from config.provider import GlobalConfigProvider
+
+        config = GlobalConfigProvider().get_config()
+        maxsize = 4096
+        if hasattr(config, "performance") and hasattr(
+            config.performance, "transpiler_cache_size"
+        ):
+            maxsize = config.performance.transpiler_cache_size
+        _ast_conversion_cache = functools.lru_cache(maxsize=maxsize)(
+            _execute_ast_conversion_impl
+        )
+    return _ast_conversion_cache
+
+
+def _execute_ast_conversion_impl(
     sql: str, to_dialect: str, from_dialect: Optional[str] = None
 ) -> str:
     """Applies profound Abstract Syntax Tree conversions mutating the raw queries securely."""
@@ -52,4 +71,5 @@ def transpile_sql(sql: str, to_dialect: str, from_dialect: Optional[str] = None)
     Supported targets correspond to generic driver architectures (e.g., 'postgres', 'mysql').
     """
     mapped_target = _resolve_target_dialect(to_dialect)
-    return _execute_ast_conversion(sql, mapped_target, from_dialect)
+    cache_fn = _get_ast_conversion_cache()
+    return cache_fn(sql, mapped_target, from_dialect)

@@ -14,7 +14,7 @@ from api.admin import router as admin_router
 # Routers
 from api.core import health
 from api.core.metrics import router as metrics_router
-from config.loader import ConfigManager
+from config.provider import GlobalConfigProvider
 from server.lifespan import lifespan
 from server.middleware.cors import setup_cors
 from server.middleware.idempotency import IdempotencyMiddleware
@@ -49,7 +49,9 @@ class PlaygroundSecurityMiddleware:
 
     def __init__(self, app):
         self.app = app
-        self._playground_enabled = ConfigManager.get().features.playground
+        self._playground_enabled = (
+            GlobalConfigProvider().get_config().features.playground
+        )
 
     async def __call__(self, scope, receive, send):
         if scope["type"] != "http":
@@ -97,15 +99,17 @@ def _build_error_response(
     """Standardizes JSON response structures for server errors."""
     return Response(
         status_code=status_code,
-        content=orjson.dumps({
-            "success": False,
-            "error": {"code": code, "message": message, "details": details},
-            "meta": {
-                "request_id": getattr(request.state, "request_id", "-"),
-                "version": request.app.version,
-            },
-        }),
-        media_type="application/json"
+        content=orjson.dumps(
+            {
+                "success": False,
+                "error": {"code": code, "message": message, "details": details},
+                "meta": {
+                    "request_id": getattr(request.state, "request_id", "-"),
+                    "version": request.app.version,
+                },
+            }
+        ),
+        media_type="application/json",
     )
 
 
@@ -140,7 +144,7 @@ def _attach_exception_handlers(app: FastAPI):
 
 def _attach_routers(app: FastAPI):
     """Registers all API versioned and unversioned core routing endpoints."""
-    config = ConfigManager.get()
+    config = GlobalConfigProvider().get_config()
 
     # Version 1 API structure
     api_v1 = APIRouter(prefix="/api/v1")

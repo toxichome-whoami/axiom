@@ -7,6 +7,7 @@ from fastapi import FastAPI
 
 from api.federation.sync import sync_federated_servers
 from config.loader import ConfigManager
+from config.provider import GlobalConfigProvider
 from db.pool import DatabasePoolManager
 from logger.rotator import log_rotator_worker
 from security.storage import SecurityStorage
@@ -73,7 +74,7 @@ async def _stop_background_daemons(tasks: List[asyncio.Task]):
 async def lifespan(app: FastAPI):
     """Controls application bootstrap and teardown sequences dynamically."""
     logger.info("Starting NexusGate bootstrap sequence")
-    config = ConfigManager.get()
+    config = GlobalConfigProvider().get_config()
 
     # 1. Boot Subsystems
     await _init_storage_backends(config)

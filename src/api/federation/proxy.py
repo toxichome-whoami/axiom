@@ -8,7 +8,7 @@ from starlette.background import BackgroundTask
 from starlette.responses import StreamingResponse
 
 from api.errors import ErrorCodes, NexusGateException
-from config.loader import ConfigManager
+from config.provider import GlobalConfigProvider
 
 
 def get_proxy_client(request: Request, verify_ssl: bool = True) -> httpx.AsyncClient:
@@ -18,8 +18,58 @@ def get_proxy_client(request: Request, verify_ssl: bool = True) -> httpx.AsyncCl
 
     clients = request.app.state.http_clients
     if verify_ssl not in clients:
-        clients[verify_ssl] = httpx.AsyncClient(timeout=30.0, verify=verify_ssl)
+        limits = httpx.Limits(max_connections=50, max_keepalive_connections=10)
+        clients[verify_ssl] = httpx.AsyncClient(
+            limits=limits, timeout=httpx.Timeout(30.0, connect=5.0), verify=verify_ssl
+        )
     return clients[verify_ssl]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Alias Resolution
+# ─────────────────────────────────────────────────────────────────────────────
+
+_ALIAS_TO_SERVER: dict = {}
+
+
+def _build_alias_map():
+    """Builds O(1) alias to server routing table based on configured federation alias mappings."""
+    global _ALIAS_TO_SERVER
+    _ALIAS_TO_SERVER.clear()
+
+    config = GlobalConfigProvider().get_config()
+
+    # Pre-populate explicitly mapped federated aliases from database configs
+    for db_alias, db_config in config.database.items():
+        fed_alias = getattr(db_config, "federated_alias", None)
+        if isinstance(fed_alias, str):
+            for srv_alias in config.federation.server:
+                if fed_alias.startswith(f"{srv_alias}_"):
+                    _ALIAS_TO_SERVER[fed_alias] = srv_alias
+                    break
+
+    # Pre-populate implicit ones that might be accessed directly without a local db config
+    # In a full overhaul, this would sync with federation state
+    config.federation.alias_map = _ALIAS_TO_SERVER
+
+
+def _resolve_server(alias: str) -> str | None:
+    """O(1) resolution from full alias to target server ID."""
+    if not _ALIAS_TO_SERVER:
+        _build_alias_map()
+
+    server_id = _ALIAS_TO_SERVER.get(alias)
+    if server_id:
+        return server_id
+
+    # Fallback for dynamic aliases not pre-mapped
+    config = GlobalConfigProvider().get_config()
+    for srv_alias in config.federation.server:
+        if alias.startswith(f"{srv_alias}_"):
+            _ALIAS_TO_SERVER[alias] = srv_alias
+            return srv_alias
+
+    return None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -127,26 +177,28 @@ async def proxy_request(
     alias: str, path: str, request: Request, is_database: bool = True
 ) -> StreamingResponse:
     """Entrypoint binding exact aliases targeting mapped proxies natively."""
-    config = ConfigManager.get()
+    config = GlobalConfigProvider().get_config()
 
-    for srv_alias, srv_config in config.federation.server.items():
-        if alias.startswith(f"{srv_alias}_"):
-            target_alias = alias[len(srv_alias) + 1 :]
-            remote_url = _build_remote_url(
-                srv_config, target_alias, path, request.url.query, is_database
+    srv_alias = _resolve_server(alias)
+
+    if srv_alias and srv_alias in config.federation.server:
+        srv_config = config.federation.server[srv_alias]
+        target_alias = alias[len(srv_alias) + 1 :]
+        remote_url = _build_remote_url(
+            srv_config, target_alias, path, request.url.query, is_database
+        )
+
+        if not _is_safe_url(remote_url):
+            raise NexusGateException(
+                ErrorCodes.FED_SERVER_DOWN,
+                "SSRF Blocked: Federation target resolves to an internal or restricted network.",
+                403,
             )
 
-            if not _is_safe_url(remote_url):
-                raise NexusGateException(
-                    ErrorCodes.FED_SERVER_DOWN,
-                    "SSRF Blocked: Federation target resolves to an internal or restricted network.",
-                    403,
-                )
+        headers = _build_proxy_headers(request, srv_config)
 
-            headers = _build_proxy_headers(request, srv_config)
-
-            client = get_proxy_client(request, srv_config.trust_mode == "verify")
-            return await _stream_proxy_execution(client, request, remote_url, headers)
+        client = get_proxy_client(request, srv_config.trust_mode == "verify")
+        return await _stream_proxy_execution(client, request, remote_url, headers)
 
     resource_type = "Database" if is_database else "Storage"
     raise NexusGateException(

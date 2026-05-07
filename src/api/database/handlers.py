@@ -1,10 +1,8 @@
 import asyncio
-import base64
 import hashlib
 import json
 from typing import Any
 
-import httpx
 from fastapi import Depends, Path, Request
 
 from api.database.filter_builder import build_where_clause
@@ -18,10 +16,10 @@ from api.database.schemas import (
 )
 from api.errors import ErrorCodes, NexusGateException
 from api.federation.proxy import proxy_request
-from api.federation.sync import FederationState
 from api.responses import cacheable_response, success_response
 from cache import CacheManager
-from config.loader import ConfigManager
+from config.provider import get_config_dependency
+from config.schema import NexusGateConfig
 from db.dialect.transpiler import transpile_sql
 from db.pool import DatabasePoolManager
 from server.middleware.auth import get_auth_context
@@ -48,7 +46,9 @@ def _refresh_feature_flags():
         _WEBHOOK_ENABLED, \
         _QUERY_CACHE_ENABLED, \
         _QUERY_RESULTS_TTL
-    config = ConfigManager.get()
+    from config.provider import GlobalConfigProvider
+
+    config = GlobalConfigProvider().get_config()
     _FEDERATION_ENABLED = bool(config.features.federation and config.federation.enabled)
     _FEDERATION_SERVERS = (
         tuple(config.federation.server.keys()) if _FEDERATION_ENABLED else ()
@@ -56,6 +56,14 @@ def _refresh_feature_flags():
     _WEBHOOK_ENABLED = bool(config.features.webhook and config.webhooks.enabled)
     _QUERY_CACHE_ENABLED = bool(config.cache.enabled and config.cache.query_cache)
     _QUERY_RESULTS_TTL = config.cache.query_results_ttl
+
+    if _FEDERATION_ENABLED:
+        try:
+            from api.federation.proxy import _build_alias_map
+
+            _build_alias_map()
+        except ImportError:
+            pass
 
 
 _refresh_feature_flags()
@@ -68,7 +76,10 @@ _refresh_feature_flags()
 def _is_federated(alias: str) -> bool:
     if not _FEDERATION_ENABLED:
         return False
-    return any(alias.startswith(f"{srv}_") for srv in _FEDERATION_SERVERS)
+
+    from api.federation.proxy import _resolve_server
+
+    return _resolve_server(alias) is not None
 
 
 async def get_db_engine(db_name: str, auth: AuthContext):
@@ -86,7 +97,9 @@ async def get_db_engine(db_name: str, auth: AuthContext):
             ErrorCodes.DB_NOT_FOUND, f"Database '{db_name}' not found", 404
         )
 
-    return engine, ConfigManager.get().database[db_name]
+    from config.provider import GlobalConfigProvider
+
+    return engine, GlobalConfigProvider().get_config().database[db_name]
 
 
 def _emit_db_webhook_event(
@@ -145,37 +158,11 @@ def _append_federated_schemas(
         }
 
 
-async def _fetch_remote_databases(
-    alias: str, server_state: dict, active_dbs: list, auth: AuthContext
+# Removed _fetch_remote_databases since state is now local
+async def _append_cached_remote_databases(
+    alias: str, info_dict: dict, active_dbs: list, auth: AuthContext
 ):
-    """Executes network proxy calls updating remote alias maps dynamically."""
-    config = ConfigManager.get()
-    if server_state.get("status") != "up" or alias not in config.federation.server:
-        return
-
-    srv_config = config.federation.server[alias]
-    databases_map = server_state.get("databases", {})
-
-    url = srv_config.url.rstrip("/")
-    headers = {
-        "X-Federation-Secret": base64.b64encode(
-            srv_config.secret.encode("utf-8")
-        ).decode("utf-8"),
-        "X-Federation-Node": srv_config.node_id,
-    }
-
-    try:
-        async with httpx.AsyncClient(
-            verify=(srv_config.trust_mode == "verify"), timeout=5
-        ) as client:
-            resp = await client.get(f"{url}/api/v1/db/databases", headers=headers)
-            if resp.status_code == 200:
-                remote_payload = resp.json().get("data", {}).get("databases", [])
-                _append_federated_schemas(alias, remote_payload, databases_map)
-    except Exception:
-        pass
-
-    for db_name, info in databases_map.items():
+    for db_name, info in info_dict.items():
         federated_name = f"{alias}_{db_name}"
         if "*" in auth.db_scope or federated_name in auth.db_scope:
             valid_info = info if isinstance(info, dict) else {}
@@ -399,9 +386,10 @@ class QueryExecutionPipeline:
 
 @router.get("/databases")
 async def list_databases(
-    request: Request, auth: AuthContext = Depends(get_auth_context)
+    request: Request,
+    auth: AuthContext = Depends(get_auth_context),
+    config: NexusGateConfig = Depends(get_config_dependency),
 ):
-    config = ConfigManager.get()
     active_dbs = []
 
     for name, db_cfg in config.database.items():
@@ -427,13 +415,20 @@ async def list_databases(
         )
 
     if _FEDERATION_ENABLED:
-        state = FederationState()
-        tasks = [
-            _fetch_remote_databases(alias, srv_state, active_dbs, auth)
-            for alias, srv_state in state.servers.items()
-        ]
-        if tasks:
-            await asyncio.gather(*tasks)
+        try:
+            from api.federation.state import FederationStateManager
+
+            state_mgr = FederationStateManager()
+            await state_mgr.load()
+
+            for alias in config.federation.server:
+                node_state = await state_mgr.get_state(alias)
+                if node_state and node_state.status == "up":
+                    await _append_cached_remote_databases(
+                        alias, node_state.databases, active_dbs, auth
+                    )
+        except Exception:
+            pass
 
     return cacheable_response(request, {"databases": active_dbs})
 

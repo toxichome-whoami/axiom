@@ -16,7 +16,7 @@ from starlette.responses import JSONResponse, Response
 
 from api.mcp.server import MCPServerManager
 from api.mcp.session_auth import clear_mcp_auth, set_mcp_auth
-from config.loader import ConfigManager
+from config.provider import GlobalConfigProvider
 from mcp.server.sse import SseServerTransport
 from server.middleware.auth import (
     _evaluate_network_bans,
@@ -76,7 +76,7 @@ def _authenticate_from_request(request: Request) -> None:
             "Malformed Bearer token. Expected Base64(key_name:secret).", 401
         )
 
-    config = ConfigManager.get()
+    config = GlobalConfigProvider().get_config()
 
     # Check network-level bans (IP + key)
     try:

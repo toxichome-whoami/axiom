@@ -12,7 +12,7 @@ import structlog
 from pydantic import AnyUrl
 
 from api.mcp.resources.registry import build_error_text_resource, mcp_resource_registry
-from config.loader import ConfigManager
+from config.provider import GlobalConfigProvider
 from mcp.types import Resource, TextResourceContents
 
 logger = structlog.get_logger()
@@ -39,7 +39,7 @@ def _extract_storage_alias(uri: str) -> str | None:
 
 async def _compile_storage_info(uri: str, alias: str) -> TextResourceContents:
     """Builds a diagnostic overview reading limits and features logically."""
-    storage_config = ConfigManager.get().storage.get(alias)
+    storage_config = GlobalConfigProvider().get_config().storage.get(alias)
 
     if not storage_config:
         return build_error_text_resource(
@@ -85,7 +85,7 @@ async def _read_storage_info(uri: str) -> list[TextResourceContents]:
 def register_storage_resources() -> None:
     """Configures storage parameter definitions natively into the global resource map."""
 
-    active_configurations = ConfigManager.get().storage
+    active_configurations = GlobalConfigProvider().get_config().storage
 
     for storage_alias in active_configurations:
         target_uri = f"{URI_PROTOCOL_PREFIX}{storage_alias}{URI_INFO_SUFFIX}"

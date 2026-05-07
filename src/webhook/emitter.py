@@ -7,7 +7,7 @@ from typing import Any, Dict, Optional
 import structlog
 from pydantic import BaseModel
 
-from config.loader import ConfigManager
+from config.provider import GlobalConfigProvider
 from utils.uuid7 import uuid7
 
 logger = structlog.get_logger()
@@ -49,7 +49,7 @@ class WebhookQueueList:
     @classmethod
     def get_queue(cls) -> asyncio.Queue:
         if cls._queue is None:
-            config = ConfigManager.get()
+            config = GlobalConfigProvider().get_config()
             cls._queue = asyncio.Queue(maxsize=config.webhooks.queue_size)
         return cls._queue
 
@@ -143,7 +143,7 @@ def emit_event(
     trigger: WebhookTrigger,
 ) -> None:
     """Entry point invoked by endpoints determining if webhook sync operations should fire."""
-    config = ConfigManager.get()
+    config = GlobalConfigProvider().get_config()
     if not config.features.webhook or not config.webhooks.enabled:
         return
 

@@ -11,7 +11,7 @@ import structlog
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from cache import CacheManager
-from config.loader import ConfigManager
+from config.provider import GlobalConfigProvider
 
 logger = structlog.get_logger()
 
@@ -32,7 +32,9 @@ class IdempotencyMiddleware:
 
     def __init__(self, app: ASGIApp):
         self.app = app
-        self._idempotency_ttl = ConfigManager.get().cache.idempotency_ttl
+        self._idempotency_ttl = (
+            GlobalConfigProvider().get_config().cache.idempotency_ttl
+        )
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != _HTTP:

@@ -1,6 +1,6 @@
 from typing import Any, Optional
 
-from config.loader import ConfigManager
+from config.provider import GlobalConfigProvider
 
 from .memory import MemoryCache
 from .redis_backend import RedisCache
@@ -10,7 +10,7 @@ from .redis_backend import RedisCache
 # Hot-reload will re-import via ConfigManager.watch if needed.
 # ─────────────────────────────────────────────────────────────────────────────
 
-_config = ConfigManager.get()
+_config = GlobalConfigProvider().get_config()
 _CACHE_ENABLED: bool = bool(_config.cache.enabled)
 _USE_REDIS: bool = _config.cache.backend == "redis"
 

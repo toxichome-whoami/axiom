@@ -5,7 +5,7 @@ import os
 
 import structlog
 
-from config.loader import ConfigManager
+from config.provider import GlobalConfigProvider
 from utils.size_parser import parse_size
 
 logger = structlog.get_logger()
@@ -75,7 +75,7 @@ def _garbage_collect_logs(directory: str, prefix: str, max_files: int):
 async def log_rotator_worker():
     """Background daemon invoking custom log rotations sequentially."""
     logger.info("Log rotator started")
-    config = ConfigManager.get()
+    config = GlobalConfigProvider().get_config()
 
     max_size_bytes = parse_size(config.logging.max_file_size)
     max_files = config.logging.max_files

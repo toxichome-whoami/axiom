@@ -4,7 +4,7 @@ from typing import Any, Optional
 import structlog
 from cachetools import TTLCache
 
-from config.loader import ConfigManager
+from config.provider import GlobalConfigProvider
 from utils.size_parser import parse_size
 
 logger = structlog.get_logger()
@@ -53,7 +53,7 @@ class MemoryCache:
     @classmethod
     def _ensure_initialized(cls) -> TTLCache:
         if cls._cache is None:
-            config = ConfigManager.get()
+            config = GlobalConfigProvider().get_config()
             max_items = _resolve_cache_capacity_heuristic(config)
 
             cls._cache = TTLCache(maxsize=max_items, ttl=config.cache.default_ttl)

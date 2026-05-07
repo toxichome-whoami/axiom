@@ -10,7 +10,7 @@ from typing import Dict
 
 import structlog
 
-from config.loader import ConfigManager
+from config.provider import GlobalConfigProvider
 from security.storage import SecurityStorage
 
 logger = structlog.get_logger()
@@ -25,7 +25,7 @@ class CircuitState(str, Enum):
 class CircuitBreaker:
     """Per-resource circuit breaker tracking failure/success windows."""
 
-    # Config cached at first use — eliminates 4x ConfigManager.get() per request
+    # Config cached at first use — eliminates 4x GlobalConfigProvider().get_config() per request
     _enabled: bool = None  # type: ignore
     _failure_threshold: int = 0
     _success_threshold: int = 0
@@ -39,7 +39,7 @@ class CircuitBreaker:
     def _ensure_config(cls):
         """Resolve circuit breaker config once, cache forever."""
         if cls._enabled is None:
-            cb = ConfigManager.get().circuit_breaker
+            cb = GlobalConfigProvider().get_config().circuit_breaker
             cls._enabled = cb.enabled
             cls._failure_threshold = cb.failure_threshold
             cls._success_threshold = cb.success_threshold

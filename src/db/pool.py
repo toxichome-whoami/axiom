@@ -2,7 +2,7 @@ from typing import Dict, Optional
 
 import structlog
 
-from config.loader import ConfigManager
+from config.provider import GlobalConfigProvider
 from db.engines.base import DatabaseEngine
 from db.engines.mssql import MSSQLEngine
 from db.engines.mysql import MySQLEngine
@@ -57,7 +57,7 @@ class DatabasePoolManager:
             return cls._engines[alias]
 
         # Lazy init configuration lookup
-        config = ConfigManager.get()
+        config = GlobalConfigProvider().get_config()
         db_config = config.database.get(alias)
         if not db_config:
             return None

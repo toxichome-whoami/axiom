@@ -4,7 +4,7 @@ import time
 import httpx
 import structlog
 
-from config.loader import ConfigManager
+from config.provider import GlobalConfigProvider
 from webhook.emitter import WebhookQueueList
 from webhook.signer import generate_signature
 
@@ -22,7 +22,7 @@ def _get_client() -> httpx.AsyncClient:
     """Resolves or instantiates the singleton connection pool for webhooks."""
     global _client
     if _client is None:
-        config = ConfigManager.get()
+        config = GlobalConfigProvider().get_config()
         _client = httpx.AsyncClient(timeout=config.webhooks.timeout)
     return _client
 
@@ -114,7 +114,7 @@ async def dispatcher_worker():
     logger.info("Webhook dispatcher started")
     queue = WebhookQueueList.get_queue()
     client = _get_client()
-    config = ConfigManager.get()
+    config = GlobalConfigProvider().get_config()
 
     while True:
         try:

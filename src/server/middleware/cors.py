@@ -1,12 +1,12 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from config.loader import ConfigManager
+from config.provider import GlobalConfigProvider
 
 
 def setup_cors(app: FastAPI) -> None:
     """Injects dynamically driven Cross-Origin Resource Sharing logic to the pipeline."""
-    config = ConfigManager.get()
+    config = GlobalConfigProvider().get_config()
 
     if not config.server.cors_origins:
         return

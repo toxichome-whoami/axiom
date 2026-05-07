@@ -9,7 +9,7 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 from cache.memory import MemoryCache
 from cache.redis_backend import RedisCache
 from cache.sqlite_backend import SQLiteCache
-from config.loader import ConfigManager
+from config.provider import GlobalConfigProvider
 from security.storage import SecurityStorage
 
 logger = structlog.get_logger()
@@ -49,11 +49,28 @@ def _resolve_api_key_from_headers(headers: tuple) -> str:
     return "anonymous"
 
 
-@functools.lru_cache(maxsize=256)
-def _determine_effective_limits(api_key_name: str) -> int:
+_determine_effective_limits_cache = None
+
+
+def _get_determine_effective_limits_cache():
+    global _determine_effective_limits_cache
+    if _determine_effective_limits_cache is None:
+        config = GlobalConfigProvider().get_config()
+        maxsize = 256
+        if hasattr(config, "performance") and hasattr(
+            config.performance, "rate_limit_cache_size"
+        ):
+            maxsize = config.performance.rate_limit_cache_size
+        _determine_effective_limits_cache = functools.lru_cache(maxsize=maxsize)(
+            _determine_effective_limits_impl
+        )
+    return _determine_effective_limits_cache
+
+
+def _determine_effective_limits_impl(api_key_name: str) -> int:
     """Calculates exactly how many requests this key is allowed per rolling window.
     Cached to avoid redundant SecurityStorage lookups on every request."""
-    config = ConfigManager.get()
+    config = GlobalConfigProvider().get_config()
     base_limit = config.rate_limit.max_requests
 
     if api_key_name == "anonymous":
@@ -71,6 +88,10 @@ def _determine_effective_limits(api_key_name: str) -> int:
         return db_key["rate_limit_override"]
 
     return base_limit
+
+
+def _determine_effective_limits(api_key_name: str) -> int:
+    return _get_determine_effective_limits_cache()(api_key_name)
 
 
 async def _send_rejection_response(send: Send, limit: int, window: int):
@@ -126,7 +147,7 @@ class RateLimitMiddleware:
     def __init__(self, app: ASGIApp):
         self.app = app
         # Resolve config and backend class ONCE at startup - never per-request
-        config = ConfigManager.get()
+        config = GlobalConfigProvider().get_config()
         self._enabled = config.rate_limit.enabled
         self._allowed_ips = frozenset(config.server.allowed_ips)  # frozenset for O(1)
         self._window = config.rate_limit.window

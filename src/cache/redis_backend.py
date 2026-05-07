@@ -12,7 +12,7 @@ except ImportError:
     HAS_REDIS = False
     redis: Any = None
 
-from config.loader import ConfigManager
+from config.provider import GlobalConfigProvider
 
 logger = structlog.get_logger()
 
@@ -92,7 +92,7 @@ class RedisCache:
                 raise RuntimeError(
                     "Redis dependency not found. Install nexusgate[redis]"
                 )
-            config = ConfigManager.get()
+            config = GlobalConfigProvider().get_config()
             url = config.cache.redis_url
             if not url:
                 raise ValueError("Redis URL not configured")
@@ -118,7 +118,7 @@ class RedisCache:
     @classmethod
     async def set(cls, key: str, value: Any, ttl: Optional[float] = None) -> None:
         client = await cls.get_client()
-        config = ConfigManager.get()
+        config = GlobalConfigProvider().get_config()
         expiration_ttl = int(ttl) if ttl is not None else config.cache.default_ttl
 
         if not isinstance(value, (str, bytes)):
