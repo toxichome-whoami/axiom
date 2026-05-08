@@ -29,6 +29,7 @@ storage/.tmp/
 logs/
 *.log
 .env
+ROADMAP.md
 
 # IDE
 .vscode/

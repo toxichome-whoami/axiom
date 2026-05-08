@@ -61,11 +61,39 @@ curl -X GET "http://localhost:4500/api/v1/api/spec" \
 curl -X GET "http://localhost:4500/api/v1/db/databases" \
      -H "Authorization: Bearer <TOKEN>"
 ```
+Returns all databases the key has access to with connection status and table count. Health checks are cached for 5 seconds.
 
-### 2. List Tables
+### 2. List Tables (Paginated)
 ```bash
-curl -X GET "http://localhost:4500/api/v1/db/main_db/tables" \
+curl -X GET "http://localhost:4500/api/v1/db/main_db/tables?limit=50&offset=0" \
      -H "Authorization: Bearer <TOKEN>"
+```
+**Parameters:**
+- `limit` — Max tables per page (default 50, max 500)
+- `offset` — Pagination offset (default 0)
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "database": "main_db",
+    "tables": [
+      {
+        "name": "users",
+        "columns": [
+          {"name": "id", "type": "integer", "nullable": false, "primary_key": true}
+        ]
+      }
+    ],
+    "pagination": {
+      "total": 150,
+      "limit": 50,
+      "offset": 0,
+      "has_more": true
+    }
+  }
+}
 ```
 
 ### 3. Execute Raw SQL
@@ -82,8 +110,9 @@ curl -X POST "http://localhost:4500/api/v1/db/main_db/query" \
          }'
 ```
 
-### 4. Fetch Rows (with filtering)
+### 4. Fetch Rows (Paginated)
 ```bash
+# Basic pagination (no count query — fast)
 curl -G "http://localhost:4500/api/v1/db/main_db/users/rows" \
      -H "Authorization: Bearer <TOKEN>" \
      --data-urlencode "page=1" \
@@ -92,6 +121,55 @@ curl -G "http://localhost:4500/api/v1/db/main_db/users/rows" \
      --data-urlencode "order=desc" \
      --data-urlencode 'filter={"active":true,"age":{"$gte":18}}' \
      --data-urlencode "fields=id,name,email"
+
+# With accurate total count (runs SELECT COUNT(*))
+curl -G "http://localhost:4500/api/v1/db/main_db/users/rows?count=1" \
+     -H "Authorization: Bearer <TOKEN>" \
+     --data-urlencode "page=1" \
+     --data-urlencode "filter={"status":"active"}"
+```
+
+**Parameters:**
+- `page` — Page number (default 1)
+- `limit` — Rows per page (default 50)
+- `sort` — Column to sort by (validated against real table columns)
+- `order` — `asc` or `desc` (default `asc`)
+- `filter` — JSON filter object
+- `fields` — Comma-separated columns to return (validated against real table columns)
+- `search` — Full-text search term
+- `search_fields` — Columns to search across
+- `count` — Set to `1` to include exact `total` in pagination (runs `SELECT COUNT(*)`)
+  — Omit for faster responses (infers `has_more` from row count)
+
+**Response (without count):**
+```json
+{
+  "success": true,
+  "data": {
+    "rows": [{"id": 1, "name": "Alice"}],
+    "pagination": {
+      "page": 1,
+      "limit": 50,
+      "has_more": true
+    }
+  }
+}
+```
+
+**Response (with `?count=1`):**
+```json
+{
+  "success": true,
+  "data": {
+    "rows": [{"id": 1, "name": "Alice"}],
+    "pagination": {
+      "total": 150,
+      "page": 1,
+      "limit": 50,
+      "has_more": true
+    }
+  }
+}
 ```
 
 ### 5. Insert Rows

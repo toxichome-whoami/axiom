@@ -1,9 +1,10 @@
 import asyncio
 import hashlib
 import json
+import time
 from typing import Any
 
-from fastapi import Depends, Path, Request
+from fastapi import Depends, Path, Query, Request
 
 from api.database.filter_builder import build_where_clause
 from api.database.query_parser import validate_query
@@ -37,6 +38,10 @@ _FEDERATION_SERVERS: tuple = ()
 _WEBHOOK_ENABLED: bool = False
 _QUERY_CACHE_ENABLED: bool = False
 _QUERY_RESULTS_TTL: int = 5
+
+# Health check cache: {db_name: (status_str, timestamp)}
+_HEALTH_CACHE: dict[str, tuple[str, float]] = {}
+_HEALTH_CACHE_TTL: int = 5  # seconds
 
 
 def _refresh_feature_flags():
@@ -178,6 +183,38 @@ async def _append_cached_remote_databases(
                     "federated": True,
                     "remote_server": alias,
                 }
+            )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Column Validation
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+async def _validate_select_columns(
+    engine, db_name: str, table_name: str, fields: str | None, sort: str | None
+) -> None:
+    if not fields and not sort:
+        return
+    columns = await _get_cached_columns(db_name, table_name, engine)
+    valid = {c.name.lower() for c in columns}
+
+    if fields and fields != "*":
+        for col in fields.split(","):
+            col = col.strip().split(".")[-1].split(" ")[0].strip("`\"'")
+            if col.lower() not in valid and col != "*":
+                raise NexusGateException(
+                    ErrorCodes.INPUT_SCHEMA_INVALID,
+                    f"Column '{col}' not found in '{table_name}'",
+                    400,
+                )
+    if sort:
+        c = sort.strip().split(".")[-1].strip("`\"'")
+        if c.lower() not in valid:
+            raise NexusGateException(
+                ErrorCodes.INPUT_SCHEMA_INVALID,
+                f"Column '{c}' not found in '{table_name}'",
+                400,
             )
 
 
@@ -391,15 +428,29 @@ async def list_databases(
     config: NexusGateConfig = Depends(get_config_dependency),
 ):
     active_dbs = []
+    now = time.monotonic()
 
     for name, db_cfg in config.database.items():
         if "*" not in auth.db_scope and name not in auth.db_scope:
             continue
 
         engine = await DatabasePoolManager.get_engine(name)
-        status = (
-            "connected" if engine and await engine.health_check() else "disconnected"
-        )
+
+        # Cached health check — avoids O(n) pings per request
+        cached_entry = _HEALTH_CACHE.get(name)
+        if cached_entry and (now - cached_entry[1]) < _HEALTH_CACHE_TTL:
+            status = cached_entry[0]
+        else:
+            status = (
+                "connected"
+                if engine and await engine.health_check()
+                else "disconnected"
+            )
+            _HEALTH_CACHE[name] = (status, now)
+
+        tables_count = 0
+        if status == "connected" and engine:
+            tables_count = len(await _get_cached_tables(name, engine))
 
         active_dbs.append(
             {
@@ -407,9 +458,7 @@ async def list_databases(
                 "engine": db_cfg.engine.value,
                 "mode": db_cfg.mode.value,
                 "status": status,
-                "tables_count": len(await engine.list_tables())
-                if (status == "connected" and engine)
-                else 0,
+                "tables_count": tables_count,
                 "federated": False,
             }
         )
@@ -437,6 +486,8 @@ async def list_databases(
 async def list_tables(
     request: Request,
     db_name: str = Path(...),
+    limit: int = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0),
     auth: AuthContext = Depends(get_auth_context),
 ):
     if _is_federated(db_name):
@@ -451,9 +502,11 @@ async def list_tables(
 
     engine, _ = await get_db_engine(db_name, auth)
     tables = await _get_cached_tables(db_name, engine)
+    total = len(tables)
+    page = tables[offset : offset + limit]
     formatted_tables = []
 
-    for table in tables:
+    for table in page:
         columns = await _get_cached_columns(db_name, table.name, engine)
         formatted_tables.append(
             {
@@ -472,7 +525,17 @@ async def list_tables(
         )
 
     return cacheable_response(
-        request, {"database": db_name, "tables": formatted_tables}
+        request,
+        {
+            "database": db_name,
+            "tables": formatted_tables,
+            "pagination": {
+                "total": total,
+                "limit": limit,
+                "offset": offset,
+                "has_more": (offset + limit) < total,
+            },
+        },
     )
 
 
@@ -495,6 +558,8 @@ async def execute_query(
             engine, db_cfg, auth, request, db_name, body.sql, body.params or {}
         )
         return success_response(request, data)
+    except NexusGateException:
+        raise
     except Exception as exec_error:
         raise NexusGateException(ErrorCodes.DB_QUERY_FAILED, str(exec_error), 500)
 
@@ -518,13 +583,46 @@ async def get_rows(
         )
 
     engine, db_cfg = await get_db_engine(db_name, auth)
+
+    await _validate_select_columns(
+        engine, db_name, table_name, params.fields, params.sort
+    )
+
     raw_sql, sql_params = _construct_select_rest_payload(table_name, params)
 
     try:
         data = await QueryExecutionPipeline.run_query(
             engine, db_cfg, auth, request, db_name, raw_sql, sql_params
         )
-        return cacheable_response(request, data["rows"], max_age=_QUERY_RESULTS_TTL)
+
+        row_count = len(data["rows"])
+        has_more = row_count >= params.limit
+        pagination = {"page": params.page, "limit": params.limit, "has_more": has_more}
+
+        # Optional accurate count via ?count=1
+        if request.query_params.get("count") == "1":
+            count_sql = f"SELECT COUNT(*) AS cnt FROM {table_name}"
+            count_params = {}
+            if params.filter:
+                fj = json.loads(params.filter)
+                ws, fp = build_where_clause(fj)
+                if ws:
+                    count_sql += f" WHERE {ws}"
+                    count_params = fp
+            cr = await QueryExecutionPipeline.run_query(
+                engine, db_cfg, auth, request, db_name, count_sql, count_params
+            )
+            total = cr["rows"][0]["cnt"]
+            pagination["total"] = total
+            pagination["has_more"] = (params.page * params.limit) < total
+
+        return cacheable_response(
+            request,
+            {"rows": data["rows"], "pagination": pagination},
+            max_age=_QUERY_RESULTS_TTL,
+        )
+    except NexusGateException:
+        raise
     except Exception as select_error:
         raise NexusGateException(ErrorCodes.DB_QUERY_FAILED, str(select_error), 500)
 
@@ -562,6 +660,8 @@ async def insert_rows(
             engine, db_cfg, auth, request, db_name, table_name, target_rows
         )
         return success_response(request, {"affected_rows": total_affected})
+    except NexusGateException:
+        raise
     except Exception as exec_error:
         raise NexusGateException(ErrorCodes.DB_QUERY_FAILED, str(exec_error), 500)
 
@@ -592,6 +692,8 @@ async def update_rows(
             engine, db_cfg, auth, request, db_name, sql, sql_params
         )
         return success_response(request, {"affected_rows": data["affected_rows"]})
+    except NexusGateException:
+        raise
     except Exception as update_error:
         raise NexusGateException(ErrorCodes.DB_QUERY_FAILED, str(update_error), 500)
 
@@ -622,5 +724,7 @@ async def delete_rows(
             engine, db_cfg, auth, request, db_name, sql, sql_params
         )
         return success_response(request, {"affected_rows": data["affected_rows"]})
+    except NexusGateException:
+        raise
     except Exception as exec_error:
         raise NexusGateException(ErrorCodes.DB_QUERY_FAILED, str(exec_error), 500)
