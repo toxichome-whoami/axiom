@@ -12,6 +12,7 @@ from api.errors import ErrorCodes, NexusGateException
 from api.federation.proxy import _resolve_server, proxy_request
 from api.responses import success_response
 from api.storage.chunked_upload import ChunkedUploadManager
+from cache import CacheManager
 from config.provider import get_config_dependency
 from config.schema import NexusGateConfig
 from server.middleware.auth import get_auth_context
@@ -606,6 +607,27 @@ async def list_folder(
 
     target_path = _get_storage_path(alias, path, auth)
 
+    # Cache directory listings for 2s — prevents thread pool saturation under concurrent load
+    cache_key = f"ls:{target_path}:r={recursive}"
+    cached = await CacheManager.get(cache_key)
+    if cached is not None:
+        total, all_items = cached
+        page = all_items[offset : offset + limit]
+        return success_response(
+            request,
+            {
+                "storage": alias,
+                "path": path,
+                "items": page,
+                "pagination": {
+                    "total": total,
+                    "limit": limit,
+                    "offset": offset,
+                    "has_more": (offset + limit) < total,
+                },
+            },
+        )
+
     # Single-pass scandir with threadpool — replaces os.listdir + os.path.exists + os.path.isdir
     def _scan_directory():
         try:
@@ -652,6 +674,9 @@ async def list_folder(
         return total, items
 
     total_items, items = await asyncio.to_thread(_scan_directory)
+
+    # Cache the full result so concurrent requests don't all hit the filesystem
+    await CacheManager.set(cache_key, (total_items, items), ttl=2)
 
     return success_response(
         request,
