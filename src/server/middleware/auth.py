@@ -9,7 +9,6 @@ from api.errors import ErrorCodes, NexusGateException
 from config.provider import get_config_dependency
 from config.schema import NexusGateConfig
 from security.ban_list import BanList
-from security.storage import SecurityStorage
 from utils.types import AuthContext, ServerMode
 
 security = HTTPBearer(auto_error=False)
@@ -107,33 +106,6 @@ def _get_federation_context(request: Request, config) -> AuthContext:
     )
 
 
-def _get_dynamic_key_context(key_name: str, secret: str) -> AuthContext | None:
-    """Authenticates the request against the fast-path SQLite security registry."""
-    db_key = SecurityStorage.get_api_key(key_name)
-    if not db_key:
-        return None
-
-    salt = db_key.get("salt", "")
-    provided_hash = hashlib.pbkdf2_hmac(
-        "sha256", secret.encode("utf-8"), salt.encode("utf-8"), 100000
-    ).hex()
-    if not hmac.compare_digest(
-        db_key["secret_hash"].encode("utf-8"), provided_hash.encode("utf-8")
-    ):
-        _record_auth_failure()
-        raise NexusGateException(
-            ErrorCodes.AUTH_INVALID_SECRET, "Invalid credentials.", 401
-        )
-
-    return AuthContext(
-        api_key_name=key_name,
-        mode=ServerMode(db_key["mode"]),
-        db_scope=db_key["db_scope"],
-        fs_scope=db_key["fs_scope"],
-        rate_limit_override=db_key["rate_limit_override"],
-        full_admin=False,
-    )
-
 
 def _get_static_key_context(key_name: str, secret: str, config) -> AuthContext:
     """Authenticates the request against statically injected config.toml keys."""
@@ -211,13 +183,7 @@ async def get_auth_context(
     # 3. Apply IP/Key global firewall blocklists
     _evaluate_network_bans(request, key_name)
 
-    # 4. Resolve Context
-    dynamic_context = _get_dynamic_key_context(key_name, secret)
-    if dynamic_context:
-        request.state.auth_context = dynamic_context
-        return dynamic_context
-
-    # 5. Fallback statically
+    # 4. Fallback statically
     ctx = _get_static_key_context(key_name, secret, config)
     request.state.auth_context = ctx
     return ctx

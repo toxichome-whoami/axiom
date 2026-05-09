@@ -3,7 +3,6 @@ Circuit Breaker: Prevents cascade failures by tracking failures
 per DB alias and tripping an OPEN state after threshold is exceeded.
 """
 
-import asyncio
 import time
 from enum import Enum
 from typing import Dict
@@ -11,7 +10,6 @@ from typing import Dict
 import structlog
 
 from config.provider import GlobalConfigProvider
-from security.storage import SecurityStorage
 
 logger = structlog.get_logger()
 
@@ -31,6 +29,8 @@ class CircuitBreaker:
     _success_threshold: int = 0
     _timeout: int = 0
 
+    _circuit_breakers_cache: Dict[str, dict] = {}
+
     # ─────────────────────────────────────────────────────────────────────────────
     # Internal Helpers
     # ─────────────────────────────────────────────────────────────────────────────
@@ -47,21 +47,15 @@ class CircuitBreaker:
 
     @classmethod
     def _get_circuit(cls, key: str) -> dict:
-        return SecurityStorage.get_circuit_cache(key)
-
-    @classmethod
-    def _persist_state(cls, key: str, circuit: dict):
-        """Asynchronously triggers the storage layer to commit state without blocking."""
-        asyncio.create_task(
-            SecurityStorage.update_circuit(
-                key,
-                circuit["state"],
-                circuit["failures"],
-                circuit["successes"],
-                circuit["last_failure_time"],
-                circuit["tripped_at"],
-            )
-        )
+        if key not in cls._circuit_breakers_cache:
+            cls._circuit_breakers_cache[key] = {
+                "state": "closed",
+                "failures": 0,
+                "successes": 0,
+                "last_failure_time": None,
+                "tripped_at": None,
+            }
+        return cls._circuit_breakers_cache[key]
 
     # ─────────────────────────────────────────────────────────────────────────────
     # Core Logic
@@ -86,7 +80,6 @@ class CircuitBreaker:
             circuit["state"] = CircuitState.HALF_OPEN.value
             circuit["successes"] = 0
             logger.info("Circuit half-opened", key=key)
-            cls._persist_state(key, circuit)
             return False
 
         return True
@@ -99,7 +92,6 @@ class CircuitBreaker:
             return
 
         circuit = cls._get_circuit(key)
-        state_changed = False
 
         # Heal from HALF_OPEN
         if circuit["state"] == CircuitState.HALF_OPEN.value:
@@ -107,17 +99,12 @@ class CircuitBreaker:
             if circuit["successes"] >= cls._success_threshold:
                 circuit["state"] = CircuitState.CLOSED.value
                 circuit["failures"] = 0
-                state_changed = True
                 logger.info("Circuit closed (recovered)", key=key)
 
         # Natural decay of failure count
         elif circuit["state"] == CircuitState.CLOSED.value:
             if circuit["failures"] > 0:
                 circuit["failures"] = max(0, circuit["failures"] - 1)
-                # Note: Deliberately avoiding state persistence on natural decay to save disk I/O
-
-        if state_changed:
-            cls._persist_state(key, circuit)
 
     @classmethod
     def record_failure(cls, key: str):
@@ -140,7 +127,6 @@ class CircuitBreaker:
             logger.warning(
                 "Circuit tripped OPEN", key=key, failures=circuit["failures"]
             )
-            cls._persist_state(key, circuit)
 
     # ─────────────────────────────────────────────────────────────────────────────
     # Introspection
@@ -158,11 +144,15 @@ class CircuitBreaker:
 
     @classmethod
     def all_states(cls) -> Dict[str, dict]:
-        return {k: cls.get_state(k) for k in SecurityStorage.get_all_circuits()}
+        return {k: cls.get_state(k) for k in cls._circuit_breakers_cache}
 
     @classmethod
     async def reset(cls, key: str):
         """Manually forces a closed state overlay."""
-        await SecurityStorage.update_circuit(
-            key, CircuitState.CLOSED.value, 0, 0, None, None
-        )
+        cls._circuit_breakers_cache[key] = {
+            "state": CircuitState.CLOSED.value,
+            "failures": 0,
+            "successes": 0,
+            "last_failure_time": None,
+            "tripped_at": None,
+        }

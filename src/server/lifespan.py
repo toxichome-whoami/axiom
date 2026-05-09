@@ -11,7 +11,6 @@ from config.loader import ConfigManager
 from config.provider import GlobalConfigProvider
 from db.pool import DatabasePoolManager
 from logger.rotator import log_rotator_worker
-from security.storage import SecurityStorage
 from webhook.dispatcher import dispatcher_worker
 
 # Silently refresh module-level feature flags in db handlers on each config reload
@@ -65,9 +64,7 @@ def _release_daemon_lock():
 
 
 async def _init_storage_backends(config):
-    """Initializes persistent databases required for startup caching and security."""
-    await SecurityStorage.init_db()
-
+    """Initializes persistent databases required for startup caching."""
     # Conditionally boot SQLite cache backend if declared in config
     if config.rate_limit.backend == "sqlite" or config.cache.backend == "sqlite":
         from cache.sqlite_backend import SQLiteCache

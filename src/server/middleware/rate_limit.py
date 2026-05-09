@@ -10,7 +10,6 @@ from cache.memory import MemoryCache
 from cache.redis_backend import RedisCache
 from cache.sqlite_backend import SQLiteCache
 from config.provider import GlobalConfigProvider
-from security.storage import SecurityStorage
 
 logger = structlog.get_logger()
 
@@ -81,11 +80,6 @@ def _determine_effective_limits_impl(api_key_name: str) -> int:
         cfg_override = config.api_key[api_key_name].rate_limit_override
         if cfg_override > 0:
             return cfg_override
-
-    # Dynamic cache lookup
-    db_key = SecurityStorage.get_api_key(api_key_name)
-    if db_key and db_key.get("rate_limit_override", 0) > 0:
-        return db_key["rate_limit_override"]
 
     return base_limit
 
