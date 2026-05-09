@@ -16,46 +16,15 @@ from webhook.dispatcher import dispatcher_worker
 # Silently refresh module-level feature flags in db handlers on each config reload
 try:
     import api.database.handlers as _db_handlers
+
     _db_handlers._refresh_feature_flags()
 except Exception:
     pass
 
 logger = structlog.get_logger()
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Daemon Leader Election (File Lock)
-# ─────────────────────────────────────────────────────────────────────────────
-# When running multiple uvicorn workers, background daemons (config watcher,
-# log rotator, webhook dispatcher, federation sync) must only run in ONE
-# worker. A sentinel file at data/.daemon_lock elects the first worker as
-# the "leader". Other workers skip daemon startup.
 
-_DAEMON_LOCK = "data/.daemon_lock"
 _daemon_tasks: List[asyncio.Task] = []
-
-
-def _should_start_daemons() -> bool:
-    """Returns True if this worker should own the background daemons."""
-    try:
-        os.makedirs("data", exist_ok=True)
-        # Atomic create — O_CREAT|O_EXCL fails if file already exists (no TOCTOU race)
-        fd = os.open(_DAEMON_LOCK, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-        os.write(fd, str(os.getpid()).encode())
-        os.close(fd)
-        return True
-    except FileExistsError:
-        return False
-    except (OSError, PermissionError):
-        return True  # Can't lock — run anyway
-
-
-def _release_daemon_lock():
-    """Removes the sentinel file on graceful shutdown."""
-    try:
-        if os.path.exists(_DAEMON_LOCK):
-            os.remove(_DAEMON_LOCK)
-    except OSError:
-        pass
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -68,12 +37,12 @@ async def _init_storage_backends(config):
     # Conditionally boot SQLite cache backend if declared in config
     if config.rate_limit.backend == "sqlite" or config.cache.backend == "sqlite":
         from cache.sqlite_backend import SQLiteCache
+
         await SQLiteCache.init_db()
 
 
 def _start_background_daemons(config) -> List[asyncio.Task]:
-    """Launches non-blocking background workers based on active feature flags.
-    Only called in the leader worker — never duplicated across processes."""
+    """Launches non-blocking background workers based on active feature flags."""
     if _daemon_tasks:
         return _daemon_tasks
 
@@ -97,7 +66,6 @@ async def _stop_background_daemons():
     for task in _daemon_tasks:
         task.cancel()
     _daemon_tasks.clear()
-    _release_daemon_lock()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -108,29 +76,25 @@ async def _stop_background_daemons():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Controls application bootstrap and teardown sequences dynamically."""
-    is_leader = _should_start_daemons()
     config = GlobalConfigProvider().get_config()
     pid = os.getpid()
 
     # 1. Boot Subsystems
     await _init_storage_backends(config)
 
-    # 2. Launch Daemons (leader only)
-    if is_leader:
-        logger.info("Starting NexusGate", pid=pid)
-        _start_background_daemons(config)
-    else:
-        logger.info("NexusGate worker ready", pid=pid)
+    # 2. Launch Daemons
+    logger.info("Starting NexusGate", pid=pid)
+    _start_background_daemons(config)
 
     # Yield control to the ASGI server
     yield
 
     # 3. Teardown Subsystems
-    if is_leader:
-        await _stop_background_daemons()
+    await _stop_background_daemons()
 
     if hasattr(app.state, "mcp_initialized"):
         from api.mcp.server import MCPServerManager
+
         MCPServerManager.shutdown()
 
     await DatabasePoolManager.shutdown()
