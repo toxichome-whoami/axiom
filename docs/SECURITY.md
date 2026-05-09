@@ -26,8 +26,8 @@ All three paths use Base64 encoding for transport, but the raw secrets are store
 
 ## 3. Dynamic Secret Storage (Cache-Aside Pattern)
 
-- **Persistent Security State**: All API keys generated via the Admin API, along with Administrator-enforced IP and Key bans, are stored in a persistent SQLite database (`data/security.db`).
-- **Hashed Secrets**: API Key secrets are never stored in plaintext inside the database. They are hashed using SHA-256 before storage. Even if the database file is exfiltrated, the raw secrets cannot be recovered.
+- **Persistent Security State**: Security states, including legacy dynamic keys and manual bans, are stored in a persistent SQLite database (`data/security.db`).
+- **Hashed Secrets**: Any dynamic API Key secrets are never stored in plaintext inside the database. They are hashed using SHA-256 before storage. Even if the database file is exfiltrated, the raw secrets cannot be recovered.
 - **Ultra-Low Latency Caching**: To prevent database disk-I/O from creating a bottleneck during DDoS attacks, the SQLite database state is synchronized into a nanosecond-latency RAM cache. Authentication and ban checks occur strictly in memory.
 
 ## 4. Attack Protections
@@ -71,5 +71,5 @@ Mutating requests (`POST`, `PUT`, `DELETE`) can be made idempotent by providing 
 - **Unique Secrets**: Never reuse the same secret across different federation nodes or webhooks.
 - **Redaction**: Avoid enabling `features.playground` in public production environments.
 - **Log Rotation**: Ensure `logging.directory` is on a partition with sufficient space to prevent service denial due to disk exhaustion.
-- **Rate Limit Penalties**: While admin-issued bans are permanently stored in SQLite, temporary IP penalties issued automatically by the rate limiter use the cache backend. Use a Redis backend for rate limiting if you require penalty persistence across load-balanced workers or container restarts. The in-memory backend stores exactly 2 keys per tracked IP (`count` + `expiry`) — safe to use under high-concurrency DDoS without memory growth.
+- **Rate Limit Penalties**: While permanent bans are stored in SQLite, temporary IP penalties issued automatically by the rate limiter use the cache backend. Use a Redis backend for rate limiting if you require penalty persistence across load-balanced workers or container restarts. The in-memory backend stores exactly 2 keys per tracked IP (`count` + `expiry`) — safe to use under high-concurrency DDoS without memory growth.
 

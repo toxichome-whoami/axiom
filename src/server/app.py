@@ -9,7 +9,6 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from __init__ import __version__
 from api import database, federation, storage
-from api.admin import router as admin_router
 
 # Routers
 from api.core import health
@@ -151,7 +150,6 @@ def _attach_routers(app: FastAPI):
     api_v1.include_router(database.router, prefix="/db")
     api_v1.include_router(storage.router, prefix="/fs")
     api_v1.include_router(federation.router, prefix="/fed")
-    api_v1.include_router(admin_router, prefix="/admin")
 
     if config.features.mcp:
         from api.mcp import router as mcp_router
