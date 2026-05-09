@@ -7,7 +7,7 @@ from fastapi import Request
 from starlette.background import BackgroundTask
 from starlette.responses import StreamingResponse
 
-from api.errors import ErrorCodes, NexusGateException
+from api.errors import ErrorCodes, AxiomException
 from config.provider import GlobalConfigProvider
 
 _PROXY_SLIM_LIMITS = httpx.Limits(max_connections=10, max_keepalive_connections=5)
@@ -148,7 +148,7 @@ async def _stream_proxy_execution(
             background=BackgroundTask(resp.aclose),
         )
     except httpx.RequestError as req_error:
-        raise NexusGateException(
+        raise AxiomException(
             ErrorCodes.FED_SERVER_DOWN, f"Federated server error: {str(req_error)}", 502
         )
 
@@ -197,7 +197,7 @@ async def proxy_request(
         )
 
         if not _is_safe_url(remote_url):
-            raise NexusGateException(
+            raise AxiomException(
                 ErrorCodes.FED_SERVER_DOWN,
                 "SSRF Blocked: Federation target resolves to an internal or restricted network.",
                 403,
@@ -209,7 +209,7 @@ async def proxy_request(
         return await _stream_proxy_execution(client, request, remote_url, headers)
 
     resource_type = "Database" if is_database else "Storage"
-    raise NexusGateException(
+    raise AxiomException(
         ErrorCodes.FED_SERVER_DOWN,
         f"Federated {resource_type} alias '{alias}' not found or unreachable",
         404,

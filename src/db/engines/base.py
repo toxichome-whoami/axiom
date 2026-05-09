@@ -42,7 +42,7 @@ class QueryResult:
 class DatabaseEngine(Protocol):
     """
     Strict typing contract ensuring all database drivers implement identical
-    asynchronous interfaces for NexusGate dynamic federation mapping.
+    asynchronous interfaces for Axiom dynamic federation mapping.
     """
 
     async def connect(self) -> None:

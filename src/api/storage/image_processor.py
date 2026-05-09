@@ -18,7 +18,7 @@ except ImportError:
     HAS_PIL = False
     Image: Any = None
 
-from api.errors import ErrorCodes, NexusGateException
+from api.errors import ErrorCodes, AxiomException
 
 STREAM_CHUNK = 65536  # 64KB
 
@@ -98,11 +98,11 @@ def process_image_and_stream(
     format: Optional[str] = None,
 ) -> StreamingResponse:
     if not HAS_PIL:
-        raise NexusGateException(
+        raise AxiomException(
             ErrorCodes.SERVER_INTERNAL, "Image processing requires Pillow library.", 501
         )
     if not os.path.exists(file_path):
-        raise NexusGateException(
+        raise AxiomException(
             ErrorCodes.FS_PATH_NOT_FOUND, f"File not found: {file_path}", 404
         )
 
@@ -125,9 +125,9 @@ def process_image_and_stream(
         img.close()
         return _package_streaming_response(tmp, output_format)
 
-    except NexusGateException:
+    except AxiomException:
         raise
     except Exception as e:
-        raise NexusGateException(
+        raise AxiomException(
             ErrorCodes.SERVER_INTERNAL, f"Image processing failed: {str(e)}", 500
         )

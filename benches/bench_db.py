@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-NexusGate Unified Industrial Benchmark
+Axiom Unified Industrial Benchmark
 =======================================
 High-performance throughput measurement for both DB and FS endpoints.
 Uses aiohttp for maximum client-side efficiency.

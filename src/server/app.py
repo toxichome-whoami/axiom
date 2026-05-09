@@ -178,9 +178,9 @@ def _attach_routers(app: FastAPI):
 
 
 def create_app() -> FastAPI:
-    """Instantiates the NexusGate application with all layers loaded and properly structured."""
+    """Instantiates the Axiom application with all layers loaded and properly structured."""
     app = FastAPI(
-        title="NexusGate",
+        title="Axiom",
         description="High-Performance Unified API Gateway with Dynamic Federation, Webhooks, MCP & Storage Management",
         version=__version__,
         lifespan=lifespan,

@@ -1,5 +1,5 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# NexusGate - Industrial-Grade Unified API Gateway
+# Axiom - Industrial-Grade Unified API Gateway
 # Configuration Example
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -32,7 +32,7 @@ mcp = true                       # Enable Model Context Protocol server
 
 # ─── Model Context Protocol (MCP) ─────────────────────
 [mcp]
-server_name = "nexusgate"
+server_name = "axiom"
 server_version = "1.0.3"
 
 # ─── Logging ──────────────────────────────────────────
@@ -41,7 +41,7 @@ enabled = true                   # false = suppress all logging
 level = "INFO"                   # TRACE | DEBUG | INFO | WARNING | ERROR
 format = "json"                  # json (production) | pretty (development)
 directory = "./logs"             # Where to store log files
-file_prefix = "nexusgate"        # Prefix for log filenames
+file_prefix = "axiom"        # Prefix for log filenames
 max_file_size = "50mb"           # Max size per log file before rotation
 max_files = 5                    # Number of rotated logs to keep
 stdout = true                    # Stream logs to console
@@ -110,7 +110,7 @@ connection_timeout = 30          # Seconds to wait for a connection
 idle_timeout = 600               # Seconds to keep an idle connection alive
 max_lifetime = 3600              # Maximum age of a connection
 query_blacklist = ["DROP", "TRUNCATE", "ALTER"]
-dangerous_operations = false     # Allow/Disallow raw SQL outside of NexusGate dialect
+dangerous_operations = false     # Allow/Disallow raw SQL outside of Axiom dialect
 federated_alias = ""             # e.g. "edge_node_production_db" — federation only
 
 # ─── Storage Volumes ──────────────────────────────────
@@ -133,7 +133,7 @@ rule = "db.any@main_db:*"      # Format: module.operation@alias:target
 enabled = true
 
 # ─── Federation (Optional) ────────────────────────────
-# Connect multiple NexusGate nodes into a unified cluster.
+# Connect multiple Axiom nodes into a unified cluster.
 # State is persisted to data/federation.db (SQLite) for crash recovery.
 [federation]
 enabled = false                # Master toggle
@@ -145,7 +145,7 @@ circuit_breaker_threshold = 3  # Consecutive failures before marking node "down"
 # ─── Federation: Outgoing Servers ────────────────────
 # Nodes this server will connect to. Each server gets a unique alias key.
 [federation.server.edge_node]
-url = "https://other-nexusgate-node.com/"
+url = "https://other-axiom-node.com/"
 secret = "FEDERATION_SECRET_KEY"
 node_id = "local_identity"
 trust_mode = "verify"          # verify (strict SSL) | trust (skip cert check)

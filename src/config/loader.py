@@ -8,11 +8,11 @@ import structlog
 from pydantic import ValidationError
 
 from config.defaults import generate_default_config
-from config.schema import NexusGateConfig
+from config.schema import AxiomConfig
 
 logger = structlog.get_logger()
 
-_ENV = os.environ.get("NEXUSGATE_ENV", "development")
+_ENV = os.environ.get("AXIOM_ENV", "development")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Helper Procedures
@@ -57,10 +57,10 @@ def _load_merged_config(paths: List[str], exit_on_error: bool = True) -> dict:
     return merged
 
 
-def _validate_schema(config_dict: dict, path: str) -> NexusGateConfig:
+def _validate_schema(config_dict: dict, path: str) -> AxiomConfig:
     """Applies strict Pydantic parsing ensuring zero runtime mapping failures."""
     try:
-        validated_config = NexusGateConfig(**config_dict)
+        validated_config = AxiomConfig(**config_dict)
         logger.info("Config loaded successfully", path=path)
         return validated_config
     except ValidationError as strict_error:
@@ -77,7 +77,7 @@ class ConfigManager:
     """Acts as a global memory singleton holding validated configurations."""
 
     _instance = None
-    _config: Optional[NexusGateConfig] = None
+    _config: Optional[AxiomConfig] = None
     _config_path: str = ""
 
     def __new__(cls):
@@ -86,7 +86,7 @@ class ConfigManager:
         return cls._instance
 
     @classmethod
-    def load(cls, path: str = "config.toml") -> NexusGateConfig:
+    def load(cls, path: str = "config.toml") -> AxiomConfig:
         """Hydrates the singleton from local variables sequentially."""
         cls._config_path = path
 
@@ -98,7 +98,7 @@ class ConfigManager:
         return cls._config
 
     @classmethod
-    def get(cls) -> NexusGateConfig:
+    def get(cls) -> AxiomConfig:
         """Retrieves active schema implicitly boosting reliability on missed injects."""
         if cls._config is None:
             return cls.load()
@@ -141,7 +141,7 @@ class ConfigManager:
         try:
             paths = _resolve_config_paths(cls._config_path)
             new_payload = await asyncio.to_thread(_load_merged_config, paths, False)
-            new_validated = NexusGateConfig(**new_payload)
+            new_validated = AxiomConfig(**new_payload)
 
             cls._config = new_validated
 

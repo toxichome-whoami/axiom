@@ -5,7 +5,7 @@ import shutil
 from datetime import datetime
 from typing import Any, Dict, List
 
-from api.errors import ErrorCodes, NexusGateException
+from api.errors import ErrorCodes, AxiomException
 from utils.size_parser import format_size
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -51,7 +51,7 @@ async def get_file_info(path: str) -> Dict[str, Any]:
     try:
         stat_result = await asyncio.to_thread(os.stat, path)
     except FileNotFoundError:
-        raise NexusGateException(
+        raise AxiomException(
             ErrorCodes.FS_PATH_NOT_FOUND, f"Path not found: {path}", 404
         )
 
@@ -94,13 +94,13 @@ async def rename_path(source: str, target: str) -> None:
     try:
         await asyncio.to_thread(os.rename, source, target)
     except FileNotFoundError:
-        raise NexusGateException(
+        raise AxiomException(
             ErrorCodes.FS_PATH_NOT_FOUND,
             "Source location node mapped incorrectly.",
             404,
         )
     except Exception as e:
-        raise NexusGateException(
+        raise AxiomException(
             ErrorCodes.SERVER_INTERNAL,
             f"Failed to rename sequence dynamically: {str(e)}",
             500,
@@ -115,7 +115,7 @@ async def copy_path(source: str, target: str) -> None:
         else:
             await asyncio.to_thread(shutil.copy2, source, target)
     except Exception as e:
-        raise NexusGateException(
+        raise AxiomException(
             ErrorCodes.SERVER_INTERNAL,
             f"Failed to copy bytes implicitly: {str(e)}",
             500,
@@ -124,7 +124,7 @@ async def copy_path(source: str, target: str) -> None:
 
 async def delete_path(source: str) -> None:
     if not os.path.exists(source):
-        raise NexusGateException(
+        raise AxiomException(
             ErrorCodes.FS_PATH_NOT_FOUND, "Missing map bindings entirely.", 404
         )
     try:
@@ -133,7 +133,7 @@ async def delete_path(source: str) -> None:
         else:
             await asyncio.to_thread(os.remove, source)
     except Exception as e:
-        raise NexusGateException(
+        raise AxiomException(
             ErrorCodes.SERVER_INTERNAL, f"Failed to detach node directly: {str(e)}", 500
         )
 
@@ -142,7 +142,7 @@ async def mkdir(path: str) -> None:
     try:
         await asyncio.to_thread(os.makedirs, path, exist_ok=True)
     except Exception as e:
-        raise NexusGateException(
+        raise AxiomException(
             ErrorCodes.SERVER_INTERNAL, f"Failed to partition structure: {str(e)}", 500
         )
 

@@ -1,4 +1,4 @@
-# NexusGate
+# Axiom
 An open-source, industrial-grade, unified API gateway for databases and file storage with federated multi-server support, webhook event streaming, and military-grade security.
 
 ## Philosophy

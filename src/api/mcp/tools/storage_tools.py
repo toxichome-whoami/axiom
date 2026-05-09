@@ -1,7 +1,7 @@
 """
 Storage Tools for MCP.
 
-Exposes NexusGate's file system capabilities as MCP tools.
+Exposes Axiom's file system capabilities as MCP tools.
 All paths are resolved and strictly confined within the storage alias root.
 """
 
@@ -205,7 +205,7 @@ async def _read_file(storage: str, path: str) -> list[TextContent]:
 def register_storage_tools() -> None:
     mcp_tool_registry.register(
         name="list_storages",
-        description="Lists all file system directory aliases securely mounted behind NexusGate.",
+        description="Lists all file system directory aliases securely mounted behind Axiom.",
         input_schema={"type": "object", "properties": {}},
         handler=_list_storages,
     )

@@ -1,7 +1,7 @@
 """
 Database Tools for MCP.
 
-Exposes NexusGate's database capabilities as MCP tools that AI models
+Exposes Axiom's database capabilities as MCP tools that AI models
 can invoke. Every tool reuses the existing validation/transpilation
 pipeline — no query bypasses the AST parser.
 
@@ -141,7 +141,7 @@ def register_database_tools() -> None:
 
     mcp_tool_registry.register(
         name="list_databases",
-        description="Lists all database aliases configured and available natively in NexusGate.",
+        description="Lists all database aliases configured and available natively in Axiom.",
         input_schema={"type": "object", "properties": {}},
         handler=_list_databases,
     )

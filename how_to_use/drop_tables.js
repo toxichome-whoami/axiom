@@ -25,10 +25,10 @@ function loadEnv() {
 const env = loadEnv();
 
 const CONFIG = {
-    url: env.NEXUSGATE_URL || 'http://localhost:4500',
-    databaseName: env.NEXUSGATE_DB || 'example_db',
-    keyName: env.NEXUSGATE_KEY_NAME || 'example',
-    secret: env.NEXUSGATE_KEY_SECRET || 'your_secret_key_here'
+    url: env.AXIOM_URL || 'http://localhost:4500',
+    databaseName: env.AXIOM_DB || 'example_db',
+    keyName: env.AXIOM_KEY_NAME || 'example',
+    secret: env.AXIOM_KEY_SECRET || 'your_secret_key_here'
 };
 
 const B64_AUTH = Buffer.from(`${CONFIG.keyName}:${CONFIG.secret}`).toString('base64');

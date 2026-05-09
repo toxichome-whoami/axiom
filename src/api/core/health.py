@@ -81,7 +81,7 @@ async def root(request: Request):
         request,
         {
             "status": "online",
-            "name": "NexusGate",
+            "name": "Axiom",
             "version": __version__,
             "uptime_seconds": int(time.time() - uptime_start),
             "features": config.features.model_dump(),

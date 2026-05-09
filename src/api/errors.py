@@ -55,7 +55,7 @@ class ErrorCodes:
     SERVER_UNAVAILABLE = "SERVER_UNAVAILABLE"
 
 
-class NexusGateException(HTTPException):
+class AxiomException(HTTPException):
     def __init__(
         self,
         code: str,

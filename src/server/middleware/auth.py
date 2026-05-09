@@ -4,9 +4,9 @@ import hmac
 from fastapi import Depends, Request, Security
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from api.errors import ErrorCodes, NexusGateException
+from api.errors import ErrorCodes, AxiomException
 from config.provider import get_config_dependency
-from config.schema import NexusGateConfig
+from config.schema import AxiomConfig
 from security.ban_list import BanList
 from utils.types import AuthContext
 
@@ -42,7 +42,7 @@ def _evaluate_network_bans(request: Request, key_name: str):
     """Executes pre-authorization checks against network blocks and IP bans."""
     is_banned, ban_reason = BanList.is_key_banned(key_name)
     if is_banned:
-        raise NexusGateException(
+        raise AxiomException(
             code=ErrorCodes.AUTH_INVALID_KEY,
             message=f"API key is suspended: {ban_reason}",
             status_code=403,
@@ -51,7 +51,7 @@ def _evaluate_network_bans(request: Request, key_name: str):
     client_ip = _resolve_client_ip(request)
     ip_banned, ip_reason = BanList.is_ip_banned(client_ip)
     if ip_banned:
-        raise NexusGateException(
+        raise AxiomException(
             code=ErrorCodes.RATE_LIMIT_BLOCKED,
             message=f"IP address is banned: {ip_reason}",
             status_code=403,
@@ -65,25 +65,25 @@ def _get_federation_context(request: Request, config) -> AuthContext:
 
     # Federation globally disabled
     if not config.features.federation or not config.federation.enabled:
-        raise NexusGateException(
+        raise AxiomException(
             ErrorCodes.AUTH_INVALID_KEY, "Federation is disabled on this instance.", 403
         )
 
     incoming_key = config.federation.incoming.get(fed_node)
     if not incoming_key:
-        raise NexusGateException(
+        raise AxiomException(
             ErrorCodes.AUTH_INVALID_KEY, "Unknown federation node.", 403
         )
 
     if not fed_secret:
-        raise NexusGateException(
+        raise AxiomException(
             ErrorCodes.AUTH_MISSING_HEADER, "Missing federation secret.", 403
         )
 
     try:
         decoded_fed_secret = base64.b64decode(fed_secret).decode("utf-8")
     except Exception:
-        raise NexusGateException(
+        raise AxiomException(
             ErrorCodes.AUTH_INVALID_FORMAT, "Malformed federation secret.", 403
         )
 
@@ -91,7 +91,7 @@ def _get_federation_context(request: Request, config) -> AuthContext:
     if not hmac.compare_digest(
         incoming_key.secret.encode("utf-8"), decoded_fed_secret.encode("utf-8")
     ):
-        raise NexusGateException(
+        raise AxiomException(
             ErrorCodes.AUTH_INVALID_SECRET, "Invalid federation secret.", 403
         )
 
@@ -109,7 +109,7 @@ def _get_static_key_context(key_name: str, secret: str, config) -> AuthContext:
     """Authenticates the request against statically injected config.toml keys."""
     api_key_cfg = config.api_key.get(key_name)
     if not api_key_cfg:
-        raise NexusGateException(
+        raise AxiomException(
             ErrorCodes.AUTH_INVALID_KEY,
             "The provided API key is invalid or expired.",
             401,
@@ -119,7 +119,7 @@ def _get_static_key_context(key_name: str, secret: str, config) -> AuthContext:
         api_key_cfg.secret.encode("utf-8"), secret.encode("utf-8")
     ):
         _record_auth_failure()
-        raise NexusGateException(
+        raise AxiomException(
             ErrorCodes.AUTH_INVALID_SECRET, "Invalid credentials.", 401
         )
 
@@ -136,7 +136,7 @@ def _get_static_key_context(key_name: str, secret: str, config) -> AuthContext:
 def _parse_bearer_token(credentials: HTTPAuthorizationCredentials) -> tuple[str, str]:
     """Decodes the HTTP Basic/Bearer formatted token strings."""
     if not credentials:
-        raise NexusGateException(
+        raise AxiomException(
             ErrorCodes.AUTH_INVALID_FORMAT, "Missing authentication.", 401
         )
 
@@ -145,7 +145,7 @@ def _parse_bearer_token(credentials: HTTPAuthorizationCredentials) -> tuple[str,
         key_name, secret = decoded_token.split(":", 1)
         return key_name, secret
     except Exception:
-        raise NexusGateException(
+        raise AxiomException(
             ErrorCodes.AUTH_INVALID_FORMAT,
             "Invalid Authorization header format. Expected Base64(key_name:secret)",
             401,
@@ -160,7 +160,7 @@ def _parse_bearer_token(credentials: HTTPAuthorizationCredentials) -> tuple[str,
 async def get_auth_context(
     request: Request,
     credentials: HTTPAuthorizationCredentials = Security(security),
-    config: NexusGateConfig = Depends(get_config_dependency),
+    config: AxiomConfig = Depends(get_config_dependency),
 ) -> AuthContext:
     """Resolves security context for a request by combining all available mechanisms."""
     cached = getattr(request.state, "auth_context", None)
@@ -190,7 +190,7 @@ async def get_auth_context(
 async def require_admin(auth: AuthContext = Depends(get_auth_context)) -> AuthContext:
     """Dependency extension specifically blocking non-administrative requests."""
     if not auth.full_admin:
-        raise NexusGateException(
+        raise AxiomException(
             ErrorCodes.AUTH_INSUFFICIENT_MODE,
             "Admin-level API key required for this action.",
             403,

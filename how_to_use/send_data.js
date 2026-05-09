@@ -29,9 +29,9 @@ function loadLocalEnv() {
 }
 
 const env = loadLocalEnv();
-const API_URL = env.NEXUSGATE_URL || 'http://localhost:4500';
-const DB_NAME = env.NEXUSGATE_DB || 'example_db';
-const AUTH_TOKEN = Buffer.from(`${env.NEXUSGATE_KEY_NAME || 'example'}:${env.NEXUSGATE_KEY_SECRET || 'your_secret_key_here'}`).toString('base64');
+const API_URL = env.AXIOM_URL || 'http://localhost:4500';
+const DB_NAME = env.AXIOM_DB || 'example_db';
+const AUTH_TOKEN = Buffer.from(`${env.AXIOM_KEY_NAME || 'example'}:${env.AXIOM_KEY_SECRET || 'your_secret_key_here'}`).toString('base64');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Low-level HTTP Client
@@ -105,7 +105,7 @@ async function insertInitialData(tableName) {
  * Orchestrates the full database seeding process.
  */
 async function startSeedingProcess() {
-    console.log('🚀 Starting NexusGate seeder...');
+    console.log('🚀 Starting Axiom seeder...');
 
     for (const tableName of TABLES_TO_SEED) {
         process.stdout.write(`Provisioning table: ${tableName}... `);

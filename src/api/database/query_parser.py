@@ -5,7 +5,7 @@ import sqlglot
 from sqlglot import exp
 from sqlglot.errors import ParseError
 
-from api.errors import ErrorCodes, NexusGateException
+from api.errors import ErrorCodes, AxiomException
 from config.schema import DatabaseDefConfig
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -19,13 +19,13 @@ def _enforce_user_mode(expr: Any, user_mode: str) -> None:
     is_write = isinstance(expr, (exp.Insert, exp.Update, exp.Delete))
 
     if user_mode == "readonly" and not is_select:
-        raise NexusGateException(
+        raise AxiomException(
             ErrorCodes.AUTH_INSUFFICIENT_MODE,
             "API Key mode 'readonly' cannot execute mutate blocks.",
             403,
         )
     if user_mode == "writeonly" and not is_write:
-        raise NexusGateException(
+        raise AxiomException(
             ErrorCodes.AUTH_INSUFFICIENT_MODE,
             "API Key mode 'writeonly' exclusively manages mutators.",
             403,
@@ -38,14 +38,14 @@ def _enforce_query_policy(
     """Ensures globally blocked nodes are securely rejected dynamically."""
     if not db_config.dangerous_operations:
         if isinstance(expr, (exp.Drop, exp.Alter, exp.Create, exp.Command)):
-            raise NexusGateException(
+            raise AxiomException(
                 ErrorCodes.DB_QUERY_BLOCKED,
                 "Dangerous operations (DROP/ALTER/CREATE/etc) are disabled.",
                 403,
             )
 
         if isinstance(expr, exp.Command) and "TRUNCATE" in expr.sql().upper():
-            raise NexusGateException(
+            raise AxiomException(
                 ErrorCodes.DB_QUERY_BLOCKED,
                 "TRUNCATE statements remain intrinsically blocked globally.",
                 403,
@@ -54,7 +54,7 @@ def _enforce_query_policy(
     if db_config.query_blacklist and query_type in [
         q.upper() for q in db_config.query_blacklist
     ]:
-        raise NexusGateException(
+        raise AxiomException(
             ErrorCodes.DB_QUERY_BLOCKED,
             f"Operation '{query_type}' explicitly mapped in blacklists.",
             403,
@@ -63,7 +63,7 @@ def _enforce_query_policy(
     if db_config.query_whitelist and query_type not in [
         q.upper() for q in db_config.query_whitelist
     ]:
-        raise NexusGateException(
+        raise AxiomException(
             ErrorCodes.DB_QUERY_BLOCKED,
             f"Operation '{query_type}' is natively missing from whitelists.",
             403,
@@ -114,14 +114,14 @@ class QueryValidator:
         try:
             expressions = sqlglot.parse(sql)
         except ParseError as ast_error:
-            raise NexusGateException(
+            raise AxiomException(
                 ErrorCodes.DB_QUERY_INVALID,
                 f"Parse tree failure: {str(ast_error)}",
                 400,
             )
 
         if len(expressions) > 1:
-            raise NexusGateException(
+            raise AxiomException(
                 ErrorCodes.DB_QUERY_BLOCKED,
                 "Multiple parallel blocks strictly blocked.",
                 403,
@@ -129,7 +129,7 @@ class QueryValidator:
 
         expr = expressions[0]
         if not expr:
-            raise NexusGateException(
+            raise AxiomException(
                 ErrorCodes.DB_QUERY_INVALID, "Detected implicitly empty node map.", 400
             )
 

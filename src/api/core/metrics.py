@@ -118,47 +118,47 @@ def _build_prometheus_metrics(
 ) -> PlainTextResponse:
     """Binds pure text execution streams strictly compatible with OpenMetrics v0.0.4 formats."""
     lines = [
-        "# NexusGate Metrics",
+        "# Axiom Metrics",
         _format_metric(
-            "nexusgate_uptime_seconds",
+            "axiom_uptime_seconds",
             round(uptime, 2),
             help_text="Server uptime",
             metric_type="gauge",
         ),
         _format_metric(
-            "nexusgate_memory_mb",
+            "axiom_memory_mb",
             round(mem_mb, 2),
             help_text="Memory usage",
             metric_type="gauge",
         ),
         _format_metric(
-            "nexusgate_cpu_percent",
+            "axiom_cpu_percent",
             round(cpu_pct, 2),
             help_text="CPU usage",
             metric_type="gauge",
         ),
         _format_metric(
-            "nexusgate_request_duration_avg_ms",
+            "axiom_request_duration_avg_ms",
             round(avg_duration, 3),
             help_text="Avg latency",
             metric_type="gauge",
         ),
         _format_metric(
-            "nexusgate_request_duration_p99_ms",
+            "axiom_request_duration_p99_ms",
             round(p99, 3),
             help_text="P99 latency",
             metric_type="gauge",
         ),
-        _format_metric("nexusgate_rate_limit_hits_total", _metrics["rate_limit_hits"]),
-        _format_metric("nexusgate_auth_failures_total", _metrics["auth_failures"]),
+        _format_metric("axiom_rate_limit_hits_total", _metrics["rate_limit_hits"]),
+        _format_metric("axiom_auth_failures_total", _metrics["auth_failures"]),
         _format_metric(
-            "nexusgate_webhook_delivered_total", _metrics["webhook_delivered"]
+            "axiom_webhook_delivered_total", _metrics["webhook_delivered"]
         ),
-        _format_metric("nexusgate_webhook_failed_total", _metrics["webhook_failed"]),
-        _format_metric("nexusgate_cache_hits_total", _metrics["cache_hits"]),
-        _format_metric("nexusgate_cache_misses_total", _metrics["cache_misses"]),
-        _format_metric("nexusgate_db_queries_total", _metrics["db_queries_total"]),
-        _format_metric("nexusgate_db_query_errors_total", _metrics["db_query_errors"]),
+        _format_metric("axiom_webhook_failed_total", _metrics["webhook_failed"]),
+        _format_metric("axiom_cache_hits_total", _metrics["cache_hits"]),
+        _format_metric("axiom_cache_misses_total", _metrics["cache_misses"]),
+        _format_metric("axiom_db_queries_total", _metrics["db_queries_total"]),
+        _format_metric("axiom_db_query_errors_total", _metrics["db_query_errors"]),
     ]
     return PlainTextResponse(
         "\n".join(lines) + "\n", media_type="text/plain; version=0.0.4"

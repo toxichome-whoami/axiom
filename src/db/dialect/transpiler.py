@@ -48,9 +48,9 @@ def _execute_ast_conversion_impl(
         return result[0]
 
     except ParseError as ast_error:
-        from api.errors import ErrorCodes, NexusGateException
+        from api.errors import ErrorCodes, AxiomException
 
-        raise NexusGateException(
+        raise AxiomException(
             code=ErrorCodes.DB_QUERY_INVALID,
             message="Failed to parse SQL query.",
             details=str(ast_error),

@@ -1,9 +1,9 @@
-# NexusGate Architecture
+# Axiom Architecture
 
-NexusGate is built on an aggressive, fully async architecture utilizing `FastAPI`, `httpx`, and `SQLGlot`.
+Axiom is built on an aggressive, fully async architecture utilizing `FastAPI`, `httpx`, and `SQLGlot`.
 
 ## Security Subsystem (Cache-Aside)
-NexusGate uses an embedded SQLite database (`data/security.db`) coupled with a native Python `dict` caching layer. This provides zero-latency (sub-nanosecond) authentication and ban evaluations without sacrificing disk-based persistence for dynamic API keys or circuit breaker thresholds.
+Axiom uses an embedded SQLite database (`data/security.db`) coupled with a native Python `dict` caching layer. This provides zero-latency (sub-nanosecond) authentication and ban evaluations without sacrificing disk-based persistence for dynamic API keys or circuit breaker thresholds.
 
 ## The Pipeline
 
@@ -25,7 +25,7 @@ The pipeline converges at the Router which redirects to:
 Write events (Uploads, Inserts, Updates, Deletes) are dropped into a non-blocking `asyncio.Queue` via `emitter.py`. The `dispatcher.py` background worker strips items from the queue, calculates `HMAC-SHA256` payload signatures using the target's secret, and attempts delivery via HTTP POST, implementing exponential backoff retries on failure.
 
 ## Federation
-Remote NexusGate instances can be configured in `config.toml`. Through `/api/fed/*`, identical structural requests mapped to `alias` are routed via `StreamingResponse` HTTPX clients, bridging queries between geographically isolated servers seamlessly.
+Remote Axiom instances can be configured in `config.toml`. Through `/api/fed/*`, identical structural requests mapped to `alias` are routed via `StreamingResponse` HTTPX clients, bridging queries between geographically isolated servers seamlessly.
 
 ### HTTP Connection Pool Lifecycle
 Federation proxy clients (`httpx.AsyncClient`) are **attached to `app.state.http_clients`** rather than a module-level global. This ensures:

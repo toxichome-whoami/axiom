@@ -1,4 +1,4 @@
-# NexusGate — Configuration Reference
+# Axiom — Configuration Reference
 
 Full reference for every key in `config.toml`. See `config.example.toml` for a ready-to-copy template.
 
@@ -45,7 +45,7 @@ Feature flags to enable/disable entire subsystems.
 | `level` | `"INFO"` | `TRACE \| DEBUG \| INFO \| WARN \| ERROR` |
 | `format` | `"json"` | `json \| pretty` |
 | `directory` | `"./logs"` | Log file output directory |
-| `file_prefix` | `"nexusgate"` | Log filename prefix |
+| `file_prefix` | `"axiom"` | Log filename prefix |
 | `max_file_size` | `"50 MB"` | Rotate when log exceeds this size |
 | `max_files` | `5` | Max rotated log files to keep |
 | `stdout` | `true` | Also log to stdout |
@@ -91,7 +91,7 @@ Global webhook delivery settings.
 | `max_retries` | `3` | Retry attempts on failure |
 | `retry_delay` | `2` | Base delay (exponential: delay^attempt) |
 | `queue_size` | `10000` | Max pending webhook events |
-| `secret_header` | `"X-NexusGate-Signature"` | HMAC header name |
+| `secret_header` | `"X-Axiom-Signature"` | HMAC header name |
 
 ---
 
@@ -196,11 +196,11 @@ Per-node incoming authentication. Each block allows exactly one remote server to
 
 ## `[federation.server.<alias>]`
 
-Outgoing connections to remote NexusGate servers.
+Outgoing connections to remote Axiom servers.
 
 | Key | Required | Description |
 |-----|----------|-------------|
-| `url` | yes | Remote NexusGate base URL |
+| `url` | yes | Remote Axiom base URL |
 | `secret` | yes | Federation secret (must match remote's incoming key) |
 | `node_id` | yes | Your identity on the remote server |
 | `trust_mode` | `"verify"` | `verify` (TLS) or `trust` (skip TLS check) |
@@ -213,7 +213,7 @@ Model Context Protocol server configuration. Enables AI assistants to interact w
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `server_name` | `"nexusgate"` | Server identity sent to MCP clients |
+| `server_name` | `"axiom"` | Server identity sent to MCP clients |
 | `server_version` | `"1.0.2"` | Version advertised in initialization |
 | `max_result_rows` | `50` | Max rows returned per query |
 | `max_directory_entries` | `100` | Max files listed per directory |

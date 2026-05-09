@@ -1,6 +1,6 @@
-# NexusGate Federation Guide
+# Axiom Federation Guide
 
-Federation allows multiple NexusGate instances to link together, forming a unified mesh of databases and storage volumes.
+Federation allows multiple Axiom instances to link together, forming a unified mesh of databases and storage volumes.
 
 ## 1. Overview
 

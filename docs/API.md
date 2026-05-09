@@ -1,4 +1,4 @@
-# NexusGate API Reference
+# Axiom API Reference
 
 ## Authentication
 
@@ -489,13 +489,13 @@ curl -X GET "http://localhost:4500/api/v1/fed/servers" \
 > [!NOTE]
 > MCP (Model Context Protocol) must be enabled via `features.mcp = true` in `config.toml`. When disabled, these endpoints do not exist and consume zero resources. See [`docs/MCP.md`](MCP.md) for the full guide.
 
-The MCP API exposes NexusGate's database and storage tools to AI models (like Claude, Gemini) securely through standard Server-Sent Events (SSE).
+The MCP API exposes Axiom's database and storage tools to AI models (like Claude, Gemini) securely through standard Server-Sent Events (SSE).
 
 ### Connection Endpoints
 1. **SSE Transport**: `GET /api/v1/mcp/sse`
 2. **RPC Messages**: `POST /api/v1/mcp/messages`
 
-Both endpoints require `Authorization: Bearer <TOKEN>` using standard NexusGate API keys. AI requests are strictly governed by the key's native permissions (`mode`, `db_scope`, `fs_scope`, and rate limits).
+Both endpoints require `Authorization: Bearer <TOKEN>` using standard Axiom API keys. AI requests are strictly governed by the key's native permissions (`mode`, `db_scope`, `fs_scope`, and rate limits).
 
 ### Available Tools (Functions)
 Once connected, the AI model gains access to the following bounded tools:
@@ -511,8 +511,8 @@ Once connected, the AI model gains access to the following bounded tools:
 | `read_file` | `storage: str, path: str` | Reads safely capped text documents |
 
 ### Available Resources (Context)
-- `nexusgate://db/{alias}/schema`: Full database schema (tables, columns, types, PKs)
-- `nexusgate://fs/{alias}/info`: Storage volume configuration and limits
+- `axiom://db/{alias}/schema`: Full database schema (tables, columns, types, PKs)
+- `axiom://fs/{alias}/info`: Storage volume configuration and limits
 
 ---
 

@@ -8,7 +8,7 @@ import secrets
 
 DEFAULT_CONFIG_CONTENT = """
 # ╔══════════════════════════════════════════════════════════════╗
-# ║                    NexusGate Configuration                   ║
+# ║                    Axiom Configuration                   ║
 # ╚══════════════════════════════════════════════════════════════╝
 
 [server]
@@ -31,7 +31,7 @@ playground = false
 level       = "INFO"
 format      = "json"
 directory   = "./logs"
-file_prefix = "nexusgate"
+file_prefix = "axiom"
 
 [database.local_cache]
 engine = "sqlite"
@@ -88,7 +88,7 @@ def _print_bootstrap_instructions(path: str, admin_secret: str) -> None:
     encoded_token = base64.b64encode(f"admin_key:{admin_secret}".encode()).decode()
 
     print("=" * 60)
-    print("NexusGate Initialized!")
+    print("Axiom Initialized!")
     print(f"Generated default config at: {path}")
     print(f"Your admin API key: {admin_secret} (save this, it won't be shown again)")
     print(f"To use it, set header: Authorization: Bearer {encoded_token}")

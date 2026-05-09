@@ -73,7 +73,7 @@ class MSSQLEngine(DatabaseEngine):
         if not HAS_AIOODBC:
             raise RuntimeError(
                 "MSSQL support requires: pip install aioodbc pyodbc. "
-                "Install via: pip install nexusgate[mssql]"
+                "Install via: pip install axiom[mssql]"
             )
 
         standardized_uri = _normalize_uri(config.url)

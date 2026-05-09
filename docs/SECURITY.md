@@ -1,6 +1,6 @@
-# NexusGate Security Model
+# Axiom Security Model
 
-NexusGate is designed with a "Security-First" philosophy, specifically engineered to withstand industrial-grade API attack vectors.
+Axiom is designed with a "Security-First" philosophy, specifically engineered to withstand industrial-grade API attack vectors.
 
 ## 1. Zero-Trust Internal Architecture
 
@@ -10,13 +10,13 @@ NexusGate is designed with a "Security-First" philosophy, specifically engineere
 
 ## 2. Three Isolated Authentication Paths
 
-NexusGate enforces strict separation between authentication domains. A credential from one domain **cannot** be used in another.
+Axiom enforces strict separation between authentication domains. A credential from one domain **cannot** be used in another.
 
 | Auth Path | Header | Config Location | Transport | Can be Admin? |
 |-----------|--------|-----------------|-----------|---------------|
 | **API Keys** | `Authorization: Bearer base64(name:secret)` | `[api_key.*]` | Base64 | ✅ Yes (`full_admin`) |
 | **Federation** | `X-Federation-Secret` + `X-Federation-Node` | `[federation.incoming.*]` | Base64 | ❌ Never |
-| **Webhooks** | `X-NexusGate-Webhook-Token: base64(secret)` | `[webhook.*]` | Base64 | N/A |
+| **Webhooks** | `X-Axiom-Webhook-Token: base64(secret)` | `[webhook.*]` | Base64 | N/A |
 
 - **API Keys** authenticate human users and external applications.
 - **Federation Secrets** authenticate server-to-server mesh connections. Each node has independent scope.
@@ -49,7 +49,7 @@ All three paths use Base64 encoding for transport, but the raw secrets are store
 
 ## 5. Web Application Firewall (WAF)
 
-NexusGate includes an embedded WAF layer (`src/server/middleware/waf.py`) that executes before any business logic.
+Axiom includes an embedded WAF layer (`src/server/middleware/waf.py`) that executes before any business logic.
 
 - **Request Size Limiting**: Rejects requests that exceed `server.body_limit`.
 - **Content-Type Enforcement**: Rejects unexpected content types (e.g., enforces JSON for API calls).

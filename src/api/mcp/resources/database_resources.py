@@ -4,7 +4,7 @@ Database Resource Provider for MCP.
 Exposes database schemas as readable MCP resources so AI models can
 load structural context without executing a tool.
 
-Resource URI Format: nexusgate://db/{alias}/schema
+Resource URI Format: axiom://db/{alias}/schema
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ from mcp.types import Resource, TextResourceContents
 logger = structlog.get_logger()
 
 # Constants
-URI_PROTOCOL_PREFIX = "nexusgate://db/"
+URI_PROTOCOL_PREFIX = "axiom://db/"
 URI_SCHEMA_SUFFIX = "/schema"
 
 

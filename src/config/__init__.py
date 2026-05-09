@@ -1,4 +1,4 @@
 from config.loader import ConfigManager
-from config.schema import NexusGateConfig
+from config.schema import AxiomConfig
 
-__all__ = ["NexusGateConfig", "ConfigManager"]
+__all__ = ["AxiomConfig", "ConfigManager"]

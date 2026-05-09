@@ -24,9 +24,9 @@ function getConfiguration() {
     );
 
     return {
-        baseUrl: env.NEXUSGATE_URL || 'http://localhost:4500',
-        keyName: env.NEXUSGATE_KEY_NAME || 'example',
-        keySecret: env.NEXUSGATE_KEY_SECRET || 'your_secret_key_here'
+        baseUrl: env.AXIOM_URL || 'http://localhost:4500',
+        keyName: env.AXIOM_KEY_NAME || 'example',
+        keySecret: env.AXIOM_KEY_SECRET || 'your_secret_key_here'
     };
 }
 
@@ -38,7 +38,7 @@ const CREDENTIALS = Buffer.from(`${CONFIG.keyName}:${CONFIG.keySecret}`).toStrin
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Generic Fetcher for NexusGate API.
+ * Generic Fetcher for Axiom API.
  */
 async function fetchFromApi(endpoint, method = 'GET') {
     const url = new URL(CONFIG.baseUrl);
@@ -99,7 +99,7 @@ function displayDatabases(databases) {
  * Main command to retrieve and list all active databases.
  */
 async function runDatabaseDiscovery() {
-    console.log('🔍 Querying NexusGate for databases...\n');
+    console.log('🔍 Querying Axiom for databases...\n');
 
     try {
         const apiResponse = await fetchFromApi('/api/v1/db/databases');

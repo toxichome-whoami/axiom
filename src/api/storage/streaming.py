@@ -11,7 +11,7 @@ from typing import Optional, Tuple
 import aiofiles
 from starlette.responses import Response, StreamingResponse
 
-from api.errors import ErrorCodes, NexusGateException
+from api.errors import ErrorCodes, AxiomException
 from security.circuit_breaker import CircuitBreaker
 
 CHUNK_SIZE = 65536  # 64KB
@@ -118,14 +118,14 @@ def serve_file(
 ) -> Response:
     """Entry node processing HTTP static evaluations mapping streams natively."""
     if CircuitBreaker.is_open("storage_streaming"):
-        raise NexusGateException(
+        raise AxiomException(
             ErrorCodes.SERVER_UNAVAILABLE,
             "Storage streaming circuit is currently OPEN to protect bandwidth.",
             503,
         )
 
     if not os.path.exists(path) or not os.path.isfile(path):
-        raise NexusGateException(
+        raise AxiomException(
             ErrorCodes.FS_PATH_NOT_FOUND, "File missing on explicit bounds.", 404
         )
 

@@ -3,7 +3,7 @@ import os
 from fastapi.responses import StreamingResponse
 from zipstream.ng import ZipStream
 
-from api.errors import ErrorCodes, NexusGateException
+from api.errors import ErrorCodes, AxiomException
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Sub-Routines
@@ -35,7 +35,7 @@ def _generate_zip_stream(folder_path: str) -> ZipStream:
 
 def stream_zip_folder(folder_path: str, filename: str) -> StreamingResponse:
     if not os.path.exists(folder_path) or not os.path.isdir(folder_path):
-        raise NexusGateException(
+        raise AxiomException(
             ErrorCodes.FS_PATH_NOT_FOUND, f"Folder not found: {folder_path}", 404
         )
 

@@ -8,7 +8,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 def _build_wsgi_bridge():
     """
     Compiles the async ASGI application into a synchronous WSGI application.
-    Required for executing NexusGate inside cPanel Phusion Passenger environments.
+    Required for executing Axiom inside cPanel Phusion Passenger environments.
     """
     try:
         from a2wsgi import ASGIMiddleware

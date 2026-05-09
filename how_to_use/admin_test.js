@@ -27,9 +27,9 @@ function loadEnvironmentVariables() {
 const env = loadEnvironmentVariables();
 
 const CONFIG = {
-    url: env.NEXUSGATE_URL || 'http://localhost:4500',
-    keyName: env.NEXUSGATE_KEY_NAME || 'example',
-    keySecret: env.NEXUSGATE_KEY_SECRET || 'your_secret_key_here'
+    url: env.AXIOM_URL || 'http://localhost:4500',
+    keyName: env.AXIOM_KEY_NAME || 'example',
+    keySecret: env.AXIOM_KEY_SECRET || 'your_secret_key_here'
 };
 
 const AUTHORIZATION_HEADER = `Bearer ${Buffer.from(`${CONFIG.keyName}:${CONFIG.keySecret}`).toString('base64')}`;
@@ -39,7 +39,7 @@ const AUTHORIZATION_HEADER = `Bearer ${Buffer.from(`${CONFIG.keyName}:${CONFIG.k
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Executes an HTTP request to the NexusGate API.
+ * Executes an HTTP request to the Axiom API.
  */
 async function performRequest(apiPath, method = 'GET', body = null) {
     const url = new URL(`${CONFIG.url}${apiPath}`);

@@ -27,9 +27,9 @@ function fetchConfig() {
     );
 
     return {
-        baseUrl: env.NEXUSGATE_URL || 'http://localhost:4500',
-        keyName: env.NEXUSGATE_KEY_NAME || 'example',
-        keySecret: env.NEXUSGATE_KEY_SECRET || 'your_secret_key_here',
+        baseUrl: env.AXIOM_URL || 'http://localhost:4500',
+        keyName: env.AXIOM_KEY_NAME || 'example',
+        keySecret: env.AXIOM_KEY_SECRET || 'your_secret_key_here',
         chunkSizeBytes: 9437184, // ~9MB
     };
 }
@@ -112,7 +112,7 @@ async function startUploadSession(alias, fileName, remotePath, totalSize) {
 
 async function uploadSingleChunk(alias, uploadId, chunkIndex, buffer) {
     const chunkHash = crypto.createHash('sha256').update(buffer).digest('hex');
-    const boundary = `----NexusGateBoundary${crypto.randomBytes(8).toString('hex')}`;
+    const boundary = `----AxiomBoundary${crypto.randomBytes(8).toString('hex')}`;
 
     const multipartBody = Buffer.concat([
         Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="action"\r\n\r\nchunk\r\n`),

@@ -15,12 +15,12 @@ from api.database.schemas import (
     QueryRequest,
     UpdateRequest,
 )
-from api.errors import ErrorCodes, NexusGateException
+from api.errors import ErrorCodes, AxiomException
 from api.federation.proxy import proxy_request
 from api.responses import cacheable_response, success_response
 from cache import CacheManager
 from config.provider import get_config_dependency
-from config.schema import NexusGateConfig
+from config.schema import AxiomConfig
 from db.dialect.transpiler import transpile_sql
 from db.pool import DatabasePoolManager
 from server.middleware.auth import get_auth_context
@@ -90,7 +90,7 @@ def _is_federated(alias: str) -> bool:
 async def get_db_engine(db_name: str, auth: AuthContext):
     """Verifies internal pool mapping executing scope validations."""
     if "*" not in auth.db_scope and db_name not in auth.db_scope:
-        raise NexusGateException(
+        raise AxiomException(
             ErrorCodes.AUTH_SCOPE_DENIED,
             f"API key does not have access to database '{db_name}'",
             403,
@@ -98,7 +98,7 @@ async def get_db_engine(db_name: str, auth: AuthContext):
 
     engine = await DatabasePoolManager.get_engine(db_name)
     if not engine:
-        raise NexusGateException(
+        raise AxiomException(
             ErrorCodes.DB_NOT_FOUND, f"Database '{db_name}' not found", 404
         )
 
@@ -123,7 +123,7 @@ async def _emit_db_webhook_event(
         api_key=auth.api_key_name,
         ip=request.client.host if request.client else "",
         request_id=getattr(request.state, "request_id", "-"),
-        webhook_token=request.headers.get("X-NexusGate-Webhook-Token"),
+        webhook_token=request.headers.get("X-Axiom-Webhook-Token"),
     )
 
     event_type = "delete" if action == "DELETE" else "write"
@@ -203,7 +203,7 @@ async def _validate_select_columns(
         for col in fields.split(","):
             col = col.strip().split(".")[-1].split(" ")[0].strip("`\"'")
             if col.lower() not in valid and col != "*":
-                raise NexusGateException(
+                raise AxiomException(
                     ErrorCodes.INPUT_SCHEMA_INVALID,
                     f"Column '{col}' not found in '{table_name}'",
                     400,
@@ -211,7 +211,7 @@ async def _validate_select_columns(
     if sort:
         c = sort.strip().split(".")[-1].strip("`\"'")
         if c.lower() not in valid:
-            raise NexusGateException(
+            raise AxiomException(
                 ErrorCodes.INPUT_SCHEMA_INVALID,
                 f"Column '{c}' not found in '{table_name}'",
                 400,
@@ -238,7 +238,7 @@ def _construct_select_rest_payload(
                 sql_parts.append(f"WHERE {where_sql}")
                 sql_params.update(filter_params)
         except Exception:
-            raise NexusGateException(
+            raise AxiomException(
                 ErrorCodes.INPUT_SCHEMA_INVALID, "Invalid filter JSON structure", 400
             )
 
@@ -425,7 +425,7 @@ class QueryExecutionPipeline:
 async def list_databases(
     request: Request,
     auth: AuthContext = Depends(get_auth_context),
-    config: NexusGateConfig = Depends(get_config_dependency),
+    config: AxiomConfig = Depends(get_config_dependency),
 ):
     active_dbs = []
     now = time.monotonic()
@@ -496,7 +496,7 @@ async def list_tables(
         )
 
     if auth.mode == ServerMode.WRITEONLY:
-        raise NexusGateException(
+        raise AxiomException(
             ErrorCodes.AUTH_INSUFFICIENT_MODE, "Write-only keys cannot list tables", 403
         )
 
@@ -558,10 +558,10 @@ async def execute_query(
             engine, db_cfg, auth, request, db_name, body.sql, body.params or {}
         )
         return success_response(request, data)
-    except NexusGateException:
+    except AxiomException:
         raise
     except Exception as exec_error:
-        raise NexusGateException(ErrorCodes.DB_QUERY_FAILED, str(exec_error), 500)
+        raise AxiomException(ErrorCodes.DB_QUERY_FAILED, str(exec_error), 500)
 
 
 @router.get("/{db_name}/{table_name}/rows")
@@ -578,7 +578,7 @@ async def get_rows(
         )
 
     if auth.mode == ServerMode.WRITEONLY:
-        raise NexusGateException(
+        raise AxiomException(
             ErrorCodes.AUTH_INSUFFICIENT_MODE, "Write-only limits apply", 403
         )
 
@@ -621,10 +621,10 @@ async def get_rows(
             {"rows": data["rows"], "pagination": pagination},
             max_age=_QUERY_RESULTS_TTL,
         )
-    except NexusGateException:
+    except AxiomException:
         raise
     except Exception as select_error:
-        raise NexusGateException(ErrorCodes.DB_QUERY_FAILED, str(select_error), 500)
+        raise AxiomException(ErrorCodes.DB_QUERY_FAILED, str(select_error), 500)
 
 
 @router.post("/{db_name}/{table_name}/rows")
@@ -641,7 +641,7 @@ async def insert_rows(
         )
 
     if auth.mode == ServerMode.READONLY:
-        raise NexusGateException(
+        raise AxiomException(
             ErrorCodes.AUTH_INSUFFICIENT_MODE, "Read-only limits apply", 403
         )
 
@@ -651,7 +651,7 @@ async def insert_rows(
         body.rows if body.rows is not None else ([body.row] if body.row else [])
     )
     if not target_rows:
-        raise NexusGateException(
+        raise AxiomException(
             ErrorCodes.INPUT_SCHEMA_INVALID, "No payload array", 400
         )
 
@@ -660,10 +660,10 @@ async def insert_rows(
             engine, db_cfg, auth, request, db_name, table_name, target_rows
         )
         return success_response(request, {"affected_rows": total_affected})
-    except NexusGateException:
+    except AxiomException:
         raise
     except Exception as exec_error:
-        raise NexusGateException(ErrorCodes.DB_QUERY_FAILED, str(exec_error), 500)
+        raise AxiomException(ErrorCodes.DB_QUERY_FAILED, str(exec_error), 500)
 
 
 @router.patch("/{db_name}/{table_name}/rows")
@@ -679,7 +679,7 @@ async def update_rows(
             db_name, f"{table_name}/rows", request
         )
     if auth.mode == ServerMode.READONLY:
-        raise NexusGateException(
+        raise AxiomException(
             ErrorCodes.AUTH_INSUFFICIENT_MODE, "Read-only limits apply", 403
         )
 
@@ -692,10 +692,10 @@ async def update_rows(
             engine, db_cfg, auth, request, db_name, sql, sql_params
         )
         return success_response(request, {"affected_rows": data["affected_rows"]})
-    except NexusGateException:
+    except AxiomException:
         raise
     except Exception as update_error:
-        raise NexusGateException(ErrorCodes.DB_QUERY_FAILED, str(update_error), 500)
+        raise AxiomException(ErrorCodes.DB_QUERY_FAILED, str(update_error), 500)
 
 
 @router.delete("/{db_name}/{table_name}/rows")
@@ -711,7 +711,7 @@ async def delete_rows(
             db_name, f"{table_name}/rows", request
         )
     if auth.mode == ServerMode.READONLY:
-        raise NexusGateException(
+        raise AxiomException(
             ErrorCodes.AUTH_INSUFFICIENT_MODE, "Read-only limits apply", 403
         )
 
@@ -724,7 +724,7 @@ async def delete_rows(
             engine, db_cfg, auth, request, db_name, sql, sql_params
         )
         return success_response(request, {"affected_rows": data["affected_rows"]})
-    except NexusGateException:
+    except AxiomException:
         raise
     except Exception as exec_error:
-        raise NexusGateException(ErrorCodes.DB_QUERY_FAILED, str(exec_error), 500)
+        raise AxiomException(ErrorCodes.DB_QUERY_FAILED, str(exec_error), 500)

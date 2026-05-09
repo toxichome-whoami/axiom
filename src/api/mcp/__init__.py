@@ -1,4 +1,4 @@
-"""MCP (Model Context Protocol) server integration for NexusGate."""
+"""MCP (Model Context Protocol) server integration for Axiom."""
 
 from api.mcp.router import router
 

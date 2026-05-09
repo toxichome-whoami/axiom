@@ -113,7 +113,7 @@ class ErrorDetails(BaseModel):
 
 
 class ResponseEnvelope(BaseModel):
-    """The master root wrapper wrapping ALL REST payloads dispatched by NexusGate."""
+    """The master root wrapper wrapping ALL REST payloads dispatched by Axiom."""
 
     model_config = ConfigDict()
 

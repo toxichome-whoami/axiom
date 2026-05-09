@@ -8,13 +8,13 @@ import aiofiles
 import structlog
 from fastapi import Depends, Path, Query, Request
 
-from api.errors import ErrorCodes, NexusGateException
+from api.errors import ErrorCodes, AxiomException
 from api.federation.proxy import _resolve_server, proxy_request
 from api.responses import success_response
 from api.storage.chunked_upload import ChunkedUploadManager
 from cache import CacheManager
 from config.provider import get_config_dependency
-from config.schema import NexusGateConfig
+from config.schema import AxiomConfig
 from server.middleware.auth import get_auth_context
 from utils.size_parser import format_size, normalize_size, parse_size
 from utils.types import AuthContext, ServerMode
@@ -82,7 +82,7 @@ def _is_federated(alias: str) -> bool:
 def _get_storage_path(alias: str, rel_path: Optional[str], auth: AuthContext) -> str:
     rel_path = rel_path or ""
     if "*" not in auth.fs_scope and alias not in auth.fs_scope:
-        raise NexusGateException(
+        raise AxiomException(
             ErrorCodes.AUTH_SCOPE_DENIED,
             f"API key does not have access to storage '{alias}'",
             403,
@@ -90,7 +90,7 @@ def _get_storage_path(alias: str, rel_path: Optional[str], auth: AuthContext) ->
 
     storage_cfg = _STORAGE_CONFIGS.get(alias)
     if not storage_cfg:
-        raise NexusGateException(
+        raise AxiomException(
             ErrorCodes.FS_NOT_FOUND, f"Storage '{alias}' not found", 404
         )
 
@@ -98,7 +98,7 @@ def _get_storage_path(alias: str, rel_path: Optional[str], auth: AuthContext) ->
     target_path = os.path.realpath(os.path.join(base_path, rel_path.lstrip("/")))
 
     if not target_path.startswith(base_path):
-        raise NexusGateException(
+        raise AxiomException(
             ErrorCodes.INPUT_PATH_TRAVERSAL, "Path traversal attempt detected", 400
         )
 
@@ -206,7 +206,7 @@ async def _process_streamed_chunk(
             await f.close()
             if os.path.exists(target_path):
                 os.remove(target_path)
-            raise NexusGateException(e.code, e.message, 400)
+            raise AxiomException(e.code, e.message, 400)
 
     await f.write(chunk)
 
@@ -214,7 +214,7 @@ async def _process_streamed_chunk(
         await f.close()
         if os.path.exists(target_path):
             os.remove(target_path)
-        raise NexusGateException(
+        raise AxiomException(
             ErrorCodes.FS_FILE_TOO_LARGE,
             "Target block supersedes max memory layout.",
             413,
@@ -249,7 +249,7 @@ async def _handle_direct_upload(
     try:
         scanner.validate_filename(filename)
     except ScannerRejectError as e:
-        raise NexusGateException(e.code, e.message, 400)
+        raise AxiomException(e.code, e.message, 400)
 
     target_path = _get_storage_path(alias, path, auth)
     os.makedirs(os.path.dirname(target_path), exist_ok=True)
@@ -269,7 +269,7 @@ async def _handle_direct_upload(
             api_key=auth.api_key_name,
             ip=request.client.host if request.client else "",
             request_id=getattr(request.state, "request_id", "-"),
-            webhook_token=request.headers.get("X-NexusGate-Webhook-Token"),
+            webhook_token=request.headers.get("X-Axiom-Webhook-Token"),
         ),
     )
 
@@ -301,7 +301,7 @@ async def _handle_form_upload(
             or not isinstance(chunk_index_raw, str)
             or not isinstance(chunk_hash, str)
         ):
-            raise NexusGateException(
+            raise AxiomException(
                 ErrorCodes.INPUT_SCHEMA_INVALID, "Invalid chunk upload parameters", 400
             )
 
@@ -312,7 +312,7 @@ async def _handle_form_upload(
 
         session = await ChunkedUploadManager.get_session(upload_id)
         if not session:
-            raise NexusGateException(
+            raise AxiomException(
                 ErrorCodes.FS_UPLOAD_EXPIRED, "Upload session not found or expired", 410
             )
 
@@ -340,7 +340,7 @@ async def _handle_form_upload(
             },
         )
 
-    raise NexusGateException(
+    raise AxiomException(
         ErrorCodes.INPUT_SCHEMA_INVALID, "Invalid form action binding", 400
     )
 
@@ -359,7 +359,7 @@ async def _action_initiate(
         scanner.validate_filename(filename)
         scanner.validate_size(body.get("total_size", 0))
     except ScannerRejectError as e:
-        raise NexusGateException(
+        raise AxiomException(
             e.code, e.message, 400 if e.code != ErrorCodes.FS_FILE_TOO_LARGE else 413
         )
 
@@ -367,7 +367,7 @@ async def _action_initiate(
 
     storage_cfg = _STORAGE_CONFIGS.get(alias)
     if not storage_cfg:
-        raise NexusGateException(
+        raise AxiomException(
             ErrorCodes.FS_NOT_FOUND, f"Storage alias not found: {alias}", 404
         )
 
@@ -418,13 +418,13 @@ async def _action_finalize(request: Request, body: dict, alias: str, auth: AuthC
     """Executes post-merge scripts invoking event hooks."""
     upload_id = body.get("upload_id")
     if not isinstance(upload_id, str):
-        raise NexusGateException(
+        raise AxiomException(
             ErrorCodes.INPUT_SCHEMA_INVALID, "Missing or invalid upload_id", 400
         )
 
     session = await ChunkedUploadManager.get_session(upload_id)
     if not session:
-        raise NexusGateException(
+        raise AxiomException(
             ErrorCodes.FS_UPLOAD_EXPIRED, "Upload session not found or expired", 410
         )
 
@@ -442,7 +442,7 @@ async def _action_finalize(request: Request, body: dict, alias: str, auth: AuthC
             api_key=auth.api_key_name,
             ip=request.client.host if request.client else "",
             request_id=getattr(request.state, "request_id", "-"),
-            webhook_token=request.headers.get("X-NexusGate-Webhook-Token"),
+            webhook_token=request.headers.get("X-Axiom-Webhook-Token"),
         ),
     )
     return success_response(
@@ -462,7 +462,7 @@ async def _handle_json_upload(
     if action == "status":
         upload_id = body.get("upload_id")
         if not isinstance(upload_id, str):
-            raise NexusGateException(
+            raise AxiomException(
                 ErrorCodes.INPUT_SCHEMA_INVALID, "Missing or invalid upload_id", 400
             )
         return success_response(
@@ -472,12 +472,12 @@ async def _handle_json_upload(
     if action == "cancel":
         upload_id = body.get("upload_id")
         if not isinstance(upload_id, str):
-            raise NexusGateException(
+            raise AxiomException(
                 ErrorCodes.INPUT_SCHEMA_INVALID, "Missing or invalid upload_id", 400
             )
         await ChunkedUploadManager.cancel(upload_id)
         return success_response(request, {"action": "cancel", "upload_id": upload_id})
-    raise NexusGateException(
+    raise AxiomException(
         ErrorCodes.INPUT_SCHEMA_INVALID, "Invalid block definition", 400
     )
 
@@ -552,7 +552,7 @@ async def _calculate_storage_usage(storage_path: str, limit_str: str) -> dict:
 async def list_storages(
     request: Request,
     auth: AuthContext = Depends(get_auth_context),
-    config: NexusGateConfig = Depends(get_config_dependency),
+    config: AxiomConfig = Depends(get_config_dependency),
 ):
     storages = []
     for name, storage_cfg in config.storage.items():
@@ -633,17 +633,17 @@ async def list_folder(
         try:
             entries = list(os.scandir(target_path))
         except FileNotFoundError:
-            raise NexusGateException(ErrorCodes.FS_PATH_NOT_FOUND, "Missing Node", 404)
+            raise AxiomException(ErrorCodes.FS_PATH_NOT_FOUND, "Missing Node", 404)
         except NotADirectoryError:
-            raise NexusGateException(
+            raise AxiomException(
                 ErrorCodes.FS_PATH_NOT_FOUND, "Path rejects dict schema.", 400
             )
         except PermissionError:
-            raise NexusGateException(
+            raise AxiomException(
                 ErrorCodes.AUTH_SCOPE_DENIED, "Permission denied reading path.", 403
             )
         except Exception as e:
-            raise NexusGateException(
+            raise AxiomException(
                 ErrorCodes.SERVER_INTERNAL,
                 f"Failed to list directory: {str(e)}",
                 500,
@@ -735,7 +735,7 @@ async def upload_file(
     if _is_federated(alias):
         return await proxy_request(alias, "upload", request, False)
     if auth.mode == ServerMode.READONLY:
-        raise NexusGateException(
+        raise AxiomException(
             ErrorCodes.AUTH_INSUFFICIENT_MODE, "Permissions block mutators.", 403
         )
 
@@ -750,7 +750,7 @@ async def _execute_bulk_actions(
 ) -> dict:
     if body.action == "bulk_delete":
         if not body.sources:
-            raise NexusGateException(
+            raise AxiomException(
                 ErrorCodes.INPUT_SCHEMA_INVALID, "Missing 'sources'", 400
             )
         results = await bulk_delete_paths(
@@ -762,7 +762,7 @@ async def _execute_bulk_actions(
 
     if body.action == "bulk_move":
         if not body.operations:
-            raise NexusGateException(
+            raise AxiomException(
                 ErrorCodes.INPUT_SCHEMA_INVALID, "Missing 'operations'", 400
             )
         real_ops = [
@@ -782,7 +782,7 @@ async def _execute_bulk_actions(
                     res["target"] = body.operations[i].get("target")
         return {"action": "bulk_move", "results": results}
 
-    raise NexusGateException(
+    raise AxiomException(
         ErrorCodes.INPUT_SCHEMA_INVALID, f"Invalid bulk action: {body.action}", 400
     )
 
@@ -797,7 +797,7 @@ async def execute_action(
     if _is_federated(alias):
         return await proxy_request(alias, "action", request, False)
     if auth.mode == ServerMode.READONLY and body.action not in ("info", "exists"):
-        raise NexusGateException(
+        raise AxiomException(
             ErrorCodes.AUTH_INSUFFICIENT_MODE,
             "Mutation policies restricted globally.",
             403,
@@ -856,6 +856,6 @@ async def execute_action(
             },
         )
 
-    raise NexusGateException(
+    raise AxiomException(
         ErrorCodes.SERVER_INTERNAL, f"Action {body.action} not yet implemented.", 501
     )

@@ -90,7 +90,7 @@ class RedisCache:
         if cls._client is None:
             if not HAS_REDIS:
                 raise RuntimeError(
-                    "Redis dependency not found. Install nexusgate[redis]"
+                    "Redis dependency not found. Install axiom[redis]"
                 )
             config = GlobalConfigProvider().get_config()
             url = config.cache.redis_url

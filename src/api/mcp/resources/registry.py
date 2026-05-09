@@ -25,7 +25,7 @@ class ResourceRegistry:
 
     def __init__(self):
         self._resources: list[Resource] = []
-        # Maps a URI prefix (e.g. "nexusgate://db/") to its dedicated reading function
+        # Maps a URI prefix (e.g. "axiom://db/") to its dedicated reading function
         self._readers: dict[str, ResourceReader] = {}
 
     def clear(self) -> None:

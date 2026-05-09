@@ -1,11 +1,11 @@
-# NexusGate Webhooks Guide
+# Axiom Webhooks Guide
 
-NexusGate features a high-performance event streaming system that can notify external applications of any database or file system activity in real-time.
+Axiom features a high-performance event streaming system that can notify external applications of any database or file system activity in real-time.
 
 ## 1. Event Flow
 
 1.  **Trigger**: An operation (INSERT, UPDATE, DELETE, UPLOAD, etc.) is successfully committed.
-2.  **Auth**: The request must include the webhook secret as a Base64-encoded token in the `X-NexusGate-Webhook-Token` header.
+2.  **Auth**: The request must include the webhook secret as a Base64-encoded token in the `X-Axiom-Webhook-Token` header.
 3.  **Match**: The event is matched against the `rule` patterns defined in `config.toml`, and the decoded token is verified against the webhook's stored secret.
 4.  **Queue**: If matched and verified, the event is placed in a non-blocking internal queue.
 5.  **Delivery**: A background worker picks up the event and sends it to the configured `url` via HTTP POST, signed with HMAC-SHA256.
@@ -34,7 +34,7 @@ enabled = true
 When sending requests to the gateway that should trigger webhooks, the client **must** include the webhook secret as a Base64-encoded token:
 
 ```
-X-NexusGate-Webhook-Token: base64(your_webhook_secret)
+X-Axiom-Webhook-Token: base64(your_webhook_secret)
 ```
 
 **Node.js example:**
@@ -43,7 +43,7 @@ const webhookToken = Buffer.from('your_webhook_secret').toString('base64');
 
 headers: {
     'Authorization': `Bearer ${apiKeyToken}`,
-    'X-NexusGate-Webhook-Token': webhookToken,
+    'X-Axiom-Webhook-Token': webhookToken,
 }
 ```
 
@@ -53,18 +53,18 @@ The gateway decodes the Base64 token and verifies it against the stored secret u
 
 All webhooks are delivered as JSON POST requests with signature headers.
 
-**Headers sent by NexusGate:**
+**Headers sent by Axiom:**
 | Header | Description |
 |--------|-------------|
-| `X-NexusGate-Signature` | `sha256=<HMAC-SHA256 hex digest>` |
-| `X-NexusGate-Timestamp` | Unix timestamp of delivery |
+| `X-Axiom-Signature` | `sha256=<HMAC-SHA256 hex digest>` |
+| `X-Axiom-Timestamp` | Unix timestamp of delivery |
 
 **Payload body:**
 ```json
 {
   "event_id": "evt_01HPC9...",
   "timestamp": "2024-03-28T15:00:00Z",
-  "source": "nexusgate-local",
+  "source": "axiom-local",
   "event": {
     "module": "db",
     "operation": "write",
@@ -88,7 +88,7 @@ All webhooks are delivered as JSON POST requests with signature headers.
 
 ## 5. Signature Verification (Your App)
 
-To ensure a webhook was actually sent by NexusGate, **verify the HMAC-SHA256 signature**.
+To ensure a webhook was actually sent by Axiom, **verify the HMAC-SHA256 signature**.
 
 **Node.js example:**
 ```javascript
@@ -111,7 +111,7 @@ function verifyWebhook(rawBody, signatureHeader, secret) {
 
 | Layer | Mechanism |
 |-------|-----------|
-| **Client → Gateway** | Webhook secret sent as Base64 in `X-NexusGate-Webhook-Token` header |
+| **Client → Gateway** | Webhook secret sent as Base64 in `X-Axiom-Webhook-Token` header |
 | **Gateway verification** | Decodes Base64, compares with `hmac.compare_digest()` (timing-safe) |
 | **Gateway → Your App** | Payload signed with `HMAC-SHA256(secret, body)` |
 | **Your App verification** | Recomputes HMAC and compares signatures |
@@ -121,6 +121,6 @@ function verifyWebhook(rawBody, signatureHeader, secret) {
 ## 7. Reliability and Retries
 
 If a webhook delivery fails (non-2xx response or timeout):
-- **Retries**: NexusGate will retry up to `max_retries` (default: 3) times.
+- **Retries**: Axiom will retry up to `max_retries` (default: 3) times.
 - **Exponential Backoff**: Wait `retry_delay ^ attempt` seconds between retries.
 - **Queue Buffering**: Events are buffered in memory up to `queue_size`. Beyond this, new events are dropped to prevent memory exhaustion.

@@ -5,7 +5,7 @@ from typing import Any, Dict, Optional
 
 import aiofiles
 
-from api.errors import ErrorCodes, NexusGateException
+from api.errors import ErrorCodes, AxiomException
 from cache import CacheManager
 
 
@@ -44,7 +44,7 @@ class ChunkedUploadManager:
                 chunk_path = os.path.join(temp_dir, f"chunk_{i}")
                 if not os.path.exists(chunk_path):
                     cls._cleanup_failed_reassembly(temp_dir, target_path)
-                    raise NexusGateException(
+                    raise AxiomException(
                         ErrorCodes.FS_UPLOAD_INVALID, f"Missing chunk sequence {i}", 400
                     )
 
@@ -60,7 +60,7 @@ class ChunkedUploadManager:
         if session.get("checksum_sha256") and final_hash != session["checksum_sha256"]:
             if os.path.exists(target_path):
                 os.remove(target_path)
-            raise NexusGateException(
+            raise AxiomException(
                 ErrorCodes.FS_CHECKSUM_MISMATCH,
                 "Final file checksum validation failed",
                 400,
@@ -85,7 +85,7 @@ class ChunkedUploadManager:
     ):
         session = await cls.get_session(upload_id)
         if not session:
-            raise NexusGateException(
+            raise AxiomException(
                 ErrorCodes.FS_UPLOAD_EXPIRED, "Upload session missing or expired", 404
             )
 
@@ -101,7 +101,7 @@ class ChunkedUploadManager:
 
         if sha256_hash.hexdigest() != chunk_hash:
             os.remove(temp_path)
-            raise NexusGateException(
+            raise AxiomException(
                 ErrorCodes.FS_CHECKSUM_MISMATCH, "Chunk checksum block corrupted", 400
             )
 
@@ -113,12 +113,12 @@ class ChunkedUploadManager:
     async def finalize(cls, upload_id: str, target_path: str):
         session = await cls.get_session(upload_id)
         if not session:
-            raise NexusGateException(
+            raise AxiomException(
                 ErrorCodes.FS_UPLOAD_EXPIRED, "Upload session unavailable", 404
             )
 
         if len(session["uploaded_chunks"]) < session["total_chunks"]:
-            raise NexusGateException(
+            raise AxiomException(
                 ErrorCodes.FS_UPLOAD_INVALID, "Incomplete blob sequence detected", 400
             )
 

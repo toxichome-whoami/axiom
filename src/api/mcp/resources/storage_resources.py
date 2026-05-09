@@ -3,7 +3,7 @@ Storage Resource Provider for MCP.
 
 Exposes storage alias configuration constraints and metrics as MCP resources.
 
-Resource URI Format: nexusgate://fs/{alias}/info
+Resource URI Format: axiom://fs/{alias}/info
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ from mcp.types import Resource, TextResourceContents
 logger = structlog.get_logger()
 
 # Constants
-URI_PROTOCOL_PREFIX = "nexusgate://fs/"
+URI_PROTOCOL_PREFIX = "axiom://fs/"
 URI_INFO_SUFFIX = "/info"
 
 

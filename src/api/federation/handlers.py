@@ -1,10 +1,10 @@
 from fastapi import Depends, Request
 
-from api.errors import ErrorCodes, NexusGateException
+from api.errors import ErrorCodes, AxiomException
 from api.federation.state import FederationStateManager
 from api.responses import success_response
 from config.provider import get_config_dependency
-from config.schema import NexusGateConfig
+from config.schema import AxiomConfig
 from server.middleware.auth import require_admin
 from utils.types import AuthContext
 
@@ -63,12 +63,12 @@ def _build_incoming_federation(config) -> list:
 async def list_servers(
     request: Request,
     auth: AuthContext = Depends(require_admin),
-    config: NexusGateConfig = Depends(get_config_dependency),
+    config: AxiomConfig = Depends(get_config_dependency),
 ):
     """Show full federation status: outgoing connections + incoming keys."""
 
     if not config.features.federation:
-        raise NexusGateException(
+        raise AxiomException(
             ErrorCodes.SERVER_INTERNAL, "Federation is disabled on this instance.", 501
         )
 

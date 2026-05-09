@@ -63,7 +63,7 @@ async def _process_dispatch_task(
     request_headers = {
         "Content-Type": "application/json",
         config.webhooks.secret_header: signature,
-        "X-NexusGate-Timestamp": str(int(time.time())),
+        "X-Axiom-Timestamp": str(int(time.time())),
         **headers,
     }
 

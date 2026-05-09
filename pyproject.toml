@@ -1,5 +1,5 @@
 [project]
-name = "nexusgate"
+name = "axiom"
 version = "1.0.3"
 description = "Industrial-grade unified API gateway for databases and file storage."
 readme = "README.md"
@@ -38,7 +38,7 @@ oracle = ["cx_Oracle>=8.3.0"]
 mcp = ["mcp>=1.2.0"]
 
 [project.scripts]
-nexusgate = "main:app"
+axiom = "main:app"
 
 [build-system]
 requires = ["hatchling"]

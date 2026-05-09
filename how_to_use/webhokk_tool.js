@@ -31,11 +31,11 @@ function loadSettings() {
     );
 
     return {
-        apiKeyName: settings.NEXUSGATE_KEY_NAME || "example",
-        apiKeySecret: settings.NEXUSGATE_KEY_SECRET || "your_secret_key_here",
-        webhookSecret: settings.NEXUSGATE_WEBHOOK_SECRET || "your_webhook_secret_here",
-        baseUrl: settings.NEXUSGATE_URL || "http://localhost:4500",
-        dbName: settings.NEXUSGATE_DB || "example_db",
+        apiKeyName: settings.AXIOM_KEY_NAME || "example",
+        apiKeySecret: settings.AXIOM_KEY_SECRET || "your_secret_key_here",
+        webhookSecret: settings.AXIOM_WEBHOOK_SECRET || "your_webhook_secret_here",
+        baseUrl: settings.AXIOM_URL || "http://localhost:4500",
+        dbName: settings.AXIOM_DB || "example_db",
         localPort: parseInt(settings.TOOL_PORT || "3111"),
         webhookPath: '/api/sync'
     };
@@ -50,7 +50,7 @@ const readlineInterface = readline.createInterface({
 });
 
 /**
- * Standard communications handler for NexusGate API.
+ * Standard communications handler for Axiom API.
  */
 async function apiPost(endpoint, requestBody = null, method = 'POST') {
     const targetUrl = new URL(`${CONFIG.baseUrl}${endpoint}`);
@@ -62,7 +62,7 @@ async function apiPost(endpoint, requestBody = null, method = 'POST') {
         headers: {
             'Authorization': AUTH_TOKEN,
             'Content-Type': 'application/json',
-            'X-NexusGate-Webhook-Token': Buffer.from(CONFIG.webhookSecret).toString('base64'),
+            'X-Axiom-Webhook-Token': Buffer.from(CONFIG.webhookSecret).toString('base64'),
             ...(requestBody ? { 'Content-Length': Buffer.byteLength(payload) } : {})
         }
     };
@@ -147,7 +147,7 @@ function handleIncomingWebhook(req, res) {
 }
 
 function dispatchWebhookData(req, res, rawPayload) {
-    const signature = req.headers['x-nexusgate-signature'];
+    const signature = req.headers['x-axiom-signature'];
     
     if (!isSignatureValid(rawPayload, signature)) {
         console.log(`\n❌ [SECURITY ALERT] Blocking invalid HMAC Signature!`);

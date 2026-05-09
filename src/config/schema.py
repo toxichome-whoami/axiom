@@ -46,7 +46,7 @@ class LoggingConfig(BaseModel):
     level: Literal["TRACE", "DEBUG", "INFO", "WARN", "ERROR"] = "INFO"
     format: Literal["json", "pretty"] = "json"
     directory: str = "./logs"
-    file_prefix: str = "nexusgate"
+    file_prefix: str = "axiom"
     max_file_size: str = "50 MB"
     max_files: int = 5
     stdout: bool = True
@@ -92,7 +92,7 @@ class PerformanceConfig(BaseModel):
 class MCPConfig(BaseModel):
     """Configuration for the Model Context Protocol (MCP) server."""
 
-    server_name: str = "nexusgate"
+    server_name: str = "axiom"
     server_version: str = "1.0.3"  # Mirrors src/__init__.py __version__
     max_result_rows: int = 50
     max_directory_entries: int = 100
@@ -110,7 +110,7 @@ class WebhookGlobalConfig(BaseModel):
     max_retries: int = 3
     retry_delay: int = 2
     queue_size: int = 10000
-    secret_header: str = "X-NexusGate-Signature"
+    secret_header: str = "X-Axiom-Signature"
 
 
 class WebhookDefConfig(BaseModel):
@@ -233,7 +233,7 @@ class CircuitBreakerConfig(BaseModel):
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-class NexusGateConfig(BaseModel):
+class AxiomConfig(BaseModel):
     """The absolute Master Layout tracking all active operational parameters per-boot."""
 
     server: ServerConfig = Field(default_factory=ServerConfig)

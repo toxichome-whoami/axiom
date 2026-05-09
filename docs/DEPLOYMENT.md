@@ -1,4 +1,4 @@
-# NexusGate Deployment Guide
+# Axiom Deployment Guide
 
 ## Requirements
 
@@ -12,8 +12,8 @@
 
 ```bash
 # 1. Clone the repo
-git clone https://github.com/yourorg/nexusgate
-cd nexusgate
+git clone https://github.com/yourorg/axiom
+cd axiom
 
 # 2. Install dependencies
 pip install -r requirements.txt
@@ -34,7 +34,7 @@ python src/main.py
 
 ```bash
 # Build the image
-docker build -t nexusgate:latest .
+docker build -t axiom:latest .
 
 # Run with a local config
 docker run -d \
@@ -43,7 +43,7 @@ docker run -d \
   -v $(pwd)/storage:/storage \
   -v $(pwd)/logs:/logs \
   -v $(pwd)/data:/data \
-  nexusgate:latest
+  axiom:latest
 ```
 
 ### Docker Compose (with Redis)
@@ -105,14 +105,14 @@ server {
 
 ```ini
 [Unit]
-Description=NexusGate API Gateway
+Description=Axiom API Gateway
 After=network.target
 
 [Service]
 Type=simple
-User=nexusgate
-WorkingDirectory=/opt/nexusgate
-ExecStart=/opt/nexusgate/.venv/bin/python src/main.py --config /etc/nexusgate/config.toml
+User=axiom
+WorkingDirectory=/opt/axiom
+ExecStart=/opt/axiom/.venv/bin/python src/main.py --config /etc/axiom/config.toml
 Restart=always
 RestartSec=5
 StandardOutput=journal
@@ -124,20 +124,20 @@ WantedBy=multi-user.target
 
 ```bash
 sudo systemctl daemon-reload
-sudo systemctl enable nexusgate
-sudo systemctl start nexusgate
+sudo systemctl enable axiom
+sudo systemctl start axiom
 ```
 
 ---
 
 ## Monitoring
 
-NexusGate exposes OpenMetrics at `/metrics` (requires `features.metrics = true`).
+Axiom exposes OpenMetrics at `/metrics` (requires `features.metrics = true`).
 
 **Prometheus scrape config:**
 ```yaml
 scrape_configs:
-  - job_name: nexusgate
+  - job_name: axiom
     static_configs:
       - targets: ["localhost:4500"]
     metrics_path: /metrics
@@ -145,10 +145,10 @@ scrape_configs:
 ```
 
 **Key metrics to alert on:**
-- `nexusgate_memory_mb` > 450 MB (approaching limit)
-- `nexusgate_db_query_errors_total` increasing rate
-- `nexusgate_rate_limit_hits_total` spike (potential attack)
-- `nexusgate_webhook_failed_total` increasing (delivery issues)
+- `axiom_memory_mb` > 450 MB (approaching limit)
+- `axiom_db_query_errors_total` increasing rate
+- `axiom_rate_limit_hits_total` spike (potential attack)
+- `axiom_webhook_failed_total` increasing (delivery issues)
 
 ---
 
@@ -162,7 +162,7 @@ git pull origin main
 pip install -r requirements.txt
 
 # Restart
-sudo systemctl restart nexusgate
+sudo systemctl restart axiom
 ```
 
 > [!NOTE]

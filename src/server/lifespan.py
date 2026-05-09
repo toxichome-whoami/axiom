@@ -83,7 +83,7 @@ async def lifespan(app: FastAPI):
     await _init_storage_backends(config)
 
     # 2. Launch Daemons
-    logger.info("Starting NexusGate", pid=pid)
+    logger.info("Starting Axiom", pid=pid)
     _start_background_daemons(config)
 
     # Yield control to the ASGI server
@@ -105,4 +105,4 @@ async def lifespan(app: FastAPI):
         for client in app.state.http_clients.values():
             await client.aclose()
 
-    logger.info("NexusGate stopped", pid=pid)
+    logger.info("Axiom stopped", pid=pid)

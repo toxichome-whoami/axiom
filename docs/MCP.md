@@ -1,6 +1,6 @@
-# NexusGate MCP Guide
+# Axiom MCP Guide
 
-MCP (Model Context Protocol) lets AI assistants like Claude, Gemini, and Copilot securely interact with your NexusGate databases and files through a standardized SSE-based interface.
+MCP (Model Context Protocol) lets AI assistants like Claude, Gemini, and Copilot securely interact with your Axiom databases and files through a standardized SSE-based interface.
 
 ---
 
@@ -25,7 +25,7 @@ MCP (Model Context Protocol) lets AI assistants like Claude, Gemini, and Copilot
 mcp = true
 
 [mcp]
-server_name = "nexusgate"
+server_name = "axiom"
 server_version = "1.0.2"
 max_result_rows = 50
 max_directory_entries = 100
@@ -47,7 +47,7 @@ Or configure Claude Desktop:
 // ~/.config/Claude/claude_desktop_config.json
 {
   "mcpServers": {
-    "nexusgate": {
+    "axiom": {
       "command": "mcp",
       "args": ["connect", "http://your-server.com:4500/api/v1/mcp/sse"],
       "env": {
@@ -91,7 +91,7 @@ sequenceDiagram
 ### Step-by-Step
 
 1. The client opens an SSE connection (`GET /sse`) with an API key
-2. NexusGate authenticates the key via the same auth pipeline as REST (ban check, dynamic/static key lookup)
+2. Axiom authenticates the key via the same auth pipeline as REST (ban check, dynamic/static key lookup)
 3. The `AuthContext` is stored in a per-session `ContextVar` — all subsequent tool calls inherit its permissions
 4. The SSE stream stays open — the client sends JSON-RPC messages and receives responses over the same connection
 5. Tool calls (`list_tables`, `query_database`, etc.) go through the same validation pipeline as REST API calls
@@ -105,7 +105,7 @@ sequenceDiagram
 
 ```toml
 [mcp]
-server_name = "nexusgate"          # Server identity sent to AI clients
+server_name = "axiom"          # Server identity sent to AI clients
 server_version = "1.0.3"           # Version advertised in initialization
 max_result_rows = 50               # Max rows returned per query
 max_directory_entries = 100        # Max files listed per directory
@@ -168,8 +168,8 @@ Resources provide structured context that AI models can read inline (without too
 
 | Resource URI | Description |
 |-------------|-------------|
-| `nexusgate://db/{alias}/schema` | Full database schema (tables, columns, types, PKs) |
-| `nexusgate://fs/{alias}/info` | Storage volume configuration and limits |
+| `axiom://db/{alias}/schema` | Full database schema (tables, columns, types, PKs) |
+| `axiom://fs/{alias}/info` | Storage volume configuration and limits |
 
 Resources respect the same auth scopes as tools — a key without access to a database cannot read its schema resource.
 
@@ -224,7 +224,7 @@ Rate limits are per API key, not per connection.
 ```json
 {
   "mcpServers": {
-    "nexusgate": {
+    "axiom": {
       "command": "mcp",
       "args": ["connect", "http://localhost:4500/api/v1/mcp/sse"],
       "env": {
@@ -361,5 +361,5 @@ Fix: Ensure reverse proxy (LiteSpeed/NGINX) has adequate timeout settings:
 An internal error occurred during tool execution. The error is sanitized — no stack traces are leaked to the client.
 
 ```
-Fix: Check the NexusGate server logs for the full error details.
+Fix: Check the Axiom server logs for the full error details.
 ```
