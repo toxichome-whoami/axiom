@@ -1,6 +1,6 @@
 [project]
 name = "nexusgate"
-version = "1.0.2"
+version = "1.0.3"
 description = "Industrial-grade unified API gateway for databases and file storage."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -9,6 +9,7 @@ authors = [{ name = "User", email = "user@example.com" }]
 dependencies = [
     "fastapi>=0.110.0",
     "uvicorn[standard]>=0.27.1",
+    "a2wsgi>=1.10.7",
     "pydantic>=2.6.0",
     "pydantic-settings>=2.2.1",
     "watchfiles>=0.21.0",
@@ -25,6 +26,8 @@ dependencies = [
     "asyncpg>=0.29.0",
     "aiomysql>=0.2.0",
     "aiosqlite>=0.20.0",
+    "orjson>=3.9.15",
+    "httptools>=0.6.1",
 ]
 
 [project.optional-dependencies]
@@ -32,6 +35,7 @@ redis = ["redis[hiredis]>=5.0.0"]
 image = ["Pillow>=10.2.0"]
 mssql = ["aioodbc>=0.5.0", "pyodbc>=5.1.0"]
 oracle = ["cx_Oracle>=8.3.0"]
+mcp = ["mcp>=1.2.0"]
 
 [project.scripts]
 nexusgate = "main:app"

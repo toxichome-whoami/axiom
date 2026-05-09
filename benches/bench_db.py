@@ -162,7 +162,8 @@ async def _run_benchmark_task(
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _p95(latencies: List[float]) -> float:
-    if not latencies: return 0.0
+    if not latencies:
+       return 0.0
     return sorted(latencies)[int(len(latencies) * 0.95)]
 
 def _print_report(res: Dict[str, Any]):
