@@ -37,6 +37,7 @@ server_version = "1.0.3"
 
 # ─── Logging ──────────────────────────────────────────
 [logging]
+enabled = true                   # false = suppress all logging
 level = "INFO"                   # TRACE | DEBUG | INFO | WARNING | ERROR
 format = "json"                  # json (production) | pretty (development)
 directory = "./logs"             # Where to store log files

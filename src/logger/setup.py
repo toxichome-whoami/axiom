@@ -18,10 +18,14 @@ request_id_ctx = contextvars.ContextVar("request_id", default="-")
 # ─────────────────────────────────────────────────────────────────────────────
 
 
+# Register a TRACE level below DEBUG in Python's logging system
+TRACE_LEVEL = logging.DEBUG - 5
+logging.addLevelName(TRACE_LEVEL, "TRACE")
+
+
 def _resolve_log_level(level_name: str) -> int:
-    """Safely maps string configuration flags to Python native numerical log levels."""
     log_level_map = {
-        "TRACE": logging.DEBUG,
+        "TRACE": TRACE_LEVEL,
         "DEBUG": logging.DEBUG,
         "INFO": logging.INFO,
         "WARN": logging.WARNING,
@@ -62,10 +66,14 @@ def _build_formatter(format_type: str):
 
 
 def setup_logging():
-    """Initializes the global python logging and structlog infrastructure."""
     try:
         config = GlobalConfigProvider().get_config()
     except RuntimeError:
+        return
+
+    if not config.logging.enabled:
+        logging.basicConfig(level=logging.CRITICAL + 10, handlers=[logging.NullHandler()])
+        structlog.configure(wrapper_class=structlog.stdlib.BoundLogger)
         return
 
     os.makedirs(config.logging.directory, exist_ok=True)
@@ -100,3 +108,12 @@ def setup_logging():
         wrapper_class=structlog.stdlib.BoundLogger,
         cache_logger_on_first_use=True,
     )
+
+    # Register TRACE level with structlog
+    try:
+        from structlog._log_levels import _LEVEL_TO_NAME, _NAME_TO_LEVEL
+
+        _LEVEL_TO_NAME[TRACE_LEVEL] = "TRACE"
+        _NAME_TO_LEVEL["TRACE"] = TRACE_LEVEL
+    except Exception:
+        pass

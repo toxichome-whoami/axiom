@@ -42,6 +42,7 @@ class FeaturesConfig(BaseModel):
 class LoggingConfig(BaseModel):
     """Formats payload retention policies targeting physical disk operations."""
 
+    enabled: bool = True
     level: Literal["TRACE", "DEBUG", "INFO", "WARN", "ERROR"] = "INFO"
     format: Literal["json", "pretty"] = "json"
     directory: str = "./logs"
