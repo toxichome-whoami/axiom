@@ -8,13 +8,14 @@ import aiofiles
 import structlog
 from fastapi import Depends, Path, Query, Request
 
-from api.errors import ErrorCodes, AxiomException
+from api.errors import AxiomException, ErrorCodes
 from api.federation.proxy import _resolve_server, proxy_request
-from api.responses import success_response
+from api.responses import is_protobuf_requested, protobuf_or_json, success_response
 from api.storage.chunked_upload import ChunkedUploadManager
 from cache import CacheManager
 from config.provider import get_config_dependency
 from config.schema import AxiomConfig
+from encoding.proto_utils import list_dir_to_proto
 from server.middleware.auth import get_auth_context
 from utils.size_parser import format_size, normalize_size, parse_size
 from utils.types import AuthContext, ServerMode
@@ -613,20 +614,23 @@ async def list_folder(
     if cached is not None:
         total, all_items = cached
         page = all_items[offset : offset + limit]
-        return success_response(
-            request,
-            {
-                "storage": alias,
-                "path": path,
-                "items": page,
-                "pagination": {
-                    "total": total,
-                    "limit": limit,
-                    "offset": offset,
-                    "has_more": (offset + limit) < total,
-                },
+        json_payload = {
+            "storage": alias,
+            "path": path,
+            "items": page,
+            "pagination": {
+                "total": total,
+                "limit": limit,
+                "offset": offset,
+                "has_more": (offset + limit) < total,
             },
-        )
+        }
+        if is_protobuf_requested(request):
+            proto_msg = list_dir_to_proto(total, page)
+        else:
+            proto_msg = None
+
+        return protobuf_or_json(request, proto_msg, json_payload)
 
     # Single-pass scandir with threadpool — replaces os.listdir + os.path.exists + os.path.isdir
     def _scan_directory():
@@ -678,20 +682,24 @@ async def list_folder(
     # Cache the full result so concurrent requests don't all hit the filesystem
     await CacheManager.set(cache_key, (total_items, items), ttl=2)
 
-    return success_response(
-        request,
-        {
-            "storage": alias,
-            "path": path,
-            "items": items,
-            "pagination": {
-                "total": total_items,
-                "limit": limit,
-                "offset": offset,
-                "has_more": (offset + limit) < total_items,
-            },
+    json_payload = {
+        "storage": alias,
+        "path": path,
+        "items": items,
+        "pagination": {
+            "total": total_items,
+            "limit": limit,
+            "offset": offset,
+            "has_more": (offset + limit) < total_items,
         },
-    )
+    }
+
+    if is_protobuf_requested(request):
+        proto_msg = list_dir_to_proto(total_items, items)
+    else:
+        proto_msg = None
+
+    return protobuf_or_json(request, proto_msg, json_payload)
 
 
 @router.get("/{alias}/download")

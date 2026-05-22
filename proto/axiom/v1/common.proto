@@ -1,0 +1,30 @@
+syntax = "proto3";
+package axiom.v1;
+
+import "axiom/v1/db.proto";
+import "axiom/v1/fs.proto";
+
+message ResponseEnvelope {
+  bool success = 1;
+  Meta meta = 2;
+  oneof result {
+    bytes data = 3; // Any JSON-encoded data (fallback)
+    DatabaseResponse db = 4;
+    StorageResponse fs = 5;
+    Error error = 6;
+  }
+}
+
+message Meta {
+  string request_id = 1;
+  string timestamp = 2;
+  float duration_ms = 3;
+  string server = 4;
+  string version = 5;
+}
+
+message Error {
+  string code = 1;
+  string message = 2;
+  map<string, string> details = 3;
+}

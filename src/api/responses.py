@@ -122,3 +122,32 @@ def cacheable_response(
     resp = success_response(request, data, links, start_time)
     resp.headers["Cache-Control"] = f"public, max-age={max_age}"
     return resp
+
+
+def is_protobuf_requested(request: Request) -> bool:
+    """Checks if the client specifically requested protobuf."""
+    return "application/x-protobuf" in request.headers.get("accept", "")
+
+
+def protobuf_or_json(
+    request: Request,
+    proto_message: Any,
+    json_dict: Any,
+    max_age: Optional[int] = None,
+    links: Optional[Dict[str, str]] = None,
+    start_time: Optional[float] = None,
+) -> Response:
+    """Returns protobuf bytes or JSON depending on the Accept header."""
+    if is_protobuf_requested(request) and proto_message is not None:
+        wire_bytes = proto_message.SerializeToString()
+        resp = Response(
+            content=wire_bytes,
+            media_type="application/x-protobuf",
+        )
+        if max_age is not None:
+            resp.headers["Cache-Control"] = f"public, max-age={max_age}"
+        return resp
+    else:
+        if max_age is not None:
+            return cacheable_response(request, json_dict, max_age, links, start_time)
+        return success_response(request, json_dict, links, start_time)

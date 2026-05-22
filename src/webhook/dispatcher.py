@@ -4,10 +4,12 @@ import time
 from typing import Optional, Set
 
 import httpx
+import orjson
 import structlog
 
 from api.core import metrics
 from config.provider import GlobalConfigProvider
+from encoding.proto_utils import webhook_payload_dict_to_proto
 from webhook.circuit_breaker import get_circuit_breaker
 from webhook.emitter import WebhookQueueList
 from webhook.persistence import get_persistence
@@ -43,9 +45,7 @@ def resolve_max_retries(hook_name: str, config) -> int:
     return config.webhooks.max_retries
 
 
-def _schedule_retry(
-    queue: Optional[asyncio.Queue], task: dict, delay_sec: float
-):
+def _schedule_retry(queue: Optional[asyncio.Queue], task: dict, delay_sec: float):
     """Schedules a retry task in-memory."""
 
     async def retry_routine():
@@ -87,14 +87,26 @@ async def _process_dispatch_task(
                 # Requeue for later probe
                 next_retry = time.time() + config.webhooks.circuit_breaker_recovery
                 persistence.mark_failed(event_id, attempt, "Circuit Open", next_retry)
-            _schedule_retry(
-                queue, task, config.webhooks.circuit_breaker_recovery
-            )
+            _schedule_retry(queue, task, config.webhooks.circuit_breaker_recovery)
             return
 
-    signature = generate_signature(secret, payload)
+    hook_def = config.webhook.get(hook_name)
+    delivery_format = (
+        getattr(hook_def, "delivery_format", "json") if hook_def else "json"
+    )
+
+    if delivery_format == "protobuf":
+        payload_dict = orjson.loads(payload) if isinstance(payload, str) else payload
+        proto_msg = webhook_payload_dict_to_proto(payload_dict)
+        final_payload = proto_msg.SerializeToString()
+        content_type = "application/x-protobuf"
+    else:
+        final_payload = payload
+        content_type = "application/json"
+
+    signature = generate_signature(secret, final_payload)
     request_headers = {
-        "Content-Type": "application/json",
+        "Content-Type": content_type,
         config.webhooks.secret_header: signature,
         "X-Axiom-Timestamp": str(int(time.time())),
         **headers,
@@ -104,7 +116,7 @@ async def _process_dispatch_task(
 
     try:
         response = await client.post(
-            url, content=payload, headers=request_headers, timeout=req_timeout
+            url, content=final_payload, headers=request_headers, timeout=req_timeout
         )
         response.raise_for_status()
 
@@ -181,13 +193,13 @@ def _handle_dispatch_failure(
     if persistence:
         next_retry_at = time.time() + delay
         persistence.mark_failed(task.get("event_id"), attempt + 1, error, next_retry_at)
-    
+
     if queue:
         _schedule_retry(queue, task, delay)
 
 
 async def dispatcher_worker(worker_id: int):
-    logger.info(f"Webhook dispatcher worker {worker_id} started")
+    logger.debug(f"Webhook dispatcher worker {worker_id} started")
     client = _get_client()
     queue = WebhookQueueList.get_queue()
 
@@ -204,12 +216,13 @@ async def dispatcher_worker(worker_id: int):
                 raise
             except Exception as system_error:
                 logger.error(
-                    "Dispatcher encountered unexpected error during task processing", error=str(system_error)
+                    "Dispatcher encountered unexpected error during task processing",
+                    error=str(system_error),
                 )
             finally:
                 queue.task_done()
     except asyncio.CancelledError:
-        logger.info(f"Webhook dispatcher worker {worker_id} shutting down")
+        logger.debug(f"Webhook dispatcher worker {worker_id} shutting down")
 
 
 def ensure_workers():
@@ -233,7 +246,11 @@ def ensure_workers():
 def load_pending_webhooks():
     """Recovers and loads pending/processing webhooks from SQLite on startup."""
     config = GlobalConfigProvider().get_config()
-    if not (config.features.webhook and config.webhooks.enabled and config.webhooks.persistence_enabled):
+    if not (
+        config.features.webhook
+        and config.webhooks.enabled
+        and config.webhooks.persistence_enabled
+    ):
         return
 
     persistence = get_persistence()

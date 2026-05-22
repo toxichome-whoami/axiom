@@ -130,6 +130,7 @@ class WebhookDefConfig(BaseModel):
     enabled: bool = True
     timeout: int = 0
     max_retries: int = 0
+    delivery_format: Literal["json", "protobuf"] = "json"
 
     @field_validator("rule")
     def validate_rule(cls, rule_property):

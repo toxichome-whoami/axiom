@@ -1,0 +1,26 @@
+syntax = "proto3";
+package axiom.v1;
+
+message WebhookPayload {
+  string event_id = 1;
+  string timestamp = 2;
+  string source = 3;
+  WebhookEvent event = 4;
+  WebhookTrigger trigger = 5;
+}
+
+message WebhookEvent {
+  string module = 1; // db, fs
+  string operation = 2; // read, write, delete, any
+  string resource = 3; // db/storage alias
+  string target = 4; // table name or file path
+  string action = 5; // INSERT, UPDATE, DELETE, SELECT, UPLOAD, etc.
+  bytes details = 6; // JSON-encoded (keep flexible)
+}
+
+message WebhookTrigger {
+  string api_key = 1;
+  string ip = 2;
+  string request_id = 3;
+  string webhook_token = 4;
+}

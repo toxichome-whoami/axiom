@@ -1,8 +1,9 @@
 import hashlib
 import hmac
+from typing import Union
 
 
-def generate_signature(secret: str, payload: str) -> str:
+def generate_signature(secret: str, payload: Union[str, bytes]) -> str:
     """
     Generates a secure HMAC-SHA256 signature for outgoing webhook validation.
 
@@ -10,8 +11,9 @@ def generate_signature(secret: str, payload: str) -> str:
     (GitHub style) allowing downstream processors to cryptographically verify
     the origin of the request.
     """
+    payload_bytes = payload if isinstance(payload, bytes) else payload.encode("utf-8")
     signature = hmac.new(
-        secret.encode("utf-8"), payload.encode("utf-8"), hashlib.sha256
+        secret.encode("utf-8"), payload_bytes, hashlib.sha256
     ).hexdigest()
 
     return f"sha256={signature}"

@@ -23,3 +23,5 @@ Pillow>=10.2.0
 orjson>=3.9.15
 httptools>=0.6.1
 mcp>=1.2.0
+protobuf>=5.0
+grpcio-tools>=1.60

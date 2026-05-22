@@ -1,5 +1,5 @@
 import asyncio
-import json
+import orjson
 import os
 import time
 from typing import Dict, List, Optional
@@ -51,7 +51,7 @@ class FederationStateManager:
                     async for row in cursor:
                         node_id, state_json = row
                         try:
-                            state_dict = json.loads(state_json)
+                            state_dict = orjson.loads(state_json)
                             self._nodes[node_id] = FederationNodeState(**state_dict)
                         except (json.JSONDecodeError, ValidationError) as e:
                             logger.warning(

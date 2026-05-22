@@ -1,0 +1,42 @@
+syntax = "proto3";
+package axiom.v1;
+
+message ListDirectoryRequest {
+  string storage_alias = 1;
+  string path = 2;
+  int32 limit = 3;
+  int32 offset = 4;
+}
+
+message DirectoryEntry {
+  string name = 1;
+  string path = 2;
+  bool is_dir = 3;
+  int64 size = 4;
+  string modified = 5; // ISO 8601
+  string mime_type = 6;
+}
+
+message ListDirectoryResponse {
+  int32 total = 1;
+  repeated DirectoryEntry entries = 2;
+}
+
+message FileUploadRequest {
+  string storage_alias = 1;
+  string path = 2;
+  bytes content = 3;
+  string mime_type = 4;
+}
+
+message StorageResponse {
+  oneof payload {
+    ListDirectoryResponse directory = 1;
+    FsWriteResult write = 2;
+  }
+}
+
+message FsWriteResult {
+  int32 affected_rows = 1;
+  optional int64 last_insert_id = 2;
+}

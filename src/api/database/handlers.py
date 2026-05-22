@@ -1,6 +1,6 @@
 import asyncio
 import hashlib
-import json
+import orjson
 import time
 from typing import Any
 
@@ -15,14 +15,20 @@ from api.database.schemas import (
     QueryRequest,
     UpdateRequest,
 )
-from api.errors import ErrorCodes, AxiomException
+from api.errors import AxiomException, ErrorCodes
 from api.federation.proxy import proxy_request
-from api.responses import cacheable_response, success_response
+from api.responses import (
+    cacheable_response,
+    is_protobuf_requested,
+    protobuf_or_json,
+    success_response,
+)
 from cache import CacheManager
 from config.provider import get_config_dependency
 from config.schema import AxiomConfig
 from db.dialect.transpiler import transpile_sql
 from db.pool import DatabasePoolManager
+from encoding.proto_utils import query_result_to_proto
 from server.middleware.auth import get_auth_context
 from utils.types import AuthContext, ServerMode
 from webhook.emitter import WebhookTrigger, emit_event
@@ -232,7 +238,7 @@ def _construct_select_rest_payload(
 
     if params.filter:
         try:
-            filter_json = json.loads(params.filter)
+            filter_json = orjson.loads(params.filter)
             where_sql, filter_params = build_where_clause(filter_json)
             if where_sql:
                 sql_parts.append(f"WHERE {where_sql}")
@@ -315,7 +321,7 @@ class FederatedQueryEngine:
                         else:
                             body_chunks.append(chunk)
                     body_bytes = b"".join(body_chunks)
-                    payload = json.loads(body_bytes.decode("utf-8"))
+                    payload = orjson.loads(body_bytes)
 
                     # Extract the payload optimally depending on the proxy wrapper
                     data_block = (
@@ -352,7 +358,7 @@ class QueryExecutionPipeline:
             cache_key = (
                 "qc:"
                 + hashlib.md5(
-                    f"{db_name}|{safe_sql}|{json.dumps(params, sort_keys=True, default=str)}".encode()
+                    f"{db_name}|{safe_sql}|{orjson.dumps(params, option=orjson.OPT_SORT_KEYS, default=str).decode('utf-8')}".encode()
                 ).hexdigest()
             )
             cached = await CacheManager.get(cache_key)
@@ -557,7 +563,13 @@ async def execute_query(
         data = await QueryExecutionPipeline.run_query(
             engine, db_cfg, auth, request, db_name, body.sql, body.params or {}
         )
-        return success_response(request, data)
+
+        if is_protobuf_requested(request):
+            proto_msg = query_result_to_proto(data)
+        else:
+            proto_msg = None
+
+        return protobuf_or_json(request, proto_msg, data)
     except AxiomException:
         raise
     except Exception as exec_error:
@@ -604,7 +616,7 @@ async def get_rows(
             count_sql = f"SELECT COUNT(*) AS cnt FROM {table_name}"
             count_params = {}
             if params.filter:
-                fj = json.loads(params.filter)
+                fj = orjson.loads(params.filter)
                 ws, fp = build_where_clause(fj)
                 if ws:
                     count_sql += f" WHERE {ws}"
@@ -616,9 +628,17 @@ async def get_rows(
             pagination["total"] = total
             pagination["has_more"] = (params.page * params.limit) < total
 
-        return cacheable_response(
+        json_payload = {"rows": data["rows"], "pagination": pagination}
+
+        if is_protobuf_requested(request):
+            proto_msg = query_result_to_proto(data)
+        else:
+            proto_msg = None
+
+        return protobuf_or_json(
             request,
-            {"rows": data["rows"], "pagination": pagination},
+            proto_msg,
+            json_payload,
             max_age=_QUERY_RESULTS_TTL,
         )
     except AxiomException:
@@ -651,9 +671,7 @@ async def insert_rows(
         body.rows if body.rows is not None else ([body.row] if body.row else [])
     )
     if not target_rows:
-        raise AxiomException(
-            ErrorCodes.INPUT_SCHEMA_INVALID, "No payload array", 400
-        )
+        raise AxiomException(ErrorCodes.INPUT_SCHEMA_INVALID, "No payload array", 400)
 
     try:
         total_affected = await QueryExecutionPipeline.run_bulk_inserts(

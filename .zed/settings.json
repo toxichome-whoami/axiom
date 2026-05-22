@@ -1,0 +1,10 @@
+{
+  "lsp": {
+    "pyright": {
+      "settings": {
+        "python.analysis.extraPaths": ["src/generated"],
+        "python.analysis.exclude": ["src/generated"]
+      }
+    }
+  }
+}

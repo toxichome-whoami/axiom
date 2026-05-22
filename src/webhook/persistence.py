@@ -1,9 +1,9 @@
-import json
 import os
 import sqlite3
 import time
 from typing import Any, Dict, List, Optional
 
+import orjson
 import structlog
 
 logger = structlog.get_logger()
@@ -75,7 +75,7 @@ class WebhookPersistence:
                     hook_name,
                     url,
                     secret,
-                    json.dumps(headers),
+                    orjson.dumps(headers).decode("utf-8"),
                     payload,
                     time.time(),
                 ),
@@ -117,7 +117,7 @@ class WebhookPersistence:
             conn.commit()
         conn.close()
         for t in tasks:
-            t["headers"] = json.loads(t["headers"]) if t["headers"] else {}
+            t["headers"] = orjson.loads(t["headers"]) if t["headers"] else {}
         return tasks
 
     def mark_delivered(self, event_id: str):
@@ -209,12 +209,14 @@ class WebhookPersistence:
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
-        c.execute("SELECT * FROM webhook_queue WHERE status = 'pending' ORDER BY created_at ASC")
+        c.execute(
+            "SELECT * FROM webhook_queue WHERE status = 'pending' ORDER BY created_at ASC"
+        )
         rows = c.fetchall()
         tasks = [dict(row) for row in rows]
         conn.close()
         for t in tasks:
-            t["headers"] = json.loads(t["headers"]) if t["headers"] else {}
+            t["headers"] = orjson.loads(t["headers"]) if t["headers"] else {}
         return tasks
 
     def close(self):

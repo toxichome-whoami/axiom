@@ -1,0 +1,88 @@
+syntax = "proto3";
+package axiom.v1;
+
+message QueryRequest {
+  string sql = 1;
+  repeated string params = 2; // Parameterized query values
+  string db_alias = 3;
+  int32 limit = 4;
+  int32 offset = 5;
+  map<string, string> options = 6; // DB-specific options
+}
+
+message QueryResponse {
+  repeated string columns = 1;
+  repeated Row rows = 2;
+  int32 affected_rows = 3;
+}
+
+message Row {
+  repeated Value values = 1; // Positional values matching columns
+}
+
+message Value {
+  oneof kind {
+    string string_val = 1;
+    int64 int_val = 2;
+    double float_val = 3;
+    bool bool_val = 4;
+    bytes bytes_val = 5;
+    // null is represented by absence of any kind
+  }
+}
+
+message InsertRequest {
+  string db_alias = 1;
+  string table = 2;
+  repeated Row rows = 3;
+}
+
+message UpdateRequest {
+  string db_alias = 1;
+  string table = 2;
+  Row set_values = 3;
+  string where_clause = 4;
+  repeated string where_params = 5;
+}
+
+message DeleteRequest {
+  string db_alias = 1;
+  string table = 2;
+  string where_clause = 3;
+  repeated string where_params = 4;
+}
+
+message DatabaseResponse {
+  oneof payload {
+    QueryResponse query = 1;
+    TablesListResponse tables = 2;
+    SchemaResponse schema = 3;
+    WriteResult write = 4; // INSERT/UPDATE/DELETE result
+  }
+}
+
+message TablesListResponse {
+  repeated TableInfo tables = 1;
+}
+
+message TableInfo {
+  string name = 1;
+  string type = 2; // TABLE, VIEW
+}
+
+message SchemaResponse {
+  repeated ColumnInfo columns = 1;
+}
+
+message ColumnInfo {
+  string name = 1;
+  string type = 2;
+  bool nullable = 3;
+  string default_value = 4;
+  bool is_primary_key = 5;
+}
+
+message WriteResult {
+  int32 affected_rows = 1;
+  optional int64 last_insert_id = 2;
+}
