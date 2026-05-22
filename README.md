@@ -11,6 +11,9 @@
 - **Universal Agnostic Target**: One language to speak to MySQL, SQLite, Postgres, and the FileSystem.
 - **Secure By Default**: Strict WAF, rate limits, and path traversal blockades.
 
+> [!NOTE]
+> **Axiom is natively a REST API gateway.** The high-performance GraphQL layer is provided as an optional, secondary interface for clients who prefer GraphQL, but under the hood, the system is fundamentally optimized for REST-first operations.
+
 ## Features
 
 - **Map-Reduce Data Mesh**: Query multiple remote federated databases simultaneously and join their JSON results entirely in-memory.
@@ -22,6 +25,7 @@
 - Async HTTP streaming reverse-proxies for Federated edge nodes.
 - High performance multi-tier rate limiting with DDoS protection.
 - Cache-Aside SQLite persistent state layer for sub-millisecond API Key and Ban validations.
+- High-Performance GraphQL Layer for zero-serialization AST-to-SQL transpilation queries.
 
 ## Documentation
 

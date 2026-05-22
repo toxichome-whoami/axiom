@@ -37,6 +37,17 @@ class FeaturesConfig(BaseModel):
     metrics: bool = True
     playground: bool = False
     mcp: bool = False
+    graphql: bool = False
+
+
+class GraphQLConfig(BaseModel):
+    """AST-to-SQL compiler configuration for high-performance schema resolving."""
+
+    endpoint: str = "/api/v1/graphql"
+    query_cache_enabled: bool = True
+    query_cache_size: int = 512
+    max_query_depth: int = 15
+    introspection: bool = False
 
 
 class LoggingConfig(BaseModel):
@@ -261,6 +272,7 @@ class AxiomConfig(BaseModel):
     cache: CacheConfig = Field(default_factory=CacheConfig)
     performance: PerformanceConfig = Field(default_factory=PerformanceConfig)
     mcp: MCPConfig = Field(default_factory=MCPConfig)
+    graphql: GraphQLConfig = Field(default_factory=GraphQLConfig)
     webhooks: WebhookGlobalConfig = Field(default_factory=WebhookGlobalConfig)
     webhook: Dict[str, WebhookDefConfig] = Field(default_factory=dict)
     database: Dict[str, DatabaseDefConfig] = Field(default_factory=dict)

@@ -13,6 +13,7 @@ from api import database, federation, storage
 # Routers
 from api.core import health
 from api.core.metrics import router as metrics_router
+from api.graphql import router as graphql_router
 from api.mcp import router as mcp_router
 from config.provider import GlobalConfigProvider
 from server.lifespan import lifespan
@@ -157,6 +158,9 @@ def _attach_routers(app: FastAPI):
     if config.features.mcp:
         api_v1.include_router(mcp_router, prefix="/mcp")
         app.state.mcp_initialized = True
+
+    if config.features.graphql:
+        api_v1.include_router(graphql_router, prefix="/graphql")
 
     app.include_router(api_v1)
 

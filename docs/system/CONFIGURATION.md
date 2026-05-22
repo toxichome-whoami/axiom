@@ -40,6 +40,8 @@ Feature flags to enable/disable entire subsystems.
 | `federation` | `false` | Enable `/api/fed/*` and sync |
 | `metrics` | `true` | Enable `/metrics` endpoint |
 | `playground` | `false` | Enable Swagger UI at `/api/docs` |
+| `mcp` | `false` | Enable MCP JSON-RPC server at `/api/v1/mcp` |
+| `graphql` | `false` | Enable optional GraphQL gateway at `/api/v1/graphql` |
 
 ---
 
@@ -243,3 +245,18 @@ Model Context Protocol server configuration. Enables AI assistants to interact w
 | `max_result_rows` | `50` | Max rows returned per query |
 | `max_directory_entries` | `100` | Max files listed per directory |
 | `max_file_read_bytes` | `1048576` | Max file read size (bytes) |
+
+---
+
+## `[graphql]`
+
+> [!NOTE]
+> GraphQL is an **optional, secondary interface**. Axiom is natively a REST API gateway. This section only applies when `features.graphql = true`. When disabled, the endpoint does not exist and consumes zero resources.
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `endpoint` | `"/api/v1/graphql"` | URL path the GraphQL POST endpoint is mounted at |
+| `query_cache_enabled` | `true` | Cache compiled AST-to-SQL results to skip recompilation on repeat queries |
+| `query_cache_size` | `512` | Max LRU slots for the compiled query cache |
+| `max_query_depth` | `15` | Maximum GraphQL query nesting depth — prevents DoS via deeply nested queries |
+| `introspection` | `false` | Allow schema introspection queries — disable in production for security |

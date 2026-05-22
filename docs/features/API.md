@@ -1,6 +1,7 @@
 <div align="center">
   <h1>Axiom API Reference</h1>
-  <p><em>Complete guide to REST and SSE endpoints for Databases, Storage, Webhooks, and MCP</em></p>
+  <p><em>Complete guide to REST and SSE endpoints for Databases, Storage, Webhooks, MCP, and GraphQL</em></p>
+  <p><strong>Axiom is natively a REST API gateway.</strong> GraphQL is an optional secondary interface — disabled by default — for clients that prefer it.</p>
 </div>
 
 <hr/>
@@ -479,6 +480,8 @@ curl -X POST "http://localhost:4500/api/v1/fs/local_fs/action" \
 
 
 
+---
+
 ## Federation API <code>/api/v1/fed</code>
 
 ### 1. List Federated Servers
@@ -488,6 +491,94 @@ curl -X GET "http://localhost:4500/api/v1/fed/servers" \
 ```
 
 ---
+
+## GraphQL API <code>/api/v1/graphql</code>
+
+> [!NOTE]
+> GraphQL is an **optional, secondary interface**. Axiom is fundamentally a REST API gateway. Enable it with `features.graphql = true` in `config.toml`. When disabled, the endpoint does not exist and consumes zero resources.
+
+Unlike standard GraphQL servers (Strawberry, Graphene, Ariadne), Axiom's GraphQL layer bypasses Python object graph resolution entirely. Incoming query strings are parsed into an AST by `graphql-core`, walked by the `ASTCompiler`, and dispatched directly into the native `QueryExecutionPipeline` — the exact same security-hardened pipeline used by the REST database endpoints. This means all WAF checks, SQL blacklist rules, API key scoping, and rate limiting apply identically.
+
+**Authentication** is identical to the REST API:
+```
+Authorization: Bearer base64(<key_name>:<secret>)
+```
+
+### Execute a SQL Query
+
+Use the `execute` root field to run a validated SQL statement against any permitted database alias.
+
+```bash
+curl -X POST "http://localhost:4500/api/v1/graphql" \
+     -H "Authorization: Bearer <TOKEN>" \
+     -H "Content-Type: application/json" \
+     -d '{
+           "query": "{ execute(dbAlias: \"main_db\", sql: \"SELECT id, name FROM users WHERE active = 1\", params: {}) }"
+         }'
+```
+
+**Response:**
+```json
+{
+  "data": {
+    "execute": {
+      "columns": ["id", "name"],
+      "rows": [
+        {"id": 1, "name": "Alice"},
+        {"id": 2, "name": "Bob"}
+      ],
+      "affectedRows": 0
+    }
+  },
+  "extensions": {
+    "duration_ms": 0.48
+  }
+}
+```
+
+### List Available Databases
+
+Use the `databases` root field to return all database aliases the API key has access to.
+
+```bash
+curl -X POST "http://localhost:4500/api/v1/graphql" \
+     -H "Authorization: Bearer <TOKEN>" \
+     -H "Content-Type: application/json" \
+     -d '{"query": "{ databases }"}'
+```
+
+### Combining Fields
+
+Multiple root fields in a single query are executed and returned together:
+
+```graphql
+{
+  execute(dbAlias: "main_db", sql: "SELECT COUNT(*) AS total FROM orders", params: {})
+  databases
+}
+```
+
+### Error Handling
+
+Errors are returned in the standard GraphQL error envelope. The HTTP status code is always `200` for query-level errors and `400`/`500` for gateway-level errors.
+
+```json
+{
+  "errors": [
+    {
+      "message": "Access denied",
+      "details": "Database alias 'secret_db' is not in scope for this key"
+    }
+  ]
+}
+```
+
+| Error Message | Cause | Fix |
+|---------------|-------|-----|
+| `Access denied` | API key lacks scope for the database | Check `db_scope` in `config.toml` |
+| `execute() requires dbAlias and sql arguments` | Missing required GraphQL arguments | Provide both `dbAlias` and `sql` |
+| `Unsupported root field: <name>` | Unknown field name in query | Only `execute` and `databases` are currently supported |
+| `Query depth exceeds limit` | Query nesting too deep | Reduce nesting or increase `max_query_depth` in config |
 
 ## MCP API <code>/api/v1/mcp</code>
 

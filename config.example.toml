@@ -29,6 +29,7 @@ federation = false               # Enable Multi-Node Federation
 metrics = true                   # Enable Prometheus/OpenMetrics endpoint
 playground = true                # Enable /api/docs Swagger UI
 mcp = true                       # Enable Model Context Protocol server
+graphql = false                  # Enable High-Performance GraphQL API
 
 # ─── Model Context Protocol (MCP) ─────────────────────
 [mcp]
@@ -158,3 +159,14 @@ mode = "readonly"
 db_scope = ["*"]
 fs_scope = ["*"]
 description = "Remote datacenter edge node"
+
+# ─── High-Performance GraphQL API ───────────────────────
+# A specialized GraphQL gateway optimized for database querying.
+# Bypasses standard GraphQL object graph resolution by transpiling AST
+# directly into database-native SQL via the QueryExecutionPipeline.
+[graphql]
+endpoint = "/api/v1/graphql"     # Mount point for the GraphQL POST endpoint
+query_cache_enabled = true       # Cache SQL transpilation results to bypass compilation
+query_cache_size = 512           # Max LRU size for parsed GraphQL AST caching
+max_query_depth = 15             # Maximum nesting level allowed to prevent DoS attacks
+introspection = false            # Disable schema introspection in production for security
