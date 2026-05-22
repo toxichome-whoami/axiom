@@ -11,7 +11,6 @@ from config.loader import ConfigManager
 from config.provider import GlobalConfigProvider
 from db.pool import DatabasePoolManager
 from logger.rotator import log_rotator_worker
-from webhook.dispatcher import dispatcher_worker
 
 # Silently refresh module-level feature flags in db handlers on each config reload
 try:
@@ -40,8 +39,13 @@ async def _init_storage_backends(config):
 
         await SQLiteCache.init_db()
 
-    if config.features.webhook and config.webhooks.enabled and config.webhooks.persistence_enabled:
+    if (
+        config.features.webhook
+        and config.webhooks.enabled
+        and config.webhooks.persistence_enabled
+    ):
         from webhook.persistence import init_persistence
+
         init_persistence(config.webhooks.persistence_path)
 
 
@@ -56,7 +60,8 @@ def _start_background_daemons(config) -> List[asyncio.Task]:
 
     # Conditional feature workers
     if config.features.webhook and config.webhooks.enabled:
-        from webhook.dispatcher import load_pending_webhooks, ensure_workers
+        from webhook.dispatcher import ensure_workers, load_pending_webhooks
+
         load_pending_webhooks()
         ensure_workers()
 
@@ -77,6 +82,7 @@ async def _stop_background_daemons():
     config = GlobalConfigProvider().get_config()
     if config.features.webhook and config.webhooks.enabled:
         from webhook.dispatcher import webhook_shutdown
+
         try:
             await webhook_shutdown()
         except Exception as e:
@@ -92,6 +98,7 @@ async def _stop_background_daemons():
 async def lifespan(app: FastAPI):
     """Controls application bootstrap and teardown sequences dynamically."""
     from logger.setup import setup_logging
+
     setup_logging()
 
     config = GlobalConfigProvider().get_config()
@@ -110,8 +117,13 @@ async def lifespan(app: FastAPI):
     # 3. Teardown Subsystems
     await _stop_background_daemons()
 
-    if config.features.webhook and config.webhooks.enabled and config.webhooks.persistence_enabled:
+    if (
+        config.features.webhook
+        and config.webhooks.enabled
+        and config.webhooks.persistence_enabled
+    ):
         from webhook.persistence import close_persistence
+
         close_persistence()
 
     if hasattr(app.state, "mcp_initialized"):

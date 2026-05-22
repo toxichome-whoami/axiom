@@ -81,7 +81,7 @@ def setup_logging():
         for h in list(root.handlers):
             root.removeHandler(h)
         root.addHandler(logging.NullHandler())
-        
+
         # Configure structlog to route through standard logging library
         structlog.configure(
             processors=[
