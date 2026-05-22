@@ -15,6 +15,22 @@ _STATUS_KEY = "status"
 _TYPE_KEY = "type"
 
 
+def _resolve_client_ip(scope: Scope) -> str:
+    """Extracts the true client IP scanning raw header tuples directly."""
+    client_ip = None
+    for k, v in scope.get("headers", ()):
+        if k == b"x-forwarded-for":
+            client_ip = v.decode("latin-1").split(",", 1)[0].strip()
+            break
+        elif k == b"x-real-ip":
+            client_ip = v.decode("latin-1")
+
+    if client_ip is None:
+        client = scope.get("client")
+        client_ip = client[0] if client else "unknown"
+    return client_ip
+
+
 class LoggingMiddleware:
     """Logs lifecycle and latency execution details for all requests."""
 
@@ -43,6 +59,7 @@ class LoggingMiddleware:
             logger.error(
                 "Request failed",
                 request_id=scope.get("state", {}).get("request_id", "-"),
+                client_ip=_resolve_client_ip(scope),
                 method=scope.get("method"),
                 path=scope.get("path"),
                 duration_ms=round(duration_ms, 2),
@@ -50,29 +67,39 @@ class LoggingMiddleware:
             )
             raise
 
-        # Only log warnings/errors — skip info-level logging for 2xx/3xx to
-        # eliminate the single largest per-request I/O bottleneck.
-        if status_code >= 400:
-            duration_ms = (time.perf_counter() - start_time) * 1000
-            req_id = scope.get("state", {}).get("request_id", "-")
-            method = scope.get("method")
-            path = scope.get("path")
+        duration_ms = (time.perf_counter() - start_time) * 1000
+        req_id = scope.get("state", {}).get("request_id", "-")
+        client_ip = _resolve_client_ip(scope)
+        method = scope.get("method")
+        path = scope.get("path")
 
-            if status_code >= 500:
-                logger.error(
-                    "Request completed",
-                    request_id=req_id,
-                    method=method,
-                    path=path,
-                    status=status_code,
-                    duration_ms=round(duration_ms, 2),
-                )
-            else:
-                logger.warning(
-                    "Request completed",
-                    request_id=req_id,
-                    method=method,
-                    path=path,
-                    status=status_code,
-                    duration_ms=round(duration_ms, 2),
-                )
+        if status_code >= 500:
+            logger.error(
+                "Request completed",
+                request_id=req_id,
+                client_ip=client_ip,
+                method=method,
+                path=path,
+                status=status_code,
+                duration_ms=round(duration_ms, 2),
+            )
+        elif status_code >= 400:
+            logger.warning(
+                "Request completed",
+                request_id=req_id,
+                client_ip=client_ip,
+                method=method,
+                path=path,
+                status=status_code,
+                duration_ms=round(duration_ms, 2),
+            )
+        else:
+            logger.info(
+                "Request completed",
+                request_id=req_id,
+                client_ip=client_ip,
+                method=method,
+                path=path,
+                status=status_code,
+                duration_ms=round(duration_ms, 2),
+            )
