@@ -1,14 +1,25 @@
-# Axiom Webhooks Guide
+<div align="center">
+  <h1>Axiom Webhooks Guide</h1>
+  <p><em>High-performance event streaming system for real-time external notifications</em></p>
+</div>
 
-Axiom features a high-performance event streaming system that can notify external applications of any database or file system activity in real-time.
+<hr/>
 
 ## 1. Event Flow
 
-1.  **Trigger**: An operation (INSERT, UPDATE, DELETE, UPLOAD, etc.) is successfully committed.
-2.  **Auth**: The request must include the webhook secret as a Base64-encoded token in the `X-Axiom-Webhook-Token` header.
-3.  **Match**: The event is matched against the `rule` patterns defined in `config.toml`, and the decoded token is verified against the webhook's stored secret.
-4.  **Queue**: If matched and verified, the event is placed in a non-blocking internal queue.
-5.  **Delivery**: A background worker picks up the event and sends it to the configured `url` via HTTP POST, signed with HMAC-SHA256.
+<details open>
+<summary><b>Click to see the webhook lifecycle</b></summary>
+<br/>
+
+1. **Trigger**: An operation (<kbd>INSERT</kbd>, <kbd>UPDATE</kbd>, <kbd>DELETE</kbd>, <kbd>UPLOAD</kbd>) is successfully committed.
+2. **Auth**: The request must include the webhook secret as a Base64-encoded token in the `X-Axiom-Webhook-Token` header.
+3. **Match**: The event is matched against the `rule` patterns defined in `config.toml`, and the decoded token is verified against the stored secret.
+4. **Queue**: If matched and verified, the event is placed in a non-blocking internal queue.
+5. **Delivery**: A background worker picks up the event and sends it to the configured `url` via HTTP POST, signed with <span style="color: #ff5555; font-weight: bold;">HMAC-SHA256</span>.
+
+</details>
+
+---
 
 ## 2. Configuration
 
@@ -23,22 +34,27 @@ enabled = true
 delivery_format = "json"  # or "protobuf"
 ```
 
-### Rule Syntax: `{module}.{operation}@{alias}:{target}`
+### Rule Syntax
+`{module}.{operation}@{alias}:{target}`
 
-- **module**: `db` or `fs`
-- **operation**: `read`, `write`, `delete`, `any`, or `*`
-- **alias**: The name of the database or storage volume (or `*` for all).
-- **target**: The table name or file path pattern (or `*` for all).
+- <kbd>module</kbd>: `db` or `fs`
+- <kbd>operation</kbd>: `read`, `write`, `delete`, `any`, or `*`
+- <kbd>alias</kbd>: The name of the database or storage volume (or `*` for all).
+- <kbd>target</kbd>: The table name or file path pattern (or `*` for all).
+
+---
 
 ## 3. Authentication (Client → Gateway)
 
 When sending requests to the gateway that should trigger webhooks, the client **must** include the webhook secret as a Base64-encoded token:
 
-```
-X-Axiom-Webhook-Token: base64(your_webhook_secret)
-```
+<div style="background-color: #1e1e1e; padding: 10px; border-radius: 5px;">
+<code>X-Axiom-Webhook-Token: base64(your_webhook_secret)</code>
+</div>
 
-**Node.js example:**
+<details>
+<summary><b>Node.js Example</b></summary>
+
 ```javascript
 const webhookToken = Buffer.from('your_webhook_secret').toString('base64');
 
@@ -47,20 +63,26 @@ headers: {
     'X-Axiom-Webhook-Token': webhookToken,
 }
 ```
+</details>
 
-The gateway decodes the Base64 token and verifies it against the stored secret using constant-time comparison (`hmac.compare_digest`). If the token doesn't match, the webhook will not fire.
+The gateway decodes the Base64 token and verifies it against the stored secret using constant-time comparison (`hmac.compare_digest`). If the token doesn't match, the webhook will **not** fire.
+
+---
 
 ## 4. Payload Format (Gateway → Your App)
 
 All webhooks are delivered as JSON POST requests with signature headers.
 
-**Headers sent by Axiom:**
+### Headers sent by Axiom
+
 | Header | Description |
 |--------|-------------|
-| `X-Axiom-Signature` | `sha256=<HMAC-SHA256 hex digest>` |
-| `X-Axiom-Timestamp` | Unix timestamp of delivery |
+| <code>X-Axiom-Signature</code> | `sha256=<HMAC-SHA256 hex digest>` |
+| <code>X-Axiom-Timestamp</code> | Unix timestamp of delivery |
 
-**Payload body:**
+<details>
+<summary><b>View JSON Payload Body</b></summary>
+
 ```json
 {
   "event_id": "evt_01HPC9...",
@@ -86,16 +108,20 @@ All webhooks are delivered as JSON POST requests with signature headers.
   }
 }
 ```
+</details>
 
 ### Protobuf Delivery
-If `delivery_format = "protobuf"` is configured, the exact same schema structure is compiled into a high-density binary payload.
-The request will be sent with `Content-Type: application/x-protobuf`.
+If `delivery_format = "protobuf"` is configured, the exact same schema structure is compiled into a high-density binary payload. The request will be sent with `Content-Type: application/x-protobuf`.
+
+---
 
 ## 5. Signature Verification (Your App)
 
 To ensure a webhook was actually sent by Axiom, **verify the HMAC-SHA256 signature**.
 
-**Node.js example:**
+<details open>
+<summary><b>Node.js Verification Example</b></summary>
+
 ```javascript
 const crypto = require('crypto');
 
@@ -111,17 +137,38 @@ function verifyWebhook(rawBody, signatureHeader, secret) {
     );
 }
 ```
+</details>
+
+---
 
 ## 6. Security Model
 
-| Layer | Mechanism |
-|-------|-----------|
-| **Client → Gateway** | Webhook secret sent as Base64 in `X-Axiom-Webhook-Token` header |
-| **Gateway verification** | Decodes Base64, compares with `hmac.compare_digest()` (timing-safe) |
-| **Gateway → Your App** | Payload signed with `HMAC-SHA256(secret, body)` |
-| **Your App verification** | Recomputes HMAC and compares signatures |
+<table style="width: 100%; border-collapse: collapse;">
+  <tr style="background-color: #2d2d2d; color: white;">
+    <th style="padding: 10px;">Layer</th>
+    <th style="padding: 10px;">Mechanism</th>
+  </tr>
+  <tr>
+    <td style="padding: 10px;"><b>Client → Gateway</b></td>
+    <td style="padding: 10px;">Webhook secret sent as Base64 in <code>X-Axiom-Webhook-Token</code> header</td>
+  </tr>
+  <tr>
+    <td style="padding: 10px;"><b>Gateway verification</b></td>
+    <td style="padding: 10px;">Decodes Base64, compares with <code>hmac.compare_digest()</code> (timing-safe)</td>
+  </tr>
+  <tr>
+    <td style="padding: 10px;"><b>Gateway → Your App</b></td>
+    <td style="padding: 10px;">Payload signed with <code>HMAC-SHA256(secret, body)</code></td>
+  </tr>
+  <tr>
+    <td style="padding: 10px;"><b>Your App verification</b></td>
+    <td style="padding: 10px;">Recomputes HMAC and compares signatures</td>
+  </tr>
+</table>
 
-> **Note:** The raw secret is **never** sent in the outgoing webhook delivery. Only the HMAC signature is transmitted.
+> <span style="font-size: 1.2em;"></span> **Note:** The raw secret is **never** sent in the outgoing webhook delivery. Only the HMAC signature is transmitted.
+
+---
 
 ## 7. Reliability and Retries
 
@@ -141,11 +188,15 @@ Axiom uses an industrial-grade, highly-concurrent persistent delivery system to 
 - **Exponential Backoff**: Wait `retry_delay ^ attempt` seconds between retries.
 - **Jitter**: A 50%-150% randomized jitter is applied to the backoff delay to prevent "thundering herd" problems when a receiver comes back online.
 
+---
+
 ## 8. Observability API
 
 You can inspect the state of the webhook system via the health endpoints:
 
-- `GET /api/v1/webhooks/status`: Get current queue counts, circuit breaker states, and configuration limits.
-- `GET /api/v1/webhooks/dead-letter`: List permanently failed deliveries.
-- `POST /api/v1/webhooks/dead-letter/replay`: Requeue specific `event_ids` from the DLQ.
-- `POST /api/v1/webhooks/circuit/{hook_name}/reset`: Manually close an open circuit.
+<ul>
+  <li><code>GET /api/v1/webhooks/status</code>: Get current queue counts, circuit breaker states, and configuration limits.</li>
+  <li><code>GET /api/v1/webhooks/dead-letter</code>: List permanently failed deliveries.</li>
+  <li><code>POST /api/v1/webhooks/dead-letter/replay</code>: Requeue specific <code>event_ids</code> from the DLQ.</li>
+  <li><code>POST /api/v1/webhooks/circuit/{hook_name}/reset</code>: Manually close an open circuit.</li>
+</ul>

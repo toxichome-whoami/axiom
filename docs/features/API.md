@@ -1,4 +1,9 @@
-# Axiom API Reference
+<div align="center">
+  <h1>Axiom API Reference</h1>
+  <p><em>Complete guide to REST and SSE endpoints for Databases, Storage, Webhooks, and MCP</em></p>
+</div>
+
+<hr/>
 
 ## Authentication
 
@@ -54,7 +59,7 @@ curl -X GET "http://localhost:4500/api/v1/api/spec" \
 
 ---
 
-## Database API `/api/v1/db`
+## Database API <code>/api/v1/db</code>
 
 ### 1. List Databases
 ```bash
@@ -205,7 +210,7 @@ curl -X DELETE "http://localhost:4500/api/v1/db/main_db/users/rows" \
 
 ---
 
-## Storage API `/api/v1/fs`
+## Storage API <code>/api/v1/fs</code>
 
 ### 1. List Storages
 ```bash
@@ -474,7 +479,7 @@ curl -X POST "http://localhost:4500/api/v1/fs/local_fs/action" \
 
 
 
-## Federation API `/api/v1/fed`
+## Federation API <code>/api/v1/fed</code>
 
 ### 1. List Federated Servers
 ```bash
@@ -484,10 +489,10 @@ curl -X GET "http://localhost:4500/api/v1/fed/servers" \
 
 ---
 
-## MCP API `/api/v1/mcp`
+## MCP API <code>/api/v1/mcp</code>
 
-> [!NOTE]
-> MCP (Model Context Protocol) must be enabled via `features.mcp = true` in `config.toml`. When disabled, these endpoints do not exist and consume zero resources. See [`docs/MCP.md`](MCP.md) for the full guide.
+> <span style="font-size: 1.2em;"></span> **NOTE:**
+> MCP (Model Context Protocol) must be enabled via `features.mcp = true` in `config.toml`. When disabled, these endpoints do not exist and consume zero resources. See [`docs/features/MCP.md`](MCP.md) for the full guide.
 
 The MCP API exposes Axiom's database and storage tools to AI models (like Claude, Gemini) securely through standard Server-Sent Events (SSE).
 
@@ -517,18 +522,24 @@ Once connected, the AI model gains access to the following bounded tools:
 ---
 
 ## Filter Syntax
+
 Filters accept a JSON object of field-to-operator mappings:
 
-| Operator | Description | Example |
-|----------|-------------|---------|
-| `$eq` | Equal | `{"age": {"$eq": 25}}` or `{"age": 25}` |
-| `$ne` | Not equal | `{"status": {"$ne": "banned"}}` |
-| `$gt` | Greater than | `{"score": {"$gt": 50}}` |
-| `$gte` | Greater or equal | `{"age": {"$gte": 18}}` |
-| `$lt` | Less than | `{"price": {"$lt": 100}}` |
-| `$lte` | Less or equal | `{"rank": {"$lte": 10}}` |
-| `$in` | In list | `{"role": {"$in": ["admin","mod"]}}` |
-| `$nin` | Not in list | `{"role": {"$nin": ["banned"]}}` |
-| `$like` | SQL LIKE | `{"email": {"$like": "%@gmail.com"}}` |
-| `$null` | IS NULL / NOT NULL | `{"deleted_at": {"$null": true}}` |
-| `$between` | BETWEEN | `{"age": {"$between": [18, 65]}}` |
+<table style="width: 100%; border-collapse: collapse;">
+  <tr style="background-color: #2d2d2d; color: white;">
+    <th style="padding: 10px; text-align: left;">Operator</th>
+    <th style="padding: 10px; text-align: left;">Description</th>
+    <th style="padding: 10px; text-align: left;">Example</th>
+  </tr>
+  <tr><td style="padding: 10px;"><code>$eq</code></td><td style="padding: 10px;">Equal</td><td style="padding: 10px;"><code>{"age": {"$eq": 25}}</code> or <code>{"age": 25}</code></td></tr>
+  <tr><td style="padding: 10px;"><code>$ne</code></td><td style="padding: 10px;">Not equal</td><td style="padding: 10px;"><code>{"status": {"$ne": "banned"}}</code></td></tr>
+  <tr><td style="padding: 10px;"><code>$gt</code></td><td style="padding: 10px;">Greater than</td><td style="padding: 10px;"><code>{"score": {"$gt": 50}}</code></td></tr>
+  <tr><td style="padding: 10px;"><code>$gte</code></td><td style="padding: 10px;">Greater or equal</td><td style="padding: 10px;"><code>{"age": {"$gte": 18}}</code></td></tr>
+  <tr><td style="padding: 10px;"><code>$lt</code></td><td style="padding: 10px;">Less than</td><td style="padding: 10px;"><code>{"price": {"$lt": 100}}</code></td></tr>
+  <tr><td style="padding: 10px;"><code>$lte</code></td><td style="padding: 10px;">Less or equal</td><td style="padding: 10px;"><code>{"rank": {"$lte": 10}}</code></td></tr>
+  <tr><td style="padding: 10px;"><code>$in</code></td><td style="padding: 10px;">In list</td><td style="padding: 10px;"><code>{"role": {"$in": ["admin","mod"]}}</code></td></tr>
+  <tr><td style="padding: 10px;"><code>$nin</code></td><td style="padding: 10px;">Not in list</td><td style="padding: 10px;"><code>{"role": {"$nin": ["banned"]}}</code></td></tr>
+  <tr><td style="padding: 10px;"><code>$like</code></td><td style="padding: 10px;">SQL LIKE</td><td style="padding: 10px;"><code>{"email": {"$like": "%@gmail.com"}}</code></td></tr>
+  <tr><td style="padding: 10px;"><code>$null</code></td><td style="padding: 10px;">IS NULL / NOT NULL</td><td style="padding: 10px;"><code>{"deleted_at": {"$null": true}}</code></td></tr>
+  <tr><td style="padding: 10px;"><code>$between</code></td><td style="padding: 10px;">BETWEEN</td><td style="padding: 10px;"><code>{"age": {"$between": [18, 65]}}</code></td></tr>
+</table>

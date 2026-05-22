@@ -1,4 +1,9 @@
-# Axiom Deployment Guide
+<div align="center">
+  <h1>Axiom Deployment Guide</h1>
+  <p><em>Instructions for standing up Axiom locally and in production</em></p>
+</div>
+
+<hr/>
 
 ## Requirements
 
@@ -9,6 +14,9 @@
 ---
 
 ## Quick Start (Local)
+
+<details open>
+<summary><b>View Shell Commands</b></summary>
 
 ```bash
 # 1. Clone the repo
@@ -28,9 +36,14 @@ python src/main.py
 # Admin API key will be printed to stdout on first run
 ```
 
+</details>
+
 ---
 
 ## Docker (Recommended)
+
+<details open>
+<summary><b>Docker Build & Run</b></summary>
 
 ```bash
 # Build the image
@@ -45,6 +58,8 @@ docker run -d \
   -v $(pwd)/data:/data \
   axiom:latest
 ```
+
+</details>
 
 ### Docker Compose (with Redis)
 
@@ -74,6 +89,9 @@ docker compose up -d
 
 ## Nginx Reverse Proxy
 
+<details>
+<summary><b>View Nginx Config</b></summary>
+
 ```nginx
 server {
     listen 443 ssl;
@@ -99,9 +117,14 @@ server {
 }
 ```
 
+</details>
+
 ---
 
 ## Systemd Service
+
+<details>
+<summary><b>View Systemd Unit File</b></summary>
 
 ```ini
 [Unit]
@@ -128,6 +151,8 @@ sudo systemctl enable axiom
 sudo systemctl start axiom
 ```
 
+</details>
+
 ---
 
 ## Monitoring
@@ -145,10 +170,10 @@ scrape_configs:
 ```
 
 **Key metrics to alert on:**
-- `axiom_memory_mb` > 450 MB (approaching limit)
-- `axiom_db_query_errors_total` increasing rate
-- `axiom_rate_limit_hits_total` spike (potential attack)
-- `axiom_webhook_failed_total` increasing (delivery issues)
+- <code>axiom_memory_mb</code> > 450 MB (approaching limit)
+- <code>axiom_db_query_errors_total</code> increasing rate
+- <code>axiom_rate_limit_hits_total</code> spike (potential attack)
+- <code>axiom_webhook_failed_total</code> increasing (delivery issues)
 
 ---
 
@@ -165,5 +190,4 @@ pip install -r requirements.txt
 sudo systemctl restart axiom
 ```
 
-> [!NOTE]
-> Check the CHANGELOG for breaking config changes before upgrading.
+> **Note:** Check the CHANGELOG for breaking config changes before upgrading.

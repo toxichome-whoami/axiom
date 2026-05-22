@@ -1,6 +1,11 @@
-# Axiom — Configuration Reference
+<div align="center">
+  <h1>Axiom Configuration Reference</h1>
+  <p><em>Comprehensive reference for all config.toml parameters</em></p>
+</div>
 
-Full reference for every key in `config.toml`. See `config.example.toml` for a ready-to-copy template.
+<hr/>
+
+See `config.example.toml` for a ready-to-copy template.
 
 ---
 

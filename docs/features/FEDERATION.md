@@ -1,12 +1,15 @@
-# Axiom Federation Guide
+<div align="center">
+  <h1>Axiom Federation Guide</h1>
+  <p><em>Link multiple Axiom instances together into a unified mesh of databases and storage</em></p>
+</div>
 
-Federation allows multiple Axiom instances to link together, forming a unified mesh of databases and storage volumes.
+<hr/>
 
 ## 1. Overview
 
 In a federated setup, a **Connector Server** (Client) proxies requests to a **Receiver Server** (Host). The Connector can query databases and storage on the Receiver as if they were local resources.
 
-**Key Features:**
+### Key Features:
 - **Unified API**: Access globally distributed data through a single URL.
 - **Map-Reduce Data Mesh**: Query a comma-separated list of nodes (`alias_a,alias_b`) to concurrently fetch and join remote JSON data entirely in-memory using `asyncio.gather`.
 - **Automatic Prefixing**: Remote resources are auto-prefixed with the node alias (e.g., `us_west_main_db`).
@@ -14,11 +17,15 @@ In a federated setup, a **Connector Server** (Client) proxies requests to a **Re
 - **Per-Node Scoping**: Each incoming node has its own `mode`, `db_scope`, and `fs_scope`.
 - **One-Way by Default**: Server A connecting to Server B does NOT give Server B access to Server A. For two-way access, both servers must configure each other.
 
+---
+
 ## 2. Configuration
 
-### On the Receiver Server (Server B — the one being connected TO):
+### On the Receiver Server (Server B)
+*The server being connected TO.*
 
-Define incoming keys for each remote node that should be allowed to connect.
+<details open>
+<summary><b>View Receiver Configuration</b></summary>
 
 ```toml
 [features]
@@ -47,10 +54,15 @@ db_scope = ["analytics"]
 fs_scope = []
 description = "EU analytics readonly mirror"
 ```
+</details>
 
-### On the Connector Server (Server A — the one that connects):
+<br/>
 
-Define outgoing connections to the remote server.
+### On the Connector Server (Server A)
+*The server that initiates the connection.*
+
+<details open>
+<summary><b>View Connector Configuration</b></summary>
 
 ```toml
 [features]
@@ -76,38 +88,70 @@ url = "mysql://user:pass@localhost:3306/main_db"  # Local connection string (unu
 mode = "readwrite"
 federated_alias = "node_b_main_db"               # Routes all requests to Server B's "main_db"
 ```
+</details>
 
-> **Important:** The `secret` on Server A must be the **exact same string** as the `secret` on Server B's `[federation.incoming.us_east_node]` block. The `node_id` must match the incoming block name.
+> <span style="font-size: 1.2em;"></span> **Important:** The `secret` on Server A must be the **exact same string** as the `secret` on Server B's `[federation.incoming.us_east_node]` block. The `node_id` must match the incoming block name.
+
+---
 
 ## 3. Authentication Flow
 
 Federation secrets are **completely separate** from API keys. They use dedicated headers:
 
 1. **Server A** sends a request with:
-   - `X-Federation-Secret`: Base64-encoded federation secret
-   - `X-Federation-Node`: The node identity (e.g., `us_east_node`)
-
+   - <kbd>X-Federation-Secret</kbd>: Base64-encoded federation secret
+   - <kbd>X-Federation-Node</kbd>: The node identity (e.g., `us_east_node`)
 2. **Server B** receives the request:
    - Looks up the node in `federation.incoming`
    - Base64-decodes the secret
    - Compares using `hmac.compare_digest()` (constant-time, timing-attack safe)
    - If valid, creates a scoped `AuthContext` with the incoming key's permissions
    - Federation keys can **never** have `full_admin` access
-
 3. **Config stores plain text**, transport uses Base64 — handled automatically.
+
+---
 
 ## 4. Resource Mapping
 
 Once synced, remote resources appear with a prefix:
 
-- A database `main_db` on Server B becomes `node_b_main_db` on Server A.
-- A storage volume `uploads` becomes `node_b_uploads`.
+- A database `main_db` on Server B becomes <kbd>node_b_main_db</kbd> on Server A.
+- A storage volume `uploads` on Server B becomes <kbd>node_b_uploads</kbd> on Server A.
 
-Requests to prefixed names are automatically proxied to the remote server.
+Requests to prefixed names are automatically proxied to the remote server transparently.
 
-## 5. Monitoring
+---
 
-Call `GET /api/federation/servers` (requires `full_admin` API key) to see:
+## 5. Transport Layers: gRPC & Proxy Fallback
+
+Axiom uses **dual-layer transport negotiation** to maximize performance while ensuring strict compatibility:
+
+<details open>
+<summary><b>1. gRPC Protocol (Default for Federation)</b></summary>
+<br/>
+
+- All federated queries, storage listings, and health streams occur over gRPC if `grpc_enabled = true`.
+- Streaming endpoints utilize long-lived bidirectional channels for minimal latency.
+- Protobuf schema structures strictly type SQL query parameters and file system payloads.
+</details>
+
+<details open>
+<summary><b>2. HTTP Proxy Streaming (Fallback)</b></summary>
+<br/>
+
+- If gRPC fails, the connection is refused, or `grpc_enabled = false`, Axiom automatically falls back to raw HTTP streaming proxies.
+- Client applications can request raw Protobuf bytes over the HTTP proxy by sending an `Accept: application/x-protobuf` header; otherwise, JSON is returned.
+- Proxy streams are perfectly transparent, meaning SSE streams and chunked file downloads pass through unmodified.
+</details>
+
+---
+
+## 6. Monitoring
+
+Call `GET /api/federation/servers` (requires `full_admin` API key) to see the state of the mesh:
+
+<details>
+<summary><b>View Monitoring Response</b></summary>
 
 ```json
 {
@@ -121,36 +165,46 @@ Call `GET /api/federation/servers` (requires `full_admin` API key) to see:
   "incoming_count": 1
 }
 ```
+</details>
 
 - **outgoing**: Servers this node connects TO (with live health status)
 - **incoming**: Servers allowed to connect TO this node (with their permissions)
-- Secrets are **never** exposed in responses
+- *Secrets are **never** exposed in responses.*
 
-## 7. Transport Layers: gRPC & Proxy Fallback
+---
 
-Axiom uses **dual-layer transport negotiation** to maximize performance while ensuring strict compatibility:
+## 7. Resilience
 
-1. **gRPC Protocol (Default for Federation)**
-   - All federated queries, storage listings, and health streams occur over gRPC if `grpc_enabled = true`.
-   - Streaming endpoints utilize long-lived bidirectional channels for minimal latency.
-   - Protobuf schema structures strictly type SQL query parameters and file system payloads.
+<table style="width: 100%; border-collapse: collapse;">
+  <tr style="background-color: #2d2d2d; color: white;">
+    <th style="padding: 10px;">Feature</th>
+    <th style="padding: 10px;">Mechanism</th>
+  </tr>
+  <tr>
+    <td style="padding: 10px;"><b>Parallel Polling</b></td>
+    <td style="padding: 10px;">All remote nodes are health-checked concurrently via <code>asyncio.gather</code> — one slow node never blocks the others.</td>
+  </tr>
+  <tr>
+    <td style="padding: 10px;"><b>Exponential Backoff</b></td>
+    <td style="padding: 10px;">Failed nodes are retried with <code>2^failures</code> seconds delay (capped at 5 min). Healthy nodes are polled at <code>sync_interval</code>.</td>
+  </tr>
+  <tr>
+    <td style="padding: 10px;"><b>Circuit Breaker</b></td>
+    <td style="padding: 10px;">Each federation link is independently tracked. After <code>threshold</code> failures, the node is marked "down" to prevent wasted resources.</td>
+  </tr>
+  <tr>
+    <td style="padding: 10px;"><b>State Persistence</b></td>
+    <td style="padding: 10px;">Node health state is persisted to <code>federation.db</code> (SQLite) to survive server restarts.</td>
+  </tr>
+  <tr>
+    <td style="padding: 10px;"><b>Shared Channels</b></td>
+    <td style="padding: 10px;">All traffic uses persistent HTTP connection pools and shared gRPC stubs.</td>
+  </tr>
+</table>
 
-2. **HTTP Proxy Streaming (Fallback)**
-   - If gRPC fails, the connection is refused, or `grpc_enabled = false`, Axiom automatically falls back to raw HTTP streaming proxies.
-   - Client applications can request raw Protobuf bytes over the HTTP proxy by sending an `Accept: application/x-protobuf` header; otherwise, JSON is returned.
-   - Proxy streams are perfectly transparent, meaning SSE streams and chunked file downloads pass through unmodified.
+---
 
-## 8. Resilience
-
-- **Parallel Polling**: All remote nodes are health-checked concurrentXly via `asyncio.gather` — one slow node never blocks the others.
-- **Exponential Backoff**: Failed nodes are retried with `2^failures` seconds delay (capped at `backoff_max`, default 5 min). Healthy nodes are polled at `sync_interval` as normal.
-- **Per-Node Circuit Breaker**: Each federation link is independently tracked. After `circuit_breaker_threshold` consecutive failures, the node is marked "down" and skipped until its backoff window expires — preventing wasted resources.
-- **SQLite State Persistence**: Node health state is persisted to `data/federation.db`. After a server restart, previously "down" nodes honor their remaining backoff window instead of being hammered immediately.
-- **Timeouts**: Federation health checks use `per_node_timeout` (default 5s) — a slow remote never blocks the sync cycle.
-- **Shared Network Channels**: All federation traffic uses persistent `httpx.AsyncClient` pools and shared gRPC stubs. Proxy clients are stored on `app.state.http_clients` and cleanly closed during server shutdown.
-- **Adaptive Sleep**: If any node is in "degraded" state, the sync loop wakes every 5s instead of 30s — enabling faster recovery without busy-waiting.
-
-## 9. Security
+## 8. Security
 
 - **Isolated Secrets**: Federation secrets cannot be used as API keys, and vice versa.
 - **Per-Node Scoping**: Each node has independent `mode`, `db_scope`, and `fs_scope`.

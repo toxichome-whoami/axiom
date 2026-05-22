@@ -1,6 +1,9 @@
-# Axiom Security Model
+<div align="center">
+  <h1>Axiom Security Model</h1>
+  <p><em>Security-First philosophy engineered to withstand industrial-grade API attack vectors</em></p>
+</div>
 
-Axiom is designed with a "Security-First" philosophy, specifically engineered to withstand industrial-grade API attack vectors.
+<hr/>
 
 ## 1. Zero-Trust Internal Architecture
 
@@ -12,11 +15,36 @@ Axiom is designed with a "Security-First" philosophy, specifically engineered to
 
 Axiom enforces strict separation between authentication domains. A credential from one domain **cannot** be used in another.
 
-| Auth Path | Header | Config Location | Transport | Can be Admin? |
-|-----------|--------|-----------------|-----------|---------------|
-| **API Keys** | `Authorization: Bearer base64(name:secret)` | `[api_key.*]` | Base64 | ✅ Yes (`full_admin`) |
-| **Federation** | `X-Federation-Secret` + `X-Federation-Node` | `[federation.incoming.*]` | Base64 | ❌ Never |
-| **Webhooks** | `X-Axiom-Webhook-Token: base64(secret)` | `[webhook.*]` | Base64 | N/A |
+<table style="width: 100%; border-collapse: collapse;">
+  <tr style="background-color: #2d2d2d; color: white;">
+    <th style="padding: 10px; text-align: left;">Auth Path</th>
+    <th style="padding: 10px; text-align: left;">Header</th>
+    <th style="padding: 10px; text-align: left;">Config Location</th>
+    <th style="padding: 10px; text-align: left;">Transport</th>
+    <th style="padding: 10px; text-align: left;">Can be Admin?</th>
+  </tr>
+  <tr>
+    <td style="padding: 10px;"><b>API Keys</b></td>
+    <td style="padding: 10px;"><code>Authorization: Bearer base64(name:secret)</code></td>
+    <td style="padding: 10px;"><code>[api_key.*]</code></td>
+    <td style="padding: 10px;">Base64</td>
+    <td style="padding: 10px;">Yes (<code>full_admin</code>)</td>
+  </tr>
+  <tr>
+    <td style="padding: 10px;"><b>Federation</b></td>
+    <td style="padding: 10px;"><code>X-Federation-Secret</code> + <code>X-Federation-Node</code></td>
+    <td style="padding: 10px;"><code>[federation.incoming.*]</code></td>
+    <td style="padding: 10px;">Base64</td>
+    <td style="padding: 10px;">Never</td>
+  </tr>
+  <tr>
+    <td style="padding: 10px;"><b>Webhooks</b></td>
+    <td style="padding: 10px;"><code>X-Axiom-Webhook-Token: base64(secret)</code></td>
+    <td style="padding: 10px;"><code>[webhook.*]</code></td>
+    <td style="padding: 10px;">Base64</td>
+    <td style="padding: 10px;">N/A</td>
+  </tr>
+</table>
 
 - **API Keys** authenticate human users and external applications.
 - **Federation Secrets** authenticate server-to-server mesh connections. Each node has independent scope.
@@ -32,20 +60,50 @@ All three paths use Base64 encoding for transport, but the raw secrets are store
 
 ## 4. Attack Protections
 
-| Threat | Protection Mechanism |
-|--------|----------------------|
-| **SQL Injection** | Mandatory use of `sqlglot` for AST-based parsing and validation. Parameterized queries are enforced; string interpolation is mathematically impossible in the data layer. |
-| **Path Traversal** | Comprehensive `../` and null-byte filtering in the `WAFMiddleware`. All file paths are canonicalized and jailed within the storage volume root. |
-| **Brute Force** | Multi-tier fixed-window rate limiting (Global, Per-Key, Per-IP) with a penalty cooldown that bans repeated violators. The in-memory backend uses an **O(1) flat counter+expiry pattern per IP** — RAM usage is constant regardless of attack volume (no growing timestamp lists). |
-| **Timing Attacks** | All secret comparisons (API keys, federation secrets, webhook tokens) use `hmac.compare_digest` (constant-time). |
-| **SSRF (Server-Side Request Forgery)** | The Federation proxy employs a strict Bogon/Localhost IP validator to ensure outbound network connections cannot be manipulated into routing to internal AWS metadata IPs or local resources. |
-| **Denial of Service (DoS)** | Protected via `CircuitBreaker` states linked to large Storage stream outputs. Additionally, all chunked file uploads bypass RAM by writing directly to disk via streaming sockets, neutralizing Out-Of-Memory (OOM) memory exhaustion attacks. |
-| **MIME Sniffing** | All responses include `X-Content-Type-Options: nosniff`. |
-| **XSS** | Strict `application/json` content-type enforcement and WAF-based input sanitization. |
-| **Clickjacking** | `X-Frame-Options: DENY` is added to all responses by the unified `SecurityHeadersMiddleware` (pure ASGI). |
+<table style="width: 100%; border-collapse: collapse;">
+  <tr style="background-color: #2d2d2d; color: white;">
+    <th style="padding: 10px; text-align: left;">Threat</th>
+    <th style="padding: 10px; text-align: left;">Protection Mechanism</th>
+  </tr>
+  <tr>
+    <td style="padding: 10px;"><b>SQL Injection</b></td>
+    <td style="padding: 10px;">Mandatory use of <code>sqlglot</code> for AST-based parsing and validation. Parameterized queries are enforced; string interpolation is mathematically impossible in the data layer.</td>
+  </tr>
+  <tr>
+    <td style="padding: 10px;"><b>Path Traversal</b></td>
+    <td style="padding: 10px;">Comprehensive <code>../</code> and null-byte filtering in the <code>WAFMiddleware</code>. All file paths are canonicalized and jailed within the storage volume root.</td>
+  </tr>
+  <tr>
+    <td style="padding: 10px;"><b>Brute Force</b></td>
+    <td style="padding: 10px;">Multi-tier fixed-window rate limiting (Global, Per-Key, Per-IP) with a penalty cooldown that bans repeated violators. The in-memory backend uses an <b>O(1) flat counter+expiry pattern per IP</b> — RAM usage is constant regardless of attack volume.</td>
+  </tr>
+  <tr>
+    <td style="padding: 10px;"><b>Timing Attacks</b></td>
+    <td style="padding: 10px;">All secret comparisons use <code>hmac.compare_digest</code> (constant-time).</td>
+  </tr>
+  <tr>
+    <td style="padding: 10px;"><b>SSRF</b></td>
+    <td style="padding: 10px;">The Federation proxy employs a strict Bogon/Localhost IP validator to ensure outbound network connections cannot be manipulated into routing to internal AWS metadata IPs or local resources.</td>
+  </tr>
+  <tr>
+    <td style="padding: 10px;"><b>DoS</b></td>
+    <td style="padding: 10px;">Protected via <code>CircuitBreaker</code> states linked to large Storage stream outputs. All chunked file uploads bypass RAM by writing directly to disk via streaming sockets.</td>
+  </tr>
+  <tr>
+    <td style="padding: 10px;"><b>MIME Sniffing</b></td>
+    <td style="padding: 10px;">All responses include <code>X-Content-Type-Options: nosniff</code>.</td>
+  </tr>
+  <tr>
+    <td style="padding: 10px;"><b>XSS</b></td>
+    <td style="padding: 10px;">Strict <code>application/json</code> content-type enforcement and WAF-based input sanitization.</td>
+  </tr>
+  <tr>
+    <td style="padding: 10px;"><b>Clickjacking</b></td>
+    <td style="padding: 10px;"><code>X-Frame-Options: DENY</code> is added to all responses by the unified <code>SecurityHeadersMiddleware</code>.</td>
+  </tr>
+</table>
 
-> [!NOTE]
-> The `info` and `exists` storage actions are available to read-only API keys. All other mutating storage and database actions enforce `readwrite` or `writeonly` mode.
+> **Note:** The `info` and `exists` storage actions are available to read-only API keys. All other mutating storage and database actions enforce `readwrite` or `writeonly` mode.
 
 ## 5. Web Application Firewall (WAF)
 
@@ -72,4 +130,3 @@ Mutating requests (`POST`, `PUT`, `DELETE`) can be made idempotent by providing 
 - **Redaction**: Avoid enabling `features.playground` in public production environments.
 - **Log Rotation**: Ensure `logging.directory` is on a partition with sufficient space to prevent service denial due to disk exhaustion.
 - **Rate Limit Penalties**: While permanent bans are stored in SQLite, temporary IP penalties issued automatically by the rate limiter use the cache backend. Use a Redis backend for rate limiting if you require penalty persistence across load-balanced workers or container restarts. The in-memory backend stores exactly 2 keys per tracked IP (`count` + `expiry`) — safe to use under high-concurrency DDoS without memory growth.
-

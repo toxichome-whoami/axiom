@@ -1,4 +1,9 @@
-# Contributing to Axiom
+<div align="center">
+  <h1>Contributing to Axiom</h1>
+  <p><em>Guidelines for collaborating, reporting issues, and submitting code</em></p>
+</div>
+
+<hr/>
 
 First off, thank you for considering contributing to Axiom! It's people like you that make Axiom such a great tool.
 
@@ -9,7 +14,7 @@ Help us keep Axiom open and inclusive. Please read and follow our [Code of Condu
 ## 2. Getting Started
 
 - **Fork the Repository**: Create your own copy of the project.
-- **Clone Local**: `git clone https://github.com/your-username/axiom.git`
+- **Clone Local**: <code>git clone https://github.com/toxichome-whoami/axiom.git </code>
 - **Environment**: Use a virtual environment.
   ```bash
   python -m venv .venv
@@ -19,28 +24,28 @@ Help us keep Axiom open and inclusive. Please read and follow our [Code of Condu
 
 ## 3. Development Workflow
 
-1.  **Create a Branch**: `git checkout -b feature/your-feature-name`
-2.  **Implementation**: Follow the strict `src/` layout.
-3.  **Testing**: Axiom uses `pytest`. Ensure your changes pass all tests.
-    ```bash
-    pytest tests/
-    ```
-4.  **Linting**: We follow PEP8.
-6.  **Documentation**: Update the relevant files in `docs/` if you change any public API or configuration.
+1. **Create a Branch**: <code>git checkout -b feature/your-feature-name</code>
+2. **Implementation**: Follow the strict `src/` layout.
+3. **Testing**: Axiom uses `pytest`. Ensure your changes pass all tests.
+   ```bash
+   pytest tests/
+   ```
+4. **Linting**: We follow PEP8.
+5. **Documentation**: Update the relevant files in `docs/` if you change any public API or configuration.
 
 ## 4. Pull Request Process
 
-1.  Synchronize your branch with the `main` branch.
-2.  Write clear, descriptive commit messages.
-3.  Fill out the Pull Request template completely.
-4.  A maintainer will review your code and may suggest changes before merging.
+1. Synchronize your branch with the `main` branch.
+2. Write clear, descriptive commit messages.
+3. Fill out the Pull Request template completely.
+4. A maintainer will review your code and may suggest changes before merging.
 
 ## 5. Reporting Bugs
 
 - Use the GitHub Issues tab.
 - Describe the expected behavior and the actual behavior.
 - Provide a minimal reproduction script if possible.
-- Include your `config.toml` (with secrets REDACTED).
+- Include your `config.toml` (with secrets **REDACTED**).
 
 ## 6. Financial Support
 

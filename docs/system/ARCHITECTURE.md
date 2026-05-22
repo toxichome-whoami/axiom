@@ -1,6 +1,9 @@
-# Axiom Architecture
+<div align="center">
+  <h1>Axiom Architecture</h1>
+  <p><em>Aggressive, fully async gateway utilizing FastAPI, httpx, and SQLGlot</em></p>
+</div>
 
-Axiom is built on an aggressive, fully async architecture utilizing `FastAPI`, `httpx`, and `SQLGlot`.
+<hr/>
 
 ## Security Subsystem (Cache-Aside)
 Axiom uses an embedded SQLite database (`data/security.db`) coupled with a native Python `dict` caching layer. This provides zero-latency (sub-nanosecond) authentication and ban evaluations without sacrificing disk-based persistence for dynamic API keys or circuit breaker thresholds.

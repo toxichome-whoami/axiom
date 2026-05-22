@@ -1,23 +1,16 @@
-# Axiom MCP Guide
+<div align="center">
+  <h1>Axiom MCP Guide</h1>
+  <p><em>Standardized Model Context Protocol for secure AI assistant integrations</em></p>
+</div>
 
-MCP (Model Context Protocol) lets AI assistants like Claude, Gemini, and Copilot securely interact with your Axiom databases and files through a standardized SSE-based interface.
+<hr/>
 
----
-
-## Table of Contents
-1. [Quick Start](#1-quick-start)
-2. [How It Works](#2-how-it-works)
-3. [Configuration](#3-configuration)
-4. [Available Tools](#4-available-tools)
-5. [Available Resources](#5-available-resources)
-6. [Security](#6-security)
-7. [Client Setup Examples](#7-client-setup-examples)
-8. [Performance](#8-performance)
-9. [Troubleshooting](#9-troubleshooting)
-
----
+MCP lets AI assistants like **Claude**, **Gemini**, and **Copilot** securely interact with your Axiom databases and files through a standardized SSE-based interface.
 
 ## 1. Quick Start
+
+<details open>
+<summary><b>Step 1: Configure Axiom</b></summary>
 
 ```toml
 # config.toml
@@ -26,23 +19,24 @@ mcp = true
 
 [mcp]
 server_name = "axiom"
-server_version = "1.0.2"
+server_version = "1.0.3"
 max_result_rows = 50
 max_directory_entries = 100
 max_file_read_bytes = 1048576
 ```
+</details>
 
-Restart and connect:
+<details open>
+<summary><b>Step 2: Connect your Client</b></summary>
 
+**Using the MCP CLI (Python):**
 ```bash
-# Using the MCP CLI (Python):
 pip install mcp
 mcp connect http://localhost:4500/api/v1/mcp/sse \
   --headers "Authorization: Bearer $(echo -n 'admin:YOUR_SECRET' | base64)"
 ```
 
-Or configure Claude Desktop:
-
+**Or configure Claude Desktop:**
 ```json
 // ~/.config/Claude/claude_desktop_config.json
 {
@@ -57,6 +51,7 @@ Or configure Claude Desktop:
   }
 }
 ```
+</details>
 
 ---
 
@@ -97,7 +92,7 @@ sequenceDiagram
 5. Tool calls (`list_tables`, `query_database`, etc.) go through the same validation pipeline as REST API calls
 6. All operations run with the API key's `mode`, `db_scope`, and `fs_scope`
 
-**Key difference from REST API:** MCP sessions are stateful — the auth context is bound to the SSE connection, not per-request. This lets AI models maintain context across multiple tool calls without re-authenticating each time.
+> <span style="font-size: 1.2em;"></span> **Key difference from REST API:** MCP sessions are stateful — the auth context is bound to the SSE connection, not per-request. This lets AI models maintain context across multiple tool calls without re-authenticating each time.
 
 ---
 
@@ -105,7 +100,7 @@ sequenceDiagram
 
 ```toml
 [mcp]
-server_name = "axiom"          # Server identity sent to AI clients
+server_name = "axiom"              # Server identity sent to AI clients
 server_version = "1.0.3"           # Version advertised in initialization
 max_result_rows = 50               # Max rows returned per query
 max_directory_entries = 100        # Max files listed per directory
@@ -116,9 +111,9 @@ max_file_read_bytes = 1048576      # Max file read size (1 MB)
 
 | Setting | Default | Why |
 |---------|---------|-----|
-| `max_result_rows` | 50 | Prevents large results from blowing the AI model's context window |
-| `max_directory_entries` | 100 | Caps directory listings to avoid timeout on large folders |
-| `max_file_read_bytes` | 1,048,576 (1 MB) | Limits memory per file read — files over this size return an error |
+| <kbd>max_result_rows</kbd> | `50` | Prevents large results from blowing the AI model's context window |
+| <kbd>max_directory_entries</kbd> | `100` | Caps directory listings to avoid timeout on large folders |
+| <kbd>max_file_read_bytes</kbd> | `1 MB` | Limits memory per file read — files over this size return an error |
 
 ### Zero-Cost When Disabled
 
@@ -134,31 +129,62 @@ When `features.mcp = false`:
 
 ### Database Tools
 
-| Tool | Description | Parameters |
-|------|-------------|------------|
-| `list_databases` | Lists accessible database aliases | _(none)_ |
-| `list_tables(database)` | Lists tables in a database with column previews | `database: str` |
-| `describe_table(database, table)` | Full column definitions (types, PK, nullable) | `database: str`, `table: str` |
-| `query_database(database, sql)` | Execute AST-validated SQL | `database: str`, `sql: str` |
+<table style="width: 100%; border-collapse: collapse;">
+  <tr style="background-color: #2d2d2d; color: white;">
+    <th style="padding: 10px;">Tool</th>
+    <th style="padding: 10px;">Description</th>
+    <th style="padding: 10px;">Parameters</th>
+  </tr>
+  <tr>
+    <td style="padding: 10px;"><code>list_databases</code></td>
+    <td style="padding: 10px;">Lists accessible database aliases</td>
+    <td style="padding: 10px;"><em>(none)</em></td>
+  </tr>
+  <tr>
+    <td style="padding: 10px;"><code>list_tables</code></td>
+    <td style="padding: 10px;">Lists tables in a database with column previews</td>
+    <td style="padding: 10px;"><code>database: str</code></td>
+  </tr>
+  <tr>
+    <td style="padding: 10px;"><code>describe_table</code></td>
+    <td style="padding: 10px;">Full column definitions (types, PK, nullable)</td>
+    <td style="padding: 10px;"><code>database: str</code>, <code>table: str</code></td>
+  </tr>
+  <tr>
+    <td style="padding: 10px;"><code>query_database</code></td>
+    <td style="padding: 10px;">Execute AST-validated SQL</td>
+    <td style="padding: 10px;"><code>database: str</code>, <code>sql: str</code></td>
+  </tr>
+</table>
 
-**`query_database` security:**
-- SQL is parsed by `sqlglot` AST parser — injection attempts are rejected before reaching the database
-- Only the authenticated key's `mode` (readonly/readwrite/writeonly) and `db_scope` are enforced
-- Queries are transpiled to the target engine's dialect automatically
+> **`query_database` security:** SQL is parsed by `sqlglot` AST parser. Injection attempts are rejected before reaching the database. Only the authenticated key's `mode` and `db_scope` are enforced. Queries are transpiled automatically.
 
 ### Storage Tools
 
-| Tool | Description | Parameters |
-|------|-------------|------------|
-| `list_storages` | Lists accessible storage aliases | _(none)_ |
-| `list_files(storage, path)` | Lists directory contents (capped at `max_directory_entries`) | `storage: str`, `path: str` (default: `/`) |
-| `read_file(storage, path)` | Reads text file content (capped at `max_file_read_bytes`) | `storage: str`, `path: str` |
+<table style="width: 100%; border-collapse: collapse;">
+  <tr style="background-color: #2d2d2d; color: white;">
+    <th style="padding: 10px;">Tool</th>
+    <th style="padding: 10px;">Description</th>
+    <th style="padding: 10px;">Parameters</th>
+  </tr>
+  <tr>
+    <td style="padding: 10px;"><code>list_storages</code></td>
+    <td style="padding: 10px;">Lists accessible storage aliases</td>
+    <td style="padding: 10px;"><em>(none)</em></td>
+  </tr>
+  <tr>
+    <td style="padding: 10px;"><code>list_files</code></td>
+    <td style="padding: 10px;">Lists directory contents (capped)</td>
+    <td style="padding: 10px;"><code>storage: str</code>, <code>path: str</code></td>
+  </tr>
+  <tr>
+    <td style="padding: 10px;"><code>read_file</code></td>
+    <td style="padding: 10px;">Reads text file content (capped)</td>
+    <td style="padding: 10px;"><code>storage: str</code>, <code>path: str</code></td>
+  </tr>
+</table>
 
-**`read_file` security:**
-- Path traversal attacks are blocked by `os.path.realpath` canonical resolution
-- Symlink swaps are detected via `O_NOFOLLOW` + `/proc/self/fd` verification (Linux)
-- File reads are offloaded to a thread pool — event loop is never blocked
-- All error messages are sanitized — no internal paths leaked
+> **`read_file` security:** Path traversal attacks are blocked by canonical resolution. File reads are offloaded to a thread pool — event loop is never blocked.
 
 ---
 
@@ -171,84 +197,37 @@ Resources provide structured context that AI models can read inline (without too
 | `axiom://db/{alias}/schema` | Full database schema (tables, columns, types, PKs) |
 | `axiom://fs/{alias}/info` | Storage volume configuration and limits |
 
-Resources respect the same auth scopes as tools — a key without access to a database cannot read its schema resource.
+*Resources respect the same auth scopes as tools.*
 
 ---
 
 ## 6. Security
 
-### Auth Flow
-```
-Client → Bearer token → _authenticate_from_request()
-  → Parse base64 token (key_name:secret)
-  → _evaluate_network_bans()     — IP + key ban check
-  → _get_dynamic_key_context()   — SQLite-backed key registry
-  → _get_static_key_context()     — config.toml fallback
-  → set_mcp_auth()               — binds to SSE session
-```
-
 ### Protections
 
 | Threat | Mitigation |
 |--------|-----------|
-| SQL injection | `sqlglot` AST parser rejects malformed/malicious SQL before execution |
-| Path traversal | `os.path.realpath` canonical comparison blocks `../` escapes |
-| Symlink TOCTOU | `O_NOFOLLOW` + post-open realpath verification (Linux) |
-| File bomb | `max_file_read_bytes` cap — files over limit return error, not memory |
-| Directory bomb | `max_directory_entries` cap — lists are truncated safely |
-| Auth bypass | Same auth path as REST API — HMAC + SHA-256 |
-| Session hijack | `ContextVar` scoped per async task, cleared in `finally` block |
-| Enumeration | Generic "access denied" messages — no name leak on scope violations |
-| Error leakage | All exceptions sanitized — no stack traces, no internal paths |
-| Resource leak | `MCPServerManager.shutdown()` called during app teardown |
-| Event loop blocking | All file I/O runs in `asyncio.to_thread()` — never blocks other requests |
-
-### Rate Limiting
-MCP requests go through the same `RateLimitMiddleware` as REST API calls. Configure via `config.toml`:
-
-```toml
-[rate_limit]
-enabled = true
-max_requests = 100
-window = 60
-```
-
-Rate limits are per API key, not per connection.
+| **SQL injection** | `sqlglot` AST parser rejects malformed/malicious SQL before execution |
+| **Path traversal** | `os.path.realpath` canonical comparison blocks `../` escapes |
+| **Symlink TOCTOU** | `O_NOFOLLOW` + post-open realpath verification (Linux) |
+| **File bomb** | `max_file_read_bytes` cap — files over limit return error, not memory |
+| **Directory bomb** | `max_directory_entries` cap — lists are truncated safely |
+| **Auth bypass** | Same auth path as REST API — HMAC + SHA-256 |
+| **Session hijack** | `ContextVar` scoped per async task, cleared in `finally` block |
+| **Enumeration** | Generic "access denied" messages — no name leak on scope violations |
 
 ---
 
 ## 7. Client Setup Examples
 
-### Claude Desktop
-
-```json
-{
-  "mcpServers": {
-    "axiom": {
-      "command": "mcp",
-      "args": ["connect", "http://localhost:4500/api/v1/mcp/sse"],
-      "env": {
-        "MCP_TOKEN": "YWRtaW46W..."
-      }
-    }
-  }
-}
-```
-
-**Important:** The `MCP_TOKEN` environment variable is read by the MCP CLI and passed as the `Authorization` header. Generate it with:
-
-```bash
-echo -n "admin:your_secret_here" | base64
-```
-
-### Custom Python Client
+<details>
+<summary><b>Custom Python Client</b></summary>
 
 ```python
 import asyncio
 import httpx
 from mcp import ClientSession
 from mcp.client.sse import sse_client
-
 
 async def main():
     token = "YWRtaW46W..."
@@ -272,94 +251,54 @@ async def main():
             )
             print(result.content[0].text)
 
-
 asyncio.run(main())
 ```
+</details>
 
-### cURL (for testing)
+<details>
+<summary><b>cURL (for testing)</b></summary>
 
 ```bash
-# Step 1: Get an SSE session ID
-# (Most MCP SDKs handle this automatically)
-
-# Step 2: Send a tools/list request via POST
+# Send a tools/list request via POST
 curl -X POST "http://localhost:4500/api/v1/mcp/messages" \
   -H "Authorization: Bearer YWRtaW46W..." \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc": "2.0", "id": 1, "method": "tools/list"}'
 ```
+</details>
 
 ---
 
-## 8. Performance
-
-### Resource Profile
+## 8. Performance Profile
 
 | Scenario | Memory | CPU | Event Loop Blocking |
 |----------|--------|-----|---------------------|
 | MCP disabled (idle) | **0 KB** | **0%** | None |
-| MCP connected (idle) | ~100 KB | 0% | None |
 | Query database (1 row) | ~10 KB | ~1ms | **0ms** (async) |
-| List tables (50 tables) | ~50 KB | ~5ms | **0ms** (async) |
 | Read file (1 MB) | ~1 MB | ~2ms | **0ms** (thread pool) |
-| List directory (100 entries) | ~20 KB | ~1ms | **0ms** (thread pool) |
-
-### Connection Handling
-
-- Each SSE connection is an async task — lightweight (~8 KB overhead)
-- No background threads, no polling, no timers
-- Connections are cleaned up on disconnect (SDK handles this)
-- All file I/O uses `asyncio.to_thread()` — the event loop remains responsive under load
 
 ---
 
 ## 9. Troubleshooting
 
-### "MCP_AUTH_FAILED"
+<details>
+<summary><b>"MCP_AUTH_FAILED"</b></summary>
+<br>
+The API key is invalid, expired, or the token format is wrong.<br><br>
+<i>Fix: Ensure the Authorization header is <br>
+<code>Bearer &lt;base64("key_name:secret")&gt;</code></i>
+</details>
 
-The API key is invalid, expired, or the token format is wrong.
+<details>
+<summary><b>"Access denied"</b></summary>
+<br>
+The API key exists but does not have permission for that database or storage.<br><br>
+<i>Fix: Check the key's <code>db_scope</code> or <code>fs_scope</code> in <code>config.toml</code>.</i>
+</details>
 
-```
-Fix: Ensure the Authorization header is:
-  Authorization: Bearer <base64("key_name:secret")>
-  
-Generate with: echo -n "admin:your_secret" | base64
-```
-
-### "Access denied: the requested resource is not available"
-
-The API key exists but does not have permission for that database or storage.
-
-```
-Fix: Check the key's db_scope or fs_scope in config.toml or SecurityStorage.
-  api_key.admin.db_scope = ["*"]      # Allow all databases
-  api_key.admin.fs_scope = ["*"]      # Allow all storages
-```
-
-### "File too large"
-
-The file exceeds `max_file_read_bytes` (default 1 MB).
-
-```
-Fix: Increase the limit in config.toml:
-  [mcp]
-  max_file_read_bytes = 5242880  # 5 MB
-```
-
-### SSE connection drops
-
-Network timeouts or proxy configuration issues.
-
-```
-Fix: Ensure reverse proxy (LiteSpeed/NGINX) has adequate timeout settings:
-  proxy_read_timeout 300s;
-  proxy_send_timeout 300s;
-```
-
-### "Tool 'X' encountered an error"
-
-An internal error occurred during tool execution. The error is sanitized — no stack traces are leaked to the client.
-
-```
-Fix: Check the Axiom server logs for the full error details.
-```
+<details>
+<summary><b>"File too large"</b></summary>
+<br>
+The file exceeds <code>max_file_read_bytes</code> (default 1 MB).<br><br>
+<i>Fix: Increase the limit in <code>config.toml</code> under <code>[mcp]</code>.</i>
+</details>
