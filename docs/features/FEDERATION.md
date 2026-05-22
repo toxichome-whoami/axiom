@@ -65,6 +65,8 @@ url = "https://server-b.example.com"
 secret = "gK8xPmW2qR7nY4vB9cT1jL6hF3dA0sE"    # Must match Server B's incoming key
 node_id = "us_east_node"                         # Your identity on Server B
 trust_mode = "verify"                            # verify | trust (skip TLS check)
+grpc_port = 50051                                # Remote gRPC port
+grpc_enabled = true                              # Prefer gRPC with HTTP proxy fallback
 
 # ─── Federation Alias Mapping ─────────────────────
 # Expose a remote database as if it were local.
@@ -124,20 +126,34 @@ Call `GET /api/federation/servers` (requires `full_admin` API key) to see:
 - **incoming**: Servers allowed to connect TO this node (with their permissions)
 - Secrets are **never** exposed in responses
 
-## 6. Resilience
+## 7. Transport Layers: gRPC & Proxy Fallback
 
-- **Parallel Polling**: All remote nodes are health-checked concurrently via `asyncio.gather` — one slow node never blocks the others.
+Axiom uses **dual-layer transport negotiation** to maximize performance while ensuring strict compatibility:
+
+1. **gRPC Protocol (Default for Federation)**
+   - All federated queries, storage listings, and health streams occur over gRPC if `grpc_enabled = true`.
+   - Streaming endpoints utilize long-lived bidirectional channels for minimal latency.
+   - Protobuf schema structures strictly type SQL query parameters and file system payloads.
+
+2. **HTTP Proxy Streaming (Fallback)**
+   - If gRPC fails, the connection is refused, or `grpc_enabled = false`, Axiom automatically falls back to raw HTTP streaming proxies.
+   - Client applications can request raw Protobuf bytes over the HTTP proxy by sending an `Accept: application/x-protobuf` header; otherwise, JSON is returned.
+   - Proxy streams are perfectly transparent, meaning SSE streams and chunked file downloads pass through unmodified.
+
+## 8. Resilience
+
+- **Parallel Polling**: All remote nodes are health-checked concurrentXly via `asyncio.gather` — one slow node never blocks the others.
 - **Exponential Backoff**: Failed nodes are retried with `2^failures` seconds delay (capped at `backoff_max`, default 5 min). Healthy nodes are polled at `sync_interval` as normal.
 - **Per-Node Circuit Breaker**: Each federation link is independently tracked. After `circuit_breaker_threshold` consecutive failures, the node is marked "down" and skipped until its backoff window expires — preventing wasted resources.
 - **SQLite State Persistence**: Node health state is persisted to `data/federation.db`. After a server restart, previously "down" nodes honor their remaining backoff window instead of being hammered immediately.
 - **Timeouts**: Federation health checks use `per_node_timeout` (default 5s) — a slow remote never blocks the sync cycle.
-- **Shared HTTP Clients**: All federation traffic uses persistent `httpx.AsyncClient` pools (with `max_keepalive_connections=5`), avoiding TCP handshake overhead. Proxy clients are stored on `app.state.http_clients` and **cleanly closed during server shutdown**.
+- **Shared Network Channels**: All federation traffic uses persistent `httpx.AsyncClient` pools and shared gRPC stubs. Proxy clients are stored on `app.state.http_clients` and cleanly closed during server shutdown.
 - **Adaptive Sleep**: If any node is in "degraded" state, the sync loop wakes every 5s instead of 30s — enabling faster recovery without busy-waiting.
 
-## 7. Security
+## 9. Security
 
 - **Isolated Secrets**: Federation secrets cannot be used as API keys, and vice versa.
 - **Per-Node Scoping**: Each node has independent `mode`, `db_scope`, and `fs_scope`.
 - **Key Compromise**: If one node is compromised, delete its `[federation.incoming.*]` block and restart. Only that node loses access.
 - **No Admin Access**: Federation keys always have `full_admin=false` — they cannot access `/api/admin/*` or `/api/federation/servers`.
-- **Encryption**: Always use `https` for federation URLs in production.
+- **Encryption**: Always use `https` for federation URLs in production, and ensure gRPC is protected behind mutual TLS or secure channels.

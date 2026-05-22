@@ -92,6 +92,15 @@ Global webhook delivery settings.
 | `retry_delay` | `2` | Base delay (exponential: delay^attempt) |
 | `queue_size` | `10000` | Max pending webhook events |
 | `secret_header` | `"X-Axiom-Signature"` | HMAC header name |
+| `max_concurrent_deliveries` | `8` | Number of background dispatch workers |
+| `persistence_enabled` | `true` | Save events to SQLite before delivery |
+| `persistence_path` | `"./data/webhooks.db"` | SQLite database path |
+| `dead_letter_enabled` | `true` | Save permanently failed events |
+| `dead_letter_retention_hours` | `72` | Hours to keep dead letter events |
+| `circuit_breaker_enabled` | `true` | Enable circuit breakers per URL |
+| `circuit_breaker_threshold` | `5` | Failures before opening circuit |
+| `circuit_breaker_recovery` | `30` | Seconds to wait before probe request |
+| `retry_jitter_enabled` | `true` | Add 50-150% jitter to retry delay |
 
 ---
 
@@ -106,6 +115,9 @@ Per-webhook subscription definition.
 | `rule` | yes | Subscription rule (see format below) |
 | `headers` | no | Extra headers to send with each delivery |
 | `enabled` | `true` | Enable or disable this rule |
+| `timeout` | `0` | Per-hook delivery timeout (0 = global default) |
+| `max_retries` | `0` | Per-hook max retries (0 = global default) |
+| `delivery_format` | `"json"` | Payload format: `json \| protobuf` |
 
 **Rule format:** `module.operation@alias:target`
 
@@ -181,6 +193,12 @@ Per-webhook subscription definition.
 |-----|---------|-------------|
 | `enabled` | `false` | Enable federation |
 | `sync_interval` | `30` | Health sync interval in seconds |
+| `per_node_timeout` | `5.0` | Node health check timeout |
+| `backoff_max` | `300.0` | Max backoff for failed nodes |
+| `circuit_breaker_threshold` | `3` | Failures before marking node down |
+| `grpc_port` | `50051` | Default gRPC listen port |
+| `grpc_max_message_mb` | `100` | Max gRPC message size in MB |
+| `grpc_keepalive_seconds` | `30` | gRPC ping interval |
 
 ## `[federation.incoming.<node_id>]`
 
@@ -204,6 +222,8 @@ Outgoing connections to remote Axiom servers.
 | `secret` | yes | Federation secret (must match remote's incoming key) |
 | `node_id` | yes | Your identity on the remote server |
 | `trust_mode` | `"verify"` | `verify` (TLS) or `trust` (skip TLS check) |
+| `grpc_port` | `50051` | Remote server's gRPC port |
+| `grpc_enabled` | `true` | Use gRPC for this node with HTTP proxy fallback |
 
 ---
 
@@ -218,4 +238,3 @@ Model Context Protocol server configuration. Enables AI assistants to interact w
 | `max_result_rows` | `50` | Max rows returned per query |
 | `max_directory_entries` | `100` | Max files listed per directory |
 | `max_file_read_bytes` | `1048576` | Max file read size (bytes) |
-

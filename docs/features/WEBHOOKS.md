@@ -20,6 +20,7 @@ url = "https://your-app.com/api/hooks/new-user"
 secret = "hmac_signing_secret_here_at_least_32_chars"
 rule = "db.write@main_db:users"
 enabled = true
+delivery_format = "json"  # or "protobuf"
 ```
 
 ### Rule Syntax: `{module}.{operation}@{alias}:{target}`
@@ -86,6 +87,10 @@ All webhooks are delivered as JSON POST requests with signature headers.
 }
 ```
 
+### Protobuf Delivery
+If `delivery_format = "protobuf"` is configured, the exact same schema structure is compiled into a high-density binary payload.
+The request will be sent with `Content-Type: application/x-protobuf`.
+
 ## 5. Signature Verification (Your App)
 
 To ensure a webhook was actually sent by Axiom, **verify the HMAC-SHA256 signature**.
@@ -123,6 +128,7 @@ function verifyWebhook(rawBody, signatureHeader, secret) {
 Axiom uses an industrial-grade, highly-concurrent persistent delivery system to ensure webhook reliability.
 
 ### Persistent Queues and Dead Letter
+- **Concurrency**: Webhooks are dispatched across an auto-scaling pool of up to `max_concurrent_deliveries` (default: 8) async background workers for high throughput.
 - **Persistence**: If `persistence_enabled` is true, all webhooks are written to a SQLite WAL database (`webhooks.db`) before delivery. If the server crashes, deliveries resume exactly where they left off.
 - **Dead Letter Queue (DLQ)**: If an event exceeds `max_retries`, it is moved to the DLQ (`webhook_dead_letter` table) for manual inspection and replay.
 
