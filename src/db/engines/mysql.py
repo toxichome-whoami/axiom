@@ -5,6 +5,8 @@ from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from config.schema import DatabaseDefConfig
 from db.engines.base import ColumnInfo, DatabaseEngine, QueryResult, TableInfo
+from encoding.proto_utils import _encode_value
+from generated.axiom.v1 import db_pb2
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Helper Functions
@@ -36,16 +38,30 @@ async def _execute_mutation(conn, statement, params: dict) -> QueryResult:
     return QueryResult(affected_rows=result.rowcount)
 
 
-async def _execute_read(conn, statement, params: dict) -> QueryResult:
+async def _execute_read(
+    conn, statement, params: dict, return_format: str
+) -> QueryResult:
     """Pulls complex read layouts gracefully bypassing empty mappings safely."""
     result = await conn.execute(statement, params)
-    rows = [dict(row._mapping) for row in result] if result.returns_rows else []
     columns = list(result.keys()) if result.keys() else []
 
     if not result.returns_rows:
         await conn.commit()
+        return QueryResult(columns=columns, rows=[], affected_rows=result.rowcount)
 
-    return QueryResult(columns=columns, rows=rows, affected_rows=result.rowcount)
+    if return_format == "protobuf":
+        pb = db_pb2.QueryResponse()
+        pb.columns.extend(columns)
+
+        for row in result:
+            pb_row = pb.rows.add()
+            for val in row:
+                _encode_value(pb_row.values.add(), val)
+
+        return QueryResult(columns=columns, affected_rows=result.rowcount, proto_msg=pb)
+    else:
+        rows = [dict(row._mapping) for row in result]
+        return QueryResult(columns=columns, rows=rows, affected_rows=result.rowcount)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -112,7 +128,10 @@ class MySQLEngine(DatabaseEngine):
             ]
 
     async def execute(
-        self, sql: str, params: Optional[Dict[str, Any]] = None
+        self,
+        sql: str,
+        params: Optional[Dict[str, Any]] = None,
+        return_format: str = "json",
     ) -> QueryResult:
         query_params = params or {}
         statement = text(sql)
@@ -120,7 +139,7 @@ class MySQLEngine(DatabaseEngine):
         async with self.engine.connect() as conn:
             if _is_mutation_query(sql):
                 return await _execute_mutation(conn, statement, query_params)
-            return await _execute_read(conn, statement, query_params)
+            return await _execute_read(conn, statement, query_params, return_format)
 
     @property
     def dialect(self) -> str:

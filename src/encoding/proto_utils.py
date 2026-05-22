@@ -1,14 +1,15 @@
-import orjson
 import os
 import sys
 from typing import Any
+
+import orjson
 
 # Ensure generated directory is in the path for imports to work
 sys.path.insert(
     0, os.path.join(os.path.dirname(os.path.dirname(__file__)), "generated")
 )
 
-from axiom.v1 import db_pb2, fs_pb2, webhook_pb2  # type: ignore
+from axiom.v1 import webhook_pb2  # type: ignore
 
 
 def _encode_value(pb_val: Any, val: Any) -> None:
@@ -26,40 +27,6 @@ def _encode_value(pb_val: Any, val: Any) -> None:
         pb_val.bytes_val = val
     else:
         pb_val.string_val = str(val)
-
-
-def query_result_to_proto(result_dict: dict) -> db_pb2.QueryResponse:
-    pb = db_pb2.QueryResponse()
-    columns = result_dict.get("columns") or []
-    pb.columns.extend(columns)
-
-    rows = result_dict.get("rows")
-    if rows:
-        for row in rows:
-            pb_row = pb.rows.add()
-            for col in columns:
-                val = row.get(col)
-                pb_val = pb_row.values.add()
-                _encode_value(pb_val, val)
-
-    affected_rows = result_dict.get("affected_rows")
-    if affected_rows is not None:
-        pb.affected_rows = affected_rows
-    return pb
-
-
-def list_dir_to_proto(total: int, entries: list) -> fs_pb2.ListDirectoryResponse:
-    pb = fs_pb2.ListDirectoryResponse()
-    pb.total = total
-    for entry in entries:
-        pb_entry = pb.entries.add()
-        pb_entry.name = entry.get("name", "")
-        pb_entry.path = entry.get("path", "")
-        pb_entry.is_dir = entry.get("is_dir", False)
-        pb_entry.size = entry.get("size", 0)
-        pb_entry.modified = entry.get("modified", "")
-        pb_entry.mime_type = entry.get("mime_type", "")
-    return pb
 
 
 def webhook_payload_dict_to_proto(payload_dict: dict) -> webhook_pb2.WebhookPayload:

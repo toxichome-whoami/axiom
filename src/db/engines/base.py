@@ -32,6 +32,7 @@ class QueryResult:
     columns: Optional[List[str]] = None
     rows: Optional[List[Dict[str, Any]]] = None
     affected_rows: Optional[int] = None
+    proto_msg: Optional[Any] = None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -66,7 +67,10 @@ class DatabaseEngine(Protocol):
         ...
 
     async def execute(
-        self, sql: str, params: Optional[Dict[str, Any]] = None
+        self,
+        sql: str,
+        params: Optional[Dict[str, Any]] = None,
+        return_format: str = "json",
     ) -> QueryResult:
         """Transmits sanitized parameterized statements directly to the target node."""
         ...

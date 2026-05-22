@@ -1,9 +1,9 @@
 import asyncio
 import hashlib
-import orjson
 import time
 from typing import Any
 
+import orjson
 from fastapi import Depends, Path, Query, Request
 
 from api.database.filter_builder import build_where_clause
@@ -27,8 +27,8 @@ from cache import CacheManager
 from config.provider import get_config_dependency
 from config.schema import AxiomConfig
 from db.dialect.transpiler import transpile_sql
+from db.engines.base import QueryResult
 from db.pool import DatabasePoolManager
-from encoding.proto_utils import query_result_to_proto
 from server.middleware.auth import get_auth_context
 from utils.types import AuthContext, ServerMode
 from webhook.emitter import WebhookTrigger, emit_event
@@ -346,15 +346,22 @@ class QueryExecutionPipeline:
 
     @staticmethod
     async def run_query(
-        engine, db_cfg, auth, request: Request, db_name: str, sql: str, params: dict
-    ) -> dict:
+        engine,
+        db_cfg,
+        auth,
+        request: Request,
+        db_name: str,
+        sql: str,
+        params: dict,
+        return_format: str = "json",
+    ):
         safe_sql, operations, target_table = validate_query(
             sql, db_cfg, auth.mode.value
         )
 
         is_read = operations in ("select", "show", "describe")
         cache_key = None
-        if is_read and _QUERY_CACHE_ENABLED:
+        if is_read and _QUERY_CACHE_ENABLED and return_format == "json":
             cache_key = (
                 "qc:"
                 + hashlib.md5(
@@ -363,11 +370,17 @@ class QueryExecutionPipeline:
             )
             cached = await CacheManager.get(cache_key)
             if cached is not None:
-                return cached
+                return QueryResult(
+                    columns=cached.get("columns"),
+                    rows=cached.get("rows"),
+                    affected_rows=cached.get("affected_rows"),
+                )
 
         transpiled_sql = transpile_sql(safe_sql, to_dialect=engine.dialect)
 
-        result = await engine.execute(transpiled_sql, params)
+        result = await engine.execute(
+            transpiled_sql, params, return_format=return_format
+        )
 
         if _WEBHOOK_ENABLED:
             webhook_action = "SELECT" if is_read else operations.upper()
@@ -380,16 +393,22 @@ class QueryExecutionPipeline:
                 result.affected_rows or 0,
             )
 
-        response = {
-            "columns": result.columns,
-            "rows": result.rows,
-            "affected_rows": result.affected_rows,
-        }
+        if (
+            is_read
+            and _QUERY_CACHE_ENABLED
+            and cache_key is not None
+            and return_format == "json"
+        ):
+            await CacheManager.set(
+                cache_key,
+                {
+                    "columns": result.columns,
+                    "rows": result.rows,
+                    "affected_rows": result.affected_rows,
+                },
+            )
 
-        if is_read and _QUERY_CACHE_ENABLED and cache_key is not None:
-            await CacheManager.set(cache_key, response)
-
-        return response
+        return result
 
     @staticmethod
     async def run_bulk_inserts(
@@ -560,16 +579,29 @@ async def execute_query(
     engine, db_cfg = await get_db_engine(db_name, auth)
 
     try:
-        data = await QueryExecutionPipeline.run_query(
-            engine, db_cfg, auth, request, db_name, body.sql, body.params or {}
+        req_fmt = "protobuf" if is_protobuf_requested(request) else "json"
+        result = await QueryExecutionPipeline.run_query(
+            engine,
+            db_cfg,
+            auth,
+            request,
+            db_name,
+            body.sql,
+            body.params or {},
+            return_format=req_fmt,
         )
 
-        if is_protobuf_requested(request):
-            proto_msg = query_result_to_proto(data)
-        else:
-            proto_msg = None
+        json_data = (
+            {
+                "columns": result.columns,
+                "rows": result.rows,
+                "affected_rows": result.affected_rows,
+            }
+            if req_fmt == "json"
+            else None
+        )
 
-        return protobuf_or_json(request, proto_msg, data)
+        return protobuf_or_json(request, result.proto_msg, json_data)
     except AxiomException:
         raise
     except Exception as exec_error:
@@ -603,11 +635,23 @@ async def get_rows(
     raw_sql, sql_params = _construct_select_rest_payload(table_name, params)
 
     try:
-        data = await QueryExecutionPipeline.run_query(
-            engine, db_cfg, auth, request, db_name, raw_sql, sql_params
+        req_fmt = "protobuf" if is_protobuf_requested(request) else "json"
+        result = await QueryExecutionPipeline.run_query(
+            engine,
+            db_cfg,
+            auth,
+            request,
+            db_name,
+            raw_sql,
+            sql_params,
+            return_format=req_fmt,
         )
 
-        row_count = len(data["rows"])
+        row_count = (
+            len(result.rows)
+            if result.rows is not None
+            else (len(result.proto_msg.rows) if result.proto_msg else 0)
+        )
         has_more = row_count >= params.limit
         pagination = {"page": params.page, "limit": params.limit, "has_more": has_more}
 
@@ -624,23 +668,24 @@ async def get_rows(
             cr = await QueryExecutionPipeline.run_query(
                 engine, db_cfg, auth, request, db_name, count_sql, count_params
             )
-            total = cr["rows"][0]["cnt"]
-            pagination["total"] = total
-            pagination["has_more"] = (params.page * params.limit) < total
+            pagination["total_count"] = cr.rows[0]["cnt"] if cr.rows else 0
+            pagination["has_more"] = (params.page * params.limit) < pagination[
+                "total_count"
+            ]
 
-        json_payload = {"rows": data["rows"], "pagination": pagination}
-
-        if is_protobuf_requested(request):
-            proto_msg = query_result_to_proto(data)
+        if req_fmt == "protobuf":
+            return protobuf_or_json(request, result.proto_msg, None)
         else:
-            proto_msg = None
-
-        return protobuf_or_json(
-            request,
-            proto_msg,
-            json_payload,
-            max_age=_QUERY_RESULTS_TTL,
-        )
+            json_data = {
+                "rows": result.rows,
+                "pagination": pagination,
+            }
+            return protobuf_or_json(
+                request,
+                None,
+                json_data,
+                max_age=_QUERY_RESULTS_TTL,
+            )
     except AxiomException:
         raise
     except Exception as select_error:
@@ -709,7 +754,7 @@ async def update_rows(
         data = await QueryExecutionPipeline.run_query(
             engine, db_cfg, auth, request, db_name, sql, sql_params
         )
-        return success_response(request, {"affected_rows": data["affected_rows"]})
+        return success_response(request, {"affected_rows": data.affected_rows})
     except AxiomException:
         raise
     except Exception as update_error:
@@ -741,7 +786,7 @@ async def delete_rows(
         data = await QueryExecutionPipeline.run_query(
             engine, db_cfg, auth, request, db_name, sql, sql_params
         )
-        return success_response(request, {"affected_rows": data["affected_rows"]})
+        return success_response(request, {"affected_rows": data.affected_rows})
     except AxiomException:
         raise
     except Exception as exec_error:
