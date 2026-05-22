@@ -6,7 +6,12 @@ from typing import Any
 import orjson
 from fastapi import Depends, Path, Query, Request
 
-from api.database.filter_builder import build_where_clause
+from api.database.filter_builder import (
+    build_where_clause,
+    construct_delete,
+    construct_insert,
+    construct_update,
+)
 from api.database.query_parser import validate_query
 from api.database.schemas import (
     DeleteRequest,
@@ -16,7 +21,8 @@ from api.database.schemas import (
     UpdateRequest,
 )
 from api.errors import AxiomException, ErrorCodes
-from api.federation.proxy import proxy_request
+from api.federation.proxy import _build_alias_map, _resolve_server, proxy_request
+from api.federation.state import FederationStateManager
 from api.responses import (
     cacheable_response,
     is_protobuf_requested,
@@ -24,7 +30,8 @@ from api.responses import (
     success_response,
 )
 from cache import CacheManager
-from config.provider import get_config_dependency
+from config.loader import HOT_RELOAD_CALLBACKS
+from config.provider import GlobalConfigProvider, get_config_dependency
 from config.schema import AxiomConfig
 from db.dialect.transpiler import transpile_sql
 from db.engines.base import QueryResult
@@ -57,7 +64,6 @@ def _refresh_feature_flags():
         _WEBHOOK_ENABLED, \
         _QUERY_CACHE_ENABLED, \
         _QUERY_RESULTS_TTL
-    from config.provider import GlobalConfigProvider
 
     config = GlobalConfigProvider().get_config()
     _FEDERATION_ENABLED = bool(config.features.federation and config.federation.enabled)
@@ -70,13 +76,12 @@ def _refresh_feature_flags():
 
     if _FEDERATION_ENABLED:
         try:
-            from api.federation.proxy import _build_alias_map
-
             _build_alias_map()
         except ImportError:
             pass
 
 
+HOT_RELOAD_CALLBACKS.append(_refresh_feature_flags)
 _refresh_feature_flags()
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -87,8 +92,6 @@ _refresh_feature_flags()
 def _is_federated(alias: str) -> bool:
     if not _FEDERATION_ENABLED:
         return False
-
-    from api.federation.proxy import _resolve_server
 
     return _resolve_server(alias) is not None
 
@@ -107,8 +110,6 @@ async def get_db_engine(db_name: str, auth: AuthContext):
         raise AxiomException(
             ErrorCodes.DB_NOT_FOUND, f"Database '{db_name}' not found", 404
         )
-
-    from config.provider import GlobalConfigProvider
 
     return engine, GlobalConfigProvider().get_config().database[db_name]
 
@@ -420,7 +421,6 @@ class QueryExecutionPipeline:
         table_name: str,
         rows: list,
     ) -> int:
-        from api.database.filter_builder import construct_insert
 
         total_affected = 0
 
@@ -490,8 +490,6 @@ async def list_databases(
 
     if _FEDERATION_ENABLED:
         try:
-            from api.federation.state import FederationStateManager
-
             state_mgr = FederationStateManager()
             await state_mgr.load()
 
@@ -747,7 +745,6 @@ async def update_rows(
         )
 
     engine, db_cfg = await get_db_engine(db_name, auth)
-    from api.database.filter_builder import construct_update
 
     try:
         sql, sql_params = construct_update(table_name, body.update, body.filter)
@@ -779,7 +776,6 @@ async def delete_rows(
         )
 
     engine, db_cfg = await get_db_engine(db_name, auth)
-    from api.database.filter_builder import construct_delete
 
     try:
         sql, sql_params = construct_delete(table_name, body.filter)

@@ -1,7 +1,7 @@
 syntax = "proto3";
 package axiom.v1;
 
-message QueryRequest {
+message ExecuteQueryRequest {
   string sql = 1;
   repeated string params = 2; // Parameterized query values
   string db_alias = 3;
@@ -10,7 +10,7 @@ message QueryRequest {
   map<string, string> options = 6; // DB-specific options
 }
 
-message QueryResponse {
+message ExecuteQueryResponse {
   repeated string columns = 1;
   repeated Row rows = 2;
   int32 affected_rows = 3;
@@ -54,14 +54,14 @@ message DeleteRequest {
 
 message DatabaseResponse {
   oneof payload {
-    QueryResponse query = 1;
-    TablesListResponse tables = 2;
+    ExecuteQueryResponse query = 1;
+    ListTablesResponse tables = 2;
     SchemaResponse schema = 3;
     WriteResult write = 4; // INSERT/UPDATE/DELETE result
   }
 }
 
-message TablesListResponse {
+message ListTablesResponse {
   repeated TableInfo tables = 1;
 }
 

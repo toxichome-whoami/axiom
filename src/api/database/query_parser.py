@@ -5,7 +5,8 @@ import sqlglot
 from sqlglot import exp
 from sqlglot.errors import ParseError
 
-from api.errors import ErrorCodes, AxiomException
+from api.errors import AxiomException, ErrorCodes
+from config.provider import GlobalConfigProvider
 from config.schema import DatabaseDefConfig
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -94,8 +95,6 @@ class QueryValidator:
     @classmethod
     def _get_parser_cache(cls):
         if cls._parser_cache is None:
-            from config.provider import GlobalConfigProvider
-
             config = GlobalConfigProvider().get_config()
             # If not configured, default to 2048
             maxsize = 2048

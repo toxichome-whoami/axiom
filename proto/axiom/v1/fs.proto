@@ -8,7 +8,7 @@ message ListDirectoryRequest {
   int32 offset = 4;
 }
 
-message DirectoryEntry {
+message FederationServiceListDirectoryResponse {
   string name = 1;
   string path = 2;
   bool is_dir = 3;
@@ -19,7 +19,7 @@ message DirectoryEntry {
 
 message ListDirectoryResponse {
   int32 total = 1;
-  repeated DirectoryEntry entries = 2;
+  repeated FederationServiceListDirectoryResponse entries = 2;
 }
 
 message FileUploadRequest {
@@ -32,11 +32,11 @@ message FileUploadRequest {
 message StorageResponse {
   oneof payload {
     ListDirectoryResponse directory = 1;
-    FsWriteResult write = 2;
+    UploadFileResponse write = 2;
   }
 }
 
-message FsWriteResult {
+message UploadFileResponse {
   int32 affected_rows = 1;
   optional int64 last_insert_id = 2;
 }

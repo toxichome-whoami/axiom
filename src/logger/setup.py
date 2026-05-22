@@ -7,8 +7,7 @@ import queue
 import sys
 
 import structlog
-
-from config.provider import GlobalConfigProvider
+from structlog._log_levels import _LEVEL_TO_NAME, _NAME_TO_LEVEL
 
 # Context var for storing request id across async functions optionally
 request_id_ctx = contextvars.ContextVar("request_id", default="-")
@@ -34,18 +33,18 @@ def _resolve_log_level(level_name: str) -> int:
     return log_level_map.get(level_name.upper(), logging.INFO)
 
 
-def _build_log_handlers(config) -> list[logging.Handler]:
+def _build_log_handlers(logging_config) -> list[logging.Handler]:
     """Generates the underlying structural streams resolving CLI/File targets."""
     handlers = []
 
     # 1. Console Stream
-    if config.logging.stdout:
+    if logging_config.stdout:
         handlers.append(logging.StreamHandler(sys.stdout))
 
     # 2. Daily Local Output Stream
     today = datetime.datetime.now().strftime("%Y-%m-%d")
     log_file_path = os.path.join(
-        config.logging.directory, f"{config.logging.file_prefix}_{today}.log"
+        logging_config.directory, f"{logging_config.file_prefix}_{today}.log"
     )
     handlers.append(logging.FileHandler(log_file_path))
 
@@ -64,16 +63,14 @@ def _build_formatter(format_type: str):
 _listener = None
 
 
-def setup_logging():
+def setup_logging(logging_config):
     global _listener
-    try:
-        config = GlobalConfigProvider().get_config()
-    except RuntimeError:
+    if logging_config is None:
         return
 
     root = logging.getLogger()
 
-    if not config.logging.enabled:
+    if not logging_config.enabled:
         if _listener is not None:
             _listener.stop()
             _listener = None
@@ -98,16 +95,16 @@ def setup_logging():
 
     # If already initialized and not NullHandler, just update the log level!
     if root.handlers and not isinstance(root.handlers[0], logging.NullHandler):
-        root.setLevel(_resolve_log_level(config.logging.level))
+        root.setLevel(_resolve_log_level(logging_config.level))
         return
 
     if _listener is not None:
         _listener.stop()
         _listener = None
 
-    os.makedirs(config.logging.directory, exist_ok=True)
+    os.makedirs(logging_config.directory, exist_ok=True)
 
-    raw_handlers = _build_log_handlers(config)
+    raw_handlers = _build_log_handlers(logging_config)
     log_queue = queue.Queue(-1)
     queue_handler = logging.handlers.QueueHandler(log_queue)
     _listener = logging.handlers.QueueListener(log_queue, *raw_handlers)
@@ -116,7 +113,7 @@ def setup_logging():
     for h in list(root.handlers):
         root.removeHandler(h)
 
-    root.setLevel(_resolve_log_level(config.logging.level))
+    root.setLevel(_resolve_log_level(logging_config.level))
     root.addHandler(queue_handler)
 
     # 2. Inject Structlog Pipeline
@@ -130,7 +127,7 @@ def setup_logging():
     ]
 
     structlog.configure(
-        processors=shared_processors + [_build_formatter(config.logging.format)],
+        processors=shared_processors + [_build_formatter(logging_config.format)],
         context_class=dict,
         logger_factory=structlog.stdlib.LoggerFactory(),
         wrapper_class=structlog.stdlib.BoundLogger,
@@ -139,8 +136,6 @@ def setup_logging():
 
     # Register TRACE level with structlog
     try:
-        from structlog._log_levels import _LEVEL_TO_NAME, _NAME_TO_LEVEL
-
         _LEVEL_TO_NAME[TRACE_LEVEL] = "TRACE"
         _NAME_TO_LEVEL["TRACE"] = TRACE_LEVEL
     except Exception:

@@ -1,6 +1,10 @@
 import os
 import sys
 
+from a2wsgi import ASGIMiddleware
+
+from server.app import create_app
+
 # Ensure the root application directory takes precedence in the import path
 sys.path.insert(0, os.path.dirname(__file__))
 
@@ -11,10 +15,6 @@ def _build_wsgi_bridge():
     Required for executing Axiom inside cPanel Phusion Passenger environments.
     """
     try:
-        from a2wsgi import ASGIMiddleware
-
-        from server.app import create_app
-
         fastapi_app = create_app()
         return ASGIMiddleware(fastapi_app)  # type: ignore
 

@@ -11,8 +11,8 @@ from api.core import metrics
 from config.provider import GlobalConfigProvider
 from encoding.proto_utils import webhook_payload_dict_to_proto
 from webhook.circuit_breaker import get_circuit_breaker
-from webhook.emitter import WebhookQueueList
 from webhook.persistence import get_persistence
+from webhook.queue import WebhookQueueList
 from webhook.signer import generate_signature
 
 logger = structlog.get_logger()

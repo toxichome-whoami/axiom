@@ -24,7 +24,7 @@ _sym_db = _symbol_database.Default()
 
 
 DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(
-    b'\n\x11\x61xiom/v1/fs.proto\x12\x08\x61xiom.v1"Z\n\x14ListDirectoryRequest\x12\x15\n\rstorage_alias\x18\x01 \x01(\t\x12\x0c\n\x04path\x18\x02 \x01(\t\x12\r\n\x05limit\x18\x03 \x01(\x05\x12\x0e\n\x06offset\x18\x04 \x01(\x05"o\n\x0e\x44irectoryEntry\x12\x0c\n\x04name\x18\x01 \x01(\t\x12\x0c\n\x04path\x18\x02 \x01(\t\x12\x0e\n\x06is_dir\x18\x03 \x01(\x08\x12\x0c\n\x04size\x18\x04 \x01(\x03\x12\x10\n\x08modified\x18\x05 \x01(\t\x12\x11\n\tmime_type\x18\x06 \x01(\t"Q\n\x15ListDirectoryResponse\x12\r\n\x05total\x18\x01 \x01(\x05\x12)\n\x07\x65ntries\x18\x02 \x03(\x0b\x32\x18.axiom.v1.DirectoryEntry"\\\n\x11\x46ileUploadRequest\x12\x15\n\rstorage_alias\x18\x01 \x01(\t\x12\x0c\n\x04path\x18\x02 \x01(\t\x12\x0f\n\x07\x63ontent\x18\x03 \x01(\x0c\x12\x11\n\tmime_type\x18\x04 \x01(\t"|\n\x0fStorageResponse\x12\x34\n\tdirectory\x18\x01 \x01(\x0b\x32\x1f.axiom.v1.ListDirectoryResponseH\x00\x12(\n\x05write\x18\x02 \x01(\x0b\x32\x17.axiom.v1.FsWriteResultH\x00\x42\t\n\x07payload"V\n\rFsWriteResult\x12\x15\n\raffected_rows\x18\x01 \x01(\x05\x12\x1b\n\x0elast_insert_id\x18\x02 \x01(\x03H\x00\x88\x01\x01\x42\x11\n\x0f_last_insert_idb\x06proto3'
+    b'\n\x11\x61xiom/v1/fs.proto\x12\x08\x61xiom.v1"Z\n\x14ListDirectoryRequest\x12\x15\n\rstorage_alias\x18\x01 \x01(\t\x12\x0c\n\x04path\x18\x02 \x01(\t\x12\r\n\x05limit\x18\x03 \x01(\x05\x12\x0e\n\x06offset\x18\x04 \x01(\x05"\x87\x01\n&FederationServiceListDirectoryResponse\x12\x0c\n\x04name\x18\x01 \x01(\t\x12\x0c\n\x04path\x18\x02 \x01(\t\x12\x0e\n\x06is_dir\x18\x03 \x01(\x08\x12\x0c\n\x04size\x18\x04 \x01(\x03\x12\x10\n\x08modified\x18\x05 \x01(\t\x12\x11\n\tmime_type\x18\x06 \x01(\t"i\n\x15ListDirectoryResponse\x12\r\n\x05total\x18\x01 \x01(\x05\x12\x41\n\x07\x65ntries\x18\x02 \x03(\x0b\x32\x30.axiom.v1.FederationServiceListDirectoryResponse"\\\n\x11\x46ileUploadRequest\x12\x15\n\rstorage_alias\x18\x01 \x01(\t\x12\x0c\n\x04path\x18\x02 \x01(\t\x12\x0f\n\x07\x63ontent\x18\x03 \x01(\x0c\x12\x11\n\tmime_type\x18\x04 \x01(\t"\x81\x01\n\x0fStorageResponse\x12\x34\n\tdirectory\x18\x01 \x01(\x0b\x32\x1f.axiom.v1.ListDirectoryResponseH\x00\x12-\n\x05write\x18\x02 \x01(\x0b\x32\x1c.axiom.v1.UploadFileResponseH\x00\x42\t\n\x07payload"[\n\x12UploadFileResponse\x12\x15\n\raffected_rows\x18\x01 \x01(\x05\x12\x1b\n\x0elast_insert_id\x18\x02 \x01(\x03H\x00\x88\x01\x01\x42\x11\n\x0f_last_insert_idb\x06proto3'
 )
 
 _globals = globals()
@@ -34,14 +34,14 @@ if not _descriptor._USE_C_DESCRIPTORS:
     DESCRIPTOR._loaded_options = None
     _globals["_LISTDIRECTORYREQUEST"]._serialized_start = 31
     _globals["_LISTDIRECTORYREQUEST"]._serialized_end = 121
-    _globals["_DIRECTORYENTRY"]._serialized_start = 123
-    _globals["_DIRECTORYENTRY"]._serialized_end = 234
-    _globals["_LISTDIRECTORYRESPONSE"]._serialized_start = 236
-    _globals["_LISTDIRECTORYRESPONSE"]._serialized_end = 317
-    _globals["_FILEUPLOADREQUEST"]._serialized_start = 319
-    _globals["_FILEUPLOADREQUEST"]._serialized_end = 411
-    _globals["_STORAGERESPONSE"]._serialized_start = 413
-    _globals["_STORAGERESPONSE"]._serialized_end = 537
-    _globals["_FSWRITERESULT"]._serialized_start = 539
-    _globals["_FSWRITERESULT"]._serialized_end = 625
+    _globals["_FEDERATIONSERVICELISTDIRECTORYRESPONSE"]._serialized_start = 124
+    _globals["_FEDERATIONSERVICELISTDIRECTORYRESPONSE"]._serialized_end = 259
+    _globals["_LISTDIRECTORYRESPONSE"]._serialized_start = 261
+    _globals["_LISTDIRECTORYRESPONSE"]._serialized_end = 366
+    _globals["_FILEUPLOADREQUEST"]._serialized_start = 368
+    _globals["_FILEUPLOADREQUEST"]._serialized_end = 460
+    _globals["_STORAGERESPONSE"]._serialized_start = 463
+    _globals["_STORAGERESPONSE"]._serialized_end = 592
+    _globals["_UPLOADFILERESPONSE"]._serialized_start = 594
+    _globals["_UPLOADFILERESPONSE"]._serialized_end = 685
 # @@protoc_insertion_point(module_scope)

@@ -10,7 +10,7 @@ from typing import ClassVar as _ClassVar, Optional as _Optional, Union as _Union
 
 DESCRIPTOR: _descriptor.FileDescriptor
 
-class QueryRequest(_message.Message):
+class ExecuteQueryRequest(_message.Message):
     __slots__ = ("sql", "params", "db_alias", "limit", "offset", "options")
     class OptionsEntry(_message.Message):
         __slots__ = ("key", "value")
@@ -44,7 +44,7 @@ class QueryRequest(_message.Message):
         options: _Optional[_Mapping[str, str]] = ...,
     ) -> None: ...
 
-class QueryResponse(_message.Message):
+class ExecuteQueryResponse(_message.Message):
     __slots__ = ("columns", "rows", "affected_rows")
     COLUMNS_FIELD_NUMBER: _ClassVar[int]
     ROWS_FIELD_NUMBER: _ClassVar[int]
@@ -148,19 +148,19 @@ class DatabaseResponse(_message.Message):
     TABLES_FIELD_NUMBER: _ClassVar[int]
     SCHEMA_FIELD_NUMBER: _ClassVar[int]
     WRITE_FIELD_NUMBER: _ClassVar[int]
-    query: QueryResponse
-    tables: TablesListResponse
+    query: ExecuteQueryResponse
+    tables: ListTablesResponse
     schema: SchemaResponse
     write: WriteResult
     def __init__(
         self,
-        query: _Optional[_Union[QueryResponse, _Mapping]] = ...,
-        tables: _Optional[_Union[TablesListResponse, _Mapping]] = ...,
+        query: _Optional[_Union[ExecuteQueryResponse, _Mapping]] = ...,
+        tables: _Optional[_Union[ListTablesResponse, _Mapping]] = ...,
         schema: _Optional[_Union[SchemaResponse, _Mapping]] = ...,
         write: _Optional[_Union[WriteResult, _Mapping]] = ...,
     ) -> None: ...
 
-class TablesListResponse(_message.Message):
+class ListTablesResponse(_message.Message):
     __slots__ = ("tables",)
     TABLES_FIELD_NUMBER: _ClassVar[int]
     tables: _containers.RepeatedCompositeFieldContainer[TableInfo]

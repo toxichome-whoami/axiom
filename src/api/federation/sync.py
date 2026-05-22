@@ -5,6 +5,7 @@ import time
 import httpx
 import structlog
 
+from api.federation.grpc_client import get_grpc_client
 from api.federation.state import FederationStateManager
 from config.provider import GlobalConfigProvider
 from config.schema import FederationNodeState
@@ -222,7 +223,6 @@ async def sync_federated_servers():
 
 
 async def _subscribe_node_health(node_id: str, state_mgr: FederationStateManager):
-    from api.federation.grpc_client import get_grpc_client
 
     while True:
         try:

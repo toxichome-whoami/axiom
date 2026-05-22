@@ -15,15 +15,15 @@ DESCRIPTOR: _descriptor.FileDescriptor
 
 class NodeStatus(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     __slots__ = ()
-    UNKNOWN: _ClassVar[NodeStatus]
-    UP: _ClassVar[NodeStatus]
-    DEGRADED: _ClassVar[NodeStatus]
-    DOWN: _ClassVar[NodeStatus]
+    NODE_STATUS_UNSPECIFIED: _ClassVar[NodeStatus]
+    NODE_STATUS_UP: _ClassVar[NodeStatus]
+    NODE_STATUS_DEGRADED: _ClassVar[NodeStatus]
+    NODE_STATUS_DOWN: _ClassVar[NodeStatus]
 
-UNKNOWN: NodeStatus
-UP: NodeStatus
-DEGRADED: NodeStatus
-DOWN: NodeStatus
+NODE_STATUS_UNSPECIFIED: NodeStatus
+NODE_STATUS_UP: NodeStatus
+NODE_STATUS_DEGRADED: NodeStatus
+NODE_STATUS_DOWN: NodeStatus
 
 class HealthCheckRequest(_message.Message):
     __slots__ = ("node_id",)
@@ -31,7 +31,7 @@ class HealthCheckRequest(_message.Message):
     node_id: str
     def __init__(self, node_id: _Optional[str] = ...) -> None: ...
 
-class HealthUpdate(_message.Message):
+class HealthCheckResponse(_message.Message):
     __slots__ = ("status", "latency_ms", "databases", "storages")
     class DatabasesEntry(_message.Message):
         __slots__ = ("key", "value")
@@ -124,13 +124,13 @@ class DownloadFileRequest(_message.Message):
         self, storage_alias: _Optional[str] = ..., path: _Optional[str] = ...
     ) -> None: ...
 
-class FileChunk(_message.Message):
+class DownloadFileResponse(_message.Message):
     __slots__ = ("data",)
     DATA_FIELD_NUMBER: _ClassVar[int]
     data: bytes
     def __init__(self, data: _Optional[bytes] = ...) -> None: ...
 
-class UploadChunk(_message.Message):
+class UploadFileRequest(_message.Message):
     __slots__ = ("storage_alias", "filename", "data", "is_last")
     STORAGE_ALIAS_FIELD_NUMBER: _ClassVar[int]
     FILENAME_FIELD_NUMBER: _ClassVar[int]
@@ -148,11 +148,11 @@ class UploadChunk(_message.Message):
         is_last: bool = ...,
     ) -> None: ...
 
-class NodeInfoRequest(_message.Message):
+class GetNodeInfoRequest(_message.Message):
     __slots__ = ()
     def __init__(self) -> None: ...
 
-class NodeInfoResponse(_message.Message):
+class GetNodeInfoResponse(_message.Message):
     __slots__ = ("node_id", "version", "databases", "storages")
     NODE_ID_FIELD_NUMBER: _ClassVar[int]
     VERSION_FIELD_NUMBER: _ClassVar[int]

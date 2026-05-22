@@ -10,6 +10,12 @@ from typing import Optional
 
 import structlog
 
+from api.mcp.resources.database_resources import register_database_resources
+from api.mcp.resources.registry import mcp_resource_registry
+from api.mcp.resources.storage_resources import register_storage_resources
+from api.mcp.tools.database_tools import register_database_tools
+from api.mcp.tools.registry import mcp_tool_registry
+from api.mcp.tools.storage_tools import register_storage_tools
 from config.provider import GlobalConfigProvider
 from mcp.server import Server
 
@@ -63,14 +69,8 @@ class MCPServerManager:
         """Registers tools and resources via their dedicated modules."""
 
         # Pull Registries
-        from api.mcp.resources.database_resources import register_database_resources
-        from api.mcp.resources.registry import mcp_resource_registry
-        from api.mcp.resources.storage_resources import register_storage_resources
 
         # Pull Implementations
-        from api.mcp.tools.database_tools import register_database_tools
-        from api.mcp.tools.registry import mcp_tool_registry
-        from api.mcp.tools.storage_tools import register_storage_tools
 
         # Prevent duplicate entries on re-initialization
         mcp_tool_registry.clear()

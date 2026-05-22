@@ -4,7 +4,8 @@ import hmac
 from fastapi import Depends, Request, Security
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from api.errors import ErrorCodes, AxiomException
+from api.core.metrics import increment
+from api.errors import AxiomException, ErrorCodes
 from config.provider import get_config_dependency
 from config.schema import AxiomConfig
 from security.ban_list import BanList
@@ -20,8 +21,6 @@ security = HTTPBearer(auto_error=False)
 def _record_auth_failure():
     """Silently records metric counters for unauthorized boundary events."""
     try:
-        from api.core.metrics import increment
-
         increment("auth_failures")
     except Exception:
         pass

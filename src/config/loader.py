@@ -9,8 +9,11 @@ from pydantic import ValidationError
 
 from config.defaults import generate_default_config
 from config.schema import AxiomConfig
+from logger.setup import setup_logging
 
 logger = structlog.get_logger()
+
+HOT_RELOAD_CALLBACKS = []
 
 _ENV = os.environ.get("AXIOM_ENV", "development")
 
@@ -104,8 +107,7 @@ class ConfigManager:
 
         # Call setup_logging automatically after config is successfully loaded
         try:
-            from logger.setup import setup_logging
-            setup_logging()
+            setup_logging(cls._config.logging)
         except Exception:
             pass
 
@@ -160,17 +162,15 @@ class ConfigManager:
             cls._config = new_validated
 
             # Refresh module-level feature flags in dependent modules
-            try:
-                import api.database.handlers as _dbh
-
-                _dbh._refresh_feature_flags()
-            except Exception:
-                pass
+            for cb in HOT_RELOAD_CALLBACKS:
+                try:
+                    cb()
+                except Exception:
+                    pass
 
             # Call setup_logging automatically on hot reload
             try:
-                from logger.setup import setup_logging
-                setup_logging()
+                setup_logging(cls._config.logging)
             except Exception:
                 pass
 

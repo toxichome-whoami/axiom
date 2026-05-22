@@ -3,11 +3,15 @@ import ipaddress
 import urllib.parse
 
 import httpx
+import orjson
 from fastapi import Request
+from google.protobuf.json_format import MessageToDict
 from starlette.background import BackgroundTask
 from starlette.responses import StreamingResponse
 
 from api.errors import AxiomException, ErrorCodes
+from api.federation.grpc_client import get_grpc_client
+from api.responses import is_protobuf_requested
 from config.provider import GlobalConfigProvider
 
 _PROXY_SLIM_LIMITS = httpx.Limits(max_connections=10, max_keepalive_connections=5)
@@ -204,16 +208,9 @@ async def proxy_request(
             )
 
         if getattr(srv_config, "grpc_enabled", False):
-            from api.federation.grpc_client import get_grpc_client
-
             client = get_grpc_client(srv_alias)
             if client:
                 if is_database and path == "query":
-                    import orjson
-                    from google.protobuf.json_format import MessageToDict
-
-                    from api.responses import is_protobuf_requested
-
                     body_bytes = await request.body()
                     body_dict = orjson.loads(body_bytes) if body_bytes else {}
 

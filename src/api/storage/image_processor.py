@@ -11,14 +11,14 @@ from typing import Any, Optional
 from starlette.responses import StreamingResponse
 
 try:
-    from PIL import Image
-
     HAS_PIL = True
 except ImportError:
     HAS_PIL = False
     Image: Any = None
 
-from api.errors import ErrorCodes, AxiomException
+from PIL import Image
+
+from api.errors import AxiomException, ErrorCodes
 
 STREAM_CHUNK = 65536  # 64KB
 

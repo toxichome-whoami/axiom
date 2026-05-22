@@ -12,10 +12,12 @@ from fastapi import Depends, Path, Query, Request
 
 from api.errors import AxiomException, ErrorCodes
 from api.federation.proxy import _resolve_server, proxy_request
+from api.federation.state import FederationStateManager
 from api.responses import is_protobuf_requested, protobuf_or_json, success_response
 from api.storage.chunked_upload import ChunkedUploadManager
 from cache import CacheManager
-from config.provider import get_config_dependency
+from config.loader import HOT_RELOAD_CALLBACKS
+from config.provider import GlobalConfigProvider, get_config_dependency
 from config.schema import AxiomConfig
 from generated.axiom.v1 import fs_pb2
 from server.middleware.auth import get_auth_context
@@ -56,7 +58,6 @@ _USAGE_CACHE_TTL: int = 30
 
 def _refresh_feature_flags():
     global _FEDERATION_ENABLED, _FEDERATION_SERVERS, _STORAGE_CONFIGS, _USAGE_CACHE_TTL
-    from config.provider import GlobalConfigProvider
 
     config = GlobalConfigProvider().get_config()
     _FEDERATION_ENABLED = bool(config.features.federation and config.federation.enabled)
@@ -68,6 +69,7 @@ def _refresh_feature_flags():
     _USAGE_CACHE_TTL = 30
 
 
+HOT_RELOAD_CALLBACKS.append(_refresh_feature_flags)
 _refresh_feature_flags()
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -578,8 +580,6 @@ async def list_storages(
 
     if _FEDERATION_ENABLED:
         try:
-            from api.federation.state import FederationStateManager
-
             state_mgr = FederationStateManager()
             await state_mgr.load()
 

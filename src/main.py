@@ -4,6 +4,11 @@ import sys
 
 import uvicorn
 
+try:
+    import uvloop  # type: ignore
+except ImportError:
+    uvloop = None
+
 from config.loader import ConfigManager
 
 
@@ -29,13 +34,10 @@ def _resolve_config_path() -> str:
 
 def _acquire_event_loop_strategy() -> str:
     """Safely delegates execution to the ultra-fast C-backed uvloop if on UNIX."""
-    try:
-        import uvloop
-
+    if uvloop is not None:
         uvloop.install()
         return "uvloop"
-    except ImportError:
-        return "auto"
+    return "auto"
 
 
 def main():

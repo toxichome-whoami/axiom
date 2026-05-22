@@ -3,9 +3,6 @@
 from typing import Any, Dict, List, Optional
 
 try:
-    from sqlalchemy import text
-    from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
-
     HAS_AIOODBC = True
 except ImportError:
     HAS_AIOODBC = False
@@ -13,12 +10,15 @@ except ImportError:
     AsyncEngine: Any = None
     text: Any = None
 
+# ─────────────────────────────────────────────────────────────────────────────
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import create_async_engine
+
 from config.schema import DatabaseDefConfig
 from db.engines.base import ColumnInfo, DatabaseEngine, QueryResult, TableInfo
 from encoding.proto_utils import _encode_value
 from generated.axiom.v1 import db_pb2
 
-# ─────────────────────────────────────────────────────────────────────────────
 # Helper Functions
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -63,7 +63,7 @@ async def _execute_read(
         return QueryResult(columns=columns, rows=[], affected_rows=result.rowcount)
 
     if return_format == "protobuf":
-        pb = db_pb2.QueryResponse()
+        pb = db_pb2.ExecuteQueryResponse()
         pb.columns.extend(columns)
 
         for row in result:

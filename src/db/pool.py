@@ -1,3 +1,4 @@
+import copy
 from typing import Dict, Optional
 
 import structlog
@@ -37,7 +38,6 @@ class DatabasePoolManager:
             return db_config
         pool_min = max(1, db_config.pool_min // workers)
         pool_max = max(2, db_config.pool_max // workers)
-        import copy
 
         scaled = copy.copy(db_config)
         scaled.pool_min = pool_min

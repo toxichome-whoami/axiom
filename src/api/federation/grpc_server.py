@@ -1,10 +1,15 @@
 import asyncio
+import base64
+import mimetypes
+import os
+from datetime import datetime
 
 import grpc
 import structlog
 
 from api.database.handlers import get_db_engine
 from api.database.query_parser import validate_query
+from api.storage.handlers import _get_storage_path
 from config.provider import GlobalConfigProvider
 from db.dialect.transpiler import transpile_sql
 from generated.axiom.v1 import db_pb2, federation_pb2, federation_pb2_grpc, fs_pb2
@@ -23,8 +28,6 @@ async def _authenticate(context: grpc.aio.ServicerContext) -> AuthContext:
         await context.abort(  # type: ignore
             grpc.StatusCode.UNAUTHENTICATED, "Missing authentication metadata"
         )
-
-    import base64
 
     try:
         secret = base64.b64decode(secret_b64).decode("utf-8")
@@ -51,7 +54,7 @@ class FederationServicer(federation_pb2_grpc.FederationServiceServicer):
     """gRPC implementation for handling federation requests."""
 
     async def ExecuteQuery(
-        self, request: db_pb2.QueryRequest, context: grpc.aio.ServicerContext
+        self, request: db_pb2.ExecuteQueryRequest, context: grpc.aio.ServicerContext
     ):
         auth = await _authenticate(context)
         try:
@@ -83,11 +86,6 @@ class FederationServicer(federation_pb2_grpc.FederationServiceServicer):
         auth = await _authenticate(context)
         try:
             # We must import from storage handler or re-implement
-            import mimetypes
-            import os
-            from datetime import datetime
-
-            from api.storage.handlers import _get_storage_path
 
             target_path = _get_storage_path(request.storage_alias, request.path, auth)
 
@@ -150,8 +148,8 @@ class FederationServicer(federation_pb2_grpc.FederationServiceServicer):
             db_map = {db_name: "up" for db_name in config.database.keys()}
             fs_map = {fs_name: "up" for fs_name in config.storage.keys()}
 
-            update = federation_pb2.HealthUpdate(
-                status=federation_pb2.NodeStatus.UP,
+            update = federation_pb2.HealthCheckResponse(
+                status=federation_pb2.NodeStatus.NODE_STATUS_UP,
                 latency_ms=0.0,
                 databases=db_map,
                 storages=fs_map,

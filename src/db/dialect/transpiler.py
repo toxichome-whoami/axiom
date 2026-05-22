@@ -4,6 +4,9 @@ from typing import Optional
 import sqlglot
 from sqlglot.errors import ParseError
 
+from api.errors import AxiomException, ErrorCodes
+from config.provider import GlobalConfigProvider
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Helper Functions
 # ─────────────────────────────────────────────────────────────────────────────
@@ -22,8 +25,6 @@ _ast_conversion_cache = None
 def _get_ast_conversion_cache():
     global _ast_conversion_cache
     if _ast_conversion_cache is None:
-        from config.provider import GlobalConfigProvider
-
         config = GlobalConfigProvider().get_config()
         maxsize = 4096
         if hasattr(config, "performance") and hasattr(
@@ -48,8 +49,6 @@ def _execute_ast_conversion_impl(
         return result[0]
 
     except ParseError as ast_error:
-        from api.errors import ErrorCodes, AxiomException
-
         raise AxiomException(
             code=ErrorCodes.DB_QUERY_INVALID,
             message="Failed to parse SQL query.",

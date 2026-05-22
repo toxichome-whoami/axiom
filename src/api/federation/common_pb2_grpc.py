@@ -7,6 +7,7 @@
 
 import grpc
 import warnings
+from grpc._utilities import first_version_is_lower
 
 
 GRPC_GENERATED_VERSION = "1.80.0"
@@ -14,8 +15,6 @@ GRPC_VERSION = grpc.__version__
 _version_not_supported = False
 
 try:
-    from grpc._utilities import first_version_is_lower
-
     _version_not_supported = first_version_is_lower(
         GRPC_VERSION, GRPC_GENERATED_VERSION
     )

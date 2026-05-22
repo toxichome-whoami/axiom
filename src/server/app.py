@@ -13,6 +13,7 @@ from api import database, federation, storage
 # Routers
 from api.core import health
 from api.core.metrics import router as metrics_router
+from api.mcp import router as mcp_router
 from config.provider import GlobalConfigProvider
 from server.lifespan import lifespan
 from server.middleware.cors import setup_cors
@@ -154,8 +155,6 @@ def _attach_routers(app: FastAPI):
     api_v1.include_router(webhook_health_router)
 
     if config.features.mcp:
-        from api.mcp import router as mcp_router
-
         api_v1.include_router(mcp_router, prefix="/mcp")
         app.state.mcp_initialized = True
 

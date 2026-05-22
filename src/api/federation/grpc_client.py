@@ -1,10 +1,10 @@
-
 import base64
 from typing import AsyncIterable
 
 import grpc
 import structlog
 
+from config.provider import GlobalConfigProvider
 from config.schema import FedServerConfig
 from generated.axiom.v1 import db_pb2, federation_pb2, federation_pb2_grpc
 
@@ -42,7 +42,7 @@ class FederationGRPCClient:
         # Or ideally send them in the options map depending on architecture
         req_params = [str(v) for v in params.values()]
 
-        request = db_pb2.QueryRequest(db_alias=db_alias, sql=sql, params=req_params)
+        request = db_pb2.ExecuteQueryRequest(db_alias=db_alias, sql=sql, params=req_params)
 
         try:
             return await self.stub.ExecuteQuery(
@@ -52,7 +52,7 @@ class FederationGRPCClient:
             logger.error("gRPC ExecuteQuery failed", node=self.node_id, error=str(e))
             raise
 
-    async def health_stream(self) -> AsyncIterable[federation_pb2.HealthUpdate]:
+    async def health_stream(self) -> AsyncIterable[federation_pb2.HealthCheckResponse]:
         """Subscribe to server-pushed health updates."""
         request = federation_pb2.HealthCheckRequest(node_id=self.node_id)
 
@@ -73,7 +73,6 @@ _GRPC_CLIENTS: dict[str, FederationGRPCClient] = {}
 
 
 def get_grpc_client(node_id: str) -> FederationGRPCClient | None:
-    from config.provider import GlobalConfigProvider
 
     config = GlobalConfigProvider().get_config()
 

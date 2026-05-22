@@ -28,7 +28,7 @@ class ListDirectoryRequest(_message.Message):
         offset: _Optional[int] = ...,
     ) -> None: ...
 
-class DirectoryEntry(_message.Message):
+class FederationServiceListDirectoryResponse(_message.Message):
     __slots__ = ("name", "path", "is_dir", "size", "modified", "mime_type")
     NAME_FIELD_NUMBER: _ClassVar[int]
     PATH_FIELD_NUMBER: _ClassVar[int]
@@ -57,11 +57,15 @@ class ListDirectoryResponse(_message.Message):
     TOTAL_FIELD_NUMBER: _ClassVar[int]
     ENTRIES_FIELD_NUMBER: _ClassVar[int]
     total: int
-    entries: _containers.RepeatedCompositeFieldContainer[DirectoryEntry]
+    entries: _containers.RepeatedCompositeFieldContainer[
+        FederationServiceListDirectoryResponse
+    ]
     def __init__(
         self,
         total: _Optional[int] = ...,
-        entries: _Optional[_Iterable[_Union[DirectoryEntry, _Mapping]]] = ...,
+        entries: _Optional[
+            _Iterable[_Union[FederationServiceListDirectoryResponse, _Mapping]]
+        ] = ...,
     ) -> None: ...
 
 class FileUploadRequest(_message.Message):
@@ -87,14 +91,14 @@ class StorageResponse(_message.Message):
     DIRECTORY_FIELD_NUMBER: _ClassVar[int]
     WRITE_FIELD_NUMBER: _ClassVar[int]
     directory: ListDirectoryResponse
-    write: FsWriteResult
+    write: UploadFileResponse
     def __init__(
         self,
         directory: _Optional[_Union[ListDirectoryResponse, _Mapping]] = ...,
-        write: _Optional[_Union[FsWriteResult, _Mapping]] = ...,
+        write: _Optional[_Union[UploadFileResponse, _Mapping]] = ...,
     ) -> None: ...
 
-class FsWriteResult(_message.Message):
+class UploadFileResponse(_message.Message):
     __slots__ = ("affected_rows", "last_insert_id")
     AFFECTED_ROWS_FIELD_NUMBER: _ClassVar[int]
     LAST_INSERT_ID_FIELD_NUMBER: _ClassVar[int]

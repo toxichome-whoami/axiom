@@ -10,6 +10,9 @@ from pydantic import BaseModel
 
 from config.provider import GlobalConfigProvider
 from utils.uuid7 import uuid7
+from webhook.dispatcher import ensure_workers
+from webhook.persistence import get_persistence
+from webhook.queue import WebhookQueueList
 
 logger = structlog.get_logger()
 
@@ -40,21 +43,6 @@ class WebhookPayload(BaseModel):
     source: str
     event: WebhookEventDetails
     trigger: WebhookTrigger
-
-
-class WebhookQueueList:
-    """Manages the in-memory buffered transmission buffer queue."""
-
-    _queue: Optional[asyncio.Queue] = None
-    _maxsize: int = 0
-
-    @classmethod
-    def get_queue(cls) -> asyncio.Queue:
-        if cls._queue is None:
-            config = GlobalConfigProvider().get_config()
-            cls._maxsize = config.webhooks.queue_size
-            cls._queue = asyncio.Queue(maxsize=cls._maxsize)
-        return cls._queue
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -223,7 +211,6 @@ async def emit_event(
 
     persistence = None
     if config.webhooks.persistence_enabled:
-        from webhook.persistence import get_persistence
         persistence = get_persistence()
 
     queue = WebhookQueueList.get_queue()
@@ -240,17 +227,18 @@ async def emit_event(
             )
             if db_id is not None:
                 try:
-                    queue.put_nowait({
-                        "id": db_id,
-                        "event_id": payload.event_id,
-                        "hook_name": name,
-                        "url": hook.url,
-                        "secret": hook.secret,
-                        "headers": hook.headers,
-                        "payload": json_payload,
-                        "attempt": 1
-                    })
-                    from webhook.dispatcher import ensure_workers
+                    queue.put_nowait(
+                        {
+                            "id": db_id,
+                            "event_id": payload.event_id,
+                            "hook_name": name,
+                            "url": hook.url,
+                            "secret": hook.secret,
+                            "headers": hook.headers,
+                            "payload": json_payload,
+                            "attempt": 1,
+                        }
+                    )
                     ensure_workers()
                 except asyncio.QueueFull:
                     logger.error(
@@ -269,7 +257,6 @@ async def emit_event(
                         "payload": json_payload,
                     }
                 )
-                from webhook.dispatcher import ensure_workers
                 ensure_workers()
             except asyncio.QueueFull:
                 logger.error(

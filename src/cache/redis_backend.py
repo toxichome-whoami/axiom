@@ -5,12 +5,12 @@ import orjson
 import structlog
 
 try:
-    import redis.asyncio as redis
-
     HAS_REDIS = True
 except ImportError:
     HAS_REDIS = False
     redis: Any = None
+
+import redis.asyncio as redis
 
 from config.provider import GlobalConfigProvider
 
@@ -89,9 +89,7 @@ class RedisCache:
     async def get_client(cls) -> Any:
         if cls._client is None:
             if not HAS_REDIS:
-                raise RuntimeError(
-                    "Redis dependency not found. Install axiom[redis]"
-                )
+                raise RuntimeError("Redis dependency not found. Install axiom[redis]")
             config = GlobalConfigProvider().get_config()
             url = config.cache.redis_url
             if not url:

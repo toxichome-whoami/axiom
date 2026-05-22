@@ -50,7 +50,7 @@ async def _execute_read(
         return QueryResult(columns=columns, rows=[], affected_rows=result.rowcount)
 
     if return_format == "protobuf":
-        pb = db_pb2.QueryResponse()
+        pb = db_pb2.ExecuteQueryResponse()
         pb.columns.extend(columns)
 
         for row in result:

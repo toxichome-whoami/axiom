@@ -1,3 +1,5 @@
+import sqlite3
+
 from fastapi import APIRouter
 from pydantic import BaseModel
 
@@ -52,8 +54,6 @@ async def list_dead_letter(limit: int = 100):
     if not persistence:
         return {"error": "Persistence not initialized"}
 
-    import sqlite3
-
     conn = sqlite3.connect(persistence.db_path)
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
@@ -79,8 +79,6 @@ async def replay_dead_letter(req: ReplayRequest):
     persistence = get_persistence()
     if not persistence:
         return {"error": "Persistence not initialized"}
-
-    import sqlite3
 
     conn = sqlite3.connect(persistence.db_path)
     c = conn.cursor()

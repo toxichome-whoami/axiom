@@ -28,7 +28,7 @@ from axiom.v1 import fs_pb2 as axiom_dot_v1_dot_fs__pb2
 
 
 DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(
-    b'\n\x19\x61xiom/v1/federation.proto\x12\x08\x61xiom.v1\x1a\x11\x61xiom/v1/db.proto\x1a\x11\x61xiom/v1/fs.proto"%\n\x12HealthCheckRequest\x12\x0f\n\x07node_id\x18\x01 \x01(\t"\x9d\x02\n\x0cHealthUpdate\x12$\n\x06status\x18\x01 \x01(\x0e\x32\x14.axiom.v1.NodeStatus\x12\x12\n\nlatency_ms\x18\x02 \x01(\x02\x12\x38\n\tdatabases\x18\x03 \x03(\x0b\x32%.axiom.v1.HealthUpdate.DatabasesEntry\x12\x36\n\x08storages\x18\x04 \x03(\x0b\x32$.axiom.v1.HealthUpdate.StoragesEntry\x1a\x30\n\x0e\x44\x61tabasesEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\x1a/\n\rStoragesEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01"\x16\n\x14ListDatabasesRequest"B\n\x15ListDatabasesResponse\x12)\n\tdatabases\x18\x01 \x03(\x0b\x32\x16.axiom.v1.DatabaseInfo"P\n\x0c\x44\x61tabaseInfo\x12\x0c\n\x04name\x18\x01 \x01(\t\x12\x0e\n\x06\x65ngine\x18\x02 \x01(\t\x12\x0c\n\x04mode\x18\x03 \x01(\t\x12\x14\n\x0ctables_count\x18\x04 \x01(\x05"D\n\x11ListTablesRequest\x12\x10\n\x08\x64\x62_alias\x18\x01 \x01(\t\x12\r\n\x05limit\x18\x02 \x01(\x05\x12\x0e\n\x06offset\x18\x03 \x01(\x05":\n\x13\x44ownloadFileRequest\x12\x15\n\rstorage_alias\x18\x01 \x01(\t\x12\x0c\n\x04path\x18\x02 \x01(\t"\x19\n\tFileChunk\x12\x0c\n\x04\x64\x61ta\x18\x01 \x01(\x0c"U\n\x0bUploadChunk\x12\x15\n\rstorage_alias\x18\x01 \x01(\t\x12\x10\n\x08\x66ilename\x18\x02 \x01(\t\x12\x0c\n\x04\x64\x61ta\x18\x03 \x01(\x0c\x12\x0f\n\x07is_last\x18\x04 \x01(\x08"\x11\n\x0fNodeInfoRequest"Y\n\x10NodeInfoResponse\x12\x0f\n\x07node_id\x18\x01 \x01(\t\x12\x0f\n\x07version\x18\x02 \x01(\t\x12\x11\n\tdatabases\x18\x03 \x03(\t\x12\x10\n\x08storages\x18\x04 \x03(\t*9\n\nNodeStatus\x12\x0b\n\x07UNKNOWN\x10\x00\x12\x06\n\x02UP\x10\x01\x12\x0c\n\x08\x44\x45GRADED\x10\x02\x12\x08\n\x04\x44OWN\x10\x03\x32\xcf\x04\n\x11\x46\x65\x64\x65rationService\x12?\n\x0c\x45xecuteQuery\x12\x16.axiom.v1.QueryRequest\x1a\x17.axiom.v1.QueryResponse\x12P\n\rListDatabases\x12\x1e.axiom.v1.ListDatabasesRequest\x1a\x1f.axiom.v1.ListDatabasesResponse\x12G\n\nListTables\x12\x1b.axiom.v1.ListTablesRequest\x1a\x1c.axiom.v1.TablesListResponse\x12K\n\rListDirectory\x12\x1e.axiom.v1.ListDirectoryRequest\x1a\x18.axiom.v1.DirectoryEntry0\x01\x12\x44\n\x0c\x44ownloadFile\x12\x1d.axiom.v1.DownloadFileRequest\x1a\x13.axiom.v1.FileChunk0\x01\x12>\n\nUploadFile\x12\x15.axiom.v1.UploadChunk\x1a\x17.axiom.v1.FsWriteResult(\x01\x12\x45\n\x0bHealthCheck\x12\x1c.axiom.v1.HealthCheckRequest\x1a\x16.axiom.v1.HealthUpdate0\x01\x12\x44\n\x0bGetNodeInfo\x12\x19.axiom.v1.NodeInfoRequest\x1a\x1a.axiom.v1.NodeInfoResponseb\x06proto3'
+    b'\n\x19\x61xiom/v1/federation.proto\x12\x08\x61xiom.v1\x1a\x11\x61xiom/v1/db.proto\x1a\x11\x61xiom/v1/fs.proto"%\n\x12HealthCheckRequest\x12\x0f\n\x07node_id\x18\x01 \x01(\t"\xb2\x02\n\x13HealthCheckResponse\x12$\n\x06status\x18\x01 \x01(\x0e\x32\x14.axiom.v1.NodeStatus\x12\x12\n\nlatency_ms\x18\x02 \x01(\x02\x12?\n\tdatabases\x18\x03 \x03(\x0b\x32,.axiom.v1.HealthCheckResponse.DatabasesEntry\x12=\n\x08storages\x18\x04 \x03(\x0b\x32+.axiom.v1.HealthCheckResponse.StoragesEntry\x1a\x30\n\x0e\x44\x61tabasesEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\x1a/\n\rStoragesEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01"\x16\n\x14ListDatabasesRequest"B\n\x15ListDatabasesResponse\x12)\n\tdatabases\x18\x01 \x03(\x0b\x32\x16.axiom.v1.DatabaseInfo"P\n\x0c\x44\x61tabaseInfo\x12\x0c\n\x04name\x18\x01 \x01(\t\x12\x0e\n\x06\x65ngine\x18\x02 \x01(\t\x12\x0c\n\x04mode\x18\x03 \x01(\t\x12\x14\n\x0ctables_count\x18\x04 \x01(\x05"D\n\x11ListTablesRequest\x12\x10\n\x08\x64\x62_alias\x18\x01 \x01(\t\x12\r\n\x05limit\x18\x02 \x01(\x05\x12\x0e\n\x06offset\x18\x03 \x01(\x05":\n\x13\x44ownloadFileRequest\x12\x15\n\rstorage_alias\x18\x01 \x01(\t\x12\x0c\n\x04path\x18\x02 \x01(\t"$\n\x14\x44ownloadFileResponse\x12\x0c\n\x04\x64\x61ta\x18\x01 \x01(\x0c"[\n\x11UploadFileRequest\x12\x15\n\rstorage_alias\x18\x01 \x01(\t\x12\x10\n\x08\x66ilename\x18\x02 \x01(\t\x12\x0c\n\x04\x64\x61ta\x18\x03 \x01(\x0c\x12\x0f\n\x07is_last\x18\x04 \x01(\x08"\x14\n\x12GetNodeInfoRequest"\\\n\x13GetNodeInfoResponse\x12\x0f\n\x07node_id\x18\x01 \x01(\t\x12\x0f\n\x07version\x18\x02 \x01(\t\x12\x11\n\tdatabases\x18\x03 \x03(\t\x12\x10\n\x08storages\x18\x04 \x03(\t*m\n\nNodeStatus\x12\x1b\n\x17NODE_STATUS_UNSPECIFIED\x10\x00\x12\x12\n\x0eNODE_STATUS_UP\x10\x01\x12\x18\n\x14NODE_STATUS_DEGRADED\x10\x02\x12\x14\n\x10NODE_STATUS_DOWN\x10\x03\x32\x98\x05\n\x11\x46\x65\x64\x65rationService\x12M\n\x0c\x45xecuteQuery\x12\x1d.axiom.v1.ExecuteQueryRequest\x1a\x1e.axiom.v1.ExecuteQueryResponse\x12P\n\rListDatabases\x12\x1e.axiom.v1.ListDatabasesRequest\x1a\x1f.axiom.v1.ListDatabasesResponse\x12G\n\nListTables\x12\x1b.axiom.v1.ListTablesRequest\x1a\x1c.axiom.v1.ListTablesResponse\x12\x63\n\rListDirectory\x12\x1e.axiom.v1.ListDirectoryRequest\x1a\x30.axiom.v1.FederationServiceListDirectoryResponse0\x01\x12O\n\x0c\x44ownloadFile\x12\x1d.axiom.v1.DownloadFileRequest\x1a\x1e.axiom.v1.DownloadFileResponse0\x01\x12I\n\nUploadFile\x12\x1b.axiom.v1.UploadFileRequest\x1a\x1c.axiom.v1.UploadFileResponse(\x01\x12L\n\x0bHealthCheck\x12\x1c.axiom.v1.HealthCheckRequest\x1a\x1d.axiom.v1.HealthCheckResponse0\x01\x12J\n\x0bGetNodeInfo\x12\x1c.axiom.v1.GetNodeInfoRequest\x1a\x1d.axiom.v1.GetNodeInfoResponseb\x06proto3'
 )
 
 _globals = globals()
@@ -36,38 +36,38 @@ _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
 _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, "axiom.v1.federation_pb2", _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
     DESCRIPTOR._loaded_options = None
-    _globals["_HEALTHUPDATE_DATABASESENTRY"]._loaded_options = None
-    _globals["_HEALTHUPDATE_DATABASESENTRY"]._serialized_options = b"8\001"
-    _globals["_HEALTHUPDATE_STORAGESENTRY"]._loaded_options = None
-    _globals["_HEALTHUPDATE_STORAGESENTRY"]._serialized_options = b"8\001"
-    _globals["_NODESTATUS"]._serialized_start = 932
-    _globals["_NODESTATUS"]._serialized_end = 989
+    _globals["_HEALTHCHECKRESPONSE_DATABASESENTRY"]._loaded_options = None
+    _globals["_HEALTHCHECKRESPONSE_DATABASESENTRY"]._serialized_options = b"8\001"
+    _globals["_HEALTHCHECKRESPONSE_STORAGESENTRY"]._loaded_options = None
+    _globals["_HEALTHCHECKRESPONSE_STORAGESENTRY"]._serialized_options = b"8\001"
+    _globals["_NODESTATUS"]._serialized_start = 976
+    _globals["_NODESTATUS"]._serialized_end = 1085
     _globals["_HEALTHCHECKREQUEST"]._serialized_start = 77
     _globals["_HEALTHCHECKREQUEST"]._serialized_end = 114
-    _globals["_HEALTHUPDATE"]._serialized_start = 117
-    _globals["_HEALTHUPDATE"]._serialized_end = 402
-    _globals["_HEALTHUPDATE_DATABASESENTRY"]._serialized_start = 305
-    _globals["_HEALTHUPDATE_DATABASESENTRY"]._serialized_end = 353
-    _globals["_HEALTHUPDATE_STORAGESENTRY"]._serialized_start = 355
-    _globals["_HEALTHUPDATE_STORAGESENTRY"]._serialized_end = 402
-    _globals["_LISTDATABASESREQUEST"]._serialized_start = 404
-    _globals["_LISTDATABASESREQUEST"]._serialized_end = 426
-    _globals["_LISTDATABASESRESPONSE"]._serialized_start = 428
-    _globals["_LISTDATABASESRESPONSE"]._serialized_end = 494
-    _globals["_DATABASEINFO"]._serialized_start = 496
-    _globals["_DATABASEINFO"]._serialized_end = 576
-    _globals["_LISTTABLESREQUEST"]._serialized_start = 578
-    _globals["_LISTTABLESREQUEST"]._serialized_end = 646
-    _globals["_DOWNLOADFILEREQUEST"]._serialized_start = 648
-    _globals["_DOWNLOADFILEREQUEST"]._serialized_end = 706
-    _globals["_FILECHUNK"]._serialized_start = 708
-    _globals["_FILECHUNK"]._serialized_end = 733
-    _globals["_UPLOADCHUNK"]._serialized_start = 735
-    _globals["_UPLOADCHUNK"]._serialized_end = 820
-    _globals["_NODEINFOREQUEST"]._serialized_start = 822
-    _globals["_NODEINFOREQUEST"]._serialized_end = 839
-    _globals["_NODEINFORESPONSE"]._serialized_start = 841
-    _globals["_NODEINFORESPONSE"]._serialized_end = 930
-    _globals["_FEDERATIONSERVICE"]._serialized_start = 992
-    _globals["_FEDERATIONSERVICE"]._serialized_end = 1583
+    _globals["_HEALTHCHECKRESPONSE"]._serialized_start = 117
+    _globals["_HEALTHCHECKRESPONSE"]._serialized_end = 423
+    _globals["_HEALTHCHECKRESPONSE_DATABASESENTRY"]._serialized_start = 326
+    _globals["_HEALTHCHECKRESPONSE_DATABASESENTRY"]._serialized_end = 374
+    _globals["_HEALTHCHECKRESPONSE_STORAGESENTRY"]._serialized_start = 376
+    _globals["_HEALTHCHECKRESPONSE_STORAGESENTRY"]._serialized_end = 423
+    _globals["_LISTDATABASESREQUEST"]._serialized_start = 425
+    _globals["_LISTDATABASESREQUEST"]._serialized_end = 447
+    _globals["_LISTDATABASESRESPONSE"]._serialized_start = 449
+    _globals["_LISTDATABASESRESPONSE"]._serialized_end = 515
+    _globals["_DATABASEINFO"]._serialized_start = 517
+    _globals["_DATABASEINFO"]._serialized_end = 597
+    _globals["_LISTTABLESREQUEST"]._serialized_start = 599
+    _globals["_LISTTABLESREQUEST"]._serialized_end = 667
+    _globals["_DOWNLOADFILEREQUEST"]._serialized_start = 669
+    _globals["_DOWNLOADFILEREQUEST"]._serialized_end = 727
+    _globals["_DOWNLOADFILERESPONSE"]._serialized_start = 729
+    _globals["_DOWNLOADFILERESPONSE"]._serialized_end = 765
+    _globals["_UPLOADFILEREQUEST"]._serialized_start = 767
+    _globals["_UPLOADFILEREQUEST"]._serialized_end = 858
+    _globals["_GETNODEINFOREQUEST"]._serialized_start = 860
+    _globals["_GETNODEINFOREQUEST"]._serialized_end = 880
+    _globals["_GETNODEINFORESPONSE"]._serialized_start = 882
+    _globals["_GETNODEINFORESPONSE"]._serialized_end = 974
+    _globals["_FEDERATIONSERVICE"]._serialized_start = 1088
+    _globals["_FEDERATIONSERVICE"]._serialized_end = 1752
 # @@protoc_insertion_point(module_scope)

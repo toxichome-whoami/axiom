@@ -46,8 +46,8 @@ class FederationServiceStub(object):
         """
         self.ExecuteQuery = channel.unary_unary(
             "/axiom.v1.FederationService/ExecuteQuery",
-            request_serializer=axiom_dot_v1_dot_db__pb2.QueryRequest.SerializeToString,
-            response_deserializer=axiom_dot_v1_dot_db__pb2.QueryResponse.FromString,
+            request_serializer=axiom_dot_v1_dot_db__pb2.ExecuteQueryRequest.SerializeToString,
+            response_deserializer=axiom_dot_v1_dot_db__pb2.ExecuteQueryResponse.FromString,
             _registered_method=True,
         )
         self.ListDatabases = channel.unary_unary(
@@ -59,37 +59,37 @@ class FederationServiceStub(object):
         self.ListTables = channel.unary_unary(
             "/axiom.v1.FederationService/ListTables",
             request_serializer=axiom_dot_v1_dot_federation__pb2.ListTablesRequest.SerializeToString,
-            response_deserializer=axiom_dot_v1_dot_db__pb2.TablesListResponse.FromString,
+            response_deserializer=axiom_dot_v1_dot_db__pb2.ListTablesResponse.FromString,
             _registered_method=True,
         )
         self.ListDirectory = channel.unary_stream(
             "/axiom.v1.FederationService/ListDirectory",
             request_serializer=axiom_dot_v1_dot_fs__pb2.ListDirectoryRequest.SerializeToString,
-            response_deserializer=axiom_dot_v1_dot_fs__pb2.DirectoryEntry.FromString,
+            response_deserializer=axiom_dot_v1_dot_fs__pb2.FederationServiceListDirectoryResponse.FromString,
             _registered_method=True,
         )
         self.DownloadFile = channel.unary_stream(
             "/axiom.v1.FederationService/DownloadFile",
             request_serializer=axiom_dot_v1_dot_federation__pb2.DownloadFileRequest.SerializeToString,
-            response_deserializer=axiom_dot_v1_dot_federation__pb2.FileChunk.FromString,
+            response_deserializer=axiom_dot_v1_dot_federation__pb2.DownloadFileResponse.FromString,
             _registered_method=True,
         )
         self.UploadFile = channel.stream_unary(
             "/axiom.v1.FederationService/UploadFile",
-            request_serializer=axiom_dot_v1_dot_federation__pb2.UploadChunk.SerializeToString,
-            response_deserializer=axiom_dot_v1_dot_fs__pb2.FsWriteResult.FromString,
+            request_serializer=axiom_dot_v1_dot_federation__pb2.UploadFileRequest.SerializeToString,
+            response_deserializer=axiom_dot_v1_dot_fs__pb2.UploadFileResponse.FromString,
             _registered_method=True,
         )
         self.HealthCheck = channel.unary_stream(
             "/axiom.v1.FederationService/HealthCheck",
             request_serializer=axiom_dot_v1_dot_federation__pb2.HealthCheckRequest.SerializeToString,
-            response_deserializer=axiom_dot_v1_dot_federation__pb2.HealthUpdate.FromString,
+            response_deserializer=axiom_dot_v1_dot_federation__pb2.HealthCheckResponse.FromString,
             _registered_method=True,
         )
         self.GetNodeInfo = channel.unary_unary(
             "/axiom.v1.FederationService/GetNodeInfo",
-            request_serializer=axiom_dot_v1_dot_federation__pb2.NodeInfoRequest.SerializeToString,
-            response_deserializer=axiom_dot_v1_dot_federation__pb2.NodeInfoResponse.FromString,
+            request_serializer=axiom_dot_v1_dot_federation__pb2.GetNodeInfoRequest.SerializeToString,
+            response_deserializer=axiom_dot_v1_dot_federation__pb2.GetNodeInfoResponse.FromString,
             _registered_method=True,
         )
 
@@ -150,8 +150,8 @@ def add_FederationServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
         "ExecuteQuery": grpc.unary_unary_rpc_method_handler(
             servicer.ExecuteQuery,
-            request_deserializer=axiom_dot_v1_dot_db__pb2.QueryRequest.FromString,
-            response_serializer=axiom_dot_v1_dot_db__pb2.QueryResponse.SerializeToString,
+            request_deserializer=axiom_dot_v1_dot_db__pb2.ExecuteQueryRequest.FromString,
+            response_serializer=axiom_dot_v1_dot_db__pb2.ExecuteQueryResponse.SerializeToString,
         ),
         "ListDatabases": grpc.unary_unary_rpc_method_handler(
             servicer.ListDatabases,
@@ -161,32 +161,32 @@ def add_FederationServiceServicer_to_server(servicer, server):
         "ListTables": grpc.unary_unary_rpc_method_handler(
             servicer.ListTables,
             request_deserializer=axiom_dot_v1_dot_federation__pb2.ListTablesRequest.FromString,
-            response_serializer=axiom_dot_v1_dot_db__pb2.TablesListResponse.SerializeToString,
+            response_serializer=axiom_dot_v1_dot_db__pb2.ListTablesResponse.SerializeToString,
         ),
         "ListDirectory": grpc.unary_stream_rpc_method_handler(
             servicer.ListDirectory,
             request_deserializer=axiom_dot_v1_dot_fs__pb2.ListDirectoryRequest.FromString,
-            response_serializer=axiom_dot_v1_dot_fs__pb2.DirectoryEntry.SerializeToString,
+            response_serializer=axiom_dot_v1_dot_fs__pb2.FederationServiceListDirectoryResponse.SerializeToString,
         ),
         "DownloadFile": grpc.unary_stream_rpc_method_handler(
             servicer.DownloadFile,
             request_deserializer=axiom_dot_v1_dot_federation__pb2.DownloadFileRequest.FromString,
-            response_serializer=axiom_dot_v1_dot_federation__pb2.FileChunk.SerializeToString,
+            response_serializer=axiom_dot_v1_dot_federation__pb2.DownloadFileResponse.SerializeToString,
         ),
         "UploadFile": grpc.stream_unary_rpc_method_handler(
             servicer.UploadFile,
-            request_deserializer=axiom_dot_v1_dot_federation__pb2.UploadChunk.FromString,
-            response_serializer=axiom_dot_v1_dot_fs__pb2.FsWriteResult.SerializeToString,
+            request_deserializer=axiom_dot_v1_dot_federation__pb2.UploadFileRequest.FromString,
+            response_serializer=axiom_dot_v1_dot_fs__pb2.UploadFileResponse.SerializeToString,
         ),
         "HealthCheck": grpc.unary_stream_rpc_method_handler(
             servicer.HealthCheck,
             request_deserializer=axiom_dot_v1_dot_federation__pb2.HealthCheckRequest.FromString,
-            response_serializer=axiom_dot_v1_dot_federation__pb2.HealthUpdate.SerializeToString,
+            response_serializer=axiom_dot_v1_dot_federation__pb2.HealthCheckResponse.SerializeToString,
         ),
         "GetNodeInfo": grpc.unary_unary_rpc_method_handler(
             servicer.GetNodeInfo,
-            request_deserializer=axiom_dot_v1_dot_federation__pb2.NodeInfoRequest.FromString,
-            response_serializer=axiom_dot_v1_dot_federation__pb2.NodeInfoResponse.SerializeToString,
+            request_deserializer=axiom_dot_v1_dot_federation__pb2.GetNodeInfoRequest.FromString,
+            response_serializer=axiom_dot_v1_dot_federation__pb2.GetNodeInfoResponse.SerializeToString,
         ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -219,8 +219,8 @@ class FederationService(object):
             request,
             target,
             "/axiom.v1.FederationService/ExecuteQuery",
-            axiom_dot_v1_dot_db__pb2.QueryRequest.SerializeToString,
-            axiom_dot_v1_dot_db__pb2.QueryResponse.FromString,
+            axiom_dot_v1_dot_db__pb2.ExecuteQueryRequest.SerializeToString,
+            axiom_dot_v1_dot_db__pb2.ExecuteQueryResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -280,7 +280,7 @@ class FederationService(object):
             target,
             "/axiom.v1.FederationService/ListTables",
             axiom_dot_v1_dot_federation__pb2.ListTablesRequest.SerializeToString,
-            axiom_dot_v1_dot_db__pb2.TablesListResponse.FromString,
+            axiom_dot_v1_dot_db__pb2.ListTablesResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -310,7 +310,7 @@ class FederationService(object):
             target,
             "/axiom.v1.FederationService/ListDirectory",
             axiom_dot_v1_dot_fs__pb2.ListDirectoryRequest.SerializeToString,
-            axiom_dot_v1_dot_fs__pb2.DirectoryEntry.FromString,
+            axiom_dot_v1_dot_fs__pb2.FederationServiceListDirectoryResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -340,7 +340,7 @@ class FederationService(object):
             target,
             "/axiom.v1.FederationService/DownloadFile",
             axiom_dot_v1_dot_federation__pb2.DownloadFileRequest.SerializeToString,
-            axiom_dot_v1_dot_federation__pb2.FileChunk.FromString,
+            axiom_dot_v1_dot_federation__pb2.DownloadFileResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -369,8 +369,8 @@ class FederationService(object):
             request_iterator,
             target,
             "/axiom.v1.FederationService/UploadFile",
-            axiom_dot_v1_dot_federation__pb2.UploadChunk.SerializeToString,
-            axiom_dot_v1_dot_fs__pb2.FsWriteResult.FromString,
+            axiom_dot_v1_dot_federation__pb2.UploadFileRequest.SerializeToString,
+            axiom_dot_v1_dot_fs__pb2.UploadFileResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -400,7 +400,7 @@ class FederationService(object):
             target,
             "/axiom.v1.FederationService/HealthCheck",
             axiom_dot_v1_dot_federation__pb2.HealthCheckRequest.SerializeToString,
-            axiom_dot_v1_dot_federation__pb2.HealthUpdate.FromString,
+            axiom_dot_v1_dot_federation__pb2.HealthCheckResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -429,8 +429,8 @@ class FederationService(object):
             request,
             target,
             "/axiom.v1.FederationService/GetNodeInfo",
-            axiom_dot_v1_dot_federation__pb2.NodeInfoRequest.SerializeToString,
-            axiom_dot_v1_dot_federation__pb2.NodeInfoResponse.FromString,
+            axiom_dot_v1_dot_federation__pb2.GetNodeInfoRequest.SerializeToString,
+            axiom_dot_v1_dot_federation__pb2.GetNodeInfoResponse.FromString,
             options,
             channel_credentials,
             insecure,

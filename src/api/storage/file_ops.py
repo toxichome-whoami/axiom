@@ -2,10 +2,11 @@ import asyncio
 import mimetypes
 import os
 import shutil
+import stat as stat_m
 from datetime import datetime
 from typing import Any, Dict, List
 
-from api.errors import ErrorCodes, AxiomException
+from api.errors import AxiomException, ErrorCodes
 from utils.size_parser import format_size
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -27,7 +28,6 @@ def _enrich_file_metrics(stat, path: str, res: dict) -> None:
 
 def _stat_to_file_info(path: str, name: str, stat_result) -> Dict[str, Any]:
     """Build file info dict from an already-obtained stat result — zero extra syscalls."""
-    import stat as stat_m
 
     is_dir = stat_m.S_ISDIR(stat_result.st_mode)
 
