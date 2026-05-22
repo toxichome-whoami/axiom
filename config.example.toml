@@ -30,6 +30,7 @@ metrics = true                   # Enable Prometheus/OpenMetrics endpoint
 playground = true                # Enable /api/docs Swagger UI
 mcp = true                       # Enable Model Context Protocol server
 graphql = false                  # Enable High-Performance GraphQL API
+websocket = false                # Enable Real-Time WebSocket Push Gateway
 
 # ─── Model Context Protocol (MCP) ─────────────────────
 [mcp]
@@ -170,3 +171,14 @@ query_cache_enabled = true       # Cache SQL transpilation results to bypass com
 query_cache_size = 512           # Max LRU size for parsed GraphQL AST caching
 max_query_depth = 15             # Maximum nesting level allowed to prevent DoS attacks
 introspection = false            # Disable schema introspection in production for security
+
+# ─── Real-Time WebSocket Push Gateway ────────────────
+# Optional, secondary interface for clients that need live event streaming.
+# When disabled, the endpoint does not exist and consumes zero resources.
+# Connect to: ws://host:port/api/v1/ws
+# First message must be: { "type": "auth", "token": "<base64(key_name:secret)>" }
+[websocket]
+max_connections = 10000          # Maximum concurrent WebSocket connections
+heartbeat_interval = 30         # Seconds between server ping messages to clients
+auth_timeout = 5.0              # Seconds a client has to send the auth message after connecting
+max_subscriptions_per_client = 100  # Maximum topic subscriptions per connection

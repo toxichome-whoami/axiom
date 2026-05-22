@@ -580,6 +580,97 @@ Errors are returned in the standard GraphQL error envelope. The HTTP status code
 | `Unsupported root field: <name>` | Unknown field name in query | Only `execute` and `databases` are currently supported |
 | `Query depth exceeds limit` | Query nesting too deep | Reduce nesting or increase `max_query_depth` in config |
 
+---
+
+## WebSocket API <code>ws://host:port/api/v1/ws</code>
+
+> [!NOTE]
+> WebSocket is an **optional, secondary interface** for clients that need real-time push. Enable it with `features.websocket = true` in `config.toml`. When disabled, the endpoint does not exist and consumes zero resources.
+
+Use WebSocket when you need **live event streaming** — DB mutations, file changes, or server metrics — without polling. For one-off queries, REST is the right choice.
+
+### Connection and Authentication
+
+WebSocket upgrades happen over the same port as the REST API. Unlike HTTP, auth is done via the **first JSON message** (5-second timeout):
+
+```javascript
+const ws = new WebSocket("ws://localhost:4500/api/v1/ws");
+
+ws.onopen = () => {
+  ws.send(JSON.stringify({
+    type: "auth",
+    token: btoa("admin:your_secret_here")  // base64(key_name:secret)
+  }));
+};
+
+ws.onmessage = (e) => {
+  const msg = JSON.parse(e.data);
+  console.log(msg);
+  // { "type": "connected", "client_id": "admin_140234567" }
+};
+```
+
+### Subscribing to Topics
+
+Topics mirror the REST URL structure. A client may only subscribe to topics within their API key's `db_scope` / `fs_scope`.
+
+```javascript
+// Subscribe to all mutations on the "users" table in "portfolio"
+ws.send(JSON.stringify({ type: "subscribe", topic: "db:portfolio:users", request_id: "r1" }));
+// → { "type": "ack", "request_id": "r1", "status": "ok", "topic": "db:portfolio:users" }
+
+// Subscribe to all file changes in the "uploads" storage
+ws.send(JSON.stringify({ type: "subscribe", topic: "fs:uploads:*" }));
+
+// Subscribe to live server metrics
+ws.send(JSON.stringify({ type: "subscribe", topic: "metrics" }));
+
+// Unsubscribe
+ws.send(JSON.stringify({ type: "unsubscribe", topic: "db:portfolio:users" }));
+```
+
+### Topic Reference
+
+| Topic | Description |
+|-------|-------------|
+| `db:{alias}:{table}` | Mutations on a specific table |
+| `db:{alias}:*` | All table mutations in a database |
+| `fs:{alias}:{path}` | File changes at a specific path |
+| `fs:{alias}:*` | All file changes in a storage volume |
+| `metrics` | Periodic server metrics (memory, CPU, query counts) |
+| `system:health` | Server health state changes |
+
+### Incoming Event Shape
+
+```json
+{
+  "type": "event",
+  "topic": "db:portfolio:users",
+  "data": {
+    "action": "INSERT",
+    "module": "db",
+    "resource": "portfolio",
+    "target": "users",
+    "details": { "affected_rows": 1 }
+  }
+}
+```
+
+### Heartbeat
+
+The server sends a ping every 30 seconds (configurable). Clients should handle it gracefully — no reply required, but optionally respond with `{ "type": "pong" }`.
+
+```json
+{ "type": "heartbeat", "server_time": "2026-05-22T17:00:00Z" }
+```
+
+### Close Codes
+
+| Code | Reason |
+|------|--------|
+| `4001` | Auth timeout or malformed auth message |
+| `4003` | Invalid token or authentication failed |
+
 ## MCP API <code>/api/v1/mcp</code>
 
 > <span style="font-size: 1.2em;"></span> **NOTE:**

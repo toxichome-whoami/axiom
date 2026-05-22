@@ -15,6 +15,7 @@ from api.core import health
 from api.core.metrics import router as metrics_router
 from api.graphql import router as graphql_router
 from api.mcp import router as mcp_router
+from api.ws import router as ws_router
 from config.provider import GlobalConfigProvider
 from server.lifespan import lifespan
 from server.middleware.cors import setup_cors
@@ -161,6 +162,9 @@ def _attach_routers(app: FastAPI):
 
     if config.features.graphql:
         api_v1.include_router(graphql_router, prefix="/graphql")
+
+    if config.features.websocket:
+        api_v1.include_router(ws_router, prefix="/ws")
 
     app.include_router(api_v1)
 

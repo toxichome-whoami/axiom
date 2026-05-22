@@ -264,3 +264,21 @@ async def emit_event(
                     event_id=payload.event_id,
                     hook_name=name,
                 )
+
+    # Bridge to WebSocket subscribers — fire-and-forget, zero latency impact
+    if config.features.websocket:
+        try:
+            from api.ws.event_bus import event_bus as _ws_bus
+
+            asyncio.create_task(
+                _ws_bus.publish(
+                    module=module,
+                    resource=resource,
+                    target=target,
+                    action=action,
+                    details=details,
+                    request_id=trigger.request_id,
+                )
+            )
+        except Exception:
+            pass  # WS module not loaded or loop not running

@@ -42,6 +42,7 @@ Feature flags to enable/disable entire subsystems.
 | `playground` | `false` | Enable Swagger UI at `/api/docs` |
 | `mcp` | `false` | Enable MCP JSON-RPC server at `/api/v1/mcp` |
 | `graphql` | `false` | Enable optional GraphQL gateway at `/api/v1/graphql` |
+| `websocket` | `false` | Enable real-time WebSocket push gateway at `/api/v1/ws` |
 
 ---
 
@@ -260,3 +261,19 @@ Model Context Protocol server configuration. Enables AI assistants to interact w
 | `query_cache_size` | `512` | Max LRU slots for the compiled query cache |
 | `max_query_depth` | `15` | Maximum GraphQL query nesting depth — prevents DoS via deeply nested queries |
 | `introspection` | `false` | Allow schema introspection queries — disable in production for security |
+
+---
+
+## `[websocket]`
+
+> [!NOTE]
+> WebSocket is an **optional, secondary interface**. Axiom is natively a REST API gateway. This section only applies when `features.websocket = true`. When disabled, the endpoint does not exist and consumes zero resources.
+
+Real-time bidirectional push gateway. Clients connect to `ws://host:port/api/v1/ws`, authenticate with the first JSON message, then subscribe to topics that map to DB tables and storage paths.
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `max_connections` | `10000` | Maximum concurrent WebSocket connections |
+| `heartbeat_interval` | `30` | Seconds between server ping messages |
+| `auth_timeout` | `5.0` | Seconds a client has to send the auth message after connecting |
+| `max_subscriptions_per_client` | `100` | Maximum topic subscriptions per connection |

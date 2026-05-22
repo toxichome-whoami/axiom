@@ -38,6 +38,7 @@ class FeaturesConfig(BaseModel):
     playground: bool = False
     mcp: bool = False
     graphql: bool = False
+    websocket: bool = False
 
 
 class GraphQLConfig(BaseModel):
@@ -48,6 +49,15 @@ class GraphQLConfig(BaseModel):
     query_cache_size: int = 512
     max_query_depth: int = 15
     introspection: bool = False
+
+
+class WebSocketConfig(BaseModel):
+    """Real-time bidirectional push gateway for DB/FS event streaming."""
+
+    max_connections: int = 10000
+    heartbeat_interval: int = 30  # Seconds between server ping messages
+    auth_timeout: float = 5.0  # Seconds client has to send auth after connecting
+    max_subscriptions_per_client: int = 100  # Prevent topic spam per connection
 
 
 class LoggingConfig(BaseModel):
@@ -273,6 +283,7 @@ class AxiomConfig(BaseModel):
     performance: PerformanceConfig = Field(default_factory=PerformanceConfig)
     mcp: MCPConfig = Field(default_factory=MCPConfig)
     graphql: GraphQLConfig = Field(default_factory=GraphQLConfig)
+    websocket: WebSocketConfig = Field(default_factory=WebSocketConfig)
     webhooks: WebhookGlobalConfig = Field(default_factory=WebhookGlobalConfig)
     webhook: Dict[str, WebhookDefConfig] = Field(default_factory=dict)
     database: Dict[str, DatabaseDefConfig] = Field(default_factory=dict)
