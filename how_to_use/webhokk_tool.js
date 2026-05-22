@@ -96,21 +96,52 @@ async function apiPost(endpoint, requestBody = null, method = 'POST') {
 async function ensureMessagingTableExists() {
     process.stdout.write(`🔍 Verifying 'messages' table existence... `);
     try {
-        const tablesResponse = await apiPost(`/api/v1/db/${CONFIG.dbName}/tables`, null, 'GET');
-        const hasMessagesTable = tablesResponse.data.tables.some(t => t.name.toLowerCase() === 'messages');
+        const dbsResponse = await apiPost('/api/v1/db/databases', null, 'GET');
+        const dbInfo = dbsResponse.data.databases.find(d => d.name === CONFIG.dbName);
+        const engine = dbInfo ? dbInfo.engine.toLowerCase() : 'mysql';
 
-        if (hasMessagesTable) {
-            return console.log('✅ Present.');
+        const tablesResponse = await apiPost(`/api/v1/db/${CONFIG.dbName}/tables`, null, 'GET');
+        const messagesTable = tablesResponse.data.tables.find(t => t.name.toLowerCase() === 'messages');
+
+        if (messagesTable) {
+            const hasContentColumn = messagesTable.columns && messagesTable.columns.some(c => c.name.toLowerCase() === 'content');
+            if (hasContentColumn) {
+                return console.log('✅ Present.');
+            }
+            console.log('⚠️  Present but missing "content" column.');
+            process.stdout.write(`🏗️  Adding 'content' column to 'messages'... `);
+            await apiPost(`/api/v1/db/${CONFIG.dbName}/query`, {
+                sql: `ALTER TABLE messages ADD COLUMN content TEXT`
+            });
+            return console.log('✅ Added.');
         }
 
         console.log('❌ Not found.');
-        process.stdout.write(`🏗️  Initializing 'messages' structure... `);
-        await apiPost(`/api/v1/db/${CONFIG.dbName}/query`, {
-            sql: `CREATE TABLE IF NOT EXISTS messages (
+        process.stdout.write(`🏗️  Initializing 'messages' structure for ${engine}... `);
+        
+        let createSql = '';
+        if (engine === 'postgres') {
+            createSql = `CREATE TABLE IF NOT EXISTS messages (
+                id SERIAL PRIMARY KEY,
+                content TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )`;
+        } else if (engine === 'sqlite') {
+            createSql = `CREATE TABLE IF NOT EXISTS messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                content TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )`;
+        } else {
+            createSql = `CREATE TABLE IF NOT EXISTS messages (
                 id INT AUTO_INCREMENT PRIMARY KEY,
                 content TEXT NOT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )`
+            )`;
+        }
+
+        await apiPost(`/api/v1/db/${CONFIG.dbName}/query`, {
+            sql: createSql
         });
         console.log('✅ Initialized.');
     } catch (err) {
@@ -158,7 +189,8 @@ function dispatchWebhookData(req, res, rawPayload) {
     console.log(`\n\n🔔 [WEBHOOK] Verified HMAC-SHA256 Payload Received:`);
     try {
         const parsed = JSON.parse(rawPayload);
-        console.log(JSON.stringify(parsed.data, null, 2));
+        const toDisplay = parsed.data !== undefined ? parsed.data : parsed;
+        console.log(JSON.stringify(toDisplay, null, 2));
     } catch (e) {
         console.log(`Raw Content: ${rawPayload}`);
     }

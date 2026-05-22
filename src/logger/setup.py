@@ -61,35 +61,63 @@ def _build_formatter(format_type: str):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Setup Core
-# ─────────────────────────────────────────────────────────────────────────────
+_listener = None
 
 
 def setup_logging():
+    global _listener
     try:
         config = GlobalConfigProvider().get_config()
     except RuntimeError:
         return
 
+    root = logging.getLogger()
+
     if not config.logging.enabled:
-        logging.basicConfig(level=logging.CRITICAL + 10, handlers=[logging.NullHandler()])
-        structlog.configure(wrapper_class=structlog.stdlib.BoundLogger)
+        if _listener is not None:
+            _listener.stop()
+            _listener = None
+        root.setLevel(logging.CRITICAL + 10)
+        for h in list(root.handlers):
+            root.removeHandler(h)
+        root.addHandler(logging.NullHandler())
+        
+        # Configure structlog to route through standard logging library
+        structlog.configure(
+            processors=[
+                structlog.stdlib.add_log_level,
+                structlog.processors.StackInfoRenderer(),
+                structlog.processors.format_exc_info,
+                structlog.processors.JSONRenderer(),
+            ],
+            logger_factory=structlog.stdlib.LoggerFactory(),
+            wrapper_class=structlog.stdlib.BoundLogger,
+            cache_logger_on_first_use=True,
+        )
         return
+
+    # If already initialized and not NullHandler, just update the log level!
+    if root.handlers and not isinstance(root.handlers[0], logging.NullHandler):
+        root.setLevel(_resolve_log_level(config.logging.level))
+        return
+
+    if _listener is not None:
+        _listener.stop()
+        _listener = None
 
     os.makedirs(config.logging.directory, exist_ok=True)
 
     raw_handlers = _build_log_handlers(config)
     log_queue = queue.Queue(-1)
     queue_handler = logging.handlers.QueueHandler(log_queue)
-    listener = logging.handlers.QueueListener(log_queue, *raw_handlers)
-    listener.start()
+    _listener = logging.handlers.QueueListener(log_queue, *raw_handlers)
+    _listener.start()
 
-    # 1. Apply StdLib Native Handlers
-    logging.basicConfig(
-        format="%(message)s",
-        level=_resolve_log_level(config.logging.level),
-        handlers=[queue_handler],
-    )
+    for h in list(root.handlers):
+        root.removeHandler(h)
+
+    root.setLevel(_resolve_log_level(config.logging.level))
+    root.addHandler(queue_handler)
 
     # 2. Inject Structlog Pipeline
     shared_processors = [

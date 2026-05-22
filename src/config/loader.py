@@ -86,8 +86,14 @@ class ConfigManager:
         return cls._instance
 
     @classmethod
-    def load(cls, path: str = "config.toml") -> AxiomConfig:
+    def load(cls, path: Optional[str] = None) -> AxiomConfig:
         """Hydrates the singleton from local variables sequentially."""
+        if path is None:
+            if len(sys.argv) > 1 and sys.argv[1] == "--config":
+                path = sys.argv[2]
+            else:
+                path = "config.toml"
+
         cls._config_path = path
 
         _ensure_file_exists(path)
@@ -95,6 +101,14 @@ class ConfigManager:
         config_payload = _load_merged_config(paths)
 
         cls._config = _validate_schema(config_payload, path)
+
+        # Call setup_logging automatically after config is successfully loaded
+        try:
+            from logger.setup import setup_logging
+            setup_logging()
+        except Exception:
+            pass
+
         return cls._config
 
     @classmethod
@@ -150,6 +164,13 @@ class ConfigManager:
                 import api.database.handlers as _dbh
 
                 _dbh._refresh_feature_flags()
+            except Exception:
+                pass
+
+            # Call setup_logging automatically on hot reload
+            try:
+                from logger.setup import setup_logging
+                setup_logging()
             except Exception:
                 pass
 

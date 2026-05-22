@@ -222,19 +222,15 @@ async def emit_event(
     json_payload = payload.model_dump_json()
 
     persistence = None
-    queue = None
-
     if config.webhooks.persistence_enabled:
         from webhook.persistence import get_persistence
-
         persistence = get_persistence()
 
-    if persistence is None:
-        queue = WebhookQueueList.get_queue()
+    queue = WebhookQueueList.get_queue()
 
     for name, hook in matched_hooks:
         if persistence:
-            persistence.enqueue(
+            db_id = persistence.enqueue(
                 event_id=payload.event_id,
                 hook_name=name,
                 url=hook.url,
@@ -242,18 +238,39 @@ async def emit_event(
                 headers=hook.headers,
                 payload=json_payload,
             )
+            if db_id is not None:
+                try:
+                    queue.put_nowait({
+                        "id": db_id,
+                        "event_id": payload.event_id,
+                        "hook_name": name,
+                        "url": hook.url,
+                        "secret": hook.secret,
+                        "headers": hook.headers,
+                        "payload": json_payload,
+                        "attempt": 1
+                    })
+                    from webhook.dispatcher import ensure_workers
+                    ensure_workers()
+                except asyncio.QueueFull:
+                    logger.error(
+                        "Webhook memory queue full, persistent event delayed",
+                        event_id=payload.event_id,
+                        hook_name=name,
+                    )
         else:
             try:
-                if queue is not None:
-                    queue.put_nowait(
-                        {
-                            "hook_name": name,
-                            "url": hook.url,
-                            "secret": hook.secret,
-                            "headers": hook.headers,
-                            "payload": json_payload,
-                        }
-                    )
+                queue.put_nowait(
+                    {
+                        "hook_name": name,
+                        "url": hook.url,
+                        "secret": hook.secret,
+                        "headers": hook.headers,
+                        "payload": json_payload,
+                    }
+                )
+                from webhook.dispatcher import ensure_workers
+                ensure_workers()
             except asyncio.QueueFull:
                 logger.error(
                     "Webhook queue full, dropping event",

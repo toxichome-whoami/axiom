@@ -56,11 +56,9 @@ def _start_background_daemons(config) -> List[asyncio.Task]:
 
     # Conditional feature workers
     if config.features.webhook and config.webhooks.enabled:
-        from webhook.dispatcher import _workers
-        for i in range(config.webhooks.max_concurrent_deliveries):
-            t = asyncio.create_task(dispatcher_worker(i))
-            _workers.add(t)
-            tasks.append(t)
+        from webhook.dispatcher import load_pending_webhooks, ensure_workers
+        load_pending_webhooks()
+        ensure_workers()
 
     if config.features.federation and config.federation.enabled:
         tasks.append(asyncio.create_task(sync_federated_servers()))
@@ -75,6 +73,15 @@ async def _stop_background_daemons():
         task.cancel()
     _daemon_tasks.clear()
 
+    # Also shut down dynamic webhook tasks
+    config = GlobalConfigProvider().get_config()
+    if config.features.webhook and config.webhooks.enabled:
+        from webhook.dispatcher import webhook_shutdown
+        try:
+            await webhook_shutdown()
+        except Exception as e:
+            logger.error("Failed to shutdown webhooks cleanly", error=str(e))
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Primary Context
@@ -84,6 +91,9 @@ async def _stop_background_daemons():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Controls application bootstrap and teardown sequences dynamically."""
+    from logger.setup import setup_logging
+    setup_logging()
+
     config = GlobalConfigProvider().get_config()
     pid = os.getpid()
 

@@ -43,18 +43,20 @@ def resolve_max_retries(hook_name: str, config) -> int:
     return config.webhooks.max_retries
 
 
-def _schedule_memory_retry(
+def _schedule_retry(
     queue: Optional[asyncio.Queue], task: dict, delay_sec: float
 ):
-    """Fallback in-memory retry mechanism when persistence is disabled."""
+    """Schedules a retry task in-memory."""
 
     async def retry_routine():
         if queue is None:
             return
-        await asyncio.sleep(delay_sec)
+        if delay_sec > 0:
+            await asyncio.sleep(delay_sec)
         task["attempt"] = task.get("attempt", 1) + 1
         try:
             queue.put_nowait(task)
+            ensure_workers()
         except asyncio.QueueFull:
             logger.error("Webhook queue full during retry, dropping")
 
@@ -85,10 +87,9 @@ async def _process_dispatch_task(
                 # Requeue for later probe
                 next_retry = time.time() + config.webhooks.circuit_breaker_recovery
                 persistence.mark_failed(event_id, attempt, "Circuit Open", next_retry)
-            else:
-                _schedule_memory_retry(
-                    queue, task, config.webhooks.circuit_breaker_recovery
-                )
+            _schedule_retry(
+                queue, task, config.webhooks.circuit_breaker_recovery
+            )
             return
 
     signature = generate_signature(secret, payload)
@@ -180,45 +181,91 @@ def _handle_dispatch_failure(
     if persistence:
         next_retry_at = time.time() + delay
         persistence.mark_failed(task.get("event_id"), attempt + 1, error, next_retry_at)
-    elif queue:
-        _schedule_memory_retry(queue, task, delay)
+    
+    if queue:
+        _schedule_retry(queue, task, delay)
 
 
 async def dispatcher_worker(worker_id: int):
     logger.info(f"Webhook dispatcher worker {worker_id} started")
     client = _get_client()
+    queue = WebhookQueueList.get_queue()
 
     try:
         while True:
-            config = GlobalConfigProvider().get_config()
             try:
-                if config.webhooks.persistence_enabled:
-                    persistence = get_persistence()
-                    if persistence:
-                        tasks = persistence.fetch_next(1)
-                        if not tasks:
-                            await asyncio.sleep(1.0)
-                            continue
-                        task = tasks[0]
-                        await _process_dispatch_task(task, None, client, config)
-                    else:
-                        await asyncio.sleep(1.0)
-                else:
-                    queue = WebhookQueueList.get_queue()
-                    task = await queue.get()
-                    try:
-                        await _process_dispatch_task(task, queue, client, config)
-                    finally:
-                        queue.task_done()
+                task = queue.get_nowait()
+            except asyncio.QueueEmpty:
+                break
+            try:
+                config = GlobalConfigProvider().get_config()
+                await _process_dispatch_task(task, queue, client, config)
             except asyncio.CancelledError:
                 raise
             except Exception as system_error:
                 logger.error(
-                    "Dispatcher encountered unexpected error", error=str(system_error)
+                    "Dispatcher encountered unexpected error during task processing", error=str(system_error)
                 )
-                await asyncio.sleep(1)
+            finally:
+                queue.task_done()
     except asyncio.CancelledError:
         logger.info(f"Webhook dispatcher worker {worker_id} shutting down")
+
+
+def ensure_workers():
+    config = GlobalConfigProvider().get_config()
+    if not (config.features.webhook and config.webhooks.enabled):
+        return
+    max_workers = config.webhooks.max_concurrent_deliveries
+    queue = WebhookQueueList.get_queue()
+    q_size = queue.qsize()
+    active_count = len(_workers)
+
+    num_to_spawn = min(q_size, max_workers - active_count)
+    if num_to_spawn > 0:
+        for _ in range(num_to_spawn):
+            worker_id = len(_workers) + 1
+            t = asyncio.create_task(dispatcher_worker(worker_id))
+            _workers.add(t)
+            t.add_done_callback(_workers.discard)
+
+
+def load_pending_webhooks():
+    """Recovers and loads pending/processing webhooks from SQLite on startup."""
+    config = GlobalConfigProvider().get_config()
+    if not (config.features.webhook and config.webhooks.enabled and config.webhooks.persistence_enabled):
+        return
+
+    persistence = get_persistence()
+    if not persistence:
+        return
+
+    # Reset any stuck 'processing' tasks to 'pending'
+    try:
+        persistence.recover_processing_tasks()
+    except Exception as e:
+        logger.error("Failed to recover processing webhooks", error=str(e))
+
+    # Fetch all pending tasks from DB
+    try:
+        tasks = persistence.fetch_all_pending()
+        queue = WebhookQueueList.get_queue()
+        now = time.time()
+        for task in tasks:
+            next_retry = task.get("next_retry_at", 0)
+            if next_retry <= now:
+                try:
+                    queue.put_nowait(task)
+                except asyncio.QueueFull:
+                    logger.error("Queue full during startup webhook load")
+            else:
+                delay = next_retry - now
+                _schedule_retry(queue, task, delay)
+        if tasks:
+            logger.info("Loaded pending webhooks from database", count=len(tasks))
+            ensure_workers()
+    except Exception as e:
+        logger.error("Failed to load pending webhooks from database", error=str(e))
 
 
 async def webhook_shutdown():

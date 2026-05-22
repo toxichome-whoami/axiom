@@ -198,6 +198,25 @@ class WebhookPersistence:
         except Exception:
             return {}
 
+    def recover_processing_tasks(self):
+        conn = sqlite3.connect(self.db_path)
+        c = conn.cursor()
+        c.execute("UPDATE webhook_queue SET status='pending' WHERE status='processing'")
+        conn.commit()
+        conn.close()
+
+    def fetch_all_pending(self) -> List[Dict[str, Any]]:
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+        c.execute("SELECT * FROM webhook_queue WHERE status = 'pending' ORDER BY created_at ASC")
+        rows = c.fetchall()
+        tasks = [dict(row) for row in rows]
+        conn.close()
+        for t in tasks:
+            t["headers"] = json.loads(t["headers"]) if t["headers"] else {}
+        return tasks
+
     def close(self):
         pass
 
