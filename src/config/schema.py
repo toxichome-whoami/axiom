@@ -111,6 +111,15 @@ class WebhookGlobalConfig(BaseModel):
     retry_delay: int = 2
     queue_size: int = 10000
     secret_header: str = "X-Axiom-Signature"
+    max_concurrent_deliveries: int = 8
+    persistence_enabled: bool = True
+    persistence_path: str = "./data/webhooks.db"
+    dead_letter_enabled: bool = True
+    dead_letter_retention_hours: int = 72
+    circuit_breaker_enabled: bool = True
+    circuit_breaker_threshold: int = 5
+    circuit_breaker_recovery: int = 30
+    retry_jitter_enabled: bool = True
 
 
 class WebhookDefConfig(BaseModel):
@@ -119,6 +128,8 @@ class WebhookDefConfig(BaseModel):
     rule: str
     headers: Dict[str, str] = Field(default_factory=dict)
     enabled: bool = True
+    timeout: int = 0
+    max_retries: int = 0
 
     @field_validator("rule")
     def validate_rule(cls, rule_property):

@@ -120,7 +120,26 @@ function verifyWebhook(rawBody, signatureHeader, secret) {
 
 ## 7. Reliability and Retries
 
-If a webhook delivery fails (non-2xx response or timeout):
+Axiom uses an industrial-grade, highly-concurrent persistent delivery system to ensure webhook reliability.
+
+### Persistent Queues and Dead Letter
+- **Persistence**: If `persistence_enabled` is true, all webhooks are written to a SQLite WAL database (`webhooks.db`) before delivery. If the server crashes, deliveries resume exactly where they left off.
+- **Dead Letter Queue (DLQ)**: If an event exceeds `max_retries`, it is moved to the DLQ (`webhook_dead_letter` table) for manual inspection and replay.
+
+### Circuit Breakers
+- **Protection**: Axiom tracks delivery failures per URL. If a URL fails `circuit_breaker_threshold` times in a row, the circuit "opens".
+- **Backoff**: While open, all webhooks to that URL are immediately skipped (or requeued) without making network requests. After `circuit_breaker_recovery` seconds, a single "probe" request is allowed to check if the receiver is back online.
+
+### Retries & Jitter
 - **Retries**: Axiom will retry up to `max_retries` (default: 3) times.
 - **Exponential Backoff**: Wait `retry_delay ^ attempt` seconds between retries.
-- **Queue Buffering**: Events are buffered in memory up to `queue_size`. Beyond this, new events are dropped to prevent memory exhaustion.
+- **Jitter**: A 50%-150% randomized jitter is applied to the backoff delay to prevent "thundering herd" problems when a receiver comes back online.
+
+## 8. Observability API
+
+You can inspect the state of the webhook system via the health endpoints:
+
+- `GET /api/v1/webhooks/status`: Get current queue counts, circuit breaker states, and configuration limits.
+- `GET /api/v1/webhooks/dead-letter`: List permanently failed deliveries.
+- `POST /api/v1/webhooks/dead-letter/replay`: Requeue specific `event_ids` from the DLQ.
+- `POST /api/v1/webhooks/circuit/{hook_name}/reset`: Manually close an open circuit.

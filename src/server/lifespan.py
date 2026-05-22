@@ -40,6 +40,10 @@ async def _init_storage_backends(config):
 
         await SQLiteCache.init_db()
 
+    if config.features.webhook and config.webhooks.enabled and config.webhooks.persistence_enabled:
+        from webhook.persistence import init_persistence
+        init_persistence(config.webhooks.persistence_path)
+
 
 def _start_background_daemons(config) -> List[asyncio.Task]:
     """Launches non-blocking background workers based on active feature flags."""
@@ -52,7 +56,11 @@ def _start_background_daemons(config) -> List[asyncio.Task]:
 
     # Conditional feature workers
     if config.features.webhook and config.webhooks.enabled:
-        tasks.append(asyncio.create_task(dispatcher_worker()))
+        from webhook.dispatcher import _workers
+        for i in range(config.webhooks.max_concurrent_deliveries):
+            t = asyncio.create_task(dispatcher_worker(i))
+            _workers.add(t)
+            tasks.append(t)
 
     if config.features.federation and config.federation.enabled:
         tasks.append(asyncio.create_task(sync_federated_servers()))
@@ -91,6 +99,10 @@ async def lifespan(app: FastAPI):
 
     # 3. Teardown Subsystems
     await _stop_background_daemons()
+
+    if config.features.webhook and config.webhooks.enabled and config.webhooks.persistence_enabled:
+        from webhook.persistence import close_persistence
+        close_persistence()
 
     if hasattr(app.state, "mcp_initialized"):
         from api.mcp.server import MCPServerManager

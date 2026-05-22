@@ -22,6 +22,7 @@ from server.middleware.rate_limit import RateLimitMiddleware
 from server.middleware.request_id import RequestIDMiddleware
 from server.middleware.security_headers import SecurityHeadersMiddleware
 from server.middleware.waf import WAFMiddleware
+from webhook import health_router as webhook_health_router
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Path Verification
@@ -150,6 +151,7 @@ def _attach_routers(app: FastAPI):
     api_v1.include_router(database.router, prefix="/db")
     api_v1.include_router(storage.router, prefix="/fs")
     api_v1.include_router(federation.router, prefix="/fed")
+    api_v1.include_router(webhook_health_router)
 
     if config.features.mcp:
         from api.mcp import router as mcp_router

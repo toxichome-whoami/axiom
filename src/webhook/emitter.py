@@ -220,22 +220,43 @@ async def emit_event(
         config, module, operation, resource, target, action, details, trigger
     )
     json_payload = payload.model_dump_json()
-    queue = WebhookQueueList.get_queue()
+
+    persistence = None
+    queue = None
+
+    if config.webhooks.persistence_enabled:
+        from webhook.persistence import get_persistence
+
+        persistence = get_persistence()
+
+    if persistence is None:
+        queue = WebhookQueueList.get_queue()
 
     for name, hook in matched_hooks:
-        try:
-            queue.put_nowait(
-                {
-                    "hook_name": name,
-                    "url": hook.url,
-                    "secret": hook.secret,
-                    "headers": hook.headers,
-                    "payload": json_payload,
-                }
-            )
-        except asyncio.QueueFull:
-            logger.error(
-                "Webhook queue full, dropping event",
+        if persistence:
+            persistence.enqueue(
                 event_id=payload.event_id,
                 hook_name=name,
+                url=hook.url,
+                secret=hook.secret,
+                headers=hook.headers,
+                payload=json_payload,
             )
+        else:
+            try:
+                if queue is not None:
+                    queue.put_nowait(
+                        {
+                            "hook_name": name,
+                            "url": hook.url,
+                            "secret": hook.secret,
+                            "headers": hook.headers,
+                            "payload": json_payload,
+                        }
+                    )
+            except asyncio.QueueFull:
+                logger.error(
+                    "Webhook queue full, dropping event",
+                    event_id=payload.event_id,
+                    hook_name=name,
+                )
