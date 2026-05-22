@@ -210,6 +210,8 @@ class FedServerConfig(BaseModel):
     secret: str
     node_id: str
     trust_mode: Literal["verify", "trust"] = "verify"
+    grpc_port: int = 50051
+    grpc_enabled: bool = True
 
 
 class FederationNodeState(BaseModel):
@@ -228,6 +230,9 @@ class FederationConfig(BaseModel):
     per_node_timeout: float = 5.0
     backoff_max: float = 300.0
     circuit_breaker_threshold: int = 3
+    grpc_port: int = 50051
+    grpc_max_message_mb: int = 100
+    grpc_keepalive_seconds: int = 30
     incoming: Dict[str, FederationIncomingKeyConfig] = Field(default_factory=dict)
     server: Dict[str, FedServerConfig] = Field(default_factory=dict)
     alias_map: Dict[str, str] = Field(default_factory=dict)

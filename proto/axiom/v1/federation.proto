@@ -1,0 +1,83 @@
+syntax = "proto3";
+package axiom.v1;
+
+import "axiom/v1/db.proto";
+import "axiom/v1/fs.proto";
+
+service FederationService {
+  // Database operations
+  rpc ExecuteQuery(QueryRequest) returns (QueryResponse);
+  rpc ListDatabases(ListDatabasesRequest) returns (ListDatabasesResponse);
+  rpc ListTables(ListTablesRequest) returns (TablesListResponse);
+
+  // Storage operations
+  rpc ListDirectory(ListDirectoryRequest) returns (stream DirectoryEntry);
+  rpc DownloadFile(DownloadFileRequest) returns (stream FileChunk);
+  rpc UploadFile(stream UploadChunk) returns (FsWriteResult);
+
+  // Health & discovery
+  rpc HealthCheck(HealthCheckRequest) returns (stream HealthUpdate);
+  rpc GetNodeInfo(NodeInfoRequest) returns (NodeInfoResponse);
+}
+
+message HealthCheckRequest {
+  string node_id = 1;
+}
+
+message HealthUpdate {
+  NodeStatus status = 1;
+  float latency_ms = 2;
+  map<string, string> databases = 3;
+  map<string, string> storages = 4;
+}
+
+enum NodeStatus {
+  UNKNOWN = 0;
+  UP = 1;
+  DEGRADED = 2;
+  DOWN = 3;
+}
+
+message ListDatabasesRequest {}
+
+message ListDatabasesResponse {
+  repeated DatabaseInfo databases = 1;
+}
+
+message DatabaseInfo {
+  string name = 1;
+  string engine = 2;
+  string mode = 3;
+  int32 tables_count = 4;
+}
+
+message ListTablesRequest {
+  string db_alias = 1;
+  int32 limit = 2;
+  int32 offset = 3;
+}
+
+message DownloadFileRequest {
+  string storage_alias = 1;
+  string path = 2;
+}
+
+message FileChunk {
+  bytes data = 1;
+}
+
+message UploadChunk {
+  string storage_alias = 1;
+  string filename = 2;
+  bytes data = 3;
+  bool is_last = 4;
+}
+
+message NodeInfoRequest {}
+
+message NodeInfoResponse {
+  string node_id = 1;
+  string version = 2;
+  repeated string databases = 3;
+  repeated string storages = 4;
+}

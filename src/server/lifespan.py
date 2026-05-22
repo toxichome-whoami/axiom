@@ -24,6 +24,7 @@ logger = structlog.get_logger()
 
 
 _daemon_tasks: List[asyncio.Task] = []
+_grpc_server = None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -66,6 +67,21 @@ def _start_background_daemons(config) -> List[asyncio.Task]:
         ensure_workers()
 
     if config.features.federation and config.federation.enabled:
+        try:
+            import grpc
+            from generated.axiom.v1 import federation_pb2_grpc
+            from api.federation.grpc_server import FederationServicer
+            
+            global _grpc_server
+            _grpc_server = grpc.aio.server()
+            federation_pb2_grpc.add_FederationServiceServicer_to_server(
+                FederationServicer(), _grpc_server
+            )
+            _grpc_server.add_insecure_port(f"[::]:{config.federation.grpc_port}")
+            tasks.append(asyncio.create_task(_grpc_server.start()))
+        except Exception as e:
+            logger.warning("gRPC server failed to start", error=str(e))
+            
         tasks.append(asyncio.create_task(sync_federated_servers()))
 
     _daemon_tasks.extend(tasks)
@@ -77,6 +93,11 @@ async def _stop_background_daemons():
     for task in _daemon_tasks:
         task.cancel()
     _daemon_tasks.clear()
+
+    global _grpc_server
+    if _grpc_server is not None:
+        await _grpc_server.stop(None)
+        _grpc_server = None
 
     # Also shut down dynamic webhook tasks
     config = GlobalConfigProvider().get_config()
@@ -138,5 +159,11 @@ async def lifespan(app: FastAPI):
         logger.info("Closing internal HTTP connection pools")
         for client in app.state.http_clients.values():
             await client.aclose()
+            
+    try:
+        from api.federation.grpc_client import shutdown_grpc_clients
+        await shutdown_grpc_clients()
+    except Exception:
+        pass
 
     logger.info("Axiom stopped", pid=pid)

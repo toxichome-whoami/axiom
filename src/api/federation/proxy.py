@@ -7,7 +7,7 @@ from fastapi import Request
 from starlette.background import BackgroundTask
 from starlette.responses import StreamingResponse
 
-from api.errors import ErrorCodes, AxiomException
+from api.errors import AxiomException, ErrorCodes
 from config.provider import GlobalConfigProvider
 
 _PROXY_SLIM_LIMITS = httpx.Limits(max_connections=10, max_keepalive_connections=5)
@@ -202,6 +202,50 @@ async def proxy_request(
                 "SSRF Blocked: Federation target resolves to an internal or restricted network.",
                 403,
             )
+
+        if getattr(srv_config, "grpc_enabled", False):
+            from api.federation.grpc_client import get_grpc_client
+
+            client = get_grpc_client(srv_alias)
+            if client:
+                if is_database and path == "query":
+                    import orjson
+                    from google.protobuf.json_format import MessageToDict
+
+                    from api.responses import is_protobuf_requested
+
+                    body_bytes = await request.body()
+                    body_dict = orjson.loads(body_bytes) if body_bytes else {}
+
+                    try:
+                        pb_result = await client.execute_query(
+                            target_alias,
+                            body_dict.get("sql", ""),
+                            body_dict.get("params", {}),
+                        )
+
+                        async def _iter_content(data: bytes):
+                            yield data
+
+                        if is_protobuf_requested(request):
+                            return StreamingResponse(
+                                _iter_content(pb_result.SerializeToString()),
+                                media_type="application/x-protobuf",
+                            )
+
+                        json_data = MessageToDict(
+                            pb_result, preserving_proto_field_name=True
+                        )
+                        return StreamingResponse(
+                            _iter_content(orjson.dumps(json_data)),
+                            media_type="application/json",
+                        )
+                    except Exception as e:
+                        raise AxiomException(
+                            ErrorCodes.FED_SERVER_DOWN,
+                            f"gRPC proxy execution failed: {str(e)}",
+                            502,
+                        )
 
         headers = _build_proxy_headers(request, srv_config)
 

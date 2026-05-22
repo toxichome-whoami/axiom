@@ -4,7 +4,7 @@ import sys
 
 from grpc_tools import protoc
 
-PRAGMAS = "# pyright: reportPrivateUsage=false, reportAttributeAccessIssue=false, reportAssignmentType=false\n# type: ignore\n"
+PRAGMAS = "# pyright: reportPrivateUsage=false, reportAttributeAccessIssue=false, reportAssignmentType=false, reportUnusedImport=false\n# type: ignore\n# flake8: noqa\n# ruff: noqa\n"
 
 
 def main():
@@ -22,6 +22,7 @@ def main():
         f"-I{proto_src}",
         f"--python_out={proto_out}",
         f"--pyi_out={proto_out}",
+        f"--grpc_python_out={proto_out}",
     ] + proto_files
 
     print(f"Generating protobufs for {len(proto_files)} files...")
@@ -32,16 +33,34 @@ def main():
         sys.exit(exit_code)
 
     # Patch generated files
-    for filepath in glob.glob(
-        os.path.join(proto_out, "**", "*_pb2.py"), recursive=True
-    ):
+    for filepath in glob.glob(os.path.join(proto_out, "**", "*"), recursive=True):
+        if not (
+            filepath.endswith("_pb2.py")
+            or filepath.endswith("_pb2_grpc.py")
+            or filepath.endswith(".pyi")
+        ):
+            continue
+
         with open(filepath, "r", encoding="utf-8") as f:
             content = f.read()
 
-        if "reportPrivateUsage=false" not in content:
-            with open(filepath, "w", encoding="utf-8") as f:
-                f.write(PRAGMAS + content)
-            print(f"Patched {os.path.basename(filepath)}")
+        # Remove existing pragmas if re-patching
+        if "# pyright:" in content:
+            lines = []
+            for line in content.splitlines():
+                if (
+                    line.startswith("# pyright:")
+                    or line.startswith("# type: ignore")
+                    or line.startswith("# flake8: noqa")
+                    or line.startswith("# ruff: noqa")
+                ):
+                    continue
+                lines.append(line)
+            content = "\n".join(lines).lstrip()
+
+        with open(filepath, "w", encoding="utf-8") as f:
+            f.write(PRAGMAS + content)
+        print(f"Patched {os.path.basename(filepath)}")
 
     print(f"Protobuf code generated and patched successfully in: {proto_out}")
 

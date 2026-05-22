@@ -161,16 +161,27 @@ async def sync_federated_servers():
         if await state_mgr.get_state(node_id) is None:
             await state_mgr.set_state(node_id, FederationNodeState(status="unknown"))
 
+    # Spawn listeners for grpc enabled nodes
+    tasks = []
+    http_nodes = []
+
+    for node_id, srv_config in config.federation.server.items():
+        if srv_config.grpc_enabled:
+            tasks.append(
+                asyncio.create_task(_subscribe_node_health(node_id, state_mgr))
+            )
+        else:
+            http_nodes.append(node_id)
+
+    # Poll HTTP nodes
     while True:
         try:
             config = GlobalConfigProvider().get_config()
-
-            # Get nodes that need checking (healthy interval vs backoff)
             nodes_to_poll = await state_mgr.get_next_retry_nodes()
 
             # Add nodes that haven't been polled in a while based on sync interval
             now = time.time()
-            for node_id in config.federation.server:
+            for node_id in http_nodes:
                 state = await state_mgr.get_state(node_id)
                 if (
                     state
@@ -181,7 +192,6 @@ async def sync_federated_servers():
                         nodes_to_poll.append(node_id)
 
             if nodes_to_poll:
-                # PARALLEL polling with per-node timeout
                 await asyncio.gather(
                     *[
                         _poll_node_with_circuit_breaker(node_id, state_mgr)
@@ -189,11 +199,8 @@ async def sync_federated_servers():
                     ],
                     return_exceptions=True,
                 )
-
-                # Persist state after each batch
                 await state_mgr.persist()
 
-            # Adaptive sleep: shorter if degraded nodes exist
             degraded = False
             for node_id in nodes_to_poll:
                 st = await state_mgr.get_state(node_id)
@@ -206,7 +213,52 @@ async def sync_federated_servers():
 
         except asyncio.CancelledError:
             logger.info("Federation sync shutting down")
+            for t in tasks:
+                t.cancel()
             break
         except Exception as sync_exception:
             logger.error("Federation sync error", error=str(sync_exception))
             await asyncio.sleep(config.federation.sync_interval)
+
+
+async def _subscribe_node_health(node_id: str, state_mgr: FederationStateManager):
+    from api.federation.grpc_client import get_grpc_client
+
+    while True:
+        try:
+            client = get_grpc_client(node_id)
+            if not client:
+                await asyncio.sleep(10)
+                continue
+
+            async for update in client.health_stream():
+                # Convert proto NodeStatus to string
+                status_str = "unknown"
+                if update.status == 1:
+                    status_str = "up"
+                elif update.status == 2:
+                    status_str = "degraded"
+                elif update.status == 3:
+                    status_str = "down"
+
+                await state_mgr.set_state(
+                    node_id,
+                    FederationNodeState(
+                        status=status_str,
+                        latency_ms=update.latency_ms,
+                        databases=dict(update.databases),
+                        storages=dict(update.storages),
+                        last_check=time.time(),
+                    ),
+                )
+                await state_mgr.persist()
+
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.warning(
+                "gRPC Health stream error, reconnecting...",
+                node_id=node_id,
+                error=str(e),
+            )
+            await asyncio.sleep(5)
