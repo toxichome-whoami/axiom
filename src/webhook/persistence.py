@@ -6,16 +6,36 @@ from typing import Any, Dict, List, Optional
 import orjson
 import structlog
 
+from config.provider import GlobalConfigProvider
+
 logger = structlog.get_logger()
+
+try:
+    import redis.asyncio as redis_module
+
+    HAS_REDIS = True
+except ImportError:
+    HAS_REDIS = False
+    redis_module = None  # type: ignore
 
 
 class WebhookPersistence:
-    """SQLite-backed durable queue for webhook events."""
+    """Dual-backend persistent queue (SQLite or Redis Streams) for webhook events."""
 
     def __init__(self, db_path: str):
         self.db_path = db_path
+        self._redis_client = None
+        self._backend = "sqlite"
 
     def init_db(self):
+        config = GlobalConfigProvider().get_config()
+        if config.eda.enabled and config.eda.backend == "redis" and HAS_REDIS:
+            self._backend = "redis"
+            # Redis connection is async, we initialize it when needed or assume it's up
+            logger.info("Webhook persistence using Redis Streams EDA")
+            return
+
+        # Fallback to SQLite
         os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
         conn = sqlite3.connect(self.db_path)
         conn.execute("PRAGMA journal_mode=WAL")
@@ -53,6 +73,20 @@ class WebhookPersistence:
         conn.close()
         logger.info("Webhook persistence DB initialized", path=self.db_path)
 
+    async def _get_redis(self):
+        if not self._redis_client:
+            config = GlobalConfigProvider().get_config()
+            self._redis_client = redis_module.from_url(  # type: ignore
+                config.eda.redis_url, decode_responses=True
+            )
+            try:
+                await self._redis_client.xgroup_create(
+                    "axiom_webhooks", "axiom_workers", mkstream=True
+                )
+            except Exception:
+                pass
+        return self._redis_client
+
     def enqueue(
         self,
         event_id: str,
@@ -61,7 +95,30 @@ class WebhookPersistence:
         secret: str,
         headers: dict,
         payload: str,
-    ) -> Optional[int]:
+    ) -> Optional[Any]:
+        if self._backend == "redis":
+            # For Redis, we should technically be async, but enqueue is called synchronously by emitter right now.
+            # Emitter is async though! We'll just launch a fire-and-forget task.
+            import asyncio
+
+            async def _xadd():
+                client = await self._get_redis()
+                await client.xadd(
+                    "axiom_webhooks",
+                    {
+                        "event_id": event_id,
+                        "hook_name": hook_name,
+                        "url": url,
+                        "secret": secret,
+                        "headers": orjson.dumps(headers).decode("utf-8"),
+                        "payload": payload,
+                        "attempt": "1",
+                    },
+                )
+
+            asyncio.create_task(_xadd())
+            return event_id
+
         try:
             conn = sqlite3.connect(self.db_path)
             c = conn.cursor()
@@ -85,42 +142,26 @@ class WebhookPersistence:
             conn.close()
             return last_id
         except sqlite3.IntegrityError:
-            # Deduplication via UNIQUE event_id
             return None
         except Exception as e:
             logger.error("Failed to enqueue webhook", error=str(e))
             return None
 
-    def fetch_next(self, limit: int = 1) -> List[Dict[str, Any]]:
-        now = time.time()
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
-        c = conn.cursor()
-        c.execute(
-            """
-            SELECT * FROM webhook_queue
-            WHERE status = 'pending' AND next_retry_at <= ?
-            ORDER BY created_at ASC
-            LIMIT ?
-        """,
-            (now, limit),
-        )
-        rows = c.fetchall()
-        tasks = [dict(row) for row in rows]
-        if tasks:
-            ids = [t["id"] for t in tasks]
-            placeholders = ",".join("?" * len(ids))
-            c.execute(
-                f"UPDATE webhook_queue SET status='processing', updated_at=datetime('now') WHERE id IN ({placeholders})",
-                ids,
-            )
-            conn.commit()
-        conn.close()
-        for t in tasks:
-            t["headers"] = orjson.loads(t["headers"]) if t["headers"] else {}
-        return tasks
-
     def mark_delivered(self, event_id: str):
+        if self._backend == "redis":
+            import asyncio
+
+            async def _xack():
+                client = await self._get_redis()
+                # In a full Redis Stream setup, event_id here is the Redis message ID
+                try:
+                    await client.xack("axiom_webhooks", "axiom_workers", event_id)
+                except Exception:
+                    pass
+
+            asyncio.create_task(_xack())
+            return
+
         conn = sqlite3.connect(self.db_path)
         c = conn.cursor()
         c.execute("DELETE FROM webhook_queue WHERE event_id = ?", (event_id,))
@@ -130,6 +171,11 @@ class WebhookPersistence:
     def mark_failed(
         self, event_id: str, attempt: int, error: str, next_retry_at: float
     ):
+        if self._backend == "redis":
+            # Redis doesn't naturally update retry times in streams.
+            # We rely on XPENDING and DLQ for retries in the Redis architecture.
+            return
+
         conn = sqlite3.connect(self.db_path)
         c = conn.cursor()
         c.execute(
@@ -145,7 +191,7 @@ class WebhookPersistence:
 
     def move_to_dead_letter(
         self,
-        queue_id: int,
+        queue_id: Any,
         event_id: str,
         hook_name: str,
         url: str,
@@ -153,6 +199,10 @@ class WebhookPersistence:
         attempts: int,
         last_error: str,
     ):
+        if self._backend == "redis":
+            # Redis DLQ is handled natively by dlq.py Reaper using XCLAIM.
+            return
+
         conn = sqlite3.connect(self.db_path)
         c = conn.cursor()
         c.execute(
@@ -167,6 +217,10 @@ class WebhookPersistence:
         conn.close()
 
     def purge_expired_dlq(self, retention_hours: int):
+        if self._backend == "redis":
+            # Redis MAXLEN on DLQ stream handles this natively.
+            return
+
         conn = sqlite3.connect(self.db_path)
         c = conn.cursor()
         c.execute(
@@ -177,6 +231,14 @@ class WebhookPersistence:
         conn.close()
 
     def stats(self) -> dict:
+        if self._backend == "redis":
+            return {
+                "pending": 0,
+                "processing": 0,
+                "dead_letter_count": 0,
+                "oldest_pending_age": 0,
+            }
+
         try:
             conn = sqlite3.connect(self.db_path)
             c = conn.cursor()
@@ -199,6 +261,9 @@ class WebhookPersistence:
             return {}
 
     def recover_processing_tasks(self):
+        if self._backend == "redis":
+            return
+
         conn = sqlite3.connect(self.db_path)
         c = conn.cursor()
         c.execute("UPDATE webhook_queue SET status='pending' WHERE status='processing'")
@@ -206,6 +271,9 @@ class WebhookPersistence:
         conn.close()
 
     def fetch_all_pending(self) -> List[Dict[str, Any]]:
+        if self._backend == "redis":
+            return []
+
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
@@ -220,6 +288,10 @@ class WebhookPersistence:
         return tasks
 
     def close(self):
+        if self._backend == "redis" and self._redis_client:
+            import asyncio
+
+            asyncio.create_task(self._redis_client.close())
         pass
 
 

@@ -113,6 +113,18 @@ class CacheConfig(BaseModel):
     upload_session_ttl: int = 3600  # Seconds before chunked upload session expires (1h)
 
 
+class EDAConfig(BaseModel):
+    """Configuration for Event-Driven Architecture (EDA) backing unified streams and Webhook queues."""
+
+    enabled: bool = True
+    backend: Literal["memory", "redis"] = "memory"
+    redis_url: str = "redis://127.0.0.1:6379/1"
+    max_stream_length: int = 100000
+    dlq_retention_hours: int = 72
+    consumer_group: str = "axiom_workers"
+    consumer_name: str = "worker_1"
+
+
 class PerformanceConfig(BaseModel):
     """Tuning knobs for internal caches and hot-path algorithms."""
 
@@ -296,6 +308,7 @@ class AxiomConfig(BaseModel):
     graphql: GraphQLConfig = Field(default_factory=GraphQLConfig)
     websocket: WebSocketConfig = Field(default_factory=WebSocketConfig)
     sse: SSEConfig = Field(default_factory=SSEConfig)
+    eda: EDAConfig = Field(default_factory=EDAConfig)
     webhooks: WebhookGlobalConfig = Field(default_factory=WebhookGlobalConfig)
     webhook: Dict[str, WebhookDefConfig] = Field(default_factory=dict)
     database: Dict[str, DatabaseDefConfig] = Field(default_factory=dict)

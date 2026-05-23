@@ -277,3 +277,19 @@ Real-time bidirectional push gateway. Clients connect to `ws://host:port/api/v1/
 | `heartbeat_interval` | `30` | Seconds between server ping messages |
 | `auth_timeout` | `5.0` | Seconds a client has to send the auth message after connecting |
 | `max_subscriptions_per_client` | `100` | Maximum topic subscriptions per connection |
+
+---
+
+## `[eda]`
+
+Event-Driven Architecture (EDA) configuration. When enabled and backed by Redis, the system uses high-performance Redis Streams for unified event publishing, Consumer Groups for background task dispatching, and Dead-Letter Queues (DLQ) for webhook retry handling.
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `enabled` | `true` | Enable EDA routing (if false, events fallback to local memory loops) |
+| `backend` | `"memory"` | Backend to use: `memory \| redis` |
+| `redis_url` | `"redis://127.0.0.1:6379/1"` | Redis connection URL |
+| `max_stream_length` | `100000` | Max events retained in the stream via XADD MAXLEN |
+| `dlq_retention_hours` | `72` | Hours to retain failed webhook deliveries in the DLQ stream |
+| `consumer_group` | `"axiom_workers"` | Redis Consumer Group name |
+| `consumer_name` | `"worker_1"` | Identifier for this specific node in the Consumer Group |

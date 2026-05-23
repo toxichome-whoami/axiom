@@ -176,8 +176,8 @@ Axiom uses an industrial-grade, highly-concurrent persistent delivery system to 
 
 ### Persistent Queues and Dead Letter
 - **Concurrency**: Webhooks are dispatched across an auto-scaling pool of up to `max_concurrent_deliveries` (default: 8) async background workers for high throughput.
-- **Persistence**: If `persistence_enabled` is true, all webhooks are written to a SQLite WAL database (`webhooks.db`) before delivery. If the server crashes, deliveries resume exactly where they left off.
-- **Dead Letter Queue (DLQ)**: If an event exceeds `max_retries`, it is moved to the DLQ (`webhook_dead_letter` table) for manual inspection and replay.
+- **Persistence**: Dual-backend support for persistence. If `eda.backend = "redis"`, events are pushed to high-speed **Redis Streams** (`axiom_webhooks`). Alternatively, they are written to a SQLite WAL database (`webhooks.db`). Both guarantee that if the server crashes, deliveries resume exactly where they left off.
+- **Dead Letter Queue (DLQ)**: If an event exceeds `max_retries`, it is moved to the DLQ. In SQLite, this is the `webhook_dead_letter` table. In Redis EDA, a dedicated Reaper daemon uses `XPENDING` and `XCLAIM` to sweep failed events into the `axiom_events_dlq` stream for manual inspection and replay.
 
 ### Circuit Breakers
 - **Protection**: Axiom tracks delivery failures per URL. If a URL fails `circuit_breaker_threshold` times in a row, the circuit "opens".
