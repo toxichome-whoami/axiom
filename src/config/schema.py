@@ -39,6 +39,7 @@ class FeaturesConfig(BaseModel):
     mcp: bool = False
     graphql: bool = False
     websocket: bool = False
+    sse: bool = True
 
 
 class GraphQLConfig(BaseModel):
@@ -58,6 +59,16 @@ class WebSocketConfig(BaseModel):
     heartbeat_interval: int = 30  # Seconds between server ping messages
     auth_timeout: float = 5.0  # Seconds client has to send auth after connecting
     max_subscriptions_per_client: int = 100  # Prevent topic spam per connection
+
+
+class SSEConfig(BaseModel):
+    """Real-time unidirectional push gateway (Server-Sent Events)."""
+
+    max_connections: int = 5000
+    queue_size: int = 100
+    heartbeat_interval: int = 15
+    health_interval: int = 10
+    metrics_interval: int = 5
 
 
 class LoggingConfig(BaseModel):
@@ -284,6 +295,7 @@ class AxiomConfig(BaseModel):
     mcp: MCPConfig = Field(default_factory=MCPConfig)
     graphql: GraphQLConfig = Field(default_factory=GraphQLConfig)
     websocket: WebSocketConfig = Field(default_factory=WebSocketConfig)
+    sse: SSEConfig = Field(default_factory=SSEConfig)
     webhooks: WebhookGlobalConfig = Field(default_factory=WebhookGlobalConfig)
     webhook: Dict[str, WebhookDefConfig] = Field(default_factory=dict)
     database: Dict[str, DatabaseDefConfig] = Field(default_factory=dict)

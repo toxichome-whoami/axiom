@@ -15,6 +15,7 @@ from api.core import health
 from api.core.metrics import router as metrics_router
 from api.graphql import router as graphql_router
 from api.mcp import router as mcp_router
+from api.sse import router as sse_router
 from api.ws import router as ws_router
 from config.provider import GlobalConfigProvider
 from server.lifespan import lifespan
@@ -153,8 +154,10 @@ def _attach_routers(app: FastAPI):
     api_v1 = APIRouter(prefix="/api/v1")
     api_v1.include_router(database.router, prefix="/db")
     api_v1.include_router(storage.router, prefix="/fs")
-    api_v1.include_router(federation.router, prefix="/fed")
     api_v1.include_router(webhook_health_router)
+
+    if config.features.federation:
+        api_v1.include_router(federation.router, prefix="/fed")
 
     if config.features.mcp:
         api_v1.include_router(mcp_router, prefix="/mcp")
@@ -165,6 +168,9 @@ def _attach_routers(app: FastAPI):
 
     if config.features.websocket:
         api_v1.include_router(ws_router, prefix="/ws")
+
+    if config.features.sse:
+        api_v1.include_router(sse_router, prefix="/sse")
 
     app.include_router(api_v1)
 

@@ -671,6 +671,62 @@ The server sends a ping every 30 seconds (configurable). Clients should handle i
 | `4001` | Auth timeout or malformed auth message |
 | `4003` | Invalid token or authentication failed |
 
+## SSE API <code>/api/v1/sse</code>
+
+> [!NOTE]
+> Server-Sent Events (SSE) is an **optional, one-way push interface**. Enable it with `features.sse = true` in `config.toml`. When disabled, the endpoints do not exist and consume zero resources.
+
+Use SSE when you need **live event streaming** without the bidirectional overhead of WebSockets. SSE is strictly one-way (Server → Client), making it incredibly efficient for live dashboards, logs, and real-time database feeds.
+
+### Connection and Authentication
+
+SSE endpoints are standard HTTP GET requests. Because browsers' native `EventSource` cannot send custom headers, authentication is done via a base64 encoded `?token=` query parameter.
+
+```javascript
+// Token is base64(key_name:secret)
+const token = btoa("admin:your_secret_here");
+
+// Connect to a specific topic
+const es = new EventSource(`http://localhost:4500/api/v1/sse/db/portfolio/users?token=${token}`);
+
+es.addEventListener("mutation", (event) => {
+  const data = JSON.parse(event.data);
+  console.log("Live event:", data);
+});
+
+// The server sends periodic heartbeats to keep the connection alive
+es.onmessage = (event) => {
+  if (event.data === "heartbeat") {
+    console.log("Heartbeat received");
+  }
+};
+```
+
+### Available Streams
+
+Unlike WebSocket, you do not "subscribe" after connecting. You connect directly to the stream you want:
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /api/v1/sse/db/{alias}/{table}` | Stream mutations on a specific table |
+| `GET /api/v1/sse/db/{alias}` | Stream all table mutations in a database |
+| `GET /api/v1/sse/fs/{alias}/{path}` | Stream file changes at a specific path |
+| `GET /api/v1/sse/fs/{alias}` | Stream all file changes in a storage volume |
+| `GET /api/v1/sse/metrics` | Admin-only stream for live server metrics |
+| `GET /api/v1/sse/health` | Public stream for system health (no auth required) |
+
+### Incoming Event Shape
+
+```json
+{
+  "action": "INSERT",
+  "module": "db",
+  "resource": "portfolio",
+  "target": "users",
+  "details": { "affected_rows": 1 }
+}
+```
+
 ## MCP API <code>/api/v1/mcp</code>
 
 > <span style="font-size: 1.2em;"></span> **NOTE:**

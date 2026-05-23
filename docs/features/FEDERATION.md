@@ -148,7 +148,7 @@ Axiom uses **dual-layer transport negotiation** to maximize performance while en
 
 ## 6. Monitoring
 
-Call `GET /api/federation/servers` (requires `full_admin` API key) to see the state of the mesh:
+Call `GET /api/v1/fed/servers` (requires `full_admin` API key) to see the state of the mesh:
 
 <details>
 <summary><b>View Monitoring Response</b></summary>

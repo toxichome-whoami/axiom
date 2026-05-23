@@ -1,59 +1,88 @@
+# ─────────────────────────────────────────────────────────────────────────────
 # Python
+# ─────────────────────────────────────────────────────────────────────────────
 __pycache__/
 *.py[cod]
-*.pyo
+*$py.class
+*.so
 .Python
-*.egg
-*.egg-info/
-dist/
 build/
-eggs/
-parts/
-var/
-sdist/
 develop-eggs/
-.installed.cfg
+dist/
+downloads/
+eggs/
+.eggs/
 lib/
 lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
 
+# ─────────────────────────────────────────────────────────────────────────────
 # Virtual Environments
-.venv/
-venv/
-env/
-ENV/
-
-# NexusGate runtime artifacts
-config.toml
-data/
-storage/.tmp/
-logs/
-*.log
+# ─────────────────────────────────────────────────────────────────────────────
 .env
-ROADMAP.md
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
 
-# IDE
+# ─────────────────────────────────────────────────────────────────────────────
+# Node & Web
+# ─────────────────────────────────────────────────────────────────────────────
+node_modules/
+npm-debug.log
+yarn-error.log
+package-lock.json
+
+# ─────────────────────────────────────────────────────────────────────────────
+# IDE & OS
+# ─────────────────────────────────────────────────────────────────────────────
 .vscode/
 .idea/
+.zed/
 .opencode/
 .commandcode/
 *.swp
 *.swo
-
-# Testing
-.pytest_cache/
-.coverage
-htmlcov/
-coverage.xml
-
-# Docker
-.dockerignore
-
-# OS
 .DS_Store
 Thumbs.db
 desktop.ini
+planning/
 
-# Temp
-fix_imports.py
+# ─────────────────────────────────────────────────────────────────────────────
+# Testing & Coverage
+# ─────────────────────────────────────────────────────────────────────────────
+.pytest_cache/
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+htmlcov/
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Axiom Runtime & Local Data
+# ─────────────────────────────────────────────────────────────────────────────
+config.toml
+data/
+logs/
+*.log
+*.sqlite3
+*.db
+storage/.tmp/
 how_to_run.txt
-graphify-out
+graphify-out/
+fix_imports.py

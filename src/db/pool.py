@@ -79,6 +79,12 @@ class DatabasePoolManager:
         if not db_config:
             return None
 
+        if getattr(db_config, "federated_alias", None):
+            logger.debug(
+                "Skipping pool initialization for federated database", alias=alias
+            )
+            return None
+
         logger.info("Initializing database pool", alias=alias, engine=db_config.engine)
 
         engine = cls._instantiate_engine(db_config)

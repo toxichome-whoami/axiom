@@ -186,6 +186,42 @@ async def emit_event(
 ) -> None:
     """Async entry point for webhook emission with pre-compiled O(1) rule matching."""
     config = GlobalConfigProvider().get_config()
+
+    # Bridge to WebSocket subscribers — fire-and-forget, zero latency impact
+    if config.features.websocket:
+        try:
+            from api.ws.event_bus import event_bus as _ws_bus
+
+            asyncio.create_task(
+                _ws_bus.publish(
+                    module=module,
+                    resource=resource,
+                    target=target,
+                    action=action,
+                    details=details,
+                    request_id=trigger.request_id,
+                )
+            )
+        except Exception:
+            pass  # WS module not loaded or loop not running
+
+    # Bridge to SSE subscribers — zero-copy pre-serialized payload
+    if config.features.sse:
+        try:
+            from api.sse.connection_manager import sse_mgr
+
+            asyncio.create_task(
+                sse_mgr.publish_mutation(
+                    module=module,
+                    resource=resource,
+                    target=target,
+                    action=action,
+                    details=details,
+                )
+            )
+        except Exception as e:
+            logger.error("SSE publish failed", error=str(e))
+
     if not config.features.webhook or not config.webhooks.enabled:
         return
 
@@ -264,21 +300,3 @@ async def emit_event(
                     event_id=payload.event_id,
                     hook_name=name,
                 )
-
-    # Bridge to WebSocket subscribers — fire-and-forget, zero latency impact
-    if config.features.websocket:
-        try:
-            from api.ws.event_bus import event_bus as _ws_bus
-
-            asyncio.create_task(
-                _ws_bus.publish(
-                    module=module,
-                    resource=resource,
-                    target=target,
-                    action=action,
-                    details=details,
-                    request_id=trigger.request_id,
-                )
-            )
-        except Exception:
-            pass  # WS module not loaded or loop not running

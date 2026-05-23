@@ -34,10 +34,10 @@ Feature flags to enable/disable entire subsystems.
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `database` | `true` | Enable `/api/db/*` endpoints |
-| `storage` | `true` | Enable `/api/fs/*` endpoints |
+| `database` | `true` | Enable `/api/v1/db/*` endpoints |
+| `storage` | `true` | Enable `/api/v1/fs/*` endpoints |
 | `webhook` | `true` | Enable webhook emission |
-| `federation` | `false` | Enable `/api/fed/*` and sync |
+| `federation` | `false` | Enable `/api/v1/fed/*` and sync |
 | `metrics` | `true` | Enable `/metrics` endpoint |
 | `playground` | `false` | Enable Swagger UI at `/api/docs` |
 | `mcp` | `false` | Enable MCP JSON-RPC server at `/api/v1/mcp` |

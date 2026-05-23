@@ -82,6 +82,12 @@ def _start_background_daemons(config) -> List[asyncio.Task]:
 
         tasks.append(asyncio.create_task(sync_federated_servers()))
 
+    if config.features.sse:
+        from api.sse.daemons import health_poller, metrics_pusher
+
+        tasks.append(asyncio.create_task(health_poller()))
+        tasks.append(asyncio.create_task(metrics_pusher()))
+
     _daemon_tasks.extend(tasks)
     return tasks
 
@@ -90,6 +96,7 @@ async def _stop_background_daemons():
     """Gracefully kills all active background coroutines."""
     for task in _daemon_tasks:
         task.cancel()
+
     _daemon_tasks.clear()
 
     global _grpc_server

@@ -31,6 +31,7 @@ playground = true                # Enable /api/docs Swagger UI
 mcp = true                       # Enable Model Context Protocol server
 graphql = false                  # Enable High-Performance GraphQL API
 websocket = false                # Enable Real-Time WebSocket Push Gateway
+sse = true                       # Enable Server-Sent Events (SSE) Push Gateway
 
 # ─── Model Context Protocol (MCP) ─────────────────────
 [mcp]
@@ -182,3 +183,11 @@ max_connections = 10000          # Maximum concurrent WebSocket connections
 heartbeat_interval = 30         # Seconds between server ping messages to clients
 auth_timeout = 5.0              # Seconds a client has to send the auth message after connecting
 max_subscriptions_per_client = 100  # Maximum topic subscriptions per connection
+
+# ─── Server-Sent Events (SSE) Push Gateway ────────────────
+[sse]
+max_connections = 5000         # Maximum concurrent SSE connections allowed
+queue_size = 100               # Max pending events per client before dropping
+heartbeat_interval = 15        # Seconds between keep-alive comments sent to idle clients
+health_interval = 10           # Seconds between background system health checks
+metrics_interval = 5           # Seconds between background metrics snapshots
