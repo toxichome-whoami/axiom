@@ -51,6 +51,7 @@ package-lock.json
 .zed/
 .opencode/
 .commandcode/
+.agents/
 *.swp
 *.swo
 .DS_Store
