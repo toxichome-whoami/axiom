@@ -26,3 +26,4 @@ mcp>=1.2.0
 protobuf>=5.0
 grpcio-tools>=1.60
 graphql-core>=3.2.3
+psutil>=5.0.0
