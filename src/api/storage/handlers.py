@@ -44,7 +44,7 @@ from .streaming import serve_file
 from .upload_scanner import ScannerRejectError, UploadScanner
 
 logger = structlog.get_logger()
-UPLOAD_BUFFER_SIZE = 65536
+UPLOAD_BUFFER_SIZE = 1048576
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Module-level feature flags (cached for performance)

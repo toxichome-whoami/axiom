@@ -1,56 +1,30 @@
+import asyncio
 import hashlib
 import os
-import shutil
 from typing import Any, Dict, Optional
 
 import aiofiles
 
-from api.errors import ErrorCodes, AxiomException
+from api.errors import AxiomException, ErrorCodes
 from cache import CacheManager
 
 
 class ChunkedUploadManager:
     """Manages multi-part chunked file uploads explicitly routing file operations."""
 
-    # ─────────────────────────────────────────────────────────────────────────────
-    # Internal Stream Utilities
-    # ─────────────────────────────────────────────────────────────────────────────
-
     @classmethod
-    def _cleanup_failed_reassembly(cls, temp_dir: str, target_path: str) -> None:
-        """Purges partially merged blobs isolating corruption events."""
-        shutil.rmtree(temp_dir, ignore_errors=True)
-        if os.path.exists(target_path):
-            os.remove(target_path)
+    async def _compute_file_hash(cls, file_path: str) -> str:
+        """Computes SHA256 checksum natively in a threadpool to prevent blocking the event loop."""
 
-    @classmethod
-    async def _stream_chunk_to_file(cls, chunk_path: str, outfile, sha256_hash) -> None:
-        """Pipes file partitions verifying cryptographic headers asynchronously."""
-        async with aiofiles.open(chunk_path, "rb") as infile:
-            while c := await infile.read(65536):
-                await outfile.write(c)
-                sha256_hash.update(c)
+        def _hash():
+            sha256_hash = hashlib.sha256()
+            with open(file_path, "rb") as f:
+                # Use an industrial-grade 4MB buffer for hashing
+                while chunk := f.read(4194304):
+                    sha256_hash.update(chunk)
+            return sha256_hash.hexdigest()
 
-    @classmethod
-    async def _reassemble_chunks(
-        cls, temp_dir: str, target_path: str, total_chunks: int
-    ) -> str:
-        """Garbage collects missing fragments generating synchronized blocks natively."""
-        sha256_hash = hashlib.sha256()
-        os.makedirs(os.path.dirname(target_path), exist_ok=True)
-
-        async with aiofiles.open(target_path, "wb") as outfile:
-            for i in range(total_chunks):
-                chunk_path = os.path.join(temp_dir, f"chunk_{i}")
-                if not os.path.exists(chunk_path):
-                    cls._cleanup_failed_reassembly(temp_dir, target_path)
-                    raise AxiomException(
-                        ErrorCodes.FS_UPLOAD_INVALID, f"Missing chunk sequence {i}", 400
-                    )
-
-                await cls._stream_chunk_to_file(chunk_path, outfile, sha256_hash)
-
-        return sha256_hash.hexdigest()
+        return await asyncio.to_thread(_hash)
 
     @classmethod
     def _verify_final_hash(
@@ -73,7 +47,15 @@ class ChunkedUploadManager:
     @classmethod
     async def initiate(cls, upload_id: str, data: Dict[str, Any], ttl: int = 3600):
         await CacheManager.set(f"upload:{upload_id}", data, ttl=ttl)
-        os.makedirs(os.path.join("./storage", ".tmp", upload_id), exist_ok=True)
+        tmp_dir = os.path.join("./storage", ".tmp")
+        os.makedirs(tmp_dir, exist_ok=True)
+        part_path = os.path.join(tmp_dir, f"{upload_id}.part")
+
+        # Touch the file so it exists for 'r+b' offset seeking
+        def _touch():
+            open(part_path, "wb").close()
+
+        await asyncio.to_thread(_touch)
 
     @classmethod
     async def get_session(cls, upload_id: str) -> Optional[Dict[str, Any]]:
@@ -89,18 +71,25 @@ class ChunkedUploadManager:
                 ErrorCodes.FS_UPLOAD_EXPIRED, "Upload session missing or expired", 404
             )
 
-        temp_path = os.path.join("./storage", ".tmp", upload_id, f"chunk_{index}")
+        part_path = os.path.join("./storage", ".tmp", f"{upload_id}.part")
+        if not os.path.exists(part_path):
+            raise AxiomException(
+                ErrorCodes.FS_UPLOAD_INVALID, "Upload part file is missing", 400
+            )
+
         sha256_hash = hashlib.sha256()
         bytes_written = 0
+        offset = session["chunk_size"] * index
 
-        async with aiofiles.open(temp_path, "wb") as f:
-            while chunk := await file_stream.read(65536):
+        async with aiofiles.open(part_path, "r+b") as f:
+            await f.seek(offset)
+            # Use 1MB buffer to reduce async I/O context switching overhead
+            while chunk := await file_stream.read(1048576):
                 await f.write(chunk)
                 sha256_hash.update(chunk)
                 bytes_written += len(chunk)
 
         if sha256_hash.hexdigest() != chunk_hash:
-            os.remove(temp_path)
             raise AxiomException(
                 ErrorCodes.FS_CHECKSUM_MISMATCH, "Chunk checksum block corrupted", 400
             )
@@ -122,21 +111,36 @@ class ChunkedUploadManager:
                 ErrorCodes.FS_UPLOAD_INVALID, "Incomplete blob sequence detected", 400
             )
 
-        temp_dir = os.path.join("./storage", ".tmp", upload_id)
-        final_hash = await cls._reassemble_chunks(
-            temp_dir, target_path, session["total_chunks"]
-        )
+        part_path = os.path.join("./storage", ".tmp", f"{upload_id}.part")
 
-        shutil.rmtree(temp_dir, ignore_errors=True)
+        if not os.path.exists(part_path):
+            raise AxiomException(
+                ErrorCodes.FS_UPLOAD_INVALID, "Missing part file during finalize", 400
+            )
+
+        # Zero-copy finalize: Just rename the sparse .part file to its final destination
+        os.makedirs(os.path.dirname(target_path), exist_ok=True)
+
+        def _rename():
+            if os.path.exists(target_path):
+                os.remove(target_path)
+            os.rename(part_path, target_path)
+
+        await asyncio.to_thread(_rename)
+
         await CacheManager.delete(f"upload:{upload_id}")
 
+        final_hash = await cls._compute_file_hash(target_path)
         cls._verify_final_hash(final_hash, session, target_path)
 
         return {"size": session["total_size"], "checksum_verified": True}
 
     @classmethod
     async def cancel(cls, upload_id: str):
-        temp_dir = os.path.join("./storage", ".tmp", upload_id)
-        if os.path.exists(temp_dir):
-            shutil.rmtree(temp_dir, ignore_errors=True)
+        part_path = os.path.join("./storage", ".tmp", f"{upload_id}.part")
+        if os.path.exists(part_path):
+            try:
+                os.remove(part_path)
+            except OSError:
+                pass
         await CacheManager.delete(f"upload:{upload_id}")
