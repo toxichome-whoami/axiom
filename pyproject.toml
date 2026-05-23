@@ -1,6 +1,6 @@
 [project]
 name = "axiom"
-version = "1.0.3"
+version = "1.0.4"
 description = "Industrial-grade unified API gateway for databases and file storage."
 readme = "README.md"
 requires-python = ">=3.11"
