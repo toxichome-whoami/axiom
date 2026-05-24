@@ -9,11 +9,12 @@ from __future__ import annotations
 
 from typing import List, Tuple, cast
 
+from mcp.types import TextContent
+
 from config.provider import GlobalConfigProvider
 from config.schema import DatabaseDefConfig
 from db.engines.base import DatabaseEngine, QueryResult
 from db.pool import DatabasePoolManager
-from mcp.types import TextContent
 
 # ── Safety Caps ──────────────────────────────────────────────────────────
 # Prevents large payloads from blowing up the model's context window or RAM.

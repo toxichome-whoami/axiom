@@ -9,7 +9,6 @@ to the MCP Server in a single pass.
 from typing import Awaitable, Callable
 
 import structlog
-
 from mcp.server import Server
 from mcp.types import TextContent, Tool
 

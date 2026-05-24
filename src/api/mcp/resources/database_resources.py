@@ -10,13 +10,13 @@ Resource URI Format: axiom://db/{alias}/schema
 from __future__ import annotations
 
 import structlog
+from mcp.types import Resource, TextResourceContents
 from pydantic import AnyUrl
 
 from api.mcp.resources.registry import build_error_text_resource, mcp_resource_registry
 from api.mcp.tools.base import ResultFormatter
 from config.provider import GlobalConfigProvider
 from db.pool import DatabasePoolManager
-from mcp.types import Resource, TextResourceContents
 
 logger = structlog.get_logger()
 

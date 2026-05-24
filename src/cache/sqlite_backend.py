@@ -153,7 +153,7 @@ class SQLiteCache:
             res = orjson.loads(val)
         except Exception:
             res = val
-            
+
         cls._l1_cache[key] = (now, res)
         return res
 

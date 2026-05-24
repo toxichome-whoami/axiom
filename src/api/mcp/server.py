@@ -9,6 +9,7 @@ All tool and resource registrations are delegated to dedicated modules.
 from typing import Optional
 
 import structlog
+from mcp.server import Server
 
 from api.mcp.resources.database_resources import register_database_resources
 from api.mcp.resources.registry import mcp_resource_registry
@@ -17,7 +18,6 @@ from api.mcp.tools.database_tools import register_database_tools
 from api.mcp.tools.registry import mcp_tool_registry
 from api.mcp.tools.storage_tools import register_storage_tools
 from config.provider import GlobalConfigProvider
-from mcp.server import Server
 
 logger = structlog.get_logger()
 

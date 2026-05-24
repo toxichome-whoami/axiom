@@ -11,11 +11,11 @@ import asyncio
 import os
 
 import structlog
+from mcp.types import TextContent
 
 from api.mcp.session_auth import get_mcp_auth
 from api.mcp.tools.registry import mcp_tool_registry
 from config.provider import GlobalConfigProvider
-from mcp.types import TextContent
 
 logger = structlog.get_logger()
 

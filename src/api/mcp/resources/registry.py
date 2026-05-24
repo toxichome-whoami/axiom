@@ -9,10 +9,9 @@ This registry aggregates context resources from multiple domain modules
 from typing import Any, Awaitable, Callable
 
 import structlog
-from pydantic import AnyUrl
-
 from mcp.server import Server
 from mcp.types import Resource, TextResourceContents
+from pydantic import AnyUrl
 
 logger = structlog.get_logger()
 

@@ -1,6 +1,6 @@
 from fastapi import Depends, Request
 
-from api.errors import ErrorCodes, AxiomException
+from api.errors import AxiomException, ErrorCodes
 from api.federation.state import FederationStateManager
 from api.responses import success_response
 from config.provider import get_config_dependency

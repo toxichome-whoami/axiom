@@ -1,6 +1,5 @@
 from typing import Any, Dict, List
 
-from config.provider import GlobalConfigProvider
 from graphql import (
     BooleanValueNode,
     FieldNode,
@@ -12,6 +11,8 @@ from graphql import (
     StringValueNode,
     parse,
 )
+
+from config.provider import GlobalConfigProvider
 
 
 class GraphQLCompilerError(Exception):
@@ -121,12 +122,18 @@ class ASTCompiler:
                                         "type": "insert_table",
                                         "db_alias": args["dbAlias"],
                                         "table": name[7:],
-                                        "rows": args.get(
-                                            "rows",
-                                            [args.get("row")] if "row" in args else [],
-                                        )
-                                        if "rows" in args or "row" in args
-                                        else [],
+                                        "rows": (
+                                            args.get(
+                                                "rows",
+                                                (
+                                                    [args.get("row")]
+                                                    if "row" in args
+                                                    else []
+                                                ),
+                                            )
+                                            if "rows" in args or "row" in args
+                                            else []
+                                        ),
                                         "alias": alias,
                                     }
                                 )

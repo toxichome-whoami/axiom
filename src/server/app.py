@@ -166,6 +166,7 @@ def _attach_routers(app: FastAPI):
 
     if config.features.mcp:
         from api.mcp.router import router as mcp_router
+
         api_v1.include_router(mcp_router, prefix="/mcp")
         app.state.mcp_initialized = True
 

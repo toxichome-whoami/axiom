@@ -147,9 +147,11 @@ def _append_remote_storages(
         fs_name = fs.get("name")
         health_status = remote_storages_map.get(fs_name, {})
         remote_storages_map[fs_name] = {
-            "status": health_status.get("status", "available")
-            if isinstance(health_status, dict)
-            else health_status,
+            "status": (
+                health_status.get("status", "available")
+                if isinstance(health_status, dict)
+                else health_status
+            ),
             "mode": fs.get("mode", "proxy"),
             "limit": normalize_size(fs.get("limit", "10 GB")),
             "chunk_size": normalize_size(fs.get("chunk_size", "10 MB")),
@@ -171,9 +173,11 @@ async def _append_cached_remote_storages(
             {
                 "name": federated_name,
                 "mode": info.get("mode", "proxy") if is_dict else "proxy",
-                "status": "available"
-                if (info.get("status", "available") if is_dict else info) == "up"
-                else (info.get("status") if is_dict else info),
+                "status": (
+                    "available"
+                    if (info.get("status", "available") if is_dict else info) == "up"
+                    else (info.get("status") if is_dict else info)
+                ),
                 "limit": normalize_size(
                     info.get("limit", "10 GB") if is_dict else "10 GB"
                 ),
@@ -544,9 +548,11 @@ async def _calculate_storage_usage(storage_path: str, limit_str: str) -> dict:
 
     result = {
         "used_bytes": [total_bytes, format_size(total_bytes)],
-        "available_bytes": [available_bytes, format_size(available_bytes)]
-        if limit_bytes > 0
-        else [0, "unlimited"],
+        "available_bytes": (
+            [available_bytes, format_size(available_bytes)]
+            if limit_bytes > 0
+            else [0, "unlimited"]
+        ),
         "file_count": file_count,
     }
     _usage_cache[storage_path] = (now, result)
@@ -567,9 +573,11 @@ async def list_storages(
                 {
                     "name": name,
                     "mode": storage_cfg.mode.value,
-                    "status": "available"
-                    if os.path.exists(storage_cfg.path)
-                    else "unavailable",
+                    "status": (
+                        "available"
+                        if os.path.exists(storage_cfg.path)
+                        else "unavailable"
+                    ),
                     "limit": normalize_size(storage_cfg.limit),
                     "chunk_size": normalize_size(storage_cfg.chunk_size),
                     "max_file_size": normalize_size(storage_cfg.max_file_size),
@@ -967,8 +975,10 @@ async def execute_action(
             _get_storage_path(alias, body.source, auth),
             _get_storage_path(alias, body.target, auth),
         )
-        await copy_path(source, target) if body.action == "copy" else await rename_path(
-            source, target
+        (
+            await copy_path(source, target)
+            if body.action == "copy"
+            else await rename_path(source, target)
         )
         return success_response(
             request,

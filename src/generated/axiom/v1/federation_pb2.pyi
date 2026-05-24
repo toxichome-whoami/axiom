@@ -2,14 +2,19 @@
 # type: ignore
 # flake8: noqa
 # ruff: noqa
-from axiom.v1 import db_pb2 as _db_pb2
-from axiom.v1 import fs_pb2 as _fs_pb2
-from google.protobuf.internal import containers as _containers
-from google.protobuf.internal import enum_type_wrapper as _enum_type_wrapper
+from collections.abc import Iterable as _Iterable
+from collections.abc import Mapping as _Mapping
+from typing import ClassVar as _ClassVar
+from typing import Optional as _Optional
+from typing import Union as _Union
+
 from google.protobuf import descriptor as _descriptor
 from google.protobuf import message as _message
-from collections.abc import Iterable as _Iterable, Mapping as _Mapping
-from typing import ClassVar as _ClassVar, Optional as _Optional, Union as _Union
+from google.protobuf.internal import containers as _containers
+from google.protobuf.internal import enum_type_wrapper as _enum_type_wrapper
+
+from axiom.v1 import db_pb2 as _db_pb2
+from axiom.v1 import fs_pb2 as _fs_pb2
 
 DESCRIPTOR: _descriptor.FileDescriptor
 
@@ -33,6 +38,7 @@ class HealthCheckRequest(_message.Message):
 
 class HealthCheckResponse(_message.Message):
     __slots__ = ("status", "latency_ms", "databases", "storages")
+
     class DatabasesEntry(_message.Message):
         __slots__ = ("key", "value")
         KEY_FIELD_NUMBER: _ClassVar[int]

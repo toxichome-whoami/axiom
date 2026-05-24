@@ -12,6 +12,7 @@ session context, not hardcoded.
 from __future__ import annotations
 
 import structlog
+from mcp.types import TextContent
 
 from api.database.handlers import _get_cached_columns, _get_cached_tables
 from api.database.query_parser import validate_query
@@ -20,7 +21,6 @@ from api.mcp.tools.base import EngineResolver, ResultFormatter
 from api.mcp.tools.registry import mcp_tool_registry
 from config.provider import GlobalConfigProvider
 from db.dialect.transpiler import transpile_sql
-from mcp.types import TextContent
 
 logger = structlog.get_logger()
 

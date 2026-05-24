@@ -129,9 +129,11 @@ async def _poll_node_with_circuit_breaker(
         await state_mgr.set_state(
             node_id,
             FederationNodeState(
-                status="down"
-                if failures >= fed_config.circuit_breaker_threshold
-                else "degraded",
+                status=(
+                    "down"
+                    if failures >= fed_config.circuit_breaker_threshold
+                    else "degraded"
+                ),
                 latency_ms=0,
                 last_check=time.time(),
                 consecutive_failures=failures,

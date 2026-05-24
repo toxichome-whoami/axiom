@@ -126,9 +126,9 @@ async def _stream_proxy_execution(
         request.method,
         remote_url,
         headers=headers,
-        content=request.stream()
-        if request.method in ("POST", "PUT", "PATCH")
-        else None,
+        content=(
+            request.stream() if request.method in ("POST", "PUT", "PATCH") else None
+        ),
     )
 
     try:

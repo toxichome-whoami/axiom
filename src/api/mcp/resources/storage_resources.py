@@ -9,11 +9,11 @@ Resource URI Format: axiom://fs/{alias}/info
 from __future__ import annotations
 
 import structlog
+from mcp.types import Resource, TextResourceContents
 from pydantic import AnyUrl
 
 from api.mcp.resources.registry import build_error_text_resource, mcp_resource_registry
 from config.provider import GlobalConfigProvider
-from mcp.types import Resource, TextResourceContents
 
 logger = structlog.get_logger()
 

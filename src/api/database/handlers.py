@@ -35,7 +35,7 @@ from config.loader import HOT_RELOAD_CALLBACKS
 from config.provider import GlobalConfigProvider, get_config_dependency
 from config.schema import AxiomConfig
 from db.dialect.transpiler import transpile_sql
-from db.engines.base import QueryResult, TableInfo, ColumnInfo
+from db.engines.base import ColumnInfo, QueryResult, TableInfo
 from db.pool import DatabasePoolManager
 from server.middleware.auth import get_auth_context
 from utils.types import AuthContext, ServerMode
@@ -59,12 +59,7 @@ _HEALTH_CACHE_TTL: int = 5  # seconds
 
 
 def _refresh_feature_flags():
-    global \
-        _FEDERATION_ENABLED, \
-        _FEDERATION_SERVERS, \
-        _EVENT_EMISSION_ENABLED, \
-        _QUERY_CACHE_ENABLED, \
-        _QUERY_RESULTS_TTL
+    global _FEDERATION_ENABLED, _FEDERATION_SERVERS, _EVENT_EMISSION_ENABLED, _QUERY_CACHE_ENABLED, _QUERY_RESULTS_TTL
 
     config = GlobalConfigProvider().get_config()
     _FEDERATION_ENABLED = bool(config.features.federation and config.federation.enabled)
@@ -191,9 +186,11 @@ async def _append_cached_remote_databases(
                     "name": federated_name,
                     "engine": valid_info.get("engine", "unknown"),
                     "mode": valid_info.get("mode", "unknown"),
-                    "status": valid_info.get("status", info)
-                    if not isinstance(info, dict)
-                    else valid_info.get("status", "unknown"),
+                    "status": (
+                        valid_info.get("status", info)
+                        if not isinstance(info, dict)
+                        else valid_info.get("status", "unknown")
+                    ),
                     "tables_count": valid_info.get("tables_count", 0),
                     "federated": True,
                     "remote_server": alias,
@@ -304,7 +301,7 @@ async def _get_cached_tables(db_name: str, engine) -> list:
 
     tables = await engine.list_tables()
     # Cache for 60 seconds (schemas change rarely during a session)
-    tables_dicts = [t.__dict__ if hasattr(t, '__dict__') else t for t in tables]
+    tables_dicts = [t.__dict__ if hasattr(t, "__dict__") else t for t in tables]
     await CacheManager.set(cache_key, tables_dicts, ttl=60)
     return tables
 
@@ -330,7 +327,7 @@ async def _get_cached_columns(db_name: str, table_name: str, engine) -> list:
 
     columns = await engine.describe_table(table_name)
     # Cache for 300 seconds (column metadata is very stable)
-    columns_dicts = [c.__dict__ if hasattr(c, '__dict__') else c for c in columns]
+    columns_dicts = [c.__dict__ if hasattr(c, "__dict__") else c for c in columns]
     await CacheManager.set(cache_key, columns_dicts, ttl=300)
     return columns
 
@@ -578,8 +575,12 @@ async def list_tables(
 
     for table in page:
         table_name = table.name if hasattr(table, "name") else table.get("name")
-        table_row_count = table.row_count_estimate if hasattr(table, "row_count_estimate") else table.get("row_count_estimate")
-        
+        table_row_count = (
+            table.row_count_estimate
+            if hasattr(table, "row_count_estimate")
+            else table.get("row_count_estimate")
+        )
+
         columns = await _get_cached_columns(db_name, table_name, engine)
         formatted_tables.append(
             {
@@ -589,8 +590,14 @@ async def list_tables(
                     {
                         "name": c.name if hasattr(c, "name") else c.get("name"),
                         "type": c.type if hasattr(c, "type") else c.get("type"),
-                        "nullable": c.nullable if hasattr(c, "nullable") else c.get("nullable"),
-                        "primary_key": c.primary_key if hasattr(c, "primary_key") else c.get("primary_key"),
+                        "nullable": (
+                            c.nullable if hasattr(c, "nullable") else c.get("nullable")
+                        ),
+                        "primary_key": (
+                            c.primary_key
+                            if hasattr(c, "primary_key")
+                            else c.get("primary_key")
+                        ),
                     }
                     for c in columns
                 ],
