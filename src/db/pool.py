@@ -80,9 +80,6 @@ class DatabasePoolManager:
             return None
 
         if getattr(db_config, "federated_alias", None):
-            logger.debug(
-                "Skipping pool initialization for federated database", alias=alias
-            )
             return None
 
         logger.info("Initializing database pool", alias=alias, engine=db_config.engine)

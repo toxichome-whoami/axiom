@@ -73,7 +73,7 @@ class ConnectionManager:
         if ws is None:
             return
         try:
-            await ws.send_bytes(payload)
+            await ws.send_text(payload.decode("utf-8"))
         except Exception:
             self.disconnect(client_id)
 

@@ -1,5 +1,5 @@
 {
-  "dependencies": {
-    "eventsource": "^4.1.0"
-  }
+    "dependencies": {
+        "eventsource": "^4.1.0"
+    }
 }

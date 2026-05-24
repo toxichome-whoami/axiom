@@ -13,7 +13,7 @@ from server.middleware.auth import _get_static_key_context, _parse_bearer_token
 from .connection_manager import sse_mgr
 
 logger = structlog.get_logger("sse.router")
-router = APIRouter()
+router = APIRouter(tags=["SSE"])
 
 # SSE uses query params for auth since EventSource cannot set custom headers
 token_query = APIKeyQuery(name="token", auto_error=False)

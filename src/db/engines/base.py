@@ -72,6 +72,10 @@ class DatabaseEngine(Protocol):
         """Dynamically introspects the connected database to map all targetable resources."""
         ...
 
+    async def count_tables(self) -> int:
+        """Fast scalar query to efficiently count tables without massive O(N) allocation."""
+        ...
+
     async def describe_table(self, table: str) -> List[ColumnInfo]:
         """Extracts low-level entity boundaries for parameter validation mappings."""
         ...

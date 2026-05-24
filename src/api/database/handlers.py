@@ -48,7 +48,7 @@ from .router import router
 
 _FEDERATION_ENABLED: bool = False
 _FEDERATION_SERVERS: tuple = ()
-_WEBHOOK_ENABLED: bool = False
+_EVENT_EMISSION_ENABLED: bool = False
 _QUERY_CACHE_ENABLED: bool = False
 _QUERY_RESULTS_TTL: int = 5
 
@@ -61,7 +61,7 @@ def _refresh_feature_flags():
     global \
         _FEDERATION_ENABLED, \
         _FEDERATION_SERVERS, \
-        _WEBHOOK_ENABLED, \
+        _EVENT_EMISSION_ENABLED, \
         _QUERY_CACHE_ENABLED, \
         _QUERY_RESULTS_TTL
 
@@ -70,7 +70,14 @@ def _refresh_feature_flags():
     _FEDERATION_SERVERS = (
         tuple(config.federation.server.keys()) if _FEDERATION_ENABLED else ()
     )
-    _WEBHOOK_ENABLED = bool(config.features.webhook and config.webhooks.enabled)
+
+    # Event emission drives Webhooks, SSE, AND WebSockets.
+    _EVENT_EMISSION_ENABLED = bool(
+        (config.features.webhook and config.webhooks.enabled)
+        or config.features.sse
+        or config.features.websocket
+    )
+
     _QUERY_CACHE_ENABLED = bool(config.cache.enabled and config.cache.query_cache)
     _QUERY_RESULTS_TTL = config.cache.query_results_ttl
 
@@ -123,7 +130,7 @@ async def _emit_db_webhook_event(
     affected_rows: int,
 ):
     """Transmits real-time mutation state via isolated webhooks."""
-    if not _WEBHOOK_ENABLED:
+    if not _EVENT_EMISSION_ENABLED:
         return
 
     trigger_context = WebhookTrigger(
@@ -300,6 +307,18 @@ async def _get_cached_tables(db_name: str, engine) -> list:
     return tables
 
 
+async def _get_cached_tables_count(db_name: str, engine) -> int:
+    """Fetches table counts via scalar query instead of massive allocations."""
+    cache_key = f"schema:tables_count:{db_name}"
+    cached = await CacheManager.get(cache_key)
+    if cached is not None:
+        return cached
+
+    count = await engine.count_tables()
+    await CacheManager.set(cache_key, count, ttl=60)
+    return count
+
+
 async def _get_cached_columns(db_name: str, table_name: str, engine) -> list:
     """Fetches column metadata with O(1) cache lookup."""
     cache_key = f"schema:cols:{db_name}:{table_name}"
@@ -408,7 +427,7 @@ class QueryExecutionPipeline:
             transpiled_sql, params, return_format=return_format
         )
 
-        if _WEBHOOK_ENABLED:
+        if _EVENT_EMISSION_ENABLED:
             webhook_action = "SELECT" if is_read else operations.upper()
             await _emit_db_webhook_event(
                 request,
@@ -500,7 +519,7 @@ async def list_databases(
 
         tables_count = 0
         if status == "connected" and engine:
-            tables_count = len(await _get_cached_tables(name, engine))
+            tables_count = await _get_cached_tables_count(name, engine)
 
         active_dbs.append(
             {
@@ -509,7 +528,7 @@ async def list_databases(
                 "mode": db_cfg.mode.value,
                 "status": status,
                 "tables_count": tables_count,
-                "federated": False,
+                "federated": bool(db_cfg.federated_alias),
             }
         )
 

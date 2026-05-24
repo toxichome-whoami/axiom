@@ -118,6 +118,12 @@ class MySQLEngine(DatabaseEngine):
             result = await conn.execute(text(sql))
             return [TableInfo(name=row[0], row_count_estimate=0) for row in result]
 
+    async def count_tables(self) -> int:
+        sql = "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE()"
+        async with self.engine.connect() as conn:
+            result = await conn.execute(text(sql))
+            return result.scalar()
+
     async def describe_table(self, table: str) -> List[ColumnInfo]:
         """Maps declarative descriptions targeting explicit table structural limits."""
         sql = f"DESCRIBE {table};"

@@ -94,12 +94,13 @@ class EventBus:
             }
         )
 
-        # Broadcast to both specific and wildcard topic subscribers locally
-        await asyncio.gather(
-            conn_mgr.broadcast(specific_topic, payload),
-            conn_mgr.broadcast(wildcard_topic, payload),
-            return_exceptions=True,
-        )
+        # Broadcast to both specific and wildcard topic subscribers without duplicating
+        subscribers = set(conn_mgr.get_subscribers(specific_topic))
+        subscribers.update(conn_mgr.get_subscribers(wildcard_topic))
+
+        tasks = [conn_mgr.send(cid, payload) for cid in subscribers]
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
 
     async def publish_metrics(self) -> None:
         """Push live server metrics to all `metrics` topic subscribers."""

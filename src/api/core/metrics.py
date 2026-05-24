@@ -12,7 +12,7 @@ import psutil
 from fastapi import APIRouter, Request
 from fastapi.responses import PlainTextResponse
 
-router = APIRouter()
+router = APIRouter(tags=["Core System"])
 
 # ─────────────────────────────────────────────────────────────────────────────
 # In-Memory Counter Storage

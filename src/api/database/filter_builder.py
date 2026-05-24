@@ -1,4 +1,22 @@
+import datetime
+import re
 from typing import Any, Dict, Tuple
+
+_ISO8601_RE = re.compile(
+    r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?$"
+)
+
+
+def _coerce_val(val: Any) -> Any:
+    """Coerces strictly formatted ISO8601 date strings to Python datetime objects for strict SQL drivers."""
+    if isinstance(val, str) and _ISO8601_RE.match(val):
+        try:
+            dt = datetime.datetime.fromisoformat(val.replace("Z", "+00:00"))
+            return dt.replace(tzinfo=None)
+        except Exception:
+            pass
+    return val
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # JSON Operator Translators
@@ -18,7 +36,7 @@ def _process_array_operator(
     for array_index, item in enumerate(val):
         in_pname = f"{pname}_{array_index}"
         in_placeholders.append(f":{in_pname}")
-        params[in_pname] = item
+        params[in_pname] = _coerce_val(item)
 
     placeholders_str = ", ".join(in_placeholders)
     where_parts.append(f"{col} {sql_op} ({placeholders_str})")
@@ -52,12 +70,15 @@ def _process_standard_operator(
         if not isinstance(val, list) or len(val) != 2:
             raise ValueError("$between requires a strictly bound list of 2 values")
         where_parts.append(f"{col} BETWEEN :{pname}_start AND :{pname}_end")
-        params[f"{pname}_start"], params[f"{pname}_end"] = val[0], val[1]
+        params[f"{pname}_start"], params[f"{pname}_end"] = (
+            _coerce_val(val[0]),
+            _coerce_val(val[1]),
+        )
         return
     else:
         raise ValueError(f"Operator node unsupported natively: {op}")
 
-    params[pname] = val
+    params[pname] = _coerce_val(val)
 
 
 def _route_filter_criteria(
@@ -112,7 +133,7 @@ def construct_insert(table: str, data: Dict[str, Any]) -> Tuple[str, Dict[str, A
     placeholders = [f":p_{i}" for i in range(len(cols))]
     sql = f"INSERT INTO {table} ({', '.join(cols)}) VALUES ({', '.join(placeholders)})"
 
-    return sql, {f"p_{i}": val for i, val in enumerate(data.values())}
+    return sql, {f"p_{i}": _coerce_val(val) for i, val in enumerate(data.values())}
 
 
 def construct_update(
@@ -124,7 +145,7 @@ def construct_update(
     for index, (col_key, col_val) in enumerate(update_data.items()):
         pname = f"up_p_{index}"
         set_parts.append(f"{col_key} = :{pname}")
-        params[pname] = col_val
+        params[pname] = _coerce_val(col_val)
 
     where_clause, filter_params = build_where_clause(filter_json)
     if not where_clause:

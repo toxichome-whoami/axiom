@@ -12,7 +12,7 @@ from server.middleware.auth import _get_static_key_context, _parse_bearer_token
 from .connection_manager import conn_mgr
 
 logger = structlog.get_logger("ws.router")
-router = APIRouter()
+router = APIRouter(tags=["WebSocket"])
 
 _HEARTBEAT_INTERVAL = 30  # seconds between server pings
 _AUTH_TIMEOUT = 5.0  # seconds to send auth message after connecting
@@ -91,20 +91,20 @@ async def ws_endpoint(websocket: WebSocket) -> None:
     logger.info("WebSocket authenticated", client_id=client_id)
 
     # Send confirmation
-    await websocket.send_bytes(
+    await websocket.send_text(
         orjson.dumps(
             {
                 "type": "connected",
                 "client_id": client_id,
             }
-        )
+        ).decode("utf-8")
     )
 
     async def _heartbeat() -> None:
         while True:
             await asyncio.sleep(_HEARTBEAT_INTERVAL)
             try:
-                await websocket.send_bytes(
+                await websocket.send_text(
                     orjson.dumps(
                         {
                             "type": "heartbeat",
@@ -112,7 +112,7 @@ async def ws_endpoint(websocket: WebSocket) -> None:
                                 "%Y-%m-%dT%H:%M:%SZ", time.gmtime()
                             ),
                         }
-                    )
+                    ).decode("utf-8")
                 )
             except Exception:
                 break
@@ -132,7 +132,7 @@ async def ws_endpoint(websocket: WebSocket) -> None:
             if msg_type == "subscribe":
                 topic = msg.get("topic", "")
                 ok = conn_mgr.subscribe(client_id, topic)
-                await websocket.send_bytes(
+                await websocket.send_text(
                     orjson.dumps(
                         {
                             "type": "ack",
@@ -140,7 +140,7 @@ async def ws_endpoint(websocket: WebSocket) -> None:
                             "status": "ok" if ok else "denied",
                             "topic": topic,
                         }
-                    )
+                    ).decode("utf-8")
                 )
 
             elif msg_type == "unsubscribe":

@@ -12,7 +12,7 @@ from config.provider import GlobalConfigProvider
 from db.pool import DatabasePoolManager
 from server.middleware.auth import AuthContext, get_auth_context
 
-router = APIRouter()
+router = APIRouter(tags=["Core System"])
 uptime_start = time.time()
 
 # ─────────────────────────────────────────────────────────────────────────────

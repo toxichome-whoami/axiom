@@ -29,10 +29,14 @@ const env = loadEnv();
 const CONFIG = {
     httpUrl: env.AXIOM_URL || "http://localhost:4500",
     keyName: env.AXIOM_KEY_NAME || "admin",
-    secret: env.AXIOM_KEY_SECRET || "ZvLpwTTxKnaxzcmuQPyPPCstUKGZGeWaampdvYPXVkeLEBDNNIOwiiyAUzgQCAxJ",
+    secret:
+        env.AXIOM_KEY_SECRET ||
+        "ZvLpwTTxKnaxzcmuQPyPPCstUKGZGeWaampdvYPXVkeLEBDNNIOwiiyAUzgQCAxJ",
 };
 
-const TOKEN = Buffer.from(`${CONFIG.keyName}:${CONFIG.secret}`).toString("base64");
+const TOKEN = Buffer.from(`${CONFIG.keyName}:${CONFIG.secret}`).toString(
+    "base64",
+);
 const AUTH = `Bearer ${TOKEN}`;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -95,9 +99,9 @@ async function demo() {
         sseUrl,
         {
             method: "GET",
-            headers: { 
+            headers: {
                 Accept: "text/event-stream",
-                Authorization: AUTH 
+                Authorization: AUTH,
             },
         },
         (res) => {
@@ -108,18 +112,24 @@ async function demo() {
             let buffer = "";
             res.on("data", async (chunk) => {
                 buffer += chunk.toString();
-                let parts = buffer.split("\n\n");
+                let parts = buffer.split(/\r?\n\r?\n/);
                 buffer = parts.pop(); // Keep incomplete chunk
 
                 for (const part of parts) {
                     if (part.startsWith("event: endpoint")) {
-                        const dataLine = part.split("\n").find((l) => l.startsWith("data: "));
+                        const dataLine = part
+                            .split("\n")
+                            .find((l) => l.startsWith("data: "));
                         if (dataLine) {
                             postEndpoint = dataLine.slice(6).trim();
-                            console.log(`[Listener] Received POST endpoint: ${postEndpoint}`);
-                            
+                            console.log(
+                                `[Listener] Received POST endpoint: ${postEndpoint}`,
+                            );
+
                             // ── 2. Send Initialize Message ───────────────────────────
-                            console.log(`\n[Client] Sending MCP 'initialize' request...`);
+                            console.log(
+                                `\n[Client] Sending MCP 'initialize' request...`,
+                            );
                             const initMsg = {
                                 jsonrpc: "2.0",
                                 id: 1,
@@ -129,46 +139,58 @@ async function demo() {
                                     capabilities: {},
                                     clientInfo: {
                                         name: "AxiomTestClient",
-                                        version: "1.0.0"
-                                    }
-                                }
+                                        version: "1.0.0",
+                                    },
+                                },
                             };
-                            
+
                             try {
                                 await postMessage(postEndpoint, initMsg);
-                                console.log(`[Client] Message successfully posted.`);
+                                console.log(
+                                    `[Client] Message successfully posted.`,
+                                );
                             } catch (err) {
-                                console.error(`[Client] Failed to post message:`, err);
+                                console.error(
+                                    `[Client] Failed to post message:`,
+                                    err,
+                                );
                             }
                         }
                     } else if (part.startsWith("event: message")) {
-                        const dataLine = part.split("\n").find((l) => l.startsWith("data: "));
+                        const dataLine = part
+                            .split("\n")
+                            .find((l) => l.startsWith("data: "));
                         if (dataLine) {
-                            console.log(`\n[Listener] 🔥 Received MCP Message!`);
+                            console.log(
+                                `\n[Listener] 🔥 Received MCP Message!`,
+                            );
                             try {
                                 const msg = JSON.parse(dataLine.slice(6));
                                 console.log(JSON.stringify(msg, null, 2));
-                                
+
                                 if (msg.id === 1 && msg.result) {
                                     // Received init response, let's ask for tools
-                                    console.log(`\n[Client] Sending 'tools/list' request...`);
+                                    console.log(
+                                        `\n[Client] Sending 'tools/list' request...`,
+                                    );
                                     await postMessage(postEndpoint, {
                                         jsonrpc: "2.0",
                                         id: 2,
                                         method: "tools/list",
-                                        params: {}
+                                        params: {},
                                     });
                                 }
-                                
+
                                 if (msg.id === 2 && msg.result) {
                                     // We've successfully listed tools, we can finish
                                     console.log("\n" + "=".repeat(55));
-                                    console.log("  Demo complete. Closing connection.");
+                                    console.log(
+                                        "  Demo complete. Closing connection.",
+                                    );
                                     console.log("=".repeat(55));
                                     sseReq.destroy();
                                     process.exit(0);
                                 }
-                                
                             } catch (e) {
                                 console.log(`Raw data: ${dataLine.slice(6)}`);
                             }
@@ -179,7 +201,9 @@ async function demo() {
         },
     );
 
-    sseReq.on("error", (err) => console.error(`[Listener] SSE Error:`, err.message));
+    sseReq.on("error", (err) =>
+        console.error(`[Listener] SSE Error:`, err.message),
+    );
     sseReq.end();
 }
 
