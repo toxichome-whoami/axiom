@@ -15,7 +15,6 @@ from api.federation.proxy import _resolve_server, proxy_request
 from api.federation.state import FederationStateManager
 from api.responses import is_protobuf_requested, protobuf_or_json, success_response
 from api.storage.chunked_upload import ChunkedUploadManager
-from cache import CacheManager
 from config.loader import HOT_RELOAD_CALLBACKS
 from config.provider import GlobalConfigProvider, get_config_dependency
 from config.schema import AxiomConfig
@@ -602,95 +601,116 @@ async def list_folder(
     path: str = Query("/"),
     recursive: bool = Query(False),
     limit: int = Query(100, ge=1, le=1000),
-    offset: int = Query(0, ge=0),
+    continuation_token: Optional[str] = Query(None),
     auth: AuthContext = Depends(get_auth_context),
 ):
     if _is_federated(alias):
         return await proxy_request(alias, "list", request, False)
 
     target_path = _get_storage_path(alias, path, auth)
+    req_fmt = "protobuf" if is_protobuf_requested(request) else "json"
 
-    # Cache directory listings for 2s — prevents thread pool saturation under concurrent load
-    cache_key = f"ls:{target_path}:r={recursive}"
-    cached = await CacheManager.get(cache_key)
-    if cached is not None:
-        total, all_items = cached
-        page = all_items[offset : offset + limit]
-        req_fmt = "protobuf" if is_protobuf_requested(request) else "json"
-
-        if req_fmt == "protobuf":
-            pb = fs_pb2.ListDirectoryResponse()
-            pb.total = total
-            for e in page:
-                pb_e = pb.entries.add()
-                pb_e.name = e["name"]
-                pb_e.is_dir = e["type"] == "directory"
-                pb_e.size = e.get("size", [0])[0]
-                pb_e.modified = e.get("modified", "")
-                pb_e.mime_type = e.get("mime_type", "")
-            return protobuf_or_json(request, pb, None)
-        else:
-            json_payload = {
-                "storage": alias,
-                "path": path,
-                "items": page,
-                "pagination": {
-                    "total": total,
-                    "limit": limit,
-                    "offset": offset,
-                    "has_more": (offset + limit) < total,
-                },
-            }
-            return protobuf_or_json(request, None, json_payload)
-
-    # Single-pass scandir with threadpool — replaces os.listdir + os.path.exists + os.path.isdir
-    def _scan_directory(return_format: str):
+    def _recursive_scandir(p):
         try:
-            entries = list(os.scandir(target_path))
-        except FileNotFoundError:
+            with os.scandir(p) as it:
+                for entry in it:
+                    yield entry
+                    if entry.is_dir(follow_symlinks=False):
+                        yield from _recursive_scandir(entry.path)
+        except (OSError, PermissionError):
+            pass
+
+    def _scan_directory(return_format: str):
+        if not os.path.exists(target_path):
             raise AxiomException(ErrorCodes.FS_PATH_NOT_FOUND, "Missing Node", 404)
-        except NotADirectoryError:
+        if not os.path.isdir(target_path):
             raise AxiomException(
                 ErrorCodes.FS_PATH_NOT_FOUND, "Path rejects dict schema.", 400
             )
-        except PermissionError:
-            raise AxiomException(
-                ErrorCodes.AUTH_SCOPE_DENIED, "Permission denied reading path.", 403
-            )
-        except Exception as e:
-            raise AxiomException(
-                ErrorCodes.SERVER_INTERNAL,
-                f"Failed to list directory: {str(e)}",
-                500,
-            )
 
+        target_token = None
+        if continuation_token:
+            try:
+                import base64
+
+                target_token = base64.b64decode(continuation_token).decode("utf-8")
+            except Exception:
+                raise AxiomException(
+                    ErrorCodes.INPUT_SCHEMA_INVALID, "Invalid continuation_token", 400
+                )
+
+        # Use recursive generator or standard scandir
         if recursive:
-            # Depth-first recursive walk: collect all entries from subdirectories
-            all_entries = []
-            stack = list(entries)
-            while stack:
-                entry = stack.pop()
-                all_entries.append(entry)
-                if entry.is_dir(follow_symlinks=False):
-                    try:
-                        sub = list(os.scandir(entry.path))
-                        stack.extend(sub)
-                    except (OSError, PermissionError):
-                        continue
-            all_entries.sort(key=lambda e: e.path)
-            total = len(all_entries)
-            page = all_entries[offset : offset + limit]
+            entries_iter = _recursive_scandir(target_path)
         else:
-            entries.sort(key=lambda e: e.name)
-            total = len(entries)
-            page = entries[offset : offset + limit]
+            try:
+                entries_iter = os.scandir(target_path)
+            except PermissionError:
+                raise AxiomException(
+                    ErrorCodes.AUTH_SCOPE_DENIED, "Permission denied reading path.", 403
+                )
+            except Exception as e:
+                raise AxiomException(
+                    ErrorCodes.SERVER_INTERNAL,
+                    f"Failed to list directory: {str(e)}",
+                    500,
+                )
+
+        # Skip until we hit the continuation token
+        if target_token:
+            for entry in entries_iter:
+                # Use relpath for recursive uniqueness, or just name for flat
+                identifier = (
+                    os.path.relpath(entry.path, target_path).replace("\\", "/")
+                    if recursive
+                    else entry.name
+                )
+                if identifier == target_token:
+                    break
+
+        page = []
+        for entry in entries_iter:
+            page.append(entry)
+            if len(page) == limit:
+                break
+
+        is_truncated = False
+        next_token = None
+
+        # Peek next to see if truncated
+        try:
+            next(entries_iter)
+            is_truncated = True
+            if page:
+                last_entry = page[-1]
+                identifier = (
+                    os.path.relpath(last_entry.path, target_path).replace("\\", "/")
+                    if recursive
+                    else last_entry.name
+                )
+                import base64
+
+                next_token = base64.b64encode(identifier.encode("utf-8")).decode(
+                    "utf-8"
+                )
+        except StopIteration:
+            pass
+        finally:
+            if not recursive and hasattr(entries_iter, "close"):
+                entries_iter.close()
 
         if return_format == "protobuf":
             pb = fs_pb2.ListDirectoryResponse()
-            pb.total = total
+            pb.is_truncated = is_truncated  # type: ignore
+            if next_token:
+                pb.next_continuation_token = next_token  # type: ignore
             for e in page:
                 pb_e = pb.entries.add()
-                pb_e.name = e.name
+                pb_e.name = (
+                    os.path.relpath(e.path, target_path).replace("\\", "/")
+                    if recursive
+                    else e.name
+                )
                 pb_e.is_dir = e.is_dir(follow_symlinks=False)
                 try:
                     stat = e.stat(follow_symlinks=False)
@@ -701,30 +721,34 @@ async def list_folder(
                         pb_e.mime_type = mime or "application/octet-stream"
                 except OSError:
                     pass
-            return total, pb
+            return pb
         else:
-            items = [build_file_info_from_entry(e) for e in page]
-            return total, items
+            items = []
+            for e in page:
+                info = build_file_info_from_entry(e)
+                if recursive:
+                    info["name"] = os.path.relpath(e.path, target_path).replace(
+                        "\\", "/"
+                    )
+                items.append(info)
+            return items, is_truncated, next_token
 
-    req_fmt = "protobuf" if is_protobuf_requested(request) else "json"
-    total_items, result_payload = await asyncio.to_thread(_scan_directory, req_fmt)
-
-    # Cache the full result so concurrent requests don't all hit the filesystem
-    if req_fmt == "json":
-        await CacheManager.set(cache_key, (total_items, result_payload), ttl=2)
-
+    # We do not use the TTL cache for cursor pagination because it breaks streaming state
     if req_fmt == "protobuf":
+        result_payload = await asyncio.to_thread(_scan_directory, req_fmt)
         return protobuf_or_json(request, result_payload, None)
     else:
+        items, is_truncated, next_token = await asyncio.to_thread(
+            _scan_directory, req_fmt
+        )  # type: ignore
         json_payload = {
             "storage": alias,
             "path": path,
-            "items": result_payload,
+            "items": items,
             "pagination": {
-                "total": total_items,
                 "limit": limit,
-                "offset": offset,
-                "has_more": (offset + limit) < total_items,
+                "is_truncated": is_truncated,
+                "next_continuation_token": next_token,
             },
         }
         return protobuf_or_json(request, None, json_payload)

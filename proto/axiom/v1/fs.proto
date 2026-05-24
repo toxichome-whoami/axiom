@@ -20,6 +20,8 @@ message FederationServiceListDirectoryResponse {
 message ListDirectoryResponse {
   int32 total = 1;
   repeated FederationServiceListDirectoryResponse entries = 2;
+  optional string next_continuation_token = 3;
+  bool is_truncated = 4;
 }
 
 message FileUploadRequest {

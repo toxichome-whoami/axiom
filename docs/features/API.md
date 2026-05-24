@@ -246,19 +246,23 @@ curl -X GET "http://localhost:4500/api/v1/fs/storages" \
 ### 2. List Folder
 ```bash
 # Flat listing (default)
-curl -X GET "http://localhost:4500/api/v1/fs/local_fs/list?path=/subfolder&limit=50&offset=0" \
+curl -X GET "http://localhost:4500/api/v1/fs/local_fs/list?path=/subfolder&limit=50" \
      -H "Authorization: Bearer <TOKEN>"
 
 # Recursive listing (all subdirectories)
 curl -X GET "http://localhost:4500/api/v1/fs/local_fs/list?path=/&recursive=true&limit=100" \
      -H "Authorization: Bearer <TOKEN>"
+
+# Pagination next page
+curl -X GET "http://localhost:4500/api/v1/fs/local_fs/list?path=/&limit=100&continuation_token=ZmlsZV8xMDAubXA0" \
+     -H "Authorization: Bearer <TOKEN>"
 ```
 
 **Parameters:**
-- `path` — Directory path (default `/`)
-- `limit` — Max items per page (default 100, max 1000)
-- `offset` — Pagination offset (default 0)
-- `recursive` — Set to `true` to include all subdirectory contents (depth-first)
+- `path` - Directory path (default `/`)
+- `limit` - Max items per page (default 100, max 1000)
+- `continuation_token` - Token returned from a previous response to fetch the next page
+- `recursive` - Set to `true` to include all subdirectory contents (depth-first)
 
 **Response:**
 ```json
@@ -271,17 +275,15 @@ curl -X GET "http://localhost:4500/api/v1/fs/local_fs/list?path=/&recursive=true
       {
         "name": "image.png",
         "type": "file",
-        "size": [2457600, "2.34 MB"],
+        "size": [1048576, "1.0 MB"],
         "mime_type": "image/png",
-        "modified": "2026-04-28T10:30:00",
-        "created": "2026-04-28T08:00:00"
+        "modified": "2024-03-10T12:00:00"
       }
     ],
     "pagination": {
-      "total": 150,
       "limit": 50,
-      "offset": 0,
-      "has_more": true
+      "is_truncated": true,
+      "next_continuation_token": "aW1hZ2VfNTEucG5n"
     }
   }
 }
