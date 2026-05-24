@@ -103,3 +103,7 @@ class LoggingMiddleware:
                 status=status_code,
                 duration_ms=round(duration_ms, 2),
             )
+
+        # USER REQUESTED TO COMMENT OUT FOR BENCHMARK PERFORMANCE
+        # metrics.increment("requests_total", {"method": method or "unknown", "path": path or "/", "status": str(status_code)})
+        # metrics.record_duration(duration_ms)

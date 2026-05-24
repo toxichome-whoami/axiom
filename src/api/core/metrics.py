@@ -86,7 +86,7 @@ def _format_metric(
 
 def _build_json_metrics(uptime, mem_mb, cpu_pct, avg_duration, p99) -> dict:
     """Renders human-readable hierarchical JSON models targeting visual dashboards."""
-    return {
+    payload = {
         "status": "online",
         "uptime_seconds": round(uptime, 2),
         "system": {"memory_mb": round(mem_mb, 2), "cpu_percent": round(cpu_pct, 2)},
@@ -111,6 +111,11 @@ def _build_json_metrics(uptime, mem_mb, cpu_pct, avg_duration, p99) -> dict:
             },
         },
     }
+
+    if _metrics.get("requests_total"):
+        payload["counters"]["requests_total"] = _metrics["requests_total"]
+
+    return payload
 
 
 def _build_prometheus_metrics(
@@ -158,6 +163,25 @@ def _build_prometheus_metrics(
         _format_metric("axiom_db_queries_total", _metrics["db_queries_total"]),
         _format_metric("axiom_db_query_errors_total", _metrics["db_query_errors"]),
     ]
+
+    # Dynamically inject the sliced requests_total maps
+    if _metrics["requests_total"]:
+        lines.append("# HELP axiom_requests_total Total HTTP requests")
+        lines.append("# TYPE axiom_requests_total counter")
+        for label_key, count in _metrics["requests_total"].items():
+            # label_key looks like: requests_total|method=GET,path=/foo,status=200
+            if "|" in label_key:
+                _, labels_str = label_key.split("|", 1)
+                # Convert `method=GET,path=/foo` to `method="GET",path="/foo"`
+                formatted_labels = ",".join(
+                    f'{k}="{v}"'
+                    for kv in labels_str.split(",")
+                    for k, v in [kv.split("=", 1)]
+                )
+                lines.append(f"axiom_requests_total{{{formatted_labels}}} {count}")
+            else:
+                lines.append(f"axiom_requests_total {count}")
+
     return PlainTextResponse(
         "\n".join(lines) + "\n", media_type="text/plain; version=0.0.4"
     )
@@ -182,6 +206,21 @@ async def metrics_endpoint(request: Request, format: str = "prometheus"):
         if len(durations) > 100
         else avg_duration
     )
+
+    from config.provider import GlobalConfigProvider
+
+    config = GlobalConfigProvider().get_config()
+
+    if config.cache.backend == "sqlite":
+        from cache.sqlite_backend import SQLiteCache
+
+        _metrics["cache_hits"] = SQLiteCache._hits
+        _metrics["cache_misses"] = SQLiteCache._misses
+    elif config.cache.backend == "memory":
+        from cache.memory import MemoryCache
+
+        _metrics["cache_hits"] = MemoryCache._hits
+        _metrics["cache_misses"] = MemoryCache._misses
 
     if format == "json":
         return _build_json_metrics(uptime, mem_mb, cpu_pct, avg_duration, p99)

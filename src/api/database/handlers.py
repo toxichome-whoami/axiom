@@ -6,6 +6,7 @@ from typing import Any
 import orjson
 from fastapi import Depends, Path, Query, Request
 
+from api.core import metrics
 from api.database.filter_builder import (
     build_where_clause,
     construct_bulk_insert,
@@ -34,7 +35,7 @@ from config.loader import HOT_RELOAD_CALLBACKS
 from config.provider import GlobalConfigProvider, get_config_dependency
 from config.schema import AxiomConfig
 from db.dialect.transpiler import transpile_sql
-from db.engines.base import QueryResult
+from db.engines.base import QueryResult, TableInfo, ColumnInfo
 from db.pool import DatabasePoolManager
 from server.middleware.auth import get_auth_context
 from utils.types import AuthContext, ServerMode
@@ -299,11 +300,12 @@ async def _get_cached_tables(db_name: str, engine) -> list:
     cache_key = f"schema:tables:{db_name}"
     cached = await CacheManager.get(cache_key)
     if cached is not None:
-        return cached
+        return [TableInfo(**t) if isinstance(t, dict) else t for t in cached]
 
     tables = await engine.list_tables()
     # Cache for 60 seconds (schemas change rarely during a session)
-    await CacheManager.set(cache_key, tables, ttl=60)
+    tables_dicts = [t.__dict__ if hasattr(t, '__dict__') else t for t in tables]
+    await CacheManager.set(cache_key, tables_dicts, ttl=60)
     return tables
 
 
@@ -324,11 +326,12 @@ async def _get_cached_columns(db_name: str, table_name: str, engine) -> list:
     cache_key = f"schema:cols:{db_name}:{table_name}"
     cached = await CacheManager.get(cache_key)
     if cached is not None:
-        return cached
+        return [ColumnInfo(**c) if isinstance(c, dict) else c for c in cached]
 
     columns = await engine.describe_table(table_name)
     # Cache for 300 seconds (column metadata is very stable)
-    await CacheManager.set(cache_key, columns, ttl=300)
+    columns_dicts = [c.__dict__ if hasattr(c, '__dict__') else c for c in columns]
+    await CacheManager.set(cache_key, columns_dicts, ttl=300)
     return columns
 
 
@@ -574,17 +577,20 @@ async def list_tables(
     formatted_tables = []
 
     for table in page:
-        columns = await _get_cached_columns(db_name, table.name, engine)
+        table_name = table.name if hasattr(table, "name") else table.get("name")
+        table_row_count = table.row_count_estimate if hasattr(table, "row_count_estimate") else table.get("row_count_estimate")
+        
+        columns = await _get_cached_columns(db_name, table_name, engine)
         formatted_tables.append(
             {
-                "name": table.name,
-                "row_count_estimate": table.row_count_estimate,
+                "name": table_name,
+                "row_count_estimate": table_row_count,
                 "columns": [
                     {
-                        "name": c.name,
-                        "type": c.type,
-                        "nullable": c.nullable,
-                        "primary_key": c.primary_key,
+                        "name": c.name if hasattr(c, "name") else c.get("name"),
+                        "type": c.type if hasattr(c, "type") else c.get("type"),
+                        "nullable": c.nullable if hasattr(c, "nullable") else c.get("nullable"),
+                        "primary_key": c.primary_key if hasattr(c, "primary_key") else c.get("primary_key"),
                     }
                     for c in columns
                 ],
@@ -643,10 +649,13 @@ async def execute_query(
             else None
         )
 
+        metrics.increment("db_queries_total")
         return protobuf_or_json(request, result.proto_msg, json_data)
     except AxiomException:
+        metrics.increment("db_query_errors")
         raise
     except Exception as exec_error:
+        metrics.increment("db_query_errors")
         raise AxiomException(ErrorCodes.DB_QUERY_FAILED, str(exec_error), 500)
 
 

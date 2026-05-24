@@ -153,6 +153,12 @@ async def handle_mcp_message(request: Request) -> Response:
         )
     except _AuthenticationError as auth_err:
         return auth_err.response
+    except Exception as e:
+        if type(e).__name__ == "ClosedResourceError":
+            # The MCP handler already sent a 202 Accepted response before attempting
+            # to push to the queue. Since it failed, we just cleanly exit.
+            return ASGIPassThroughResponse()
+        raise e
     finally:
         clear_mcp_auth()
 

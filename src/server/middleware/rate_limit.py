@@ -6,6 +6,7 @@ import orjson
 import structlog
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
+from api.core import metrics
 from cache.memory import MemoryCache
 from cache.redis_backend import RedisCache
 from cache.sqlite_backend import SQLiteCache
@@ -199,6 +200,7 @@ class RateLimitMiddleware:
         )
 
         if violated:
+            metrics.increment("rate_limit_hits")
             return await _send_rejection_response(send, limit, self._window)
 
         # Pre-compute header values outside the closure

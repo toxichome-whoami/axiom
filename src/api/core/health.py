@@ -102,6 +102,33 @@ def _evaluate_storage_health(config) -> dict:
     return storage_status
 
 
+async def _evaluate_federation_health(config) -> dict:
+    """Extracts node statuses from the persistent federation state manager."""
+    if not config.features.federation:
+        return {}
+
+    try:
+        from api.federation.state import FederationStateManager
+
+        state_mgr = FederationStateManager()
+        await state_mgr.load()
+
+        fed_status = {}
+        for alias in config.federation.server:
+            state = await state_mgr.get_state(alias)
+            if state:
+                fed_status[alias] = {
+                    "status": state.status,
+                    "latency_ms": state.latency_ms,
+                    "last_seen": state.last_check,
+                }
+            else:
+                fed_status[alias] = {"status": "unknown"}
+        return fed_status
+    except Exception:
+        return {}
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Exposed Routes
 # ─────────────────────────────────────────────────────────────────────────────
@@ -140,6 +167,7 @@ async def health(
     db_status, all_dbs_up = await _evaluate_database_health(config)
     cache_status = await _evaluate_cache_health(config)
     storage_status = _evaluate_storage_health(config)
+    federation_status = await _evaluate_federation_health(config)
 
     system_stats = {
         "memory_used_mb": int(_proc.memory_info().rss / 1024 / 1024),
@@ -156,7 +184,7 @@ async def health(
                 "databases": db_status,
                 "storages": storage_status,
                 "cache": cache_status,
-                "federation": {},
+                "federation": federation_status,
             },
             "system": system_stats,
         },
