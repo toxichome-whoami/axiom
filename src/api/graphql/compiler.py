@@ -1,5 +1,6 @@
 from typing import Any, Dict, List
 
+from config.provider import GlobalConfigProvider
 from graphql import (
     BooleanValueNode,
     FieldNode,
@@ -26,6 +27,7 @@ class ASTCompiler:
     def __init__(self, query: str):
         self.query_string = query
         self.ast = parse(query)
+        self.max_depth = GlobalConfigProvider().get_config().graphql.max_query_depth
 
     def _parse_value(self, val_node: Any) -> Any:
         if isinstance(val_node, StringValueNode):
@@ -54,7 +56,14 @@ class ASTCompiler:
             args[arg.name.value] = self._parse_value(arg.value)
         return args
 
-    def _extract_table_selection(self, selection: FieldNode) -> Dict[str, Any]:
+    def _extract_table_selection(
+        self, selection: FieldNode, current_depth: int = 1
+    ) -> Dict[str, Any]:
+        if current_depth > self.max_depth:
+            raise GraphQLCompilerError(
+                f"Query exceeds maximum allowed depth of {self.max_depth}"
+            )
+
         columns = []
         nested = []
         if selection.selection_set:
@@ -62,7 +71,9 @@ class ASTCompiler:
                 if isinstance(sub_sel, FieldNode):
                     if sub_sel.selection_set:
                         # Nested relation
-                        nested.append(self._extract_table_selection(sub_sel))
+                        nested.append(
+                            self._extract_table_selection(sub_sel, current_depth + 1)
+                        )
                     else:
                         columns.append(sub_sel.name.value)
 

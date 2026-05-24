@@ -69,6 +69,12 @@ async def ws_endpoint(websocket: WebSocket) -> None:
       4. Dispatch heartbeat task + message loop concurrently.
       5. Disconnect and clean up on close or error.
     """
+    config = GlobalConfigProvider().get_config()
+    if conn_mgr.active_count >= config.websocket.max_connections:
+        await websocket.accept()
+        await websocket.close(code=1013, reason="Server at maximum capacity")
+        return
+
     await websocket.accept()
 
     auth = await _authenticate(websocket)

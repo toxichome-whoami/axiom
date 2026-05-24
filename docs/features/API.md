@@ -618,6 +618,11 @@ mutation {
 }
 ```
 
+### Security: Max Query Depth Limiting
+
+To prevent Denial of Service (DoS) attacks via maliciously crafted infinite GraphQL graphs, the AST compiler enforces a strict **Max Query Depth Limit** (default: `15`). Any query that nests deeper than this threshold is instantly rejected before any database connections are made. You can adjust this in the `config/schema.py` (`graphql.max_query_depth`).
+
+
 ### List Available Databases
 
 Use the `databases` root field to return all database aliases the API key has access to.
