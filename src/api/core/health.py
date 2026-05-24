@@ -11,9 +11,15 @@ from cache.redis_backend import RedisCache
 from config.provider import GlobalConfigProvider
 from db.pool import DatabasePoolManager
 from server.middleware.auth import AuthContext, get_auth_context
+from utils.size_parser import parse_size
 
 router = APIRouter(tags=["Core System"])
 uptime_start = time.time()
+
+# Prime the process handle once at import time so the first cpu_percent()
+# call has a baseline interval and never returns a spurious 0.0.
+_proc = psutil.Process(os.getpid())
+_proc.cpu_percent()  # Discard — establishes the t0 measurement point
 
 # ─────────────────────────────────────────────────────────────────────────────
 # System Subroutines
@@ -55,13 +61,37 @@ async def _evaluate_cache_health(config) -> dict:
     return cache_status
 
 
+def _scan_used_bytes(path: str) -> int:
+    """Fast recursive directory size scan."""
+    total = 0
+    stack = [path]
+    while stack:
+        try:
+            with os.scandir(stack.pop()) as it:
+                for entry in it:
+                    try:
+                        if entry.is_file(follow_symlinks=False):
+                            total += entry.stat(follow_symlinks=False).st_size
+                        elif entry.is_dir(follow_symlinks=False):
+                            stack.append(entry.path)
+                    except OSError:
+                        pass
+        except OSError:
+            pass
+    return total
+
+
 def _evaluate_storage_health(config) -> dict:
-    """Validates physical OS mount states generating storage constraints locally."""
+    """Validates storage volumes against configured limits — not raw disk space."""
     storage_status = {}
     for alias, storage_cfg in config.storage.items():
         if os.path.exists(storage_cfg.path):
-            stat_vfs = os.statvfs(storage_cfg.path) if hasattr(os, "statvfs") else None
-            free_bytes = (stat_vfs.f_bavail * stat_vfs.f_frsize) if stat_vfs else 0
+            try:
+                limit_bytes = parse_size(storage_cfg.limit) if storage_cfg.limit else 0
+                used_bytes = _scan_used_bytes(storage_cfg.path)
+                free_bytes = max(0, limit_bytes - used_bytes) if limit_bytes > 0 else 0
+            except OSError:
+                free_bytes = 0
             storage_status[alias] = {"status": "up", "free_space_bytes": free_bytes}
         else:
             storage_status[alias] = {"status": "down"}
@@ -109,10 +139,9 @@ async def health(
     storage_status = _evaluate_storage_health(config)
 
     system_stats = {
-        "memory_used_mb": int(
-            psutil.Process(os.getpid()).memory_info().rss / 1024 / 1024
-        ),
-        "cpu_percent": psutil.Process(os.getpid()).cpu_percent(),
+        "memory_used_mb": int(_proc.memory_info().rss / 1024 / 1024),
+        "cpu_percent": _proc.cpu_percent(),
+        "uptime_seconds": int(time.time() - uptime_start),
     }
 
     return success_response(

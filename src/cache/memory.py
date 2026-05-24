@@ -44,6 +44,8 @@ class MemoryCache:
 
     _instance = None
     _cache: Optional[TTLCache] = None
+    _hits: int = 0
+    _misses: int = 0
 
     def __new__(cls):
         if cls._instance is None:
@@ -68,7 +70,12 @@ class MemoryCache:
     @classmethod
     async def get(cls, key: str) -> Optional[Any]:
         cache = cls._ensure_initialized()
-        return cache.get(key)
+        val = cache.get(key)
+        if val is not None:
+            cls._hits += 1
+        else:
+            cls._misses += 1
+        return val
 
     @classmethod
     async def set(cls, key: str, value: Any, ttl: Optional[float] = None) -> None:
@@ -96,8 +103,8 @@ class MemoryCache:
             "backend": "memory",
             "size_items": cache.currsize,
             "max_items": cache.maxsize,
-            "hits": getattr(cache, "hits", 0),
-            "misses": getattr(cache, "misses", 0),
+            "hits": cls._hits,
+            "misses": cls._misses,
         }
 
     @classmethod
