@@ -36,7 +36,7 @@ sse = true                       # Enable Server-Sent Events (SSE) Push Gateway
 # ─── Model Context Protocol (MCP) ─────────────────────
 [mcp]
 server_name = "axiom"
-server_version = "1.0.4"
+server_version = "1.0.5"
 
 # ─── Logging ──────────────────────────────────────────
 [logging]
