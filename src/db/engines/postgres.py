@@ -4,7 +4,13 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from config.schema import DatabaseDefConfig
-from db.engines.base import ColumnInfo, DatabaseEngine, QueryResult, TableInfo
+from db.engines.base import (
+    ColumnInfo,
+    DatabaseEngine,
+    ForeignKeyInfo,
+    QueryResult,
+    TableInfo,
+)
 from encoding.proto_utils import _encode_value
 from generated.axiom.v1 import db_pb2
 
@@ -124,6 +130,31 @@ class PostgresEngine(DatabaseEngine):
                     type=row[1],
                     nullable=(row[2] == "YES"),
                     primary_key=False,
+                )
+                for row in result
+            ]
+
+    async def get_foreign_keys(self, table: str) -> List[ForeignKeyInfo]:
+        sql = """
+        SELECT
+            kcu.column_name,
+            ccu.table_name AS referenced_table,
+            ccu.column_name AS referenced_column
+        FROM
+            information_schema.table_constraints AS tc
+            JOIN information_schema.key_column_usage AS kcu
+              ON tc.constraint_name = kcu.constraint_name
+            JOIN information_schema.constraint_column_usage AS ccu
+              ON ccu.constraint_name = tc.constraint_name
+        WHERE tc.constraint_type = 'FOREIGN KEY' AND tc.table_name = :table;
+        """
+        async with self.engine.connect() as conn:
+            result = await conn.execute(text(sql), {"table": table})
+            return [
+                ForeignKeyInfo(
+                    column=row[0],
+                    referenced_table=row[1],
+                    referenced_column=row[2],
                 )
                 for row in result
             ]

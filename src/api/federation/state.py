@@ -1,10 +1,10 @@
 import asyncio
-import orjson
 import os
 import time
 from typing import Dict, List, Optional
 
 import aiosqlite
+import orjson
 import structlog
 from pydantic import ValidationError
 
@@ -53,7 +53,7 @@ class FederationStateManager:
                         try:
                             state_dict = orjson.loads(state_json)
                             self._nodes[node_id] = FederationNodeState(**state_dict)
-                        except (json.JSONDecodeError, ValidationError) as e:
+                        except (orjson.JSONDecodeError, ValidationError) as e:
                             logger.warning(
                                 "Failed to load federation state",
                                 node_id=node_id,

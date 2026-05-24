@@ -42,7 +42,9 @@ class FederationGRPCClient:
         # Or ideally send them in the options map depending on architecture
         req_params = [str(v) for v in params.values()]
 
-        request = db_pb2.ExecuteQueryRequest(db_alias=db_alias, sql=sql, params=req_params)
+        request = db_pb2.ExecuteQueryRequest(
+            db_alias=db_alias, sql=sql, params=req_params
+        )
 
         try:
             return await self.stub.ExecuteQuery(

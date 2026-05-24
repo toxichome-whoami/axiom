@@ -15,7 +15,13 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from config.schema import DatabaseDefConfig
-from db.engines.base import ColumnInfo, DatabaseEngine, QueryResult, TableInfo
+from db.engines.base import (
+    ColumnInfo,
+    DatabaseEngine,
+    ForeignKeyInfo,
+    QueryResult,
+    TableInfo,
+)
 from encoding.proto_utils import _encode_value
 from generated.axiom.v1 import db_pb2
 
@@ -148,6 +154,29 @@ class MSSQLEngine(DatabaseEngine):
                     type=row[1],
                     nullable=(row[2] == "YES"),
                     primary_key=bool(row[3]),
+                )
+                for row in result
+            ]
+
+    async def get_foreign_keys(self, table: str) -> List[ForeignKeyInfo]:
+        sql = """
+        SELECT
+            c.name AS column_name,
+            OBJECT_NAME(fk.referenced_object_id) AS referenced_table,
+            rc.name AS referenced_column
+        FROM sys.foreign_keys fk
+        INNER JOIN sys.foreign_key_columns fkc ON fk.object_id = fkc.constraint_object_id
+        INNER JOIN sys.columns c ON fkc.parent_object_id = c.object_id AND fkc.parent_column_id = c.column_id
+        INNER JOIN sys.columns rc ON fkc.referenced_object_id = rc.object_id AND fkc.referenced_column_id = rc.column_id
+        WHERE OBJECT_NAME(fk.parent_object_id) = :table;
+        """
+        async with self.engine.connect() as conn:
+            result = await conn.execute(text(sql), {"table": table})
+            return [
+                ForeignKeyInfo(
+                    column=row[0],
+                    referenced_table=row[1],
+                    referenced_column=row[2],
                 )
                 for row in result
             ]
