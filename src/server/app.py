@@ -20,7 +20,6 @@ from api import database, federation, storage
 from api.core import health
 from api.core.metrics import router as metrics_router
 from api.graphql import router as graphql_router
-from api.mcp import router as mcp_router
 from api.sse import router as sse_router
 from api.ws import router as ws_router
 from config.provider import GlobalConfigProvider
@@ -166,6 +165,7 @@ def _attach_routers(app: FastAPI):
         api_v1.include_router(federation.router, prefix="/fed")
 
     if config.features.mcp:
+        from api.mcp.router import router as mcp_router
         api_v1.include_router(mcp_router, prefix="/mcp")
         app.state.mcp_initialized = True
 
