@@ -84,6 +84,7 @@ class AuthContext(BaseModel):
     mode: ServerMode
     db_scope: List[str]
     fs_scope: List[str]
+    feature_scope: List[str]
     rate_limit_override: int
     full_admin: bool = False
 

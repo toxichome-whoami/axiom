@@ -51,6 +51,15 @@ async def _authenticate(websocket: WebSocket) -> dict | None:
         await websocket.close(code=4003, reason=str(exc))
         return None
 
+    from server.middleware.auth import feature_in_scope
+
+    if not feature_in_scope("ws", auth_ctx):
+        await websocket.close(
+            code=4003,
+            reason="API key does not have permission to use the WebSocket subsystem.",
+        )
+        return None
+
     return {
         "client_id": f"{auth_ctx.api_key_name}_{id(websocket)}",
         "api_key_name": auth_ctx.api_key_name,

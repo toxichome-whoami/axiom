@@ -167,12 +167,10 @@ async function demo() {
     // ── 2. Trigger DB mutations via REST ───────────────────
     const MESSAGES = [
         {
-            sender: "alice",
-            text: "SSE is so lightweight!",
+            tag: "alice: SSE is so lightweight!",
         },
         {
-            sender: "bob",
-            text: "No bidirectional overhead.",
+            tag: "bob: No bidirectional overhead.",
         },
     ];
 

@@ -35,6 +35,14 @@ def authenticate_sse(token: str = Depends(token_query)) -> dict:
     except Exception as exc:
         raise HTTPException(status_code=403, detail=str(exc))
 
+    from server.middleware.auth import feature_in_scope
+
+    if not feature_in_scope("sse", auth_ctx):
+        raise HTTPException(
+            status_code=403,
+            detail="API key does not have permission to use the SSE subsystem.",
+        )
+
     return {
         "api_key_name": auth_ctx.api_key_name,
         "db_scope": auth_ctx.db_scope,

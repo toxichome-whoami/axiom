@@ -100,6 +100,7 @@ def _get_federation_context(request: Request, config) -> AuthContext:
         mode=incoming_key.mode,
         db_scope=incoming_key.db_scope,
         fs_scope=incoming_key.fs_scope,
+        feature_scope=incoming_key.feature_scope,
         rate_limit_override=0,
         full_admin=False,  # Nodes are inherently isolated from administrative capacities
     )
@@ -128,6 +129,7 @@ def _get_static_key_context(key_name: str, secret: str, config) -> AuthContext:
         mode=api_key_cfg.mode,
         db_scope=api_key_cfg.db_scope,
         fs_scope=api_key_cfg.fs_scope,
+        feature_scope=api_key_cfg.feature_scope,
         rate_limit_override=api_key_cfg.rate_limit_override,
         full_admin=api_key_cfg.full_admin,
     )
@@ -196,3 +198,10 @@ async def require_admin(auth: AuthContext = Depends(get_auth_context)) -> AuthCo
             403,
         )
     return auth
+
+
+def feature_in_scope(feature: str, auth: AuthContext) -> bool:
+    """Helper to check if a feature string is permitted by the AuthContext."""
+    if auth.full_admin:
+        return True
+    return "*" in auth.feature_scope or feature in auth.feature_scope

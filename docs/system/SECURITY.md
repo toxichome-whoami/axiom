@@ -7,7 +7,7 @@
 
 ## 1. Zero-Trust Internal Architecture
 
-- **Scope-Based Access**: Every API key is restricted by `mode` (readonly, writeonly, readwrite), `db_scope` (permitted database aliases), and `fs_scope` (permitted storage aliases).
+- **Scope-Based Access**: Every API key is restricted by `mode` (readonly, writeonly, readwrite), `db_scope` (permitted database aliases), `fs_scope` (permitted storage aliases), and `feature_scope` (permitted feature endpoints like MCP, WS, GraphQL).
 - **Mode Intersection**: Permissions are calculated by taking the intersection of the API key's mode and the resource's (database or storage) configured mode.
 - **Service-Level Isolation**: No cross-service data leakage. Database engines cannot interact with the storage system directly and vice versa.
 
@@ -124,7 +124,7 @@ Mutating requests (`POST`, `PUT`, `DELETE`) can be made idempotent by providing 
 ## 7. Security Recommendations for Production
 
 - **TLS/SSL**: Always set `tls_cert` and `tls_key` in `config.toml` or terminate TLS at a trusted reverse proxy (e.g., Nginx, Cloudflare).
-- **Restricted Scoping**: Never use `["*"]` for `db_scope` or `fs_scope` on keys exposed to end-user applications.
+- **Restricted Scoping**: Never use `["*"]` for `db_scope` or `fs_scope` on keys exposed to end-user applications. Use `feature_scope` to lock down access to unneeded subsystems like GraphQL or WebSockets.
 - **Federation Scoping**: Give federated nodes the minimum permissions needed. Use `readonly` mode and restrict `db_scope` where possible.
 - **Unique Secrets**: Never reuse the same secret across different federation nodes or webhooks.
 - **Redaction**: Avoid enabling `features.playground` in public production environments.

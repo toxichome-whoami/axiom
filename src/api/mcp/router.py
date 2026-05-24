@@ -86,11 +86,17 @@ def _authenticate_from_request(request: Request) -> None:
     except Exception as ban_error:
         raise _auth_error(str(ban_error), 403)
 
-    # Resolve credentials: static config keys only (SQLite removed)
     try:
         auth_ctx = _get_static_key_context(key_name, secret, config)
     except Exception as auth_error:
         raise _auth_error(str(auth_error), 401)
+
+    from server.middleware.auth import feature_in_scope
+
+    if not feature_in_scope("mcp", auth_ctx):
+        raise _auth_error(
+            "API key does not have permission to use the MCP subsystem.", 403
+        )
 
     set_mcp_auth(auth_ctx)
 

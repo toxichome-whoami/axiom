@@ -196,6 +196,7 @@ Per-webhook subscription definition.
 | `mode` | `"readwrite"` | `readwrite \| readonly \| writeonly` |
 | `db_scope` | `["*"]` | Accessible database aliases |
 | `fs_scope` | `["*"]` | Accessible storage aliases |
+| `feature_scope`| `["*"]` | Accessible feature endpoints (`mcp`, `ws`, `graphql`, `sse`) |
 | `rate_limit_override` | `0` | Per-key rate limit (0 = global) |
 | `full_admin` | `false` | Grants access to `/api/admin/*` endpoints |
 
@@ -235,6 +236,7 @@ Per-node incoming authentication. Each block allows exactly one remote server to
 | `mode` | `"readonly"` | `readwrite \| readonly` |
 | `db_scope` | `["*"]` | Accessible database aliases |
 | `fs_scope` | `["*"]` | Accessible storage aliases |
+| `feature_scope`| `["*"]` | Accessible feature endpoints |
 | `description` | `""` | Human-readable label for this node |
 
 ## `[federation.server.<alias>]`

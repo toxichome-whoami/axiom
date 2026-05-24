@@ -212,19 +212,13 @@ class AxiomWS {
 
 const MESSAGES = [
     {
-        sender: "alice",
-        text: "Hello from the WebSocket demo!",
-        ts: new Date().toISOString(),
+        tag: "alice: Hello from the WebSocket demo!",
     },
     {
-        sender: "bob",
-        text: "Real-time, no polling needed.",
-        ts: new Date().toISOString(),
+        tag: "bob: Real-time, no polling needed.",
     },
     {
-        sender: "alice",
-        text: "Axiom pushes events instantly.",
-        ts: new Date().toISOString(),
+        tag: "alice: Axiom pushes events instantly.",
     },
 ];
 
@@ -288,7 +282,7 @@ async function demo() {
 
             const ok = res?.success === true;
             console.log(
-                `[Sender] INSERT "${msg.text.slice(0, 35)}..." → ${ok ? "OK" : "FAILED"}`,
+                `[Sender] INSERT "${msg.tag.slice(0, 35)}..." → ${ok ? "OK" : "FAILED"}`,
             );
             if (!ok) console.log("         Response:", JSON.stringify(res));
         } catch (err) {

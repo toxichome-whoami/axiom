@@ -220,6 +220,7 @@ class ApiKeyDefConfig(BaseModel):
     secret: str
     db_scope: List[str] = Field(default_factory=lambda: ["*"])
     fs_scope: List[str] = Field(default_factory=lambda: ["*"])
+    feature_scope: List[str] = Field(default_factory=lambda: ["*"])
     rate_limit_override: int = 0
     full_admin: bool = False
 
@@ -240,6 +241,7 @@ class FederationIncomingKeyConfig(BaseModel):
     mode: ServerMode = ServerMode.READONLY
     db_scope: List[str] = Field(default_factory=lambda: ["*"])
     fs_scope: List[str] = Field(default_factory=lambda: ["*"])
+    feature_scope: List[str] = Field(default_factory=lambda: ["*"])
     description: str = ""
 
     @field_validator("secret")

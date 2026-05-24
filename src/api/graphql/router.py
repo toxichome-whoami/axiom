@@ -124,6 +124,15 @@ async def execute_graphql(
     if not config.features.graphql:
         return Response(status_code=404, content=b"GraphQL is disabled")
 
+    from server.middleware.auth import feature_in_scope
+
+    if not feature_in_scope("graphql", auth_context):
+        return Response(
+            status_code=403,
+            content=b'{"errors":[{"message":"API key does not have permission to use the GraphQL subsystem."}]}',
+            media_type="application/json",
+        )
+
     start_time = time.perf_counter()
 
     try:

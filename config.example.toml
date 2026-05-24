@@ -96,6 +96,7 @@ secret = "CHANGE_THIS_TO_A_SECURE_KEY_AT_LEAST_32_CHARS"
 mode = "readwrite"               # readwrite | readonly | writeonly
 db_scope = ["*"]                 # ["*"] for all, or ["db1", "db2"]
 fs_scope = ["*"]                 # ["*"] for all, or ["vol1", "vol2"]
+feature_scope = ["*"]            # ["mcp", "ws", "graphql", "sse"]
 rate_limit_override = 0          # 0 = use global limit, >0 = specific limit
 full_admin = true                # Bypass all scope checks
 
@@ -156,11 +157,12 @@ trust_mode = "verify"          # verify (strict SSL) | trust (skip cert check)
 # ─── Federation: Incoming Keys ───────────────────────
 # Define keys that remote nodes use to authenticate to this instance.
 [federation.incoming.edge_node]
-secret = "REMOTE_NODE_SECRET"
-mode = "readonly"
+secret = "SelfFederationSecret123456789012"
+mode = "readwrite"
 db_scope = ["*"]
 fs_scope = ["*"]
-description = "Remote datacenter edge node"
+feature_scope = ["*"]
+description = "Self-federation loopback node"
 
 # ─── High-Performance GraphQL API ───────────────────────
 # A specialized GraphQL gateway optimized for database querying.

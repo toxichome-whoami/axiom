@@ -42,6 +42,16 @@ def _execute_ast_conversion_impl(
 ) -> str:
     """Applies profound Abstract Syntax Tree conversions mutating the raw queries securely."""
     try:
+        # Patch the target dialect's generator so that it preserves named parameters
+        # instead of converting them to dialect-specific formats (like %(name)s or %s)
+        # because SQLAlchemy's text() function universally expects the :name syntax.
+        from sqlglot import exp
+
+        target_dialect_cls = sqlglot.Dialect.get_or_raise(to_dialect)
+        target_dialect_cls.Generator.TRANSFORMS[exp.Placeholder] = (
+            lambda self, e: f":{e.name}"
+        )
+
         # sqlglot.transpile handles AST conversion under the hood. Returns a list.
         result = sqlglot.transpile(sql, read=from_dialect, write=to_dialect)
 
