@@ -4,6 +4,7 @@ from config.provider import GlobalConfigProvider
 
 from .memory import MemoryCache
 from .redis_backend import RedisCache
+from .sqlite_backend import SQLiteCache
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Resolve backend ONCE at module load — never per-request.
@@ -12,12 +13,21 @@ from .redis_backend import RedisCache
 
 _config = GlobalConfigProvider().get_config()
 _CACHE_ENABLED: bool = bool(_config.cache.enabled)
-_USE_REDIS: bool = _config.cache.backend == "redis"
+_BACKEND: str = _config.cache.backend
 
 # Direct function references — avoids attribute lookup + branch on every call
-_get_fn = RedisCache.get if _USE_REDIS else MemoryCache.get
-_set_fn = RedisCache.set if _USE_REDIS else MemoryCache.set
-_delete_fn = RedisCache.delete if _USE_REDIS else MemoryCache.delete
+if _BACKEND == "redis":
+    _get_fn = RedisCache.get
+    _set_fn = RedisCache.set
+    _delete_fn = RedisCache.delete
+elif _BACKEND == "sqlite":
+    _get_fn = SQLiteCache.get
+    _set_fn = SQLiteCache.set
+    _delete_fn = SQLiteCache.delete
+else:
+    _get_fn = MemoryCache.get
+    _set_fn = MemoryCache.set
+    _delete_fn = MemoryCache.delete
 
 
 class CacheManager:

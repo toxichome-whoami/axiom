@@ -134,10 +134,10 @@ class QueryValidator:
 
         query_type = expr.key.upper()
         target_table = _extract_target_table(expr)
-        
+
         # Pre-compute the AST-formatted SQL string here so it gets cached
         formatted_sql = expr.sql()
-        
+
         return expr, query_type, target_table, formatted_sql
 
     @classmethod
