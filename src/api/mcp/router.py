@@ -9,6 +9,8 @@ Authentication is enforced manually via header extraction since the MCP SDK
 bypasses FastAPI's Depends() injection by using raw ASGI send/receive.
 """
 
+import logging
+
 import structlog
 from fastapi import APIRouter, Request
 from fastapi.security import HTTPAuthorizationCredentials
@@ -27,6 +29,7 @@ from server.middleware.auth import (
 logger = structlog.get_logger()
 
 router = APIRouter(tags=["MCP"])
+logging.getLogger("mcp").setLevel(logging.WARNING)
 
 # Shared transport — maps the JSON-RPC endpoint path for SSE clients
 _transport = SseServerTransport("/api/v1/mcp/messages")

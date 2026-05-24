@@ -131,6 +131,31 @@ async def lifespan(app: FastAPI):
 
     # 2. Launch Daemons
     logger.info("Starting Axiom", pid=pid)
+
+    if config.features.database:
+        logger.debug("Database active", endpoint="/api/v1/db")
+    if config.features.storage:
+        logger.debug("Storage active", endpoint="/api/v1/fs")
+    if config.features.webhook:
+        logger.debug("Webhooks active", endpoint="/api/v1/webhooks")
+    if config.features.metrics:
+        logger.debug("Metrics active", endpoint="/metrics")
+    if config.features.playground:
+        logger.debug("Playground active", endpoint="/api/docs")
+    if config.features.mcp:
+        logger.debug("MCP Transport active", endpoint="/api/v1/mcp/messages")
+    if config.features.graphql:
+        logger.debug("GraphQL gateway active", endpoint="/api/v1/graphql")
+    if config.features.websocket:
+        logger.debug("WebSocket gateway active", endpoint="/api/v1/ws")
+    if config.features.sse:
+        logger.debug("SSE gateway active", endpoint="/api/v1/sse")
+    if config.features.federation:
+        logger.debug(
+            "Federation node active",
+            endpoint=f"/api/v1/fed (gRPC: {config.federation.grpc_port})",
+        )
+
     _start_background_daemons(config)
 
     # Yield control to the ASGI server

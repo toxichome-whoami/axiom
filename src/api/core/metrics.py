@@ -151,9 +151,7 @@ def _build_prometheus_metrics(
         ),
         _format_metric("axiom_rate_limit_hits_total", _metrics["rate_limit_hits"]),
         _format_metric("axiom_auth_failures_total", _metrics["auth_failures"]),
-        _format_metric(
-            "axiom_webhook_delivered_total", _metrics["webhook_delivered"]
-        ),
+        _format_metric("axiom_webhook_delivered_total", _metrics["webhook_delivered"]),
         _format_metric("axiom_webhook_failed_total", _metrics["webhook_failed"]),
         _format_metric("axiom_cache_hits_total", _metrics["cache_hits"]),
         _format_metric("axiom_cache_misses_total", _metrics["cache_misses"]),
