@@ -8,6 +8,7 @@ from api.responses import _SERVER_VERSION as __version__
 from api.responses import success_response
 from cache.memory import MemoryCache
 from cache.redis_backend import RedisCache
+from cache.sqlite_backend import SQLiteCache
 from config.provider import GlobalConfigProvider
 from db.pool import DatabasePoolManager
 from server.middleware.auth import AuthContext, get_auth_context
@@ -55,6 +56,8 @@ async def _evaluate_cache_health(config) -> dict:
             cache_status["status"] = "up"
         except Exception:
             cache_status["status"] = "down"
+    elif config.cache.backend == "sqlite":
+        cache_status.update(await SQLiteCache.stats())
     else:
         cache_status.update(MemoryCache.stats())
 

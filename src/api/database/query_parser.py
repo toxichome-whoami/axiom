@@ -108,7 +108,7 @@ class QueryValidator:
         return cls._parser_cache
 
     @staticmethod
-    def _parse_and_extract_impl(sql: str) -> Tuple[Any, str, str]:
+    def _parse_and_extract_impl(sql: str) -> Tuple[Any, str, str, str]:
         """Deterministically parses SQL into an AST. Extremely CPU heavy, hence cached."""
         try:
             expressions = sqlglot.parse(sql)
@@ -134,7 +134,11 @@ class QueryValidator:
 
         query_type = expr.key.upper()
         target_table = _extract_target_table(expr)
-        return expr, query_type, target_table
+        
+        # Pre-compute the AST-formatted SQL string here so it gets cached
+        formatted_sql = expr.sql()
+        
+        return expr, query_type, target_table, formatted_sql
 
     @classmethod
     def validate(
@@ -142,12 +146,12 @@ class QueryValidator:
     ) -> tuple[str, str, str]:
         """Validates the cached AST against dynamic configuration and user constraints."""
         cache_fn = cls._get_parser_cache()
-        expr, query_type, target_table = cache_fn(sql)
+        expr, query_type, target_table, formatted_sql = cache_fn(sql)
 
         _enforce_user_mode(expr, user_mode)
         _enforce_query_policy(expr, db_config, query_type)
 
-        return expr.sql(), query_type.lower(), target_table
+        return formatted_sql, query_type.lower(), target_table
 
 
 def validate_query(

@@ -77,6 +77,8 @@ class SQLiteCache:
 
     _instance = None
     _lock = asyncio.Lock()
+    _hits: int = 0
+    _misses: int = 0
 
     def __new__(cls):
         if cls._instance is None:
@@ -124,12 +126,16 @@ class SQLiteCache:
                 row = await cursor.fetchone()
 
                 if not row:
+                    cls._misses += 1
                     return None
 
                 val, exp = row
                 if exp is not None and time.time() > exp:
                     asyncio.create_task(cls.delete(key))
+                    cls._misses += 1
                     return None
+
+                cls._hits += 1
 
                 try:
                     return orjson.loads(val)
@@ -166,6 +172,25 @@ class SQLiteCache:
             await db.execute("DELETE FROM cache")
             await db.execute("DELETE FROM rate_limits")
             await db.commit()
+
+    @classmethod
+    async def stats(cls) -> dict:
+        try:
+            async with aiosqlite.connect(DB_PATH) as db:
+                async with db.execute("SELECT COUNT(*) FROM cache") as cursor:
+                    row = await cursor.fetchone()
+                    count = row[0] if row else 0
+        except Exception:
+            count = 0
+            
+        return {
+            "status": "up",
+            "backend": "sqlite",
+            "size_items": count,
+            "max_items": 0,  # SQLite grows to disk capacity
+            "hits": cls._hits,
+            "misses": cls._misses,
+        }
 
     @classmethod
     async def check_rate_limit(
