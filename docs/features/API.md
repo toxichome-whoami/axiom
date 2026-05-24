@@ -540,6 +540,84 @@ curl -X POST "http://localhost:4500/api/v1/graphql" \
 }
 ```
 
+### Native Table Queries
+
+You can query tables directly using standard GraphQL syntax without writing raw SQL. The AST compiler automatically transposes this into an ultra-fast `SELECT` statement:
+
+```bash
+curl -X POST "http://localhost:4500/api/v1/graphql" \
+     -H "Authorization: Bearer <TOKEN>" \
+     -H "Content-Type: application/json" \
+     -d '{
+           "query": "{ users(dbAlias: \"main_db\", limit: 10, offset: 0) { id name email } }"
+         }'
+```
+
+**Response:**
+```json
+{
+  "data": {
+    "users": [
+      {"id": 1, "name": "Alice", "email": "alice@example.com"}
+    ]
+  },
+  "extensions": {
+    "duration_ms": 0.21
+  }
+}
+```
+
+### Complex Filtering
+
+You can apply complex filters to table queries using the `filter` argument. This seamlessly maps to the gateway's AST `WHERE` clause generator:
+
+```graphql
+{
+  users(dbAlias: "main_db", filter: { status: "active", age: { $gte: 18 } }) {
+    id
+    name
+  }
+}
+```
+
+### Auto-Detected Nested Relational Joins
+
+Axiom's GraphQL engine is truly industrial-grade. It entirely avoids the "N+1" query problem by automatically inspecting your database's physical **Foreign Key constraints** and using the DataLoader pattern to resolve deeply nested graphs in exactly 1+1 queries.
+
+```graphql
+{
+  users(dbAlias: "main_db") {
+    id
+    name
+    posts {
+      title
+      comments {
+        text
+      }
+    }
+  }
+}
+```
+*Note: No Python models or schemas are required. The engine queries `PRAGMA foreign_key_list` (or equivalent) natively on-the-fly to securely traverse the relations!*
+
+### Native Mutations
+
+Axiom natively supports standard GraphQL mutations, mapped securely through the core `QueryExecutionPipeline` (triggering all WAF rules and webhooks automatically).
+
+- `insert_<table_name>`
+- `update_<table_name>`
+- `delete_<table_name>` (Strictly requires a `filter` argument to prevent accidental table wipes).
+
+```graphql
+mutation {
+  insert_users(dbAlias: "main_db", row: { name: "Alice", status: "active" })
+  
+  update_users(dbAlias: "main_db", filter: { id: 1 }, update: { status: "inactive" })
+  
+  delete_users(dbAlias: "main_db", filter: { id: 2 })
+}
+```
+
 ### List Available Databases
 
 Use the `databases` root field to return all database aliases the API key has access to.

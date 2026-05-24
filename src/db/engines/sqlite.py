@@ -4,7 +4,13 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from config.schema import DatabaseDefConfig
-from db.engines.base import ColumnInfo, DatabaseEngine, QueryResult, TableInfo
+from db.engines.base import (
+    ColumnInfo,
+    DatabaseEngine,
+    ForeignKeyInfo,
+    QueryResult,
+    TableInfo,
+)
 from encoding.proto_utils import _encode_value
 from generated.axiom.v1 import db_pb2
 
@@ -116,6 +122,19 @@ class SQLiteEngine(DatabaseEngine):
                     type=row[2],
                     nullable=not row[3],
                     primary_key=bool(row[5]),
+                )
+                for row in result
+            ]
+
+    async def get_foreign_keys(self, table: str) -> List[ForeignKeyInfo]:
+        sql = f"PRAGMA foreign_key_list({table});"
+        async with self.engine.connect() as conn:
+            result = await conn.execute(text(sql))
+            return [
+                ForeignKeyInfo(
+                    column=row[3],
+                    referenced_table=row[2],
+                    referenced_column=row[4],
                 )
                 for row in result
             ]

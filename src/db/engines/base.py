@@ -17,12 +17,22 @@ class ColumnInfo:
 
 
 @dataclass
+class ForeignKeyInfo:
+    """Represents a database-level constraint pointing a column to a referenced table."""
+
+    column: str
+    referenced_table: str
+    referenced_column: str
+
+
+@dataclass
 class TableInfo:
     """Represents top-level macroscopic statistics natively polled from a given schema."""
 
     name: str
     row_count_estimate: int
     columns: Optional[List[ColumnInfo]] = None
+    foreign_keys: Optional[List[ForeignKeyInfo]] = None
 
 
 @dataclass
@@ -64,6 +74,10 @@ class DatabaseEngine(Protocol):
 
     async def describe_table(self, table: str) -> List[ColumnInfo]:
         """Extracts low-level entity boundaries for parameter validation mappings."""
+        ...
+
+    async def get_foreign_keys(self, table: str) -> List[ForeignKeyInfo]:
+        """Introspects strict database-level relationships to power automatic graph resolution."""
         ...
 
     async def execute(
