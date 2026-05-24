@@ -117,7 +117,7 @@ def setup_logging(logging_config):
     root.addHandler(queue_handler)
 
     # Silence noisy third-party loggers that pollute DEBUG output
-    for noisy_logger in ("aiosqlite", "asyncio", "urllib3", "httpcore", "httpx"):
+    for noisy_logger in ("aiosqlite", "asyncio", "urllib3", "httpcore", "httpx", "PIL"):
         logging.getLogger(noisy_logger).setLevel(logging.WARNING)
 
     # 2. Inject Structlog Pipeline
