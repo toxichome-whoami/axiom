@@ -2,7 +2,7 @@ import os
 import time
 
 import psutil
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 
 from api.responses import _SERVER_VERSION as __version__
 from api.responses import success_response
@@ -10,6 +10,7 @@ from cache.memory import MemoryCache
 from cache.redis_backend import RedisCache
 from config.provider import GlobalConfigProvider
 from db.pool import DatabasePoolManager
+from server.middleware.auth import AuthContext, get_auth_context
 
 router = APIRouter()
 uptime_start = time.time()
@@ -96,7 +97,10 @@ async def ready(request: Request):
 
 
 @router.get("/health")
-async def health(request: Request):
+async def health(
+    request: Request,
+    auth: AuthContext = Depends(get_auth_context),
+):
     """Detailed synchronous orchestration of all underlying infrastructure states."""
     config = GlobalConfigProvider().get_config()
 

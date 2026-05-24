@@ -1,4 +1,10 @@
 import os
+import sys
+
+# Ensure protobuf generated imports can resolve 'axiom.v1'
+sys.path.insert(
+    0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "generated"))
+)
 
 import orjson
 from fastapi import APIRouter, FastAPI, Request, Response
