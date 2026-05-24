@@ -43,16 +43,20 @@ class ConnectionManager:
     def subscribe(self, client_id: str, topic: str) -> bool:
         """Returns True if subscribed, False if topic is outside the key's scope or limits reached."""
         from config.provider import GlobalConfigProvider
+
         config = GlobalConfigProvider().get_config()
-        
+
         subs = self._subscriptions.setdefault(client_id, set())
         # Check if already subscribed to avoid falsely denying an existing sub
-        if topic not in subs and len(subs) >= config.websocket.max_subscriptions_per_client:
+        if (
+            topic not in subs
+            and len(subs) >= config.websocket.max_subscriptions_per_client
+        ):
             return False
 
         if not self._topic_in_scope(topic, self._client_scopes.get(client_id, {})):
             return False
-            
+
         subs.add(topic)
         self._topic_subscribers.setdefault(topic, set()).add(client_id)
         return True

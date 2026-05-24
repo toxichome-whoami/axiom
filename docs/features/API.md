@@ -716,6 +716,14 @@ ws.send(JSON.stringify({ type: "subscribe", topic: "metrics" }));
 ws.send(JSON.stringify({ type: "unsubscribe", topic: "db:portfolio:users" }));
 ```
 
+### Security & Connection Limits
+
+Axiom enforces strict hardware limits to prevent DDoS attacks and memory exhaustion via malicious WebSockets. These limits are configurable in `config/schema.py`:
+
+- **Max Connections (`max_connections`)**: Default `10000`. If the server is full, new connections are instantly rejected with HTTP `1013` (Try Again Later).
+- **Max Subscriptions (`max_subscriptions_per_client`)**: Default `100`. Clients exceeding this limit will receive a `{"status": "denied"}` acknowledgment.
+- **Auth Timeout (`auth_timeout`)**: Unauthenticated sockets are violently closed after 5 seconds to prevent hanging connection attacks.
+
 ### Topic Reference
 
 | Topic | Description |
