@@ -118,25 +118,26 @@ curl -X POST "http://localhost:4500/api/v1/db/main_db/query" \
 
 ### 4. Fetch Rows (Paginated)
 ```bash
-# Basic pagination (no count query — fast)
+# Basic cursor pagination (ultra-fast for massive tables)
 curl -G "http://localhost:4500/api/v1/db/main_db/users/rows" \
      -H "Authorization: Bearer <TOKEN>" \
-     --data-urlencode "page=1" \
      --data-urlencode "limit=50" \
-     --data-urlencode "sort=created_at" \
+     --data-urlencode "sort=id" \
      --data-urlencode "order=desc" \
      --data-urlencode 'filter={"active":true,"age":{"$gte":18}}' \
      --data-urlencode "fields=id,name,email"
 
-# With accurate total count (runs SELECT COUNT(*))
-curl -G "http://localhost:4500/api/v1/db/main_db/users/rows?count=1" \
+# Next page using cursor
+curl -G "http://localhost:4500/api/v1/db/main_db/users/rows" \
      -H "Authorization: Bearer <TOKEN>" \
-     --data-urlencode "page=1" \
-     --data-urlencode "filter={"status":"active"}"
+     --data-urlencode "limit=50" \
+     --data-urlencode "sort=id" \
+     --data-urlencode "cursor=eyJ2IjogNDV9"
 ```
 
 **Parameters:**
-- `page` — Page number (default 1)
+- `page` — Legacy offset page number (default 1)
+- `cursor` — Keyset cursor for ultra-fast pagination (bypasses `page` offset)
 - `limit` — Rows per page (default 50)
 - `sort` — Column to sort by (validated against real table columns)
 - `order` — `asc` or `desc` (default `asc`)
@@ -154,9 +155,10 @@ curl -G "http://localhost:4500/api/v1/db/main_db/users/rows?count=1" \
   "data": {
     "rows": [{"id": 1, "name": "Alice"}],
     "pagination": {
-      "page": 1,
       "limit": 50,
-      "has_more": true
+      "has_more": true,
+      "is_cursor": true,
+      "next_cursor": "eyJ2IjogNDV9"
     }
   }
 }

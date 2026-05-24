@@ -237,23 +237,48 @@ def _construct_select_rest_payload(
     sql_parts = [f"SELECT {params.fields if params.fields else '*'} FROM {table_name}"]
     sql_params = {}
 
+    where_clauses = []
+
     if params.filter:
         try:
             filter_json = orjson.loads(params.filter)
             where_sql, filter_params = build_where_clause(filter_json)
             if where_sql:
-                sql_parts.append(f"WHERE {where_sql}")
+                where_clauses.append(where_sql)
                 sql_params.update(filter_params)
         except Exception:
             raise AxiomException(
                 ErrorCodes.INPUT_SCHEMA_INVALID, "Invalid filter JSON structure", 400
             )
 
-    if params.sort:
-        direction = "DESC" if params.order.upper() == "DESC" else "ASC"
-        sql_parts.append(f"ORDER BY {params.sort} {direction}")
+    sort_col = params.sort if params.sort else "id"
+    direction = "DESC" if params.order.upper() == "DESC" else "ASC"
 
-    sql_parts.append(f"LIMIT {params.limit} OFFSET {(params.page - 1) * params.limit}")
+    if params.cursor:
+        import base64
+
+        try:
+            cursor_val = orjson.loads(base64.b64decode(params.cursor))["v"]
+            op = "<" if direction == "DESC" else ">"
+            where_clauses.append(f"{sort_col} {op} :__cursor_val")
+            sql_params["__cursor_val"] = cursor_val
+        except Exception:
+            raise AxiomException(
+                ErrorCodes.INPUT_SCHEMA_INVALID, "Invalid cursor format", 400
+            )
+
+    if where_clauses:
+        sql_parts.append(f"WHERE {' AND '.join(f'({c})' for c in where_clauses)}")
+
+    sql_parts.append(f"ORDER BY {sort_col} {direction}")
+
+    if params.cursor:
+        sql_parts.append(f"LIMIT {params.limit}")
+    else:
+        sql_parts.append(
+            f"LIMIT {params.limit} OFFSET {(params.page - 1) * params.limit}"
+        )
+
     return " ".join(sql_parts), sql_params
 
 
@@ -651,7 +676,22 @@ async def get_rows(
             else (len(result.proto_msg.rows) if result.proto_msg else 0)
         )
         has_more = row_count >= params.limit
-        pagination = {"page": params.page, "limit": params.limit, "has_more": has_more}
+        pagination = {"limit": params.limit, "has_more": has_more}
+
+        if params.cursor is not None or request.query_params.get("use_cursor") == "1":
+            pagination["is_cursor"] = True
+            if has_more and result.rows:
+                sort_col = params.sort if params.sort else "id"
+                last_row = result.rows[-1]
+                cursor_val = last_row.get(sort_col)
+                if cursor_val is not None:
+                    import base64
+
+                    pagination["next_cursor"] = base64.b64encode(
+                        orjson.dumps({"v": cursor_val})
+                    ).decode("utf-8")
+        else:
+            pagination["page"] = params.page
 
         # Optional accurate count via ?count=1
         if request.query_params.get("count") == "1":
