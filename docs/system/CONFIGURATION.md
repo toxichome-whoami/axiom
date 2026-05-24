@@ -9,6 +9,23 @@ See `config.example.toml` for a ready-to-copy template.
 
 ---
 
+## Hot Reloading (Dynamic vs Startup Configs)
+
+Axiom features a zero-downtime hot-reloading daemon that watches `config.toml` for changes. However, it is crucial to understand that **not all settings can be hot-reloaded**. 
+
+1. **Startup Settings (Require Restart):** These settings dictate deep architectural constraints (like binding ports, compiling log pipelines, or mounting FastAPI routers). If you change these, the watcher detects it, but the application **requires a full restart** to apply them:
+   - `[server]` (host, port, workers, tls)
+   - `[features]` (enabling/disabling entire gateways like MCP, GraphQL, etc.)
+   - `[logging]` (format, file sizes)
+
+2. **Dynamic Settings (Hot Reloadable):** These settings govern runtime traffic rules and limits. Changing these applies **instantly without restarting**:
+   - `[rate_limit]` thresholds and bans
+   - `[circuit_breaker]` logic
+   - `[webhooks]` destinations and retries
+   - `[api_key]` permissions and scopes
+
+---
+
 ## `[server]`
 
 | Key | Type | Default | Description |

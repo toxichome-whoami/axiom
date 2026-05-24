@@ -8,7 +8,7 @@
 
 ## Authentication
 
-All endpoints (except `/health` and `/ready`) require Bearer token authentication.
+All endpoints (except `/` and `/ready`) require Bearer token authentication.
 
 **Format:**
 ```
@@ -30,8 +30,7 @@ curl -X GET "http://localhost:4500/api/v1/db/databases" \
 
 ### 1. Server Info & Feature Flags
 ```bash
-curl -X GET "http://localhost:4500/" \
-     -H "Authorization: Bearer <TOKEN>"
+curl -X GET "http://localhost:4500/"
 ```
 
 ### 2. Kubernetes Readiness Probe
