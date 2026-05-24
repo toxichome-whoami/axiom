@@ -797,6 +797,13 @@ es.onmessage = (event) => {
 };
 ```
 
+### Security, Limits & Backpressure
+
+Axiom enforces strict hardware limits to prevent Server-Sent Events from causing memory exhaustion (OOM) or DDoS vulnerabilities. These limits are configurable in `config/schema.py`:
+
+- **Max Connections (`max_connections`)**: Default `5000`. If the server is at absolute capacity, new SSE streams are instantly rejected with HTTP `503` (Server at maximum capacity).
+- **Ring-Buffer Backpressure (`queue_size`)**: Default `100`. To prevent a slow client's internet connection from causing an infinite memory leak on the server, Axiom bounds the internal memory queue for each client. If a client falls behind by more than 100 events, the server will silently drop their oldest unread event to make room for the new one.
+
 ### Available Streams
 
 Unlike WebSocket, you do not "subscribe" after connecting. You connect directly to the stream you want:

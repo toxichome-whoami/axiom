@@ -28,6 +28,15 @@ class SSEConnectionManager:
 
     async def connect(self, client_id: str) -> asyncio.Queue:
         """Allocate a new strict-bounded queue for the client."""
+        from fastapi import HTTPException
+
+        from config.provider import GlobalConfigProvider
+
+        config = GlobalConfigProvider().get_config()
+        if self.active_count >= config.sse.max_connections:
+            logger.warning("SSE connection rejected", reason="max_connections reached")
+            raise HTTPException(status_code=503, detail="Server at maximum capacity")
+
         q = asyncio.Queue(maxsize=self._queue_size)
         self._queues[client_id] = q
         self._client_topics[client_id] = set()
