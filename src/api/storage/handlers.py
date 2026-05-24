@@ -15,6 +15,7 @@ from api.federation.proxy import _resolve_server, proxy_request
 from api.federation.state import FederationStateManager
 from api.responses import is_protobuf_requested, protobuf_or_json, success_response
 from api.storage.chunked_upload import ChunkedUploadManager
+from cache.memory import MemoryCache
 from config.loader import HOT_RELOAD_CALLBACKS
 from config.provider import GlobalConfigProvider, get_config_dependency
 from config.schema import AxiomConfig
@@ -610,6 +611,30 @@ async def list_folder(
     target_path = _get_storage_path(alias, path, auth)
     req_fmt = "protobuf" if is_protobuf_requested(request) else "json"
 
+    config_obj = GlobalConfigProvider().get_config()
+    cache_key = (
+        f"fs_list:{alias}:{path}:{recursive}:{limit}:{continuation_token}:{req_fmt}"
+    )
+
+    if config_obj.cache.enabled and config_obj.cache.fs_cache:
+        cached = await MemoryCache.get(cache_key)
+        if cached is not None:
+            if req_fmt == "protobuf":
+                return protobuf_or_json(request, cached, None)
+            else:
+                items, is_truncated, next_token = cached
+                json_payload = {
+                    "storage": alias,
+                    "path": path,
+                    "items": items,
+                    "pagination": {
+                        "limit": limit,
+                        "is_truncated": is_truncated,
+                        "next_continuation_token": next_token,
+                    },
+                }
+                return protobuf_or_json(request, None, json_payload)
+
     def _recursive_scandir(p):
         try:
             with os.scandir(p) as it:
@@ -733,14 +758,19 @@ async def list_folder(
                 items.append(info)
             return items, is_truncated, next_token
 
-    # We do not use the TTL cache for cursor pagination because it breaks streaming state
+    # Restore TTL caching with cursor-aware cache key
     if req_fmt == "protobuf":
         result_payload = await asyncio.to_thread(_scan_directory, req_fmt)
+        if config_obj.cache.enabled and config_obj.cache.fs_cache:
+            await MemoryCache.set(cache_key, result_payload, ttl=2)
         return protobuf_or_json(request, result_payload, None)
     else:
         items, is_truncated, next_token = await asyncio.to_thread(
             _scan_directory, req_fmt
         )  # type: ignore
+        if config_obj.cache.enabled and config_obj.cache.fs_cache:
+            await MemoryCache.set(cache_key, (items, is_truncated, next_token), ttl=2)
+
         json_payload = {
             "storage": alias,
             "path": path,
