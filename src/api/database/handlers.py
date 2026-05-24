@@ -8,8 +8,8 @@ from fastapi import Depends, Path, Query, Request
 
 from api.database.filter_builder import (
     build_where_clause,
+    construct_bulk_insert,
     construct_delete,
-    construct_insert,
     construct_update,
 )
 from api.database.query_parser import validate_query
@@ -465,23 +465,23 @@ class QueryExecutionPipeline:
         table_name: str,
         rows: list,
     ) -> int:
+        if not rows:
+            return 0
 
-        total_affected = 0
+        # Build one INSERT + a list of param dicts — validated once, sent in one round-trip
+        sql, params_list = construct_bulk_insert(table_name, rows)
+        safe_sql, _, _ = validate_query(sql, db_cfg, auth.mode.value)
+        transpiled_sql = transpile_sql(safe_sql, to_dialect=engine.dialect)
 
-        # Batching execution loop structurally contained
-        for row in rows:
-            sql, sql_params = construct_insert(table_name, row)
-            safe_sql, _, _ = validate_query(sql, db_cfg, auth.mode.value)
-            if db_cfg.engine.value == engine.dialect:
-                transpiled_sql = safe_sql
-            else:
-                transpiled_sql = transpile_sql(safe_sql, to_dialect=engine.dialect)
-            result = await engine.execute(transpiled_sql, sql_params)
-            total_affected += result.affected_rows or 0
+        total_affected = await engine.executemany(transpiled_sql, params_list)
+        # executemany rowcount is unreliable on some drivers — fall back to len(rows)
+        if not total_affected:
+            total_affected = len(rows)
 
-        await _emit_db_webhook_event(
-            request, auth, db_name, table_name, "INSERT", total_affected
-        )
+        if _EVENT_EMISSION_ENABLED:
+            await _emit_db_webhook_event(
+                request, auth, db_name, table_name, "INSERT", total_affected
+            )
         return total_affected
 
 

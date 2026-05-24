@@ -1,6 +1,6 @@
 import datetime
 import re
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, List, Tuple
 
 _ISO8601_RE = re.compile(
     r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?$"
@@ -8,7 +8,7 @@ _ISO8601_RE = re.compile(
 
 
 def _coerce_val(val: Any) -> Any:
-    """Coerces strictly formatted ISO8601 date strings to Python datetime objects for strict SQL drivers."""
+    """Coerces ISO8601 date strings to Python datetime objects for strict SQL drivers."""
     if isinstance(val, str) and _ISO8601_RE.match(val):
         try:
             dt = datetime.datetime.fromisoformat(val.replace("Z", "+00:00"))
@@ -38,8 +38,7 @@ def _process_array_operator(
         in_placeholders.append(f":{in_pname}")
         params[in_pname] = _coerce_val(item)
 
-    placeholders_str = ", ".join(in_placeholders)
-    where_parts.append(f"{col} {sql_op} ({placeholders_str})")
+    where_parts.append(f"{col} {sql_op} ({', '.join(in_placeholders)})")
 
 
 def _process_null_operator(col: str, op: str, val: Any, where_parts: list) -> None:
@@ -101,39 +100,110 @@ def _route_filter_criteria(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Dynamic SQL Generators
+# Recursive WHERE Clause Builder (supports $or / $and nesting)
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-def build_where_clause(filter_json: Dict[str, Any]) -> Tuple[str, Dict[str, Any]]:
-    """Generates parameterized queries avoiding implicit manual concatenations completely."""
-    if not filter_json:
-        return "", {}
+def _build_where_recursive(
+    filter_json: Dict[str, Any], param_idx: int = 0
+) -> Tuple[str, Dict[str, Any], int]:
+    """
+    Recursively converts a filter dict to a parameterized WHERE clause.
+    Supports logical operators: $or, $and (each takes a list of sub-filters).
 
-    where_parts = []
-    params = {}
-    param_idx = 0
+    Example:
+        {"$or": [{"status": "active"}, {"role": "admin"}]}
+        → "(status = :__p_0 OR role = :__p_1)"
+    """
+    where_parts: list = []
+    params: Dict[str, Any] = {}
 
     for col, criteria in filter_json.items():
-        if isinstance(criteria, dict):
+        # ── Logical operators: $or / $and ────────────────────────────────────
+        if col in ("$or", "$and"):
+            if not isinstance(criteria, list):
+                raise ValueError(f"{col} requires a list of filter objects")
+            connector = " OR " if col == "$or" else " AND "
+            sub_clauses: List[str] = []
+            for sub_filter in criteria:
+                sub_clause, sub_params, param_idx = _build_where_recursive(
+                    sub_filter, param_idx
+                )
+                if sub_clause:
+                    sub_clauses.append(f"({sub_clause})")
+                    params.update(sub_params)
+            if sub_clauses:
+                where_parts.append(f"({connector.join(sub_clauses)})")
+
+        # ── Comparison operators: {"col": {"$gt": 5}} ───────────────────────
+        elif isinstance(criteria, dict):
             param_idx = _route_filter_criteria(
                 col, criteria, param_idx, where_parts, params
             )
+
+        # ── Exact equality: {"col": value} ──────────────────────────────────
         else:
             pname = f"__p_{param_idx}"
             param_idx += 1
             where_parts.append(f"{col} = :{pname}")
             params[pname] = criteria
 
-    return " AND ".join(where_parts), params
+    return " AND ".join(where_parts), params, param_idx
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Public WHERE Clause Interface
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def build_where_clause(filter_json: Dict[str, Any]) -> Tuple[str, Dict[str, Any]]:
+    """
+    Converts a JSON filter object into a parameterized SQL WHERE clause.
+
+    Supported operators:
+      $eq, $ne, $gt, $gte, $lt, $lte   — comparisons
+      $like, $ilike                     — pattern matching
+      $in, $nin                         — membership
+      $between                          — range (requires [min, max] list)
+      $null, $not_null                  — NULL checks
+      $or, $and                         — logical nesting (list of sub-filters)
+    """
+    clause, params, _ = _build_where_recursive(filter_json)
+    return clause, params
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Dynamic SQL Generators
+# ─────────────────────────────────────────────────────────────────────────────
 
 
 def construct_insert(table: str, data: Dict[str, Any]) -> Tuple[str, Dict[str, Any]]:
+    """Single-row INSERT with positional param names."""
     cols = list(data.keys())
     placeholders = [f":p_{i}" for i in range(len(cols))]
     sql = f"INSERT INTO {table} ({', '.join(cols)}) VALUES ({', '.join(placeholders)})"
-
     return sql, {f"p_{i}": _coerce_val(val) for i, val in enumerate(data.values())}
+
+
+def construct_bulk_insert(
+    table: str, rows: List[Dict[str, Any]]
+) -> Tuple[str, List[Dict[str, Any]]]:
+    """
+    Generates a SINGLE INSERT statement with column-name params suitable for
+    executemany, sending all rows to the database in ONE round-trip.
+
+    Returns (sql, params_list) where params_list is a list of dicts —
+    one per row — all keyed by column name.
+    """
+    if not rows:
+        return "", []
+
+    # Normalise: use the union of all column names, fill missing with None
+    all_cols: List[str] = list(dict.fromkeys(col for row in rows for col in row))
+    placeholders = ", ".join(f":{col}" for col in all_cols)
+    sql = f"INSERT INTO {table} ({', '.join(all_cols)}) VALUES ({placeholders})"
+    params_list = [{col: _coerce_val(row.get(col)) for col in all_cols} for row in rows]
+    return sql, params_list
 
 
 def construct_update(
@@ -163,5 +233,4 @@ def construct_delete(
     where_clause, params = build_where_clause(filter_json)
     if not where_clause:
         raise ValueError("Delete operations mandate structurally bound node limits.")
-
     return f"DELETE FROM {table} WHERE {where_clause}", params

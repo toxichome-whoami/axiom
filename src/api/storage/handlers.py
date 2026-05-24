@@ -784,6 +784,25 @@ async def list_folder(
         return protobuf_or_json(request, None, json_payload)
 
 
+@router.head("/{alias}/download")
+async def head_file(
+    request: Request,
+    alias: str = Path(...),
+    path: str = Query(...),
+    auth: AuthContext = Depends(get_auth_context),
+):
+    """HEAD pre-flight for Safari/iOS — returns headers without body."""
+    if _is_federated(alias):
+        return await proxy_request(alias, "download", request, False)
+    target_path = _get_storage_path(alias, path, auth)
+    return serve_file(
+        target_path,
+        inline=True,
+        request_headers={},
+        head_only=True,
+    )
+
+
 @router.get("/{alias}/download")
 async def download_file(
     request: Request,
@@ -793,8 +812,13 @@ async def download_file(
     width: Optional[int] = Query(None),
     height: Optional[int] = Query(None),
     format: Optional[str] = Query(None),
+    quality: int = Query(
+        82, ge=1, le=100, description="JPEG/WebP/AVIF compression quality (1–100)"
+    ),
+    fit: str = Query("contain", description="Fit mode: contain | cover | fill"),
     auth: AuthContext = Depends(get_auth_context),
 ):
+    """Download or stream a file. Supports image resize/convert and HTTP Range for video."""
     if _is_federated(alias):
         return await proxy_request(alias, "download", request, False)
     target_path = _get_storage_path(alias, path, auth)
@@ -802,10 +826,20 @@ async def download_file(
     is_dir = await asyncio.to_thread(os.path.isdir, target_path)
     if is_dir:
         return stream_zip_folder(target_path, os.path.basename(target_path))
+
     if width or height or format:
         return await asyncio.to_thread(
-            process_image_and_stream, target_path, width, height, format=format
+            process_image_and_stream,
+            target_path,
+            width,
+            height,
+            quality=quality,
+            format=format,
+            fit=fit,
+            accept_header=request.headers.get("accept", ""),
+            if_none_match=request.headers.get("if-none-match", ""),
         )
+
     return serve_file(
         target_path,
         inline,

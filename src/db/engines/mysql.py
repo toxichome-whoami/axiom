@@ -122,7 +122,7 @@ class MySQLEngine(DatabaseEngine):
         sql = "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE()"
         async with self.engine.connect() as conn:
             result = await conn.execute(text(sql))
-            return result.scalar()
+            return int(result.scalar() or 0)
 
     async def describe_table(self, table: str) -> List[ColumnInfo]:
         """Maps declarative descriptions targeting explicit table structural limits."""
@@ -176,6 +176,14 @@ class MySQLEngine(DatabaseEngine):
             if _is_mutation_query(sql):
                 return await _execute_mutation(conn, statement, query_params)
             return await _execute_read(conn, statement, query_params, return_format)
+
+    async def executemany(self, sql: str, params_list: list) -> int:
+        """Batch-inserts multiple rows in a single database round-trip."""
+        if not params_list:
+            return 0
+        async with self.engine.begin() as conn:
+            result = await conn.execute(text(sql), params_list)
+            return result.rowcount or 0
 
     @property
     def dialect(self) -> str:

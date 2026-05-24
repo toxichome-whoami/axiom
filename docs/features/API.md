@@ -293,20 +293,61 @@ curl -X GET "http://localhost:4500/api/v1/fs/local_fs/list?path=/&limit=100&cont
 }
 ```
 
-### 3. Download File or Folder
+### 3. Download / Stream File or Folder
+
 ```bash
-# Inline view of a file
+# Inline view (browser renders it directly)
 curl -X GET "http://localhost:4500/api/v1/fs/local_fs/download?path=/image.png&inline=true" \
-     -H "Authorization: Bearer <TOKEN>" -O
+     -H "Authorization: Bearer <TOKEN>"
 
-# Download with image resizing
-curl -X GET "http://localhost:4500/api/v1/fs/local_fs/download?path=/image.png&width=300&height=200" \
-     -H "Authorization: Bearer <TOKEN>" -o thumb.png
+# Resize image — aspect-ratio preserved (contain mode)
+curl -X GET "http://localhost:4500/api/v1/fs/local_fs/download?path=/photo.jpg&width=400" \
+     -H "Authorization: Bearer <TOKEN>" -o thumb.jpg
 
-# Download folder as ZIP archive automatically
+# Exact crop thumbnail (cover mode — crops center)
+curl -X GET "http://localhost:4500/api/v1/fs/local_fs/download?path=/photo.jpg&width=300&height=300&fit=cover" \
+     -H "Authorization: Bearer <TOKEN>" -o avatar.jpg
+
+# Convert to WebP with quality control
+curl -X GET "http://localhost:4500/api/v1/fs/local_fs/download?path=/photo.jpg&format=webp&quality=75" \
+     -H "Authorization: Bearer <TOKEN>" -o photo.webp
+
+# Auto-negotiate best format (WebP/AVIF) based on browser Accept header
+curl -X GET "http://localhost:4500/api/v1/fs/local_fs/download?path=/photo.jpg&width=800" \
+     -H "Authorization: Bearer <TOKEN>" \
+     -H "Accept: image/avif,image/webp,image/jpeg"
+
+# Stream video with Range support (browser media players use this automatically)
+curl -X GET "http://localhost:4500/api/v1/fs/local_fs/download?path=/video.mp4" \
+     -H "Authorization: Bearer <TOKEN>" \
+     -H "Range: bytes=0-1048575" -o chunk.mp4
+
+# HEAD pre-flight (Safari/iOS use this before starting Range video streaming)
+curl -I "http://localhost:4500/api/v1/fs/local_fs/download?path=/video.mp4" \
+     -H "Authorization: Bearer <TOKEN>"
+
+# Download folder as ZIP archive
 curl -X GET "http://localhost:4500/api/v1/fs/local_fs/download?path=/reports_folder" \
      -H "Authorization: Bearer <TOKEN>" -o reports.zip
 ```
+
+**Image Transform Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `width` | int | — | Target width in pixels |
+| `height` | int | — | Target height in pixels |
+| `fit` | string | `contain` | `contain` (aspect-ratio preserve) \| `cover` (crop to fill) \| `fill` (stretch) |
+| `format` | string | auto | Force output format: `jpeg`, `webp`, `avif`, `png` |
+| `quality` | int (1–100) | `82` | Compression quality for JPEG/WebP/AVIF |
+| `inline` | bool | `false` | Set `Content-Disposition: inline` (renders in browser) |
+
+> [!TIP]
+> If you send `Accept: image/avif,image/webp` in your request headers and don't force a `?format=`, Axiom automatically picks the **best format your client supports** (AVIF → WebP → original). This is exactly how modern CDNs like Cloudflare Images work.
+
+> [!NOTE]
+> **Video Streaming**: All video and audio files are served with full `HTTP Range` support (`206 Partial Content`). Browser `<video>` and `<audio>` tags work out-of-the-box. Safari/iOS pre-flight `HEAD` requests are also fully supported.
+
 
 ### 4. Direct Upload (Small Files)
 ```bash
@@ -884,4 +925,22 @@ Filters accept a JSON object of field-to-operator mappings:
   <tr><td style="padding: 10px;"><code>$like</code></td><td style="padding: 10px;">SQL LIKE</td><td style="padding: 10px;"><code>{"email": {"$like": "%@gmail.com"}}</code></td></tr>
   <tr><td style="padding: 10px;"><code>$null</code></td><td style="padding: 10px;">IS NULL / NOT NULL</td><td style="padding: 10px;"><code>{"deleted_at": {"$null": true}}</code></td></tr>
   <tr><td style="padding: 10px;"><code>$between</code></td><td style="padding: 10px;">BETWEEN</td><td style="padding: 10px;"><code>{"age": {"$between": [18, 65]}}</code></td></tr>
+  <tr><td style="padding: 10px;"><code>$ilike</code></td><td style="padding: 10px;">Case-insensitive LIKE</td><td style="padding: 10px;"><code>{"name": {"$ilike": "%alice%"}}</code></td></tr>
+  <tr><td style="padding: 10px;"><code>$or</code></td><td style="padding: 10px;">Logical OR (list of sub-filters)</td><td style="padding: 10px;"><code>{"$or": [{"status": "active"}, {"role": "admin"}]}</code></td></tr>
+  <tr><td style="padding: 10px;"><code>$and</code></td><td style="padding: 10px;">Logical AND (list of sub-filters)</td><td style="padding: 10px;"><code>{"$and": [{"age": {"$gte": 18}}, {"verified": true}]}</code></td></tr>
 </table>
+
+**Logical nesting example** — users who are active OR are admins, AND have a verified email:
+```json
+{
+  "$and": [
+    { "email_verified": true },
+    {
+      "$or": [
+        { "status": "active" },
+        { "role": "admin" }
+      ]
+    }
+  ]
+}
+```

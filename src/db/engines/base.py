@@ -93,6 +93,10 @@ class DatabaseEngine(Protocol):
         """Transmits sanitized parameterized statements directly to the target node."""
         ...
 
+    async def executemany(self, sql: str, params_list: List[Dict[str, Any]]) -> int:
+        """Executes a parameterized statement for multiple rows in a single round-trip."""
+        ...
+
     @property
     def dialect(self) -> str:
         """Yields the target sqlglot AST parsing dialect compatible with this driver."""
