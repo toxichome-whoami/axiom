@@ -1,6 +1,6 @@
 <div align="center">
   <h1>Axiom</h1>
-  <p><em>An open-source, industrial-grade, unified API gateway for databases and file storage with federated multi-server support, webhook event streaming, and military-grade security.</em></p>
+  <p><em>An open-source, unified API gateway for databases and file storage with federated multi-server support, webhook event streaming, and with great security.</em></p>
 </div>
 
 <hr/>
