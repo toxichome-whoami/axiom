@@ -11,7 +11,7 @@ from config.provider import GlobalConfigProvider
 
 logger = structlog.get_logger()
 
-DB_DIR = "data"
+DB_DIR = "data/cache"
 DB_PATH = os.path.join(DB_DIR, "cache.db")
 
 # ─────────────────────────────────────────────────────────────────────────────

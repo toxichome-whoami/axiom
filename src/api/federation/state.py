@@ -20,7 +20,7 @@ logger = structlog.get_logger()
 class FederationStateManager:
     """Replaces FederationState singleton with persistent + cached state."""
 
-    def __init__(self, db_path: str = "data/federation.db"):
+    def __init__(self, db_path: str = "data/federation/federation.db"):
         self._nodes: Dict[str, FederationNodeState] = {}
         self._lock = asyncio.Lock()
         self._db_path = db_path

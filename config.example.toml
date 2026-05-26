@@ -138,7 +138,7 @@ enabled = true
 
 # ─── Federation (Optional) ────────────────────────────
 # Connect multiple Axiom nodes into a unified cluster.
-# State is persisted to data/federation.db (SQLite) for crash recovery.
+# State is persisted to data/federation/federation.db (SQLite) for crash recovery.
 [federation]
 enabled = false                # Master toggle
 sync_interval = 30             # Seconds between health heartbeats

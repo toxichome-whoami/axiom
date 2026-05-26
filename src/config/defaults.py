@@ -35,7 +35,7 @@ file_prefix = "axiom"
 
 [database.local_cache]
 engine = "sqlite"
-url    = "./data/cache.db"
+url    = "./data/cache/cache.db"
 mode   = "readwrite"
 pool_min = 5
 pool_max = 50

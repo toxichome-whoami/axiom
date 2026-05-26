@@ -157,7 +157,7 @@ class WebhookGlobalConfig(BaseModel):
     secret_header: str = "X-Axiom-Signature"
     max_concurrent_deliveries: int = 8
     persistence_enabled: bool = True
-    persistence_path: str = "./data/webhooks.db"
+    persistence_path: str = "./data/webhooks/webhooks.db"
     dead_letter_enabled: bool = True
     dead_letter_retention_hours: int = 72
     circuit_breaker_enabled: bool = True
