@@ -14,12 +14,13 @@ import logging
 import structlog
 from fastapi import APIRouter, Request
 from fastapi.security import HTTPAuthorizationCredentials
-from mcp.server.sse import SseServerTransport
 from starlette.responses import JSONResponse, Response
+from starlette.types import Message
 
 from api.mcp.server import MCPServerManager
 from api.mcp.session_auth import clear_mcp_auth, set_mcp_auth
 from config.provider import GlobalConfigProvider
+from mcp.server.sse import SseServerTransport
 from server.middleware.auth import (
     _evaluate_network_bans,
     _get_static_key_context,
@@ -130,11 +131,19 @@ def _auth_error(message: str, status_code: int) -> _AuthenticationError:
 @router.get("/sse")
 async def handle_sse_connection(request: Request) -> Response:
     """Opens a persistent SSE stream for an MCP client session."""
+    response_started = False
+
+    async def send_wrapper(message: Message):
+        nonlocal response_started
+        if message["type"] == "http.response.start":
+            response_started = True
+        await request._send(message)
+
     try:
         _authenticate_from_request(request)
         server = MCPServerManager.get()
         async with _transport.connect_sse(
-            request.scope, request.receive, request._send
+            request.scope, request.receive, send_wrapper
         ) as (read_stream, write_stream):
             await server.run(
                 read_stream,
@@ -143,6 +152,10 @@ async def handle_sse_connection(request: Request) -> Response:
             )
     except _AuthenticationError as auth_err:
         return auth_err.response
+    except Exception as e:
+        if response_started:
+            return ASGIPassThroughResponse()
+        raise e
     finally:
         clear_mcp_auth()
 
@@ -152,17 +165,27 @@ async def handle_sse_connection(request: Request) -> Response:
 @router.post("/messages")
 async def handle_mcp_message(request: Request) -> Response:
     """Routes a JSON-RPC message to the matching tool or resource handler."""
+    response_started = False
+
+    async def send_wrapper(message: Message):
+        nonlocal response_started
+        if message["type"] == "http.response.start":
+            response_started = True
+        await request._send(message)
+
     try:
         _authenticate_from_request(request)
         await _transport.handle_post_message(
-            request.scope, request.receive, request._send
+            request.scope, request.receive, send_wrapper
         )
     except _AuthenticationError as auth_err:
         return auth_err.response
     except Exception as e:
-        if type(e).__name__ == "ClosedResourceError":
-            # The MCP handler already sent a 202 Accepted response before attempting
-            # to push to the queue. Since it failed, we just cleanly exit.
+        if response_started:
+            # The MCP handler already initiated or completed the HTTP response
+            # before failing (e.g., ClosedResourceError on queue push).
+            # We must gracefully exit to prevent FastAPI's global exception handler
+            # from attempting to send a duplicate 500 response.
             return ASGIPassThroughResponse()
         raise e
     finally:
