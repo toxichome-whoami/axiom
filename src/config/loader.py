@@ -145,7 +145,8 @@ class ConfigManager:
                         pass
 
                 if changed:
-                    logger.info("Config file modification detected, refreshing")
+                    logger.info("Config file modification detected, waiting 10s before applying...")
+                    await asyncio.sleep(10)
                     await cls._handle_hot_reload()
 
         except asyncio.CancelledError:

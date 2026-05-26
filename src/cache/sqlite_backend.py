@@ -155,6 +155,9 @@ class SQLiteCache:
             res = val
 
         cls._l1_cache[key] = (now, res)
+        # Prevent memory exhaustion from unbounded L1 dict growth
+        if len(cls._l1_cache) > 2000:
+            cls._l1_cache.clear()
         return res
 
     @classmethod
