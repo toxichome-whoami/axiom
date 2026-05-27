@@ -202,6 +202,144 @@ Per-webhook subscription definition.
 
 ---
 
+## `[features]` — `auth`
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `auth` | `false` | Enable the Axiom Auth identity system at `/api/v1/auth/*` |
+
+---
+
+## `[auth.project.<name>]`
+
+Configures one isolated auth project. The `<name>` must match an API key name defined in `[api_key.<name>]`. Each project gets its own isolated SQLite database, Ed25519 key, and email config.
+
+**Token Lifetimes**
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `access_token_ttl` | `900` | Seconds until Ed25519 JWT access token expires |
+| `refresh_token_ttl` | `2592000` | Seconds until refresh token expires (30 days) |
+| `magic_link_ttl` | `600` | Seconds until magic login link expires |
+| `verification_ttl` | `86400` | Seconds until email verification token/link expires |
+| `password_reset_ttl` | `3600` | Seconds until password reset link expires |
+| `otp_ttl` | `600` | Seconds until a numeric OTP expires |
+
+**Email Resend Throttling**
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `resend_cooldown` | `60` | Minimum seconds between email resends per user |
+| `resend_max_per_hour` | `5` | Max email sends per user per hour |
+
+**Password Policy**
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `min_password_length` | `8` | Minimum required password length |
+| `require_uppercase` | `false` | Require at least one uppercase character |
+| `require_number` | `false` | Require at least one numeric digit |
+| `require_symbol` | `false` | Require at least one special character |
+| `pwned_check` | `false` | Reject passwords found in HaveIBeenPwned breach database |
+
+**Email Verification**
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `email_verification` | `true` | Block login until email is verified |
+| `verification_method` | `"token"` | `"token"` (link in email) or `"otp"` (numeric code) |
+
+**TOTP / 2FA**
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `totp_enabled` | `true` | Allow users to enroll in TOTP 2FA |
+| `totp_issuer` | `"Axiom"` | Name shown in Authenticator apps (e.g. Google Authenticator) |
+| `backup_codes_count` | `8` | Number of one-time backup codes generated on TOTP confirm |
+
+**Anonymous Auth**
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `anonymous_auth` | `false` | Allow unauthenticated anonymous sessions |
+| `anonymous_upgrade_ttl` | `604800` | Seconds before an unupgraded anonymous account is purged (7 days) |
+
+**JWT Custom Claims**
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `jwt_custom_claims` | `[]` | List of user metadata keys to inject into the JWT payload |
+
+**Rate Limiting & Security**
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `max_login_attempts` | `5` | Failed login attempts before account lockout |
+| `lockout_duration` | `900` | Lockout duration in seconds (15 minutes) |
+| `max_signup_per_ip` | `10` | Max signups allowed from a single IP |
+| `max_otp_attempts` | `3` | Max incorrect OTP attempts before invalidation |
+| `ip_allowlist` | `[]` | IPs that bypass auth rate limiting |
+
+**Redirect URLs**
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `callback_url` | `""` | Default redirect URL after magic link / email verification |
+| `allowed_redirect_urls` | `[]` | Allowed redirect URLs (others are rejected) |
+
+**Webhook Triggers**
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `webhook_on_signup` | `false` | Emit webhook on new user signup |
+| `webhook_on_login` | `false` | Emit webhook on successful login |
+| `webhook_on_logout` | `false` | Emit webhook on logout |
+| `webhook_on_password_reset` | `false` | Emit webhook on password reset |
+| `webhook_on_email_change` | `false` | Emit webhook on email change |
+| `webhook_on_delete` | `false` | Emit webhook on account deletion |
+
+---
+
+## `[auth.project.<name>.email]`
+
+SMTP transport for sending verification, magic link, and password reset emails.
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `provider` | `"smtp"` | Transport provider — currently only `"smtp"` is supported |
+| `from_address` | `"noreply@axiom.local"` | Sender email address |
+| `from_name` | `"Axiom Auth"` | Sender display name |
+| `smtp_host` | `"127.0.0.1"` | SMTP server hostname |
+| `smtp_port` | `1025` | SMTP server port |
+| `smtp_user` | `""` | SMTP username (leave blank if no auth) |
+| `smtp_password` | `""` | SMTP password |
+| `smtp_tls` | `false` | Use STARTTLS / TLS for the SMTP connection |
+
+**Example:**
+```toml
+[auth.project.default_project]
+min_password_length = 8
+email_verification = true
+verification_method = "token"
+totp_enabled = true
+totp_issuer = "My App"
+anonymous_auth = false
+access_token_ttl = 3600
+refresh_token_ttl = 604800
+webhook_on_signup = true
+
+[auth.project.default_project.email]
+provider = "smtp"
+host = "smtp.mailtrap.io"
+port = 2525
+username = "your_username"
+password = "your_password"
+from_email = "noreply@myapp.com"
+from_name = "My App Auth"
+```
+
+---
+
 ## `[circuit_breaker]`
 
 | Key | Default | Description |

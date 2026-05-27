@@ -179,6 +179,11 @@ def _attach_routers(app: FastAPI):
     if config.features.sse:
         api_v1.include_router(sse_router, prefix="/sse")
 
+    if config.features.auth:
+        from api.auth.router import router as auth_router
+
+        api_v1.include_router(auth_router)
+
     app.include_router(api_v1)
 
     # Core System Endpoints (Unversioned)

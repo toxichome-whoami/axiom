@@ -57,6 +57,7 @@ All three paths use Base64 encoding for transport, but the raw secrets are store
 - **Persistent Security State**: Security states, including legacy dynamic keys and manual bans, are stored in a persistent SQLite database (`data/security.db`).
 - **Hashed Secrets**: Any dynamic API Key secrets are never stored in plaintext inside the database. They are hashed using SHA-256 before storage. Even if the database file is exfiltrated, the raw secrets cannot be recovered.
 - **Ultra-Low Latency Caching**: To prevent database disk-I/O from creating a bottleneck during DDoS attacks, the SQLite database state is synchronized into a nanosecond-latency RAM cache. Authentication and ban checks occur strictly in memory.
+- **User Credential Storage**: The End-User Authentication Engine (`/api/auth`) uses isolated databases per API key. Passwords are mathematically shielded via **Argon2id** (memory-hard, resistant to GPU cracking). Access tokens are completely stateless JWTs signed using **Ed25519** (EdDSA), immune to key-confusion and timing attacks often found in RSA/ECDSA implementations.
 
 ## 4. Attack Protections
 

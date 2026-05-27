@@ -40,6 +40,7 @@ class FeaturesConfig(BaseModel):
     graphql: bool = False
     websocket: bool = False
     sse: bool = True
+    auth: bool = False
 
 
 class GraphQLConfig(BaseModel):
@@ -292,6 +293,84 @@ class CircuitBreakerConfig(BaseModel):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Auth Subsystem
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class AuthEmailConfig(BaseModel):
+    provider: Literal["smtp"] = "smtp"
+    from_address: str = "noreply@axiom.local"
+    from_name: str = "Axiom Auth"
+    smtp_host: str = "127.0.0.1"
+    smtp_port: int = 1025
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_tls: bool = False
+
+
+class AuthProjectConfig(BaseModel):
+    # Lifetimes
+    access_token_ttl: int = 900
+    refresh_token_ttl: int = 2592000
+    magic_link_ttl: int = 600
+    verification_ttl: int = 86400
+    password_reset_ttl: int = 3600
+    otp_ttl: int = 600
+
+    # Resend
+    resend_cooldown: int = 60
+    resend_max_per_hour: int = 5
+
+    # Password Policy
+    min_password_length: int = 8
+    require_uppercase: bool = False
+    require_number: bool = False
+    require_symbol: bool = False
+    pwned_check: bool = False
+
+    # Verification
+    email_verification: bool = True
+    verification_method: Literal["token", "otp"] = "token"
+
+    # TOTP
+    totp_enabled: bool = True
+    totp_issuer: str = "Axiom"
+    backup_codes_count: int = 8
+
+    # Anonymous
+    anonymous_auth: bool = False
+    anonymous_upgrade_ttl: int = 604800
+
+    # JWT Injection
+    jwt_custom_claims: List[str] = Field(default_factory=list)
+
+    # Rate limiting
+    max_login_attempts: int = 5
+    lockout_duration: int = 900
+    max_signup_per_ip: int = 10
+    max_otp_attempts: int = 3
+    ip_allowlist: List[str] = Field(default_factory=list)
+
+    # URLs
+    callback_url: str = ""
+    allowed_redirect_urls: List[str] = Field(default_factory=list)
+
+    # Webhooks
+    webhook_on_signup: bool = False
+    webhook_on_login: bool = False
+    webhook_on_logout: bool = False
+    webhook_on_password_reset: bool = False
+    webhook_on_email_change: bool = False
+    webhook_on_delete: bool = False
+
+    email: AuthEmailConfig = Field(default_factory=AuthEmailConfig)
+
+
+class AuthConfig(BaseModel):
+    project: Dict[str, AuthProjectConfig] = Field(default_factory=dict)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Master Node Payload
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -318,3 +397,4 @@ class AxiomConfig(BaseModel):
     api_key: Dict[str, ApiKeyDefConfig] = Field(default_factory=dict)
     federation: FederationConfig = Field(default_factory=FederationConfig)
     circuit_breaker: CircuitBreakerConfig = Field(default_factory=CircuitBreakerConfig)
+    auth: AuthConfig = Field(default_factory=AuthConfig)

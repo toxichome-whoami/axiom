@@ -32,6 +32,7 @@ mcp = true                       # Enable Model Context Protocol server
 graphql = false                  # Enable High-Performance GraphQL API
 websocket = false                # Enable Real-Time WebSocket Push Gateway
 sse = true                       # Enable Server-Sent Events (SSE) Push Gateway
+auth = true                      # Enable Axiom Auth identity system
 
 # ─── Model Context Protocol (MCP) ─────────────────────
 [mcp]
@@ -203,3 +204,30 @@ max_stream_length = 100000         # Max events retained in the stream (XADD MAX
 dlq_retention_hours = 72           # Dead-Letter Queue retention period
 consumer_group = "axiom_workers"
 consumer_name = "worker_1"
+
+# ─── Auth Identity System ────────────────────────────
+# Isolated identity provider powered by Ed25519 JWT and Argon2id.
+[auth.project.default_project]
+min_password_length = 8
+email_verification = true
+verification_method = "magic_link" # 'magic_link' or 'otp'
+verification_ttl = 900             # 15 minutes
+magic_link_ttl = 900               # 15 minutes
+anonymous_auth = true
+anonymous_upgrade_ttl = 2592000    # 30 days
+totp_enabled = true
+totp_issuer = "Axiom Gateway"
+backup_codes_count = 10
+access_token_ttl = 3600            # 1 hour
+refresh_token_ttl = 604800         # 7 days
+callback_url = "http://localhost:3000/auth/callback"
+jwt_custom_claims = ["role", "tenant_id"]
+
+[auth.project.default_project.email]
+provider = "smtp"                  # smtp | mock
+host = "smtp.mailtrap.io"
+port = 2525
+username = "your_username"
+password = "your_password"
+from_email = "noreply@axiom.local"
+from_name = "Axiom Auth"

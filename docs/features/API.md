@@ -529,6 +529,443 @@ curl -X POST "http://localhost:4500/api/v1/fs/local_fs/action" \
 
 ---
 
+## Auth API <code>/api/v1/auth/{project_id}</code>
+
+> [!NOTE]
+> Enable with `features.auth = true` in `config.toml`. Each API key acts as an **isolated auth project** — users, sessions, tokens, and templates for one key cannot be accessed from another.
+
+**Auth headers**: User-facing auth endpoints are accessed with your API key (`Authorization: Bearer base64(name:secret)`). After login, protected user endpoints use the returned Ed25519 JWT.
+
+The `{project_id}` is your API key name (as defined in `config.toml` under `[api_key.<name>]`).
+
+---
+
+### JWKS
+
+#### GET `/.well-known/jwks.json`
+Returns the Ed25519 public key as a JSON Web Key Set for external JWT verification.
+```bash
+curl -X GET "http://localhost:4500/api/v1/auth/my_project/.well-known/jwks.json"
+```
+
+---
+
+### Signup & Login
+
+#### POST `/signup`
+Create a new user with email and password.
+```bash
+curl -X POST "http://localhost:4500/api/v1/auth/my_project/signup" \
+     -H "Authorization: Bearer <API_KEY_TOKEN>" \
+     -H "Content-Type: application/json" \
+     -d '{"email": "user@example.com", "password": "SecurePassword123"}'
+```
+**Response:**
+```json
+{
+  "access_token": "eyJhb...",
+  "refresh_token": "rt_abc123",
+  "expires_in": 3600,
+  "user": { "uid": "uuid...", "email": "user@example.com", "email_verified": false }
+}
+```
+
+#### POST `/login`
+Authenticate with email and password.
+```bash
+curl -X POST "http://localhost:4500/api/v1/auth/my_project/login" \
+     -H "Authorization: Bearer <API_KEY_TOKEN>" \
+     -H "Content-Type: application/json" \
+     -d '{"email": "user@example.com", "password": "SecurePassword123"}'
+```
+If TOTP is enrolled, the response includes `"totp_required": true` and a one-time `session_token` to be exchanged via `/totp/verify`.
+
+#### POST `/refresh`
+Exchange a valid refresh token for a new access token.
+```bash
+curl -X POST "http://localhost:4500/api/v1/auth/my_project/refresh" \
+     -H "Authorization: Bearer <API_KEY_TOKEN>" \
+     -H "Content-Type: application/json" \
+     -d '{"refresh_token": "rt_abc123"}'
+```
+
+#### POST `/logout`
+Revoke the current session's refresh token.
+```bash
+curl -X POST "http://localhost:4500/api/v1/auth/my_project/logout" \
+     -H "Authorization: Bearer <USER_ACCESS_TOKEN>" \
+     -H "Content-Type: application/json" \
+     -d '{"refresh_token": "rt_abc123"}'
+```
+
+---
+
+### Sessions
+
+#### GET `/user/sessions`
+List all active sessions for the authenticated user.
+```bash
+curl -X GET "http://localhost:4500/api/v1/auth/my_project/user/sessions" \
+     -H "Authorization: Bearer <USER_ACCESS_TOKEN>"
+```
+
+#### DELETE `/user/sessions/{session_id}`
+Revoke a specific session by ID.
+```bash
+curl -X DELETE "http://localhost:4500/api/v1/auth/my_project/user/sessions/sess_abc123" \
+     -H "Authorization: Bearer <USER_ACCESS_TOKEN>"
+```
+
+---
+
+### Anonymous Auth
+
+#### POST `/anonymous`
+Create a temporary anonymous session (requires `anonymous_auth = true` in config).
+```bash
+curl -X POST "http://localhost:4500/api/v1/auth/my_project/anonymous" \
+     -H "Authorization: Bearer <API_KEY_TOKEN>"
+```
+
+#### POST `/anonymous/upgrade`
+Convert an anonymous account to a permanent account with email and password.
+```bash
+curl -X POST "http://localhost:4500/api/v1/auth/my_project/anonymous/upgrade" \
+     -H "Authorization: Bearer <USER_ACCESS_TOKEN>" \
+     -H "Content-Type: application/json" \
+     -d '{"email": "user@example.com", "password": "SecurePassword123"}'
+```
+
+---
+
+### Email Verification
+
+#### POST `/verify/email`
+Request a new verification email to be sent.
+```bash
+curl -X POST "http://localhost:4500/api/v1/auth/my_project/verify/email" \
+     -H "Authorization: Bearer <USER_ACCESS_TOKEN>"
+```
+
+#### GET `/verify?token=<TOKEN>`
+Verify an email address via a token link (used when `verification_method = "token"`).
+```bash
+curl -X GET "http://localhost:4500/api/v1/auth/my_project/verify?token=abc123"
+```
+
+#### POST `/verify/otp`
+Verify an email address using a numeric OTP (used when `verification_method = "otp"`).
+```bash
+curl -X POST "http://localhost:4500/api/v1/auth/my_project/verify/otp" \
+     -H "Authorization: Bearer <USER_ACCESS_TOKEN>" \
+     -H "Content-Type: application/json" \
+     -d '{"code": "482910"}'
+```
+
+#### POST `/otp/send`
+Manually trigger a new OTP to be sent to the user's email.
+```bash
+curl -X POST "http://localhost:4500/api/v1/auth/my_project/otp/send" \
+     -H "Authorization: Bearer <USER_ACCESS_TOKEN>"
+```
+
+#### POST `/resend`
+Re-send the verification email (subject to `resend_cooldown`).
+```bash
+curl -X POST "http://localhost:4500/api/v1/auth/my_project/resend" \
+     -H "Authorization: Bearer <API_KEY_TOKEN>" \
+     -H "Content-Type: application/json" \
+     -d '{"email": "user@example.com"}'
+```
+
+---
+
+### Magic Link (Passwordless)
+
+#### POST `/magic-link`
+Send a magic login link to the user's email.
+```bash
+curl -X POST "http://localhost:4500/api/v1/auth/my_project/magic-link" \
+     -H "Authorization: Bearer <API_KEY_TOKEN>" \
+     -H "Content-Type: application/json" \
+     -d '{"email": "user@example.com"}'
+```
+
+#### POST `/magic-link/verify`
+Exchange a magic link token for a full session (access + refresh tokens).
+```bash
+curl -X POST "http://localhost:4500/api/v1/auth/my_project/magic-link/verify" \
+     -H "Authorization: Bearer <API_KEY_TOKEN>" \
+     -H "Content-Type: application/json" \
+     -d '{"token": "ml_abc123"}'
+```
+
+---
+
+### Password Management
+
+#### POST `/password/forgot`
+Trigger a password reset email.
+```bash
+curl -X POST "http://localhost:4500/api/v1/auth/my_project/password/forgot" \
+     -H "Authorization: Bearer <API_KEY_TOKEN>" \
+     -H "Content-Type: application/json" \
+     -d '{"email": "user@example.com"}'
+```
+
+#### POST `/password/reset`
+Reset password using a token from the reset email.
+```bash
+curl -X POST "http://localhost:4500/api/v1/auth/my_project/password/reset" \
+     -H "Authorization: Bearer <API_KEY_TOKEN>" \
+     -H "Content-Type: application/json" \
+     -d '{"token": "rst_abc123", "new_password": "NewSecurePass456"}'
+```
+
+---
+
+### TOTP / 2FA
+
+#### POST `/totp/enroll`
+Begin TOTP enrollment. Returns a TOTP secret, QR code SVG, and provisioning URI.
+```bash
+curl -X POST "http://localhost:4500/api/v1/auth/my_project/totp/enroll" \
+     -H "Authorization: Bearer <USER_ACCESS_TOKEN>"
+```
+**Response:**
+```json
+{
+  "secret": "JBSWY3DPEHPK3PXP",
+  "qr_code_svg": "<svg>...</svg>"
+}
+```
+
+#### POST `/totp/confirm`
+Confirm TOTP enrollment by providing the first valid code from the Authenticator app. Returns one-time backup codes.
+```bash
+curl -X POST "http://localhost:4500/api/v1/auth/my_project/totp/confirm" \
+     -H "Authorization: Bearer <USER_ACCESS_TOKEN>" \
+     -H "Content-Type: application/json" \
+     -d '{"code": "123456"}'
+```
+
+#### POST `/totp/verify`
+Provide a TOTP code to complete a login that had `"totp_required": true`.
+```bash
+curl -X POST "http://localhost:4500/api/v1/auth/my_project/totp/verify" \
+     -H "Authorization: Bearer <API_KEY_TOKEN>" \
+     -H "Content-Type: application/json" \
+     -d '{"session_token": "sess_tmp_abc", "code": "123456"}'
+```
+
+#### POST `/totp/disable`
+Disable TOTP for the authenticated user (requires current password confirmation).
+```bash
+curl -X POST "http://localhost:4500/api/v1/auth/my_project/totp/disable" \
+     -H "Authorization: Bearer <USER_ACCESS_TOKEN>" \
+     -H "Content-Type: application/json" \
+     -d '{"password": "CurrentPassword123"}'
+```
+
+#### POST `/totp/backup/verify`
+Use one of the one-time backup codes to authenticate when the Authenticator app is unavailable.
+```bash
+curl -X POST "http://localhost:4500/api/v1/auth/my_project/totp/backup/verify" \
+     -H "Authorization: Bearer <API_KEY_TOKEN>" \
+     -H "Content-Type: application/json" \
+     -d '{"session_token": "sess_tmp_abc", "backup_code": "ABCD-EFGH"}'
+```
+
+#### GET `/totp/backup/regenerate`
+Regenerate a fresh set of backup codes (invalidates all previous ones).
+```bash
+curl -X GET "http://localhost:4500/api/v1/auth/my_project/totp/backup/regenerate" \
+     -H "Authorization: Bearer <USER_ACCESS_TOKEN>"
+```
+
+---
+
+### User Profile
+
+#### GET `/user`
+Get the currently authenticated user's profile.
+```bash
+curl -X GET "http://localhost:4500/api/v1/auth/my_project/user" \
+     -H "Authorization: Bearer <USER_ACCESS_TOKEN>"
+```
+**Response:**
+```json
+{
+  "uid": "uuid...", "email": "user@example.com",
+  "email_verified": true, "totp_enabled": false,
+  "created_at": "2026-05-28T00:00:00Z", "metadata": {}
+}
+```
+
+#### PATCH `/user`
+Update profile metadata (display name, custom fields, etc.).
+```bash
+curl -X PATCH "http://localhost:4500/api/v1/auth/my_project/user" \
+     -H "Authorization: Bearer <USER_ACCESS_TOKEN>" \
+     -H "Content-Type: application/json" \
+     -d '{"metadata": {"display_name": "Alice"}}'
+```
+
+#### DELETE `/user`
+Permanently delete the authenticated user's account (requires password confirmation).
+```bash
+curl -X DELETE "http://localhost:4500/api/v1/auth/my_project/user" \
+     -H "Authorization: Bearer <USER_ACCESS_TOKEN>" \
+     -H "Content-Type: application/json" \
+     -d '{"password": "CurrentPassword123"}'
+```
+
+#### POST `/user/email`
+Request an email address change. Sends a confirmation link to the new address.
+```bash
+curl -X POST "http://localhost:4500/api/v1/auth/my_project/user/email" \
+     -H "Authorization: Bearer <USER_ACCESS_TOKEN>" \
+     -H "Content-Type: application/json" \
+     -d '{"new_email": "newemail@example.com", "password": "CurrentPassword123"}'
+```
+
+#### POST `/user/email/confirm`
+Confirm the new email address using the token from the change email link.
+```bash
+curl -X POST "http://localhost:4500/api/v1/auth/my_project/user/email/confirm" \
+     -H "Authorization: Bearer <API_KEY_TOKEN>" \
+     -H "Content-Type: application/json" \
+     -d '{"token": "ec_abc123"}'
+```
+
+#### POST `/user/password`
+Change the authenticated user's password.
+```bash
+curl -X POST "http://localhost:4500/api/v1/auth/my_project/user/password" \
+     -H "Authorization: Bearer <USER_ACCESS_TOKEN>" \
+     -H "Content-Type: application/json" \
+     -d '{"current_password": "OldPass123", "new_password": "NewPass456"}'
+```
+
+---
+
+### Admin Endpoints <code>/api/v1/auth/{project_id}/admin</code>
+
+> [!IMPORTANT]
+> All admin endpoints require an API key with `full_admin = true` in `config.toml`.
+
+#### GET `/admin/users`
+List all users in the project (paginated).
+```bash
+curl -X GET "http://localhost:4500/api/v1/auth/my_project/admin/users?limit=50&offset=0" \
+     -H "Authorization: Bearer <ADMIN_TOKEN>"
+```
+
+#### GET `/admin/users/{uid}`
+Get a specific user by UID.
+```bash
+curl -X GET "http://localhost:4500/api/v1/auth/my_project/admin/users/user_uid" \
+     -H "Authorization: Bearer <ADMIN_TOKEN>"
+```
+
+#### PATCH `/admin/users/{uid}`
+Update a user's properties (disable/enable account, update metadata, set role, etc.).
+```bash
+curl -X PATCH "http://localhost:4500/api/v1/auth/my_project/admin/users/user_uid" \
+     -H "Authorization: Bearer <ADMIN_TOKEN>" \
+     -H "Content-Type: application/json" \
+     -d '{"disabled": true}'
+```
+
+#### DELETE `/admin/users/{uid}`
+Permanently delete a user by UID.
+```bash
+curl -X DELETE "http://localhost:4500/api/v1/auth/my_project/admin/users/user_uid" \
+     -H "Authorization: Bearer <ADMIN_TOKEN>"
+```
+
+#### POST `/admin/users/{uid}/sessions/revoke`
+Revoke all active sessions for a specific user (force sign-out everywhere).
+```bash
+curl -X POST "http://localhost:4500/api/v1/auth/my_project/admin/users/user_uid/sessions/revoke" \
+     -H "Authorization: Bearer <ADMIN_TOKEN>"
+```
+
+#### GET `/admin/templates`
+List all custom email HTML templates stored for this project.
+```bash
+curl -X GET "http://localhost:4500/api/v1/auth/my_project/admin/templates" \
+     -H "Authorization: Bearer <ADMIN_TOKEN>"
+```
+
+#### PUT `/admin/templates/{type_name}`
+Create or replace a custom HTML email template. Valid `type_name` values: `email_verify`, `password_reset`, `magic_link`, `email_change`.
+```bash
+curl -X PUT "http://localhost:4500/api/v1/auth/my_project/admin/templates/magic_link" \
+     -H "Authorization: Bearer <ADMIN_TOKEN>" \
+     -H "Content-Type: application/json" \
+     -d '{"subject": "Your magic link", "html_body": "<p>Click <a href=\"{{.Link}}\">here</a> to login.</p>"}'
+```
+
+#### DELETE `/admin/templates/{type_name}`
+Delete a custom email template (reverts to built-in default).
+```bash
+curl -X DELETE "http://localhost:4500/api/v1/auth/my_project/admin/templates/magic_link" \
+     -H "Authorization: Bearer <ADMIN_TOKEN>"
+```
+
+#### POST `/admin/users/import`
+Bulk import users from a JSON payload. Returns a `job_id` for async status polling.
+```bash
+curl -X POST "http://localhost:4500/api/v1/auth/my_project/admin/users/import" \
+     -H "Authorization: Bearer <ADMIN_TOKEN>" \
+     -H "Content-Type: application/json" \
+     -d '{"users": [{"email": "user@example.com", "password_hash": "argon2id_hash"}]}'
+```
+
+#### GET `/admin/users/import/{job_id}`
+Poll the status of a bulk import job.
+```bash
+curl -X GET "http://localhost:4500/api/v1/auth/my_project/admin/users/import/job_abc123" \
+     -H "Authorization: Bearer <ADMIN_TOKEN>"
+```
+
+#### GET `/admin/users/export`
+Export all users as JSON.
+```bash
+curl -X GET "http://localhost:4500/api/v1/auth/my_project/admin/users/export" \
+     -H "Authorization: Bearer <ADMIN_TOKEN>"
+```
+
+#### GET `/admin/audit`
+Retrieve the audit log for this project (paginated).
+```bash
+curl -X GET "http://localhost:4500/api/v1/auth/my_project/admin/audit?limit=100&offset=0" \
+     -H "Authorization: Bearer <ADMIN_TOKEN>"
+```
+
+---
+
+### Auth Error Codes
+
+| Code | Meaning |
+|------|---------|
+| `AUTH_USER_EXISTS` | Email already registered |
+| `AUTH_USER_NOT_FOUND` | No user found with that email/UID |
+| `AUTH_INVALID_CREDENTIALS` | Wrong email or password |
+| `AUTH_EMAIL_NOT_VERIFIED` | Login blocked pending email verification |
+| `AUTH_TOKEN_EXPIRED` | JWT or magic link / reset token has expired |
+| `AUTH_TOKEN_INVALID` | Token is malformed or has been tampered with |
+| `AUTH_TOKEN_STOLEN` | Refresh token reuse detected (token rotation violation) |
+| `AUTH_ACCOUNT_DISABLED` | Account has been disabled by an admin |
+| `AUTH_RATE_LIMITED` | Too many failed attempts — account locked |
+| `AUTH_WEAK_PASSWORD` | Password does not meet the project's policy |
+| `AUTH_MAGIC_LINK_EXPIRED` | Magic link has expired or already been used |
+| `AUTH_PROJECT_NOT_CONFIGURED` | No auth config found for this project key |
+| `AUTH_OTP_INVALID` | OTP code is incorrect or expired |
+
+---
+
 ## Federation API <code>/api/v1/fed</code>
 
 ### 1. List Federated Servers

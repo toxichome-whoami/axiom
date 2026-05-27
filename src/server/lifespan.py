@@ -53,6 +53,50 @@ async def _init_storage_backends(config):
     ):
         init_persistence(config.webhooks.persistence_path)
 
+    if config.features.auth:
+        from api.auth.token_engine import token_engine
+
+        # Validate all auth project configs before accepting traffic
+        _validate_auth_config(config)
+
+        # Ensure Ed25519 keys are ready
+        await asyncio.to_thread(token_engine.init_keys)
+
+
+def _validate_auth_config(config) -> None:
+    """Refuse to start if auth config is incomplete or inconsistent."""
+    for key_name, key_cfg in config.api_key.items():
+        if not hasattr(key_cfg, "feature_scope"):
+            continue
+        if "auth" not in (key_cfg.feature_scope or []):
+            continue
+        # Key has auth in feature_scope — must have a matching project block
+        if key_name not in config.auth.project:
+            raise RuntimeError(
+                f"[auth] API key '{key_name}' has 'auth' in feature_scope "
+                f"but no [auth.project.{key_name}] block is defined in config.toml. "
+                f"Add the project block or remove 'auth' from feature_scope."
+            )
+        project = config.auth.project[key_name]
+        # If email_verification is on, SMTP must be configured
+        if project.email_verification:
+            email_cfg = project.email
+            if not email_cfg.smtp_host or email_cfg.smtp_host in ("", "127.0.0.1"):
+                logger.warning(
+                    "auth: email_verification=true but smtp_host is localhost — "
+                    "emails will only work if a local SMTP server is running",
+                    project=key_name,
+                )
+            if (
+                not email_cfg.from_address
+                or email_cfg.from_address == "noreply@axiom.local"
+            ):
+                logger.warning(
+                    "auth: email_verification=true but from_address is still the default — "
+                    "set [auth.project.*.email] from_address in config.toml",
+                    project=key_name,
+                )
+
 
 def _start_background_daemons(config) -> List[asyncio.Task]:
     """Launches non-blocking background workers based on active feature flags."""
@@ -87,6 +131,11 @@ def _start_background_daemons(config) -> List[asyncio.Task]:
 
         tasks.append(asyncio.create_task(health_poller()))
         tasks.append(asyncio.create_task(metrics_pusher()))
+
+    if config.features.auth:
+        from api.auth.anon_cleanup import cleanup_expired_anonymous_users
+
+        tasks.append(asyncio.create_task(cleanup_expired_anonymous_users()))
 
     _daemon_tasks.extend(tasks)
     return tasks
@@ -150,6 +199,8 @@ async def lifespan(app: FastAPI):
         logger.debug("WebSocket gateway active", endpoint="/api/v1/ws")
     if config.features.sse:
         logger.debug("SSE gateway active", endpoint="/api/v1/sse")
+    if config.features.auth:
+        logger.debug("Auth gateway active", endpoint="/api/v1/auth")
     if config.features.federation:
         logger.debug(
             "Federation node active",

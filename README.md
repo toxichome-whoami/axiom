@@ -63,3 +63,26 @@ curl -X POST "http://localhost:4500/api/v1/fs/local_fs/upload" \
 ```
 
 </details>
+
+## Universal SDK
+
+Axiom includes a Universal Client SDK for interacting with all platform modules seamlessly. 
+
+The SDKs are located in the `sdks/` directory and are available in:
+- **JavaScript** (`sdks/javascript/index.js`)
+- **Python** (`sdks/python/axiom.py`)
+- **Rust** (`sdks/rust/src/lib.rs`)
+
+### Usage Example
+```javascript
+import { Axiom } from "./sdks/javascript/index.js";
+
+const axiom = new Axiom({ baseUrl: "http://localhost:4500", apiKey: "your_api_key" });
+
+// Log in via Auth Module
+await axiom.auth.login("admin@axiom.com", "password123");
+
+// Interact with other Modules
+await axiom.db.query("SELECT * FROM users");
+await axiom.mcp.invoke("search", { query: "hello" });
+```
