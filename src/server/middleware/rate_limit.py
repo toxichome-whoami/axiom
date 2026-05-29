@@ -166,10 +166,9 @@ class RateLimitMiddleware:
         if not self._enabled:
             return await self.app(scope, receive, send)
 
-        # Scan raw headers directly — no dict() allocation
-        raw_headers = scope.get("headers", ())
 
-        client_ip = scope.get("client", ["127.0.0.1"])[0]
+        client = scope.get("client")
+        client_ip = client[0] if client else "127.0.0.1"
 
         if client_ip in self._allowed_ips:
             return await self.app(scope, receive, send)

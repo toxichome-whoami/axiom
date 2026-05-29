@@ -41,8 +41,7 @@ class LoggingMiddleware:
         self.app = app
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send):
-        if scope[_TYPE_KEY] != _HTTP:
-            return await self.app(scope, receive, send)
+        return await self.app(scope, receive, send)
 
         start_time = time.perf_counter()
         status_code = 500  # Default in case of crash before response.start

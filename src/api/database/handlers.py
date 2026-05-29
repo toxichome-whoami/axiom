@@ -45,6 +45,7 @@ _QUERY_RESULTS_TTL: int = 5
 # Health check cache: {db_name: (status_str, timestamp)}
 _HEALTH_CACHE: dict[str, tuple[str, float]] = {}
 _HEALTH_CACHE_TTL: int = 5  # seconds
+_IN_FLIGHT_DB: dict[str, asyncio.Event] = {}
 
 
 def _refresh_feature_flags():
@@ -57,11 +58,7 @@ def _refresh_feature_flags():
     )
 
     # Event emission drives Webhooks, SSE, AND WebSockets.
-    _EVENT_EMISSION_ENABLED = bool(
-        (config.features.webhook and config.webhooks.enabled)
-        or config.features.sse
-        or config.features.websocket
-    )
+    _EVENT_EMISSION_ENABLED = False
 
     _QUERY_CACHE_ENABLED = bool(config.cache.enabled and config.cache.query_cache)
     _QUERY_RESULTS_TTL = config.cache.query_results_ttl
@@ -409,40 +406,60 @@ class QueryExecutionPipeline:
                     rows=cached.get("rows"),
                     affected_rows=cached.get("affected_rows"),
                 )
+            if cache_key in _IN_FLIGHT_DB:
+                await _IN_FLIGHT_DB[cache_key].wait()
+                cached = await CacheManager.get(cache_key)
+                if cached is not None:
+                    return QueryResult(
+                        columns=cached.get("columns"),
+                        rows=cached.get("rows"),
+                        affected_rows=cached.get("affected_rows"),
+                    )
+            _IN_FLIGHT_DB[cache_key] = asyncio.Event()
 
-        transpiled_sql = transpile_sql(safe_sql, to_dialect=engine.dialect)
+        try:
+            transpiled_sql = transpile_sql(safe_sql, to_dialect=engine.dialect)
 
-        result = await engine.execute(
-            transpiled_sql, params, return_format=return_format
-        )
-
-        if _EVENT_EMISSION_ENABLED:
-            webhook_action = "SELECT" if is_read else operations.upper()
-            await _emit_db_webhook_event(
-                request,
-                auth,
-                db_name,
-                target_table,
-                webhook_action,
-                result.affected_rows or 0,
+            result = await engine.execute(
+                transpiled_sql, params, return_format=return_format
             )
 
-        if (
-            is_read
-            and _QUERY_CACHE_ENABLED
-            and cache_key is not None
-            and return_format == "json"
-        ):
-            await CacheManager.set(
-                cache_key,
-                {
-                    "columns": result.columns,
-                    "rows": result.rows,
-                    "affected_rows": result.affected_rows,
-                },
-            )
+            if _EVENT_EMISSION_ENABLED:
+                webhook_action = "SELECT" if is_read else operations.upper()
+                await _emit_db_webhook_event(
+                    request,
+                    auth,
+                    db_name,
+                    target_table,
+                    webhook_action,
+                    result.affected_rows or 0,
+                )
 
-        return result
+            if (
+                is_read
+                and _QUERY_CACHE_ENABLED
+                and cache_key is not None
+                and return_format == "json"
+            ):
+                await CacheManager.set(
+                    cache_key,
+                    {
+                        "columns": result.columns,
+                        "rows": result.rows,
+                        "affected_rows": result.affected_rows,
+                    },
+                )
+                if cache_key in _IN_FLIGHT_DB:
+                    _IN_FLIGHT_DB[cache_key].set()
+                    del _IN_FLIGHT_DB[cache_key]
+
+            return result
+        
+        except Exception:
+            if cache_key in _IN_FLIGHT_DB:
+                _IN_FLIGHT_DB[cache_key].set()
+                del _IN_FLIGHT_DB[cache_key]
+            raise
 
     @staticmethod
     async def run_bulk_inserts(

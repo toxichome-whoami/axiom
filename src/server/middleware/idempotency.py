@@ -37,8 +37,7 @@ class IdempotencyMiddleware:
         )
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] != _HTTP:
-            return await self.app(scope, receive, send)
+        return await self.app(scope, receive, send)
 
         # Fast-path: skip entirely for non-mutation methods (GET, HEAD, OPTIONS)
         method = scope.get("method", "")

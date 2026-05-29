@@ -40,13 +40,12 @@ def setup_telemetry(app: FastAPI):
             logger.info(
                 "OpenTelemetry Distributed Tracing enabled", endpoint=otlp_endpoint
             )
+            # 3. Instrument FastAPI automatically so every request gets a span
+            FastAPIInstrumentor.instrument_app(app)
         else:
             logger.info(
-                "OpenTelemetry exporter disabled (otlp_endpoint not set). Local trace IDs will still be generated for logs."
+                "OpenTelemetry exporter disabled (otlp_endpoint not set). Instrumentation skipped for maximum performance."
             )
-
-        # 3. Instrument FastAPI automatically so every request gets a span
-        FastAPIInstrumentor.instrument_app(app)
 
     except Exception as e:
         logger.error("Failed to initialize OpenTelemetry", error=str(e))

@@ -13,8 +13,7 @@ from fastapi import Depends, Path, Query, Request
 from api.errors import AxiomException, ErrorCodes
 from api.federation.proxy import _resolve_server, proxy_request
 from api.federation.state import FederationStateManager
-from api.responses import (is_protobuf_requested, protobuf_or_json,
-                           success_response)
+from api.responses import is_protobuf_requested, protobuf_or_json, success_response
 from api.storage.chunked_upload import ChunkedUploadManager
 from cache.memory import MemoryCache
 from config.loader import HOT_RELOAD_CALLBACKS
@@ -28,9 +27,16 @@ from utils.uuid7 import uuid7
 from webhook.emitter import WebhookTrigger, emit_event
 
 from .archive import stream_zip_folder
-from .file_ops import (build_file_info_from_entry, bulk_delete_paths,
-                       bulk_move_paths, copy_path, delete_path, get_file_info,
-                       mkdir, rename_path)
+from .file_ops import (
+    build_file_info_from_entry,
+    bulk_delete_paths,
+    bulk_move_paths,
+    copy_path,
+    delete_path,
+    get_file_info,
+    mkdir,
+    rename_path,
+)
 from .image_processor import process_image_and_stream
 from .router import router
 from .schemas import ActionRequest
@@ -48,10 +54,17 @@ _FEDERATION_ENABLED: bool = False
 _FEDERATION_SERVERS: tuple = ()
 _STORAGE_CONFIGS: dict = {}
 _USAGE_CACHE_TTL: int = 30
+_EVENT_EMISSION_ENABLED: bool = True
+_IN_FLIGHT_FS: dict[str, asyncio.Event] = {}
 
 
 def _refresh_feature_flags():
-    global _FEDERATION_ENABLED, _FEDERATION_SERVERS, _STORAGE_CONFIGS, _USAGE_CACHE_TTL
+    global \
+        _FEDERATION_ENABLED, \
+        _FEDERATION_SERVERS, \
+        _STORAGE_CONFIGS, \
+        _USAGE_CACHE_TTL, \
+        _EVENT_EMISSION_ENABLED
 
     config = GlobalConfigProvider().get_config()
     _FEDERATION_ENABLED = bool(config.features.federation and config.federation.enabled)
@@ -61,6 +74,8 @@ def _refresh_feature_flags():
     _STORAGE_CONFIGS = config.storage
     # Note: _USAGE_CACHE_TTL could be moved to config.performance if desired
     _USAGE_CACHE_TTL = 30
+    # Event emission drives Webhooks, SSE, AND WebSockets.
+    _EVENT_EMISSION_ENABLED = False
 
 
 HOT_RELOAD_CALLBACKS.append(_refresh_feature_flags)
@@ -637,6 +652,28 @@ async def list_folder(
                 }
                 return protobuf_or_json(request, None, json_payload)
 
+        if cache_key in _IN_FLIGHT_FS:
+            await _IN_FLIGHT_FS[cache_key].wait()
+            cached = await MemoryCache.get(cache_key)
+            if cached is not None:
+                if req_fmt == "protobuf":
+                    return protobuf_or_json(request, cached, None)
+                else:
+                    items, is_truncated, next_token = cached
+                    json_payload = {
+                        "storage": alias,
+                        "path": path,
+                        "items": items,
+                        "pagination": {
+                            "limit": limit,
+                            "is_truncated": is_truncated,
+                            "next_continuation_token": next_token,
+                        },
+                    }
+                    return protobuf_or_json(request, None, json_payload)
+
+        _IN_FLIGHT_FS[cache_key] = asyncio.Event()
+
     def _recursive_scandir(p):
         try:
             with os.scandir(p) as it:
@@ -760,30 +797,44 @@ async def list_folder(
                 items.append(info)
             return items, is_truncated, next_token
 
-    # Restore TTL caching with cursor-aware cache key
-    if req_fmt == "protobuf":
-        result_payload = await asyncio.to_thread(_scan_directory, req_fmt)
-        if config_obj.cache.enabled and config_obj.cache.fs_cache:
-            await MemoryCache.set(cache_key, result_payload, ttl=2)
-        return protobuf_or_json(request, result_payload, None)
-    else:
-        items, is_truncated, next_token = await asyncio.to_thread(
-            _scan_directory, req_fmt
-        )  # type: ignore
-        if config_obj.cache.enabled and config_obj.cache.fs_cache:
-            await MemoryCache.set(cache_key, (items, is_truncated, next_token), ttl=2)
+    try:
+        # Restore TTL caching with cursor-aware cache key
+        if req_fmt == "protobuf":
+            result_payload = await asyncio.to_thread(_scan_directory, req_fmt)
+            if config_obj.cache.enabled and config_obj.cache.fs_cache:
+                await MemoryCache.set(cache_key, result_payload, ttl=2)
+                if cache_key in _IN_FLIGHT_FS:
+                    _IN_FLIGHT_FS[cache_key].set()
+                    del _IN_FLIGHT_FS[cache_key]
+            return protobuf_or_json(request, result_payload, None)
+        else:
+            items, is_truncated, next_token = await asyncio.to_thread(
+                _scan_directory, req_fmt
+            )  # type: ignore
+            if config_obj.cache.enabled and config_obj.cache.fs_cache:
+                await MemoryCache.set(
+                    cache_key, (items, is_truncated, next_token), ttl=2
+                )
+                if cache_key in _IN_FLIGHT_FS:
+                    _IN_FLIGHT_FS[cache_key].set()
+                    del _IN_FLIGHT_FS[cache_key]
 
-        json_payload = {
-            "storage": alias,
-            "path": path,
-            "items": items,
-            "pagination": {
-                "limit": limit,
-                "is_truncated": is_truncated,
-                "next_continuation_token": next_token,
-            },
-        }
-        return protobuf_or_json(request, None, json_payload)
+            json_payload = {
+                "storage": alias,
+                "path": path,
+                "items": items,
+                "pagination": {
+                    "limit": limit,
+                    "is_truncated": is_truncated,
+                    "next_continuation_token": next_token,
+                },
+            }
+            return protobuf_or_json(request, None, json_payload)
+    except Exception:
+        if cache_key in _IN_FLIGHT_FS:
+            _IN_FLIGHT_FS[cache_key].set()
+            del _IN_FLIGHT_FS[cache_key]
+        raise
 
 
 @router.head("/{alias}/download")

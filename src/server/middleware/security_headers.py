@@ -61,10 +61,7 @@ class SecurityHeadersMiddleware:
         async def send_wrapper(message: Message) -> None:
             if message["type"] == _HTTP_RESPONSE_START:
                 existing_headers = message.setdefault("headers", [])
-                existing_keys = {k.lower() for k, v in existing_headers}
-                for k, v in headers_to_add:
-                    if k.lower() not in existing_keys:
-                        existing_headers.append((k, v))
+                existing_headers.extend(headers_to_add)
             await send(message)
 
         await self.app(scope, receive, send_wrapper)
