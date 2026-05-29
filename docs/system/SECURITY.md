@@ -11,46 +11,54 @@
 - **Mode Intersection**: Permissions are calculated by taking the intersection of the API key's mode and the resource's (database or storage) configured mode.
 - **Service-Level Isolation**: No cross-service data leakage. Database engines cannot interact with the storage system directly and vice versa.
 
-## 2. Three Isolated Authentication Paths
+## 2. Four Isolated Authentication Paths
 
 Axiom enforces strict separation between authentication domains. A credential from one domain **cannot** be used in another.
 
 <table style="width: 100%; border-collapse: collapse;">
   <tr style="background-color: #2d2d2d; color: white;">
     <th style="padding: 10px; text-align: left;">Auth Path</th>
-    <th style="padding: 10px; text-align: left;">Header</th>
+    <th style="padding: 10px; text-align: left;">Credential Location</th>
     <th style="padding: 10px; text-align: left;">Config Location</th>
     <th style="padding: 10px; text-align: left;">Transport</th>
     <th style="padding: 10px; text-align: left;">Can be Admin?</th>
   </tr>
   <tr>
-    <td style="padding: 10px;"><b>API Keys</b></td>
+    <td style="padding: 10px;"><b>API Keys (REST)</b></td>
     <td style="padding: 10px;"><code>Authorization: Bearer base64(name:secret)</code></td>
     <td style="padding: 10px;"><code>[api_key.*]</code></td>
-    <td style="padding: 10px;">Base64</td>
+    <td style="padding: 10px;">HTTP Header</td>
     <td style="padding: 10px;">Yes (<code>full_admin</code>)</td>
+  </tr>
+  <tr>
+    <td style="padding: 10px;"><b>WebSocket</b></td>
+    <td style="padding: 10px;"><code>{"type":"auth","token":"base64(name:secret)"}</code> — first JSON message after connect</td>
+    <td style="padding: 10px;"><code>[api_key.*]</code></td>
+    <td style="padding: 10px;">In-message (WSS encrypted)</td>
+    <td style="padding: 10px;">No</td>
   </tr>
   <tr>
     <td style="padding: 10px;"><b>Federation</b></td>
     <td style="padding: 10px;"><code>X-Federation-Secret</code> + <code>X-Federation-Node</code></td>
     <td style="padding: 10px;"><code>[federation.incoming.*]</code></td>
-    <td style="padding: 10px;">Base64</td>
+    <td style="padding: 10px;">HTTP Header</td>
     <td style="padding: 10px;">Never</td>
   </tr>
   <tr>
     <td style="padding: 10px;"><b>Webhooks</b></td>
     <td style="padding: 10px;"><code>X-Axiom-Webhook-Token: base64(secret)</code></td>
     <td style="padding: 10px;"><code>[webhook.*]</code></td>
-    <td style="padding: 10px;">Base64</td>
+    <td style="padding: 10px;">HTTP Header</td>
     <td style="padding: 10px;">N/A</td>
   </tr>
 </table>
 
-- **API Keys** authenticate human users and external applications.
+- **API Keys (REST)** authenticate all standard HTTP requests via the `Authorization` header.
+- **WebSocket** uses the same API key credential as REST, but delivered as the **first JSON message** after the socket is established. This deliberately avoids URL query-string tokens (e.g. `?token=...`), which would be logged in plaintext by every Nginx/CDN access log and stored in browser history. The token is fully shielded by WSS/TLS encryption.
 - **Federation Secrets** authenticate server-to-server mesh connections. Each node has independent scope.
 - **Webhook Tokens** authorize webhook event emission. Verified via constant-time comparison.
 
-All three paths use Base64 encoding for transport, but the raw secrets are stored as plain text in `config.toml`.
+All paths use Base64 encoding for credential transport. Raw secrets are stored in `config.toml`.
 
 ## 3. Dynamic Secret Storage (Cache-Aside Pattern)
 
@@ -136,13 +144,23 @@ Mutating requests (`POST`, `PUT`, `DELETE`) can be made idempotent by providing 
 
 Axiom injects **OpenTelemetry (OTLP)** trace IDs into every request at the middleware level. The `trace_id` is included in all structured JSON log lines emitted by `structlog`, allowing you to correlate a single failing request across distributed logs instantly.
 
-- **Exporter**: Standard OTLP over HTTP, compatible with Jaeger, Datadog, Honeycomb, and any OTLP-compliant backend.
-- **Auto-Instrumentation**: `FastAPIInstrumentor` wraps all routes automatically — no manual span creation needed.
-- **Default Endpoint**: `http://localhost:4318/v1/traces` (standard OTLP collector port).
+- **Config-Driven**: Telemetry is toggled via `features.telemetry = true` in `config.toml`. No environment variables required.
+- **Always Generates Local Trace IDs**: When enabled, Axiom always initializes a `TracerProvider` and instruments FastAPI via `FastAPIInstrumentor`. Every request gets a unique 32-character hex `trace_id` in logs — even with no external collector configured.
+- **Optional Exporter**: Set `telemetry.otlp_endpoint` in `config.toml` (or the `OTEL_EXPORTER_OTLP_ENDPOINT` environment variable) to export spans to an external collector. Compatible with **Jaeger**, **Datadog**, **Honeycomb**, and any standard OTLP backend.
+- **Dual IDs**: Every log line contains both a `trace_id` (global, from OTEL) and a `request_id` (local, generated at the edge). Use `trace_id` to correlate across distributed microservices; use `request_id` to correlate logs within a single Axiom instance.
 
 ```json
-// Every log line now contains:
-{ "level": "info", "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736", "request_id": "...", "method": "POST", "path": "/api/v1/auth/login" }
+// Every log line contains both IDs:
+{ "level": "info", "trace_id": "a759389c3b7340cd0645e0024f08bd24", "request_id": "req_019e74e3fe097f53bafcb559a73e146f", "method": "POST", "path": "/api/v1/auth/login" }
+```
+
+```toml
+# config.toml — enable telemetry with optional exporter
+[features]
+telemetry = true
+
+[telemetry]
+otlp_endpoint = "http://localhost:4318"  # Optional: leave blank for local-only trace IDs
 ```
 
 ## 9. Security Recommendations for Production

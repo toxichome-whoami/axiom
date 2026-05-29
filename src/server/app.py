@@ -214,6 +214,7 @@ def create_app() -> FastAPI:
         docs_url="/api/docs",
         redoc_url=None,
         openapi_url="/api/spec",
+        swagger_ui_oauth2_redirect_url=None,
     )
 
     _attach_middlewares(app)

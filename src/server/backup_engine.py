@@ -1,12 +1,13 @@
 import asyncio
 import os
 import tarfile
+import tempfile
 from datetime import datetime
 
 import boto3
 import structlog
 
-from src.config.provider import GlobalConfigProvider
+from config.provider import GlobalConfigProvider
 
 logger = structlog.get_logger()
 
@@ -22,7 +23,7 @@ class BackupEngine:
     def start(self):
         """Starts the background backup daemon."""
         config = GlobalConfigProvider().get_config()
-        if not config.backups.enabled:
+        if not hasattr(config, "backups") or not config.backups.enabled:
             logger.info("Automated backups disabled via config.toml")
             return
 
@@ -49,8 +50,15 @@ class BackupEngine:
             interval = config.backups.interval_minutes * 60
 
             try:
-                # Wait for the interval first so we don't backup immediately on boot
-                await asyncio.sleep(interval)
+                # Wait for the interval in small increments to allow responsive shutdown
+                slept = 0
+                while slept < interval and self.running:
+                    await asyncio.sleep(1)
+                    slept += 1
+
+                if not self.running:
+                    break
+
                 await self._execute_backup(config.backups)
             except asyncio.CancelledError:
                 break
@@ -60,12 +68,17 @@ class BackupEngine:
 
     async def _execute_backup(self, backup_config):
         """Compresses the data directory and uploads to S3."""
+        if not os.path.exists(self.data_dir):
+            logger.warning("Backup skipped: Data directory does not exist", path=self.data_dir)
+            return
+
         timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
         archive_name = f"axiom_backup_{timestamp}.tar.gz"
-        archive_path = f"/tmp/{archive_name}"
+        tmp_dir = tempfile.gettempdir()
+        archive_path = os.path.join(tmp_dir, archive_name)
 
         try:
-            logger.info("Starting automated PITR backup...")
+            logger.info("Starting automated PITR backup...", dest=archive_path)
 
             # 1. Compress data directory
             def make_tarfile():
@@ -75,6 +88,10 @@ class BackupEngine:
             await asyncio.to_thread(make_tarfile)
 
             # 2. Upload to S3
+            if not backup_config.s3_access_key or not backup_config.s3_secret_key:
+                logger.warning("Backup S3 credentials missing. Skipping upload.")
+                return
+
             client_args = {
                 "service_name": "s3",
                 "region_name": backup_config.s3_region,
@@ -84,9 +101,8 @@ class BackupEngine:
             if backup_config.s3_endpoint_url:
                 client_args["endpoint_url"] = backup_config.s3_endpoint_url
 
-            s3_client = boto3.client(**client_args)
-
             def upload():
+                s3_client = boto3.client(**client_args)
                 s3_client.upload_file(
                     archive_path, backup_config.s3_bucket, archive_name
                 )
@@ -102,7 +118,10 @@ class BackupEngine:
             logger.error("Failed to execute S3 backup", error=str(e))
         finally:
             if os.path.exists(archive_path):
-                os.remove(archive_path)
+                try:
+                    os.remove(archive_path)
+                except Exception as ex:
+                    logger.warning("Failed to clean up temp backup archive", error=str(ex))
 
 
 backup_engine = BackupEngine()

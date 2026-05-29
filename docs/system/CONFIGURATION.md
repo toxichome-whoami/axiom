@@ -60,6 +60,9 @@ Feature flags to enable/disable entire subsystems.
 | `mcp` | `false` | Enable MCP JSON-RPC server at `/api/v1/mcp` |
 | `graphql` | `false` | Enable optional GraphQL gateway at `/api/v1/graphql` |
 | `websocket` | `false` | Enable real-time WebSocket push gateway at `/api/v1/ws` |
+| `sse` | `true` | Enable real-time SSE push gateway at `/api/v1/sse` |
+| `auth` | `false` | Enable the Axiom Auth identity system at `/api/v1/auth/*` |
+| `telemetry` | `false` | Enable OpenTelemetry instrumentation for distributed tracing |
 
 ---
 
@@ -196,7 +199,7 @@ Per-webhook subscription definition.
 | `mode` | `"readwrite"` | `readwrite \| readonly \| writeonly` |
 | `db_scope` | `["*"]` | Accessible database aliases |
 | `fs_scope` | `["*"]` | Accessible storage aliases |
-| `feature_scope`| `["*"]` | Accessible feature endpoints (`mcp`, `ws`, `graphql`, `sse`) |
+| `feature_scope`| `["*"]` | Accessible feature endpoints (`mcp`, `ws`, `graphql`, `sse`, `webhooks`) |
 | `rate_limit_override` | `0` | Per-key rate limit (0 = global) |
 | `full_admin` | `false` | Grants access to `/api/admin/*` endpoints |
 
@@ -456,6 +459,33 @@ Real-time bidirectional push gateway. Clients connect to `ws://host:port/api/v1/
 | `auth_timeout` | `5.0` | Seconds a client has to send the auth message after connecting |
 | `max_subscriptions_per_client` | `100` | Maximum topic subscriptions per connection |
 
+### Authentication Flow
+
+WebSocket connections **cannot** use the `Authorization` HTTP header directly because the browser's native `WebSocket` API does not allow custom headers during the initial handshake. Putting the token in the URL (e.g. `?token=...`) is **insecure** — URLs are logged in plaintext by every Nginx/CDN access log and stored in browser history.
+
+Axiom solves this by requiring authentication as the **first JSON message** after the socket is established, fully shielded by WSS/TLS encryption:
+
+```json
+// Step 1: Client opens the socket
+// ws://host:4500/api/v1/ws
+
+// Step 2: Client MUST send this as the first message (within auth_timeout seconds)
+{ "type": "auth", "token": "<base64(key_name:secret)>" }
+
+// Step 3: Server replies on success
+{ "type": "connected", "client_id": "admin_140234..." }
+
+// Step 4: Client subscribes to topics
+{ "type": "subscribe", "topic": "db.localdb.users" }
+```
+
+The same API key used for REST is reused here. The key must have `"ws"` in its `feature_scope` (or `full_admin = true`).
+
+### DoS Protections
+
+- **Auth Timeout:** If a client connects but does not send a valid auth message within `auth_timeout` seconds, the server forcefully closes the connection with code `4001`. This prevents idle connection exhaustion attacks.
+- **Hard Cap:** Once `max_connections` is reached, new socket upgrade requests are immediately rejected with code `1013 (Server at maximum capacity)` — guaranteeing the server never runs out of memory or file descriptors under flood conditions.
+
 ---
 
 ## `[eda]`
@@ -501,4 +531,31 @@ s3_region = "auto"
 s3_endpoint_url = "https://<account_id>.r2.cloudflarestorage.com"
 s3_access_key = "your_r2_access_key"
 s3_secret_key = "your_r2_secret_key"
+```
+
+---
+
+## `[telemetry]`
+
+OpenTelemetry distributed tracing configuration. Requires `features.telemetry = true`.
+
+> [!NOTE]
+> When `features.telemetry = true`, Axiom **always** generates a unique 32-character `trace_id` for every request log line — even without a configured exporter. The exporter is optional and only needed to ship traces to an external visualization tool.
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `otlp_endpoint` | `""` | OTLP collector URL. Leave blank to generate local trace IDs only. Overrideable with the `OTEL_EXPORTER_OTLP_ENDPOINT` environment variable |
+
+**Example:**
+```toml
+[features]
+telemetry = true
+
+[telemetry]
+otlp_endpoint = "http://localhost:4318"   # Standard Jaeger/OTLP port
+```
+
+**Trace ID in every log line:**
+```json
+{ "trace_id": "a759389c3b7340cd0645e0024f08bd24", "request_id": "req_019e...", "method": "GET", "path": "/api/v1/db/databases", "status": 200 }
 ```

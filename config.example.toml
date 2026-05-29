@@ -97,7 +97,7 @@ secret = "CHANGE_THIS_TO_A_SECURE_KEY_AT_LEAST_32_CHARS"
 mode = "readwrite"               # readwrite | readonly | writeonly
 db_scope = ["*"]                 # ["*"] for all, or ["db1", "db2"]
 fs_scope = ["*"]                 # ["*"] for all, or ["vol1", "vol2"]
-feature_scope = ["*"]            # ["mcp", "ws", "graphql", "sse"]
+feature_scope = ["*"]            # ["mcp", "ws", "graphql", "sse", "webhooks"]
 rate_limit_override = 0          # 0 = use global limit, >0 = specific limit
 full_admin = true                # Bypass all scope checks
 

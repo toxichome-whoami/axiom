@@ -41,6 +41,7 @@ class FeaturesConfig(BaseModel):
     websocket: bool = False
     sse: bool = True
     auth: bool = False
+    telemetry: bool = False
 
 
 class GraphQLConfig(BaseModel):
@@ -305,7 +306,13 @@ class AuthEmailConfig(BaseModel):
     smtp_port: int = 1025
     smtp_user: str = ""
     smtp_password: str = ""
-    smtp_tls: bool = False
+    smtp_tls: bool = True
+
+
+class TelemetryConfig(BaseModel):
+    """OpenTelemetry configuration."""
+
+    otlp_endpoint: str = ""
 
 
 class AuthProjectConfig(BaseModel):
@@ -421,3 +428,4 @@ class AxiomConfig(BaseModel):
     circuit_breaker: CircuitBreakerConfig = Field(default_factory=CircuitBreakerConfig)
     auth: AuthConfig = Field(default_factory=AuthConfig)
     backups: BackupsConfig = Field(default_factory=BackupsConfig)
+    telemetry: TelemetryConfig = Field(default_factory=TelemetryConfig)

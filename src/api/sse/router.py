@@ -17,11 +17,19 @@ router = APIRouter(tags=["SSE"])
 
 # SSE uses query params for auth since EventSource cannot set custom headers
 token_query = APIKeyQuery(name="token", auto_error=False)
+key_query = APIKeyQuery(name="key", auto_error=False)
 
 
-def authenticate_sse(token: str = Depends(token_query)) -> dict:
-    if not token:
-        raise HTTPException(status_code=401, detail="Missing ?token= query parameter")
+def authenticate_sse(
+    token: str = Depends(token_query), key: str = Depends(key_query)
+) -> dict:
+    actual_token = token or key
+    if not actual_token:
+        raise HTTPException(status_code=401, detail="Missing ?key= query parameter")
+
+    # FastAPI URL-decodes query params, turning '+' into ' '.
+    # Base64 tokens often contain '+', so we must revert it before decoding.
+    actual_token = actual_token.replace(" ", "+")
 
     config = GlobalConfigProvider().get_config()
 
@@ -29,7 +37,7 @@ def authenticate_sse(token: str = Depends(token_query)) -> dict:
     from fastapi.security import HTTPAuthorizationCredentials
 
     try:
-        creds = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
+        creds = HTTPAuthorizationCredentials(scheme="Bearer", credentials=actual_token)
         key_name, secret = _parse_bearer_token(creds)
         auth_ctx = _get_static_key_context(key_name, secret, config)
     except Exception as exc:
@@ -86,8 +94,11 @@ def _topic_in_scope(resource: str, scope: list[str]) -> bool:
 
 
 @router.get("/health")
-async def sse_health(request: Request):
-    """Public stream for system health updates (no auth required)."""
+async def sse_health(request: Request, auth: dict = Depends(authenticate_sse)):
+    """Admin-only stream for system health updates."""
+    if not auth["full_admin"]:
+        raise HTTPException(status_code=403, detail="Health stream requires full admin scope")
+
     client_id = f"health_{id(request)}_{time.monotonic()}"
     q = await sse_mgr.connect(client_id)
     sse_mgr.subscribe(client_id, "system:health")

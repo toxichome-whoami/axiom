@@ -192,6 +192,9 @@ Axiom uses an industrial-grade, highly-concurrent persistent delivery system to 
 
 ## 8. Observability API
 
+> [!NOTE]
+> All webhook observability endpoints require administrative authorization. Your API key must either have `full_admin = true`, or explicitly include `"webhooks"` in its `feature_scope` array.
+
 You can inspect the state of the webhook system via the health endpoints:
 
 <ul>

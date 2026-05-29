@@ -205,3 +205,21 @@ def feature_in_scope(feature: str, auth: AuthContext) -> bool:
     if auth.full_admin:
         return True
     return "*" in auth.feature_scope or feature in auth.feature_scope
+
+
+class RequireFeature:
+    """Dependency extension to block requests lacking a specific feature_scope."""
+
+    def __init__(self, feature: str):
+        self.feature = feature
+
+    async def __call__(
+        self, auth: AuthContext = Depends(get_auth_context)
+    ) -> AuthContext:
+        if not feature_in_scope(self.feature, auth):
+            raise AxiomException(
+                ErrorCodes.AUTH_INSUFFICIENT_MODE,
+                f"API key lacks '{self.feature}' in its feature_scope.",
+                403,
+            )
+        return auth

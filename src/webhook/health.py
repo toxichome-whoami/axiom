@@ -1,17 +1,23 @@
 import sqlite3
+from typing import List
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from config.provider import GlobalConfigProvider
+from server.middleware.auth import AuthContext, RequireFeature
 from webhook.circuit_breaker import get_circuit_breaker
 from webhook.persistence import get_persistence
 
-router = APIRouter(prefix="/api/v1/webhooks", tags=["Webhooks"])
+router = APIRouter(prefix="/webhooks", tags=["Webhooks"])
+
+# Require 'webhooks' feature scope or full_admin for all observability routes
+require_webhook_admin = RequireFeature("webhooks")
 
 
 @router.get("/status")
-async def webhook_status():
+async def get_webhook_status(auth: AuthContext = Depends(require_webhook_admin)):
+    """Returns current queue depth, active workers, and circuit breaker states."""
     config = GlobalConfigProvider().get_config()
     breaker = get_circuit_breaker()
 
@@ -33,19 +39,24 @@ async def webhook_status():
 
 
 @router.post("/circuit/{hook_name}/reset")
-async def reset_circuit(hook_name: str):
+async def reset_circuit_breaker(
+    hook_name: str, auth: AuthContext = Depends(require_webhook_admin)
+):
+    """Manually force a circuit breaker from OPEN to HALF_OPEN to allow immediate retry."""
     config = GlobalConfigProvider().get_config()
     hook_def = config.webhook.get(hook_name)
     if not hook_def:
-        return {"error": "Webhook not found"}
+        raise HTTPException(status_code=404, detail="Webhook not found")
 
     breaker = get_circuit_breaker()
     breaker.reset(hook_def.url)
-    return {"success": True, "hook": hook_name, "url": hook_def.url}
+    return {"status": "ok", "message": f"Circuit breaker for {hook_name} reset"}
 
 
 @router.get("/dead-letter")
-async def list_dead_letter(limit: int = 100):
+async def list_dead_letter(
+    limit: int = 100, auth: AuthContext = Depends(require_webhook_admin)
+):
     config = GlobalConfigProvider().get_config()
     if not config.webhooks.persistence_enabled:
         return {"error": "Persistence disabled"}
@@ -67,11 +78,13 @@ async def list_dead_letter(limit: int = 100):
 
 
 class ReplayRequest(BaseModel):
-    event_ids: list[str]
+    event_ids: List[str]
 
 
 @router.post("/dead-letter/replay")
-async def replay_dead_letter(req: ReplayRequest):
+async def replay_dead_letter(
+    req: ReplayRequest, auth: AuthContext = Depends(require_webhook_admin)
+):
     config = GlobalConfigProvider().get_config()
     if not config.webhooks.persistence_enabled:
         return {"error": "Persistence disabled"}
