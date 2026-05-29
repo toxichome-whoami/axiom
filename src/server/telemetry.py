@@ -3,7 +3,8 @@ import os
 import structlog
 from fastapi import FastAPI
 from opentelemetry import trace
-from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import \
+    OTLPSpanExporter
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry.sdk.resources import SERVICE_NAME, Resource
 from opentelemetry.sdk.trace import TracerProvider
@@ -27,10 +28,7 @@ def setup_telemetry(app: FastAPI):
         provider = TracerProvider(resource=resource)
         trace.set_tracer_provider(provider)
 
-        # 2. Instrument FastAPI automatically so every request gets a span
-        FastAPIInstrumentor.instrument_app(app)
-
-        # 3. Only attach an exporter if explicitly configured
+        # 2. Only attach an exporter if explicitly configured
         otlp_endpoint = config.telemetry.otlp_endpoint or os.environ.get(
             "OTEL_EXPORTER_OTLP_ENDPOINT"
         )
@@ -47,5 +45,13 @@ def setup_telemetry(app: FastAPI):
                 "OpenTelemetry exporter disabled (otlp_endpoint not set). Local trace IDs will still be generated for logs."
             )
 
+        # 3. Instrument FastAPI automatically so every request gets a span
+        FastAPIInstrumentor.instrument_app(app)
+
     except Exception as e:
         logger.error("Failed to initialize OpenTelemetry", error=str(e))
+        from config.provider import GlobalConfigProvider
+
+        config = GlobalConfigProvider().get_config()
+        config.features.telemetry = False
+        logger.warning("Telemetry has been disabled due to initialization error.")

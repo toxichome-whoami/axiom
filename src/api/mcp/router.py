@@ -9,6 +9,7 @@ Authentication is enforced manually via header extraction since the MCP SDK
 bypasses FastAPI's Depends() injection by using raw ASGI send/receive.
 """
 
+import asyncio
 import logging
 
 import structlog
@@ -23,7 +24,7 @@ from api.mcp.session_auth import clear_mcp_auth, set_mcp_auth
 from config.provider import GlobalConfigProvider
 from server.middleware.auth import (_evaluate_network_bans,
                                     _get_static_key_context,
-                                    _parse_bearer_token)
+                                    _parse_bearer_token, feature_in_scope)
 
 logger = structlog.get_logger()
 
@@ -90,8 +91,6 @@ def _authenticate_from_request(request: Request) -> None:
     except Exception as auth_error:
         raise _auth_error(str(auth_error), 401)
 
-    from server.middleware.auth import feature_in_scope
-
     if not feature_in_scope("mcp", auth_ctx):
         raise _auth_error(
             "API key does not have permission to use the MCP subsystem.", 403
@@ -143,11 +142,29 @@ async def handle_sse_connection(request: Request) -> Response:
         async with _transport.connect_sse(
             request.scope, request.receive, send_wrapper
         ) as (read_stream, write_stream):
-            await server.run(
-                read_stream,
-                write_stream,
-                server.create_initialization_options(),
+
+            async def _auth_loop():
+                while True:
+                    await asyncio.sleep(5)
+                    _authenticate_from_request(request)
+
+            run_task = asyncio.create_task(
+                server.run(
+                    read_stream,
+                    write_stream,
+                    server.create_initialization_options(),
+                )
             )
+            auth_task = asyncio.create_task(_auth_loop())
+
+            done, pending = await asyncio.wait(
+                [run_task, auth_task], return_when=asyncio.FIRST_COMPLETED
+            )
+            for p in pending:
+                p.cancel()
+            for d in done:
+                d.result()
+
     except _AuthenticationError as auth_err:
         return auth_err.response
     except Exception as e:
@@ -155,7 +172,10 @@ async def handle_sse_connection(request: Request) -> Response:
             return ASGIPassThroughResponse()
         raise e
     finally:
-        clear_mcp_auth()
+        from api.mcp.session_auth import _current_auth
+
+        if _current_auth.get() is not None:
+            clear_mcp_auth()
 
     return ASGIPassThroughResponse()
 
@@ -187,6 +207,9 @@ async def handle_mcp_message(request: Request) -> Response:
             return ASGIPassThroughResponse()
         raise e
     finally:
-        clear_mcp_auth()
+        from api.mcp.session_auth import _current_auth
+
+        if _current_auth.get() is not None:
+            clear_mcp_auth()
 
     return ASGIPassThroughResponse()

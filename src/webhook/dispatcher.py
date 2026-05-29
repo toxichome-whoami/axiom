@@ -177,7 +177,7 @@ def _handle_dispatch_failure(
             persistence.mark_delivered(task.get("event_id"))
         return
 
-    delay = config.webhooks.retry_delay**attempt
+    delay = min(config.webhooks.retry_delay**attempt, 300)
     if config.webhooks.retry_jitter_enabled:
         delay = delay * (0.5 + random.random())
 

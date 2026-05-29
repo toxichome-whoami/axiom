@@ -159,7 +159,8 @@ def _attach_routers(app: FastAPI):
     api_v1 = APIRouter(prefix="/api/v1")
     api_v1.include_router(database.router, prefix="/db")
     api_v1.include_router(storage.router, prefix="/fs")
-    api_v1.include_router(webhook_health_router)
+    if config.features.webhook:
+        api_v1.include_router(webhook_health_router)
 
     if config.features.federation:
         api_v1.include_router(federation.router, prefix="/fed")

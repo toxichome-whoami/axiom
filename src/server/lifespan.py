@@ -20,6 +20,7 @@ from generated.axiom.v1 import federation_pb2_grpc
 from logger.rotator import log_rotator_worker
 from logger.setup import setup_logging
 from server.backup_engine import backup_engine
+from server.telemetry import setup_telemetry
 from webhook.dispatcher import (ensure_workers, load_pending_webhooks,
                                 webhook_shutdown)
 from webhook.persistence import close_persistence, init_persistence
@@ -102,8 +103,12 @@ def _validate_auth_config(config) -> None:
 
 def _start_background_daemons(config) -> List[asyncio.Task]:
     """Launches non-blocking background workers based on active feature flags."""
+    global _daemon_tasks
     if _daemon_tasks:
-        return _daemon_tasks
+        for t in _daemon_tasks:
+            if not t.done():
+                t.cancel()
+        _daemon_tasks.clear()
 
     tasks = []
     tasks.append(asyncio.create_task(ConfigManager.watch()))
@@ -151,7 +156,11 @@ async def _stop_background_daemons():
     for task in _daemon_tasks:
         task.cancel()
 
-    await backup_engine.stop()
+    await asyncio.gather(*_daemon_tasks, return_exceptions=True)
+
+    config = GlobalConfigProvider().get_config()
+    if hasattr(config, "backups") and config.backups.enabled:
+        await backup_engine.stop()
 
     _daemon_tasks.clear()
 
@@ -214,6 +223,7 @@ async def lifespan(app: FastAPI):
             endpoint=f"/api/v1/fed (gRPC: {config.federation.grpc_port})",
         )
 
+    setup_telemetry(app)
     _start_background_daemons(config)
 
     # Yield control to the ASGI server

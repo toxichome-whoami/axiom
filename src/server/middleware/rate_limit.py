@@ -169,28 +169,16 @@ class RateLimitMiddleware:
         # Scan raw headers directly — no dict() allocation
         raw_headers = scope.get("headers", ())
 
-        # Try to extract client IP from scope first (cheapest)
-        client_ip = None
-        for k, v in raw_headers:
-            if k == _XFF_HEADER:
-                client_ip = v.decode("latin-1").split(",", 1)[0].strip()
-                break
-            elif k == _XRI_HEADER:
-                client_ip = v.decode("latin-1")
-
-        if client_ip is None:
-            client = scope.get("client")
-            client_ip = client[0] if client else "unknown"
+        client_ip = scope.get("client", ["127.0.0.1"])[0]
 
         if client_ip in self._allowed_ips:
             return await self.app(scope, receive, send)
 
-        api_key_name = _resolve_api_key_from_headers(raw_headers)
-        limit = _determine_effective_limits(api_key_name)
+        limit = _determine_effective_limits("anonymous")
 
         # Use pre-cached backend class - no per-request resolution
         violated, current_count = await self._backend.check_rate_limit(
-            limits_key=f"rl:ip:{client_ip}:key:{api_key_name}",
+            limits_key=f"rl:ip:{client_ip}",
             window=self._window,
             limit=limit,
             penalty_key=f"penalty:{client_ip}",

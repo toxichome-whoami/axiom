@@ -1,5 +1,6 @@
 import asyncio
 import time
+import urllib.parse
 from typing import AsyncGenerator
 
 import structlog
@@ -8,7 +9,8 @@ from fastapi.responses import StreamingResponse
 from fastapi.security import APIKeyQuery
 
 from config.provider import GlobalConfigProvider
-from server.middleware.auth import _get_static_key_context, _parse_bearer_token
+from server.middleware.auth import (_get_static_key_context,
+                                    _parse_bearer_token, feature_in_scope)
 
 from .connection_manager import sse_mgr
 
@@ -27,9 +29,7 @@ def authenticate_sse(
     if not actual_token:
         raise HTTPException(status_code=401, detail="Missing ?key= query parameter")
 
-    # FastAPI URL-decodes query params, turning '+' into ' '.
-    # Base64 tokens often contain '+', so we must revert it before decoding.
-    actual_token = actual_token.replace(" ", "+")
+    actual_token = urllib.parse.unquote(actual_token)
 
     config = GlobalConfigProvider().get_config()
 
@@ -42,8 +42,6 @@ def authenticate_sse(
         auth_ctx = _get_static_key_context(key_name, secret, config)
     except Exception as exc:
         raise HTTPException(status_code=403, detail=str(exc))
-
-    from server.middleware.auth import feature_in_scope
 
     if not feature_in_scope("sse", auth_ctx):
         raise HTTPException(
@@ -97,17 +95,23 @@ def _topic_in_scope(resource: str, scope: list[str]) -> bool:
 async def sse_health(request: Request, auth: dict = Depends(authenticate_sse)):
     """Admin-only stream for system health updates."""
     if not auth["full_admin"]:
-        raise HTTPException(status_code=403, detail="Health stream requires full admin scope")
+        raise HTTPException(
+            status_code=403, detail="Health stream requires full admin scope"
+        )
 
     client_id = f"health_{id(request)}_{time.monotonic()}"
-    q = await sse_mgr.connect(client_id)
-    sse_mgr.subscribe(client_id, "system:health")
+    try:
+        q = await sse_mgr.connect(client_id)
+        sse_mgr.subscribe(client_id, "system:health")
 
-    return StreamingResponse(
-        sse_stream(request, q, client_id),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
-    )
+        return StreamingResponse(
+            sse_stream(request, q, client_id),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
+        )
+    except Exception:
+        sse_mgr.disconnect(client_id)
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/metrics")
@@ -117,14 +121,18 @@ async def sse_metrics(request: Request, auth: dict = Depends(authenticate_sse)):
         raise HTTPException(status_code=403, detail="Metrics require full admin scope")
 
     client_id = f"metrics_{id(request)}_{time.monotonic()}"
-    q = await sse_mgr.connect(client_id)
-    sse_mgr.subscribe(client_id, "metrics")
+    try:
+        q = await sse_mgr.connect(client_id)
+        sse_mgr.subscribe(client_id, "metrics")
 
-    return StreamingResponse(
-        sse_stream(request, q, client_id),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
-    )
+        return StreamingResponse(
+            sse_stream(request, q, client_id),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
+        )
+    except Exception:
+        sse_mgr.disconnect(client_id)
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/db/{alias}")
@@ -140,15 +148,19 @@ async def sse_db(
         raise HTTPException(status_code=403, detail=f"Database '{alias}' not in scope")
 
     client_id = f"db_{alias}_{id(request)}_{time.monotonic()}"
-    q = await sse_mgr.connect(client_id)
-    topic = f"db:{alias}:{table}"
-    sse_mgr.subscribe(client_id, topic)
+    try:
+        q = await sse_mgr.connect(client_id)
+        topic = f"db:{alias}:{table}"
+        sse_mgr.subscribe(client_id, topic)
 
-    return StreamingResponse(
-        sse_stream(request, q, client_id),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
-    )
+        return StreamingResponse(
+            sse_stream(request, q, client_id),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
+        )
+    except Exception:
+        sse_mgr.disconnect(client_id)
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/fs/{alias}")
@@ -164,12 +176,16 @@ async def sse_fs(
         raise HTTPException(status_code=403, detail=f"Storage '{alias}' not in scope")
 
     client_id = f"fs_{alias}_{id(request)}_{time.monotonic()}"
-    q = await sse_mgr.connect(client_id)
-    topic = f"fs:{alias}:{path}"
-    sse_mgr.subscribe(client_id, topic)
+    try:
+        q = await sse_mgr.connect(client_id)
+        topic = f"fs:{alias}:{path}"
+        sse_mgr.subscribe(client_id, topic)
 
-    return StreamingResponse(
-        sse_stream(request, q, client_id),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
-    )
+        return StreamingResponse(
+            sse_stream(request, q, client_id),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
+        )
+    except Exception:
+        sse_mgr.disconnect(client_id)
+        raise HTTPException(status_code=500, detail="Internal server error")

@@ -26,6 +26,13 @@ class ConnectionManager:
         self._topic_subscribers: Dict[str, Set[str]] = {}  # topic → {client_id}
         self._client_scopes: Dict[str, dict] = {}  # client_id → {db_scope, fs_scope}
 
+    async def register_pre_accepted(
+        self, client_id: str, websocket: WebSocket, scopes: dict
+    ) -> None:
+        self._connections[client_id] = websocket
+        self._subscriptions[client_id] = set()
+        self._client_scopes[client_id] = scopes
+
     async def connect(self, websocket, client_id: str, scopes: dict) -> None:
         await websocket.accept()
         self._connections[client_id] = websocket

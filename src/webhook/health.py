@@ -5,7 +5,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from config.provider import GlobalConfigProvider
-from server.middleware.auth import AuthContext, RequireFeature
+from server.middleware.auth import RequireFeature
+from utils.types import AuthContext
 from webhook.circuit_breaker import get_circuit_breaker
 from webhook.persistence import get_persistence
 
@@ -94,29 +95,37 @@ async def replay_dead_letter(
         return {"error": "Persistence not initialized"}
 
     conn = sqlite3.connect(persistence.db_path)
+    conn.row_factory = sqlite3.Row
     c = conn.cursor()
 
-    replayed = 0
-    for event_id in req.event_ids:
-        c.execute("SELECT * FROM webhook_dead_letter WHERE event_id = ?", (event_id,))
-        row = c.fetchone()
-        if row:
-            hook_def = config.webhook.get(row[3])  # hook_name
-            if hook_def:
-                persistence.enqueue(
-                    event_id=row[2],  # event_id
-                    hook_name=row[3],
-                    url=row[4],
-                    secret=hook_def.secret,
-                    headers=hook_def.headers,
-                    payload=row[5],
-                )
+    try:
+        rows_to_replay = []
+        for event_id in req.event_ids:
+            c.execute(
+                "SELECT * FROM webhook_dead_letter WHERE event_id = ?", (event_id,)
+            )
+            row = c.fetchone()
+            if row:
+                rows_to_replay.append(dict(row))
                 c.execute(
                     "DELETE FROM webhook_dead_letter WHERE event_id = ?", (event_id,)
                 )
-                replayed += 1
+        conn.commit()
+    finally:
+        conn.close()
 
-    conn.commit()
-    conn.close()
+    replayed = 0
+    for row in rows_to_replay:
+        hook_def = config.webhook.get(row["hook_name"])
+        if hook_def:
+            persistence.enqueue(
+                event_id=row["event_id"],
+                hook_name=row["hook_name"],
+                url=row["url"],
+                secret=hook_def.secret,
+                headers=hook_def.headers,
+                payload=row["payload"],
+            )
+            replayed += 1
 
     return {"success": True, "replayed": replayed}

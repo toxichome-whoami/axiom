@@ -1,8 +1,10 @@
 import asyncio
-from typing import Dict, Set
+from typing import Dict, Optional, Set
 
 import orjson
 import structlog
+
+from config.provider import GlobalConfigProvider
 
 logger = structlog.get_logger("sse.connection_manager")
 
@@ -20,7 +22,9 @@ class SSEConnectionManager:
         "_queue_size",
     )
 
-    def __init__(self, queue_size: int = 100):
+    def __init__(self, queue_size: Optional[int] = None):
+        if queue_size is None:
+            queue_size = GlobalConfigProvider().get_config().sse.queue_size
         self._queue_size = queue_size
         self._queues: Dict[str, asyncio.Queue] = {}  # client_id → Queue
         self._topic_subscribers: Dict[str, Set[str]] = {}  # topic → {client_id}

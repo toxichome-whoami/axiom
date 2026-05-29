@@ -100,6 +100,7 @@ class WebhookPersistence:
             # For Redis, we should technically be async, but enqueue is called synchronously by emitter right now.
             # Emitter is async though! We'll just launch a fire-and-forget task.
             import asyncio
+            import threading
 
             async def _xadd():
                 client = await self._get_redis()
@@ -116,7 +117,7 @@ class WebhookPersistence:
                     },
                 )
 
-            asyncio.create_task(_xadd())
+            threading.Thread(target=lambda: asyncio.run(_xadd()), daemon=True).start()
             return event_id
 
         try:
@@ -150,6 +151,7 @@ class WebhookPersistence:
     def mark_delivered(self, event_id: str):
         if self._backend == "redis":
             import asyncio
+            import threading
 
             async def _xack():
                 client = await self._get_redis()
@@ -159,7 +161,7 @@ class WebhookPersistence:
                 except Exception:
                     pass
 
-            asyncio.create_task(_xack())
+            threading.Thread(target=lambda: asyncio.run(_xack()), daemon=True).start()
             return
 
         conn = sqlite3.connect(self.db_path)
@@ -290,8 +292,12 @@ class WebhookPersistence:
     def close(self):
         if self._backend == "redis" and self._redis_client:
             import asyncio
+            import threading
 
-            asyncio.create_task(self._redis_client.close())
+            client = self._redis_client
+            threading.Thread(
+                target=lambda: asyncio.run(client.close()), daemon=True  # type: ignore
+            ).start()
         pass
 
 

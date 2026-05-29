@@ -7,15 +7,13 @@ from fastapi import APIRouter
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
 from config.provider import GlobalConfigProvider
-from server.middleware.auth import _get_static_key_context, _parse_bearer_token
+from server.middleware.auth import (_get_static_key_context,
+                                    _parse_bearer_token, feature_in_scope)
 
 from .connection_manager import conn_mgr
 
 logger = structlog.get_logger("ws.router")
 router = APIRouter(tags=["WebSocket"])
-
-_HEARTBEAT_INTERVAL = 30  # seconds between server pings
-_AUTH_TIMEOUT = 5.0  # seconds to send auth message after connecting
 
 
 async def _authenticate(websocket: WebSocket) -> dict | None:
@@ -24,8 +22,11 @@ async def _authenticate(websocket: WebSocket) -> dict | None:
     Expected: { "type": "auth", "token": "<base64(key_name:secret)>" }
     Closes with code 4001/4003 on failure.
     """
+    config = GlobalConfigProvider().get_config()
     try:
-        raw = await asyncio.wait_for(websocket.receive_text(), timeout=_AUTH_TIMEOUT)
+        raw = await asyncio.wait_for(
+            websocket.receive_text(), timeout=config.websocket.auth_timeout
+        )
         msg = orjson.loads(raw)
     except asyncio.TimeoutError:
         await websocket.close(code=4001, reason="Auth timeout")
@@ -38,8 +39,6 @@ async def _authenticate(websocket: WebSocket) -> dict | None:
         await websocket.close(code=4001, reason="First message must be auth")
         return None
 
-    config = GlobalConfigProvider().get_config()
-
     # Reuse the existing bearer token parser — identical to REST auth
     from fastapi.security import HTTPAuthorizationCredentials
 
@@ -50,8 +49,6 @@ async def _authenticate(websocket: WebSocket) -> dict | None:
     except Exception as exc:
         await websocket.close(code=4003, reason=str(exc))
         return None
-
-    from server.middleware.auth import feature_in_scope
 
     if not feature_in_scope("ws", auth_ctx):
         await websocket.close(
@@ -80,7 +77,6 @@ async def ws_endpoint(websocket: WebSocket) -> None:
     """
     config = GlobalConfigProvider().get_config()
     if conn_mgr.active_count >= config.websocket.max_connections:
-        await websocket.accept()
         await websocket.close(code=1013, reason="Server at maximum capacity")
         return
 
@@ -94,9 +90,7 @@ async def ws_endpoint(websocket: WebSocket) -> None:
     scopes = {"db_scope": auth["db_scope"], "fs_scope": auth["fs_scope"]}
 
     # Register connection (do NOT accept again — already accepted above)
-    conn_mgr._connections[client_id] = websocket
-    conn_mgr._subscriptions[client_id] = set()
-    conn_mgr._client_scopes[client_id] = scopes
+    await conn_mgr.register_pre_accepted(client_id, websocket, scopes)
     logger.info("WebSocket authenticated", client_id=client_id)
 
     # Send confirmation
@@ -110,8 +104,11 @@ async def ws_endpoint(websocket: WebSocket) -> None:
     )
 
     async def _heartbeat() -> None:
+        heartbeat_interval = (
+            GlobalConfigProvider().get_config().websocket.heartbeat_interval
+        )
         while True:
-            await asyncio.sleep(_HEARTBEAT_INTERVAL)
+            await asyncio.sleep(heartbeat_interval)
             try:
                 await websocket.send_text(
                     orjson.dumps(

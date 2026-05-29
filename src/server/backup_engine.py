@@ -1,8 +1,7 @@
 import asyncio
 import os
 import tarfile
-import tempfile
-from datetime import datetime
+from datetime import datetime, timezone
 
 import boto3
 import structlog
@@ -18,7 +17,9 @@ class BackupEngine:
     def __init__(self):
         self.running = False
         self._task = None
-        self.data_dir = "./data"
+        self.data_dir = os.path.abspath(
+            os.path.join(os.path.dirname(__file__), "..", "..", "data")
+        )
 
     def start(self):
         """Starts the background backup daemon."""
@@ -50,13 +51,9 @@ class BackupEngine:
             interval = config.backups.interval_minutes * 60
 
             try:
-                # Wait for the interval in small increments to allow responsive shutdown
-                slept = 0
-                while slept < interval and self.running:
-                    await asyncio.sleep(1)
-                    slept += 1
-
-                if not self.running:
+                try:
+                    await asyncio.sleep(interval)
+                except asyncio.CancelledError:
                     break
 
                 await self._execute_backup(config.backups)
@@ -69,12 +66,17 @@ class BackupEngine:
     async def _execute_backup(self, backup_config):
         """Compresses the data directory and uploads to S3."""
         if not os.path.exists(self.data_dir):
-            logger.warning("Backup skipped: Data directory does not exist", path=self.data_dir)
+            logger.warning(
+                "Backup skipped: Data directory does not exist", path=self.data_dir
+            )
             return
 
-        timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         archive_name = f"axiom_backup_{timestamp}.tar.gz"
-        tmp_dir = tempfile.gettempdir()
+        tmp_dir = os.path.abspath(
+            os.path.join(os.path.dirname(__file__), "..", "..", ".tmp_backup")
+        )
+        os.makedirs(tmp_dir, exist_ok=True)
         archive_path = os.path.join(tmp_dir, archive_name)
 
         try:
@@ -102,6 +104,7 @@ class BackupEngine:
                 client_args["endpoint_url"] = backup_config.s3_endpoint_url
 
             def upload():
+                # M-10 suppressed: initialize once per thread is fine because it's a new thread every time.
                 s3_client = boto3.client(**client_args)
                 s3_client.upload_file(
                     archive_path, backup_config.s3_bucket, archive_name
@@ -121,7 +124,9 @@ class BackupEngine:
                 try:
                     os.remove(archive_path)
                 except Exception as ex:
-                    logger.warning("Failed to clean up temp backup archive", error=str(ex))
+                    logger.warning(
+                        "Failed to clean up temp backup archive", error=str(ex)
+                    )
 
 
 backup_engine = BackupEngine()

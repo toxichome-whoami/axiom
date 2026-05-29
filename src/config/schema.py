@@ -174,8 +174,8 @@ class WebhookDefConfig(BaseModel):
     rule: str
     headers: Dict[str, str] = Field(default_factory=dict)
     enabled: bool = True
-    timeout: int = 0
-    max_retries: int = 0
+    timeout: Optional[int] = None
+    max_retries: Optional[int] = None
     delivery_format: Literal["json", "protobuf"] = "json"
 
     @field_validator("rule")
@@ -408,7 +408,7 @@ class AxiomConfig(BaseModel):
     """The absolute Master Layout tracking all active operational parameters per-boot."""
 
     server: ServerConfig = Field(default_factory=ServerConfig)
-    __version__: str = "1.0.5"
+    version: str = "1.0.5"
     features: FeaturesConfig = Field(default_factory=FeaturesConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
     rate_limit: RateLimitConfig = Field(default_factory=RateLimitConfig)
