@@ -166,9 +166,17 @@ class RateLimitMiddleware:
         if not self._enabled:
             return await self.app(scope, receive, send)
 
-
         client = scope.get("client")
         client_ip = client[0] if client else "127.0.0.1"
+
+        # Extremely fast header scan for reverse proxy IPs
+        for k, v in scope.get("headers", ()):
+            if k == b"cf-connecting-ip":
+                client_ip = v.decode("latin-1")
+                break
+            elif k == b"x-forwarded-for":
+                client_ip = v.decode("latin-1").split(",", 1)[0].strip()
+                break
 
         if client_ip in self._allowed_ips:
             return await self.app(scope, receive, send)
