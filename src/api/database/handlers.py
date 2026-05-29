@@ -7,29 +7,18 @@ import orjson
 from fastapi import Depends, Path, Query, Request
 
 from api.core import metrics
-from api.database.filter_builder import (
-    build_where_clause,
-    construct_bulk_insert,
-    construct_delete,
-    construct_update,
-)
+from api.database.filter_builder import (build_where_clause,
+                                         construct_bulk_insert,
+                                         construct_delete, construct_update)
 from api.database.query_parser import validate_query
-from api.database.schemas import (
-    DeleteRequest,
-    FetchRowsParams,
-    InsertRequest,
-    QueryRequest,
-    UpdateRequest,
-)
+from api.database.schemas import (DeleteRequest, FetchRowsParams,
+                                  InsertRequest, QueryRequest, UpdateRequest)
 from api.errors import AxiomException, ErrorCodes
-from api.federation.proxy import _build_alias_map, _resolve_server, proxy_request
+from api.federation.proxy import (_build_alias_map, _resolve_server,
+                                  proxy_request)
 from api.federation.state import FederationStateManager
-from api.responses import (
-    cacheable_response,
-    is_protobuf_requested,
-    protobuf_or_json,
-    success_response,
-)
+from api.responses import (cacheable_response, is_protobuf_requested,
+                           protobuf_or_json, success_response)
 from cache import CacheManager
 from config.loader import HOT_RELOAD_CALLBACKS
 from config.provider import GlobalConfigProvider, get_config_dependency

@@ -53,6 +53,10 @@ class LoggingMiddleware:
                 status_code = message[_STATUS_KEY]
             await send(message)
 
+        from src.api.auth.user_store import auth_db_ctx
+
+        token = auth_db_ctx.set([])
+
         try:
             await self.app(scope, receive, send_wrapper)
         except Exception as e:
@@ -75,6 +79,14 @@ class LoggingMiddleware:
                 error=str(e),
             )
             raise
+        finally:
+            conns = auth_db_ctx.get()
+            for conn in conns:
+                try:
+                    await conn.close()
+                except Exception as ex:
+                    logger.error("Failed to close auth db connection", error=str(ex))
+            auth_db_ctx.reset(token)
 
         duration_ms = (time.perf_counter() - start_time) * 1000
         req_id = scope.get("state", {}).get("request_id", "-")

@@ -1,16 +1,8 @@
 from typing import Any, Dict, List
 
-from graphql import (
-    BooleanValueNode,
-    FieldNode,
-    FloatValueNode,
-    IntValueNode,
-    ListValueNode,
-    ObjectValueNode,
-    OperationDefinitionNode,
-    StringValueNode,
-    parse,
-)
+from graphql import (BooleanValueNode, FieldNode, FloatValueNode, IntValueNode,
+                     ListValueNode, ObjectValueNode, OperationDefinitionNode,
+                     StringValueNode, parse)
 
 from config.provider import GlobalConfigProvider
 

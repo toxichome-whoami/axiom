@@ -1,29 +1,18 @@
 from fastapi import APIRouter, Request
 
 from src.api.auth import handlers
-from src.api.auth.schemas import (
-    ChangeEmailRequest,
-    ConfirmEmailChangeRequest,
-    ForgotPasswordRequest,
-    ImportUsersRequest,
-    LoginRequest,
-    LogoutRequest,
-    MagicLinkRequest,
-    OtpSendRequest,
-    RefreshRequest,
-    ResendRequest,
-    ResetPasswordRequest,
-    SignupRequest,
-    TemplateRequest,
-    TotpBackupVerifyRequest,
-    TotpConfirmRequest,
-    TotpDisableRequest,
-    TotpVerifyRequest,
-    UpdatePasswordRequest,
-    UpdateUserRequest,
-    VerifyEmailRequest,
-    VerifyOtpRequest,
-)
+from src.api.auth.schemas import (ChangeEmailRequest,
+                                  ConfirmEmailChangeRequest,
+                                  ForgotPasswordRequest, ImportUsersRequest,
+                                  LoginRequest, LogoutRequest,
+                                  MagicLinkRequest, OtpSendRequest,
+                                  RefreshRequest, ResendRequest,
+                                  ResetPasswordRequest, SignupRequest,
+                                  TemplateRequest, TotpBackupVerifyRequest,
+                                  TotpConfirmRequest, TotpDisableRequest,
+                                  TotpVerifyRequest, UpdatePasswordRequest,
+                                  UpdateUserRequest, VerifyEmailRequest,
+                                  VerifyOtpRequest)
 from src.api.auth.token_engine import token_engine
 
 router = APIRouter(prefix="/auth", tags=["auth"])

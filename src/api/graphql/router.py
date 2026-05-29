@@ -5,11 +5,8 @@ import orjson
 from fastapi import APIRouter, Depends, Request, Response
 from pydantic import BaseModel
 
-from api.database.handlers import (
-    QueryExecutionPipeline,
-    build_where_clause,
-    get_db_engine,
-)
+from api.database.handlers import (QueryExecutionPipeline, build_where_clause,
+                                   get_db_engine)
 from config.provider import GlobalConfigProvider
 from server.middleware.auth import get_auth_context
 

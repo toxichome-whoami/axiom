@@ -20,7 +20,8 @@ from generated.axiom.v1 import federation_pb2_grpc
 from logger.rotator import log_rotator_worker
 from logger.setup import setup_logging
 from server.backup_engine import backup_engine
-from webhook.dispatcher import ensure_workers, load_pending_webhooks, webhook_shutdown
+from webhook.dispatcher import (ensure_workers, load_pending_webhooks,
+                                webhook_shutdown)
 from webhook.persistence import close_persistence, init_persistence
 
 # Silently refresh module-level feature flags in db handlers on each config reload

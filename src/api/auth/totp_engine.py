@@ -1,9 +1,8 @@
 import io
 import secrets
 import uuid
-from typing import List
+from typing import Any, List
 
-import aiosqlite
 import pyotp
 import qrcode
 import qrcode.image.svg
@@ -40,9 +39,7 @@ class TOTPEngine:
         return totp.verify(code, valid_window=1)
 
     @staticmethod
-    async def generate_backup_codes(
-        conn: aiosqlite.Connection, uid: str, count: int = 8
-    ) -> List[str]:
+    async def generate_backup_codes(conn: Any, uid: str, count: int = 8) -> List[str]:
         """Generates, hashes, and stores backup codes, replacing any existing ones."""
         # Delete old backup codes for this user
         await conn.execute("DELETE FROM totp_backup_codes WHERE uid = ?", (uid,))
@@ -67,9 +64,7 @@ class TOTPEngine:
         return codes
 
     @staticmethod
-    async def verify_backup_code(
-        conn: aiosqlite.Connection, uid: str, code: str
-    ) -> bool:
+    async def verify_backup_code(conn: Any, uid: str, code: str) -> bool:
         """Verifies and consumes a backup code."""
         code_hash = hash_sha256(code)
         async with conn.execute(

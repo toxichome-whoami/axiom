@@ -48,7 +48,7 @@ def _execute_ast_conversion_impl(
         from sqlglot import exp
 
         target_dialect_cls = sqlglot.Dialect.get_or_raise(to_dialect)
-        target_dialect_cls.Generator.TRANSFORMS[exp.Placeholder] = (
+        target_dialect_cls.Generator.TRANSFORMS[exp.Placeholder] = (  # type: ignore
             lambda self, e: f":{e.name}"
         )
 

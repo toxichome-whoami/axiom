@@ -218,7 +218,7 @@ Configures one isolated auth project. The `<name>` must match an API key name de
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `db_url` | `"sqlite+aiosqlite:///data/auth.db"` | SQLAlchemy database URL. Use `postgresql+asyncpg://user:pass@host/db` for PostgreSQL (horizontal scaling) |
+| `db_url` | *(Optional)* | Database URL for horizontal scaling (e.g., `postgresql+asyncpg://user:pass@host/db`). If omitted, defaults to an isolated SQLite file at `data/auth/<api_key_name>/auth.db` |
 
 **Token Lifetimes**
 

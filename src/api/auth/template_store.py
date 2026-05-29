@@ -1,7 +1,5 @@
 import re
-from typing import Dict, List, Optional
-
-import aiosqlite
+from typing import Any, Dict, List, Optional
 
 from src.api.auth.user_store import utc_now_iso
 from src.api.errors import AxiomException, ErrorCodes
@@ -59,9 +57,7 @@ class TemplateStore:
             )
 
     @staticmethod
-    async def get_template(
-        conn: aiosqlite.Connection, template_type: str
-    ) -> Optional[aiosqlite.Row]:
+    async def get_template(conn: Any, template_type: str) -> Optional[Dict[str, Any]]:
         async with conn.execute(
             "SELECT subject, html FROM email_templates WHERE type = ?", (template_type,)
         ) as cursor:
@@ -69,7 +65,7 @@ class TemplateStore:
 
     @staticmethod
     async def set_template(
-        conn: aiosqlite.Connection, template_type: str, subject: str, html: str
+        conn: Any, template_type: str, subject: str, html: str
     ) -> None:
         TemplateStore.validate_html(template_type, html)
         await conn.execute(
@@ -82,13 +78,13 @@ class TemplateStore:
         )
 
     @staticmethod
-    async def delete_template(conn: aiosqlite.Connection, template_type: str) -> None:
+    async def delete_template(conn: Any, template_type: str) -> None:
         await conn.execute(
             "DELETE FROM email_templates WHERE type = ?", (template_type,)
         )
 
     @staticmethod
-    async def list_templates(conn: aiosqlite.Connection) -> List[Dict[str, str]]:
+    async def list_templates(conn: Any) -> List[Dict[str, str]]:
         async with conn.execute(
             "SELECT type, subject, updated_at FROM email_templates"
         ) as cursor:

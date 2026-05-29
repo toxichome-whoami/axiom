@@ -6,7 +6,7 @@ Axiom includes an ultra-secure, ultra-lightweight embedded authentication engine
 
 ## Core Philosophy
 
-1. **Total Isolation**: Every API key acts as its own autonomous "project." All users, sessions, tokens, and audit logs are stored in an isolated database (SQLite by default, or PostgreSQL for horizontal scaling) configured via `db_url`.
+1. **Total Isolation**: Every API key acts as its own autonomous "project." All users, sessions, tokens, and audit logs are stored in an isolated database (by default, automatically generated at `data/auth/<api_key_name>/auth.db`). For horizontal scaling, you can override this with a PostgreSQL `db_url`.
 2. **State-of-the-art Crypto**:
    - JWTs are signed using **Ed25519** (EdDSA) — incredibly fast verification and tiny token sizes.
    - Passwords are hashed using **Argon2id** — memory-hard, resistant to GPU/ASIC cracking.
@@ -87,10 +87,13 @@ origin = "https://example.com"
 
 ## Database Scaling
 
-By default, each auth project uses an isolated SQLite database (`sqlite+aiosqlite:///data/auth.db`). For **horizontal scaling across multiple servers**, switch to PostgreSQL:
+By default, each auth project uses a strictly isolated, automatically generated SQLite database (`data/auth/<project_id>/auth.db`). You do not need to configure a `db_url` for this.
+
+For **horizontal scaling across multiple servers**, you can override the default SQLite behavior by explicitly providing a PostgreSQL `db_url` in your configuration:
 
 ```toml
 [auth.project.myapp]
+# Use asyncpg for extreme scaling
 db_url = "postgresql+asyncpg://user:password@db-host:5432/myapp_auth"
 ```
 

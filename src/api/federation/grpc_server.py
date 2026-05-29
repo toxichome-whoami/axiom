@@ -12,7 +12,8 @@ from api.database.query_parser import validate_query
 from api.storage.handlers import _get_storage_path
 from config.provider import GlobalConfigProvider
 from db.dialect.transpiler import transpile_sql
-from generated.axiom.v1 import db_pb2, federation_pb2, federation_pb2_grpc, fs_pb2
+from generated.axiom.v1 import (db_pb2, federation_pb2, federation_pb2_grpc,
+                                fs_pb2)
 from server.middleware.auth import AuthContext
 
 logger = structlog.get_logger()
@@ -45,6 +46,7 @@ async def _authenticate(context: grpc.aio.ServicerContext) -> AuthContext:
         mode=incoming.mode,
         db_scope=incoming.db_scope,
         fs_scope=incoming.fs_scope,
+        feature_scope=incoming.feature_scope,
         rate_limit_override=0,
         full_admin=False,
     )

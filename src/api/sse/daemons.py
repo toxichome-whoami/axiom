@@ -5,11 +5,8 @@ import time
 import orjson
 import psutil
 
-from api.core.health import (
-    _evaluate_cache_health,
-    _evaluate_database_health,
-    _evaluate_storage_health,
-)
+from api.core.health import (_evaluate_cache_health, _evaluate_database_health,
+                             _evaluate_storage_health)
 from api.core.metrics import _metrics, _start_time
 from config.provider import GlobalConfigProvider
 

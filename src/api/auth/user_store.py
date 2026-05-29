@@ -1,130 +1,138 @@
+import contextvars
 import hashlib
 import json
 import os
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
-import aiosqlite
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
+from sqlalchemy import Column, ForeignKey, Integer, String, text
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.orm import declarative_base
 
 from src.api.errors import AxiomException, ErrorCodes
+from src.config.provider import GlobalConfigProvider
+
+auth_db_ctx: contextvars.ContextVar[list] = contextvars.ContextVar("auth_db_ctx")
+
 
 ph = PasswordHasher(
-    time_cost=3,  # Tuned for ~50ms
+    time_cost=3,
     memory_cost=65536,
     parallelism=4,
     hash_len=32,
     salt_len=16,
 )
 
-AUTH_SCHEMA = """
-CREATE TABLE IF NOT EXISTS users (
-    uid              TEXT PRIMARY KEY,
-    email            TEXT UNIQUE,
-    password_hash    TEXT,
-    display_name     TEXT DEFAULT '',
-    avatar_url       TEXT DEFAULT '',
-    email_verified   INTEGER DEFAULT 0,
-    disabled         INTEGER DEFAULT 0,
-    is_anonymous     INTEGER DEFAULT 0,
-    anonymous_expires_at TEXT,
-    totp_secret      TEXT,
-    totp_enabled     INTEGER DEFAULT 0,
-    created_at       TEXT NOT NULL,
-    updated_at       TEXT NOT NULL,
-    last_sign_in     TEXT,
-    sign_in_count    INTEGER DEFAULT 0,
-    metadata         TEXT DEFAULT '{}'
-);
+Base = declarative_base()
 
-CREATE TABLE IF NOT EXISTS refresh_tokens (
-    id           TEXT PRIMARY KEY,
-    uid          TEXT NOT NULL REFERENCES users(uid) ON DELETE CASCADE,
-    token_hash   TEXT NOT NULL UNIQUE,
-    family_id    TEXT NOT NULL,
-    expires_at   TEXT NOT NULL,
-    created_at   TEXT NOT NULL,
-    revoked      INTEGER DEFAULT 0,
-    ip_address   TEXT,
-    user_agent   TEXT,
-    device_name  TEXT
-);
 
-CREATE TABLE IF NOT EXISTS auth_tokens (
-    id           TEXT PRIMARY KEY,
-    uid          TEXT REFERENCES users(uid) ON DELETE CASCADE,
-    email        TEXT NOT NULL,
-    token_hash   TEXT NOT NULL UNIQUE,
-    token_type   TEXT NOT NULL,
-    otp_code     TEXT,
-    otp_attempts INTEGER DEFAULT 0,
-    expires_at   TEXT NOT NULL,
-    used         INTEGER DEFAULT 0,
-    resend_count INTEGER DEFAULT 0,
-    last_resent_at TEXT,
-    created_at   TEXT NOT NULL
-);
+class User(Base):
+    __tablename__ = "users"
+    uid = Column(String, primary_key=True)
+    email = Column(String, unique=True)
+    password_hash = Column(String)
+    display_name = Column(String, default="")
+    avatar_url = Column(String, default="")
+    email_verified = Column(Integer, default=0)
+    disabled = Column(Integer, default=0)
+    is_anonymous = Column(Integer, default=0)
+    anonymous_expires_at = Column(String)
+    totp_secret = Column(String)
+    totp_enabled = Column(Integer, default=0)
+    created_at = Column(String, nullable=False)
+    updated_at = Column(String, nullable=False)
+    last_sign_in = Column(String)
+    sign_in_count = Column(Integer, default=0)
+    metadata_ = Column("metadata", String, default="{}")
 
-CREATE TABLE IF NOT EXISTS totp_backup_codes (
-    id           TEXT PRIMARY KEY,
-    uid          TEXT NOT NULL REFERENCES users(uid) ON DELETE CASCADE,
-    code_hash    TEXT NOT NULL UNIQUE,
-    used         INTEGER DEFAULT 0,
-    used_at      TEXT,
-    created_at   TEXT NOT NULL
-);
 
-CREATE TABLE IF NOT EXISTS webauthn_credentials (
-    id           TEXT PRIMARY KEY, -- Base64URL encoded credential ID
-    uid          TEXT NOT NULL REFERENCES users(uid) ON DELETE CASCADE,
-    public_key   TEXT NOT NULL, -- Base64URL encoded public key bytes
-    sign_count   INTEGER DEFAULT 0,
-    created_at   TEXT NOT NULL,
-    last_used_at TEXT
-);
+class RefreshToken(Base):
+    __tablename__ = "refresh_tokens"
+    id = Column(String, primary_key=True)
+    uid = Column(
+        String, ForeignKey("users.uid", ondelete="CASCADE"), nullable=False, index=True
+    )
+    token_hash = Column(String, nullable=False, unique=True)
+    family_id = Column(String, nullable=False, index=True)
+    expires_at = Column(String, nullable=False, index=True)
+    created_at = Column(String, nullable=False)
+    revoked = Column(Integer, default=0)
+    ip_address = Column(String)
+    user_agent = Column(String)
+    device_name = Column(String)
 
-CREATE TABLE IF NOT EXISTS email_templates (
-    type         TEXT PRIMARY KEY,
-    subject      TEXT NOT NULL,
-    html         TEXT NOT NULL,
-    updated_at   TEXT NOT NULL
-);
 
-CREATE TABLE IF NOT EXISTS import_jobs (
-    id           TEXT PRIMARY KEY,
-    status       TEXT DEFAULT 'pending',
-    total        INTEGER DEFAULT 0,
-    succeeded    INTEGER DEFAULT 0,
-    failed       INTEGER DEFAULT 0,
-    errors       TEXT DEFAULT '[]',
-    created_at   TEXT NOT NULL,
-    completed_at TEXT
-);
+class AuthToken(Base):
+    __tablename__ = "auth_tokens"
+    id = Column(String, primary_key=True)
+    uid = Column(String, ForeignKey("users.uid", ondelete="CASCADE"))
+    email = Column(String, nullable=False, index=True)
+    token_hash = Column(String, nullable=False, unique=True)
+    token_type = Column(String, nullable=False, index=True)
+    otp_code = Column(String)
+    otp_attempts = Column(Integer, default=0)
+    expires_at = Column(String, nullable=False)
+    used = Column(Integer, default=0)
+    resend_count = Column(Integer, default=0)
+    last_resent_at = Column(String)
+    created_at = Column(String, nullable=False)
 
-CREATE TABLE IF NOT EXISTS auth_audit (
-    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    uid          TEXT,
-    event        TEXT NOT NULL,
-    ip_address   TEXT,
-    user_agent   TEXT,
-    metadata     TEXT DEFAULT '{}',
-    created_at   TEXT NOT NULL
-);
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email        ON users(email);
-CREATE INDEX IF NOT EXISTS        idx_refresh_uid        ON refresh_tokens(uid);
-CREATE INDEX IF NOT EXISTS        idx_refresh_family     ON refresh_tokens(family_id);
-CREATE INDEX IF NOT EXISTS        idx_refresh_expires    ON refresh_tokens(expires_at);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_auth_tokens_hash   ON auth_tokens(token_hash);
-CREATE INDEX IF NOT EXISTS        idx_auth_tokens_email  ON auth_tokens(email);
-CREATE INDEX IF NOT EXISTS        idx_auth_tokens_type   ON auth_tokens(token_type);
-CREATE INDEX IF NOT EXISTS        idx_totp_uid           ON totp_backup_codes(uid);
-CREATE INDEX IF NOT EXISTS        idx_audit_uid          ON auth_audit(uid);
-CREATE INDEX IF NOT EXISTS        idx_audit_event        ON auth_audit(event);
-CREATE INDEX IF NOT EXISTS        idx_audit_created      ON auth_audit(created_at);
-"""
+class TotpBackupCode(Base):
+    __tablename__ = "totp_backup_codes"
+    id = Column(String, primary_key=True)
+    uid = Column(
+        String, ForeignKey("users.uid", ondelete="CASCADE"), nullable=False, index=True
+    )
+    code_hash = Column(String, nullable=False, unique=True)
+    used = Column(Integer, default=0)
+    used_at = Column(String)
+    created_at = Column(String, nullable=False)
+
+
+class WebauthnCredential(Base):
+    __tablename__ = "webauthn_credentials"
+    id = Column(String, primary_key=True)
+    uid = Column(String, ForeignKey("users.uid", ondelete="CASCADE"), nullable=False)
+    public_key = Column(String, nullable=False)
+    sign_count = Column(Integer, default=0)
+    created_at = Column(String, nullable=False)
+    last_used_at = Column(String)
+
+
+class EmailTemplate(Base):
+    __tablename__ = "email_templates"
+    type = Column(String, primary_key=True)
+    subject = Column(String, nullable=False)
+    html = Column(String, nullable=False)
+    updated_at = Column(String, nullable=False)
+
+
+class ImportJob(Base):
+    __tablename__ = "import_jobs"
+    id = Column(String, primary_key=True)
+    status = Column(String, default="pending")
+    total = Column(Integer, default=0)
+    succeeded = Column(Integer, default=0)
+    failed = Column(Integer, default=0)
+    errors = Column(String, default="[]")
+    created_at = Column(String, nullable=False)
+    completed_at = Column(String)
+
+
+class AuthAudit(Base):
+    __tablename__ = "auth_audit"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    uid = Column(String, index=True)
+    event = Column(String, nullable=False, index=True)
+    ip_address = Column(String)
+    user_agent = Column(String)
+    metadata_ = Column("metadata", String, default="{}")
+    created_at = Column(String, nullable=False, index=True)
 
 
 def utc_now_iso() -> str:
@@ -135,39 +143,160 @@ def hash_sha256(data: str) -> str:
     return hashlib.sha256(data.encode()).hexdigest()
 
 
+class AxiomCursor:
+    def __init__(self, result):
+        self.result = result
+
+    @property
+    def rowcount(self) -> int:
+        return self.result.rowcount
+
+    async def fetchone(self) -> Optional[Dict[str, Any]]:
+        row = self.result.fetchone()
+        return dict(row._mapping) if row else None
+
+    async def fetchall(self) -> List[Dict[str, Any]]:
+        return [dict(row._mapping) for row in self.result.fetchall()]
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        row = self.result.fetchone()
+        if row:
+            return dict(row._mapping)
+        raise StopAsyncIteration
+
+
+class AxiomCursorContextManager:
+    def __init__(self, session: AsyncSession, sql: str, params: dict):
+        self.session = session
+        self.sql = sql
+        self.params = params
+        self.result = None
+
+    def __await__(self):
+        return self._execute().__await__()
+
+    async def _execute(self):
+        return await self.session.execute(text(self.sql), self.params)
+
+    async def __aenter__(self) -> AxiomCursor:
+        self.result = await self._execute()
+        return AxiomCursor(self.result)
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        pass
+
+
+class AxiomConnection:
+    """Wrapper that mimics aiosqlite API but routes queries through SQLAlchemy AsyncSession."""
+
+    def __init__(self, session: AsyncSession):
+        self.session = session
+
+    def __del__(self):
+        try:
+            self.session.sync_session.close()
+        except Exception:
+            pass
+
+    def _convert_sql(self, sql: str, parameters: tuple) -> Tuple[str, Dict[str, Any]]:
+        parts = sql.split("?")
+        if len(parts) == 1:
+            return sql, {}
+
+        new_sql = ""
+        params_dict = {}
+        for i in range(len(parts) - 1):
+            new_sql += parts[i] + f":p{i}"
+            params_dict[f"p{i}"] = parameters[i]
+        new_sql += parts[-1]
+
+        return new_sql, params_dict
+
+    def execute(self, sql: str, parameters: tuple = ()) -> AxiomCursorContextManager:
+        new_sql, params_dict = self._convert_sql(sql, parameters)
+        return AxiomCursorContextManager(self.session, new_sql, params_dict)
+
+    async def commit(self):
+        await self.session.commit()
+
+    async def rollback(self):
+        await self.session.rollback()
+
+    async def close(self):
+        await self.session.close()
+
+
 class AuthDBManager:
-    """Manages SQLite connections per project for auth."""
+    def __init__(self):
+        self.engines = {}
 
-    def __init__(self, data_dir: str = "./data/auth"):
-        self.data_dir = data_dir
-        self.conns: Dict[str, aiosqlite.Connection] = {}
+    async def get_db(self, project_id: str) -> AxiomConnection:
+        config = GlobalConfigProvider().get_config()
+        if project_id not in config.auth.project:
+            raise AxiomException(
+                ErrorCodes.AUTH_PROJECT_NOT_CONFIGURED,
+                f"Project {project_id} not configured",
+                400,
+            )
 
-    async def get_db(self, project_id: str) -> aiosqlite.Connection:
-        if project_id not in self.conns:
-            project_dir = os.path.join(self.data_dir, project_id)
-            os.makedirs(project_dir, exist_ok=True)
-            db_path = os.path.join(project_dir, "auth.db")
+        proj_config = config.auth.project[project_id]
 
-            conn = await aiosqlite.connect(db_path)
-            conn.row_factory = aiosqlite.Row
-            await conn.execute("PRAGMA journal_mode=WAL;")
-            await conn.execute("PRAGMA synchronous=NORMAL;")
-            await conn.execute("PRAGMA busy_timeout=5000;")
+        # Determine URL (fallback to sqlite if not defined)
+        db_url = getattr(proj_config, "db_url", None)
+        if not db_url:
+            db_url = f"sqlite+aiosqlite:///data/auth/{project_id}/auth.db"
 
-            # Init schema if not exists
-            await conn.executescript(AUTH_SCHEMA)
-            await conn.commit()
+        if project_id not in self.engines:
+            if "sqlite" in db_url:
+                db_path = db_url.replace("sqlite+aiosqlite:///", "")
+                if "/" in db_path:
+                    os.makedirs(os.path.dirname(db_path), exist_ok=True)
 
-            self.conns[project_id] = conn
+            if "sqlite" in db_url:
+                from sqlalchemy.pool import NullPool
 
-        return self.conns[project_id]
+                engine = create_async_engine(db_url, echo=False, poolclass=NullPool)
+            else:
+                engine = create_async_engine(db_url, echo=False)
+
+            # Setup pragmas for sqlite
+            if "sqlite" in db_url:
+                from sqlalchemy import event
+
+                @event.listens_for(engine.sync_engine, "connect")
+                def set_sqlite_pragma(dbapi_connection, connection_record):
+                    cursor = dbapi_connection.cursor()
+                    cursor.execute("PRAGMA journal_mode=WAL")
+                    cursor.execute("PRAGMA synchronous=NORMAL")
+                    cursor.execute("PRAGMA busy_timeout=5000")
+                    cursor.execute("PRAGMA foreign_keys=ON")
+                    cursor.close()
+
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+
+            self.engines[project_id] = engine
+
+        session = AsyncSession(self.engines[project_id])
+        conn = AxiomConnection(session)
+
+        try:
+            ctx_conns = auth_db_ctx.get()
+            ctx_conns.append(conn)
+        except LookupError:
+            pass
+
+        return conn
 
 
 auth_db_manager = AuthDBManager()
 
 
 class UserStore:
-    """Provides higher-level abstractions for auth user data."""
+    """Provides higher-level abstractions for auth user data using the new AxiomConnection layer."""
 
     @staticmethod
     def hash_password(password: str) -> str:
@@ -177,16 +306,14 @@ class UserStore:
     def verify_password(hashed: str, password: str) -> bool:
         try:
             ph.verify(hashed, password)
-            if ph.check_needs_rehash(hashed):
-                pass  # Ideally rehash and update DB, but verification succeeded
             return True
         except VerifyMismatchError:
             return False
 
     @staticmethod
     async def get_user_by_email(
-        conn: aiosqlite.Connection, email: str
-    ) -> Optional[aiosqlite.Row]:
+        conn: AxiomConnection, email: str
+    ) -> Optional[Dict[str, Any]]:
         async with conn.execute(
             "SELECT * FROM users WHERE email = ?", (email.lower(),)
         ) as cursor:
@@ -194,14 +321,14 @@ class UserStore:
 
     @staticmethod
     async def get_user_by_uid(
-        conn: aiosqlite.Connection, uid: str
-    ) -> Optional[aiosqlite.Row]:
+        conn: AxiomConnection, uid: str
+    ) -> Optional[Dict[str, Any]]:
         async with conn.execute("SELECT * FROM users WHERE uid = ?", (uid,)) as cursor:
             return await cursor.fetchone()
 
     @staticmethod
     async def create_user(
-        conn: aiosqlite.Connection,
+        conn: AxiomConnection,
         email: str,
         password_hash: Optional[str] = None,
         email_verified: int = 0,
@@ -226,7 +353,7 @@ class UserStore:
                 ),
             )
             return uid
-        except aiosqlite.IntegrityError:
+        except IntegrityError:
             raise AxiomException(
                 code=ErrorCodes.AUTH_USER_EXISTS,
                 message="User with this email already exists",
@@ -235,7 +362,7 @@ class UserStore:
 
     @staticmethod
     async def update_user(
-        conn: aiosqlite.Connection, uid: str, updates: Dict[str, Any]
+        conn: AxiomConnection, uid: str, updates: Dict[str, Any]
     ) -> None:
         if not updates:
             return
@@ -250,11 +377,11 @@ class UserStore:
         values.append(uid)
 
         query = f"UPDATE users SET {', '.join(fields)} WHERE uid = ?"
-        await conn.execute(query, values)
+        await conn.execute(query, tuple(values))
 
     @staticmethod
     async def log_audit(
-        conn: aiosqlite.Connection,
+        conn: AxiomConnection,
         event: str,
         uid: Optional[str] = None,
         ip_address: Optional[str] = None,
@@ -278,7 +405,7 @@ class UserStore:
 
     @staticmethod
     async def issue_refresh_token(
-        conn: aiosqlite.Connection,
+        conn: AxiomConnection,
         uid: str,
         token_hash: str,
         family_id: str,
@@ -307,34 +434,34 @@ class UserStore:
         )
 
     @staticmethod
-    async def revoke_refresh_token(conn: aiosqlite.Connection, token_hash: str) -> None:
+    async def revoke_refresh_token(conn: AxiomConnection, token_hash: str) -> None:
         await conn.execute(
             "UPDATE refresh_tokens SET revoked = 1 WHERE token_hash = ?", (token_hash,)
         )
 
     @staticmethod
-    async def revoke_refresh_family(conn: aiosqlite.Connection, family_id: str) -> None:
+    async def revoke_refresh_family(conn: AxiomConnection, family_id: str) -> None:
         await conn.execute(
             "UPDATE refresh_tokens SET revoked = 1 WHERE family_id = ?", (family_id,)
         )
 
     @staticmethod
-    async def revoke_all_sessions(conn: aiosqlite.Connection, uid: str) -> None:
+    async def revoke_all_sessions(conn: AxiomConnection, uid: str) -> None:
         await conn.execute(
             "UPDATE refresh_tokens SET revoked = 1 WHERE uid = ?", (uid,)
         )
 
     @staticmethod
     async def get_refresh_token(
-        conn: aiosqlite.Connection, token_hash: str
-    ) -> Optional[aiosqlite.Row]:
+        conn: AxiomConnection, token_hash: str
+    ) -> Optional[Dict[str, Any]]:
         async with conn.execute(
             "SELECT * FROM refresh_tokens WHERE token_hash = ?", (token_hash,)
         ) as cursor:
             return await cursor.fetchone()
 
     @staticmethod
-    async def record_login(conn: aiosqlite.Connection, uid: str) -> None:
+    async def record_login(conn: AxiomConnection, uid: str) -> None:
         await conn.execute(
             """
             UPDATE users

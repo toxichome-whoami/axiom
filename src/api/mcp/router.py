@@ -14,18 +14,16 @@ import logging
 import structlog
 from fastapi import APIRouter, Request
 from fastapi.security import HTTPAuthorizationCredentials
+from mcp.server.sse import SseServerTransport
 from starlette.responses import JSONResponse, Response
 from starlette.types import Message
 
 from api.mcp.server import MCPServerManager
 from api.mcp.session_auth import clear_mcp_auth, set_mcp_auth
 from config.provider import GlobalConfigProvider
-from mcp.server.sse import SseServerTransport
-from server.middleware.auth import (
-    _evaluate_network_bans,
-    _get_static_key_context,
-    _parse_bearer_token,
-)
+from server.middleware.auth import (_evaluate_network_bans,
+                                    _get_static_key_context,
+                                    _parse_bearer_token)
 
 logger = structlog.get_logger()
 

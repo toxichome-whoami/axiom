@@ -1,18 +1,13 @@
 import json
 from typing import Any, Dict, List
 
-from webauthn import (
-    generate_authentication_options,
-    generate_registration_options,
-    options_to_json,
-    verify_authentication_response,
-    verify_registration_response,
-)
-from webauthn.helpers.structs import (
-    AuthenticatorSelectionCriteria,
-    PublicKeyCredentialDescriptor,
-    UserVerificationRequirement,
-)
+from webauthn import (generate_authentication_options,
+                      generate_registration_options, options_to_json,
+                      verify_authentication_response,
+                      verify_registration_response)
+from webauthn.helpers.structs import (AuthenticatorSelectionCriteria,
+                                      PublicKeyCredentialDescriptor,
+                                      UserVerificationRequirement)
 
 
 class WebAuthnEngine:

@@ -4,8 +4,6 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from typing import Any, Dict
 
-import aiosqlite
-
 from src.api.auth.template_store import TemplateStore
 from src.config.schema import AuthEmailConfig
 
@@ -66,7 +64,7 @@ class EmailTransport:
 
     @staticmethod
     async def send_email(
-        conn: aiosqlite.Connection,
+        conn: Any,
         email_config: AuthEmailConfig,
         template_type: str,
         to_email: str,

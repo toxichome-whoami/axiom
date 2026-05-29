@@ -309,8 +309,8 @@ class AuthEmailConfig(BaseModel):
 
 
 class AuthProjectConfig(BaseModel):
-    # Database
-    db_url: str = "sqlite+aiosqlite:///data/auth.db"
+    # Database (If None, defaults to data/auth/<project_id>/auth.db)
+    db_url: Optional[str] = None
 
     # Lifetimes
     access_token_ttl: int = 900

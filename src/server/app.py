@@ -15,7 +15,6 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from __init__ import __version__
 from api import database, federation, storage
-
 # Routers
 from api.core import health
 from api.core.metrics import router as metrics_router

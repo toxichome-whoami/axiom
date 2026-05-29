@@ -12,7 +12,8 @@ import structlog
 from mcp.types import Resource, TextResourceContents
 from pydantic import AnyUrl
 
-from api.mcp.resources.registry import build_error_text_resource, mcp_resource_registry
+from api.mcp.resources.registry import (build_error_text_resource,
+                                        mcp_resource_registry)
 from config.provider import GlobalConfigProvider
 
 logger = structlog.get_logger()

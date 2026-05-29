@@ -16,6 +16,7 @@
 
 ## Features
 
+- **Identity & Auth**: Fully isolated authentication engine powered by Ed25519 JWTs, Argon2id, Passkeys (WebAuthn), and dynamically scales from SQLite (Edge) to PostgreSQL (Cloud).
 - **Map-Reduce Data Mesh**: Query multiple remote federated databases simultaneously and join their JSON results entirely in-memory.
 - **Storage Circuit Breakers**: Automatically disconnects bandwidth-heavy streaming downloads when the server is overloaded.
 - **Model Context Protocol (MCP)**: Seamlessly expose databases to AI tools via the standardized MCP JSON-RPC Server interface.

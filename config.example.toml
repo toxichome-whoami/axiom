@@ -207,8 +207,10 @@ consumer_name = "worker_1"
 
 # ─── Auth Identity System ────────────────────────────
 # Isolated identity provider powered by Ed25519 JWT and Argon2id.
-[auth.project.default_project]
-db_url = "sqlite+aiosqlite:///data/auth.db"
+[auth.project.admin]
+# Database Connection (Optional. If omitted, defaults to SQLite: data/auth/admin/auth.db)
+# Example (Postgres Scale): "postgresql+asyncpg://user:pass@localhost:5432/axiom_auth"
+# db_url = "postgresql+asyncpg://user:pass@localhost:5432/axiom_auth"
 min_password_length = 8
 
 # Automatic post-signup verification:

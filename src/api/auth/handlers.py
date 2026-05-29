@@ -4,43 +4,33 @@ import json
 import secrets
 import time
 import uuid
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Tuple
 
-import aiosqlite
 from fastapi import Request
+from sqlalchemy.exc import IntegrityError
 
 from src.api.auth.brute_force import BruteForceProtector
 from src.api.auth.email_transport import EmailTransport
 from src.api.auth.import_export import AuthImportExport
 from src.api.auth.rate_limiter import auth_rate_limiter
-from src.api.auth.schemas import (
-    AdminUpdateUserRequest,
-    ChangeEmailRequest,
-    ConfirmEmailChangeRequest,
-    ForgotPasswordRequest,
-    ImportUsersRequest,
-    LoginRequest,
-    LogoutRequest,
-    MagicLinkRequest,
-    OtpSendRequest,
-    RefreshRequest,
-    ResendRequest,
-    ResetPasswordRequest,
-    SignupRequest,
-    TemplateRequest,
-    TotpBackupVerifyRequest,
-    TotpConfirmRequest,
-    TotpDisableRequest,
-    TotpVerifyRequest,
-    UpdatePasswordRequest,
-    UpdateUserRequest,
-    VerifyEmailRequest,
-    VerifyOtpRequest,
-)
+from src.api.auth.schemas import (AdminUpdateUserRequest, ChangeEmailRequest,
+                                  ConfirmEmailChangeRequest,
+                                  ForgotPasswordRequest, ImportUsersRequest,
+                                  LoginRequest, LogoutRequest,
+                                  MagicLinkRequest, OtpSendRequest,
+                                  RefreshRequest, ResendRequest,
+                                  ResetPasswordRequest, SignupRequest,
+                                  TemplateRequest, TotpBackupVerifyRequest,
+                                  TotpConfirmRequest, TotpDisableRequest,
+                                  TotpVerifyRequest, UpdatePasswordRequest,
+                                  UpdateUserRequest, VerifyEmailRequest,
+                                  VerifyOtpRequest)
 from src.api.auth.template_store import TemplateStore
 from src.api.auth.token_engine import token_engine
 from src.api.auth.totp_engine import TOTPEngine
-from src.api.auth.user_store import UserStore, auth_db_manager, hash_sha256, utc_now_iso
+from src.api.auth.user_store import (UserStore, auth_db_manager, hash_sha256,
+                                     utc_now_iso)
 from src.api.auth.webhook_emitter import AuthWebhookEmitter
 from src.api.errors import AxiomException, ErrorCodes
 from src.config.provider import GlobalConfigProvider
@@ -163,7 +153,7 @@ async def _get_current_user(request: Request) -> Tuple[str, Any, Dict[str, Any]]
 
 
 async def _create_auth_response(
-    conn: aiosqlite.Connection,
+    conn: Any,
     config: Any,
     project_id: str,
     row: Any,
@@ -246,8 +236,6 @@ async def _create_auth_response(
 
 
 def datetime_to_iso(ts: float) -> str:
-    from datetime import datetime, timezone
-
     return datetime.fromtimestamp(ts, timezone.utc).isoformat()
 
 
@@ -295,9 +283,7 @@ async def signup(request: Request, body: SignupRequest) -> Dict[str, Any]:
         raise e
 
 
-async def _send_verification(
-    conn: aiosqlite.Connection, config: Any, email: str, uid: str
-) -> None:
+async def _send_verification(conn: Any, config: Any, email: str, uid: str) -> None:
     token = secrets.token_urlsafe(32)
     token_hash = hash_sha256(token)
     otp = None
@@ -632,7 +618,7 @@ async def upgrade_anonymous(request: Request, body: SignupRequest) -> Dict[str, 
             ),
         )
         await conn.commit()
-    except aiosqlite.IntegrityError:
+    except IntegrityError:
         raise AxiomException(ErrorCodes.AUTH_USER_EXISTS, "Email already in use", 409)
 
     await AuthWebhookEmitter.emit(
@@ -1296,7 +1282,7 @@ async def confirm_email_change(
             "UPDATE auth_tokens SET used = 1 WHERE token_hash = ?", (token_hash,)
         )
         await conn.commit()
-    except aiosqlite.IntegrityError:
+    except IntegrityError:
         raise AxiomException(ErrorCodes.AUTH_USER_EXISTS, "Email already in use", 409)
 
     await AuthWebhookEmitter.emit(

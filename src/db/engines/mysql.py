@@ -4,13 +4,8 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from config.schema import DatabaseDefConfig
-from db.engines.base import (
-    ColumnInfo,
-    DatabaseEngine,
-    ForeignKeyInfo,
-    QueryResult,
-    TableInfo,
-)
+from db.engines.base import (ColumnInfo, DatabaseEngine, ForeignKeyInfo,
+                             QueryResult, TableInfo)
 from encoding.proto_utils import _encode_value
 from generated.axiom.v1 import db_pb2
 

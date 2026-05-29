@@ -26,20 +26,23 @@ async def cleanup_expired_anonymous_users() -> None:
 
                 try:
                     conn = await auth_db_manager.get_db(api_key_name)
-                    # Delete users where is_anonymous=1 and anonymous_expires_at < now
-                    # ON DELETE CASCADE handles refresh_tokens, auth_tokens, totp_backup_codes
-                    async with conn.execute(
-                        "DELETE FROM users WHERE is_anonymous = 1 AND anonymous_expires_at < ?",
-                        (now,),
-                    ) as cursor:
-                        deleted = cursor.rowcount
-                        if deleted > 0:
-                            logger.info(
-                                "Cleaned up expired anonymous accounts",
-                                project=api_key_name,
-                                count=deleted,
-                            )
-                            await conn.commit()
+                    try:
+                        # Delete users where is_anonymous=1 and anonymous_expires_at < now
+                        # ON DELETE CASCADE handles refresh_tokens, auth_tokens, totp_backup_codes
+                        async with conn.execute(
+                            "DELETE FROM users WHERE is_anonymous = 1 AND anonymous_expires_at < ?",
+                            (now,),
+                        ) as cursor:
+                            deleted = cursor.rowcount
+                            if deleted > 0:
+                                logger.info(
+                                    "Cleaned up expired anonymous accounts",
+                                    project=api_key_name,
+                                    count=deleted,
+                                )
+                                await conn.commit()
+                    finally:
+                        await conn.close()
                 except Exception as e:
                     logger.error(
                         "Failed to cleanup anonymous accounts",

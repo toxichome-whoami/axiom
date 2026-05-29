@@ -13,7 +13,8 @@ from fastapi import Depends, Path, Query, Request
 from api.errors import AxiomException, ErrorCodes
 from api.federation.proxy import _resolve_server, proxy_request
 from api.federation.state import FederationStateManager
-from api.responses import is_protobuf_requested, protobuf_or_json, success_response
+from api.responses import (is_protobuf_requested, protobuf_or_json,
+                           success_response)
 from api.storage.chunked_upload import ChunkedUploadManager
 from cache.memory import MemoryCache
 from config.loader import HOT_RELOAD_CALLBACKS
@@ -27,16 +28,9 @@ from utils.uuid7 import uuid7
 from webhook.emitter import WebhookTrigger, emit_event
 
 from .archive import stream_zip_folder
-from .file_ops import (
-    build_file_info_from_entry,
-    bulk_delete_paths,
-    bulk_move_paths,
-    copy_path,
-    delete_path,
-    get_file_info,
-    mkdir,
-    rename_path,
-)
+from .file_ops import (build_file_info_from_entry, bulk_delete_paths,
+                       bulk_move_paths, copy_path, delete_path, get_file_info,
+                       mkdir, rename_path)
 from .image_processor import process_image_and_stream
 from .router import router
 from .schemas import ActionRequest
