@@ -106,7 +106,17 @@ All three paths use Base64 encoding for transport, but the raw secrets are store
 
 > **Note:** The `info` and `exists` storage actions are available to read-only API keys. All other mutating storage and database actions enforce `readwrite` or `writeonly` mode.
 
-## 5. Web Application Firewall (WAF)
+## 5. Advanced End-User Auth Protections
+
+When `features.auth = true` is enabled, Axiom provides state-of-the-art protections for end-users:
+
+- **Smart Brute Force Protection**: The `/login`, `/otp/send`, and `/password/forgot` endpoints are protected by an isolated, in-memory `BruteForceProtector`. It tracks failed attempts using a sliding TTL window per IP Address. If a user exceeds `max_login_attempts` (default 5), they are mathematically locked out for `lockout_duration` (default 15 minutes).
+- **New Device Detection**: If `new_device_alerts = true`, the system queries the user's historical `refresh_tokens`. If a successful login originates from an IP Address that has never been associated with that user, a `new_device_login` security email is instantly dispatched.
+- **Role-Based Access Control (RBAC)**: The API supports strict RBAC natively. By adding `"role"` to `jwt_custom_claims`, the backend embeds the user's role directly into the cryptographic JWT payload, allowing sub-millisecond, database-free permission checks on every request via the `RequireRole` dependency.
+- **Passkeys (WebAuthn)**: The system supports cryptographic, passwordless logins using native device biometrics (FaceID/TouchID) via WebAuthn (`python-webauthn`). Registration and authentication challenges are verified server-side, making phishing and credential stuffing mathematically impossible.
+- **Refresh Token Rotation**: Every use of a refresh token issues a brand-new token and immediately invalidates the old one. If a stolen token is used, the legitimate family is also revoked, instantly alerting the system to token theft.
+
+## 6. Web Application Firewall (WAF)
 
 Axiom includes an embedded WAF layer (`src/server/middleware/waf.py`) that executes before any business logic.
 
@@ -115,14 +125,27 @@ Axiom includes an embedded WAF layer (`src/server/middleware/waf.py`) that execu
 - **Input Sanitization**: Automatically removes null bytes and suspicious Unicode character sequences.
 - **Pattern Matching**: Blocks requests containing common exploit strings in URLs and headers.
 
-## 6. Idempotency
+## 7. Idempotency
 
 Mutating requests (`POST`, `PUT`, `DELETE`) can be made idempotent by providing a `X-Idempotency-Key` header.
 - The gateway caches the result of the first successful execution for 24 hours.
 - Subsequent requests with the same key receive the cached response without re-executing the operation.
 - This prevents duplicate database records and file operations in the event of network retry loops.
 
-## 7. Security Recommendations for Production
+## 8. Distributed Tracing & Observability
+
+Axiom injects **OpenTelemetry (OTLP)** trace IDs into every request at the middleware level. The `trace_id` is included in all structured JSON log lines emitted by `structlog`, allowing you to correlate a single failing request across distributed logs instantly.
+
+- **Exporter**: Standard OTLP over HTTP, compatible with Jaeger, Datadog, Honeycomb, and any OTLP-compliant backend.
+- **Auto-Instrumentation**: `FastAPIInstrumentor` wraps all routes automatically — no manual span creation needed.
+- **Default Endpoint**: `http://localhost:4318/v1/traces` (standard OTLP collector port).
+
+```json
+// Every log line now contains:
+{ "level": "info", "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736", "request_id": "...", "method": "POST", "path": "/api/v1/auth/login" }
+```
+
+## 9. Security Recommendations for Production
 
 - **TLS/SSL**: Always set `tls_cert` and `tls_key` in `config.toml` or terminate TLS at a trusted reverse proxy (e.g., Nginx, Cloudflare).
 - **Restricted Scoping**: Never use `["*"]` for `db_scope` or `fs_scope` on keys exposed to end-user applications. Use `feature_scope` to lock down access to unneeded subsystems like GraphQL or WebSockets.

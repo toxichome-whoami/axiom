@@ -31,6 +31,7 @@ from server.middleware.rate_limit import RateLimitMiddleware
 from server.middleware.request_id import RequestIDMiddleware
 from server.middleware.security_headers import SecurityHeadersMiddleware
 from server.middleware.waf import WAFMiddleware
+from server.telemetry import setup_telemetry
 from webhook import health_router as webhook_health_router
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -219,5 +220,8 @@ def create_app() -> FastAPI:
     _attach_middlewares(app)
     _attach_routers(app)
     _attach_exception_handlers(app)
+
+    # Inject Distributed Tracing
+    setup_telemetry(app)
 
     return app

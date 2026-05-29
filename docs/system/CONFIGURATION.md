@@ -214,6 +214,12 @@ Per-webhook subscription definition.
 
 Configures one isolated auth project. The `<name>` must match an API key name defined in `[api_key.<name>]`. Each project gets its own isolated SQLite database, Ed25519 key, and email config.
 
+**Database**
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `db_url` | `"sqlite+aiosqlite:///data/auth.db"` | SQLAlchemy database URL. Use `postgresql+asyncpg://user:pass@host/db` for PostgreSQL (horizontal scaling) |
+
 **Token Lifetimes**
 
 | Key | Default | Description |
@@ -264,11 +270,26 @@ Configures one isolated auth project. The `<name>` must match an API key name de
 | `anonymous_auth` | `false` | Allow unauthenticated anonymous sessions |
 | `anonymous_upgrade_ttl` | `604800` | Seconds before an unupgraded anonymous account is purged (7 days) |
 
-**JWT Custom Claims**
+**JWT Custom Claims & RBAC**
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `jwt_custom_claims` | `[]` | List of user metadata keys to inject into the JWT payload |
+| `jwt_custom_claims` | `[]` | List of user metadata keys to inject into the JWT payload. Add `"role"` here to enable server-side RBAC |
+
+**WebAuthn (Passkeys)**
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `webauthn_enabled` | `true` | Enable passwordless logins via device biometrics (FaceID/TouchID) |
+| `rp_id` | `"localhost"` | Relying Party ID — must match your domain (e.g. `example.com`) |
+| `rp_name` | `"Axiom"` | Human-readable app name shown in the browser passkey dialog |
+| `origin` | `"http://localhost:3000"` | Full origin URL where registration/authentication flows are initiated |
+
+**Security Alerts**
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `new_device_alerts` | `true` | Send a security email when a user logs in from a new IP address |
 
 **Rate Limiting & Security**
 
@@ -450,3 +471,34 @@ Event-Driven Architecture (EDA) configuration. When enabled and backed by Redis,
 | `dlq_retention_hours` | `72` | Hours to retain failed webhook deliveries in the DLQ stream |
 | `consumer_group` | `"axiom_workers"` | Redis Consumer Group name |
 | `consumer_name` | `"worker_1"` | Identifier for this specific node in the Consumer Group |
+
+---
+
+## `[backups]`
+
+Automated Point-in-Time Recovery (PITR) engine. When enabled, Axiom runs a background daemon that compresses the `data/` directory and streams it to an S3-compatible bucket (AWS S3, Cloudflare R2, MinIO) at regular intervals.
+
+> [!NOTE]
+> The `data/` directory contains all SQLite databases (auth, security, webhooks). Enabling this gives you full disaster recovery capability without any external orchestration tools.
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `enabled` | `false` | Enable the backup daemon |
+| `interval_minutes` | `5` | How often (in minutes) to compress and upload a snapshot |
+| `s3_bucket` | `""` | Target S3 bucket name |
+| `s3_region` | `"us-east-1"` | AWS region or equivalent for your S3-compatible provider |
+| `s3_endpoint_url` | `null` | Override endpoint for non-AWS providers (e.g. `https://...r2.cloudflarestorage.com`) |
+| `s3_access_key` | `""` | S3 Access Key ID |
+| `s3_secret_key` | `""` | S3 Secret Access Key |
+
+**Example (Cloudflare R2):**
+```toml
+[backups]
+enabled = true
+interval_minutes = 60
+s3_bucket = "axiom-backups"
+s3_region = "auto"
+s3_endpoint_url = "https://<account_id>.r2.cloudflarestorage.com"
+s3_access_key = "your_r2_access_key"
+s3_secret_key = "your_r2_secret_key"
+```

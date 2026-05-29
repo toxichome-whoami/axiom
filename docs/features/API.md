@@ -572,12 +572,27 @@ curl -X POST "http://localhost:4500/api/v1/auth/my_project/signup" \
 
 #### POST `/login`
 Authenticate with email and password.
+
 ```bash
 curl -X POST "http://localhost:4500/api/v1/auth/my_project/login" \
      -H "Authorization: Bearer <API_KEY_TOKEN>" \
      -H "Content-Type: application/json" \
-     -d '{"email": "user@example.com", "password": "SecurePassword123"}'
+     -d '{"email":"test@example.com", "password":"StrongPassword123!"}'
 ```
+
+### 5. WebAuthn (Passkeys)
+
+Axiom supports passwordless biometrics via the W3C WebAuthn standard.
+
+#### Register a Passkey
+1. Generate options: `POST /api/v1/auth/{project_id}/webauthn/register/options` (Requires JWT)
+2. Verify & Save: `POST /api/v1/auth/{project_id}/webauthn/register/verify` (Requires JWT)
+
+#### Login via Passkey
+1. Generate options: `POST /api/v1/auth/{project_id}/webauthn/login/options`
+2. Verify & Login: `POST /api/v1/auth/{project_id}/webauthn/login/verify` (Returns Access & Refresh tokens)
+
+### 6. Refresh Token
 If TOTP is enrolled, the response includes `"totp_required": true` and a one-time `session_token` to be exchanged via `/totp/verify`.
 
 #### POST `/refresh`

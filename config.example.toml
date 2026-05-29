@@ -208,6 +208,7 @@ consumer_name = "worker_1"
 # ─── Auth Identity System ────────────────────────────
 # Isolated identity provider powered by Ed25519 JWT and Argon2id.
 [auth.project.default_project]
+db_url = "sqlite+aiosqlite:///data/auth.db"
 min_password_length = 8
 
 # Automatic post-signup verification:
@@ -217,7 +218,17 @@ verification_ttl = 900             # 15 minutes
 magic_link_ttl = 900               # 15 minutes (used for passwordless /magic-link endpoint)
 
 anonymous_auth = true
-anonymous_upgrade_ttl = 2592000    # 30 days
+anonymous_upgrade_ttl = 604800
+
+# Advanced Security
+webauthn_enabled = true
+rp_id = "localhost"
+rp_name = "Axiom Auth"
+origin = "http://localhost:3000"
+new_device_alerts = true
+
+max_login_attempts = 5
+lockout_duration = 9000    # 30 days
 totp_enabled = true
 totp_issuer = "Axiom Gateway"
 backup_codes_count = 10
@@ -235,3 +246,13 @@ smtp_password = "your_password"
 smtp_tls = false
 from_address = "noreply@axiom.local"
 from_name = "Axiom Auth"
+
+# ─── Automated Disaster Recovery (PITR) ─────────
+[backups]
+enabled = false
+interval_minutes = 5
+s3_bucket = "axiom-backups"
+s3_region = "us-east-1"
+s3_endpoint_url = "https://s3.us-east-1.amazonaws.com"
+s3_access_key = ""
+s3_secret_key = ""

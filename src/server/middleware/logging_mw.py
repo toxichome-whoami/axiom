@@ -1,6 +1,7 @@
 import time
 
 import structlog
+from opentelemetry import trace
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 logger = structlog.get_logger()
@@ -56,8 +57,16 @@ class LoggingMiddleware:
             await self.app(scope, receive, send_wrapper)
         except Exception as e:
             duration_ms = (time.perf_counter() - start_time) * 1000
+            span = trace.get_current_span()
+            trace_id = (
+                format(span.get_span_context().trace_id, "032x")
+                if span and span.get_span_context().is_valid
+                else "-"
+            )
+
             logger.error(
                 "Request failed",
+                trace_id=trace_id,
                 request_id=scope.get("state", {}).get("request_id", "-"),
                 client_ip=_resolve_client_ip(scope),
                 method=scope.get("method"),
@@ -73,9 +82,17 @@ class LoggingMiddleware:
         method = scope.get("method")
         path = scope.get("path")
 
+        span = trace.get_current_span()
+        trace_id = (
+            format(span.get_span_context().trace_id, "032x")
+            if span and span.get_span_context().is_valid
+            else "-"
+        )
+
         if status_code >= 500:
             logger.error(
                 "Request completed",
+                trace_id=trace_id,
                 request_id=req_id,
                 client_ip=client_ip,
                 method=method,
@@ -86,6 +103,7 @@ class LoggingMiddleware:
         elif status_code >= 400:
             logger.warning(
                 "Request completed",
+                trace_id=trace_id,
                 request_id=req_id,
                 client_ip=client_ip,
                 method=method,
@@ -96,6 +114,7 @@ class LoggingMiddleware:
         else:
             logger.info(
                 "Request completed",
+                trace_id=trace_id,
                 request_id=req_id,
                 client_ip=client_ip,
                 method=method,

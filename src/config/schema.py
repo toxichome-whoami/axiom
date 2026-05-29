@@ -309,6 +309,9 @@ class AuthEmailConfig(BaseModel):
 
 
 class AuthProjectConfig(BaseModel):
+    # Database
+    db_url: str = "sqlite+aiosqlite:///data/auth.db"
+
     # Lifetimes
     access_token_ttl: int = 900
     refresh_token_ttl: int = 2592000
@@ -344,6 +347,15 @@ class AuthProjectConfig(BaseModel):
     # JWT Injection
     jwt_custom_claims: List[str] = Field(default_factory=list)
 
+    # WebAuthn (Passkeys)
+    webauthn_enabled: bool = True
+    rp_id: str = "localhost"
+    rp_name: str = "Axiom"
+    origin: str = "http://localhost:3000"
+
+    # Security Alerts
+    new_device_alerts: bool = True
+
     # Rate limiting
     max_login_attempts: int = 5
     lockout_duration: int = 900
@@ -368,6 +380,16 @@ class AuthProjectConfig(BaseModel):
 
 class AuthConfig(BaseModel):
     project: Dict[str, AuthProjectConfig] = Field(default_factory=dict)
+
+
+class BackupsConfig(BaseModel):
+    enabled: bool = False
+    interval_minutes: int = 5
+    s3_bucket: str = ""
+    s3_region: str = "us-east-1"
+    s3_endpoint_url: Optional[str] = None
+    s3_access_key: str = ""
+    s3_secret_key: str = ""
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -398,3 +420,4 @@ class AxiomConfig(BaseModel):
     federation: FederationConfig = Field(default_factory=FederationConfig)
     circuit_breaker: CircuitBreakerConfig = Field(default_factory=CircuitBreakerConfig)
     auth: AuthConfig = Field(default_factory=AuthConfig)
+    backups: BackupsConfig = Field(default_factory=BackupsConfig)

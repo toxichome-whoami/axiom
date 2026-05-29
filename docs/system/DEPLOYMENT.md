@@ -175,6 +175,27 @@ scrape_configs:
 - <code>axiom_rate_limit_hits_total</code> spike (potential attack)
 - <code>axiom_webhook_failed_total</code> increasing (delivery issues)
 
+### Distributed Tracing (OpenTelemetry)
+
+Axiom automatically exports OpenTelemetry (`OTLP`) traces to `localhost:4318/v1/traces` if the OpenTelemetry SDK is installed. It injects `trace_id` directly into the JSON `structlog` output. Use Jaeger or Datadog to visualize cross-service request flame graphs.
+
+---
+
+## Disaster Recovery (S3 PITR)
+
+Axiom supports Automated Point-in-Time Recovery (PITR) using a background daemon that periodically compresses the `data/` directory and streams it to an S3-compatible bucket (AWS S3, Cloudflare R2, MinIO).
+
+Configure it in `config.toml`:
+```toml
+[backups]
+enabled = true
+interval_minutes = 60
+s3_bucket = "axiom-backups"
+s3_region = "us-east-1"
+s3_access_key = "..."
+s3_secret_key = "..."
+```
+
 ---
 
 ## Upgrading

@@ -1,51 +1,118 @@
 # Authentication Subsystem
 
-Axiom includes an ultra-secure, ultra-lightweight embedded authentication engine. It is designed to be "faster than Firebase Auth, lighter than Supabase Auth, and perfectly isolated."
+Axiom includes an ultra-secure, ultra-lightweight embedded authentication engine. Designed to be *"faster than Firebase Auth, lighter than Supabase Auth — you own every byte."*
+
+---
 
 ## Core Philosophy
-1. **Total Isolation**: Every API key acts as its own autonomous "project." All users, sessions, templates, and audit logs for an API key are stored in an isolated SQLite database at `data/auth/<api_key_hash>/auth.db`.
-2. **State-of-the-art Crypto**: 
-   - JWTs are signed using **Ed25519** (EdDSA) for incredibly fast verification and small token sizes.
-   - Passwords are automatically hashed using **Argon2id**.
-3. **No External Dependencies**: Axiom handles TOTP, QR code generation, magic links, email delivery (via SMTP), and session revocation entirely in-memory and on-disk without needing external Redis or managed services.
 
-## Features
+1. **Total Isolation**: Every API key acts as its own autonomous "project." All users, sessions, tokens, and audit logs are stored in an isolated database (SQLite by default, or PostgreSQL for horizontal scaling) configured via `db_url`.
+2. **State-of-the-art Crypto**:
+   - JWTs are signed using **Ed25519** (EdDSA) — incredibly fast verification and tiny token sizes.
+   - Passwords are hashed using **Argon2id** — memory-hard, resistant to GPU/ASIC cracking.
+3. **No External Dependencies**: Axiom handles TOTP, QR code generation, magic links, email delivery (SMTP), WebAuthn, and session revocation entirely in-memory and on-disk without external services.
 
-### Authentication Methods
-- **Password**: Traditional email/password with strict verification.
-- **Magic Links**: Passwordless login via secure, single-use tokens sent over email.
-- **Anonymous**: Temporary anonymous sessions that can be later upgraded to permanent accounts.
-- **Multi-Factor (TOTP)**: Standard Authenticator app support (Google Authenticator, Authy). Includes backup codes and enforces 2FA on sessions if enrolled.
+---
 
-### Sessions & Tokens
-- **Ed25519 JWTs**: Access tokens are stateless and verify offline rapidly. They include audience claims matching your API key project.
-- **Refresh Tokens**: Opaque tokens stored in the database for rolling sessions and immediate revocation.
-- **Device & IP Tracking**: Sessions track the originating IP and User Agent, allowing users and admins to revoke compromised devices.
+## Authentication Methods
 
-### Email & Customization
-- Axiom natively connects to any SMTP server.
-- **Custom Templates**: You can inject your own HTML templates directly into the project's `auth.db` for flows like `password_reset`, `email_verify`, and `magic_link`.
-- Templates support safe placeholder injection (e.g., `{{.Link}}`, `{{.UserEmail}}`).
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| **Password** | `POST /signup`, `POST /login` | Traditional email/password with policy enforcement |
+| **Magic Links** | `POST /magic-link` | Passwordless login via secure, single-use tokens in email |
+| **OTP Login** | `POST /otp/send`, `POST /otp/verify` | Numeric code-based verification |
+| **Anonymous** | `POST /anon` | Temporary sessions upgradeable to full accounts |
+| **TOTP / 2FA** | `POST /totp/enroll`, `POST /totp/verify` | Authenticator app support with backup codes |
+| **Passkeys (WebAuthn)** | `POST /webauthn/register`, `POST /webauthn/login` | Biometric, passwordless login (FaceID/TouchID) |
 
-### Rate Limiting & Protection
-- Local, high-performance rate limiter caching invalid login attempts.
-- Configurable lockouts after sequential failures.
-- Captures and records failed login IP addresses into the audit logs.
+---
 
-### Webhook Integration
-Auth flows are natively hooked into the EDA/Webhook system. You can configure webhooks to automatically dispatch payloads when events occur:
-- `signup`
-- `login`
-- `logout`
-- `password_reset`
-- `email_change`
-- `delete`
+## Sessions & Tokens
 
-## Configuration
-Auth behavior is defined under the `auth.project.<api_key>` section in your `axiom.json` file. You can customize:
-- Token TTLs (Access, Refresh, Magic Link)
-- Password Policies (Length, Uppercase, Numbers)
-- Resend Cooldowns
-- SMTP Transport Settings
+- **Ed25519 JWTs**: Access tokens are stateless and verify offline instantly. Claims include `sub`, `email`, `email_verified`, `is_anonymous`, `totp_verified`, and any custom claims.
+- **Refresh Token Rotation**: Every refresh issues a brand-new token and **immediately revokes the old one**. If a stolen token is used, the entire token family is revoked — token theft is instantly detected.
+- **Device & IP Tracking**: Sessions record the originating IP and User Agent. New IP logins trigger a security alert email if `new_device_alerts = true`.
 
-See the [Configuration Guide](../system/CONFIGURATION.md) for a full schema breakdown.
+---
+
+## Security Features
+
+### Brute Force Protection
+The `BruteForceProtector` is an isolated, in-memory fixed-window TTL counter.
+
+- Protects: `/login`, `/otp/send`, `/password/forgot`
+- Config: `max_login_attempts` (default `5`), `lockout_duration` (default `900s`)
+- After N failed attempts from an IP, the IP is mathematically locked out for the cooldown period.
+
+### New Device Alerts
+When `new_device_alerts = true`, every successful login checks if the IP has ever been seen for that user. If not, a `new_device_login` security email is dispatched in real-time — before the token is even returned.
+
+### Role-Based Access Control (RBAC)
+Add `"role"` to `jwt_custom_claims` in `config.toml`. The system reads the user's `role` field from their metadata and embeds it directly into the signed JWT — allowing **sub-millisecond, database-free** permission checks via the `RequireRole` FastAPI dependency.
+
+```toml
+[auth.project.myapp]
+jwt_custom_claims = ["role", "tenant_id"]
+```
+
+Then in your FastAPI route:
+```python
+from api.auth.dependencies import RequireRole
+
+@router.get("/admin", dependencies=[Depends(RequireRole(["admin", "superadmin"]))])
+async def admin_panel(): ...
+```
+
+### Passkeys (WebAuthn)
+Axiom natively supports **FIDO2/WebAuthn** via `python-webauthn`. Users can register device biometrics (FaceID, TouchID, hardware keys) and authenticate without a password. Challenges are generated and verified entirely server-side — phishing and credential stuffing are mathematically impossible.
+
+Configure with:
+```toml
+[auth.project.myapp]
+webauthn_enabled = true
+rp_id = "example.com"        # Must match your domain
+rp_name = "My App"
+origin = "https://example.com"
+```
+
+---
+
+## Email & Templates
+
+- Axiom natively connects to any SMTP server via `[auth.project.<name>.email]`.
+- **Custom Templates**: Inject your own HTML into `auth.db` for flows like `password_reset`, `email_verify`, `magic_link`, `new_device_login`.
+- Safe placeholder injection: `{{.Link}}`, `{{.UserEmail}}`, `{{.Code}}`, `{{.IpAddress}}`, `{{.Time}}`.
+
+---
+
+## Database Scaling
+
+By default, each auth project uses an isolated SQLite database (`sqlite+aiosqlite:///data/auth.db`). For **horizontal scaling across multiple servers**, switch to PostgreSQL:
+
+```toml
+[auth.project.myapp]
+db_url = "postgresql+asyncpg://user:password@db-host:5432/myapp_auth"
+```
+
+This uses `asyncpg` under the hood — the fastest PostgreSQL driver for Python.
+
+---
+
+## Webhook Integration
+
+Auth flows are natively hooked into the EDA/Webhook system. Configure webhooks for:
+
+| Event | Config Key |
+|-------|-----------|
+| New signup | `webhook_on_signup = true` |
+| Successful login | `webhook_on_login = true` |
+| Logout | `webhook_on_logout = true` |
+| Password reset | `webhook_on_password_reset = true` |
+| Email change | `webhook_on_email_change = true` |
+| Account deletion | `webhook_on_delete = true` |
+
+---
+
+## Configuration Reference
+
+See [`CONFIGURATION.md → [auth.project.<name>]`](../system/CONFIGURATION.md) for the full schema breakdown including all token TTLs, password policies, resend throttling, and SMTP settings.

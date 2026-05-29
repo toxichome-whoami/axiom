@@ -19,6 +19,7 @@ from db.pool import DatabasePoolManager
 from generated.axiom.v1 import federation_pb2_grpc
 from logger.rotator import log_rotator_worker
 from logger.setup import setup_logging
+from server.backup_engine import backup_engine
 from webhook.dispatcher import ensure_workers, load_pending_webhooks, webhook_shutdown
 from webhook.persistence import close_persistence, init_persistence
 
@@ -107,6 +108,9 @@ def _start_background_daemons(config) -> List[asyncio.Task]:
     tasks.append(asyncio.create_task(ConfigManager.watch()))
     tasks.append(asyncio.create_task(log_rotator_worker(config.logging)))
 
+    if hasattr(config, "backups") and config.backups.enabled:
+        backup_engine.start()
+
     # Conditional feature workers
     if config.features.webhook and config.webhooks.enabled:
         load_pending_webhooks()
@@ -145,6 +149,8 @@ async def _stop_background_daemons():
     """Gracefully kills all active background coroutines."""
     for task in _daemon_tasks:
         task.cancel()
+
+    await backup_engine.stop()
 
     _daemon_tasks.clear()
 

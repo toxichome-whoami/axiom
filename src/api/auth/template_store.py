@@ -12,6 +12,7 @@ VALID_TEMPLATES = {
     "password_reset",
     "magic_link",
     "email_change",
+    "new_device_login",
 }
 
 ALLOWED_PLACEHOLDERS = {
@@ -20,6 +21,13 @@ ALLOWED_PLACEHOLDERS = {
     "password_reset": {"{{.AppName}}", "{{.UserEmail}}", "{{.Link}}"},
     "magic_link": {"{{.AppName}}", "{{.UserEmail}}", "{{.Link}}"},
     "email_change": {"{{.AppName}}", "{{.UserEmail}}", "{{.Link}}"},
+    "new_device_login": {
+        "{{.AppName}}",
+        "{{.UserEmail}}",
+        "{{.IpAddress}}",
+        "{{.UserAgent}}",
+        "{{.Time}}",
+    },
 }
 
 # Regex to find any placeholder in the form {{...}}

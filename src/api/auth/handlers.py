@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Tuple
 import aiosqlite
 from fastapi import Request
 
+from src.api.auth.brute_force import BruteForceProtector
 from src.api.auth.email_transport import EmailTransport
 from src.api.auth.import_export import AuthImportExport
 from src.api.auth.rate_limiter import auth_rate_limiter
@@ -194,6 +195,32 @@ async def _create_auth_response(
     token_hash = hash_sha256(refresh_token)
     family_id = str(uuid.uuid4())
 
+    if (
+        getattr(config, "new_device_alerts", False)
+        and not bool(row["is_anonymous"])
+        and email
+    ):
+        async with conn.execute(
+            "SELECT COUNT(*) FROM refresh_tokens WHERE uid = ? AND ip_address = ?",
+            (uid, ip),
+        ) as cursor:
+            count_row = await cursor.fetchone()
+            count = count_row[0] if count_row else 0
+            if count == 0:
+                await EmailTransport.send_email(
+                    conn,
+                    config.email,
+                    "new_device_login",
+                    email,
+                    {
+                        "{{.AppName}}": "Axiom",
+                        "{{.UserEmail}}": email,
+                        "{{.IpAddress}}": ip,
+                        "{{.UserAgent}}": user_agent,
+                        "{{.Time}}": utc_now_iso(),
+                    },
+                )
+
     expires_at = datetime_to_iso(time.time() + config.refresh_token_ttl)
     await UserStore.issue_refresh_token(
         conn, uid, token_hash, family_id, expires_at, ip, user_agent
@@ -309,6 +336,15 @@ async def login(request: Request, body: LoginRequest) -> Dict[str, Any]:
     ip = _get_ip(request)
     ua = _get_user_agent(request)
 
+    BruteForceProtector.check_and_record(
+        action="login",
+        project_id=project_id,
+        ip_address=ip,
+        max_attempts=getattr(config, "max_login_attempts", 5),
+        window_seconds=300,
+        lockout_duration=getattr(config, "lockout_duration", 300),
+    )
+
     _check_ip_allowlist(ip, config)
     auth_rate_limiter.check_login_lockout(body.email, config)
 
@@ -351,6 +387,7 @@ async def login(request: Request, body: LoginRequest) -> Dict[str, Any]:
             ErrorCodes.AUTH_ACCOUNT_DISABLED, "Account is disabled", 403
         )
 
+    BruteForceProtector.reset(action="login", project_id=project_id, ip_address=ip)
     auth_rate_limiter.record_successful_login(body.email)
     await UserStore.log_audit(conn, "login_success", row["uid"], ip, ua)
     await AuthWebhookEmitter.emit(

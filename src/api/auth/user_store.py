@@ -76,6 +76,15 @@ CREATE TABLE IF NOT EXISTS totp_backup_codes (
     created_at   TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS webauthn_credentials (
+    id           TEXT PRIMARY KEY, -- Base64URL encoded credential ID
+    uid          TEXT NOT NULL REFERENCES users(uid) ON DELETE CASCADE,
+    public_key   TEXT NOT NULL, -- Base64URL encoded public key bytes
+    sign_count   INTEGER DEFAULT 0,
+    created_at   TEXT NOT NULL,
+    last_used_at TEXT
+);
+
 CREATE TABLE IF NOT EXISTS email_templates (
     type         TEXT PRIMARY KEY,
     subject      TEXT NOT NULL,

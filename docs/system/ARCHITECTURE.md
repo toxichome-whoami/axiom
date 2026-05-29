@@ -25,7 +25,7 @@ The pipeline converges at the Router which redirects to:
 - **Storage (`/api/fs`)**: Executes zero-copy `aiofiles` streamed proxies and implements active `CircuitBreaker` integrations to block bandwidth saturation. All large file uploads via the `ChunkedUploadManager` use direct socket-to-disk 1MB streams (`write_chunk_stream`) leveraging native sparse-file offset allocation with on-the-fly threaded cryptographic hashing, rendering the gateway fully immune to Out-of-Memory (OOM) crashes during massive concurrent uploads.
 - **GraphQL (`/api/v1/graphql`)** *(optional)*: An `ASTCompiler` walks the incoming `graphql-core` parse tree and extracts SQL intent — no Python resolver objects are instantiated. The extracted SQL is dispatched directly into the same `QueryExecutionPipeline` used by the REST database endpoints, meaning all WAF, blacklist, scope, and rate-limit rules apply identically. This is the secondary interface; the REST API is the primary.
 - **WebSocket (`/api/v1/ws`)** *(optional)*: A Starlette-native WebSocket endpoint using zero additional dependencies. The `ConnectionManager` maintains an in-process `{client_id → WebSocket}` registry. The `EventBus` pushes natively to **Redis Streams** (EDA) allowing cross-node event syncing, and broadcasts to local subscribers via fire-and-forget side channel from `emit_event()`.
-- **Auth (`/api/v1/auth`)**: A fully self-contained, isolated authentication engine built on `Ed25519` JWTs and `Argon2id`. Every API key gets its own private SQLite database (`auth.db`) containing its users, refresh tokens, TOTP secrets, audit logs, and custom email HTML templates. Enabled via `features.auth = true`. On startup, the lifespan initializes the Ed25519 key pair on a background thread. A background daemon (`cleanup_expired_anonymous_users`) continuously purges expired anonymous sessions. Auth flows emit events into the webhook engine.
+- **Auth (`/api/v1/auth`)**: A fully self-contained, isolated authentication engine built on `Ed25519` JWTs and `Argon2id`. Every API key gets its own configurable database (`db_url` in config — SQLite by default, PostgreSQL for horizontal scaling) containing its users, refresh tokens, TOTP secrets, WebAuthn credentials, audit logs, and custom email HTML templates. Enabled via `features.auth = true`. On startup, the lifespan initializes the Ed25519 key pair on a background thread. A background daemon (`cleanup_expired_anonymous_users`) continuously purges expired anonymous sessions. Auth flows emit events into the webhook engine. Advanced security features include brute-force protection (`BruteForceProtector`), new device IP alerts, RBAC via JWT custom claims, and FIDO2/WebAuthn passkey support.
 - **Webhooks (`/api/v1/webhook`)**: Uses a dual-backend persistence layer (SQLite or **Redis Streams**) with robust Dead-Letter Queues (DLQ) using `XPENDING` and `XCLAIM`. Background workers deliver webhooks asynchronously, protected by a dedicated Circuit Breaker.
 
 ## Federation
@@ -36,3 +36,16 @@ Federation proxy clients (`httpx.AsyncClient`) are **attached to `app.state.http
 - Connection pools are cleanly initialized on first use and shared across all requests.
 - On server shutdown, the `lifespan` context manager iterates over all clients in `app.state.http_clients` and calls `aclose()` — preventing socket leaks on restart.
 - Horizontal scaling is safe: each process owns its own isolated pool in its own ASGI app state.
+
+## Distributed Tracing (OpenTelemetry)
+
+Axiom integrates **OpenTelemetry** via `FastAPIInstrumentor` — every route is automatically wrapped in a trace span. The `LoggingMiddleware` extracts the active `trace_id` from the span context and injects it into every `structlog` JSON log line. Traces are exported via OTLP/HTTP to `localhost:4318` (compatible with Jaeger, Datadog, Honeycomb). This allows full **flame graph debugging** of distributed request chains without any manual instrumentation.
+
+## Automated Backup Engine (PITR)
+
+The `BackupEngine` (`src/server/backup_engine.py`) runs as a background daemon launched in the FastAPI lifespan. When `backups.enabled = true`, it periodically:
+1. Compresses the entire `data/` directory into a timestamped `.tar.gz` archive using Python's `tarfile`.
+2. Streams the archive to any S3-compatible bucket (AWS S3, Cloudflare R2, MinIO) via `boto3`.
+3. Deletes the local archive after a successful upload.
+
+All I/O is dispatched to a thread pool via `asyncio.to_thread` to keep the event loop non-blocking. The backup interval, bucket, region, and credentials are all configurable in `[backups]` in `config.toml`.
