@@ -198,9 +198,10 @@ metrics_interval = 5           # Seconds between background metrics snapshots
 # ─── Event-Driven Architecture (EDA) ─────────
 [eda]
 enabled = true
-backend = "memory"                 # memory | redis
+backend = "memory"                 # memory | redis | nats
 redis_url = "redis://127.0.0.1:6379/1"
-max_stream_length = 100000         # Max events retained in the stream (XADD MAXLEN)
+nats_url = "nats://127.0.0.1:4222" # Ultra-lightweight ~15MB RAM Go-based broker
+max_stream_length = 100000         # Max events retained in the stream
 dlq_retention_hours = 72           # Dead-Letter Queue retention period
 consumer_group = "axiom_workers"
 consumer_name = "worker_1"

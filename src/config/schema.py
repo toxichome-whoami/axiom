@@ -119,8 +119,9 @@ class EDAConfig(BaseModel):
     """Configuration for Event-Driven Architecture (EDA) backing unified streams and Webhook queues."""
 
     enabled: bool = True
-    backend: Literal["memory", "redis"] = "memory"
+    backend: Literal["memory", "redis", "nats"] = "memory"
     redis_url: str = "redis://127.0.0.1:6379/1"
+    nats_url: str = "nats://127.0.0.1:4222"
     max_stream_length: int = 100000
     dlq_retention_hours: int = 72
     consumer_group: str = "axiom_workers"

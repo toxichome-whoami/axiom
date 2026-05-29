@@ -54,3 +54,12 @@ class FetchRowsParams(BaseModel):
     filter: Optional[str] = None
     search: Optional[str] = None
     search_fields: Optional[str] = None
+
+
+class VectorSearchRequest(BaseModel):
+    """Payload for embedded sqlite-vec similarity search."""
+
+    table: str
+    vector: List[float]
+    k: int = 10
+    filter: Optional[Dict[str, Any]] = None

@@ -80,10 +80,21 @@ docker compose up -d
 - [ ] Set `features.playground = false` to disable Swagger UI
 - [ ] Configure `rate_limit.max_requests` appropriate for your expected traffic
 - [ ] Set `cache.backend = "redis"` and `rate_limit.backend = "redis"` for multi-worker deployments
+- [ ] Set `eda.backend = "nats"` and configure `eda.nats_url` for high-performance Event-Driven Webhooks with minimal RAM usage
 - [ ] Ensure the `/data` directory is mounted to a persistent volume, as it stores dynamic API keys and security state in SQLite
 - [ ] Configure `logging.level = "WARN"` or `"ERROR"` for production
 - [ ] Set `storage.<alias>.blocked_extensions` to block potentially dangerous uploads
 - [ ] Review `database.<alias>.dangerous_operations = false` (default) to prevent DDL
+
+- [ ] Review `database.<alias>.dangerous_operations = false` (default) to prevent DDL
+
+---
+
+## Embedded Database Features (AI & Search)
+
+Axiom deeply integrates with SQLite to provide enterprise capabilities without external containers:
+1. **Vector AI Search:** If using the `sqlite` dialect, Axiom automatically loads `sqlite-vec` to provide K-Nearest Neighbors vector search via the `/api/v1/db/{alias}/embeddings/search` endpoint.
+2. **FTS5 Full-Text Search:** Axiom dynamically hooks into SQLite's native FTS5 engine, offering Elasticsearch-grade searching with zero idle background RAM usage via `/api/v1/db/{alias}/search/fts5`.
 
 ---
 

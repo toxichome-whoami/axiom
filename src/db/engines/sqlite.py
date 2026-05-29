@@ -86,6 +86,15 @@ class SQLiteEngine(DatabaseEngine):
             pool_recycle=config.max_lifetime,
         )
 
+        from sqlalchemy import event
+        import sqlite_vec  # type: ignore
+
+        @event.listens_for(self.engine.sync_engine, "connect")
+        def receive_connect(dbapi_connection, connection_record):
+            dbapi_connection.enable_load_extension(True)
+            sqlite_vec.load(dbapi_connection)
+            dbapi_connection.enable_load_extension(False)
+
     async def connect(self) -> None:
         """Handled purely by AioSQLite background engine proxies."""
         pass
@@ -161,6 +170,19 @@ class SQLiteEngine(DatabaseEngine):
         async with self.engine.begin() as conn:
             result = await conn.execute(text(sql), params_list)
             return result.rowcount or 0
+
+    async def setup_fts5_index(self, table: str, columns: List[str]) -> None:
+        """Dynamically creates an FTS5 virtual table synchronized via zero-RAM database triggers."""
+        fts_table = f"{table}_fts"
+        cols_str = ", ".join(columns)
+        new_cols_str = ", ".join(f"new.{c}" for c in columns)
+        old_cols_str = ", ".join(f"old.{c}" for c in columns)
+        
+        async with self.engine.begin() as conn:
+            await conn.execute(text(f"CREATE VIRTUAL TABLE IF NOT EXISTS {fts_table} USING fts5({cols_str}, content='{table}', content_rowid='rowid');"))
+            await conn.execute(text(f"CREATE TRIGGER IF NOT EXISTS {fts_table}_ai AFTER INSERT ON {table} BEGIN INSERT INTO {fts_table}(rowid, {cols_str}) VALUES (new.rowid, {new_cols_str}); END;"))
+            await conn.execute(text(f"CREATE TRIGGER IF NOT EXISTS {fts_table}_ad AFTER DELETE ON {table} BEGIN INSERT INTO {fts_table}({fts_table}, rowid, {cols_str}) VALUES('delete', old.rowid, {old_cols_str}); END;"))
+            await conn.execute(text(f"CREATE TRIGGER IF NOT EXISTS {fts_table}_au AFTER UPDATE ON {table} BEGIN INSERT INTO {fts_table}({fts_table}, rowid, {cols_str}) VALUES('delete', old.rowid, {old_cols_str}); INSERT INTO {fts_table}(rowid, {cols_str}) VALUES (new.rowid, {new_cols_str}); END;"))
 
     @property
     def dialect(self) -> str:

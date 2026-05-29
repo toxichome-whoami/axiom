@@ -18,6 +18,14 @@ except ImportError:
     HAS_REDIS = False
     redis_module = None  # type: ignore
 
+try:
+    import nats  # type: ignore
+
+    HAS_NATS = True
+except ImportError:
+    HAS_NATS = False
+    nats = None  # type: ignore
+
 
 class WebhookPersistence:
     """Dual-backend persistent queue (SQLite or Redis Streams) for webhook events."""
@@ -33,6 +41,11 @@ class WebhookPersistence:
             self._backend = "redis"
             # Redis connection is async, we initialize it when needed or assume it's up
             logger.info("Webhook persistence using Redis Streams EDA")
+            return
+
+        if config.eda.enabled and config.eda.backend == "nats" and HAS_NATS:
+            self._backend = "nats"
+            logger.info("Webhook persistence using NATS JetStream EDA")
             return
 
         # Fallback to SQLite
@@ -87,6 +100,19 @@ class WebhookPersistence:
                 pass
         return self._redis_client
 
+    async def _get_nats(self):
+        if not hasattr(self, "_nats_client"):
+            config = GlobalConfigProvider().get_config()
+            self._nats_client = await nats.connect(config.eda.nats_url)  # type: ignore
+            self._js = self._nats_client.jetstream()
+            try:
+                await self._js.add_stream(
+                    name="axiom_webhooks", subjects=["webhooks.*"]
+                )
+            except Exception:
+                pass
+        return self._js
+
     def enqueue(
         self,
         event_id: str,
@@ -118,6 +144,32 @@ class WebhookPersistence:
                 )
 
             threading.Thread(target=lambda: asyncio.run(_xadd()), daemon=True).start()
+            return event_id
+
+        if self._backend == "nats":
+            import asyncio
+            import threading
+
+            async def _js_publish():
+                js = await self._get_nats()
+                await js.publish(
+                    "webhooks.enqueue",
+                    orjson.dumps(
+                        {
+                            "event_id": event_id,
+                            "hook_name": hook_name,
+                            "url": url,
+                            "secret": secret,
+                            "headers": headers,
+                            "payload": payload,
+                            "attempt": 1,
+                        }
+                    ),
+                )
+
+            threading.Thread(
+                target=lambda: asyncio.run(_js_publish()), daemon=True
+            ).start()
             return event_id
 
         try:
@@ -162,6 +214,10 @@ class WebhookPersistence:
                     pass
 
             threading.Thread(target=lambda: asyncio.run(_xack()), daemon=True).start()
+            return
+
+        if self._backend == "nats":
+            # NATS uses msg.ack() directly on the consumer side.
             return
 
         conn = sqlite3.connect(self.db_path)
@@ -296,7 +352,8 @@ class WebhookPersistence:
 
             client = self._redis_client
             threading.Thread(
-                target=lambda: asyncio.run(client.close()), daemon=True  # type: ignore
+                target=lambda: asyncio.run(client.close()),
+                daemon=True,  # type: ignore
             ).start()
         pass
 

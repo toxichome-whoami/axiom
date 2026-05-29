@@ -12,7 +12,7 @@ from api.database.filter_builder import (build_where_clause,
                                          construct_delete, construct_update)
 from api.database.query_parser import validate_query
 from api.database.schemas import (DeleteRequest, FetchRowsParams,
-                                  InsertRequest, QueryRequest, UpdateRequest)
+                                  InsertRequest, QueryRequest, UpdateRequest, VectorSearchRequest)
 from api.errors import AxiomException, ErrorCodes
 from api.federation.proxy import (_build_alias_map, _resolve_server,
                                   proxy_request)
@@ -669,6 +669,123 @@ async def execute_query(
         raise
     except Exception as exec_error:
         metrics.increment("db_query_errors")
+        raise AxiomException(ErrorCodes.DB_QUERY_FAILED, str(exec_error), 500)
+
+
+@router.post("/{db_name}/search/fts5")
+async def fts5_search(
+    request: Request,
+    body: QueryRequest,
+    db_name: str = Path(...),
+    auth: AuthContext = Depends(get_auth_context),
+):
+    """Executes high-speed Full-Text Search against an FTS5 virtual table."""
+    engine, db_cfg = await get_db_engine(db_name, auth)
+    
+    if engine.dialect != "sqlite":
+        raise AxiomException(
+            ErrorCodes.INPUT_SCHEMA_INVALID, 
+            "FTS5 search is only supported natively on SQLite embedded instances", 
+            400
+        )
+
+    try:
+        req_fmt = "protobuf" if is_protobuf_requested(request) else "json"
+        
+        # We assume body.sql contains the FTS MATCH query, or we construct it
+        result = await QueryExecutionPipeline.run_query(
+            engine,
+            db_cfg,
+            auth,
+            request,
+            db_name,
+            body.sql,
+            body.params or {},
+            return_format=req_fmt,
+        )
+
+        json_data = (
+            {
+                "columns": result.columns,
+                "rows": result.rows,
+                "affected_rows": result.affected_rows,
+            }
+            if req_fmt == "json"
+            else None
+        )
+
+        metrics.increment("db_fts_searches_total")
+        return protobuf_or_json(request, result.proto_msg, json_data)
+    except AxiomException:
+        raise
+    except Exception as exec_error:
+        raise AxiomException(ErrorCodes.DB_QUERY_FAILED, str(exec_error), 500)
+
+
+@router.post("/{db_name}/embeddings/search")
+async def search_embeddings(
+    request: Request,
+    body: VectorSearchRequest,
+    db_name: str = Path(...),
+    auth: AuthContext = Depends(get_auth_context),
+):
+    if _is_federated(db_name):
+        return await FederatedQueryEngine.execute_distributed_query(
+            db_name, "embeddings/search", request
+        )
+
+    engine, db_cfg = await get_db_engine(db_name, auth)
+    
+    if engine.dialect != "sqlite":
+        raise AxiomException(
+            ErrorCodes.INPUT_SCHEMA_INVALID, 
+            "Vector similarity search is only supported natively on SQLite embedded instances via sqlite-vec", 
+            400
+        )
+
+    try:
+        import orjson
+        vector_json = orjson.dumps(body.vector).decode("utf-8")
+        req_fmt = "protobuf" if is_protobuf_requested(request) else "json"
+        
+        sql = f"SELECT *, vec_distance_L2(embedding, :__vector) as _distance FROM {body.table}"
+        sql_params: dict[str, Any] = {"__vector": vector_json}
+        
+        if body.filter:
+            where_sql, filter_params = build_where_clause(body.filter)
+            if where_sql:
+                sql += f" WHERE {where_sql}"
+                sql_params.update(filter_params)
+                
+        sql += " ORDER BY _distance ASC LIMIT :__k"
+        sql_params["__k"] = body.k
+        
+        result = await QueryExecutionPipeline.run_query(
+            engine,
+            db_cfg,
+            auth,
+            request,
+            db_name,
+            sql,
+            sql_params,
+            return_format=req_fmt,
+        )
+
+        json_data = (
+            {
+                "columns": result.columns,
+                "rows": result.rows,
+                "affected_rows": result.affected_rows,
+            }
+            if req_fmt == "json"
+            else None
+        )
+
+        metrics.increment("db_vector_searches_total")
+        return protobuf_or_json(request, result.proto_msg, json_data)
+    except AxiomException:
+        raise
+    except Exception as exec_error:
         raise AxiomException(ErrorCodes.DB_QUERY_FAILED, str(exec_error), 500)
 
 
