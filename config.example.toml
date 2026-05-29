@@ -209,10 +209,13 @@ consumer_name = "worker_1"
 # Isolated identity provider powered by Ed25519 JWT and Argon2id.
 [auth.project.default_project]
 min_password_length = 8
+
+# Automatic post-signup verification:
 email_verification = true
-verification_method = "magic_link" # 'magic_link' or 'otp'
+verification_method = "token"      # 'token' (sends Magic Link) or 'otp' (sends 6-digit code)
 verification_ttl = 900             # 15 minutes
-magic_link_ttl = 900               # 15 minutes
+magic_link_ttl = 900               # 15 minutes (used for passwordless /magic-link endpoint)
+
 anonymous_auth = true
 anonymous_upgrade_ttl = 2592000    # 30 days
 totp_enabled = true
@@ -224,10 +227,11 @@ callback_url = "http://localhost:3000/auth/callback"
 jwt_custom_claims = ["role", "tenant_id"]
 
 [auth.project.default_project.email]
-provider = "smtp"                  # smtp | mock
-host = "smtp.mailtrap.io"
-port = 2525
-username = "your_username"
-password = "your_password"
-from_email = "noreply@axiom.local"
+provider = "smtp"                  # smtp
+smtp_host = "smtp.mailtrap.io"
+smtp_port = 2525
+smtp_user = "your_username"
+smtp_password = "your_password"
+smtp_tls = false
+from_address = "noreply@axiom.local"
 from_name = "Axiom Auth"

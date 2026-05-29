@@ -4,12 +4,18 @@ import sys
 
 import uvicorn
 
+from config.loader import ConfigManager
+
+# Ensure the project root is in sys.path so 'src.*' imports resolve correctly
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
+
 try:
     import uvloop  # type: ignore
 except ImportError:
     uvloop = None
-
-from config.loader import ConfigManager
 
 
 def _optimize_garbage_collection():

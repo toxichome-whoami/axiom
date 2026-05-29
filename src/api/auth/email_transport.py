@@ -49,11 +49,15 @@ class EmailTransport:
         part = MIMEText(html_body, "html")
         msg.attach(part)
 
-        # Connect to SMTP
-        server = smtplib.SMTP(email_config.smtp_host, email_config.smtp_port)
-        try:
+        # Connect to SMTP securely based on port
+        if email_config.smtp_port == 465:
+            server = smtplib.SMTP_SSL(email_config.smtp_host, email_config.smtp_port)
+        else:
+            server = smtplib.SMTP(email_config.smtp_host, email_config.smtp_port)
             if email_config.smtp_tls:
                 server.starttls()
+
+        try:
             if email_config.smtp_user and email_config.smtp_password:
                 server.login(email_config.smtp_user, email_config.smtp_password)
             server.send_message(msg)

@@ -3,6 +3,7 @@ uvicorn[standard]>=0.27.1
 a2wsgi>=1.10.7
 pydantic>=2.6.0
 pydantic-settings>=2.2.1
+email-validator>=2.1.0
 watchfiles>=0.21.0
 cachetools>=5.3.3
 structlog>=24.1.0

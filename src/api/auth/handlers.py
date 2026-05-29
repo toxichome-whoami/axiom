@@ -46,7 +46,11 @@ from src.config.provider import GlobalConfigProvider
 
 
 def _get_project(request: Request) -> Tuple[str, Any]:
-    api_key_b64 = request.headers.get("X-Axiom-Key") or request.query_params.get("key")
+    api_key_b64 = (
+        request.headers.get("X-Api-Key")
+        or request.headers.get("X-Axiom-Key")
+        or request.query_params.get("key")
+    )
     if not api_key_b64:
         raise AxiomException(ErrorCodes.AUTH_MISSING_HEADER, "Missing API Key", 401)
 

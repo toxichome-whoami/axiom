@@ -1,13 +1,35 @@
 // Node.js example showing Axiom Auth SDK usage
 // Run with: node demo_auth_flow.js
 
-import "dotenv/config";
+import path from "path";
+import { fileURLToPath } from "url";
+import fs from "fs";
 import { AxiomAuth } from "../auth_sdks/javascript/index.js";
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+function loadEnv() {
+    const envPath = path.resolve(__dirname, ".env");
+    if (!fs.existsSync(envPath)) return {};
+
+    return Object.fromEntries(
+        fs
+            .readFileSync(envPath, "utf8")
+            .split("\n")
+            .filter((line) => line.includes("="))
+            .map((line) => {
+                const [key, ...val] = line.split("=");
+                return [key.trim(), val.join("=").trim().replace(/"/g, "")];
+            }),
+    );
+}
+
+const env = loadEnv();
+
 // Configuration from .env, falling back to defaults if not set
-const PROJECT_URL = process.env.AXIOM_URL;
-const keyName = process.env.AXIOM_KEY_NAME;
-const keySecret = process.env.AXIOM_KEY_SECRET;
+const PROJECT_URL = env.AXIOM_URL || "http://localhost:4500";
+const keyName = env.AXIOM_KEY_NAME || "admin";
+const keySecret = env.AXIOM_KEY_SECRET || "default_secret";
 const API_KEY = Buffer.from(`${keyName}:${keySecret}`).toString("base64");
 
 // Initialize SDK

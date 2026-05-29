@@ -131,25 +131,27 @@ class AuthDBManager:
 
     def __init__(self, data_dir: str = "./data/auth"):
         self.data_dir = data_dir
-        self.dbs: Dict[str, str] = {}
+        self.conns: Dict[str, aiosqlite.Connection] = {}
 
     async def get_db(self, project_id: str) -> aiosqlite.Connection:
-        if project_id not in self.dbs:
+        if project_id not in self.conns:
             project_dir = os.path.join(self.data_dir, project_id)
             os.makedirs(project_dir, exist_ok=True)
             db_path = os.path.join(project_dir, "auth.db")
-            self.dbs[project_id] = db_path
+
+            conn = await aiosqlite.connect(db_path)
+            conn.row_factory = aiosqlite.Row
+            await conn.execute("PRAGMA journal_mode=WAL;")
+            await conn.execute("PRAGMA synchronous=NORMAL;")
+            await conn.execute("PRAGMA busy_timeout=5000;")
 
             # Init schema if not exists
-            async with aiosqlite.connect(db_path) as conn:
-                await conn.executescript(AUTH_SCHEMA)
-                await conn.commit()
+            await conn.executescript(AUTH_SCHEMA)
+            await conn.commit()
 
-        # Return a new connection for the request (or could pool it if needed)
-        # We rely on aiosqlite connection per request lifecycle
-        conn = await aiosqlite.connect(self.dbs[project_id])
-        conn.row_factory = aiosqlite.Row
-        return conn
+            self.conns[project_id] = conn
+
+        return self.conns[project_id]
 
 
 auth_db_manager = AuthDBManager()

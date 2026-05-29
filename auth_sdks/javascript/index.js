@@ -42,7 +42,7 @@ export class AxiomAuth {
         const options = { method, headers };
         if (body !== null) options.body = JSON.stringify(body);
 
-        const url = `${this.baseUrl}/api/v1/auth/${this.projectId}${path}`;
+        const url = `${this.baseUrl}/api/v1/auth${path}`;
         let response = await fetch(url, options);
 
         // Auto-refresh on 401 if we have a refresh token and this was a user-token request
