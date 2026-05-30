@@ -433,6 +433,64 @@ impl WebhookPersistence {
         Ok(results)
     }
 
+    pub fn fetch_dead_letters(&self, py: Python, limit: i64) -> PyResult<Vec<PyObject>> {
+        if self.backend != "sqlite" {
+            return Ok(vec![]);
+        }
+        let conn = Connection::open(&self.db_path)
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+
+        let mut stmt = conn.prepare("SELECT json_object('id', id, 'queue_id', queue_id, 'event_id', event_id, 'hook_name', hook_name, 'url', url, 'payload', payload, 'attempts', attempts, 'last_error', last_error, 'died_at', died_at) FROM webhook_dead_letter ORDER BY died_at DESC LIMIT ?1").map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+
+        let mut rows = stmt
+            .query([limit])
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+        let json_mod = py.import_bound("json")?;
+
+        let mut results = Vec::new();
+        while let Ok(Some(row)) = rows.next() {
+            let json_str: String = row.get(0).unwrap();
+            let py_dict = json_mod.call_method1("loads", (json_str,))?;
+            results.push(py_dict.into());
+        }
+
+        Ok(results)
+    }
+
+    pub fn pop_dead_letter(&self, py: Python, event_id: String) -> PyResult<Option<PyObject>> {
+        if self.backend != "sqlite" {
+            return Ok(None);
+        }
+        let mut conn = Connection::open(&self.db_path)
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+        let tx = conn
+            .transaction()
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+
+        let mut stmt = tx.prepare("SELECT json_object('id', id, 'queue_id', queue_id, 'event_id', event_id, 'hook_name', hook_name, 'url', url, 'payload', payload, 'attempts', attempts, 'last_error', last_error, 'died_at', died_at) FROM webhook_dead_letter WHERE event_id = ?1").map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+
+        let mut rows = stmt
+            .query(params![event_id])
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+        let json_mod = py.import_bound("json")?;
+
+        if let Ok(Some(row)) = rows.next() {
+            let json_str: String = row.get(0).unwrap();
+            let py_dict = json_mod.call_method1("loads", (json_str,))?;
+
+            drop(rows);
+            drop(stmt);
+            let _ = tx.execute(
+                "DELETE FROM webhook_dead_letter WHERE event_id = ?1",
+                params![event_id],
+            );
+            let _ = tx.commit();
+            return Ok(Some(py_dict.into()));
+        }
+
+        Ok(None)
+    }
+
     pub fn close(&self) -> PyResult<()> {
         Ok(())
     }

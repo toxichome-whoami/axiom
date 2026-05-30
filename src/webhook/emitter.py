@@ -1,20 +1,13 @@
 import asyncio
-import base64
-import hmac
-import time
-from dataclasses import dataclass
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional
 
 import structlog
-from axiom_core.webhook import (  # type: ignore
-    WebhookQueueList,
-    get_persistence,
-)
+from axiom_core.webhook import WebhookQueueList, get_persistence  # type: ignore
+from axiom_core.webhook import compile_rules as _rs_compile_rules  # type: ignore
+from axiom_core.webhook import process_event as _rs_process_event  # type: ignore
 from pydantic import BaseModel
 
 from config.provider import GlobalConfigProvider
-from utils.uuid7 import uuid7
-from webhook.dispatcher import ensure_workers
 
 logger = structlog.get_logger()
 
@@ -52,129 +45,20 @@ class WebhookPayload(BaseModel):
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-@dataclass(frozen=True, slots=True)
-class CompiledRule:
-    """Pre-parsed rule components for O(1) matching per event."""
-
-    module: str
-    operation: str
-    alias: str
-    targets: Tuple[str, ...]  # Immutable tuple for fast 'in' checks
-
-
-# {hook_name: CompiledRule}
-_compiled_rules: Dict[str, CompiledRule] = {}
-
-
 def _compile_rules() -> None:
-    """Pre-compiles all webhook rules from config into structured objects.
-    Called once at startup and again on config hot-reload."""
-    global _compiled_rules
-    config = GlobalConfigProvider().get_config()
-    if not config.features.webhook or not config.webhooks.enabled:
-        _compiled_rules = {}
-        return
-
-    new_rules: Dict[str, CompiledRule] = {}
-    for name, hook in config.webhook.items():
-        try:
-            r_mod_op, r_alias_target = hook.rule.split("@")
-            r_mod, r_op = r_mod_op.split(".")
-            r_alias, r_target = r_alias_target.split(":")
-            targets = (
-                tuple(t.strip() for t in r_target.split(","))
-                if r_target != "*"
-                else ("*",)
-            )
-            new_rules[name] = CompiledRule(
-                module=r_mod,
-                operation=r_op,
-                alias=r_alias,
-                targets=targets,
-            )
-        except (ValueError, AttributeError) as e:
-            logger.warning("Skipping malformed webhook rule", hook=name, error=str(e))
-            continue
-
-    _compiled_rules = new_rules
+    """Delegates rule compilation to the native Rust engine."""
+    try:
+        _rs_compile_rules()
+    except Exception as e:
+        logger.error("Rust compiler failed to compile webhook rules", error=str(e))
 
 
 # Compile on first import
 _compile_rules()
 
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Event Engine
 # ─────────────────────────────────────────────────────────────────────────────
-
-
-def _is_token_matched(hook_secret: str, provided_token: Optional[str]) -> bool:
-    """Validates the client-provided trigger token cryptographically."""
-    if not provided_token:
-        return False
-
-    try:
-        decoded_token = base64.b64decode(provided_token).decode("utf-8")
-        return hmac.compare_digest(hook_secret, decoded_token)
-    except Exception:
-        return False
-
-
-def _is_rule_matched_compiled(
-    compiled: CompiledRule,
-    hook,
-    module: str,
-    operation: str,
-    resource: str,
-    target: str,
-    trigger: WebhookTrigger,
-) -> bool:
-    """O(1) rule matching against pre-compiled rule components."""
-    if not hook.enabled:
-        return False
-
-    if compiled.module not in ("*", module):
-        return False
-
-    if compiled.operation not in ("*", "any", operation):
-        return False
-
-    if compiled.alias not in ("*", resource):
-        return False
-
-    if compiled.targets[0] != "*" and target not in compiled.targets:
-        return False
-
-    return _is_token_matched(hook.secret, trigger.webhook_token)
-
-
-def _build_payload(
-    config,
-    module: str,
-    operation: str,
-    resource: str,
-    target: str,
-    action: str,
-    details: Dict[str, Any],
-    trigger: WebhookTrigger,
-) -> WebhookPayload:
-    """Constructs the heavily structured standard output contract representing the notification."""
-    event_details = WebhookEventDetails(
-        module=module,
-        operation=operation,
-        resource=resource,
-        target=target,
-        action=action,
-        details=details,
-    )
-
-    return WebhookPayload(
-        event_id=f"evt_{uuid7().hex}",
-        timestamp=time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime()),
-        source=config.server.host,
-        event=event_details,
-        trigger=trigger,
-    )
 
 
 async def emit_event(
@@ -186,7 +70,7 @@ async def emit_event(
     details: Dict[str, Any],
     trigger: WebhookTrigger,
 ) -> None:
-    """Async entry point for webhook emission with pre-compiled O(1) rule matching."""
+    """Async entry point for webhook emission. Bridges to native Rust engine for O(1) matching."""
     config = GlobalConfigProvider().get_config()
 
     # Bridge to WebSocket subscribers — fire-and-forget, zero latency impact
@@ -205,9 +89,9 @@ async def emit_event(
                 )
             )
         except Exception:
-            pass  # WS module not loaded or loop not running
+            pass
 
-    # Bridge to SSE subscribers — zero-copy pre-serialized payload
+    # Bridge to SSE subscribers
     if config.features.sse:
         try:
             from api.sse.connection_manager import sse_mgr
@@ -224,81 +108,31 @@ async def emit_event(
         except Exception as e:
             logger.error("SSE publish failed", error=str(e))
 
-    if not config.features.webhook or not config.webhooks.enabled:
-        return
+    # Pass the heavy lifting down into the Rust engine
+    import json
 
-    # Match against pre-compiled rules — no string parsing per event
-    matched_hooks = []
-    for name, hook in config.webhook.items():
-        compiled = _compiled_rules.get(name)
-        if compiled is None:
-            continue
-        if _is_rule_matched_compiled(
-            compiled, hook, module, operation, resource, target, trigger
-        ):
-            matched_hooks.append((name, hook))
-
-    if not matched_hooks:
-        return
-
-    # Pack and distribute
-    payload = _build_payload(
-        config, module, operation, resource, target, action, details, trigger
-    )
-    json_payload = payload.model_dump_json()
+    details_json = json.dumps(details)
 
     persistence = None
-    if config.webhooks.persistence_enabled:
+    if config.features.webhook and config.webhooks.persistence_enabled:
         persistence = get_persistence()
 
     queue = WebhookQueueList.get_queue()
 
-    for name, hook in matched_hooks:
-        if persistence:
-            db_id = persistence.enqueue(
-                event_id=payload.event_id,
-                hook_name=name,
-                url=hook.url,
-                secret=hook.secret,
-                headers=hook.headers,
-                payload=json_payload,
-            )
-            if db_id is not None:
-                try:
-                    queue.put_nowait(
-                        {
-                            "id": db_id,
-                            "event_id": payload.event_id,
-                            "hook_name": name,
-                            "url": hook.url,
-                            "secret": hook.secret,
-                            "headers": hook.headers,
-                            "payload": json_payload,
-                            "attempt": 1,
-                        }
-                    )
-                    ensure_workers()
-                except asyncio.QueueFull:
-                    logger.error(
-                        "Webhook memory queue full, persistent event delayed",
-                        event_id=payload.event_id,
-                        hook_name=name,
-                    )
-        else:
-            try:
-                queue.put_nowait(
-                    {
-                        "hook_name": name,
-                        "url": hook.url,
-                        "secret": hook.secret,
-                        "headers": hook.headers,
-                        "payload": json_payload,
-                    }
-                )
-                ensure_workers()
-            except asyncio.QueueFull:
-                logger.error(
-                    "Webhook queue full, dropping event",
-                    event_id=payload.event_id,
-                    hook_name=name,
-                )
+    try:
+        _rs_process_event(
+            persistence,
+            queue,
+            module,
+            operation,
+            resource,
+            target,
+            action,
+            details_json,
+            trigger.api_key,
+            trigger.ip,
+            trigger.request_id,
+            trigger.webhook_token,
+        )
+    except Exception as e:
+        logger.error("Rust engine failed to process webhook event", error=str(e))

@@ -1,4 +1,3 @@
-import sqlite3
 from typing import List
 
 from axiom_core.webhook import (  # type: ignore
@@ -68,16 +67,8 @@ async def list_dead_letter(
     if not persistence:
         return {"error": "Persistence not initialized"}
 
-    conn = sqlite3.connect(persistence.db_path)
-    conn.row_factory = sqlite3.Row
-    c = conn.cursor()
-    c.execute(
-        "SELECT * FROM webhook_dead_letter ORDER BY died_at DESC LIMIT ?", (limit,)
-    )
-    rows = c.fetchall()
-    conn.close()
-
-    return {"dead_letters": [dict(row) for row in rows]}
+    letters = persistence.fetch_dead_letters(limit)
+    return {"dead_letters": letters}
 
 
 class ReplayRequest(BaseModel):
@@ -96,25 +87,11 @@ async def replay_dead_letter(
     if not persistence:
         return {"error": "Persistence not initialized"}
 
-    conn = sqlite3.connect(persistence.db_path)
-    conn.row_factory = sqlite3.Row
-    c = conn.cursor()
-
-    try:
-        rows_to_replay = []
-        for event_id in req.event_ids:
-            c.execute(
-                "SELECT * FROM webhook_dead_letter WHERE event_id = ?", (event_id,)
-            )
-            row = c.fetchone()
-            if row:
-                rows_to_replay.append(dict(row))
-                c.execute(
-                    "DELETE FROM webhook_dead_letter WHERE event_id = ?", (event_id,)
-                )
-        conn.commit()
-    finally:
-        conn.close()
+    rows_to_replay = []
+    for event_id in req.event_ids:
+        row = persistence.pop_dead_letter(event_id)
+        if row:
+            rows_to_replay.append(row)
 
     replayed = 0
     for row in rows_to_replay:
