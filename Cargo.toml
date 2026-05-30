@@ -42,4 +42,5 @@ opentelemetry_sdk = { version = "0.24.1", features = ["rt-tokio"] }
 opentelemetry-otlp = { version = "0.17.0", features = ["grpc-sys", "http-proto"] }
 tracing-opentelemetry = "0.25.0"
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+tracing-appender = "0.2"

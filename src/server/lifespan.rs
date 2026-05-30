@@ -15,6 +15,9 @@ pub fn start_daemons() {
         tasks.push(handle);
     }
 
+    let rotator_handle = crate::logger::rotator::LogRotator::start();
+    tasks.push(rotator_handle);
+
     // Future daemon spawns (Webhook retries, Federation gRPC server) go here
 }
 
