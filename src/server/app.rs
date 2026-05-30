@@ -33,7 +33,11 @@ pub fn create_app() -> Router {
         .allow_origin(Any)
         .allow_methods(Any)
         .allow_headers(Any);
+    // Core Routes
+    let core_routes = crate::api::core::health::get_router()
+        .merge(crate::api::core::metrics::get_router());
 
+    // API versioning wrapper
     let api_routes = Router::new()
         .route("/health", get(health_check))
         // Mount feature modules here as they are ported
@@ -47,9 +51,11 @@ pub fn create_app() -> Router {
         .nest("/api/v1", api_routes)
         .nest("/api/v1/webhook", crate::webhook::router::get_router())
         .nest("/api/v1/db", crate::api::database::router::get_router())
+        .nest("/api/v1/fs", crate::api::storage::router::get_router())
         .nest("/api/v1/graphql", crate::api::graphql::router::get_router())
         .nest("/api/v1/ws", crate::api::ws::router::get_router())
         .nest("/api/v1/sse", crate::api::sse::router::get_router())
+        .merge(core_routes)
         .fallback(fallback_handler)
         .layer(cors)
         .layer(TraceLayer::new_for_http())
