@@ -24,4 +24,6 @@ serde_json = "1.0.116"
 
 uuid = { version = "1.8", features = ["v4"] }
 base64 = "0.22.1"
+reqwest = { version = "0.13.4", features = ["default-tls"] }
+rand = "0.10.1"
 

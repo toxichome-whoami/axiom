@@ -179,7 +179,11 @@ async function ensureMessagingTableExists() {
         });
         console.log("✅ Initialized.");
     } catch (err) {
-        console.log(`⚠️  Bootstrap Warning: ${err.message}\n`);
+        console.error(`\n❌ Bootstrap Error: Failed to verify or initialize messaging table.`);
+        console.error(`   Details: ${err.message}`);
+        console.error(`   Ensure your database is running, the credentials in .env are correct,`);
+        console.error(`   and that 'dangerous_operations = true' is set in config.toml for your database.`);
+        process.exit(1);
     }
 }
 

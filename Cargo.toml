@@ -1,0 +1,30 @@
+[package]
+name = "axiom"
+version = "1.0.5"
+edition = "2021"
+description = "Axiom API Gateway Backend"
+
+[dependencies]
+dashmap = "5.5"
+
+hmac = "0.12"
+sha2 = "0.10"
+hex = "0.4"
+
+tokio = { version = "1.37.0", features = ["full"] }
+rusqlite = { version = "0.31.0", features = ["bundled"] }
+redis = { version = "0.25.3", features = ["tokio-comp"] }
+async-nats = "0.35.0"
+serde_json = "1.0.116"
+serde = { version = "1.0", features = ["derive"] }
+
+uuid = { version = "1.8", features = ["v4"] }
+base64 = "0.22.1"
+reqwest = { version = "0.13.4", features = ["default-tls", "json"] }
+rand = "0.8.5"
+
+# Web Framework
+axum = "0.7.5"
+tower-http = { version = "0.5.2", features = ["cors", "trace"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

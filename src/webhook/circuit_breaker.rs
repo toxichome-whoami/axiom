@@ -1,19 +1,17 @@
 use dashmap::DashMap;
-use pyo3::prelude::*;
-use pyo3::types::PyDict;
 use std::sync::Arc;
 use std::sync::OnceLock;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Clone, PartialEq, Eq)]
-enum State {
+pub enum State {
     Closed,
     Open,
     HalfOpen,
 }
 
 impl State {
-    fn as_str(&self) -> &'static str {
+    pub fn as_str(&self) -> &'static str {
         match self {
             State::Closed => "closed",
             State::Open => "open",
@@ -23,7 +21,7 @@ impl State {
 }
 
 #[derive(Clone)]
-struct CircuitState {
+pub struct CircuitState {
     pub failures: u32,
     pub opened_at: f64,
     pub state: State,
@@ -50,15 +48,12 @@ fn current_time() -> f64 {
 
 /// A high-performance, thread-safe Circuit Breaker implemented in Rust.
 /// Uses DashMap for lock-free concurrency across all Python threads.
-#[pyclass]
 #[derive(Clone)]
 pub struct CircuitBreaker {
     states: Arc<DashMap<String, CircuitState>>,
 }
 
-#[pymethods]
 impl CircuitBreaker {
-    #[new]
     pub fn new() -> Self {
         CircuitBreaker {
             states: Arc::new(DashMap::new()),
@@ -113,17 +108,18 @@ impl CircuitBreaker {
         }
     }
 
-    pub fn get_state<'py>(&self, py: Python<'py>, url: &str) -> PyResult<Bound<'py, PyDict>> {
+    pub fn get_state(&self, url: &str) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
         let st = self
             .states
             .entry(url.to_string())
             .or_insert_with(CircuitState::default);
-        let dict = PyDict::new_bound(py);
-        dict.set_item("state", st.state.as_str())?;
-        dict.set_item("failures", st.failures)?;
-        dict.set_item("opened_at", st.opened_at)?;
-        dict.set_item("last_success", st.last_success)?;
-        Ok(dict)
+
+        Ok(serde_json::json!({
+            "state": st.state.as_str(),
+            "failures": st.failures,
+            "opened_at": st.opened_at,
+            "last_success": st.last_success,
+        }))
     }
 
     pub fn all_urls(&self) -> Vec<String> {
@@ -143,7 +139,6 @@ impl CircuitBreaker {
 
 static BREAKER: OnceLock<CircuitBreaker> = OnceLock::new();
 
-#[pyfunction]
 pub fn get_circuit_breaker() -> CircuitBreaker {
     BREAKER.get_or_init(|| CircuitBreaker::new()).clone()
 }

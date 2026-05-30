@@ -7,18 +7,30 @@ import orjson
 from fastapi import Depends, Path, Query, Request
 
 from api.core import metrics
-from api.database.filter_builder import (build_where_clause,
-                                         construct_bulk_insert,
-                                         construct_delete, construct_update)
+from api.database.filter_builder import (
+    build_where_clause,
+    construct_bulk_insert,
+    construct_delete,
+    construct_update,
+)
 from api.database.query_parser import validate_query
-from api.database.schemas import (DeleteRequest, FetchRowsParams,
-                                  InsertRequest, QueryRequest, UpdateRequest, VectorSearchRequest)
+from api.database.schemas import (
+    DeleteRequest,
+    FetchRowsParams,
+    InsertRequest,
+    QueryRequest,
+    UpdateRequest,
+    VectorSearchRequest,
+)
 from api.errors import AxiomException, ErrorCodes
-from api.federation.proxy import (_build_alias_map, _resolve_server,
-                                  proxy_request)
+from api.federation.proxy import _build_alias_map, _resolve_server, proxy_request
 from api.federation.state import FederationStateManager
-from api.responses import (cacheable_response, is_protobuf_requested,
-                           protobuf_or_json, success_response)
+from api.responses import (
+    cacheable_response,
+    is_protobuf_requested,
+    protobuf_or_json,
+    success_response,
+)
 from cache import CacheManager
 from config.loader import HOT_RELOAD_CALLBACKS
 from config.provider import GlobalConfigProvider, get_config_dependency
@@ -49,7 +61,12 @@ _IN_FLIGHT_DB: dict[str, asyncio.Event] = {}
 
 
 def _refresh_feature_flags():
-    global _FEDERATION_ENABLED, _FEDERATION_SERVERS, _EVENT_EMISSION_ENABLED, _QUERY_CACHE_ENABLED, _QUERY_RESULTS_TTL
+    global \
+        _FEDERATION_ENABLED, \
+        _FEDERATION_SERVERS, \
+        _EVENT_EMISSION_ENABLED, \
+        _QUERY_CACHE_ENABLED, \
+        _QUERY_RESULTS_TTL
 
     config = GlobalConfigProvider().get_config()
     _FEDERATION_ENABLED = bool(config.features.federation and config.federation.enabled)
@@ -435,6 +452,14 @@ class QueryExecutionPipeline:
                     result.affected_rows or 0,
                 )
 
+            # Invalidate schema cache on DDL operations
+            if operations in ("create", "drop", "alter"):
+                await CacheManager.delete(f"schema:tables:{db_name}")
+                await CacheManager.delete(f"schema:tables_count:{db_name}")
+                if target_table and target_table != "*":
+                    await CacheManager.delete(f"schema:cols:{db_name}:{target_table}")
+                    await CacheManager.delete(f"schema:cols:{db_name}:*")
+
             if (
                 is_read
                 and _QUERY_CACHE_ENABLED
@@ -454,7 +479,7 @@ class QueryExecutionPipeline:
                     del _IN_FLIGHT_DB[cache_key]
 
             return result
-        
+
         except Exception:
             if cache_key in _IN_FLIGHT_DB:
                 _IN_FLIGHT_DB[cache_key].set()
@@ -681,17 +706,17 @@ async def fts5_search(
 ):
     """Executes high-speed Full-Text Search against an FTS5 virtual table."""
     engine, db_cfg = await get_db_engine(db_name, auth)
-    
+
     if engine.dialect != "sqlite":
         raise AxiomException(
-            ErrorCodes.INPUT_SCHEMA_INVALID, 
-            "FTS5 search is only supported natively on SQLite embedded instances", 
-            400
+            ErrorCodes.INPUT_SCHEMA_INVALID,
+            "FTS5 search is only supported natively on SQLite embedded instances",
+            400,
         )
 
     try:
         req_fmt = "protobuf" if is_protobuf_requested(request) else "json"
-        
+
         # We assume body.sql contains the FTS MATCH query, or we construct it
         result = await QueryExecutionPipeline.run_query(
             engine,
@@ -735,31 +760,32 @@ async def search_embeddings(
         )
 
     engine, db_cfg = await get_db_engine(db_name, auth)
-    
+
     if engine.dialect != "sqlite":
         raise AxiomException(
-            ErrorCodes.INPUT_SCHEMA_INVALID, 
-            "Vector similarity search is only supported natively on SQLite embedded instances via sqlite-vec", 
-            400
+            ErrorCodes.INPUT_SCHEMA_INVALID,
+            "Vector similarity search is only supported natively on SQLite embedded instances via sqlite-vec",
+            400,
         )
 
     try:
         import orjson
+
         vector_json = orjson.dumps(body.vector).decode("utf-8")
         req_fmt = "protobuf" if is_protobuf_requested(request) else "json"
-        
+
         sql = f"SELECT *, vec_distance_L2(embedding, :__vector) as _distance FROM {body.table}"
         sql_params: dict[str, Any] = {"__vector": vector_json}
-        
+
         if body.filter:
             where_sql, filter_params = build_where_clause(body.filter)
             if where_sql:
                 sql += f" WHERE {where_sql}"
                 sql_params.update(filter_params)
-                
+
         sql += " ORDER BY _distance ASC LIMIT :__k"
         sql_params["__k"] = body.k
-        
+
         result = await QueryExecutionPipeline.run_query(
             engine,
             db_cfg,
