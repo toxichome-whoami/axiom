@@ -45,6 +45,15 @@ def main():
         print(
             "[+] The native Rust module has been injected into your Python environment."
         )
+
+        if len(sys.argv) > 1 and sys.argv[1] == "--test":
+            test_cmd = sys.argv[2]
+            print(f"\n[*] Running Test: {test_cmd}")
+            env["PYTHONPATH"] = "src"
+            subprocess.run(
+                [sys.executable, "-c", test_cmd], cwd=".", env=env, check=True
+            )
+
     except subprocess.CalledProcessError as e:
         print(f"\n[-] Build failed with exit code {e.returncode}")
         sys.exit(e.returncode)

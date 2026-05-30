@@ -10,12 +10,12 @@ from axiom_core.webhook import (  # type: ignore
     WebhookQueueList,
     generate_signature,
     get_circuit_breaker,
+    get_persistence,
 )
 
 from api.core import metrics
 from config.provider import GlobalConfigProvider
 from encoding.proto_utils import webhook_payload_dict_to_proto
-from webhook.persistence import get_persistence
 
 logger = structlog.get_logger()
 

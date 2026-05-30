@@ -6,13 +6,15 @@ from dataclasses import dataclass
 from typing import Any, Dict, Optional, Tuple
 
 import structlog
-from axiom_core.webhook import WebhookQueueList # type: ignore
+from axiom_core.webhook import (  # type: ignore
+    WebhookQueueList,
+    get_persistence,
+)
 from pydantic import BaseModel
 
 from config.provider import GlobalConfigProvider
 from utils.uuid7 import uuid7
 from webhook.dispatcher import ensure_workers
-from webhook.persistence import get_persistence
 
 logger = structlog.get_logger()
 

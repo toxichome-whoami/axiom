@@ -1,14 +1,16 @@
 import sqlite3
 from typing import List
 
-from axiom_core.webhook import get_circuit_breaker  # type: ignore
+from axiom_core.webhook import (  # type: ignore
+    get_circuit_breaker,
+    get_persistence,
+)
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from config.provider import GlobalConfigProvider
 from server.middleware.auth import RequireFeature
 from utils.types import AuthContext
-from webhook.persistence import get_persistence
 
 router = APIRouter(prefix="/webhooks", tags=["Webhooks"])
 

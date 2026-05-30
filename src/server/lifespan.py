@@ -23,7 +23,7 @@ from server.backup_engine import backup_engine
 from server.telemetry import setup_telemetry
 from webhook.dispatcher import (ensure_workers, load_pending_webhooks,
                                 webhook_shutdown)
-from webhook.persistence import close_persistence, init_persistence
+from axiom_core.webhook import close_persistence, init_persistence
 
 # Silently refresh module-level feature flags in db handlers on each config reload
 try:
