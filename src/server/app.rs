@@ -45,6 +45,8 @@ pub fn create_app() -> Router {
 
     Router::new()
         .nest("/api/v1", api_routes)
+        .nest("/api/v1/webhook", crate::webhook::router::get_router())
+        .nest("/api/v1/ws", crate::api::ws::router::get_router())
         .fallback(fallback_handler)
         .layer(cors)
         .layer(TraceLayer::new_for_http())
