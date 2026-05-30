@@ -6,14 +6,13 @@ from typing import Optional, Set
 import httpx
 import orjson
 import structlog
+from axiom_core.webhook import generate_signature, get_circuit_breaker  # type: ignore
 
 from api.core import metrics
 from config.provider import GlobalConfigProvider
 from encoding.proto_utils import webhook_payload_dict_to_proto
-from webhook.circuit_breaker import get_circuit_breaker
 from webhook.persistence import get_persistence
 from webhook.queue import WebhookQueueList
-from webhook.signer import generate_signature
 
 logger = structlog.get_logger()
 

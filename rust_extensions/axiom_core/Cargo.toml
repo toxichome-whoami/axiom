@@ -1,0 +1,17 @@
+[package]
+name = "axiom_core"
+version = "0.1.0"
+edition = "2021"
+description = "Core Rust extensions for the Axiom API"
+
+[lib]
+name = "axiom_core"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = { version = "0.21", features = ["extension-module"] }
+dashmap = "5.5"
+
+hmac = "0.12"
+sha2 = "0.10"
+hex = "0.4"
