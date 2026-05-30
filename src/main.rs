@@ -8,6 +8,7 @@ pub mod middleware;
 pub mod config;
 pub mod server;
 pub mod logger;
+pub mod db;
 mod utils;
 mod webhook;
 
