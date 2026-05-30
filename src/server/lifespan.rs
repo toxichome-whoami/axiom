@@ -18,6 +18,12 @@ pub fn start_daemons() {
     let rotator_handle = crate::logger::rotator::LogRotator::start();
     tasks.push(rotator_handle);
 
+    let health_handle = tokio::spawn(crate::api::sse::daemons::health_poller());
+    tasks.push(health_handle);
+
+    let metrics_handle = tokio::spawn(crate::api::sse::daemons::metrics_pusher());
+    tasks.push(metrics_handle);
+
     // Future daemon spawns (Webhook retries, Federation gRPC server) go here
 }
 

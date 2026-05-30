@@ -49,3 +49,5 @@ async-trait = "0.1.80"
 redis = { version = "0.25.3", features = ["tokio-comp"] }
 futures = "0.3.30"
 base64 = "0.22"
+tokio-stream = "0.1.15"
+graphql-parser = "0.4.0"
