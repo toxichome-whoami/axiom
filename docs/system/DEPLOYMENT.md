@@ -7,7 +7,8 @@
 
 ## Requirements
 
-- Python 3.11+
+- Rust 1.75+ (Cargo)
+- MSYS2 UCRT64 toolchain (if compiling on Windows)
 - Optional: Redis (for distributed rate limiting and caching)
 - Optional: Docker + Docker Compose
 
@@ -23,15 +24,13 @@
 git clone https://github.com/yourorg/axiom
 cd axiom
 
-# 2. Install dependencies
-pip install -r requirements.txt
-
-# 3. Configure
+# 2. Configure
 cp config.example.toml config.toml
 # Edit config.toml — update secrets, database URLs, storage paths
 
-# 4. Run
-python src/main.py
+# 3. Build & Run
+cargo build --release
+./target/release/axiom
 # Server starts at http://0.0.0.0:4500
 # Admin API key will be printed to stdout on first run
 ```
@@ -46,18 +45,23 @@ python src/main.py
 <summary><b>Docker Build & Run</b></summary>
 
 ```bash
-# Build the image
+# Build the image (multi-stage: compiles Rust, then copies binary into slim runtime)
 docker build -t axiom:latest .
 
 # Run with a local config
 docker run -d \
   -p 4500:4500 \
-  -v $(pwd)/config.toml:/config.toml \
-  -v $(pwd)/storage:/storage \
-  -v $(pwd)/logs:/logs \
-  -v $(pwd)/data:/data \
+  -p 4501:4501 \
+  -e RUST_LOG=info \
+  -v $(pwd)/config.toml:/app/config.toml \
+  -v $(pwd)/storage:/app/storage \
+  -v $(pwd)/logs:/app/logs \
+  -v $(pwd)/data:/app/data \
   axiom:latest
 ```
+
+> [!NOTE]
+> The Dockerfile uses a **multi-stage build**: Stage 1 compiles the full release binary using `rust:1.78-slim`. Stage 2 copies only the binary into a minimal `debian:bookworm-slim` image with no Rust toolchain, no source code, and no build tools. The resulting image is tiny and has a minimal attack surface.
 
 </details>
 
@@ -67,8 +71,15 @@ docker run -d \
 cp config.example.toml config.toml
 # Set cache.backend = "redis" and cache.redis_url = "redis://redis:6379/0" in config.toml
 
+# Development (single instance + Redis)
 docker compose up -d
+
+# Production (3 replicas + Redis + NGINX load balancer)
+docker compose -f docker-compose.prod.yml up -d
 ```
+
+> [!TIP]
+> In production compose, the `RUST_LOG` environment variable controls log verbosity. Set it to `warn` or `error` to reduce log noise. The Tokio runtime automatically uses all available CPU cores — no worker count config needed.
 
 ---
 
@@ -79,13 +90,11 @@ docker compose up -d
 - [ ] Enable TLS by setting `tls_cert` and `tls_key` (or terminate TLS at your reverse proxy)
 - [ ] Set `features.playground = false` to disable Swagger UI
 - [ ] Configure `rate_limit.max_requests` appropriate for your expected traffic
-- [ ] Set `cache.backend = "redis"` and `rate_limit.backend = "redis"` for multi-worker deployments
+- [ ] Set `cache.backend = "redis"` and `rate_limit.backend = "redis"` for multi-replica deployments
 - [ ] Set `eda.backend = "nats"` and configure `eda.nats_url` for high-performance Event-Driven Webhooks with minimal RAM usage
-- [ ] Ensure the `/data` directory is mounted to a persistent volume, as it stores dynamic API keys and security state in SQLite
-- [ ] Configure `logging.level = "WARN"` or `"ERROR"` for production
+- [ ] Ensure `/app/data` is mounted to a persistent volume — it stores dynamic API keys and security state in SQLite
+- [ ] Set `RUST_LOG=warn` in production to reduce log volume
 - [ ] Set `storage.<alias>.blocked_extensions` to block potentially dangerous uploads
-- [ ] Review `database.<alias>.dangerous_operations = false` (default) to prevent DDL
-
 - [ ] Review `database.<alias>.dangerous_operations = false` (default) to prevent DDL
 
 ---
@@ -114,6 +123,7 @@ server {
     # Increase buffer for large file uploads
     client_max_body_size 500m;
 
+    # HTTP / REST API
     location / {
         proxy_pass http://127.0.0.1:4500;
         proxy_set_header Host $host;
@@ -121,9 +131,19 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
 
-        # For streaming downloads
+        # For SSE and streaming downloads
         proxy_buffering off;
         proxy_cache off;
+    }
+}
+
+# gRPC (HTTP/2) — separate server block on port 4501
+server {
+    listen 4501 http2;
+    server_name api.example.com;
+
+    location / {
+        grpc_pass grpc://127.0.0.1:4501;
     }
 }
 ```
@@ -146,7 +166,8 @@ After=network.target
 Type=simple
 User=axiom
 WorkingDirectory=/opt/axiom
-ExecStart=/opt/axiom/.venv/bin/python src/main.py --config /etc/axiom/config.toml
+ExecStart=/opt/axiom/target/release/axiom
+Environment="CONFIG_PATH=/etc/axiom/config.toml"
 Restart=always
 RestartSec=5
 StandardOutput=journal
@@ -188,7 +209,7 @@ scrape_configs:
 
 ### Distributed Tracing (OpenTelemetry)
 
-Axiom automatically exports OpenTelemetry (`OTLP`) traces to `localhost:4318/v1/traces` if the OpenTelemetry SDK is installed. It injects `trace_id` directly into the JSON `structlog` output. Use Jaeger or Datadog to visualize cross-service request flame graphs.
+Axiom automatically exports OpenTelemetry (`OTLP`) traces to `localhost:4318/v1/traces`. It injects `trace_id` directly into the JSON `tracing` output. Use Jaeger or Datadog to visualize cross-service request flame graphs.
 
 ---
 
@@ -215,8 +236,8 @@ s3_secret_key = "..."
 # Pull latest
 git pull origin main
 
-# Update deps
-pip install -r requirements.txt
+# Build
+cargo build --release
 
 # Restart
 sudo systemctl restart axiom

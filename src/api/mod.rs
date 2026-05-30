@@ -2,7 +2,6 @@ pub mod core;
 pub mod database;
 pub mod auth;
 pub mod errors;
-pub mod events;
 pub mod federation;
 pub mod graphql;
 pub mod mcp;

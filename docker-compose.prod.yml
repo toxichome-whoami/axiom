@@ -1,56 +1,58 @@
-version: '3.8'
+version: "3.8"
 
 services:
-  # The Redis store handles distributed state for Rate Limiting and Caching.
-  redis:
-    image: redis:7-alpine
-    container_name: axiom_redis
-    command: redis-server --save 60 1 --loglevel warning
-    volumes:
-      - redis_data:/data
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+    # Redis handles distributed state for Rate Limiting, Caching, and Event Streams.
+    redis:
+        image: redis:7-alpine
+        container_name: axiom_redis
+        command: redis-server --save 60 1 --loglevel warning
+        volumes:
+            - redis_data:/data
+        restart: unless-stopped
+        healthcheck:
+            test: ["CMD", "redis-cli", "ping"]
+            interval: 10s
+            timeout: 5s
+            retries: 5
 
-  # Axiom scalable replicas
-  axiom:
-    build: .
-    image: axiom:latest
-    # Override command to run multiple Uvicorn workers (via Config) or let Uvicorn handle it 
-    # Since we configured src/main.py to read config.server.workers, we just need to set the config!
-    restart: unless-stopped
-    volumes:
-      - ./config.toml:/config.toml
-      - ./storage:/storage
-      - ./logs:/logs
-      - ./data:/data
-    depends_on:
-      redis:
-        condition: service_healthy
-    deploy:
-      replicas: 3 # <--- AUTO-SCALING / LOAD BALANCING REPLICAS
-      update_config:
-        parallelism: 1
-        delay: 10s
-    # In production, do not expose ports directly to host. Let NGINX route traffic.
-    expose:
-      - "4500"
+    # Axiom — Rust native binary, no interpreter overhead
+    axiom:
+        build: .
+        image: axiom:latest
+        restart: unless-stopped
+        volumes:
+            - ./config.toml:/app/config.toml
+            - ./storage:/app/storage
+            - ./logs:/app/logs
+            - ./data:/app/data
+        environment:
+            - RUST_LOG=info
+        depends_on:
+            redis:
+                condition: service_healthy
+        deploy:
+            replicas: 3
+            update_config:
+                parallelism: 1
+                delay: 10s
+        # In production, do not expose ports directly to the host.
+        # NGINX routes all external traffic to the replicas.
+        expose:
+            - "4500" # HTTP / REST API
+            - "4501" # gRPC
 
-  # NGINX Load Balancer
-  nginx:
-    image: nginx:alpine
-    container_name: axiom_lb
-    volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf:ro
-    ports:
-      - "80:80"
-      - "443:443"
-    depends_on:
-      - axiom
-    restart: unless-stopped
+    # NGINX Load Balancer — routes HTTP to :4500 and gRPC to :4501
+    nginx:
+        image: nginx:alpine
+        container_name: axiom_lb
+        volumes:
+            - ./nginx.conf:/etc/nginx/nginx.conf:ro
+        ports:
+            - "80:80"
+            - "443:443"
+        depends_on:
+            - axiom
+        restart: unless-stopped
 
 volumes:
-  redis_data:
+    redis_data:

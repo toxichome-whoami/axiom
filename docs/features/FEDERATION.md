@@ -11,7 +11,7 @@ In a federated setup, a **Connector Server** (Client) proxies requests to a **Re
 
 ### Key Features:
 - **Unified API**: Access globally distributed data through a single URL.
-- **Map-Reduce Data Mesh**: Query a comma-separated list of nodes (`alias_a,alias_b`) to concurrently fetch and join remote JSON data entirely in-memory using `asyncio.gather`.
+- **Map-Reduce Data Mesh**: Query a comma-separated list of nodes (`alias_a,alias_b`) to concurrently fetch and join remote JSON data entirely in-memory using async Tokio tasks (`futures::future::join_all`).
 - **Automatic Prefixing**: Remote resources are auto-prefixed with the node alias (e.g., `us_west_main_db`).
 - **Isolated Auth**: Federation uses its own dedicated secrets — completely separate from API keys.
 - **Per-Node Scoping**: Each incoming node has its own `mode`, `db_scope`, and `fs_scope`.
@@ -104,7 +104,7 @@ Federation secrets are **completely separate** from API keys. They use dedicated
 2. **Server B** receives the request:
    - Looks up the node in `federation.incoming`
    - Base64-decodes the secret
-   - Compares using `hmac.compare_digest()` (constant-time, timing-attack safe)
+   - Compares using `constant_time_eq` (constant-time, timing-attack safe)
    - If valid, creates a scoped `AuthContext` with the incoming key's permissions
    - Federation keys can **never** have `full_admin` access
 3. **Config stores plain text**, transport uses Base64 — handled automatically.
@@ -182,7 +182,7 @@ Call `GET /api/v1/fed/servers` (requires `full_admin` API key) to see the state 
   </tr>
   <tr>
     <td style="padding: 10px;"><b>Parallel Polling</b></td>
-    <td style="padding: 10px;">All remote nodes are health-checked concurrently via <code>asyncio.gather</code> — one slow node never blocks the others.</td>
+    <td style="padding: 10px;">All remote nodes are health-checked concurrently via Tokio async tasks — one slow node never blocks the others.</td>
   </tr>
   <tr>
     <td style="padding: 10px;"><b>Exponential Backoff</b></td>

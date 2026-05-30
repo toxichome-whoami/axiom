@@ -20,7 +20,7 @@
 - **Map-Reduce Data Mesh**: Query multiple remote federated databases simultaneously and join their JSON results entirely in-memory.
 - **Storage Circuit Breakers**: Automatically disconnects bandwidth-heavy streaming downloads when the server is overloaded.
 - **Model Context Protocol (MCP)**: Seamlessly expose databases to AI tools via the standardized MCP JSON-RPC Server interface.
-- Dynamic connection pooling to any SQL dialect using <code>sqlglot</code> for secure AST caching and verification.
+- Dynamic connection pooling to any SQL dialect using `sqlx` for type-safe, compile-time verified queries.
 - Virtual file system proxy with built in zip-streaming and image resizing.
 - Real-time webhook emissions based on regex-like operation subscriptions.
 - Async HTTP streaming reverse-proxies for Federated edge nodes.
@@ -39,9 +39,16 @@ For comprehensive guides, API references, architecture overviews, and deployment
 
 <br>
 
-1. <code>pip install -r requirements.txt</code>
-2. Run via: <code>python src/main.py</code>
-3. Check the auto-generated <code>config.toml</code> for your new Admin API Key.
+1. `cargo build --release`
+2. Run via: `./target/release/axiom` (or `axiom.exe` on Windows)
+3. Check the auto-generated `config.toml` for your new Admin API Key.
+
+**Or via Docker:**
+```bash
+docker compose up -d
+```
+
+> **Ports:** REST/HTTP on `:4500` · gRPC on `:4501`
 
 </details>
 
@@ -69,12 +76,14 @@ curl -X POST "http://localhost:4500/api/v1/fs/local_fs/upload" \
 
 Axiom includes a Universal Client SDK for interacting with all platform modules seamlessly. 
 
-The SDKs are located in the `sdks/` directory and are available in:
-- **JavaScript** (`sdks/javascript/index.js`)
-- **Python** (`sdks/python/axiom.py`)
-- **Rust** (`sdks/rust/src/lib.rs`)
+The SDKs are located in the `auth_sdks/` directory and are available in:
+- **JavaScript** (`auth_sdks/js/`)
+- **Rust** (`auth_sdks/rust/`)
 
 ### Usage Example
+<details>
+<summary><b>View API Examples</b></summary>
+
 ```javascript
 import { Axiom } from "./sdks/javascript/index.js";
 
@@ -87,3 +96,4 @@ await axiom.auth.login("admin@axiom.com", "password123");
 await axiom.db.query("SELECT * FROM users");
 await axiom.mcp.invoke("search", { query: "hello" });
 ```
+</details>

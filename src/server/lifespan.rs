@@ -1,8 +1,9 @@
 use crate::config::loader::ConfigManager;
+use crate::logging::rotator::LogRotator;
 use crate::server::backup_engine::BackupEngine;
+use once_cell::sync::Lazy;
 use std::sync::Mutex;
 use tokio::task::JoinHandle;
-use once_cell::sync::Lazy;
 
 static DAEMONS: Lazy<Mutex<Vec<JoinHandle<()>>>> = Lazy::new(|| Mutex::new(Vec::new()));
 
@@ -15,7 +16,7 @@ pub fn start_daemons() {
         tasks.push(handle);
     }
 
-    let rotator_handle = crate::logger::rotator::LogRotator::start();
+    let rotator_handle = LogRotator::start();
     tasks.push(rotator_handle);
 
     let health_handle = tokio::spawn(crate::api::sse::daemons::health_poller());

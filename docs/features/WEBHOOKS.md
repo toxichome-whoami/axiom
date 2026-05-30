@@ -65,7 +65,7 @@ headers: {
 ```
 </details>
 
-The gateway decodes the Base64 token and verifies it against the stored secret using constant-time comparison (`hmac.compare_digest`). If the token doesn't match, the webhook will **not** fire.
+The gateway decodes the Base64 token and verifies it against the stored secret using constant-time comparison (`constant_time_eq`). If the token doesn't match, the webhook will **not** fire.
 
 ---
 
@@ -154,7 +154,7 @@ function verifyWebhook(rawBody, signatureHeader, secret) {
   </tr>
   <tr>
     <td style="padding: 10px;"><b>Gateway verification</b></td>
-    <td style="padding: 10px;">Decodes Base64, compares with <code>hmac.compare_digest()</code> (timing-safe)</td>
+    <td style="padding: 10px;">Decodes Base64, compares with <code>constant_time_eq</code> (timing-safe)</td>
   </tr>
   <tr>
     <td style="padding: 10px;"><b>Gateway → Your App</b></td>

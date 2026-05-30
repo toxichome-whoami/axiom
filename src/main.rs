@@ -2,12 +2,11 @@ use std::net::SocketAddr;
 use tokio::net::TcpListener;
 
 pub mod api;
-pub mod cache;
 pub mod security;
 pub mod middleware;
 pub mod config;
 pub mod server;
-pub mod logger;
+pub mod logging;
 pub mod db;
 mod utils;
 mod webhook;
@@ -21,7 +20,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     // Initialize logging
-    if let Err(e) = logger::setup::setup_logging() {
+    if let Err(e) = logging::setup::setup_logging() {
         eprintln!("Failed to setup logging: {}", e);
     }
     

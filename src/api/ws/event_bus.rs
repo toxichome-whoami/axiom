@@ -3,7 +3,7 @@ use serde_json::json;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-use crate::api::events::schemas::EventPayload;
+use crate::api::ws::schemas::EventPayload;
 use crate::api::ws::connection_manager::CONN_MGR;
 use crate::config::loader::ConfigManager;
 

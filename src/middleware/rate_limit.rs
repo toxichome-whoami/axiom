@@ -5,7 +5,7 @@ use axum::{
 };
 use crate::api::errors::AxiomError;
 use crate::config::loader::ConfigManager;
-use crate::cache::memory::MemoryCache;
+use crate::middleware::cache::MemoryCache;
 
 pub async fn rate_limit_middleware(
     req: Request,
