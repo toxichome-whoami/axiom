@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use axum::{
     extract::{Path, Query},
     http::{HeaderMap, StatusCode},
@@ -90,10 +91,12 @@ fn proj_val(config: &Value, key: &str, default: i64) -> i64 {
     config.get(key).and_then(|v| v.as_i64()).unwrap_or(default)
 }
 
+#[allow(dead_code)]
 fn proj_str<'a>(config: &'a Value, key: &str, default: &'a str) -> String {
     config.get(key).and_then(|v| v.as_str()).unwrap_or(default).to_string()
 }
 
+#[allow(dead_code)]
 fn proj_bool(config: &Value, key: &str, default: bool) -> bool {
     config.get(key).and_then(|v| v.as_bool()).unwrap_or(default)
 }

@@ -39,46 +39,46 @@ impl WebhookPersistence {
 
     pub fn enqueue(
         &self,
-        event_id: String,
-        hook_name: String,
-        url: String,
-        secret: String,
-        headers: Value,
-        payload: String,
+        _event_id: String,
+        _hook_name: String,
+        _url: String,
+        _secret: String,
+        _headers: Value,
+        _payload: String,
     ) -> Result<Option<i64>, Box<dyn std::error::Error>> {
         Ok(Some(1))
     }
 
-    pub fn mark_delivered(&self, event_id: String) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn mark_delivered(&self, _event_id: String) -> Result<(), Box<dyn std::error::Error>> {
         Ok(())
     }
 
     pub fn mark_failed(
         &self,
-        event_id: String,
-        attempt: i64,
+        _event_id: String,
+        _attempt: i64,
         _error: String,
-        next_retry_at: f64,
+        _next_retry_at: f64,
     ) -> Result<(), Box<dyn std::error::Error>> {
         Ok(())
     }
 
     pub fn move_to_dead_letter(
         &self,
-        queue_id: i64,
-        event_id: String,
-        hook_name: String,
-        url: String,
-        payload: String,
-        attempts: i64,
-        last_error: String,
+        _queue_id: i64,
+        _event_id: String,
+        _hook_name: String,
+        _url: String,
+        _payload: String,
+        _attempts: i64,
+        _last_error: String,
     ) -> Result<(), Box<dyn std::error::Error>> {
         Ok(())
     }
 
     pub fn purge_expired_dlq(
         &self,
-        retention_hours: i64,
+        _retention_hours: i64,
     ) -> Result<(), Box<dyn std::error::Error>> {
         Ok(())
     }
@@ -95,13 +95,13 @@ impl WebhookPersistence {
         Ok(vec![])
     }
 
-    pub fn fetch_dead_letters(&self, limit: i64) -> Result<Vec<Value>, Box<dyn std::error::Error>> {
+    pub fn fetch_dead_letters(&self, _limit: i64) -> Result<Vec<Value>, Box<dyn std::error::Error>> {
         Ok(vec![])
     }
 
     pub fn pop_dead_letter(
         &self,
-        event_id: String,
+        _event_id: String,
     ) -> Result<Option<Value>, Box<dyn std::error::Error>> {
         Ok(None)
     }

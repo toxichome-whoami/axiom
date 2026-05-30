@@ -1,9 +1,9 @@
 use crate::config::loader::ConfigManager;
-use opentelemetry::KeyValue;
-use opentelemetry_sdk::trace::{self, Tracer, TracerProvider};
-use opentelemetry_sdk::Resource;
-use opentelemetry_otlp::WithExportConfig;
 use opentelemetry::trace::TracerProvider as _;
+use opentelemetry::KeyValue;
+use opentelemetry_otlp::WithExportConfig;
+use opentelemetry_sdk::trace::{self};
+use opentelemetry_sdk::Resource;
 use tracing_opentelemetry::OpenTelemetryLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, Registry};
 
@@ -32,12 +32,9 @@ pub fn setup_telemetry() -> Result<(), Box<dyn std::error::Error>> {
                 .http()
                 .with_endpoint(&otlp_endpoint),
         )
-        .with_trace_config(
-            trace::Config::default().with_resource(Resource::new(vec![KeyValue::new(
-                "service.name",
-                "axiom-gateway",
-            )])),
-        )
+        .with_trace_config(trace::Config::default().with_resource(Resource::new(vec![
+            KeyValue::new("service.name", "axiom-gateway"),
+        ])))
         .install_batch(opentelemetry_sdk::runtime::Tokio)?;
 
     let tracer = provider.tracer("axiom-gateway");

@@ -1,15 +1,18 @@
 use axum::{
     extract::{Path, Query},
-    response::{sse::{Event, Sse}, IntoResponse},
+    http::StatusCode,
+    response::{
+        sse::{Event, Sse},
+        IntoResponse,
+    },
     routing::get,
     Router,
-    http::StatusCode,
 };
-use tokio_stream::{wrappers::ReceiverStream, StreamExt};
+use base64::{engine::general_purpose::STANDARD, Engine};
+use futures::stream::Stream;
 use std::collections::HashMap;
 use std::convert::Infallible;
-use futures::stream::Stream;
-use base64::{engine::general_purpose::STANDARD, Engine};
+use tokio_stream::{wrappers::ReceiverStream, StreamExt};
 
 use crate::api::errors::AxiomError;
 use crate::api::sse::connection_manager::{SSEClientScopes, SSE_MGR};
@@ -29,8 +32,16 @@ fn authenticate_sse(query: &HashMap<String, String>) -> Result<SSEClientScopes, 
     let token = query.get("token").or_else(|| query.get("key"));
 
     let token_str = match token {
-        Some(t) => urlencoding::decode(t).unwrap_or(std::borrow::Cow::Borrowed("")).to_string(),
-        None => return Err(AxiomError::new("AUTH_MISSING", "Missing ?key= query parameter", StatusCode::UNAUTHORIZED)),
+        Some(t) => urlencoding::decode(t)
+            .unwrap_or(std::borrow::Cow::Borrowed(""))
+            .to_string(),
+        None => {
+            return Err(AxiomError::new(
+                "AUTH_MISSING",
+                "Missing ?key= query parameter",
+                StatusCode::UNAUTHORIZED,
+            ))
+        }
     };
 
     let config = ConfigManager::get();
@@ -55,14 +66,21 @@ fn authenticate_sse(query: &HashMap<String, String>) -> Result<SSEClientScopes, 
         }
     }
 
-    Err(AxiomError::new("AUTH_FAILED", "Invalid API Key", StatusCode::FORBIDDEN))
+    Err(AxiomError::new(
+        "AUTH_FAILED",
+        "Invalid API Key",
+        StatusCode::FORBIDDEN,
+    ))
 }
 
 fn topic_in_scope(resource: &str, scope: &[String]) -> bool {
     scope.iter().any(|s| s == "*" || s == resource)
 }
 
-async fn create_sse_stream(client_id: String, rx: tokio::sync::mpsc::Receiver<Event>) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
+async fn create_sse_stream(
+    _client_id: String,
+    rx: tokio::sync::mpsc::Receiver<Event>,
+) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
     let config = ConfigManager::get();
     let heartbeat = std::time::Duration::from_secs(config.sse.heartbeat_interval as u64);
 
@@ -76,14 +94,20 @@ async fn create_sse_stream(client_id: String, rx: tokio::sync::mpsc::Receiver<Ev
     Sse::new(stream).keep_alive(
         axum::response::sse::KeepAlive::new()
             .interval(heartbeat)
-            .text("heartbeat")
+            .text("heartbeat"),
     )
 }
 
-async fn sse_health(Query(query): Query<HashMap<String, String>>) -> Result<impl IntoResponse, AxiomError> {
+async fn sse_health(
+    Query(query): Query<HashMap<String, String>>,
+) -> Result<impl IntoResponse, AxiomError> {
     let auth = authenticate_sse(&query)?;
     if !auth.full_admin {
-        return Err(AxiomError::new("FORBIDDEN", "Health stream requires full admin scope", StatusCode::FORBIDDEN));
+        return Err(AxiomError::new(
+            "FORBIDDEN",
+            "Health stream requires full admin scope",
+            StatusCode::FORBIDDEN,
+        ));
     }
 
     let client_id = format!("health_{}", uuid::Uuid::new_v4());
@@ -94,8 +118,10 @@ async fn sse_health(Query(query): Query<HashMap<String, String>>) -> Result<impl
     // Axum doesn't natively expose an OnDisconnect hook for SSE yet without tower wrappers,
     // but the `mpsc::channel` will automatically drop the receiver when the client disconnects,
     // which eventually errors the sender, allowing us to GC it in the publish loop.
-    // However, explicit cleanup is better handled via a spawned task.
-    let cid_clone = client_id.clone();
+    // We clone the client ID so we can move it into the async task
+    let _cid_clone = client_id.clone();
+
+    // Spawn a background task that pumps messages from the channel
     tokio::spawn(async move {
         // Wait for receiver to be dropped by Axum (client disconnect)
         // Unfortunately we can't easily wait on the receiver itself from the outside.
@@ -105,10 +131,16 @@ async fn sse_health(Query(query): Query<HashMap<String, String>>) -> Result<impl
     Ok(create_sse_stream(client_id, rx).await)
 }
 
-async fn sse_metrics(Query(query): Query<HashMap<String, String>>) -> Result<impl IntoResponse, AxiomError> {
+async fn sse_metrics(
+    Query(query): Query<HashMap<String, String>>,
+) -> Result<impl IntoResponse, AxiomError> {
     let auth = authenticate_sse(&query)?;
     if !auth.full_admin {
-        return Err(AxiomError::new("FORBIDDEN", "Metrics require full admin scope", StatusCode::FORBIDDEN));
+        return Err(AxiomError::new(
+            "FORBIDDEN",
+            "Metrics require full admin scope",
+            StatusCode::FORBIDDEN,
+        ));
     }
 
     let client_id = format!("metrics_{}", uuid::Uuid::new_v4());
@@ -118,54 +150,90 @@ async fn sse_metrics(Query(query): Query<HashMap<String, String>>) -> Result<imp
     Ok(create_sse_stream(client_id, rx).await)
 }
 
-async fn sse_db(Path(alias): Path<String>, Query(query): Query<HashMap<String, String>>) -> Result<impl IntoResponse, AxiomError> {
+async fn sse_db(
+    Path(alias): Path<String>,
+    Query(query): Query<HashMap<String, String>>,
+) -> Result<impl IntoResponse, AxiomError> {
     let auth = authenticate_sse(&query)?;
     if !topic_in_scope(&alias, &auth.db_scope) {
-        return Err(AxiomError::new("FORBIDDEN", &format!("Database '{}' not in scope", alias), StatusCode::FORBIDDEN));
+        return Err(AxiomError::new(
+            "FORBIDDEN",
+            &format!("Database '{}' not in scope", alias),
+            StatusCode::FORBIDDEN,
+        ));
     }
 
     let client_id = format!("db_{}_{}", alias, uuid::Uuid::new_v4());
     let rx = SSE_MGR.connect(&client_id).await;
-    SSE_MGR.subscribe(&client_id, &format!("db:{}:*", alias)).await;
+    SSE_MGR
+        .subscribe(&client_id, &format!("db:{}:*", alias))
+        .await;
 
     Ok(create_sse_stream(client_id, rx).await)
 }
 
-async fn sse_db_table(Path((alias, table)): Path<(String, String)>, Query(query): Query<HashMap<String, String>>) -> Result<impl IntoResponse, AxiomError> {
+async fn sse_db_table(
+    Path((alias, table)): Path<(String, String)>,
+    Query(query): Query<HashMap<String, String>>,
+) -> Result<impl IntoResponse, AxiomError> {
     let auth = authenticate_sse(&query)?;
     if !topic_in_scope(&alias, &auth.db_scope) {
-        return Err(AxiomError::new("FORBIDDEN", &format!("Database '{}' not in scope", alias), StatusCode::FORBIDDEN));
+        return Err(AxiomError::new(
+            "FORBIDDEN",
+            &format!("Database '{}' not in scope", alias),
+            StatusCode::FORBIDDEN,
+        ));
     }
 
     let client_id = format!("db_{}_{}_{}", alias, table, uuid::Uuid::new_v4());
     let rx = SSE_MGR.connect(&client_id).await;
-    SSE_MGR.subscribe(&client_id, &format!("db:{}:{}", alias, table)).await;
+    SSE_MGR
+        .subscribe(&client_id, &format!("db:{}:{}", alias, table))
+        .await;
 
     Ok(create_sse_stream(client_id, rx).await)
 }
 
-async fn sse_fs(Path(alias): Path<String>, Query(query): Query<HashMap<String, String>>) -> Result<impl IntoResponse, AxiomError> {
+async fn sse_fs(
+    Path(alias): Path<String>,
+    Query(query): Query<HashMap<String, String>>,
+) -> Result<impl IntoResponse, AxiomError> {
     let auth = authenticate_sse(&query)?;
     if !topic_in_scope(&alias, &auth.fs_scope) {
-        return Err(AxiomError::new("FORBIDDEN", &format!("Storage '{}' not in scope", alias), StatusCode::FORBIDDEN));
+        return Err(AxiomError::new(
+            "FORBIDDEN",
+            &format!("Storage '{}' not in scope", alias),
+            StatusCode::FORBIDDEN,
+        ));
     }
 
     let client_id = format!("fs_{}_{}", alias, uuid::Uuid::new_v4());
     let rx = SSE_MGR.connect(&client_id).await;
-    SSE_MGR.subscribe(&client_id, &format!("fs:{}:*", alias)).await;
+    SSE_MGR
+        .subscribe(&client_id, &format!("fs:{}:*", alias))
+        .await;
 
     Ok(create_sse_stream(client_id, rx).await)
 }
 
-async fn sse_fs_path(Path((alias, path)): Path<(String, String)>, Query(query): Query<HashMap<String, String>>) -> Result<impl IntoResponse, AxiomError> {
+async fn sse_fs_path(
+    Path((alias, path)): Path<(String, String)>,
+    Query(query): Query<HashMap<String, String>>,
+) -> Result<impl IntoResponse, AxiomError> {
     let auth = authenticate_sse(&query)?;
     if !topic_in_scope(&alias, &auth.fs_scope) {
-        return Err(AxiomError::new("FORBIDDEN", &format!("Storage '{}' not in scope", alias), StatusCode::FORBIDDEN));
+        return Err(AxiomError::new(
+            "FORBIDDEN",
+            &format!("Storage '{}' not in scope", alias),
+            StatusCode::FORBIDDEN,
+        ));
     }
 
     let client_id = format!("fs_{}_{}_{}", alias, path, uuid::Uuid::new_v4());
     let rx = SSE_MGR.connect(&client_id).await;
-    SSE_MGR.subscribe(&client_id, &format!("fs:{}:{}", alias, path)).await;
+    SSE_MGR
+        .subscribe(&client_id, &format!("fs:{}:{}", alias, path))
+        .await;
 
     Ok(create_sse_stream(client_id, rx).await)
 }

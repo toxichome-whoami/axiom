@@ -1,26 +1,22 @@
+use crate::config::loader::ConfigManager;
+use aws_sdk_s3::config::Region;
+use aws_sdk_s3::Client;
+use flate2::write::GzEncoder;
+use flate2::Compression;
+use std::fs::File;
 use std::path::Path;
 use std::time::Duration;
-use tokio::time::sleep;
-use crate::config::loader::ConfigManager;
-use aws_sdk_s3::Client;
-use aws_config::meta::region::RegionProviderChain;
-use aws_sdk_s3::config::Region;
-use std::fs::File;
-use flate2::Compression;
-use flate2::write::GzEncoder;
 use tar::Builder;
+use tokio::time::sleep;
 
 pub struct BackupEngine;
 
 impl BackupEngine {
     pub fn start() -> tokio::task::JoinHandle<()> {
         tokio::spawn(async move {
-            let mut running = true;
-
-            while running {
+            loop {
                 let config = ConfigManager::get();
                 if !config.backups.enabled {
-                    running = false;
                     break;
                 }
 
@@ -67,7 +63,7 @@ impl BackupEngine {
         std::env::set_var("AWS_SECRET_ACCESS_KEY", &config.backups.s3_secret_key);
 
         let region = Region::new(config.backups.s3_region.clone());
-        let mut aws_config_builder = aws_config::from_env().region(region);
+        let mut aws_config_builder = aws_config::defaults(aws_config::BehaviorVersion::latest()).region(region);
 
         if let Some(endpoint) = &config.backups.s3_endpoint_url {
             aws_config_builder = aws_config_builder.endpoint_url(endpoint);
@@ -78,7 +74,8 @@ impl BackupEngine {
 
         let body = aws_sdk_s3::primitives::ByteStream::from_path(&archive_path).await?;
 
-        client.put_object()
+        client
+            .put_object()
             .bucket(&config.backups.s3_bucket)
             .key(&archive_name)
             .body(body)

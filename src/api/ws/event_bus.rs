@@ -1,12 +1,11 @@
-use std::sync::Arc;
-use tokio::sync::RwLock;
 use once_cell::sync::Lazy;
 use serde_json::json;
-use redis::AsyncCommands;
+use std::sync::Arc;
+use tokio::sync::RwLock;
 
-use crate::config::loader::ConfigManager;
 use crate::api::events::schemas::EventPayload;
 use crate::api::ws::connection_manager::CONN_MGR;
+use crate::config::loader::ConfigManager;
 
 pub struct EventBus {
     redis_client: RwLock<Option<redis::Client>>,
@@ -84,10 +83,13 @@ impl EventBus {
             "type": "event",
             "topic": specific_topic,
             "data": event
-        }).to_string();
+        })
+        .to_string();
 
         // Broadcast locally to WebSocket subscribers
-        CONN_MGR.broadcast(&specific_topic, ws_payload.clone()).await;
+        CONN_MGR
+            .broadcast(&specific_topic, ws_payload.clone())
+            .await;
         CONN_MGR.broadcast(&wildcard_topic, ws_payload).await;
     }
 
@@ -101,7 +103,8 @@ impl EventBus {
                 "ws_connections": active_ws,
                 // other stats can go here
             }
-        }).to_string();
+        })
+        .to_string();
 
         CONN_MGR.broadcast("metrics", payload).await;
     }

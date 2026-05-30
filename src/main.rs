@@ -11,6 +11,7 @@ pub mod logger;
 pub mod db;
 mod utils;
 mod webhook;
+pub mod grpc;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -40,6 +41,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = config::loader::ConfigManager::get();
     let addr = SocketAddr::from(([0, 0, 0, 0], config.server.port as u16));
     let listener = TcpListener::bind(addr).await?;
+    
+    // Start gRPC Server
+    let grpc_port = config.server.port as u16 + 1;
+    tokio::spawn(async move {
+        grpc::server::start_grpc_server(grpc_port).await;
+    });
     
     println!("Axiom Native Core running on {}", addr);
     axum::serve(listener, app).await?;

@@ -1,10 +1,8 @@
 use reqwest::Client;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use tokio::time::sleep;
+use std::time::Duration;
 
 use crate::webhook::circuit_breaker::CircuitBreaker;
-use crate::webhook::persistence::{get_rt, WebhookPersistence};
-use crate::webhook::signer::generate_signature;
+use crate::webhook::persistence::WebhookPersistence;
 
 pub struct WebhookDispatcher {
     client: Client,
@@ -19,9 +17,9 @@ impl WebhookDispatcher {
 
     pub fn dispatch_event(
         &self,
-        task: serde_json::Value,
-        persistence: Option<WebhookPersistence>,
-        breaker: CircuitBreaker,
+        _task: serde_json::Value,
+        _persistence: Option<WebhookPersistence>,
+        _breaker: CircuitBreaker,
     ) -> Result<(), Box<dyn std::error::Error>> {
         Ok(())
     }

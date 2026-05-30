@@ -1,11 +1,10 @@
-use sqlx::{
-    any::AnyPoolOptions,
-    Any, AnyPool, Pool, Row, Column, TypeInfo
+use crate::config::schema::DatabaseDefConfig;
+use crate::db::engines::base::{
+    ColumnInfo, DatabaseEngine, ForeignKeyInfo, QueryResult, TableInfo,
 };
 use async_trait::async_trait;
 use serde_json::Value;
-use crate::db::engines::base::{ColumnInfo, DatabaseEngine, ForeignKeyInfo, QueryResult, TableInfo};
-use crate::config::schema::DatabaseDefConfig;
+use sqlx::{any::AnyPoolOptions, Any, Column, Pool, Row};
 
 pub struct AnyDatabaseEngine {
     pool: Option<Pool<Any>>,
@@ -58,20 +57,26 @@ impl DatabaseEngine for AnyDatabaseEngine {
         Ok(0)
     }
 
-    async fn describe_table(&self, _table: &str) -> Result<Vec<ColumnInfo>, Box<dyn std::error::Error>> {
+    async fn describe_table(
+        &self,
+        _table: &str,
+    ) -> Result<Vec<ColumnInfo>, Box<dyn std::error::Error>> {
         Ok(vec![])
     }
 
-    async fn get_foreign_keys(&self, _table: &str) -> Result<Vec<ForeignKeyInfo>, Box<dyn std::error::Error>> {
+    async fn get_foreign_keys(
+        &self,
+        _table: &str,
+    ) -> Result<Vec<ForeignKeyInfo>, Box<dyn std::error::Error>> {
         Ok(vec![])
     }
 
     async fn execute(&self, sql: &str) -> Result<QueryResult, Box<dyn std::error::Error>> {
         let pool = self.pool.as_ref().ok_or("Not connected")?;
 
-        let is_mutation = sql.trim().to_uppercase().starts_with("INSERT") ||
-                          sql.trim().to_uppercase().starts_with("UPDATE") ||
-                          sql.trim().to_uppercase().starts_with("DELETE");
+        let is_mutation = sql.trim().to_uppercase().starts_with("INSERT")
+            || sql.trim().to_uppercase().starts_with("UPDATE")
+            || sql.trim().to_uppercase().starts_with("DELETE");
 
         if is_mutation {
             let result = sqlx::query(sql).execute(pool).await?;

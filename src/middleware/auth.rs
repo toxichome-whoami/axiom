@@ -39,7 +39,7 @@ pub async fn auth_middleware(
                         db_scope: key_cfg.db_scope.clone(),
                         fs_scope: key_cfg.fs_scope.clone(),
                         feature_scope: key_cfg.feature_scope.clone(),
-                        rate_limit_override: key_cfg.rate_limit_override as u64,
+                        rate_limit_override: key_cfg.rate_limit_override as u32,
                         full_admin: key_cfg.full_admin,
                     };
                     req.extensions_mut().insert(ctx);

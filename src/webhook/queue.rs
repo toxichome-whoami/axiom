@@ -10,7 +10,7 @@ impl WebhookQueueList {
         Ok(WebhookQueueList)
     }
 
-    pub fn put_nowait(&self, item: Value) {
+    pub fn put_nowait(&self, _item: Value) {
         // dummy implementation
     }
 }

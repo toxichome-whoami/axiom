@@ -1,10 +1,8 @@
 use base64::{engine::general_purpose::STANDARD as b64, Engine as _};
-use hmac::{Hmac, Mac};
-use serde_json::{json, Value};
+use hmac::Hmac;
 use sha2::Sha256;
 use std::collections::HashMap;
 use std::sync::OnceLock;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::webhook::persistence::WebhookPersistence;
 use crate::webhook::queue::WebhookQueueList;
@@ -47,18 +45,18 @@ fn is_token_matched(hook_secret: &str, provided_token: &Option<String>) -> bool 
 }
 
 pub fn process_event(
-    persistence: Option<WebhookPersistence>,
-    queue: WebhookQueueList,
-    module: String,
-    operation: String,
-    resource: String,
-    target: String,
-    action: String,
-    details_json_str: String,
-    trigger_api_key: String,
-    trigger_ip: Option<String>,
-    trigger_request_id: String,
-    trigger_webhook_token: Option<String>,
+    _persistence: Option<WebhookPersistence>,
+    _queue: WebhookQueueList,
+    _module: String,
+    _operation: String,
+    _resource: String,
+    _target: String,
+    _action: String,
+    _details_json_str: String,
+    _trigger_api_key: String,
+    _trigger_ip: Option<String>,
+    _trigger_request_id: String,
+    _trigger_webhook_token: Option<String>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }

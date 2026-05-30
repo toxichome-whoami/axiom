@@ -1,13 +1,9 @@
-use axum::{
-    routing::get,
-    Router, Json,
-};
-use serde_json::{json, Value};
+use axum::{routing::get, Json, Router};
 use once_cell::sync::Lazy;
+use serde_json::{json, Value};
 
 use crate::config::loader::ConfigManager;
 use crate::db::pool::DatabasePoolManager;
-use crate::db::engines::base::DatabaseEngine;
 
 static START_TIME: Lazy<std::time::Instant> = Lazy::new(std::time::Instant::now);
 const VERSION: &str = "1.0.5";
@@ -71,10 +67,13 @@ async fn health() -> Json<Value> {
     // Storage is stubbed since we don't have the scanner here yet
     let mut storage_status = serde_json::Map::new();
     for (alias, _) in &config.storage {
-        storage_status.insert(alias.clone(), json!({
-            "status": "up",
-            "free_space_bytes": 0
-        }));
+        storage_status.insert(
+            alias.clone(),
+            json!({
+                "status": "up",
+                "free_space_bytes": 0
+            }),
+        );
     }
 
     Json(json!({

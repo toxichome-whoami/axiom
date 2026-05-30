@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -28,7 +30,9 @@ pub enum ServerMode {
 }
 
 impl Default for ServerMode {
-    fn default() -> Self { ServerMode::Readwrite }
+    fn default() -> Self {
+        ServerMode::Readwrite
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
@@ -61,7 +65,9 @@ pub enum DbEngineType {
 }
 
 impl Default for DbEngineType {
-    fn default() -> Self { DbEngineType::Sqlite }
+    fn default() -> Self {
+        DbEngineType::Sqlite
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
