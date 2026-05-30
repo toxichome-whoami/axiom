@@ -1,8 +1,11 @@
+pub mod core;
+pub mod database;
+pub mod auth;
 pub mod errors;
 pub mod events;
-pub mod ws;
-pub mod sse;
-pub mod database;
+pub mod federation;
 pub mod graphql;
-pub mod core;
+pub mod mcp;
+pub mod sse;
 pub mod storage;
+pub mod ws;

@@ -12,7 +12,6 @@ sha2 = "0.10"
 hex = "0.4"
 
 tokio = { version = "1.37.0", features = ["full"] }
-rusqlite = { version = "0.31.0", features = ["bundled"] }
 redis = { version = "0.25.3", features = ["tokio-comp"] }
 async-nats = "0.35.0"
 serde_json = "1.0.116"
@@ -25,13 +24,16 @@ reqwest = { version = "0.13.4", features = ["default-tls", "json"] }
 rand = "0.8.5"
 toml = "0.8.19"
 mime_guess = "2.0"
+url = "2.5"
 once_cell = "1.19.0"
 chrono = "0.4"
 
 # Web Framework
-axum = { version = "0.7.5", features = ["multipart"] }
+axum = { version = "0.7.5", features = ["multipart", "ws"] }
 tower = "0.4.13"
 tower-http = { version = "0.5.2", features = ["cors", "trace", "set-header", "compression-gzip"] }
+tokio-util = { version = "0.7", features = ["io"] }
+urlencoding = "2.1"
 
 # Backup & Telemetry
 aws-config = "1.5.5"
@@ -40,15 +42,21 @@ tar = "0.4.41"
 flate2 = "1.0.31"
 opentelemetry = { version = "0.24.0", features = ["metrics"] }
 opentelemetry_sdk = { version = "0.24.1", features = ["rt-tokio"] }
-opentelemetry-otlp = { version = "0.17.0", features = ["grpc-sys", "http-proto"] }
+opentelemetry-otlp = { version = "0.17.0", features = ["grpc-tonic", "http-proto"] }
 tracing-opentelemetry = "0.25.0"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 tracing-appender = "0.2"
 sqlx = { version = "0.7.4", features = ["runtime-tokio-rustls", "any", "postgres", "mysql", "sqlite", "json"] }
 async-trait = "0.1.80"
-redis = { version = "0.25.3", features = ["tokio-comp"] }
 futures = "0.3.30"
-base64 = "0.22"
 tokio-stream = "0.1.15"
 graphql-parser = "0.4.0"
+async-stream = "0.3.5"
+
+# Auth
+jsonwebtoken = "9.3"
+argon2 = "0.5"
+totp-rs = "5.5"
+lettre = { version = "0.11", features = ["tokio1-native-tls", "builder"], default-features = false }
+bytes = "1.6"

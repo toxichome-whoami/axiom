@@ -27,6 +27,10 @@ pub enum ServerMode {
     Writeonly,
 }
 
+impl Default for ServerMode {
+    fn default() -> Self { ServerMode::Readwrite }
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum EventModule {
@@ -54,6 +58,10 @@ pub enum DbEngineType {
     Mariadb,
     Db2,
     Cockroachdb,
+}
+
+impl Default for DbEngineType {
+    fn default() -> Self { DbEngineType::Sqlite }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]

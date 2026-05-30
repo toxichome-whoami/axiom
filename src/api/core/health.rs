@@ -7,6 +7,7 @@ use once_cell::sync::Lazy;
 
 use crate::config::loader::ConfigManager;
 use crate::db::pool::DatabasePoolManager;
+use crate::db::engines::base::DatabaseEngine;
 
 static START_TIME: Lazy<std::time::Instant> = Lazy::new(std::time::Instant::now);
 const VERSION: &str = "1.0.5";
@@ -27,7 +28,7 @@ async fn root() -> Json<Value> {
         "version": VERSION,
         "uptime_seconds": START_TIME.elapsed().as_secs(),
         "features": {
-            "webhooks": config.features.webhooks,
+            "webhooks": config.features.webhook,
             "sse": config.features.sse,
             "graphql": config.features.graphql,
             "auth": config.features.auth,
@@ -50,7 +51,7 @@ async fn health() -> Json<Value> {
 
     for (alias, _) in &config.database {
         if let Some(engine) = DatabasePoolManager::get_engine(alias).await {
-            let is_up = engine.health_check().await;
+            let is_up = engine.lock().await.health_check().await;
             db_status.insert(alias.clone(), json!(if is_up { "up" } else { "down" }));
             if !is_up {
                 all_dbs_up = false;

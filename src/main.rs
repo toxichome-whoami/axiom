@@ -33,6 +33,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     server::lifespan::start_daemons();
 
     // 4. Create App Router
+    crate::api::auth::token_engine::init_keys().await;
     let app = server::app::create_app();
 
     // 5. Serve
@@ -40,7 +41,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let addr = SocketAddr::from(([0, 0, 0, 0], config.server.port as u16));
     let listener = TcpListener::bind(addr).await?;
     
-    println!("🚀 Axiom Native Core running on {}", addr);
+    println!("Axiom Native Core running on {}", addr);
     axum::serve(listener, app).await?;
     
     Ok(())

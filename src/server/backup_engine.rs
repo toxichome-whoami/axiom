@@ -4,6 +4,7 @@ use tokio::time::sleep;
 use crate::config::loader::ConfigManager;
 use aws_sdk_s3::Client;
 use aws_config::meta::region::RegionProviderChain;
+use aws_sdk_s3::config::Region;
 use std::fs::File;
 use flate2::Compression;
 use flate2::write::GzEncoder;
@@ -65,8 +66,8 @@ impl BackupEngine {
         std::env::set_var("AWS_ACCESS_KEY_ID", &config.backups.s3_access_key);
         std::env::set_var("AWS_SECRET_ACCESS_KEY", &config.backups.s3_secret_key);
 
-        let region_provider = RegionProviderChain::default_provider().or_else(config.backups.s3_region.clone());
-        let mut aws_config_builder = aws_config::from_env().region(region_provider);
+        let region = Region::new(config.backups.s3_region.clone());
+        let mut aws_config_builder = aws_config::from_env().region(region);
 
         if let Some(endpoint) = &config.backups.s3_endpoint_url {
             aws_config_builder = aws_config_builder.endpoint_url(endpoint);

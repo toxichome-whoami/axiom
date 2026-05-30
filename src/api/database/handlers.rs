@@ -5,7 +5,7 @@ use serde_json::Value;
 use crate::config::schema::DatabaseDefConfig;
 use crate::utils::types::{AuthContext, ServerMode};
 use crate::api::errors::AxiomError;
-use crate::db::engines::base::QueryResult;
+use crate::db::engines::base::{DatabaseEngine, QueryResult};
 use crate::db::pool::DatabasePoolManager;
 use crate::api::database::filter_builder;
 
@@ -26,7 +26,7 @@ impl QueryExecutionPipeline {
             || sql.trim().to_uppercase().starts_with("DROP")
             || sql.trim().to_uppercase().starts_with("ALTER");
 
-        if is_mutation && auth.mode == ServerMode::READONLY {
+        if is_mutation && auth.mode == ServerMode::Readonly {
             return Err(AxiomError::new("AUTH_INSUFFICIENT_MODE", "Read-only keys cannot mutate data", StatusCode::FORBIDDEN));
         }
 
@@ -40,8 +40,10 @@ impl QueryExecutionPipeline {
         let engine = DatabasePoolManager::get_engine(db_name).await
             .ok_or_else(|| AxiomError::new("DB_NOT_FOUND", "Database not found", StatusCode::NOT_FOUND))?;
 
+        let engine_guard = engine.lock().await;
+
         // Format placeholders based on engine dialect
-        let dialect = engine.dialect();
+        let dialect = engine_guard.dialect();
         let formatted_sql = if dialect == "postgres" || dialect == "any" {
             // Primitive placeholder conversion for postgres `$1, $2`
             let mut final_sql = String::new();
@@ -84,7 +86,7 @@ impl QueryExecutionPipeline {
             }
         }
 
-        match engine.execute(&final_bound_sql).await {
+        match engine_guard.execute(&final_bound_sql).await {
             Ok(res) => Ok(res),
             Err(e) => Err(AxiomError::new("DB_QUERY_FAILED", &e.to_string(), StatusCode::INTERNAL_SERVER_ERROR)),
         }

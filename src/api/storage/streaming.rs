@@ -1,7 +1,7 @@
 use axum::{
     body::Body,
     http::{header, StatusCode},
-    response::{IntoResponse, Response},
+    response::Response,
 };
 use std::path::Path;
 use tokio::fs::File;

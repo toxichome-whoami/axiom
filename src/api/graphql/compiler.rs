@@ -1,4 +1,4 @@
-use graphql_parser::query::{parse_query, Document, Definition, OperationDefinition, Selection, Field, Value};
+use graphql_parser::query::{parse_query, Definition, OperationDefinition, Selection, Field, Value};
 use std::collections::HashMap;
 use serde_json::Value as JsonValue;
 

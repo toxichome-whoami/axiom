@@ -24,7 +24,8 @@ impl EventBus {
         if client_lock.is_none() {
             let config = ConfigManager::get();
             if config.eda.enabled && config.eda.backend == "redis" {
-                if let Some(url) = &config.eda.redis_url {
+                let url = &config.eda.redis_url;
+                if !url.is_empty() {
                     if let Ok(client) = redis::Client::open(url.as_str()) {
                         *client_lock = Some(client);
                     }

@@ -1,5 +1,5 @@
 use axum::{
-    routing::{get, post},
+    routing::get,
     Router,
     middleware,
     Json,
@@ -49,12 +49,15 @@ pub fn create_app() -> Router {
 
     Router::new()
         .nest("/api/v1", api_routes)
-        .nest("/api/v1/webhook", crate::webhook::router::get_router())
+        // webhook router is served via the webhook module (TODO: add webhook::router)
         .nest("/api/v1/db", crate::api::database::router::get_router())
+        .nest("/api/v1/mcp", crate::api::mcp::router::get_router())
         .nest("/api/v1/fs", crate::api::storage::router::get_router())
         .nest("/api/v1/graphql", crate::api::graphql::router::get_router())
         .nest("/api/v1/ws", crate::api::ws::router::get_router())
         .nest("/api/v1/sse", crate::api::sse::router::get_router())
+        .nest("/api/v1/federation", crate::api::federation::router::get_router())
+        .nest("/api/v1/auth", crate::api::auth::router::get_router())
         .merge(core_routes)
         .fallback(fallback_handler)
         .layer(cors)

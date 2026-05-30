@@ -1,13 +1,12 @@
 use axum::{
-    extract::{Path, Query, State, Extension},
+    extract::{Path, Extension},
     routing::{get, post},
     Router, Json,
 };
-use std::collections::HashMap;
 use serde_json::Value;
 
 use crate::api::errors::AxiomError;
-use crate::api::database::schemas::{QueryRequest, FetchRowsParams};
+use crate::api::database::schemas::QueryRequest;
 use crate::api::database::handlers::{QueryExecutionPipeline, get_db_config};
 use crate::utils::types::AuthContext;
 use crate::config::loader::ConfigManager;

@@ -1,7 +1,7 @@
 use axum::{
     extract::Request,
     middleware::Next,
-    response::{IntoResponse, Response},
+    response::Response,
 };
 use crate::api::errors::AxiomError;
 use crate::config::loader::ConfigManager;
