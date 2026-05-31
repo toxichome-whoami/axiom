@@ -1,8 +1,9 @@
 use crate::config::schema::AxiomConfig;
 use once_cell::sync::Lazy;
-use std::sync::RwLock;
+use std::sync::{Arc, RwLock};
 
-static CONFIG: Lazy<RwLock<AxiomConfig>> = Lazy::new(|| RwLock::new(AxiomConfig::default()));
+static CONFIG: Lazy<RwLock<Arc<AxiomConfig>>> =
+    Lazy::new(|| RwLock::new(Arc::new(AxiomConfig::default())));
 
 pub struct ConfigManager;
 
@@ -12,12 +13,12 @@ impl ConfigManager {
         if !content.is_empty() {
             let parsed: AxiomConfig = toml::from_str(&content)?;
             let mut writer = CONFIG.write().unwrap();
-            *writer = parsed;
+            *writer = Arc::new(parsed);
         }
         Ok(())
     }
 
-    pub fn get() -> AxiomConfig {
+    pub fn get() -> Arc<AxiomConfig> {
         let reader = CONFIG.read().unwrap();
         reader.clone()
     }

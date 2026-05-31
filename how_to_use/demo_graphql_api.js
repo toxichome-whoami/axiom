@@ -95,10 +95,10 @@ async function runTests() {
     try {
         console.log("1. Testing `databases` introspection field...");
         const dbRes = await graphqlRequest("{ databases }");
-        if (dbRes.status === 200 && dbRes.data) {
+        if (dbRes.status === 200 && dbRes.data && dbRes.data.data) {
             console.log(
                 "✅ Success! Available databases:",
-                dbRes.data.databases.join(", "),
+                dbRes.data.data.databases.map(d => d.alias).join(", "),
             );
         } else {
             console.log("❌ Failed:", JSON.stringify(dbRes.data));
@@ -119,9 +119,10 @@ async function runTests() {
         if (
             execRes.status === 200 &&
             execRes.data &&
-            execRes.data.execute
+            execRes.data.data &&
+            execRes.data.data.execute
         ) {
-            const execData = execRes.data.execute;
+            const execData = execRes.data.data.execute;
             console.log("✅ AST transpiled successfully! Response:");
             console.log(`   Columns: ${execData.columns.join(", ")}`);
             console.log(`   Rows:    ${JSON.stringify(execData.rows)}`);

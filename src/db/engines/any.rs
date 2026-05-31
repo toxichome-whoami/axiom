@@ -25,6 +25,15 @@ impl DatabaseEngine for AnyDatabaseEngine {
             let pool = AnyPoolOptions::new()
                 .max_connections(self.config.pool_max as u32)
                 .min_connections(self.config.pool_min as u32)
+                .acquire_timeout(std::time::Duration::from_secs(
+                    self.config.connection_timeout as u64,
+                ))
+                .idle_timeout(std::time::Duration::from_secs(
+                    self.config.idle_timeout as u64,
+                ))
+                .max_lifetime(std::time::Duration::from_secs(
+                    self.config.max_lifetime as u64,
+                ))
                 .connect(&self.config.url)
                 .await?;
             self.pool = Some(pool);

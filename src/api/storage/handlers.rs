@@ -1,41 +1,57 @@
 use axum::{
-    extract::{Path, Query, Extension, Multipart},
+    extract::{Extension, Multipart, Path, Query},
     http::StatusCode,
     Json,
 };
 use serde_json::{json, Value};
 use std::collections::HashMap;
-use std::path::{Path as StdPath};
+use std::path::Path as StdPath;
 use tokio::fs;
 
 use crate::api::errors::AxiomError;
-use crate::utils::types::AuthContext;
-use crate::config::loader::ConfigManager;
 use crate::api::storage::chunked_upload::ChunkedUploadManager;
 use crate::api::storage::streaming::serve_file;
+use crate::config::loader::ConfigManager;
+use crate::utils::types::AuthContext;
 
 fn get_storage_path(alias: &str, rel_path: &str, auth: &AuthContext) -> Result<String, AxiomError> {
     if !auth.fs_scope.iter().any(|s| s == "*" || s == alias) {
-        return Err(AxiomError::new("AUTH_SCOPE_DENIED", "API key does not have access to storage", StatusCode::FORBIDDEN));
+        return Err(AxiomError::new(
+            "AUTH_SCOPE_DENIED",
+            "API key does not have access to storage",
+            StatusCode::FORBIDDEN,
+        ));
     }
 
     let config = ConfigManager::get();
-    let storage_cfg = config.storage.get(alias)
-        .ok_or_else(|| AxiomError::new("FS_NOT_FOUND", "Storage alias not found", StatusCode::NOT_FOUND))?;
+    let storage_cfg = config.storage.get(alias).ok_or_else(|| {
+        AxiomError::new(
+            "FS_NOT_FOUND",
+            "Storage alias not found",
+            StatusCode::NOT_FOUND,
+        )
+    })?;
 
     let base_path = StdPath::new(&storage_cfg.path);
+    if !base_path.exists() {
+        let _ = std::fs::create_dir_all(base_path);
+    }
     let target_path = base_path.join(rel_path.trim_start_matches('/'));
 
     // Stub path traversal check
     if !target_path.starts_with(base_path) {
-        return Err(AxiomError::new("INPUT_PATH_TRAVERSAL", "Path traversal attempt detected", StatusCode::BAD_REQUEST));
+        return Err(AxiomError::new(
+            "INPUT_PATH_TRAVERSAL",
+            "Path traversal attempt detected",
+            StatusCode::BAD_REQUEST,
+        ));
     }
 
     Ok(target_path.to_string_lossy().to_string())
 }
 
 pub async fn list_storages(
-    Extension(auth): Extension<AuthContext>
+    Extension(auth): Extension<AuthContext>,
 ) -> Result<Json<Value>, AxiomError> {
     let config = ConfigManager::get();
     let mut storages = Vec::new();
@@ -66,13 +82,17 @@ pub async fn list_storages(
 pub async fn list_folder(
     Path(alias): Path<String>,
     Query(params): Query<HashMap<String, String>>,
-    Extension(auth): Extension<AuthContext>
+    Extension(auth): Extension<AuthContext>,
 ) -> Result<Json<Value>, AxiomError> {
     let rel_path = params.get("path").map(|s| s.as_str()).unwrap_or("/");
     let target_path = get_storage_path(&alias, rel_path, &auth)?;
 
     if !StdPath::new(&target_path).exists() {
-        return Err(AxiomError::new("FS_PATH_NOT_FOUND", "Directory not found", StatusCode::NOT_FOUND));
+        return Err(AxiomError::new(
+            "FS_PATH_NOT_FOUND",
+            "Directory not found",
+            StatusCode::NOT_FOUND,
+        ));
     }
 
     let mut items = Vec::new();
@@ -118,11 +138,23 @@ pub async fn upload_file(
             let filename = field.file_name().unwrap_or("upload.bin").to_string();
             let target_path = get_storage_path(&alias, &filename, &auth)?;
 
-            let data = field.bytes().await.map_err(|_| AxiomError::new("FS_ERROR", "Failed to read upload", StatusCode::INTERNAL_SERVER_ERROR))?;
+            let data = field.bytes().await.map_err(|_| {
+                AxiomError::new(
+                    "FS_ERROR",
+                    "Failed to read upload",
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                )
+            })?;
             total_written = data.len();
             file_path = target_path.clone();
 
-            fs::write(&target_path, data).await.map_err(|_| AxiomError::new("FS_ERROR", "Failed to write file", StatusCode::INTERNAL_SERVER_ERROR))?;
+            fs::write(&target_path, data).await.map_err(|_| {
+                AxiomError::new(
+                    "FS_ERROR",
+                    "Failed to write file",
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                )
+            })?;
         }
     }
 
@@ -155,25 +187,39 @@ pub async fn json_action(
             "chunks": []
         })));
     } else if action == "finalize" {
-        let upload_id = payload.get("upload_id").and_then(|v| v.as_str()).unwrap_or("");
+        let upload_id = payload
+            .get("upload_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
         let path = payload.get("path").and_then(|v| v.as_str()).unwrap_or("");
 
         let target = get_storage_path(&alias, path, &auth)?;
 
-        let result = ChunkedUploadManager::finalize(upload_id, &target).await
+        let result = ChunkedUploadManager::finalize(upload_id, &target)
+            .await
             .map_err(|e| AxiomError::new("FS_ERROR", &e, StatusCode::BAD_REQUEST))?;
 
         return Ok(Json(result));
     }
 
-    Err(AxiomError::new("INPUT_SCHEMA_INVALID", "Invalid block definition", StatusCode::BAD_REQUEST))
+    Err(AxiomError::new(
+        "INPUT_SCHEMA_INVALID",
+        "Invalid block definition",
+        StatusCode::BAD_REQUEST,
+    ))
 }
 
 pub async fn download_file(
     Path((alias, path)): Path<(String, String)>,
-    Extension(auth): Extension<AuthContext>
+    Extension(auth): Extension<AuthContext>,
 ) -> Result<impl axum::response::IntoResponse, AxiomError> {
     let target_path = get_storage_path(&alias, &path, &auth)?;
 
-    serve_file(&target_path).await.map_err(|_| AxiomError::new("FS_ERROR", "Failed to serve file", StatusCode::INTERNAL_SERVER_ERROR))
+    serve_file(&target_path).await.map_err(|_| {
+        AxiomError::new(
+            "FS_ERROR",
+            "Failed to serve file",
+            StatusCode::INTERNAL_SERVER_ERROR,
+        )
+    })
 }

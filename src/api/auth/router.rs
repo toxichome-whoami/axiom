@@ -14,6 +14,16 @@ pub fn get_router() -> Router {
         .route("/login", post(handler_login))
         .route("/refresh", post(handler_refresh))
         .route("/logout", post(handler_logout))
+        // Anonymous Auth
+        .route("/anonymous", post(handler_anonymous_login))
+        .route("/anonymous/upgrade", post(handler_anonymous_upgrade))
+        // TOTP
+        .route("/totp/enroll", post(handler_totp_enroll))
+        .route("/totp/confirm", post(handler_totp_confirm))
+        .route("/totp/verify", post(handler_totp_verify))
+        .route("/totp/disable", post(handler_totp_disable))
+        .route("/totp/backup/verify", post(handler_totp_backup_verify))
+        .route("/totp/backup/regenerate", get(handler_totp_backup_regenerate))
         // Session management
         .route("/user/sessions", get(handler_get_sessions))
         .route("/user/sessions", delete(handler_revoke_all_sessions))
@@ -24,7 +34,7 @@ pub fn get_router() -> Router {
         .route("/password/forgot", post(handler_forgot_password))
         .route("/password/reset", post(handler_reset_password))
         // User profile
-        .route("/user", get(handler_get_me))
+        .route("/user", get(handler_get_me).patch(handler_update_me))
         // Admin routes
         .route("/admin/users", get(admin_list_users))
         .route("/admin/users/:uid", delete(admin_delete_user))

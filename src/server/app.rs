@@ -7,10 +7,8 @@ use axum::http::header;
 use axum::{http::StatusCode, middleware, response::IntoResponse, routing::get, Json, Router};
 use serde_json::json;
 use tower_http::{
-    compression::CompressionLayer,
     cors::{Any, CorsLayer},
     set_header::SetResponseHeaderLayer,
-    trace::{DefaultMakeSpan, TraceLayer},
 };
 
 async fn fallback_handler() -> impl IntoResponse {
@@ -64,10 +62,6 @@ pub fn create_app() -> Router {
         .route("/favicon.ico", get(favicon))
         .fallback(fallback_handler)
         .layer(cors)
-        .layer(
-            TraceLayer::new_for_http().make_span_with(DefaultMakeSpan::new().include_headers(true)),
-        )
-        .layer(CompressionLayer::new())
         .layer(SetResponseHeaderLayer::overriding(
             header::X_CONTENT_TYPE_OPTIONS,
             header::HeaderValue::from_static("nosniff"),

@@ -91,7 +91,16 @@ pub struct UpdatePasswordRequest {
 
 #[derive(Debug, Deserialize)]
 pub struct TotpVerifyRequest {
+    pub mfa_token: String,
     pub code: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AnonymousUpgradeRequest {
+    pub email: String,
+    pub password: String,
+    pub display_name: Option<String>,
+    pub avatar_url: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

@@ -102,7 +102,7 @@ async function executeRequest(endpoint, method, requestBody) {
 async function ensureTableExists(tableName) {
     const tableStructureSql = `
         CREATE TABLE IF NOT EXISTS ${tableName} (
-            id INT AUTO_INCREMENT PRIMARY KEY,
+            id SERIAL PRIMARY KEY,
             tag VARCHAR(255) DEFAULT 'test_item',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )`;

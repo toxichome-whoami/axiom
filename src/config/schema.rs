@@ -59,9 +59,9 @@ impl Default for FeaturesConfig {
         Self {
             database: true,
             storage: true,
-            webhook: true,
+            webhook: false,
             federation: false,
-            metrics: true,
+            metrics: false,
             playground: false,
             mcp: false,
             graphql: false,

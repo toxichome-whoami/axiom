@@ -53,7 +53,7 @@ impl QueryExecutionPipeline {
                 AxiomError::new("DB_NOT_FOUND", "Database not found", StatusCode::NOT_FOUND)
             })?;
 
-        let engine_guard = engine.lock().await;
+        let engine_guard = engine.read().await;
 
         // Format placeholders based on engine dialect
         let dialect = engine_guard.dialect();
@@ -94,10 +94,10 @@ impl QueryExecutionPipeline {
                 final_bound_sql.replace_range(pos..pos + 1, &val_str);
             } else if let Some(pos) = final_bound_sql.find('$') {
                 // remove the $N
-                let end = final_bound_sql[pos..]
+                let end = final_bound_sql[pos + 1..]
                     .find(|c: char| !c.is_numeric())
-                    .unwrap_or(final_bound_sql.len() - pos)
-                    + pos;
+                    .map(|i| i + pos + 1)
+                    .unwrap_or(final_bound_sql.len());
                 final_bound_sql.replace_range(pos..end, &val_str);
             }
         }
@@ -135,4 +135,71 @@ pub async fn get_db_config(
             StatusCode::NOT_FOUND,
         ))
     }
+}
+
+pub async fn insert_rows(
+    axum::extract::Path((db_name, table_name)): axum::extract::Path<(String, String)>,
+    axum::extract::Extension(auth): axum::extract::Extension<AuthContext>,
+    axum::Json(payload): axum::Json<crate::api::database::schemas::InsertRequest>,
+) -> Result<axum::Json<Value>, AxiomError> {
+    let db_cfg = get_db_config(&db_name, &auth).await?;
+    
+    let rows_to_insert = if let Some(r) = payload.rows {
+        r
+    } else if let Some(single) = payload.row {
+        vec![single]
+    } else {
+        return Err(AxiomError::new("BAD_REQUEST", "No rows provided", StatusCode::BAD_REQUEST));
+    };
+    
+    if rows_to_insert.is_empty() {
+        return Err(AxiomError::new("BAD_REQUEST", "No rows provided", StatusCode::BAD_REQUEST));
+    }
+    
+    // In a production ORM, this would map keys and use properly bound parameters.
+    // For this stub, we dynamically build a multi-insert query.
+    let first_row = &rows_to_insert[0];
+    let columns: Vec<String> = first_row.keys().cloned().collect();
+    let cols_str = columns.join(", ");
+    
+    let mut all_params = Vec::new();
+    let mut values_strings = Vec::new();
+    
+    for row in &rows_to_insert {
+        let mut row_placeholders = Vec::new();
+        for col in &columns {
+            let val = row.get(col).unwrap_or(&Value::Null);
+            all_params.push(val.clone());
+            row_placeholders.push("?");
+        }
+        values_strings.push(format!("({})", row_placeholders.join(", ")));
+    }
+    
+    let sql = format!("INSERT INTO {} ({}) VALUES {}", table_name, cols_str, values_strings.join(", "));
+    
+    let result = QueryExecutionPipeline::run_query(
+        &db_name,
+        &sql,
+        all_params,
+        &auth,
+        &db_cfg
+    ).await?;
+    
+    // Webhook/SSE triggering logic
+    use crate::api::sse::connection_manager::SSE_MGR;
+    let topic = format!("db:{}:{}", db_name, table_name);
+    SSE_MGR.publish(
+        &topic,
+        "INSERT",
+        serde_json::json!({
+            "table": table_name,
+            "affected_rows": result.affected_rows,
+            "rows": rows_to_insert
+        }).to_string()
+    ).await;
+    
+    Ok(axum::Json(serde_json::json!({
+        "success": true,
+        "affected_rows": result.affected_rows
+    })))
 }

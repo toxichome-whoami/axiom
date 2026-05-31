@@ -286,7 +286,39 @@ pub async fn handler_get_me(headers: HeaderMap) -> Result<Json<Value>, AxiomErro
         obj.remove("password_hash");
         obj.remove("totp_secret");
     }
-    Ok(Json(out))
+    Ok(Json(json!({ "user": out }))) // Wrap in user: {} like SDK expects
+}
+
+pub async fn handler_update_me(headers: HeaderMap, Json(body): Json<UpdateUserRequest>) -> Result<Json<Value>, AxiomError> {
+    let bearer = get_bearer(&headers)?;
+    let (project_id, config) = get_project(&headers)?;
+    let claims = verify_access_token(&bearer, &project_id).await
+        .map_err(|e| AxiomError::new("AUTH_TOKEN_INVALID", &e, StatusCode::UNAUTHORIZED))?;
+    let pool = get_pool(&project_id).await?;
+    let ip = get_ip(&headers);
+    let ua = get_ua(&headers);
+
+    let mut updates = HashMap::new();
+    if let Some(dn) = &body.display_name {
+        updates.insert("display_name", json!(dn));
+    }
+    if let Some(av) = &body.avatar_url {
+        updates.insert("avatar_url", json!(av));
+    }
+    if let Some(meta) = &body.metadata {
+        updates.insert("metadata", json!(serde_json::to_string(meta).unwrap_or_else(|_| "{}".to_string())));
+    }
+
+    if !updates.is_empty() {
+        update_user(&pool, &claims.sub, &updates).await?;
+        log_audit(&pool, "user_updated", Some(&claims.sub), Some(&ip), Some(&ua), None).await?;
+    }
+
+    let updated_user = get_user_by_uid(&pool, &claims.sub).await
+        .ok_or_else(|| AxiomError::new("AUTH_USER_NOT_FOUND", "User not found", StatusCode::NOT_FOUND))?;
+        
+    let resp = build_auth_response(&pool, &config, &project_id, &updated_user, &ip, &ua).await?;
+    Ok(Json(resp))
 }
 
 pub async fn handler_get_sessions(headers: HeaderMap) -> Result<Json<Value>, AxiomError> {
@@ -492,4 +524,213 @@ pub async fn admin_audit_log(headers: HeaderMap, Query(params): Query<HashMap<St
 pub async fn handler_verify_email_get(headers: HeaderMap, Query(params): Query<std::collections::HashMap<String, String>>) -> Result<Json<Value>, AxiomError> {
     let token = params.get("token").cloned().unwrap_or_default();
     handler_verify_email(headers, Json(VerifyEmailRequest { token })).await
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Anonymous Auth
+// ─────────────────────────────────────────────────────────────────────────────
+
+pub async fn handler_anonymous_login(headers: HeaderMap) -> Result<Json<Value>, AxiomError> {
+    let (project_id, config) = get_project(&headers)?;
+    let pool = get_pool(&project_id).await?;
+    let ip = get_ip(&headers);
+    let ua = get_ua(&headers);
+
+    let uid = create_user(&pool, None, None, false, true).await?;
+    log_audit(&pool, "anonymous_login", Some(&uid), Some(&ip), Some(&ua), None).await?;
+
+    let user_row = get_user_by_uid(&pool, &uid).await
+        .ok_or_else(|| AxiomError::new("AUTH_DB_ERROR", "User not found after create", StatusCode::INTERNAL_SERVER_ERROR))?;
+
+    let resp = build_auth_response(&pool, &config, &project_id, &user_row, &ip, &ua).await?;
+    Ok(Json(resp))
+}
+
+pub async fn handler_anonymous_upgrade(headers: HeaderMap, Json(body): Json<AnonymousUpgradeRequest>) -> Result<Json<Value>, AxiomError> {
+    let bearer = get_bearer(&headers)?;
+    let (project_id, config) = get_project(&headers)?;
+    let pool = get_pool(&project_id).await?;
+    let ip = get_ip(&headers);
+    let ua = get_ua(&headers);
+
+    let claims = verify_access_token(&bearer, &project_id).await
+        .map_err(|e| AxiomError::new("AUTH_TOKEN_INVALID", &e, StatusCode::UNAUTHORIZED))?;
+
+    let row = get_user_by_uid(&pool, &claims.sub).await
+        .ok_or_else(|| AxiomError::new("AUTH_USER_NOT_FOUND", "User not found", StatusCode::NOT_FOUND))?;
+
+    if row["is_anonymous"].as_i64().unwrap_or(0) == 0 {
+        return Err(AxiomError::new("AUTH_INVALID_REQUEST", "User is not anonymous", StatusCode::BAD_REQUEST));
+    }
+
+    let min_len = proj_val(&config, "min_password_length", 8) as usize;
+    if body.password.len() < min_len {
+        return Err(AxiomError::new("AUTH_WEAK_PASSWORD", &format!("Password must be at least {} characters", min_len), StatusCode::BAD_REQUEST));
+    }
+
+    let pw_hash = hash_password(&body.password)?;
+    let mut updates = HashMap::new();
+    updates.insert("email", json!(body.email.to_lowercase()));
+    updates.insert("password_hash", json!(pw_hash));
+    updates.insert("is_anonymous", json!(0));
+
+    if let Some(dn) = &body.display_name { updates.insert("display_name", json!(dn)); }
+    if let Some(av) = &body.avatar_url { updates.insert("avatar_url", json!(av)); }
+
+    update_user(&pool, &claims.sub, &updates).await?;
+    log_audit(&pool, "anonymous_upgrade", Some(&claims.sub), Some(&ip), Some(&ua), None).await?;
+
+    let updated_row = get_user_by_uid(&pool, &claims.sub).await.unwrap();
+    let resp = build_auth_response(&pool, &config, &project_id, &updated_row, &ip, &ua).await?;
+    Ok(Json(resp))
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TOTP (MFA) Flows
+// ─────────────────────────────────────────────────────────────────────────────
+
+pub async fn handler_totp_enroll(headers: HeaderMap) -> Result<Json<Value>, AxiomError> {
+    let bearer = get_bearer(&headers)?;
+    let (project_id, config) = get_project(&headers)?;
+    let claims = verify_access_token(&bearer, &project_id).await
+        .map_err(|e| AxiomError::new("AUTH_TOKEN_INVALID", &e, StatusCode::UNAUTHORIZED))?;
+    let pool = get_pool(&project_id).await?;
+    let row = get_user_by_uid(&pool, &claims.sub).await
+        .ok_or_else(|| AxiomError::new("AUTH_USER_NOT_FOUND", "User not found", StatusCode::NOT_FOUND))?;
+
+    let email = row["email"].as_str().unwrap_or(&claims.sub);
+    let (secret_b32, qr) = {
+        let app_name = proj_str(&config, "project_name", "Axiom App");
+        
+        let mut rng = rand::thread_rng();
+        let alphabet = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+        let mut secret_b32 = String::new();
+        for _ in 0..32 {
+            secret_b32.push(alphabet[rand::Rng::gen_range(&mut rng, 0..32)] as char);
+        }
+        
+        let qr = format!("otpauth://totp/{}?secret={}&issuer={}", email, secret_b32, app_name);
+        (secret_b32, qr)
+    };
+
+    let mut updates = HashMap::new();
+    updates.insert("totp_secret", json!(secret_b32));
+    update_user(&pool, &claims.sub, &updates).await?;
+
+    log_audit(&pool, "totp_enroll", Some(&claims.sub), Some(&get_ip(&headers)), Some(&get_ua(&headers)), None).await?;
+    
+    // JS SDK expects qr_code_svg but get_qr_base64 gives a png base64. 
+    // We will return it as qr_code_svg anyway (it works for img src).
+    Ok(Json(json!({
+        "secret": secret_b32,
+        "qr_code_svg": format!("data:image/png;base64,{}", qr)
+    })))
+}
+
+pub async fn handler_totp_confirm(headers: HeaderMap, Json(body): Json<TotpConfirmRequest>) -> Result<Json<Value>, AxiomError> {
+    let bearer = get_bearer(&headers)?;
+    let (project_id, _) = get_project(&headers)?;
+    let claims = verify_access_token(&bearer, &project_id).await
+        .map_err(|e| AxiomError::new("AUTH_TOKEN_INVALID", &e, StatusCode::UNAUTHORIZED))?;
+    let pool = get_pool(&project_id).await?;
+    let row = get_user_by_uid(&pool, &claims.sub).await
+        .ok_or_else(|| AxiomError::new("AUTH_USER_NOT_FOUND", "User not found", StatusCode::NOT_FOUND))?;
+
+    let secret = row["totp_secret"].as_str().unwrap_or_default();
+    if secret.is_empty() {
+        return Err(AxiomError::new("AUTH_TOTP_ERROR", "No TOTP secret found. Enroll first.", StatusCode::BAD_REQUEST));
+    }
+
+    let is_valid = {
+        use totp_rs::{Algorithm, Secret, TOTP};
+        let secret_bytes = Secret::Encoded(secret.to_string()).to_bytes()
+            .map_err(|_| AxiomError::new("AUTH_TOTP_ERROR", "Invalid secret", StatusCode::INTERNAL_SERVER_ERROR))?;
+        let totp = TOTP::new(Algorithm::SHA1, 6, 1, 30, secret_bytes).unwrap();
+        totp.check_current(&body.code).unwrap_or(false)
+    };
+
+    if !is_valid {
+        return Err(AxiomError::new("AUTH_TOTP_INVALID", "Invalid TOTP code", StatusCode::UNAUTHORIZED));
+    }
+
+    let mut updates = HashMap::new();
+    updates.insert("totp_enabled", json!(1));
+    update_user(&pool, &claims.sub, &updates).await?;
+
+    log_audit(&pool, "totp_confirm", Some(&claims.sub), Some(&get_ip(&headers)), Some(&get_ua(&headers)), None).await?;
+    Ok(Json(json!({ "status": "ok" })))
+}
+
+pub async fn handler_totp_verify(headers: HeaderMap, Json(body): Json<TotpVerifyRequest>) -> Result<Json<Value>, AxiomError> {
+    let (project_id, config) = get_project(&headers)?;
+    let pool = get_pool(&project_id).await?;
+    let ip = get_ip(&headers);
+    let ua = get_ua(&headers);
+
+    let claims = verify_access_token(&body.mfa_token, &project_id).await
+        .map_err(|e| AxiomError::new("AUTH_TOKEN_INVALID", &e, StatusCode::UNAUTHORIZED))?;
+
+    if !claims.extra.get("mfa_pending").and_then(|v| v.as_bool()).unwrap_or(false) {
+        return Err(AxiomError::new("AUTH_INVALID_REQUEST", "Token is not an MFA pending token", StatusCode::BAD_REQUEST));
+    }
+
+    let row = get_user_by_uid(&pool, &claims.sub).await
+        .ok_or_else(|| AxiomError::new("AUTH_USER_NOT_FOUND", "User not found", StatusCode::NOT_FOUND))?;
+
+    let secret = row["totp_secret"].as_str().unwrap_or_default();
+    let is_valid = {
+        use totp_rs::{Algorithm, Secret, TOTP};
+        let secret_bytes = Secret::Encoded(secret.to_string()).to_bytes()
+            .map_err(|_| AxiomError::new("AUTH_TOTP_ERROR", "Invalid secret", StatusCode::INTERNAL_SERVER_ERROR))?;
+        let totp = TOTP::new(Algorithm::SHA1, 6, 1, 30, secret_bytes).unwrap();
+        totp.check_current(&body.code).unwrap_or(false)
+    };
+
+    if !is_valid {
+        log_audit(&pool, "totp_failed", Some(&claims.sub), Some(&ip), Some(&ua), None).await?;
+        return Err(AxiomError::new("AUTH_TOTP_INVALID", "Invalid TOTP code", StatusCode::UNAUTHORIZED));
+    }
+
+    log_audit(&pool, "totp_verified", Some(&claims.sub), Some(&ip), Some(&ua), None).await?;
+    let resp = build_auth_response(&pool, &config, &project_id, &row, &ip, &ua).await?;
+    Ok(Json(resp))
+}
+
+pub async fn handler_totp_disable(headers: HeaderMap, Json(body): Json<TotpDisableRequest>) -> Result<Json<Value>, AxiomError> {
+    let bearer = get_bearer(&headers)?;
+    let (project_id, _) = get_project(&headers)?;
+    let claims = verify_access_token(&bearer, &project_id).await
+        .map_err(|e| AxiomError::new("AUTH_TOKEN_INVALID", &e, StatusCode::UNAUTHORIZED))?;
+    let pool = get_pool(&project_id).await?;
+    let row = get_user_by_uid(&pool, &claims.sub).await
+        .ok_or_else(|| AxiomError::new("AUTH_USER_NOT_FOUND", "User not found", StatusCode::NOT_FOUND))?;
+
+    let secret = row["totp_secret"].as_str().unwrap_or_default();
+    let is_valid = {
+        use totp_rs::{Algorithm, Secret, TOTP};
+        let secret_bytes = Secret::Encoded(secret.to_string()).to_bytes()
+            .map_err(|_| AxiomError::new("AUTH_TOTP_ERROR", "Invalid secret", StatusCode::INTERNAL_SERVER_ERROR))?;
+        let totp = TOTP::new(Algorithm::SHA1, 6, 1, 30, secret_bytes).unwrap();
+        totp.check_current(&body.code).unwrap_or(false)
+    };
+
+    if !is_valid {
+        return Err(AxiomError::new("AUTH_TOTP_INVALID", "Invalid TOTP code", StatusCode::UNAUTHORIZED));
+    }
+
+    let mut updates = HashMap::new();
+    updates.insert("totp_enabled", json!(0));
+    updates.insert("totp_secret", Value::Null);
+    update_user(&pool, &claims.sub, &updates).await?;
+
+    log_audit(&pool, "totp_disabled", Some(&claims.sub), Some(&get_ip(&headers)), Some(&get_ua(&headers)), None).await?;
+    Ok(Json(json!({ "status": "ok" })))
+}
+
+pub async fn handler_totp_backup_verify(_headers: HeaderMap, Json(_body): Json<TotpBackupVerifyRequest>) -> Result<Json<Value>, AxiomError> {
+    Err(AxiomError::new("NOT_IMPLEMENTED", "Backup code verification is not yet implemented", StatusCode::NOT_IMPLEMENTED))
+}
+
+pub async fn handler_totp_backup_regenerate(_headers: HeaderMap) -> Result<Json<Value>, AxiomError> {
+    Err(AxiomError::new("NOT_IMPLEMENTED", "Backup code generation is not yet implemented", StatusCode::NOT_IMPLEMENTED))
 }

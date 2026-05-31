@@ -15,6 +15,7 @@ pub fn get_router() -> Router {
     Router::new()
         .route("/databases", get(list_databases))
         .route("/:db_name/query", post(execute_query))
+        .route("/:db_name/:table_name/rows", post(crate::api::database::handlers::insert_rows))
 }
 
 async fn list_databases(

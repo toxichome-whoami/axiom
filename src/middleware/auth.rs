@@ -26,7 +26,17 @@ pub async fn auth_middleware(
 
     if let Some(auth_value) = auth_header {
         if auth_value.starts_with("Bearer ") {
-            let token = &auth_value[7..];
+            let raw_token = &auth_value[7..];
+
+            // Auto-detect and decode Base64 tokens from legacy demo scripts
+            let decoded_token = if !raw_token.contains(':') && raw_token.len() > 30 {
+                use base64::prelude::*;
+                BASE64_STANDARD.decode(raw_token).ok().and_then(|d| String::from_utf8(d).ok())
+            } else {
+                None
+            };
+            
+            let token = decoded_token.as_deref().unwrap_or(raw_token);
 
             let config = ConfigManager::get();
             // Check if the token matches any API key's secret or name:secret format
