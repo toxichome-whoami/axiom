@@ -11,6 +11,13 @@ pub fn sanitize_ident(ident: &str) -> String {
 /// Recursively builds a WHERE clause and a vector of positional values.
 /// Returns (clause, values).
 pub fn build_where_clause(filter: &HashMap<String, Value>) -> (String, Vec<Value>) {
+    build_where_clause_inner(filter.iter())
+}
+
+fn build_where_clause_inner<'a, I>(filter: I) -> (String, Vec<Value>)
+where
+    I: Iterator<Item = (&'a String, &'a Value)>,
+{
     let mut parts = Vec::new();
     let mut values = Vec::new();
 
@@ -21,12 +28,7 @@ pub fn build_where_clause(filter: &HashMap<String, Value>) -> (String, Vec<Value
                 let mut sub_clauses = Vec::new();
                 for sub_filter in arr {
                     if let Some(obj) = sub_filter.as_object() {
-                        // Recursively build
-                        let mut map = HashMap::new();
-                        for (k, v) in obj {
-                            map.insert(k.clone(), v.clone());
-                        }
-                        let (sub_clause, mut sub_vals) = build_where_clause(&map);
+                        let (sub_clause, mut sub_vals) = build_where_clause_inner(obj.iter());
                         if !sub_clause.is_empty() {
                             sub_clauses.push(format!("({})", sub_clause));
                             values.append(&mut sub_vals);

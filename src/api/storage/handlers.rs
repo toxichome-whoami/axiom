@@ -44,8 +44,11 @@ fn get_storage_path(alias: &str, rel_path: &str, auth: &AuthContext) -> Result<S
         ));
     }
 
+    // Clean leading slashes and windows drive prefixes
+    let clean_rel_path = rel_path.trim_start_matches('/').trim_start_matches('\\');
+
     // Force strict relative paths
-    let req_path = StdPath::new(rel_path);
+    let req_path = StdPath::new(clean_rel_path);
     if req_path.is_absolute() || req_path.has_root() {
         return Err(AxiomError::new(
             "INPUT_PATH_TRAVERSAL",
@@ -53,9 +56,6 @@ fn get_storage_path(alias: &str, rel_path: &str, auth: &AuthContext) -> Result<S
             StatusCode::BAD_REQUEST,
         ));
     }
-
-    // Clean leading slashes and windows drive prefixes
-    let clean_rel_path = rel_path.trim_start_matches('/').trim_start_matches('\\');
 
     let target_path = base_path.join(clean_rel_path);
 
@@ -104,7 +104,7 @@ pub async fn list_folder(
     Path(alias): Path<String>,
     Query(params): Query<HashMap<String, String>>,
     Extension(auth): Extension<AuthContext>,
-) -> Result<Json<Value>, AxiomError> {
+) -> Result<axum::response::Response, AxiomError> {
     let rel_path = params.get("path").map(|s| s.as_str()).unwrap_or("/");
 
     // 1. Fast path memory-only checks
@@ -131,23 +131,17 @@ pub async fn list_folder(
 
     let cache_key = format!("{}:{}", alias, rel_path);
     static FS_CACHE: once_cell::sync::Lazy<
-        dashmap::DashMap<String, (std::time::Instant, Vec<Value>)>,
+        dashmap::DashMap<String, (std::time::Instant, bytes::Bytes)>,
     > = once_cell::sync::Lazy::new(|| dashmap::DashMap::new());
 
     if cache_enabled {
         if let Some(entry) = FS_CACHE.get(&cache_key) {
             if entry.0.elapsed().as_secs() < cache_ttl {
-                let items = entry.1.clone();
-                return Ok(Json(json!({
-                    "storage": alias,
-                    "path": rel_path,
-                    "items": items,
-                    "pagination": {
-                        "limit": 100,
-                        "is_truncated": false,
-                        "next_continuation_token": null
-                    }
-                })));
+                let b = entry.1.clone();
+                return Ok(axum::response::Response::builder()
+                    .header("content-type", "application/json")
+                    .body(axum::body::Body::from(b))
+                    .unwrap());
             }
         }
     }
@@ -187,11 +181,7 @@ pub async fn list_folder(
 
     let items = items_res.unwrap_or_default();
 
-    if cache_enabled {
-        FS_CACHE.insert(cache_key, (std::time::Instant::now(), items.clone()));
-    }
-
-    Ok(Json(json!({
+    let json_val = json!({
         "storage": alias,
         "path": rel_path,
         "items": items,
@@ -200,7 +190,18 @@ pub async fn list_folder(
             "is_truncated": false,
             "next_continuation_token": null
         }
-    })))
+    });
+
+    let json_bytes = bytes::Bytes::from(serde_json::to_vec(&json_val).unwrap());
+
+    if cache_enabled {
+        FS_CACHE.insert(cache_key, (std::time::Instant::now(), json_bytes.clone()));
+    }
+
+    Ok(axum::response::Response::builder()
+        .header("content-type", "application/json")
+        .body(axum::body::Body::from(json_bytes))
+        .unwrap())
 }
 
 pub async fn upload_file(

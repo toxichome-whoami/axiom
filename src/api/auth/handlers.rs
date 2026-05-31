@@ -320,12 +320,13 @@ pub async fn handler_login(
     }
 
     let row = get_user_by_email(&pool, &body.email).await.ok_or_else(|| {
-        if let Some(mut entry) = FAILED_ATTEMPTS.get_mut(&attempt_key) {
-            entry.0 += 1;
-            entry.1 = std::time::Instant::now();
-        } else {
-            FAILED_ATTEMPTS.insert(attempt_key.clone(), (1, std::time::Instant::now()));
-        }
+        FAILED_ATTEMPTS
+            .entry(attempt_key.clone())
+            .and_modify(|e| {
+                e.0 += 1;
+                e.1 = std::time::Instant::now();
+            })
+            .or_insert((1, std::time::Instant::now()));
         AxiomError::new(
             "AUTH_INVALID_CREDENTIALS",
             "Invalid credentials",
@@ -343,12 +344,13 @@ pub async fn handler_login(
 
     let hash = row["password_hash"].as_str().unwrap_or_default();
     if hash.is_empty() || !verify_password(hash, &body.password) {
-        if let Some(mut entry) = FAILED_ATTEMPTS.get_mut(&attempt_key) {
-            entry.0 += 1;
-            entry.1 = std::time::Instant::now();
-        } else {
-            FAILED_ATTEMPTS.insert(attempt_key.clone(), (1, std::time::Instant::now()));
-        }
+        FAILED_ATTEMPTS
+            .entry(attempt_key)
+            .and_modify(|e| {
+                e.0 += 1;
+                e.1 = std::time::Instant::now();
+            })
+            .or_insert((1, std::time::Instant::now()));
 
         log_audit(
             &pool,

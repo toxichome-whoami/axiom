@@ -65,7 +65,7 @@ async fn execute_graphql(
                     params_vec.push(v);
                 }
 
-                let db_result =
+                let (db_result, _) =
                     QueryExecutionPipeline::run_query(&db_alias, &sql, params_vec, &auth, &db_cfg)
                         .await?;
 
@@ -100,11 +100,11 @@ async fn execute_graphql(
                     cols, table, limit, offset
                 );
 
-                let db_result =
+                let (db_result, _) =
                     QueryExecutionPipeline::run_query(&db_alias, &sql, vec![], &auth, &db_cfg)
                         .await?;
 
-                results.insert(alias, json!(db_result.rows.unwrap_or_default()));
+                results.insert(alias, json!(db_result.rows.as_ref().unwrap_or(&vec![])));
             }
             ASTOperation::ListDatabases { alias } => {
                 let mut active_dbs = Vec::new();

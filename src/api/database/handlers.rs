@@ -1,5 +1,6 @@
 use axum::http::StatusCode;
 use serde_json::Value;
+use std::sync::Arc;
 
 use crate::api::errors::AxiomError;
 use crate::config::schema::DatabaseDefConfig;
@@ -16,15 +17,44 @@ impl QueryExecutionPipeline {
         params: Vec<Value>,
         auth: &AuthContext,
         db_cfg: &DatabaseDefConfig,
-    ) -> Result<QueryResult, AxiomError> {
+    ) -> Result<(Arc<QueryResult>, bytes::Bytes), AxiomError> {
         let engine = DatabasePoolManager::get_engine(db_name)
             .await
             .ok_or_else(|| {
                 AxiomError::new("DB_NOT_FOUND", "Database not found", StatusCode::NOT_FOUND)
             })?;
 
+        static MUTATION_RE: once_cell::sync::Lazy<regex::Regex> = once_cell::sync::Lazy::new(
+            || {
+                regex::Regex::new(r"(?i)\b(INSERT|UPDATE|DELETE|DROP|CREATE|ALTER|TRUNCATE|REPLACE|GRANT|REVOKE|PRAGMA)\b").unwrap()
+            },
+        );
+
+        let is_mutation_regex = MUTATION_RE.is_match(sql);
+
+        let config = crate::config::loader::ConfigManager::get();
+        let cache_enabled = config.cache.enabled && config.cache.query_cache;
+        let cache_ttl = config.cache.query_results_ttl as u64;
+
+        let cache_key = if cache_enabled && !is_mutation_regex {
+            let key = format!("{}:{}:{:?}", db_name, sql, params);
+            static QUERY_CACHE: once_cell::sync::Lazy<
+                dashmap::DashMap<String, (std::time::Instant, Arc<QueryResult>, bytes::Bytes)>,
+            > = once_cell::sync::Lazy::new(|| dashmap::DashMap::new());
+
+            if let Some(entry) = QUERY_CACHE.get(&key) {
+                if entry.0.elapsed().as_secs() < cache_ttl {
+                    return Ok((entry.1.clone(), entry.2.clone()));
+                }
+            }
+            Some((key, &QUERY_CACHE))
+        } else {
+            None
+        };
+
+        // Cache miss or mutation. Now we MUST run the strict AST parser to prevent bypasses.
         let dialect_name = engine.dialect();
-        
+
         let ast_result = if dialect_name == "postgres" {
             sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::PostgreSqlDialect {}, sql)
         } else if dialect_name == "mysql" {
@@ -48,9 +78,9 @@ impl QueryExecutionPipeline {
 
         for stmt in statements {
             match stmt {
-                sqlparser::ast::Statement::Query(_) 
-                | sqlparser::ast::Statement::Explain { .. } 
-                | sqlparser::ast::Statement::ShowVariable { .. } 
+                sqlparser::ast::Statement::Query(_)
+                | sqlparser::ast::Statement::Explain { .. }
+                | sqlparser::ast::Statement::ShowVariable { .. }
                 | sqlparser::ast::Statement::ShowColumns { .. } => {
                     // Safe for readonly
                 }
@@ -83,29 +113,8 @@ impl QueryExecutionPipeline {
             ));
         }
 
-        let config = crate::config::loader::ConfigManager::get();
-        let cache_enabled = config.cache.enabled && config.cache.query_cache;
-        let cache_ttl = config.cache.query_results_ttl as u64;
-
-        let cache_key = if cache_enabled && !is_mutation {
-            let key = format!("{}:{}:{:?}", db_name, sql, params);
-            static QUERY_CACHE: once_cell::sync::Lazy<
-                dashmap::DashMap<String, (std::time::Instant, QueryResult)>,
-            > = once_cell::sync::Lazy::new(|| dashmap::DashMap::new());
-
-            if let Some(entry) = QUERY_CACHE.get(&key) {
-                if entry.0.elapsed().as_secs() < cache_ttl {
-                    return Ok(entry.1.clone());
-                }
-            }
-            Some((key, &QUERY_CACHE))
-        } else {
-            None
-        };
-
         // Format placeholders based on engine dialect
-        let dialect = engine.dialect();
-        let formatted_sql = if dialect == "postgres" || dialect == "any" {
+        let formatted_sql = if dialect_name == "postgres" || dialect_name == "any" {
             // Primitive placeholder conversion for postgres `$1, $2`
             let mut final_sql = String::new();
             let mut param_index = 1;
@@ -125,10 +134,22 @@ impl QueryExecutionPipeline {
 
         match engine.execute(&formatted_sql, &params).await {
             Ok(res) => {
-                if let Some((key, cache_ref)) = cache_key {
-                    cache_ref.insert(key, (std::time::Instant::now(), res.clone()));
+                let arc_res = Arc::new(res);
+                let json_bytes = bytes::Bytes::from(serde_json::to_vec(&*arc_res).unwrap());
+
+                if !is_mutation {
+                    if let Some((key, cache_ref)) = cache_key {
+                        cache_ref.insert(
+                            key,
+                            (
+                                std::time::Instant::now(),
+                                arc_res.clone(),
+                                json_bytes.clone(),
+                            ),
+                        );
+                    }
                 }
-                Ok(res)
+                Ok((arc_res, json_bytes))
             }
             Err(e) => Err(AxiomError::new(
                 "DB_QUERY_FAILED",
@@ -248,7 +269,7 @@ pub async fn insert_rows(
         values_strings.join(", ")
     );
 
-    let result =
+    let (result, _) =
         QueryExecutionPipeline::run_query(&db_name, &sql, all_params, &auth, &db_cfg).await?;
 
     // Webhook/SSE triggering logic
@@ -325,7 +346,8 @@ pub async fn fetch_rows(
         offset
     );
 
-    let result = QueryExecutionPipeline::run_query(&db_name, &sql, values, &auth, &db_cfg).await?;
+    let (result, _) =
+        QueryExecutionPipeline::run_query(&db_name, &sql, values, &auth, &db_cfg).await?;
 
     Ok(axum::Json(serde_json::json!({
         "success": true,
@@ -361,7 +383,8 @@ pub async fn update_rows(
         &payload.filter,
     );
 
-    let result = QueryExecutionPipeline::run_query(&db_name, &sql, values, &auth, &db_cfg).await?;
+    let (result, _) =
+        QueryExecutionPipeline::run_query(&db_name, &sql, values, &auth, &db_cfg).await?;
 
     use crate::api::sse::connection_manager::SSE_MGR;
     let topic = format!("db:{}:{}", db_name, table_name);
@@ -397,7 +420,8 @@ pub async fn delete_rows(
     let (sql, values) =
         crate::api::database::filter_builder::construct_delete(&table_name, &payload.filter);
 
-    let result = QueryExecutionPipeline::run_query(&db_name, &sql, values, &auth, &db_cfg).await?;
+    let (result, _) =
+        QueryExecutionPipeline::run_query(&db_name, &sql, values, &auth, &db_cfg).await?;
 
     use crate::api::sse::connection_manager::SSE_MGR;
     let topic = format!("db:{}:{}", db_name, table_name);

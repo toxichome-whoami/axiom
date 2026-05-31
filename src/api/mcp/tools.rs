@@ -28,16 +28,17 @@ pub async fn handle_tool_call(
                 .map_err(|e| e.message.clone())?;
 
             match QueryExecutionPipeline::run_query(db_name, sql, params_vec, auth, &db_cfg).await {
-                Ok(res) => {
-                    let text_out = serde_json::to_string_pretty(&res.rows.unwrap_or_default())
-                        .unwrap_or_else(|_| "[]".to_string());
+                Ok((res, _)) => {
+                    let text_out =
+                        serde_json::to_string_pretty(res.rows.as_ref().unwrap_or(&vec![]))
+                            .unwrap_or_else(|_| "[]".to_string());
                     Ok(json!({
                         "content": [
                             {
                                 "type": "text",
                                 "text": text_out
                             }
-                        ]
+                        ]   
                     }))
                 }
                 Err(e) => Err(e.message),

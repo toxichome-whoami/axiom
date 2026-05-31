@@ -56,7 +56,7 @@ async fn execute_query(
     Path(db_name): Path<String>,
     Extension(auth): Extension<AuthContext>,
     Json(payload): Json<QueryRequest>,
-) -> Result<Json<Value>, AxiomError> {
+) -> Result<axum::response::Response, AxiomError> {
     let db_cfg = get_db_config(&db_name, &auth).await?;
 
     // In Rust, parameters are typically array based for positional arguments
@@ -70,13 +70,11 @@ async fn execute_query(
         }
     }
 
-    let result =
-        QueryExecutionPipeline::run_query(&db_name, &payload.sql, params_array, &auth, &db_cfg)
-            .await?;
+    let (_arc_result, json_bytes) = QueryExecutionPipeline::run_query(&db_name, &payload.sql, params_array, &auth, &db_cfg)
+        .await?;
 
-    Ok(Json(serde_json::json!({
-        "columns": result.columns,
-        "rows": result.rows,
-        "affected_rows": result.affected_rows
-    })))
+    Ok(axum::response::Response::builder()
+        .header("content-type", "application/json")
+        .body(axum::body::Body::from(json_bytes))
+        .unwrap())
 }

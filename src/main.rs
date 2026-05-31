@@ -1,6 +1,9 @@
 use std::net::SocketAddr;
 use tokio::net::TcpListener;
 
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 pub mod api;
 pub mod config;
 pub mod db;

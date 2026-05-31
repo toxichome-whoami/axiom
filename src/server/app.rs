@@ -63,6 +63,7 @@ pub fn create_app() -> Router {
         .route("/favicon.ico", get(favicon))
         .fallback(fallback_handler)
         .layer(cors)
+        .layer(tower_http::timeout::TimeoutLayer::new(std::time::Duration::from_secs(30)))
         .layer(SetResponseHeaderLayer::overriding(
             header::X_CONTENT_TYPE_OPTIONS,
             header::HeaderValue::from_static("nosniff"),

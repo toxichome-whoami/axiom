@@ -20,7 +20,7 @@ serde = { version = "1.0", features = ["derive"] }
 uuid = { version = "1.8", features = ["v4", "v7"] }
 regex = "1.10"
 base64 = "0.22.1"
-reqwest = { version = "0.13.4", features = ["default-tls", "json"] }
+reqwest = { version = "0.13.4", default-features = false, features = ["rustls", "json", "charset", "http2"] }
 rand = "0.8.5"
 toml = "0.8.19"
 mime_guess = "2.0"
@@ -31,7 +31,7 @@ chrono = "0.4"
 # Web Framework
 axum = { version = "0.7.5", features = ["multipart", "ws"] }
 tower = "0.4.13"
-tower-http = { version = "0.5.2", features = ["cors", "trace", "set-header", "compression-gzip", "request-id", "util"] }
+tower-http = { version = "0.5.2", features = ["cors", "trace", "set-header", "compression-gzip", "request-id", "util", "timeout"] }
 tokio-util = { version = "0.7", features = ["io"] }
 urlencoding = "2.1"
 
@@ -58,7 +58,7 @@ async-stream = "0.3.5"
 jsonwebtoken = "9.3"
 argon2 = "0.5"
 totp-rs = "5.5"
-lettre = { version = "0.11", features = ["tokio1-native-tls", "builder"], default-features = false }
+lettre = { version = "0.11", features = ["tokio1-rustls-tls", "builder"], default-features = false }
 bytes = "1.6"
 
 # gRPC & Protobuf
@@ -73,7 +73,14 @@ utoipa = { version = "4.2.0", features = ["axum_extras"] }
 utoipa-swagger-ui = { version = "7.1.0", features = ["axum"] }
 ring = "0.17.14"
 sqlparser = "0.62.0"
+mimalloc = { version = "0.1", default-features = false }
 
 [build-dependencies]
 tonic-build = "0.11"
 protoc-bin-vendored = "3.0"
+
+[profile.release]
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
