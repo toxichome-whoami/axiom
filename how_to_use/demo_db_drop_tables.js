@@ -113,7 +113,7 @@ async function fetchAllTables() {
         `/api/v1/db/${CONFIG.databaseName}/tables`,
         "GET",
     );
-    return response.data.tables || [];
+    return response.tables || [];
 }
 
 /**

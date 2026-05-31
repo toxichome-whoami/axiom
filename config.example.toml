@@ -7,8 +7,7 @@
 # Tuning the underlying network and execution bindings.
 [server]
 host = "0.0.0.0"                 # Bind to all interfaces
-port = 4500                      # Public port
-workers = 1                      # 1 = single worker (clean logs, shared cache). >1 for multi-worker.
+port = 4500                      # Public HTTP/REST port (gRPC automatically binds to port + 1)
 max_connections = 10000          # Maximum concurrent TCP connections
 request_timeout = 30             # Timeout per request in seconds
 body_limit = "10mb"              # Maximum request body size (e.g., "10mb", "1gb")
@@ -42,7 +41,7 @@ server_version = "1.0.5"
 # ─── Logging ──────────────────────────────────────────
 [logging]
 enabled = true                   # false = suppress all logging
-level = "INFO"                   # TRACE | DEBUG | INFO | WARNING | ERROR
+level = "INFO"                   # TRACE | DEBUG | INFO | WARN | ERROR (Can be overridden by RUST_LOG env var)
 format = "json"                  # json (production) | pretty (development)
 directory = "./logs"             # Where to store log files
 file_prefix = "axiom"        # Prefix for log filenames
@@ -54,7 +53,7 @@ stdout = true                    # Stream logs to console
 # Hardened locks preventing DOS and brute-force attacks.
 [rate_limit]
 enabled = false                  # Master toggle for rate limiting
-backend = "memory"               # memory | redis | sqlite
+backend = "memory"               # memory | redis
 redis_url = ""                   # Required if backend = "redis" (e.g., "redis://localhost:6379/0")
 window = 60                      # Rolling window size in seconds
 max_requests = 100               # Max requests allowed per window
@@ -66,7 +65,7 @@ penalty_cooldown = 300           # Duration of IP ban in seconds
 # Mitigation for backend latency via internal response caching.
 [cache]
 enabled = true
-backend = "memory"               # memory | redis | sqlite
+backend = "memory"               # memory | redis
 redis_url = ""                   # Required if backend = "redis"
 max_memory = "100mb"             # Memory limit for internal cache (approximate)
 default_ttl = 60                 # Default expiration for generic items (seconds)
@@ -146,6 +145,8 @@ sync_interval = 30             # Seconds between health heartbeats
 per_node_timeout = 5.0         # Max seconds to wait per node health check
 backoff_max = 300.0            # Max exponential backoff for failed nodes (5 min)
 circuit_breaker_threshold = 3  # Consecutive failures before marking node "down"
+grpc_port = 50051              # Default gRPC port for federation endpoints
+grpc_keepalive_seconds = 30    # Keepalive ping interval for long-lived streams
 
 # ─── Federation: Outgoing Servers ────────────────────
 # Nodes this server will connect to. Each server gets a unique alias key.
@@ -154,6 +155,8 @@ url = "https://other-axiom-node.com/"
 secret = "FEDERATION_SECRET_KEY"
 node_id = "local_identity"
 trust_mode = "verify"          # verify (strict SSL) | trust (skip cert check)
+grpc_port = 50051              # Remote gRPC port (defaults to federation.grpc_port)
+grpc_enabled = true            # Prefer gRPC transport over HTTP proxy
 
 # ─── Federation: Incoming Keys ───────────────────────
 # Define keys that remote nodes use to authenticate to this instance.

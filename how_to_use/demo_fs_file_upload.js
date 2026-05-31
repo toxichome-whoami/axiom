@@ -98,7 +98,7 @@ async function discoverStorages() {
     process.stdout.write("📦 Fetching available storages...\n");
     try {
         const responseData = await apiCall("/api/v1/fs/storages", "GET");
-        const summary = responseData.data.storages.map((s) => ({
+        const summary = responseData.storages.map((s) => ({
             Alias: s.name,
             Status: s.status,
             Limit: s.limit,
@@ -221,7 +221,7 @@ async function runChunkedUploadFlow(alias, localFilePath, targetRelativePath) {
         );
 
         console.log("✨ Successful Transfer!");
-        console.log(`🔗 Remote Path: ${finalizeResponse.data.file.path}`);
+        console.log(`🔗 Remote Path: ${finalizeResponse.file.path}`);
     } catch (error) {
         console.error(`\n❌ TRANSFER ERROR: ${error.message}`);
     }

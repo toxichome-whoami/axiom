@@ -34,9 +34,7 @@ function getConfiguration() {
 }
 
 const CONFIG = getConfiguration();
-const CREDENTIALS = Buffer.from(
-    `${CONFIG.keyName}:${CONFIG.keySecret}`,
-).toString("base64");
+const CREDENTIALS = `${CONFIG.keyName}:${CONFIG.keySecret}`;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // API Client
@@ -108,7 +106,7 @@ async function runDatabaseDiscovery() {
 
     try {
         const apiResponse = await fetchFromApi("/api/v1/db/databases");
-        displayDatabases(apiResponse.data.databases);
+        displayDatabases(apiResponse.databases);
     } catch (error) {
         console.error(`❌ Fetch failed: ${error.message}`);
     }

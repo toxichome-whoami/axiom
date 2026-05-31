@@ -1,29 +1,35 @@
-use axum::{
-    routing::get,
-    Router,
-    middleware,
-    Json,
-    response::IntoResponse,
-    http::StatusCode
-};
-use tower_http::{
-    cors::{Any, CorsLayer},
-    trace::TraceLayer,
-    set_header::SetResponseHeaderLayer,
-    compression::CompressionLayer,
+use crate::api::errors::AxiomError;
+use crate::config::loader::ConfigManager;
+use crate::middleware::{
+    auth::auth_middleware, rate_limit::rate_limit_middleware, waf::waf_middleware,
 };
 use axum::http::header;
-use crate::middleware::{auth::auth_middleware, waf::waf_middleware, rate_limit::rate_limit_middleware};
-use crate::config::loader::ConfigManager;
-use crate::api::errors::AxiomError;
+use axum::{http::StatusCode, middleware, response::IntoResponse, routing::get, Json, Router};
 use serde_json::json;
+use tower_http::{
+    compression::CompressionLayer,
+    cors::{Any, CorsLayer},
+    set_header::SetResponseHeaderLayer,
+    trace::{DefaultMakeSpan, TraceLayer},
+};
 
 async fn fallback_handler() -> impl IntoResponse {
-    AxiomError::new("NOT_FOUND", "The requested resource was not found.", StatusCode::NOT_FOUND)
+    AxiomError::new(
+        "NOT_FOUND",
+        "The requested resource was not found.",
+        StatusCode::NOT_FOUND,
+    )
 }
 
 async fn health_check() -> impl IntoResponse {
     Json(json!({"status": "ok", "version": "1.0.5"}))
+}
+
+async fn favicon() -> impl IntoResponse {
+    (
+        [(header::CONTENT_TYPE, "image/x-icon")],
+        include_bytes!("../icon/favicon.ico"),
+    )
 }
 
 pub fn create_app() -> Router {
@@ -34,34 +40,33 @@ pub fn create_app() -> Router {
         .allow_methods(Any)
         .allow_headers(Any);
     // Core Routes
-    let core_routes = crate::api::core::health::get_router()
-        .merge(crate::api::core::metrics::get_router());
+    let core_routes =
+        crate::api::core::health::get_router().merge(crate::api::core::metrics::get_router());
 
     // API versioning wrapper
     let api_routes = Router::new()
         .route("/health", get(health_check))
-        // Mount feature modules here as they are ported
-        // .nest("/db", db_router)
-        // .nest("/fs", fs_router)
+        .nest("/db", crate::api::database::router::get_router())
+        .nest("/mcp", crate::api::mcp::router::get_router())
+        .nest("/fs", crate::api::storage::router::get_router())
+        .nest("/graphql", crate::api::graphql::router::get_router())
+        .nest("/ws", crate::api::ws::router::get_router())
+        .nest("/sse", crate::api::sse::router::get_router())
+        .nest("/federation", crate::api::federation::router::get_router())
+        .nest("/auth", crate::api::auth::router::get_router())
         .layer(middleware::from_fn(auth_middleware))
         .layer(middleware::from_fn(rate_limit_middleware))
         .layer(middleware::from_fn(waf_middleware));
 
     Router::new()
         .nest("/api/v1", api_routes)
-        // webhook router is served via the webhook module (TODO: add webhook::router)
-        .nest("/api/v1/db", crate::api::database::router::get_router())
-        .nest("/api/v1/mcp", crate::api::mcp::router::get_router())
-        .nest("/api/v1/fs", crate::api::storage::router::get_router())
-        .nest("/api/v1/graphql", crate::api::graphql::router::get_router())
-        .nest("/api/v1/ws", crate::api::ws::router::get_router())
-        .nest("/api/v1/sse", crate::api::sse::router::get_router())
-        .nest("/api/v1/federation", crate::api::federation::router::get_router())
-        .nest("/api/v1/auth", crate::api::auth::router::get_router())
         .merge(core_routes)
+        .route("/favicon.ico", get(favicon))
         .fallback(fallback_handler)
         .layer(cors)
-        .layer(TraceLayer::new_for_http())
+        .layer(
+            TraceLayer::new_for_http().make_span_with(DefaultMakeSpan::new().include_headers(true)),
+        )
         .layer(CompressionLayer::new())
         .layer(SetResponseHeaderLayer::overriding(
             header::X_CONTENT_TYPE_OPTIONS,

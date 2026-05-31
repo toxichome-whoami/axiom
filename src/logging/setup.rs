@@ -44,7 +44,7 @@ pub fn setup_logging() -> Result<(), Box<dyn std::error::Error>> {
         }
     } else {
         let stdout_log = fmt::layer().with_span_events(FmtSpan::CLOSE);
-        let file_log = fmt::layer().with_writer(non_blocking_file);
+        let file_log = fmt::layer().with_writer(non_blocking_file).with_ansi(false);
 
         let subscriber = Registry::default().with(env_filter).with(file_log);
 

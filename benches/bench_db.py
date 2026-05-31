@@ -24,6 +24,7 @@ import orjson
 # .env Loader
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def _find_env_file() -> Optional[str]:
     """Locate the .env file in project root or current directory."""
     search_dirs = [
@@ -36,6 +37,7 @@ def _find_env_file() -> Optional[str]:
         if os.path.isfile(candidate):
             return candidate
     return None
+
 
 def _parse_env_file(path: str) -> Dict[str, str]:
     """Parse KEY=VALUE .env file."""
@@ -53,6 +55,7 @@ def _parse_env_file(path: str) -> Dict[str, str]:
                 env[key] = value
     return env
 
+
 def _load_config() -> Dict[str, Any]:
     """Load configuration from .env or fallback to defaults."""
     env_file = _find_env_file()
@@ -61,18 +64,31 @@ def _load_config() -> Dict[str, Any]:
     if env_file:
         print(f"[config] Loaded .env from: {env_file}")
 
+    raw_key = env.get("API_KEY", "")
+
+    # If the user's .env still has the old Python Base64 string, decode it on the fly
+    if ":" not in raw_key and len(raw_key) > 50:
+        import base64
+
+        try:
+            raw_key = base64.b64decode(raw_key).decode("ascii")
+        except Exception:
+            pass
+
     return {
         "api_url": env.get("API_URL", "http://127.0.0.1:4500").rstrip("/"),
-        "api_key": env.get("API_KEY", ""),
+        "api_key": raw_key,
         "db_name": env.get("DB_NAME", "localdb"),
         "fs_alias": env.get("FS_ALIAS", "local_uploads"),
         "concurrency": int(env.get("CONCURRENCY", "200")),
         "total_requests": int(env.get("TOTAL_REQUESTS", "2000")),
     }
 
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Performance Worker
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 async def _run_benchmark_task(
     label: str,
@@ -80,12 +96,12 @@ async def _run_benchmark_task(
     url: str,
     headers: Dict[str, str],
     payload: Optional[dict],
-    config: Dict[str, Any]
+    config: Dict[str, Any],
 ) -> Dict[str, Any]:
     """Execute a high-concurrency benchmark for a specific endpoint."""
     concurrency = config["concurrency"]
     total = config["total_requests"]
-    
+
     print(f"\n{'=' * 60}")
     print(f"  Benchmark: {label}")
     print(f"  Endpoint:  {url}")
@@ -96,7 +112,7 @@ async def _run_benchmark_task(
         limit=concurrency,
         limit_per_host=concurrency,
         keepalive_timeout=60,
-        force_close=False
+        force_close=False,
     )
 
     latencies: List[float] = []
@@ -116,7 +132,9 @@ async def _run_benchmark_task(
             start = time.perf_counter()
             try:
                 if method == "POST":
-                    async with session.post(url, headers=headers, data=body_bytes) as resp:
+                    async with session.post(
+                        url, headers=headers, data=body_bytes
+                    ) as resp:
                         await resp.read()
                         elapsed = (time.perf_counter() - start) * 1000
                         latencies.append(elapsed)
@@ -144,9 +162,9 @@ async def _run_benchmark_task(
     async with aiohttp.ClientSession(connector=connector) as session:
         tasks = [asyncio.create_task(worker(session)) for _ in range(total)]
         await asyncio.gather(*tasks)
-    
+
     overall_duration = time.perf_counter() - overall_start
-    
+
     return {
         "label": label,
         "duration": overall_duration,
@@ -154,17 +172,20 @@ async def _run_benchmark_task(
         "failed": failed,
         "throughput": total / overall_duration,
         "latency": latencies,
-        "errors": errors
+        "errors": errors,
     }
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Reporting
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def _p95(latencies: List[float]) -> float:
     if not latencies:
-       return 0.0
+        return 0.0
     return sorted(latencies)[int(len(latencies) * 0.95)]
+
 
 def _print_report(res: Dict[str, Any]):
     lat = res["latency"]
@@ -173,16 +194,17 @@ def _print_report(res: Dict[str, Any]):
     print(f"    Successful:     {res['success']}")
     print(f"    Failed:         {res['failed']}")
     print(f"    Throughput:     {res['throughput']:.2f} req/sec")
-    
+
     if lat:
         print(f"    Latency (avg):  {statistics.mean(lat):.2f}ms")
         print(f"    Latency (P50):  {statistics.median(lat):.2f}ms")
         print(f"    Latency (P95):  {_p95(lat):.2f}ms")
         print(f"    Latency (min):  {min(lat):.2f}ms")
-    
+
     if res["errors"]:
         for code, count in res["errors"].items():
             print(f"    HTTP {code}:      {count}")
+
 
 async def main():
     config = _load_config()
@@ -199,7 +221,7 @@ async def main():
         f"{config['api_url']}/api/v1/db/{config['db_name']}/query",
         headers.copy(),
         {"sql": "SELECT 1", "params": {}},
-        config
+        config,
     )
 
     # 2. Filesystem Benchmark
@@ -209,13 +231,16 @@ async def main():
         f"{config['api_url']}/api/v1/fs/{config['fs_alias']}/list?path=/",
         headers.copy(),
         None,
-        config
+        config,
     )
 
     _print_report(db_res)
     _print_report(fs_res)
 
-    print(f"\n  ✅ Benchmark complete. DB: {db_res['throughput']:.1f} req/s | FS: {fs_res['throughput']:.1f} req/s\n")
+    print(
+        f"\n  ✅ Benchmark complete. DB: {db_res['throughput']:.1f} req/s | FS: {fs_res['throughput']:.1f} req/s\n"
+    )
+
 
 if __name__ == "__main__":
     asyncio.run(main())

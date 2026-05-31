@@ -16,22 +16,10 @@ pub fn get_router() -> Router {
 }
 
 async fn root() -> Json<Value> {
-    let config = ConfigManager::get();
-
     Json(json!({
-        "status": "online",
         "name": "Axiom",
         "version": VERSION,
-        "uptime_seconds": START_TIME.elapsed().as_secs(),
-        "features": {
-            "webhooks": config.features.webhook,
-            "sse": config.features.sse,
-            "graphql": config.features.graphql,
-            "auth": config.features.auth,
-            "telemetry": config.features.telemetry,
-            "federation": config.features.federation,
-            "mcp": config.features.mcp
-        }
+        "status": "online"
     }))
 }
 

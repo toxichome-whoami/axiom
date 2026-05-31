@@ -115,7 +115,7 @@ async function ensureMessagingTableExists() {
     process.stdout.write(`🔍 Verifying 'messages' table existence... `);
     try {
         const dbsResponse = await apiPost("/api/v1/db/databases", null, "GET");
-        const dbInfo = dbsResponse.data.databases.find(
+        const dbInfo = dbsResponse.databases.find(
             (d) => d.name === CONFIG.dbName,
         );
         const engine = dbInfo ? dbInfo.engine.toLowerCase() : "mysql";
@@ -125,7 +125,7 @@ async function ensureMessagingTableExists() {
             null,
             "GET",
         );
-        const messagesTable = tablesResponse.data.tables.find(
+        const messagesTable = tablesResponse.tables.find(
             (t) => t.name.toLowerCase() === "messages",
         );
 
@@ -283,10 +283,10 @@ async function startInteractivePrompt() {
 
                 if (command.isNative) {
                     console.log(
-                        `✅ Success! Affected rows: ${result.data.affected_rows}`,
+                        `✅ Success! Affected rows: ${result.affected_rows}`,
                     );
-                    if (result.data.rows?.length > 0)
-                        console.table(result.data.rows.slice(0, 5));
+                    if (result.rows?.length > 0)
+                        console.table(result.rows.slice(0, 5));
                 } else {
                     console.log(`🚀 Message committed to memory!`);
                 }

@@ -95,10 +95,10 @@ async function runTests() {
     try {
         console.log("1. Testing `databases` introspection field...");
         const dbRes = await graphqlRequest("{ databases }");
-        if (dbRes.status === 200 && dbRes.data.data) {
+        if (dbRes.status === 200 && dbRes.data) {
             console.log(
                 "✅ Success! Available databases:",
-                dbRes.data.data.databases.join(", "),
+                dbRes.data.databases.join(", "),
             );
         } else {
             console.log("❌ Failed:", JSON.stringify(dbRes.data));
@@ -118,16 +118,16 @@ async function runTests() {
         const execRes = await graphqlRequest(sqlQuery);
         if (
             execRes.status === 200 &&
-            execRes.data.data &&
-            execRes.data.data.execute
+            execRes.data &&
+            execRes.data.execute
         ) {
-            const execData = execRes.data.data.execute;
+            const execData = execRes.data.execute;
             console.log("✅ AST transpiled successfully! Response:");
             console.log(`   Columns: ${execData.columns.join(", ")}`);
             console.log(`   Rows:    ${JSON.stringify(execData.rows)}`);
-            if (execRes.data.extensions) {
+            if (execRes.extensions) {
                 console.log(
-                    `   Timing:  ${execRes.data.extensions.duration_ms}ms execution`,
+                    `   Timing:  ${execRes.extensions.duration_ms}ms execution`,
                 );
             }
         } else {
