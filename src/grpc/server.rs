@@ -1,7 +1,7 @@
 use std::net::SocketAddr;
 use tonic::transport::Server;
 use tonic_health::server::health_reporter;
-use tracing::{info, error};
+use tracing::{error, info};
 
 pub async fn start_grpc_server(port: u16) {
     let addr = SocketAddr::from(([0, 0, 0, 0], port));

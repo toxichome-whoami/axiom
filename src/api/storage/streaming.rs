@@ -28,7 +28,7 @@ pub async fn serve_file(path: &str) -> Result<Response, StatusCode> {
                 .unwrap();
 
             Ok(response)
-        },
+        }
         Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
     }
 }

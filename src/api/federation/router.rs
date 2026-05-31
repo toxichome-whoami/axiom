@@ -1,8 +1,4 @@
-use axum::{
-    extract::Extension,
-    routing::get,
-    Json, Router,
-};
+use axum::{extract::Extension, routing::get, Json, Router};
 use serde_json::{json, Value};
 
 use crate::api::errors::AxiomError;
@@ -14,9 +10,7 @@ pub fn get_router() -> Router {
     Router::new().route("/servers", get(list_servers))
 }
 
-async fn list_servers(
-    Extension(auth): Extension<AuthContext>,
-) -> Result<Json<Value>, AxiomError> {
+async fn list_servers(Extension(auth): Extension<AuthContext>) -> Result<Json<Value>, AxiomError> {
     if !auth.full_admin {
         return Err(AxiomError::new(
             "AUTH_INSUFFICIENT",

@@ -1,8 +1,8 @@
+use axum::response::sse::Event;
+use once_cell::sync::Lazy;
 use std::collections::{HashMap, HashSet};
 use tokio::sync::mpsc;
 use tokio::sync::RwLock;
-use axum::response::sse::Event;
-use once_cell::sync::Lazy;
 
 use crate::config::loader::ConfigManager;
 
@@ -35,15 +35,26 @@ impl SSEConnectionManager {
         // Use bounded channel to apply backpressure if client is slow
         let (tx, rx) = mpsc::channel(queue_size);
 
-        self.connections.write().await.insert(client_id.to_string(), tx);
-        self.subscriptions.write().await.insert(client_id.to_string(), HashSet::new());
+        self.connections
+            .write()
+            .await
+            .insert(client_id.to_string(), tx);
+        self.subscriptions
+            .write()
+            .await
+            .insert(client_id.to_string(), HashSet::new());
         println!("SSE connected: {}", client_id);
 
         rx
     }
 
     pub async fn disconnect(&self, client_id: &str) {
-        let subs = self.subscriptions.write().await.remove(client_id).unwrap_or_default();
+        let subs = self
+            .subscriptions
+            .write()
+            .await
+            .remove(client_id)
+            .unwrap_or_default();
         let mut topic_subs = self.topic_subscribers.write().await;
         for topic in subs {
             if let Some(clients) = topic_subs.get_mut(&topic) {
@@ -60,7 +71,9 @@ impl SSEConnectionManager {
         subs.insert(topic.to_string());
         drop(subs_map);
 
-        self.topic_subscribers.write().await
+        self.topic_subscribers
+            .write()
+            .await
             .entry(topic.to_string())
             .or_default()
             .insert(client_id.to_string());

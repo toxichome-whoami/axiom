@@ -3,8 +3,8 @@ use serde_json::json;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-use crate::api::ws::schemas::EventPayload;
 use crate::api::ws::connection_manager::CONN_MGR;
+use crate::api::ws::schemas::EventPayload;
 use crate::config::loader::ConfigManager;
 
 pub struct EventBus {

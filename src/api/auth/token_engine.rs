@@ -1,8 +1,6 @@
-use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-use jsonwebtoken::{
-    decode, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation,
-};
+use base64::Engine;
+use jsonwebtoken::{decode, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation};
 use once_cell::sync::Lazy;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
@@ -116,10 +114,7 @@ pub async fn create_access_token(
     encode(&header, &claims, &kp.encoding_key).map_err(|e| e.to_string())
 }
 
-pub async fn verify_access_token(
-    token: &str,
-    project_id: &str,
-) -> Result<JwtClaims, String> {
+pub async fn verify_access_token(token: &str, project_id: &str) -> Result<JwtClaims, String> {
     let lock = KEY_PAIR.read().await;
     let kp = lock.as_ref().ok_or("Keys not initialized")?;
 
@@ -134,7 +129,10 @@ pub async fn verify_access_token(
 
 pub async fn get_jwks() -> serde_json::Value {
     let lock = KEY_PAIR.read().await;
-    let pub_bytes = lock.as_ref().map(|kp| kp.public_bytes.clone()).unwrap_or_default();
+    let pub_bytes = lock
+        .as_ref()
+        .map(|kp| kp.public_bytes.clone())
+        .unwrap_or_default();
     let x = URL_SAFE_NO_PAD.encode(&pub_bytes);
 
     serde_json::json!({

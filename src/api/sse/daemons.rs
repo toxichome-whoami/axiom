@@ -1,9 +1,9 @@
+use serde_json::json;
 use std::time::Duration;
 use tokio::time::sleep;
-use serde_json::json;
 
-use crate::config::loader::ConfigManager;
 use crate::api::sse::connection_manager::SSE_MGR;
+use crate::config::loader::ConfigManager;
 
 pub async fn health_poller() {
     let config = ConfigManager::get();
@@ -22,7 +22,8 @@ pub async fn health_poller() {
                 "memory_mb": 0.0, // Stubbed, avoid sysinfo
                 "cpu_pct": 0.0    // Stubbed, avoid sysinfo
             }
-        }).to_string();
+        })
+        .to_string();
 
         SSE_MGR.publish("system:health", "health", payload).await;
 
@@ -52,7 +53,8 @@ pub async fn metrics_pusher() {
             "db_queries_total": 0,
             "sse_connections": active_count,
             "sse_topics": topic_count
-        }).to_string();
+        })
+        .to_string();
 
         SSE_MGR.publish("metrics", "metrics", payload).await;
 

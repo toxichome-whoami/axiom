@@ -1,8 +1,8 @@
 use dashmap::DashMap;
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
-use std::time::{SystemTime, UNIX_EPOCH};
 use std::collections::HashMap;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 fn now_secs() -> f64 {
     SystemTime::now()
@@ -13,7 +13,7 @@ fn now_secs() -> f64 {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FederationNodeState {
-    pub status: String,             // "up" | "down" | "degraded" | "unknown"
+    pub status: String, // "up" | "down" | "degraded" | "unknown"
     pub latency_ms: f64,
     pub last_check: f64,
     pub consecutive_failures: u32,
@@ -66,7 +66,8 @@ impl FederationStateManager {
     }
 
     pub fn get_healthy_nodes(&self) -> Vec<String> {
-        NODE_STATES.iter()
+        NODE_STATES
+            .iter()
             .filter(|e| e.value().status == "up")
             .map(|e| e.key().clone())
             .collect()
@@ -74,7 +75,8 @@ impl FederationStateManager {
 
     pub fn get_next_retry_nodes(&self) -> Vec<String> {
         let now = now_secs();
-        NODE_STATES.iter()
+        NODE_STATES
+            .iter()
             .filter(|e| {
                 let state = e.value();
                 state.status == "unknown" || state.next_retry_at <= now

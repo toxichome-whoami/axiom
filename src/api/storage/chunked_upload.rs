@@ -20,7 +20,11 @@ impl ChunkedUploadManager {
         UPLOAD_SESSIONS.remove(upload_id);
     }
 
-    pub fn update_progress(upload_id: &str, chunk_index: usize, bytes_written: u64) -> Result<(), String> {
+    pub fn update_progress(
+        upload_id: &str,
+        chunk_index: usize,
+        bytes_written: u64,
+    ) -> Result<(), String> {
         if let Some(mut session) = UPLOAD_SESSIONS.get_mut(upload_id) {
             if let Some(obj) = session.as_object_mut() {
                 if let Some(uploaded_bytes) = obj.get_mut("uploaded_bytes") {

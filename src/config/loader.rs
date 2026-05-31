@@ -18,6 +18,9 @@ impl ConfigManager {
     }
 
     pub fn get() -> Arc<AxiomConfig> {
-        CONFIG.get().cloned().unwrap_or_else(|| Arc::new(AxiomConfig::default()))
+        CONFIG
+            .get()
+            .cloned()
+            .unwrap_or_else(|| Arc::new(AxiomConfig::default()))
     }
 }

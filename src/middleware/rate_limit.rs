@@ -1,17 +1,14 @@
-use axum::{
-    extract::Request,
-    middleware::Next,
-    response::Response,
-};
 use crate::api::errors::AxiomError;
 use crate::config::loader::ConfigManager;
 use crate::middleware::cache::MemoryCache;
+use axum::{extract::Request, middleware::Next, response::Response};
 
-pub async fn rate_limit_middleware(
-    req: Request,
-    next: Next,
-) -> Result<Response, AxiomError> {
-    let config = req.extensions().get::<std::sync::Arc<crate::config::schema::AxiomConfig>>().cloned().unwrap_or_else(|| ConfigManager::get());
+pub async fn rate_limit_middleware(req: Request, next: Next) -> Result<Response, AxiomError> {
+    let config = req
+        .extensions()
+        .get::<std::sync::Arc<crate::config::schema::AxiomConfig>>()
+        .cloned()
+        .unwrap_or_else(|| ConfigManager::get());
 
     if !config.rate_limit.enabled {
         return Ok(next.run(req).await);
@@ -37,17 +34,27 @@ pub async fn rate_limit_middleware(
         config.rate_limit.burst as u32,
         config.rate_limit.penalty_cooldown as u32,
         config.rate_limit.penalty_threshold as u32,
-    ).await;
+    )
+    .await;
 
     if violated {
-        return Err(AxiomError::new("RATE_LIMIT_EXCEEDED", "Rate limit exceeded or IP temporary blocked.", axum::http::StatusCode::TOO_MANY_REQUESTS));
+        return Err(AxiomError::new(
+            "RATE_LIMIT_EXCEEDED",
+            "Rate limit exceeded or IP temporary blocked.",
+            axum::http::StatusCode::TOO_MANY_REQUESTS,
+        ));
     }
 
     let mut response = next.run(req).await;
 
     let remaining = std::cmp::max(0, limit as i32 - current_count as i32);
-    response.headers_mut().insert("x-ratelimit-limit", limit.to_string().parse().unwrap());
-    response.headers_mut().insert("x-ratelimit-remaining", remaining.to_string().parse().unwrap());
+    response
+        .headers_mut()
+        .insert("x-ratelimit-limit", limit.to_string().parse().unwrap());
+    response.headers_mut().insert(
+        "x-ratelimit-remaining",
+        remaining.to_string().parse().unwrap(),
+    );
 
     Ok(response)
 }

@@ -1,7 +1,4 @@
-use redis::{
-    streams::StreamClaimReply,
-    AsyncCommands,
-};
+use redis::{streams::StreamClaimReply, AsyncCommands};
 
 use crate::webhook::persistence::get_rt;
 
@@ -29,7 +26,10 @@ impl RedisDLQManager {
         Ok(())
     }
 
-    pub fn reap_dead_letters(&self, min_idle_time_ms: i64) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn reap_dead_letters(
+        &self,
+        min_idle_time_ms: i64,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let redis_url = match &self.redis_url {
             Some(url) => url.clone(),
             None => return Ok(()),

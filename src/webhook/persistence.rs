@@ -95,7 +95,10 @@ impl WebhookPersistence {
         Ok(vec![])
     }
 
-    pub fn fetch_dead_letters(&self, _limit: i64) -> Result<Vec<Value>, Box<dyn std::error::Error>> {
+    pub fn fetch_dead_letters(
+        &self,
+        _limit: i64,
+    ) -> Result<Vec<Value>, Box<dyn std::error::Error>> {
         Ok(vec![])
     }
 

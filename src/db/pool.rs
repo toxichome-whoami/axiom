@@ -1,13 +1,12 @@
+use dashmap::DashMap;
 use once_cell::sync::Lazy;
 use std::sync::Arc;
-use dashmap::DashMap;
 
 use crate::config::loader::ConfigManager;
 use crate::db::engines::any::AnyDatabaseEngine;
 use crate::db::engines::base::DatabaseEngine;
 
-static ENGINES: Lazy<DashMap<String, Arc<dyn DatabaseEngine>>> =
-    Lazy::new(|| DashMap::new());
+static ENGINES: Lazy<DashMap<String, Arc<dyn DatabaseEngine>>> = Lazy::new(|| DashMap::new());
 
 pub struct DatabasePoolManager;
 

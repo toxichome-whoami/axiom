@@ -1,18 +1,21 @@
 use axum::{
     extract::{Extension, Json},
-    response::{sse::{Event, Sse}, IntoResponse},
+    response::{
+        sse::{Event, Sse},
+        IntoResponse,
+    },
     routing::{get, post},
     Router,
 };
 use futures::stream::Stream;
+use once_cell::sync::Lazy;
 use serde_json::Value;
 use std::convert::Infallible;
 use tokio::sync::broadcast;
-use once_cell::sync::Lazy;
 
 use crate::api::errors::AxiomError;
-use crate::utils::types::AuthContext;
 use crate::api::mcp::server::MCPServer;
+use crate::utils::types::AuthContext;
 
 // A simple global broadcast channel to push events to SSE clients
 static MCP_EVENT_TX: Lazy<broadcast::Sender<Value>> = Lazy::new(|| {
@@ -27,17 +30,23 @@ pub fn get_router() -> Router {
 }
 
 async fn handle_sse_connection(
-    Extension(auth): Extension<AuthContext>
+    Extension(auth): Extension<AuthContext>,
 ) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, AxiomError> {
     if !auth.full_admin {
         // Stub basic access check
-        return Err(AxiomError::new("MCP_AUTH_FAILED", "Admin access required for MCP", axum::http::StatusCode::FORBIDDEN));
+        return Err(AxiomError::new(
+            "MCP_AUTH_FAILED",
+            "Admin access required for MCP",
+            axum::http::StatusCode::FORBIDDEN,
+        ));
     }
 
     let mut rx = MCP_EVENT_TX.subscribe();
 
     // Create an endpoint URL that the MCP client will use to POST messages
-    let endpoint_event = Event::default().event("endpoint").data("/api/v1/mcp/messages");
+    let endpoint_event = Event::default()
+        .event("endpoint")
+        .data("/api/v1/mcp/messages");
 
     let stream = async_stream::stream! {
         yield Ok(endpoint_event);
@@ -55,7 +64,11 @@ async fn handle_mcp_message(
     Json(payload): Json<Value>,
 ) -> Result<impl IntoResponse, AxiomError> {
     if !auth.full_admin {
-        return Err(AxiomError::new("MCP_AUTH_FAILED", "Admin access required for MCP", axum::http::StatusCode::FORBIDDEN));
+        return Err(AxiomError::new(
+            "MCP_AUTH_FAILED",
+            "Admin access required for MCP",
+            axum::http::StatusCode::FORBIDDEN,
+        ));
     }
 
     if let Some(response) = MCPServer::handle_rpc_message(payload, &auth).await {

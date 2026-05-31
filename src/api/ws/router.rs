@@ -5,9 +5,9 @@ use axum::{
     Router,
 };
 use futures::{sink::SinkExt, stream::StreamExt};
+use serde_json::json;
 use std::time::Duration;
 use tokio::time::sleep;
-use serde_json::json;
 
 use crate::api::ws::connection_manager::{ClientScopes, CONN_MGR};
 use crate::config::loader::ConfigManager;
@@ -36,7 +36,7 @@ async fn handle_socket(socket: WebSocket) {
         if let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) {
             if json["type"] == "auth" && json["token"].is_string() {
                 let token = json["token"].as_str().unwrap_or("");
-                
+
                 // Decode Base64 token (format: base64(key_name:secret))
                 use base64::{engine::general_purpose::STANDARD, Engine};
                 if let Ok(decoded) = STANDARD.decode(token) {
@@ -73,7 +73,8 @@ async fn handle_socket(socket: WebSocket) {
     let ack = json!({
         "type": "connected",
         "client_id": client_id
-    }).to_string();
+    })
+    .to_string();
     let _ = sender.send(Message::Text(ack)).await;
 
     // 3. Heartbeat task
@@ -85,7 +86,8 @@ async fn handle_socket(socket: WebSocket) {
             let hb = json!({
                 "type": "heartbeat",
                 "server_time": chrono::Utc::now().to_rfc3339()
-            }).to_string();
+            })
+            .to_string();
             CONN_MGR.send(&hb_client_id, hb).await;
         }
     });
@@ -114,7 +116,8 @@ async fn handle_socket(socket: WebSocket) {
                                     "request_id": json["request_id"].as_str().unwrap_or(""),
                                     "status": if ok { "ok" } else { "denied" },
                                     "topic": topic
-                                }).to_string();
+                                })
+                                .to_string();
                                 CONN_MGR.send(&rc_client_id, ack).await;
                             }
                         }

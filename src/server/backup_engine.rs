@@ -63,7 +63,8 @@ impl BackupEngine {
         std::env::set_var("AWS_SECRET_ACCESS_KEY", &config.backups.s3_secret_key);
 
         let region = Region::new(config.backups.s3_region.clone());
-        let mut aws_config_builder = aws_config::defaults(aws_config::BehaviorVersion::latest()).region(region);
+        let mut aws_config_builder =
+            aws_config::defaults(aws_config::BehaviorVersion::latest()).region(region);
 
         if let Some(endpoint) = &config.backups.s3_endpoint_url {
             aws_config_builder = aws_config_builder.endpoint_url(endpoint);

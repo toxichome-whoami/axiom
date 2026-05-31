@@ -1,9 +1,9 @@
+use crate::config::loader::ConfigManager;
+use axum::extract::ws::Message;
+use once_cell::sync::Lazy;
 use std::collections::{HashMap, HashSet};
 use tokio::sync::mpsc;
 use tokio::sync::RwLock;
-use axum::extract::ws::Message;
-use once_cell::sync::Lazy;
-use crate::config::loader::ConfigManager;
 
 #[derive(Clone, Default)]
 pub struct ClientScopes {
@@ -28,15 +28,34 @@ impl ConnectionManager {
         }
     }
 
-    pub async fn register(&self, client_id: &str, sender: mpsc::UnboundedSender<Message>, scopes: ClientScopes) {
-        self.connections.write().await.insert(client_id.to_string(), sender);
-        self.subscriptions.write().await.insert(client_id.to_string(), HashSet::new());
-        self.client_scopes.write().await.insert(client_id.to_string(), scopes);
+    pub async fn register(
+        &self,
+        client_id: &str,
+        sender: mpsc::UnboundedSender<Message>,
+        scopes: ClientScopes,
+    ) {
+        self.connections
+            .write()
+            .await
+            .insert(client_id.to_string(), sender);
+        self.subscriptions
+            .write()
+            .await
+            .insert(client_id.to_string(), HashSet::new());
+        self.client_scopes
+            .write()
+            .await
+            .insert(client_id.to_string(), scopes);
         println!("WebSocket connected: {}", client_id);
     }
 
     pub async fn disconnect(&self, client_id: &str) {
-        let subs = self.subscriptions.write().await.remove(client_id).unwrap_or_default();
+        let subs = self
+            .subscriptions
+            .write()
+            .await
+            .remove(client_id)
+            .unwrap_or_default();
         let mut topic_subs = self.topic_subscribers.write().await;
         for topic in subs {
             if let Some(clients) = topic_subs.get_mut(&topic) {
@@ -69,7 +88,9 @@ impl ConnectionManager {
         subs.insert(topic.to_string());
         drop(subs_map); // unlock before locking next
 
-        self.topic_subscribers.write().await
+        self.topic_subscribers
+            .write()
+            .await
             .entry(topic.to_string())
             .or_default()
             .insert(client_id.to_string());
@@ -108,7 +129,9 @@ impl ConnectionManager {
 
     fn topic_in_scope(&self, topic: &str, scopes: &ClientScopes) -> bool {
         let parts: Vec<&str> = topic.splitn(3, ':').collect();
-        if parts.is_empty() { return false; }
+        if parts.is_empty() {
+            return false;
+        }
 
         let module = parts[0];
         if module == "db" {

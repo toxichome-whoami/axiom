@@ -18,7 +18,10 @@ fn now_secs() -> f64 {
 static CIRCUIT_STATE: Lazy<DashMap<String, u32>> = Lazy::new(DashMap::new);
 
 fn circuit_is_open(node_id: &str, threshold: u32) -> bool {
-    CIRCUIT_STATE.get(node_id).map(|v| *v >= threshold).unwrap_or(false)
+    CIRCUIT_STATE
+        .get(node_id)
+        .map(|v| *v >= threshold)
+        .unwrap_or(false)
 }
 
 fn circuit_record_failure(node_id: &str) -> u32 {
@@ -52,8 +55,14 @@ async fn poll_node(node_id: &str, state_mgr: &FederationStateManager) {
     use base64::Engine;
     let mut headers = reqwest::header::HeaderMap::new();
     let b64_secret = base64::engine::general_purpose::STANDARD.encode(&srv_config.secret);
-    headers.insert("X-Federation-Secret", reqwest::header::HeaderValue::from_str(&b64_secret).unwrap());
-    headers.insert("X-Federation-Node", reqwest::header::HeaderValue::from_str(&srv_config.node_id).unwrap());
+    headers.insert(
+        "X-Federation-Secret",
+        reqwest::header::HeaderValue::from_str(&b64_secret).unwrap(),
+    );
+    headers.insert(
+        "X-Federation-Node",
+        reqwest::header::HeaderValue::from_str(&srv_config.node_id).unwrap(),
+    );
 
     let timeout = std::time::Duration::from_secs_f64(fed_config.per_node_timeout);
     let start = std::time::Instant::now();
@@ -65,25 +74,30 @@ async fn poll_node(node_id: &str, state_mgr: &FederationStateManager) {
         .build();
 
     match client {
-        Ok(http) => {
-            match http.get(&health_url).send().await {
-                Ok(resp) if resp.status().is_success() => {
-                    let latency_ms = start.elapsed().as_secs_f64() * 1000.0;
-                    let data: serde_json::Value = resp.json().await.unwrap_or_default();
+        Ok(http) => match http.get(&health_url).send().await {
+            Ok(resp) if resp.status().is_success() => {
+                let latency_ms = start.elapsed().as_secs_f64() * 1000.0;
+                let data: serde_json::Value = resp.json().await.unwrap_or_default();
 
-                    let databases = data
-                        .get("data").and_then(|d| d.get("checks")).and_then(|c| c.get("databases"))
-                        .and_then(|v| v.as_object())
-                        .map(|m| m.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
-                        .unwrap_or_default();
+                let databases = data
+                    .get("data")
+                    .and_then(|d| d.get("checks"))
+                    .and_then(|c| c.get("databases"))
+                    .and_then(|v| v.as_object())
+                    .map(|m| m.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
+                    .unwrap_or_default();
 
-                    let storages = data
-                        .get("data").and_then(|d| d.get("checks")).and_then(|c| c.get("storages"))
-                        .and_then(|v| v.as_object())
-                        .map(|m| m.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
-                        .unwrap_or_default();
+                let storages = data
+                    .get("data")
+                    .and_then(|d| d.get("checks"))
+                    .and_then(|c| c.get("storages"))
+                    .and_then(|v| v.as_object())
+                    .map(|m| m.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
+                    .unwrap_or_default();
 
-                    state_mgr.set_state(node_id, FederationNodeState {
+                state_mgr.set_state(
+                    node_id,
+                    FederationNodeState {
                         status: "up".to_string(),
                         latency_ms,
                         last_check: now_secs(),
@@ -91,36 +105,59 @@ async fn poll_node(node_id: &str, state_mgr: &FederationStateManager) {
                         next_retry_at: 0.0,
                         databases,
                         storages,
-                    });
-                    circuit_record_success(node_id);
-                    info!("Federation node {} is up ({}ms)", node_id, latency_ms as u64);
-                }
-                Ok(resp) => {
-                    let failures = circuit_record_failure(node_id);
-                    let backoff = (2u64.pow(failures)).min(fed_config.backoff_max as u64) as f64;
-                    warn!("Federation node {} returned HTTP {}", node_id, resp.status());
-                    state_mgr.set_state(node_id, FederationNodeState {
-                        status: if failures >= threshold { "down" } else { "degraded" }.to_string(),
-                        consecutive_failures: failures,
-                        next_retry_at: now_secs() + backoff,
-                        last_check: now_secs(),
-                        ..Default::default()
-                    });
-                }
-                Err(e) => {
-                    let failures = circuit_record_failure(node_id);
-                    let backoff = (2u64.pow(failures)).min(fed_config.backoff_max as u64) as f64;
-                    warn!("Federation node {} unreachable: {}", node_id, e);
-                    state_mgr.set_state(node_id, FederationNodeState {
-                        status: if failures >= threshold { "down" } else { "degraded" }.to_string(),
-                        consecutive_failures: failures,
-                        next_retry_at: now_secs() + backoff,
-                        last_check: now_secs(),
-                        ..Default::default()
-                    });
-                }
+                    },
+                );
+                circuit_record_success(node_id);
+                info!(
+                    "Federation node {} is up ({}ms)",
+                    node_id, latency_ms as u64
+                );
             }
-        }
+            Ok(resp) => {
+                let failures = circuit_record_failure(node_id);
+                let backoff = (2u64.pow(failures)).min(fed_config.backoff_max as u64) as f64;
+                warn!(
+                    "Federation node {} returned HTTP {}",
+                    node_id,
+                    resp.status()
+                );
+                state_mgr.set_state(
+                    node_id,
+                    FederationNodeState {
+                        status: if failures >= threshold {
+                            "down"
+                        } else {
+                            "degraded"
+                        }
+                        .to_string(),
+                        consecutive_failures: failures,
+                        next_retry_at: now_secs() + backoff,
+                        last_check: now_secs(),
+                        ..Default::default()
+                    },
+                );
+            }
+            Err(e) => {
+                let failures = circuit_record_failure(node_id);
+                let backoff = (2u64.pow(failures)).min(fed_config.backoff_max as u64) as f64;
+                warn!("Federation node {} unreachable: {}", node_id, e);
+                state_mgr.set_state(
+                    node_id,
+                    FederationNodeState {
+                        status: if failures >= threshold {
+                            "down"
+                        } else {
+                            "degraded"
+                        }
+                        .to_string(),
+                        consecutive_failures: failures,
+                        next_retry_at: now_secs() + backoff,
+                        last_check: now_secs(),
+                        ..Default::default()
+                    },
+                );
+            }
+        },
         Err(e) => error!("Failed to build HTTP client for {}: {}", node_id, e),
     }
 }
@@ -189,7 +226,8 @@ pub async fn sync_federated_servers() {
         }
 
         let has_degraded = nodes_to_poll.iter().any(|id| {
-            state_mgr.get_state(id)
+            state_mgr
+                .get_state(id)
                 .map(|s| s.status == "degraded")
                 .unwrap_or(false)
         });

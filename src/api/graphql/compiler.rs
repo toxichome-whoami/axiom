@@ -1,6 +1,8 @@
-use graphql_parser::query::{parse_query, Definition, OperationDefinition, Selection, Field, Value};
-use std::collections::HashMap;
+use graphql_parser::query::{
+    parse_query, Definition, Field, OperationDefinition, Selection, Value,
+};
 use serde_json::Value as JsonValue;
+use std::collections::HashMap;
 
 #[derive(Debug)]
 pub enum ASTOperation {
@@ -21,7 +23,7 @@ pub enum ASTOperation {
     },
     ListDatabases {
         alias: String,
-    }
+    },
 }
 
 pub struct ASTCompiler {
@@ -45,7 +47,7 @@ impl ASTCompiler {
             Value::List(l) => {
                 let vec: Vec<JsonValue> = l.iter().map(|v| self.parse_value(v)).collect();
                 JsonValue::Array(vec)
-            },
+            }
             Value::Object(o) => {
                 let mut map = serde_json::Map::new();
                 for (k, v) in o {
@@ -64,9 +66,16 @@ impl ASTCompiler {
         args
     }
 
-    fn extract_table_selection<'a>(&self, field: &Field<'a, &'a str>, current_depth: i32) -> Result<ASTOperation, String> {
+    fn extract_table_selection<'a>(
+        &self,
+        field: &Field<'a, &'a str>,
+        current_depth: i32,
+    ) -> Result<ASTOperation, String> {
         if current_depth > self.max_depth {
-            return Err(format!("Query exceeds maximum allowed depth of {}", self.max_depth));
+            return Err(format!(
+                "Query exceeds maximum allowed depth of {}",
+                self.max_depth
+            ));
         }
 
         let mut columns = Vec::new();
@@ -83,9 +92,16 @@ impl ASTCompiler {
         }
 
         let args = self.extract_arguments(field);
-        let alias = field.alias.map(|a| a.to_string()).unwrap_or_else(|| field.name.to_string());
-        
-        let db_alias = args.get("dbAlias").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let alias = field
+            .alias
+            .map(|a| a.to_string())
+            .unwrap_or_else(|| field.name.to_string());
+
+        let db_alias = args
+            .get("dbAlias")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
         let limit = args.get("limit").and_then(|v| v.as_i64()).unwrap_or(50) as i32;
         let offset = args.get("offset").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
 
@@ -109,21 +125,43 @@ impl ASTCompiler {
                 let selection_set = match op {
                     OperationDefinition::Query(q) => q.selection_set,
                     OperationDefinition::SelectionSet(s) => s,
-                    OperationDefinition::Mutation(_) => return Err("Mutations are currently unsupported in this basic Rust stub".to_string()),
-                    OperationDefinition::Subscription(_) => return Err("Subscriptions not supported".to_string()),
+                    OperationDefinition::Mutation(_) => {
+                        return Err(
+                            "Mutations are currently unsupported in this basic Rust stub"
+                                .to_string(),
+                        )
+                    }
+                    OperationDefinition::Subscription(_) => {
+                        return Err("Subscriptions not supported".to_string())
+                    }
                 };
 
                 for selection in selection_set.items {
                     if let Selection::Field(field) = selection {
                         let name = field.name;
-                        let alias = field.alias.map(|a| a.to_string()).unwrap_or_else(|| name.to_string());
+                        let alias = field
+                            .alias
+                            .map(|a| a.to_string())
+                            .unwrap_or_else(|| name.to_string());
                         let args = self.extract_arguments(&field);
 
                         if name == "execute" {
-                            let db_alias = args.get("dbAlias").and_then(|v| v.as_str()).ok_or("dbAlias required")?.to_string();
-                            let sql = args.get("sql").and_then(|v| v.as_str()).ok_or("sql required")?.to_string();
-                            let params = args.get("params").and_then(|v| v.as_object()).cloned().unwrap_or_default();
-                            
+                            let db_alias = args
+                                .get("dbAlias")
+                                .and_then(|v| v.as_str())
+                                .ok_or("dbAlias required")?
+                                .to_string();
+                            let sql = args
+                                .get("sql")
+                                .and_then(|v| v.as_str())
+                                .ok_or("sql required")?
+                                .to_string();
+                            let params = args
+                                .get("params")
+                                .and_then(|v| v.as_object())
+                                .cloned()
+                                .unwrap_or_default();
+
                             let mut param_map = HashMap::new();
                             for (k, v) in params {
                                 param_map.insert(k, v);
@@ -139,7 +177,10 @@ impl ASTCompiler {
                             operations.push(ASTOperation::ListDatabases { alias });
                         } else {
                             if args.get("dbAlias").is_none() {
-                                return Err(format!("Field '{}' requires a 'dbAlias' argument", name));
+                                return Err(format!(
+                                    "Field '{}' requires a 'dbAlias' argument",
+                                    name
+                                ));
                             }
                             let op = self.extract_table_selection(&field, 1)?;
                             operations.push(op);

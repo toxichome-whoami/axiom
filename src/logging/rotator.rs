@@ -1,8 +1,8 @@
-use std::time::Duration;
-use tokio::time::sleep;
+use crate::config::loader::ConfigManager;
 use std::fs;
 use std::path::Path;
-use crate::config::loader::ConfigManager;
+use std::time::Duration;
+use tokio::time::sleep;
 
 pub struct LogRotator;
 
@@ -16,14 +16,20 @@ impl LogRotator {
                 }
 
                 sleep(Duration::from_secs(60)).await;
-                Self::garbage_collect(&config.logging.directory, &config.logging.file_prefix, config.logging.max_files as usize);
+                Self::garbage_collect(
+                    &config.logging.directory,
+                    &config.logging.file_prefix,
+                    config.logging.max_files as usize,
+                );
             }
         })
     }
 
     fn garbage_collect(directory: &str, prefix: &str, max_files: usize) {
         let dir_path = Path::new(directory);
-        if !dir_path.exists() { return; }
+        if !dir_path.exists() {
+            return;
+        }
 
         let mut logs = vec![];
         if let Ok(entries) = fs::read_dir(dir_path) {

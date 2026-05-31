@@ -112,7 +112,13 @@ pub async fn get_pool(project_id: &str) -> Result<SqlitePool, AxiomError> {
     let db_path = format!("{}/auth.db", dir);
 
     let opts = SqliteConnectOptions::from_str(&format!("sqlite://{}?mode=rwc", db_path))
-        .map_err(|e| AxiomError::new("AUTH_DB_ERROR", &e.to_string(), StatusCode::INTERNAL_SERVER_ERROR))?
+        .map_err(|e| {
+            AxiomError::new(
+                "AUTH_DB_ERROR",
+                &e.to_string(),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            )
+        })?
         .journal_mode(sqlx::sqlite::SqliteJournalMode::Wal)
         .synchronous(sqlx::sqlite::SqliteSynchronous::Normal)
         .foreign_keys(true)
@@ -122,12 +128,21 @@ pub async fn get_pool(project_id: &str) -> Result<SqlitePool, AxiomError> {
         .max_connections(10)
         .connect_with(opts)
         .await
-        .map_err(|e| AxiomError::new("AUTH_DB_ERROR", &e.to_string(), StatusCode::INTERNAL_SERVER_ERROR))?;
+        .map_err(|e| {
+            AxiomError::new(
+                "AUTH_DB_ERROR",
+                &e.to_string(),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            )
+        })?;
 
-    sqlx::query(SCHEMA)
-        .execute(&pool)
-        .await
-        .map_err(|e| AxiomError::new("AUTH_DB_INIT", &e.to_string(), StatusCode::INTERNAL_SERVER_ERROR))?;
+    sqlx::query(SCHEMA).execute(&pool).await.map_err(|e| {
+        AxiomError::new(
+            "AUTH_DB_INIT",
+            &e.to_string(),
+            StatusCode::INTERNAL_SERVER_ERROR,
+        )
+    })?;
 
     POOLS.insert(project_id.to_string(), pool.clone());
     Ok(pool)
@@ -139,7 +154,13 @@ pub fn hash_password(password: &str) -> Result<String, AxiomError> {
     argon2
         .hash_password(password.as_bytes(), &salt)
         .map(|h| h.to_string())
-        .map_err(|e| AxiomError::new("AUTH_HASH_ERROR", &e.to_string(), StatusCode::INTERNAL_SERVER_ERROR))
+        .map_err(|e| {
+            AxiomError::new(
+                "AUTH_HASH_ERROR",
+                &e.to_string(),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            )
+        })
 }
 
 pub fn verify_password(hash: &str, password: &str) -> bool {
@@ -147,7 +168,9 @@ pub fn verify_password(hash: &str, password: &str) -> bool {
         Ok(p) => p,
         Err(_) => return false,
     };
-    Argon2::default().verify_password(password.as_bytes(), &parsed).is_ok()
+    Argon2::default()
+        .verify_password(password.as_bytes(), &parsed)
+        .is_ok()
 }
 
 pub async fn get_user_by_email(pool: &SqlitePool, email: &str) -> Option<Value> {
@@ -196,20 +219,33 @@ pub async fn create_user(
 
     match res {
         Ok(_) => Ok(uid),
-        Err(sqlx::Error::Database(e)) if e.message().contains("UNIQUE") => {
-            Err(AxiomError::new("AUTH_USER_EXISTS", "User with this email already exists", StatusCode::CONFLICT))
-        }
-        Err(e) => Err(AxiomError::new("AUTH_DB_ERROR", &e.to_string(), StatusCode::INTERNAL_SERVER_ERROR)),
+        Err(sqlx::Error::Database(e)) if e.message().contains("UNIQUE") => Err(AxiomError::new(
+            "AUTH_USER_EXISTS",
+            "User with this email already exists",
+            StatusCode::CONFLICT,
+        )),
+        Err(e) => Err(AxiomError::new(
+            "AUTH_DB_ERROR",
+            &e.to_string(),
+            StatusCode::INTERNAL_SERVER_ERROR,
+        )),
     }
 }
 
-pub async fn update_user(pool: &SqlitePool, uid: &str, updates: &HashMap<&str, Value>) -> Result<(), AxiomError> {
+pub async fn update_user(
+    pool: &SqlitePool,
+    uid: &str,
+    updates: &HashMap<&str, Value>,
+) -> Result<(), AxiomError> {
     if updates.is_empty() {
         return Ok(());
     }
     let now = utc_now_iso();
     let set_clause: Vec<String> = updates.keys().map(|k| format!("{} = ?", k)).collect();
-    let sql = format!("UPDATE users SET {}, updated_at = ? WHERE uid = ?", set_clause.join(", "));
+    let sql = format!(
+        "UPDATE users SET {}, updated_at = ? WHERE uid = ?",
+        set_clause.join(", ")
+    );
 
     let mut q = sqlx::query(&sql);
     for v in updates.values() {
@@ -221,11 +257,18 @@ pub async fn update_user(pool: &SqlitePool, uid: &str, updates: &HashMap<&str, V
             other => q.bind(other.to_string()),
         };
     }
-    q.bind(&now).bind(uid)
+    q.bind(&now)
+        .bind(uid)
         .execute(pool)
         .await
         .map(|_| ())
-        .map_err(|e| AxiomError::new("AUTH_DB_ERROR", &e.to_string(), StatusCode::INTERNAL_SERVER_ERROR))
+        .map_err(|e| {
+            AxiomError::new(
+                "AUTH_DB_ERROR",
+                &e.to_string(),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            )
+        })
 }
 
 pub async fn issue_refresh_token(
@@ -261,30 +304,65 @@ pub async fn get_refresh_token(pool: &SqlitePool, token_hash: &str) -> Option<Va
 
 pub async fn revoke_refresh_token(pool: &SqlitePool, token_hash: &str) -> Result<(), AxiomError> {
     sqlx::query("UPDATE refresh_tokens SET revoked = 1 WHERE token_hash = ?")
-        .bind(token_hash).execute(pool).await
+        .bind(token_hash)
+        .execute(pool)
+        .await
         .map(|_| ())
-        .map_err(|e| AxiomError::new("AUTH_DB_ERROR", &e.to_string(), StatusCode::INTERNAL_SERVER_ERROR))
+        .map_err(|e| {
+            AxiomError::new(
+                "AUTH_DB_ERROR",
+                &e.to_string(),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            )
+        })
 }
 
 pub async fn revoke_refresh_family(pool: &SqlitePool, family_id: &str) -> Result<(), AxiomError> {
     sqlx::query("UPDATE refresh_tokens SET revoked = 1 WHERE family_id = ?")
-        .bind(family_id).execute(pool).await
+        .bind(family_id)
+        .execute(pool)
+        .await
         .map(|_| ())
-        .map_err(|e| AxiomError::new("AUTH_DB_ERROR", &e.to_string(), StatusCode::INTERNAL_SERVER_ERROR))
+        .map_err(|e| {
+            AxiomError::new(
+                "AUTH_DB_ERROR",
+                &e.to_string(),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            )
+        })
 }
 
 pub async fn revoke_all_sessions(pool: &SqlitePool, uid: &str) -> Result<(), AxiomError> {
     sqlx::query("UPDATE refresh_tokens SET revoked = 1 WHERE uid = ?")
-        .bind(uid).execute(pool).await
+        .bind(uid)
+        .execute(pool)
+        .await
         .map(|_| ())
-        .map_err(|e| AxiomError::new("AUTH_DB_ERROR", &e.to_string(), StatusCode::INTERNAL_SERVER_ERROR))
+        .map_err(|e| {
+            AxiomError::new(
+                "AUTH_DB_ERROR",
+                &e.to_string(),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            )
+        })
 }
 
 pub async fn record_login(pool: &SqlitePool, uid: &str) -> Result<(), AxiomError> {
-    sqlx::query("UPDATE users SET last_sign_in = ?, sign_in_count = sign_in_count + 1 WHERE uid = ?")
-        .bind(utc_now_iso()).bind(uid).execute(pool).await
-        .map(|_| ())
-        .map_err(|e| AxiomError::new("AUTH_DB_ERROR", &e.to_string(), StatusCode::INTERNAL_SERVER_ERROR))
+    sqlx::query(
+        "UPDATE users SET last_sign_in = ?, sign_in_count = sign_in_count + 1 WHERE uid = ?",
+    )
+    .bind(utc_now_iso())
+    .bind(uid)
+    .execute(pool)
+    .await
+    .map(|_| ())
+    .map_err(|e| {
+        AxiomError::new(
+            "AUTH_DB_ERROR",
+            &e.to_string(),
+            StatusCode::INTERNAL_SERVER_ERROR,
+        )
+    })
 }
 
 pub async fn log_audit(
@@ -295,7 +373,9 @@ pub async fn log_audit(
     user_agent: Option<&str>,
     metadata: Option<&serde_json::Value>,
 ) -> Result<(), AxiomError> {
-    let meta_str = metadata.map(|m| m.to_string()).unwrap_or_else(|| "{}".into());
+    let meta_str = metadata
+        .map(|m| m.to_string())
+        .unwrap_or_else(|| "{}".into());
     sqlx::query(
         "INSERT INTO auth_audit (uid, event, ip_address, user_agent, metadata, created_at) VALUES (?, ?, ?, ?, ?, ?)"
     )

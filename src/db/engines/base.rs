@@ -39,8 +39,14 @@ pub trait DatabaseEngine: Send + Sync {
 
     async fn list_tables(&self) -> Result<Vec<TableInfo>, Box<dyn std::error::Error>>;
     async fn count_tables(&self) -> Result<i64, Box<dyn std::error::Error>>;
-    async fn describe_table(&self, table: &str) -> Result<Vec<ColumnInfo>, Box<dyn std::error::Error>>;
-    async fn get_foreign_keys(&self, table: &str) -> Result<Vec<ForeignKeyInfo>, Box<dyn std::error::Error>>;
+    async fn describe_table(
+        &self,
+        table: &str,
+    ) -> Result<Vec<ColumnInfo>, Box<dyn std::error::Error>>;
+    async fn get_foreign_keys(
+        &self,
+        table: &str,
+    ) -> Result<Vec<ForeignKeyInfo>, Box<dyn std::error::Error>>;
 
     async fn execute(&self, sql: &str) -> Result<QueryResult, Box<dyn std::error::Error>>;
 

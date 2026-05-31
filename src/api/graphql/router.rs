@@ -7,11 +7,11 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 
+use crate::api::database::handlers::{get_db_config, QueryExecutionPipeline};
 use crate::api::errors::AxiomError;
-use crate::api::database::handlers::{QueryExecutionPipeline, get_db_config};
 use crate::api::graphql::compiler::{ASTCompiler, ASTOperation};
-use crate::utils::types::AuthContext;
 use crate::config::loader::ConfigManager;
+use crate::utils::types::AuthContext;
 
 #[derive(Deserialize)]
 pub struct GraphQLRequest {
@@ -33,39 +33,60 @@ async fn execute_graphql(
 
     // In Rust we don't have python's feature flag system globally, so we check config directly
     if !auth.full_admin && auth.db_scope.is_empty() {
-        return Err(AxiomError::new("AUTH_FAILED", "GraphQL access denied", axum::http::StatusCode::FORBIDDEN));
+        return Err(AxiomError::new(
+            "AUTH_FAILED",
+            "GraphQL access denied",
+            axum::http::StatusCode::FORBIDDEN,
+        ));
     }
 
     let compiler = ASTCompiler::new(config.graphql.max_query_depth as i32);
-    let operations = compiler.compile(&payload.query)
-        .map_err(|e| AxiomError::new("GRAPHQL_COMPILE_ERROR", &e, axum::http::StatusCode::BAD_REQUEST))?;
+    let operations = compiler.compile(&payload.query).map_err(|e| {
+        AxiomError::new(
+            "GRAPHQL_COMPILE_ERROR",
+            &e,
+            axum::http::StatusCode::BAD_REQUEST,
+        )
+    })?;
 
     let mut results = serde_json::Map::new();
 
     for op in operations {
         match op {
-            ASTOperation::ExecuteSql { db_alias, sql, params, alias } => {
+            ASTOperation::ExecuteSql {
+                db_alias,
+                sql,
+                params,
+                alias,
+            } => {
                 let db_cfg = get_db_config(&db_alias, &auth).await?;
                 let mut params_vec = Vec::new();
                 for (_, v) in params {
                     params_vec.push(v);
                 }
 
-                let db_result = QueryExecutionPipeline::run_query(
-                    &db_alias,
-                    &sql,
-                    params_vec,
-                    &auth,
-                    &db_cfg
-                ).await?;
+                let db_result =
+                    QueryExecutionPipeline::run_query(&db_alias, &sql, params_vec, &auth, &db_cfg)
+                        .await?;
 
-                results.insert(alias, json!({
-                    "columns": db_result.columns,
-                    "rows": db_result.rows,
-                    "affectedRows": db_result.affected_rows
-                }));
+                results.insert(
+                    alias,
+                    json!({
+                        "columns": db_result.columns,
+                        "rows": db_result.rows,
+                        "affectedRows": db_result.affected_rows
+                    }),
+                );
             }
-            ASTOperation::QueryTable { db_alias, table, columns, alias, limit, offset, .. } => {
+            ASTOperation::QueryTable {
+                db_alias,
+                table,
+                columns,
+                alias,
+                limit,
+                offset,
+                ..
+            } => {
                 let db_cfg = get_db_config(&db_alias, &auth).await?;
 
                 let cols = if columns.is_empty() {
@@ -74,15 +95,14 @@ async fn execute_graphql(
                     columns.join(", ")
                 };
 
-                let sql = format!("SELECT {} FROM {} LIMIT {} OFFSET {}", cols, table, limit, offset);
+                let sql = format!(
+                    "SELECT {} FROM {} LIMIT {} OFFSET {}",
+                    cols, table, limit, offset
+                );
 
-                let db_result = QueryExecutionPipeline::run_query(
-                    &db_alias,
-                    &sql,
-                    vec![],
-                    &auth,
-                    &db_cfg
-                ).await?;
+                let db_result =
+                    QueryExecutionPipeline::run_query(&db_alias, &sql, vec![], &auth, &db_cfg)
+                        .await?;
 
                 results.insert(alias, json!(db_result.rows.unwrap_or_default()));
             }
