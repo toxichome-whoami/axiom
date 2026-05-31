@@ -16,7 +16,7 @@ pub fn get_router() -> Router {
     Router::new().route("/", get(ws_handler))
 }
 
-async fn ws_handler(ws: WebSocketUpgrade) -> Response {
+pub async fn ws_handler(ws: WebSocketUpgrade) -> Response {
     ws.on_upgrade(handle_socket)
 }
 

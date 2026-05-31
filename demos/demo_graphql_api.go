@@ -31,16 +31,31 @@ func RunGraphqlApi() {
 
 	endpoint := fmt.Sprintf("%s/api/v1/graphql", baseURL)
 
+	authStr := fmt.Sprintf("%s:%s", keyName, keySecret)
+	encodedAuth := base64.StdEncoding.EncodeToString([]byte(authStr))
+
+	// Create the users table first to avoid 'relation does not exist' or 'column does not exist' errors
+	createTableQuery := map[string]interface{}{
+		"sql": `CREATE TABLE IF NOT EXISTS demo_graphql_users (uid UUID PRIMARY KEY DEFAULT gen_random_uuid(), email TEXT, display_name TEXT)`,
+	}
+	createTableJSON, _ := json.Marshal(createTableQuery)
+	reqCreateTable, _ := http.NewRequest("POST", fmt.Sprintf("%s/api/v1/db/localdb/query", baseURL), bytes.NewBuffer(createTableJSON))
+	reqCreateTable.Header.Set("Authorization", fmt.Sprintf("Bearer %s", encodedAuth))
+	reqCreateTable.Header.Set("Content-Type", "application/json")
+	client := &http.Client{}
+	_, _ = client.Do(reqCreateTable)
+
+	// Example query to fetch users
 	query := `
 	query {
-		users(dbAlias: "localdb") {
+		demo_graphql_users(dbAlias: "localdb") {
 			uid
 			email
 			display_name
 		}
 	}
 	`
-	
+
 	payload := map[string]interface{}{
 		"query": query,
 	}
@@ -51,13 +66,13 @@ func RunGraphqlApi() {
 		log.Fatal(err)
 	}
 
-	authStr := fmt.Sprintf("%s:%s", keyName, keySecret)
-	encodedAuth := base64.StdEncoding.EncodeToString([]byte(authStr))
+	authStr = fmt.Sprintf("%s:%s", keyName, keySecret)
+	encodedAuth = base64.StdEncoding.EncodeToString([]byte(authStr))
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", encodedAuth))
 	req.Header.Set("Content-Type", "application/json")
 
 	fmt.Println("📡 Sending GraphQL Query...")
-	client := &http.Client{}
+	client = &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
 		log.Fatal("GraphQL request failed:", err)
@@ -70,11 +85,9 @@ func RunGraphqlApi() {
 	}
 
 	fmt.Println("✅ Response:")
-	
+
 	// Pretty print
 	var prettyJSON bytes.Buffer
 	json.Indent(&prettyJSON, body, "", "  ")
 	fmt.Println(prettyJSON.String())
 }
-
-

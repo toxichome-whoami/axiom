@@ -28,7 +28,7 @@ type Payload struct {
 
 type InsertResponse struct {
 	Success bool  `json:"success"`
-	Count   int64 `json:"count"`
+	Count   int64 `json:"affected_rows"`
 }
 
 func loadDBInsertConfig() DBInsertConfig {
@@ -50,10 +50,7 @@ func loadDBInsertConfig() DBInsertConfig {
 	if db == "" {
 		db = "localdb"
 	}
-	table := os.Getenv("AXIOM_WS_TABLE") // reusing WS table for generic insertion, or just specify "users"
-	if table == "" {
-		table = "users"
-	}
+	table := "demo_users"
 
 	return DBInsertConfig{
 		BaseURL:   baseURL,
@@ -119,6 +116,16 @@ func RunDbInsertData() {
 				"role": "Manager",
 			},
 		},
+	}
+
+	// Create the table first so we don't get a 'relation does not exist' error
+	createTableQuery := map[string]interface{}{
+		"sql": fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (id SERIAL PRIMARY KEY, name TEXT, age INT, role TEXT)`, DBInsertConfig.Table),
+	}
+	queryEndpoint := fmt.Sprintf("/api/v1/db/%s/query", DBInsertConfig.DB)
+	_, err := postData(queryEndpoint, DBInsertConfig, createTableQuery)
+	if err != nil {
+		fmt.Printf("⚠️ Warning: Table creation failed (might already exist or query invalid): %v\n", err)
 	}
 
 	endpoint := fmt.Sprintf("/api/v1/db/%s/%s/rows", DBInsertConfig.DB, DBInsertConfig.Table)

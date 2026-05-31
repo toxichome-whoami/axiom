@@ -39,7 +39,7 @@ func RunSseClient() {
 	authStr := fmt.Sprintf("%s:%s", keyName, keySecret)
 	encodedAuth := base64.StdEncoding.EncodeToString([]byte(authStr))
 	// Axiom SSE endpoints support ?token= URL parameter for auth since EventSource in browsers doesn't support headers well.
-	endpoint := fmt.Sprintf("%s/api/v1/sse/db/%s/%s?token=%s", baseURL, db, table, encodedAuth)
+	endpoint := fmt.Sprintf("%s/api/v1/sse/db/localdb?token=%s", baseURL, encodedAuth)
 
 	fmt.Println(strings.Repeat("=", 55))
 	fmt.Println("  AXIOM SSE (SERVER-SENT EVENTS) DEMO")

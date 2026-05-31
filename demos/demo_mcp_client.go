@@ -34,7 +34,7 @@ func RunMcpClient() {
 		keySecret = "default_secret"
 	}
 
-	endpoint := fmt.Sprintf("%s/api/v1/mcp", baseURL)
+	endpoint := fmt.Sprintf("%s/api/v1/mcp/messages", baseURL)
 
 	// We'll call the "db_query" tool via MCP
 	mcpReq := MCPRequest{
@@ -68,14 +68,11 @@ func RunMcpClient() {
 	defer resp.Body.Close()
 
 	body, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode != http.StatusAccepted && resp.StatusCode != http.StatusOK {
 		log.Fatalf("Error %d: %s", resp.StatusCode, string(body))
 	}
 
-	fmt.Println("✅ MCP Response:")
-	var prettyJSON bytes.Buffer
-	json.Indent(&prettyJSON, body, "", "  ")
-	fmt.Println(prettyJSON.String())
+	fmt.Println("✅ MCP Message Accepted (Response sent via SSE).")
 }
 
 

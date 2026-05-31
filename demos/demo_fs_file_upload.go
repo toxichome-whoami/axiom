@@ -29,9 +29,8 @@ func RunFsFileUpload() {
 		keySecret = "default_secret"
 	}
 
-	storageAlias := "local"
-	targetPath := "demo_upload.txt"
-	endpoint := fmt.Sprintf("/api/v1/fs/%s/%s", storageAlias, targetPath)
+	storageAlias := "local_uploads"
+	endpoint := fmt.Sprintf("/api/v1/fs/%s/upload", storageAlias)
 	url := fmt.Sprintf("%s%s", baseURL, endpoint)
 
 	fmt.Println("🚀 Uploading file to Axiom Storage...")

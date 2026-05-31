@@ -3,6 +3,7 @@ use crate::config::loader::ConfigManager;
 use crate::security::ban_list::BanList;
 use crate::utils::types::AuthContext;
 use axum::{extract::Request, middleware::Next, response::Response};
+use url::form_urlencoded;
 
 pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, AxiomError> {
     let _config = req
@@ -22,13 +23,25 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, A
         ));
     }
 
-    // 2. Extract Bearer token
-    let auth_header = req
+    // 2. Extract token from header or query
+    let mut auth_value = req
         .headers()
         .get("Authorization")
-        .and_then(|h| h.to_str().ok());
+        .and_then(|h| h.to_str().ok().map(|s| s.to_string()));
 
-    if let Some(auth_value) = auth_header {
+    if auth_value.is_none() {
+        if let Some(query) = req.uri().query() {
+            let params: std::collections::HashMap<String, String> =
+                form_urlencoded::parse(query.as_bytes())
+                    .into_owned()
+                    .collect();
+            if let Some(token) = params.get("token").or(params.get("key")) {
+                auth_value = Some(format!("Bearer {}", token));
+            }
+        }
+    }
+
+    if let Some(auth_value) = auth_value {
         if auth_value.starts_with("Bearer ") {
             let raw_token = &auth_value[7..];
 

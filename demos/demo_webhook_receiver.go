@@ -9,6 +9,9 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
+
+	"github.com/joho/godotenv"
 )
 
 func verifySignature(payload []byte, signature, secret string) bool {
@@ -58,6 +61,7 @@ func webhookHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func RunWebhookReceiver() {
+	_ = godotenv.Load(filepath.Join(".", ".env"))
 	port := "8080"
 	http.HandleFunc("/webhook", webhookHandler)
 	

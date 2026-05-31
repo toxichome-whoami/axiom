@@ -48,11 +48,11 @@ pub fn create_app() -> Router {
         .nest("/mcp", crate::api::mcp::router::get_router())
         .nest("/fs", crate::api::storage::router::get_router())
         .nest("/graphql", crate::api::graphql::router::get_router())
-        .nest("/ws", crate::api::ws::router::get_router())
+        .route("/ws", get(crate::api::ws::router::ws_handler))
         .nest("/sse", crate::api::sse::router::get_router())
         .nest("/federation", crate::api::federation::router::get_router())
-        .nest("/auth", crate::api::auth::router::get_router())
         .layer(middleware::from_fn(auth_middleware))
+        .nest("/auth", crate::api::auth::router::get_router())
         .layer(middleware::from_fn(rate_limit_middleware))
         .layer(middleware::from_fn(waf_middleware));
 

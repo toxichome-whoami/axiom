@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -39,10 +41,7 @@ func loadDBDropConfig() DBDropConfig {
 	if db == "" {
 		db = "localdb"
 	}
-	table := os.Getenv("AXIOM_WS_TABLE")
-	if table == "" {
-		table = "users"
-	}
+	table := "demo_users"
 
 	return DBDropConfig{
 		BaseURL:   baseURL,
@@ -55,7 +54,13 @@ func loadDBDropConfig() DBDropConfig {
 
 func dropTable(endpoint string, DBDropConfig DBDropConfig) ([]byte, error) {
 	url := fmt.Sprintf("%s%s", DBDropConfig.BaseURL, endpoint)
-	req, err := http.NewRequest("DELETE", url, nil)
+
+	queryPayload := map[string]interface{}{
+		"sql": fmt.Sprintf("DROP TABLE IF EXISTS %s", DBDropConfig.Table),
+	}
+	jsonPayload, _ := json.Marshal(queryPayload)
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonPayload))
 	if err != nil {
 		return nil, err
 	}
@@ -63,6 +68,7 @@ func dropTable(endpoint string, DBDropConfig DBDropConfig) ([]byte, error) {
 	authStr := fmt.Sprintf("%s:%s", DBDropConfig.KeyName, DBDropConfig.KeySecret)
 	encodedAuth := base64.StdEncoding.EncodeToString([]byte(authStr))
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", encodedAuth))
+	req.Header.Set("Content-Type", "application/json")
 
 	client := &http.Client{}
 	resp, err := client.Do(req)
@@ -87,7 +93,7 @@ func RunDbDropTables() {
 	fmt.Println("🗑️ Dropping table from Axiom...")
 	DBDropConfig := loadDBDropConfig()
 
-	endpoint := fmt.Sprintf("/api/v1/db/%s/%s", DBDropConfig.DB, DBDropConfig.Table)
+	endpoint := fmt.Sprintf("/api/v1/db/%s/query", DBDropConfig.DB)
 
 	fmt.Printf("Warning: Dropping table %s in database %s!\n", DBDropConfig.Table, DBDropConfig.DB)
 	data, err := dropTable(endpoint, DBDropConfig)

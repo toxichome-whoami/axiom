@@ -55,11 +55,13 @@ func doRequest(method, endpoint string, AuthConfig AuthConfig, payload interface
 		return nil, err
 	}
 
+	authStr := fmt.Sprintf("%s:%s", AuthConfig.KeyName, AuthConfig.KeySecret)
+	encodedAuth := base64.StdEncoding.EncodeToString([]byte(authStr))
+	req.Header.Set("X-Axiom-Key", encodedAuth)
+
 	if token != "" {
 		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
 	} else {
-		authStr := fmt.Sprintf("%s:%s", AuthConfig.KeyName, AuthConfig.KeySecret)
-		encodedAuth := base64.StdEncoding.EncodeToString([]byte(authStr))
 		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", encodedAuth))
 	}
 	req.Header.Set("Content-Type", "application/json")
@@ -131,7 +133,18 @@ func RunAuthFlow() {
 
 	// 4. Logout
 	fmt.Println("\n[4] Logging out...")
-	_, err = doRequest("POST", "/api/v1/auth/logout", AuthConfig, nil, accessToken)
+	
+	// Assuming the login response doesn't actually provide refreshToken in this simplistic demo
+	// We'll just pass empty string or extract it if available
+	refreshToken := ""
+	if rt, ok := anonRes["refresh_token"].(string); ok {
+		refreshToken = rt
+	}
+
+	logoutPayload := map[string]interface{}{
+		"refresh_token": refreshToken,
+	}
+	_, err = doRequest("POST", "/api/v1/auth/logout", AuthConfig, logoutPayload, accessToken)
 	if err != nil {
 		log.Fatalf("Logout failed: %v", err)
 	}

@@ -4,7 +4,9 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
+	"net/http"
 	"net/url"
 	"os"
 	"os/signal"
@@ -36,7 +38,6 @@ func RunWebsocketMessaging() {
 	// Convert http:// to ws://
 	wsURL := strings.Replace(baseURL, "http://", "ws://", 1)
 	wsURL = strings.Replace(wsURL, "https://", "wss://", 1)
-	wsEndpoint := fmt.Sprintf("%s/api/v1/ws/", wsURL)
 
 	keyName := os.Getenv("AXIOM_KEY_NAME")
 	if keyName == "" {
@@ -50,14 +51,23 @@ func RunWebsocketMessaging() {
 	authStr := fmt.Sprintf("%s:%s", keyName, keySecret)
 	encodedAuth := base64.StdEncoding.EncodeToString([]byte(authStr))
 
+	wsEndpoint := fmt.Sprintf("%s/api/v1/ws", wsURL)
+
 	u, err := url.Parse(wsEndpoint)
 	if err != nil {
 		log.Fatal("Invalid URL:", err)
 	}
 
+	header := http.Header{}
+	header.Add("Authorization", fmt.Sprintf("Bearer %s", encodedAuth))
+
 	fmt.Printf("🔌 Connecting to WebSocket: %s\n", u.String())
-	c, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
+	c, resp, err := websocket.DefaultDialer.Dial(u.String(), header)
 	if err != nil {
+		if resp != nil {
+			body, _ := io.ReadAll(resp.Body)
+			log.Fatalf("Dial error: %v, Status: %s, Body: %s", err, resp.Status, string(body))
+		}
 		log.Fatal("Dial error:", err)
 	}
 	defer c.Close()
