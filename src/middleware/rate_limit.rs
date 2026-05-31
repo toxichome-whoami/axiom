@@ -14,7 +14,13 @@ pub async fn rate_limit_middleware(req: Request, next: Next) -> Result<Response,
         return Ok(next.run(req).await);
     }
 
-    let client_ip = "127.0.0.1"; // TODO: Extract real IP
+    let client_ip = req
+        .headers()
+        .get("x-forwarded-for")
+        .or_else(|| req.headers().get("x-real-ip"))
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("127.0.0.1")
+        .to_string();
 
     if config.server.allowed_ips.contains(&client_ip.to_string()) {
         return Ok(next.run(req).await);

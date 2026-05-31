@@ -296,7 +296,36 @@ pub async fn handler_login(
     let ip = get_ip(&headers);
     let ua = get_ua(&headers);
 
+    let max_login_attempts = proj_val(&config, "max_login_attempts", 5) as i64;
+    let lockout_duration = proj_val(&config, "lockout_duration", 900) as u64;
+
+    static FAILED_ATTEMPTS: once_cell::sync::Lazy<
+        dashmap::DashMap<String, (i64, std::time::Instant)>,
+    > = once_cell::sync::Lazy::new(|| dashmap::DashMap::new());
+
+    let attempt_key = format!("{}:{}", project_id, body.email);
+    if let Some(entry) = FAILED_ATTEMPTS.get(&attempt_key) {
+        if entry.0 >= max_login_attempts {
+            if entry.1.elapsed().as_secs() < lockout_duration {
+                return Err(AxiomError::new(
+                    "AUTH_LOCKED_OUT",
+                    "Account locked due to too many failed attempts.",
+                    StatusCode::TOO_MANY_REQUESTS,
+                ));
+            } else {
+                drop(entry);
+                FAILED_ATTEMPTS.remove(&attempt_key);
+            }
+        }
+    }
+
     let row = get_user_by_email(&pool, &body.email).await.ok_or_else(|| {
+        if let Some(mut entry) = FAILED_ATTEMPTS.get_mut(&attempt_key) {
+            entry.0 += 1;
+            entry.1 = std::time::Instant::now();
+        } else {
+            FAILED_ATTEMPTS.insert(attempt_key.clone(), (1, std::time::Instant::now()));
+        }
         AxiomError::new(
             "AUTH_INVALID_CREDENTIALS",
             "Invalid credentials",
@@ -314,6 +343,13 @@ pub async fn handler_login(
 
     let hash = row["password_hash"].as_str().unwrap_or_default();
     if hash.is_empty() || !verify_password(hash, &body.password) {
+        if let Some(mut entry) = FAILED_ATTEMPTS.get_mut(&attempt_key) {
+            entry.0 += 1;
+            entry.1 = std::time::Instant::now();
+        } else {
+            FAILED_ATTEMPTS.insert(attempt_key.clone(), (1, std::time::Instant::now()));
+        }
+
         log_audit(
             &pool,
             "login_failed",
@@ -329,6 +365,9 @@ pub async fn handler_login(
             StatusCode::UNAUTHORIZED,
         ));
     }
+
+    // Success! Clear failed attempts
+    FAILED_ATTEMPTS.remove(&attempt_key);
 
     // TOTP gate
     if row["totp_enabled"].as_i64().unwrap_or(0) != 0 {
@@ -639,6 +678,32 @@ pub async fn handler_forgot_password(
 ) -> Result<Json<Value>, AxiomError> {
     let (project_id, config, _) = get_project(&headers)?;
     let pool = get_pool(&project_id).await?;
+
+    let max_login_attempts = proj_val(&config, "max_login_attempts", 5) as i64;
+    let lockout_duration = proj_val(&config, "lockout_duration", 900) as u64;
+
+    static FORGOT_PW_ATTEMPTS: once_cell::sync::Lazy<
+        dashmap::DashMap<String, (i64, std::time::Instant)>,
+    > = once_cell::sync::Lazy::new(|| dashmap::DashMap::new());
+
+    let attempt_key = format!("{}:{}", project_id, body.email);
+    if let Some(mut entry) = FORGOT_PW_ATTEMPTS.get_mut(&attempt_key) {
+        if entry.0 >= max_login_attempts {
+            if entry.1.elapsed().as_secs() < lockout_duration {
+                return Err(AxiomError::new(
+                    "RATE_LIMIT_EXCEEDED",
+                    "Too many password reset requests. Try again later.",
+                    StatusCode::TOO_MANY_REQUESTS,
+                ));
+            } else {
+                entry.0 = 0;
+            }
+        }
+        entry.0 += 1;
+        entry.1 = std::time::Instant::now();
+    } else {
+        FORGOT_PW_ATTEMPTS.insert(attempt_key.clone(), (1, std::time::Instant::now()));
+    }
 
     // Always return ok to prevent email enumeration
     if let Some(user) = get_user_by_email(&pool, &body.email).await {
@@ -1245,32 +1310,186 @@ pub async fn handler_totp_backup_regenerate(
     ))
 }
 pub async fn handler_magic_link_send(
-    _headers: HeaderMap,
-    Json(_body): Json<crate::api::auth::schemas::MagicLinkRequest>,
+    headers: HeaderMap,
+    Json(body): Json<crate::api::auth::schemas::MagicLinkRequest>,
 ) -> Result<Json<Value>, AxiomError> {
+    let (project_id, config, _) = get_project(&headers)?;
+    let pool = get_pool(&project_id).await?;
+
+    if let Some(user) = get_user_by_email(&pool, &body.email).await {
+        let uid = user["uid"].as_str().unwrap_or_default().to_string();
+        let token = generate_refresh_token();
+        let token_hash = sha256_hex(&token);
+        let ttl = proj_val(&config, "magic_link_ttl", 900);
+        let expires_at = datetime_from_secs(now_secs() + ttl);
+        let id = uuid::Uuid::new_v4().to_string();
+
+        sqlx::query(
+            "INSERT INTO auth_tokens (id, uid, email, token_hash, token_type, expires_at, created_at) VALUES (?, ?, ?, ?, 'magic_link', ?, ?)"
+        ).bind(&id).bind(&uid).bind(&body.email.to_lowercase()).bind(&token_hash).bind(&expires_at).bind(utc_now_iso())
+        .execute(&pool).await.ok();
+
+        log_audit(
+            &pool,
+            "magic_link_sent",
+            Some(&uid),
+            Some(&get_ip(&headers)),
+            Some(&get_ua(&headers)),
+            None,
+        )
+        .await?;
+        return Ok(Json(
+            json!({ "status": "ok", "message": "Magic link sent", "token": token }),
+        ));
+    }
+
     Ok(Json(
-        json!({ "status": "ok", "message": "Magic link sent" }),
+        json!({ "status": "ok", "message": "If account exists, magic link sent" }),
     ))
 }
 pub async fn handler_magic_link_verify(
-    _headers: HeaderMap,
-    Json(_body): Json<crate::api::auth::schemas::VerifyEmailRequest>,
+    headers: HeaderMap,
+    Json(body): Json<crate::api::auth::schemas::VerifyEmailRequest>,
 ) -> Result<Json<Value>, AxiomError> {
-    Ok(Json(
-        json!({ "status": "ok", "access_token": "token", "refresh_token": "token" }),
-    ))
+    let (project_id, config, _) = get_project(&headers)?;
+    let pool = get_pool(&project_id).await?;
+    let token_hash = sha256_hex(&body.token);
+
+    let row = sqlx::query("SELECT uid, expires_at, used FROM auth_tokens WHERE token_hash = ? AND token_type = 'magic_link'")
+        .bind(&token_hash).fetch_optional(&pool).await
+        .map_err(|e| AxiomError::new("AUTH_DB_ERROR", &e.to_string(), StatusCode::INTERNAL_SERVER_ERROR))?
+        .ok_or_else(|| AxiomError::new("AUTH_TOKEN_INVALID", "Invalid or expired token", StatusCode::BAD_REQUEST))?;
+
+    let used: i64 = row.try_get("used").unwrap_or(0);
+    if used != 0 {
+        return Err(AxiomError::new(
+            "AUTH_TOKEN_USED",
+            "Token already used",
+            StatusCode::BAD_REQUEST,
+        ));
+    }
+
+    let uid: String = row.try_get("uid").unwrap_or_default();
+
+    sqlx::query("UPDATE auth_tokens SET used = 1 WHERE token_hash = ?")
+        .bind(&token_hash)
+        .execute(&pool)
+        .await
+        .ok();
+
+    let user_row = get_user_by_uid(&pool, &uid).await.ok_or_else(|| {
+        AxiomError::new(
+            "AUTH_DB_ERROR",
+            "User not found",
+            StatusCode::INTERNAL_SERVER_ERROR,
+        )
+    })?;
+
+    let resp = build_auth_response(
+        &pool,
+        &config,
+        &project_id,
+        &user_row,
+        &get_ip(&headers),
+        &get_ua(&headers),
+    )
+    .await?;
+    Ok(Json(resp))
 }
 pub async fn handler_otp_send(
-    _headers: HeaderMap,
-    Json(_body): Json<crate::api::auth::schemas::OtpSendRequest>,
+    headers: HeaderMap,
+    Json(body): Json<crate::api::auth::schemas::OtpSendRequest>,
 ) -> Result<Json<Value>, AxiomError> {
-    Ok(Json(json!({ "status": "ok", "message": "OTP sent" })))
+    let (project_id, config, _) = get_project(&headers)?;
+    let pool = get_pool(&project_id).await?;
+
+    if let Some(user) = get_user_by_email(&pool, &body.email).await {
+        let uid = user["uid"].as_str().unwrap_or_default().to_string();
+
+        use rand::Rng;
+        let otp_code: String = (0..6)
+            .map(|_| rand::thread_rng().gen_range(0..10).to_string())
+            .collect();
+        let code_hash = sha256_hex(&otp_code);
+
+        let ttl = proj_val(&config, "otp_ttl", 300);
+        let expires_at = datetime_from_secs(now_secs() + ttl);
+        let id = uuid::Uuid::new_v4().to_string();
+
+        sqlx::query(
+            "INSERT INTO auth_tokens (id, uid, email, token_hash, token_type, expires_at, created_at, otp_code) VALUES (?, ?, ?, ?, 'otp', ?, ?, ?)"
+        ).bind(&id).bind(&uid).bind(&body.email.to_lowercase()).bind(&code_hash).bind(&expires_at).bind(utc_now_iso()).bind(&otp_code)
+        .execute(&pool).await.ok();
+
+        log_audit(
+            &pool,
+            "otp_sent",
+            Some(&uid),
+            Some(&get_ip(&headers)),
+            Some(&get_ua(&headers)),
+            None,
+        )
+        .await?;
+        return Ok(Json(
+            json!({ "status": "ok", "message": "OTP sent", "code": otp_code }),
+        ));
+    }
+
+    Ok(Json(
+        json!({ "status": "ok", "message": "If account exists, OTP sent" }),
+    ))
 }
 pub async fn handler_verify_otp(
-    _headers: HeaderMap,
-    Json(_body): Json<crate::api::auth::schemas::VerifyOtpRequest>,
+    headers: HeaderMap,
+    Json(body): Json<crate::api::auth::schemas::VerifyOtpRequest>,
 ) -> Result<Json<Value>, AxiomError> {
-    Ok(Json(json!({ "status": "ok", "message": "OTP verified" })))
+    let (project_id, config, _) = get_project(&headers)?;
+    let pool = get_pool(&project_id).await?;
+    let code_hash = sha256_hex(&body.code);
+
+    let row = sqlx::query("SELECT uid, expires_at, used FROM auth_tokens WHERE token_hash = ? AND email = ? AND token_type = 'otp'")
+        .bind(&code_hash).bind(&body.email.to_lowercase()).fetch_optional(&pool).await
+        .map_err(|e| AxiomError::new("AUTH_DB_ERROR", &e.to_string(), StatusCode::INTERNAL_SERVER_ERROR))?
+        .ok_or_else(|| AxiomError::new("AUTH_TOKEN_INVALID", "Invalid or expired OTP", StatusCode::BAD_REQUEST))?;
+
+    let used: i64 = row.try_get("used").unwrap_or(0);
+    if used != 0 {
+        return Err(AxiomError::new(
+            "AUTH_TOKEN_USED",
+            "OTP already used",
+            StatusCode::BAD_REQUEST,
+        ));
+    }
+
+    let uid: String = row.try_get("uid").unwrap_or_default();
+
+    sqlx::query(
+        "UPDATE auth_tokens SET used = 1 WHERE token_hash = ? AND email = ? AND token_type = 'otp'",
+    )
+    .bind(&code_hash)
+    .bind(&body.email.to_lowercase())
+    .execute(&pool)
+    .await
+    .ok();
+
+    let user_row = get_user_by_uid(&pool, &uid).await.ok_or_else(|| {
+        AxiomError::new(
+            "AUTH_DB_ERROR",
+            "User not found",
+            StatusCode::INTERNAL_SERVER_ERROR,
+        )
+    })?;
+
+    let resp = build_auth_response(
+        &pool,
+        &config,
+        &project_id,
+        &user_row,
+        &get_ip(&headers),
+        &get_ua(&headers),
+    )
+    .await?;
+    Ok(Json(resp))
 }
 pub async fn handler_resend(
     _headers: HeaderMap,
@@ -1278,49 +1497,312 @@ pub async fn handler_resend(
 ) -> Result<Json<Value>, AxiomError> {
     Ok(Json(json!({ "status": "ok", "message": "Resent" })))
 }
-pub async fn handler_delete_me(_headers: HeaderMap) -> Result<Json<Value>, AxiomError> {
+pub async fn handler_delete_me(headers: HeaderMap) -> Result<Json<Value>, AxiomError> {
+    let bearer = get_bearer(&headers)?;
+    let (project_id, _, _) = get_project(&headers)?;
+    let claims = verify_access_token(&bearer, &project_id)
+        .await
+        .map_err(|e| AxiomError::new("AUTH_TOKEN_INVALID", &e, StatusCode::UNAUTHORIZED))?;
+    let pool = get_pool(&project_id).await?;
+
+    sqlx::query("DELETE FROM users WHERE uid = ?")
+        .bind(&claims.sub)
+        .execute(&pool)
+        .await
+        .map_err(|e| {
+            AxiomError::new(
+                "AUTH_DB_ERROR",
+                &e.to_string(),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            )
+        })?;
+
+    log_audit(
+        &pool,
+        "user_deleted",
+        Some(&claims.sub),
+        Some(&get_ip(&headers)),
+        Some(&get_ua(&headers)),
+        None,
+    )
+    .await?;
+
     Ok(Json(json!({ "status": "ok", "message": "User deleted" })))
 }
 pub async fn handler_change_email(
-    _headers: HeaderMap,
-    Json(_body): Json<crate::api::auth::schemas::ChangeEmailRequest>,
+    headers: HeaderMap,
+    Json(body): Json<crate::api::auth::schemas::ChangeEmailRequest>,
 ) -> Result<Json<Value>, AxiomError> {
+    let bearer = get_bearer(&headers)?;
+    let (project_id, _, _) = get_project(&headers)?;
+    let claims = verify_access_token(&bearer, &project_id)
+        .await
+        .map_err(|e| AxiomError::new("AUTH_TOKEN_INVALID", &e, StatusCode::UNAUTHORIZED))?;
+    let pool = get_pool(&project_id).await?;
+
+    let row = get_user_by_uid(&pool, &claims.sub).await.ok_or_else(|| {
+        AxiomError::new(
+            "AUTH_USER_NOT_FOUND",
+            "User not found",
+            StatusCode::NOT_FOUND,
+        )
+    })?;
+
+    let hash = row["password_hash"].as_str().unwrap_or_default();
+    if hash.is_empty() || !verify_password(hash, &body.password) {
+        return Err(AxiomError::new(
+            "AUTH_INVALID_CREDENTIALS",
+            "Invalid password",
+            StatusCode::UNAUTHORIZED,
+        ));
+    }
+
+    let token = uuid::Uuid::new_v4().to_string();
+    let token_hash = sha256_hex(&token);
+    let expires_at = datetime_from_secs(now_secs() + 3600);
+    let token_id = format!("tkn_{}", uuid::Uuid::new_v4().to_string().replace("-", ""));
+
+    sqlx::query("INSERT INTO auth_tokens (id, uid, email, token_hash, token_type, expires_at, created_at) VALUES (?, ?, ?, ?, 'email_change', ?, ?)")
+        .bind(&token_id)
+        .bind(&claims.sub)
+        .bind(&body.new_email)
+        .bind(&token_hash)
+        .bind(&expires_at)
+        .bind(datetime_from_secs(now_secs()))
+        .execute(&pool)
+        .await
+        .map_err(|e| AxiomError::new("AUTH_DB_ERROR", &e.to_string(), StatusCode::INTERNAL_SERVER_ERROR))?;
+
+    log_audit(
+        &pool,
+        "email_change_requested",
+        Some(&claims.sub),
+        Some(&get_ip(&headers)),
+        Some(&get_ua(&headers)),
+        None,
+    )
+    .await?;
+
     Ok(Json(
-        json!({ "status": "ok", "message": "Email change requested" }),
+        json!({ "status": "ok", "message": "Email change requested. Please verify.", "token": token }),
     ))
 }
 pub async fn handler_change_email_confirm(
-    _headers: HeaderMap,
-    Json(_body): Json<crate::api::auth::schemas::VerifyEmailRequest>,
+    headers: HeaderMap,
+    Json(body): Json<crate::api::auth::schemas::VerifyEmailRequest>,
 ) -> Result<Json<Value>, AxiomError> {
-    Ok(Json(json!({ "status": "ok", "message": "Email changed" })))
+    let (project_id, _, _) = get_project(&headers)?;
+    let pool = get_pool(&project_id).await?;
+
+    let token_hash = sha256_hex(&body.token);
+
+    let row = sqlx::query("SELECT uid, email, expires_at FROM auth_tokens WHERE token_hash = ? AND token_type = 'email_change'")
+        .bind(&token_hash)
+        .fetch_optional(&pool)
+        .await
+        .map_err(|e| AxiomError::new("AUTH_DB_ERROR", &e.to_string(), StatusCode::INTERNAL_SERVER_ERROR))?;
+
+    if let Some(r) = row {
+        use sqlx::Row;
+        let uid: String = r.get("uid");
+        let new_email: String = r.get("email");
+        let expires_at: String = r.get("expires_at");
+
+        let exp_dt = chrono::DateTime::parse_from_rfc3339(&expires_at)
+            .unwrap_or_else(|_| chrono::Utc::now().into());
+        if exp_dt.timestamp() < now_secs() {
+            return Err(AxiomError::new(
+                "AUTH_TOKEN_EXPIRED",
+                "Token expired",
+                StatusCode::BAD_REQUEST,
+            ));
+        }
+
+        sqlx::query("DELETE FROM auth_tokens WHERE token_hash = ?")
+            .bind(&token_hash)
+            .execute(&pool)
+            .await
+            .ok();
+
+        let mut updates = HashMap::new();
+        updates.insert("email", json!(new_email));
+        updates.insert("email_verified", json!(true));
+        update_user(&pool, &uid, &updates).await?;
+
+        log_audit(
+            &pool,
+            "email_changed",
+            Some(&uid),
+            Some(&get_ip(&headers)),
+            Some(&get_ua(&headers)),
+            None,
+        )
+        .await?;
+
+        Ok(Json(
+            json!({ "status": "ok", "message": "Email changed successfully" }),
+        ))
+    } else {
+        Err(AxiomError::new(
+            "AUTH_INVALID_TOKEN",
+            "Invalid token",
+            StatusCode::BAD_REQUEST,
+        ))
+    }
 }
 pub async fn handler_change_password(
-    _headers: HeaderMap,
-    Json(_body): Json<crate::api::auth::schemas::UpdatePasswordRequest>,
+    headers: HeaderMap,
+    Json(body): Json<crate::api::auth::schemas::UpdatePasswordRequest>,
 ) -> Result<Json<Value>, AxiomError> {
+    let bearer = get_bearer(&headers)?;
+    let (project_id, config, _) = get_project(&headers)?;
+    let claims = verify_access_token(&bearer, &project_id)
+        .await
+        .map_err(|e| AxiomError::new("AUTH_TOKEN_INVALID", &e, StatusCode::UNAUTHORIZED))?;
+    let pool = get_pool(&project_id).await?;
+
+    let row = get_user_by_uid(&pool, &claims.sub).await.ok_or_else(|| {
+        AxiomError::new(
+            "AUTH_USER_NOT_FOUND",
+            "User not found",
+            StatusCode::NOT_FOUND,
+        )
+    })?;
+
+    let hash = row["password_hash"].as_str().unwrap_or_default();
+    if hash.is_empty() || !verify_password(hash, &body.current_password) {
+        return Err(AxiomError::new(
+            "AUTH_INVALID_CREDENTIALS",
+            "Invalid current password",
+            StatusCode::UNAUTHORIZED,
+        ));
+    }
+
+    let min_len = proj_val(&config, "min_password_length", 8) as usize;
+    if body.new_password.len() < min_len {
+        return Err(AxiomError::new(
+            "AUTH_WEAK_PASSWORD",
+            &format!("Password must be at least {} characters", min_len),
+            StatusCode::BAD_REQUEST,
+        ));
+    }
+
+    let new_hash = hash_password(&body.new_password)?;
+    let mut updates = HashMap::new();
+    updates.insert("password_hash", json!(new_hash));
+
+    update_user(&pool, &claims.sub, &updates).await?;
+
+    log_audit(
+        &pool,
+        "password_changed",
+        Some(&claims.sub),
+        Some(&get_ip(&headers)),
+        Some(&get_ua(&headers)),
+        None,
+    )
+    .await?;
+
     Ok(Json(
         json!({ "status": "ok", "message": "Password changed" }),
     ))
 }
 pub async fn admin_get_user(
-    _headers: HeaderMap,
-    Path(_uid): Path<String>,
+    headers: HeaderMap,
+    Path(uid): Path<String>,
 ) -> Result<Json<Value>, AxiomError> {
-    Ok(Json(json!({ "status": "ok", "user": {} })))
+    let (project_id, _, is_admin) = get_project(&headers)?;
+    if !is_admin {
+        return Err(AxiomError::new(
+            "AUTH_FORBIDDEN",
+            "Admin access required",
+            StatusCode::FORBIDDEN,
+        ));
+    }
+    let pool = get_pool(&project_id).await?;
+    let user = get_user_by_uid(&pool, &uid).await.ok_or_else(|| {
+        AxiomError::new("AUTH_NOT_FOUND", "User not found", StatusCode::NOT_FOUND)
+    })?;
+    Ok(Json(json!({ "status": "ok", "user": user })))
 }
 pub async fn admin_update_user(
-    _headers: HeaderMap,
-    Path(_uid): Path<String>,
-    Json(_body): Json<crate::api::auth::schemas::AdminUpdateUserRequest>,
+    headers: HeaderMap,
+    Path(uid): Path<String>,
+    Json(body): Json<crate::api::auth::schemas::AdminUpdateUserRequest>,
 ) -> Result<Json<Value>, AxiomError> {
-    Ok(Json(json!({ "status": "ok" })))
+    let (project_id, _, is_admin) = get_project(&headers)?;
+    if !is_admin {
+        return Err(AxiomError::new(
+            "AUTH_FORBIDDEN",
+            "Admin access required",
+            StatusCode::FORBIDDEN,
+        ));
+    }
+    let pool = get_pool(&project_id).await?;
+    let mut updates = HashMap::new();
+    if let Some(e) = body.email {
+        updates.insert("email", json!(e));
+    }
+    if let Some(p) = body.password {
+        updates.insert("password_hash", json!(hash_password(&p)?));
+    }
+    if let Some(ev) = body.email_verified {
+        updates.insert("email_verified", json!(ev));
+    }
+    if let Some(d) = body.disabled {
+        updates.insert("disabled", json!(d));
+    }
+    if let Some(dn) = body.display_name {
+        updates.insert("display_name", json!(dn));
+    }
+    if let Some(av) = body.avatar_url {
+        updates.insert("avatar_url", json!(av));
+    }
+    if let Some(m) = body.metadata {
+        updates.insert(
+            "metadata",
+            json!(serde_json::to_string(&m).unwrap_or_else(|_| "{}".to_string())),
+        );
+    }
+
+    update_user(&pool, &uid, &updates).await?;
+    log_audit(
+        &pool,
+        "admin_user_updated",
+        Some(&uid),
+        Some(&get_ip(&headers)),
+        Some(&get_ua(&headers)),
+        None,
+    )
+    .await?;
+    Ok(Json(json!({ "status": "ok", "message": "User updated" })))
 }
 pub async fn admin_revoke_sessions(
-    _headers: HeaderMap,
-    Path(_uid): Path<String>,
+    headers: HeaderMap,
+    Path(uid): Path<String>,
 ) -> Result<Json<Value>, AxiomError> {
-    Ok(Json(json!({ "status": "ok" })))
+    let (project_id, _, is_admin) = get_project(&headers)?;
+    if !is_admin {
+        return Err(AxiomError::new(
+            "AUTH_FORBIDDEN",
+            "Admin access required",
+            StatusCode::FORBIDDEN,
+        ));
+    }
+    let pool = get_pool(&project_id).await?;
+    revoke_all_sessions(&pool, &uid).await?;
+    log_audit(
+        &pool,
+        "admin_sessions_revoked",
+        Some(&uid),
+        Some(&get_ip(&headers)),
+        Some(&get_ua(&headers)),
+        None,
+    )
+    .await?;
+    Ok(Json(
+        json!({ "status": "ok", "message": "Sessions revoked" }),
+    ))
 }
 pub async fn admin_list_templates(_headers: HeaderMap) -> Result<Json<Value>, AxiomError> {
     Ok(Json(json!({ "status": "ok", "templates": [] })))

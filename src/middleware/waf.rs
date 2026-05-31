@@ -42,8 +42,12 @@ pub async fn waf_middleware(req: Request, next: Next) -> Result<Response, AxiomE
     }
 
     if path.contains("..") || path.contains("%") || query.contains("..") || query.contains("%") {
-        // Basic check for traversal
-        if path.contains("../") || path.contains("..\\") || path.contains("%2e%2e%2f") {
+        let combined = format!("{}?{}", path, query).to_lowercase();
+        if combined.contains("../")
+            || combined.contains("..\\")
+            || combined.contains("%2e%2e%2f")
+            || combined.contains("%2e%2e%5c")
+        {
             return Err(AxiomError::new(
                 "WAF_PATH_TRAVERSAL",
                 "Path traversal attempt detected",

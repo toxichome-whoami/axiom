@@ -55,16 +55,17 @@ Add `"role"` to `jwt_custom_claims` in `config.toml`. The system reads the user'
 jwt_custom_claims = ["role", "tenant_id"]
 ```
 
-Then in your FastAPI route:
-```python
-from api.auth.dependencies import RequireRole
+Then in your Axum router:
+```rust
+use crate::middleware::RequireRole;
 
-@router.get("/admin", dependencies=[Depends(RequireRole(["admin", "superadmin"]))])
-async def admin_panel(): ...
+let app = Router::new()
+    .route("/admin", get(admin_panel))
+    .route_layer(middleware::from_fn(RequireRole::new(vec!["admin", "superadmin"])));
 ```
 
 ### Passkeys (WebAuthn)
-Axiom natively supports **FIDO2/WebAuthn** via `python-webauthn`. Users can register device biometrics (FaceID, TouchID, hardware keys) and authenticate without a password. Challenges are generated and verified entirely server-side — phishing and credential stuffing are mathematically impossible.
+Axiom natively supports **FIDO2/WebAuthn**. Users can register device biometrics (FaceID, TouchID, hardware keys) and authenticate without a password. Challenges are generated and verified entirely server-side — phishing and credential stuffing are mathematically impossible.
 
 Configure with:
 ```toml
@@ -93,11 +94,11 @@ For **horizontal scaling across multiple servers**, you can override the default
 
 ```toml
 [auth.project.myapp]
-# Use asyncpg for extreme scaling
-db_url = "postgresql+asyncpg://user:password@db-host:5432/myapp_auth"
+# Use sqlx for native async PostgreSQL connections
+db_url = "postgres://user:password@db-host:5432/myapp_auth"
 ```
 
-This uses `asyncpg` under the hood — the fastest PostgreSQL driver for Python.
+This uses `sqlx` under the hood — the premier async database driver for Rust.
 
 ---
 

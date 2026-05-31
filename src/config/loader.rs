@@ -7,12 +7,14 @@ pub struct ConfigManager;
 
 impl ConfigManager {
     pub fn load(path: &str) -> Result<(), Box<dyn std::error::Error>> {
-        let content = std::fs::read_to_string(path).unwrap_or_else(|_| "".to_string());
-        let parsed = if !content.is_empty() {
-            toml::from_str(&content)?
-        } else {
-            AxiomConfig::default()
-        };
+        let content = std::fs::read_to_string(path).unwrap_or_else(|e| {
+            panic!("FATAL: Failed to read config file {}: {}", path, e);
+        });
+
+        let parsed = toml::from_str(&content).unwrap_or_else(|e| {
+            panic!("FATAL: Failed to parse config file {}: {}", path, e);
+        });
+
         let _ = CONFIG.set(Arc::new(parsed));
         Ok(())
     }

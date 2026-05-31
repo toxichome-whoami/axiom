@@ -3,7 +3,6 @@ use crate::config::loader::ConfigManager;
 use crate::security::ban_list::BanList;
 use crate::utils::types::AuthContext;
 use axum::{extract::Request, middleware::Next, response::Response};
-use url::form_urlencoded;
 
 pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, AxiomError> {
     let _config = req
@@ -12,9 +11,15 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, A
         .cloned()
         .unwrap_or_else(|| ConfigManager::get());
 
-    // 1. IP Ban Check
-    let client_ip = "127.0.0.1"; // TODO: Extract real IP
-    let (is_ip_banned, reason) = BanList::is_ip_banned(client_ip);
+    let client_ip = req
+        .headers()
+        .get("x-forwarded-for")
+        .or_else(|| req.headers().get("x-real-ip"))
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("127.0.0.1")
+        .to_string();
+
+    let (is_ip_banned, reason) = BanList::is_ip_banned(&client_ip);
     if is_ip_banned {
         return Err(AxiomError::new(
             "RATE_LIMIT_BLOCKED",
@@ -23,7 +28,7 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, A
         ));
     }
 
-    // 2. Extract token from header or query
+    // 2. Extract token from header ONLY (do not allow query params for auth)
     let mut auth_value = None;
 
     if let Some(key) = req
@@ -41,18 +46,6 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, A
             .headers()
             .get("Authorization")
             .and_then(|h| h.to_str().ok().map(|s| s.to_string()));
-    }
-
-    if auth_value.is_none() {
-        if let Some(query) = req.uri().query() {
-            let params: std::collections::HashMap<String, String> =
-                form_urlencoded::parse(query.as_bytes())
-                    .into_owned()
-                    .collect();
-            if let Some(token) = params.get("token").or(params.get("key")) {
-                auth_value = Some(format!("Bearer {}", token));
-            }
-        }
     }
 
     if let Some(auth_value) = auth_value {

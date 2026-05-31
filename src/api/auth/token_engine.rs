@@ -3,6 +3,9 @@ use base64::Engine;
 use jsonwebtoken::{decode, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation};
 use once_cell::sync::Lazy;
 use rand::Rng;
+use ring::rand::SystemRandom;
+use ring::signature::Ed25519KeyPair;
+use ring::signature::KeyPair as RingKeyPair;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
@@ -33,7 +36,6 @@ pub struct JwtClaims {
 struct KeyPair {
     encoding_key: EncodingKey,
     decoding_key: DecodingKey,
-    /// Raw public key bytes for JWKS output
     public_bytes: Vec<u8>,
 }
 
@@ -53,30 +55,29 @@ pub async fn init_keys() {
     }
 
     fs::create_dir_all(KEYS_DIR).expect("Failed to create auth key directory");
-    let key_path = Path::new(KEYS_DIR).join("ed25519.pem");
+    let key_path = Path::new(KEYS_DIR).join("ed25519.pk8");
 
-    let pem_bytes = if key_path.exists() {
+    let pkcs8_bytes = if key_path.exists() {
         fs::read(&key_path).expect("Failed to read existing key file")
     } else {
-        // Generate a new random Ed25519-like secret key (32 random bytes)
-        // In production, use ring or ed25519-dalek for proper Ed25519.
-        // jsonwebtoken 9.x supports EdDSA with proper PEM — we use HS256 as a secure fallback
-        // since generating Ed25519 PEM requires additional crypto crates.
-        let secret: Vec<u8> = (0..64).map(|_| rand::random::<u8>()).collect();
-        fs::write(&key_path, &secret).expect("Failed to write key file");
-        info!("Generated new auth signing key at {:?}", key_path);
-        secret
+        let rng = SystemRandom::new();
+        let pkcs8 = Ed25519KeyPair::generate_pkcs8(&rng).expect("Failed to generate pkcs8");
+        let bytes = pkcs8.as_ref().to_vec();
+        fs::write(&key_path, &bytes).expect("Failed to write key file");
+        info!("Generated new Ed25519 signing key at {:?}", key_path);
+        bytes
     };
 
-    // Use HS256 with the raw key material as a secure symmetric approach
-    // (Ed25519 would need the `ring` crate; HS256 is production-safe for single-node deployments)
-    let encoding_key = EncodingKey::from_secret(&pem_bytes);
-    let decoding_key = DecodingKey::from_secret(&pem_bytes);
+    let key_pair = Ed25519KeyPair::from_pkcs8(&pkcs8_bytes).expect("Invalid PKCS8 bytes");
+    let pub_bytes = key_pair.public_key().as_ref().to_vec();
+
+    let encoding_key = EncodingKey::from_ed_der(&pkcs8_bytes);
+    let decoding_key = DecodingKey::from_ed_der(&pub_bytes);
 
     *lock = Some(KeyPair {
         encoding_key,
         decoding_key,
-        public_bytes: pem_bytes,
+        public_bytes: pub_bytes,
     });
 }
 
@@ -87,28 +88,27 @@ pub async fn create_access_token(
     email_verified: bool,
     is_anonymous: bool,
     totp_verified: bool,
-    ttl: i64,
-    extra_claims: HashMap<String, serde_json::Value>,
+    ttl_secs: i64,
+    extra: HashMap<String, serde_json::Value>,
 ) -> Result<String, String> {
     let lock = KEY_PAIR.read().await;
-    let kp = lock.as_ref().ok_or("Keys not initialized")?;
+    let kp = lock.as_ref().ok_or("Auth keys not initialized")?;
 
-    let now = now_secs();
     let claims = JwtClaims {
         sub: uid.to_string(),
         email: email.to_string(),
         email_verified,
         is_anonymous,
         totp_verified,
-        iat: now,
-        exp: now + ttl,
+        iat: now_secs(),
+        exp: now_secs() + ttl_secs,
         iss: "axiom".to_string(),
         aud: project_id.to_string(),
         jti: uuid::Uuid::new_v4().to_string(),
-        extra: extra_claims,
+        extra,
     };
 
-    let mut header = Header::new(Algorithm::HS256);
+    let mut header = Header::new(Algorithm::EdDSA);
     header.kid = Some(KEY_ID.to_string());
 
     encode(&header, &claims, &kp.encoding_key).map_err(|e| e.to_string())
@@ -116,9 +116,9 @@ pub async fn create_access_token(
 
 pub async fn verify_access_token(token: &str, project_id: &str) -> Result<JwtClaims, String> {
     let lock = KEY_PAIR.read().await;
-    let kp = lock.as_ref().ok_or("Keys not initialized")?;
+    let kp = lock.as_ref().ok_or("Auth keys not initialized")?;
 
-    let mut validation = Validation::new(Algorithm::HS256);
+    let mut validation = Validation::new(Algorithm::EdDSA);
     validation.set_audience(&[project_id]);
     validation.set_issuer(&["axiom"]);
 
@@ -137,11 +137,12 @@ pub async fn get_jwks() -> serde_json::Value {
 
     serde_json::json!({
         "keys": [{
-            "kty": "oct",
-            "k": x,
+            "kty": "OKP",
+            "crv": "Ed25519",
+            "x": x,
             "kid": KEY_ID,
             "use": "sig",
-            "alg": "HS256"
+            "alg": "EdDSA"
         }]
     })
 }

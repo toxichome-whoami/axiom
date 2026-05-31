@@ -32,18 +32,23 @@ impl SSEConnectionManager {
         let config = ConfigManager::get();
         let queue_size = config.sse.queue_size as usize;
 
-        // Use bounded channel to apply backpressure if client is slow
         let (tx, rx) = mpsc::channel(queue_size);
 
         self.connections
             .write()
             .await
-            .insert(client_id.to_string(), tx);
+            .insert(client_id.to_string(), tx.clone());
         self.subscriptions
             .write()
             .await
             .insert(client_id.to_string(), HashSet::new());
         println!("SSE connected: {}", client_id);
+
+        let cid_clone = client_id.to_string();
+        tokio::spawn(async move {
+            tx.closed().await;
+            SSE_MGR.disconnect(&cid_clone).await;
+        });
 
         rx
     }

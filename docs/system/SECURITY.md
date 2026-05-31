@@ -76,7 +76,7 @@ All paths use Base64 encoding for credential transport. Raw secrets are stored i
   </tr>
   <tr>
     <td style="padding: 10px;"><b>SQL Injection</b></td>
-    <td style="padding: 10px;">Mandatory use of <code>sqlglot</code> for AST-based parsing and validation. Parameterized queries are enforced; string interpolation is mathematically impossible in the data layer.</td>
+    <td style="padding: 10px;">Mandatory use of parameterized queries natively mapped to the database driver (e.g. <code>sqlx::query().bind()</code>). String interpolation is strictly prohibited in the data layer, making SQL injection impossible.</td>
   </tr>
   <tr>
     <td style="padding: 10px;"><b>Path Traversal</b></td>
@@ -88,7 +88,7 @@ All paths use Base64 encoding for credential transport. Raw secrets are stored i
   </tr>
   <tr>
     <td style="padding: 10px;"><b>Timing Attacks</b></td>
-    <td style="padding: 10px;">All secret comparisons use <code>hmac.compare_digest</code> (constant-time).</td>
+    <td style="padding: 10px;">All secret comparisons use <code>ring::constant_time::verify_slices_are_equal</code> or equivalent constant-time operations.</td>
   </tr>
   <tr>
     <td style="padding: 10px;"><b>SSRF</b></td>
@@ -121,12 +121,12 @@ When `features.auth = true` is enabled, Axiom provides state-of-the-art protecti
 - **Smart Brute Force Protection**: The `/login`, `/otp/send`, and `/password/forgot` endpoints are protected by an isolated, in-memory `BruteForceProtector`. It tracks failed attempts using a sliding TTL window per IP Address. If a user exceeds `max_login_attempts` (default 5), they are mathematically locked out for `lockout_duration` (default 15 minutes).
 - **New Device Detection**: If `new_device_alerts = true`, the system queries the user's historical `refresh_tokens`. If a successful login originates from an IP Address that has never been associated with that user, a `new_device_login` security email is instantly dispatched.
 - **Role-Based Access Control (RBAC)**: The API supports strict RBAC natively. By adding `"role"` to `jwt_custom_claims`, the backend embeds the user's role directly into the cryptographic JWT payload, allowing sub-millisecond, database-free permission checks on every request via the `RequireRole` dependency.
-- **Passkeys (WebAuthn)**: The system supports cryptographic, passwordless logins using native device biometrics (FaceID/TouchID) via WebAuthn (`python-webauthn`). Registration and authentication challenges are verified server-side, making phishing and credential stuffing mathematically impossible.
+- **Passkeys (WebAuthn)**: The system supports cryptographic, passwordless logins using native device biometrics (FaceID/TouchID). Registration and authentication challenges are verified server-side, making phishing and credential stuffing mathematically impossible.
 - **Refresh Token Rotation**: Every use of a refresh token issues a brand-new token and immediately invalidates the old one. If a stolen token is used, the legitimate family is also revoked, instantly alerting the system to token theft.
 
 ## 6. Web Application Firewall (WAF)
 
-Axiom includes an embedded WAF layer (`src/server/middleware/waf.py`) that executes before any business logic.
+Axiom includes an embedded WAF layer (`src/middleware/waf.rs`) that executes before any business logic.
 
 - **Request Size Limiting**: Rejects requests that exceed `server.body_limit`.
 - **Content-Type Enforcement**: Rejects unexpected content types (e.g., enforces JSON for API calls).
@@ -145,13 +145,13 @@ Mutating requests (`POST`, `PUT`, `DELETE`) can be made idempotent by providing 
 Axiom injects **OpenTelemetry (OTLP)** trace IDs into every request at the middleware level. The `trace_id` is included in all structured JSON log lines emitted by `structlog`, allowing you to correlate a single failing request across distributed logs instantly.
 
 - **Config-Driven**: Telemetry is toggled via `features.telemetry = true` in `config.toml`. No environment variables required.
-- **Always Generates Local Trace IDs**: When enabled, Axiom always initializes a `TracerProvider` and instruments FastAPI via `FastAPIInstrumentor`. Every request gets a unique 32-character hex `trace_id` in logs — even with no external collector configured.
+- **Always Generates Local Trace IDs**: When enabled, Axiom always initializes an OpenTelemetry `TracerProvider` and instruments the Axum router natively. Every request gets a unique 32-character hex `trace_id` in logs — even with no external collector configured.
 - **Optional Exporter**: Set `telemetry.otlp_endpoint` in `config.toml` (or the `OTEL_EXPORTER_OTLP_ENDPOINT` environment variable) to export spans to an external collector. Compatible with **Jaeger**, **Datadog**, **Honeycomb**, and any standard OTLP backend.
 - **Dual IDs**: Every log line contains both a `trace_id` (global, from OTEL) and a `request_id` (local, generated at the edge). Use `trace_id` to correlate across distributed microservices; use `request_id` to correlate logs within a single Axiom instance.
 
 ```json
 // Every log line contains both IDs:
-{ "level": "info", "trace_id": "a759389c3b7340cd0645e0024f08bd24", "request_id": "req_019e74e3fe097f53bafcb559a73e146f", "method": "POST", "path": "/api/v1/auth/login" }
+{ "level": "INFO", "trace_id": "a759389c3b7340cd0645e0024f08bd24", "request_id": "req_019e74e3fe097f53bafcb559a73e146f", "method": "POST", "path": "/api/v1/auth/login" }
 ```
 
 ```toml
