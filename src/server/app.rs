@@ -56,7 +56,7 @@ pub fn create_app() -> Router {
         .layer(middleware::from_fn(rate_limit_middleware))
         .layer(middleware::from_fn(waf_middleware));
 
-    Router::new()
+    let mut router = Router::new()
         .nest("/api/v1", api_routes)
         .layer(axum::extract::Extension(_config.clone()))
         .merge(core_routes)
@@ -70,5 +70,17 @@ pub fn create_app() -> Router {
         .layer(SetResponseHeaderLayer::overriding(
             header::X_FRAME_OPTIONS,
             header::HeaderValue::from_static("DENY"),
-        ))
+        ));
+
+    if _config.features.playground {
+        use utoipa::OpenApi;
+        use utoipa_swagger_ui::SwaggerUi;
+
+        router = router.merge(SwaggerUi::new("/api/docs").url(
+            "/api-docs/openapi.json",
+            crate::api::docs::ApiDoc::openapi(),
+        ));
+    }
+
+    router
 }
