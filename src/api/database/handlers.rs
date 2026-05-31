@@ -45,6 +45,26 @@ impl QueryExecutionPipeline {
             ));
         }
 
+        let config = crate::config::loader::ConfigManager::get();
+        let cache_enabled = config.cache.enabled && config.cache.query_cache;
+        let cache_ttl = config.cache.query_results_ttl as u64;
+
+        let cache_key = if cache_enabled && !is_mutation {
+            let key = format!("{}:{}:{:?}", db_name, sql, params);
+            static QUERY_CACHE: once_cell::sync::Lazy<
+                dashmap::DashMap<String, (std::time::Instant, QueryResult)>,
+            > = once_cell::sync::Lazy::new(|| dashmap::DashMap::new());
+
+            if let Some(entry) = QUERY_CACHE.get(&key) {
+                if entry.0.elapsed().as_secs() < cache_ttl {
+                    return Ok(entry.1.clone());
+                }
+            }
+            Some((key, &QUERY_CACHE))
+        } else {
+            None
+        };
+
         // Stub WAF / validation
         // In a real system, we'd parse the SQL string to validate constraints.
 
@@ -102,7 +122,12 @@ impl QueryExecutionPipeline {
         }
 
         match engine.execute(&final_bound_sql).await {
-            Ok(res) => Ok(res),
+            Ok(res) => {
+                if let Some((key, cache_ref)) = cache_key {
+                    cache_ref.insert(key, (std::time::Instant::now(), res.clone()));
+                }
+                Ok(res)
+            }
             Err(e) => Err(AxiomError::new(
                 "DB_QUERY_FAILED",
                 &e.to_string(),

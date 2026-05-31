@@ -138,11 +138,6 @@ func runBenchmarkTask(label, method, url string, payload interface{}, config Con
 	fmt.Printf("  Load:      %d requests @ %d concurrency\n", config.TotalRequests, config.Concurrency)
 	fmt.Printf("============================================================\n")
 
-	var bodyBytes []byte
-	if payload != nil {
-		bodyBytes, _ = json.Marshal(payload)
-	}
-
 	transport := &http.Transport{
 		MaxIdleConns:        config.Concurrency,
 		MaxIdleConnsPerHost: config.Concurrency,
@@ -152,41 +147,79 @@ func runBenchmarkTask(label, method, url string, payload interface{}, config Con
 	}
 	client := &http.Client{Transport: transport, Timeout: 10 * time.Second}
 
+	fmt.Printf("Warming up cache for %s...\n", label)
+	var warmupReq *http.Request
+	if payload != nil {
+		bodyBytes, _ := json.Marshal(payload)
+		warmupReq, _ = http.NewRequest(method, url, bytes.NewReader(bodyBytes))
+		warmupReq.Header.Set("Content-Type", "application/json")
+	} else {
+		warmupReq, _ = http.NewRequest(method, url, nil)
+	}
+	warmupReq.Header.Set("Authorization", fmt.Sprintf("Bearer %s", config.APIKey))
+	if warmupResp, err := client.Do(warmupReq); err == nil {
+		io.Copy(io.Discard, warmupResp.Body)
+		warmupResp.Body.Close()
+	}
+
+	var bodyBytes []byte
+	if payload != nil {
+		bodyBytes, _ = json.Marshal(payload)
+	}
+
 	var mu sync.Mutex
 	latencies := make([]float64, 0, config.TotalRequests)
 	success := 0
 	failed := 0
 	errorsCount := make(map[int]int)
 
-	sem := make(chan struct{}, config.Concurrency)
 	var wg sync.WaitGroup
+	requestsPerWorker := config.TotalRequests / config.Concurrency
+	remainingRequests := config.TotalRequests % config.Concurrency
 
 	overallStart := time.Now()
 
-	for i := 0; i < config.TotalRequests; i++ {
+	for workerID := range config.Concurrency {
 		wg.Add(1)
-		sem <- struct{}{} // Acquire semaphore
 
-		go func() {
+		// Calculate how many requests this specific worker should handle
+		tasksForThisWorker := requestsPerWorker
+		if workerID < remainingRequests {
+			tasksForThisWorker++
+		}
+
+		go func(id int, tasks int) {
 			defer wg.Done()
-			defer func() { <-sem }() // Release semaphore
 
-			start := time.Now()
-			var req *http.Request
-			var err error
+			// Initial connection ramp-up to prevent OS TCP backlog overflow
+			// This sleep only happens ONCE per connection, not per request!
+			time.Sleep(time.Duration(id) * 200 * time.Microsecond)
 
-			if payload != nil {
-				req, err = http.NewRequest(method, url, bytes.NewReader(bodyBytes))
-				req.Header.Set("Content-Type", "application/json")
-			} else {
-				req, err = http.NewRequest(method, url, nil)
-			}
-
-			if err == nil {
-				req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", config.APIKey))
-
+			for range tasks {
+				start := time.Now()
 				var resp *http.Response
-				resp, err = client.Do(req)
+				var err error
+
+				for attempt := range 10 {
+					var req *http.Request
+					if payload != nil {
+						req, err = http.NewRequest(method, url, bytes.NewReader(bodyBytes))
+						req.Header.Set("Content-Type", "application/json")
+					} else {
+						req, err = http.NewRequest(method, url, nil)
+					}
+
+					if err == nil {
+						req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", config.APIKey))
+						resp, err = client.Do(req)
+						if err == nil {
+							break // Success!
+						}
+					}
+					// Exponential backoff only if the connection dropped
+					time.Sleep(time.Duration(10*(attempt+1)) * time.Millisecond)
+				}
+
 				if err == nil {
 					io.Copy(io.Discard, resp.Body)
 					resp.Body.Close()
@@ -202,17 +235,14 @@ func runBenchmarkTask(label, method, url string, payload interface{}, config Con
 						errorsCount[resp.StatusCode]++
 					}
 					mu.Unlock()
-					return
+				} else {
+					mu.Lock()
+					failed++
+					errorsCount[-1]++
+					mu.Unlock()
 				}
 			}
-
-			// On failure
-			elapsed := time.Since(start).Seconds() * 1000
-			mu.Lock()
-			latencies = append(latencies, elapsed)
-			failed++
-			mu.Unlock()
-		}()
+		}(workerID, tasksForThisWorker)
 	}
 
 	wg.Wait()

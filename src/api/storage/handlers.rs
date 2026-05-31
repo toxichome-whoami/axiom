@@ -93,6 +93,53 @@ pub async fn list_folder(
     Extension(auth): Extension<AuthContext>,
 ) -> Result<Json<Value>, AxiomError> {
     let rel_path = params.get("path").map(|s| s.as_str()).unwrap_or("/");
+
+    // 1. Fast path memory-only checks
+    if !auth.fs_scope.iter().any(|s| s == "*" || s == &alias) {
+        return Err(AxiomError::new(
+            "AUTH_SCOPE_DENIED",
+            "API key does not have access to storage",
+            StatusCode::FORBIDDEN,
+        ));
+    }
+
+    let config = ConfigManager::get();
+    if !config.storage.contains_key(&alias) {
+        return Err(AxiomError::new(
+            "FS_NOT_FOUND",
+            "Storage alias not found",
+            StatusCode::NOT_FOUND,
+        ));
+    }
+
+    // 2. Cache Lookup
+    let cache_enabled = config.cache.enabled && config.cache.fs_cache;
+    let cache_ttl = config.cache.query_results_ttl as u64;
+
+    let cache_key = format!("{}:{}", alias, rel_path);
+    static FS_CACHE: once_cell::sync::Lazy<
+        dashmap::DashMap<String, (std::time::Instant, Vec<Value>)>,
+    > = once_cell::sync::Lazy::new(|| dashmap::DashMap::new());
+
+    if cache_enabled {
+        if let Some(entry) = FS_CACHE.get(&cache_key) {
+            if entry.0.elapsed().as_secs() < cache_ttl {
+                let items = entry.1.clone();
+                return Ok(Json(json!({
+                    "storage": alias,
+                    "path": rel_path,
+                    "items": items,
+                    "pagination": {
+                        "limit": 100,
+                        "is_truncated": false,
+                        "next_continuation_token": null
+                    }
+                })));
+            }
+        }
+    }
+
+    // 3. Cache Miss: Perform Disk IO
     let target_path = get_storage_path(&alias, rel_path, &auth)?;
 
     if !StdPath::new(&target_path).exists() {
@@ -126,6 +173,10 @@ pub async fn list_folder(
     .await;
 
     let items = items_res.unwrap_or_default();
+
+    if cache_enabled {
+        FS_CACHE.insert(cache_key, (std::time::Instant::now(), items.clone()));
+    }
 
     Ok(Json(json!({
         "storage": alias,
