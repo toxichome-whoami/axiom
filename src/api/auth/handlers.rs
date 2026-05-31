@@ -103,14 +103,13 @@ pub fn get_project(headers: &HeaderMap) -> Result<(String, Value, bool), AxiomEr
 
 fn get_bearer(headers: &HeaderMap) -> Result<String, AxiomError> {
     headers
-        .get("authorization")
+        .get("x-user-access-token")
         .and_then(|v| v.to_str().ok())
-        .and_then(|s| s.strip_prefix("Bearer "))
         .map(|s| s.to_string())
         .ok_or_else(|| {
             AxiomError::new(
                 "AUTH_MISSING_HEADER",
-                "Missing Bearer token",
+                "Missing X-User-Access-Token header",
                 StatusCode::UNAUTHORIZED,
             )
         })

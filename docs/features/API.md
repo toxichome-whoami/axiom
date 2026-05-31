@@ -608,7 +608,7 @@ Revoke the current session's refresh token.
 ```bash
 curl -X POST "http://localhost:4500/api/v1/auth/my_project/logout" \
      -H "X-Axiom-Key: <API_KEY_TOKEN>" \
-     -H "Authorization: Bearer <USER_ACCESS_TOKEN>" \
+     -H "X-User-Access-Token: <USER_ACCESS_TOKEN>" \
      -H "Content-Type: application/json" \
      -d '{"refresh_token": "rt_abc123"}'
 ```
@@ -622,7 +622,7 @@ List all active sessions for the authenticated user.
 ```bash
 curl -X GET "http://localhost:4500/api/v1/auth/my_project/user/sessions" \
      -H "X-Axiom-Key: <API_KEY_TOKEN>" \
-     -H "Authorization: Bearer <USER_ACCESS_TOKEN>"
+     -H "X-User-Access-Token: <USER_ACCESS_TOKEN>"
 ```
 
 #### DELETE `/user/sessions/{session_id}`
@@ -630,7 +630,7 @@ Revoke a specific session by ID.
 ```bash
 curl -X DELETE "http://localhost:4500/api/v1/auth/my_project/user/sessions/sess_abc123" \
      -H "X-Axiom-Key: <API_KEY_TOKEN>" \
-     -H "Authorization: Bearer <USER_ACCESS_TOKEN>"
+     -H "X-User-Access-Token: <USER_ACCESS_TOKEN>"
 ```
 
 ---
@@ -649,7 +649,7 @@ Convert an anonymous account to a permanent account with email and password.
 ```bash
 curl -X POST "http://localhost:4500/api/v1/auth/my_project/anonymous/upgrade" \
      -H "X-Axiom-Key: <API_KEY_TOKEN>" \
-     -H "Authorization: Bearer <USER_ACCESS_TOKEN>" \
+     -H "X-User-Access-Token: <USER_ACCESS_TOKEN>" \
      -H "Content-Type: application/json" \
      -d '{"email": "user@example.com", "password": "SecurePassword123"}'
 ```
@@ -663,7 +663,7 @@ Request a new verification email to be sent.
 ```bash
 curl -X POST "http://localhost:4500/api/v1/auth/my_project/verify/email" \
      -H "X-Axiom-Key: <API_KEY_TOKEN>" \
-     -H "Authorization: Bearer <USER_ACCESS_TOKEN>"
+     -H "X-User-Access-Token: <USER_ACCESS_TOKEN>"
 ```
 
 #### GET `/verify?token=<TOKEN>`
@@ -677,7 +677,7 @@ Verify an email address using a numeric OTP (used when `verification_method = "o
 ```bash
 curl -X POST "http://localhost:4500/api/v1/auth/my_project/verify/otp" \
      -H "X-Axiom-Key: <API_KEY_TOKEN>" \
-     -H "Authorization: Bearer <USER_ACCESS_TOKEN>" \
+     -H "X-User-Access-Token: <USER_ACCESS_TOKEN>" \
      -H "Content-Type: application/json" \
      -d '{"code": "482910"}'
 ```
@@ -687,7 +687,7 @@ Manually trigger a new OTP to be sent to the user's email.
 ```bash
 curl -X POST "http://localhost:4500/api/v1/auth/my_project/otp/send" \
      -H "X-Axiom-Key: <API_KEY_TOKEN>" \
-     -H "Authorization: Bearer <USER_ACCESS_TOKEN>"
+     -H "X-User-Access-Token: <USER_ACCESS_TOKEN>"
 ```
 
 #### POST `/resend`
@@ -752,7 +752,7 @@ Begin TOTP enrollment. Returns a TOTP secret, QR code SVG, and provisioning URI.
 ```bash
 curl -X POST "http://localhost:4500/api/v1/auth/my_project/totp/enroll" \
      -H "X-Axiom-Key: <API_KEY_TOKEN>" \
-     -H "Authorization: Bearer <USER_ACCESS_TOKEN>"
+     -H "X-User-Access-Token: <USER_ACCESS_TOKEN>"
 ```
 **Response:**
 ```json
@@ -767,7 +767,7 @@ Confirm TOTP enrollment by providing the first valid code from the Authenticator
 ```bash
 curl -X POST "http://localhost:4500/api/v1/auth/my_project/totp/confirm" \
      -H "X-Axiom-Key: <API_KEY_TOKEN>" \
-     -H "Authorization: Bearer <USER_ACCESS_TOKEN>" \
+     -H "X-User-Access-Token: <USER_ACCESS_TOKEN>" \
      -H "Content-Type: application/json" \
      -d '{"code": "123456"}'
 ```
@@ -786,7 +786,7 @@ Disable TOTP for the authenticated user (requires current password confirmation)
 ```bash
 curl -X POST "http://localhost:4500/api/v1/auth/my_project/totp/disable" \
      -H "X-Axiom-Key: <API_KEY_TOKEN>" \
-     -H "Authorization: Bearer <USER_ACCESS_TOKEN>" \
+     -H "X-User-Access-Token: <USER_ACCESS_TOKEN>" \
      -H "Content-Type: application/json" \
      -d '{"password": "CurrentPassword123"}'
 ```
@@ -805,7 +805,7 @@ Regenerate a fresh set of backup codes (invalidates all previous ones).
 ```bash
 curl -X GET "http://localhost:4500/api/v1/auth/my_project/totp/backup/regenerate" \
      -H "X-Axiom-Key: <API_KEY_TOKEN>" \
-     -H "Authorization: Bearer <USER_ACCESS_TOKEN>"
+     -H "X-User-Access-Token: <USER_ACCESS_TOKEN>"
 ```
 
 ---
@@ -817,7 +817,7 @@ Get the currently authenticated user's profile.
 ```bash
 curl -X GET "http://localhost:4500/api/v1/auth/my_project/user" \
      -H "X-Axiom-Key: <API_KEY_TOKEN>" \
-     -H "Authorization: Bearer <USER_ACCESS_TOKEN>"
+     -H "X-User-Access-Token: <USER_ACCESS_TOKEN>"
 ```
 **Response:**
 ```json
@@ -833,7 +833,7 @@ Update profile metadata (display name, custom fields, etc.).
 ```bash
 curl -X PATCH "http://localhost:4500/api/v1/auth/my_project/user" \
      -H "X-Axiom-Key: <API_KEY_TOKEN>" \
-     -H "Authorization: Bearer <USER_ACCESS_TOKEN>" \
+     -H "X-User-Access-Token: <USER_ACCESS_TOKEN>" \
      -H "Content-Type: application/json" \
      -d '{"metadata": {"display_name": "Alice"}}'
 ```
@@ -843,7 +843,7 @@ Permanently delete the authenticated user's account (requires password confirmat
 ```bash
 curl -X DELETE "http://localhost:4500/api/v1/auth/my_project/user" \
      -H "X-Axiom-Key: <API_KEY_TOKEN>" \
-     -H "Authorization: Bearer <USER_ACCESS_TOKEN>" \
+     -H "X-User-Access-Token: <USER_ACCESS_TOKEN>" \
      -H "Content-Type: application/json" \
      -d '{"password": "CurrentPassword123"}'
 ```
@@ -853,7 +853,7 @@ Request an email address change. Sends a confirmation link to the new address.
 ```bash
 curl -X POST "http://localhost:4500/api/v1/auth/my_project/user/email" \
      -H "X-Axiom-Key: <API_KEY_TOKEN>" \
-     -H "Authorization: Bearer <USER_ACCESS_TOKEN>" \
+     -H "X-User-Access-Token: <USER_ACCESS_TOKEN>" \
      -H "Content-Type: application/json" \
      -d '{"new_email": "newemail@example.com", "password": "CurrentPassword123"}'
 ```
@@ -872,7 +872,7 @@ Change the authenticated user's password.
 ```bash
 curl -X POST "http://localhost:4500/api/v1/auth/my_project/user/password" \
      -H "X-Axiom-Key: <API_KEY_TOKEN>" \
-     -H "Authorization: Bearer <USER_ACCESS_TOKEN>" \
+     -H "X-User-Access-Token: <USER_ACCESS_TOKEN>" \
      -H "Content-Type: application/json" \
      -d '{"current_password": "OldPass123", "new_password": "NewPass456"}'
 ```
