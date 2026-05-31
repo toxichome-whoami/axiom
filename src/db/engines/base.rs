@@ -48,7 +48,11 @@ pub trait DatabaseEngine: Send + Sync {
         table: &str,
     ) -> Result<Vec<ForeignKeyInfo>, Box<dyn std::error::Error>>;
 
-    async fn execute(&self, sql: &str) -> Result<QueryResult, Box<dyn std::error::Error>>;
+    async fn execute(
+        &self,
+        sql: &str,
+        params: &[serde_json::Value],
+    ) -> Result<QueryResult, Box<dyn std::error::Error>>;
 
     fn dialect(&self) -> &str;
 }

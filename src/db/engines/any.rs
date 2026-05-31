@@ -80,15 +80,47 @@ impl DatabaseEngine for AnyDatabaseEngine {
         Ok(vec![])
     }
 
-    async fn execute(&self, sql: &str) -> Result<QueryResult, Box<dyn std::error::Error>> {
+    async fn execute(
+        &self,
+        sql: &str,
+        params: &[serde_json::Value],
+    ) -> Result<QueryResult, Box<dyn std::error::Error>> {
         let pool = self.pool.as_ref().ok_or("Not connected")?;
 
         let is_mutation = sql.trim().to_uppercase().starts_with("INSERT")
             || sql.trim().to_uppercase().starts_with("UPDATE")
             || sql.trim().to_uppercase().starts_with("DELETE");
 
+        let mut query = sqlx::query(sql);
+
+        for param in params {
+            match param {
+                serde_json::Value::String(s) => {
+                    query = query.bind(s);
+                }
+                serde_json::Value::Number(n) => {
+                    if let Some(i) = n.as_i64() {
+                        query = query.bind(i);
+                    } else if let Some(f) = n.as_f64() {
+                        query = query.bind(f);
+                    } else {
+                        query = query.bind(n.to_string());
+                    }
+                }
+                serde_json::Value::Bool(b) => {
+                    query = query.bind(b);
+                }
+                serde_json::Value::Null => {
+                    query = query.bind(Option::<String>::None);
+                }
+                _ => {
+                    query = query.bind(param.to_string());
+                }
+            }
+        }
+
         if is_mutation {
-            let result = sqlx::query(sql).execute(pool).await?;
+            let result = query.execute(pool).await?;
             return Ok(QueryResult {
                 columns: None,
                 rows: None,
@@ -97,7 +129,7 @@ impl DatabaseEngine for AnyDatabaseEngine {
         }
 
         // Generic JSON mapping for read queries
-        let rows = sqlx::query(sql).fetch_all(pool).await?;
+        let rows = query.fetch_all(pool).await?;
 
         let mut result_rows = Vec::new();
         let mut column_names = Vec::new();

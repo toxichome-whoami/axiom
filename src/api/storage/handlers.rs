@@ -44,7 +44,20 @@ fn get_storage_path(alias: &str, rel_path: &str, auth: &AuthContext) -> Result<S
         ));
     }
 
-    let target_path = base_path.join(rel_path.trim_start_matches('/'));
+    // Force strict relative paths
+    let req_path = StdPath::new(rel_path);
+    if req_path.is_absolute() || req_path.has_root() {
+        return Err(AxiomError::new(
+            "INPUT_PATH_TRAVERSAL",
+            "Absolute paths are forbidden",
+            StatusCode::BAD_REQUEST,
+        ));
+    }
+
+    // Clean leading slashes and windows drive prefixes
+    let clean_rel_path = rel_path.trim_start_matches('/').trim_start_matches('\\');
+
+    let target_path = base_path.join(clean_rel_path);
 
     // Additional safeguard
     if !target_path.starts_with(base_path) {

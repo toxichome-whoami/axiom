@@ -94,34 +94,7 @@ impl QueryExecutionPipeline {
             sql.to_string()
         };
 
-        // In the true migration, we would bind `params` safely into `sqlx::query().bind()`.
-        // Since `DatabaseEngine::execute(sql: &str)` only takes a string currently in our Rust stub,
-        // we'll format the values inline for demonstration purposes.
-        // WARNING: INSECURE STUB. Real code MUST use bound parameters.
-        let mut final_bound_sql = formatted_sql.clone();
-        for val in params {
-            let val_str = match val {
-                Value::String(s) => format!("'{}'", s.replace("'", "''")),
-                Value::Number(n) => n.to_string(),
-                Value::Bool(b) => b.to_string(),
-                Value::Null => "NULL".to_string(),
-                _ => format!("'{}'", val.to_string().replace("'", "''")),
-            };
-            // Replace the first occurrence of `?` or `$N` with the value
-            // Extremely hacky stub.
-            if let Some(pos) = final_bound_sql.find('?') {
-                final_bound_sql.replace_range(pos..pos + 1, &val_str);
-            } else if let Some(pos) = final_bound_sql.find('$') {
-                // remove the $N
-                let end = final_bound_sql[pos + 1..]
-                    .find(|c: char| !c.is_numeric())
-                    .map(|i| i + pos + 1)
-                    .unwrap_or(final_bound_sql.len());
-                final_bound_sql.replace_range(pos..end, &val_str);
-            }
-        }
-
-        match engine.execute(&final_bound_sql).await {
+        match engine.execute(&formatted_sql, &params).await {
             Ok(res) => {
                 if let Some((key, cache_ref)) = cache_key {
                     cache_ref.insert(key, (std::time::Instant::now(), res.clone()));
