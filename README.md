@@ -24,8 +24,8 @@
 - Virtual file system proxy with built in zip-streaming and image resizing.
 - Real-time webhook emissions based on regex-like operation subscriptions.
 - Async HTTP streaming reverse-proxies for Federated edge nodes.
-- High performance multi-tier rate limiting with DDoS protection.
-- Cache-Aside SQLite persistent state layer for sub-millisecond API Key and Ban validations.
+- High performance multi-tier rate limiting with DDoS protection and lock-free `AtomicU32` counters.
+- Zero-contention configuration via `OnceLock<Arc<Config>>` — all worker threads read config with no locks.
 - High-Performance GraphQL Layer for zero-serialization AST-to-SQL transpilation queries.
 
 ## Documentation

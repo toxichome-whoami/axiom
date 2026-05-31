@@ -1,6 +1,9 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # Axiom - Industrial-Grade Unified API Gateway
 # Configuration Example
+#
+# NOTE: All settings require a server restart to take effect.
+# Configuration is loaded once at startup (OnceLock) for maximum performance.
 # ─────────────────────────────────────────────────────────────────────────────
 
 # ─── Server Settings ──────────────────────────────────
@@ -109,7 +112,7 @@ engine = "postgres"              # postgres | mysql | sqlite | mariadb | mssql
 url = "postgresql://user:pass@localhost:5432/dbname"
 mode = "readwrite"               # readwrite | readonly
 pool_min = 5                     # Minimum idle connections
-pool_max = 20                    # Maximum concurrent connections
+pool_max = 80                    # Maximum concurrent connections (tune to your DB's max_connections)
 connection_timeout = 30          # Seconds to wait for a connection
 idle_timeout = 600               # Seconds to keep an idle connection alive
 max_lifetime = 3600              # Maximum age of a connection

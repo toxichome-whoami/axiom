@@ -9,20 +9,14 @@ See `config.example.toml` for a ready-to-copy template.
 
 ---
 
-## Hot Reloading (Dynamic vs Startup Configs)
+## Configuration Loading
 
-Axiom features a zero-downtime hot-reloading daemon that watches `config.toml` for changes. However, it is crucial to understand that **not all settings can be hot-reloaded**. 
+Axiom loads `config.toml` **once at startup** into a `std::sync::OnceLock<Arc<AxiomConfig>>`. This provides lock-free, zero-contention reads from every concurrent worker thread — a key reason for the high throughput.
 
-1. **Startup Settings (Require Restart):** These settings dictate deep architectural constraints (like binding ports, compiling log pipelines, or mounting FastAPI routers). If you change these, the watcher detects it, but the application **requires a full restart** to apply them:
-   - `[server]` (host, port, workers, tls)
-   - `[features]` (enabling/disabling entire gateways like MCP, GraphQL, etc.)
-   - `[logging]` (format, file sizes)
+> [!IMPORTANT]
+> **All settings require a server restart to take effect.** There is no hot-reloading. Because configuration is stored immutably in a `OnceLock`, it cannot be changed at runtime without restarting the process.
 
-2. **Dynamic Settings (Hot Reloadable):** These settings govern runtime traffic rules and limits. Changing these applies **instantly without restarting**:
-   - `[rate_limit]` thresholds and bans
-   - `[circuit_breaker]` logic
-   - `[webhooks]` destinations and retries
-   - `[api_key]` permissions and scopes
+For zero-downtime config changes, use a reverse proxy (Nginx, Caddy) in front of Axiom and perform a rolling restart.
 
 ---
 
@@ -164,7 +158,7 @@ Per-webhook subscription definition.
 | `url` | required | Connection URL |
 | `mode` | `"readwrite"` | `readwrite \| readonly \| writeonly` |
 | `pool_min` | `2` | Minimum pool connections |
-| `pool_max` | `20` | Maximum pool connections |
+| `pool_max` | `80` | Maximum pool connections (tune to your DB server's `max_connections`) |
 | `connection_timeout` | `5` | Connect timeout in seconds |
 | `idle_timeout` | `300` | Idle connection timeout |
 | `max_lifetime` | `1800` | Max connection lifetime |
