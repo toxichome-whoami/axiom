@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net/http"
 	"net/url"
 	"os"
 	"os/signal"
@@ -17,7 +18,7 @@ import (
 	"github.com/joho/godotenv"
 )
 
-type AuthMessage struct {
+type WSAuthMessage struct {
 	Type  string `json:"type"`
 	Token string `json:"token"`
 }
@@ -50,8 +51,7 @@ func RunWebsocketMessaging() {
 	authStr := fmt.Sprintf("%s:%s", keyName, keySecret)
 	encodedAuth := base64.StdEncoding.EncodeToString([]byte(authStr))
 
-	encodedAuthURL := url.QueryEscape(encodedAuth)
-	wsEndpoint := fmt.Sprintf("%s/api/v1/ws?token=%s", wsURL, encodedAuthURL)
+	wsEndpoint := fmt.Sprintf("%s/api/v1/ws", wsURL)
 
 	u, err := url.Parse(wsEndpoint)
 	if err != nil {
@@ -59,7 +59,11 @@ func RunWebsocketMessaging() {
 	}
 
 	fmt.Printf("🔌 Connecting to WebSocket: %s\n", u.String())
-	c, resp, err := websocket.DefaultDialer.Dial(u.String(), nil)
+
+	header := http.Header{}
+	header.Set("X-Axiom-Key", encodedAuth)
+
+	c, resp, err := websocket.DefaultDialer.Dial(u.String(), header)
 	if err != nil {
 		if resp != nil {
 			body, _ := io.ReadAll(resp.Body)
@@ -69,12 +73,7 @@ func RunWebsocketMessaging() {
 	}
 	defer c.Close()
 
-	// 1. Send Auth message
-	authMsg := AuthMessage{Type: "auth", Token: encodedAuth}
-	if err := c.WriteJSON(authMsg); err != nil {
-		log.Fatal("Failed to send auth:", err)
-	}
-	fmt.Println("🔐 Sent auth payload...")
+	fmt.Println("🔐 Connected via authenticated HTTP header...")
 
 	// Listen for messages in background
 	done := make(chan struct{})

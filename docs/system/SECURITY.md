@@ -54,7 +54,7 @@ Axiom enforces strict separation between authentication domains. A credential fr
 </table>
 
 - **API Keys (REST)** authenticate all standard HTTP requests via the `Authorization` header.
-- **WebSocket** uses the same API key credential as REST, but delivered as the **first JSON message** after the socket is established. This deliberately avoids URL query-string tokens (e.g. `?token=...`), which would be logged in plaintext by every Nginx/CDN access log and stored in browser history. The token is fully shielded by WSS/TLS encryption.
+- **WebSocket** supports **Hybrid Authentication**: it can use standard HTTP headers during the handshake (recommended for backend clients) OR the API key can be delivered as the **first JSON message** after the socket is established (required for browsers). This design deliberately avoids URL query-string tokens (e.g. `?token=...`), which would be logged in plaintext by Nginx/CDN access logs and stored in browser history. The token is fully shielded by WSS/TLS encryption in both modes.
 - **Federation Secrets** authenticate server-to-server mesh connections. Each node has independent scope.
 - **Webhook Tokens** authorize webhook event emission. Verified via constant-time comparison.
 

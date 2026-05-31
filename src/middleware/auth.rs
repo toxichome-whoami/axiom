@@ -5,7 +5,7 @@ use crate::utils::types::AuthContext;
 use axum::{extract::Request, middleware::Next, response::Response};
 
 pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, AxiomError> {
-    let _config = req
+    let config = req
         .extensions()
         .get::<std::sync::Arc<crate::config::schema::AxiomConfig>>()
         .cloned()
@@ -28,7 +28,7 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, A
         ));
     }
 
-    // 2. Extract token from header ONLY (do not allow query params for auth)
+    // 1. Extract token from header ONLY
     let mut auth_value = None;
 
     if let Some(key) = req
@@ -49,41 +49,14 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, A
     }
 
     if let Some(auth_value) = auth_value {
+        if let Some(ctx) = validate_api_key(&auth_value, &config) {
+            req.extensions_mut().insert(ctx);
+            return Ok(next.run(req).await);
+        }
+
+        // Check if the key itself is banned
         if auth_value.starts_with("Bearer ") {
             let raw_token = &auth_value[7..];
-
-            use base64::prelude::*;
-            let decoded_str = BASE64_STANDARD
-                .decode(raw_token)
-                .ok()
-                .and_then(|d| String::from_utf8(d).ok());
-
-            if let Some(decoded) = decoded_str {
-                if let Some((key_name, key_secret)) = decoded.split_once(':') {
-                    let config = req
-                        .extensions()
-                        .get::<std::sync::Arc<crate::config::schema::AxiomConfig>>()
-                        .cloned()
-                        .unwrap_or_else(|| ConfigManager::get());
-
-                    if let Some(key_cfg) = config.api_key.get(key_name) {
-                        if key_cfg.secret == key_secret {
-                            let ctx = AuthContext {
-                                api_key_name: key_name.to_string(),
-                                mode: key_cfg.mode.clone(),
-                                db_scope: key_cfg.db_scope.clone(),
-                                fs_scope: key_cfg.fs_scope.clone(),
-                                feature_scope: key_cfg.feature_scope.clone(),
-                                rate_limit_override: key_cfg.rate_limit_override as u32,
-                                full_admin: key_cfg.full_admin,
-                            };
-                            req.extensions_mut().insert(ctx);
-                            return Ok(next.run(req).await);
-                        }
-                    }
-                }
-            }
-
             let (is_key_banned, reason) = BanList::is_key_banned(raw_token);
             if is_key_banned {
                 return Err(AxiomError::new(
@@ -95,9 +68,59 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, A
         }
     }
 
+    // Special case: Allow WebSocket upgrades to pass through without header auth.
+    // They will be authenticated via the first JSON payload in the WebSocket handler.
+    let is_ws = req
+        .headers()
+        .get(axum::http::header::UPGRADE)
+        .and_then(|v| v.to_str().ok())
+        .map(|v| v.to_lowercase() == "websocket")
+        .unwrap_or(false);
+
+    if is_ws {
+        return Ok(next.run(req).await);
+    }
+
     Err(AxiomError::new(
         "UNAUTHORIZED",
         "Missing or invalid API key.",
         axum::http::StatusCode::UNAUTHORIZED,
     ))
+}
+
+pub fn validate_api_key(
+    auth_value: &str,
+    config: &crate::config::schema::AxiomConfig,
+) -> Option<AuthContext> {
+    if !auth_value.starts_with("Bearer ") {
+        return None;
+    }
+
+    let raw_token = &auth_value[7..];
+
+    use base64::prelude::*;
+    let decoded_str = BASE64_STANDARD
+        .decode(raw_token)
+        .ok()
+        .and_then(|d| String::from_utf8(d).ok());
+
+    if let Some(decoded) = decoded_str {
+        if let Some((key_name, key_secret)) = decoded.split_once(':') {
+            if let Some(key_cfg) = config.api_key.get(key_name) {
+                if key_cfg.secret == key_secret {
+                    return Some(AuthContext {
+                        api_key_name: key_name.to_string(),
+                        mode: key_cfg.mode.clone(),
+                        db_scope: key_cfg.db_scope.clone(),
+                        fs_scope: key_cfg.fs_scope.clone(),
+                        feature_scope: key_cfg.feature_scope.clone(),
+                        rate_limit_override: key_cfg.rate_limit_override as u32,
+                        full_admin: key_cfg.full_admin,
+                    });
+                }
+            }
+        }
+    }
+
+    None
 }

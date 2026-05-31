@@ -38,8 +38,7 @@ func RunSseClient() {
 
 	authStr := fmt.Sprintf("%s:%s", keyName, keySecret)
 	encodedAuth := base64.StdEncoding.EncodeToString([]byte(authStr))
-	// Axiom SSE endpoints support ?token= URL parameter for auth since EventSource in browsers doesn't support headers well.
-	endpoint := fmt.Sprintf("%s/api/v1/sse/db/localdb?token=%s", baseURL, encodedAuth)
+	endpoint := fmt.Sprintf("%s/api/v1/sse/db/localdb", baseURL)
 
 	fmt.Println(strings.Repeat("=", 55))
 	fmt.Println("  AXIOM SSE (SERVER-SENT EVENTS) DEMO")
@@ -56,6 +55,7 @@ func RunSseClient() {
 		log.Fatalf("Failed to create request: %v", err)
 	}
 	req.Header.Set("Accept", "text/event-stream")
+	req.Header.Set("X-Axiom-Key", encodedAuth)
 
 	client := &http.Client{}
 	resp, err := client.Do(req)
@@ -95,5 +95,3 @@ func RunSseClient() {
 		}
 	}
 }
-
-

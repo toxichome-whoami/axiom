@@ -1188,17 +1188,22 @@ Use WebSocket when you need **live event streaming** — DB mutations, file chan
 
 ### Connection and Authentication
 
-WebSocket upgrades happen over the same port as the REST API. Because browser `WebSocket` APIs cannot send custom HTTP headers, authentication is done securely via a base64 encoded `?token=` query parameter (exactly like SSE). The connection is verified and rate-limited *before* the socket even opens.
+WebSocket upgrades happen over the same port as the REST API. Axiom supports **Hybrid Authentication**:
 
-After connecting, you must also send a JSON authentication payload as your first message (5-second timeout) to formally register the client ID:
+1.  **HTTP Headers (Recommended for Backend/Mobile)**: Send `X-Axiom-Key: base64(<name>:<secret>)` during the initial handshake.
+2.  **JSON Payload (Required for Browsers)**: Because browser `WebSocket` APIs cannot send custom HTTP headers, you can open the socket without headers and then send a JSON authentication payload as your first message (5-second timeout).
+
+**Axiom strictly prohibits passing authentication tokens via URL parameters (`?token=...`)** to prevent token leakage in server logs. The token is fully shielded by WSS/TLS encryption when sent as a payload.
 
 ```javascript
 // Token is base64(key_name:secret)
 const token = btoa("admin:your_secret_here");
 
-const ws = new WebSocket(`ws://localhost:4500/api/v1/ws?token=${token}`);
+// Step 1: Open the socket (no headers needed for browsers)
+const ws = new WebSocket(`ws://localhost:4500/api/v1/ws`);
 
 ws.onopen = () => {
+  // Step 2: Send the auth payload within 5 seconds
   ws.send(JSON.stringify({
     type: "auth",
     token: token

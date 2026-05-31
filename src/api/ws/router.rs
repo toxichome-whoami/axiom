@@ -12,58 +12,85 @@ use tokio::time::sleep;
 use crate::api::ws::connection_manager::{ClientScopes, CONN_MGR};
 use crate::config::loader::ConfigManager;
 
+use crate::utils::types::AuthContext;
+
 pub fn get_router() -> Router {
     Router::new().route("/", get(ws_handler))
 }
 
-pub async fn ws_handler(ws: WebSocketUpgrade) -> Response {
-    ws.on_upgrade(handle_socket)
+pub async fn ws_handler(
+    ws: WebSocketUpgrade,
+    auth: Option<axum::extract::Extension<AuthContext>>,
+) -> Response {
+    let auth = auth.map(|axum::extract::Extension(a)| a);
+    ws.on_upgrade(move |socket| handle_socket(socket, auth))
 }
 
-async fn handle_socket(socket: WebSocket) {
+async fn handle_socket(socket: WebSocket, initial_auth: Option<AuthContext>) {
     let (mut sender, mut receiver) = socket.split();
 
-    // 1. Wait for Auth Message
     let config = ConfigManager::get();
-    let auth_timeout = Duration::from_secs(config.websocket.auth_timeout as u64);
 
-    let auth_result = tokio::time::timeout(auth_timeout, receiver.next()).await;
+    // 1. Authenticate if not already authenticated via headers
+    let auth = if let Some(a) = initial_auth {
+        a
+    } else {
+        let auth_timeout = config.websocket.auth_timeout;
+        let auth_result = tokio::time::timeout(Duration::from_secs_f64(auth_timeout), async {
+            while let Some(msg) = receiver.next().await {
+                match msg {
+                    Ok(Message::Text(text)) => {
+                        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) {
+                            if json["type"] == "auth" {
+                                if let Some(token) = json["token"].as_str() {
+                                    let auth_value = if token.starts_with("Bearer ") {
+                                        token.to_string()
+                                    } else {
+                                        format!("Bearer {}", token)
+                                    };
 
-    let mut client_id = String::new();
-    let mut scopes = ClientScopes::default();
-
-    if let Ok(Some(Ok(Message::Text(text)))) = auth_result {
-        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) {
-            if json["type"] == "auth" && json["token"].is_string() {
-                let token = json["token"].as_str().unwrap_or("");
-
-                // Decode Base64 token (format: base64(key_name:secret))
-                use base64::{engine::general_purpose::STANDARD, Engine};
-                if let Ok(decoded) = STANDARD.decode(token) {
-                    if let Ok(creds) = String::from_utf8(decoded) {
-                        let parts: Vec<&str> = creds.splitn(2, ':').collect();
-                        if parts.len() == 2 {
-                            let key_name = parts[0];
-                            let secret = parts[1];
-
-                            if let Some(api_key_cfg) = config.api_key.get(key_name) {
-                                if api_key_cfg.secret == secret {
-                                    client_id = format!("{}_{}", key_name, uuid::Uuid::new_v4());
-                                    scopes.db_scope = api_key_cfg.db_scope.clone();
-                                    scopes.fs_scope = api_key_cfg.fs_scope.clone();
+                                    if let Some(ctx) = crate::middleware::auth::validate_api_key(
+                                        &auth_value,
+                                        &config,
+                                    ) {
+                                        return Ok(ctx);
+                                    }
                                 }
+                                return Err("INVALID_TOKEN");
                             }
                         }
+                        return Err("EXPECTED_AUTH_MESSAGE");
                     }
+                    _ => return Err("INVALID_MESSAGE_TYPE"),
                 }
             }
-        }
-    }
+            Err("CONNECTION_CLOSED")
+        })
+        .await;
 
-    if client_id.is_empty() {
-        let _ = sender.close().await;
-        return;
-    }
+        match auth_result {
+            Ok(Ok(ctx)) => ctx,
+            _ => {
+                let code = match auth_result {
+                    Ok(Err(e)) => e,
+                    _ => "AUTH_TIMEOUT",
+                };
+                let error = json!({
+                    "type": "error",
+                    "code": code,
+                    "message": "Authentication failed or timed out"
+                })
+                .to_string();
+                let _ = sender.send(Message::Text(error)).await;
+                return;
+            }
+        }
+    };
+
+    let client_id = format!("{}_{}", auth.api_key_name, uuid::Uuid::new_v4());
+    let mut scopes = ClientScopes::default();
+    scopes.db_scope = auth.db_scope.clone();
+    scopes.fs_scope = auth.fs_scope.clone();
 
     // 2. Setup internal communication channel
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Message>();

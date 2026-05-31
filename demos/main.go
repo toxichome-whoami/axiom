@@ -5,7 +5,7 @@ import (
 	"os"
 )
 
-func main() {
+func main() {  
 	if len(os.Args) < 2 {
 		fmt.Println("❌ Please specify a demo to run!")
 		fmt.Println("Available demos:")

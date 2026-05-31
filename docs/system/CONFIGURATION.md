@@ -455,22 +455,29 @@ Real-time bidirectional push gateway. Clients connect to `ws://host:port/api/v1/
 
 ### Authentication Flow
 
-WebSocket connections **cannot** use the `Authorization` HTTP header directly because the browser's native `WebSocket` API does not allow custom headers during the initial handshake. Putting the token in the URL (e.g. `?token=...`) is **insecure** — URLs are logged in plaintext by every Nginx/CDN access log and stored in browser history.
+Axiom supports **Hybrid Authentication** for WebSockets:
 
-Axiom solves this by requiring authentication as the **first JSON message** after the socket is established, fully shielded by WSS/TLS encryption:
+1.  **Standard HTTP Headers (Backend/Mobile)**:
+    Most backend and mobile WebSocket clients (e.g. Go's `gorilla/websocket`, Python's `websockets`, iOS/Android native clients) support injecting custom HTTP headers during the connection upgrade.
+    ```
+    X-Axiom-Key: base64(<key_name>:<secret>)
+    ```
 
-```json
-// Step 1: Client opens the socket
-// ws://host:4500/api/v1/ws
+2.  **First JSON Message (Web Browsers)**:
+    Browser `WebSocket` objects do not natively support custom headers. If no headers are provided during the handshake, Axiom allows the socket to open but requires a valid `auth` message as the **first JSON payload** within 5 seconds.
 
-// Step 2: Client MUST send this as the first message (within auth_timeout seconds)
-{ "type": "auth", "token": "<base64(key_name:secret)>" }
+**Axiom strictly prohibits passing authentication tokens via URL parameters (`?token=...`) to prevent token leakage in server logs.**
 
-// Step 3: Server replies on success
-{ "type": "connected", "client_id": "admin_140234..." }
+```javascript
+// Example for Browser JS
+const ws = new WebSocket("ws://host:4500/api/v1/ws");
 
-// Step 4: Client subscribes to topics
-{ "type": "subscribe", "topic": "db.localdb.users" }
+ws.onopen = () => {
+  ws.send(JSON.stringify({
+    type: "auth",
+    token: btoa("admin:your_secret")
+  }));
+};
 ```
 
 The same API key used for REST is reused here. The key must have `"ws"` in its `feature_scope` (or `full_admin = true`).
