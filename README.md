@@ -72,28 +72,27 @@ curl -X POST "http://localhost:4500/api/v1/fs/local_fs/upload" \
 
 </details>
 
-## Universal SDK
+## Examples and Demos
 
-Axiom includes a Universal Client SDK for interacting with all platform modules seamlessly. 
+Axiom provides a comprehensive set of **Golang Demos** demonstrating how to interact with all platform modules natively via REST, Server-Sent Events, WebSockets, and Webhooks.
 
-The SDKs are located in the `auth_sdks/` directory and are available in:
-- **JavaScript** (`auth_sdks/js/`)
-- **Rust** (`auth_sdks/rust/`)
+The examples are located in the `demos/` directory. 
 
 ### Usage Example
 <details>
-<summary><b>View API Examples</b></summary>
+<summary><b>View Demo Execution</b></summary>
 
-```javascript
-import { Axiom } from "./sdks/javascript/index.js";
+To run the unified Golang demo suite, simply use the Go CLI from within the `demos/` folder:
 
-const axiom = new Axiom({ baseUrl: "http://localhost:4500", apiKey: "your_api_key" });
-
-// Log in via Auth Module
-await axiom.auth.login("admin@axiom.com", "password123");
-
-// Interact with other Modules
-await axiom.db.query("SELECT * FROM users");
-await axiom.mcp.invoke("search", { query: "hello" });
+```bash
+cd demos/
+go run . [demo_name]
 ```
+
+Available demos include:
+- `auth`: Full authentication flow (login, token management, profile upgrades)
+- `db_fetch` / `db_insert` / `db_drop`: Type-safe database queries
+- `sse` / `websocket`: Real-time streaming and pub/sub
+- `graphql` / `mcp`: Advanced interfaces
+
 </details>

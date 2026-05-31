@@ -268,13 +268,14 @@ curl -X POST "http://localhost:4500/api/v1/mcp/messages" \
 </details>
 
 <details>
-<summary><b>Zero-Dependency Node.js (Raw HTTP)</b></summary>
+<summary><b>Zero-Dependency Golang (Raw HTTP)</b></summary>
 
-For a complete pure implementation without the official SDK, see the demo script provided in the repository:
+For a complete pure implementation without the official SDK, see the unified Golang demo suite provided in the repository:
 ```bash
-node how_to_use/demo_mcp_client.js
+cd demos/
+go run . mcp
 ```
-This script demonstrates the exact SSE connection, dynamic endpoint discovery, HTTP POST message flow, and the JSON-RPC initialization handshake required by the protocol.
+This script demonstrates the HTTP POST message flow and the JSON-RPC initialization handshake required by the protocol.
 </details>
 
 ---

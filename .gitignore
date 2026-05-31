@@ -52,6 +52,7 @@ package-lock.json
 .opencode/
 .commandcode/
 .agents/
+.cargo/
 *.swp
 *.swo
 .DS_Store
