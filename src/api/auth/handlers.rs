@@ -26,7 +26,7 @@ use crate::config::loader::ConfigManager;
 // Request Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-pub fn get_project(headers: &HeaderMap) -> Result<(String, Value), AxiomError> {
+pub fn get_project(headers: &HeaderMap) -> Result<(String, Value, bool), AxiomError> {
     let api_key = headers
         .get("X-Api-Key")
         .or_else(|| headers.get("X-Axiom-Key"))
@@ -98,7 +98,7 @@ pub fn get_project(headers: &HeaderMap) -> Result<(String, Value), AxiomError> {
             )
         })?;
 
-    Ok((key_name.to_string(), project_cfg))
+    Ok((key_name.to_string(), project_cfg, key_cfg.full_admin))
 }
 
 fn get_bearer(headers: &HeaderMap) -> Result<String, AxiomError> {
@@ -234,7 +234,7 @@ pub async fn handler_signup(
     headers: HeaderMap,
     Json(body): Json<SignupRequest>,
 ) -> Result<Json<Value>, AxiomError> {
-    let (project_id, config) = get_project(&headers)?;
+    let (project_id, config, _) = get_project(&headers)?;
     let min_len = proj_val(&config, "min_password_length", 8) as usize;
     if body.password.len() < min_len {
         return Err(AxiomError::new(
@@ -292,7 +292,7 @@ pub async fn handler_login(
     headers: HeaderMap,
     Json(body): Json<LoginRequest>,
 ) -> Result<Json<Value>, AxiomError> {
-    let (project_id, config) = get_project(&headers)?;
+    let (project_id, config, _) = get_project(&headers)?;
     let pool = get_pool(&project_id).await?;
     let ip = get_ip(&headers);
     let ua = get_ua(&headers);
@@ -371,7 +371,7 @@ pub async fn handler_refresh(
     headers: HeaderMap,
     Json(body): Json<RefreshRequest>,
 ) -> Result<Json<Value>, AxiomError> {
-    let (project_id, config) = get_project(&headers)?;
+    let (project_id, config, _) = get_project(&headers)?;
     let pool = get_pool(&project_id).await?;
     let ip = get_ip(&headers);
     let ua = get_ua(&headers);
@@ -438,7 +438,7 @@ pub async fn handler_logout(
     Json(body): Json<LogoutRequest>,
 ) -> Result<Json<Value>, AxiomError> {
     let bearer = get_bearer(&headers)?;
-    let (project_id, _) = get_project(&headers)?;
+    let (project_id, _, _) = get_project(&headers)?;
     let pool = get_pool(&project_id).await?;
 
     let claims = verify_access_token(&bearer, &project_id)
@@ -467,7 +467,7 @@ pub async fn handler_logout(
 
 pub async fn handler_get_me(headers: HeaderMap) -> Result<Json<Value>, AxiomError> {
     let bearer = get_bearer(&headers)?;
-    let (project_id, _) = get_project(&headers)?;
+    let (project_id, _, _) = get_project(&headers)?;
     let claims = verify_access_token(&bearer, &project_id)
         .await
         .map_err(|e| AxiomError::new("AUTH_TOKEN_INVALID", &e, StatusCode::UNAUTHORIZED))?;
@@ -494,7 +494,7 @@ pub async fn handler_update_me(
     Json(body): Json<UpdateUserRequest>,
 ) -> Result<Json<Value>, AxiomError> {
     let bearer = get_bearer(&headers)?;
-    let (project_id, config) = get_project(&headers)?;
+    let (project_id, config, _) = get_project(&headers)?;
     let claims = verify_access_token(&bearer, &project_id)
         .await
         .map_err(|e| AxiomError::new("AUTH_TOKEN_INVALID", &e, StatusCode::UNAUTHORIZED))?;
@@ -543,7 +543,7 @@ pub async fn handler_update_me(
 
 pub async fn handler_get_sessions(headers: HeaderMap) -> Result<Json<Value>, AxiomError> {
     let bearer = get_bearer(&headers)?;
-    let (project_id, _) = get_project(&headers)?;
+    let (project_id, _, _) = get_project(&headers)?;
     let claims = verify_access_token(&bearer, &project_id)
         .await
         .map_err(|e| AxiomError::new("AUTH_TOKEN_INVALID", &e, StatusCode::UNAUTHORIZED))?;
@@ -579,7 +579,7 @@ pub async fn handler_get_sessions(headers: HeaderMap) -> Result<Json<Value>, Axi
 
 pub async fn handler_revoke_all_sessions(headers: HeaderMap) -> Result<Json<Value>, AxiomError> {
     let bearer = get_bearer(&headers)?;
-    let (project_id, _) = get_project(&headers)?;
+    let (project_id, _, _) = get_project(&headers)?;
     let claims = verify_access_token(&bearer, &project_id)
         .await
         .map_err(|e| AxiomError::new("AUTH_TOKEN_INVALID", &e, StatusCode::UNAUTHORIZED))?;
@@ -602,7 +602,7 @@ pub async fn handler_verify_email(
     headers: HeaderMap,
     Json(body): Json<VerifyEmailRequest>,
 ) -> Result<Json<Value>, AxiomError> {
-    let (project_id, _) = get_project(&headers)?;
+    let (project_id, _, _) = get_project(&headers)?;
     let pool = get_pool(&project_id).await?;
     let token_hash = sha256_hex(&body.token);
 
@@ -638,7 +638,7 @@ pub async fn handler_forgot_password(
     headers: HeaderMap,
     Json(body): Json<ForgotPasswordRequest>,
 ) -> Result<Json<Value>, AxiomError> {
-    let (project_id, config) = get_project(&headers)?;
+    let (project_id, config, _) = get_project(&headers)?;
     let pool = get_pool(&project_id).await?;
 
     // Always return ok to prevent email enumeration
@@ -663,7 +663,7 @@ pub async fn handler_reset_password(
     headers: HeaderMap,
     Json(body): Json<ResetPasswordRequest>,
 ) -> Result<Json<Value>, AxiomError> {
-    let (project_id, config) = get_project(&headers)?;
+    let (project_id, config, _) = get_project(&headers)?;
     let pool = get_pool(&project_id).await?;
     let token_hash = sha256_hex(&body.token);
 
@@ -717,11 +717,14 @@ pub async fn admin_list_users(
     headers: HeaderMap,
     Query(params): Query<HashMap<String, String>>,
 ) -> Result<Json<Value>, AxiomError> {
-    let bearer = get_bearer(&headers)?;
-    let (project_id, _) = get_project(&headers)?;
-    verify_access_token(&bearer, &project_id)
-        .await
-        .map_err(|e| AxiomError::new("AUTH_TOKEN_INVALID", &e, StatusCode::UNAUTHORIZED))?;
+    let (project_id, _, is_admin) = get_project(&headers)?;
+    if !is_admin {
+        return Err(AxiomError::new(
+            "AUTH_FORBIDDEN",
+            "Admin privileges required",
+            StatusCode::FORBIDDEN,
+        ));
+    }
 
     let pool = get_pool(&project_id).await?;
     let limit = params
@@ -769,11 +772,14 @@ pub async fn admin_delete_user(
     headers: HeaderMap,
     Path(uid): Path<String>,
 ) -> Result<Json<Value>, AxiomError> {
-    let bearer = get_bearer(&headers)?;
-    let (project_id, _) = get_project(&headers)?;
-    verify_access_token(&bearer, &project_id)
-        .await
-        .map_err(|e| AxiomError::new("AUTH_TOKEN_INVALID", &e, StatusCode::UNAUTHORIZED))?;
+    let (project_id, _, is_admin) = get_project(&headers)?;
+    if !is_admin {
+        return Err(AxiomError::new(
+            "AUTH_FORBIDDEN",
+            "Admin privileges required",
+            StatusCode::FORBIDDEN,
+        ));
+    }
 
     let pool = get_pool(&project_id).await?;
     sqlx::query("DELETE FROM users WHERE uid = ?")
@@ -795,11 +801,14 @@ pub async fn admin_audit_log(
     headers: HeaderMap,
     Query(params): Query<HashMap<String, String>>,
 ) -> Result<Json<Value>, AxiomError> {
-    let bearer = get_bearer(&headers)?;
-    let (project_id, _) = get_project(&headers)?;
-    verify_access_token(&bearer, &project_id)
-        .await
-        .map_err(|e| AxiomError::new("AUTH_TOKEN_INVALID", &e, StatusCode::UNAUTHORIZED))?;
+    let (project_id, _, is_admin) = get_project(&headers)?;
+    if !is_admin {
+        return Err(AxiomError::new(
+            "AUTH_FORBIDDEN",
+            "Admin privileges required",
+            StatusCode::FORBIDDEN,
+        ));
+    }
 
     let pool = get_pool(&project_id).await?;
     let limit = params
@@ -856,7 +865,7 @@ pub async fn handler_verify_email_get(
 // ─────────────────────────────────────────────────────────────────────────────
 
 pub async fn handler_anonymous_login(headers: HeaderMap) -> Result<Json<Value>, AxiomError> {
-    let (project_id, config) = get_project(&headers)?;
+    let (project_id, config, _) = get_project(&headers)?;
     let pool = get_pool(&project_id).await?;
     let ip = get_ip(&headers);
     let ua = get_ua(&headers);
@@ -889,7 +898,7 @@ pub async fn handler_anonymous_upgrade(
     Json(body): Json<AnonymousUpgradeRequest>,
 ) -> Result<Json<Value>, AxiomError> {
     let bearer = get_bearer(&headers)?;
-    let (project_id, config) = get_project(&headers)?;
+    let (project_id, config, _) = get_project(&headers)?;
     let pool = get_pool(&project_id).await?;
     let ip = get_ip(&headers);
     let ua = get_ua(&headers);
@@ -958,7 +967,7 @@ pub async fn handler_anonymous_upgrade(
 
 pub async fn handler_totp_enroll(headers: HeaderMap) -> Result<Json<Value>, AxiomError> {
     let bearer = get_bearer(&headers)?;
-    let (project_id, config) = get_project(&headers)?;
+    let (project_id, config, _) = get_project(&headers)?;
     let claims = verify_access_token(&bearer, &project_id)
         .await
         .map_err(|e| AxiomError::new("AUTH_TOKEN_INVALID", &e, StatusCode::UNAUTHORIZED))?;
@@ -1016,7 +1025,7 @@ pub async fn handler_totp_confirm(
     Json(body): Json<TotpConfirmRequest>,
 ) -> Result<Json<Value>, AxiomError> {
     let bearer = get_bearer(&headers)?;
-    let (project_id, _) = get_project(&headers)?;
+    let (project_id, _, _) = get_project(&headers)?;
     let claims = verify_access_token(&bearer, &project_id)
         .await
         .map_err(|e| AxiomError::new("AUTH_TOKEN_INVALID", &e, StatusCode::UNAUTHORIZED))?;
@@ -1081,7 +1090,7 @@ pub async fn handler_totp_verify(
     headers: HeaderMap,
     Json(body): Json<TotpVerifyRequest>,
 ) -> Result<Json<Value>, AxiomError> {
-    let (project_id, config) = get_project(&headers)?;
+    let (project_id, config, _) = get_project(&headers)?;
     let pool = get_pool(&project_id).await?;
     let ip = get_ip(&headers);
     let ua = get_ua(&headers);
@@ -1162,7 +1171,7 @@ pub async fn handler_totp_disable(
     Json(body): Json<TotpDisableRequest>,
 ) -> Result<Json<Value>, AxiomError> {
     let bearer = get_bearer(&headers)?;
-    let (project_id, _) = get_project(&headers)?;
+    let (project_id, _, _) = get_project(&headers)?;
     let claims = verify_access_token(&bearer, &project_id)
         .await
         .map_err(|e| AxiomError::new("AUTH_TOKEN_INVALID", &e, StatusCode::UNAUTHORIZED))?;

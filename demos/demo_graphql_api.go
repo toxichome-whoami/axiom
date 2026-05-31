@@ -40,7 +40,7 @@ func RunGraphqlApi() {
 	}
 	createTableJSON, _ := json.Marshal(createTableQuery)
 	reqCreateTable, _ := http.NewRequest("POST", fmt.Sprintf("%s/api/v1/db/localdb/query", baseURL), bytes.NewBuffer(createTableJSON))
-	reqCreateTable.Header.Set("Authorization", fmt.Sprintf("Bearer %s", encodedAuth))
+	reqCreateTable.Header.Set("X-Axiom-Key", encodedAuth)
 	reqCreateTable.Header.Set("Content-Type", "application/json")
 	client := &http.Client{}
 	_, _ = client.Do(reqCreateTable)
@@ -68,7 +68,7 @@ func RunGraphqlApi() {
 
 	authStr = fmt.Sprintf("%s:%s", keyName, keySecret)
 	encodedAuth = base64.StdEncoding.EncodeToString([]byte(authStr))
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", encodedAuth))
+	req.Header.Set("X-Axiom-Key", encodedAuth)
 	req.Header.Set("Content-Type", "application/json")
 
 	fmt.Println("📡 Sending GraphQL Query...")

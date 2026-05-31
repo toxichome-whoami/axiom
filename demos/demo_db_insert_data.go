@@ -76,7 +76,7 @@ func postData(endpoint string, DBInsertConfig DBInsertConfig, payload interface{
 
 	authStr := fmt.Sprintf("%s:%s", DBInsertConfig.KeyName, DBInsertConfig.KeySecret)
 	encodedAuth := base64.StdEncoding.EncodeToString([]byte(authStr))
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", encodedAuth))
+	req.Header.Set("X-Axiom-Key", encodedAuth)
 	req.Header.Set("Content-Type", "application/json")
 
 	client := &http.Client{}

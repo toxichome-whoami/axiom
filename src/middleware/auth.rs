@@ -24,10 +24,24 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, A
     }
 
     // 2. Extract token from header or query
-    let mut auth_value = req
+    let mut auth_value = None;
+
+    if let Some(key) = req
         .headers()
-        .get("Authorization")
-        .and_then(|h| h.to_str().ok().map(|s| s.to_string()));
+        .get("X-Axiom-Key")
+        .or_else(|| req.headers().get("X-Api-Key"))
+    {
+        if let Ok(key_str) = key.to_str() {
+            auth_value = Some(format!("Bearer {}", key_str));
+        }
+    }
+
+    if auth_value.is_none() {
+        auth_value = req
+            .headers()
+            .get("Authorization")
+            .and_then(|h| h.to_str().ok().map(|s| s.to_string()));
+    }
 
     if auth_value.is_none() {
         if let Some(query) = req.uri().query() {
@@ -45,44 +59,39 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, A
         if auth_value.starts_with("Bearer ") {
             let raw_token = &auth_value[7..];
 
-            // Auto-detect and decode Base64 tokens from legacy demo scripts
-            let decoded_token = if !raw_token.contains(':') && raw_token.len() > 30 {
-                use base64::prelude::*;
-                BASE64_STANDARD
-                    .decode(raw_token)
-                    .ok()
-                    .and_then(|d| String::from_utf8(d).ok())
-            } else {
-                None
-            };
+            use base64::prelude::*;
+            let decoded_str = BASE64_STANDARD
+                .decode(raw_token)
+                .ok()
+                .and_then(|d| String::from_utf8(d).ok());
 
-            let token = decoded_token.as_deref().unwrap_or(raw_token);
+            if let Some(decoded) = decoded_str {
+                if let Some((key_name, key_secret)) = decoded.split_once(':') {
+                    let config = req
+                        .extensions()
+                        .get::<std::sync::Arc<crate::config::schema::AxiomConfig>>()
+                        .cloned()
+                        .unwrap_or_else(|| ConfigManager::get());
 
-            let config = req
-                .extensions()
-                .get::<std::sync::Arc<crate::config::schema::AxiomConfig>>()
-                .cloned()
-                .unwrap_or_else(|| ConfigManager::get());
-            // Check if the token matches any API key's secret or name:secret format
-            for (key_name, key_cfg) in &config.api_key {
-                let is_match =
-                    token == key_cfg.secret || token == format!("{}:{}", key_name, key_cfg.secret);
-                if is_match {
-                    let ctx = AuthContext {
-                        api_key_name: key_name.clone(),
-                        mode: key_cfg.mode.clone(),
-                        db_scope: key_cfg.db_scope.clone(),
-                        fs_scope: key_cfg.fs_scope.clone(),
-                        feature_scope: key_cfg.feature_scope.clone(),
-                        rate_limit_override: key_cfg.rate_limit_override as u32,
-                        full_admin: key_cfg.full_admin,
-                    };
-                    req.extensions_mut().insert(ctx);
-                    return Ok(next.run(req).await);
+                    if let Some(key_cfg) = config.api_key.get(key_name) {
+                        if key_cfg.secret == key_secret {
+                            let ctx = AuthContext {
+                                api_key_name: key_name.to_string(),
+                                mode: key_cfg.mode.clone(),
+                                db_scope: key_cfg.db_scope.clone(),
+                                fs_scope: key_cfg.fs_scope.clone(),
+                                feature_scope: key_cfg.feature_scope.clone(),
+                                rate_limit_override: key_cfg.rate_limit_override as u32,
+                                full_admin: key_cfg.full_admin,
+                            };
+                            req.extensions_mut().insert(ctx);
+                            return Ok(next.run(req).await);
+                        }
+                    }
                 }
             }
 
-            let (is_key_banned, reason) = BanList::is_key_banned(token);
+            let (is_key_banned, reason) = BanList::is_key_banned(raw_token);
             if is_key_banned {
                 return Err(AxiomError::new(
                     "AUTH_INVALID_KEY",

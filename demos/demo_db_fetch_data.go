@@ -71,7 +71,7 @@ func fetchFromAPI(endpoint string, DBFetchConfig DBFetchConfig) ([]byte, error) 
 	// Generate Basic Auth token (base64)
 	authStr := fmt.Sprintf("%s:%s", DBFetchConfig.KeyName, DBFetchConfig.KeySecret)
 	encodedAuth := base64.StdEncoding.EncodeToString([]byte(authStr))
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", encodedAuth))
+	req.Header.Set("X-Axiom-Key", encodedAuth)
 	req.Header.Set("Content-Type", "application/json")
 
 	client := &http.Client{}

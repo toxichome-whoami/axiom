@@ -67,7 +67,7 @@ func dropTable(endpoint string, DBDropConfig DBDropConfig) ([]byte, error) {
 
 	authStr := fmt.Sprintf("%s:%s", DBDropConfig.KeyName, DBDropConfig.KeySecret)
 	encodedAuth := base64.StdEncoding.EncodeToString([]byte(authStr))
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", encodedAuth))
+	req.Header.Set("X-Axiom-Key", encodedAuth)
 	req.Header.Set("Content-Type", "application/json")
 
 	client := &http.Client{}

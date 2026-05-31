@@ -48,7 +48,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         grpc::server::start_grpc_server(grpc_port).await;
     });
 
-    println!("Axiom Native Core running on {}", addr);
+    println!("Axiom Native Core running on http://{}", addr);
     axum::serve(listener, app).await?;
 
     Ok(())

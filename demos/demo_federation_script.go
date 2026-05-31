@@ -38,7 +38,7 @@ func RunFederationTest() {
 
 	authStr := fmt.Sprintf("%s:%s", keyName, keySecret)
 	encodedAuth := base64.StdEncoding.EncodeToString([]byte(authStr))
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", encodedAuth))
+	req.Header.Set("X-Axiom-Key", encodedAuth)
 	req.Header.Set("Content-Type", "application/json")
 
 	fmt.Println("🌍 Querying Federation Status...")

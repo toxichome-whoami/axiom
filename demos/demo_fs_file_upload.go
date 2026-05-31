@@ -54,7 +54,7 @@ func RunFsFileUpload() {
 
 	authStr := fmt.Sprintf("%s:%s", keyName, keySecret)
 	encodedAuth := base64.StdEncoding.EncodeToString([]byte(authStr))
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", encodedAuth))
+	req.Header.Set("X-Axiom-Key", encodedAuth)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
 	client := &http.Client{}

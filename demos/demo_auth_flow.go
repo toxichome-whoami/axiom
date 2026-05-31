@@ -62,7 +62,7 @@ func doRequest(method, endpoint string, AuthConfig AuthConfig, payload interface
 	if token != "" {
 		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
 	} else {
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", encodedAuth))
+		req.Header.Set("X-Axiom-Key", encodedAuth)
 	}
 	req.Header.Set("Content-Type", "application/json")
 

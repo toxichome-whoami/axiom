@@ -15,7 +15,7 @@ All endpoints (except `/` and `/ready`) require Bearer token authentication.
 
 **Format:**
 ```
-Authorization: Bearer base64(<key_name>:<secret>)
+X-Axiom-Key: base64(<key_name>:<secret>)
 ```
 
 **cURL Example:**
@@ -24,7 +24,7 @@ Authorization: Bearer base64(<key_name>:<secret>)
 # TOKEN=$(echo -n "admin:your_secret_here" | base64)
 
 curl -X GET "http://localhost:4500/api/v1/db/databases" \
-     -H "Authorization: Bearer $TOKEN"
+     -H "X-Axiom-Key: $TOKEN"
 ```
 
 ---
@@ -45,13 +45,13 @@ curl -X GET "http://localhost:4500/ready"
 ### 3. Deep Health Check
 ```bash
 curl -X GET "http://localhost:4500/health" \
-     -H "Authorization: Bearer <TOKEN>"
+     -H "X-Axiom-Key: <TOKEN>"
 ```
 
 ### 4. Metrics (Prometheus)
 ```bash
 curl -X GET "http://localhost:4500/metrics" \
-     -H "Authorization: Bearer <TOKEN>"
+     -H "X-Axiom-Key: <TOKEN>"
 ```
 
 ### 5. OpenAPI JSON Spec
@@ -66,14 +66,14 @@ curl -X GET "http://localhost:4500/api-docs/openapi.json"
 ### 1. List Databases
 ```bash
 curl -X GET "http://localhost:4500/api/v1/db/databases" \
-     -H "Authorization: Bearer <TOKEN>"
+     -H "X-Axiom-Key: <TOKEN>"
 ```
 Returns all databases the key has access to with connection status and table count. Health checks are cached for 5 seconds.
 
 ### 2. List Tables (Paginated)
 ```bash
 curl -X GET "http://localhost:4500/api/v1/db/main_db/tables?limit=50&offset=0" \
-     -H "Authorization: Bearer <TOKEN>"
+     -H "X-Axiom-Key: <TOKEN>"
 ```
 **Parameters:**
 - `limit` — Max tables per page (default 50, max 500)
@@ -109,7 +109,7 @@ curl -X GET "http://localhost:4500/api/v1/db/main_db/tables?limit=50&offset=0" \
 
 ```bash
 curl -X POST "http://localhost:4500/api/v1/db/main_db/query" \
-     -H "Authorization: Bearer <TOKEN>" \
+     -H "X-Axiom-Key: <TOKEN>" \
      -H "Content-Type: application/json" \
      -d '{
            "sql": "SELECT * FROM users WHERE id = :id",
@@ -121,7 +121,7 @@ curl -X POST "http://localhost:4500/api/v1/db/main_db/query" \
 ```bash
 # Basic cursor pagination (ultra-fast for massive tables)
 curl -G "http://localhost:4500/api/v1/db/main_db/users/rows" \
-     -H "Authorization: Bearer <TOKEN>" \
+     -H "X-Axiom-Key: <TOKEN>" \
      --data-urlencode "limit=50" \
      --data-urlencode "sort=id" \
      --data-urlencode "order=desc" \
@@ -130,7 +130,7 @@ curl -G "http://localhost:4500/api/v1/db/main_db/users/rows" \
 
 # Next page using cursor
 curl -G "http://localhost:4500/api/v1/db/main_db/users/rows" \
-     -H "Authorization: Bearer <TOKEN>" \
+     -H "X-Axiom-Key: <TOKEN>" \
      --data-urlencode "limit=50" \
      --data-urlencode "sort=id" \
      --data-urlencode "cursor=eyJ2IjogNDV9"
@@ -184,7 +184,7 @@ curl -G "http://localhost:4500/api/v1/db/main_db/users/rows" \
 ### 5. Insert Rows
 ```bash
 curl -X POST "http://localhost:4500/api/v1/db/main_db/users/rows" \
-     -H "Authorization: Bearer <TOKEN>" \
+     -H "X-Axiom-Key: <TOKEN>" \
      -H "Content-Type: application/json" \
      -d '{
            "rows": [{"name": "Alice", "active": true}]
@@ -194,7 +194,7 @@ curl -X POST "http://localhost:4500/api/v1/db/main_db/users/rows" \
 ### 6. Update Rows
 ```bash
 curl -X PATCH "http://localhost:4500/api/v1/db/main_db/users/rows" \
-     -H "Authorization: Bearer <TOKEN>" \
+     -H "X-Axiom-Key: <TOKEN>" \
      -H "Content-Type: application/json" \
      -d '{
            "filter": {"id": 42},
@@ -205,7 +205,7 @@ curl -X PATCH "http://localhost:4500/api/v1/db/main_db/users/rows" \
 ### 7. Delete Rows
 ```bash
 curl -X DELETE "http://localhost:4500/api/v1/db/main_db/users/rows" \
-     -H "Authorization: Bearer <TOKEN>" \
+     -H "X-Axiom-Key: <TOKEN>" \
      -H "Content-Type: application/json" \
      -d '{
            "filter": {"id": 42}
@@ -219,7 +219,7 @@ curl -X DELETE "http://localhost:4500/api/v1/db/main_db/users/rows" \
 ### 1. List Storages
 ```bash
 curl -X GET "http://localhost:4500/api/v1/fs/storages" \
-     -H "Authorization: Bearer <TOKEN>"
+     -H "X-Axiom-Key: <TOKEN>"
 ```
 **Response:**
 ```json
@@ -250,15 +250,15 @@ curl -X GET "http://localhost:4500/api/v1/fs/storages" \
 ```bash
 # Flat listing (default)
 curl -X GET "http://localhost:4500/api/v1/fs/local_fs/list?path=/subfolder&limit=50" \
-     -H "Authorization: Bearer <TOKEN>"
+     -H "X-Axiom-Key: <TOKEN>"
 
 # Recursive listing (all subdirectories)
 curl -X GET "http://localhost:4500/api/v1/fs/local_fs/list?path=/&recursive=true&limit=100" \
-     -H "Authorization: Bearer <TOKEN>"
+     -H "X-Axiom-Key: <TOKEN>"
 
 # Pagination next page
 curl -X GET "http://localhost:4500/api/v1/fs/local_fs/list?path=/&limit=100&continuation_token=ZmlsZV8xMDAubXA0" \
-     -H "Authorization: Bearer <TOKEN>"
+     -H "X-Axiom-Key: <TOKEN>"
 ```
 
 **Parameters:**
@@ -297,37 +297,37 @@ curl -X GET "http://localhost:4500/api/v1/fs/local_fs/list?path=/&limit=100&cont
 ```bash
 # Inline view (browser renders it directly)
 curl -X GET "http://localhost:4500/api/v1/fs/local_fs/download?path=/image.png&inline=true" \
-     -H "Authorization: Bearer <TOKEN>"
+     -H "X-Axiom-Key: <TOKEN>"
 
 # Resize image — aspect-ratio preserved (contain mode)
 curl -X GET "http://localhost:4500/api/v1/fs/local_fs/download?path=/photo.jpg&width=400" \
-     -H "Authorization: Bearer <TOKEN>" -o thumb.jpg
+     -H "X-Axiom-Key: <TOKEN>" -o thumb.jpg
 
 # Exact crop thumbnail (cover mode — crops center)
 curl -X GET "http://localhost:4500/api/v1/fs/local_fs/download?path=/photo.jpg&width=300&height=300&fit=cover" \
-     -H "Authorization: Bearer <TOKEN>" -o avatar.jpg
+     -H "X-Axiom-Key: <TOKEN>" -o avatar.jpg
 
 # Convert to WebP with quality control
 curl -X GET "http://localhost:4500/api/v1/fs/local_fs/download?path=/photo.jpg&format=webp&quality=75" \
-     -H "Authorization: Bearer <TOKEN>" -o photo.webp
+     -H "X-Axiom-Key: <TOKEN>" -o photo.webp
 
 # Auto-negotiate best format (WebP/AVIF) based on browser Accept header
 curl -X GET "http://localhost:4500/api/v1/fs/local_fs/download?path=/photo.jpg&width=800" \
-     -H "Authorization: Bearer <TOKEN>" \
+     -H "X-Axiom-Key: <TOKEN>" \
      -H "Accept: image/avif,image/webp,image/jpeg"
 
 # Stream video with Range support (browser media players use this automatically)
 curl -X GET "http://localhost:4500/api/v1/fs/local_fs/download?path=/video.mp4" \
-     -H "Authorization: Bearer <TOKEN>" \
+     -H "X-Axiom-Key: <TOKEN>" \
      -H "Range: bytes=0-1048575" -o chunk.mp4
 
 # HEAD pre-flight (Safari/iOS use this before starting Range video streaming)
 curl -I "http://localhost:4500/api/v1/fs/local_fs/download?path=/video.mp4" \
-     -H "Authorization: Bearer <TOKEN>"
+     -H "X-Axiom-Key: <TOKEN>"
 
 # Download folder as ZIP archive
 curl -X GET "http://localhost:4500/api/v1/fs/local_fs/download?path=/reports_folder" \
-     -H "Authorization: Bearer <TOKEN>" -o reports.zip
+     -H "X-Axiom-Key: <TOKEN>" -o reports.zip
 ```
 
 **Image Transform Parameters:**
@@ -351,7 +351,7 @@ curl -X GET "http://localhost:4500/api/v1/fs/local_fs/download?path=/reports_fol
 ### 4. Direct Upload (Small Files)
 ```bash
 curl -X POST "http://localhost:4500/api/v1/fs/local_fs/upload" \
-     -H "Authorization: Bearer <TOKEN>" \
+     -H "X-Axiom-Key: <TOKEN>" \
      -F "action=direct" \
      -F "path=/uploads/file.txt" \
      -F "file=@/path/to/local/file.txt"
@@ -361,14 +361,14 @@ curl -X POST "http://localhost:4500/api/v1/fs/local_fs/upload" \
 ```bash
 # Step 1: Initiate
 curl -X POST "http://localhost:4500/api/v1/fs/local_fs/upload" \
-     -H "Authorization: Bearer <TOKEN>" \
+     -H "X-Axiom-Key: <TOKEN>" \
      -H "Content-Type: application/json" \
      -d '{"action":"initiate", "filename":"video.mp4", "path":"/uploads/video.mp4", "total_size":104857600, "checksum_sha256":"abc123..."}'
 # Note the `upload_id` returned
 
 # Step 2: Upload Chunks
 curl -X POST "http://localhost:4500/api/v1/fs/local_fs/upload" \
-     -H "Authorization: Bearer <TOKEN>" \
+     -H "X-Axiom-Key: <TOKEN>" \
      -F "action=chunk" \
      -F "upload_id=upl_xxx" \
      -F "chunk_index=0" \
@@ -377,7 +377,7 @@ curl -X POST "http://localhost:4500/api/v1/fs/local_fs/upload" \
 
 # Step 3: Finalize
 curl -X POST "http://localhost:4500/api/v1/fs/local_fs/upload" \
-     -H "Authorization: Bearer <TOKEN>" \
+     -H "X-Axiom-Key: <TOKEN>" \
      -H "Content-Type: application/json" \
      -d '{"action":"finalize", "upload_id":"upl_xxx"}'
 ```
@@ -392,7 +392,7 @@ All file actions are sent as `POST` requests to `/{alias}/action` with a JSON bo
 #### Rename / Move / Copy
 ```bash
 curl -X POST "http://localhost:4500/api/v1/fs/local_fs/action" \
-     -H "Authorization: Bearer <TOKEN>" \
+     -H "X-Axiom-Key: <TOKEN>" \
      -H "Content-Type: application/json" \
      -d '{
            "action": "rename",
@@ -410,7 +410,7 @@ curl -X POST "http://localhost:4500/api/v1/fs/local_fs/action" \
 #### Delete
 ```bash
 curl -X POST "http://localhost:4500/api/v1/fs/local_fs/action" \
-     -H "Authorization: Bearer <TOKEN>" \
+     -H "X-Axiom-Key: <TOKEN>" \
      -H "Content-Type: application/json" \
      -d '{"action": "delete", "source": "/unwanted.txt"}'
 ```
@@ -418,7 +418,7 @@ curl -X POST "http://localhost:4500/api/v1/fs/local_fs/action" \
 #### Create Directory
 ```bash
 curl -X POST "http://localhost:4500/api/v1/fs/local_fs/action" \
-     -H "Authorization: Bearer <TOKEN>" \
+     -H "X-Axiom-Key: <TOKEN>" \
      -H "Content-Type: application/json" \
      -d '{"action": "mkdir", "source": "/new_folder"}'
 ```
@@ -427,7 +427,7 @@ curl -X POST "http://localhost:4500/api/v1/fs/local_fs/action" \
 Returns detailed metadata: name, type, size, human-readable size, MIME type, timestamps, and item count for directories.
 ```bash
 curl -X POST "http://localhost:4500/api/v1/fs/local_fs/action" \
-     -H "Authorization: Bearer <TOKEN>" \
+     -H "X-Axiom-Key: <TOKEN>" \
      -H "Content-Type: application/json" \
      -d '{"action": "info", "source": "/reports/Q1.pdf"}'
 ```
@@ -454,7 +454,7 @@ curl -X POST "http://localhost:4500/api/v1/fs/local_fs/action" \
 Lightweight boolean check — does not transfer file data.
 ```bash
 curl -X POST "http://localhost:4500/api/v1/fs/local_fs/action" \
-     -H "Authorization: Bearer <TOKEN>" \
+     -H "X-Axiom-Key: <TOKEN>" \
      -H "Content-Type: application/json" \
      -d '{"action": "exists", "source": "/config/app.yml"}'
 ```
@@ -474,7 +474,7 @@ curl -X POST "http://localhost:4500/api/v1/fs/local_fs/action" \
 Delete multiple files/directories in a single request. Each item reports its own success/failure status.
 ```bash
 curl -X POST "http://localhost:4500/api/v1/fs/local_fs/action" \
-     -H "Authorization: Bearer <TOKEN>" \
+     -H "X-Axiom-Key: <TOKEN>" \
      -H "Content-Type: application/json" \
      -d '{
            "action": "bulk_delete",
@@ -500,7 +500,7 @@ curl -X POST "http://localhost:4500/api/v1/fs/local_fs/action" \
 Move multiple files/directories in a single request. Provide an `operations` array of `{source, target}` pairs.
 ```bash
 curl -X POST "http://localhost:4500/api/v1/fs/local_fs/action" \
-     -H "Authorization: Bearer <TOKEN>" \
+     -H "X-Axiom-Key: <TOKEN>" \
      -H "Content-Type: application/json" \
      -d '{
            "action": "bulk_move",
@@ -533,7 +533,7 @@ curl -X POST "http://localhost:4500/api/v1/fs/local_fs/action" \
 > [!NOTE]
 > Enable with `features.auth = true` in `config.toml`. Each API key acts as an **isolated auth project** — users, sessions, tokens, and templates for one key cannot be accessed from another.
 
-**Auth headers**: User-facing auth endpoints are accessed with your API key (`Authorization: Bearer base64(name:secret)`). After login, protected user endpoints use the returned Ed25519 JWT.
+**Auth headers**: User-facing auth endpoints are accessed with your API key (`X-Axiom-Key: base64(name:secret)`). After login, protected user endpoints use the returned Ed25519 JWT.
 
 The `{project_id}` is your API key name (as defined in `config.toml` under `[api_key.<name>]`).
 
@@ -555,7 +555,7 @@ curl -X GET "http://localhost:4500/api/v1/auth/my_project/.well-known/jwks.json"
 Create a new user with email and password.
 ```bash
 curl -X POST "http://localhost:4500/api/v1/auth/my_project/signup" \
-     -H "Authorization: Bearer <API_KEY_TOKEN>" \
+     -H "X-Axiom-Key: <API_KEY_TOKEN>" \
      -H "Content-Type: application/json" \
      -d '{"email": "user@example.com", "password": "SecurePassword123"}'
 ```
@@ -574,7 +574,7 @@ Authenticate with email and password.
 
 ```bash
 curl -X POST "http://localhost:4500/api/v1/auth/my_project/login" \
-     -H "Authorization: Bearer <API_KEY_TOKEN>" \
+     -H "X-Axiom-Key: <API_KEY_TOKEN>" \
      -H "Content-Type: application/json" \
      -d '{"email":"test@example.com", "password":"StrongPassword123!"}'
 ```
@@ -598,7 +598,7 @@ If TOTP is enrolled, the response includes `"totp_required": true` and a one-tim
 Exchange a valid refresh token for a new access token.
 ```bash
 curl -X POST "http://localhost:4500/api/v1/auth/my_project/refresh" \
-     -H "Authorization: Bearer <API_KEY_TOKEN>" \
+     -H "X-Axiom-Key: <API_KEY_TOKEN>" \
      -H "Content-Type: application/json" \
      -d '{"refresh_token": "rt_abc123"}'
 ```
@@ -607,6 +607,7 @@ curl -X POST "http://localhost:4500/api/v1/auth/my_project/refresh" \
 Revoke the current session's refresh token.
 ```bash
 curl -X POST "http://localhost:4500/api/v1/auth/my_project/logout" \
+     -H "X-Axiom-Key: <API_KEY_TOKEN>" \
      -H "Authorization: Bearer <USER_ACCESS_TOKEN>" \
      -H "Content-Type: application/json" \
      -d '{"refresh_token": "rt_abc123"}'
@@ -620,6 +621,7 @@ curl -X POST "http://localhost:4500/api/v1/auth/my_project/logout" \
 List all active sessions for the authenticated user.
 ```bash
 curl -X GET "http://localhost:4500/api/v1/auth/my_project/user/sessions" \
+     -H "X-Axiom-Key: <API_KEY_TOKEN>" \
      -H "Authorization: Bearer <USER_ACCESS_TOKEN>"
 ```
 
@@ -627,6 +629,7 @@ curl -X GET "http://localhost:4500/api/v1/auth/my_project/user/sessions" \
 Revoke a specific session by ID.
 ```bash
 curl -X DELETE "http://localhost:4500/api/v1/auth/my_project/user/sessions/sess_abc123" \
+     -H "X-Axiom-Key: <API_KEY_TOKEN>" \
      -H "Authorization: Bearer <USER_ACCESS_TOKEN>"
 ```
 
@@ -638,13 +641,14 @@ curl -X DELETE "http://localhost:4500/api/v1/auth/my_project/user/sessions/sess_
 Create a temporary anonymous session (requires `anonymous_auth = true` in config).
 ```bash
 curl -X POST "http://localhost:4500/api/v1/auth/my_project/anonymous" \
-     -H "Authorization: Bearer <API_KEY_TOKEN>"
+     -H "X-Axiom-Key: <API_KEY_TOKEN>"
 ```
 
 #### POST `/anonymous/upgrade`
 Convert an anonymous account to a permanent account with email and password.
 ```bash
 curl -X POST "http://localhost:4500/api/v1/auth/my_project/anonymous/upgrade" \
+     -H "X-Axiom-Key: <API_KEY_TOKEN>" \
      -H "Authorization: Bearer <USER_ACCESS_TOKEN>" \
      -H "Content-Type: application/json" \
      -d '{"email": "user@example.com", "password": "SecurePassword123"}'
@@ -658,6 +662,7 @@ curl -X POST "http://localhost:4500/api/v1/auth/my_project/anonymous/upgrade" \
 Request a new verification email to be sent.
 ```bash
 curl -X POST "http://localhost:4500/api/v1/auth/my_project/verify/email" \
+     -H "X-Axiom-Key: <API_KEY_TOKEN>" \
      -H "Authorization: Bearer <USER_ACCESS_TOKEN>"
 ```
 
@@ -671,6 +676,7 @@ curl -X GET "http://localhost:4500/api/v1/auth/my_project/verify?token=abc123"
 Verify an email address using a numeric OTP (used when `verification_method = "otp"`).
 ```bash
 curl -X POST "http://localhost:4500/api/v1/auth/my_project/verify/otp" \
+     -H "X-Axiom-Key: <API_KEY_TOKEN>" \
      -H "Authorization: Bearer <USER_ACCESS_TOKEN>" \
      -H "Content-Type: application/json" \
      -d '{"code": "482910"}'
@@ -680,6 +686,7 @@ curl -X POST "http://localhost:4500/api/v1/auth/my_project/verify/otp" \
 Manually trigger a new OTP to be sent to the user's email.
 ```bash
 curl -X POST "http://localhost:4500/api/v1/auth/my_project/otp/send" \
+     -H "X-Axiom-Key: <API_KEY_TOKEN>" \
      -H "Authorization: Bearer <USER_ACCESS_TOKEN>"
 ```
 
@@ -687,7 +694,7 @@ curl -X POST "http://localhost:4500/api/v1/auth/my_project/otp/send" \
 Re-send the verification email (subject to `resend_cooldown`).
 ```bash
 curl -X POST "http://localhost:4500/api/v1/auth/my_project/resend" \
-     -H "Authorization: Bearer <API_KEY_TOKEN>" \
+     -H "X-Axiom-Key: <API_KEY_TOKEN>" \
      -H "Content-Type: application/json" \
      -d '{"email": "user@example.com"}'
 ```
@@ -700,7 +707,7 @@ curl -X POST "http://localhost:4500/api/v1/auth/my_project/resend" \
 Send a magic login link to the user's email.
 ```bash
 curl -X POST "http://localhost:4500/api/v1/auth/my_project/magic-link" \
-     -H "Authorization: Bearer <API_KEY_TOKEN>" \
+     -H "X-Axiom-Key: <API_KEY_TOKEN>" \
      -H "Content-Type: application/json" \
      -d '{"email": "user@example.com"}'
 ```
@@ -709,7 +716,7 @@ curl -X POST "http://localhost:4500/api/v1/auth/my_project/magic-link" \
 Exchange a magic link token for a full session (access + refresh tokens).
 ```bash
 curl -X POST "http://localhost:4500/api/v1/auth/my_project/magic-link/verify" \
-     -H "Authorization: Bearer <API_KEY_TOKEN>" \
+     -H "X-Axiom-Key: <API_KEY_TOKEN>" \
      -H "Content-Type: application/json" \
      -d '{"token": "ml_abc123"}'
 ```
@@ -722,7 +729,7 @@ curl -X POST "http://localhost:4500/api/v1/auth/my_project/magic-link/verify" \
 Trigger a password reset email.
 ```bash
 curl -X POST "http://localhost:4500/api/v1/auth/my_project/password/forgot" \
-     -H "Authorization: Bearer <API_KEY_TOKEN>" \
+     -H "X-Axiom-Key: <API_KEY_TOKEN>" \
      -H "Content-Type: application/json" \
      -d '{"email": "user@example.com"}'
 ```
@@ -731,7 +738,7 @@ curl -X POST "http://localhost:4500/api/v1/auth/my_project/password/forgot" \
 Reset password using a token from the reset email.
 ```bash
 curl -X POST "http://localhost:4500/api/v1/auth/my_project/password/reset" \
-     -H "Authorization: Bearer <API_KEY_TOKEN>" \
+     -H "X-Axiom-Key: <API_KEY_TOKEN>" \
      -H "Content-Type: application/json" \
      -d '{"token": "rst_abc123", "new_password": "NewSecurePass456"}'
 ```
@@ -744,6 +751,7 @@ curl -X POST "http://localhost:4500/api/v1/auth/my_project/password/reset" \
 Begin TOTP enrollment. Returns a TOTP secret, QR code SVG, and provisioning URI.
 ```bash
 curl -X POST "http://localhost:4500/api/v1/auth/my_project/totp/enroll" \
+     -H "X-Axiom-Key: <API_KEY_TOKEN>" \
      -H "Authorization: Bearer <USER_ACCESS_TOKEN>"
 ```
 **Response:**
@@ -758,6 +766,7 @@ curl -X POST "http://localhost:4500/api/v1/auth/my_project/totp/enroll" \
 Confirm TOTP enrollment by providing the first valid code from the Authenticator app. Returns one-time backup codes.
 ```bash
 curl -X POST "http://localhost:4500/api/v1/auth/my_project/totp/confirm" \
+     -H "X-Axiom-Key: <API_KEY_TOKEN>" \
      -H "Authorization: Bearer <USER_ACCESS_TOKEN>" \
      -H "Content-Type: application/json" \
      -d '{"code": "123456"}'
@@ -767,7 +776,7 @@ curl -X POST "http://localhost:4500/api/v1/auth/my_project/totp/confirm" \
 Provide a TOTP code to complete a login that had `"totp_required": true`.
 ```bash
 curl -X POST "http://localhost:4500/api/v1/auth/my_project/totp/verify" \
-     -H "Authorization: Bearer <API_KEY_TOKEN>" \
+     -H "X-Axiom-Key: <API_KEY_TOKEN>" \
      -H "Content-Type: application/json" \
      -d '{"session_token": "sess_tmp_abc", "code": "123456"}'
 ```
@@ -776,6 +785,7 @@ curl -X POST "http://localhost:4500/api/v1/auth/my_project/totp/verify" \
 Disable TOTP for the authenticated user (requires current password confirmation).
 ```bash
 curl -X POST "http://localhost:4500/api/v1/auth/my_project/totp/disable" \
+     -H "X-Axiom-Key: <API_KEY_TOKEN>" \
      -H "Authorization: Bearer <USER_ACCESS_TOKEN>" \
      -H "Content-Type: application/json" \
      -d '{"password": "CurrentPassword123"}'
@@ -785,7 +795,7 @@ curl -X POST "http://localhost:4500/api/v1/auth/my_project/totp/disable" \
 Use one of the one-time backup codes to authenticate when the Authenticator app is unavailable.
 ```bash
 curl -X POST "http://localhost:4500/api/v1/auth/my_project/totp/backup/verify" \
-     -H "Authorization: Bearer <API_KEY_TOKEN>" \
+     -H "X-Axiom-Key: <API_KEY_TOKEN>" \
      -H "Content-Type: application/json" \
      -d '{"session_token": "sess_tmp_abc", "backup_code": "ABCD-EFGH"}'
 ```
@@ -794,6 +804,7 @@ curl -X POST "http://localhost:4500/api/v1/auth/my_project/totp/backup/verify" \
 Regenerate a fresh set of backup codes (invalidates all previous ones).
 ```bash
 curl -X GET "http://localhost:4500/api/v1/auth/my_project/totp/backup/regenerate" \
+     -H "X-Axiom-Key: <API_KEY_TOKEN>" \
      -H "Authorization: Bearer <USER_ACCESS_TOKEN>"
 ```
 
@@ -805,6 +816,7 @@ curl -X GET "http://localhost:4500/api/v1/auth/my_project/totp/backup/regenerate
 Get the currently authenticated user's profile.
 ```bash
 curl -X GET "http://localhost:4500/api/v1/auth/my_project/user" \
+     -H "X-Axiom-Key: <API_KEY_TOKEN>" \
      -H "Authorization: Bearer <USER_ACCESS_TOKEN>"
 ```
 **Response:**
@@ -820,6 +832,7 @@ curl -X GET "http://localhost:4500/api/v1/auth/my_project/user" \
 Update profile metadata (display name, custom fields, etc.).
 ```bash
 curl -X PATCH "http://localhost:4500/api/v1/auth/my_project/user" \
+     -H "X-Axiom-Key: <API_KEY_TOKEN>" \
      -H "Authorization: Bearer <USER_ACCESS_TOKEN>" \
      -H "Content-Type: application/json" \
      -d '{"metadata": {"display_name": "Alice"}}'
@@ -829,6 +842,7 @@ curl -X PATCH "http://localhost:4500/api/v1/auth/my_project/user" \
 Permanently delete the authenticated user's account (requires password confirmation).
 ```bash
 curl -X DELETE "http://localhost:4500/api/v1/auth/my_project/user" \
+     -H "X-Axiom-Key: <API_KEY_TOKEN>" \
      -H "Authorization: Bearer <USER_ACCESS_TOKEN>" \
      -H "Content-Type: application/json" \
      -d '{"password": "CurrentPassword123"}'
@@ -838,6 +852,7 @@ curl -X DELETE "http://localhost:4500/api/v1/auth/my_project/user" \
 Request an email address change. Sends a confirmation link to the new address.
 ```bash
 curl -X POST "http://localhost:4500/api/v1/auth/my_project/user/email" \
+     -H "X-Axiom-Key: <API_KEY_TOKEN>" \
      -H "Authorization: Bearer <USER_ACCESS_TOKEN>" \
      -H "Content-Type: application/json" \
      -d '{"new_email": "newemail@example.com", "password": "CurrentPassword123"}'
@@ -847,7 +862,7 @@ curl -X POST "http://localhost:4500/api/v1/auth/my_project/user/email" \
 Confirm the new email address using the token from the change email link.
 ```bash
 curl -X POST "http://localhost:4500/api/v1/auth/my_project/user/email/confirm" \
-     -H "Authorization: Bearer <API_KEY_TOKEN>" \
+     -H "X-Axiom-Key: <API_KEY_TOKEN>" \
      -H "Content-Type: application/json" \
      -d '{"token": "ec_abc123"}'
 ```
@@ -856,6 +871,7 @@ curl -X POST "http://localhost:4500/api/v1/auth/my_project/user/email/confirm" \
 Change the authenticated user's password.
 ```bash
 curl -X POST "http://localhost:4500/api/v1/auth/my_project/user/password" \
+     -H "X-Axiom-Key: <API_KEY_TOKEN>" \
      -H "Authorization: Bearer <USER_ACCESS_TOKEN>" \
      -H "Content-Type: application/json" \
      -d '{"current_password": "OldPass123", "new_password": "NewPass456"}'
@@ -872,21 +888,21 @@ curl -X POST "http://localhost:4500/api/v1/auth/my_project/user/password" \
 List all users in the project (paginated).
 ```bash
 curl -X GET "http://localhost:4500/api/v1/auth/my_project/admin/users?limit=50&offset=0" \
-     -H "Authorization: Bearer <ADMIN_TOKEN>"
+     -H "X-Axiom-Key: <ADMIN_TOKEN>"
 ```
 
 #### GET `/admin/users/{uid}`
 Get a specific user by UID.
 ```bash
 curl -X GET "http://localhost:4500/api/v1/auth/my_project/admin/users/user_uid" \
-     -H "Authorization: Bearer <ADMIN_TOKEN>"
+     -H "X-Axiom-Key: <ADMIN_TOKEN>"
 ```
 
 #### PATCH `/admin/users/{uid}`
 Update a user's properties (disable/enable account, update metadata, set role, etc.).
 ```bash
 curl -X PATCH "http://localhost:4500/api/v1/auth/my_project/admin/users/user_uid" \
-     -H "Authorization: Bearer <ADMIN_TOKEN>" \
+     -H "X-Axiom-Key: <ADMIN_TOKEN>" \
      -H "Content-Type: application/json" \
      -d '{"disabled": true}'
 ```
@@ -895,28 +911,28 @@ curl -X PATCH "http://localhost:4500/api/v1/auth/my_project/admin/users/user_uid
 Permanently delete a user by UID.
 ```bash
 curl -X DELETE "http://localhost:4500/api/v1/auth/my_project/admin/users/user_uid" \
-     -H "Authorization: Bearer <ADMIN_TOKEN>"
+     -H "X-Axiom-Key: <ADMIN_TOKEN>"
 ```
 
 #### POST `/admin/users/{uid}/sessions/revoke`
 Revoke all active sessions for a specific user (force sign-out everywhere).
 ```bash
 curl -X POST "http://localhost:4500/api/v1/auth/my_project/admin/users/user_uid/sessions/revoke" \
-     -H "Authorization: Bearer <ADMIN_TOKEN>"
+     -H "X-Axiom-Key: <ADMIN_TOKEN>"
 ```
 
 #### GET `/admin/templates`
 List all custom email HTML templates stored for this project.
 ```bash
 curl -X GET "http://localhost:4500/api/v1/auth/my_project/admin/templates" \
-     -H "Authorization: Bearer <ADMIN_TOKEN>"
+     -H "X-Axiom-Key: <ADMIN_TOKEN>"
 ```
 
 #### PUT `/admin/templates/{type_name}`
 Create or replace a custom HTML email template. Valid `type_name` values: `email_verify`, `password_reset`, `magic_link`, `email_change`.
 ```bash
 curl -X PUT "http://localhost:4500/api/v1/auth/my_project/admin/templates/magic_link" \
-     -H "Authorization: Bearer <ADMIN_TOKEN>" \
+     -H "X-Axiom-Key: <ADMIN_TOKEN>" \
      -H "Content-Type: application/json" \
      -d '{"subject": "Your magic link", "html_body": "<p>Click <a href=\"{{.Link}}\">here</a> to login.</p>"}'
 ```
@@ -925,14 +941,14 @@ curl -X PUT "http://localhost:4500/api/v1/auth/my_project/admin/templates/magic_
 Delete a custom email template (reverts to built-in default).
 ```bash
 curl -X DELETE "http://localhost:4500/api/v1/auth/my_project/admin/templates/magic_link" \
-     -H "Authorization: Bearer <ADMIN_TOKEN>"
+     -H "X-Axiom-Key: <ADMIN_TOKEN>"
 ```
 
 #### POST `/admin/users/import`
 Bulk import users from a JSON payload. Returns a `job_id` for async status polling.
 ```bash
 curl -X POST "http://localhost:4500/api/v1/auth/my_project/admin/users/import" \
-     -H "Authorization: Bearer <ADMIN_TOKEN>" \
+     -H "X-Axiom-Key: <ADMIN_TOKEN>" \
      -H "Content-Type: application/json" \
      -d '{"users": [{"email": "user@example.com", "password_hash": "argon2id_hash"}]}'
 ```
@@ -941,21 +957,21 @@ curl -X POST "http://localhost:4500/api/v1/auth/my_project/admin/users/import" \
 Poll the status of a bulk import job.
 ```bash
 curl -X GET "http://localhost:4500/api/v1/auth/my_project/admin/users/import/job_abc123" \
-     -H "Authorization: Bearer <ADMIN_TOKEN>"
+     -H "X-Axiom-Key: <ADMIN_TOKEN>"
 ```
 
 #### GET `/admin/users/export`
 Export all users as JSON.
 ```bash
 curl -X GET "http://localhost:4500/api/v1/auth/my_project/admin/users/export" \
-     -H "Authorization: Bearer <ADMIN_TOKEN>"
+     -H "X-Axiom-Key: <ADMIN_TOKEN>"
 ```
 
 #### GET `/admin/audit`
 Retrieve the audit log for this project (paginated).
 ```bash
 curl -X GET "http://localhost:4500/api/v1/auth/my_project/admin/audit?limit=100&offset=0" \
-     -H "Authorization: Bearer <ADMIN_TOKEN>"
+     -H "X-Axiom-Key: <ADMIN_TOKEN>"
 ```
 
 ---
@@ -985,7 +1001,7 @@ curl -X GET "http://localhost:4500/api/v1/auth/my_project/admin/audit?limit=100&
 ### 1. List Federated Servers
 ```bash
 curl -X GET "http://localhost:4500/api/v1/fed/servers" \
-     -H "Authorization: Bearer <TOKEN>"
+     -H "X-Axiom-Key: <TOKEN>"
 ```
 
 ---
@@ -999,7 +1015,7 @@ Unlike standard GraphQL servers (Strawberry, Graphene, Ariadne), Axiom's GraphQL
 
 **Authentication** is identical to the REST API:
 ```
-Authorization: Bearer base64(<key_name>:<secret>)
+X-Axiom-Key: base64(<key_name>:<secret>)
 ```
 
 ### Execute a SQL Query
@@ -1008,7 +1024,7 @@ Use the `execute` root field to run a validated SQL statement against any permit
 
 ```bash
 curl -X POST "http://localhost:4500/api/v1/graphql" \
-     -H "Authorization: Bearer <TOKEN>" \
+     -H "X-Axiom-Key: <TOKEN>" \
      -H "Content-Type: application/json" \
      -d '{
            "query": "{ execute(dbAlias: \"main_db\", sql: \"SELECT id, name FROM users WHERE active = 1\", params: {}) }"
@@ -1040,7 +1056,7 @@ You can query tables directly using standard GraphQL syntax without writing raw 
 
 ```bash
 curl -X POST "http://localhost:4500/api/v1/graphql" \
-     -H "Authorization: Bearer <TOKEN>" \
+     -H "X-Axiom-Key: <TOKEN>" \
      -H "Content-Type: application/json" \
      -d '{
            "query": "{ users(dbAlias: \"main_db\", limit: 10, offset: 0) { id name email } }"
@@ -1123,7 +1139,7 @@ Use the `databases` root field to return all database aliases the API key has ac
 
 ```bash
 curl -X POST "http://localhost:4500/api/v1/graphql" \
-     -H "Authorization: Bearer <TOKEN>" \
+     -H "X-Axiom-Key: <TOKEN>" \
      -H "Content-Type: application/json" \
      -d '{"query": "{ databases }"}'
 ```
@@ -1172,15 +1188,20 @@ Use WebSocket when you need **live event streaming** — DB mutations, file chan
 
 ### Connection and Authentication
 
-WebSocket upgrades happen over the same port as the REST API. Unlike HTTP, auth is done via the **first JSON message** (5-second timeout):
+WebSocket upgrades happen over the same port as the REST API. Because browser `WebSocket` APIs cannot send custom HTTP headers, authentication is done securely via a base64 encoded `?token=` query parameter (exactly like SSE). The connection is verified and rate-limited *before* the socket even opens.
+
+After connecting, you must also send a JSON authentication payload as your first message (5-second timeout) to formally register the client ID:
 
 ```javascript
-const ws = new WebSocket("ws://localhost:4500/api/v1/ws");
+// Token is base64(key_name:secret)
+const token = btoa("admin:your_secret_here");
+
+const ws = new WebSocket(`ws://localhost:4500/api/v1/ws?token=${token}`);
 
 ws.onopen = () => {
   ws.send(JSON.stringify({
     type: "auth",
-    token: btoa("admin:your_secret_here")  // base64(key_name:secret)
+    token: token
   }));
 };
 
@@ -1334,7 +1355,7 @@ The MCP API exposes Axiom's database and storage tools to AI models (like Claude
 1. **SSE Transport**: `GET /api/v1/mcp/sse`
 2. **RPC Messages**: `POST /api/v1/mcp/messages`
 
-Both endpoints require `Authorization: Bearer <TOKEN>` using standard Axiom API keys. AI requests are strictly governed by the key's native permissions (`mode`, `db_scope`, `fs_scope`, and rate limits).
+Both endpoints require `X-Axiom-Key: <TOKEN>` using standard Axiom API keys. AI requests are strictly governed by the key's native permissions (`mode`, `db_scope`, `fs_scope`, and rate limits).
 
 ### Available Tools (Functions)
 Once connected, the AI model gains access to the following bounded tools:

@@ -84,11 +84,9 @@ func loadConfig() Config {
 	apiUrl = strings.TrimRight(apiUrl, "/")
 
 	apiKey := env["API_KEY"]
-	// Decode old Python base64 key
-	if apiKey != "" && !strings.Contains(apiKey, ":") && len(apiKey) > 50 {
-		if decoded, err := base64.StdEncoding.DecodeString(apiKey); err == nil {
-			apiKey = string(decoded)
-		}
+	// If it's a plaintext name:secret pair, base64 encode it to match backend requirements
+	if strings.Contains(apiKey, ":") {
+		apiKey = base64.StdEncoding.EncodeToString([]byte(apiKey))
 	}
 
 	dbName := env["DB_NAME"]
@@ -156,7 +154,7 @@ func runBenchmarkTask(label, method, url string, payload interface{}, config Con
 	} else {
 		warmupReq, _ = http.NewRequest(method, url, nil)
 	}
-	warmupReq.Header.Set("Authorization", fmt.Sprintf("Bearer %s", config.APIKey))
+	warmupReq.Header.Set("X-Axiom-Key", config.APIKey)
 	if warmupResp, err := client.Do(warmupReq); err == nil {
 		io.Copy(io.Discard, warmupResp.Body)
 		warmupResp.Body.Close()
@@ -210,7 +208,7 @@ func runBenchmarkTask(label, method, url string, payload interface{}, config Con
 					}
 
 					if err == nil {
-						req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", config.APIKey))
+						req.Header.Set("X-Axiom-Key", config.APIKey)
 						resp, err = client.Do(req)
 						if err == nil {
 							break // Success!

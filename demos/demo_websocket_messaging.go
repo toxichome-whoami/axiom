@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"net/http"
 	"net/url"
 	"os"
 	"os/signal"
@@ -51,18 +50,16 @@ func RunWebsocketMessaging() {
 	authStr := fmt.Sprintf("%s:%s", keyName, keySecret)
 	encodedAuth := base64.StdEncoding.EncodeToString([]byte(authStr))
 
-	wsEndpoint := fmt.Sprintf("%s/api/v1/ws", wsURL)
+	encodedAuthURL := url.QueryEscape(encodedAuth)
+	wsEndpoint := fmt.Sprintf("%s/api/v1/ws?token=%s", wsURL, encodedAuthURL)
 
 	u, err := url.Parse(wsEndpoint)
 	if err != nil {
 		log.Fatal("Invalid URL:", err)
 	}
 
-	header := http.Header{}
-	header.Add("Authorization", fmt.Sprintf("Bearer %s", encodedAuth))
-
 	fmt.Printf("🔌 Connecting to WebSocket: %s\n", u.String())
-	c, resp, err := websocket.DefaultDialer.Dial(u.String(), header)
+	c, resp, err := websocket.DefaultDialer.Dial(u.String(), nil)
 	if err != nil {
 		if resp != nil {
 			body, _ := io.ReadAll(resp.Body)
