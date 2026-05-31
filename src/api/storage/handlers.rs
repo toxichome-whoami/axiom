@@ -36,9 +36,17 @@ fn get_storage_path(alias: &str, rel_path: &str, auth: &AuthContext) -> Result<S
     if !base_path.exists() {
         let _ = std::fs::create_dir_all(base_path);
     }
+    if rel_path.contains("..") {
+        return Err(AxiomError::new(
+            "INPUT_PATH_TRAVERSAL",
+            "Path traversal attempt detected",
+            StatusCode::BAD_REQUEST,
+        ));
+    }
+
     let target_path = base_path.join(rel_path.trim_start_matches('/'));
 
-    // Stub path traversal check
+    // Additional safeguard
     if !target_path.starts_with(base_path) {
         return Err(AxiomError::new(
             "INPUT_PATH_TRAVERSAL",

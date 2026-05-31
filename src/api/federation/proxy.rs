@@ -6,7 +6,7 @@ use crate::api::errors::AxiomError;
 use crate::config::loader::ConfigManager;
 
 /// SSRF guard — blocks private/loopback/link-local addresses
-pub fn is_safe_url(raw_url: &str) -> bool {
+pub async fn is_safe_url(raw_url: &str) -> bool {
     let parsed = match Url::parse(raw_url) {
         Ok(u) => u,
         Err(_) => return false,
@@ -17,13 +17,19 @@ pub fn is_safe_url(raw_url: &str) -> bool {
         None => return false,
     };
 
-    match host.to_lowercase().as_str() {
-        "localhost" | "127.0.0.1" | "0.0.0.0" | "::1" => return false,
-        _ => {}
-    }
+    let port = parsed.port_or_known_default().unwrap_or(80);
+    let addr_str = format!("{}:{}", host, port);
 
-    // If the host is a raw IP, check it isn't private
-    if let Ok(ip) = host.parse::<IpAddr>() {
+    // Resolve DNS manually to prevent DNS rebinding and IP obfuscation
+    let mut resolved = match tokio::net::lookup_host(&addr_str).await {
+        Ok(r) => r,
+        Err(_) => return false,
+    };
+
+    let mut has_ips = false;
+    while let Some(socket_addr) = resolved.next() {
+        has_ips = true;
+        let ip = socket_addr.ip();
         if ip.is_loopback() || ip.is_multicast() {
             return false;
         }
@@ -41,7 +47,7 @@ pub fn is_safe_url(raw_url: &str) -> bool {
         }
     }
 
-    true
+    has_ips
 }
 
 /// Resolve a federated alias (e.g. "node1_mydb") to the server alias ("node1")
@@ -88,13 +94,23 @@ pub async fn proxy_request(
 ) -> Result<(u16, bytes::Bytes, String), AxiomError> {
     let config = ConfigManager::get();
 
-    let (srv_alias, target_alias) = resolve_alias(full_alias)
-        .ok_or_else(|| AxiomError::new("FED_ALIAS_NOT_FOUND", "Federated alias not found", StatusCode::NOT_FOUND))?;
+    let (srv_alias, target_alias) = resolve_alias(full_alias).ok_or_else(|| {
+        AxiomError::new(
+            "FED_ALIAS_NOT_FOUND",
+            "Federated alias not found",
+            StatusCode::NOT_FOUND,
+        )
+    })?;
 
     let fed = &config.federation;
 
-    let srv_cfg = fed.server.get(&srv_alias)
-        .ok_or_else(|| AxiomError::new("FED_SERVER_NOT_FOUND", "Federation server config missing", StatusCode::NOT_FOUND))?;
+    let srv_cfg = fed.server.get(&srv_alias).ok_or_else(|| {
+        AxiomError::new(
+            "FED_SERVER_NOT_FOUND",
+            "Federation server config missing",
+            StatusCode::NOT_FOUND,
+        )
+    })?;
 
     let base = srv_cfg.url.trim_end_matches('/');
     let subpath = path.trim_start_matches('/');
@@ -102,10 +118,13 @@ pub async fn proxy_request(
     let remote_url = if query.is_empty() {
         format!("{}/api/v1/{}/{}/{}", base, resource, target_alias, subpath)
     } else {
-        format!("{}/api/v1/{}/{}/{}?{}", base, resource, target_alias, subpath, query)
+        format!(
+            "{}/api/v1/{}/{}/{}?{}",
+            base, resource, target_alias, subpath, query
+        )
     };
 
-    if !is_safe_url(&remote_url) {
+    if !is_safe_url(&remote_url).await {
         return Err(AxiomError::new(
             "FED_SSRF_BLOCKED",
             "SSRF blocked: federation target resolves to an internal or restricted network",
@@ -125,7 +144,13 @@ pub async fn proxy_request(
         .timeout(std::time::Duration::from_secs(30))
         .default_headers(fed_headers)
         .build()
-        .map_err(|e| AxiomError::new("FED_CLIENT_ERROR", &e.to_string(), StatusCode::INTERNAL_SERVER_ERROR))?;
+        .map_err(|e| {
+            AxiomError::new(
+                "FED_CLIENT_ERROR",
+                &e.to_string(),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            )
+        })?;
 
     let req = match method.to_uppercase().as_str() {
         "POST" => client.post(&remote_url).body(body.unwrap_or_default()),
@@ -134,17 +159,22 @@ pub async fn proxy_request(
         _ => client.get(&remote_url),
     };
 
-    let resp = req.send().await
+    let resp = req
+        .send()
+        .await
         .map_err(|e| AxiomError::new("FED_SERVER_DOWN", &e.to_string(), StatusCode::BAD_GATEWAY))?;
 
     let status = resp.status().as_u16();
-    let content_type = resp.headers()
+    let content_type = resp
+        .headers()
         .get(reqwest::header::CONTENT_TYPE)
         .and_then(|v| v.to_str().ok())
         .unwrap_or("application/json")
         .to_string();
 
-    let body_bytes = resp.bytes().await
+    let body_bytes = resp
+        .bytes()
+        .await
         .map_err(|e| AxiomError::new("FED_READ_ERROR", &e.to_string(), StatusCode::BAD_GATEWAY))?;
 
     Ok((status, body_bytes, content_type))

@@ -17,17 +17,18 @@ impl QueryExecutionPipeline {
         auth: &AuthContext,
         db_cfg: &DatabaseDefConfig,
     ) -> Result<QueryResult, AxiomError> {
-        let is_mutation = sql.trim().to_uppercase().starts_with("INSERT")
-            || sql.trim().to_uppercase().starts_with("UPDATE")
-            || sql.trim().to_uppercase().starts_with("DELETE")
-            || sql.trim().to_uppercase().starts_with("CREATE")
-            || sql.trim().to_uppercase().starts_with("DROP")
-            || sql.trim().to_uppercase().starts_with("ALTER");
+        static MUTATION_RE: once_cell::sync::Lazy<regex::Regex> = once_cell::sync::Lazy::new(
+            || {
+                regex::Regex::new(r"(?i)\b(INSERT|UPDATE|DELETE|DROP|CREATE|ALTER|TRUNCATE|REPLACE|GRANT|REVOKE|PRAGMA)\b").unwrap()
+            },
+        );
+
+        let is_mutation = MUTATION_RE.is_match(sql);
 
         if is_mutation && auth.mode == ServerMode::Readonly {
             return Err(AxiomError::new(
                 "AUTH_INSUFFICIENT_MODE",
-                "Read-only keys cannot mutate data",
+                "Read-only keys cannot execute mutations or dangerous commands",
                 StatusCode::FORBIDDEN,
             ));
         }
@@ -193,7 +194,11 @@ pub async fn insert_rows(
     // In a production ORM, this would map keys and use properly bound parameters.
     // For this stub, we dynamically build a multi-insert query.
     let first_row = &rows_to_insert[0];
-    let columns: Vec<String> = first_row.keys().cloned().collect();
+    let columns: Vec<String> = first_row
+        .keys()
+        .cloned()
+        .map(|k| crate::api::database::filter_builder::sanitize_ident(&k))
+        .collect();
     let cols_str = columns.join(", ");
 
     let mut all_params = Vec::new();
@@ -211,7 +216,7 @@ pub async fn insert_rows(
 
     let sql = format!(
         "INSERT INTO {} ({}) VALUES {}",
-        table_name,
+        crate::api::database::filter_builder::sanitize_ident(&table_name),
         cols_str,
         values_strings.join(", ")
     );
@@ -243,42 +248,58 @@ pub async fn insert_rows(
 pub async fn fetch_rows(
     axum::extract::Path((db_name, table_name)): axum::extract::Path<(String, String)>,
     axum::extract::Extension(auth): axum::extract::Extension<AuthContext>,
-    axum::extract::Query(params): axum::extract::Query<crate::api::database::schemas::FetchRowsParams>,
+    axum::extract::Query(params): axum::extract::Query<
+        crate::api::database::schemas::FetchRowsParams,
+    >,
 ) -> Result<axum::Json<Value>, AxiomError> {
     let db_cfg = get_db_config(&db_name, &auth).await?;
-    
+
     let mut values = Vec::new();
     let mut where_clauses = Vec::new();
-    
+
     if let Some(filter_str) = &params.filter {
-        if let Ok(filter_json) = serde_json::from_str::<std::collections::HashMap<String, Value>>(filter_str) {
-            let (clause, mut vals) = crate::api::database::filter_builder::build_where_clause(&filter_json);
+        if let Ok(filter_json) =
+            serde_json::from_str::<std::collections::HashMap<String, Value>>(filter_str)
+        {
+            let (clause, mut vals) =
+                crate::api::database::filter_builder::build_where_clause(&filter_json);
             if !clause.is_empty() {
                 where_clauses.push(clause);
                 values.append(&mut vals);
             }
         }
     }
-    
+
     let where_sql = if where_clauses.is_empty() {
         "".to_string()
     } else {
         format!("WHERE {}", where_clauses.join(" AND "))
     };
-    
-    let order_col = params.sort.clone().unwrap_or_else(|| "id".to_string());
-    let order_dir = if params.order.to_lowercase() == "desc" { "DESC" } else { "ASC" };
-    
+
+    let order_col = crate::api::database::filter_builder::sanitize_ident(
+        &params.sort.clone().unwrap_or_else(|| "id".to_string()),
+    );
+    let order_dir = if params.order.to_lowercase() == "desc" {
+        "DESC"
+    } else {
+        "ASC"
+    };
+
     let limit = params.limit.clamp(1, 500);
     let offset = (params.page.max(1) - 1) * limit;
-    
+
     let sql = format!(
         "SELECT * FROM {} {} ORDER BY {} {} LIMIT {} OFFSET {}",
-        table_name, where_sql, order_col, order_dir, limit, offset
+        crate::api::database::filter_builder::sanitize_ident(&table_name),
+        where_sql,
+        order_col,
+        order_dir,
+        limit,
+        offset
     );
-    
+
     let result = QueryExecutionPipeline::run_query(&db_name, &sql, values, &auth, &db_cfg).await?;
-    
+
     Ok(axum::Json(serde_json::json!({
         "success": true,
         "data": {
@@ -298,20 +319,37 @@ pub async fn update_rows(
     axum::Json(payload): axum::Json<crate::api::database::schemas::UpdateRequest>,
 ) -> Result<axum::Json<Value>, AxiomError> {
     let db_cfg = get_db_config(&db_name, &auth).await?;
-    
+
     if payload.filter.is_empty() {
-        return Err(AxiomError::new("BAD_REQUEST", "Update requires a filter", StatusCode::BAD_REQUEST));
+        return Err(AxiomError::new(
+            "BAD_REQUEST",
+            "Update requires a filter",
+            StatusCode::BAD_REQUEST,
+        ));
     }
-    
-    let (sql, values) = crate::api::database::filter_builder::construct_update(&table_name, &payload.update, &payload.filter);
-    
+
+    let (sql, values) = crate::api::database::filter_builder::construct_update(
+        &table_name,
+        &payload.update,
+        &payload.filter,
+    );
+
     let result = QueryExecutionPipeline::run_query(&db_name, &sql, values, &auth, &db_cfg).await?;
-    
+
     use crate::api::sse::connection_manager::SSE_MGR;
     let topic = format!("db:{}:{}", db_name, table_name);
-    SSE_MGR.publish(&topic, "UPDATE", serde_json::json!({ "table": table_name, "affected_rows": result.affected_rows }).to_string()).await;
-    
-    Ok(axum::Json(serde_json::json!({ "success": true, "affected_rows": result.affected_rows })))
+    SSE_MGR
+        .publish(
+            &topic,
+            "UPDATE",
+            serde_json::json!({ "table": table_name, "affected_rows": result.affected_rows })
+                .to_string(),
+        )
+        .await;
+
+    Ok(axum::Json(
+        serde_json::json!({ "success": true, "affected_rows": result.affected_rows }),
+    ))
 }
 
 pub async fn delete_rows(
@@ -320,18 +358,32 @@ pub async fn delete_rows(
     axum::Json(payload): axum::Json<crate::api::database::schemas::DeleteRequest>,
 ) -> Result<axum::Json<Value>, AxiomError> {
     let db_cfg = get_db_config(&db_name, &auth).await?;
-    
+
     if payload.filter.is_empty() {
-        return Err(AxiomError::new("BAD_REQUEST", "Delete requires a filter", StatusCode::BAD_REQUEST));
+        return Err(AxiomError::new(
+            "BAD_REQUEST",
+            "Delete requires a filter",
+            StatusCode::BAD_REQUEST,
+        ));
     }
-    
-    let (sql, values) = crate::api::database::filter_builder::construct_delete(&table_name, &payload.filter);
-    
+
+    let (sql, values) =
+        crate::api::database::filter_builder::construct_delete(&table_name, &payload.filter);
+
     let result = QueryExecutionPipeline::run_query(&db_name, &sql, values, &auth, &db_cfg).await?;
-    
+
     use crate::api::sse::connection_manager::SSE_MGR;
     let topic = format!("db:{}:{}", db_name, table_name);
-    SSE_MGR.publish(&topic, "DELETE", serde_json::json!({ "table": table_name, "affected_rows": result.affected_rows }).to_string()).await;
-    
-    Ok(axum::Json(serde_json::json!({ "success": true, "affected_rows": result.affected_rows })))
+    SSE_MGR
+        .publish(
+            &topic,
+            "DELETE",
+            serde_json::json!({ "table": table_name, "affected_rows": result.affected_rows })
+                .to_string(),
+        )
+        .await;
+
+    Ok(axum::Json(
+        serde_json::json!({ "success": true, "affected_rows": result.affected_rows }),
+    ))
 }

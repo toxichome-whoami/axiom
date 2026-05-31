@@ -1,6 +1,13 @@
 use serde_json::Value;
 use std::collections::HashMap;
 
+pub fn sanitize_ident(ident: &str) -> String {
+    ident
+        .chars()
+        .filter(|c| c.is_alphanumeric() || *c == '_')
+        .collect()
+}
+
 /// Recursively builds a WHERE clause and a vector of positional values.
 /// Returns (clause, values).
 pub fn build_where_clause(filter: &HashMap<String, Value>) -> (String, Vec<Value>) {
@@ -34,42 +41,47 @@ pub fn build_where_clause(filter: &HashMap<String, Value>) -> (String, Vec<Value
             for (op, val) in obj {
                 match op.as_str() {
                     "$eq" => {
-                        parts.push(format!("{} = ?", col));
+                        parts.push(format!("{} = ?", sanitize_ident(col)));
                         values.push(val.clone());
                     }
                     "$ne" => {
-                        parts.push(format!("{} != ?", col));
+                        parts.push(format!("{} != ?", sanitize_ident(col)));
                         values.push(val.clone());
                     }
                     "$gt" => {
-                        parts.push(format!("{} > ?", col));
+                        parts.push(format!("{} > ?", sanitize_ident(col)));
                         values.push(val.clone());
                     }
                     "$gte" => {
-                        parts.push(format!("{} >= ?", col));
+                        parts.push(format!("{} >= ?", sanitize_ident(col)));
                         values.push(val.clone());
                     }
                     "$lt" => {
-                        parts.push(format!("{} < ?", col));
+                        parts.push(format!("{} < ?", sanitize_ident(col)));
                         values.push(val.clone());
                     }
                     "$lte" => {
-                        parts.push(format!("{} <= ?", col));
+                        parts.push(format!("{} <= ?", sanitize_ident(col)));
                         values.push(val.clone());
                     }
                     "$like" => {
-                        parts.push(format!("{} LIKE ?", col));
+                        parts.push(format!("{} LIKE ?", sanitize_ident(col)));
                         values.push(val.clone());
                     }
                     "$ilike" => {
-                        parts.push(format!("LOWER({}) LIKE LOWER(?)", col));
+                        parts.push(format!("LOWER({}) LIKE LOWER(?)", sanitize_ident(col)));
                         values.push(val.clone());
                     }
                     "$in" | "$nin" => {
                         if let Some(arr) = val.as_array() {
                             let sql_op = if op == "$in" { "IN" } else { "NOT IN" };
                             let placeholders = vec!["?"; arr.len()].join(", ");
-                            parts.push(format!("{} {} ({})", col, sql_op, placeholders));
+                            parts.push(format!(
+                                "{} {} ({})",
+                                sanitize_ident(col),
+                                sql_op,
+                                placeholders
+                            ));
                             for item in arr {
                                 values.push(item.clone());
                             }
@@ -77,22 +89,22 @@ pub fn build_where_clause(filter: &HashMap<String, Value>) -> (String, Vec<Value
                     }
                     "$null" => {
                         if val.as_bool().unwrap_or(true) {
-                            parts.push(format!("{} IS NULL", col));
+                            parts.push(format!("{} IS NULL", sanitize_ident(col)));
                         } else {
-                            parts.push(format!("{} IS NOT NULL", col));
+                            parts.push(format!("{} IS NOT NULL", sanitize_ident(col)));
                         }
                     }
                     "$not_null" => {
                         if val.as_bool().unwrap_or(true) {
-                            parts.push(format!("{} IS NOT NULL", col));
+                            parts.push(format!("{} IS NOT NULL", sanitize_ident(col)));
                         } else {
-                            parts.push(format!("{} IS NULL", col));
+                            parts.push(format!("{} IS NULL", sanitize_ident(col)));
                         }
                     }
                     "$between" => {
                         if let Some(arr) = val.as_array() {
                             if arr.len() == 2 {
-                                parts.push(format!("{} BETWEEN ? AND ?", col));
+                                parts.push(format!("{} BETWEEN ? AND ?", sanitize_ident(col)));
                                 values.push(arr[0].clone());
                                 values.push(arr[1].clone());
                             }
@@ -103,7 +115,7 @@ pub fn build_where_clause(filter: &HashMap<String, Value>) -> (String, Vec<Value
             }
         } else {
             // Exact equality
-            parts.push(format!("{} = ?", col));
+            parts.push(format!("{} = ?", sanitize_ident(col)));
             values.push(criteria.clone());
         }
     }
@@ -117,14 +129,14 @@ pub fn construct_insert(table: &str, data: &HashMap<String, Value>) -> (String, 
     let mut values = Vec::new();
 
     for (k, v) in data {
-        cols.push(k.clone());
+        cols.push(sanitize_ident(k));
         placeholders.push("?");
         values.push(v.clone());
     }
 
     let sql = format!(
         "INSERT INTO {} ({}) VALUES ({})",
-        table,
+        sanitize_ident(table),
         cols.join(", "),
         placeholders.join(", ")
     );
@@ -141,7 +153,7 @@ pub fn construct_update(
     let mut values = Vec::new();
 
     for (k, v) in update_data {
-        set_parts.push(format!("{} = ?", k));
+        set_parts.push(format!("{} = ?", sanitize_ident(k)));
         values.push(v.clone());
     }
 
@@ -150,7 +162,7 @@ pub fn construct_update(
 
     let sql = format!(
         "UPDATE {} SET {} WHERE {}",
-        table,
+        sanitize_ident(table),
         set_parts.join(", "),
         where_clause
     );
@@ -160,6 +172,10 @@ pub fn construct_update(
 
 pub fn construct_delete(table: &str, filter: &HashMap<String, Value>) -> (String, Vec<Value>) {
     let (where_clause, values) = build_where_clause(filter);
-    let sql = format!("DELETE FROM {} WHERE {}", table, where_clause);
+    let sql = format!(
+        "DELETE FROM {} WHERE {}",
+        sanitize_ident(table),
+        where_clause
+    );
     (sql, values)
 }
