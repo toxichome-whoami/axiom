@@ -95,7 +95,7 @@ pub async fn list_folder(
         ));
     }
 
-    // Optimize directory listing by doing it in a single blocking task rather than tokio::fs 
+    // Optimize directory listing by doing it in a single blocking task rather than tokio::fs
     // which spawns a blocking task for every single entry and metadata fetch.
     let target_path_clone = target_path.clone();
     let items_res = tokio::task::spawn_blocking(move || {
@@ -114,8 +114,9 @@ pub async fn list_folder(
             }
         }
         local_items
-    }).await;
-    
+    })
+    .await;
+
     let items = items_res.unwrap_or_default();
 
     Ok(Json(json!({

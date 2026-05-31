@@ -56,8 +56,7 @@ curl -X GET "http://localhost:4500/metrics" \
 
 ### 5. OpenAPI JSON Spec
 ```bash
-curl -X GET "http://localhost:4500/api/v1/api/spec" \
-     -H "Authorization: Bearer <TOKEN>"
+curl -X GET "http://localhost:4500/api-docs/openapi.json"
 ```
 
 ---

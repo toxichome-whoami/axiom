@@ -1,28 +1,32 @@
-use axum::{
-    extract::Request,
-    middleware::Next,
-    response::Response,
-};
 use crate::api::errors::AxiomError;
 use crate::config::loader::ConfigManager;
 use crate::security::ban_list::BanList;
-use crate::utils::types::{AuthContext, ServerMode};
+use crate::utils::types::AuthContext;
+use axum::{extract::Request, middleware::Next, response::Response};
 
-pub async fn auth_middleware(
-    mut req: Request,
-    next: Next,
-) -> Result<Response, AxiomError> {
-    let _config = req.extensions().get::<std::sync::Arc<crate::config::schema::AxiomConfig>>().cloned().unwrap_or_else(|| ConfigManager::get());
+pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, AxiomError> {
+    let _config = req
+        .extensions()
+        .get::<std::sync::Arc<crate::config::schema::AxiomConfig>>()
+        .cloned()
+        .unwrap_or_else(|| ConfigManager::get());
 
     // 1. IP Ban Check
     let client_ip = "127.0.0.1"; // TODO: Extract real IP
     let (is_ip_banned, reason) = BanList::is_ip_banned(client_ip);
     if is_ip_banned {
-        return Err(AxiomError::new("RATE_LIMIT_BLOCKED", &format!("IP address is banned: {}", reason), axum::http::StatusCode::FORBIDDEN));
+        return Err(AxiomError::new(
+            "RATE_LIMIT_BLOCKED",
+            &format!("IP address is banned: {}", reason),
+            axum::http::StatusCode::FORBIDDEN,
+        ));
     }
 
     // 2. Extract Bearer token
-    let auth_header = req.headers().get("Authorization").and_then(|h| h.to_str().ok());
+    let auth_header = req
+        .headers()
+        .get("Authorization")
+        .and_then(|h| h.to_str().ok());
 
     if let Some(auth_value) = auth_header {
         if auth_value.starts_with("Bearer ") {
@@ -31,17 +35,25 @@ pub async fn auth_middleware(
             // Auto-detect and decode Base64 tokens from legacy demo scripts
             let decoded_token = if !raw_token.contains(':') && raw_token.len() > 30 {
                 use base64::prelude::*;
-                BASE64_STANDARD.decode(raw_token).ok().and_then(|d| String::from_utf8(d).ok())
+                BASE64_STANDARD
+                    .decode(raw_token)
+                    .ok()
+                    .and_then(|d| String::from_utf8(d).ok())
             } else {
                 None
             };
-            
+
             let token = decoded_token.as_deref().unwrap_or(raw_token);
 
-            let config = req.extensions().get::<std::sync::Arc<crate::config::schema::AxiomConfig>>().cloned().unwrap_or_else(|| ConfigManager::get());
+            let config = req
+                .extensions()
+                .get::<std::sync::Arc<crate::config::schema::AxiomConfig>>()
+                .cloned()
+                .unwrap_or_else(|| ConfigManager::get());
             // Check if the token matches any API key's secret or name:secret format
             for (key_name, key_cfg) in &config.api_key {
-                let is_match = token == key_cfg.secret || token == format!("{}:{}", key_name, key_cfg.secret);
+                let is_match =
+                    token == key_cfg.secret || token == format!("{}:{}", key_name, key_cfg.secret);
                 if is_match {
                     let ctx = AuthContext {
                         api_key_name: key_name.clone(),
@@ -59,22 +71,18 @@ pub async fn auth_middleware(
 
             let (is_key_banned, reason) = BanList::is_key_banned(token);
             if is_key_banned {
-                return Err(AxiomError::new("AUTH_INVALID_KEY", &format!("API key is suspended: {}", reason), axum::http::StatusCode::FORBIDDEN));
+                return Err(AxiomError::new(
+                    "AUTH_INVALID_KEY",
+                    &format!("API key is suspended: {}", reason),
+                    axum::http::StatusCode::FORBIDDEN,
+                ));
             }
         }
     }
 
-    // Unauthenticated fallback
-    let ctx = AuthContext {
-        api_key_name: "anonymous".to_string(),
-        mode: ServerMode::Readonly,
-        db_scope: vec![],
-        fs_scope: vec![],
-        feature_scope: vec![],
-        rate_limit_override: 0,
-        full_admin: false,
-    };
-    req.extensions_mut().insert(ctx);
-
-    Ok(next.run(req).await)
+    Err(AxiomError::new(
+        "UNAUTHORIZED",
+        "Missing or invalid API key.",
+        axum::http::StatusCode::UNAUTHORIZED,
+    ))
 }

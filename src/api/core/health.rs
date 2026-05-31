@@ -74,16 +74,8 @@ async fn ready() -> Json<Value> {
     )
 )]
 async fn health(
-    axum::extract::Extension(ctx): axum::extract::Extension<crate::utils::types::AuthContext>,
+    axum::extract::Extension(_ctx): axum::extract::Extension<crate::utils::types::AuthContext>,
 ) -> Result<Json<Value>, crate::api::errors::AxiomError> {
-    if ctx.api_key_name == "anonymous" {
-        return Err(crate::api::errors::AxiomError::new(
-            "UNAUTHORIZED",
-            "Missing or invalid API key.",
-            axum::http::StatusCode::UNAUTHORIZED,
-        ));
-    }
-
     let config = ConfigManager::get();
 
     let mut db_status = serde_json::Map::new();

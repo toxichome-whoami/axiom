@@ -1,25 +1,35 @@
 use axum::{
-    extract::{Path, Extension},
+    extract::{Extension, Path},
     routing::{get, post},
-    Router, Json,
+    Json, Router,
 };
 use serde_json::Value;
 
-use crate::api::errors::AxiomError;
+use crate::api::database::handlers::{get_db_config, QueryExecutionPipeline};
 use crate::api::database::schemas::QueryRequest;
-use crate::api::database::handlers::{QueryExecutionPipeline, get_db_config};
-use crate::utils::types::AuthContext;
+use crate::api::errors::AxiomError;
 use crate::config::loader::ConfigManager;
+use crate::utils::types::AuthContext;
 
 pub fn get_router() -> Router {
     Router::new()
         .route("/databases", get(list_databases))
+        .route(
+            "/:db_name/tables",
+            get(crate::api::database::handlers::list_tables),
+        )
         .route("/:db_name/query", post(execute_query))
-        .route("/:db_name/:table_name/rows", post(crate::api::database::handlers::insert_rows))
+        .route(
+            "/:db_name/:table_name/rows",
+            post(crate::api::database::handlers::insert_rows)
+                .get(crate::api::database::handlers::fetch_rows)
+                .patch(crate::api::database::handlers::update_rows)
+                .delete(crate::api::database::handlers::delete_rows),
+        )
 }
 
 async fn list_databases(
-    Extension(auth): Extension<AuthContext>
+    Extension(auth): Extension<AuthContext>,
 ) -> Result<Json<Value>, AxiomError> {
     let config = ConfigManager::get();
     let mut active_dbs = Vec::new();
@@ -60,13 +70,9 @@ async fn execute_query(
         }
     }
 
-    let result = QueryExecutionPipeline::run_query(
-        &db_name,
-        &payload.sql,
-        params_array,
-        &auth,
-        &db_cfg
-    ).await?;
+    let result =
+        QueryExecutionPipeline::run_query(&db_name, &payload.sql, params_array, &auth, &db_cfg)
+            .await?;
 
     Ok(Json(serde_json::json!({
         "columns": result.columns,
