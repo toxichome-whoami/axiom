@@ -12,7 +12,7 @@ pub async fn auth_middleware(
     mut req: Request,
     next: Next,
 ) -> Result<Response, AxiomError> {
-    let _config = ConfigManager::get();
+    let _config = req.extensions().get::<std::sync::Arc<crate::config::schema::AxiomConfig>>().cloned().unwrap_or_else(|| ConfigManager::get());
 
     // 1. IP Ban Check
     let client_ip = "127.0.0.1"; // TODO: Extract real IP
@@ -38,7 +38,7 @@ pub async fn auth_middleware(
             
             let token = decoded_token.as_deref().unwrap_or(raw_token);
 
-            let config = ConfigManager::get();
+            let config = req.extensions().get::<std::sync::Arc<crate::config::schema::AxiomConfig>>().cloned().unwrap_or_else(|| ConfigManager::get());
             // Check if the token matches any API key's secret or name:secret format
             for (key_name, key_cfg) in &config.api_key {
                 let is_match = token == key_cfg.secret || token == format!("{}:{}", key_name, key_cfg.secret);

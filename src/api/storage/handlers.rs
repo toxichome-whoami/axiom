@@ -95,20 +95,28 @@ pub async fn list_folder(
         ));
     }
 
-    let mut items = Vec::new();
-
-    if let Ok(mut entries) = fs::read_dir(&target_path).await {
-        while let Ok(Some(entry)) = entries.next_entry().await {
-            let meta = entry.metadata().await;
-            if let Ok(m) = meta {
-                items.push(json!({
-                    "name": entry.file_name().to_string_lossy(),
-                    "is_dir": m.is_dir(),
-                    "size": m.len()
-                }));
+    // Optimize directory listing by doing it in a single blocking task rather than tokio::fs 
+    // which spawns a blocking task for every single entry and metadata fetch.
+    let target_path_clone = target_path.clone();
+    let items_res = tokio::task::spawn_blocking(move || {
+        let mut local_items = Vec::new();
+        if let Ok(entries) = std::fs::read_dir(&target_path_clone) {
+            for entry_res in entries {
+                if let Ok(entry) = entry_res {
+                    if let Ok(m) = entry.metadata() {
+                        local_items.push(json!({
+                            "name": entry.file_name().to_string_lossy(),
+                            "is_dir": m.is_dir(),
+                            "size": m.len()
+                        }));
+                    }
+                }
             }
         }
-    }
+        local_items
+    }).await;
+    
+    let items = items_res.unwrap_or_default();
 
     Ok(Json(json!({
         "storage": alias,

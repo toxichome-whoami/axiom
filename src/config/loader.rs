@@ -1,25 +1,23 @@
 use crate::config::schema::AxiomConfig;
-use once_cell::sync::Lazy;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, OnceLock};
 
-static CONFIG: Lazy<RwLock<Arc<AxiomConfig>>> =
-    Lazy::new(|| RwLock::new(Arc::new(AxiomConfig::default())));
+static CONFIG: OnceLock<Arc<AxiomConfig>> = OnceLock::new();
 
 pub struct ConfigManager;
 
 impl ConfigManager {
     pub fn load(path: &str) -> Result<(), Box<dyn std::error::Error>> {
         let content = std::fs::read_to_string(path).unwrap_or_else(|_| "".to_string());
-        if !content.is_empty() {
-            let parsed: AxiomConfig = toml::from_str(&content)?;
-            let mut writer = CONFIG.write().unwrap();
-            *writer = Arc::new(parsed);
-        }
+        let parsed = if !content.is_empty() {
+            toml::from_str(&content)?
+        } else {
+            AxiomConfig::default()
+        };
+        let _ = CONFIG.set(Arc::new(parsed));
         Ok(())
     }
 
     pub fn get() -> Arc<AxiomConfig> {
-        let reader = CONFIG.read().unwrap();
-        reader.clone()
+        CONFIG.get().cloned().unwrap_or_else(|| Arc::new(AxiomConfig::default()))
     }
 }

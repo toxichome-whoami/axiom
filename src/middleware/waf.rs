@@ -11,8 +11,12 @@ pub async fn waf_middleware(
     req: Request,
     next: Next,
 ) -> Result<Response, AxiomError> {
-    let config = ConfigManager::get();
-    let body_limit = parse_size(&config.server.body_limit).unwrap_or(10 * 1024 * 1024);
+    let _config = req.extensions().get::<std::sync::Arc<crate::config::schema::AxiomConfig>>().cloned().unwrap_or_else(|| ConfigManager::get());
+    static BODY_LIMIT: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
+    let body_limit = *BODY_LIMIT.get_or_init(|| {
+        let config_inner = ConfigManager::get();
+        parse_size(&config_inner.server.body_limit).unwrap_or(10 * 1024 * 1024)
+    });
 
     if let Some(cl) = req.headers().get("content-length") {
         if let Ok(cl_str) = cl.to_str() {

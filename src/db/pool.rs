@@ -1,24 +1,21 @@
 use once_cell::sync::Lazy;
-use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::RwLock;
+use dashmap::DashMap;
 
 use crate::config::loader::ConfigManager;
 use crate::db::engines::any::AnyDatabaseEngine;
 use crate::db::engines::base::DatabaseEngine;
 
-static ENGINES: Lazy<Arc<RwLock<HashMap<String, Arc<tokio::sync::RwLock<dyn DatabaseEngine>>>>>> =
-    Lazy::new(|| Arc::new(RwLock::new(HashMap::new())));
+static ENGINES: Lazy<DashMap<String, Arc<dyn DatabaseEngine>>> =
+    Lazy::new(|| DashMap::new());
 
 pub struct DatabasePoolManager;
 
 impl DatabasePoolManager {
-    pub async fn get_engine(alias: &str) -> Option<Arc<tokio::sync::RwLock<dyn DatabaseEngine>>> {
-        let readers = ENGINES.read().await;
-        if let Some(engine) = readers.get(alias) {
+    pub async fn get_engine(alias: &str) -> Option<Arc<dyn DatabaseEngine>> {
+        if let Some(engine) = ENGINES.get(alias) {
             return Some(engine.clone());
         }
-        drop(readers);
 
         let config = ConfigManager::get();
         let db_config = config.database.get(alias)?;
@@ -30,9 +27,12 @@ impl DatabasePoolManager {
             }
         }
 
-        let mut writers = ENGINES.write().await;
-        // Double-check inside the write lock to prevent thundering herd under high concurrency
-        if let Some(engine) = writers.get(alias) {
+        // Global initialization lock to prevent thundering herd
+        static INIT_LOCK: Lazy<tokio::sync::Mutex<()>> = Lazy::new(|| tokio::sync::Mutex::new(()));
+        let _guard = INIT_LOCK.lock().await;
+
+        // Double-check inside the lock
+        if let Some(engine) = ENGINES.get(alias) {
             return Some(engine.clone());
         }
 
@@ -44,30 +44,26 @@ impl DatabasePoolManager {
             return None;
         }
 
-        let arc_engine: Arc<tokio::sync::RwLock<dyn DatabaseEngine>> =
-            Arc::new(tokio::sync::RwLock::new(engine));
-        writers.insert(alias.to_string(), arc_engine.clone());
+        let arc_engine: Arc<dyn DatabaseEngine> = Arc::new(engine);
+        ENGINES.insert(alias.to_string(), arc_engine.clone());
 
         Some(arc_engine)
     }
 
     pub async fn remove_engine(alias: &str) {
-        let mut writers = ENGINES.write().await;
-        if let Some(engine) = writers.remove(alias) {
+        if let Some((_, engine)) = ENGINES.remove(alias) {
             println!("Closing pool for dynamically removed database: {}", alias);
-            let locked = engine.write().await;
-            let _ = locked.disconnect().await;
+            let _ = engine.disconnect().await;
         }
     }
 
     pub async fn shutdown() {
         println!("Shutting down database pools");
-        let mut writers = ENGINES.write().await;
-        for (alias, engine) in writers.drain() {
-            println!("Closing pool: {}", alias);
-            let locked = engine.write().await;
-            let _ = locked.disconnect().await;
+        for entry in ENGINES.iter() {
+            println!("Closing pool: {}", entry.key());
+            let _ = entry.value().disconnect().await;
         }
+        ENGINES.clear();
         println!("Database shutdown complete");
     }
 }

@@ -1,8 +1,9 @@
 use dashmap::DashMap;
 use once_cell::sync::Lazy;
+use std::sync::atomic::{AtomicU32, Ordering};
 
-static RATE_LIMIT_CACHE: Lazy<DashMap<String, u32>> = Lazy::new(|| DashMap::new());
-static PENALTY_CACHE: Lazy<DashMap<String, u32>> = Lazy::new(|| DashMap::new());
+static RATE_LIMIT_CACHE: Lazy<DashMap<String, AtomicU32>> = Lazy::new(|| DashMap::new());
+static PENALTY_CACHE: Lazy<DashMap<String, AtomicU32>> = Lazy::new(|| DashMap::new());
 
 pub struct MemoryCache;
 
@@ -18,21 +19,30 @@ impl MemoryCache {
     ) -> (bool, u32) {
         // Penalty check
         if let Some(penalty) = PENALTY_CACHE.get(penalty_key) {
-            if *penalty >= penalty_threshold {
+            if penalty.load(Ordering::Relaxed) >= penalty_threshold {
                 return (true, 0); // Banned
             }
         }
 
-        let mut current = RATE_LIMIT_CACHE.entry(limits_key.to_string()).or_insert(0);
-        *current += 1;
+        let current = {
+            if let Some(entry) = RATE_LIMIT_CACHE.get(limits_key) {
+                entry.fetch_add(1, Ordering::Relaxed) + 1
+            } else {
+                RATE_LIMIT_CACHE.insert(limits_key.to_string(), AtomicU32::new(1));
+                1
+            }
+        };
 
-        if *current > limit {
+        if current > limit {
             // Apply penalty if exceeded
-            let mut penalty = PENALTY_CACHE.entry(penalty_key.to_string()).or_insert(0);
-            *penalty += 1;
-            return (true, *current);
+            if let Some(entry) = PENALTY_CACHE.get(penalty_key) {
+                entry.fetch_add(1, Ordering::Relaxed);
+            } else {
+                PENALTY_CACHE.insert(penalty_key.to_string(), AtomicU32::new(1));
+            }
+            return (true, current);
         }
 
-        (false, *current)
+        (false, current)
     }
 }

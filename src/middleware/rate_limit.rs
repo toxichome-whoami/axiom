@@ -11,7 +11,7 @@ pub async fn rate_limit_middleware(
     req: Request,
     next: Next,
 ) -> Result<Response, AxiomError> {
-    let config = ConfigManager::get();
+    let config = req.extensions().get::<std::sync::Arc<crate::config::schema::AxiomConfig>>().cloned().unwrap_or_else(|| ConfigManager::get());
 
     if !config.rate_limit.enabled {
         return Ok(next.run(req).await);

@@ -35,7 +35,7 @@ async fn health() -> Json<Value> {
 
     for (alias, _) in &config.database {
         if let Some(engine) = DatabasePoolManager::get_engine(alias).await {
-            let is_up = engine.read().await.health_check().await;
+            let is_up = engine.health_check().await;
             db_status.insert(alias.clone(), json!(if is_up { "up" } else { "down" }));
             if !is_up {
                 all_dbs_up = false;

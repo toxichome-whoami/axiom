@@ -53,10 +53,8 @@ impl QueryExecutionPipeline {
                 AxiomError::new("DB_NOT_FOUND", "Database not found", StatusCode::NOT_FOUND)
             })?;
 
-        let engine_guard = engine.read().await;
-
         // Format placeholders based on engine dialect
-        let dialect = engine_guard.dialect();
+        let dialect = engine.dialect();
         let formatted_sql = if dialect == "postgres" || dialect == "any" {
             // Primitive placeholder conversion for postgres `$1, $2`
             let mut final_sql = String::new();
@@ -102,7 +100,7 @@ impl QueryExecutionPipeline {
             }
         }
 
-        match engine_guard.execute(&final_bound_sql).await {
+        match engine.execute(&final_bound_sql).await {
             Ok(res) => Ok(res),
             Err(e) => Err(AxiomError::new(
                 "DB_QUERY_FAILED",

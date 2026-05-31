@@ -58,6 +58,7 @@ pub fn create_app() -> Router {
 
     Router::new()
         .nest("/api/v1", api_routes)
+        .layer(axum::extract::Extension(_config.clone()))
         .merge(core_routes)
         .route("/favicon.ico", get(favicon))
         .fallback(fallback_handler)
