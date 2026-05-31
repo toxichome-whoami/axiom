@@ -17,13 +17,55 @@ impl QueryExecutionPipeline {
         auth: &AuthContext,
         db_cfg: &DatabaseDefConfig,
     ) -> Result<QueryResult, AxiomError> {
-        static MUTATION_RE: once_cell::sync::Lazy<regex::Regex> = once_cell::sync::Lazy::new(
-            || {
-                regex::Regex::new(r"(?i)\b(INSERT|UPDATE|DELETE|DROP|CREATE|ALTER|TRUNCATE|REPLACE|GRANT|REVOKE|PRAGMA)\b").unwrap()
-            },
-        );
+        let engine = DatabasePoolManager::get_engine(db_name)
+            .await
+            .ok_or_else(|| {
+                AxiomError::new("DB_NOT_FOUND", "Database not found", StatusCode::NOT_FOUND)
+            })?;
 
-        let is_mutation = MUTATION_RE.is_match(sql);
+        let dialect_name = engine.dialect();
+        
+        let ast_result = if dialect_name == "postgres" {
+            sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::PostgreSqlDialect {}, sql)
+        } else if dialect_name == "mysql" {
+            sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::MySqlDialect {}, sql)
+        } else if dialect_name == "sqlite" {
+            sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::SQLiteDialect {}, sql)
+        } else {
+            sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::GenericDialect {}, sql)
+        };
+
+        let statements = ast_result.map_err(|e| {
+            AxiomError::new(
+                "SQL_PARSE_ERROR",
+                &format!("SQL parsing failed: {}", e),
+                StatusCode::BAD_REQUEST,
+            )
+        })?;
+
+        let mut is_mutation = false;
+        let mut is_dangerous = false;
+
+        for stmt in statements {
+            match stmt {
+                sqlparser::ast::Statement::Query(_) 
+                | sqlparser::ast::Statement::Explain { .. } 
+                | sqlparser::ast::Statement::ShowVariable { .. } 
+                | sqlparser::ast::Statement::ShowColumns { .. } => {
+                    // Safe for readonly
+                }
+                sqlparser::ast::Statement::Drop { .. }
+                | sqlparser::ast::Statement::AlterTable { .. }
+                | sqlparser::ast::Statement::Truncate { .. } => {
+                    is_mutation = true;
+                    is_dangerous = true;
+                }
+                _ => {
+                    // Treat any other statements (Insert, Update, Delete, Create, etc.) as mutations
+                    is_mutation = true;
+                }
+            }
+        }
 
         if is_mutation && auth.mode == ServerMode::Readonly {
             return Err(AxiomError::new(
@@ -33,11 +75,7 @@ impl QueryExecutionPipeline {
             ));
         }
 
-        if !db_cfg.dangerous_operations
-            && (sql.trim().to_uppercase().starts_with("DROP")
-                || sql.trim().to_uppercase().starts_with("TRUNCATE")
-                || sql.trim().to_uppercase().starts_with("ALTER"))
-        {
+        if is_dangerous && !db_cfg.dangerous_operations {
             return Err(AxiomError::new(
                 "DB_DANGEROUS_OP_DENIED",
                 "Dangerous operations are disabled",
@@ -64,15 +102,6 @@ impl QueryExecutionPipeline {
         } else {
             None
         };
-
-        // Stub WAF / validation
-        // In a real system, we'd parse the SQL string to validate constraints.
-
-        let engine = DatabasePoolManager::get_engine(db_name)
-            .await
-            .ok_or_else(|| {
-                AxiomError::new("DB_NOT_FOUND", "Database not found", StatusCode::NOT_FOUND)
-            })?;
 
         // Format placeholders based on engine dialect
         let dialect = engine.dialect();
