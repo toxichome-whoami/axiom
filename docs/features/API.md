@@ -69,11 +69,19 @@ curl -X GET "http://localhost:4500/api/v1/db/databases" \
 ```
 Returns all databases the key has access to with connection status and table count. Health checks are cached for 5 seconds.
 
-### 2. List Tables
+### 2. List Tables (Paginated)
 ```bash
-curl -X GET "http://localhost:4500/api/v1/db/main_db/tables" \
+# Initial request
+curl -X GET "http://localhost:4500/api/v1/db/main_db/tables?limit=50" \
+     -H "X-Axiom-Key: <TOKEN>"
+
+# Subsequent pages
+curl -X GET "http://localhost:4500/api/v1/db/main_db/tables?limit=50&cursor=users_table" \
      -H "X-Axiom-Key: <TOKEN>"
 ```
+**Parameters:**
+- `limit` — Max tables per page (default 50, max 500)
+- `cursor` — Keyset cursor string returned from the previous page's `next_cursor` field. Omit for the first page.
 
 ### 3. Execute Raw SQL
 > [!CAUTION]
@@ -850,7 +858,7 @@ curl -X POST "http://localhost:4500/api/v1/graphql" \
      -H "X-Axiom-Key: <TOKEN>" \
      -H "Content-Type: application/json" \
      -d '{
-           "query": "{ users(dbAlias: \"main_db\", limit: 10, offset: 0) { id name email } }"
+           "query": "{ users(dbAlias: \"main_db\", limit: 10, sort: \"id\", order: \"asc\", cursor: \"1\") { id name email } }"
          }'
 ```
 

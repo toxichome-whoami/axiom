@@ -10,6 +10,13 @@ pub struct QueryRequest {
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct ListTablesParams {
+    #[serde(default = "default_limit")]
+    pub limit: i32,
+    pub cursor: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct InsertRequest {
     pub rows: Option<Vec<HashMap<String, Value>>>,
     pub row: Option<HashMap<String, Value>>,

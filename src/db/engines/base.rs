@@ -37,7 +37,11 @@ pub trait DatabaseEngine: Send + Sync {
     async fn disconnect(&self) -> Result<(), Box<dyn std::error::Error>>;
     async fn health_check(&self) -> bool;
 
-    async fn list_tables(&self) -> Result<Vec<TableInfo>, Box<dyn std::error::Error>>;
+    async fn list_tables(
+        &self,
+        cursor: Option<String>,
+        limit: usize,
+    ) -> Result<Vec<TableInfo>, Box<dyn std::error::Error>>;
     async fn count_tables(&self) -> Result<i64, Box<dyn std::error::Error>>;
     async fn describe_table(
         &self,

@@ -84,7 +84,9 @@ async fn execute_graphql(
                 columns,
                 alias,
                 limit,
-                offset,
+                cursor,
+                sort,
+                order,
                 ..
             } => {
                 let db_cfg = get_db_config(&db_alias, &auth).await?;
@@ -95,9 +97,19 @@ async fn execute_graphql(
                     columns.join(", ")
                 };
 
+                let mut where_clause = String::new();
+                if let Some(c) = cursor {
+                    let op = if order.to_lowercase() == "desc" {
+                        "<"
+                    } else {
+                        ">"
+                    };
+                    where_clause = format!("WHERE {} {} '{}'", sort, op, c);
+                }
+
                 let sql = format!(
-                    "SELECT {} FROM {} LIMIT {} OFFSET {}",
-                    cols, table, limit, offset
+                    "SELECT {} FROM {} {} ORDER BY {} {} LIMIT {}",
+                    cols, table, where_clause, sort, order, limit
                 );
 
                 let (db_result, _) =

@@ -56,10 +56,54 @@ impl DatabaseEngine for AnyDatabaseEngine {
         }
     }
 
-    async fn list_tables(&self) -> Result<Vec<TableInfo>, Box<dyn std::error::Error>> {
-        // Simplified generic implementation, usually requires dialect-specific introspection.
-        // We'll return an empty list for this stub to satisfy the compiler while showing the structure.
-        Ok(vec![])
+    async fn list_tables(
+        &self,
+        cursor: Option<String>,
+        limit: usize,
+    ) -> Result<Vec<TableInfo>, Box<dyn std::error::Error>> {
+        let pool = self.pool.as_ref().ok_or("Not connected")?;
+        let dialect = self.config.url.split(':').next().unwrap_or("any");
+
+        let mut query_str = String::new();
+        if dialect == "postgres" {
+            query_str.push_str(
+                "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'",
+            );
+            if cursor.is_some() {
+                query_str.push_str(" AND table_name > $1");
+            }
+            query_str.push_str(&format!(" ORDER BY table_name ASC LIMIT {}", limit));
+        } else if dialect == "sqlite" {
+            query_str.push_str("SELECT name as table_name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'");
+            if cursor.is_some() {
+                query_str.push_str(" AND name > ?");
+            }
+            query_str.push_str(&format!(" ORDER BY name ASC LIMIT {}", limit));
+        } else {
+            return Ok(vec![]); // Stub for unsupported dialects
+        }
+
+        let mut query = sqlx::query(&query_str);
+        if let Some(c) = cursor {
+            query = query.bind(c);
+        }
+
+        let rows = query.fetch_all(pool).await?;
+        let mut tables = Vec::new();
+
+        use sqlx::Row;
+        for row in rows {
+            if let Ok(name) = row.try_get::<String, _>("table_name") {
+                tables.push(TableInfo {
+                    name,
+                    row_count_estimate: 0,
+                    columns: None,
+                    foreign_keys: None,
+                });
+            }
+        }
+
+        Ok(tables)
     }
 
     async fn count_tables(&self) -> Result<i64, Box<dyn std::error::Error>> {

@@ -12,7 +12,9 @@ pub enum ASTOperation {
         columns: Vec<String>,
         alias: String,
         limit: i32,
-        offset: i32,
+        cursor: Option<String>,
+        sort: String,
+        order: String,
         nested: Vec<ASTOperation>, // Supports basic nesting
     },
     ExecuteSql {
@@ -103,7 +105,20 @@ impl ASTCompiler {
             .unwrap_or("")
             .to_string();
         let limit = args.get("limit").and_then(|v| v.as_i64()).unwrap_or(50) as i32;
-        let offset = args.get("offset").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+        let cursor = args
+            .get("cursor")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        let sort = args
+            .get("sort")
+            .and_then(|v| v.as_str())
+            .unwrap_or("id")
+            .to_string();
+        let order = args
+            .get("order")
+            .and_then(|v| v.as_str())
+            .unwrap_or("asc")
+            .to_string();
 
         Ok(ASTOperation::QueryTable {
             db_alias,
@@ -111,7 +126,9 @@ impl ASTCompiler {
             columns,
             alias,
             limit,
-            offset,
+            cursor,
+            sort,
+            order,
             nested,
         })
     }

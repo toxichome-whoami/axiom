@@ -187,6 +187,9 @@ pub async fn get_db_config(
 pub async fn list_tables(
     axum::extract::Path(db_name): axum::extract::Path<String>,
     axum::extract::Extension(auth): axum::extract::Extension<AuthContext>,
+    axum::extract::Query(params): axum::extract::Query<
+        crate::api::database::schemas::ListTablesParams,
+    >,
 ) -> Result<axum::Json<Value>, AxiomError> {
     let _db_cfg = get_db_config(&db_name, &auth).await?;
 
@@ -196,14 +199,29 @@ pub async fn list_tables(
             AxiomError::new("DB_NOT_FOUND", "Database not found", StatusCode::NOT_FOUND)
         })?;
 
-    match engine.list_tables().await {
-        Ok(tables) => Ok(axum::Json(serde_json::json!({
-            "success": true,
-            "data": {
-                "database": db_name,
-                "tables": tables,
+    let limit = params.limit.clamp(1, 500) as usize;
+    match engine.list_tables(params.cursor, limit).await {
+        Ok(tables) => {
+            let mut next_cursor = None;
+            if !tables.is_empty() && tables.len() == limit {
+                if let Some(last_table) = tables.last() {
+                    next_cursor = Some(last_table.name.clone());
+                }
             }
-        }))),
+
+            Ok(axum::Json(serde_json::json!({
+                "success": true,
+                "data": {
+                    "database": db_name,
+                    "tables": tables,
+                },
+                "pagination": {
+                    "limit": limit,
+                    "has_more": next_cursor.is_some(),
+                    "next_cursor": next_cursor
+                }
+            })))
+        }
         Err(e) => Err(AxiomError::new(
             "DB_QUERY_FAILED",
             &e.to_string(),
