@@ -54,7 +54,8 @@ pub fn create_app() -> Router {
         .nest("/auth", crate::api::auth::router::get_router())
         .layer(middleware::from_fn(auth_middleware))
         .layer(middleware::from_fn(rate_limit_middleware))
-        .layer(middleware::from_fn(waf_middleware));
+        .layer(middleware::from_fn(waf_middleware))
+        .layer(middleware::map_response(crate::middleware::response::envelope_middleware));
 
     let mut router = Router::new()
         .nest("/api/v1", api_routes)

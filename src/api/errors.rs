@@ -24,6 +24,7 @@ impl AxiomError {
 impl IntoResponse for AxiomError {
     fn into_response(self) -> Response {
         let body = Json(json!({
+            "success": false,
             "error": {
                 "code": self.code,
                 "message": self.message
