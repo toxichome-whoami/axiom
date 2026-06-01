@@ -71,7 +71,8 @@ pub fn create_app() -> Router {
         .layer(SetResponseHeaderLayer::overriding(
             header::X_FRAME_OPTIONS,
             header::HeaderValue::from_static("DENY"),
-        ));
+        ))
+        .layer(tower_http::trace::TraceLayer::new_for_http());
 
     if _config.features.playground {
         use utoipa::OpenApi;
