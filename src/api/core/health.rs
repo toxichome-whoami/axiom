@@ -15,6 +15,25 @@ static SYSTEM: Lazy<Mutex<System>> = Lazy::new(|| {
     Mutex::new(sys)
 });
 
+pub fn get_system_stats() -> (f32, u64) {
+    if let Ok(mut sys) = SYSTEM.lock() {
+        let pid = sysinfo::Pid::from_u32(std::process::id());
+        // Refresh process stats to get actual server footprint
+        sys.refresh_all();
+        if let Some(process) = sys.process(pid) {
+            (process.cpu_usage(), process.memory() / 1024 / 1024)
+        } else {
+            (0.0, 0)
+        }
+    } else {
+        (0.0, 0)
+    }
+}
+
+pub fn get_uptime() -> f64 {
+    START_TIME.elapsed().as_secs_f64()
+}
+
 const VERSION: &str = "1.0.5";
 
 use crate::middleware::auth::auth_middleware;
@@ -112,20 +131,7 @@ async fn health(
         );
     }
 
-    let (cpu_percent, memory_used_mb) = {
-        if let Ok(mut sys) = SYSTEM.lock() {
-            let pid = sysinfo::Pid::from_u32(std::process::id());
-            // Refresh process stats to get actual server footprint
-            sys.refresh_all();
-            if let Some(process) = sys.process(pid) {
-                (process.cpu_usage(), process.memory() / 1024 / 1024)
-            } else {
-                (0.0, 0)
-            }
-        } else {
-            (0.0, 0)
-        }
-    };
+    let (cpu_percent, memory_used_mb) = get_system_stats();
 
     Ok(Json(json!({
         "status": if all_dbs_up { "healthy" } else { "degraded" },

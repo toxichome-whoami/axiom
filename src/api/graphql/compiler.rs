@@ -175,6 +175,9 @@ impl ASTCompiler {
                             });
                         } else if name == "databases" {
                             operations.push(ASTOperation::ListDatabases { alias });
+                        } else if name == "__schema" {
+                            return Err("GraphQL introspection is disabled for security reasons"
+                                .to_string());
                         } else {
                             if args.get("dbAlias").is_none() {
                                 return Err(format!(
