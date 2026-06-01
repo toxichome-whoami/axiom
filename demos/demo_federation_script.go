@@ -29,7 +29,7 @@ func RunFederationTest() {
 		keySecret = "default_secret"
 	}
 
-	endpoint := fmt.Sprintf("%s/api/v1/federation/servers", baseURL)
+	endpoint := fmt.Sprintf("%s/api/v1/fed/servers", baseURL)
 
 	req, err := http.NewRequest("GET", endpoint, nil)
 	if err != nil {

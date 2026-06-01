@@ -69,14 +69,11 @@ curl -X GET "http://localhost:4500/api/v1/db/databases" \
 ```
 Returns all databases the key has access to with connection status and table count. Health checks are cached for 5 seconds.
 
-### 2. List Tables (Paginated)
+### 2. List Tables
 ```bash
-curl -X GET "http://localhost:4500/api/v1/db/main_db/tables?limit=50&offset=0" \
+curl -X GET "http://localhost:4500/api/v1/db/main_db/tables" \
      -H "X-Axiom-Key: <TOKEN>"
 ```
-**Parameters:**
-- `limit` — Max tables per page (default 50, max 500)
-- `offset` — Pagination offset (default 0)
 
 ### 3. Execute Raw SQL
 > [!CAUTION]
@@ -112,8 +109,7 @@ curl -G "http://localhost:4500/api/v1/db/main_db/users/rows" \
 ```
 
 **Parameters:**
-- `page` — Legacy offset page number (default 1)
-- `cursor` — Keyset cursor for ultra-fast pagination (bypasses `page` offset)
+- `cursor` — Keyset cursor string returned from the previous page's `next_cursor` field. Omit for the first page.
 - `limit` — Rows per page (default 50)
 - `sort` — Column to sort by (validated against real table columns)
 - `order` — `asc` or `desc` (default `asc`)
@@ -689,9 +685,14 @@ curl -X POST "http://localhost:4500/api/v1/auth/my_project/user/password" \
 > All admin endpoints require an API key with `full_admin = true` in `config.toml`.
 
 #### GET `/admin/users`
-List all users in the project (paginated).
+List all users in the project (cursor paginated).
 ```bash
-curl -X GET "http://localhost:4500/api/v1/auth/my_project/admin/users?limit=50&offset=0" \
+# Initial request
+curl -X GET "http://localhost:4500/api/v1/auth/my_project/admin/users?limit=50" \
+     -H "X-Axiom-Key: <ADMIN_TOKEN>"
+
+# Subsequent pages (use next_cursor from response)
+curl -X GET "http://localhost:4500/api/v1/auth/my_project/admin/users?limit=50&cursor=2026-06-01T12:00:00Z" \
      -H "X-Axiom-Key: <ADMIN_TOKEN>"
 ```
 
@@ -772,9 +773,14 @@ curl -X GET "http://localhost:4500/api/v1/auth/my_project/admin/users/export" \
 ```
 
 #### GET `/admin/audit`
-Retrieve the audit log for this project (paginated).
+Retrieve the audit log for this project (cursor paginated).
 ```bash
-curl -X GET "http://localhost:4500/api/v1/auth/my_project/admin/audit?limit=100&offset=0" \
+# Initial request
+curl -X GET "http://localhost:4500/api/v1/auth/my_project/admin/audit?limit=100" \
+     -H "X-Axiom-Key: <ADMIN_TOKEN>"
+
+# Subsequent pages (use next_cursor from response)
+curl -X GET "http://localhost:4500/api/v1/auth/my_project/admin/audit?limit=100&cursor=123" \
      -H "X-Axiom-Key: <ADMIN_TOKEN>"
 ```
 

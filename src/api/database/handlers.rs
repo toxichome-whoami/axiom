@@ -334,29 +334,57 @@ pub async fn fetch_rows(
     };
 
     let limit = params.limit.clamp(1, 500);
-    let offset = (params.page.max(1) - 1) * limit;
+
+    let mut final_where = where_sql.clone();
+
+    if let Some(cursor) = &params.cursor {
+        // If WHERE already exists, append with AND, else start new WHERE
+        let cursor_op = if order_dir == "DESC" { "<" } else { ">" };
+        let cursor_cond = format!("{} {} '{}'", order_col, cursor_op, cursor);
+
+        if final_where.trim().is_empty() {
+            final_where = format!("WHERE {}", cursor_cond);
+        } else {
+            final_where = format!("{} AND {}", final_where, cursor_cond);
+        }
+    }
 
     let sql = format!(
-        "SELECT * FROM {} {} ORDER BY {} {} LIMIT {} OFFSET {}",
+        "SELECT * FROM {} {} ORDER BY {} {} LIMIT {}",
         crate::api::database::filter_builder::sanitize_ident(&table_name),
-        where_sql,
+        final_where,
         order_col,
         order_dir,
-        limit,
-        offset
+        limit
     );
 
     let (result, _) =
         QueryExecutionPipeline::run_query(&db_name, &sql, values, &auth, &db_cfg).await?;
+
+    let mut next_cursor = None;
+    if let Some(rows) = &result.rows {
+        if !rows.is_empty() && rows.len() == limit as usize {
+            if let Some(last_row) = rows.last() {
+                // Determine cursor value by grabbing the column we sorted by
+                if let Some(val) = last_row.get(&order_col) {
+                    next_cursor = match val {
+                        Value::String(s) => Some(s.clone()),
+                        Value::Number(n) => Some(n.to_string()),
+                        _ => None, // nulls or booleans not supported as cursors
+                    };
+                }
+            }
+        }
+    }
 
     Ok(axum::Json(serde_json::json!({
         "success": true,
         "data": {
             "rows": result.rows,
             "pagination": {
-                "page": params.page,
                 "limit": limit,
-                "has_more": result.rows.as_ref().map(|r| r.len()).unwrap_or(0) as i32 == limit
+                "has_more": next_cursor.is_some(),
+                "next_cursor": next_cursor
             }
         }
     })))

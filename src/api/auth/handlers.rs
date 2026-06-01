@@ -797,15 +797,37 @@ pub async fn admin_list_users(
         .get("limit")
         .and_then(|v| v.parse::<i64>().ok())
         .unwrap_or(50);
-    let offset = params
-        .get("offset")
-        .and_then(|v| v.parse::<i64>().ok())
-        .unwrap_or(0);
 
-    let rows = sqlx::query("SELECT uid, email, display_name, email_verified, disabled, is_anonymous, created_at, last_sign_in FROM users LIMIT ? OFFSET ?")
-        .bind(limit).bind(offset)
-        .fetch_all(&pool).await
-        .map_err(|e| AxiomError::new("AUTH_DB_ERROR", &e.to_string(), StatusCode::INTERNAL_SERVER_ERROR))?;
+    let cursor = params.get("cursor").map(|s| s.as_str());
+
+    let rows = if let Some(c) = cursor {
+        let q = "SELECT uid, email, display_name, email_verified, disabled, is_anonymous, created_at, last_sign_in FROM users WHERE created_at < ? ORDER BY created_at DESC LIMIT ?";
+        sqlx::query(q)
+            .bind(c)
+            .bind(limit)
+            .fetch_all(&pool)
+            .await
+            .map_err(|e| {
+                AxiomError::new(
+                    "AUTH_DB_ERROR",
+                    &e.to_string(),
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                )
+            })?
+    } else {
+        let q = "SELECT uid, email, display_name, email_verified, disabled, is_anonymous, created_at, last_sign_in FROM users ORDER BY created_at DESC LIMIT ?";
+        sqlx::query(q)
+            .bind(limit)
+            .fetch_all(&pool)
+            .await
+            .map_err(|e| {
+                AxiomError::new(
+                    "AUTH_DB_ERROR",
+                    &e.to_string(),
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                )
+            })?
+    };
 
     use sqlx::Column;
     let users: Vec<Value> = rows
@@ -831,7 +853,20 @@ pub async fn admin_list_users(
         })
         .collect();
 
-    Ok(Json(json!({ "users": users, "total": users.len() })))
+    let mut next_cursor = None;
+    if !users.is_empty() && users.len() == limit as usize {
+        if let Some(last_user) = users.last() {
+            if let Some(created_at) = last_user.get("created_at").and_then(|v| v.as_str()) {
+                next_cursor = Some(created_at.to_string());
+            }
+        }
+    }
+
+    Ok(Json(json!({
+        "users": users,
+        "total": users.len(),
+        "next_cursor": next_cursor
+    })))
 }
 
 pub async fn admin_delete_user(
@@ -881,15 +916,37 @@ pub async fn admin_audit_log(
         .get("limit")
         .and_then(|v| v.parse::<i64>().ok())
         .unwrap_or(100);
-    let offset = params
-        .get("offset")
-        .and_then(|v| v.parse::<i64>().ok())
-        .unwrap_or(0);
 
-    let rows = sqlx::query("SELECT id, uid, event, ip_address, user_agent, metadata, created_at FROM auth_audit ORDER BY id DESC LIMIT ? OFFSET ?")
-        .bind(limit).bind(offset)
-        .fetch_all(&pool).await
-        .map_err(|e| AxiomError::new("AUTH_DB_ERROR", &e.to_string(), StatusCode::INTERNAL_SERVER_ERROR))?;
+    let cursor = params.get("cursor").and_then(|v| v.parse::<i64>().ok());
+
+    let rows = if let Some(c) = cursor {
+        let q = "SELECT id, uid, event, ip_address, user_agent, metadata, created_at FROM auth_audit WHERE id < ? ORDER BY id DESC LIMIT ?";
+        sqlx::query(q)
+            .bind(c)
+            .bind(limit)
+            .fetch_all(&pool)
+            .await
+            .map_err(|e| {
+                AxiomError::new(
+                    "AUTH_DB_ERROR",
+                    &e.to_string(),
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                )
+            })?
+    } else {
+        let q = "SELECT id, uid, event, ip_address, user_agent, metadata, created_at FROM auth_audit ORDER BY id DESC LIMIT ?";
+        sqlx::query(q)
+            .bind(limit)
+            .fetch_all(&pool)
+            .await
+            .map_err(|e| {
+                AxiomError::new(
+                    "AUTH_DB_ERROR",
+                    &e.to_string(),
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                )
+            })?
+    };
 
     use sqlx::Column;
     let entries: Vec<Value> = rows
@@ -915,7 +972,20 @@ pub async fn admin_audit_log(
         })
         .collect();
 
-    Ok(Json(json!({ "audit": entries })))
+    let mut next_cursor = None;
+    if !entries.is_empty() && entries.len() == limit as usize {
+        if let Some(last_entry) = entries.last() {
+            if let Some(id) = last_entry.get("id").and_then(|v| v.as_i64()) {
+                next_cursor = Some(id);
+            }
+        }
+    }
+
+    Ok(Json(json!({
+        "audit": entries,
+        "total": entries.len(),
+        "next_cursor": next_cursor
+    })))
 }
 
 pub async fn handler_verify_email_get(
