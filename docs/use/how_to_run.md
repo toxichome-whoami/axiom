@@ -74,23 +74,29 @@ $env:PATH = "D:\msys64_install\ucrt64\bin;" + $env:PATH; cargo zigbuild --target
 scp target\x86_64-unknown-linux-gnu\release\axiom user@yourserver.com:/home/user/axiom/axiom
 ```
 
-### Step 3: SSH into your cPanel terminal and restart
+### Step 3: Stop the old version (if running)
 
 ```bash
-# First time only — make it executable
-chmod +x ~/axiom/axiom
-
 # Stop old version (use whichever works on your host)
 kill $(pgrep axiom)
 # OR if pgrep is not available:
 ps aux | grep axiom          # find the PID from output
 kill <PID>
+```
 
-# Start new version — stays alive after terminal close
-cd ~/axiom
+### Step 4: Run in the Background (nohup)
+
+To keep Axiom running even after you close your SSH terminal, you **must** use `nohup` (no hangup).
+
+```bash
+# First time only — make it executable
+cd /axiom # if you create folder with this name
+
+chmod +x /axiom
 nohup ./axiom > axiom.log 2>&1 &
 echo "Running. PID: $!"
 ```
+*(This will write all logs to `axiom.log` and keep the server alive in the background)*
 
 ---
 
