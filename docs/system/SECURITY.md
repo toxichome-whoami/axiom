@@ -140,29 +140,6 @@ Mutating requests (`POST`, `PUT`, `DELETE`) can be made idempotent by providing 
 - Subsequent requests with the same key receive the cached response without re-executing the operation.
 - This prevents duplicate database records and file operations in the event of network retry loops.
 
-## 8. Distributed Tracing & Observability
-
-Axiom injects **OpenTelemetry (OTLP)** trace IDs into every request at the middleware level. The `trace_id` is included in all structured JSON log lines emitted by `structlog`, allowing you to correlate a single failing request across distributed logs instantly.
-
-- **Config-Driven**: Telemetry is toggled via `features.telemetry = true` in `config.toml`. No environment variables required.
-- **Always Generates Local Trace IDs**: When enabled, Axiom always initializes an OpenTelemetry `TracerProvider` and instruments the Axum router natively. Every request gets a unique 32-character hex `trace_id` in logs — even with no external collector configured.
-- **Optional Exporter**: Set `telemetry.otlp_endpoint` in `config.toml` (or the `OTEL_EXPORTER_OTLP_ENDPOINT` environment variable) to export spans to an external collector. Compatible with **Jaeger**, **Datadog**, **Honeycomb**, and any standard OTLP backend.
-- **Dual IDs**: Every log line contains both a `trace_id` (global, from OTEL) and a `request_id` (local, generated at the edge). Use `trace_id` to correlate across distributed microservices; use `request_id` to correlate logs within a single Axiom instance.
-
-```json
-// Every log line contains both IDs:
-{ "level": "INFO", "trace_id": "a759389c3b7340cd0645e0024f08bd24", "request_id": "req_019e74e3fe097f53bafcb559a73e146f", "method": "POST", "path": "/api/v1/auth/login" }
-```
-
-```toml
-# config.toml — enable telemetry with optional exporter
-[features]
-telemetry = true
-
-[telemetry]
-otlp_endpoint = "http://localhost:4318"  # Optional: leave blank for local-only trace IDs
-```
-
 ## 9. Security Recommendations for Production
 
 - **TLS/SSL**: Always set `tls_cert` and `tls_key` in `config.toml` or terminate TLS at a trusted reverse proxy (e.g., Nginx, Cloudflare).

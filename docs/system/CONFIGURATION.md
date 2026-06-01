@@ -56,7 +56,7 @@ Feature flags to enable/disable entire subsystems.
 | `websocket` | `false` | Enable real-time WebSocket push gateway at `/api/v1/ws` |
 | `sse` | `true` | Enable real-time SSE push gateway at `/api/v1/sse` |
 | `auth` | `false` | Enable the Axiom Auth identity system at `/api/v1/auth/*` |
-| `telemetry` | `false` | Enable OpenTelemetry instrumentation for distributed tracing |
+
 
 ---
 
@@ -532,31 +532,4 @@ s3_region = "auto"
 s3_endpoint_url = "https://<account_id>.r2.cloudflarestorage.com"
 s3_access_key = "your_r2_access_key"
 s3_secret_key = "your_r2_secret_key"
-```
-
----
-
-## `[telemetry]`
-
-OpenTelemetry distributed tracing configuration. Requires `features.telemetry = true`.
-
-> [!NOTE]
-> When `features.telemetry = true`, Axiom **always** generates a unique 32-character `trace_id` for every request log line — even without a configured exporter. The exporter is optional and only needed to ship traces to an external visualization tool.
-
-| Key | Default | Description |
-|-----|---------|-------------|
-| `otlp_endpoint` | `""` | OTLP collector URL. Leave blank to generate local trace IDs only. Overrideable with the `OTEL_EXPORTER_OTLP_ENDPOINT` environment variable |
-
-**Example:**
-```toml
-[features]
-telemetry = true
-
-[telemetry]
-otlp_endpoint = "http://localhost:4318"   # Standard Jaeger/OTLP port
-```
-
-**Trace ID in every log line:**
-```json
-{ "trace_id": "a759389c3b7340cd0645e0024f08bd24", "request_id": "req_019e...", "method": "GET", "path": "/api/v1/db/databases", "status": 200 }
 ```

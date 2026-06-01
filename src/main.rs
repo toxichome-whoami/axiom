@@ -27,11 +27,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         eprintln!("Failed to setup logging: {}", e);
     }
 
-    // 2. Setup Telemetry
-    if let Err(e) = server::telemetry::setup_telemetry() {
-        eprintln!("Failed to setup telemetry: {}", e);
-    }
-
     // 3. Start Background Daemons
     server::lifespan::start_daemons();
 

@@ -207,9 +207,7 @@ scrape_configs:
 - <code>axiom_rate_limit_hits_total</code> spike (potential attack)
 - <code>axiom_webhook_failed_total</code> increasing (delivery issues)
 
-### Distributed Tracing (OpenTelemetry)
 
-Axiom automatically exports OpenTelemetry (`OTLP`) traces to `localhost:4318/v1/traces`. It injects `trace_id` directly into the JSON `tracing` output. Use Jaeger or Datadog to visualize cross-service request flame graphs.
 
 ---
 

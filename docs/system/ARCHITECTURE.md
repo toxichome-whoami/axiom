@@ -38,9 +38,7 @@ Federation proxy clients (`reqwest::Client`) are **attached to the global config
 - Connection pools are cleanly initialized on first use and shared across all requests.
 - Horizontal scaling is safe: each process/thread owns its isolated connection pool.
 
-## Distributed Tracing (OpenTelemetry)
 
-Axiom integrates **OpenTelemetry** via `tracing-opentelemetry` — every route is automatically wrapped in a trace span. The `Tracing` subsystem extracts the active `trace_id` from the span context and injects it into every JSON log line. Traces are exported via OTLP/HTTP to `localhost:4318` (compatible with Jaeger, Datadog, Honeycomb). This allows full **flame graph debugging** of distributed request chains without any manual instrumentation.
 
 ## Automated Backup Engine (PITR)
 

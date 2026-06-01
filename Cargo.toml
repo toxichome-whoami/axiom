@@ -35,15 +35,11 @@ tower-http = { version = "0.5.2", features = ["cors", "trace", "set-header", "co
 tokio-util = { version = "0.7", features = ["io"] }
 urlencoding = "2.1"
 
-# Backup & Telemetry
+# Backup
 aws-config = "1.5.5"
 aws-sdk-s3 = "1.42.0"
 tar = "0.4.41"
 flate2 = "1.0.31"
-opentelemetry = { version = "0.24.0", features = ["metrics"] }
-opentelemetry_sdk = { version = "0.24.1", features = ["rt-tokio"] }
-opentelemetry-otlp = { version = "0.17.0", features = ["grpc-tonic", "http-proto"] }
-tracing-opentelemetry = "0.25.0"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 tracing-appender = "0.2"

@@ -51,7 +51,6 @@ pub struct FeaturesConfig {
     pub websocket: bool,
     pub sse: bool,
     pub auth: bool,
-    pub telemetry: bool,
 }
 
 impl Default for FeaturesConfig {
@@ -68,7 +67,6 @@ impl Default for FeaturesConfig {
             websocket: false,
             sse: true,
             auth: false,
-            telemetry: false,
         }
     }
 }
@@ -624,20 +622,6 @@ impl Default for AuthEmailConfig {
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 #[serde(default)]
-pub struct TelemetryConfig {
-    pub otlp_endpoint: String,
-}
-
-impl Default for TelemetryConfig {
-    fn default() -> Self {
-        Self {
-            otlp_endpoint: "".to_string(),
-        }
-    }
-}
-
-#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
-#[serde(default)]
 pub struct AuthProjectConfig {
     pub db_url: Option<String>,
     pub access_token_ttl: i32,
@@ -794,7 +778,6 @@ pub struct AxiomConfig {
     pub circuit_breaker: CircuitBreakerConfig,
     pub auth: AuthConfig,
     pub backups: BackupsConfig,
-    pub telemetry: TelemetryConfig,
 }
 
 impl Default for AxiomConfig {
@@ -821,7 +804,6 @@ impl Default for AxiomConfig {
             circuit_breaker: CircuitBreakerConfig::default(),
             auth: AuthConfig::default(),
             backups: BackupsConfig::default(),
-            telemetry: TelemetryConfig::default(),
         }
     }
 }
