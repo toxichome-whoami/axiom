@@ -79,30 +79,6 @@ curl -X GET "http://localhost:4500/api/v1/db/main_db/tables?limit=50&offset=0" \
 - `limit` — Max tables per page (default 50, max 500)
 - `offset` — Pagination offset (default 0)
 
-**Response:**
-```json
-{
-  "success": true,
-  "data": {
-    "database": "main_db",
-    "tables": [
-      {
-        "name": "users",
-        "columns": [
-          {"name": "id", "type": "integer", "nullable": false, "primary_key": true}
-        ]
-      }
-    ],
-    "pagination": {
-      "total": 150,
-      "limit": 50,
-      "offset": 0,
-      "has_more": true
-    }
-  }
-}
-```
-
 ### 3. Execute Raw SQL
 > [!CAUTION]
 > Raw SQL is validated by AST parser. Dangerous operations blocked per config.
@@ -149,38 +125,6 @@ curl -G "http://localhost:4500/api/v1/db/main_db/users/rows" \
 - `count` — Set to `1` to include exact `total` in pagination (runs `SELECT COUNT(*)`)
   — Omit for faster responses (infers `has_more` from row count)
 
-**Response (without count):**
-```json
-{
-  "success": true,
-  "data": {
-    "rows": [{"id": 1, "name": "Alice"}],
-    "pagination": {
-      "limit": 50,
-      "has_more": true,
-      "is_cursor": true,
-      "next_cursor": "eyJ2IjogNDV9"
-    }
-  }
-}
-```
-
-**Response (with `?count=1`):**
-```json
-{
-  "success": true,
-  "data": {
-    "rows": [{"id": 1, "name": "Alice"}],
-    "pagination": {
-      "total": 150,
-      "page": 1,
-      "limit": 50,
-      "has_more": true
-    }
-  }
-}
-```
-
 ### 5. Insert Rows
 ```bash
 curl -X POST "http://localhost:4500/api/v1/db/main_db/users/rows" \
@@ -221,31 +165,6 @@ curl -X DELETE "http://localhost:4500/api/v1/db/main_db/users/rows" \
 curl -X GET "http://localhost:4500/api/v1/fs/storages" \
      -H "X-Axiom-Key: <TOKEN>"
 ```
-**Response:**
-```json
-{
-  "success": true,
-  "data": {
-    "storages": [
-      {
-        "name": "uploads",
-        "mode": "readwrite",
-        "status": "available",
-        "limit": "10 GB",
-        "chunk_size": "10 MB",
-        "max_file_size": "500 MB",
-        "federated": false,
-        "usage": {
-          "used_bytes": [104857600, "100.00 MB"],
-          "available_bytes": [10632560640, "9.90 GB"],
-          "file_count": 42
-        }
-      }
-    ]
-  }
-}
-```
-
 ### 2. List Folder
 ```bash
 # Flat listing (default)
@@ -266,31 +185,6 @@ curl -X GET "http://localhost:4500/api/v1/fs/local_fs/list?path=/&limit=100&cont
 - `limit` - Max items per page (default 100, max 1000)
 - `continuation_token` - Token returned from a previous response to fetch the next page
 - `recursive` - Set to `true` to include all subdirectory contents (depth-first)
-
-**Response:**
-```json
-{
-  "success": true,
-  "data": {
-    "storage": "local_fs",
-    "path": "/subfolder",
-    "items": [
-      {
-        "name": "image.png",
-        "type": "file",
-        "size": [1048576, "1.0 MB"],
-        "mime_type": "image/png",
-        "modified": "2024-03-10T12:00:00"
-      }
-    ],
-    "pagination": {
-      "limit": 50,
-      "is_truncated": true,
-      "next_continuation_token": "aW1hZ2VfNTEucG5n"
-    }
-  }
-}
-```
 
 ### 3. Download / Stream File or Folder
 
@@ -431,25 +325,6 @@ curl -X POST "http://localhost:4500/api/v1/fs/local_fs/action" \
      -H "Content-Type: application/json" \
      -d '{"action": "info", "source": "/reports/Q1.pdf"}'
 ```
-**Response:**
-```json
-{
-  "success": true,
-  "data": {
-    "action": "info",
-    "source": "/reports/Q1.pdf",
-    "info": {
-      "name": "Q1.pdf",
-      "type": "file",
-      "size": [2457600, "2.34 MB"],
-      "mime_type": "application/pdf",
-      "modified": "2026-03-15T10:30:00",
-      "created": "2026-03-01T08:00:00"
-    }
-  }
-}
-```
-
 #### Check Existence
 Lightweight boolean check — does not transfer file data.
 ```bash
@@ -458,18 +333,6 @@ curl -X POST "http://localhost:4500/api/v1/fs/local_fs/action" \
      -H "Content-Type: application/json" \
      -d '{"action": "exists", "source": "/config/app.yml"}'
 ```
-**Response:**
-```json
-{
-  "success": true,
-  "data": {
-    "action": "exists",
-    "source": "/config/app.yml",
-    "exists": true
-  }
-}
-```
-
 #### Bulk Delete
 Delete multiple files/directories in a single request. Each item reports its own success/failure status.
 ```bash
@@ -481,21 +344,6 @@ curl -X POST "http://localhost:4500/api/v1/fs/local_fs/action" \
            "sources": ["/tmp/old1.log", "/tmp/old2.log", "/tmp/cache"]
          }'
 ```
-**Response:**
-```json
-{
-  "success": true,
-  "data": {
-    "action": "bulk_delete",
-    "results": [
-      {"source": "/tmp/old1.log", "status": "success"},
-      {"source": "/tmp/old2.log", "status": "success"},
-      {"source": "/tmp/cache", "status": "success"}
-    ]
-  }
-}
-```
-
 #### Bulk Move
 Move multiple files/directories in a single request. Provide an `operations` array of `{source, target}` pairs.
 ```bash
@@ -510,22 +358,6 @@ curl -X POST "http://localhost:4500/api/v1/fs/local_fs/action" \
            ]
          }'
 ```
-**Response:**
-```json
-{
-  "success": true,
-  "data": {
-    "action": "bulk_move",
-    "results": [
-      {"source": "/inbox/file1.txt", "target": "/archive/file1.txt", "status": "success"},
-      {"source": "/inbox/file2.txt", "target": "/archive/file2.txt", "status": "success"}
-    ]
-  }
-}
-```
-
-
-
 ---
 
 ## Auth API <code>/api/v1/auth/{project_id}</code>
@@ -559,16 +391,6 @@ curl -X POST "http://localhost:4500/api/v1/auth/my_project/signup" \
      -H "Content-Type: application/json" \
      -d '{"email": "user@example.com", "password": "SecurePassword123"}'
 ```
-**Response:**
-```json
-{
-  "access_token": "eyJhb...",
-  "refresh_token": "rt_abc123",
-  "expires_in": 3600,
-  "user": { "uid": "uuid...", "email": "user@example.com", "email_verified": false }
-}
-```
-
 #### POST `/login`
 Authenticate with email and password.
 
@@ -754,14 +576,6 @@ curl -X POST "http://localhost:4500/api/v1/auth/my_project/totp/enroll" \
      -H "X-Axiom-Key: <API_KEY_TOKEN>" \
      -H "X-User-Access-Token: <USER_ACCESS_TOKEN>"
 ```
-**Response:**
-```json
-{
-  "secret": "JBSWY3DPEHPK3PXP",
-  "qr_code_svg": "<svg>...</svg>"
-}
-```
-
 #### POST `/totp/confirm`
 Confirm TOTP enrollment by providing the first valid code from the Authenticator app. Returns one-time backup codes.
 ```bash
@@ -819,15 +633,6 @@ curl -X GET "http://localhost:4500/api/v1/auth/my_project/user" \
      -H "X-Axiom-Key: <API_KEY_TOKEN>" \
      -H "X-User-Access-Token: <USER_ACCESS_TOKEN>"
 ```
-**Response:**
-```json
-{
-  "uid": "uuid...", "email": "user@example.com",
-  "email_verified": true, "totp_enabled": false,
-  "created_at": "2026-05-28T00:00:00Z", "metadata": {}
-}
-```
-
 #### PATCH `/user`
 Update profile metadata (display name, custom fields, etc.).
 ```bash
@@ -998,7 +803,7 @@ curl -X GET "http://localhost:4500/api/v1/auth/my_project/admin/audit?limit=100&
 
 ## Federation API <code>/api/v1/fed</code>
 
-### 1. List Federated Servers
+#### GET `/fed/servers`
 ```bash
 curl -X GET "http://localhost:4500/api/v1/fed/servers" \
      -H "X-Axiom-Key: <TOKEN>"
@@ -1031,25 +836,6 @@ curl -X POST "http://localhost:4500/api/v1/graphql" \
          }'
 ```
 
-**Response:**
-```json
-{
-  "data": {
-    "execute": {
-      "columns": ["id", "name"],
-      "rows": [
-        {"id": 1, "name": "Alice"},
-        {"id": 2, "name": "Bob"}
-      ],
-      "affectedRows": 0
-    }
-  },
-  "extensions": {
-    "duration_ms": 0.48
-  }
-}
-```
-
 ### Native Table Queries
 
 You can query tables directly using standard GraphQL syntax without writing raw SQL. The AST compiler automatically transposes this into an ultra-fast `SELECT` statement:
@@ -1061,20 +847,6 @@ curl -X POST "http://localhost:4500/api/v1/graphql" \
      -d '{
            "query": "{ users(dbAlias: \"main_db\", limit: 10, offset: 0) { id name email } }"
          }'
-```
-
-**Response:**
-```json
-{
-  "data": {
-    "users": [
-      {"id": 1, "name": "Alice", "email": "alice@example.com"}
-    ]
-  },
-  "extensions": {
-    "duration_ms": 0.21
-  }
-}
 ```
 
 ### Complex Filtering

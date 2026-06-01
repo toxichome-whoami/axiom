@@ -14,6 +14,33 @@ use crate::api::storage::streaming::serve_file;
 use crate::config::loader::ConfigManager;
 use crate::utils::types::AuthContext;
 
+fn get_dir_usage(path: &StdPath) -> (u64, u64) {
+    let mut total_size = 0;
+    let mut file_count = 0;
+    
+    if path.is_dir() {
+        if let Ok(entries) = std::fs::read_dir(path) {
+            for entry in entries.flatten() {
+                if let Ok(metadata) = entry.metadata() {
+                    if metadata.is_dir() {
+                        let (s, c) = get_dir_usage(&entry.path());
+                        total_size += s;
+                        file_count += c;
+                    } else {
+                        total_size += metadata.len();
+                        file_count += 1;
+                    }
+                }
+            }
+        }
+    } else if let Ok(metadata) = path.metadata() {
+        total_size = metadata.len();
+        file_count = 1;
+    }
+    
+    (total_size, file_count)
+}
+
 fn get_storage_path(alias: &str, rel_path: &str, auth: &AuthContext) -> Result<String, AxiomError> {
     if !auth.fs_scope.iter().any(|s| s == "*" || s == alias) {
         return Err(AxiomError::new(
@@ -75,25 +102,52 @@ pub async fn list_storages(
     Extension(auth): Extension<AuthContext>,
 ) -> Result<Json<Value>, AxiomError> {
     let config = ConfigManager::get();
-    let mut storages = Vec::new();
+    let mut tasks = Vec::new();
 
     for (name, storage_cfg) in &config.storage {
         if auth.fs_scope.iter().any(|s| s == "*" || s == name) {
-            let exists = StdPath::new(&storage_cfg.path).exists();
-            storages.push(json!({
-                "name": name,
-                "mode": storage_cfg.mode,
-                "status": if exists { "available" } else { "unavailable" },
-                "limit": storage_cfg.limit,
-                "chunk_size": storage_cfg.chunk_size,
-                "max_file_size": storage_cfg.max_file_size,
-                "federated": false,
-                "usage": {
-                    "used_bytes": [0, "0 B"], // Stubbed
-                    "available_bytes": [0, "0 B"], // Stubbed
-                    "file_count": 0
-                }
+            let path = storage_cfg.path.clone();
+            let limit_str = storage_cfg.limit.clone();
+            let name_cloned = name.clone();
+            let mode = storage_cfg.mode.clone();
+            let chunk_size = storage_cfg.chunk_size.clone();
+            let max_file_size = storage_cfg.max_file_size.clone();
+
+            tasks.push(tokio::task::spawn_blocking(move || {
+                let exists = StdPath::new(&path).exists();
+                let (used_bytes, file_count) = if exists {
+                    get_dir_usage(StdPath::new(&path))
+                } else {
+                    (0, 0)
+                };
+
+                let limit_bytes = crate::utils::size_parser::parse_size(&limit_str).unwrap_or(u64::MAX);
+                let available_bytes = limit_bytes.saturating_sub(used_bytes);
+
+                json!({
+                    "name": name_cloned,
+                    "mode": mode,
+                    "status": if exists { "available" } else { "unavailable" },
+                    "limit": limit_str,
+                    "chunk_size": chunk_size,
+                    "max_file_size": max_file_size,
+                    "federated": false,
+                    "usage": {
+                        "used_bytes": used_bytes,
+                        "used_human": crate::utils::size_parser::format_size(used_bytes),
+                        "available_bytes": available_bytes,
+                        "available_human": crate::utils::size_parser::format_size(available_bytes),
+                        "file_count": file_count
+                    }
+                })
             }));
+        }
+    }
+
+    let mut storages = Vec::new();
+    for task in tasks {
+        if let Ok(storage_json) = task.await {
+            storages.push(storage_json);
         }
     }
 

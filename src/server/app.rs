@@ -50,7 +50,7 @@ pub fn create_app() -> Router {
         .nest("/graphql", crate::api::graphql::router::get_router())
         .route("/ws", get(crate::api::ws::router::ws_handler))
         .nest("/sse", crate::api::sse::router::get_router())
-        .nest("/federation", crate::api::federation::router::get_router())
+        .nest("/fed", crate::api::federation::router::get_router())
         .nest("/auth", crate::api::auth::router::get_router())
         .layer(middleware::from_fn(auth_middleware))
         .layer(middleware::from_fn(rate_limit_middleware))
