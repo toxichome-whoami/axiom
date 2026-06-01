@@ -7,7 +7,6 @@
 <hr/>
 
 > [!TIP]
-> **Interactive API Playground**: If `features.playground = true` is set in `config.toml`, Axiom automatically hosts a fully interactive OpenAPI Swagger UI at `http://localhost:4500/api/docs`. All routes (Core System, Database, Storage, SSE, WebSocket, etc.) are neatly tagged for instant testing directly from your browser.
 
 ## Authentication
 

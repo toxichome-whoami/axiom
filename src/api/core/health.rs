@@ -36,13 +36,6 @@ pub fn init_health_timer() {
     let _ = *START_TIME;
 }
 
-#[utoipa::path(
-    get,
-    path = "/",
-    responses(
-        (status = 200, description = "Root server info")
-    )
-)]
 async fn root() -> Json<Value> {
     Json(json!({
         "name": "Axiom",
@@ -51,28 +44,10 @@ async fn root() -> Json<Value> {
     }))
 }
 
-#[utoipa::path(
-    get,
-    path = "/ready",
-    responses(
-        (status = 200, description = "Server readiness check")
-    )
-)]
 async fn ready() -> Json<Value> {
     Json(json!({"ready": true}))
 }
 
-#[utoipa::path(
-    get,
-    path = "/health",
-    security(
-        ("api_key" = [])
-    ),
-    responses(
-        (status = 200, description = "Detailed hardware and subsystem health check"),
-        (status = 401, description = "Unauthorized")
-    )
-)]
 async fn health(
     axum::extract::Extension(_ctx): axum::extract::Extension<crate::utils::types::AuthContext>,
 ) -> Result<Json<Value>, crate::api::errors::AxiomError> {

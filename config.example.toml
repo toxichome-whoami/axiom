@@ -29,7 +29,6 @@ storage = true                   # Enable Filesystem/Storage Gateway
 webhook = true                   # Enable Outbound Webhook Dispatcher
 federation = false               # Enable Multi-Node Federation
 metrics = true                   # Enable Prometheus/OpenMetrics endpoint
-playground = true                # Enable /api/docs Swagger UI
 mcp = true                       # Enable Model Context Protocol server
 graphql = false                  # Enable High-Performance GraphQL API
 websocket = false                # Enable Real-Time WebSocket Push Gateway

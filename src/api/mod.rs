@@ -1,7 +1,6 @@
 pub mod auth;
 pub mod core;
 pub mod database;
-pub mod docs;
 pub mod errors;
 pub mod federation;
 pub mod graphql;

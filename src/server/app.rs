@@ -55,16 +55,20 @@ pub fn create_app() -> Router {
         .layer(middleware::from_fn(auth_middleware))
         .layer(middleware::from_fn(rate_limit_middleware))
         .layer(middleware::from_fn(waf_middleware))
-        .layer(middleware::map_response(crate::middleware::response::envelope_middleware));
+        .layer(middleware::map_response(
+            crate::middleware::response::envelope_middleware,
+        ));
 
-    let mut router = Router::new()
+    let router = Router::new()
         .nest("/api/v1", api_routes)
         .layer(axum::extract::Extension(_config.clone()))
         .merge(core_routes)
         .route("/favicon.ico", get(favicon))
         .fallback(fallback_handler)
         .layer(cors)
-        .layer(tower_http::timeout::TimeoutLayer::new(std::time::Duration::from_secs(30)))
+        .layer(tower_http::timeout::TimeoutLayer::new(
+            std::time::Duration::from_secs(30),
+        ))
         .layer(SetResponseHeaderLayer::overriding(
             header::X_CONTENT_TYPE_OPTIONS,
             header::HeaderValue::from_static("nosniff"),
@@ -74,16 +78,6 @@ pub fn create_app() -> Router {
             header::HeaderValue::from_static("DENY"),
         ))
         .layer(tower_http::trace::TraceLayer::new_for_http());
-
-    if _config.features.playground {
-        use utoipa::OpenApi;
-        use utoipa_swagger_ui::SwaggerUi;
-
-        router = router.merge(SwaggerUi::new("/api/docs").url(
-            "/api-docs/openapi.json",
-            crate::api::docs::ApiDoc::openapi(),
-        ));
-    }
 
     router
 }
