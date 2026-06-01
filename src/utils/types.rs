@@ -78,7 +78,7 @@ pub enum FileType {
     All,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Debug, Clone)]
 pub struct AuthContext {
     pub api_key_name: String,
     pub mode: ServerMode,

@@ -107,7 +107,7 @@ pub fn validate_api_key(
     if let Some(decoded) = decoded_str {
         if let Some((key_name, key_secret)) = decoded.split_once(':') {
             if let Some(key_cfg) = config.api_key.get(key_name) {
-                if key_cfg.secret == key_secret {
+                if key_cfg.secret == key_secret && !key_cfg.secret.is_empty() {
                     return Some(AuthContext {
                         api_key_name: key_name.to_string(),
                         mode: key_cfg.mode.clone(),
@@ -116,6 +116,18 @@ pub fn validate_api_key(
                         feature_scope: key_cfg.feature_scope.clone(),
                         rate_limit_override: key_cfg.rate_limit_override as u32,
                         full_admin: key_cfg.full_admin,
+                    });
+                }
+            } else if let Some(fed_cfg) = config.federation.incoming.get(key_name) {
+                if fed_cfg.secret == key_secret && !fed_cfg.secret.is_empty() {
+                    return Some(AuthContext {
+                        api_key_name: key_name.to_string(),
+                        mode: fed_cfg.mode.clone(),
+                        db_scope: fed_cfg.db_scope.clone(),
+                        fs_scope: fed_cfg.fs_scope.clone(),
+                        feature_scope: fed_cfg.feature_scope.clone(),
+                        rate_limit_override: 0,
+                        full_admin: false,
                     });
                 }
             }
