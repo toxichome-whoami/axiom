@@ -6,8 +6,6 @@
 
 <hr/>
 
-> [!TIP]
-
 ## Authentication
 
 All endpoints (except `/` and `/ready`) require Bearer token authentication.
