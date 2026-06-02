@@ -18,6 +18,23 @@ Axiom loads `config.toml` **once at startup** into a `std::sync::OnceLock<Arc<Ax
 
 For zero-downtime config changes, use a reverse proxy (Nginx, Caddy) in front of Axiom and perform a rolling restart.
 
+### Environment Variable Overrides
+
+Every configuration property defined in `config.toml` can be directly overridden using environment variables. This is particularly useful for Docker deployments or dynamic secret injection.
+
+**Important Rule:** When specifying nested configuration sections via environment variables, use **double underscores (`__`)** as the separator instead of single underscores. This allows keys that natively contain single underscores (like `local_uploads` or `max_file_size`) to parse correctly without getting split.
+
+For example, to override `[server]` -> `port` (which is `server.port`):
+`SERVER__PORT=4500`
+
+To override `[api_key.admin]` -> `db_scope`:
+`API_KEY__ADMIN__DB_SCOPE="[*]"`
+
+To override `[database.remote_localdb]` -> `url`:
+`DATABASE__REMOTE_LOCALDB__URL="postgres://..."`
+
+Axiom includes a `toml2env.go` script in the `scripts/` folder which automatically transpiles your `config.toml` file into a ready-to-use `.env` file using these exact double-underscore rules.
+
 ---
 
 ## `[server]`

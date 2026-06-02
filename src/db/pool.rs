@@ -26,6 +26,12 @@ impl DatabasePoolManager {
             }
         }
 
+        // Do not attempt to connect if the URL is empty
+        if db_config.url.is_empty() {
+            eprintln!("Database {} has an empty URL, skipping connection.", alias);
+            return None;
+        }
+
         // Global initialization lock to prevent thundering herd
         static INIT_LOCK: Lazy<tokio::sync::Mutex<()>> = Lazy::new(|| tokio::sync::Mutex::new(()));
         let _guard = INIT_LOCK.lock().await;

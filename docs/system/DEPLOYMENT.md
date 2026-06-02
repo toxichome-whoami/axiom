@@ -27,6 +27,8 @@ cd axiom
 # 2. Configure
 cp config.example.toml config.toml
 # Edit config.toml — update secrets, database URLs, storage paths
+# Then generate the .env file for Docker:
+cd scripts && go run toml2env.go && cd ..
 
 # 3. Build & Run
 cargo build --release
@@ -53,7 +55,7 @@ docker run -d \
   -p 4500:4500 \
   -p 4501:4501 \
   -e RUST_LOG=info \
-  -v $(pwd)/config.toml:/app/config.toml \
+  --env-file .env \
   -v $(pwd)/storage:/app/storage \
   -v $(pwd)/logs:/app/logs \
   -v $(pwd)/data:/app/data \
