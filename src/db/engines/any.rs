@@ -66,11 +66,9 @@ impl DatabaseEngine for AnyDatabaseEngine {
 
         let mut query_str = String::new();
         if dialect == "postgres" {
-            query_str.push_str(
-                "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'",
-            );
+            query_str.push_str("SELECT table_name::text as table_name FROM information_schema.tables WHERE table_schema = 'public'");
             if cursor.is_some() {
-                query_str.push_str(" AND table_name > $1");
+                query_str.push_str(" AND table_name::text > $1");
             }
             query_str.push_str(&format!(" ORDER BY table_name ASC LIMIT {}", limit));
         } else if dialect == "sqlite" {

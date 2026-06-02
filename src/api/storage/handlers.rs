@@ -17,7 +17,7 @@ use crate::utils::types::AuthContext;
 fn get_dir_usage(path: &StdPath) -> (u64, u64) {
     let mut total_size = 0;
     let mut file_count = 0;
-    
+
     if path.is_dir() {
         if let Ok(entries) = std::fs::read_dir(path) {
             for entry in entries.flatten() {
@@ -37,7 +37,7 @@ fn get_dir_usage(path: &StdPath) -> (u64, u64) {
         total_size = metadata.len();
         file_count = 1;
     }
-    
+
     (total_size, file_count)
 }
 
@@ -121,7 +121,8 @@ pub async fn list_storages(
                     (0, 0)
                 };
 
-                let limit_bytes = crate::utils::size_parser::parse_size(&limit_str).unwrap_or(u64::MAX);
+                let limit_bytes =
+                    crate::utils::size_parser::parse_size(&limit_str).unwrap_or(u64::MAX);
                 let available_bytes = limit_bytes.saturating_sub(used_bytes);
 
                 json!({
@@ -350,6 +351,15 @@ pub async fn download_file(
     Extension(auth): Extension<AuthContext>,
 ) -> Result<impl axum::response::IntoResponse, AxiomError> {
     let target_path = get_storage_path(&alias, &path, &auth)?;
+
+    let target_path_obj = std::path::Path::new(&target_path);
+    if !target_path_obj.exists() || !target_path_obj.is_file() {
+        return Err(AxiomError::new(
+            "FS_NOT_FOUND",
+            "File not found",
+            StatusCode::NOT_FOUND,
+        ));
+    }
 
     serve_file(&target_path).await.map_err(|_| {
         AxiomError::new(
