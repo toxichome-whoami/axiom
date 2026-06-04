@@ -1,0 +1,21 @@
+{
+  "name": "@toxichome/axiom-js",
+  "version": "1.0.0",
+  "description": "Official TypeScript/JavaScript client for Axiom Gateway",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "axiom",
+    "sdk",
+    "backend"
+  ],
+  "author": "ToxicHome",
+  "license": "MIT",
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  }
+}

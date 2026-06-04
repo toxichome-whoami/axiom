@@ -1,0 +1,16 @@
+[project]
+name = "axiom-py"
+version = "1.0.0"
+description = "Official Python client for Axiom Gateway"
+authors = [
+    {name = "ToxicHome", email = "contact@toxichome.top"}
+]
+dependencies = [
+    "httpx>=0.24.0"
+]
+readme = "README.md"
+requires-python = ">=3.8"
+
+[build-system]
+requires = ["setuptools>=61.0.0", "wheel"]
+build-backend = "setuptools.build_meta"

@@ -40,6 +40,14 @@ Federation proxy clients (`reqwest::Client`) are **attached to the global config
 
 
 
+## Client SDKs
+
+Axiom provides strictly typed, zero-configuration Client SDKs out of the box in the `sdk/` directory:
+- **`axiom-js`**: A TypeScript/JavaScript client built entirely on the native `fetch` API for maximum browser compatibility and zero bloat.
+- **`axiom-py`**: An asynchronous Python client utilizing `httpx` to provide robust, concurrent networking for data science or backend worker environments.
+
+Both SDKs handle authentication headers, configuration state, and JSON serialization automatically, providing an intuitive, identical API surface regardless of the language environment.
+
 ## Automated Backup Engine (PITR)
 
 The `BackupEngine` (`src/server/backup_engine.rs`) runs as a background Tokio task. When `backups.enabled = true`, it periodically:

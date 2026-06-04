@@ -6,6 +6,17 @@
 
 <hr/>
 
+## Client SDKs
+
+If you are building an application in TypeScript or Python, you do not need to construct raw HTTP/REST requests manually. Axiom provides officially supported SDKs:
+
+- **TypeScript / JavaScript**: `sdk/axiom-js`
+- **Python**: `sdk/axiom-py`
+
+Both SDKs handle authentication headers, connection pooling, and payload formatting automatically.
+
+<hr/>
+
 > [!TIP]
 
 ## Authentication

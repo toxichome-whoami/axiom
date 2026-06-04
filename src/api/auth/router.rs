@@ -14,6 +14,9 @@ pub fn get_router() -> Router {
         .route("/login", post(handler_login))
         .route("/refresh", post(handler_refresh))
         .route("/logout", post(handler_logout))
+        // OAuth
+        .route("/oauth/:provider/login", get(crate::api::auth::oauth::handler_oauth_login))
+        .route("/oauth/:provider/callback", get(crate::api::auth::oauth::handler_oauth_callback))
         // Anonymous Auth
         .route("/anonymous", post(handler_anonymous_login))
         .route("/anonymous/upgrade", post(handler_anonymous_upgrade))

@@ -253,7 +253,18 @@ smtp_user = "your_username"
 smtp_password = "your_password"
 smtp_tls = false
 from_address = "noreply@axiom.local"
-from_name = "Axiom Auth"
+
+[auth.project.default_project.oauth_google]
+enabled       = false
+client_id     = "YOUR_GOOGLE_CLIENT_ID"
+client_secret = "YOUR_GOOGLE_CLIENT_SECRET"
+redirect_uri  = "http://localhost:4500/api/v1/auth/oauth/google/callback"
+
+[auth.project.default_project.oauth_github]
+enabled       = false
+client_id     = "YOUR_GITHUB_CLIENT_ID"
+client_secret = "YOUR_GITHUB_CLIENT_SECRET"
+redirect_uri  = "http://localhost:4500/api/v1/auth/oauth/github/callback"
 
 # ─── Automated Disaster Recovery (PITR) ─────────
 [backups]

@@ -333,6 +333,13 @@ Configures one isolated auth project. The `<name>` must match an API key name de
 | `webhook_on_email_change` | `false` | Emit webhook on email change |
 | `webhook_on_delete` | `false` | Emit webhook on account deletion |
 
+**OAuth Providers**
+
+| Provider Section | Keys | Description |
+|------------------|------|-------------|
+| `[auth.project.<name>.oauth_google]` | `enabled`, `client_id`, `client_secret`, `redirect_uri` | Google OAuth 2.0 settings |
+| `[auth.project.<name>.oauth_github]` | `enabled`, `client_id`, `client_secret`, `redirect_uri` | GitHub OAuth 2.0 settings |
+
 ---
 
 ## `[auth.project.<name>.email]`
@@ -371,7 +378,12 @@ username = "your_username"
 password = "your_password"
 from_email = "noreply@myapp.com"
 from_name = "My App Auth"
-```
+
+[auth.project.default_project.oauth_google]
+enabled = false
+client_id = "YOUR_CLIENT_ID"
+client_secret = "YOUR_CLIENT_SECRET"
+redirect_uri = "http://localhost:4500/api/v1/auth/oauth/google/callback"
 
 ---
 

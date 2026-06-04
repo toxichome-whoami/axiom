@@ -592,6 +592,26 @@ impl Default for CircuitBreakerConfig {
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 #[serde(default)]
+pub struct OAuthProviderConfig {
+    pub enabled: bool,
+    pub client_id: String,
+    pub client_secret: String,
+    pub redirect_uri: String,
+}
+
+impl Default for OAuthProviderConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            client_id: "".to_string(),
+            client_secret: "".to_string(),
+            redirect_uri: "".to_string(),
+        }
+    }
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
+#[serde(default)]
 pub struct AuthEmailConfig {
     pub provider: String,
     pub from_address: String,
@@ -661,6 +681,8 @@ pub struct AuthProjectConfig {
     pub webhook_on_password_reset: bool,
     pub webhook_on_email_change: bool,
     pub webhook_on_delete: bool,
+    pub oauth_google: OAuthProviderConfig,
+    pub oauth_github: OAuthProviderConfig,
     pub email: AuthEmailConfig,
 }
 
@@ -707,6 +729,8 @@ impl Default for AuthProjectConfig {
             webhook_on_password_reset: false,
             webhook_on_email_change: false,
             webhook_on_delete: false,
+            oauth_google: OAuthProviderConfig::default(),
+            oauth_github: OAuthProviderConfig::default(),
             email: AuthEmailConfig::default(),
         }
     }

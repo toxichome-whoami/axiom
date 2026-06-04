@@ -4,6 +4,17 @@ Axiom is a self-hosted, high-performance Rust backend gateway. Exposes REST APIs
 
 ---
 
+## Client SDKs
+
+To simplify interacting with the Axiom Gateway from your applications, officially supported Client SDKs are available in the `sdk/` directory.
+
+- **TypeScript/JavaScript**: `sdk/axiom-js` (Zero-dependency, uses native `fetch`)
+- **Python**: `sdk/axiom-py` (Async support via `httpx`)
+
+Both SDKs expose unified interfaces for the `auth`, `db`, `fs`, and `realtime` modules, automatically handling header injection (`X-Axiom-Key` and `X-User-Access-Token`) and token state.
+
+---
+
 ## Auth
 
 Every request needs `X-Axiom-Key` header. Value = `base64(key_name:secret)`.
@@ -117,6 +128,13 @@ Video/audio supports `Range` headers (HTTP 206). Folders download as ZIP.
 | Refresh token | `POST /api/v1/auth/{pid}/refresh` | X-Axiom-Key |
 | Anonymous session | `POST /api/v1/auth/{pid}/anonymous` | X-Axiom-Key |
 | Upgrade anonymous | `POST /api/v1/auth/{pid}/anonymous/upgrade` | Both |
+
+### OAuth 2.0
+
+| What | Method + Path |
+|------|--------------|
+| OAuth Login Redirect | `GET /api/v1/auth/{pid}/oauth/{provider}/login` (providers: `google`, `github`) |
+| OAuth Callback Handler | `GET /api/v1/auth/{pid}/oauth/{provider}/callback?code=...` |
 
 ### Email Verification
 

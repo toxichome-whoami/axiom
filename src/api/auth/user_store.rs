@@ -91,6 +91,15 @@ CREATE TABLE IF NOT EXISTS auth_audit (
     metadata TEXT DEFAULT '{}',
     created_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS oauth_accounts (
+    id TEXT PRIMARY KEY,
+    uid TEXT NOT NULL REFERENCES users(uid) ON DELETE CASCADE,
+    provider TEXT NOT NULL,
+    provider_user_id TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE(provider, provider_user_id)
+);
 "#;
 
 pub fn utc_now_iso() -> String {
@@ -414,4 +423,29 @@ fn row_to_json(row: &sqlx::sqlite::SqliteRow) -> Value {
         map.insert(name.to_string(), val);
     }
     Value::Object(map)
+}
+
+pub async fn get_user_by_oauth(pool: &SqlitePool, provider: &str, provider_user_id: &str) -> Option<Value> {
+    let row = sqlx::query("SELECT users.* FROM users JOIN oauth_accounts ON users.uid = oauth_accounts.uid WHERE oauth_accounts.provider = ? AND oauth_accounts.provider_user_id = ?")
+        .bind(provider)
+        .bind(provider_user_id)
+        .fetch_optional(pool)
+        .await
+        .ok()??;
+
+    Some(row_to_json(&row))
+}
+
+pub async fn link_oauth_account(pool: &SqlitePool, uid: &str, provider: &str, provider_user_id: &str) -> Result<(), AxiomError> {
+    let id = uuid::Uuid::new_v4().to_string();
+    sqlx::query("INSERT INTO oauth_accounts (id, uid, provider, provider_user_id, created_at) VALUES (?, ?, ?, ?, ?)")
+        .bind(&id)
+        .bind(uid)
+        .bind(provider)
+        .bind(provider_user_id)
+        .bind(utc_now_iso())
+        .execute(pool)
+        .await
+        .map(|_| ())
+        .map_err(|e| AxiomError::new("AUTH_DB_ERROR", &e.to_string(), StatusCode::INTERNAL_SERVER_ERROR))
 }
