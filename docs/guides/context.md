@@ -136,7 +136,7 @@ Video/audio supports `Range` headers (HTTP 206). Folders download as ZIP.
 
 | What | Method + Path |
 |------|--------------|
-| OAuth Login Redirect | `GET /api/v1/auth/{pid}/oauth/{provider}/login` (providers: `google`, `github`) |
+| OAuth Login Redirect | `POST /api/v1/auth/{pid}/oauth/{provider}/url` (providers: `google`, `github`) |
 | OAuth Callback Handler | `GET /api/v1/auth/{pid}/oauth/{provider}/callback?code=...` |
 
 ### Email Verification

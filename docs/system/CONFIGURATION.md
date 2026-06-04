@@ -383,7 +383,13 @@ from_name = "My App Auth"
 enabled = false
 client_id = "YOUR_CLIENT_ID"
 client_secret = "YOUR_CLIENT_SECRET"
-redirect_uri = "http://localhost:4500/api/v1/auth/oauth/google/callback"
+redirect_uri = "http://localhost:4500/api/v1/auth/default_project/oauth/google/callback"
+
+[auth.project.default_project.oauth_github]
+enabled = false
+client_id = "YOUR_GITHUB_CLIENT_ID"
+client_secret = "YOUR_GITHUB_CLIENT_SECRET"
+redirect_uri = "http://localhost:4500/api/v1/auth/default_project/oauth/github/callback"
 
 ---
 

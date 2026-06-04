@@ -98,6 +98,35 @@ docker compose -f docker-compose.prod.yml up -d
 - [ ] Set `RUST_LOG=warn` in production to reduce log volume
 - [ ] Set `storage.<alias>.blocked_extensions` to block potentially dangerous uploads
 - [ ] Review `database.<alias>.dangerous_operations = false` (default) to prevent DDL
+- [ ] If using OAuth, register the correct `redirect_uri` in your provider's console — it must match `config.toml` exactly (e.g. `https://yourdomain.com/api/v1/auth/<project_id>/oauth/google/callback`)
+- [ ] Create a `migrations/<db_alias>/` directory and place versioned SQL migration files there before first deploy if using the Migrations API
+
+---
+
+## Database Migrations
+
+Axiom includes an API-first migration engine powered by `sqlx::migrate::Migrator`. Migrations are stored as versioned `.sql` files on the server's filesystem and applied directly to the connected database pool.
+
+**Directory convention:**
+```
+migrations/
+  <db_alias>/
+    20260101000000_init.sql
+    20260201000000_add_users.sql
+```
+Files are executed in ascending version order. Already-applied migrations are skipped automatically.
+
+**Apply migrations via curl:**
+```bash
+curl -X POST "http://localhost:4500/api/v1/db/main_db/migrations" \
+     -H "X-Axiom-Key: <FULL_ADMIN_TOKEN>"
+```
+
+> [!IMPORTANT]
+> The `migrations/` directory path is resolved relative to the binary's working directory. Ensure this directory is present and mounted correctly in Docker deployments (e.g. `-v $(pwd)/migrations:/app/migrations`).
+
+> [!CAUTION]
+> Only API keys with `full_admin = true` can call the apply endpoint. Do not use a migrations key for regular application traffic.
 
 ---
 

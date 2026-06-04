@@ -19,7 +19,7 @@ Axiom includes an ultra-secure, ultra-lightweight embedded authentication engine
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | **Password** | `POST /signup`, `POST /login` | Traditional email/password with policy enforcement |
-| **OAuth 2.0** | `GET /oauth/:provider/login` | Native Social Login (Google, GitHub) |
+| **OAuth 2.0** | `POST /api/v1/auth/{project_id}/oauth/{provider}/url` | Native Social Login (Google, GitHub) |
 | **Magic Links** | `POST /magic-link` | Passwordless login via secure, single-use tokens in email |
 | **OTP Login** | `POST /otp/send`, `POST /otp/verify` | Numeric code-based verification |
 | **Anonymous** | `POST /anon` | Temporary sessions upgradeable to full accounts |

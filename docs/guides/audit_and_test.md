@@ -608,10 +608,10 @@ These are confirmed missing from the codebase. Do NOT expect them to work.
 
 | Feature | Status | Impact |
 |---------|--------|--------|
-| OAuth providers (Google, GitHub, Discord) | Not implemented | High — most developers expect social login |
-| Presigned upload URLs | Not implemented | Medium — large file uploads go through Axiom |
-| Database schema migrations | Not implemented | Medium — no `ALTER TABLE` history |
-| TypeScript / Python / Go SDKs | Not implemented | High — adoption barrier |
+| OAuth providers (Google, GitHub) | **Implemented** — `POST /api/v1/auth/{project_id}/oauth/{provider}/url` and `GET /api/v1/auth/{project_id}/oauth/{provider}/callback`. Config via `[auth.project.<id>.oauth_google]` and `[auth.project.<id>.oauth_github]`. | — |
+| Presigned download URLs | **Implemented** — `POST /api/v1/fs/{alias}/presign`. HMAC-SHA256 signed, time-limited. Available in both SDKs. | — |
+| Database schema migrations | **Implemented** — `POST /api/v1/db/{alias}/migrations`. Reads from `migrations/<alias>/` on the server. Requires `full_admin=true`. | — |
+| TypeScript / Python SDKs | **Implemented** — `sdk/axiom-js` (TypeScript, zero-dep) and `sdk/axiom-py` (Python/httpx). Cover auth, db, fs, realtime modules. | — |
 | Per-endpoint rate limiting | Not implemented | Medium — `/login` and `/query` share same rate limit |
 | Gateway-level audit log | Not implemented | Medium — no record of which key ran which SQL |
 | Admin UI / dashboard | Not implemented | Low for now |

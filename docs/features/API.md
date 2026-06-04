@@ -173,12 +173,18 @@ curl -X DELETE "http://localhost:4500/api/v1/db/main_db/users/rows" \
 ### 8. Migrations
 Axiom provides an automated API-first migration engine that executes SQL migrations found in your server's `migrations/<alias>/` directory against the connected database pool.
 
+> [!CAUTION]
+> `POST /migrations` (apply) requires a **full admin** API key (`full_admin = true` in `config.toml`). Regular and read-only keys will receive a `403 Forbidden` response.
+
+> [!NOTE]
+> Migration files must follow the `sqlx` naming convention: `<VERSION>_<description>.sql` (e.g. `20260101000000_init.sql`). Migrations are applied in version order and are idempotent — already-applied migrations are skipped automatically.
+
 ```bash
 # List all applied and pending migrations
 curl -X GET "http://localhost:4500/api/v1/db/main_db/migrations" \
      -H "X-Axiom-Key: <TOKEN>"
 
-# Apply pending migrations
+# Apply pending migrations (requires full_admin key)
 curl -X POST "http://localhost:4500/api/v1/db/main_db/migrations" \
      -H "X-Axiom-Key: <TOKEN>"
 ```
@@ -323,7 +329,7 @@ url = await client.fs.generate_presigned_url("local_fs", "/reports/Q1.pdf", "GET
 > **Video Streaming**: All video and audio files are served with full `HTTP Range` support (`206 Partial Content`). Browser `<video>` and `<audio>` tags work out-of-the-box. Safari/iOS pre-flight `HEAD` requests are also fully supported.
 
 
-### 4. Direct Upload (Small Files)
+### 5. Direct Upload (Small Files)
 ```bash
 curl -X POST "http://localhost:4500/api/v1/fs/local_fs/upload" \
      -H "X-Axiom-Key: <TOKEN>" \
@@ -332,7 +338,7 @@ curl -X POST "http://localhost:4500/api/v1/fs/local_fs/upload" \
      -F "file=@/path/to/local/file.txt"
 ```
 
-### 5. Chunked Upload (Large Files)
+### 6. Chunked Upload (Large Files)
 ```bash
 # Step 1: Initiate
 curl -X POST "http://localhost:4500/api/v1/fs/local_fs/upload" \
@@ -357,7 +363,7 @@ curl -X POST "http://localhost:4500/api/v1/fs/local_fs/upload" \
      -d '{"action":"finalize", "upload_id":"upl_xxx"}'
 ```
 
-### 6. File Actions
+### 7. File Actions
 
 All file actions are sent as `POST` requests to `/{alias}/action` with a JSON body containing the `action` field.
 
@@ -449,6 +455,34 @@ curl -X POST "http://localhost:4500/api/v1/fs/local_fs/action" \
 **Auth headers**: User-facing auth endpoints are accessed with your API key (`X-Axiom-Key: base64(name:secret)`). After login, protected user endpoints use the returned Ed25519 JWT.
 
 The `{project_id}` is your API key name (as defined in `config.toml` under `[api_key.<name>]`).
+
+---
+
+### OAuth 2.0 (Social Login)
+
+Axiom supports native OAuth 2.0 social login for **Google** and **GitHub**. The flow is a standard redirect-based authorization code exchange.
+
+> [!NOTE]
+> OAuth must be enabled per-project in `config.toml` under `[auth.project.<id>.oauth_google]` and `[auth.project.<id>.oauth_github]`. The `redirect_uri` you configure there must match what you register in your OAuth provider's console.
+
+**Step 1 — Get the redirect URL (from your backend):**
+```bash
+curl -X POST "http://localhost:4500/api/v1/auth/my_project/oauth/google/url" \
+     -H "X-Axiom-Key: <API_KEY_TOKEN>"
+```
+**Response:**
+```json
+{ "success": true, "data": { "url": "https://accounts.google.com/o/oauth2/auth?client_id=..." } }
+```
+Redirect the user's browser to the returned `url`.
+
+**Step 2 — Handle the callback (Axiom handles this automatically):**
+```
+GET /api/v1/auth/my_project/oauth/google/callback?code=<code>&state=<state>
+```
+Axiom exchanges the code for a user profile, creates or links the account, and returns standard `access_token` + `refresh_token` credentials.
+
+**Supported Providers:** `google`, `github`
 
 ---
 
