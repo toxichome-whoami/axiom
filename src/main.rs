@@ -15,7 +15,7 @@ pub mod server;
 mod utils;
 mod webhook;
 
-#[tokio::main]
+#[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 1. Load config
     config::loader::ConfigManager::load("config.toml").unwrap_or_else(|e| {

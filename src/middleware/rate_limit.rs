@@ -22,7 +22,21 @@ pub async fn rate_limit_middleware(req: Request, next: Next) -> Result<Response,
         .unwrap_or("127.0.0.1")
         .to_string();
 
-    if config.server.allowed_ips.contains(&client_ip.to_string()) {
+    let mut is_allowed = false;
+    for allowed in &config.server.allowed_ips {
+        if allowed.ends_with('*') {
+            let prefix = &allowed[..allowed.len() - 1];
+            if client_ip.starts_with(prefix) {
+                is_allowed = true;
+                break;
+            }
+        } else if allowed == &client_ip {
+            is_allowed = true;
+            break;
+        }
+    }
+
+    if is_allowed {
         return Ok(next.run(req).await);
     }
 
