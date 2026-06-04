@@ -53,8 +53,8 @@ impl LogRotator {
         logs.sort_by(|a, b| a.1.cmp(&b.1)); // Oldest first
 
         let to_delete = logs.len() - max_files;
-        for i in 0..to_delete {
-            let _ = fs::remove_file(&logs[i].0);
+        for log in logs.iter().take(to_delete) {
+            std::fs::remove_file(&log.0).ok();
         }
     }
 }

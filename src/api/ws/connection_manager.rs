@@ -27,7 +27,15 @@ impl ConnectionManager {
             client_scopes: RwLock::new(HashMap::new()),
         }
     }
+}
 
+impl Default for ConnectionManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ConnectionManager {
     pub async fn register(
         &self,
         client_id: &str,

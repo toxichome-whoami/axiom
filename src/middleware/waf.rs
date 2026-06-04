@@ -8,7 +8,7 @@ pub async fn waf_middleware(req: Request, next: Next) -> Result<Response, AxiomE
         .extensions()
         .get::<std::sync::Arc<crate::config::schema::AxiomConfig>>()
         .cloned()
-        .unwrap_or_else(|| ConfigManager::get());
+        .unwrap_or_else(ConfigManager::get);
     static BODY_LIMIT: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
     let body_limit = *BODY_LIMIT.get_or_init(|| {
         let config_inner = ConfigManager::get();

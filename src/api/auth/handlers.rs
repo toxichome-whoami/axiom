@@ -296,12 +296,12 @@ pub async fn handler_login(
     let ip = get_ip(&headers);
     let ua = get_ua(&headers);
 
-    let max_login_attempts = proj_val(&config, "max_login_attempts", 5) as i64;
+    let max_login_attempts = proj_val(&config, "max_login_attempts", 5);
     let lockout_duration = proj_val(&config, "lockout_duration", 900) as u64;
 
     static FAILED_ATTEMPTS: once_cell::sync::Lazy<
         dashmap::DashMap<String, (i64, std::time::Instant)>,
-    > = once_cell::sync::Lazy::new(|| dashmap::DashMap::new());
+    > = once_cell::sync::Lazy::new(dashmap::DashMap::new);
 
     let attempt_key = format!("{}:{}", project_id, body.email);
     if let Some(entry) = FAILED_ATTEMPTS.get(&attempt_key) {
@@ -681,12 +681,12 @@ pub async fn handler_forgot_password(
     let (project_id, config, _) = get_project(&headers)?;
     let pool = get_pool(&project_id).await?;
 
-    let max_login_attempts = proj_val(&config, "max_login_attempts", 5) as i64;
+    let max_login_attempts = proj_val(&config, "max_login_attempts", 5);
     let lockout_duration = proj_val(&config, "lockout_duration", 900) as u64;
 
     static FORGOT_PW_ATTEMPTS: once_cell::sync::Lazy<
         dashmap::DashMap<String, (i64, std::time::Instant)>,
-    > = once_cell::sync::Lazy::new(|| dashmap::DashMap::new());
+    > = once_cell::sync::Lazy::new(dashmap::DashMap::new);
 
     let attempt_key = format!("{}:{}", project_id, body.email);
     if let Some(mut entry) = FORGOT_PW_ATTEMPTS.get_mut(&attempt_key) {
@@ -718,7 +718,7 @@ pub async fn handler_forgot_password(
 
         sqlx::query(
             "INSERT INTO auth_tokens (id, uid, email, token_hash, token_type, expires_at, created_at) VALUES (?, ?, ?, ?, 'password_reset', ?, ?)"
-        ).bind(&id).bind(&uid).bind(&body.email.to_lowercase()).bind(&token_hash).bind(&expires_at).bind(utc_now_iso())
+        ).bind(&id).bind(&uid).bind(body.email.to_lowercase()).bind(&token_hash).bind(&expires_at).bind(utc_now_iso())
         .execute(&pool).await.ok();
     }
 
@@ -1398,7 +1398,7 @@ pub async fn handler_magic_link_send(
 
         sqlx::query(
             "INSERT INTO auth_tokens (id, uid, email, token_hash, token_type, expires_at, created_at) VALUES (?, ?, ?, ?, 'magic_link', ?, ?)"
-        ).bind(&id).bind(&uid).bind(&body.email.to_lowercase()).bind(&token_hash).bind(&expires_at).bind(utc_now_iso())
+        ).bind(&id).bind(&uid).bind(body.email.to_lowercase()).bind(&token_hash).bind(&expires_at).bind(utc_now_iso())
         .execute(&pool).await.ok();
 
         log_audit(
@@ -1490,7 +1490,7 @@ pub async fn handler_otp_send(
 
         sqlx::query(
             "INSERT INTO auth_tokens (id, uid, email, token_hash, token_type, expires_at, created_at, otp_code) VALUES (?, ?, ?, ?, 'otp', ?, ?, ?)"
-        ).bind(&id).bind(&uid).bind(&body.email.to_lowercase()).bind(&code_hash).bind(&expires_at).bind(utc_now_iso()).bind(&otp_code)
+        ).bind(&id).bind(&uid).bind(body.email.to_lowercase()).bind(&code_hash).bind(&expires_at).bind(utc_now_iso()).bind(&otp_code)
         .execute(&pool).await.ok();
 
         log_audit(
@@ -1520,7 +1520,7 @@ pub async fn handler_verify_otp(
     let code_hash = sha256_hex(&body.code);
 
     let row = sqlx::query("SELECT uid, expires_at, used FROM auth_tokens WHERE token_hash = ? AND email = ? AND token_type = 'otp'")
-        .bind(&code_hash).bind(&body.email.to_lowercase()).fetch_optional(&pool).await
+        .bind(&code_hash).bind(body.email.to_lowercase()).fetch_optional(&pool).await
         .map_err(|e| AxiomError::new("AUTH_DB_ERROR", &e.to_string(), StatusCode::INTERNAL_SERVER_ERROR))?
         .ok_or_else(|| AxiomError::new("AUTH_TOKEN_INVALID", "Invalid or expired OTP", StatusCode::BAD_REQUEST))?;
 
@@ -1539,7 +1539,7 @@ pub async fn handler_verify_otp(
         "UPDATE auth_tokens SET used = 1 WHERE token_hash = ? AND email = ? AND token_type = 'otp'",
     )
     .bind(&code_hash)
-    .bind(&body.email.to_lowercase())
+    .bind(body.email.to_lowercase())
     .execute(&pool)
     .await
     .ok();

@@ -38,9 +38,10 @@ impl QueryExecutionPipeline {
 
         let cache_key = if cache_enabled && !is_mutation_regex {
             let key = format!("{}:{}:{:?}", db_name, sql, params);
+            #[allow(clippy::type_complexity)]
             static QUERY_CACHE: once_cell::sync::Lazy<
                 dashmap::DashMap<String, (std::time::Instant, Arc<QueryResult>, bytes::Bytes)>,
-            > = once_cell::sync::Lazy::new(|| dashmap::DashMap::new());
+            > = once_cell::sync::Lazy::new(dashmap::DashMap::new);
 
             if let Some(entry) = QUERY_CACHE.get(&key) {
                 if entry.0.elapsed().as_secs() < cache_ttl {
@@ -60,8 +61,8 @@ impl QueryExecutionPipeline {
             // Primitive placeholder conversion for postgres `$1, $2`
             let mut final_sql = String::new();
             let mut param_index = 1;
-            let mut chars = sql.chars().peekable();
-            while let Some(c) = chars.next() {
+            let chars = sql.chars().peekable();
+            for c in chars {
                 if c == '?' {
                     final_sql.push_str(&format!("${}", param_index));
                     param_index += 1;
@@ -297,8 +298,7 @@ pub async fn insert_rows(
     let first_row = &rows_to_insert[0];
     let columns: Vec<String> = first_row
         .keys()
-        .cloned()
-        .map(|k| crate::api::database::filter_builder::sanitize_ident(&k))
+        .map(|k| crate::api::database::filter_builder::sanitize_ident(k))
         .collect();
     let cols_str = columns.join(", ");
 

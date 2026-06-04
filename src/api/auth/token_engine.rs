@@ -81,6 +81,7 @@ pub async fn init_keys() {
     });
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn create_access_token(
     project_id: &str,
     uid: &str,

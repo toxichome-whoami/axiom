@@ -113,7 +113,7 @@ pub async fn handler_oauth_callback(
     let state = query.state.unwrap_or_else(|| "default:".to_string());
 
     let parts: Vec<&str> = state.split(':').collect();
-    let project_id = parts.get(0).unwrap_or(&"default").to_string();
+    let project_id = parts.first().unwrap_or(&"default").to_string();
 
     let p_config = config
         .auth

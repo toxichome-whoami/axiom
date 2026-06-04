@@ -59,7 +59,7 @@ pub fn create_app() -> Router {
             crate::middleware::response::envelope_middleware,
         ));
 
-    let router = Router::new()
+    Router::new()
         .nest("/api/v1", api_routes)
         .layer(axum::extract::DefaultBodyLimit::max(10 * 1024 * 1024))
         .layer(axum::extract::Extension(_config.clone()))
@@ -78,7 +78,5 @@ pub fn create_app() -> Router {
             header::X_FRAME_OPTIONS,
             header::HeaderValue::from_static("DENY"),
         ))
-        .layer(tower_http::trace::TraceLayer::new_for_http());
-
-    router
+        .layer(tower_http::trace::TraceLayer::new_for_http())
 }

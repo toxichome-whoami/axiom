@@ -187,7 +187,7 @@ pub async fn list_folder(
     let cache_key = format!("{}:{}", alias, rel_path);
     static FS_CACHE: once_cell::sync::Lazy<
         dashmap::DashMap<String, (std::time::Instant, bytes::Bytes)>,
-    > = once_cell::sync::Lazy::new(|| dashmap::DashMap::new());
+    > = once_cell::sync::Lazy::new(dashmap::DashMap::new);
 
     if cache_enabled {
         if let Some(entry) = FS_CACHE.get(&cache_key) {
@@ -218,15 +218,13 @@ pub async fn list_folder(
     let items_res = tokio::task::spawn_blocking(move || {
         let mut local_items = Vec::new();
         if let Ok(entries) = std::fs::read_dir(&target_path_clone) {
-            for entry_res in entries {
-                if let Ok(entry) = entry_res {
-                    if let Ok(m) = entry.metadata() {
-                        local_items.push(json!({
-                            "name": entry.file_name().to_string_lossy(),
-                            "is_dir": m.is_dir(),
-                            "size": m.len()
-                        }));
-                    }
+            for entry in entries.flatten() {
+                if let Ok(m) = entry.metadata() {
+                    local_items.push(json!({
+                        "name": entry.file_name().to_string_lossy(),
+                        "is_dir": m.is_dir(),
+                        "size": m.len()
+                    }));
                 }
             }
         }
@@ -374,9 +372,7 @@ pub async fn json_action(
             for source_val in sources {
                 if let Some(source) = source_val.as_str() {
                     if let Ok(target) = get_storage_path(&alias, source, &auth) {
-                        if tokio::fs::remove_file(&target).await.is_ok() {
-                            deleted += 1;
-                        } else if tokio::fs::remove_dir_all(&target).await.is_ok() {
+                        if tokio::fs::remove_file(&target).await.is_ok() || tokio::fs::remove_dir_all(&target).await.is_ok() {
                             deleted += 1;
                         }
                     }

@@ -75,7 +75,7 @@ async fn health(
     let mut db_status = serde_json::Map::new();
     let mut all_dbs_up = true;
 
-    for (alias, _) in &config.database {
+    for alias in config.database.keys() {
         if let Some(engine) = DatabasePoolManager::get_engine(alias).await {
             let is_up = engine.health_check().await;
             db_status.insert(alias.clone(), json!(if is_up { "up" } else { "down" }));

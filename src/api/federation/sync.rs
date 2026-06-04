@@ -198,10 +198,8 @@ pub async fn sync_federated_servers() {
         let now = now_secs();
         for node_id in fed_cfg.server.keys() {
             if let Some(state) = state_mgr.get_state(node_id) {
-                if state.status == "up" && (now - state.last_check) >= sync_interval as f64 {
-                    if !nodes_to_poll.contains(&node_id.to_string()) {
-                        nodes_to_poll.push(node_id.to_string());
-                    }
+                if state.status == "up" && (now - state.last_check) >= sync_interval as f64 && !nodes_to_poll.contains(&node_id.to_string()) {
+                    nodes_to_poll.push(node_id.to_string());
                 }
             }
         }

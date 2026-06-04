@@ -21,13 +21,13 @@ pub async fn is_safe_url(raw_url: &str) -> bool {
     let addr_str = format!("{}:{}", host, port);
 
     // Resolve DNS manually to prevent DNS rebinding and IP obfuscation
-    let mut resolved = match tokio::net::lookup_host(&addr_str).await {
+    let resolved = match tokio::net::lookup_host(&addr_str).await {
         Ok(r) => r,
         Err(_) => return false,
     };
 
     let mut has_ips = false;
-    while let Some(socket_addr) = resolved.next() {
+    for socket_addr in resolved {
         has_ips = true;
         let ip = socket_addr.ip();
         if ip.is_loopback() || ip.is_multicast() {

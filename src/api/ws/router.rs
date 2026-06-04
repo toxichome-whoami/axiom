@@ -37,7 +37,7 @@ async fn handle_socket(socket: WebSocket, initial_auth: Option<AuthContext>) {
     } else {
         let auth_timeout = config.websocket.auth_timeout;
         let auth_result = tokio::time::timeout(Duration::from_secs_f64(auth_timeout), async {
-            while let Some(msg) = receiver.next().await {
+            if let Some(msg) = receiver.next().await {
                 match msg {
                     Ok(Message::Text(text)) => {
                         if let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) {
@@ -88,9 +88,10 @@ async fn handle_socket(socket: WebSocket, initial_auth: Option<AuthContext>) {
     };
 
     let client_id = format!("{}_{}", auth.api_key_name, uuid::Uuid::new_v4());
-    let mut scopes = ClientScopes::default();
-    scopes.db_scope = auth.db_scope.clone();
-    scopes.fs_scope = auth.fs_scope.clone();
+    let scopes = ClientScopes {
+        db_scope: auth.db_scope.clone(),
+        fs_scope: auth.fs_scope.clone(),
+    };
 
     // 2. Setup internal communication channel
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Message>();

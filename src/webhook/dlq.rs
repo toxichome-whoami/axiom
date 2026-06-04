@@ -86,7 +86,7 @@ impl RedisDLQManager {
 
                                         // Ack original
                                         let _: redis::RedisResult<()> =
-                                            con.xack(&stream, &group, &[msg_id.clone()]).await;
+                                            con.xack(&stream, &group, std::slice::from_ref(&msg_id)).await;
                                     }
                                 }
                             }

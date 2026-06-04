@@ -45,7 +45,15 @@ impl FederationStateManager {
     pub fn new() -> Self {
         Self
     }
+}
 
+impl Default for FederationStateManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl FederationStateManager {
     pub async fn load(&self) {
         // In a full implementation, we'd load from SQLite via sqlx here.
         // For now, an empty in-memory map is sufficient.

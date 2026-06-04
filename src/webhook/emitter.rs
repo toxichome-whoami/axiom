@@ -32,7 +32,7 @@ fn is_token_matched(hook_secret: &str, provided_token: &Option<String>) -> bool 
     if let Some(token) = provided_token {
         if let Ok(decoded) = b64.decode(token) {
             if let Ok(decoded_str) = String::from_utf8(decoded) {
-                return hook_secret.as_bytes().len() == decoded_str.as_bytes().len()
+                return hook_secret.len() == decoded_str.len()
                     && hook_secret
                         .as_bytes()
                         .iter()
@@ -44,6 +44,7 @@ fn is_token_matched(hook_secret: &str, provided_token: &Option<String>) -> bool 
     false
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn process_event(
     _persistence: Option<WebhookPersistence>,
     _queue: WebhookQueueList,

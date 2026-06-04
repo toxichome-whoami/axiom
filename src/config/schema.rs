@@ -736,18 +736,9 @@ impl Default for AuthProjectConfig {
     }
 }
 
-#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
-#[serde(default)]
+#[derive(Default, Debug, serde::Serialize, serde::Deserialize, Clone)]
 pub struct AuthConfig {
     pub project: HashMap<String, AuthProjectConfig>,
-}
-
-impl Default for AuthConfig {
-    fn default() -> Self {
-        Self {
-            project: HashMap::new(),
-        }
-    }
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]

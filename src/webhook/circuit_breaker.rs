@@ -64,7 +64,7 @@ impl CircuitBreaker {
         let mut st = self
             .states
             .entry(url.to_string())
-            .or_insert_with(CircuitState::default);
+            .or_default();
 
         match st.state {
             State::Closed => true,
@@ -84,7 +84,7 @@ impl CircuitBreaker {
         let mut st = self
             .states
             .entry(url.to_string())
-            .or_insert_with(CircuitState::default);
+            .or_default();
         st.failures = 0;
         st.state = State::Closed;
         st.last_success = current_time();
@@ -94,7 +94,7 @@ impl CircuitBreaker {
         let mut st = self
             .states
             .entry(url.to_string())
-            .or_insert_with(CircuitState::default);
+            .or_default();
 
         if st.state == State::HalfOpen {
             st.state = State::Open;
@@ -112,7 +112,7 @@ impl CircuitBreaker {
         let st = self
             .states
             .entry(url.to_string())
-            .or_insert_with(CircuitState::default);
+            .or_default();
 
         Ok(serde_json::json!({
             "state": st.state.as_str(),
@@ -130,7 +130,7 @@ impl CircuitBreaker {
         let mut st = self
             .states
             .entry(url.to_string())
-            .or_insert_with(CircuitState::default);
+            .or_default();
         st.failures = 0;
         st.state = State::Closed;
         st.opened_at = 0.0;
@@ -140,5 +140,5 @@ impl CircuitBreaker {
 static BREAKER: OnceLock<CircuitBreaker> = OnceLock::new();
 
 pub fn get_circuit_breaker() -> CircuitBreaker {
-    BREAKER.get_or_init(|| CircuitBreaker::new()).clone()
+    BREAKER.get_or_init(CircuitBreaker::new).clone()
 }

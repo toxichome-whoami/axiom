@@ -27,7 +27,15 @@ impl SSEConnectionManager {
             topic_subscribers: RwLock::new(HashMap::new()),
         }
     }
+}
 
+impl Default for SSEConnectionManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl SSEConnectionManager {
     pub async fn connect(&self, client_id: &str) -> mpsc::Receiver<Event> {
         let config = ConfigManager::get();
         let queue_size = config.sse.queue_size as usize;

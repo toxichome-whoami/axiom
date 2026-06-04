@@ -63,6 +63,7 @@ impl WebhookPersistence {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn move_to_dead_letter(
         &self,
         _queue_id: i64,

@@ -9,7 +9,7 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, A
         .extensions()
         .get::<std::sync::Arc<crate::config::schema::AxiomConfig>>()
         .cloned()
-        .unwrap_or_else(|| ConfigManager::get());
+        .unwrap_or_else(ConfigManager::get);
 
     let client_ip = req
         .headers()
@@ -65,10 +65,8 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, A
                     if now < expires {
                         let secret_opt = if let Some(k) = config.api_key.get(key_name) {
                             Some((&k.secret, k.mode.clone(), k.db_scope.clone(), k.fs_scope.clone(), k.feature_scope.clone(), k.rate_limit_override as u32, k.full_admin))
-                        } else if let Some(f) = config.federation.incoming.get(key_name) {
-                            Some((&f.secret, f.mode.clone(), f.db_scope.clone(), f.fs_scope.clone(), f.feature_scope.clone(), 0, false))
                         } else {
-                            None
+                            config.federation.incoming.get(key_name).map(|f| (&f.secret, f.mode.clone(), f.db_scope.clone(), f.fs_scope.clone(), f.feature_scope.clone(), 0, false))
                         };
 
                         if let Some((secret, mode, db_scope, fs_scope, feature_scope, rate_limit_override, full_admin)) = secret_opt {
@@ -132,8 +130,7 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, A
         }
 
         // Check if the key itself is banned
-        if auth_value.starts_with("Bearer ") {
-            let raw_token = &auth_value[7..];
+        if let Some(raw_token) = auth_value.strip_prefix("Bearer ") {
             let (is_key_banned, reason) = BanList::is_key_banned(raw_token);
             if is_key_banned {
                 return Err(AxiomError::new(

@@ -17,7 +17,15 @@ impl EventBus {
             redis_client: RwLock::new(None),
         }
     }
+}
 
+impl Default for EventBus {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl EventBus {
     async fn ensure_redis(&self) {
         let mut client_lock = self.redis_client.write().await;
         if client_lock.is_none() {

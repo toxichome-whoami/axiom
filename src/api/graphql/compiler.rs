@@ -196,7 +196,7 @@ impl ASTCompiler {
                             return Err("GraphQL introspection is disabled for security reasons"
                                 .to_string());
                         } else {
-                            if args.get("dbAlias").is_none() {
+                            if !args.contains_key("dbAlias") {
                                 return Err(format!(
                                     "Field '{}' requires a 'dbAlias' argument",
                                     name

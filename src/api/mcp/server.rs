@@ -8,7 +8,7 @@ impl MCPServer {
     pub async fn handle_rpc_message(msg: Value, auth: &AuthContext) -> Option<Value> {
         let method = msg.get("method").and_then(|v| v.as_str()).unwrap_or("");
         let params = msg.get("params").cloned().unwrap_or_else(|| json!({}));
-        let id = msg.get("id").cloned().unwrap_or_else(|| json!(null));
+        let id = msg.get("id").cloned().unwrap_or(json!(null));
 
         let result = match method {
             "initialize" => Ok(json!({

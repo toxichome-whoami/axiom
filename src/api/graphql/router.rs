@@ -39,7 +39,7 @@ async fn execute_graphql(
         ));
     }
 
-    let compiler = ASTCompiler::new(config.graphql.max_query_depth as i32);
+    let compiler = ASTCompiler::new(config.graphql.max_query_depth);
     let operations = compiler.compile(&payload.query).map_err(|e| {
         AxiomError::new(
             "GRAPHQL_COMPILE_ERROR",

@@ -21,18 +21,13 @@ pub enum StatusEnum {
     Offline,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Default, Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ServerMode {
+    #[default]
     Readwrite,
     Readonly,
     Writeonly,
-}
-
-impl Default for ServerMode {
-    fn default() -> Self {
-        ServerMode::Readwrite
-    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
@@ -51,23 +46,18 @@ pub enum EventOperation {
     Any,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum DbEngineType {
     Postgres,
     Mysql,
+    #[default]
     Sqlite,
     Mssql,
     Oracle,
     Mariadb,
     Db2,
     Cockroachdb,
-}
-
-impl Default for DbEngineType {
-    fn default() -> Self {
-        DbEngineType::Sqlite
-    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]

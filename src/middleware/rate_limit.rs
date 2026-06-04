@@ -8,7 +8,7 @@ pub async fn rate_limit_middleware(req: Request, next: Next) -> Result<Response,
         .extensions()
         .get::<std::sync::Arc<crate::config::schema::AxiomConfig>>()
         .cloned()
-        .unwrap_or_else(|| ConfigManager::get());
+        .unwrap_or_else(ConfigManager::get);
 
     if !config.rate_limit.enabled {
         return Ok(next.run(req).await);
@@ -67,7 +67,7 @@ pub async fn rate_limit_middleware(req: Request, next: Next) -> Result<Response,
 
     let mut response = next.run(req).await;
 
-    let remaining = std::cmp::max(0, limit as i32 - current_count as i32);
+    let remaining = std::cmp::max(0, limit - current_count as i32);
     response
         .headers_mut()
         .insert("x-ratelimit-limit", limit.to_string().parse().unwrap());

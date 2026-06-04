@@ -9,8 +9,8 @@ fn now_secs() -> u64 {
         .as_secs()
 }
 
-static RATE_LIMIT_CACHE: Lazy<DashMap<String, (u32, u64)>> = Lazy::new(|| DashMap::new());
-static PENALTY_CACHE: Lazy<DashMap<String, (u32, u64)>> = Lazy::new(|| DashMap::new());
+static RATE_LIMIT_CACHE: Lazy<DashMap<String, (u32, u64)>> = Lazy::new(DashMap::new);
+static PENALTY_CACHE: Lazy<DashMap<String, (u32, u64)>> = Lazy::new(DashMap::new);
 
 pub struct MemoryCache;
 
