@@ -218,13 +218,16 @@ pub async fn list_folder(
     let items_res = tokio::task::spawn_blocking(move || {
         let mut local_items = Vec::new();
         if let Ok(entries) = std::fs::read_dir(&target_path_clone) {
-            for entry in entries.flatten() {
-                if let Ok(m) = entry.metadata() {
-                    local_items.push(json!({
-                        "name": entry.file_name().to_string_lossy(),
-                        "is_dir": m.is_dir(),
-                        "size": m.len()
-                    }));
+            #[allow(clippy::manual_flatten)]
+            for entry_res in entries {
+                if let Ok(entry) = entry_res {
+                    if let Ok(m) = entry.metadata() {
+                        local_items.push(json!({
+                            "name": entry.file_name().to_string_lossy(),
+                            "is_dir": m.is_dir(),
+                            "size": m.len()
+                        }));
+                    }
                 }
             }
         }

@@ -61,8 +61,7 @@ impl QueryExecutionPipeline {
             // Primitive placeholder conversion for postgres `$1, $2`
             let mut final_sql = String::new();
             let mut param_index = 1;
-            let chars = sql.chars().peekable();
-            for c in chars {
+            for c in sql.chars() {
                 if c == '?' {
                     final_sql.push_str(&format!("${}", param_index));
                     param_index += 1;
