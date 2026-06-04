@@ -61,6 +61,7 @@ pub fn create_app() -> Router {
 
     let router = Router::new()
         .nest("/api/v1", api_routes)
+        .layer(axum::extract::DefaultBodyLimit::max(10 * 1024 * 1024))
         .layer(axum::extract::Extension(_config.clone()))
         .merge(core_routes)
         .route("/favicon.ico", get(favicon))

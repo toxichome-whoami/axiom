@@ -244,7 +244,7 @@ pub async fn handler_signup(
     }
 
     let pool = get_pool(&project_id).await?;
-    let pw_hash = hash_password(&body.password)?;
+    let pw_hash = hash_password(body.password.clone()).await?;
     let uid = create_user(&pool, Some(&body.email), Some(&pw_hash), false, false).await?;
 
     let mut updates = HashMap::new();
@@ -343,7 +343,7 @@ pub async fn handler_login(
     }
 
     let hash = row["password_hash"].as_str().unwrap_or_default();
-    if hash.is_empty() || !verify_password(hash, &body.password) {
+    if hash.is_empty() || !verify_password(hash.to_string(), body.password.clone()).await {
         FAILED_ATTEMPTS
             .entry(attempt_key)
             .and_modify(|e| {
@@ -757,7 +757,7 @@ pub async fn handler_reset_password(
     }
 
     let uid: String = row.try_get("uid").unwrap_or_default();
-    let pw_hash = hash_password(&body.new_password)?;
+    let pw_hash = hash_password(body.new_password.clone()).await?;
     sqlx::query("UPDATE users SET password_hash = ?, updated_at = ? WHERE uid = ?")
         .bind(&pw_hash)
         .bind(utc_now_iso())
@@ -1068,7 +1068,7 @@ pub async fn handler_anonymous_upgrade(
         ));
     }
 
-    let pw_hash = hash_password(&body.password)?;
+    let pw_hash = hash_password(body.password.clone()).await?;
     let mut updates = HashMap::new();
     updates.insert("email", json!(body.email.to_lowercase()));
     updates.insert("password_hash", json!(pw_hash));
@@ -1621,7 +1621,7 @@ pub async fn handler_change_email(
     })?;
 
     let hash = row["password_hash"].as_str().unwrap_or_default();
-    if hash.is_empty() || !verify_password(hash, &body.password) {
+    if hash.is_empty() || !verify_password(hash.to_string(), body.password.clone()).await {
         return Err(AxiomError::new(
             "AUTH_INVALID_CREDENTIALS",
             "Invalid password",
@@ -1742,7 +1742,7 @@ pub async fn handler_change_password(
     })?;
 
     let hash = row["password_hash"].as_str().unwrap_or_default();
-    if hash.is_empty() || !verify_password(hash, &body.current_password) {
+    if hash.is_empty() || !verify_password(hash.to_string(), body.current_password.clone()).await {
         return Err(AxiomError::new(
             "AUTH_INVALID_CREDENTIALS",
             "Invalid current password",
@@ -1759,7 +1759,7 @@ pub async fn handler_change_password(
         ));
     }
 
-    let new_hash = hash_password(&body.new_password)?;
+    let new_hash = hash_password(body.new_password.clone()).await?;
     let mut updates = HashMap::new();
     updates.insert("password_hash", json!(new_hash));
 
@@ -1816,7 +1816,7 @@ pub async fn admin_update_user(
         updates.insert("email", json!(e));
     }
     if let Some(p) = body.password {
-        updates.insert("password_hash", json!(hash_password(&p)?));
+        updates.insert("password_hash", json!(hash_password(p.clone()).await?));
     }
     if let Some(ev) = body.email_verified {
         updates.insert("email_verified", json!(ev));

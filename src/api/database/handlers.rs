@@ -55,14 +55,33 @@ impl QueryExecutionPipeline {
         // Cache miss or mutation. Now we MUST run the strict AST parser to prevent bypasses.
         let dialect_name = engine.dialect();
 
-        let ast_result = if dialect_name == "postgres" {
-            sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::PostgreSqlDialect {}, sql)
-        } else if dialect_name == "mysql" {
-            sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::MySqlDialect {}, sql)
-        } else if dialect_name == "sqlite" {
-            sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::SQLiteDialect {}, sql)
+        // Format placeholders based on engine dialect
+        let formatted_sql = if dialect_name == "postgres" || dialect_name == "any" {
+            // Primitive placeholder conversion for postgres `$1, $2`
+            let mut final_sql = String::new();
+            let mut param_index = 1;
+            let mut chars = sql.chars().peekable();
+            while let Some(c) = chars.next() {
+                if c == '?' {
+                    final_sql.push_str(&format!("${}", param_index));
+                    param_index += 1;
+                } else {
+                    final_sql.push(c);
+                }
+            }
+            final_sql
         } else {
-            sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::GenericDialect {}, sql)
+            sql.to_string()
+        };
+
+        let ast_result = if dialect_name == "postgres" {
+            sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::PostgreSqlDialect {}, &formatted_sql)
+        } else if dialect_name == "mysql" {
+            sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::MySqlDialect {}, &formatted_sql)
+        } else if dialect_name == "sqlite" {
+            sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::SQLiteDialect {}, &formatted_sql)
+        } else {
+            sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::GenericDialect {}, &formatted_sql)
         };
 
         let statements = ast_result.map_err(|e| {
@@ -73,13 +92,48 @@ impl QueryExecutionPipeline {
             )
         })?;
 
+        if statements.len() > 1 {
+            return Err(AxiomError::new(
+                "SQL_MULTIPLE_STATEMENTS_BLOCKED",
+                "Multiple statements in a single query payload are strictly forbidden",
+                StatusCode::BAD_REQUEST,
+            ));
+        }
+
+        let sql_lower = sql.to_lowercase();
+        if sql_lower.contains("pg_sleep") || sql_lower.contains("sleep(") || sql_lower.contains("waitfor delay") {
+            return Err(AxiomError::new(
+                "SQL_TIMING_ATTACK_BLOCKED",
+                "Sleep/timing functions are strictly forbidden",
+                StatusCode::BAD_REQUEST,
+            ));
+        }
+
         let mut is_mutation = false;
         let mut is_dangerous = false;
 
         for stmt in statements {
             match stmt {
-                sqlparser::ast::Statement::Query(_)
-                | sqlparser::ast::Statement::Explain { .. }
+                sqlparser::ast::Statement::Query(q) => {
+                    // Prevent shallow UNION/INTERSECT/EXCEPT
+                    if let sqlparser::ast::SetExpr::SetOperation { .. } = *q.body {
+                        return Err(AxiomError::new(
+                            "SQL_SET_OPERATION_BLOCKED",
+                            "UNION, EXCEPT, and INTERSECT statements are forbidden",
+                            StatusCode::BAD_REQUEST,
+                        ));
+                    }
+                    // Fallback for nested UNIONs
+                    if sql_lower.contains(" union ") || sql_lower.contains("union select") {
+                        return Err(AxiomError::new(
+                            "SQL_UNION_BLOCKED",
+                            "UNION SELECT statements are forbidden by security policy",
+                            StatusCode::BAD_REQUEST,
+                        ));
+                    }
+                    // Safe for readonly
+                }
+                sqlparser::ast::Statement::Explain { .. }
                 | sqlparser::ast::Statement::ShowVariable { .. }
                 | sqlparser::ast::Statement::ShowColumns { .. } => {
                     // Safe for readonly
@@ -112,25 +166,6 @@ impl QueryExecutionPipeline {
                 StatusCode::FORBIDDEN,
             ));
         }
-
-        // Format placeholders based on engine dialect
-        let formatted_sql = if dialect_name == "postgres" || dialect_name == "any" {
-            // Primitive placeholder conversion for postgres `$1, $2`
-            let mut final_sql = String::new();
-            let mut param_index = 1;
-            let mut chars = sql.chars().peekable();
-            while let Some(c) = chars.next() {
-                if c == '?' {
-                    final_sql.push_str(&format!("${}", param_index));
-                    param_index += 1;
-                } else {
-                    final_sql.push(c);
-                }
-            }
-            final_sql
-        } else {
-            sql.to_string()
-        };
 
         match engine.execute(&formatted_sql, &params).await {
             Ok(res) => {

@@ -337,11 +337,58 @@ pub async fn json_action(
             .map_err(|e| AxiomError::new("FS_ERROR", &e, StatusCode::BAD_REQUEST))?;
 
         return Ok(Json(result));
+    } else if action == "info" {
+        let source = payload.get("source").and_then(|v| v.as_str()).unwrap_or("");
+        let target = get_storage_path(&alias, source, &auth)?;
+        if let Ok(m) = std::fs::metadata(&target) {
+            return Ok(Json(json!({
+                "status": "success",
+                "info": {
+                    "name": StdPath::new(source).file_name().unwrap_or_default().to_string_lossy(),
+                    "size": m.len(),
+                    "is_dir": m.is_dir(),
+                }
+            })));
+        } else {
+            return Err(AxiomError::new("FS_NOT_FOUND", "File not found", StatusCode::NOT_FOUND));
+        }
+    } else if action == "exists" {
+        let source = payload.get("source").and_then(|v| v.as_str()).unwrap_or("");
+        let target = get_storage_path(&alias, source, &auth)?;
+        return Ok(Json(json!({
+            "status": "success",
+            "exists": StdPath::new(&target).exists()
+        })));
+    } else if action == "rename" {
+        let source = payload.get("source").and_then(|v| v.as_str()).unwrap_or("");
+        let target = payload.get("target").and_then(|v| v.as_str()).unwrap_or("");
+        let source_path = get_storage_path(&alias, source, &auth)?;
+        let target_path = get_storage_path(&alias, target, &auth)?;
+        if let Err(e) = tokio::fs::rename(&source_path, &target_path).await {
+            return Err(AxiomError::new("FS_ERROR", &e.to_string(), StatusCode::INTERNAL_SERVER_ERROR));
+        }
+        return Ok(Json(json!({ "status": "success" })));
+    } else if action == "bulk_delete" {
+        if let Some(sources) = payload.get("sources").and_then(|v| v.as_array()) {
+            let mut deleted = 0;
+            for source_val in sources {
+                if let Some(source) = source_val.as_str() {
+                    if let Ok(target) = get_storage_path(&alias, source, &auth) {
+                        if tokio::fs::remove_file(&target).await.is_ok() {
+                            deleted += 1;
+                        } else if tokio::fs::remove_dir_all(&target).await.is_ok() {
+                            deleted += 1;
+                        }
+                    }
+                }
+            }
+            return Ok(Json(json!({ "status": "success", "deleted": deleted })));
+        }
     }
 
     Err(AxiomError::new(
         "INPUT_SCHEMA_INVALID",
-        "Invalid block definition",
+        "Invalid action or missing parameters",
         StatusCode::BAD_REQUEST,
     ))
 }

@@ -30,8 +30,8 @@ pub async fn waf_middleware(req: Request, next: Next) -> Result<Response, AxiomE
     }
 
     let uri = req.uri();
-    let path = uri.path();
-    let query = uri.query().unwrap_or("");
+    let mut path = uri.path().to_string();
+    let mut query = uri.query().unwrap_or("").to_string();
 
     if path.len() + query.len() > 2048 {
         return Err(AxiomError::new(
@@ -39,6 +39,16 @@ pub async fn waf_middleware(req: Request, next: Next) -> Result<Response, AxiomE
             "URI exceeds 2048 characters",
             axum::http::StatusCode::URI_TOO_LONG,
         ));
+    }
+
+    // Decode URL up to 3 times to prevent double/triple encoding bypasses
+    for _ in 0..3 {
+        if let Ok(decoded) = urlencoding::decode(&path) {
+            path = decoded.into_owned();
+        }
+        if let Ok(decoded) = urlencoding::decode(&query) {
+            query = decoded.into_owned();
+        }
     }
 
     if path.contains("..") || path.contains("%") || query.contains("..") || query.contains("%") {
@@ -56,7 +66,7 @@ pub async fn waf_middleware(req: Request, next: Next) -> Result<Response, AxiomE
         }
     }
 
-    if path.contains("\0") || query.contains("\0") {
+    if path.contains('\0') || query.contains('\0') {
         return Err(AxiomError::new(
             "WAF_NULL_BYTE",
             "Null byte detected",

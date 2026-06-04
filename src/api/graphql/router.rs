@@ -31,11 +31,10 @@ async fn execute_graphql(
 ) -> Result<Json<Value>, AxiomError> {
     let config = ConfigManager::get();
 
-    // In Rust we don't have python's feature flag system globally, so we check config directly
-    if !auth.full_admin && auth.db_scope.is_empty() {
+    if !auth.full_admin && !auth.feature_scope.iter().any(|s| s == "*" || s == "graphql") {
         return Err(AxiomError::new(
-            "AUTH_FAILED",
-            "GraphQL access denied",
+            "AUTH_FEATURE_DENIED",
+            "GraphQL feature is not enabled for this key",
             axum::http::StatusCode::FORBIDDEN,
         ));
     }

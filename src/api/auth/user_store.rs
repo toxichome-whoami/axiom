@@ -148,29 +148,43 @@ pub async fn get_pool(project_id: &str) -> Result<SqlitePool, AxiomError> {
     Ok(pool)
 }
 
-pub fn hash_password(password: &str) -> Result<String, AxiomError> {
-    let salt = SaltString::generate(&mut OsRng);
-    let argon2 = Argon2::default();
-    argon2
-        .hash_password(password.as_bytes(), &salt)
-        .map(|h| h.to_string())
-        .map_err(|e| {
-            AxiomError::new(
-                "AUTH_HASH_ERROR",
-                &e.to_string(),
-                StatusCode::INTERNAL_SERVER_ERROR,
-            )
-        })
+pub async fn hash_password(password: String) -> Result<String, AxiomError> {
+    tokio::task::spawn_blocking(move || {
+        let salt = SaltString::generate(&mut OsRng);
+        let argon2 = Argon2::default();
+        argon2
+            .hash_password(password.as_bytes(), &salt)
+            .map(|h| h.to_string())
+            .map_err(|e| {
+                AxiomError::new(
+                    "AUTH_HASH_ERROR",
+                    &e.to_string(),
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                )
+            })
+    })
+    .await
+    .map_err(|_| {
+        AxiomError::new(
+            "AUTH_HASH_ERROR",
+            "Thread pool panicked",
+            StatusCode::INTERNAL_SERVER_ERROR,
+        )
+    })?
 }
 
-pub fn verify_password(hash: &str, password: &str) -> bool {
-    let parsed = match PasswordHash::new(hash) {
-        Ok(p) => p,
-        Err(_) => return false,
-    };
-    Argon2::default()
-        .verify_password(password.as_bytes(), &parsed)
-        .is_ok()
+pub async fn verify_password(hash: String, password: String) -> bool {
+    tokio::task::spawn_blocking(move || {
+        let parsed = match PasswordHash::new(&hash) {
+            Ok(p) => p,
+            Err(_) => return false,
+        };
+        Argon2::default()
+            .verify_password(password.as_bytes(), &parsed)
+            .is_ok()
+    })
+    .await
+    .unwrap_or(false)
 }
 
 pub async fn get_user_by_email(pool: &SqlitePool, email: &str) -> Option<Value> {
