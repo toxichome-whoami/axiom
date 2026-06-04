@@ -48,6 +48,83 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, A
             .and_then(|h| h.to_str().ok().map(|s| s.to_string()));
     }
 
+    // 2. Presigned URL Interception (if no header auth)
+    if auth_value.is_none() {
+        if let Some(query) = req.uri().query() {
+            let params: std::collections::HashMap<String, String> = url::form_urlencoded::parse(query.as_bytes())
+                .into_owned()
+                .collect();
+
+            if let (Some(sig), Some(exp_str), Some(key_name)) = (params.get("signature"), params.get("expires"), params.get("X-Axiom-Key-Name")) {
+                if let Ok(expires) = exp_str.parse::<u64>() {
+                    let now = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap()
+                        .as_secs();
+
+                    if now < expires {
+                        let secret_opt = if let Some(k) = config.api_key.get(key_name) {
+                            Some((&k.secret, k.mode.clone(), k.db_scope.clone(), k.fs_scope.clone(), k.feature_scope.clone(), k.rate_limit_override as u32, k.full_admin))
+                        } else if let Some(f) = config.federation.incoming.get(key_name) {
+                            Some((&f.secret, f.mode.clone(), f.db_scope.clone(), f.fs_scope.clone(), f.feature_scope.clone(), 0, false))
+                        } else {
+                            None
+                        };
+
+                        if let Some((secret, mode, db_scope, fs_scope, feature_scope, rate_limit_override, full_admin)) = secret_opt {
+                            if !secret.is_empty() {
+                                let mut path = req.uri().path();
+                                // Axum may strip the prefix if the middleware is in a nested router
+                                if path.starts_with("/api/v1") {
+                                    path = &path["/api/v1".len()..];
+                                }
+
+                                if path.starts_with("/fs/") {
+                                    let parts: Vec<&str> = path.splitn(4, '/').collect(); // "", "fs", "alias", "download/file.txt"
+                                    if parts.len() >= 4 {
+                                        let alias = parts[2];
+                                        let mut subpath = parts[3].to_string();
+                                        if subpath.starts_with("download/") {
+                                            subpath = subpath["download/".len()..].to_string();
+                                        } else if subpath.starts_with("upload") {
+                                            if let Some(p) = params.get("path") {
+                                                subpath = p.clone();
+                                            }
+                                        }
+
+                                        let string_to_sign = format!("{}:{}:{}:{}", req.method().as_str().to_uppercase(), alias, subpath.trim_start_matches('/'), expires);
+
+                                        use hmac::Mac;
+                                        if let Ok(mut mac) = hmac::Hmac::<sha2::Sha256>::new_from_slice(secret.as_bytes()) {
+                                            mac.update(string_to_sign.as_bytes());
+                                            let expected_sig = hex::encode(mac.finalize().into_bytes());
+
+                                            if expected_sig == *sig {
+                                                let ctx = AuthContext {
+                                                    api_key_name: key_name.clone(),
+                                                    mode,
+                                                    db_scope,
+                                                    fs_scope,
+                                                    feature_scope,
+                                                    rate_limit_override,
+                                                    full_admin,
+                                                };
+                                                req.extensions_mut().insert(ctx);
+                                                return Ok(next.run(req).await);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        return Err(AxiomError::new("AUTH_EXPIRED", "Presigned URL has expired", axum::http::StatusCode::UNAUTHORIZED));
+                    }
+                }
+            }
+        }
+    }
+
     if let Some(auth_value) = auth_value {
         if let Some(ctx) = validate_api_key(&auth_value, &config) {
             req.extensions_mut().insert(ctx);

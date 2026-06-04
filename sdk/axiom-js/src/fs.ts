@@ -59,4 +59,20 @@ export class StorageAPI {
             throw new Error(json.error?.message || "Unknown error");
         return json.data;
     }
+    public async generatePresignedUrl(
+        alias: string,
+        path: string,
+        method: string = "GET",
+        expiresIn: number = 3600,
+    ): Promise<string> {
+        const res = await this.client.fetch(`/api/v1/fs/${alias}/presign`, {
+            method: "POST",
+            body: JSON.stringify({
+                path,
+                method,
+                expires_in: expiresIn,
+            }),
+        });
+        return res.url;
+    }
 }

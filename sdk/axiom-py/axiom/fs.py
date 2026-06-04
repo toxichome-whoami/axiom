@@ -50,3 +50,21 @@ class StorageAPI:
             error_msg = json_res.get("error", {}).get("message", "Unknown error")
             raise Exception(error_msg)
         return json_res.get("data")
+
+    async def generate_presigned_url(
+        self,
+        alias: str,
+        path: str,
+        method: str = "GET",
+        expires_in: int = 3600,
+    ) -> str:
+        res = await self.client.fetch(
+            f"/api/v1/fs/{alias}/presign",
+            method="POST",
+            json={
+                "path": path,
+                "method": method,
+                "expires_in": expires_in,
+            },
+        )
+        return res["url"]

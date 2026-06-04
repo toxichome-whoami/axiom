@@ -249,6 +249,48 @@ curl -X GET "http://localhost:4500/api/v1/fs/local_fs/download?path=/reports_fol
 | `quality` | int (1–100) | `82` | Compression quality for JPEG/WebP/AVIF |
 | `inline` | bool | `false` | Set `Content-Disposition: inline` (renders in browser) |
 
+### 4. Presigned URLs
+
+Presigned URLs allow you to grant secure, time-limited, direct access to files in your storage volumes from frontend clients (like web browsers or mobile apps) without needing to expose backend API keys or implement proxy streaming routes.
+
+**Generate a Presigned URL:**
+```bash
+curl -X POST "http://localhost:4500/api/v1/fs/local_fs/presign" \
+     -H "X-Axiom-Key: <TOKEN>" \
+     -H "Content-Type: application/json" \
+     -d '{
+       "path": "/reports/Q1.pdf",
+       "method": "GET",
+       "expires_in": 3600
+     }'
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "url": "/api/v1/fs/local_fs/download/reports/Q1.pdf?X-Axiom-Key-Name=admin&expires=1780612065&signature=3083...",
+    "expires": 1780612065,
+    "method": "GET",
+    "path": "/reports/Q1.pdf"
+  }
+}
+```
+
+The returned `url` can be safely sent to the client and accessed without any HTTP Authorization headers until it expires.
+
+Using the **Client SDKs**:
+```typescript
+// JavaScript/TypeScript
+const url = await client.fs.generatePresignedUrl("local_fs", "/reports/Q1.pdf", "GET", 3600);
+```
+
+```python
+# Python
+url = await client.fs.generate_presigned_url("local_fs", "/reports/Q1.pdf", "GET", 3600)
+```
+
 > [!TIP]
 > If you send `Accept: image/avif,image/webp` in your request headers and don't force a `?format=`, Axiom automatically picks the **best format your client supports** (AVIF → WebP → original). This is exactly how modern CDNs like Cloudflare Images work.
 

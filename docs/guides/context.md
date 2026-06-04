@@ -86,6 +86,7 @@ Pagination is **keyset/cursor-based** — use `next_cursor` from response as `cu
 | List storages | `GET /api/v1/fs/storages` |
 | List folder | `GET /api/v1/fs/{alias}/list?path=/&limit=100&continuation_token=&recursive=true` |
 | Download / stream file | `GET /api/v1/fs/{alias}/download?path=/file.txt` |
+| Generate Presigned URL | `POST /api/v1/fs/{alias}/presign` JSON `{"path": "/...", "method": "GET", "expires_in": 3600}` |
 | Direct upload (small) | `POST /api/v1/fs/{alias}/upload` (multipart: `action=direct`, `path=`, `file=@`) |
 | Chunked upload step 1 | `POST /api/v1/fs/{alias}/upload` JSON `{"action":"initiate","filename":"","path":"","total_size":0,"checksum_sha256":""}` |
 | Chunked upload step 2 | `POST /api/v1/fs/{alias}/upload` multipart `action=chunk, upload_id=, chunk_index=, chunk_hash=, file=@` |

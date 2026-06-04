@@ -416,3 +416,76 @@ pub async fn download_file(
         )
     })
 }
+
+#[derive(serde::Deserialize)]
+pub struct PresignedUrlRequest {
+    path: String,
+    method: String,
+    expires_in: u64,
+}
+
+pub async fn generate_presigned_url(
+    Path(alias): Path<String>,
+    Extension(auth): Extension<AuthContext>,
+    Json(payload): Json<PresignedUrlRequest>,
+) -> Result<impl axum::response::IntoResponse, AxiomError> {
+    use hmac::Mac;
+
+    // 1. Verify standard storage access
+    let _ = get_storage_path(&alias, &payload.path, &auth)?;
+
+    // 2. Fetch the config to get the secret for the current API key
+    let config = ConfigManager::get();
+    let secret = if let Some(k) = config.api_key.get(&auth.api_key_name) {
+        &k.secret
+    } else if let Some(f) = config.federation.incoming.get(&auth.api_key_name) {
+        &f.secret
+    } else {
+        return Err(AxiomError::new("AUTH_ERROR", "Key config not found", StatusCode::INTERNAL_SERVER_ERROR));
+    };
+
+    if secret.is_empty() {
+        return Err(AxiomError::new("AUTH_ERROR", "Cannot generate presigned URLs without a secret", StatusCode::BAD_REQUEST));
+    }
+
+    // 3. Calculate expiration timestamp
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    let expires = now + payload.expires_in;
+
+    // 4. Construct the signature payload: "{method}:{alias}:{path}:{expires}"
+    let clean_path = payload.path.trim_start_matches('/');
+    let string_to_sign = format!("{}:{}:{}:{}", payload.method.to_uppercase(), alias, clean_path, expires);
+
+    // 5. Generate HMAC-SHA256 signature
+    let mut mac = hmac::Hmac::<sha2::Sha256>::new_from_slice(secret.as_bytes())
+        .map_err(|_| AxiomError::new("INTERNAL_ERROR", "Invalid HMAC key", StatusCode::INTERNAL_SERVER_ERROR))?;
+    hmac::Mac::update(&mut mac, string_to_sign.as_bytes());
+    let result = mac.finalize();
+    let signature = hex::encode(result.into_bytes());
+
+    // 6. Build the final presigned URL
+    let endpoint = if payload.method.to_uppercase() == "GET" {
+        format!("/api/v1/fs/{}/download/{}", alias, clean_path)
+    } else if payload.method.to_uppercase() == "POST" {
+        format!("/api/v1/fs/{}/upload?path={}", alias, urlencoding::encode(clean_path))
+    } else {
+        return Err(AxiomError::new("INVALID_METHOD", "Only GET and POST are supported for presigned URLs", StatusCode::BAD_REQUEST));
+    };
+
+    let separator = if endpoint.contains('?') { '&' } else { '?' };
+    let url = format!("{}{}X-Axiom-Key-Name={}&expires={}&signature={}",
+        endpoint, separator, urlencoding::encode(&auth.api_key_name), expires, signature);
+
+    Ok(Json(json!({
+        "success": true,
+        "data": {
+            "url": url,
+            "expires": expires,
+            "method": payload.method.to_uppercase(),
+            "path": payload.path
+        }
+    })))
+}
