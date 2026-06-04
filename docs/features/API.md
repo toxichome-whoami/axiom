@@ -170,6 +170,31 @@ curl -X DELETE "http://localhost:4500/api/v1/db/main_db/users/rows" \
          }'
 ```
 
+### 8. Migrations
+Axiom provides an automated API-first migration engine that executes SQL migrations found in your server's `migrations/<alias>/` directory against the connected database pool.
+
+```bash
+# List all applied and pending migrations
+curl -X GET "http://localhost:4500/api/v1/db/main_db/migrations" \
+     -H "X-Axiom-Key: <TOKEN>"
+
+# Apply pending migrations
+curl -X POST "http://localhost:4500/api/v1/db/main_db/migrations" \
+     -H "X-Axiom-Key: <TOKEN>"
+```
+
+Using the **Client SDKs**:
+```typescript
+// TypeScript
+const history = await client.db.listMigrations("main_db");
+const applied = await client.db.applyMigrations("main_db");
+```
+```python
+# Python
+history = await client.db.list_migrations("main_db")
+applied = await client.db.apply_migrations("main_db")
+```
+
 ---
 
 ## Storage API <code>/api/v1/fs</code>

@@ -58,5 +58,10 @@ pub trait DatabaseEngine: Send + Sync {
         params: &[serde_json::Value],
     ) -> Result<QueryResult, Box<dyn std::error::Error>>;
 
+    async fn apply_migrations(&self, path: &std::path::Path) -> Result<Vec<String>, Box<dyn std::error::Error>>;
+
+    // Returns a list of migration file names or versions
+    async fn list_migrations(&self, path: &std::path::Path) -> Result<Vec<serde_json::Value>, Box<dyn std::error::Error>>;
+
     fn dialect(&self) -> &str;
 }

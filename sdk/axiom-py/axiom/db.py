@@ -57,3 +57,9 @@ class DatabaseAPI:
             method="POST",
             json={"sql": sql, "params": params or {}},
         )
+
+    async def list_migrations(self, alias: str) -> Any:
+        return await self.client.fetch(f"/api/v1/db/{alias}/migrations")
+
+    async def apply_migrations(self, alias: str) -> Any:
+        return await self.client.fetch(f"/api/v1/db/{alias}/migrations", method="POST")

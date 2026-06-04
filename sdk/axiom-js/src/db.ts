@@ -64,4 +64,14 @@ export class DatabaseAPI {
             body: JSON.stringify({ sql, params }),
         });
     }
+
+    public async listMigrations(alias: string): Promise<any> {
+        return this.client.fetch(`/api/v1/db/${alias}/migrations`);
+    }
+
+    public async applyMigrations(alias: string): Promise<any> {
+        return this.client.fetch(`/api/v1/db/${alias}/migrations`, {
+            method: "POST",
+        });
+    }
 }

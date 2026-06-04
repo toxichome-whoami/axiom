@@ -58,10 +58,12 @@ https://your-host.com   (or http://localhost:4500 locally)
 | List all DBs | `GET /api/v1/db/databases` |
 | List tables (paginated) | `GET /api/v1/db/{alias}/tables?limit=50&cursor=` |
 | Fetch rows (paginated) | `GET /api/v1/db/{alias}/{table}/rows` |
-| Insert rows | `POST /api/v1/db/{alias}/{table}/rows` |
-| Update rows | `PATCH /api/v1/db/{alias}/{table}/rows` |
-| Delete rows | `DELETE /api/v1/db/{alias}/{table}/rows` |
-| Raw SQL | `POST /api/v1/db/{alias}/query` |
+| Insert rows | `POST /api/v1/db/{alias}/{table}/rows` JSON `{"rows": [...]}` |
+| Update rows | `PATCH /api/v1/db/{alias}/{table}/rows` JSON `{"filter": ..., "update": ...}` |
+| Delete rows | `DELETE /api/v1/db/{alias}/{table}/rows` JSON `{"filter": ...}` |
+| Query raw SQL | `POST /api/v1/db/{alias}/query` JSON `{"sql": "", "params": {}}` |
+| List migrations | `GET /api/v1/db/{alias}/migrations` |
+| Apply migrations | `POST /api/v1/db/{alias}/migrations` |
 
 **Fetch rows params:** `limit`, `cursor`, `sort`, `order=asc|desc`, `filter={"col":val}`, `fields=col1,col2`, `search`, `search_fields`, `count=1`
 

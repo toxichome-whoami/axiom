@@ -519,3 +519,51 @@ pub async fn delete_rows(
         serde_json::json!({ "success": true, "affected_rows": result.affected_rows }),
     ))
 }
+
+pub async fn list_migrations(
+    axum::extract::Path(db_name): axum::extract::Path<String>,
+    axum::extract::Extension(auth): axum::extract::Extension<AuthContext>,
+) -> Result<axum::Json<Value>, AxiomError> {
+    let _db_cfg = get_db_config(&db_name, &auth).await?;
+
+    let engine_lock = DatabasePoolManager::get_engine(&db_name).await
+        .ok_or_else(|| AxiomError::new("DB_NOT_FOUND", "Database not found", StatusCode::NOT_FOUND))?;
+
+    let path_str = format!("migrations/{}", db_name);
+    let path = std::path::Path::new(&path_str);
+
+    if !path.exists() {
+        return Ok(axum::Json(serde_json::json!({ "success": true, "data": [] })));
+    }
+
+    let migrations = engine_lock.list_migrations(path).await
+        .map_err(|e| AxiomError::new("MIGRATION_ERROR", &e.to_string(), StatusCode::INTERNAL_SERVER_ERROR))?;
+
+    Ok(axum::Json(serde_json::json!({ "success": true, "data": migrations })))
+}
+
+pub async fn apply_migrations(
+    axum::extract::Path(db_name): axum::extract::Path<String>,
+    axum::extract::Extension(auth): axum::extract::Extension<AuthContext>,
+) -> Result<axum::Json<Value>, AxiomError> {
+    if !auth.full_admin {
+        return Err(AxiomError::new("FORBIDDEN", "Only full admin can apply migrations", StatusCode::FORBIDDEN));
+    }
+
+    let _db_cfg = get_db_config(&db_name, &auth).await?;
+
+    let engine_lock = DatabasePoolManager::get_engine(&db_name).await
+        .ok_or_else(|| AxiomError::new("DB_NOT_FOUND", "Database not found", StatusCode::NOT_FOUND))?;
+
+    let path_str = format!("migrations/{}", db_name);
+    let path = std::path::Path::new(&path_str);
+
+    if !path.exists() {
+        return Err(AxiomError::new("NOT_FOUND", "No migrations folder found for this database", StatusCode::NOT_FOUND));
+    }
+
+    let applied = engine_lock.apply_migrations(path).await
+        .map_err(|e| AxiomError::new("MIGRATION_ERROR", &e.to_string(), StatusCode::INTERNAL_SERVER_ERROR))?;
+
+    Ok(axum::Json(serde_json::json!({ "success": true, "data": applied })))
+}

@@ -20,6 +20,11 @@ pub fn get_router() -> Router {
         )
         .route("/:db_name/query", post(execute_query))
         .route(
+            "/:db_name/migrations",
+            get(crate::api::database::handlers::list_migrations)
+                .post(crate::api::database::handlers::apply_migrations),
+        )
+        .route(
             "/:db_name/:table_name/rows",
             post(crate::api::database::handlers::insert_rows)
                 .get(crate::api::database::handlers::fetch_rows)

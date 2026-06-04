@@ -238,6 +238,32 @@ impl DatabaseEngine for AnyDatabaseEngine {
         })
     }
 
+    async fn apply_migrations(&self, path: &std::path::Path) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+        let pool = self.pool.as_ref().ok_or("Database not connected")?;
+        let migrator = sqlx::migrate::Migrator::new(path).await?;
+
+        match pool {
+            NativePool::Postgres(p) => migrator.run(p).await?,
+            NativePool::MySql(p) => migrator.run(p).await?,
+            NativePool::Sqlite(p) => migrator.run(p).await?,
+        }
+
+        let applied = migrator.iter().map(|m| format!("{}_{}", m.version, m.description)).collect();
+        Ok(applied)
+    }
+
+    async fn list_migrations(&self, path: &std::path::Path) -> Result<Vec<serde_json::Value>, Box<dyn std::error::Error>> {
+        let migrator = sqlx::migrate::Migrator::new(path).await?;
+        let mut result = Vec::new();
+        for m in migrator.iter() {
+            result.push(serde_json::json!({
+                "version": m.version,
+                "description": m.description.to_string(),
+            }));
+        }
+        Ok(result)
+    }
+
     fn dialect(&self) -> &str {
         self.config.url.split(':').next().unwrap_or("any")
     }
