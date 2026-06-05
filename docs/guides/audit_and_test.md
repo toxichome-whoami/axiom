@@ -2,6 +2,8 @@
 
 This document is written for an AI model or developer performing a structured audit of the Axiom backend gateway. It covers security testing, functional correctness, edge cases, known gaps, and suggested test scripts. All information is based on the actual source code, not just the public documentation.
 
+**Last updated:** June 2026 — reflects OAuth 2.0, Presigned URLs, Database Migrations, Clippy cleanup, and storage usage caching.
+
 ---
 
 ## Project Overview
@@ -79,6 +81,9 @@ curl http://localhost:4500/api/v1/db/databases -H "X-Axiom-Key: $(echo -n 'admin
 # Should return 200 — correct token
 TOKEN=$(echo -n "admin:YOUR_SECRET" | base64)
 curl http://localhost:4500/api/v1/db/databases -H "X-Axiom-Key: $TOKEN"
+
+# Should strip Bearer prefix correctly — strip_prefix("Bearer ") used, not manual slice
+curl http://localhost:4500/api/v1/db/databases -H "Authorization: Bearer $(echo -n 'admin:YOUR_SECRET' | base64)"
 ```
 
 **Audit questions:**
@@ -416,6 +421,41 @@ curl "http://localhost:4500/api/v1/fs/local_uploads/download?path=/does_not_exis
 # Edge: readonly key tries to upload — should 403
 ```
 
+### Presigned URL (Storage)
+
+Presigned URLs allow authenticated one-time download/upload access without exposing the API key. Signed with HMAC-SHA256. The signature covers `METHOD:alias:path:expires`.
+
+```bash
+TOKEN=$(echo -n "admin:YOUR_SECRET" | base64)
+
+# Generate a presigned download URL (valid for 1 hour)
+curl -X POST "http://localhost:4500/api/v1/fs/local_uploads/presign" \
+  -H "X-Axiom-Key: $TOKEN" -H "Content-Type: application/json" \
+  -d '{"path":"/test/hello.txt","method":"GET","expires_in":3600}'
+
+# Use the returned URL without any auth header — should return 200 and file content
+curl "<URL_FROM_ABOVE>"
+
+# Security: tamper the signature — should return 401
+curl "http://localhost:4500/api/v1/fs/local_uploads/download/test/hello.txt?X-Axiom-Key-Name=admin&expires=9999999999&signature=deadbeef"
+
+# Security: use a valid signature past the expiry — should return 401
+# Generate a URL with expires_in=1 (1 second), wait 2 seconds, then use it
+curl -X POST "http://localhost:4500/api/v1/fs/local_uploads/presign" \
+  -H "X-Axiom-Key: $TOKEN" -H "Content-Type: application/json" \
+  -d '{"path":"/test/hello.txt","method":"GET","expires_in":1}'
+sleep 2
+curl "<URL_FROM_ABOVE>"  # should now return 401 AUTH_EXPIRED
+
+# Security: presigned URL for wrong path — signature mismatch should 401
+# Take a valid URL and change the path portion manually
+```
+
+**Audit questions:**
+- [ ] Can the `expires` parameter be set to a value far in the future (e.g. year 2099)? Is there a max TTL enforced?
+- [ ] Is the `alias` in the URL path validated against the key's `fs_scope`?
+- [ ] Can a presigned URL for `GET` be replayed for a `PUT`/upload?
+
 ---
 
 ### 2.3 GraphQL API
@@ -612,14 +652,120 @@ These are confirmed missing from the codebase. Do NOT expect them to work.
 | Presigned download URLs | **Implemented** — `POST /api/v1/fs/{alias}/presign`. HMAC-SHA256 signed, time-limited. Available in both SDKs. | — |
 | Database schema migrations | **Implemented** — `POST /api/v1/db/{alias}/migrations`. Reads from `migrations/<alias>/` on the server. Requires `full_admin=true`. | — |
 | TypeScript / Python SDKs | **Implemented** — `sdk/axiom-js` (TypeScript, zero-dep) and `sdk/axiom-py` (Python/httpx). Cover auth, db, fs, realtime modules. | — |
+| Storage usage tracking | **Implemented** — `GET /api/v1/fs/storages` now returns `used_bytes`, `available_bytes`, `file_count`. Uses a 30-second in-memory cache (`DIR_USAGE_CACHE`) to prevent CPU/RAM spikes under load. | — |
+| Clippy / code quality | **Resolved** — all 56 warnings and 1 pre-existing error resolved. 0 warnings remain. | — |
 | Per-endpoint rate limiting | Not implemented | Medium — `/login` and `/query` share same rate limit |
 | Gateway-level audit log | Not implemented | Medium — no record of which key ran which SQL |
 | Admin UI / dashboard | Not implemented | Low for now |
 | Constant-time secret comparison | Not implemented | Low (local deployments), High (internet-facing) |
+| OAuth state CSRF nonce | Not implemented | Medium — OAuth `state` param is not cryptographically signed, CSRF-safe nonce recommended |
 
 ---
 
-## Part 6 — Configuration Edge Cases
+## Part 6 — New Features Audit
+
+### 6.1 Presigned URL Security
+
+Presigned URLs bypass normal header auth. They must be audited independently.
+
+**What to verify:**
+- Signature is HMAC-SHA256 keyed on the API key's `secret`
+- String to sign format: `METHOD:alias:path:expires`
+- Expiry is checked server-side **before** signature verification
+- The `alias` in the URL path must match what was signed
+
+**Audit checklist:**
+- [ ] Signature tamper returns 401
+- [ ] Expired URL returns 401 `AUTH_EXPIRED`
+- [ ] Path manipulation (changing `/file.txt` to `/etc/passwd`) returns 401 due to signature mismatch
+- [ ] Wrong alias in path returns 401
+- [ ] Is there a maximum `expires_in` cap? (currently none — an operator could generate a URL valid for years)
+- [ ] Can a GET presigned URL be replayed as a PUT?
+
+---
+
+### 6.2 Database Migrations Security
+
+Migration files are read from `migrations/<alias>/` on the server filesystem, not submitted by the client.
+
+**Audit checklist:**
+- [ ] `POST /api/v1/db/{alias}/migrations` without `full_admin=true` key — should return 403
+- [ ] `GET /api/v1/db/{alias}/migrations` (list) — accessible to non-admin keys?
+- [ ] Verify the migrations path is resolved relative to the server CWD — test by running the binary from a different directory
+- [ ] Verify `sqlx::Migrator` correctly skips already-applied migrations (idempotent)
+
+```bash
+ADMIN_TOKEN=$(echo -n "admin:YOUR_SECRET" | base64)
+LIM_TOKEN=$(echo -n "limited_key:limited_secret_here_32_chars_min" | base64)
+
+# List migrations (read-only) — should work for non-admin key
+curl "http://localhost:4500/api/v1/db/localdb/migrations" -H "X-Axiom-Key: $ADMIN_TOKEN"
+
+# Apply migrations (requires full_admin=true)
+curl -X POST "http://localhost:4500/api/v1/db/localdb/migrations" -H "X-Axiom-Key: $ADMIN_TOKEN"
+
+# Apply migrations without full_admin — should 403
+curl -X POST "http://localhost:4500/api/v1/db/localdb/migrations" -H "X-Axiom-Key: $LIM_TOKEN"
+
+# Apply migrations twice — should be idempotent (second call applies 0 new migrations)
+curl -X POST "http://localhost:4500/api/v1/db/localdb/migrations" -H "X-Axiom-Key: $ADMIN_TOKEN"
+curl -X POST "http://localhost:4500/api/v1/db/localdb/migrations" -H "X-Axiom-Key: $ADMIN_TOKEN"
+```
+
+---
+
+### 6.3 OAuth 2.0 Audit
+
+```bash
+TOKEN=$(echo -n "admin:YOUR_SECRET" | base64)
+
+# Get Google OAuth redirect URL
+curl "http://localhost:4500/api/v1/auth/admin/oauth/google/url" -H "X-Axiom-Key: $TOKEN"
+
+# Get GitHub OAuth redirect URL
+curl "http://localhost:4500/api/v1/auth/admin/oauth/github/url" -H "X-Axiom-Key: $TOKEN"
+
+# Simulate callback with a forged code — should fail at token exchange
+curl "http://localhost:4500/api/v1/auth/admin/oauth/google/callback?code=fakecode&state=admin"
+```
+
+**Audit checklist:**
+- [ ] The `state` parameter is used to route to the correct project but is NOT a CSRF nonce — a forged `state` with a valid `code` from the same provider could succeed
+- [ ] `reqwest::Client::new()` is created per request in the OAuth handler — not a security issue but causes unnecessary TCP connection overhead
+- [ ] Verify that a callback for a provider not configured in `config.toml` returns an appropriate error
+
+---
+
+### 6.4 Storage Usage Cache (Performance)
+
+The `GET /api/v1/fs/storages` endpoint triggers a recursive directory walk (`get_dir_usage_raw`) to compute used bytes and file count. This is now cached in memory for 30 seconds via `DIR_USAGE_CACHE`.
+
+**What to verify:**
+- Under high load (benchmark), RAM and CPU must remain stable
+- The cache correctly invalidates after 30 seconds — upload a new file and check usage updates within the next cache cycle
+- A storage with millions of files does not block the Tokio runtime — the walk runs inside `spawn_blocking`
+
+```bash
+TOKEN=$(echo -n "admin:YOUR_SECRET" | base64)
+
+# Check usage before upload
+curl "http://localhost:4500/api/v1/fs/storages" -H "X-Axiom-Key: $TOKEN" | python3 -m json.tool
+
+# Upload a file
+curl -X POST "http://localhost:4500/api/v1/fs/local_uploads/upload" \
+  -H "X-Axiom-Key: $TOKEN" -F "path=/cache_test.txt" -F "file=@/tmp/hello.txt"
+
+# Check usage immediately — may still show cached (stale) value
+curl "http://localhost:4500/api/v1/fs/storages" -H "X-Axiom-Key: $TOKEN" | python3 -m json.tool
+
+# Wait 31 seconds and check again — must show updated value
+sleep 31
+curl "http://localhost:4500/api/v1/fs/storages" -H "X-Axiom-Key: $TOKEN" | python3 -m json.tool
+```
+
+---
+
+## Part 7 — Configuration Edge Cases
 
 ### 6.1 Environment Variable Overrides
 
@@ -669,6 +815,10 @@ Run these in order. Stop and report findings at each level before proceeding.
 8. **Refresh token reuse** — Does the second use of a refresh token correctly revoke all sessions?
 9. **Admin endpoint access** — Can a non-`full_admin` key access `/admin/` routes?
 10. **Concurrent write safety** — Do parallel writes produce consistent data without corruption?
+11. **Presigned URL replay** — Can a presigned URL be used after expiry or with a modified path?
+12. **Migration endpoint** — Can a non-`full_admin` key trigger migrations?
+13. **OAuth CSRF** — Can a forged `state` parameter in the OAuth callback succeed?
+14. **Storage usage cache** — Does high benchmark load cause CPU/RAM spikes on `GET /api/v1/fs/storages`?
 
 ---
 
