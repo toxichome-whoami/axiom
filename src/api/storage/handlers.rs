@@ -14,21 +14,28 @@ use crate::api::storage::streaming::serve_file;
 use crate::config::loader::ConfigManager;
 use crate::utils::types::AuthContext;
 
-fn get_dir_usage(path: &StdPath) -> (u64, u64) {
+static DIR_USAGE_CACHE: once_cell::sync::Lazy<
+    dashmap::DashMap<String, (std::time::Instant, u64, u64)>,
+> = once_cell::sync::Lazy::new(dashmap::DashMap::new);
+
+fn get_dir_usage_raw(path: &StdPath) -> (u64, u64) {
     let mut total_size = 0;
     let mut file_count = 0;
 
     if path.is_dir() {
         if let Ok(entries) = std::fs::read_dir(path) {
-            for entry in entries.flatten() {
-                if let Ok(metadata) = entry.metadata() {
-                    if metadata.is_dir() {
-                        let (s, c) = get_dir_usage(&entry.path());
-                        total_size += s;
-                        file_count += c;
-                    } else {
-                        total_size += metadata.len();
-                        file_count += 1;
+            #[allow(clippy::manual_flatten)]
+            for entry_res in entries {
+                if let Ok(entry) = entry_res {
+                    if let Ok(metadata) = entry.metadata() {
+                        if metadata.is_dir() {
+                            let (s, c) = get_dir_usage_raw(&entry.path());
+                            total_size += s;
+                            file_count += c;
+                        } else {
+                            total_size += metadata.len();
+                            file_count += 1;
+                        }
                     }
                 }
             }
@@ -39,6 +46,19 @@ fn get_dir_usage(path: &StdPath) -> (u64, u64) {
     }
 
     (total_size, file_count)
+}
+
+fn get_dir_usage(path: &StdPath) -> (u64, u64) {
+    let path_str = path.to_string_lossy().to_string();
+    if let Some(entry) = DIR_USAGE_CACHE.get(&path_str) {
+        if entry.0.elapsed().as_secs() < 30 {
+            return (entry.1, entry.2);
+        }
+    }
+
+    let (s, c) = get_dir_usage_raw(path);
+    DIR_USAGE_CACHE.insert(path_str, (std::time::Instant::now(), s, c));
+    (s, c)
 }
 
 fn get_storage_path(alias: &str, rel_path: &str, auth: &AuthContext) -> Result<String, AxiomError> {
@@ -351,7 +371,11 @@ pub async fn json_action(
                 }
             })));
         } else {
-            return Err(AxiomError::new("FS_NOT_FOUND", "File not found", StatusCode::NOT_FOUND));
+            return Err(AxiomError::new(
+                "FS_NOT_FOUND",
+                "File not found",
+                StatusCode::NOT_FOUND,
+            ));
         }
     } else if action == "exists" {
         let source = payload.get("source").and_then(|v| v.as_str()).unwrap_or("");
@@ -366,7 +390,11 @@ pub async fn json_action(
         let source_path = get_storage_path(&alias, source, &auth)?;
         let target_path = get_storage_path(&alias, target, &auth)?;
         if let Err(e) = tokio::fs::rename(&source_path, &target_path).await {
-            return Err(AxiomError::new("FS_ERROR", &e.to_string(), StatusCode::INTERNAL_SERVER_ERROR));
+            return Err(AxiomError::new(
+                "FS_ERROR",
+                &e.to_string(),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            ));
         }
         return Ok(Json(json!({ "status": "success" })));
     } else if action == "bulk_delete" {
@@ -375,7 +403,9 @@ pub async fn json_action(
             for source_val in sources {
                 if let Some(source) = source_val.as_str() {
                     if let Ok(target) = get_storage_path(&alias, source, &auth) {
-                        if tokio::fs::remove_file(&target).await.is_ok() || tokio::fs::remove_dir_all(&target).await.is_ok() {
+                        if tokio::fs::remove_file(&target).await.is_ok()
+                            || tokio::fs::remove_dir_all(&target).await.is_ok()
+                        {
                             deleted += 1;
                         }
                     }
@@ -440,11 +470,19 @@ pub async fn generate_presigned_url(
     } else if let Some(f) = config.federation.incoming.get(&auth.api_key_name) {
         &f.secret
     } else {
-        return Err(AxiomError::new("AUTH_ERROR", "Key config not found", StatusCode::INTERNAL_SERVER_ERROR));
+        return Err(AxiomError::new(
+            "AUTH_ERROR",
+            "Key config not found",
+            StatusCode::INTERNAL_SERVER_ERROR,
+        ));
     };
 
     if secret.is_empty() {
-        return Err(AxiomError::new("AUTH_ERROR", "Cannot generate presigned URLs without a secret", StatusCode::BAD_REQUEST));
+        return Err(AxiomError::new(
+            "AUTH_ERROR",
+            "Cannot generate presigned URLs without a secret",
+            StatusCode::BAD_REQUEST,
+        ));
     }
 
     // 3. Calculate expiration timestamp
@@ -456,11 +494,22 @@ pub async fn generate_presigned_url(
 
     // 4. Construct the signature payload: "{method}:{alias}:{path}:{expires}"
     let clean_path = payload.path.trim_start_matches('/');
-    let string_to_sign = format!("{}:{}:{}:{}", payload.method.to_uppercase(), alias, clean_path, expires);
+    let string_to_sign = format!(
+        "{}:{}:{}:{}",
+        payload.method.to_uppercase(),
+        alias,
+        clean_path,
+        expires
+    );
 
     // 5. Generate HMAC-SHA256 signature
-    let mut mac = hmac::Hmac::<sha2::Sha256>::new_from_slice(secret.as_bytes())
-        .map_err(|_| AxiomError::new("INTERNAL_ERROR", "Invalid HMAC key", StatusCode::INTERNAL_SERVER_ERROR))?;
+    let mut mac = hmac::Hmac::<sha2::Sha256>::new_from_slice(secret.as_bytes()).map_err(|_| {
+        AxiomError::new(
+            "INTERNAL_ERROR",
+            "Invalid HMAC key",
+            StatusCode::INTERNAL_SERVER_ERROR,
+        )
+    })?;
     hmac::Mac::update(&mut mac, string_to_sign.as_bytes());
     let result = mac.finalize();
     let signature = hex::encode(result.into_bytes());
@@ -469,14 +518,28 @@ pub async fn generate_presigned_url(
     let endpoint = if payload.method.to_uppercase() == "GET" {
         format!("/api/v1/fs/{}/download/{}", alias, clean_path)
     } else if payload.method.to_uppercase() == "POST" {
-        format!("/api/v1/fs/{}/upload?path={}", alias, urlencoding::encode(clean_path))
+        format!(
+            "/api/v1/fs/{}/upload?path={}",
+            alias,
+            urlencoding::encode(clean_path)
+        )
     } else {
-        return Err(AxiomError::new("INVALID_METHOD", "Only GET and POST are supported for presigned URLs", StatusCode::BAD_REQUEST));
+        return Err(AxiomError::new(
+            "INVALID_METHOD",
+            "Only GET and POST are supported for presigned URLs",
+            StatusCode::BAD_REQUEST,
+        ));
     };
 
     let separator = if endpoint.contains('?') { '&' } else { '?' };
-    let url = format!("{}{}X-Axiom-Key-Name={}&expires={}&signature={}",
-        endpoint, separator, urlencoding::encode(&auth.api_key_name), expires, signature);
+    let url = format!(
+        "{}{}X-Axiom-Key-Name={}&expires={}&signature={}",
+        endpoint,
+        separator,
+        urlencoding::encode(&auth.api_key_name),
+        expires,
+        signature
+    );
 
     Ok(Json(json!({
         "success": true,
