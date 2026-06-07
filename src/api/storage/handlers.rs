@@ -104,6 +104,25 @@ fn get_storage_path(alias: &str, rel_path: &str, auth: &AuthContext) -> Result<S
         ));
     }
 
+    let lower_path = rel_path.to_lowercase();
+    if !storage_cfg.blocked_extensions.is_empty()
+        && storage_cfg.blocked_extensions.iter().any(|ext| lower_path.ends_with(&ext.to_lowercase())) {
+        return Err(AxiomError::new(
+            "FS_BLOCKED_EXTENSION",
+            "File extension is blocked",
+            StatusCode::FORBIDDEN,
+        ));
+    }
+
+    if !storage_cfg.allowed_extensions.is_empty()
+        && !storage_cfg.allowed_extensions.iter().any(|ext| lower_path.ends_with(&ext.to_lowercase())) {
+        return Err(AxiomError::new(
+            "FS_EXTENSION_NOT_ALLOWED",
+            "File extension is not in allowed list",
+            StatusCode::FORBIDDEN,
+        ));
+    }
+
     let target_path = base_path.join(clean_rel_path);
 
     // Additional safeguard
