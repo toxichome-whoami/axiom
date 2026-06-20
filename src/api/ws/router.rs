@@ -94,7 +94,7 @@ async fn handle_socket(socket: WebSocket, initial_auth: Option<AuthContext>) {
     };
 
     // 2. Setup internal communication channel
-    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Message>();
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<Message>(256);
     CONN_MGR.register(&client_id, tx, scopes).await;
 
     // Send connection success

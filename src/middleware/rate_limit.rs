@@ -1,6 +1,7 @@
 use crate::api::errors::AxiomError;
 use crate::config::loader::ConfigManager;
 use crate::middleware::cache::MemoryCache;
+use crate::utils::ip::get_client_ip;
 use axum::{extract::Request, middleware::Next, response::Response};
 
 pub async fn rate_limit_middleware(req: Request, next: Next) -> Result<Response, AxiomError> {
@@ -14,13 +15,7 @@ pub async fn rate_limit_middleware(req: Request, next: Next) -> Result<Response,
         return Ok(next.run(req).await);
     }
 
-    let client_ip = req
-        .headers()
-        .get("x-forwarded-for")
-        .or_else(|| req.headers().get("x-real-ip"))
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("127.0.0.1")
-        .to_string();
+    let client_ip = get_client_ip(&req, &config);
 
     let mut is_allowed = false;
     for allowed in &config.server.allowed_ips {

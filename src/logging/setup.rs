@@ -1,4 +1,6 @@
 use crate::config::loader::ConfigManager;
+use once_cell::sync::OnceCell;
+use tracing_appender::non_blocking::WorkerGuard;
 use tracing_appender::rolling;
 use tracing_subscriber::{
     fmt::{self, format::FmtSpan},
@@ -6,6 +8,8 @@ use tracing_subscriber::{
     util::SubscriberInitExt,
     EnvFilter, Registry,
 };
+
+static LOG_GUARD: OnceCell<WorkerGuard> = OnceCell::new();
 
 pub fn setup_logging() -> Result<(), Box<dyn std::error::Error>> {
     let config = ConfigManager::get();
@@ -27,7 +31,8 @@ pub fn setup_logging() -> Result<(), Box<dyn std::error::Error>> {
         EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(log_level));
 
     let file_appender = rolling::daily(&config.logging.directory, &config.logging.file_prefix);
-    let (non_blocking_file, _guard) = tracing_appender::non_blocking(file_appender);
+    let (non_blocking_file, guard) = tracing_appender::non_blocking(file_appender);
+    LOG_GUARD.set(guard).ok(); // Store guard for program lifetime
 
     let format_json = config.logging.format == "json";
 
@@ -54,11 +59,6 @@ pub fn setup_logging() -> Result<(), Box<dyn std::error::Error>> {
             let _ = subscriber.try_init();
         }
     }
-
-    // NOTE: The `_guard` will be dropped here, which flushes non_blocking_file.
-    // In a real app we need to return the WorkerGuard so it stays alive,
-    // but we can leak it for now to match the simplicity.
-    std::mem::forget(_guard);
 
     Ok(())
 }

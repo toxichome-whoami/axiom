@@ -54,7 +54,7 @@ Axiom enforces strict separation between authentication domains. A credential fr
 </table>
 
 - **API Keys (REST)** authenticate all standard HTTP requests via the `Authorization` header.
-- **WebSocket** supports **Hybrid Authentication**: it can use standard HTTP headers during the handshake (recommended for backend clients) OR the API key can be delivered as the **first JSON message** after the socket is established (required for browsers). This design deliberately avoids URL query-string tokens (e.g. `?token=...`), which would be logged in plaintext by Nginx/CDN access logs and stored in browser history. The token is fully shielded by WSS/TLS encryption in both modes.
+- **WebSocket** supports **Hybrid Authentication**: backend/mobile clients can use HTTP headers (`X-Axiom-Key`) during the handshake, while browser clients (which cannot set custom headers) send the API key as the **first JSON message** after the socket is established. DoS protection is provided by bounded 256-message channels and `max_connections` enforcement. This design deliberately avoids URL query-string tokens (e.g. `?token=...`), which would be logged in plaintext by Nginx/CDN access logs.
 - **Federation Secrets** authenticate server-to-server mesh connections. Each node has independent scope.
 - **Webhook Tokens** authorize webhook event emission. Verified via constant-time comparison.
 
@@ -100,15 +100,23 @@ All paths use Base64 encoding for credential transport. Raw secrets are stored i
   </tr>
   <tr>
     <td style="padding: 10px;"><b>MIME Sniffing</b></td>
-    <td style="padding: 10px;">All responses include <code>X-Content-Type-Options: nosniff</code>.</td>
+    <td style="padding: 10px;">All responses include <code>X-Content-Type-Options: nosniff</code>. File downloads are served as <code>application/octet-stream</code> with <code>Content-Disposition: attachment</code>, preventing browser rendering of uploaded HTML/JS.</td>
   </tr>
   <tr>
     <td style="padding: 10px;"><b>XSS</b></td>
-    <td style="padding: 10px;">Strict <code>application/json</code> content-type enforcement and WAF-based input sanitization.</td>
+    <td style="padding: 10px;">WAF-based input sanitization plus a strict <code>Content-Security-Policy: default-src 'none'; script-src 'none'</code> header on all responses as defense-in-depth.</td>
   </tr>
   <tr>
     <td style="padding: 10px;"><b>Clickjacking</b></td>
     <td style="padding: 10px;"><code>X-Frame-Options: DENY</code> is added to all responses by the unified <code>SecurityHeadersMiddleware</code>.</td>
+  </tr>
+  <tr>
+    <td style="padding: 10px;"><b>Cross-Client Data Leakage</b></td>
+    <td style="padding: 10px;">MCP responses are routed via per-client <code>client_id</code> channels instead of a single broadcast channel, preventing one client from seeing another's data.</td>
+  </tr>
+  <tr>
+    <td style="padding: 10px;"><b>Backpressure / Slowloris (WS)</b></td>
+    <td style="padding: 10px;">WebSocket channels use a bounded 256-message buffer. Slow clients have messages silently dropped instead of the server accumulating unbounded memory per connection.</td>
   </tr>
 </table>
 

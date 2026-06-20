@@ -59,8 +59,9 @@ impl BackupEngine {
             return Ok(());
         }
 
-        std::env::set_var("AWS_ACCESS_KEY_ID", &config.backups.s3_access_key);
-        std::env::set_var("AWS_SECRET_ACCESS_KEY", &config.backups.s3_secret_key);
+        // AWS SDK reads AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY from environment.
+        // Set these in the deployment environment, not in code.
+        // std::env::set_var is not thread-safe and leaks credentials to /proc/self/environ.
 
         let region = Region::new(config.backups.s3_region.clone());
         let mut aws_config_builder =

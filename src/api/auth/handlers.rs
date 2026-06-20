@@ -1411,7 +1411,7 @@ pub async fn handler_magic_link_send(
         )
         .await?;
         return Ok(Json(
-            json!({ "status": "ok", "message": "Magic link sent", "token": token }),
+            json!({ "status": "ok", "message": "If account exists, magic link sent" }),
         ));
     }
 
@@ -1489,8 +1489,8 @@ pub async fn handler_otp_send(
         let id = uuid::Uuid::new_v4().to_string();
 
         sqlx::query(
-            "INSERT INTO auth_tokens (id, uid, email, token_hash, token_type, expires_at, created_at, otp_code) VALUES (?, ?, ?, ?, 'otp', ?, ?, ?)"
-        ).bind(&id).bind(&uid).bind(body.email.to_lowercase()).bind(&code_hash).bind(&expires_at).bind(utc_now_iso()).bind(&otp_code)
+            "INSERT INTO auth_tokens (id, uid, email, token_hash, token_type, expires_at, created_at) VALUES (?, ?, ?, ?, 'otp', ?, ?)"
+        ).bind(&id).bind(&uid).bind(body.email.to_lowercase()).bind(&code_hash).bind(&expires_at).bind(utc_now_iso())
         .execute(&pool).await.ok();
 
         log_audit(
@@ -1503,7 +1503,7 @@ pub async fn handler_otp_send(
         )
         .await?;
         return Ok(Json(
-            json!({ "status": "ok", "message": "OTP sent", "code": otp_code }),
+            json!({ "status": "ok", "message": "If account exists, OTP sent" }),
         ));
     }
 
@@ -1656,7 +1656,7 @@ pub async fn handler_change_email(
     .await?;
 
     Ok(Json(
-        json!({ "status": "ok", "message": "Email change requested. Please verify.", "token": token }),
+        json!({ "status": "ok", "message": "Email change requested. Please verify." }),
     ))
 }
 pub async fn handler_change_email_confirm(

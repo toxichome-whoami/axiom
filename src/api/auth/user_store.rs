@@ -12,9 +12,13 @@ use sqlx::{
 };
 use std::collections::HashMap;
 use std::str::FromStr;
+use tokio::sync::Semaphore;
 
 use crate::api::errors::AxiomError;
 use axum::http::StatusCode;
+
+// Allow at most 4 concurrent password hashing operations
+static HASH_SEMAPHORE: Lazy<Semaphore> = Lazy::new(|| Semaphore::new(4));
 
 static POOLS: Lazy<DashMap<String, SqlitePool>> = Lazy::new(DashMap::new);
 
@@ -158,6 +162,15 @@ pub async fn get_pool(project_id: &str) -> Result<SqlitePool, AxiomError> {
 }
 
 pub async fn hash_password(password: String) -> Result<String, AxiomError> {
+    // Limit concurrent Argon2 operations to prevent blocking pool exhaustion
+    let _permit = HASH_SEMAPHORE.acquire().await.map_err(|_| {
+        AxiomError::new(
+            "AUTH_RATE_LIMITED",
+            "Too many password operations, try again later",
+            StatusCode::TOO_MANY_REQUESTS,
+        )
+    })?;
+
     tokio::task::spawn_blocking(move || {
         let salt = SaltString::generate(&mut OsRng);
         let argon2 = Argon2::default();
@@ -263,6 +276,32 @@ pub async fn update_user(
     if updates.is_empty() {
         return Ok(());
     }
+
+    // Whitelist of allowed column names to prevent SQL injection via column names
+    const ALLOWED_COLUMNS: &[&str] = &[
+        "email",
+        "password_hash",
+        "display_name",
+        "avatar_url",
+        "email_verified",
+        "disabled",
+        "is_anonymous",
+        "metadata",
+        "totp_secret",
+        "totp_enabled",
+        "updated_at",
+    ];
+
+    for key in updates.keys() {
+        if !ALLOWED_COLUMNS.contains(key) {
+            return Err(AxiomError::new(
+                "AUTH_INVALID_FIELD",
+                &format!("Invalid field: {}", key),
+                StatusCode::BAD_REQUEST,
+            ));
+        }
+    }
+
     let now = utc_now_iso();
     let set_clause: Vec<String> = updates.keys().map(|k| format!("{} = ?", k)).collect();
     let sql = format!(
@@ -425,7 +464,11 @@ fn row_to_json(row: &sqlx::sqlite::SqliteRow) -> Value {
     Value::Object(map)
 }
 
-pub async fn get_user_by_oauth(pool: &SqlitePool, provider: &str, provider_user_id: &str) -> Option<Value> {
+pub async fn get_user_by_oauth(
+    pool: &SqlitePool,
+    provider: &str,
+    provider_user_id: &str,
+) -> Option<Value> {
     let row = sqlx::query("SELECT users.* FROM users JOIN oauth_accounts ON users.uid = oauth_accounts.uid WHERE oauth_accounts.provider = ? AND oauth_accounts.provider_user_id = ?")
         .bind(provider)
         .bind(provider_user_id)
@@ -436,7 +479,12 @@ pub async fn get_user_by_oauth(pool: &SqlitePool, provider: &str, provider_user_
     Some(row_to_json(&row))
 }
 
-pub async fn link_oauth_account(pool: &SqlitePool, uid: &str, provider: &str, provider_user_id: &str) -> Result<(), AxiomError> {
+pub async fn link_oauth_account(
+    pool: &SqlitePool,
+    uid: &str,
+    provider: &str,
+    provider_user_id: &str,
+) -> Result<(), AxiomError> {
     let id = uuid::Uuid::new_v4().to_string();
     sqlx::query("INSERT INTO oauth_accounts (id, uid, provider, provider_user_id, created_at) VALUES (?, ?, ?, ?, ?)")
         .bind(&id)

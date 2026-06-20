@@ -32,12 +32,21 @@ fn is_token_matched(hook_secret: &str, provided_token: &Option<String>) -> bool 
     if let Some(token) = provided_token {
         if let Ok(decoded) = b64.decode(token) {
             if let Ok(decoded_str) = String::from_utf8(decoded) {
-                return hook_secret.len() == decoded_str.len()
-                    && hook_secret
-                        .as_bytes()
-                        .iter()
-                        .zip(decoded_str.as_bytes())
-                        .all(|(a, b)| a == b);
+                // Constant-time comparison: always compare all bytes up to max length
+                let secret_bytes = hook_secret.as_bytes();
+                let token_bytes = decoded_str.as_bytes();
+                let max_len = secret_bytes.len().max(token_bytes.len());
+                let mut result: u8 = if secret_bytes.len() == token_bytes.len() {
+                    0
+                } else {
+                    1
+                };
+                for i in 0..max_len {
+                    let a = secret_bytes.get(i).unwrap_or(&0);
+                    let b = token_bytes.get(i).unwrap_or(&0);
+                    result |= a ^ b;
+                }
+                return result == 0;
             }
         }
     }

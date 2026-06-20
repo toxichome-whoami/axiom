@@ -12,7 +12,7 @@ pub struct ClientScopes {
 }
 
 pub struct ConnectionManager {
-    connections: RwLock<HashMap<String, mpsc::UnboundedSender<Message>>>,
+    connections: RwLock<HashMap<String, mpsc::Sender<Message>>>,
     subscriptions: RwLock<HashMap<String, HashSet<String>>>,
     topic_subscribers: RwLock<HashMap<String, HashSet<String>>>,
     client_scopes: RwLock<HashMap<String, ClientScopes>>,
@@ -39,9 +39,15 @@ impl ConnectionManager {
     pub async fn register(
         &self,
         client_id: &str,
-        sender: mpsc::UnboundedSender<Message>,
+        sender: mpsc::Sender<Message>,
         scopes: ClientScopes,
-    ) {
+    ) -> bool {
+        let config = ConfigManager::get();
+        let max = config.websocket.max_connections as usize;
+        if self.connections.read().await.len() >= max {
+            tracing::warn!("Max WebSocket connections reached ({})", max);
+            return false;
+        }
         self.connections
             .write()
             .await
@@ -54,7 +60,8 @@ impl ConnectionManager {
             .write()
             .await
             .insert(client_id.to_string(), scopes);
-        println!("WebSocket connected: {}", client_id);
+        tracing::info!("WebSocket connected: {}", client_id);
+        true
     }
 
     pub async fn disconnect(&self, client_id: &str) {
@@ -118,7 +125,8 @@ impl ConnectionManager {
     pub async fn send(&self, client_id: &str, payload: String) {
         let connections = self.connections.read().await;
         if let Some(sender) = connections.get(client_id) {
-            let _ = sender.send(Message::Text(payload));
+            // Drop message if client is too slow (backpressure)
+            let _ = sender.try_send(Message::Text(payload));
         }
     }
 
@@ -129,7 +137,7 @@ impl ConnectionManager {
         if let Some(subscribers) = topic_subs.get(topic) {
             for cid in subscribers {
                 if let Some(sender) = connections.get(cid) {
-                    let _ = sender.send(Message::Text(payload.clone()));
+                    let _ = sender.try_send(Message::Text(payload.clone()));
                 }
             }
         }

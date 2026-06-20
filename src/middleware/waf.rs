@@ -29,6 +29,19 @@ pub async fn waf_middleware(req: Request, next: Next) -> Result<Response, AxiomE
         }
     }
 
+    // Check for chunked encoding without content-length (bypass attempt)
+    if let Some(te) = req.headers().get("transfer-encoding") {
+        if let Ok(te_str) = te.to_str() {
+            if te_str.to_lowercase().contains("chunked")
+                && req.headers().get("content-length").is_none()
+            {
+                tracing::warn!(
+                    "Chunked request without Content-Length received — DefaultBodyLimit will catch oversized payloads"
+                );
+            }
+        }
+    }
+
     let uri = req.uri();
     let mut path = uri.path().to_string();
     let mut query = uri.query().unwrap_or("").to_string();

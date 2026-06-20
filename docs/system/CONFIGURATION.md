@@ -22,6 +22,8 @@ For zero-downtime config changes, use a reverse proxy (Nginx, Caddy) in front of
 
 Every configuration property defined in `config.toml` can be directly overridden using environment variables. This is particularly useful for Docker deployments or dynamic secret injection.
 
+> **Security Best Practice:** Never commit secrets (passwords, API keys, S3 credentials) directly in `config.toml`. Use environment variable placeholders like `${PG_PASSWORD}` or `${SMTP_PASSWORD}` and set the actual values via your deployment environment or a `.env` file. The `config.toml` file should contain only `${VAR}` references for any sensitive value.
+
 **Important Rule:** When specifying nested configuration sections via environment variables, use **double underscores (`__`)** as the separator instead of single underscores. This allows keys that natively contain single underscores (like `local_uploads` or `max_file_size`) to parse correctly without getting split.
 
 For example, to override `[server]` -> `port` (which is `server.port`):
@@ -43,7 +45,7 @@ Axiom includes a `toml2env.go` script in the `scripts/` folder which automatical
 |-----|------|---------|-------------|
 | `host` | string | `"0.0.0.0"` | Bind address |
 | `port` | int | `4500` | Listen port |
-| `workers` | int | `0` | uvicorn workers (0 = auto) |
+| `workers` | int | `0` | Tokio runtime worker threads (0 = auto-detect CPU count) |
 | `max_connections` | int | `10000` | Max concurrent connections |
 | `request_timeout` | int | `30` | Request timeout in seconds |
 | `body_limit` | string | `"10 MB"` | Max request body size |

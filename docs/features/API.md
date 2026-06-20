@@ -233,10 +233,12 @@ curl -X GET "http://localhost:4500/api/v1/fs/local_fs/list?path=/&limit=100&cont
 
 ### 3. Download / Stream File or Folder
 
+> **Security Notice:** All files are served with `Content-Disposition: attachment` to prevent browser execution of uploaded HTML/JS files (stored XSS prevention). Files always download — they are never rendered inline by the browser.
+
 ```bash
-# Inline view (browser renders it directly)
-curl -X GET "http://localhost:4500/api/v1/fs/local_fs/download?path=/image.png&inline=true" \
-     -H "X-Axiom-Key: <TOKEN>"
+# Download a file (always force-download)
+curl -X GET "http://localhost:4500/api/v1/fs/local_fs/download?path=/image.png" \
+     -H "X-Axiom-Key: <TOKEN>" -o image.png
 
 # Resize image — aspect-ratio preserved (contain mode)
 curl -X GET "http://localhost:4500/api/v1/fs/local_fs/download?path=/photo.jpg&width=400" \
@@ -278,7 +280,6 @@ curl -X GET "http://localhost:4500/api/v1/fs/local_fs/download?path=/reports_fol
 | `fit` | string | `contain` | `contain` (aspect-ratio preserve) \| `cover` (crop to fill) \| `fill` (stretch) |
 | `format` | string | auto | Force output format: `jpeg`, `webp`, `avif`, `png` |
 | `quality` | int (1–100) | `82` | Compression quality for JPEG/WebP/AVIF |
-| `inline` | bool | `false` | Set `Content-Disposition: inline` (renders in browser) |
 
 ### 4. Presigned URLs
 
@@ -1087,10 +1088,12 @@ Use WebSocket when you need **live event streaming** — DB mutations, file chan
 
 WebSocket upgrades happen over the same port as the REST API. Axiom supports **Hybrid Authentication**:
 
-1.  **HTTP Headers (Recommended for Backend/Mobile)**: Send `X-Axiom-Key: base64(<name>:<secret>)` during the initial handshake.
-2.  **JSON Payload (Required for Browsers)**: Because browser `WebSocket` APIs cannot send custom HTTP headers, you can open the socket without headers and then send a JSON authentication payload as your first message (5-second timeout).
+1. **HTTP Headers (Recommended for Backend/Mobile)**: Send `X-Axiom-Key: base64(<name>:<secret>)` during the initial handshake.
+2. **First JSON Message (Required for Browsers)**: Because browser `WebSocket` APIs cannot send custom HTTP headers, the middleware allows the upgrade to proceed without authentication. The client must send a valid auth JSON payload as its **first message** within the configured `auth_timeout` (default 5 seconds) or the server closes the connection.
 
-**Axiom strictly prohibits passing authentication tokens via URL parameters (`?token=...`)** to prevent token leakage in server logs. The token is fully shielded by WSS/TLS encryption when sent as a payload.
+> DoS protection: Unauthenticated WebSocket connections are rate-limited by `max_connections` and use bounded 256-message channels, preventing memory exhaustion from slow/pending connections.
+
+**Axiom strictly prohibits passing authentication tokens via URL parameters (`?token=...`)** to prevent token leakage in server logs.
 
 ```javascript
 // Token is base64(key_name:secret)

@@ -36,8 +36,14 @@ impl Default for SSEConnectionManager {
 }
 
 impl SSEConnectionManager {
-    pub async fn connect(&self, client_id: &str) -> mpsc::Receiver<Event> {
+    pub async fn connect(&self, client_id: &str) -> Option<mpsc::Receiver<Event>> {
         let config = ConfigManager::get();
+        let max = config.sse.max_connections as usize;
+        if self.connections.read().await.len() >= max {
+            tracing::warn!("Max SSE connections reached ({})", max);
+            return None;
+        }
+
         let queue_size = config.sse.queue_size as usize;
 
         let (tx, rx) = mpsc::channel(queue_size);
@@ -50,7 +56,7 @@ impl SSEConnectionManager {
             .write()
             .await
             .insert(client_id.to_string(), HashSet::new());
-        println!("SSE connected: {}", client_id);
+        tracing::info!("SSE connected: {}", client_id);
 
         let cid_clone = client_id.to_string();
         tokio::spawn(async move {
@@ -58,7 +64,7 @@ impl SSEConnectionManager {
             SSE_MGR.disconnect(&cid_clone).await;
         });
 
-        rx
+        Some(rx)
     }
 
     pub async fn disconnect(&self, client_id: &str) {

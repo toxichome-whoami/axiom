@@ -1,6 +1,7 @@
 use crate::api::errors::AxiomError;
 use crate::config::loader::ConfigManager;
 use crate::security::ban_list::BanList;
+use crate::utils::ip::get_client_ip;
 use crate::utils::types::AuthContext;
 use axum::{extract::Request, middleware::Next, response::Response};
 
@@ -11,13 +12,7 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, A
         .cloned()
         .unwrap_or_else(ConfigManager::get);
 
-    let client_ip = req
-        .headers()
-        .get("x-forwarded-for")
-        .or_else(|| req.headers().get("x-real-ip"))
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("127.0.0.1")
-        .to_string();
+    let client_ip = get_client_ip(&req, &config);
 
     let (is_ip_banned, reason) = BanList::is_ip_banned(&client_ip);
     if is_ip_banned {
@@ -51,11 +46,16 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, A
     // 2. Presigned URL Interception (if no header auth)
     if auth_value.is_none() {
         if let Some(query) = req.uri().query() {
-            let params: std::collections::HashMap<String, String> = url::form_urlencoded::parse(query.as_bytes())
-                .into_owned()
-                .collect();
+            let params: std::collections::HashMap<String, String> =
+                url::form_urlencoded::parse(query.as_bytes())
+                    .into_owned()
+                    .collect();
 
-            if let (Some(sig), Some(exp_str), Some(key_name)) = (params.get("signature"), params.get("expires"), params.get("X-Axiom-Key-Name")) {
+            if let (Some(sig), Some(exp_str), Some(key_name)) = (
+                params.get("signature"),
+                params.get("expires"),
+                params.get("X-Axiom-Key-Name"),
+            ) {
                 if let Ok(expires) = exp_str.parse::<u64>() {
                     let now = std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
@@ -64,12 +64,39 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, A
 
                     if now < expires {
                         let secret_opt = if let Some(k) = config.api_key.get(key_name) {
-                            Some((&k.secret, k.mode.clone(), k.db_scope.clone(), k.fs_scope.clone(), k.feature_scope.clone(), k.rate_limit_override as u32, k.full_admin))
+                            Some((
+                                &k.secret,
+                                k.mode.clone(),
+                                k.db_scope.clone(),
+                                k.fs_scope.clone(),
+                                k.feature_scope.clone(),
+                                k.rate_limit_override as u32,
+                                k.full_admin,
+                            ))
                         } else {
-                            config.federation.incoming.get(key_name).map(|f| (&f.secret, f.mode.clone(), f.db_scope.clone(), f.fs_scope.clone(), f.feature_scope.clone(), 0, false))
+                            config.federation.incoming.get(key_name).map(|f| {
+                                (
+                                    &f.secret,
+                                    f.mode.clone(),
+                                    f.db_scope.clone(),
+                                    f.fs_scope.clone(),
+                                    f.feature_scope.clone(),
+                                    0,
+                                    false,
+                                )
+                            })
                         };
 
-                        if let Some((secret, mode, db_scope, fs_scope, feature_scope, rate_limit_override, full_admin)) = secret_opt {
+                        if let Some((
+                            secret,
+                            mode,
+                            db_scope,
+                            fs_scope,
+                            feature_scope,
+                            rate_limit_override,
+                            full_admin,
+                        )) = secret_opt
+                        {
                             if !secret.is_empty() {
                                 let mut path = req.uri().path();
                                 // Axum may strip the prefix if the middleware is in a nested router
@@ -90,12 +117,23 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, A
                                             }
                                         }
 
-                                        let string_to_sign = format!("{}:{}:{}:{}", req.method().as_str().to_uppercase(), alias, subpath.trim_start_matches('/'), expires);
+                                        let string_to_sign = format!(
+                                            "{}:{}:{}:{}",
+                                            req.method().as_str().to_uppercase(),
+                                            alias,
+                                            subpath.trim_start_matches('/'),
+                                            expires
+                                        );
 
                                         use hmac::Mac;
-                                        if let Ok(mut mac) = hmac::Hmac::<sha2::Sha256>::new_from_slice(secret.as_bytes()) {
+                                        if let Ok(mut mac) =
+                                            hmac::Hmac::<sha2::Sha256>::new_from_slice(
+                                                secret.as_bytes(),
+                                            )
+                                        {
                                             mac.update(string_to_sign.as_bytes());
-                                            let expected_sig = hex::encode(mac.finalize().into_bytes());
+                                            let expected_sig =
+                                                hex::encode(mac.finalize().into_bytes());
 
                                             if expected_sig == *sig {
                                                 let ctx = AuthContext {
@@ -116,7 +154,11 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, A
                             }
                         }
                     } else {
-                        return Err(AxiomError::new("AUTH_EXPIRED", "Presigned URL has expired", axum::http::StatusCode::UNAUTHORIZED));
+                        return Err(AxiomError::new(
+                            "AUTH_EXPIRED",
+                            "Presigned URL has expired",
+                            axum::http::StatusCode::UNAUTHORIZED,
+                        ));
                     }
                 }
             }
@@ -143,7 +185,9 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, A
     }
 
     // Special case: Allow WebSocket upgrades to pass through without header auth.
-    // They will be authenticated via the first JSON payload in the WebSocket handler.
+    // Browser WebSocket API cannot send custom headers, so auth is handled via
+    // the first JSON message in the WebSocket handler.
+    // DoS protection is provided by bounded channels and max connection limits.
     let is_ws = req
         .headers()
         .get(axum::http::header::UPGRADE)

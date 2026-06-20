@@ -19,11 +19,16 @@ pub async fn serve_file(path: &str) -> Result<Response, StatusCode> {
             let stream = ReaderStream::new(file);
             let body = Body::from_stream(stream);
 
-            let mime_type = mime_guess::from_path(p).first_or_octet_stream();
+            // SECURITY: Force download, never render in browser
+            let filename = p.file_name().and_then(|n| n.to_str()).unwrap_or("download");
 
             let response = Response::builder()
                 .status(StatusCode::OK)
-                .header(header::CONTENT_TYPE, mime_type.as_ref())
+                .header(header::CONTENT_TYPE, "application/octet-stream")
+                .header(
+                    header::CONTENT_DISPOSITION,
+                    format!("attachment; filename=\"{}\"", filename),
+                )
                 .body(body)
                 .unwrap();
 

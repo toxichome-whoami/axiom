@@ -25,10 +25,19 @@ class StorageAPI:
 
         return await self.client.fetch(f"/api/v1/fs/{alias}/list", params=params)
 
-    async def download(self, alias: str, path: str) -> Any:
-        return await self.client.fetch(
-            f"/api/v1/fs/{alias}/download", params={"path": path}
+    async def download(self, alias: str, path: str) -> bytes:
+        headers = {}
+        if self.client.user_token:
+            headers["X-User-Access-Token"] = self.client.user_token
+        elif self.client.api_key:
+            headers["X-Axiom-Key"] = self.client.api_key
+
+        res = await self.client._http.get(
+            f"/api/v1/fs/{alias}/download",
+            params={"path": path},
+            headers=headers,
         )
+        return res.content
 
     async def upload(
         self, alias: str, path: str, file_bytes: bytes, filename: str

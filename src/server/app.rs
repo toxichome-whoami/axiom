@@ -31,12 +31,27 @@ async fn favicon() -> impl IntoResponse {
 }
 
 pub fn create_app() -> Router {
-    let _config = ConfigManager::get();
+    let config = ConfigManager::get();
 
-    let cors = CorsLayer::new()
-        .allow_origin(Any)
-        .allow_methods(Any)
-        .allow_headers(Any);
+    let cors = if config.server.cors_origins.is_empty()
+        || config.server.cors_origins.contains(&"*".to_string())
+    {
+        CorsLayer::new()
+            .allow_origin(Any)
+            .allow_methods(Any)
+            .allow_headers(Any)
+    } else {
+        let origins: Vec<_> = config
+            .server
+            .cors_origins
+            .iter()
+            .filter_map(|o| o.parse().ok())
+            .collect();
+        CorsLayer::new()
+            .allow_origin(origins)
+            .allow_methods(Any)
+            .allow_headers(Any)
+    };
     // Core Routes
     let core_routes =
         crate::api::core::health::get_router().merge(crate::api::core::metrics::get_router());
@@ -62,7 +77,7 @@ pub fn create_app() -> Router {
     Router::new()
         .nest("/api/v1", api_routes)
         .layer(axum::extract::DefaultBodyLimit::max(10 * 1024 * 1024))
-        .layer(axum::extract::Extension(_config.clone()))
+        .layer(axum::extract::Extension(config.clone()))
         .merge(core_routes)
         .route("/favicon.ico", get(favicon))
         .fallback(fallback_handler)
@@ -77,6 +92,22 @@ pub fn create_app() -> Router {
         .layer(SetResponseHeaderLayer::overriding(
             header::X_FRAME_OPTIONS,
             header::HeaderValue::from_static("DENY"),
+        ))
+        .layer(SetResponseHeaderLayer::overriding(
+            header::CONTENT_SECURITY_POLICY,
+            header::HeaderValue::from_static(
+                "default-src 'none'; script-src 'none'; style-src 'none'; \
+                 img-src 'none'; connect-src 'self'; frame-ancestors 'none'; \
+                 base-uri 'none'; form-action 'none'",
+            ),
+        ))
+        .layer(SetResponseHeaderLayer::overriding(
+            header::X_XSS_PROTECTION,
+            header::HeaderValue::from_static("0"),
+        ))
+        .layer(SetResponseHeaderLayer::overriding(
+            header::REFERRER_POLICY,
+            header::HeaderValue::from_static("no-referrer"),
         ))
         .layer(tower_http::trace::TraceLayer::new_for_http())
 }

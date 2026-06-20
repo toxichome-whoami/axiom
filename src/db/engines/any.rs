@@ -4,7 +4,10 @@ use crate::db::engines::base::{
 };
 use async_trait::async_trait;
 use serde_json::Value;
-use sqlx::{mysql::MySqlPoolOptions, postgres::PgPoolOptions, sqlite::SqlitePoolOptions, Column, MySqlPool, PgPool, Row, SqlitePool, TypeInfo};
+use sqlx::{
+    mysql::MySqlPoolOptions, postgres::PgPoolOptions, sqlite::SqlitePoolOptions, Column, MySqlPool,
+    PgPool, Row, SqlitePool, TypeInfo,
+};
 
 pub enum NativePool {
     Postgres(PgPool),
@@ -20,6 +23,31 @@ pub struct AnyDatabaseEngine {
 impl AnyDatabaseEngine {
     pub fn new(config: DatabaseDefConfig) -> Self {
         Self { pool: None, config }
+    }
+
+    async fn set_statement_timeout(&self) {
+        if let Some(pool) = &self.pool {
+            match pool {
+                NativePool::Postgres(p) => {
+                    sqlx::query("SET statement_timeout = '30000'")
+                        .execute(p)
+                        .await
+                        .ok();
+                }
+                NativePool::MySql(p) => {
+                    sqlx::query("SET max_execution_time = 30000")
+                        .execute(p)
+                        .await
+                        .ok();
+                }
+                NativePool::Sqlite(p) => {
+                    sqlx::query("PRAGMA busy_timeout = 30000")
+                        .execute(p)
+                        .await
+                        .ok();
+                }
+            };
+        }
     }
 }
 
@@ -52,6 +80,8 @@ impl DatabaseEngine for AnyDatabaseEngine {
             } else {
                 return Err("Unsupported database dialect".into());
             }
+            // Set statement timeout after connecting
+            self.set_statement_timeout().await;
         }
         Ok(())
     }
@@ -109,31 +139,52 @@ impl DatabaseEngine for AnyDatabaseEngine {
         match pool {
             NativePool::Postgres(p) => {
                 let mut query = sqlx::query(&query_str);
-                if let Some(c) = cursor { query = query.bind(c); }
+                if let Some(c) = cursor {
+                    query = query.bind(c);
+                }
                 let rows = query.fetch_all(p).await?;
                 for row in rows {
                     if let Ok(name) = row.try_get::<String, _>("table_name") {
-                        tables.push(TableInfo { name, row_count_estimate: 0, columns: None, foreign_keys: None });
+                        tables.push(TableInfo {
+                            name,
+                            row_count_estimate: 0,
+                            columns: None,
+                            foreign_keys: None,
+                        });
                     }
                 }
             }
             NativePool::MySql(p) => {
                 let mut query = sqlx::query(&query_str);
-                if let Some(c) = cursor { query = query.bind(c); }
+                if let Some(c) = cursor {
+                    query = query.bind(c);
+                }
                 let rows = query.fetch_all(p).await?;
                 for row in rows {
                     if let Ok(name) = row.try_get::<String, _>("table_name") {
-                        tables.push(TableInfo { name, row_count_estimate: 0, columns: None, foreign_keys: None });
+                        tables.push(TableInfo {
+                            name,
+                            row_count_estimate: 0,
+                            columns: None,
+                            foreign_keys: None,
+                        });
                     }
                 }
             }
             NativePool::Sqlite(p) => {
                 let mut query = sqlx::query(&query_str);
-                if let Some(c) = cursor { query = query.bind(c); }
+                if let Some(c) = cursor {
+                    query = query.bind(c);
+                }
                 let rows = query.fetch_all(p).await?;
                 for row in rows {
                     if let Ok(name) = row.try_get::<String, _>("table_name") {
-                        tables.push(TableInfo { name, row_count_estimate: 0, columns: None, foreign_keys: None });
+                        tables.push(TableInfo {
+                            name,
+                            row_count_estimate: 0,
+                            columns: None,
+                            foreign_keys: None,
+                        });
                     }
                 }
             }
@@ -142,9 +193,21 @@ impl DatabaseEngine for AnyDatabaseEngine {
         Ok(tables)
     }
 
-    async fn count_tables(&self) -> Result<i64, Box<dyn std::error::Error>> { Ok(0) }
-    async fn describe_table(&self, _table: &str) -> Result<Vec<ColumnInfo>, Box<dyn std::error::Error>> { Ok(vec![]) }
-    async fn get_foreign_keys(&self, _table: &str) -> Result<Vec<ForeignKeyInfo>, Box<dyn std::error::Error>> { Ok(vec![]) }
+    async fn count_tables(&self) -> Result<i64, Box<dyn std::error::Error>> {
+        Ok(0)
+    }
+    async fn describe_table(
+        &self,
+        _table: &str,
+    ) -> Result<Vec<ColumnInfo>, Box<dyn std::error::Error>> {
+        Ok(vec![])
+    }
+    async fn get_foreign_keys(
+        &self,
+        _table: &str,
+    ) -> Result<Vec<ForeignKeyInfo>, Box<dyn std::error::Error>> {
+        Ok(vec![])
+    }
 
     async fn execute(
         &self,
@@ -166,15 +229,27 @@ impl DatabaseEngine for AnyDatabaseEngine {
                 let mut query = sqlx::query(sql);
                 for param in params {
                     match param {
-                        Value::String(s) => { query = query.bind(s); }
-                        Value::Number(n) => {
-                            if let Some(i) = n.as_i64() { query = query.bind(i); }
-                            else if let Some(f) = n.as_f64() { query = query.bind(f); }
-                            else { query = query.bind(n.to_string()); }
+                        Value::String(s) => {
+                            query = query.bind(s);
                         }
-                        Value::Bool(b) => { query = query.bind(b); }
-                        Value::Null => { query = query.bind(Option::<String>::None); }
-                        _ => { query = query.bind(param.to_string()); }
+                        Value::Number(n) => {
+                            if let Some(i) = n.as_i64() {
+                                query = query.bind(i);
+                            } else if let Some(f) = n.as_f64() {
+                                query = query.bind(f);
+                            } else {
+                                query = query.bind(n.to_string());
+                            }
+                        }
+                        Value::Bool(b) => {
+                            query = query.bind(b);
+                        }
+                        Value::Null => {
+                            query = query.bind(Option::<String>::None);
+                        }
+                        _ => {
+                            query = query.bind(param.to_string());
+                        }
                     }
                 }
 
@@ -205,7 +280,10 @@ impl DatabaseEngine for AnyDatabaseEngine {
                                 if let Ok(i) = row.try_get::<i64, _>(col.ordinal()) {
                                     mapped_val = Value::Number(serde_json::Number::from(i));
                                 }
-                            } else if type_name.contains("FLOAT") || type_name.contains("DOUBLE") || type_name.contains("NUMERIC") {
+                            } else if type_name.contains("FLOAT")
+                                || type_name.contains("DOUBLE")
+                                || type_name.contains("NUMERIC")
+                            {
                                 if let Ok(f) = row.try_get::<f64, _>(col.ordinal()) {
                                     if let Some(num) = serde_json::Number::from_f64(f) {
                                         mapped_val = Value::Number(num);
@@ -232,13 +310,24 @@ impl DatabaseEngine for AnyDatabaseEngine {
         }
 
         Ok(QueryResult {
-            columns: if column_names.is_empty() { None } else { Some(column_names) },
-            rows: if result_rows.is_empty() && is_mutation { None } else { Some(result_rows) },
+            columns: if column_names.is_empty() {
+                None
+            } else {
+                Some(column_names)
+            },
+            rows: if result_rows.is_empty() && is_mutation {
+                None
+            } else {
+                Some(result_rows)
+            },
             affected_rows: affected,
         })
     }
 
-    async fn apply_migrations(&self, path: &std::path::Path) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+    async fn apply_migrations(
+        &self,
+        path: &std::path::Path,
+    ) -> Result<Vec<String>, Box<dyn std::error::Error>> {
         let pool = self.pool.as_ref().ok_or("Database not connected")?;
         let migrator = sqlx::migrate::Migrator::new(path).await?;
 
@@ -248,11 +337,17 @@ impl DatabaseEngine for AnyDatabaseEngine {
             NativePool::Sqlite(p) => migrator.run(p).await?,
         }
 
-        let applied = migrator.iter().map(|m| format!("{}_{}", m.version, m.description)).collect();
+        let applied = migrator
+            .iter()
+            .map(|m| format!("{}_{}", m.version, m.description))
+            .collect();
         Ok(applied)
     }
 
-    async fn list_migrations(&self, path: &std::path::Path) -> Result<Vec<serde_json::Value>, Box<dyn std::error::Error>> {
+    async fn list_migrations(
+        &self,
+        path: &std::path::Path,
+    ) -> Result<Vec<serde_json::Value>, Box<dyn std::error::Error>> {
         let migrator = sqlx::migrate::Migrator::new(path).await?;
         let mut result = Vec::new();
         for m in migrator.iter() {

@@ -88,11 +88,12 @@ sequenceDiagram
 1. The client opens an SSE connection (`GET /sse`) with an API key
 2. Axiom authenticates the key via the same auth pipeline as REST (ban check, dynamic/static key lookup)
 3. The `AuthContext` is stored in a per-session `ContextVar` — all subsequent tool calls inherit its permissions
-4. The SSE stream stays open — the client sends JSON-RPC messages and receives responses over the same connection
-5. Tool calls (`list_tables`, `query_database`, etc.) go through the same validation pipeline as REST API calls
-6. All operations run with the API key's `mode`, `db_scope`, and `fs_scope`
+4. The SSE stream sends an `endpoint` event containing a URL with a unique `client_id` (e.g. `/api/v1/mcp/messages?client_id=<uuid>`)
+5. The client sends JSON-RPC messages to that endpoint URL; the `client_id` routes responses back to the correct SSE connection
+6. Tool calls (`list_tables`, `query_database`, etc.) go through the same validation pipeline as REST API calls
+7. All operations run with the API key's `mode`, `db_scope`, and `fs_scope`
 
-> <span style="font-size: 1.2em;"></span> **Key difference from REST API:** MCP sessions are stateful — the auth context is bound to the SSE connection, not per-request. This lets AI models maintain context across multiple tool calls without re-authenticating each time.
+> <span style="font-size: 1.2em;"></span> **Key difference from REST API:** MCP sessions are stateful — the auth context is bound to the SSE connection, not per-request. Each connection gets an isolated response channel via its `client_id`, preventing cross-client data leakage.
 
 ---
 
@@ -259,11 +260,17 @@ asyncio.run(main())
 <summary><b>cURL (for testing)</b></summary>
 
 ```bash
-# Send a tools/list request via POST
-curl -X POST "http://localhost:4500/api/v1/mcp/messages" \
+# First, open the SSE stream to get a client_id:
+# The endpoint event returns: /api/v1/mcp/messages?client_id=<uuid>
+
+# Then send a tools/list request via POST using that client_id:
+curl -X POST "http://localhost:4500/api/v1/mcp/messages?client_id=<uuid-from-sse>" \
   -H "Authorization: Bearer YWRtaW46W..." \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc": "2.0", "id": 1, "method": "tools/list"}'
+
+# Note: The client_id query parameter routes the response to the correct
+# SSE connection. Each connection gets its own isolated response channel.
 ```
 </details>
 

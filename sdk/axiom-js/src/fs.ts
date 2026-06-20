@@ -18,11 +18,20 @@ export class StorageAPI {
         return this.client.fetch(`/api/v1/fs/${alias}/list?${q.toString()}`);
     }
 
-    public async download(alias: string, path: string): Promise<any> {
+    public async download(alias: string, path: string): Promise<Response> {
         const q = new URLSearchParams();
         q.set("path", path);
-        return this.client.fetch(
-            `/api/v1/fs/${alias}/download?${q.toString()}`,
+
+        const headers = new Headers();
+        if (this.client.userToken) {
+            headers.set("X-User-Access-Token", this.client.userToken);
+        } else if (this.client.apiKey) {
+            headers.set("X-Axiom-Key", this.client.apiKey);
+        }
+
+        return fetch(
+            `${this.client.url}/api/v1/fs/${alias}/download?${q.toString()}`,
+            { headers },
         );
     }
 

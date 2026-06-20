@@ -60,7 +60,13 @@ async fn sse_health(
         ));
     }
     let client_id = format!("health_{}", uuid::Uuid::new_v4());
-    let rx = SSE_MGR.connect(&client_id).await;
+    let rx = SSE_MGR.connect(&client_id).await.ok_or_else(|| {
+        AxiomError::new(
+            "SSE_LIMIT",
+            "Max SSE connections reached",
+            StatusCode::SERVICE_UNAVAILABLE,
+        )
+    })?;
     SSE_MGR.subscribe(&client_id, "system:health").await;
     Ok(create_sse_stream(client_id, rx).await)
 }
@@ -76,7 +82,13 @@ async fn sse_metrics(
         ));
     }
     let client_id = format!("metrics_{}", uuid::Uuid::new_v4());
-    let rx = SSE_MGR.connect(&client_id).await;
+    let rx = SSE_MGR.connect(&client_id).await.ok_or_else(|| {
+        AxiomError::new(
+            "SSE_LIMIT",
+            "Max SSE connections reached",
+            StatusCode::SERVICE_UNAVAILABLE,
+        )
+    })?;
     SSE_MGR.subscribe(&client_id, "system:metrics").await;
     Ok(create_sse_stream(client_id, rx).await)
 }
@@ -93,7 +105,13 @@ async fn sse_db(
         ));
     }
     let client_id = format!("db_{}_{}", alias, uuid::Uuid::new_v4());
-    let rx = SSE_MGR.connect(&client_id).await;
+    let rx = SSE_MGR.connect(&client_id).await.ok_or_else(|| {
+        AxiomError::new(
+            "SSE_LIMIT",
+            "Max SSE connections reached",
+            StatusCode::SERVICE_UNAVAILABLE,
+        )
+    })?;
     SSE_MGR
         .subscribe(&client_id, &format!("db:{}", alias))
         .await;
@@ -113,7 +131,13 @@ async fn sse_db_table(
     }
     let table = table.trim_start_matches('/');
     let client_id = format!("db_table_{}_{}_{}", alias, table, uuid::Uuid::new_v4());
-    let rx = SSE_MGR.connect(&client_id).await;
+    let rx = SSE_MGR.connect(&client_id).await.ok_or_else(|| {
+        AxiomError::new(
+            "SSE_LIMIT",
+            "Max SSE connections reached",
+            StatusCode::SERVICE_UNAVAILABLE,
+        )
+    })?;
     SSE_MGR
         .subscribe(&client_id, &format!("db:{}:{}", alias, table))
         .await;
@@ -132,7 +156,13 @@ async fn sse_fs(
         ));
     }
     let client_id = format!("fs_{}_{}", alias, uuid::Uuid::new_v4());
-    let rx = SSE_MGR.connect(&client_id).await;
+    let rx = SSE_MGR.connect(&client_id).await.ok_or_else(|| {
+        AxiomError::new(
+            "SSE_LIMIT",
+            "Max SSE connections reached",
+            StatusCode::SERVICE_UNAVAILABLE,
+        )
+    })?;
     SSE_MGR
         .subscribe(&client_id, &format!("fs:{}", alias))
         .await;
@@ -152,7 +182,13 @@ async fn sse_fs_path(
     }
     let path = path.trim_start_matches('/');
     let client_id = format!("fs_path_{}_{}_{}", alias, path, uuid::Uuid::new_v4());
-    let rx = SSE_MGR.connect(&client_id).await;
+    let rx = SSE_MGR.connect(&client_id).await.ok_or_else(|| {
+        AxiomError::new(
+            "SSE_LIMIT",
+            "Max SSE connections reached",
+            StatusCode::SERVICE_UNAVAILABLE,
+        )
+    })?;
     SSE_MGR
         .subscribe(&client_id, &format!("fs:{}:{}", alias, path))
         .await;
