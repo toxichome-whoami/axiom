@@ -34,7 +34,7 @@ pub fn get_uptime() -> f64 {
     START_TIME.elapsed().as_secs_f64()
 }
 
-const VERSION: &str = "1.0.5";
+const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 use crate::middleware::auth::auth_middleware;
 use axum::middleware;

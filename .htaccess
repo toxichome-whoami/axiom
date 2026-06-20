@@ -13,7 +13,11 @@ RewriteRule ^(.*)$ https://%{HTTP_HOST}/$1 [R=301,L]
 RewriteCond %{HTTP:Content-Type} ^application/grpc [NC]
 RewriteRule ^(.*)$ http://127.0.0.1:4501/$1 [P,L]
 
-# Reverse Proxy - Send all other traffic to Python app on port 4500 (local ONLY)
+# NOTE: The port below (4500) is updated automatically by axiom.sh during
+# zero-downtime updates. It alternates between 4500 and 4501.
+# DO NOT hardcode — run ./axiom.sh update <version> instead.
+
+# Reverse Proxy - Send all other traffic to Axiom on port 4500
 RewriteRule ^(.*)$ http://127.0.0.1:4500/$1 [P,L]
 
 # Proxy headers to forward real visitor IP to the app

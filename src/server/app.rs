@@ -20,7 +20,7 @@ async fn fallback_handler() -> impl IntoResponse {
 }
 
 async fn health_check() -> impl IntoResponse {
-    Json(json!({"status": "ok", "version": "1.0.5"}))
+    Json(json!({"status": "ok", "version": env!("CARGO_PKG_VERSION")}))
 }
 
 async fn favicon() -> impl IntoResponse {

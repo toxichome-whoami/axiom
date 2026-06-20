@@ -19,7 +19,7 @@ impl MCPServer {
                 },
                 "serverInfo": {
                     "name": "axiom-mcp",
-                    "version": "1.0.5"
+                    "version": env!("CARGO_PKG_VERSION")
                 }
             })),
             "notifications/initialized" => {

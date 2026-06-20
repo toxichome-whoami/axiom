@@ -283,7 +283,7 @@ impl Default for MCPConfig {
     fn default() -> Self {
         Self {
             server_name: "axiom".to_string(),
-            server_version: "1.0.5".to_string(),
+            server_version: env!("CARGO_PKG_VERSION").to_string(),
             max_result_rows: 50,
             max_directory_entries: 100,
             max_file_read_bytes: 1_048_576,
@@ -797,7 +797,7 @@ impl Default for AxiomConfig {
     fn default() -> Self {
         Self {
             server: ServerConfig::default(),
-            version: "1.0.5".to_string(),
+            version: env!("CARGO_PKG_VERSION").to_string(),
             features: FeaturesConfig::default(),
             logging: LoggingConfig::default(),
             rate_limit: RateLimitConfig::default(),
