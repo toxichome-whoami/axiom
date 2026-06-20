@@ -89,39 +89,90 @@ backup_binary() {
     fi
 }
 
-# ── Interactive picker ───────────────────────────────────────────────────────
+# ── Interactive picker (arrow keys + Enter + Ctrl+C) ────────────────────────
 
 pick_one() {
     local title="$1"; shift
     local items=("$@")
     [ ${#items[@]} -eq 0 ] && return 1
 
-    echo ""
-    echo "  ${title}"
-    echo ""
+    local selected=0
+    local byte
 
-    local i=0
-    for item in "${items[@]}"; do
-        i=$((i + 1))
-        local name; name=$(basename "$item")
-        local size; size=$(ls -lh "$item" | awk '{print $5}')
-        echo "  ${YELLOW}$i)${NC} $name  ${CYAN}($size)${NC}"
-    done
-    echo ""
-    echo "  Press Ctrl+C to cancel"
+    # Save terminal state, switch to raw mode (no echo, no line buffering)
+    local saved_stty
+    saved_stty=$(stty -g 2>/dev/null || true)
+    stty raw -echo 2>/dev/null || true
+
+    cleanup() {
+        stty "$saved_stty" 2>/dev/null || true
+        printf "\033[?25h" 2>/dev/null || true  # show cursor
+        echo "" 2>/dev/null || true
+    }
+
+    draw() {
+        local lines=$(( ${#items[@]} + 4 ))
+        printf "\033[${lines}A\033[J"
+        echo ""
+        echo "  ${title}"
+        echo ""
+        local i=0
+        for item in "${items[@]}"; do
+            local name; name=$(basename "$item")
+            local size; size=$(ls -lh "$item" | awk '{print $5}')
+            if [ "$i" -eq "$selected" ]; then
+                printf "  \033[7m %s  (%s) \033[27m\n" "$name" "$size"
+            else
+                printf "  %s  (%s)\n" "$name" "$size"
+            fi
+            i=$((i + 1))
+        done
+        echo ""
+        printf "  Use arrow keys to select, Enter to confirm, Ctrl+C to cancel\n"
+    }
+
+    printf "\033[?25l"  # hide cursor
+    draw
 
     while true; do
-        read -r -p "  Select number: " choice
-        if [ -z "$choice" ]; then
-            continue
-        fi
-        if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le "${#items[@]}" ]; then
-            SELECTED="${items[$((choice - 1))]}"
-            echo ""
-            return 0
-        fi
-        echo -e "  ${YELLOW}Invalid — pick 1-${#items[@]}${NC}"
+        # Read exactly 1 raw byte (terminal is in raw mode, no echo)
+        byte=$(dd bs=1 count=1 2>/dev/null)
+
+        case "$byte" in
+            "$(printf '\033')")
+                # Escape byte — read the rest of the arrow key sequence
+                byte=$(dd bs=1 count=1 2>/dev/null)
+                if [ "$byte" = "[" ]; then
+                    byte=$(dd bs=1 count=1 2>/dev/null)
+                    case "$byte" in
+                        A)  # Up
+                            selected=$((selected - 1))
+                            [ "$selected" -lt 0 ] && selected=$(( ${#items[@]} - 1 ))
+                            draw
+                            ;;
+                        B)  # Down
+                            selected=$((selected + 1))
+                            [ "$selected" -ge "${#items[@]}" ] && selected=0
+                            draw
+                            ;;
+                    esac
+                fi
+                ;;
+            "$(printf '\n')"|"$(printf '\r')")
+                # Enter key
+                break
+                ;;
+            "$(printf '\003')")
+                # Ctrl+C — restore terminal and exit
+                cleanup
+                exit 1
+                ;;
+        esac
     done
+
+    cleanup
+    SELECTED="${items[$selected]}"
+    return 0
 }
 
 # ── Commands ─────────────────────────────────────────────────────────────────
@@ -135,17 +186,26 @@ start)
         exit 0
     fi
 
-    # If ./axiom doesn't exist, pick a versioned binary to promote
+    # If ./axiom doesn't exist, promote a versioned binary
     if [ ! -f "${DIR}/${NAME}" ]; then
         candidates=( "${DIR}/${NAME}-v"* )
         if [ ! -f "${candidates[0]}" ]; then
             fail "No binary found — upload a versioned binary like ${NAME}-v<version> first"
         fi
-        warn "No ${NAME} binary found — select one to promote:"
-        pick_one "Available binaries:" "${candidates[@]}" || exit 1
-        cp "$SELECTED" "${DIR}/${NAME}"
-        chmod +x "${DIR}/${NAME}"
-        ok "Promoted: $(basename "$SELECTED") → ${NAME}"
+
+        if [ "${#candidates[@]}" -eq 1 ]; then
+            # Only one — use it automatically
+            cp "${candidates[0]}" "${DIR}/${NAME}"
+            chmod +x "${DIR}/${NAME}"
+            ok "Promoted: $(basename "${candidates[0]}") → ${NAME}"
+        else
+            # Multiple — let user pick
+            warn "No ${NAME} binary found — select one to promote:"
+            pick_one "Available binaries:" "${candidates[@]}" || exit 1
+            cp "$SELECTED" "${DIR}/${NAME}"
+            chmod +x "${DIR}/${NAME}"
+            ok "Promoted: $(basename "$SELECTED") → ${NAME}"
+        fi
     fi
 
     chmod +x "${DIR}/${NAME}"

@@ -71,23 +71,26 @@ chmod +x axiom-v<version> axiom.sh
 ./axiom.sh start
 ```
 
-Since no `./axiom` binary exists yet, it shows a picker:
+If only one versioned binary exists, it auto-promotes without asking:
 
 ```
-  No axiom binary found -- select one to promote:
-
-  Select version to deploy:
-
-    1) axiom-v<version>  (12.5 MB)
-
-  Select number: 1
-
   Promoted: axiom-v<version> -> axiom
   Starting axiom on port 4500...
   Running (PID: 12345, Port: 4500)
 ```
 
-After this, `./axiom` exists, so future `./axiom.sh start` calls skip the picker.
+If multiple exist, use arrow keys to pick, Enter to confirm:
+
+```
+  No axiom binary found - select one to promote:
+
+  > axiom-v1.0.7-beta  (26M)     <-- highlighted with arrows
+    axiom-v1.0.6       (24M)
+
+  Use arrow keys to select, Enter to confirm, Ctrl+C to cancel
+```
+
+After this, `./axiom` exists, so future `./axiom.sh start` calls skip the prompt entirely.
 
 Check it's running:
 
@@ -113,18 +116,22 @@ Output is `target\x86_64-unknown-linux-gnu\release\axiom-v<version>` — version
 
 Upload the versioned binary from `target\x86_64-unknown-linux-gnu\release\` to your `/home/youruser/axiom/` folder. Won't overwrite existing files — each version has a unique name.
 
-### Step 4: Run the update (cPanel Terminal)
+### Step 3: Run the update (cPanel Terminal)
 
 ```bash
 cd /home/youruser/axiom
 ./axiom.sh update
-# Then pick the version from the interactive menu:
-#
-#   Select version to deploy:
-#
-#     1) axiom-v<version>  (12.5 MB)
-#
-#   Select number: 1
+```
+
+Use arrow keys to pick the version, Enter to deploy, Ctrl+C to cancel:
+
+```
+  Select version to deploy:
+
+  > axiom-v1.0.7-beta  (26M)     <-- highlighted, arrows move it
+    axiom-v1.0.6       (24M)
+
+  Use arrow keys to select, Enter to confirm, Ctrl+C to cancel
 ```
 
 The script does this automatically:
@@ -148,8 +155,8 @@ The script does this automatically:
 ./axiom.sh start              # Start the server
 ./axiom.sh stop               # Stop gracefully (drains connections)
 ./axiom.sh status             # Show PID, port, version, available updates & backups
-./axiom.sh update             # Interactive: pick a version to deploy (zero-downtime)
-./axiom.sh rollback           # Interactive: pick a backup to restore
+./axiom.sh update             # Arrow keys to pick version, Enter to deploy
+./axiom.sh rollback           # Arrow keys to pick backup, Enter to restore
 ./axiom.sh logs               # Tail live log file
 ```
 
@@ -173,14 +180,17 @@ The `.htaccess` proxy is updated atomically (Apache re-reads it on next request)
 
 ```bash
 ./axiom.sh rollback
-# Then pick the backup from the interactive menu:
-#
-#   Select backup to restore:
-#
-#     1) axiom-pre-v<version>-20260620_120000  (12.1 MB)
-#     2) axiom-pre-v<older-version>-20260619_150000  (12.0 MB)
-#
-#   Select number: 1
+```
+
+Use arrow keys to pick the backup, Enter to restore, Ctrl+C to cancel:
+
+```
+  Select backup to restore:
+
+  > axiom-pre-v1.0.7-beta-20260620_120000  (12.1 MB)   <-- highlighted
+    axiom-pre-v1.0.6-20260619_150000       (12.0 MB)
+
+  Use arrow keys to select, Enter to confirm, Ctrl+C to cancel
 ```
 
 Restores the selected backup from the `backups/` folder and restarts. The `.htaccess` proxy stays on whatever port it was already pointing to.
