@@ -3,20 +3,15 @@ set -euo pipefail
 
 # ═════════════════════════════════════════════════════════════════════════════
 # Axiom Manager — start, stop, update, rollback
-# Usage:  ./axiom.sh <command> [version]
+# Usage:  ./axiom.sh <command>
 #
 # Commands:
-#   start                  Start the current binary
-#   stop                   Stop the running instance
-#   status                 Show running version and port
-#   update  <version>      Deploy a new version (zero-downtime via port swap)
-#   rollback               Revert to the previous backup
-#   logs                   Tail the log file
-#
-# Zero-downtime update flow:
-#   1. Upload new binary to the same folder (e.g. axiom-v<version>)
-#   2. Run:  ./axiom.sh update v<version>
-#   3. Script starts new instance on standby port, swaps .htaccess, kills old
+#   start       Start the current binary
+#   stop        Stop the running instance
+#   status      Show running version, port, available updates & backups
+#   update      Interactive: pick a versioned binary to deploy (zero-downtime)
+#   rollback    Interactive: pick a backup to restore
+#   logs        Tail the log file
 # ═════════════════════════════════════════════════════════════════════════════
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'; NC='\033[0m'
@@ -25,79 +20,108 @@ warn() { echo -e "${YELLOW}  ⚠${NC} $*"; }
 fail() { echo -e "${RED}  ✗${NC} $*"; exit 1; }
 info() { echo -e "${CYAN}  →${NC} $*"; }
 
-# ── Config ──────────────────────────────────────────────────────────────────
 NAME="axiom"
 DIR="$(cd "$(dirname "$0")" && pwd)"
 LOG_FILE="${DIR}/${NAME}.log"
 PID_FILE="${DIR}/${NAME}.pid"
 PORT_FILE="${DIR}/${NAME}.port"
 HTACCESS="${DIR}/.htaccess"
-
-# Two ports for zero-downtime swapping
+BACKUP_DIR="${DIR}/backups"
 PORT_A=4500
 PORT_B=4501
 
-# ── Help ─────────────────────────────────────────────────────────────────────
+mkdir -p "$BACKUP_DIR"
+
 if [ $# -lt 1 ]; then
-    echo "Usage: $0 <command> [version]"
+    echo "Usage: $0 <command>"
     echo ""
     echo "Commands:"
-    echo "  start                  Start the current binary"
-    echo "  stop                   Stop the running instance"
-    echo "  status                 Show running version, port, health"
-    echo "  update  <version>      Deploy a new version (zero-downtime)"
-    echo "  rollback               Revert to the previous backup"
-    echo "  logs                   Tail the log file"
+    echo "  start       Start the current binary"
+    echo "  stop        Stop the running instance"
+    echo "  status      Show running version, port, available updates & backups"
+    echo "  update      Pick a versioned binary to deploy (zero-downtime)"
+    echo "  rollback    Pick a backup to restore"
+    echo "  logs        Tail the log file"
     exit 0
 fi
 
 CMD="$1"
-VERSION="${2:-}"
 
-# ── Detect functions ─────────────────────────────────────────────────────────
+# ── Helpers ──────────────────────────────────────────────────────────────────
 
 get_active_port() {
-    if [ -f "$PORT_FILE" ]; then
-        cat "$PORT_FILE"
-    else
-        echo "$PORT_A"
-    fi
+    if [ -f "$PORT_FILE" ]; then cat "$PORT_FILE"; else echo "$PORT_A"; fi
 }
 
 get_standby_port() {
-    local active
-    active=$(get_active_port)
-    if [ "$active" = "$PORT_A" ]; then echo "$PORT_B"; else echo "$PORT_A"; fi
+    local a; a=$(get_active_port)
+    [ "$a" = "$PORT_A" ] && echo "$PORT_B" || echo "$PORT_A"
 }
 
 get_pid() {
-    if [ -f "$PID_FILE" ]; then
-        cat "$PID_FILE"
-    fi
+    [ -f "$PID_FILE" ] && cat "$PID_FILE" || true
 }
 
 is_running() {
-    local pid
-    pid=$(get_pid)
-    [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null
+    local p; p=$(get_pid); [ -n "$p" ] && kill -0 "$p" 2>/dev/null
 }
 
 health_check() {
-    local port="${1:-$(get_active_port)}"
-    curl -sf "http://127.0.0.1:${port}/api/v1/health" > /dev/null 2>&1
+    curl -sf "http://127.0.0.1:${1:-$(get_active_port)}/" > /dev/null 2>&1
 }
 
 wait_for_health() {
-    local port="$1"
-    local label="$2"
     for i in $(seq 1 15); do
-        if health_check "$port"; then
-            ok "${label} health check passed (attempt $i)"
-            return 0
-        fi
+        health_check "$1" && { ok "$2 health check passed (attempt $i)"; return 0; }
         sleep 1
     done
-    fail "${label} health check failed after 15 seconds"
+    fail "$2 health check failed after 15 seconds"
+}
+
+backup_binary() {
+    local label="${1:-manual}"
+    local ts; ts=$(date '+%Y%m%d_%H%M%S')
+    if [ -f "${DIR}/${NAME}" ]; then
+        local dest="${BACKUP_DIR}/${NAME}-${label}-${ts}"
+        cp "${DIR}/${NAME}" "$dest"
+        chmod +x "$dest"
+        ok "Backed up → backups/$(basename "$dest") ($(ls -lh "$dest" | awk '{print $5}'))"
+    fi
+}
+
+# ── Interactive picker ───────────────────────────────────────────────────────
+
+pick_one() {
+    local title="$1"; shift
+    local items=("$@")
+    [ ${#items[@]} -eq 0 ] && return 1
+
+    echo ""
+    echo "  ${title}"
+    echo ""
+
+    local i=0
+    for item in "${items[@]}"; do
+        i=$((i + 1))
+        local name; name=$(basename "$item")
+        local size; size=$(ls -lh "$item" | awk '{print $5}')
+        echo "  ${YELLOW}$i)${NC} $name  ${CYAN}($size)${NC}"
+    done
+    echo ""
+    echo "  Press Ctrl+C to cancel"
+
+    while true; do
+        read -r -p "  Select number: " choice
+        if [ -z "$choice" ]; then
+            continue
+        fi
+        if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le "${#items[@]}" ]; then
+            SELECTED="${items[$((choice - 1))]}"
+            echo ""
+            return 0
+        fi
+        echo -e "  ${YELLOW}Invalid — pick 1-${#items[@]}${NC}"
+    done
 }
 
 # ── Commands ─────────────────────────────────────────────────────────────────
@@ -111,242 +135,183 @@ start)
         exit 0
     fi
 
+    # If ./axiom doesn't exist, pick a versioned binary to promote
     if [ ! -f "${DIR}/${NAME}" ]; then
-        fail "Binary not found: ${DIR}/${NAME}"
+        candidates=( "${DIR}/${NAME}-v"* )
+        if [ ! -f "${candidates[0]}" ]; then
+            fail "No binary found — upload a versioned binary like ${NAME}-v<version> first"
+        fi
+        warn "No ${NAME} binary found — select one to promote:"
+        pick_one "Available binaries:" "${candidates[@]}" || exit 1
+        cp "$SELECTED" "${DIR}/${NAME}"
+        chmod +x "${DIR}/${NAME}"
+        ok "Promoted: $(basename "$SELECTED") → ${NAME}"
     fi
 
     chmod +x "${DIR}/${NAME}"
-    local port
     port=$(get_active_port)
-
     info "Starting ${NAME} on port ${port}..."
     cd "$DIR"
     nohup "./${NAME}" >> "$LOG_FILE" 2>&1 &
-    local pid=$!
+    pid=$!
     echo "$pid" > "$PID_FILE"
     echo "$port" > "$PORT_FILE"
-
     wait_for_health "$port" "Start"
     ok "Running (PID: $pid, Port: $port)"
     ;;
 
 # ── stop ─────────────────────────────────────────────────────────────────────
 stop)
-    local pid
     pid=$(get_pid)
     if [ -z "$pid" ] || ! kill -0 "$pid" 2>/dev/null; then
-        warn "Not running"
-        exit 0
+        warn "Not running"; exit 0
     fi
-
     info "Stopping (PID: $pid)..."
     kill "$pid" 2>/dev/null || true
-
-    local waited=0
+    waited=0
     while kill -0 "$pid" 2>/dev/null; do
-        sleep 1
-        waited=$((waited + 1))
-        if [ $waited -ge 35 ]; then
-            warn "Force stopping..."
-            kill -9 "$pid" 2>/dev/null || true
-            break
-        fi
+        sleep 1; waited=$((waited + 1))
+        [ $waited -ge 35 ] && { kill -9 "$pid" 2>/dev/null || true; break; }
     done
-
     rm -f "$PID_FILE"
     ok "Stopped (${waited}s)"
     ;;
 
 # ── status ───────────────────────────────────────────────────────────────────
 status)
-    local pid port
-    pid=$(get_pid)
-    port=$(get_active_port)
-
     if is_running; then
+        pid=$(get_pid); port=$(get_active_port)
         echo -e "${GREEN}●${NC} ${NAME} is running"
         echo "   PID:      $pid"
         echo "   Port:     $port"
-
-        # Try to get version from health endpoint
-        local health
-        health=$(curl -sf "http://127.0.0.1:${port}/api/v1/health" 2>/dev/null || true)
+        health=$(curl -sf "http://127.0.0.1:${port}/" 2>/dev/null || true)
         if [ -n "$health" ]; then
-            local ver
             ver=$(echo "$health" | grep -o '"version":"[^"]*"' | head -1 | sed 's/"version":"//;s/"//')
             [ -n "$ver" ] && echo "   Version:  $ver"
         fi
-
-        echo "   Process:  $(ps -p "$pid" -o etimes= 2>/dev/null || echo "?")s uptime"
+        echo "   Uptime:   $(ps -p "$pid" -o etimes= 2>/dev/null || echo "?")s"
     else
         echo -e "${RED}✘${NC} ${NAME} is not running"
     fi
 
-    # List available versioned binaries and backups
     echo ""
-    local bins
-    bins=$(ls -1 "${DIR}/${NAME}-v"* 2>/dev/null || true)
-    if [ -n "$bins" ]; then
+    bins=( "${DIR}/${NAME}-v"* )
+    if [ -f "${bins[0]}" ]; then
         echo "   Available to deploy:"
-        echo "$bins" | while read -r f; do
+        for f in "${bins[@]}"; do
             echo "     $(basename "$f") ($(ls -lh "$f" | awk '{print $5}'))"
         done
-        echo "     → ./${NAME}.sh update v<version>"
+        echo "     → ./${NAME}.sh update"
     fi
 
-    local baks
-    baks=$(ls -1 "${DIR}/${NAME}.bak."* 2>/dev/null || true)
-    if [ -n "$baks" ]; then
+    baks=( "${BACKUP_DIR}/${NAME}-"* )
+    if [ -f "${baks[0]}" ]; then
         echo ""
         echo "   Available backups:"
-        echo "$baks" | while read -r f; do
+        for f in "${baks[@]}"; do
             echo "     $(basename "$f") ($(ls -lh "$f" | awk '{print $5}'))"
         done
         echo "     → ./${NAME}.sh rollback"
     fi
 
-    if [ -z "$bins" ] && [ -z "$baks" ]; then
+    if { [ ! -f "${bins[0]}" ] || [ -z "${bins[0]}" ]; } && { [ ! -f "${baks[0]}" ] || [ -z "${baks[0]}" ]; } 2>/dev/null; then
         echo "   No versioned binaries or backups found"
     fi
     ;;
 
 # ── update ───────────────────────────────────────────────────────────────────
 update)
-    if [ -z "$VERSION" ]; then
-        fail "Usage: $0 update <version>"
-        echo "  Example: $0 update v<version>"
-        echo "  The binary must exist at: ${DIR}/${NAME}-${VERSION}"
+    # Gather available versioned binaries
+    candidates=( "${DIR}/${NAME}-v"* )
+    if [ ! -f "${candidates[0]}" ]; then
+        fail "No versioned binaries found (e.g. ${NAME}-v<version>)"
+        echo "  Upload one via cPanel File Manager, then re-run."
     fi
 
-    NEW_BINARY="${DIR}/${NAME}-${VERSION}"
-    if [ ! -f "$NEW_BINARY" ]; then
-        fail "Binary not found: $NEW_BINARY"
-        echo "  Upload it to the server first via cPanel File Manager."
-    fi
+    pick_one "Select version to deploy:" "${candidates[@]}" || exit 1
+    NEW_BINARY="$SELECTED"
+    VERSION=$(basename "$NEW_BINARY" | sed "s/^${NAME}-//")
 
-    local active_port standby_port
     active_port=$(get_active_port)
     standby_port=$(get_standby_port)
 
     echo "════════════════════════════════════════════════════"
-    echo "  Updating ${NAME} to version ${VERSION}"
+    echo "  Updating to: ${VERSION}"
     echo "  Active port:  ${active_port}"
     echo "  Standby port: ${standby_port}"
     echo "════════════════════════════════════════════════════"
 
-    # 1. Start new binary on standby port (config override via SERVER__PORT env var)
-    info "Starting new version on port ${standby_port}..."
+    # Start new version on standby port
+    info "Starting ${VERSION} on port ${standby_port}..."
     cd "$DIR"
     SERVER__PORT="$standby_port" nohup "$NEW_BINARY" >> "$LOG_FILE" 2>&1 &
-    local new_pid=$!
-    info "New PID: $new_pid"
+    new_pid=$!
 
-    # 2. Wait for health check on standby port
-    wait_for_health "$standby_port" "New version (v${VERSION})"
+    wait_for_health "$standby_port" "v${VERSION}"
 
-    # 3. Backup current binary
-    local date_stamp
-    date_stamp=$(date '+%Y%m%d_%H%M%S')
-    if [ -f "${DIR}/${NAME}" ]; then
-        cp "${DIR}/${NAME}" "${DIR}/${NAME}.bak.${date_stamp}"
-        ok "Backed up current binary → ${NAME}.bak.${date_stamp}"
-    fi
+    # Backup current binary
+    backup_binary "pre-${VERSION}"
 
-    # 4. Update port tracking
+    # Switch port and .htaccess
     echo "$standby_port" > "$PORT_FILE"
-
-    # 5. Update .htaccess to proxy to new port
     if [ -f "$HTACCESS" ]; then
-        info "Switching .htaccess proxy to port ${standby_port}..."
+        info "Switching .htaccess to port ${standby_port}..."
         sed -i "s|http://127.0.0.1:${active_port}/|http://127.0.0.1:${standby_port}/|g" "$HTACCESS"
         ok ".htaccess updated"
-    else
-        warn ".htaccess not found — skipping proxy update"
     fi
 
-    # 6. Save old PID then update PID file
-    if [ -f "$PID_FILE" ]; then
-        cp "$PID_FILE" "${PID_FILE}.old"
-    fi
-    echo "$new_pid" > "$PID_FILE"
-
-    # 7. Promote the versioned binary
+    # Promote binary
     cp "$NEW_BINARY" "${DIR}/${NAME}"
     chmod +x "${DIR}/${NAME}"
+    echo "$new_pid" > "$PID_FILE"
 
-    # 8. Stop old instance
-    # Read the old PID from file before we overwrote it
-    local old_pid
-    if [ -f "${PID_FILE}.old" ]; then
-        old_pid=$(cat "${PID_FILE}.old")
-        rm -f "${PID_FILE}.old"
-    else
-        # Fallback: find process listening on the old port
-        old_pid=$(ss -tlnp 2>/dev/null | grep ":${active_port} " | grep -o 'pid=[0-9]*' | grep -o '[0-9]*' | head -1 || true)
-        # Or try fuser
-        if [ -z "$old_pid" ]; then
-            old_pid=$(fuser "${active_port}/tcp" 2>/dev/null || true)
-        fi
-        # Or pgrep by name
-        if [ -z "$old_pid" ]; then
-            old_pid=$(pgrep -x "$NAME" 2>/dev/null || true)
-        fi
-    fi
+    # Stop old instance
+    old_pid=$(ss -tlnp 2>/dev/null | grep ":${active_port} " | grep -o 'pid=[0-9]*' | grep -o '[0-9]*' | head -1 || true)
+    [ -z "$old_pid" ] && old_pid=$(fuser "${active_port}/tcp" 2>/dev/null || true)
+    [ -z "$old_pid" ] && old_pid=$(pgrep -x "$NAME" 2>/dev/null || true)
 
     if [ -n "$old_pid" ] && [ "$old_pid" != "$new_pid" ]; then
         info "Stopping old instance on port ${active_port} (PID: $old_pid)..."
         kill "$old_pid" 2>/dev/null || true
-        local waited=0
+        waited=0
         while kill -0 "$old_pid" 2>/dev/null; do
-            sleep 1
-            waited=$((waited + 1))
+            sleep 1; waited=$((waited + 1))
             [ $waited -ge 35 ] && { kill -9 "$old_pid" 2>/dev/null || true; break; }
         done
         ok "Old instance stopped (${waited}s)"
     fi
 
-    # 9. Verify new binary is still healthy on the now-active port
     sleep 1
     wait_for_health "$standby_port" "Final verification"
 
     echo ""
     echo -e "${GREEN}════════════════════════════════════════════════════${NC}"
-    echo -e "${GREEN}  Update complete — ${VERSION} is live${NC}"
-    echo -e "${GREEN}  Port: ${standby_port}  PID: ${new_pid}${NC}"
+    echo -e "${GREEN}  ${VERSION} is live on port ${standby_port} (PID: ${new_pid})${NC}"
     echo -e "${GREEN}  Next update will use port ${active_port}${NC}"
     echo -e "${GREEN}════════════════════════════════════════════════════${NC}"
-    echo ""
-    echo "To rollback:  ./axiom.sh rollback"
     ;;
 
-# ── rollback ────────────────────────────────────────────────────────────────
+# ── rollback ─────────────────────────────────────────────────────────────────
 rollback)
-    local backup
-    backup=$(ls -t "${DIR}/${NAME}.bak."* 2>/dev/null | head -1 || true)
-    if [ -z "$backup" ]; then
-        echo "No backups found in ${DIR}"
+    candidates=( "${BACKUP_DIR}/${NAME}-"* )
+    if [ ! -f "${candidates[0]}" ]; then
+        fail "No backups found in backups/"
         echo "  Backups are created automatically during 'update'."
-        fail "Nothing to rollback"
     fi
 
-    info "Rolling back to: $(basename "$backup") ($(ls -lh "$backup" | awk '{print $5}'))"
+    pick_one "Select backup to restore:" "${candidates[@]}" || exit 1
+    RESTORE="$SELECTED"
+    info "Restoring: $(basename "$RESTORE") ($(ls -lh "$RESTORE" | awk '{print $5}'))"
 
-    # Stop current
     "$0" stop
-
-    # Swap
-    cp "$backup" "${DIR}/${NAME}"
+    cp "$RESTORE" "${DIR}/${NAME}"
     chmod +x "${DIR}/${NAME}"
-
-    # Start
     "$0" start
     ;;
 
 # ── logs ─────────────────────────────────────────────────────────────────────
 logs)
-    if [ ! -f "$LOG_FILE" ]; then
-        fail "No log file found at $LOG_FILE"
-    fi
+    [ -f "$LOG_FILE" ] || fail "No log file found"
     tail -f "$LOG_FILE"
     ;;
 

@@ -30,13 +30,17 @@ cargo install cargo-zigbuild
 rustup target add x86_64-unknown-linux-gnu
 ```
 
-### Build for production
+### Build for production (creates versioned binary automatically)
+
 ```powershell
-$env:PATH = "D:\msys64_install\ucrt64\bin;" + $env:PATH
-cargo zigbuild --target x86_64-unknown-linux-gnu.2.17 --release
+# Native Windows release
+.\build.ps1 -Release
+
+# Cross-compile for Linux (cPanel)
+.\build.ps1 -Linux -Release
 ```
 
-**Output:** `target\x86_64-unknown-linux-gnu\release\axiom`
+**Output:** `target\x86_64-unknown-linux-gnu\release\axiom-v<version>` (versioned — won't overwrite on upload)
 
 ---
 
@@ -48,7 +52,7 @@ Upload these to a folder (e.g. `/home/youruser/axiom/`):
 
 | File | Location |
 |------|----------|
-| `axiom` | compiled Linux binary |
+| `axiom-v<version>` | compiled Linux binary (versioned — won't overwrite) |
 | `.htaccess` | root or subfolder where Apache should proxy |
 | `axiom.sh` | alongside the binary |
 | `config.toml` | alongside the binary |
@@ -57,15 +61,33 @@ Upload these to a folder (e.g. `/home/youruser/axiom/`):
 
 Place the `.htaccess` file in the **public_html** folder (or the folder Apache serves from). This proxies all traffic to your Axiom server running on port 4500.
 
-### 3c. Start the server
+### 3c. Start the server (first time)
 
 Open cPanel **Terminal** and run:
 
 ```bash
 cd /home/youruser/axiom
-chmod +x axiom axiom.sh
+chmod +x axiom-v<version> axiom.sh
 ./axiom.sh start
 ```
+
+Since no `./axiom` binary exists yet, it shows a picker:
+
+```
+  No axiom binary found -- select one to promote:
+
+  Select version to deploy:
+
+    1) axiom-v<version>  (12.5 MB)
+
+  Select number: 1
+
+  Promoted: axiom-v<version> -> axiom
+  Starting axiom on port 4500...
+  Running (PID: 12345, Port: 4500)
+```
+
+After this, `./axiom` exists, so future `./axiom.sh start` calls skip the picker.
 
 Check it's running:
 
@@ -82,25 +104,27 @@ The update uses **port swapping** — old and new run simultaneously for a momen
 ### Step 1: Build the Linux binary
 
 ```powershell
-$env:PATH = "D:\msys64_install\ucrt64\bin;" + $env:PATH
-cargo zigbuild --target x86_64-unknown-linux-gnu.2.17 --release
+.\build.ps1 -Linux -Release
 ```
 
-### Step 2: Rename the binary with a version tag
+Output is `target\x86_64-unknown-linux-gnu\release\axiom-v<version>` — versioned, no rename needed.
 
-```powershell
-copy target\x86_64-unknown-linux-gnu\release\axiom axiom-v<version>
-```
+### Step 2: Upload via cPanel File Manager
 
-### Step 3: Upload via cPanel File Manager
-
-Upload `axiom-v<version>` to `/home/youruser/axiom/` (alongside the existing `axiom` binary).
+Upload the versioned binary from `target\x86_64-unknown-linux-gnu\release\` to your `/home/youruser/axiom/` folder. Won't overwrite existing files — each version has a unique name.
 
 ### Step 4: Run the update (cPanel Terminal)
 
 ```bash
 cd /home/youruser/axiom
-./axiom.sh update v<version>
+./axiom.sh update
+# Then pick the version from the interactive menu:
+#
+#   Select version to deploy:
+#
+#     1) axiom-v<version>  (12.5 MB)
+#
+#   Select number: 1
 ```
 
 The script does this automatically:
@@ -108,7 +132,7 @@ The script does this automatically:
 ```
 1. Starts new binary on standby port (4501)
 2. Waits for health check to pass
-3. Backs up current binary → axiom.bak.{timestamp}
+3. Backs up current binary → backups/axiom-pre-{version}-{timestamp}
 4. Updates .htaccess to proxy to standby port
 5. Stops old binary on active port (4500)
 6. Confirms new binary is healthy
@@ -123,9 +147,9 @@ The script does this automatically:
 ```bash
 ./axiom.sh start              # Start the server
 ./axiom.sh stop               # Stop gracefully (drains connections)
-./axiom.sh status             # Show PID, port, version, uptime
-./axiom.sh update v<version>   # Deploy new version (zero-downtime)
-./axiom.sh rollback           # Revert to previous backup
+./axiom.sh status             # Show PID, port, version, available updates & backups
+./axiom.sh update             # Interactive: pick a version to deploy (zero-downtime)
+./axiom.sh rollback           # Interactive: pick a backup to restore
 ./axiom.sh logs               # Tail live log file
 ```
 
@@ -149,9 +173,17 @@ The `.htaccess` proxy is updated atomically (Apache re-reads it on next request)
 
 ```bash
 ./axiom.sh rollback
+# Then pick the backup from the interactive menu:
+#
+#   Select backup to restore:
+#
+#     1) axiom-pre-v<version>-20260620_120000  (12.1 MB)
+#     2) axiom-pre-v<older-version>-20260619_150000  (12.0 MB)
+#
+#   Select number: 1
 ```
 
-Restores the most recent backup (`axiom.bak.{timestamp}`) and restarts it. The `.htaccess` proxy stays on whatever port it was already pointing to.
+Restores the selected backup from the `backups/` folder and restarts. The `.htaccess` proxy stays on whatever port it was already pointing to.
 
 ---
 
@@ -174,7 +206,7 @@ pgrep -x axiom || (cd /home/youruser/axiom && ./axiom.sh start)
 | Check status, version, available updates & backups | `./axiom.sh status` |
 | View live logs | `./axiom.sh logs` |
 | Stop server | `./axiom.sh stop` |
-| Deploy new version | `./axiom.sh update v<version>` |
+| Deploy new version | `./axiom.sh update` (picks interactively) |
 | Rollback | `./axiom.sh rollback` |
 
 **Ports:** HTTP on `:4500`, gRPC on `:4501`. Apache proxies from 80/443 via `.htaccess`.

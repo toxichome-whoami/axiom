@@ -1,24 +1,37 @@
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let proto_dir = "proto/axiom/v1";
-    let proto_files = &[
-        format!("{}/common.proto", proto_dir),
-        format!("{}/db.proto", proto_dir),
-        format!("{}/federation.proto", proto_dir),
-        format!("{}/fs.proto", proto_dir),
-        format!("{}/webhook.proto", proto_dir),
-    ];
+use std::env;
+use std::fs;
+use std::path::Path;
 
-    // Tell cargo to recompile if any proto file changes
-    println!("cargo:rerun-if-changed={}", proto_dir);
+fn main() {
+    // ── 0. Use vendored protoc ─────────────────────────────────────────────
+    if let Ok(path) = protoc_bin_vendored::protoc_bin_path() {
+        env::set_var("PROTOC", path);
+    }
 
-    // Point prost-build to the vendored protoc so no system install is needed
-    let protoc_path = protoc_bin_vendored::protoc_bin_path().unwrap();
-    std::env::set_var("PROTOC", protoc_path);
-
+    // ── 1. Compile gRPC protobuf definitions ───────────────────────────────
     tonic_build::configure()
         .build_server(true)
         .build_client(true)
-        .compile(proto_files, &["proto"])?;
+        .compile(
+            &[
+                "proto/axiom/v1/common.proto",
+                "proto/axiom/v1/db.proto",
+                "proto/axiom/v1/fs.proto",
+                "proto/axiom/v1/webhook.proto",
+                "proto/axiom/v1/federation.proto",
+            ],
+            &["proto"],
+        )
+        .unwrap_or_else(|e| {
+            println!(
+                "cargo:warning=protobuf compilation failed (non-fatal): {}",
+                e
+            );
+        });
 
-    Ok(())
+    // ── 2. Write version for build.ps1 ─────────────────────────────────────
+    if let Ok(manifest) = env::var("CARGO_MANIFEST_DIR") {
+        let ver = env::var("CARGO_PKG_VERSION").unwrap_or_else(|_| "0.0.0".to_string());
+        let _ = fs::write(Path::new(&manifest).join(".axiom_version"), &ver);
+    }
 }
