@@ -96,3 +96,4 @@ fix_imports.py
 target/
 Cargo.lock
 .axiom_version
+opencode.json
