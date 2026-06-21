@@ -38,8 +38,8 @@ auth = true                      # Enable Axiom Auth identity system
 
 # ─── Model Context Protocol (MCP) ─────────────────────
 [mcp]
-server_name = "axiom"
-server_version = "1.0.5"
+enabled = true
+
 
 # ─── Logging ──────────────────────────────────────────
 [logging]

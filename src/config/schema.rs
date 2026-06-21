@@ -274,8 +274,7 @@ impl Default for PerformanceConfig {
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 #[serde(default)]
 pub struct MCPConfig {
-    pub server_name: String,
-    pub server_version: String,
+    pub enabled: bool,
     pub max_result_rows: i32,
     pub max_directory_entries: i32,
     pub max_file_read_bytes: i32,
@@ -284,8 +283,7 @@ pub struct MCPConfig {
 impl Default for MCPConfig {
     fn default() -> Self {
         Self {
-            server_name: "axiom".to_string(),
-            server_version: env!("CARGO_PKG_VERSION").to_string(),
+            enabled: false,
             max_result_rows: 50,
             max_directory_entries: 100,
             max_file_read_bytes: 1_048_576,

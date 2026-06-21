@@ -18,8 +18,6 @@ MCP lets AI assistants like **Claude**, **Gemini**, and **Copilot** securely int
 mcp = true
 
 [mcp]
-server_name = "axiom"
-server_version = "1.0.5"
 max_result_rows = 50
 max_directory_entries = 100
 max_file_read_bytes = 1048576

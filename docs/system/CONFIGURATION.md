@@ -26,14 +26,20 @@ Every configuration property defined in `config.toml` can be directly overridden
 
 **Important Rule:** When specifying nested configuration sections via environment variables, use **double underscores (`__`)** as the separator instead of single underscores. This allows keys that natively contain single underscores (like `local_uploads` or `max_file_size`) to parse correctly without getting split.
 
-For example, to override `[server]` -> `port` (which is `server.port`):
-`SERVER__PORT=4500`
+For example, to override `[server]` → `port` (which is `server.port`):
+```bash
+SERVER__PORT=4500
+```
 
-To override `[api_key.admin]` -> `db_scope`:
-`API_KEY__ADMIN__DB_SCOPE="[*]"`
+To override `[api_key.admin]` → `db_scope`:
+```bash
+API_KEY__ADMIN__DB_SCOPE="[*]"
+```
 
-To override `[database.remote_localdb]` -> `url`:
-`DATABASE__REMOTE_LOCALDB__URL="postgres://..."`
+To override `[database.remote_localdb]` → `url`:
+```bash
+DATABASE__REMOTE_LOCALDB__URL="postgres://..."
+```
 
 Axiom includes a `toml2env.go` script in the `scripts/` folder which automatically transpiles your `config.toml` file into a ready-to-use `.env` file using these exact double-underscore rules.
 
@@ -41,105 +47,112 @@ Axiom includes a `toml2env.go` script in the `scripts/` folder which automatical
 
 ## `[server]`
 
+Core HTTP server configuration.
+
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `host` | string | `"0.0.0.0"` | Bind address |
-| `port` | int | `4500` | Listen port |
+| `port` | int | `4500` | HTTP/REST API listen port |
 | `current_thread` | bool | `false` | Enable single-threaded runtime (ideal for strict cPanel limits) |
 | `workers` | int | `0` | Tokio runtime worker threads (0 = auto-detect CPU count) |
-| `max_connections` | int | `10000` | Max concurrent connections |
+| `max_connections` | int | `10000` | Maximum concurrent connections |
 | `request_timeout` | int | `30` | Request timeout in seconds |
-| `body_limit` | string | `"10 MB"` | Max request body size |
-| `tls_cert` | string | `""` | Path to TLS cert (blank = HTTP) |
+| `body_limit` | string | `"10 MB"` | Maximum request body size |
+| `tls_cert` | string | `""` | Path to TLS certificate (blank = HTTP only) |
 | `tls_key` | string | `""` | Path to TLS private key |
 | `allowed_ips` | list | `[]` | IPs exempt from rate limiting |
-| `trusted_proxies` | list | `["127.0.0.1"]` | Trusted reverse proxy IPs |
+| `trusted_proxies` | list | `["127.0.0.1"]` | Trusted reverse proxy IPs for real IP extraction |
 | `cors_origins` | list | `["*"]` | Allowed CORS origins |
-| `shutdown_timeout` | int | `30` | Graceful shutdown timeout |
+| `shutdown_timeout` | int | `30` | Graceful shutdown timeout in seconds |
 
 ---
 
 ## `[features]`
 
-Feature flags to enable/disable entire subsystems.
+Feature flags to enable/disable entire subsystems. Disabled features consume zero resources and do not expose any endpoints.
 
 | Key | Default | Description |
 |-----|---------|-------------|
 | `database` | `true` | Enable `/api/v1/db/*` endpoints |
 | `storage` | `true` | Enable `/api/v1/fs/*` endpoints |
-| `webhook` | `true` | Enable webhook emission |
-| `federation` | `false` | Enable `/api/v1/fed/*` and sync |
-| `metrics` | `true` | Enable `/metrics` endpoint |
+| `webhook` | `true` | Enable webhook emission and delivery |
+| `federation` | `false` | Enable `/api/v1/fed/*` and cross-node sync |
+| `metrics` | `true` | Enable `/metrics` Prometheus endpoint |
 | `playground` | `false` | Enable Swagger UI at `/api/docs` |
-| `mcp` | `false` | Enable MCP JSON-RPC server at `/api/v1/mcp` |
+| `mcp` | `false` | Enable MCP JSON-RPC server at `/api/v1/mcp` for AI integration |
 | `graphql` | `false` | Enable optional GraphQL gateway at `/api/v1/graphql` |
 | `websocket` | `false` | Enable real-time WebSocket push gateway at `/api/v1/ws` |
 | `sse` | `true` | Enable real-time SSE push gateway at `/api/v1/sse` |
 | `auth` | `false` | Enable the Axiom Auth identity system at `/api/v1/auth/*` |
 
-
 ---
 
 ## `[logging]`
 
+Structured logging configuration using `tracing`.
+
 | Key | Default | Description |
 |-----|---------|-------------|
-| `level` | `"INFO"` | `TRACE \| DEBUG \| INFO \| WARN \| ERROR` |
-| `format` | `"json"` | `json \| pretty` |
+| `level` | `"INFO"` | Log level: `TRACE` \| `DEBUG` \| `INFO` \| `WARN` \| `ERROR` |
+| `format` | `"json"` | Output format: `json` \| `pretty` |
 | `directory` | `"./logs"` | Log file output directory |
 | `file_prefix` | `"axiom"` | Log filename prefix |
-| `max_file_size` | `"50 MB"` | Rotate when log exceeds this size |
-| `max_files` | `5` | Max rotated log files to keep |
+| `max_file_size` | `"50 MB"` | Rotate when log file exceeds this size |
+| `max_files` | `5` | Maximum number of rotated log files to keep |
 | `stdout` | `true` | Also log to stdout |
 
 ---
 
 ## `[rate_limit]`
 
+Global rate limiting configuration using lock-free atomic counters.
+
 | Key | Default | Description |
 |-----|---------|-------------|
 | `enabled` | `true` | Enable rate limiting |
-| `backend` | `"memory"` | `memory \| redis` |
+| `backend` | `"memory"` | Backend: `memory` \| `redis` |
 | `redis_url` | `""` | Redis URL (required if backend=redis) |
 | `window` | `60` | Window size in seconds |
-| `max_requests` | `100` | Max requests per window per key |
+| `max_requests` | `100` | Maximum requests per window per key |
 | `burst` | `20` | Additional burst allowance |
-| `penalty_cooldown` | `300` | IP ban duration after 10 violations |
+| `penalty_cooldown` | `300` | IP ban duration in seconds after 10 violations |
 
 ---
 
 ## `[cache]`
 
+Query and metadata caching configuration.
+
 | Key | Default | Description |
 |-----|---------|-------------|
 | `enabled` | `true` | Enable caching |
-| `backend` | `"memory"` | `memory \| redis` |
-| `redis_url` | `""` | Redis URL |
+| `backend` | `"memory"` | Backend: `memory` \| `redis` |
+| `redis_url` | `""` | Redis URL (required if backend=redis) |
 | `max_memory` | `"100 MB"` | Memory cache size bound |
 | `default_ttl` | `60` | Default TTL in seconds |
-| `query_cache` | `true` | Cache DB query results |
+| `query_cache` | `true` | Cache database query results |
 | `fs_cache` | `true` | Cache file metadata |
 
 ---
 
 ## `[webhooks]`
 
-Global webhook delivery settings.
+Global webhook delivery settings with circuit breaker support.
 
 | Key | Default | Description |
 |-----|---------|-------------|
 | `enabled` | `true` | Enable webhook delivery |
-| `timeout` | `5` | HTTP delivery timeout |
+| `timeout` | `5` | HTTP delivery timeout in seconds |
 | `max_retries` | `3` | Retry attempts on failure |
-| `retry_delay` | `2` | Base delay (exponential: delay^attempt) |
-| `queue_size` | `10000` | Max pending webhook events |
-| `secret_header` | `"X-Axiom-Signature"` | HMAC header name |
+| `retry_delay` | `2` | Base delay in seconds (exponential: delay^attempt) |
+| `queue_size` | `10000` | Maximum pending webhook events |
+| `secret_header` | `"X-Axiom-Signature"` | HMAC signature header name |
 | `max_concurrent_deliveries` | `8` | Number of background dispatch workers |
 | `persistence_enabled` | `true` | Save events to SQLite before delivery |
 | `persistence_path` | `"./data/webhooks.db"` | SQLite database path |
-| `dead_letter_enabled` | `true` | Save permanently failed events |
+| `dead_letter_enabled` | `true` | Save permanently failed events to DLQ |
 | `dead_letter_retention_hours` | `72` | Hours to keep dead letter events |
-| `circuit_breaker_enabled` | `true` | Enable circuit breakers per URL |
+| `circuit_breaker_enabled` | `true` | Enable circuit breakers per destination URL |
 | `circuit_breaker_threshold` | `5` | Failures before opening circuit |
 | `circuit_breaker_recovery` | `30` | Seconds to wait before probe request |
 | `retry_jitter_enabled` | `true` | Add 50-150% jitter to retry delay |
@@ -159,7 +172,7 @@ Per-webhook subscription definition.
 | `enabled` | `true` | Enable or disable this rule |
 | `timeout` | `0` | Per-hook delivery timeout (0 = global default) |
 | `max_retries` | `0` | Per-hook max retries (0 = global default) |
-| `delivery_format` | `"json"` | Payload format: `json \| protobuf` |
+| `delivery_format` | `"json"` | Payload format: `json` \| `protobuf` |
 
 **Rule format:** `module.operation@alias:target`
 
@@ -168,76 +181,81 @@ Per-webhook subscription definition.
 - `alias`: database/storage alias or `*`
 - `target`: table name, file path, or `*`
 
+**Example:**
+```toml
+[webhook.user_events]
+url = "https://api.example.com/webhooks"
+secret = "your_hmac_secret_min_32_chars"
+rule = "db.write@main_db:users"
+enabled = true
+```
+
 ---
 
 ## `[database.<alias>]`
 
+Database connection pool configuration.
+
 | Key | Default | Description |
 |-----|---------|-------------|
-| `engine` | required | `sqlite \| postgres \| mysql \| mariadb \| mssql` |
+| `engine` | required | Database engine: `sqlite` \| `postgres` \| `mysql` \| `mariadb` \| `mssql` |
 | `url` | required | Connection URL |
-| `mode` | `"readwrite"` | `readwrite \| readonly \| writeonly` |
+| `mode` | `"readwrite"` | Access mode: `readwrite` \| `readonly` \| `writeonly` |
 | `pool_min` | `2` | Minimum pool connections |
 | `pool_max` | `80` | Maximum pool connections (tune to your DB server's `max_connections`) |
 | `connection_timeout` | `5` | Connect timeout in seconds |
-| `idle_timeout` | `300` | Idle connection timeout |
-| `max_lifetime` | `1800` | Max connection lifetime |
-| `query_whitelist` | `null` | Only allow these SQL operations |
+| `idle_timeout` | `300` | Idle connection timeout in seconds |
+| `max_lifetime` | `1800` | Maximum connection lifetime in seconds |
+| `query_whitelist` | `null` | Only allow these SQL operations (null = allow all) |
 | `query_blacklist` | `["DROP","TRUNCATE","ALTER"]` | Block these SQL operations |
-| `dangerous_operations` | `false` | Allow DDL (DROP/ALTER/TRUNCATE) |
+| `dangerous_operations` | `false` | Allow DDL operations (DROP/ALTER/TRUNCATE) |
 
 ---
 
 ## `[storage.<alias>]`
 
+File storage volume configuration.
+
 | Key | Default | Description |
 |-----|---------|-------------|
 | `path` | required | Absolute or relative root directory |
-| `mode` | `"readwrite"` | `readwrite \| readonly \| writeonly` |
+| `mode` | `"readwrite"` | Access mode: `readwrite` \| `readonly` \| `writeonly` |
 | `limit` | `"5 GB"` | Maximum total storage size |
 | `chunk_size` | `"10 MB"` | Default upload chunk size |
-| `max_file_size` | `"500 MB"` | Max single file upload size |
-| `allowed_extensions` | `[]` | Allowed extensions (empty = all) |
-| `blocked_extensions` | `[".exe",".bat",...]` | Blocked extensions |
+| `max_file_size` | `"500 MB"` | Maximum single file upload size |
+| `allowed_extensions` | `[]` | Allowed file extensions (empty = all allowed) |
+| `blocked_extensions` | `[".exe",".bat",...]` | Blocked file extensions |
 
 ---
 
 ## `[api_key.<name>]`
 
 > [!NOTE]
-> This configures **Static API Keys**. You can also generate and manage **Dynamic API Keys** seamlessly via the `/api/admin/keys` endpoint. For security reasons, Dynamic keys cannot be assigned `full_admin` privileges; only static keys managed by developers in this configuration file may act as superadmins.
+> This configures **Static API Keys**. You can also generate and manage **Dynamic API Keys** via the `/api/admin/keys` endpoint. For security reasons, Dynamic keys cannot be assigned `full_admin` privileges; only static keys managed by developers in this configuration file may act as superadmins.
 
 | Key | Required | Description |
 |-----|----------|-------------|
 | `secret` | yes | Secret string (≥32 chars) |
-| `mode` | `"readwrite"` | `readwrite \| readonly \| writeonly` |
+| `mode` | `"readwrite"` | Access mode: `readwrite` \| `readonly` \| `writeonly` |
 | `db_scope` | `["*"]` | Accessible database aliases |
 | `fs_scope` | `["*"]` | Accessible storage aliases |
 | `feature_scope`| `["*"]` | Accessible feature endpoints (`mcp`, `ws`, `graphql`, `sse`, `webhooks`) |
-| `rate_limit_override` | `0` | Per-key rate limit (0 = global) |
+| `rate_limit_override` | `0` | Per-key rate limit (0 = use global) |
 | `full_admin` | `false` | Grants access to `/api/admin/*` endpoints |
-
----
-
-## `[features]` — `auth`
-
-| Key | Default | Description |
-|-----|---------|-------------|
-| `auth` | `false` | Enable the Axiom Auth identity system at `/api/v1/auth/*` |
 
 ---
 
 ## `[auth.project.<name>]`
 
-Configures one isolated auth project. The `<name>` must match an API key name defined in `[api_key.<name>]`. Each project gets its own isolated SQLite database, Ed25519 key, and email config.
+Configures one isolated auth project. The `<name>` must match an API key name defined in `[api_key.<name>]`. Each project gets its own isolated SQLite database, Ed25519 key pair, and email configuration.
 
-**Database**
+### Database
 
 | Key | Default | Description |
 |-----|---------|-------------|
 | `db_url` | *(Optional)* | Database URL for horizontal scaling (e.g., `postgresql+asyncpg://user:pass@host/db`). If omitted, defaults to an isolated SQLite file at `data/auth/<api_key_name>/auth.db` |
 
-**Token Lifetimes**
+### Token Lifetimes
 
 | Key | Default | Description |
 |-----|---------|-------------|
@@ -248,14 +266,14 @@ Configures one isolated auth project. The `<name>` must match an API key name de
 | `password_reset_ttl` | `3600` | Seconds until password reset link expires |
 | `otp_ttl` | `600` | Seconds until a numeric OTP expires |
 
-**Email Resend Throttling**
+### Email Resend Throttling
 
 | Key | Default | Description |
 |-----|---------|-------------|
 | `resend_cooldown` | `60` | Minimum seconds between email resends per user |
-| `resend_max_per_hour` | `5` | Max email sends per user per hour |
+| `resend_max_per_hour` | `5` | Maximum email sends per user per hour |
 
-**Password Policy**
+### Password Policy
 
 | Key | Default | Description |
 |-----|---------|-------------|
@@ -265,14 +283,14 @@ Configures one isolated auth project. The `<name>` must match an API key name de
 | `require_symbol` | `false` | Require at least one special character |
 | `pwned_check` | `false` | Reject passwords found in HaveIBeenPwned breach database |
 
-**Email Verification**
+### Email Verification
 
 | Key | Default | Description |
 |-----|---------|-------------|
 | `email_verification` | `true` | Block login until email is verified |
-| `verification_method` | `"token"` | `"token"` (link in email) or `"otp"` (numeric code) |
+| `verification_method` | `"token"` | Verification method: `"token"` (link in email) or `"otp"` (numeric code) |
 
-**TOTP / 2FA**
+### TOTP / 2FA
 
 | Key | Default | Description |
 |-----|---------|-------------|
@@ -280,20 +298,20 @@ Configures one isolated auth project. The `<name>` must match an API key name de
 | `totp_issuer` | `"Axiom"` | Name shown in Authenticator apps (e.g. Google Authenticator) |
 | `backup_codes_count` | `8` | Number of one-time backup codes generated on TOTP confirm |
 
-**Anonymous Auth**
+### Anonymous Auth
 
 | Key | Default | Description |
 |-----|---------|-------------|
 | `anonymous_auth` | `false` | Allow unauthenticated anonymous sessions |
 | `anonymous_upgrade_ttl` | `604800` | Seconds before an unupgraded anonymous account is purged (7 days) |
 
-**JWT Custom Claims & RBAC**
+### JWT Custom Claims & RBAC
 
 | Key | Default | Description |
 |-----|---------|-------------|
 | `jwt_custom_claims` | `[]` | List of user metadata keys to inject into the JWT payload. Add `"role"` here to enable server-side RBAC |
 
-**WebAuthn (Passkeys)**
+### WebAuthn (Passkeys)
 
 | Key | Default | Description |
 |-----|---------|-------------|
@@ -302,30 +320,30 @@ Configures one isolated auth project. The `<name>` must match an API key name de
 | `rp_name` | `"Axiom"` | Human-readable app name shown in the browser passkey dialog |
 | `origin` | `"http://localhost:3000"` | Full origin URL where registration/authentication flows are initiated |
 
-**Security Alerts**
+### Security Alerts
 
 | Key | Default | Description |
 |-----|---------|-------------|
 | `new_device_alerts` | `true` | Send a security email when a user logs in from a new IP address |
 
-**Rate Limiting & Security**
+### Rate Limiting & Security
 
 | Key | Default | Description |
 |-----|---------|-------------|
 | `max_login_attempts` | `5` | Failed login attempts before account lockout |
 | `lockout_duration` | `900` | Lockout duration in seconds (15 minutes) |
-| `max_signup_per_ip` | `10` | Max signups allowed from a single IP |
-| `max_otp_attempts` | `3` | Max incorrect OTP attempts before invalidation |
+| `max_signup_per_ip` | `10` | Maximum signups allowed from a single IP |
+| `max_otp_attempts` | `3` | Maximum incorrect OTP attempts before invalidation |
 | `ip_allowlist` | `[]` | IPs that bypass auth rate limiting |
 
-**Redirect URLs**
+### Redirect URLs
 
 | Key | Default | Description |
 |-----|---------|-------------|
 | `callback_url` | `""` | Default redirect URL after magic link / email verification |
 | `allowed_redirect_urls` | `[]` | Allowed redirect URLs (others are rejected) |
 
-**Webhook Triggers**
+### Webhook Triggers
 
 | Key | Default | Description |
 |-----|---------|-------------|
@@ -336,7 +354,7 @@ Configures one isolated auth project. The `<name>` must match an API key name de
 | `webhook_on_email_change` | `false` | Emit webhook on email change |
 | `webhook_on_delete` | `false` | Emit webhook on account deletion |
 
-**OAuth Providers**
+### OAuth Providers
 
 | Provider Section | Keys | Description |
 |------------------|------|-------------|
@@ -375,11 +393,11 @@ webhook_on_signup = true
 
 [auth.project.default_project.email]
 provider = "smtp"
-host = "smtp.mailtrap.io"
-port = 2525
-username = "your_username"
-password = "your_password"
-from_email = "noreply@myapp.com"
+smtp_host = "smtp.mailtrap.io"
+smtp_port = 2525
+smtp_user = "your_username"
+smtp_password = "your_password"
+from_address = "noreply@myapp.com"
 from_name = "My App Auth"
 
 [auth.project.default_project.oauth_google]
@@ -393,32 +411,39 @@ enabled = false
 client_id = "YOUR_GITHUB_CLIENT_ID"
 client_secret = "YOUR_GITHUB_CLIENT_SECRET"
 redirect_uri = "http://localhost:4500/api/v1/auth/default_project/oauth/github/callback"
+```
 
 ---
 
 ## `[circuit_breaker]`
 
+Circuit breaker configuration for external service calls (webhooks, federation).
+
 | Key | Default | Description |
 |-----|---------|-------------|
 | `enabled` | `true` | Enable circuit breaker |
-| `failure_threshold` | `5` | Failures before tripping OPEN |
-| `success_threshold` | `3` | Successes in HALF_OPEN before CLOSED |
-| `timeout` | `30` | Seconds before retry |
+| `failure_threshold` | `5` | Failures before tripping to OPEN state |
+| `success_threshold` | `3` | Successes in HALF_OPEN before returning to CLOSED |
+| `timeout` | `30` | Seconds to wait before retry attempt |
 
 ---
 
 ## `[federation]`
+
+Cross-node federation configuration.
 
 | Key | Default | Description |
 |-----|---------|-------------|
 | `enabled` | `false` | Enable federation |
 | `sync_interval` | `30` | Health sync interval in seconds |
 | `per_node_timeout` | `5.0` | Node health check timeout |
-| `backoff_max` | `300.0` | Max backoff for failed nodes |
+| `backoff_max` | `300.0` | Maximum backoff for failed nodes |
 | `circuit_breaker_threshold` | `3` | Failures before marking node down |
 | `grpc_port` | `50051` | Default gRPC listen port |
-| `grpc_max_message_mb` | `100` | Max gRPC message size in MB |
+| `grpc_max_message_mb` | `100` | Maximum gRPC message size in MB |
 | `grpc_keepalive_seconds` | `30` | gRPC ping interval |
+
+---
 
 ## `[federation.incoming.<node_id>]`
 
@@ -427,11 +452,13 @@ Per-node incoming authentication. Each block allows exactly one remote server to
 | Key | Required | Description |
 |-----|----------|-------------|
 | `secret` | yes | Federation secret (≥32 chars, unique per node) |
-| `mode` | `"readonly"` | `readwrite \| readonly` |
+| `mode` | `"readonly"` | Access mode: `readwrite` \| `readonly` |
 | `db_scope` | `["*"]` | Accessible database aliases |
 | `fs_scope` | `["*"]` | Accessible storage aliases |
 | `feature_scope`| `["*"]` | Accessible feature endpoints |
 | `description` | `""` | Human-readable label for this node |
+
+---
 
 ## `[federation.server.<alias>]`
 
@@ -442,7 +469,7 @@ Outgoing connections to remote Axiom servers.
 | `url` | yes | Remote Axiom base URL |
 | `secret` | yes | Federation secret (must match remote's incoming key) |
 | `node_id` | yes | Your identity on the remote server |
-| `trust_mode` | `"verify"` | `verify` (TLS) or `trust` (skip TLS check) |
+| `trust_mode` | `"verify"` | TLS verification: `verify` or `trust` (skip TLS check) |
 | `grpc_port` | `50051` | Remote server's gRPC port |
 | `grpc_enabled` | `true` | Use gRPC for this node with HTTP proxy fallback |
 
@@ -450,15 +477,14 @@ Outgoing connections to remote Axiom servers.
 
 ## `[mcp]`
 
-Model Context Protocol server configuration. Enables AI assistants to interact with databases and storage.
+Model Context Protocol server configuration for AI integration.
 
 | Key | Default | Description |
-|-----|---------|-------------|
-| `server_name` | `"axiom"` | Server identity sent to MCP clients |
-| `server_version` | `"1.0.5"` | Version advertised in initialization |
-| `max_result_rows` | `50` | Max rows returned per query |
-| `max_directory_entries` | `100` | Max files listed per directory |
-| `max_file_read_bytes` | `1048576` | Max file read size (bytes) |
+|---|---|---|
+| `enabled` | `false` | Enable or disable the MCP server. |
+| `max_result_rows` | `50` | Maximum number of rows returned by `query_database` tool |
+| `max_directory_entries` | `100` | Maximum files listed per directory |
+| `max_file_read_bytes` | `1048576` | Maximum file read size in bytes (1MB) |
 
 ---
 
@@ -471,7 +497,7 @@ Model Context Protocol server configuration. Enables AI assistants to interact w
 |-----|---------|-------------|
 | `endpoint` | `"/api/v1/graphql"` | URL path the GraphQL POST endpoint is mounted at |
 | `query_cache_enabled` | `true` | Cache compiled AST-to-SQL results to skip recompilation on repeat queries |
-| `query_cache_size` | `512` | Max LRU slots for the compiled query cache |
+| `query_cache_size` | `512` | Maximum LRU slots for the compiled query cache |
 | `max_query_depth` | `15` | Maximum GraphQL query nesting depth — prevents DoS via deeply nested queries |
 | `introspection` | `false` | Allow schema introspection queries — disable in production for security |
 
@@ -480,9 +506,9 @@ Model Context Protocol server configuration. Enables AI assistants to interact w
 ## `[websocket]`
 
 > [!NOTE]
-> WebSocket is an **optional, secondary interface**. Axiom is natively a REST API gateway. This section only applies when `features.websocket = true`. When disabled, the endpoint does not exist and consumes zero resources.
+> WebSocket is an **optional, secondary interface**. This section only applies when `features.websocket = true`. When disabled, the endpoint does not exist and consumes zero resources.
 
-Real-time bidirectional push gateway. Clients connect to `ws://host:port/api/v1/ws`, authenticate with the first JSON message, then subscribe to topics that map to DB tables and storage paths.
+Real-time bidirectional push gateway configuration.
 
 | Key | Default | Description |
 |-----|---------|-------------|
@@ -495,14 +521,14 @@ Real-time bidirectional push gateway. Clients connect to `ws://host:port/api/v1/
 
 Axiom supports **Hybrid Authentication** for WebSockets:
 
-1.  **Standard HTTP Headers (Backend/Mobile)**:
-    Most backend and mobile WebSocket clients (e.g. Go's `gorilla/websocket`, Python's `websockets`, iOS/Android native clients) support injecting custom HTTP headers during the connection upgrade.
-    ```
-    X-Axiom-Key: base64(<key_name>:<secret>)
-    ```
+1. **Standard HTTP Headers (Backend/Mobile)**:
+   Most backend and mobile WebSocket clients support injecting custom HTTP headers during the connection upgrade:
+   ```
+   X-Axiom-Key: base64(<key_name>:<secret>)
+   ```
 
-2.  **First JSON Message (Web Browsers)**:
-    Browser `WebSocket` objects do not natively support custom headers. If no headers are provided during the handshake, Axiom allows the socket to open but requires a valid `auth` message as the **first JSON payload** within 5 seconds.
+2. **First JSON Message (Web Browsers)**:
+   Browser `WebSocket` objects do not natively support custom headers. If no headers are provided during the handshake, Axiom allows the socket to open but requires a valid `auth` message as the **first JSON payload** within 5 seconds.
 
 **Axiom strictly prohibits passing authentication tokens via URL parameters (`?token=...`) to prevent token leakage in server logs.**
 
@@ -518,25 +544,23 @@ ws.onopen = () => {
 };
 ```
 
-The same API key used for REST is reused here. The key must have `"ws"` in its `feature_scope` (or `full_admin = true`).
-
 ### DoS Protections
 
-- **Auth Timeout:** If a client connects but does not send a valid auth message within `auth_timeout` seconds, the server forcefully closes the connection with code `4001`. This prevents idle connection exhaustion attacks.
-- **Hard Cap:** Once `max_connections` is reached, new socket upgrade requests are immediately rejected with code `1013 (Server at maximum capacity)` — guaranteeing the server never runs out of memory or file descriptors under flood conditions.
+- **Auth Timeout:** If a client connects but does not send a valid auth message within `auth_timeout` seconds, the server forcefully closes the connection with code `4001`.
+- **Hard Cap:** Once `max_connections` is reached, new socket upgrade requests are immediately rejected with code `1013 (Server at maximum capacity)`.
 
 ---
 
 ## `[eda]`
 
-Event-Driven Architecture (EDA) configuration. When enabled and backed by Redis, the system uses high-performance Redis Streams for unified event publishing, Consumer Groups for background task dispatching, and Dead-Letter Queues (DLQ) for webhook retry handling.
+Event-Driven Architecture (EDA) configuration using Redis Streams.
 
 | Key | Default | Description |
 |-----|---------|-------------|
 | `enabled` | `true` | Enable EDA routing (if false, events fallback to local memory loops) |
-| `backend` | `"memory"` | Backend to use: `memory \| redis` |
+| `backend` | `"memory"` | Backend: `memory` \| `redis` |
 | `redis_url` | `"redis://127.0.0.1:6379/1"` | Redis connection URL |
-| `max_stream_length` | `100000` | Max events retained in the stream via XADD MAXLEN |
+| `max_stream_length` | `100000` | Maximum events retained in the stream via XADD MAXLEN |
 | `dlq_retention_hours` | `72` | Hours to retain failed webhook deliveries in the DLQ stream |
 | `consumer_group` | `"axiom_workers"` | Redis Consumer Group name |
 | `consumer_name` | `"worker_1"` | Identifier for this specific node in the Consumer Group |
@@ -545,10 +569,10 @@ Event-Driven Architecture (EDA) configuration. When enabled and backed by Redis,
 
 ## `[backups]`
 
-Automated Point-in-Time Recovery (PITR) engine. When enabled, Axiom runs a background daemon that compresses the `data/` directory and streams it to an S3-compatible bucket (AWS S3, Cloudflare R2, MinIO) at regular intervals.
+Automated Point-in-Time Recovery (PITR) engine with S3-compatible storage.
 
 > [!NOTE]
-> The `data/` directory contains all SQLite databases (auth, security, webhooks). Enabling this gives you full disaster recovery capability without any external orchestration tools.
+> The `data/` directory contains all SQLite databases (auth, security, webhooks). Enabling this provides full disaster recovery capability without any external orchestration tools.
 
 | Key | Default | Description |
 |-----|---------|-------------|
@@ -556,7 +580,7 @@ Automated Point-in-Time Recovery (PITR) engine. When enabled, Axiom runs a backg
 | `interval_minutes` | `5` | How often (in minutes) to compress and upload a snapshot |
 | `s3_bucket` | `""` | Target S3 bucket name |
 | `s3_region` | `"us-east-1"` | AWS region or equivalent for your S3-compatible provider |
-| `s3_endpoint_url` | `null` | Override endpoint for non-AWS providers (e.g. `https://...r2.cloudflarestorage.com`) |
+| `s3_endpoint_url` | `null` | Override endpoint for non-AWS providers (e.g. Cloudflare R2, MinIO) |
 | `s3_access_key` | `""` | S3 Access Key ID |
 | `s3_secret_key` | `""` | S3 Secret Access Key |
 

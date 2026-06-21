@@ -1,23 +1,23 @@
 # Axiom API — AI Context
 
-Axiom is a self-hosted, high-performance Rust backend gateway. Exposes REST APIs for databases, file storage, auth, real-time channels, GraphQL, and MCP. All responses: `{"success": true|false, "data": ..., "error": {"code": "...", "message": "..."}}`.
+Axiom is a self-hosted, high-performance Rust backend gateway that exposes REST APIs for databases, file storage, authentication, real-time channels, GraphQL, and MCP. All responses follow a consistent structure: `{"success": true|false, "data": ..., "error": {"code": "...", "message": "..."}}`.
 
 ---
 
 ## Client SDKs
 
-To simplify interacting with the Axiom Gateway from your applications, officially supported Client SDKs are available in the `sdk/` directory.
+Official Client SDKs are available in the `sdk/` directory to simplify integration with your applications:
 
 - **TypeScript/JavaScript**: `sdk/axiom-js` (Zero-dependency, uses native `fetch`)
 - **Python**: `sdk/axiom-py` (Async support via `httpx`)
 
-Both SDKs expose unified interfaces for the `auth`, `db`, `fs`, and `realtime` modules, automatically handling header injection (`X-Axiom-Key` and `X-User-Access-Token`) and token state.
+Both SDKs provide unified interfaces for the `auth`, `db`, `fs`, and `realtime` modules, automatically handling header injection (`X-Axiom-Key` and `X-User-Access-Token`) and token state management.
 
 ---
 
 ## Auth
 
-Every request needs `X-Axiom-Key` header. Value = `base64(key_name:secret)`.
+Every request requires an `X-Axiom-Key` header. The value is `base64(key_name:secret)`.
 
 ```
 X-Axiom-Key: YWRtaW46c2VjcmV0
@@ -108,9 +108,9 @@ Pagination is **keyset/cursor-based** — use `next_cursor` from response as `cu
 | `bulk_delete` | `sources: [...]` |
 | `bulk_move` | `operations: [{source, target}, ...]` |
 
-**Image transforms on download:** `?width=400&height=300&fit=contain|cover|fill&format=webp|avif|jpeg|png&quality=82&inline=true`
+**Image transforms on download:** `?width=400&height=300&fit=contain|cover|fill&format=webp|avif|jpeg|png&quality=82`
 
-Video/audio supports `Range` headers (HTTP 206). Folders download as ZIP.
+Video/audio supports `Range` headers (HTTP 206). Folders download as ZIP. All files served with `Content-Disposition: attachment` to prevent XSS.
 
 ---
 
@@ -136,8 +136,8 @@ Video/audio supports `Range` headers (HTTP 206). Folders download as ZIP.
 
 | What | Method + Path |
 |------|--------------|
-| OAuth Login Redirect | `POST /api/v1/auth/{pid}/oauth/{provider}/url` (providers: `google`, `github`) |
-| OAuth Callback Handler | `GET /api/v1/auth/{pid}/oauth/{provider}/callback?code=...` |
+| Get OAuth redirect URL | `POST /api/v1/auth/{pid}/oauth/{provider}/url` (providers: `google`, `github`) |
+| OAuth callback handler | `GET /api/v1/auth/{pid}/oauth/{provider}/callback?code=...` |
 
 ### Email Verification
 
@@ -221,7 +221,7 @@ Video/audio supports `Range` headers (HTTP 206). Folders download as ZIP.
 
 ## SSE API  `/api/v1/sse`  *(requires `features.sse = true`)*
 
-One-way server push. Connect directly to the stream URL — no subscribe message needed.
+One-way server push for live events. Connect directly to the stream URL — no subscribe message needed.
 
 > Browser `EventSource` cannot send headers. Use `?token=base64(name:secret)` query param.
 
@@ -234,17 +234,19 @@ One-way server push. Connect directly to the stream URL — no subscribe message
 | Live server metrics | `GET /api/v1/sse/metrics` |
 | Health stream (no auth) | `GET /api/v1/sse/health` |
 
+Max connections: 5000. Ring-buffer backpressure: 100 events per client. Heartbeat every 30s.
+
 ---
 
 ## WebSocket API  `ws://host/api/v1/ws`  *(requires `features.websocket = true`)*
 
-Bidirectional push. Backend clients send `X-Axiom-Key` header during handshake. Browser clients send auth as first JSON message (5s timeout).
+Bidirectional push for real-time events. Backend clients send `X-Axiom-Key` header during handshake. Browser clients send auth as first JSON message (5s timeout).
 
 ```json
-// Step 1 auth
+// Step 1: Authenticate
 {"type": "auth", "token": "base64(name:secret)"}
 
-// Step 2 subscribe
+// Step 2: Subscribe to topics
 {"type": "subscribe", "topic": "db:{alias}:{table}", "request_id": "r1"}
 
 // Unsubscribe
@@ -254,6 +256,8 @@ Bidirectional push. Backend clients send `X-Axiom-Key` header during handshake. 
 **Topics:** `db:{alias}:{table}` · `db:{alias}:*` · `fs:{alias}:{path}` · `fs:{alias}:*` · `metrics` · `system:health`
 
 **Close codes:** `4001` = auth timeout · `4003` = invalid token
+
+Max connections: 10,000. Max subscriptions per client: 100. Heartbeat every 30s.
 
 ---
 
@@ -270,6 +274,9 @@ Same auth header as REST. Runs through identical security pipeline (AST validati
 
 # Filtering
 { users(dbAlias: "main_db", filter: { status: "active", age: { $gte: 18 } }) { id name } }
+
+# Auto-resolved nested relations (no N+1)
+{ users(dbAlias: "main_db") { id name posts { title comments { text } } } }
 
 # List available DBs
 { databases }
@@ -339,7 +346,10 @@ Exposes Axiom to AI models (Claude, Gemini, etc.) via Model Context Protocol.
 6. **Admin routes** require `X-Axiom-Key` from a key with `full_admin = true` in config.
 7. **SSE in browsers** cannot use custom headers — pass `?token=base64(name:secret)` in URL.
 8. **WebSocket in browsers** cannot use custom headers — send auth as first JSON message within 5s.
-9. **DB alias and storage alias** come from the user's `config.toml` — always ask the user.
+9. **DB alias and storage alias** come from the user's `config.toml` — always ask the user which alias to use.
 10. **`feature_scope` values:** `mcp` · `ws` · `graphql` · `sse` · `webhooks` · `*` (all).
 11. **All responses** include `"success": true|false`. On error, read `error.code` + `error.message`.
 12. **Optional features** (GraphQL, WebSocket, SSE, MCP, Federation) — endpoints only exist if enabled in config.
+13. **File downloads** always use `Content-Disposition: attachment` to prevent XSS.
+14. **Image transforms** support `width`, `height`, `fit`, `format`, `quality` params. Auto-negotiates best format (AVIF/WebP) based on `Accept` header.
+15. **Video/audio streaming** supports HTTP `Range` requests (206 Partial Content) for Safari/iOS compatibility.
