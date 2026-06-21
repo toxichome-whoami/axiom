@@ -1,12 +1,15 @@
+use ahash::AHasher;
 use dashmap::DashMap;
 use once_cell::sync::Lazy;
+use std::hash::BuildHasherDefault;
 use std::sync::Arc;
 
 use crate::config::loader::ConfigManager;
 use crate::db::engines::any::AnyDatabaseEngine;
 use crate::db::engines::base::DatabaseEngine;
 
-static ENGINES: Lazy<DashMap<String, Arc<dyn DatabaseEngine>>> = Lazy::new(DashMap::new);
+type FastMap<K, V> = DashMap<K, V, BuildHasherDefault<AHasher>>;
+static ENGINES: Lazy<FastMap<String, Arc<dyn DatabaseEngine>>> = Lazy::new(FastMap::default);
 
 pub struct DatabasePoolManager;
 

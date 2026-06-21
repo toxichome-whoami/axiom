@@ -68,6 +68,7 @@ sysinfo = "0.38.4"
 ring = "0.17.14"
 sqlparser = "0.62.0"
 mimalloc = { version = "0.1", default-features = false }
+ahash = "0.8.12"
 
 [build-dependencies]
 tonic-build = "0.11"

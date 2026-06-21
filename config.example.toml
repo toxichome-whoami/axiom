@@ -11,6 +11,7 @@
 [server]
 host = "0.0.0.0"                 # Bind to all interfaces
 port = 4500                      # Public HTTP/REST port (gRPC automatically binds to port + 1)
+current_thread = false           # Set to true for single-threaded mode (cPanel friendly)
 max_connections = 1000           # Maximum concurrent TCP connections
 request_timeout = 30             # Timeout per request in seconds
 body_limit = "10mb"              # Maximum request body size (e.g., "10mb", "1gb")

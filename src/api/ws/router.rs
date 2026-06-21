@@ -43,15 +43,10 @@ async fn handle_socket(socket: WebSocket, initial_auth: Option<AuthContext>) {
                         if let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) {
                             if json["type"] == "auth" {
                                 if let Some(token) = json["token"].as_str() {
-                                    let auth_value = if token.starts_with("Bearer ") {
-                                        token.to_string()
-                                    } else {
-                                        format!("Bearer {}", token)
-                                    };
+                                    let raw_token = token.strip_prefix("Bearer ").unwrap_or(token);
 
-                                    if let Some(ctx) = crate::middleware::auth::validate_api_key(
-                                        &auth_value,
-                                        &config,
+                                    if let Some(ctx) = crate::middleware::auth::validate_raw_token(
+                                        raw_token, &config,
                                     ) {
                                         return Ok(ctx);
                                     }

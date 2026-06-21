@@ -97,3 +97,5 @@ target/
 Cargo.lock
 .axiom_version
 opencode.json
+api_test_results.txt
+bench_db.exe

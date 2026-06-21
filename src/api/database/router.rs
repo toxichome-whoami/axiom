@@ -9,6 +9,7 @@ use crate::api::database::handlers::{get_db_config, QueryExecutionPipeline};
 use crate::api::database::schemas::QueryRequest;
 use crate::api::errors::AxiomError;
 use crate::config::loader::ConfigManager;
+use crate::db::pool::DatabasePoolManager;
 use crate::utils::types::AuthContext;
 
 pub fn get_router() -> Router {
@@ -44,11 +45,17 @@ async fn list_databases(
             continue;
         }
 
+        let status = if DatabasePoolManager::get_engine(name).await.is_some() {
+            "connected"
+        } else {
+            "error"
+        };
+
         active_dbs.push(serde_json::json!({
             "name": name,
             "engine": db_cfg.engine,
             "mode": db_cfg.mode,
-            "status": "connected", // Stubbed
+            "status": status,
             "tables_count": 0,     // Stubbed
             "federated": false
         }));
@@ -75,8 +82,9 @@ async fn execute_query(
         }
     }
 
-    let (_arc_result, json_bytes) = QueryExecutionPipeline::run_query(&db_name, &payload.sql, params_array, &auth, &db_cfg)
-        .await?;
+    let (_arc_result, json_bytes) =
+        QueryExecutionPipeline::run_query(&db_name, &payload.sql, params_array, &auth, &db_cfg)
+            .await?;
 
     Ok(axum::response::Response::builder()
         .header("content-type", "application/json")

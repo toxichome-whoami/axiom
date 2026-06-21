@@ -36,7 +36,7 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, A
     }
 
     // 1. Extract token from header ONLY
-    let mut auth_value = None;
+    let mut raw_token = None;
 
     if let Some(key) = req
         .headers()
@@ -44,19 +44,21 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, A
         .or_else(|| req.headers().get("X-Api-Key"))
     {
         if let Ok(key_str) = key.to_str() {
-            auth_value = Some(format!("Bearer {}", key_str));
+            raw_token = Some(key_str.to_string());
         }
     }
 
-    if auth_value.is_none() {
-        auth_value = req
+    if raw_token.is_none() {
+        raw_token = req
             .headers()
             .get("Authorization")
-            .and_then(|h| h.to_str().ok().map(|s| s.to_string()));
+            .and_then(|h| h.to_str().ok())
+            .and_then(|s| s.strip_prefix("Bearer "))
+            .map(|s| s.to_string());
     }
 
     // 2. Presigned URL Interception (if no header auth)
-    if auth_value.is_none() {
+    if raw_token.is_none() {
         if let Some(query) = req.uri().query() {
             let params: std::collections::HashMap<String, String> =
                 url::form_urlencoded::parse(query.as_bytes())
@@ -180,22 +182,20 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, A
         }
     }
 
-    if let Some(auth_value) = auth_value {
-        if let Some(ctx) = validate_api_key(&auth_value, &config) {
+    if let Some(token) = &raw_token {
+        if let Some(ctx) = validate_raw_token(token, &config) {
             req.extensions_mut().insert(ctx);
             return Ok(next.run(req).await);
         }
 
         // Check if the key itself is banned
-        if let Some(raw_token) = auth_value.strip_prefix("Bearer ") {
-            let (is_key_banned, reason) = BanList::is_key_banned(raw_token);
-            if is_key_banned {
-                return Err(AxiomError::new(
-                    "AUTH_INVALID_KEY",
-                    &format!("API key is suspended: {}", reason),
-                    axum::http::StatusCode::FORBIDDEN,
-                ));
-            }
+        let (is_key_banned, reason) = BanList::is_key_banned(token);
+        if is_key_banned {
+            return Err(AxiomError::new(
+                "AUTH_INVALID_KEY",
+                &format!("API key is suspended: {}", reason),
+                axum::http::StatusCode::FORBIDDEN,
+            ));
         }
     }
 
@@ -221,16 +221,10 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, A
     ))
 }
 
-pub fn validate_api_key(
-    auth_value: &str,
+pub fn validate_raw_token(
+    raw_token: &str,
     config: &crate::config::schema::AxiomConfig,
 ) -> Option<AuthContext> {
-    if !auth_value.starts_with("Bearer ") {
-        return None;
-    }
-
-    let raw_token = &auth_value[7..];
-
     use base64::prelude::*;
     let decoded_str = BASE64_STANDARD
         .decode(raw_token)

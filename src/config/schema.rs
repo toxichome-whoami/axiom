@@ -6,6 +6,7 @@ use std::collections::HashMap;
 pub struct ServerConfig {
     pub host: String,
     pub port: i32,
+    pub current_thread: bool,
     pub workers: i32,
     pub max_connections: i32,
     pub request_timeout: i32,
@@ -23,6 +24,7 @@ impl Default for ServerConfig {
         Self {
             host: "0.0.0.0".to_string(),
             port: 4500,
+            current_thread: false,
             workers: 0,
             max_connections: 10000,
             request_timeout: 30,

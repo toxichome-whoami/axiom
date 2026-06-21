@@ -32,6 +32,10 @@ impl MemoryCache {
             PENALTY_CACHE.retain(|_, v| v.1 > now);
         }
 
+        if RATE_LIMIT_CACHE.len() > 100_000 && !RATE_LIMIT_CACHE.contains_key(limits_key) {
+            return (false, 0); // Drop tracking to prevent OOM
+        }
+
         if let Some(mut penalty) = PENALTY_CACHE.get_mut(penalty_key) {
             if penalty.1 < now {
                 penalty.0 = 0;

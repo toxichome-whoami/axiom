@@ -12,6 +12,21 @@ use crate::api::errors::AxiomError;
 use crate::api::graphql::compiler::{ASTCompiler, ASTOperation};
 use crate::config::loader::ConfigManager;
 use crate::utils::types::AuthContext;
+use ahash::AHasher;
+use dashmap::DashMap;
+use once_cell::sync::Lazy;
+use std::hash::BuildHasherDefault;
+use std::sync::Arc;
+
+type FastMap<K, V> = DashMap<K, V, BuildHasherDefault<AHasher>>;
+static QUERY_CACHE: Lazy<FastMap<u64, Arc<Vec<ASTOperation>>>> = Lazy::new(FastMap::default);
+
+fn hash_query(q: &str) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = ahash::AHasher::default();
+    q.hash(&mut h);
+    h.finish()
+}
 
 #[derive(Deserialize)]
 pub struct GraphQLRequest {
@@ -44,18 +59,42 @@ async fn execute_graphql(
         ));
     }
 
-    let compiler = ASTCompiler::new(config.graphql.max_query_depth);
-    let operations = compiler.compile(&payload.query).map_err(|e| {
-        AxiomError::new(
-            "GRAPHQL_COMPILE_ERROR",
-            &e,
-            axum::http::StatusCode::BAD_REQUEST,
-        )
-    })?;
+    let mut operations = None;
+    let query_hash = hash_query(&payload.query);
+    if config.graphql.query_cache_enabled {
+        if let Some(cached) = QUERY_CACHE.get(&query_hash) {
+            operations = Some(cached.clone());
+        }
+    }
+
+    let operations = match operations {
+        Some(ops) => ops,
+        None => {
+            let compiler = ASTCompiler::new(config.graphql.max_query_depth);
+            let ops = compiler.compile(&payload.query).map_err(|e| {
+                AxiomError::new(
+                    "GRAPHQL_COMPILE_ERROR",
+                    &e,
+                    axum::http::StatusCode::BAD_REQUEST,
+                )
+            })?;
+            let arc_ops = Arc::new(ops);
+            if config.graphql.query_cache_enabled {
+                if QUERY_CACHE.len() >= config.graphql.query_cache_size as usize {
+                    let key_to_remove = QUERY_CACHE.iter().next().map(|ref_multi| *ref_multi.key());
+                    if let Some(k) = key_to_remove {
+                        QUERY_CACHE.remove(&k);
+                    }
+                }
+                QUERY_CACHE.insert(query_hash, arc_ops.clone());
+            }
+            arc_ops
+        }
+    };
 
     let mut results = serde_json::Map::new();
 
-    for op in operations {
+    for op in operations.iter() {
         match op {
             ASTOperation::ExecuteSql {
                 db_alias,
@@ -66,7 +105,7 @@ async fn execute_graphql(
                 let db_cfg = get_db_config(&db_alias, &auth).await?;
                 let mut params_vec = Vec::new();
                 for (_, v) in params {
-                    params_vec.push(v);
+                    params_vec.push(v.clone());
                 }
 
                 let (db_result, _) =
@@ -74,7 +113,7 @@ async fn execute_graphql(
                         .await?;
 
                 results.insert(
-                    alias,
+                    alias.clone(),
                     json!({
                         "columns": db_result.columns,
                         "rows": db_result.rows,
@@ -132,7 +171,7 @@ async fn execute_graphql(
                     ));
                 }
 
-                for col in &columns {
+                for col in columns {
                     if !is_valid_ident(col) {
                         return Err(AxiomError::new(
                             "INVALID_COLUMN",
@@ -166,7 +205,10 @@ async fn execute_graphql(
                     QueryExecutionPipeline::run_query(&db_alias, &sql, params_vec, &auth, &db_cfg)
                         .await?;
 
-                results.insert(alias, json!(db_result.rows.as_ref().unwrap_or(&vec![])));
+                results.insert(
+                    alias.clone(),
+                    json!(db_result.rows.as_ref().unwrap_or(&vec![])),
+                );
             }
             ASTOperation::ListDatabases { alias } => {
                 let mut active_dbs = Vec::new();
@@ -179,7 +221,7 @@ async fn execute_graphql(
                         }));
                     }
                 }
-                results.insert(alias, json!(active_dbs));
+                results.insert(alias.clone(), json!(active_dbs));
             }
         }
     }

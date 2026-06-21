@@ -177,7 +177,7 @@ func runBenchmarkTask(label, method, url string, payload interface{}, config Con
 
 	overallStart := time.Now()
 
-	for workerID := range config.Concurrency {
+	for workerID := 0; workerID < config.Concurrency; workerID++ {
 		wg.Add(1)
 
 		// Calculate how many requests this specific worker should handle
@@ -193,12 +193,12 @@ func runBenchmarkTask(label, method, url string, payload interface{}, config Con
 			// This sleep only happens ONCE per connection, not per request!
 			time.Sleep(time.Duration(id) * 200 * time.Microsecond)
 
-			for range tasks {
+			for taskIdx := 0; taskIdx < tasks; taskIdx++ {
 				start := time.Now()
 				var resp *http.Response
 				var err error
 
-				for attempt := range 10 {
+				for attempt := 0; attempt < 10; attempt++ {
 					var req *http.Request
 					if payload != nil {
 						req, err = http.NewRequest(method, url, bytes.NewReader(bodyBytes))

@@ -30,10 +30,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .unwrap_or(4)
     };
 
-    let rt = tokio::runtime::Builder::new_multi_thread()
-        .worker_threads(worker_count)
-        .enable_all()
-        .build()?;
+    let rt = if config.server.current_thread {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()?
+    } else {
+        tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(worker_count)
+            .enable_all()
+            .build()?
+    };
 
     rt.block_on(async { main_impl().await })
 }

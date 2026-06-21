@@ -7,6 +7,7 @@ use axum::http::header;
 use axum::{http::StatusCode, middleware, response::IntoResponse, routing::get, Json, Router};
 use serde_json::json;
 use tower_http::{
+    compression::CompressionLayer,
     cors::{Any, CorsLayer},
     set_header::SetResponseHeaderLayer,
 };
@@ -82,6 +83,11 @@ pub fn create_app() -> Router {
         .route("/favicon.ico", get(favicon))
         .fallback(fallback_handler)
         .layer(cors)
+        .layer(
+            CompressionLayer::new()
+                .gzip(true)
+                .quality(tower_http::CompressionLevel::Fastest),
+        )
         .layer(tower_http::timeout::TimeoutLayer::new(
             std::time::Duration::from_secs(30),
         ))
