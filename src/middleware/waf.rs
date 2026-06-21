@@ -43,8 +43,8 @@ pub async fn waf_middleware(req: Request, next: Next) -> Result<Response, AxiomE
     }
 
     let uri = req.uri();
-    let mut path = uri.path().to_string();
-    let mut query = uri.query().unwrap_or("").to_string();
+    let mut path = std::borrow::Cow::Borrowed(uri.path());
+    let mut query = std::borrow::Cow::Borrowed(uri.query().unwrap_or(""));
 
     if path.len() + query.len() > 2048 {
         return Err(AxiomError::new(
@@ -54,29 +54,53 @@ pub async fn waf_middleware(req: Request, next: Next) -> Result<Response, AxiomE
         ));
     }
 
-    // Decode URL up to 3 times to prevent double/triple encoding bypasses
+    // 1. Check for raw traversal sequences before decoding
+    let combined_raw = format!("{}?{}", path, query).to_lowercase();
+    if combined_raw.contains("../")
+        || combined_raw.contains("..\\")
+        || combined_raw.contains("%2e")
+        || combined_raw.contains("%2f")
+        || combined_raw.contains("%5c")
+    {
+        return Err(AxiomError::new(
+            "WAF_PATH_TRAVERSAL",
+            "Path traversal attempt detected",
+            axum::http::StatusCode::BAD_REQUEST,
+        ));
+    }
+
+    // 2. Decode URL up to 3 times, allocating only if changed
     for _ in 0..3 {
-        if let Ok(decoded) = urlencoding::decode(&path) {
-            path = decoded.into_owned();
+        let mut path_changed = false;
+        if let Ok(std::borrow::Cow::Owned(decoded)) = urlencoding::decode(&path) {
+            path = std::borrow::Cow::Owned(decoded);
+            path_changed = true;
         }
-        if let Ok(decoded) = urlencoding::decode(&query) {
-            query = decoded.into_owned();
+        let mut query_changed = false;
+        if let Ok(std::borrow::Cow::Owned(decoded)) = urlencoding::decode(&query) {
+            query = std::borrow::Cow::Owned(decoded);
+            query_changed = true;
+        }
+        if !path_changed && !query_changed {
+            break;
         }
     }
 
-    if path.contains("..") || path.contains("%") || query.contains("..") || query.contains("%") {
-        let combined = format!("{}?{}", path, query).to_lowercase();
-        if combined.contains("../")
-            || combined.contains("..\\")
-            || combined.contains("%2e%2e%2f")
-            || combined.contains("%2e%2e%5c")
-        {
-            return Err(AxiomError::new(
-                "WAF_PATH_TRAVERSAL",
-                "Path traversal attempt detected",
-                axum::http::StatusCode::BAD_REQUEST,
-            ));
-        }
+    // 3. Post-decode checks
+    if path.contains('%') || query.contains('%') {
+        return Err(AxiomError::new(
+            "WAF_MALFORMED",
+            "Malformed encoding detected",
+            axum::http::StatusCode::BAD_REQUEST,
+        ));
+    }
+
+    if path.contains("..") || query.contains("..") {
+        return Err(AxiomError::new(
+            "WAF_PATH_TRAVERSAL",
+            "Path traversal attempt detected",
+            axum::http::StatusCode::BAD_REQUEST,
+        ));
     }
 
     if path.contains('\0') || query.contains('\0') {

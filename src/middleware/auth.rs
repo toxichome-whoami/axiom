@@ -5,6 +5,18 @@ use crate::utils::ip::get_client_ip;
 use crate::utils::types::AuthContext;
 use axum::{extract::Request, middleware::Next, response::Response};
 
+/// Compare two byte slices in constant time to prevent timing attacks.
+fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut result = 0;
+    for (x, y) in a.iter().zip(b.iter()) {
+        result |= x ^ y;
+    }
+    result == 0
+}
+
 pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, AxiomError> {
     let config = req
         .extensions()
@@ -135,7 +147,10 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, A
                                             let expected_sig =
                                                 hex::encode(mac.finalize().into_bytes());
 
-                                            if expected_sig == *sig {
+                                            if constant_time_eq(
+                                                expected_sig.as_bytes(),
+                                                sig.as_bytes(),
+                                            ) {
                                                 let ctx = AuthContext {
                                                     api_key_name: key_name.clone(),
                                                     mode,
@@ -225,7 +240,11 @@ pub fn validate_api_key(
     if let Some(decoded) = decoded_str {
         if let Some((key_name, key_secret)) = decoded.split_once(':') {
             if let Some(key_cfg) = config.api_key.get(key_name) {
-                if key_cfg.secret == key_secret && !key_cfg.secret.is_empty() {
+                let secret_ok = !key_cfg.secret.is_empty()
+                    && key_cfg.secret.len() == key_secret.len()
+                    && constant_time_eq(key_cfg.secret.as_bytes(), key_secret.as_bytes());
+
+                if secret_ok {
                     return Some(AuthContext {
                         api_key_name: key_name.to_string(),
                         mode: key_cfg.mode.clone(),
@@ -237,7 +256,11 @@ pub fn validate_api_key(
                     });
                 }
             } else if let Some(fed_cfg) = config.federation.incoming.get(key_name) {
-                if fed_cfg.secret == key_secret && !fed_cfg.secret.is_empty() {
+                let secret_ok = !fed_cfg.secret.is_empty()
+                    && fed_cfg.secret.len() == key_secret.len()
+                    && constant_time_eq(fed_cfg.secret.as_bytes(), key_secret.as_bytes());
+
+                if secret_ok {
                     return Some(AuthContext {
                         api_key_name: key_name.to_string(),
                         mode: fed_cfg.mode.clone(),

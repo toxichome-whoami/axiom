@@ -11,14 +11,14 @@
 [server]
 host = "0.0.0.0"                 # Bind to all interfaces
 port = 4500                      # Public HTTP/REST port (gRPC automatically binds to port + 1)
-max_connections = 10000          # Maximum concurrent TCP connections
+max_connections = 1000           # Maximum concurrent TCP connections
 request_timeout = 30             # Timeout per request in seconds
 body_limit = "10mb"              # Maximum request body size (e.g., "10mb", "1gb")
 tls_cert = ""                    # Path to TLS certificate (leave blank for HTTP)
 tls_key = ""                     # Path to TLS private key
 allowed_ips = ["127.0.0.1"]      # IPs exempt from rate limiting
 trusted_proxies = ["127.0.0.1"]  # Proxies to trust for X-Forwarded-For headers
-cors_origins = ["*"]             # Allowed CORS origins
+cors_origins = ["http://localhost:3000"] # Allowed CORS origins (Avoid wildcard in production)
 shutdown_timeout = 30            # Seconds to wait for active requests during shutdown
 
 # ─── Modular Features ─────────────────────────────────
@@ -47,8 +47,8 @@ level = "INFO"                   # TRACE | DEBUG | INFO | WARN | ERROR (Can be o
 format = "json"                  # json (production) | pretty (development)
 directory = "./logs"             # Where to store log files
 file_prefix = "axiom"        # Prefix for log filenames
-max_file_size = "50mb"           # Max size per log file before rotation
-max_files = 5                    # Number of rotated logs to keep
+max_file_size = "10mb"           # Max size per log file before rotation
+max_files = 3                    # Number of rotated logs to keep
 stdout = true                    # Stream logs to console
 
 # ─── Rate Limiting ────────────────────────────────────
@@ -108,10 +108,10 @@ full_admin = true                # Bypass all scope checks
 # Format: "<federation_server_alias>_<remote_db_name>"
 [database.main_db]
 engine = "postgres"              # postgres | mysql | sqlite | mariadb | mssql
-url = "postgresql://user:pass@localhost:5432/dbname"
+url = "postgresql://user:pass@localhost:5432/dbname?sslmode=require"
 mode = "readwrite"               # readwrite | readonly
-pool_min = 5                     # Minimum idle connections
-pool_max = 80                    # Maximum concurrent connections (tune to your DB's max_connections)
+pool_min = 2                     # Minimum idle connections
+pool_max = 20                    # Maximum concurrent connections (tune to your DB's max_connections)
 connection_timeout = 30          # Seconds to wait for a connection
 idle_timeout = 600               # Seconds to keep an idle connection alive
 max_lifetime = 3600              # Maximum age of a connection
@@ -187,14 +187,14 @@ introspection = false            # Disable schema introspection in production fo
 # Connect to: ws://host:port/api/v1/ws
 # First message must be: { "type": "auth", "token": "<base64(key_name:secret)>" }
 [websocket]
-max_connections = 10000          # Maximum concurrent WebSocket connections
+max_connections = 1000           # Maximum concurrent WebSocket connections
 heartbeat_interval = 30         # Seconds between server ping messages to clients
 auth_timeout = 5.0              # Seconds a client has to send the auth message after connecting
 max_subscriptions_per_client = 100  # Maximum topic subscriptions per connection
 
 # ─── Server-Sent Events (SSE) Push Gateway ────────────────
 [sse]
-max_connections = 5000         # Maximum concurrent SSE connections allowed
+max_connections = 500          # Maximum concurrent SSE connections allowed
 queue_size = 100               # Max pending events per client before dropping
 heartbeat_interval = 15        # Seconds between keep-alive comments sent to idle clients
 health_interval = 10           # Seconds between background system health checks

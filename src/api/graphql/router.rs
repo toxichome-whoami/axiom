@@ -31,7 +31,12 @@ async fn execute_graphql(
 ) -> Result<Json<Value>, AxiomError> {
     let config = ConfigManager::get();
 
-    if !auth.full_admin && !auth.feature_scope.iter().any(|s| s == "*" || s == "graphql") {
+    if !auth.full_admin
+        && !auth
+            .feature_scope
+            .iter()
+            .any(|s| s == "*" || s == "graphql")
+    {
         return Err(AxiomError::new(
             "AUTH_FEATURE_DENIED",
             "GraphQL feature is not enabled for this key",
@@ -90,29 +95,75 @@ async fn execute_graphql(
             } => {
                 let db_cfg = get_db_config(&db_alias, &auth).await?;
 
+                let is_valid_ident = |s: &str| -> bool {
+                    let mut chars = s.chars();
+                    if let Some(first) = chars.next() {
+                        if !first.is_ascii_alphabetic() && first != '_' {
+                            return false;
+                        }
+                    } else {
+                        return false;
+                    }
+                    chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+                };
+
+                let order_lower = order.to_lowercase();
+                if order_lower != "asc" && order_lower != "desc" {
+                    return Err(AxiomError::new(
+                        "INVALID_ORDER",
+                        "order must be asc or desc",
+                        axum::http::StatusCode::BAD_REQUEST,
+                    ));
+                }
+
+                if !is_valid_ident(&sort) {
+                    return Err(AxiomError::new(
+                        "INVALID_SORT",
+                        "invalid sort column",
+                        axum::http::StatusCode::BAD_REQUEST,
+                    ));
+                }
+
+                if !is_valid_ident(&table) {
+                    return Err(AxiomError::new(
+                        "INVALID_TABLE",
+                        "invalid table name",
+                        axum::http::StatusCode::BAD_REQUEST,
+                    ));
+                }
+
+                for col in &columns {
+                    if !is_valid_ident(col) {
+                        return Err(AxiomError::new(
+                            "INVALID_COLUMN",
+                            "invalid column name",
+                            axum::http::StatusCode::BAD_REQUEST,
+                        ));
+                    }
+                }
+
                 let cols = if columns.is_empty() {
                     "*".to_string()
                 } else {
                     columns.join(", ")
                 };
 
+                let mut params_vec = Vec::new();
                 let mut where_clause = String::new();
                 if let Some(c) = cursor {
-                    let op = if order.to_lowercase() == "desc" {
-                        "<"
-                    } else {
-                        ">"
-                    };
-                    where_clause = format!("WHERE {} {} '{}'", sort, op, c);
+                    let op = if order_lower == "desc" { "<" } else { ">" };
+                    params_vec.push(serde_json::json!(c));
+                    where_clause = format!("WHERE {} {} ?", sort, op);
                 }
 
+                params_vec.push(serde_json::json!(limit));
                 let sql = format!(
-                    "SELECT {} FROM {} {} ORDER BY {} {} LIMIT {}",
-                    cols, table, where_clause, sort, order, limit
+                    "SELECT {} FROM {} {} ORDER BY {} {} LIMIT ?",
+                    cols, table, where_clause, sort, order_lower
                 );
 
                 let (db_result, _) =
-                    QueryExecutionPipeline::run_query(&db_alias, &sql, vec![], &auth, &db_cfg)
+                    QueryExecutionPipeline::run_query(&db_alias, &sql, params_vec, &auth, &db_cfg)
                         .await?;
 
                 results.insert(alias, json!(db_result.rows.as_ref().unwrap_or(&vec![])));
