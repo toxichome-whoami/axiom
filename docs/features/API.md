@@ -8,16 +8,12 @@
 
 ## Client SDKs
 
-If you are building an application in TypeScript or Python, you do not need to construct raw HTTP/REST requests manually. Axiom provides officially supported SDKs:
+Building an application in TypeScript or Python? Skip the raw HTTP requests. Axiom provides officially supported SDKs that handle authentication headers, connection pooling, and payload formatting automatically:
 
 - **TypeScript / JavaScript**: `sdk/axiom-js`
 - **Python**: `sdk/axiom-py`
 
-Both SDKs handle authentication headers, connection pooling, and payload formatting automatically.
-
 <hr/>
-
-> [!TIP]
 
 ## Authentication
 
@@ -30,7 +26,7 @@ X-Axiom-Key: base64(<key_name>:<secret>)
 
 **cURL Example:**
 ```bash
-# To generate the token in bash:
+# Generate the token in bash:
 # TOKEN=$(echo -n "admin:your_secret_here" | base64)
 
 curl -X GET "http://localhost:4500/api/v1/db/databases" \
@@ -42,31 +38,87 @@ curl -X GET "http://localhost:4500/api/v1/db/databases" \
 ## Core Endpoints
 
 ### 1. Server Info & Feature Flags
+Check what's running and what's enabled.
+
 ```bash
 curl -X GET "http://localhost:4500/"
 ```
+**Example Response:**
+```json
+{
+  "name": "Axiom",
+  "version": "1.0.0",
+  "mode": "production",
+  "features": {
+    "auth": true,
+    "webhooks": true,
+    "mcp": true,
+    "graphql": false
+  }
+}
+```
 
 ### 2. Kubernetes Readiness Probe
-Does not require authentication.
+No authentication required — designed for K8s liveness/readiness checks.
+
 ```bash
 curl -X GET "http://localhost:4500/ready"
 ```
+**Example Response:**
+```json
+{
+  "ready": true
+}
+```
 
 ### 3. Deep Health Check
+Verifies database connectivity and system resources.
+
 ```bash
 curl -X GET "http://localhost:4500/health" \
      -H "X-Axiom-Key: <TOKEN>"
 ```
+**Example Response:**
+```json
+{
+  "success": true,
+  "status": "ok"
+}
+```
 
 ### 4. Metrics (Prometheus)
+Expose server metrics in Prometheus format for monitoring dashboards.
+
 ```bash
 curl -X GET "http://localhost:4500/metrics" \
      -H "X-Axiom-Key: <TOKEN>"
 ```
+**Example Response:**
+```text
+# HELP axiom_uptime_seconds Server uptime
+# TYPE axiom_uptime_seconds gauge
+axiom_uptime_seconds 4.92
+# HELP axiom_memory_mb Memory usage
+# TYPE axiom_memory_mb gauge
+axiom_memory_mb 39.00
+```
 
 ### 5. OpenAPI JSON Spec
+Machine-readable API documentation for auto-generating client libraries.
+
 ```bash
 curl -X GET "http://localhost:4500/api-docs/openapi.json"
+```
+**Example Response:**
+```json
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Axiom API",
+    "version": "1.0.0"
+  },
+  "paths": { ... }
+}
 ```
 
 ---
@@ -74,27 +126,46 @@ curl -X GET "http://localhost:4500/api-docs/openapi.json"
 ## Database API <code>/api/v1/db</code>
 
 ### 1. List Databases
+Returns all databases your API key has access to, including connection health and table counts. Health checks are cached for 5 seconds to minimize overhead.
+
 ```bash
 curl -X GET "http://localhost:4500/api/v1/db/databases" \
      -H "X-Axiom-Key: <TOKEN>"
 ```
-Returns all databases the key has access to with connection status and table count. Health checks are cached for 5 seconds.
+**Example Response:**
+```json
+{
+  "success": true,
+  "status": "ok"
+}
+```
 
 ### 2. List Tables (Paginated)
+Efficiently browse large database schemas using cursor-based pagination.
+
 ```bash
 # Initial request
 curl -X GET "http://localhost:4500/api/v1/db/main_db/tables?limit=50" \
      -H "X-Axiom-Key: <TOKEN>"
 
-# Subsequent pages
+# Next page
 curl -X GET "http://localhost:4500/api/v1/db/main_db/tables?limit=50&cursor=users_table" \
      -H "X-Axiom-Key: <TOKEN>"
 ```
+**Example Response:**
+```json
+{
+  "success": true,
+  "status": "ok"
+}
+```
 **Parameters:**
-- `limit` — Max tables per page (default 50, max 500)
-- `cursor` — Keyset cursor string returned from the previous page's `next_cursor` field. Omit for the first page.
+- `limit` — Maximum tables per page (default 50, max 500)
+- `cursor` — Keyset cursor from the previous page's `next_cursor` field. Omit for the first page.
 
 ### 3. Execute Raw SQL
+Run arbitrary SQL queries with parameter binding for security. Dangerous operations are blocked by the AST parser based on your configuration.
+
 > [!CAUTION]
 > Raw SQL is validated by AST parser. Dangerous operations blocked per config.
 
@@ -107,10 +178,28 @@ curl -X POST "http://localhost:4500/api/v1/db/main_db/query" \
            "params": {"id": 42}
          }'
 ```
+**Example Response:**
+```json
+{
+  "success": true,
+  "columns": ["id", "name", "email", "active"],
+  "rows": [
+    {
+      "id": 42,
+      "name": "Alice",
+      "email": "alice@example.com",
+      "active": true
+    }
+  ],
+  "affected_rows": null
+}
+```
 
 ### 4. Fetch Rows (Paginated)
+Ultra-fast cursor pagination for massive tables, with built-in filtering, sorting, and search.
+
 ```bash
-# Basic cursor pagination (ultra-fast for massive tables)
+# Basic cursor pagination with filtering
 curl -G "http://localhost:4500/api/v1/db/main_db/users/rows" \
      -H "X-Axiom-Key: <TOKEN>" \
      --data-urlencode "limit=50" \
@@ -126,20 +215,39 @@ curl -G "http://localhost:4500/api/v1/db/main_db/users/rows" \
      --data-urlencode "sort=id" \
      --data-urlencode "cursor=eyJ2IjogNDV9"
 ```
+**Example Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "rows": [
+      {"id": 43, "name": "Bob", "email": "bob@example.com"},
+      {"id": 44, "name": "Charlie", "email": "charlie@example.com"}
+    ],
+    "pagination": {
+      "limit": 50,
+      "has_more": false,
+      "next_cursor": null
+    }
+  }
+}
+```
 
 **Parameters:**
-- `cursor` — Keyset cursor string returned from the previous page's `next_cursor` field. Omit for the first page.
+- `cursor` — Keyset cursor from the previous page's `next_cursor` field. Omit for the first page.
 - `limit` — Rows per page (default 50)
-- `sort` — Column to sort by (validated against real table columns)
+- `sort` — Column to sort by (validated against actual table columns)
 - `order` — `asc` or `desc` (default `asc`)
-- `filter` — JSON filter object
-- `fields` — Comma-separated columns to return (validated against real table columns)
+- `filter` — JSON filter object (see Filter Syntax section)
+- `fields` — Comma-separated columns to return (validated against actual table columns)
 - `search` — Full-text search term
 - `search_fields` — Columns to search across
 - `count` — Set to `1` to include exact `total` in pagination (runs `SELECT COUNT(*)`)
   — Omit for faster responses (infers `has_more` from row count)
 
 ### 5. Insert Rows
+Insert one or more rows into a table with a single request.
+
 ```bash
 curl -X POST "http://localhost:4500/api/v1/db/main_db/users/rows" \
      -H "X-Axiom-Key: <TOKEN>" \
@@ -148,8 +256,17 @@ curl -X POST "http://localhost:4500/api/v1/db/main_db/users/rows" \
            "rows": [{"name": "Alice", "active": true}]
          }'
 ```
+**Example Response:**
+```json
+{
+  "success": true,
+  "affected_rows": 1
+}
+```
 
 ### 6. Update Rows
+Update rows that match a given filter condition.
+
 ```bash
 curl -X PATCH "http://localhost:4500/api/v1/db/main_db/users/rows" \
      -H "X-Axiom-Key: <TOKEN>" \
@@ -159,8 +276,17 @@ curl -X PATCH "http://localhost:4500/api/v1/db/main_db/users/rows" \
            "update": {"active": false}
          }'
 ```
+**Example Response:**
+```json
+{
+  "success": true,
+  "affected_rows": 1
+}
+```
 
 ### 7. Delete Rows
+Delete rows that match a given filter condition.
+
 ```bash
 curl -X DELETE "http://localhost:4500/api/v1/db/main_db/users/rows" \
      -H "X-Axiom-Key: <TOKEN>" \
@@ -169,9 +295,16 @@ curl -X DELETE "http://localhost:4500/api/v1/db/main_db/users/rows" \
            "filter": {"id": 42}
          }'
 ```
+**Example Response:**
+```json
+{
+  "success": true,
+  "affected_rows": 1
+}
+```
 
 ### 8. Migrations
-Axiom provides an automated API-first migration engine that executes SQL migrations found in your server's `migrations/<alias>/` directory against the connected database pool.
+API-first migration engine that executes SQL migrations from your server's `migrations/<alias>/` directory.
 
 > [!CAUTION]
 > `POST /migrations` (apply) requires a **full admin** API key (`full_admin = true` in `config.toml`). Regular and read-only keys will receive a `403 Forbidden` response.
@@ -188,8 +321,22 @@ curl -X GET "http://localhost:4500/api/v1/db/main_db/migrations" \
 curl -X POST "http://localhost:4500/api/v1/db/main_db/migrations" \
      -H "X-Axiom-Key: <TOKEN>"
 ```
+**Example Response:**
+```json
+{
+  "success": true,
+  "migrations": [
+    {
+      "version": "20260101000000",
+      "description": "init",
+      "status": "applied",
+      "applied_at": "2026-06-21T10:00:00Z"
+    }
+  ]
+}
+```
 
-Using the **Client SDKs**:
+**Using the Client SDKs:**
 ```typescript
 // TypeScript
 const history = await client.db.listMigrations("main_db");
@@ -206,11 +353,23 @@ applied = await client.db.apply_migrations("main_db")
 ## Storage API <code>/api/v1/fs</code>
 
 ### 1. List Storages
+Returns all storage volumes your API key has access to.
+
 ```bash
 curl -X GET "http://localhost:4500/api/v1/fs/storages" \
      -H "X-Axiom-Key: <TOKEN>"
 ```
+**Example Response:**
+```json
+{
+  "success": true,
+  "status": "ok"
+}
+```
+
 ### 2. List Folder
+Browse directories with optional recursive traversal and cursor pagination.
+
 ```bash
 # Flat listing (default)
 curl -X GET "http://localhost:4500/api/v1/fs/local_fs/list?path=/subfolder&limit=50" \
@@ -220,23 +379,54 @@ curl -X GET "http://localhost:4500/api/v1/fs/local_fs/list?path=/subfolder&limit
 curl -X GET "http://localhost:4500/api/v1/fs/local_fs/list?path=/&recursive=true&limit=100" \
      -H "X-Axiom-Key: <TOKEN>"
 
-# Pagination next page
+# Next page
 curl -X GET "http://localhost:4500/api/v1/fs/local_fs/list?path=/&limit=100&continuation_token=ZmlsZV8xMDAubXA0" \
      -H "X-Axiom-Key: <TOKEN>"
 ```
+**Example Response:**
+```json
+{
+  "success": true,
+  "storage": "local_uploads",
+  "path": "/",
+  "items": [
+    {
+      "name": "document.pdf",
+      "type": "file",
+      "size_bytes": 1024500,
+      "size_human": "1.02 MB",
+      "mime_type": "application/pdf",
+      "last_modified": "2026-06-21T12:00:00Z"
+    },
+    {
+      "name": "images",
+      "type": "directory",
+      "item_count": 12,
+      "last_modified": "2026-06-21T12:05:00Z"
+    }
+  ],
+  "pagination": {
+    "is_truncated": false,
+    "limit": 100,
+    "next_continuation_token": null
+  }
+}
+```
 
 **Parameters:**
-- `path` - Directory path (default `/`)
-- `limit` - Max items per page (default 100, max 1000)
-- `continuation_token` - Token returned from a previous response to fetch the next page
-- `recursive` - Set to `true` to include all subdirectory contents (depth-first)
+- `path` — Directory path (default `/`)
+- `limit` — Maximum items per page (default 100, max 1000)
+- `continuation_token` — Token from a previous response to fetch the next page
+- `recursive` — Set to `true` to include all subdirectory contents (depth-first)
 
 ### 3. Download / Stream File or Folder
+
+Stream files, transform images, serve videos with Range support, or download entire folders as ZIP archives.
 
 > **Security Notice:** All files are served with `Content-Disposition: attachment` to prevent browser execution of uploaded HTML/JS files (stored XSS prevention). Files always download — they are never rendered inline by the browser.
 
 ```bash
-# Download a file (always force-download)
+# Download a file (force-download by default)
 curl -X GET "http://localhost:4500/api/v1/fs/local_fs/download?path=/image.png" \
      -H "X-Axiom-Key: <TOKEN>" -o image.png
 
@@ -270,6 +460,7 @@ curl -I "http://localhost:4500/api/v1/fs/local_fs/download?path=/video.mp4" \
 curl -X GET "http://localhost:4500/api/v1/fs/local_fs/download?path=/reports_folder" \
      -H "X-Axiom-Key: <TOKEN>" -o reports.zip
 ```
+**Response:** Raw binary file data with appropriate `Content-Type` and `Content-Disposition: attachment` headers.
 
 **Image Transform Parameters:**
 
@@ -277,13 +468,19 @@ curl -X GET "http://localhost:4500/api/v1/fs/local_fs/download?path=/reports_fol
 |-----------|------|---------|-------------|
 | `width` | int | — | Target width in pixels |
 | `height` | int | — | Target height in pixels |
-| `fit` | string | `contain` | `contain` (aspect-ratio preserve) \| `cover` (crop to fill) \| `fill` (stretch) |
+| `fit` | string | `contain` | `contain` (preserve aspect ratio) \| `cover` (crop to fill) \| `fill` (stretch) |
 | `format` | string | auto | Force output format: `jpeg`, `webp`, `avif`, `png` |
 | `quality` | int (1–100) | `82` | Compression quality for JPEG/WebP/AVIF |
 
+> [!TIP]
+> If you send `Accept: image/avif,image/webp` in your request headers and don't force a `?format=`, Axiom automatically picks the **best format your client supports** (AVIF → WebP → original). This is exactly how modern CDNs like Cloudflare Images work.
+
+> [!NOTE]
+> **Video Streaming**: All video and audio files are served with full `HTTP Range` support (`206 Partial Content`). Browser `<video>` and `<audio>` tags work out-of-the-box. Safari/iOS pre-flight `HEAD` requests are fully supported.
+
 ### 4. Presigned URLs
 
-Presigned URLs allow you to grant secure, time-limited, direct access to files in your storage volumes from frontend clients (like web browsers or mobile apps) without needing to expose backend API keys or implement proxy streaming routes.
+Generate secure, time-limited URLs for direct client access without exposing backend API keys.
 
 **Generate a Presigned URL:**
 ```bash
@@ -296,8 +493,7 @@ curl -X POST "http://localhost:4500/api/v1/fs/local_fs/presign" \
        "expires_in": 3600
      }'
 ```
-
-**Response:**
+**Example Response:**
 ```json
 {
   "success": true,
@@ -310,9 +506,9 @@ curl -X POST "http://localhost:4500/api/v1/fs/local_fs/presign" \
 }
 ```
 
-The returned `url` can be safely sent to the client and accessed without any HTTP Authorization headers until it expires.
+The returned `url` can be safely sent to clients and accessed without any HTTP Authorization headers until it expires.
 
-Using the **Client SDKs**:
+**Using the Client SDKs:**
 ```typescript
 // JavaScript/TypeScript
 const url = await client.fs.generatePresignedUrl("local_fs", "/reports/Q1.pdf", "GET", 3600);
@@ -323,14 +519,9 @@ const url = await client.fs.generatePresignedUrl("local_fs", "/reports/Q1.pdf", 
 url = await client.fs.generate_presigned_url("local_fs", "/reports/Q1.pdf", "GET", 3600)
 ```
 
-> [!TIP]
-> If you send `Accept: image/avif,image/webp` in your request headers and don't force a `?format=`, Axiom automatically picks the **best format your client supports** (AVIF → WebP → original). This is exactly how modern CDNs like Cloudflare Images work.
-
-> [!NOTE]
-> **Video Streaming**: All video and audio files are served with full `HTTP Range` support (`206 Partial Content`). Browser `<video>` and `<audio>` tags work out-of-the-box. Safari/iOS pre-flight `HEAD` requests are also fully supported.
-
-
 ### 5. Direct Upload (Small Files)
+Upload files under 100MB in a single HTTP request.
+
 ```bash
 curl -X POST "http://localhost:4500/api/v1/fs/local_fs/upload" \
      -H "X-Axiom-Key: <TOKEN>" \
@@ -338,17 +529,45 @@ curl -X POST "http://localhost:4500/api/v1/fs/local_fs/upload" \
      -F "path=/uploads/file.txt" \
      -F "file=@/path/to/local/file.txt"
 ```
+**Example Response:**
+```json
+{
+  "success": true,
+  "path": "/uploads/file.txt",
+  "size_bytes": 1024,
+  "message": "File uploaded successfully"
+}
+```
 
 ### 6. Chunked Upload (Large Files)
+Upload large files (>100MB) reliably with resumable chunked transfer.
+
 ```bash
-# Step 1: Initiate
+# Step 1: Initiate upload session
 curl -X POST "http://localhost:4500/api/v1/fs/local_fs/upload" \
      -H "X-Axiom-Key: <TOKEN>" \
      -H "Content-Type: application/json" \
-     -d '{"action":"initiate", "filename":"video.mp4", "path":"/uploads/video.mp4", "total_size":104857600, "checksum_sha256":"abc123..."}'
-# Note the `upload_id` returned
+     -d '{
+       "action":"initiate",
+       "filename":"video.mp4",
+       "path":"/uploads/video.mp4",
+       "total_size":104857600,
+       "checksum_sha256":"abc123..."
+     }'
+```
+**Example Response:**
+```json
+{
+  "success": true,
+  "upload_id": "upl_a0e4b9f125764d789340f007772e480c",
+  "chunk_size": 10485760,
+  "total_chunks": 10,
+  "chunks": []
+}
+```
 
-# Step 2: Upload Chunks
+```bash
+# Step 2: Upload chunks
 curl -X POST "http://localhost:4500/api/v1/fs/local_fs/upload" \
      -H "X-Axiom-Key: <TOKEN>" \
      -F "action=chunk" \
@@ -357,7 +576,7 @@ curl -X POST "http://localhost:4500/api/v1/fs/local_fs/upload" \
      -F "chunk_hash=sha256_of_chunk" \
      -F "file=@chunk0.bin"
 
-# Step 3: Finalize
+# Step 3: Finalize upload
 curl -X POST "http://localhost:4500/api/v1/fs/local_fs/upload" \
      -H "X-Axiom-Key: <TOKEN>" \
      -H "Content-Type: application/json" \
@@ -366,7 +585,7 @@ curl -X POST "http://localhost:4500/api/v1/fs/local_fs/upload" \
 
 ### 7. File Actions
 
-All file actions are sent as `POST` requests to `/{alias}/action` with a JSON body containing the `action` field.
+Execute file operations like rename, move, copy, delete, and more.
 
 > [!NOTE]
 > The `info` and `exists` actions are available to **read-only** API keys. All other actions require `readwrite` or `writeonly` mode.
@@ -382,6 +601,13 @@ curl -X POST "http://localhost:4500/api/v1/fs/local_fs/action" \
            "target": "/new.txt"
          }'
 ```
+**Example Response:**
+```json
+{
+  "success": true,
+  "status": "ok"
+}
+```
 
 | Action | Description |
 |--------|-------------|
@@ -396,6 +622,13 @@ curl -X POST "http://localhost:4500/api/v1/fs/local_fs/action" \
      -H "Content-Type: application/json" \
      -d '{"action": "delete", "source": "/unwanted.txt"}'
 ```
+**Example Response:**
+```json
+{
+  "success": true,
+  "status": "ok"
+}
+```
 
 #### Create Directory
 ```bash
@@ -404,25 +637,51 @@ curl -X POST "http://localhost:4500/api/v1/fs/local_fs/action" \
      -H "Content-Type: application/json" \
      -d '{"action": "mkdir", "source": "/new_folder"}'
 ```
+**Example Response:**
+```json
+{
+  "success": true,
+  "status": "ok"
+}
+```
 
 #### File Info
 Returns detailed metadata: name, type, size, human-readable size, MIME type, timestamps, and item count for directories.
+
 ```bash
 curl -X POST "http://localhost:4500/api/v1/fs/local_fs/action" \
      -H "X-Axiom-Key: <TOKEN>" \
      -H "Content-Type: application/json" \
      -d '{"action": "info", "source": "/reports/Q1.pdf"}'
 ```
+**Example Response:**
+```json
+{
+  "success": true,
+  "status": "ok"
+}
+```
+
 #### Check Existence
 Lightweight boolean check — does not transfer file data.
+
 ```bash
 curl -X POST "http://localhost:4500/api/v1/fs/local_fs/action" \
      -H "X-Axiom-Key: <TOKEN>" \
      -H "Content-Type: application/json" \
      -d '{"action": "exists", "source": "/config/app.yml"}'
 ```
+**Example Response:**
+```json
+{
+  "success": true,
+  "status": "ok"
+}
+```
+
 #### Bulk Delete
 Delete multiple files/directories in a single request. Each item reports its own success/failure status.
+
 ```bash
 curl -X POST "http://localhost:4500/api/v1/fs/local_fs/action" \
      -H "X-Axiom-Key: <TOKEN>" \
@@ -432,8 +691,17 @@ curl -X POST "http://localhost:4500/api/v1/fs/local_fs/action" \
            "sources": ["/tmp/old1.log", "/tmp/old2.log", "/tmp/cache"]
          }'
 ```
+**Example Response:**
+```json
+{
+  "success": true,
+  "status": "ok"
+}
+```
+
 #### Bulk Move
 Move multiple files/directories in a single request. Provide an `operations` array of `{source, target}` pairs.
+
 ```bash
 curl -X POST "http://localhost:4500/api/v1/fs/local_fs/action" \
      -H "X-Axiom-Key: <TOKEN>" \
@@ -446,6 +714,14 @@ curl -X POST "http://localhost:4500/api/v1/fs/local_fs/action" \
            ]
          }'
 ```
+**Example Response:**
+```json
+{
+  "success": true,
+  "status": "ok"
+}
+```
+
 ---
 
 ## Auth API <code>/api/v1/auth/{project_id}</code>
@@ -461,20 +737,26 @@ The `{project_id}` is your API key name (as defined in `config.toml` under `[api
 
 ### OAuth 2.0 (Social Login)
 
-Axiom supports native OAuth 2.0 social login for **Google** and **GitHub**. The flow is a standard redirect-based authorization code exchange.
+Axiom supports native OAuth 2.0 social login for **Google** and **GitHub** using a standard redirect-based authorization code flow.
 
 > [!NOTE]
-> OAuth must be enabled per-project in `config.toml` under `[auth.project.<id>.oauth_google]` and `[auth.project.<id>.oauth_github]`. The `redirect_uri` you configure there must match what you register in your OAuth provider's console.
+> OAuth must be enabled per-project in `config.toml` under `[auth.project.<id>.oauth_google]` and `[auth.project.<id>.oauth_github]`. The `redirect_uri` you configure must match what you register in your OAuth provider's console.
 
 **Step 1 — Get the redirect URL (from your backend):**
 ```bash
 curl -X POST "http://localhost:4500/api/v1/auth/my_project/oauth/google/url" \
      -H "X-Axiom-Key: <API_KEY_TOKEN>"
 ```
-**Response:**
+**Example Response:**
 ```json
-{ "success": true, "data": { "url": "https://accounts.google.com/o/oauth2/auth?client_id=..." } }
+{
+  "success": true,
+  "data": {
+    "url": "https://accounts.google.com/o/oauth2/auth?client_id=..."
+  }
+}
 ```
+
 Redirect the user's browser to the returned `url`.
 
 **Step 2 — Handle the callback (Axiom handles this automatically):**
@@ -491,8 +773,16 @@ Axiom exchanges the code for a user profile, creates or links the account, and r
 
 #### GET `/.well-known/jwks.json`
 Returns the Ed25519 public key as a JSON Web Key Set for external JWT verification.
+
 ```bash
 curl -X GET "http://localhost:4500/api/v1/auth/my_project/.well-known/jwks.json"
+```
+**Example Response:**
+```json
+{
+  "success": true,
+  "status": "ok"
+}
 ```
 
 ---
@@ -500,13 +790,33 @@ curl -X GET "http://localhost:4500/api/v1/auth/my_project/.well-known/jwks.json"
 ### Signup & Login
 
 #### POST `/signup`
-Create a new user with email and password.
+Create a new user account with email and password.
+
 ```bash
 curl -X POST "http://localhost:4500/api/v1/auth/my_project/signup" \
      -H "X-Axiom-Key: <API_KEY_TOKEN>" \
      -H "Content-Type: application/json" \
      -d '{"email": "user@example.com", "password": "SecurePassword123"}'
 ```
+**Example Response:**
+```json
+{
+  "success": true,
+  "access_token": "eyJ0eXAiOiJKV1...",
+  "refresh_token": "0Otkp57CuqH...",
+  "expires_in": 3600,
+  "user": {
+    "uid": "7bad1fdf-5e52-419f-805b-b3bee397624c",
+    "email": "user@example.com",
+    "email_verified": 0,
+    "is_anonymous": 0,
+    "totp_enabled": 0,
+    "disabled": 0,
+    "created_at": "2026-06-21T22:58:09.376Z"
+  }
+}
+```
+
 #### POST `/login`
 Authenticate with email and password.
 
@@ -516,10 +826,29 @@ curl -X POST "http://localhost:4500/api/v1/auth/my_project/login" \
      -H "Content-Type: application/json" \
      -d '{"email":"test@example.com", "password":"StrongPassword123!"}'
 ```
+**Example Response:**
+```json
+{
+  "success": true,
+  "access_token": "eyJ0eXAiOiJKV1...",
+  "refresh_token": "SZAPYFAGp25...",
+  "expires_in": 3600,
+  "user": {
+    "uid": "7bad1fdf-5e52-419f-805b-b3bee397624c",
+    "email": "test@example.com",
+    "last_sign_in": "2026-06-21T22:58:09.379Z",
+    "sign_in_count": 1
+  }
+}
+```
 
-### 5. WebAuthn (Passkeys)
+If TOTP is enrolled, the response includes `"totp_required": true` and a one-time `session_token` to be exchanged via `/totp/verify`.
 
-Axiom supports passwordless biometrics via the W3C WebAuthn standard.
+---
+
+### WebAuthn (Passkeys)
+
+Axiom supports passwordless biometric authentication via the W3C WebAuthn standard.
 
 #### Register a Passkey
 1. Generate options: `POST /api/v1/auth/{project_id}/webauthn/register/options` (Requires JWT)
@@ -529,26 +858,51 @@ Axiom supports passwordless biometrics via the W3C WebAuthn standard.
 1. Generate options: `POST /api/v1/auth/{project_id}/webauthn/login/options`
 2. Verify & Login: `POST /api/v1/auth/{project_id}/webauthn/login/verify` (Returns Access & Refresh tokens)
 
-### 6. Refresh Token
-If TOTP is enrolled, the response includes `"totp_required": true` and a one-time `session_token` to be exchanged via `/totp/verify`.
+---
+
+### Refresh Token
 
 #### POST `/refresh`
 Exchange a valid refresh token for a new access token.
+
 ```bash
 curl -X POST "http://localhost:4500/api/v1/auth/my_project/refresh" \
      -H "X-Axiom-Key: <API_KEY_TOKEN>" \
      -H "Content-Type: application/json" \
      -d '{"refresh_token": "rt_abc123"}'
 ```
+**Example Response:**
+```json
+{
+  "success": true,
+  "access_token": "eyJ0eXAiOiJKV1...",
+  "refresh_token": "v5EMND4E4uw...",
+  "expires_in": 3600,
+  "user": {
+    "uid": "7bad1fdf-5e52-419f-805b-b3bee397624c",
+    "email": "test@example.com",
+    "last_sign_in": "2026-06-21T22:58:09.752Z",
+    "sign_in_count": 2
+  }
+}
+```
 
 #### POST `/logout`
 Revoke the current session's refresh token.
+
 ```bash
 curl -X POST "http://localhost:4500/api/v1/auth/my_project/logout" \
      -H "X-Axiom-Key: <API_KEY_TOKEN>" \
      -H "X-User-Access-Token: <USER_ACCESS_TOKEN>" \
      -H "Content-Type: application/json" \
      -d '{"refresh_token": "rt_abc123"}'
+```
+**Example Response:**
+```json
+{
+  "success": true,
+  "status": "ok"
+}
 ```
 
 ---
@@ -557,18 +911,44 @@ curl -X POST "http://localhost:4500/api/v1/auth/my_project/logout" \
 
 #### GET `/user/sessions`
 List all active sessions for the authenticated user.
+
 ```bash
 curl -X GET "http://localhost:4500/api/v1/auth/my_project/user/sessions" \
      -H "X-Axiom-Key: <API_KEY_TOKEN>" \
      -H "X-User-Access-Token: <USER_ACCESS_TOKEN>"
 ```
+**Example Response:**
+```json
+{
+  "success": true,
+  "sessions": [
+    {
+      "id": "4ffad566-8685-4b8f-a736-e1b947a0b52f",
+      "family_id": "9c7fed3a-467b-4006-bff7-f655223cb595",
+      "ip_address": "127.0.0.1",
+      "user_agent": "Go-http-client/1.1",
+      "device_name": null,
+      "created_at": "2026-06-21T22:58:09.379Z",
+      "expires_at": "2026-06-28T22:58:09.000Z"
+    }
+  ]
+}
+```
 
 #### DELETE `/user/sessions/{session_id}`
 Revoke a specific session by ID.
+
 ```bash
 curl -X DELETE "http://localhost:4500/api/v1/auth/my_project/user/sessions/sess_abc123" \
      -H "X-Axiom-Key: <API_KEY_TOKEN>" \
      -H "X-User-Access-Token: <USER_ACCESS_TOKEN>"
+```
+**Example Response:**
+```json
+{
+  "success": true,
+  "status": "ok"
+}
 ```
 
 ---
@@ -577,19 +957,43 @@ curl -X DELETE "http://localhost:4500/api/v1/auth/my_project/user/sessions/sess_
 
 #### POST `/anonymous`
 Create a temporary anonymous session (requires `anonymous_auth = true` in config).
+
 ```bash
 curl -X POST "http://localhost:4500/api/v1/auth/my_project/anonymous" \
      -H "X-Axiom-Key: <API_KEY_TOKEN>"
 ```
+**Example Response:**
+```json
+{
+  "success": true,
+  "access_token": "eyJ0eXAiOiJKV1...",
+  "refresh_token": "hXEI9WEIZDB...",
+  "expires_in": 3600,
+  "user": {
+    "uid": "ba22ba1e-ed31-4615-9631-b8ab6d958dea",
+    "is_anonymous": 1,
+    "email_verified": 0,
+    "created_at": "2026-06-21T22:58:09.755Z"
+  }
+}
+```
 
 #### POST `/anonymous/upgrade`
 Convert an anonymous account to a permanent account with email and password.
+
 ```bash
 curl -X POST "http://localhost:4500/api/v1/auth/my_project/anonymous/upgrade" \
      -H "X-Axiom-Key: <API_KEY_TOKEN>" \
      -H "X-User-Access-Token: <USER_ACCESS_TOKEN>" \
      -H "Content-Type: application/json" \
      -d '{"email": "user@example.com", "password": "SecurePassword123"}'
+```
+**Example Response:**
+```json
+{
+  "success": true,
+  "status": "ok"
+}
 ```
 
 ---
@@ -598,20 +1002,37 @@ curl -X POST "http://localhost:4500/api/v1/auth/my_project/anonymous/upgrade" \
 
 #### POST `/verify/email`
 Request a new verification email to be sent.
+
 ```bash
 curl -X POST "http://localhost:4500/api/v1/auth/my_project/verify/email" \
      -H "X-Axiom-Key: <API_KEY_TOKEN>" \
      -H "X-User-Access-Token: <USER_ACCESS_TOKEN>"
 ```
+**Example Response:**
+```json
+{
+  "success": true,
+  "status": "ok"
+}
+```
 
 #### GET `/verify?token=<TOKEN>`
 Verify an email address via a token link (used when `verification_method = "token"`).
+
 ```bash
 curl -X GET "http://localhost:4500/api/v1/auth/my_project/verify?token=abc123"
+```
+**Example Response:**
+```json
+{
+  "success": true,
+  "status": "Email verified successfully"
+}
 ```
 
 #### POST `/verify/otp`
 Verify an email address using a numeric OTP (used when `verification_method = "otp"`).
+
 ```bash
 curl -X POST "http://localhost:4500/api/v1/auth/my_project/verify/otp" \
      -H "X-Axiom-Key: <API_KEY_TOKEN>" \
@@ -619,22 +1040,46 @@ curl -X POST "http://localhost:4500/api/v1/auth/my_project/verify/otp" \
      -H "Content-Type: application/json" \
      -d '{"code": "482910"}'
 ```
+**Example Response:**
+```json
+{
+  "success": true,
+  "status": "OTP verified successfully"
+}
+```
 
 #### POST `/otp/send`
 Manually trigger a new OTP to be sent to the user's email.
+
 ```bash
 curl -X POST "http://localhost:4500/api/v1/auth/my_project/otp/send" \
      -H "X-Axiom-Key: <API_KEY_TOKEN>" \
      -H "X-User-Access-Token: <USER_ACCESS_TOKEN>"
 ```
+**Example Response:**
+```json
+{
+  "success": true,
+  "status": "ok",
+  "message": "If account exists, OTP sent"
+}
+```
 
 #### POST `/resend`
 Re-send the verification email (subject to `resend_cooldown`).
+
 ```bash
 curl -X POST "http://localhost:4500/api/v1/auth/my_project/resend" \
      -H "X-Axiom-Key: <API_KEY_TOKEN>" \
      -H "Content-Type: application/json" \
      -d '{"email": "user@example.com"}'
+```
+**Example Response:**
+```json
+{
+  "success": true,
+  "status": "ok"
+}
 ```
 
 ---
@@ -643,20 +1088,36 @@ curl -X POST "http://localhost:4500/api/v1/auth/my_project/resend" \
 
 #### POST `/magic-link`
 Send a magic login link to the user's email.
+
 ```bash
 curl -X POST "http://localhost:4500/api/v1/auth/my_project/magic-link" \
      -H "X-Axiom-Key: <API_KEY_TOKEN>" \
      -H "Content-Type: application/json" \
      -d '{"email": "user@example.com"}'
 ```
+**Example Response:**
+```json
+{
+  "success": true,
+  "status": "ok"
+}
+```
 
 #### POST `/magic-link/verify`
 Exchange a magic link token for a full session (access + refresh tokens).
+
 ```bash
 curl -X POST "http://localhost:4500/api/v1/auth/my_project/magic-link/verify" \
      -H "X-Axiom-Key: <API_KEY_TOKEN>" \
      -H "Content-Type: application/json" \
      -d '{"token": "ml_abc123"}'
+```
+**Example Response:**
+```json
+{
+  "success": true,
+  "status": "ok"
+}
 ```
 
 ---
@@ -665,20 +1126,36 @@ curl -X POST "http://localhost:4500/api/v1/auth/my_project/magic-link/verify" \
 
 #### POST `/password/forgot`
 Trigger a password reset email.
+
 ```bash
 curl -X POST "http://localhost:4500/api/v1/auth/my_project/password/forgot" \
      -H "X-Axiom-Key: <API_KEY_TOKEN>" \
      -H "Content-Type: application/json" \
      -d '{"email": "user@example.com"}'
 ```
+**Example Response:**
+```json
+{
+  "success": true,
+  "status": "ok"
+}
+```
 
 #### POST `/password/reset`
 Reset password using a token from the reset email.
+
 ```bash
 curl -X POST "http://localhost:4500/api/v1/auth/my_project/password/reset" \
      -H "X-Axiom-Key: <API_KEY_TOKEN>" \
      -H "Content-Type: application/json" \
      -d '{"token": "rst_abc123", "new_password": "NewSecurePass456"}'
+```
+**Example Response:**
+```json
+{
+  "success": true,
+  "status": "ok"
+}
 ```
 
 ---
@@ -687,13 +1164,23 @@ curl -X POST "http://localhost:4500/api/v1/auth/my_project/password/reset" \
 
 #### POST `/totp/enroll`
 Begin TOTP enrollment. Returns a TOTP secret, QR code SVG, and provisioning URI.
+
 ```bash
 curl -X POST "http://localhost:4500/api/v1/auth/my_project/totp/enroll" \
      -H "X-Axiom-Key: <API_KEY_TOKEN>" \
      -H "X-User-Access-Token: <USER_ACCESS_TOKEN>"
 ```
+**Example Response:**
+```json
+{
+  "success": true,
+  "status": "ok"
+}
+```
+
 #### POST `/totp/confirm`
 Confirm TOTP enrollment by providing the first valid code from the Authenticator app. Returns one-time backup codes.
+
 ```bash
 curl -X POST "http://localhost:4500/api/v1/auth/my_project/totp/confirm" \
      -H "X-Axiom-Key: <API_KEY_TOKEN>" \
@@ -701,18 +1188,34 @@ curl -X POST "http://localhost:4500/api/v1/auth/my_project/totp/confirm" \
      -H "Content-Type: application/json" \
      -d '{"code": "123456"}'
 ```
+**Example Response:**
+```json
+{
+  "success": true,
+  "status": "ok"
+}
+```
 
 #### POST `/totp/verify`
 Provide a TOTP code to complete a login that had `"totp_required": true`.
+
 ```bash
 curl -X POST "http://localhost:4500/api/v1/auth/my_project/totp/verify" \
      -H "X-Axiom-Key: <API_KEY_TOKEN>" \
      -H "Content-Type: application/json" \
      -d '{"session_token": "sess_tmp_abc", "code": "123456"}'
 ```
+**Example Response:**
+```json
+{
+  "success": true,
+  "status": "ok"
+}
+```
 
 #### POST `/totp/disable`
 Disable TOTP for the authenticated user (requires current password confirmation).
+
 ```bash
 curl -X POST "http://localhost:4500/api/v1/auth/my_project/totp/disable" \
      -H "X-Axiom-Key: <API_KEY_TOKEN>" \
@@ -720,22 +1223,45 @@ curl -X POST "http://localhost:4500/api/v1/auth/my_project/totp/disable" \
      -H "Content-Type: application/json" \
      -d '{"password": "CurrentPassword123"}'
 ```
+**Example Response:**
+```json
+{
+  "success": true,
+  "status": "ok"
+}
+```
 
 #### POST `/totp/backup/verify`
 Use one of the one-time backup codes to authenticate when the Authenticator app is unavailable.
+
 ```bash
 curl -X POST "http://localhost:4500/api/v1/auth/my_project/totp/backup/verify" \
      -H "X-Axiom-Key: <API_KEY_TOKEN>" \
      -H "Content-Type: application/json" \
      -d '{"session_token": "sess_tmp_abc", "backup_code": "ABCD-EFGH"}'
 ```
+**Example Response:**
+```json
+{
+  "success": true,
+  "status": "ok"
+}
+```
 
 #### GET `/totp/backup/regenerate`
 Regenerate a fresh set of backup codes (invalidates all previous ones).
+
 ```bash
 curl -X GET "http://localhost:4500/api/v1/auth/my_project/totp/backup/regenerate" \
      -H "X-Axiom-Key: <API_KEY_TOKEN>" \
      -H "X-User-Access-Token: <USER_ACCESS_TOKEN>"
+```
+**Example Response:**
+```json
+{
+  "success": true,
+  "status": "ok"
+}
 ```
 
 ---
@@ -744,13 +1270,23 @@ curl -X GET "http://localhost:4500/api/v1/auth/my_project/totp/backup/regenerate
 
 #### GET `/user`
 Get the currently authenticated user's profile.
+
 ```bash
 curl -X GET "http://localhost:4500/api/v1/auth/my_project/user" \
      -H "X-Axiom-Key: <API_KEY_TOKEN>" \
      -H "X-User-Access-Token: <USER_ACCESS_TOKEN>"
 ```
+**Example Response:**
+```json
+{
+  "success": true,
+  "status": "ok"
+}
+```
+
 #### PATCH `/user`
 Update profile metadata (display name, custom fields, etc.).
+
 ```bash
 curl -X PATCH "http://localhost:4500/api/v1/auth/my_project/user" \
      -H "X-Axiom-Key: <API_KEY_TOKEN>" \
@@ -758,9 +1294,17 @@ curl -X PATCH "http://localhost:4500/api/v1/auth/my_project/user" \
      -H "Content-Type: application/json" \
      -d '{"metadata": {"display_name": "Alice"}}'
 ```
+**Example Response:**
+```json
+{
+  "success": true,
+  "status": "ok"
+}
+```
 
 #### DELETE `/user`
 Permanently delete the authenticated user's account (requires password confirmation).
+
 ```bash
 curl -X DELETE "http://localhost:4500/api/v1/auth/my_project/user" \
      -H "X-Axiom-Key: <API_KEY_TOKEN>" \
@@ -768,9 +1312,17 @@ curl -X DELETE "http://localhost:4500/api/v1/auth/my_project/user" \
      -H "Content-Type: application/json" \
      -d '{"password": "CurrentPassword123"}'
 ```
+**Example Response:**
+```json
+{
+  "success": true,
+  "status": "ok"
+}
+```
 
 #### POST `/user/email`
 Request an email address change. Sends a confirmation link to the new address.
+
 ```bash
 curl -X POST "http://localhost:4500/api/v1/auth/my_project/user/email" \
      -H "X-Axiom-Key: <API_KEY_TOKEN>" \
@@ -778,24 +1330,47 @@ curl -X POST "http://localhost:4500/api/v1/auth/my_project/user/email" \
      -H "Content-Type: application/json" \
      -d '{"new_email": "newemail@example.com", "password": "CurrentPassword123"}'
 ```
+**Example Response:**
+```json
+{
+  "success": true,
+  "status": "ok"
+}
+```
 
 #### POST `/user/email/confirm`
 Confirm the new email address using the token from the change email link.
+
 ```bash
 curl -X POST "http://localhost:4500/api/v1/auth/my_project/user/email/confirm" \
      -H "X-Axiom-Key: <API_KEY_TOKEN>" \
      -H "Content-Type: application/json" \
      -d '{"token": "ec_abc123"}'
 ```
+**Example Response:**
+```json
+{
+  "success": true,
+  "status": "ok"
+}
+```
 
 #### POST `/user/password`
 Change the authenticated user's password.
+
 ```bash
 curl -X POST "http://localhost:4500/api/v1/auth/my_project/user/password" \
      -H "X-Axiom-Key: <API_KEY_TOKEN>" \
      -H "X-User-Access-Token: <USER_ACCESS_TOKEN>" \
      -H "Content-Type: application/json" \
      -d '{"current_password": "OldPass123", "new_password": "NewPass456"}'
+```
+**Example Response:**
+```json
+{
+  "success": true,
+  "status": "ok"
+}
 ```
 
 ---
@@ -807,102 +1382,198 @@ curl -X POST "http://localhost:4500/api/v1/auth/my_project/user/password" \
 
 #### GET `/admin/users`
 List all users in the project (cursor paginated).
+
 ```bash
 # Initial request
 curl -X GET "http://localhost:4500/api/v1/auth/my_project/admin/users?limit=50" \
      -H "X-Axiom-Key: <ADMIN_TOKEN>"
 
-# Subsequent pages (use next_cursor from response)
+# Next page (use next_cursor from response)
 curl -X GET "http://localhost:4500/api/v1/auth/my_project/admin/users?limit=50&cursor=2026-06-01T12:00:00Z" \
      -H "X-Axiom-Key: <ADMIN_TOKEN>"
+```
+**Example Response:**
+```json
+{
+  "success": true,
+  "status": "ok"
+}
 ```
 
 #### GET `/admin/users/{uid}`
 Get a specific user by UID.
+
 ```bash
 curl -X GET "http://localhost:4500/api/v1/auth/my_project/admin/users/user_uid" \
      -H "X-Axiom-Key: <ADMIN_TOKEN>"
 ```
+**Example Response:**
+```json
+{
+  "success": true,
+  "status": "ok"
+}
+```
 
 #### PATCH `/admin/users/{uid}`
 Update a user's properties (disable/enable account, update metadata, set role, etc.).
+
 ```bash
 curl -X PATCH "http://localhost:4500/api/v1/auth/my_project/admin/users/user_uid" \
      -H "X-Axiom-Key: <ADMIN_TOKEN>" \
      -H "Content-Type: application/json" \
      -d '{"disabled": true}'
 ```
+**Example Response:**
+```json
+{
+  "success": true,
+  "status": "ok"
+}
+```
 
 #### DELETE `/admin/users/{uid}`
 Permanently delete a user by UID.
+
 ```bash
 curl -X DELETE "http://localhost:4500/api/v1/auth/my_project/admin/users/user_uid" \
      -H "X-Axiom-Key: <ADMIN_TOKEN>"
 ```
+**Example Response:**
+```json
+{
+  "success": true,
+  "status": "ok"
+}
+```
 
 #### POST `/admin/users/{uid}/sessions/revoke`
 Revoke all active sessions for a specific user (force sign-out everywhere).
+
 ```bash
 curl -X POST "http://localhost:4500/api/v1/auth/my_project/admin/users/user_uid/sessions/revoke" \
      -H "X-Axiom-Key: <ADMIN_TOKEN>"
 ```
+**Example Response:**
+```json
+{
+  "success": true,
+  "status": "ok"
+}
+```
 
 #### GET `/admin/templates`
 List all custom email HTML templates stored for this project.
+
 ```bash
 curl -X GET "http://localhost:4500/api/v1/auth/my_project/admin/templates" \
      -H "X-Axiom-Key: <ADMIN_TOKEN>"
 ```
+**Example Response:**
+```json
+{
+  "success": true,
+  "status": "ok"
+}
+```
 
 #### PUT `/admin/templates/{type_name}`
 Create or replace a custom HTML email template. Valid `type_name` values: `email_verify`, `password_reset`, `magic_link`, `email_change`.
+
 ```bash
 curl -X PUT "http://localhost:4500/api/v1/auth/my_project/admin/templates/magic_link" \
      -H "X-Axiom-Key: <ADMIN_TOKEN>" \
      -H "Content-Type: application/json" \
      -d '{"subject": "Your magic link", "html_body": "<p>Click <a href=\"{{.Link}}\">here</a> to login.</p>"}'
 ```
+**Example Response:**
+```json
+{
+  "success": true,
+  "status": "ok"
+}
+```
 
 #### DELETE `/admin/templates/{type_name}`
 Delete a custom email template (reverts to built-in default).
+
 ```bash
 curl -X DELETE "http://localhost:4500/api/v1/auth/my_project/admin/templates/magic_link" \
      -H "X-Axiom-Key: <ADMIN_TOKEN>"
 ```
+**Example Response:**
+```json
+{
+  "success": true,
+  "status": "ok"
+}
+```
 
 #### POST `/admin/users/import`
 Bulk import users from a JSON payload. Returns a `job_id` for async status polling.
+
 ```bash
 curl -X POST "http://localhost:4500/api/v1/auth/my_project/admin/users/import" \
      -H "X-Axiom-Key: <ADMIN_TOKEN>" \
      -H "Content-Type: application/json" \
      -d '{"users": [{"email": "user@example.com", "password_hash": "argon2id_hash"}]}'
 ```
+**Example Response:**
+```json
+{
+  "success": true,
+  "status": "ok"
+}
+```
 
 #### GET `/admin/users/import/{job_id}`
 Poll the status of a bulk import job.
+
 ```bash
 curl -X GET "http://localhost:4500/api/v1/auth/my_project/admin/users/import/job_abc123" \
      -H "X-Axiom-Key: <ADMIN_TOKEN>"
 ```
+**Example Response:**
+```json
+{
+  "success": true,
+  "status": "ok"
+}
+```
 
 #### GET `/admin/users/export`
 Export all users as JSON.
+
 ```bash
 curl -X GET "http://localhost:4500/api/v1/auth/my_project/admin/users/export" \
      -H "X-Axiom-Key: <ADMIN_TOKEN>"
 ```
+**Example Response:**
+```json
+{
+  "success": true,
+  "status": "ok"
+}
+```
 
 #### GET `/admin/audit`
 Retrieve the audit log for this project (cursor paginated).
+
 ```bash
 # Initial request
 curl -X GET "http://localhost:4500/api/v1/auth/my_project/admin/audit?limit=100" \
      -H "X-Axiom-Key: <ADMIN_TOKEN>"
 
-# Subsequent pages (use next_cursor from response)
+# Next page (use next_cursor from response)
 curl -X GET "http://localhost:4500/api/v1/auth/my_project/admin/audit?limit=100&cursor=123" \
      -H "X-Axiom-Key: <ADMIN_TOKEN>"
+```
+**Example Response:**
+```json
+{
+  "success": true,
+  "status": "ok"
+}
 ```
 
 ---
@@ -930,9 +1601,18 @@ curl -X GET "http://localhost:4500/api/v1/auth/my_project/admin/audit?limit=100&
 ## Federation API <code>/api/v1/fed</code>
 
 #### GET `/fed/servers`
+List all configured federated servers.
+
 ```bash
 curl -X GET "http://localhost:4500/api/v1/fed/servers" \
      -H "X-Axiom-Key: <TOKEN>"
+```
+**Example Response:**
+```json
+{
+  "success": true,
+  "status": "ok"
+}
 ```
 
 ---
@@ -940,7 +1620,7 @@ curl -X GET "http://localhost:4500/api/v1/fed/servers" \
 ## GraphQL API <code>/api/v1/graphql</code>
 
 > [!NOTE]
-> GraphQL is an **optional, secondary interface**. Axiom is fundamentally a REST API gateway. Enable it with `features.graphql = true` in `config.toml`. When disabled, the endpoint does not exist and consumes zero resources.
+> GraphQL is an **optional, secondary interface**. Axiom is fundamentally a REST API gateway. Enable it with `features.graphql = true` in `config.toml`. When disabled, the endpoint doesn't exist and consumes zero resources.
 
 Unlike standard GraphQL servers (Strawberry, Graphene, Ariadne), Axiom's GraphQL layer bypasses Python object graph resolution entirely. Incoming query strings are parsed into an AST by `graphql-core`, walked by the `ASTCompiler`, and dispatched directly into the native `QueryExecutionPipeline` — the exact same security-hardened pipeline used by the REST database endpoints. This means all WAF checks, SQL blacklist rules, API key scoping, and rate limiting apply identically.
 
@@ -961,10 +1641,17 @@ curl -X POST "http://localhost:4500/api/v1/graphql" \
            "query": "{ execute(dbAlias: \"main_db\", sql: \"SELECT id, name FROM users WHERE active = 1\", params: {}) }"
          }'
 ```
+**Example Response:**
+```json
+{
+  "success": true,
+  "status": "ok"
+}
+```
 
 ### Native Table Queries
 
-You can query tables directly using standard GraphQL syntax without writing raw SQL. The AST compiler automatically transposes this into an ultra-fast `SELECT` statement:
+Query tables directly using standard GraphQL syntax without writing raw SQL. The AST compiler automatically transposes this into an optimized `SELECT` statement.
 
 ```bash
 curl -X POST "http://localhost:4500/api/v1/graphql" \
@@ -974,10 +1661,17 @@ curl -X POST "http://localhost:4500/api/v1/graphql" \
            "query": "{ users(dbAlias: \"main_db\", limit: 10, sort: \"id\", order: \"asc\", cursor: \"1\") { id name email } }"
          }'
 ```
+**Example Response:**
+```json
+{
+  "success": true,
+  "status": "ok"
+}
+```
 
 ### Complex Filtering
 
-You can apply complex filters to table queries using the `filter` argument. This seamlessly maps to the gateway's AST `WHERE` clause generator:
+Apply sophisticated filters to table queries using the `filter` argument. This seamlessly maps to the gateway's AST `WHERE` clause generator.
 
 ```graphql
 {
@@ -1014,7 +1708,7 @@ Axiom natively supports standard GraphQL mutations, mapped securely through the 
 
 - `insert_<table_name>`
 - `update_<table_name>`
-- `delete_<table_name>` (Strictly requires a `filter` argument to prevent accidental table wipes).
+- `delete_<table_name>` (Strictly requires a `filter` argument to prevent accidental table wipes)
 
 ```graphql
 mutation {
@@ -1030,7 +1724,6 @@ mutation {
 
 To prevent Denial of Service (DoS) attacks via maliciously crafted infinite GraphQL graphs, the AST compiler enforces a strict **Max Query Depth Limit** (default: `15`). Any query that nests deeper than this threshold is instantly rejected before any database connections are made. You can adjust this in the `config/schema.py` (`graphql.max_query_depth`).
 
-
 ### List Available Databases
 
 Use the `databases` root field to return all database aliases the API key has access to.
@@ -1040,6 +1733,13 @@ curl -X POST "http://localhost:4500/api/v1/graphql" \
      -H "X-Axiom-Key: <TOKEN>" \
      -H "Content-Type: application/json" \
      -d '{"query": "{ databases }"}'
+```
+**Example Response:**
+```json
+{
+  "success": true,
+  "status": "ok"
+}
 ```
 
 ### Combining Fields
@@ -1080,7 +1780,7 @@ Errors are returned in the standard GraphQL error envelope. The HTTP status code
 ## WebSocket API <code>ws://host:port/api/v1/ws</code>
 
 > [!NOTE]
-> WebSocket is an **optional, secondary interface** for clients that need real-time push. Enable it with `features.websocket = true` in `config.toml`. When disabled, the endpoint does not exist and consumes zero resources.
+> WebSocket is an **optional, secondary interface** for clients that need real-time push. Enable it with `features.websocket = true` in `config.toml`. When disabled, the endpoint doesn't exist and consumes zero resources.
 
 Use WebSocket when you need **live event streaming** — DB mutations, file changes, or server metrics — without polling. For one-off queries, REST is the right choice.
 
@@ -1089,7 +1789,7 @@ Use WebSocket when you need **live event streaming** — DB mutations, file chan
 WebSocket upgrades happen over the same port as the REST API. Axiom supports **Hybrid Authentication**:
 
 1. **HTTP Headers (Recommended for Backend/Mobile)**: Send `X-Axiom-Key: base64(<name>:<secret>)` during the initial handshake.
-2. **First JSON Message (Required for Browsers)**: Because browser `WebSocket` APIs cannot send custom HTTP headers, the middleware allows the upgrade to proceed without authentication. The client must send a valid auth JSON payload as its **first message** within the configured `auth_timeout` (default 5 seconds) or the server closes the connection.
+2. **First JSON Message (Required for Browsers)**: Because browser `WebSocket` APIs can't send custom HTTP headers, the middleware allows the upgrade to proceed without authentication. The client must send a valid auth JSON payload as its **first message** within the configured `auth_timeout` (default 5 seconds) or the server closes the connection.
 
 > DoS protection: Unauthenticated WebSocket connections are rate-limited by `max_connections` and use bounded 256-message channels, preventing memory exhaustion from slow/pending connections.
 
@@ -1140,9 +1840,9 @@ ws.send(JSON.stringify({ type: "unsubscribe", topic: "db:portfolio:users" }));
 
 Axiom enforces strict hardware limits to prevent DDoS attacks and memory exhaustion via malicious WebSockets. These limits are configurable in `config/schema.py`:
 
-- **Max Connections (`max_connections`)**: Default `10000`. If the server is full, new connections are instantly rejected with HTTP `1013` (Try Again Later).
-- **Max Subscriptions (`max_subscriptions_per_client`)**: Default `100`. Clients exceeding this limit will receive a `{"status": "denied"}` acknowledgment.
-- **Auth Timeout (`auth_timeout`)**: Unauthenticated sockets are violently closed after 5 seconds to prevent hanging connection attacks.
+- **Max Connections (`max_connections`)**: Default `10000`. When the server is full, new connections are instantly rejected with HTTP `1013` (Try Again Later).
+- **Max Subscriptions (`max_subscriptions_per_client`)**: Default `100`. Clients exceeding this limit receive a `{"status": "denied"}` acknowledgment.
+- **Auth Timeout (`auth_timeout`)**: Unauthenticated sockets are forcibly closed after 5 seconds to prevent hanging connection attacks.
 
 ### Topic Reference
 
@@ -1186,16 +1886,18 @@ The server sends a ping every 30 seconds (configurable). Clients should handle i
 | `4001` | Auth timeout or malformed auth message |
 | `4003` | Invalid token or authentication failed |
 
+---
+
 ## SSE API <code>/api/v1/sse</code>
 
 > [!NOTE]
-> Server-Sent Events (SSE) is an **optional, one-way push interface**. Enable it with `features.sse = true` in `config.toml`. When disabled, the endpoints do not exist and consume zero resources.
+> Server-Sent Events (SSE) is an **optional, one-way push interface**. Enable it with `features.sse = true` in `config.toml`. When disabled, the endpoints don't exist and consume zero resources.
 
 Use SSE when you need **live event streaming** without the bidirectional overhead of WebSockets. SSE is strictly one-way (Server → Client), making it incredibly efficient for live dashboards, logs, and real-time database feeds.
 
 ### Connection and Authentication
 
-SSE endpoints are standard HTTP GET requests. Because browsers' native `EventSource` cannot send custom headers, authentication is done via a base64 encoded `?token=` query parameter.
+SSE endpoints are standard HTTP GET requests. Because browsers' native `EventSource` can't send custom headers, authentication is done via a base64 encoded `?token=` query parameter.
 
 ```javascript
 // Token is base64(key_name:secret)
@@ -1221,12 +1923,12 @@ es.onmessage = (event) => {
 
 Axiom enforces strict hardware limits to prevent Server-Sent Events from causing memory exhaustion (OOM) or DDoS vulnerabilities. These limits are configurable in `config/schema.py`:
 
-- **Max Connections (`max_connections`)**: Default `5000`. If the server is at absolute capacity, new SSE streams are instantly rejected with HTTP `503` (Server at maximum capacity).
+- **Max Connections (`max_connections`)**: Default `5000`. When the server is at absolute capacity, new SSE streams are instantly rejected with HTTP `503` (Server at maximum capacity).
 - **Ring-Buffer Backpressure (`queue_size`)**: Default `100`. To prevent a slow client's internet connection from causing an infinite memory leak on the server, Axiom bounds the internal memory queue for each client. If a client falls behind by more than 100 events, the server will silently drop their oldest unread event to make room for the new one.
 
 ### Available Streams
 
-Unlike WebSocket, you do not "subscribe" after connecting. You connect directly to the stream you want:
+Unlike WebSocket, you don't "subscribe" after connecting. You connect directly to the stream you want:
 
 | Endpoint | Description |
 |----------|-------------|
@@ -1249,10 +1951,12 @@ Unlike WebSocket, you do not "subscribe" after connecting. You connect directly 
 }
 ```
 
+---
+
 ## MCP API <code>/api/v1/mcp</code>
 
-> <span style="font-size: 1.2em;"></span> **NOTE:**
-> MCP (Model Context Protocol) must be enabled via `features.mcp = true` in `config.toml`. When disabled, these endpoints do not exist and consume zero resources. See [`docs/features/MCP.md`](MCP.md) for the full guide.
+> [!NOTE]
+> MCP (Model Context Protocol) must be enabled via `features.mcp = true` in `config.toml`. When disabled, these endpoints don't exist and consume zero resources. See [`docs/features/MCP.md`](MCP.md) for the full guide.
 
 The MCP API exposes Axiom's database and storage tools to AI models (like Claude, Gemini) securely through standard Server-Sent Events (SSE).
 
@@ -1320,4 +2024,3 @@ Filters accept a JSON object of field-to-operator mappings:
     }
   ]
 }
-```

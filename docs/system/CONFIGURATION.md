@@ -45,6 +45,7 @@ Axiom includes a `toml2env.go` script in the `scripts/` folder which automatical
 |-----|------|---------|-------------|
 | `host` | string | `"0.0.0.0"` | Bind address |
 | `port` | int | `4500` | Listen port |
+| `current_thread` | bool | `false` | Enable single-threaded runtime (ideal for strict cPanel limits) |
 | `workers` | int | `0` | Tokio runtime worker threads (0 = auto-detect CPU count) |
 | `max_connections` | int | `10000` | Max concurrent connections |
 | `request_timeout` | int | `30` | Request timeout in seconds |

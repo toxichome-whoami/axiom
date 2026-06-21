@@ -836,4 +836,7 @@ tail -f axiom.log
 
 # Check if server is alive
 curl http://localhost:4500/ready
+
+# Run the complete modular automated test suite
+cd test && go run .
 ```
