@@ -25,7 +25,7 @@ PID_FILE="${DIR}/${NAME}.pid"
 PORT_FILE="${DIR}/${NAME}.port"
 PORT=4500
 
-if [ $# -lt 1 ]; then
+print_usage() {
     echo "Usage: $0 <command>"
     echo ""
     echo "Commands:"
@@ -33,6 +33,11 @@ if [ $# -lt 1 ]; then
     echo "  stop        Stop the running instance"
     echo "  status      Show PID, port, version"
     echo "  logs        Tail the log file"
+    echo "  help        Show this help message"
+}
+
+if [ $# -lt 1 ]; then
+    print_usage
     exit 0
 fi
 
@@ -116,8 +121,13 @@ logs)
     tail -f "$LOG_FILE"
     ;;
 
+help|--help|-h)
+    print_usage
+    exit 0
+    ;;
+
 *)
     fail "Unknown command: $CMD"
-    echo "Usage: $0 <start|stop|status|logs>"
+    echo "Usage: $0 <start|stop|status|logs|help>"
     ;;
 esac
