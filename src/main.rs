@@ -7,13 +7,11 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 pub mod api;
 pub mod config;
 pub mod db;
-pub mod grpc;
 pub mod logging;
 pub mod middleware;
 pub mod security;
 pub mod server;
 mod utils;
-mod webhook;
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -32,19 +30,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // 4. Create App Router
     crate::api::core::health::init_health_timer();
-    crate::api::auth::token_engine::init_keys().await;
     let app = server::app::create_app();
 
     // 5. Serve
     let config = config::loader::ConfigManager::get();
     let addr = SocketAddr::from(([0, 0, 0, 0], config.server.port as u16));
     let listener = TcpListener::bind(addr).await?;
-
-    // Start gRPC Server
-    let grpc_port = config.server.port as u16 + 1;
-    tokio::spawn(async move {
-        grpc::server::start_grpc_server(grpc_port).await;
-    });
 
     println!("Axiom Native Core running on http://{}", addr);
     axum::serve(listener, app).await?;

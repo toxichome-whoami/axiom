@@ -35,21 +35,7 @@ impl Default for ServerMode {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
-#[serde(rename_all = "lowercase")]
-pub enum EventModule {
-    Db,
-    Fs,
-}
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
-#[serde(rename_all = "lowercase")]
-pub enum EventOperation {
-    Read,
-    Write,
-    Delete,
-    Any,
-}
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 #[serde(rename_all = "lowercase")]
@@ -70,21 +56,11 @@ impl Default for DbEngineType {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
-#[serde(rename_all = "lowercase")]
-pub enum FileType {
-    File,
-    Directory,
-    All,
-}
-
 #[derive(Serialize, Debug, Clone)]
 pub struct AuthContext {
     pub api_key_name: String,
     pub mode: ServerMode,
     pub db_scope: Vec<String>,
-    pub fs_scope: Vec<String>,
-    pub feature_scope: Vec<String>,
     pub rate_limit_override: u32,
     #[serde(default)]
     pub full_admin: bool,
@@ -97,10 +73,6 @@ pub struct RequestMeta {
     pub duration_ms: f64,
     pub server: String,
     pub version: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub federated: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub proxy_latency_ms: Option<f64>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

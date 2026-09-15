@@ -1,10 +1,3 @@
-pub mod auth;
 pub mod core;
 pub mod database;
 pub mod errors;
-pub mod federation;
-pub mod graphql;
-pub mod mcp;
-pub mod sse;
-pub mod storage;
-pub mod ws;

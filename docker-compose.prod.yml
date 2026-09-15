@@ -23,9 +23,7 @@ services:
         env_file:
             - .env
         volumes:
-            - ./storage:/app/storage
             - ./logs:/app/logs
-            - ./data:/app/data
         environment:
             - RUST_LOG=info
         depends_on:
@@ -40,7 +38,6 @@ services:
         # NGINX routes all external traffic to the replicas.
         expose:
             - "4500" # HTTP / REST API
-            - "4501" # gRPC
 
     # NGINX Load Balancer — routes HTTP to :4500 and gRPC to :4501
     nginx:

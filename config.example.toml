@@ -25,22 +25,8 @@ shutdown_timeout = 30            # Seconds to wait for active requests during sh
 # Toggle major subsystems to minimize RAM and CPU footprint.
 [features]
 database = true                  # Enable SQL Database Gateway
-storage = true                   # Enable Filesystem/Storage Gateway
-webhook = true                   # Enable Outbound Webhook Dispatcher
-federation = false               # Enable Multi-Node Federation
-metrics = true                   # Enable Prometheus/OpenMetrics endpoint
-mcp = true                       # Enable Model Context Protocol server
-graphql = false                  # Enable High-Performance GraphQL API
-websocket = false                # Enable Real-Time WebSocket Push Gateway
-sse = true                       # Enable Server-Sent Events (SSE) Push Gateway
-auth = true                      # Enable Axiom Auth identity system
 
 # ─── Model Context Protocol (MCP) ─────────────────────
-[mcp]
-server_name = "axiom"
-server_version = "1.0.5"
-
-# ─── Logging ──────────────────────────────────────────
 [logging]
 enabled = true                   # false = suppress all logging
 level = "INFO"                   # TRACE | DEBUG | INFO | WARN | ERROR (Can be overridden by RUST_LOG env var)
@@ -72,7 +58,6 @@ redis_url = ""                   # Required if backend = "redis"
 max_memory = "100mb"             # Memory limit for internal cache (approximate)
 default_ttl = 60                 # Default expiration for generic items (seconds)
 query_cache = true               # Cache SQL query metadata/AST
-fs_cache = true                  # Cache filesystem directory listings
 idempotency_ttl = 86400          # Duration to remember idempotent requests (24h)
 response_cache_ttl = 30          # Default Max-Age for cacheable GET responses
 
@@ -97,14 +82,11 @@ timeout = 30                     # Seconds to wait before testing recovery
 secret = "CHANGE_THIS_TO_A_SECURE_KEY_AT_LEAST_32_CHARS"
 mode = "readwrite"               # readwrite | readonly | writeonly
 db_scope = ["*"]                 # ["*"] for all, or ["db1", "db2"]
-fs_scope = ["*"]                 # ["*"] for all, or ["vol1", "vol2"]
-feature_scope = ["*"]            # ["mcp", "ws", "graphql", "sse", "webhooks"]
 rate_limit_override = 0          # 0 = use global limit, >0 = specific limit
 full_admin = true                # Bypass all scope checks
 
 # ─── Database Backends ────────────────────────────────
 # Configure your SQL targets (PostgreSQL, MySQL, SQLite, etc.)
-# Use federated_alias to expose a database from a remote node as a local alias.
 # Format: "<federation_server_alias>_<remote_db_name>"
 [database.main_db]
 engine = "postgres"              # postgres | mysql | sqlite | mariadb | mssql
@@ -117,150 +99,6 @@ idle_timeout = 600               # Seconds to keep an idle connection alive
 max_lifetime = 3600              # Maximum age of a connection
 query_blacklist = ["DROP", "TRUNCATE", "ALTER"]
 dangerous_operations = false     # Allow/Disallow raw SQL outside of Axiom dialect
-federated_alias = ""             # e.g. "edge_node_production_db" — federation only
 
 # ─── Storage Volumes ──────────────────────────────────
 # Mount local or network directories as virtual storage aliases.
-[storage.uploads]
-path = "storage/uploads"         # Physical path on the host machine
-mode = "readwrite"               # readwrite | readonly
-limit = "10gb"                   # Total capacity limit
-chunk_size = "10mb"              # Preferred size for multipart uploads
-max_file_size = "800mb"          # Maximum size per individual file
-allowed_extensions = []          # Empty = all allowed
-blocked_extensions = [".exe", ".bat", ".sh", ".cmd", ".ps1"]
-
-# ─── Webhooks (Optional) ──────────────────────────────
-# Trigger external services on database or filesystem changes.
-[webhook.log_sink]
-url = "https://your-webhook-endpoint.com/receive"
-secret = "YOUR_WEBHOOK_SECRET"
-rule = "db.any@main_db:*"      # Format: module.operation@alias:target
-enabled = true
-
-# ─── Federation (Optional) ────────────────────────────
-# Connect multiple Axiom nodes into a unified cluster.
-# State is persisted to data/federation/federation.db (SQLite) for crash recovery.
-[federation]
-enabled = false                # Master toggle
-sync_interval = 30             # Seconds between health heartbeats
-per_node_timeout = 5.0         # Max seconds to wait per node health check
-backoff_max = 300.0            # Max exponential backoff for failed nodes (5 min)
-circuit_breaker_threshold = 3  # Consecutive failures before marking node "down"
-grpc_port = 50051              # Default gRPC port for federation endpoints
-grpc_keepalive_seconds = 30    # Keepalive ping interval for long-lived streams
-
-# ─── Federation: Outgoing Servers ────────────────────
-# Nodes this server will connect to. Each server gets a unique alias key.
-[federation.server.edge_node]
-url = "https://other-axiom-node.com/"
-secret = "FEDERATION_SECRET_KEY"
-node_id = "local_identity"
-trust_mode = "verify"          # verify (strict SSL) | trust (skip cert check)
-grpc_port = 50051              # Remote gRPC port (defaults to federation.grpc_port)
-grpc_enabled = true            # Prefer gRPC transport over HTTP proxy
-
-# ─── Federation: Incoming Keys ───────────────────────
-# Define keys that remote nodes use to authenticate to this instance.
-[federation.incoming.edge_node]
-secret = "SelfFederationSecret123456789012"
-mode = "readwrite"
-db_scope = ["*"]
-fs_scope = ["*"]
-feature_scope = ["*"]
-description = "Self-federation loopback node"
-
-# ─── High-Performance GraphQL API ───────────────────────
-# A specialized GraphQL gateway optimized for database querying.
-# Bypasses standard GraphQL object graph resolution by transpiling AST
-# directly into database-native SQL via the QueryExecutionPipeline.
-[graphql]
-endpoint = "/api/v1/graphql"     # Mount point for the GraphQL POST endpoint
-query_cache_enabled = true       # Cache SQL transpilation results to bypass compilation
-query_cache_size = 512           # Max LRU size for parsed GraphQL AST caching
-max_query_depth = 15             # Maximum nesting level allowed to prevent DoS attacks
-introspection = false            # Disable schema introspection in production for security
-
-# ─── Real-Time WebSocket Push Gateway ────────────────
-# Optional, secondary interface for clients that need live event streaming.
-# When disabled, the endpoint does not exist and consumes zero resources.
-# Connect to: ws://host:port/api/v1/ws
-# First message must be: { "type": "auth", "token": "<base64(key_name:secret)>" }
-[websocket]
-max_connections = 10000          # Maximum concurrent WebSocket connections
-heartbeat_interval = 30         # Seconds between server ping messages to clients
-auth_timeout = 5.0              # Seconds a client has to send the auth message after connecting
-max_subscriptions_per_client = 100  # Maximum topic subscriptions per connection
-
-# ─── Server-Sent Events (SSE) Push Gateway ────────────────
-[sse]
-max_connections = 5000         # Maximum concurrent SSE connections allowed
-queue_size = 100               # Max pending events per client before dropping
-heartbeat_interval = 15        # Seconds between keep-alive comments sent to idle clients
-health_interval = 10           # Seconds between background system health checks
-metrics_interval = 5           # Seconds between background metrics snapshots
-
-# ─── Event-Driven Architecture (EDA) ─────────
-[eda]
-enabled = true
-backend = "memory"                 # memory | redis | nats
-redis_url = "redis://127.0.0.1:6379/1"
-nats_url = "nats://127.0.0.1:4222" # Ultra-lightweight ~15MB RAM Go-based broker
-max_stream_length = 100000         # Max events retained in the stream
-dlq_retention_hours = 72           # Dead-Letter Queue retention period
-consumer_group = "axiom_workers"
-consumer_name = "worker_1"
-
-# ─── Auth Identity System ────────────────────────────
-# Isolated identity provider powered by Ed25519 JWT and Argon2id.
-[auth.project.admin]
-# Database Connection (Optional. If omitted, defaults to SQLite: data/auth/admin/auth.db)
-# Example (Postgres Scale): "postgresql+asyncpg://user:pass@localhost:5432/axiom_auth"
-# db_url = "postgresql+asyncpg://user:pass@localhost:5432/axiom_auth"
-min_password_length = 8
-
-# Automatic post-signup verification:
-email_verification = true
-verification_method = "token"      # 'token' (sends Magic Link) or 'otp' (sends 6-digit code)
-verification_ttl = 900             # 15 minutes
-magic_link_ttl = 900               # 15 minutes (used for passwordless /magic-link endpoint)
-
-anonymous_auth = true
-anonymous_upgrade_ttl = 604800
-
-# Advanced Security
-webauthn_enabled = true
-rp_id = "localhost"
-rp_name = "Axiom Auth"
-origin = "http://localhost:3000"
-new_device_alerts = true
-
-max_login_attempts = 5
-lockout_duration = 9000    # 30 days
-totp_enabled = true
-totp_issuer = "Axiom Gateway"
-backup_codes_count = 10
-access_token_ttl = 3600            # 1 hour
-refresh_token_ttl = 604800         # 7 days
-callback_url = "http://localhost:3000/auth/callback"
-jwt_custom_claims = ["role", "tenant_id"]
-
-[auth.project.default_project.email]
-provider = "smtp"                  # smtp
-smtp_host = "smtp.mailtrap.io"
-smtp_port = 2525
-smtp_user = "your_username"
-smtp_password = "your_password"
-smtp_tls = false
-from_address = "noreply@axiom.local"
-from_name = "Axiom Auth"
-
-# ─── Automated Disaster Recovery (PITR) ─────────
-[backups]
-enabled = false
-interval_minutes = 5
-s3_bucket = "axiom-backups"
-s3_region = "us-east-1"
-s3_endpoint_url = "https://s3.us-east-1.amazonaws.com"
-s3_access_key = ""
-s3_secret_key = ""

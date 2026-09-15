@@ -31,7 +31,7 @@ async fn favicon() -> impl IntoResponse {
 }
 
 pub fn create_app() -> Router {
-    let _config = ConfigManager::get();
+    let config = ConfigManager::get();
 
     let cors = CorsLayer::new()
         .allow_origin(Any)
@@ -39,19 +39,12 @@ pub fn create_app() -> Router {
         .allow_headers(Any);
     // Core Routes
     let core_routes =
-        crate::api::core::health::get_router().merge(crate::api::core::metrics::get_router());
+        crate::api::core::health::get_router();
 
     // API versioning wrapper
     let api_routes = Router::new()
         .route("/health", get(health_check))
         .nest("/db", crate::api::database::router::get_router())
-        .nest("/mcp", crate::api::mcp::router::get_router())
-        .nest("/fs", crate::api::storage::router::get_router())
-        .nest("/graphql", crate::api::graphql::router::get_router())
-        .route("/ws", get(crate::api::ws::router::ws_handler))
-        .nest("/sse", crate::api::sse::router::get_router())
-        .nest("/fed", crate::api::federation::router::get_router())
-        .nest("/auth", crate::api::auth::router::get_router())
         .layer(middleware::from_fn(auth_middleware))
         .layer(middleware::from_fn(rate_limit_middleware))
         .layer(middleware::from_fn(waf_middleware))
@@ -61,7 +54,7 @@ pub fn create_app() -> Router {
 
     let router = Router::new()
         .nest("/api/v1", api_routes)
-        .layer(axum::extract::Extension(_config.clone()))
+        .layer(axum::extract::Extension(config.clone()))
         .merge(core_routes)
         .route("/favicon.ico", get(favicon))
         .fallback(fallback_handler)

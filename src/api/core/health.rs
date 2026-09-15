@@ -2,11 +2,10 @@ use axum::{routing::get, Json, Router};
 use once_cell::sync::Lazy;
 use serde_json::{json, Value};
 use std::sync::Mutex;
-use sysinfo::{Disks, System};
+use sysinfo::System;
 
 use crate::config::loader::ConfigManager;
 use crate::db::pool::DatabasePoolManager;
-use crate::utils::size_parser::parse_size;
 
 static START_TIME: Lazy<std::time::Instant> = Lazy::new(std::time::Instant::now);
 static SYSTEM: Lazy<Mutex<System>> = Lazy::new(|| {
@@ -88,49 +87,6 @@ async fn health(
         }
     }
 
-    let cache_status = json!({
-        "enabled": config.cache.enabled,
-        "backend": config.cache.backend,
-        "status": "up" // Stubbed
-    });
-
-    let disks = Disks::new_with_refreshed_list();
-    let mut storage_status = serde_json::Map::new();
-
-    let current_dir = std::env::current_dir().unwrap_or_default();
-
-    for (alias, cfg) in &config.storage {
-        let path = current_dir.join(&cfg.path);
-        let path_str = path.to_string_lossy().to_lowercase().replace("\\\\?\\", "");
-
-        let mut best_match = None;
-        let mut max_len = 0;
-
-        for disk in disks.list() {
-            let mp = disk.mount_point().to_string_lossy().to_lowercase();
-            if path_str.starts_with(&mp) {
-                let mp_len = mp.len();
-                if mp_len > max_len {
-                    max_len = mp_len;
-                    best_match = Some(disk);
-                }
-            }
-        }
-
-        let hw_free = best_match.map(|d| d.available_space()).unwrap_or(0);
-        let allocated_bytes = parse_size(&cfg.limit).unwrap_or(u64::MAX);
-
-        let free_space = hw_free.min(allocated_bytes);
-
-        storage_status.insert(
-            alias.clone(),
-            json!({
-                "status": "up",
-                "free_space_bytes": free_space
-            }),
-        );
-    }
-
     let (cpu_percent, memory_used_mb) = get_system_stats();
 
     Ok(Json(json!({
@@ -142,10 +98,7 @@ async fn health(
                 "port": config.server.port,
                 "max_connections": config.server.max_connections
             },
-            "databases": db_status,
-            "storages": storage_status,
-            "cache": cache_status,
-            "federation": {}
+            "databases": db_status
         },
         "system": {
             "memory_used_mb": memory_used_mb,

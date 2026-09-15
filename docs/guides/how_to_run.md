@@ -142,7 +142,6 @@ pgrep -x axiom || (cd /home/yourusername/axiom && nohup ./axiom >> axiom.log 2>&
 ## 6. Ports
 
 - **HTTP / REST API:** `:4500`
-- **gRPC (Tonic):** `:4501`
 
 > [!NOTE]
 > Shared cPanel hosts usually block custom ports. Ask your host to open port `4500`, or set up an Apache proxy in your `.htaccess` to forward requests from port `80` to `4500`.

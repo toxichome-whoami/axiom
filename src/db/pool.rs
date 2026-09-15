@@ -19,13 +19,6 @@ impl DatabasePoolManager {
         let config = ConfigManager::get();
         let db_config = config.database.get(alias)?;
 
-        // Only mount if no federated alias exists
-        if let Some(fed_alias) = &db_config.federated_alias {
-            if !fed_alias.is_empty() {
-                return None;
-            }
-        }
-
         // Do not attempt to connect if the URL is empty
         if db_config.url.is_empty() {
             eprintln!("Database {} has an empty URL, skipping connection.", alias);

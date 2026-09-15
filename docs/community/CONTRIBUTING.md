@@ -15,22 +15,17 @@ Help us keep Axiom open and inclusive. Please read and follow our [Code of Condu
 
 - **Fork the Repository**: Create your own copy of the project.
 - **Clone Local**: <code>git clone https://github.com/toxichome-whoami/axiom.git </code>
-- **Environment**: Use a virtual environment.
-  ```bash
-  python -m venv .venv
-  source .venv/bin/activate  # or .venv\Scripts\activate on Windows
-  pip install -r requirements.txt
-  ```
+- **Environment**: Axiom is written in Rust. You will need Cargo and `rustc` 1.75+.
 
 ## 3. Development Workflow
 
 1. **Create a Branch**: <code>git checkout -b feature/your-feature-name</code>
 2. **Implementation**: Follow the strict `src/` layout.
-3. **Testing**: Axiom uses `pytest`. Ensure your changes pass all tests.
+3. **Testing**: Axiom uses `cargo test`. Ensure your changes pass all tests.
    ```bash
-   pytest tests/
+   cargo test
    ```
-4. **Linting**: We follow PEP8.
+4. **Linting**: We follow `cargo clippy`.
 5. **Documentation**: Update the relevant files in `docs/` if you change any public API or configuration.
 
 ## 4. Pull Request Process

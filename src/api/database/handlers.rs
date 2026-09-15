@@ -290,21 +290,7 @@ pub async fn insert_rows(
     let (result, _) =
         QueryExecutionPipeline::run_query(&db_name, &sql, all_params, &auth, &db_cfg).await?;
 
-    // Webhook/SSE triggering logic
-    use crate::api::sse::connection_manager::SSE_MGR;
-    let topic = format!("db:{}:{}", db_name, table_name);
-    SSE_MGR
-        .publish(
-            &topic,
-            "INSERT",
-            serde_json::json!({
-                "table": table_name,
-                "affected_rows": result.affected_rows,
-                "rows": rows_to_insert
-            })
-            .to_string(),
-        )
-        .await;
+    // Webhook/SSE triggering logic removed
 
     Ok(axum::Json(serde_json::json!({
         "success": true,
@@ -432,16 +418,7 @@ pub async fn update_rows(
     let (result, _) =
         QueryExecutionPipeline::run_query(&db_name, &sql, values, &auth, &db_cfg).await?;
 
-    use crate::api::sse::connection_manager::SSE_MGR;
-    let topic = format!("db:{}:{}", db_name, table_name);
-    SSE_MGR
-        .publish(
-            &topic,
-            "UPDATE",
-            serde_json::json!({ "table": table_name, "affected_rows": result.affected_rows })
-                .to_string(),
-        )
-        .await;
+
 
     Ok(axum::Json(
         serde_json::json!({ "success": true, "affected_rows": result.affected_rows }),
@@ -469,16 +446,7 @@ pub async fn delete_rows(
     let (result, _) =
         QueryExecutionPipeline::run_query(&db_name, &sql, values, &auth, &db_cfg).await?;
 
-    use crate::api::sse::connection_manager::SSE_MGR;
-    let topic = format!("db:{}:{}", db_name, table_name);
-    SSE_MGR
-        .publish(
-            &topic,
-            "DELETE",
-            serde_json::json!({ "table": table_name, "affected_rows": result.affected_rows })
-                .to_string(),
-        )
-        .await;
+
 
     Ok(axum::Json(
         serde_json::json!({ "success": true, "affected_rows": result.affected_rows }),

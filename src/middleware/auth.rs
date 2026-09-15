@@ -68,18 +68,7 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, A
         }
     }
 
-    // Special case: Allow WebSocket upgrades to pass through without header auth.
-    // They will be authenticated via the first JSON payload in the WebSocket handler.
-    let is_ws = req
-        .headers()
-        .get(axum::http::header::UPGRADE)
-        .and_then(|v| v.to_str().ok())
-        .map(|v| v.to_lowercase() == "websocket")
-        .unwrap_or(false);
 
-    if is_ws {
-        return Ok(next.run(req).await);
-    }
 
     Err(AxiomError::new(
         "UNAUTHORIZED",
@@ -112,22 +101,8 @@ pub fn validate_api_key(
                         api_key_name: key_name.to_string(),
                         mode: key_cfg.mode.clone(),
                         db_scope: key_cfg.db_scope.clone(),
-                        fs_scope: key_cfg.fs_scope.clone(),
-                        feature_scope: key_cfg.feature_scope.clone(),
                         rate_limit_override: key_cfg.rate_limit_override as u32,
                         full_admin: key_cfg.full_admin,
-                    });
-                }
-            } else if let Some(fed_cfg) = config.federation.incoming.get(key_name) {
-                if fed_cfg.secret == key_secret && !fed_cfg.secret.is_empty() {
-                    return Some(AuthContext {
-                        api_key_name: key_name.to_string(),
-                        mode: fed_cfg.mode.clone(),
-                        db_scope: fed_cfg.db_scope.clone(),
-                        fs_scope: fed_cfg.fs_scope.clone(),
-                        feature_scope: fed_cfg.feature_scope.clone(),
-                        rate_limit_override: 0,
-                        full_admin: false,
                     });
                 }
             }

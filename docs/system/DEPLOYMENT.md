@@ -53,12 +53,9 @@ docker build -t axiom:latest .
 # Run with a local config
 docker run -d \
   -p 4500:4500 \
-  -p 4501:4501 \
   -e RUST_LOG=info \
   --env-file .env \
-  -v $(pwd)/storage:/app/storage \
   -v $(pwd)/logs:/app/logs \
-  -v $(pwd)/data:/app/data \
   axiom:latest
 ```
 
@@ -93,19 +90,8 @@ docker compose -f docker-compose.prod.yml up -d
 - [ ] Set `features.playground = false` to disable Swagger UI
 - [ ] Configure `rate_limit.max_requests` appropriate for your expected traffic
 - [ ] Set `cache.backend = "redis"` and `rate_limit.backend = "redis"` for multi-replica deployments
-- [ ] Set `eda.backend = "nats"` and configure `eda.nats_url` for high-performance Event-Driven Webhooks with minimal RAM usage
-- [ ] Ensure `/app/data` is mounted to a persistent volume — it stores dynamic API keys and security state in SQLite
 - [ ] Set `RUST_LOG=warn` in production to reduce log volume
-- [ ] Set `storage.<alias>.blocked_extensions` to block potentially dangerous uploads
 - [ ] Review `database.<alias>.dangerous_operations = false` (default) to prevent DDL
-
----
-
-## Embedded Database Features (AI & Search)
-
-Axiom deeply integrates with SQLite to provide enterprise capabilities without external containers:
-1. **Vector AI Search:** If using the `sqlite` dialect, Axiom automatically loads `sqlite-vec` to provide K-Nearest Neighbors vector search via the `/api/v1/db/{alias}/embeddings/search` endpoint.
-2. **FTS5 Full-Text Search:** Axiom dynamically hooks into SQLite's native FTS5 engine, offering Elasticsearch-grade searching with zero idle background RAM usage via `/api/v1/db/{alias}/search/fts5`.
 
 ---
 
@@ -139,100 +125,6 @@ server {
     }
 }
 
-# gRPC (HTTP/2) — separate server block on port 4501
-server {
-    listen 4501 http2;
-    server_name api.example.com;
-
-    location / {
-        grpc_pass grpc://127.0.0.1:4501;
-    }
-}
-```
-
-</details>
-
----
-
-## Systemd Service
-
-<details>
-<summary><b>View Systemd Unit File</b></summary>
-
-```ini
-[Unit]
-Description=Axiom API Gateway
-After=network.target
-
-[Service]
-Type=simple
-User=axiom
-WorkingDirectory=/opt/axiom
-ExecStart=/opt/axiom/target/release/axiom
-Environment="CONFIG_PATH=/etc/axiom/config.toml"
-Restart=always
-RestartSec=5
-StandardOutput=journal
-StandardError=journal
-
-[Install]
-WantedBy=multi-user.target
-```
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable axiom
-sudo systemctl start axiom
-```
-
-</details>
-
----
-
-## Monitoring
-
-Axiom exposes OpenMetrics at `/metrics` (requires `features.metrics = true`).
-
-**Prometheus scrape config:**
-```yaml
-scrape_configs:
-  - job_name: axiom
-    static_configs:
-      - targets: ["localhost:4500"]
-    metrics_path: /metrics
-    bearer_token: "<base64(admin:secret)>"
-```
-
-**Key metrics to alert on:**
-- <code>axiom_memory_mb</code> > 450 MB (approaching limit)
-- <code>axiom_db_query_errors_total</code> increasing rate
-- <code>axiom_rate_limit_hits_total</code> spike (potential attack)
-- <code>axiom_webhook_failed_total</code> increasing (delivery issues)
-
-
-
----
-
-## Disaster Recovery (S3 PITR)
-
-Axiom supports Automated Point-in-Time Recovery (PITR) using a background daemon that periodically compresses the `data/` directory and streams it to an S3-compatible bucket (AWS S3, Cloudflare R2, MinIO).
-
-Configure it in `config.toml`:
-```toml
-[backups]
-enabled = true
-interval_minutes = 60
-s3_bucket = "axiom-backups"
-s3_region = "us-east-1"
-s3_access_key = "..."
-s3_secret_key = "..."
-```
-
----
-
-## Upgrading
-
-```bash
 # Pull latest
 git pull origin main
 

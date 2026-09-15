@@ -1,7 +1,7 @@
 # Set output encoding to UTF-8 to correctly display emojis
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
-$demos = @("auth", "db_fetch", "db_insert", "db_drop", "fs_upload", "sse", "websocket", "webhook", "graphql", "mcp", "federation")
+$demos = @("db_insert", "db_fetch", "db_drop")
 
 Write-Host "============================================="
 Write-Host "      AXIOM DEMOS AUTOMATED TEST SCRIPT      "
@@ -12,30 +12,13 @@ $failedDemos = @()
 foreach ($demo in $demos) {
     Write-Host "`n---> Running Demo: $demo" -ForegroundColor Cyan
     
-    # We use Start-Process or simply call go directly.
-    # To catch errors, we can redirect stderr or check $LASTEXITCODE
-    
     try {
-        if ($demo -eq "webhook" -or $demo -eq "sse" -or $demo -eq "websocket") {
-            # Run background demos with a short timeout since they loop/listen forever
-            $process = Start-Process -FilePath "go" -ArgumentList "run . $demo" -NoNewWindow -PassThru
-            Start-Sleep -Seconds 3
-            if (-not $process.HasExited) {
-                # Use taskkill to kill the entire process tree (including the compiled Go binary)
-                Start-Process -FilePath "taskkill" -ArgumentList "/F /T /PID $($process.Id)" -NoNewWindow -Wait
-                Write-Host "  ✅ SUCCESS: $demo connected and ran successfully (terminated gracefully)." -ForegroundColor Green
-            } else {
-                Write-Host "  ❌ FAILED: $demo exited prematurely with code $($process.ExitCode)" -ForegroundColor Red
-                $failedDemos += $demo
-            }
+        $process = Start-Process -FilePath "go" -ArgumentList "run . $demo" -NoNewWindow -Wait -PassThru
+        if ($process.ExitCode -eq 0) {
+            Write-Host "  ✅ SUCCESS: $demo completed without errors." -ForegroundColor Green
         } else {
-            $process = Start-Process -FilePath "go" -ArgumentList "run . $demo" -NoNewWindow -Wait -PassThru
-            if ($process.ExitCode -eq 0) {
-                Write-Host "  ✅ SUCCESS: $demo completed without errors." -ForegroundColor Green
-            } else {
-                Write-Host "  ❌ FAILED: $demo exited with code $($process.ExitCode)" -ForegroundColor Red
-                $failedDemos += $demo
-            }
+            Write-Host "  ❌ FAILED: $demo exited with code $($process.ExitCode)" -ForegroundColor Red
+            $failedDemos += $demo
         }
     } catch {
         Write-Host "  ❌ FAILED: Could not execute 'go run . $demo'" -ForegroundColor Red
