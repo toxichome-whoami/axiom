@@ -6,7 +6,7 @@ use crate::config::loader::ConfigManager;
 use crate::db::engines::any::AnyDatabaseEngine;
 use crate::db::engines::base::DatabaseEngine;
 
-static ENGINES: Lazy<DashMap<String, Arc<dyn DatabaseEngine>>> = Lazy::new(|| DashMap::new());
+static ENGINES: Lazy<DashMap<String, Arc<dyn DatabaseEngine>>> = Lazy::new(DashMap::new);
 
 pub struct DatabasePoolManager;
 

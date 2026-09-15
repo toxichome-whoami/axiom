@@ -23,25 +23,24 @@ pub enum StatusEnum {
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum ServerMode {
+    #[default]
     Readwrite,
     Readonly,
     Writeonly,
 }
 
-impl Default for ServerMode {
-    fn default() -> Self {
-        ServerMode::Readwrite
-    }
-}
 
 
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum DbEngineType {
     Postgres,
     Mysql,
+    #[default]
     Sqlite,
     Mssql,
     Oracle,
@@ -50,11 +49,6 @@ pub enum DbEngineType {
     Cockroachdb,
 }
 
-impl Default for DbEngineType {
-    fn default() -> Self {
-        DbEngineType::Sqlite
-    }
-}
 
 #[derive(Serialize, Debug, Clone)]
 pub struct AuthContext {

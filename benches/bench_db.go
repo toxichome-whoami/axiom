@@ -309,17 +309,7 @@ func main() {
 		config,
 	)
 
-	// 2. Filesystem Benchmark
-	fsRes := runBenchmarkTask(
-		"Filesystem (List Directory)",
-		"GET",
-		fmt.Sprintf("%s/api/v1/fs/%s/list?path=/", config.APIURL, config.FSAlias),
-		nil,
-		config,
-	)
-
 	printReport(dbRes)
-	printReport(fsRes)
 
-	fmt.Printf("\n  ✅ Benchmark complete. DB: %.1f req/s | FS: %.1f req/s\n\n", dbRes.Throughput, fsRes.Throughput)
+	fmt.Printf("\n  ✅ Benchmark complete. DB: %.1f req/s\n\n", dbRes.Throughput)
 }

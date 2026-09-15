@@ -1,8 +1,8 @@
 use dashmap::DashMap;
 use once_cell::sync::Lazy;
 
-static IP_BANS: Lazy<DashMap<String, String>> = Lazy::new(|| DashMap::new());
-static KEY_BANS: Lazy<DashMap<String, String>> = Lazy::new(|| DashMap::new());
+static IP_BANS: Lazy<DashMap<String, String>> = Lazy::new(DashMap::new);
+static KEY_BANS: Lazy<DashMap<String, String>> = Lazy::new(DashMap::new);
 
 pub struct BanList;
 

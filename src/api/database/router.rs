@@ -39,13 +39,23 @@ async fn list_databases(
             continue;
         }
 
+        let mut status = "down";
+        let mut tables_count = 0;
+        if let Some(engine) = crate::db::pool::DatabasePoolManager::get_engine(name).await {
+            if engine.health_check().await {
+                status = "connected";
+                if let Ok(tables) = engine.list_tables(None, 10000).await {
+                    tables_count = tables.len();
+                }
+            }
+        }
+
         active_dbs.push(serde_json::json!({
             "name": name,
             "engine": db_cfg.engine,
             "mode": db_cfg.mode,
-            "status": "connected", // Stubbed
-            "tables_count": 0,     // Stubbed
-            "federated": false
+            "status": status,
+            "tables_count": tables_count
         }));
     }
 

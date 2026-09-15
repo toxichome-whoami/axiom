@@ -8,7 +8,7 @@ pub async fn rate_limit_middleware(req: Request, next: Next) -> Result<Response,
         .extensions()
         .get::<std::sync::Arc<crate::config::schema::AxiomConfig>>()
         .cloned()
-        .unwrap_or_else(|| ConfigManager::get());
+        .unwrap_or_else(ConfigManager::get);
 
     if !config.rate_limit.enabled {
         return Ok(next.run(req).await);
@@ -46,16 +46,28 @@ pub async fn rate_limit_middleware(req: Request, next: Next) -> Result<Response,
     let limits_key = format!("rl:ip:{}", client_ip);
     let penalty_key = format!("penalty:{}", client_ip);
 
-    let (violated, current_count) = MemoryCache::check_rate_limit(
-        &limits_key,
-        window,
-        limit as u32,
-        &penalty_key,
-        config.rate_limit.burst as u32,
-        config.rate_limit.penalty_cooldown as u32,
-        config.rate_limit.penalty_threshold as u32,
-    )
-    .await;
+    let (violated, current_count) = if config.rate_limit.backend == "turso" {
+        crate::middleware::cache::TursoCache::check_rate_limit(
+            &client_ip,
+            window,
+            limit as u32,
+            config.rate_limit.burst as u32,
+            config.rate_limit.penalty_cooldown as u32,
+            config.rate_limit.penalty_threshold as u32,
+        )
+        .await
+    } else {
+        MemoryCache::check_rate_limit(
+            &limits_key,
+            window,
+            limit as u32,
+            &penalty_key,
+            config.rate_limit.burst as u32,
+            config.rate_limit.penalty_cooldown as u32,
+            config.rate_limit.penalty_threshold as u32,
+        )
+        .await
+    };
 
     if violated {
         return Err(AxiomError::new(
@@ -67,7 +79,7 @@ pub async fn rate_limit_middleware(req: Request, next: Next) -> Result<Response,
 
     let mut response = next.run(req).await;
 
-    let remaining = std::cmp::max(0, limit as i32 - current_count as i32);
+    let remaining = std::cmp::max(0, limit - current_count as i32);
     response
         .headers_mut()
         .insert("x-ratelimit-limit", limit.to_string().parse().unwrap());

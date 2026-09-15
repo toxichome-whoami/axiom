@@ -1,24 +1,54 @@
-# DO NOT REMOVE OR MODIFY. CLOUDLINUX ENV VARS CONFIGURATION BEGIN
-<IfModule Litespeed>
+# ─────────────────────────────────────────────────────────────────────────────
+# Axiom API Gateway - Apache Reverse Proxy Configuration
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Disable directory browsing for security
+Options -Indexes
+
+# Hide Apache server signature
+ServerSignature Off
+
+# ─── CRITICAL SECURITY: Block Sensitive Files ──────────────────────────────
+# If the Rust backend goes offline, Apache might try to serve files statically.
+# This prevents anyone from downloading your config, database, or binary files.
+<FilesMatch "(?i)\.(toml|db|exe|log|env|sh|ps1|go|rs|md|lock)$">
+    Require all denied
+</FilesMatch>
+
+# Block access to all hidden files (like .env, .git)
+<FilesMatch "^\.">
+    Require all denied
+</FilesMatch>
+
+# Block direct access to internal folders
+RedirectMatch 404 ^/(src|data|logs|tools|scripts|docs)/
+# ─────────────────────────────────────────────────────────────────────────────
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # 1. Force HTTPS (Crucial for API Key security)
+    RewriteCond %{HTTPS} !=on
+    RewriteCond %{HTTP:X-Forwarded-Proto} !https
+    RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+
+    # 2. Proxy all traffic to the Axiom Rust Backend (Port 4500)
+    RewriteRule ^(.*)$ http://127.0.0.1:4500/$1 [P,L]
 </IfModule>
-# DO NOT REMOVE OR MODIFY. CLOUDLINUX ENV VARS CONFIGURATION END
 
-RewriteEngine On
-
-# Force HTTPS
-RewriteCond %{HTTPS} !=on
-RewriteRule ^(.*)$ https://%{HTTP_HOST}/$1 [R=301,L]
-
-# Reverse Proxy - Send gRPC traffic to port 4501
-RewriteCond %{HTTP:Content-Type} ^application/grpc [NC]
-RewriteRule ^(.*)$ http://127.0.0.1:4501/$1 [P,L]
-
-# Reverse Proxy - Send all other traffic to Python app on port 4500 (local ONLY)
-RewriteRule ^(.*)$ http://127.0.0.1:4500/$1 [P,L]
-
-# Proxy headers to forward real visitor IP to the app
+# 3. Security & Proxy Headers
 <IfModule mod_headers.c>
+    # Forward client HTTPS status to Axiom
     RequestHeader set X-Forwarded-Proto "https"
     RequestHeader set X-Forwarded-Port "443"
-    RequestHeader set X-Forwarded-For "%{REMOTE_ADDR}e"
+    
+    # Hardened Security Headers (Double-layer protection before it hits Rust)
+    Header always set Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set X-Frame-Options "DENY"
+    Header always set X-XSS-Protection "1; mode=block"
+    
+    # Hide the fact that Apache is running
+    Header unset Server
+    Header unset X-Powered-By
 </IfModule>

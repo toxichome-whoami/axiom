@@ -40,21 +40,23 @@ stdout = true                    # Stream logs to console
 # ─── Rate Limiting ────────────────────────────────────
 # Hardened locks preventing DOS and brute-force attacks.
 [rate_limit]
-enabled = false                  # Master toggle for rate limiting
-backend = "memory"               # memory | redis
-redis_url = ""                   # Required if backend = "redis" (e.g., "redis://localhost:6379/0")
-window = 60                      # Rolling window size in seconds
-max_requests = 100               # Max requests allowed per window
-burst = 20                       # Extra allowance for short bursts
-penalty_threshold = 10           # Consecutive violations before temporary IP ban
-penalty_cooldown = 300           # Duration of IP ban in seconds
+enabled = true                   # Master toggle for rate limiting
+backend = "memory"               # memory | turso
+turso_url = "file:data/cache.db" # Required if backend = "turso"
+turso_token = ""
+window = 60                      # Time window in seconds
+max_requests = 100               # Max requests per window
+burst = 20                       # Allowed burst over max
+penalty_threshold = 10           # Limit violations before IP ban
+penalty_cooldown = 300           # IP ban duration in seconds
 
 # ─── Caching ──────────────────────────────────────────
 # Mitigation for backend latency via internal response caching.
 [cache]
 enabled = true
-backend = "memory"               # memory | redis
-redis_url = ""                   # Required if backend = "redis"
+backend = "memory"               # memory | turso
+turso_url = "file:data/cache.db" # Required if backend = "turso"
+turso_token = ""
 max_memory = "100mb"             # Memory limit for internal cache (approximate)
 default_ttl = 60                 # Default expiration for generic items (seconds)
 query_cache = true               # Cache SQL query metadata/AST
@@ -100,5 +102,3 @@ max_lifetime = 3600              # Maximum age of a connection
 query_blacklist = ["DROP", "TRUNCATE", "ALTER"]
 dangerous_operations = false     # Allow/Disallow raw SQL outside of Axiom dialect
 
-# ─── Storage Volumes ──────────────────────────────────
-# Mount local or network directories as virtual storage aliases.

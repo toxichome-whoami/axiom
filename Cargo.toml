@@ -1,6 +1,6 @@
 [package]
 name = "axiom"
-version = "1.0.5"
+version = "2.0.0-beta.1"
 edition = "2021"
 description = "Axiom API Gateway Backend"
 
@@ -12,7 +12,7 @@ sha2 = "0.10"
 hex = "0.4"
 
 tokio = { version = "1.37.0", features = ["full"] }
-redis = { version = "0.25.3", features = ["tokio-comp"] }
+libsql = "0.9.30"
 serde_json = "1.0.116"
 serde = { version = "1.0", features = ["derive"] }
 uuid = { version = "1.8", features = ["v4", "v7"] }
@@ -33,7 +33,7 @@ urlencoding = "2.1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 tracing-appender = "0.2"
-sqlx = { version = "0.7.4", features = ["runtime-tokio-rustls", "any", "postgres", "mysql", "sqlite", "json"] }
+sqlx = { version = "0.7.4", features = ["runtime-tokio-rustls", "any", "postgres", "mysql", "json"] }
 async-trait = "0.1.80"
 futures = "0.3.30"
 tokio-stream = "0.1.15"

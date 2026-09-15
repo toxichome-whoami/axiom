@@ -50,11 +50,11 @@ impl LogRotator {
             return;
         }
 
-        logs.sort_by(|a, b| a.1.cmp(&b.1)); // Oldest first
+        logs.sort_by_key(|a| a.1); // Oldest first
 
         let to_delete = logs.len() - max_files;
-        for i in 0..to_delete {
-            let _ = fs::remove_file(&logs[i].0);
+        for item in logs.iter().take(to_delete) {
+            let _ = fs::remove_file(&item.0);
         }
     }
 }

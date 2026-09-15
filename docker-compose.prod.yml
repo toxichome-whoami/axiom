@@ -1,20 +1,6 @@
 version: "3.8"
 
 services:
-    # Redis handles distributed state for Rate Limiting, Caching, and Event Streams.
-    redis:
-        image: redis:7-alpine
-        container_name: axiom_redis
-        command: redis-server --save 60 1 --loglevel warning
-        volumes:
-            - redis_data:/data
-        restart: unless-stopped
-        healthcheck:
-            test: ["CMD", "redis-cli", "ping"]
-            interval: 10s
-            timeout: 5s
-            retries: 5
-
     # Axiom — Rust native binary, no interpreter overhead
     axiom:
         build: .
@@ -26,9 +12,6 @@ services:
             - ./logs:/app/logs
         environment:
             - RUST_LOG=info
-        depends_on:
-            redis:
-                condition: service_healthy
         deploy:
             replicas: 3
             update_config:
@@ -39,7 +22,7 @@ services:
         expose:
             - "4500" # HTTP / REST API
 
-    # NGINX Load Balancer — routes HTTP to :4500 and gRPC to :4501
+    # NGINX Load Balancer — routes HTTP to :4500
     nginx:
         image: nginx:alpine
         container_name: axiom_lb
@@ -51,6 +34,3 @@ services:
         depends_on:
             - axiom
         restart: unless-stopped
-
-volumes:
-    redis_data:

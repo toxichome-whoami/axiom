@@ -33,7 +33,7 @@ cd scripts && go run toml2env.go && cd ..
 # 3. Build & Run
 cargo build --release
 ./target/release/axiom
-# Server starts at http://0.0.0.0:4500
+# Server starts at http://127.0.0.1:4500
 # Admin API key will be printed to stdout on first run
 ```
 

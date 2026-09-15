@@ -41,7 +41,7 @@ Axiom includes a `toml2env.go` script in the `scripts/` folder which automatical
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `host` | string | `"0.0.0.0"` | Bind address |
+| `host` | string | `"127.0.0.1"` | Bind address |
 | `port` | int | `4500` | Listen port |
 | `workers` | int | `0` | uvicorn workers (0 = auto) |
 | `max_connections` | int | `10000` | Max concurrent connections |
@@ -63,9 +63,6 @@ Feature flags to enable/disable entire subsystems.
 | Key | Default | Description |
 |-----|---------|-------------|
 | `database` | `true` | Enable `/api/v1/db/*` endpoints |
-| `metrics` | `true` | Enable `/metrics` endpoint |
-| `playground` | `false` | Enable Swagger UI at `/api/docs` |
-
 ---
 
 ## `[logging]`
@@ -87,8 +84,9 @@ Feature flags to enable/disable entire subsystems.
 | Key | Default | Description |
 |-----|---------|-------------|
 | `enabled` | `true` | Enable rate limiting |
-| `backend` | `"memory"` | `memory \| redis` |
-| `redis_url` | `""` | Redis URL (required if backend=redis) |
+| `backend` | `"memory"` | `memory \| turso` |
+| `turso_url` | `""` | Turso URL (required if backend=turso) |
+| `turso_token` | `""` | Turso API Token |
 | `window` | `60` | Window size in seconds |
 | `max_requests` | `100` | Max requests per window per key |
 | `burst` | `20` | Additional burst allowance |
@@ -101,8 +99,9 @@ Feature flags to enable/disable entire subsystems.
 | Key | Default | Description |
 |-----|---------|-------------|
 | `enabled` | `true` | Enable caching |
-| `backend` | `"memory"` | `memory \| redis` |
-| `redis_url` | `""` | Redis URL |
+| `backend` | `"memory"` | `memory \| turso` |
+| `turso_url` | `""` | Turso URL |
+| `turso_token` | `""` | Turso API Token |
 | `max_memory` | `"100 MB"` | Memory cache size bound |
 | `default_ttl` | `60` | Default TTL in seconds |
 | `query_cache` | `true` | Cache DB query results |

@@ -21,7 +21,7 @@ pub struct ServerConfig {
 impl Default for ServerConfig {
     fn default() -> Self {
         Self {
-            host: "0.0.0.0".to_string(),
+            host: "127.0.0.1".to_string(),
             port: 4500,
             workers: 0,
             max_connections: 10000,
@@ -84,7 +84,8 @@ impl Default for LoggingConfig {
 pub struct RateLimitConfig {
     pub enabled: bool,
     pub backend: String,
-    pub redis_url: String,
+    pub turso_url: String,
+    pub turso_token: String,
     pub window: i32,
     pub max_requests: i32,
     pub burst: i32,
@@ -97,7 +98,8 @@ impl Default for RateLimitConfig {
         Self {
             enabled: true,
             backend: "memory".to_string(),
-            redis_url: "".to_string(),
+            turso_url: "file:data/cache.db".to_string(),
+            turso_token: "".to_string(),
             window: 60,
             max_requests: 100,
             burst: 20,
@@ -112,7 +114,8 @@ impl Default for RateLimitConfig {
 pub struct CacheConfig {
     pub enabled: bool,
     pub backend: String,
-    pub redis_url: String,
+    pub turso_url: String,
+    pub turso_token: String,
     pub max_memory: String,
     pub default_ttl: i32,
     pub query_cache: bool,
@@ -126,7 +129,8 @@ impl Default for CacheConfig {
         Self {
             enabled: true,
             backend: "memory".to_string(),
-            redis_url: "".to_string(),
+            turso_url: "file:data/cache.db".to_string(),
+            turso_token: "".to_string(),
             max_memory: "100 MB".to_string(),
             default_ttl: 60,
             query_cache: true,
@@ -255,7 +259,7 @@ impl Default for AxiomConfig {
     fn default() -> Self {
         Self {
             server: ServerConfig::default(),
-            version: "1.0.5".to_string(),
+            version: "2.0.0-beta.1".to_string(),
             features: FeaturesConfig::default(),
             logging: LoggingConfig::default(),
             rate_limit: RateLimitConfig::default(),

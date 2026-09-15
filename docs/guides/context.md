@@ -30,8 +30,6 @@ https://your-host.com   (or http://localhost:4500 locally)
 | Server info + feature flags | `GET /` | None |
 | Readiness probe | `GET /ready` | None |
 | Deep health + DB status | `GET /health` | X-Axiom-Key |
-| Prometheus metrics | `GET /metrics` | X-Axiom-Key |
-| OpenAPI JSON spec | `GET /api-docs/openapi.json` | None |
 
 ---
 

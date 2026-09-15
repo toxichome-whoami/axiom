@@ -1,7 +1,7 @@
 <div align="center">
   <h1>Axiom API Reference</h1>
-  <p><em>Complete guide to REST and SSE endpoints for Databases, Storage, Webhooks, MCP, and GraphQL</em></p>
-  <p><strong>Axiom is natively a REST API gateway.</strong> GraphQL is an optional secondary interface — disabled by default — for clients that prefer it.</p>
+  <p><em>Complete guide to REST endpoints for Databases</em></p>
+  <p><strong>Axiom is natively a high-performance REST API gateway.</strong></p>
 </div>
 
 <hr/>
@@ -34,16 +34,7 @@ curl -X GET "http://localhost:4500/health" \
      -H "X-Axiom-Key: <TOKEN>"
 ```
 
-### 4. Metrics (Prometheus)
-```bash
-curl -X GET "http://localhost:4500/metrics" \
-     -H "X-Axiom-Key: <TOKEN>"
-```
 
-### 5. OpenAPI JSON Spec
-```bash
-curl -X GET "http://localhost:4500/api-docs/openapi.json"
-```
 
 ---
 

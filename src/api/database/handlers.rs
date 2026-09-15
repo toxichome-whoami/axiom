@@ -8,6 +8,8 @@ use crate::db::engines::base::QueryResult;
 use crate::db::pool::DatabasePoolManager;
 use crate::utils::types::{AuthContext, ServerMode};
 
+type QueryCacheMap = dashmap::DashMap<String, (std::time::Instant, Arc<QueryResult>, bytes::Bytes)>;
+
 pub struct QueryExecutionPipeline;
 
 impl QueryExecutionPipeline {
@@ -38,16 +40,21 @@ impl QueryExecutionPipeline {
 
         let cache_key = if cache_enabled && !is_mutation_regex {
             let key = format!("{}:{}:{:?}", db_name, sql, params);
-            static QUERY_CACHE: once_cell::sync::Lazy<
-                dashmap::DashMap<String, (std::time::Instant, Arc<QueryResult>, bytes::Bytes)>,
-            > = once_cell::sync::Lazy::new(|| dashmap::DashMap::new());
 
-            if let Some(entry) = QUERY_CACHE.get(&key) {
-                if entry.0.elapsed().as_secs() < cache_ttl {
-                    return Ok((entry.1.clone(), entry.2.clone()));
+            if config.cache.backend == "turso" {
+                if let Some(bytes) = crate::middleware::cache::TursoCache::get_query_cache(&key).await {
+                    return Ok((Arc::new(QueryResult { columns: None, rows: None, affected_rows: Some(0) }), bytes));
+                }
+            } else {
+                static QUERY_CACHE: once_cell::sync::Lazy<QueryCacheMap> = once_cell::sync::Lazy::new(dashmap::DashMap::new);
+
+                if let Some(entry) = QUERY_CACHE.get(&key) {
+                    if entry.0.elapsed().as_secs() < cache_ttl {
+                        return Ok((entry.1.clone(), entry.2.clone()));
+                    }
                 }
             }
-            Some((key, &QUERY_CACHE))
+            Some(key)
         } else {
             None
         };
@@ -118,8 +125,8 @@ impl QueryExecutionPipeline {
             // Primitive placeholder conversion for postgres `$1, $2`
             let mut final_sql = String::new();
             let mut param_index = 1;
-            let mut chars = sql.chars().peekable();
-            while let Some(c) = chars.next() {
+            let chars = sql.chars().peekable();
+            for c in chars {
                 if c == '?' {
                     final_sql.push_str(&format!("${}", param_index));
                     param_index += 1;
@@ -132,21 +139,29 @@ impl QueryExecutionPipeline {
             sql.to_string()
         };
 
-        match engine.execute(&formatted_sql, &params).await {
+        let exec_result = engine.execute(&formatted_sql, &params).await.map_err(|e| e.to_string());
+
+        match exec_result {
             Ok(res) => {
                 let arc_res = Arc::new(res);
                 let json_bytes = bytes::Bytes::from(serde_json::to_vec(&*arc_res).unwrap());
 
                 if !is_mutation {
-                    if let Some((key, cache_ref)) = cache_key {
-                        cache_ref.insert(
-                            key,
-                            (
-                                std::time::Instant::now(),
-                                arc_res.clone(),
-                                json_bytes.clone(),
-                            ),
-                        );
+                    if let Some(key) = cache_key {
+                        if config.cache.backend == "turso" {
+                            crate::middleware::cache::TursoCache::set_query_cache(&key, &json_bytes, cache_ttl as u32).await;
+                        } else {
+                            static QUERY_CACHE: once_cell::sync::Lazy<QueryCacheMap> = once_cell::sync::Lazy::new(dashmap::DashMap::new);
+                            
+                            QUERY_CACHE.insert(
+                                key,
+                                (
+                                    std::time::Instant::now(),
+                                    arc_res.clone(),
+                                    json_bytes.clone(),
+                                ),
+                            );
+                        }
                     }
                 }
                 Ok((arc_res, json_bytes))
@@ -262,8 +277,7 @@ pub async fn insert_rows(
     let first_row = &rows_to_insert[0];
     let columns: Vec<String> = first_row
         .keys()
-        .cloned()
-        .map(|k| crate::api::database::filter_builder::sanitize_ident(&k))
+        .map(|k| crate::api::database::filter_builder::sanitize_ident(k))
         .collect();
     let cols_str = columns.join(", ");
 
@@ -289,8 +303,6 @@ pub async fn insert_rows(
 
     let (result, _) =
         QueryExecutionPipeline::run_query(&db_name, &sql, all_params, &auth, &db_cfg).await?;
-
-    // Webhook/SSE triggering logic removed
 
     Ok(axum::Json(serde_json::json!({
         "success": true,

@@ -94,3 +94,7 @@ fix_imports.py
 # ----------------------------------------------------------------------
 target/
 Cargo.lock
+
+# Database files
+data/
+*.db
