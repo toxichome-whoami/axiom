@@ -317,8 +317,7 @@ pub async fn insert_rows(
         ));
     }
 
-    // In a production ORM, this would map keys and use properly bound parameters.
-    // For this stub, we dynamically build a multi-insert query.
+    // Dynamically build a parameterized multi-insert query from the provided rows.
     let first_row = &rows_to_insert[0];
     let columns: Vec<String> = first_row
         .keys()

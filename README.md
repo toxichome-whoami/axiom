@@ -83,12 +83,14 @@ flowchart LR
 
 Security is enforced at the gateway layer before any query reaches the database:
 
-- `X-Axiom-Key` API key authentication
+- `X-Axiom-Key` API key authentication with constant-time XOR validation
 - AST-based SQL query validation (blocks injections at the parse tree level)
-- Multi-tier rate limiting with IP ban enforcement via Turso cache
-- DDoS protection mechanisms
-- WAF middleware (blocks path traversal, null-byte injections, oversized payloads)
+- Multi-tier rate limiting with automatic IP ban list for brute-force attacks
+- Idempotency engine for safe request retries
+- Circuit breaker for database health tracking and connection shedding
+- WAF middleware (blocks path traversal via deep-decode, null-byte injections, 10MB default body limit)
 - Configurable per-database query blacklists and dangerous operation guards
+- Structured audit logging per query including UUID tracing
 
 ### Lock-Free Configuration
 
@@ -294,11 +296,12 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    A["Client Request"] --> B["WAF Middleware\nBlocks path traversal, null-bytes, oversized payloads"]
-    B --> C["Rate Limiter\nPer-IP and per-key fixed-window counter"]
-    C --> D["API Key Auth\nX-Axiom-Key validation and scope check"]
+    A["Client Request"] --> B["WAF Middleware\nDeep-decodes URLs, blocks path traversal, null-bytes, oversized payloads"]
+    B --> C["Rate Limiter & Ban List\nPer-IP and per-key fixed-window counter, auto-bans on brute force"]
+    C --> D["API Key Auth\nX-Axiom-Key validation via constant-time XOR"]
     D --> E["AST Query Validator\nParses and validates SQL before execution"]
-    E --> F[("Database Layer\nParameterized query execution")]
+    E --> F["Circuit Breaker\nMonitors failure rates and sheds load"]
+    F --> G[("Database Layer\nParameterized query execution")]
 ```
 
 

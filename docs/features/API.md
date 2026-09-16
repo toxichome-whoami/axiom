@@ -23,6 +23,11 @@ curl -H "X-Axiom-Key: $TOKEN" http://localhost:4500/api/v1/db/databases
 > All write requests (`POST`, `PATCH`, `DELETE`) also require `Content-Type: application/json`.
 
 
+## Request and Response Headers
+
+- `X-Request-ID` — UUID returned on every response for debugging and tracing.
+- `Idempotency-Key` — Optional request header for safe retries on `/query`. Cached responses are returned on retry.
+
 ## Response Envelope
 
 Every response follows this structure:
@@ -78,7 +83,7 @@ curl http://localhost:4500/ready
 
 ### `GET /health` - Deep Health Check
 
-Returns connection status for all configured databases.
+Returns connection status for all configured databases. Infrastructure details are only visible if a `full_admin` key is used.
 
 ```bash
 curl http://localhost:4500/health \
@@ -146,12 +151,16 @@ curl "http://localhost:4500/api/v1/db/main_db/tables?limit=50&cursor=users" \
 ```bash
 curl -X POST "http://localhost:4500/api/v1/db/main_db/query" \
   -H "X-Axiom-Key: <TOKEN>" \
+  -H "Idempotency-Key: idempotency-uuid" \
   -H "Content-Type: application/json" \
   -d '{
     "sql": "SELECT id, name FROM users WHERE active = :active AND age > :min_age",
-    "params": { "active": true, "min_age": 18 }
+    "params": { "active": true, "min_age": 18 },
+    "timeout": 5000
   }'
 ```
+
+*Note: The `timeout` field in the JSON body allows specifying a per-query timeout in milliseconds.*
 
 **Response:**
 ```json

@@ -1,4 +1,4 @@
-﻿<div align="center">
+<div align="center">
 
 # Axiom Configuration Reference
 
@@ -54,6 +54,9 @@ Controls how Axiom binds and handles incoming connections.
 | `trusted_proxies` | list | `["127.0.0.1"]` | Trusted reverse proxy IPs for `X-Forwarded-For` |
 | `cors_origins` | list | `["*"]` | Allowed CORS origins |
 | `shutdown_timeout` | int | `30` | Graceful shutdown wait time in seconds |
+
+> [!NOTE]
+> The `workers` setting is now fully honoured to configure the multi-thread Tokio runtime (previously single-threaded).
 
 **Example:**
 ```toml
@@ -123,6 +126,9 @@ turso_url = "file:data/cache.db"
 
 Query result caching to avoid redundant database round-trips.
 
+> [!NOTE]
+> The `idempotency_ttl` is fully active on the `/query` endpoint, caching responses for safe retries without hitting the database again.
+
 | Key | Default | Description |
 |-----|---------|-------------|
 | `enabled` | `true` | Enable caching |
@@ -139,7 +145,7 @@ Query result caching to avoid redundant database round-trips.
 
 ## `[circuit_breaker]`
 
-Automatically opens the circuit when a database is unhealthy, preventing request pile-ups.
+Automatically opens the circuit when a database is unhealthy, preventing request pile-ups. Tracks failures per DB alias, and is now fully implemented and active in the execution pipeline.
 
 | Key | Default | Description |
 |-----|---------|-------------|

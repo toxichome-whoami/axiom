@@ -98,12 +98,10 @@ async fn execute_query(
     }
     let db_cfg = get_db_config(&db_name, &auth).await?;
 
-    // In Rust, parameters are typically array based for positional arguments
-    // In Python they were dict based. For simplicity, we convert dict to array.
+    // Named params arrive as a JSON object {"1": val, "2": val}.
+    // Sort numerically so positional binding order is always deterministic.
     let mut params_array = Vec::new();
     if let Some(map) = payload.params {
-        // Sort keys to ensure deterministic ordering
-        // The SDKs typically send "1", "2", "3" as keys for positional args
         let mut keys: Vec<_> = map.keys().collect();
         keys.sort_by(|a, b| {
             match (a.parse::<i32>(), b.parse::<i32>()) {

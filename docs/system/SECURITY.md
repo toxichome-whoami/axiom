@@ -1,4 +1,4 @@
-﻿<div align="center">
+<div align="center">
 
 # Axiom Security Model
 
@@ -35,7 +35,7 @@ X-Axiom-Key: your-api-key-secret
 ```
 
 > [!IMPORTANT]
-> Axiom uses **constant-time secret comparison** via `ring::constant_time::verify_slices_are_equal` to prevent timing attacks. An attacker cannot determine how many characters of a key are correct based on response time.
+> Axiom uses **constant-time secret comparison** via a custom XOR byte loop to prevent timing attacks. An attacker cannot determine how many characters of a key are correct based on response time.
 
 ### Scope-Based Access Control
 
@@ -57,9 +57,9 @@ Axiom includes an embedded WAF (`src/middleware/waf.rs`) that runs **before any 
 
 | Check | Description |
 |---|---|
-| **Payload size** | Rejects requests exceeding `server.body_limit` |
+| **Payload size** | Rejects requests exceeding `server.body_limit`, enforced by `DefaultBodyLimit` (10MB hard cap) |
 | **Null-byte injection** | Strips and blocks null bytes (`\x00`) in URLs and headers |
-| **Path traversal** | Blocks `../`, `..%2F`, and encoded variants |
+| **Path traversal** | Deep-decodes URL up to 3 times to block `%252e%252e` bypass and other encoded variants |
 | **Suspicious patterns** | Blocks common exploit strings in URL and header values |
 
 > [!NOTE]
@@ -82,6 +82,9 @@ Multi-tier fixed-window rate limiting backed by lock-free `AtomicU32` counters.
 - RAM usage is **constant** regardless of request volume or concurrent attackers
 - After `penalty_threshold` violations, the IP is temporarily banned for `penalty_cooldown` seconds
 
+### Brute Force Ban List
+Axiom actively monitors failed authentication attempts. 5 failed auth attempts from the same IP triggers `BanList::ban_ip()`, automatically banning the offending IP to prevent credential stuffing and brute force attacks.
+
 
 ## 4. SQL Injection Protection
 
@@ -99,7 +102,19 @@ All internally constructed queries (insert, fetch, update, delete) use `sqlx::qu
 > Even with these protections, the `/query` endpoint executes raw SQL. Only expose this endpoint to trusted backend services  never directly to a frontend or end user.
 
 
-## 5. Security Headers
+## 5. Circuit Breaker
+
+The Circuit Breaker pattern is fully implemented to protect upstream databases from cascading failures. It tracks connection and query failures per DB alias. Once the `failure_threshold` is hit, the circuit opens, immediately rejecting requests and allowing the database time to recover.
+
+## 6. Idempotency Engine
+
+Safe request retries are supported on the `/query` endpoint via the `Idempotency-Key` header. Cached responses are returned for duplicate requests without re-executing the query or hitting the database, preventing double-execution on network retries.
+
+## 7. Audit Logging
+
+A structured audit log is recorded per query, capturing detailed context for compliance and security review. It logs the database alias, authenticated user, actual query executed, rows affected, and rows returned.
+
+## 8. Security Headers
 
 Every response from Axiom includes a hardened set of HTTP security headers injected by `SecurityHeadersMiddleware`:
 
@@ -110,26 +125,28 @@ Every response from Axiom includes a hardened set of HTTP security headers injec
 | `X-XSS-Protection` | `1; mode=block` | Legacy XSS filter |
 | `Cache-Control` | `no-store` | Prevent response caching |
 | `Strict-Transport-Security` | `max-age=63072000; includeSubDomains; preload` | Force HTTPS |
+| `Content-Security-Policy` | `default-src 'none'; frame-ancestors 'none';` | Prevents rendering and execution |
 
 > [!TIP]
 > The security header sets are **pre-computed as immutable tuples at startup**  zero allocation cost per response.
 
 
-## 6. Attack Protection Summary
+## 9. Attack Protection Summary
 
 | Threat | Protection |
 |---|---|
 | **SQL Injection** | AST validation + parameterized `sqlx` bindings |
 | **Brute Force** | Multi-tier rate limiting + IP ban with penalty cooldown |
-| **Timing Attacks** | Constant-time secret comparison via `ring` |
-| **Path Traversal** | WAF null-byte and `../` filtering |
+| **Timing Attacks** | Constant-time secret comparison via custom XOR byte loop |
+| **Path Traversal** | WAF null-byte and deep URL decoding to catch `%252e%252e` |
 | **DDoS** | Lock-free O(1) rate counter, constant RAM under any load |
+| **Oversized Payloads** | WAF limits bodies via `DefaultBodyLimit` (10MB max) |
 | **MIME Sniffing** | `X-Content-Type-Options: nosniff` on all responses |
-| **Clickjacking** | `X-Frame-Options: DENY` on all responses |
+| **Clickjacking** | `X-Frame-Options: DENY` and CSP `frame-ancestors 'none'` |
 | **Key Leaks** | Keys never logged; never sent as query parameters |
 
 
-## 7. Production Security Recommendations
+## 10. Production Security Recommendations
 
 > [!WARNING]
 > These are not optional in a real deployment.
