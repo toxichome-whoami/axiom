@@ -1,7 +1,7 @@
 import base64
 import json
 from typing import Any, Dict, Iterator, List, Optional, Union
-import httpx
+import httpx 
 
 
 class AxiomClient:
@@ -59,6 +59,10 @@ class AxiomClient:
     def list_tables(self, db: str) -> Dict[str, Any]:
         """List all tables in a specific database."""
         return self._request("GET", f"/api/v1/db/{db}/tables")
+
+    def describe_table(self, db: str, table: str) -> Dict[str, Any]:
+        """Get the column schema and foreign key relationships for a table."""
+        return self._request("GET", f"/api/v1/db/{db}/{table}/schema")
 
     def fetch_rows(
         self,

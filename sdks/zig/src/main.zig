@@ -114,6 +114,12 @@ pub const AxiomClient = struct {
         return self.request(.GET, endpoint, null);
     }
 
+    pub fn describeTable(self: *AxiomClient, db: []const u8, table: []const u8) ![]u8 {
+        const endpoint = try std.fmt.allocPrint(self.allocator, "/api/v1/db/{s}/{s}/schema", .{ db, table });
+        defer self.allocator.free(endpoint);
+        return self.request(.GET, endpoint, null);
+    }
+
     /// Fetch rows with optional cursor pagination. Returns JSON bytes — caller must free.
     pub fn fetchRows(self: *AxiomClient, db: []const u8, table: []const u8, params: ?FetchRowsParams) ![]u8 {
         var qs = std.ArrayList(u8).init(self.allocator);

@@ -1,7 +1,7 @@
 pub mod models;
 
 use base64::{engine::general_purpose, Engine as _};
-use models::{DatabasesResponse, FetchRowsParams, FetchResponse, MutationResponse, QueryResponse, TablesResponse};
+use models::{SchemaResponse, DatabasesResponse, FetchRowsParams, FetchResponse, MutationResponse, QueryResponse, TablesResponse};
 use reqwest::{Client, header};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -38,6 +38,11 @@ impl AxiomClient {
 
     pub async fn list_tables(&self, db: &str) -> Result<TablesResponse, reqwest::Error> {
         let url = format!("{}/api/v1/db/{}/tables", self.base_url, db);
+        self.client.get(&url).send().await?.json().await
+    }
+
+    pub async fn describe_table(&self, db: &str, table: &str) -> Result<SchemaResponse, reqwest::Error> {
+        let url = format!("{}/api/v1/db/{}/{}/schema", self.base_url, db, table);
         self.client.get(&url).send().await?.json().await
     }
 

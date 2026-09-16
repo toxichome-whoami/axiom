@@ -21,7 +21,7 @@ export interface AxiomResponse<T = Record<string, unknown>> {
   pagination?: Pagination;
   // The response fields are spread at the top level (e.g. rows, databases, tables)
   // so T is intersected below per method rather than nested in data
-  rows?: unknown[];
+  rows?: T[];
   databases?: unknown[];
   tables?: unknown[];
 }

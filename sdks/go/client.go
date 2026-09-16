@@ -155,3 +155,12 @@ func (c *Client) Query(db string, sql string, params map[string]interface{}) (*Q
 }
 
 
+
+func (c *Client) DescribeTable(db, table string) (*SchemaResponse, error) {
+	var resp SchemaResponse
+	err := c.request("GET", fmt.Sprintf("/api/v1/db/%s/%s/schema", db, table), nil, &resp)
+	if err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}

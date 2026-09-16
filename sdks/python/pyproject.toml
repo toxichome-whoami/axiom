@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "toxichome-axiom"
 version = "2.1.0"
 authors = [
-  { name="Toxichome", email="admin@toxichome.cc" },
+  { name="Toxichome", email="contact@toxichome.cc" },
 ]
 description = "Official Python SDK for the Axiom API Gateway"
 readme = "README.md"

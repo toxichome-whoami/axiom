@@ -84,3 +84,33 @@ pub struct FetchRowsParams {
     pub filter: Option<HashMap<String, serde_json::Value>>,
     pub fields: Option<String>,
 }
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ColumnInfo {
+    pub name: String,
+    pub r#type: String,
+    pub nullable: bool,
+    pub primary_key: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ForeignKeyInfo {
+    pub column: String,
+    pub referenced_table: String,
+    pub referenced_column: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SchemaData {
+    pub database: String,
+    pub table: String,
+    pub columns: Vec<ColumnInfo>,
+    pub foreign_keys: Vec<ForeignKeyInfo>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SchemaResponse {
+    pub success: bool,
+    pub data: Option<SchemaData>,
+    pub error: Option<AxiomError>,
+}

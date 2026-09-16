@@ -60,12 +60,17 @@ export class AxiomClient {
     return this.request("GET", `/api/v1/db/${db}/tables`);
   }
 
+  /** Get the column schema and foreign key relationships for a table. */
+  describeTable(db: string, table: string): Promise<AxiomResponse<{ database: string; table: string; columns: any[]; foreign_keys: any[] }>> {
+    return this.request("GET", `/api/v1/db/${db}/${table}/schema`);
+  }
+
   /** Fetch rows from a table with full cursor pagination and filter support. */
   fetchRows<T = Record<string, unknown>>(
     db: string,
     table: string,
     params?: FetchRowsParams
-  ): Promise<AxiomResponse<{ rows: T[] }>> {
+  ): Promise<AxiomResponse<T>> {
     const qs = new URLSearchParams();
     if (params) {
       for (const [key, value] of Object.entries(params)) {
@@ -94,11 +99,11 @@ export class AxiomClient {
     let cursor: string | null = null;
 
     while (true) {
-      const result = await this.fetchRows<T>(db, table, { ...params, cursor: cursor ?? undefined });
+      const result: AxiomResponse<T> = await this.fetchRows<T>(db, table, { ...params, cursor: cursor ?? undefined });
       const rows = result.rows ?? [];
       yield rows;
 
-      const nextCursor = result.pagination?.next_cursor ?? null;
+      const nextCursor: string | null = result.pagination?.next_cursor ?? null;
       if (!nextCursor || rows.length === 0) break;
       cursor = nextCursor;
     }
@@ -142,5 +147,3 @@ export class AxiomClient {
     return this.request("POST", `/api/v1/db/${db}/query`, { sql, params });
   }
 }
-
-
