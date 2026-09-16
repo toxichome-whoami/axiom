@@ -79,7 +79,7 @@ impl DatabaseEngine for LibsqlDatabaseEngine {
         }
         query_str.push_str(&format!(" ORDER BY name ASC LIMIT {}", limit));
 
-        let mut stmt = conn.prepare(&query_str).await?;
+        let stmt = conn.prepare(&query_str).await?;
         let mut rows = stmt.query(libsql::params_from_iter(params)).await?;
         
         let mut tables = Vec::new();
@@ -152,7 +152,7 @@ impl DatabaseEngine for LibsqlDatabaseEngine {
         }
 
         if is_mutation {
-            let mut stmt = conn.prepare(sql).await?;
+            let stmt = conn.prepare(sql).await?;
             let affected = stmt.execute(libsql::params_from_iter(libsql_params)).await?;
             return Ok(QueryResult {
                 columns: None,
@@ -161,7 +161,7 @@ impl DatabaseEngine for LibsqlDatabaseEngine {
             });
         }
 
-        let mut stmt = conn.prepare(sql).await?;
+        let stmt = conn.prepare(sql).await?;
         let mut rows = stmt.query(libsql::params_from_iter(libsql_params)).await?;
 
         let mut column_names = Vec::new();
@@ -206,3 +206,4 @@ impl DatabaseEngine for LibsqlDatabaseEngine {
         "sqlite"
     }
 }
+
