@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use crate::config::loader::ConfigManager;
 use crate::db::engines::any::AnyDatabaseEngine;
+use crate::db::engines::libsql::LibsqlDatabaseEngine;
 use crate::db::engines::base::DatabaseEngine;
 
 static ENGINES: Lazy<DashMap<String, Arc<dyn DatabaseEngine>>> = Lazy::new(DashMap::new);
@@ -36,13 +37,25 @@ impl DatabasePoolManager {
 
         println!("Initializing database pool: {}", alias);
 
-        let mut engine = AnyDatabaseEngine::new(db_config.clone());
-        if let Err(e) = engine.connect().await {
-            eprintln!("Failed to connect to database {}: {}", alias, e);
-            return None;
-        }
+        
+        let url = db_config.url.as_str();
+        let arc_engine: Arc<dyn DatabaseEngine> = if url.starts_with("sqlite://") || url.starts_with("libsql://") {
+            let mut engine = LibsqlDatabaseEngine::new(db_config.clone());
+            if let Err(e) = engine.connect().await {
+                eprintln!("Failed to connect to SQLite/Turso {}: {}", alias, e);
+                return None;
+            }
+            Arc::new(engine)
+        } else {
+            let mut engine = AnyDatabaseEngine::new(db_config.clone());
+            if let Err(e) = engine.connect().await {
+                eprintln!("Failed to connect to database {}: {}", alias, e);
+                return None;
+            }
+            Arc::new(engine)
+        };
 
-        let arc_engine: Arc<dyn DatabaseEngine> = Arc::new(engine);
+        
         ENGINES.insert(alias.to_string(), arc_engine.clone());
 
         Some(arc_engine)
@@ -65,3 +78,4 @@ impl DatabasePoolManager {
         println!("Database shutdown complete");
     }
 }
+

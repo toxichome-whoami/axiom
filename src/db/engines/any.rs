@@ -65,18 +65,18 @@ impl DatabaseEngine for AnyDatabaseEngine {
         let dialect = self.config.url.split(':').next().unwrap_or("any");
 
         let mut query_str = String::new();
-        if dialect == "postgres" {
+                if dialect == "postgres" {
             query_str.push_str("SELECT table_name::text as table_name FROM information_schema.tables WHERE table_schema = 'public'");
             if cursor.is_some() {
-                query_str.push_str(" AND table_name::text > $1");
+                query_str.push_str(" AND table_name::text > ");
             }
             query_str.push_str(&format!(" ORDER BY table_name ASC LIMIT {}", limit));
-        } else if dialect == "sqlite" {
-            query_str.push_str("SELECT name as table_name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'");
+        } else if dialect == "mysql" {
+            query_str.push_str("SELECT table_name FROM information_schema.tables WHERE table_schema = DATABASE()");
             if cursor.is_some() {
-                query_str.push_str(" AND name > ?");
+                query_str.push_str(" AND table_name > ?");
             }
-            query_str.push_str(&format!(" ORDER BY name ASC LIMIT {}", limit));
+            query_str.push_str(&format!(" ORDER BY table_name ASC LIMIT {}", limit));
         } else {
             return Ok(vec![]); // Stub for unsupported dialects
         }
@@ -104,8 +104,22 @@ impl DatabaseEngine for AnyDatabaseEngine {
         Ok(tables)
     }
 
-    async fn count_tables(&self) -> Result<i64, Box<dyn std::error::Error>> {
-        Ok(0)
+        async fn count_tables(&self) -> Result<i64, Box<dyn std::error::Error>> {
+        let pool = self.pool.as_ref().ok_or("Not connected")?;
+        let dialect = self.config.url.split(':').next().unwrap_or("any");
+        
+        let query_str = if dialect == "postgres" {
+            "SELECT count(*)::bigint as count FROM information_schema.tables WHERE table_schema = 'public'"
+        } else if dialect == "mysql" {
+            "SELECT count(*) as count FROM information_schema.tables WHERE table_schema = DATABASE()"
+        } else {
+            return Ok(0);
+        };
+        
+        use sqlx::Row;
+        let row = sqlx::query(query_str).fetch_one(pool).await?;
+        let count: i64 = row.try_get("count").unwrap_or(0);
+        Ok(count)
     }
 
     async fn describe_table(
