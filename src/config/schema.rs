@@ -259,7 +259,7 @@ impl Default for AxiomConfig {
     fn default() -> Self {
         Self {
             server: ServerConfig::default(),
-            version: "2.0.0-beta.1".to_string(),
+            version: "2.0.0".to_string(),
             features: FeaturesConfig::default(),
             logging: LoggingConfig::default(),
             rate_limit: RateLimitConfig::default(),
