@@ -89,4 +89,8 @@ def main():
         build_windows()
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        print_color("\n[Axiom] Gracefully stopped via Ctrl+C.", GREEN)
+        sys.exit(0)
