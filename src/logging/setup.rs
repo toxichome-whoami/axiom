@@ -49,11 +49,11 @@ where
     }
 }
 
-pub fn setup_logging() -> std::result::Result<(), Box<dyn std::error::Error>> {
+pub fn setup_logging() -> std::result::Result<Option<tracing_appender::non_blocking::WorkerGuard>, Box<dyn std::error::Error>> {
     let config = ConfigManager::get();
 
     if !config.logging.enabled {
-        return Ok(());
+        return Ok(None);
     }
 
     let log_level = match config.logging.level.to_uppercase().as_str() {
@@ -97,8 +97,6 @@ pub fn setup_logging() -> std::result::Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    std::mem::forget(_guard);
-
-    Ok(())
+    Ok(Some(_guard))
 }
 

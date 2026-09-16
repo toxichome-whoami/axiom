@@ -42,9 +42,13 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
     // 1. Load config (already done in sync main)
 
     // Initialize logging
-    if let Err(e) = logging::setup::setup_logging() {
-        eprintln!("Failed to setup logging: {}", e);
-    }
+    let _log_guard = match logging::setup::setup_logging() {
+        Ok(guard) => Some(guard),
+        Err(e) => {
+            eprintln!("Failed to setup logging: {}", e);
+            None
+        }
+    };
 
     // 3. Start Background Daemons
     server::lifespan::start_daemons().await;
@@ -97,9 +101,10 @@ async fn shutdown_signal() {
     tracing::warn!("Shutdown signal received. Gracefully stopping Axiom...");
     server::lifespan::stop_daemons().await;
 
-    // Force exit after 2 seconds to drop lingering keep-alive connections
-    tokio::spawn(async {
-        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    // Force exit after shutdown_timeout seconds to drop lingering keep-alive connections
+    let timeout = config::loader::ConfigManager::get().server.shutdown_timeout as u64;
+    tokio::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_secs(timeout)).await;
         std::process::exit(0);
     });
 }

@@ -67,7 +67,7 @@ async fn ready() -> Json<Value> {
 }
 
 async fn health(
-    axum::extract::Extension(_ctx): axum::extract::Extension<crate::utils::types::AuthContext>,
+    axum::extract::Extension(ctx): axum::extract::Extension<crate::utils::types::AuthContext>,
 ) -> Result<Json<Value>, crate::api::errors::AxiomError> {
     let config = ConfigManager::get();
 
@@ -88,6 +88,12 @@ async fn health(
     }
 
     let (cpu_percent, memory_used_mb) = tokio::task::spawn_blocking(get_system_stats).await.unwrap_or((0.0, 0));
+
+    if !ctx.full_admin {
+        return Ok(Json(json!({
+            "status": if all_dbs_up { "healthy" } else { "degraded" }
+        })));
+    }
 
     Ok(Json(json!({
         "status": if all_dbs_up { "healthy" } else { "degraded" },

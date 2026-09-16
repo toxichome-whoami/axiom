@@ -89,5 +89,7 @@ pub fn create_app() -> Router {
             header::CONTENT_SECURITY_POLICY,
             header::HeaderValue::from_static("default-src 'none'; frame-ancestors 'none';"),
         ))
+        .layer(tower_http::request_id::SetRequestIdLayer::x_request_id(tower_http::request_id::MakeRequestUuid))
         .layer(tower_http::trace::TraceLayer::new_for_http())
+        .layer(axum::extract::DefaultBodyLimit::max(10 * 1024 * 1024))
 }

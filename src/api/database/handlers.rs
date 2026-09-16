@@ -35,6 +35,16 @@ impl QueryExecutionPipeline {
         let is_mutation_regex = MUTATION_RE.is_match(sql);
 
         let config = crate::config::loader::ConfigManager::get();
+        
+        if let Some(blacklist) = &db_cfg.query_blacklist {
+            let sql_upper = sql.to_uppercase();
+            for blacklisted in blacklist {
+                if sql_upper.contains(&blacklisted.to_uppercase()) {
+                    return Err(AxiomError::new("QUERY_BLACKLISTED", "Query contains blacklisted keyword", StatusCode::FORBIDDEN));
+                }
+            }
+        }
+
         let cache_enabled = config.cache.enabled && config.cache.query_cache;
         let cache_ttl = config.cache.query_results_ttl as u64;
 

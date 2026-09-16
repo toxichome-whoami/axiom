@@ -44,7 +44,7 @@ dotenvy = "0.15.7"
 sysinfo = "0.38.4"
 ring = "0.17.14"
 sqlparser = "0.62.0"
-mimalloc = { version = "0.1", default-features = false }
+mimalloc = { version = "0.1", default-features = false, features = ["secure"] }
 tiberius = "0.12"
 clickhouse = { version = "0.12", features = ["lz4"] }
 
