@@ -86,7 +86,8 @@ impl AxiomClient {
         rows: &[T],
     ) -> Result<MutationResponse, reqwest::Error> {
         let url = format!("{}/api/v1/db/{}/{}/rows", self.base_url, db, table);
-        self.client.post(&url).json(rows).send().await?.json().await
+        let payload = serde_json::json!({ "rows": rows });
+        self.client.post(&url).json(&payload).send().await?.json().await
     }
 
     pub async fn update_rows(
@@ -108,7 +109,8 @@ impl AxiomClient {
         filter: HashMap<String, serde_json::Value>,
     ) -> Result<MutationResponse, reqwest::Error> {
         let url = format!("{}/api/v1/db/{}/{}/rows", self.base_url, db, table);
-        self.client.delete(&url).json(&filter).send().await?.json().await
+        let payload = serde_json::json!({ "filter": filter });
+        self.client.delete(&url).json(&payload).send().await?.json().await
     }
 
     pub async fn query<T: DeserializeOwned>(
@@ -125,3 +127,5 @@ impl AxiomClient {
         self.client.post(&url).json(&payload).send().await?.json().await
     }
 }
+
+

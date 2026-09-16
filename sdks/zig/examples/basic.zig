@@ -32,7 +32,7 @@ pub fn main() !void {
     const insert_result = try client.insertRows(
         "local_pg",
         "users",
-        \\[{"name": "Alice", "email": "alice@example.com"}]
+        \\\{"rows": [{"name": "Alice", "email": "alice@example.com"}]}
     );
     defer allocator.free(insert_result);
     std.debug.print("Insert: {s}\n", .{insert_result});
@@ -45,3 +45,4 @@ pub fn main() !void {
     defer allocator.free(query_result);
     std.debug.print("Query: {s}\n", .{query_result});
 }
+

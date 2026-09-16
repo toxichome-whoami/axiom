@@ -36,17 +36,27 @@ pub struct DatabasesResponse {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+pub struct TablesData {
+    pub tables: Option<Vec<TableInfo>>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub struct TablesResponse {
     pub success: bool,
-    pub tables: Option<Vec<TableInfo>>,
+    pub data: Option<TablesData>,
     pub error: Option<AxiomError>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct FetchData<T> {
+    pub rows: Option<Vec<T>>,
+    pub pagination: Option<Pagination>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct FetchResponse<T> {
     pub success: bool,
-    pub rows: Option<Vec<T>>,
-    pub pagination: Option<Pagination>,
+    pub data: Option<FetchData<T>>,
     pub error: Option<AxiomError>,
 }
 
@@ -65,7 +75,6 @@ pub struct MutationResponse {
     pub error: Option<AxiomError>,
 }
 
-/// Parameters for fetch_rows — all fields optional.
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct FetchRowsParams {
     pub limit: Option<usize>,

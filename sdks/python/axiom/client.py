@@ -7,14 +7,6 @@ import httpx
 class AxiomClient:
     """
     Official Python SDK for the Axiom API Gateway.
-
-    Usage:
-        client = AxiomClient(
-            base_url="http://localhost:4500",
-            key_name="admin",
-            key_secret="YOUR_SECRET"
-        )
-        dbs = client.list_databases()
     """
 
     def __init__(self, base_url: str, key_name: str, key_secret: str, timeout: int = 30):
@@ -42,7 +34,15 @@ class AxiomClient:
         try:
             url = self.base_url + endpoint
             response = self._client.request(method, url, **kwargs)
-            result = response.json()
+            
+            try:
+                result = response.json()
+            except Exception:
+                return {
+                    "success": False,
+                    "error": {"code": "JSON_ERROR", "message": f"Non-JSON response (HTTP {response.status_code}): {response.text}"},
+                }
+
             if not response.is_success:
                 return {
                     "success": False,
@@ -71,19 +71,7 @@ class AxiomClient:
         order: Optional[str] = None,
         fields: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """
-        Fetch rows from a table with keyset cursor pagination.
-
-        Args:
-            db:         Database alias (e.g. "main_db")
-            table:      Table name
-            limit:      Maximum rows to return (default 50)
-            cursor:     Opaque cursor string from a previous response's next_cursor
-            row_filter: Dict of column:value pairs to filter by
-            sort:       Column name to sort by
-            order:      "asc" or "desc"
-            fields:     Comma-separated list of columns to return (e.g. "id,name")
-        """
+        """Fetch rows from a table with keyset cursor pagination."""
         params: Dict[str, Any] = {"limit": limit}
         if cursor:
             params["cursor"] = cursor
@@ -106,15 +94,6 @@ class AxiomClient:
         sort: Optional[str] = None,
         order: Optional[str] = None,
     ) -> Iterator[List[Dict[str, Any]]]:
-        """
-        Generator that transparently pages through ALL rows using the cursor.
-        Yields each page's list of rows.
-
-        Usage:
-            for page in client.fetch_all_rows("main_db", "users"):
-                for row in page:
-                    print(row)
-        """
         cursor: Optional[str] = None
         while True:
             resp = self.fetch_rows(db, table, limit=limit, cursor=cursor, row_filter=row_filter, sort=sort, order=order)
@@ -132,9 +111,8 @@ class AxiomClient:
         table: str,
         rows: Union[Dict[str, Any], List[Dict[str, Any]]],
     ) -> Dict[str, Any]:
-        """Insert one or multiple rows. Pass a single dict or a list of dicts."""
         payload = rows if isinstance(rows, list) else [rows]
-        return self._request("POST", f"/api/v1/db/{db}/{table}/rows", json=payload)
+        return self._request("POST", f"/api/v1/db/{db}/{table}/rows", json={"rows": payload})
 
     def update_rows(
         self,
@@ -143,7 +121,6 @@ class AxiomClient:
         row_filter: Dict[str, Any],
         update: Dict[str, Any],
     ) -> Dict[str, Any]:
-        """Update all rows matching row_filter with the values in update."""
         return self._request(
             "PATCH",
             f"/api/v1/db/{db}/{table}/rows",
@@ -156,8 +133,7 @@ class AxiomClient:
         table: str,
         row_filter: Dict[str, Any],
     ) -> Dict[str, Any]:
-        """Delete all rows matching row_filter."""
-        return self._request("DELETE", f"/api/v1/db/{db}/{table}/rows", json=row_filter)
+        return self._request("DELETE", f"/api/v1/db/{db}/{table}/rows", json={"filter": row_filter})
 
     def query(
         self,
@@ -165,8 +141,8 @@ class AxiomClient:
         sql: str,
         params: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        """Execute a raw SQL query with optional parameters."""
         payload: Dict[str, Any] = {"sql": sql}
         if params:
             payload["params"] = params
         return self._request("POST", f"/api/v1/db/{db}/query", json=payload)
+

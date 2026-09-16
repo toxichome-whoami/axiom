@@ -111,7 +111,7 @@ export class AxiomClient {
     rows: Partial<T> | Partial<T>[]
   ): Promise<AxiomResponse<MutationResponse>> {
     const payload = Array.isArray(rows) ? rows : [rows];
-    return this.request("POST", `/api/v1/db/${db}/${table}/rows`, payload);
+    return this.request("POST", `/api/v1/db/${db}/${table}/rows`, { rows: payload });
   }
 
   /** Update rows matching filter with the values in update. */
@@ -130,7 +130,7 @@ export class AxiomClient {
     table: string,
     filter: Record<string, unknown>
   ): Promise<AxiomResponse<MutationResponse>> {
-    return this.request("DELETE", `/api/v1/db/${db}/${table}/rows`, filter);
+    return this.request("DELETE", `/api/v1/db/${db}/${table}/rows`, { filter });
   }
 
   /** Execute a raw SQL query. */
@@ -142,3 +142,5 @@ export class AxiomClient {
     return this.request("POST", `/api/v1/db/${db}/query`, { sql, params });
   }
 }
+
+

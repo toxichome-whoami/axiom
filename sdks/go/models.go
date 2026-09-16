@@ -42,10 +42,14 @@ type TableInfo struct {
 	Name string `json:"name"`
 }
 
+type TablesData struct {
+	Tables []TableInfo `json:"tables,omitempty"`
+}
+
 type TablesResponse struct {
-	Success bool        `json:"success"`
-	Tables  []TableInfo `json:"tables,omitempty"`
-	Error   *AxiomError `json:"error,omitempty"`
+	Success bool         `json:"success"`
+	Data    *TablesData  `json:"data,omitempty"`
+	Error   *AxiomError  `json:"error,omitempty"`
 }
 
 type FetchRowsParams struct {
@@ -56,11 +60,15 @@ type FetchRowsParams struct {
 	Filter map[string]interface{}
 }
 
-type FetchResponse struct {
-	Success    bool                     `json:"success"`
+type FetchData struct {
 	Rows       []map[string]interface{} `json:"rows,omitempty"`
 	Pagination map[string]interface{}   `json:"pagination,omitempty"`
-	Error      *AxiomError              `json:"error,omitempty"`
+}
+
+type FetchResponse struct {
+	Success bool        `json:"success"`
+	Data    *FetchData  `json:"data,omitempty"`
+	Error   *AxiomError `json:"error,omitempty"`
 }
 
 type MutationResponse struct {

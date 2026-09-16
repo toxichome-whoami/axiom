@@ -119,7 +119,8 @@ func (c *Client) FetchRows(db, table string, params *FetchRowsParams) (*FetchRes
 
 func (c *Client) InsertRows(db, table string, rows interface{}) (*MutationResponse, error) {
 	var resp MutationResponse
-	err := c.request("POST", fmt.Sprintf("/api/v1/db/%s/%s/rows", db, table), rows, &resp)
+	payload := map[string]interface{}{"rows": rows}
+	err := c.request("POST", fmt.Sprintf("/api/v1/db/%s/%s/rows", db, table), payload, &resp)
 	return &resp, err
 }
 
@@ -135,7 +136,8 @@ func (c *Client) UpdateRows(db, table string, filter map[string]interface{}, upd
 
 func (c *Client) DeleteRows(db, table string, filter map[string]interface{}) (*MutationResponse, error) {
 	var resp MutationResponse
-	err := c.request("DELETE", fmt.Sprintf("/api/v1/db/%s/%s/rows", db, table), filter, &resp)
+	payload := map[string]interface{}{"filter": filter}
+	err := c.request("DELETE", fmt.Sprintf("/api/v1/db/%s/%s/rows", db, table), payload, &resp)
 	return &resp, err
 }
 
@@ -151,3 +153,5 @@ func (c *Client) Query(db string, sql string, params map[string]interface{}) (*Q
 	err := c.request("POST", fmt.Sprintf("/api/v1/db/%s/query", db), payload, &resp)
 	return &resp, err
 }
+
+
