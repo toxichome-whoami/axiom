@@ -108,18 +108,46 @@ impl DatabaseEngine for LibsqlDatabaseEngine {
         Ok(0)
     }
 
-    async fn describe_table(
-        &self,
-        _table: &str,
-    ) -> Result<Vec<ColumnInfo>, Box<dyn std::error::Error>> {
-        Ok(vec![])
+    async fn describe_table(&self, table: &str) -> Result<Vec<ColumnInfo>, Box<dyn std::error::Error>> {
+        let conn = self.conn.as_ref().ok_or("Not connected")?;
+        
+        let sql = format!("PRAGMA table_info('{}')", table.replace("'", "''"));
+        let mut rows = conn.query(&sql, ()).await?;
+        
+        let mut columns = Vec::new();
+        while let Ok(Some(row)) = rows.next().await {
+            let name: String = row.get(1)?;
+            let data_type: String = row.get(2)?;
+            let notnull: i32 = row.get(3)?;
+            let pk: i32 = row.get(5)?;
+            columns.push(ColumnInfo {
+                name,
+                r#type: data_type,
+                nullable: notnull == 0,
+                primary_key: pk > 0,
+            });
+        }
+        Ok(columns)
     }
 
-    async fn get_foreign_keys(
-        &self,
-        _table: &str,
-    ) -> Result<Vec<ForeignKeyInfo>, Box<dyn std::error::Error>> {
-        Ok(vec![])
+    async fn get_foreign_keys(&self, table: &str) -> Result<Vec<ForeignKeyInfo>, Box<dyn std::error::Error>> {
+        let conn = self.conn.as_ref().ok_or("Not connected")?;
+        
+        let sql = format!("PRAGMA foreign_key_list('{}')", table.replace("'", "''"));
+        let mut rows = conn.query(&sql, ()).await?;
+        
+        let mut fks = Vec::new();
+        while let Ok(Some(row)) = rows.next().await {
+            let referenced_table_name: String = row.get(2)?;
+            let column_name: String = row.get(3)?;
+            let referenced_column_name: String = row.get(4)?;
+            fks.push(ForeignKeyInfo {
+                column: column_name,
+                referenced_table: referenced_table_name,
+                referenced_column: referenced_column_name,
+            });
+        }
+        Ok(fks)
     }
 
     async fn execute(

@@ -149,7 +149,13 @@ impl QueryExecutionPipeline {
         match exec_result {
             Ok(res) => {
                 let arc_res = Arc::new(res);
-                let json_bytes = bytes::Bytes::from(serde_json::to_vec(&*arc_res).unwrap());
+                let json_bytes = match serde_json::to_vec(&*arc_res) {
+                    Ok(b) => bytes::Bytes::from(b),
+                    Err(e) => {
+                        tracing::error!("Serialization error: {}", e);
+                        return Err(AxiomError::new("SERIALIZATION_FAILED", "Failed to serialize response", StatusCode::INTERNAL_SERVER_ERROR));
+                    }
+                };
 
                 if !is_mutation {
                     if let Some(key) = cache_key {

@@ -63,11 +63,21 @@ impl DatabaseEngine for MysqlDatabaseEngine {
     ) -> Result<Vec<TableInfo>, Box<dyn std::error::Error>> {
         let pool = self.pool.as_ref().ok_or("Not connected")?;
 
-        let mut query_str = "SELECT table_name FROM information_schema.tables WHERE table_schema = DATABASE()".to_string();
-        if cursor.is_some() {
-            query_str.push_str(" AND table_name > ?");
-        }
-        query_str.push_str(&format!(" ORDER BY table_name ASC LIMIT {}", limit));
+        let query_str = if cursor.is_some() {
+            format!(
+                "SELECT TABLE_NAME as table_name FROM information_schema.tables \
+                 WHERE table_schema = DATABASE() AND TABLE_NAME > ? \
+                 ORDER BY TABLE_NAME ASC LIMIT {}",
+                limit
+            )
+        } else {
+            format!(
+                "SELECT TABLE_NAME as table_name FROM information_schema.tables \
+                 WHERE table_schema = DATABASE() \
+                 ORDER BY TABLE_NAME ASC LIMIT {}",
+                limit
+            )
+        };
 
         let mut query = sqlx::query(&query_str);
         if let Some(c) = cursor {
@@ -93,50 +103,82 @@ impl DatabaseEngine for MysqlDatabaseEngine {
 
     async fn count_tables(&self) -> Result<i64, Box<dyn std::error::Error>> {
         let pool = self.pool.as_ref().ok_or("Not connected")?;
-        let query_str = "SELECT count(*) as count FROM information_schema.tables WHERE table_schema = DATABASE()";
-        
-        let row = sqlx::query(query_str).fetch_one(pool).await?;
-        let count: i64 = row.try_get("count").unwrap_or(0);
+        let row = sqlx::query(
+            "SELECT COUNT(*) as cnt FROM information_schema.tables WHERE table_schema = DATABASE()",
+        )
+        .fetch_one(pool)
+        .await?;
+        let count: i64 = row.try_get("cnt").unwrap_or(0);
         Ok(count)
     }
 
-    async fn describe_table(&self, table: &str) -> Result<Vec<ColumnInfo>, Box<dyn std::error::Error>> {
+    async fn describe_table(
+        &self,
+        table: &str,
+    ) -> Result<Vec<ColumnInfo>, Box<dyn std::error::Error>> {
         let pool = self.pool.as_ref().ok_or("Not connected")?;
-        let query_str = "SELECT COLUMN_NAME as column: column_name, DATA_TYPE as r#type: data_type, IS_NULLABLE as is_nullable FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = ? ORDER BY ORDINAL_POSITION";
-        let rows = sqlx::query(query_str).bind(table).fetch_all(pool).await?;
-        
+
+        let rows = sqlx::query(
+            "SELECT COLUMN_NAME as column_name, DATA_TYPE as data_type, \
+             IS_NULLABLE as is_nullable, COLUMN_KEY as column_key \
+             FROM information_schema.COLUMNS \
+             WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? \
+             ORDER BY ORDINAL_POSITION",
+        )
+        .bind(table)
+        .fetch_all(pool)
+        .await?;
+
         let mut columns = Vec::new();
         for row in rows {
             columns.push(ColumnInfo {
                 name: row.try_get::<String, _>("column_name").unwrap_or_default(),
                 r#type: row.try_get::<String, _>("data_type").unwrap_or_default(),
-                primary_key: false,
-                nullable: row.try_get::<String, _>("is_nullable").unwrap_or("YES".to_string()) == "YES",
+                nullable: row.try_get::<String, _>("is_nullable").unwrap_or_default() == "YES",
+                primary_key: row.try_get::<String, _>("column_key").unwrap_or_default() == "PRI",
             });
         }
         Ok(columns)
     }
 
-    async fn get_foreign_keys(&self, table: &str) -> Result<Vec<ForeignKeyInfo>, Box<dyn std::error::Error>> {
+    async fn get_foreign_keys(
+        &self,
+        table: &str,
+    ) -> Result<Vec<ForeignKeyInfo>, Box<dyn std::error::Error>> {
         let pool = self.pool.as_ref().ok_or("Not connected")?;
-        let query_str = "
-            SELECT COLUMN_NAME as column: column_name, REFERENCED_TABLE_NAME as referenced_table: referenced_table_name, REFERENCED_COLUMN_NAME as referenced_column_name
-            FROM information_schema.key_column_usage
-            WHERE REFERENCED_TABLE_NAME IS NOT NULL AND TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?";
-        let rows = sqlx::query(query_str).bind(table).fetch_all(pool).await?;
-        
+
+        let rows = sqlx::query(
+            "SELECT COLUMN_NAME as column_name, \
+             REFERENCED_TABLE_NAME as referenced_table_name, \
+             REFERENCED_COLUMN_NAME as referenced_column_name \
+             FROM information_schema.KEY_COLUMN_USAGE \
+             WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? \
+             AND REFERENCED_TABLE_NAME IS NOT NULL",
+        )
+        .bind(table)
+        .fetch_all(pool)
+        .await?;
+
         let mut fks = Vec::new();
         for row in rows {
             fks.push(ForeignKeyInfo {
                 column: row.try_get::<String, _>("column_name").unwrap_or_default(),
-                referenced_table: row.try_get::<String, _>("referenced_table_name").unwrap_or_default(),
-                referenced_column: row.try_get::<String, _>("referenced_column_name").unwrap_or_default(),
+                referenced_table: row
+                    .try_get::<String, _>("referenced_table_name")
+                    .unwrap_or_default(),
+                referenced_column: row
+                    .try_get::<String, _>("referenced_column_name")
+                    .unwrap_or_default(),
             });
         }
         Ok(fks)
     }
 
-    async fn execute(&self, sql: &str, params: &[serde_json::Value]) -> Result<QueryResult, Box<dyn std::error::Error>> {
+    async fn execute(
+        &self,
+        sql: &str,
+        params: &[serde_json::Value],
+    ) -> Result<QueryResult, Box<dyn std::error::Error>> {
         let pool = self.pool.as_ref().ok_or("Not connected")?;
 
         let is_mutation = sql.trim().to_uppercase().starts_with("INSERT")
@@ -149,8 +191,8 @@ impl DatabaseEngine for MysqlDatabaseEngine {
             match param {
                 Value::String(s) => { query = query.bind(s); }
                 Value::Number(n) => {
-                    if let Some(i) = n.as_i64() { query = query.bind(i); } 
-                    else if let Some(f) = n.as_f64() { query = query.bind(f); } 
+                    if let Some(i) = n.as_i64() { query = query.bind(i); }
+                    else if let Some(f) = n.as_f64() { query = query.bind(f); }
                     else { query = query.bind(n.to_string()); }
                 }
                 Value::Bool(b) => { query = query.bind(b); }

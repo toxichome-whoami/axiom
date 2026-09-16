@@ -75,7 +75,7 @@ impl DatabaseEngine for ClickHouseDatabaseEngine {
     ) -> Result<Vec<TableInfo>, Box<dyn std::error::Error>> {
         let mut sql = format!("SELECT name as table_name FROM system.tables WHERE database = '{}'", self.database);
         if cursor.is_some() {
-            sql.push_str(" AND name > {cursor:String}");
+            sql.push_str(" AND name > ?");
         }
         sql.push_str(&format!(" ORDER BY name ASC LIMIT {}", limit));
 
@@ -122,7 +122,7 @@ impl DatabaseEngine for ClickHouseDatabaseEngine {
     }
 
     async fn describe_table(&self, table: &str) -> Result<Vec<ColumnInfo>, Box<dyn std::error::Error>> {
-        let sql = format!("SELECT name as column: column_name, type as data_type FROM system.columns WHERE database = '{}' AND table = '{}'", self.database, table.replace("'", "''"));
+        let sql = format!("SELECT name as column_name, type as data_type FROM system.columns WHERE database = '{}' AND table = '{}'", self.database, table.replace("'", "''"));
         let result = self.execute(&sql, &[]).await?;
         
         let mut columns = Vec::new();
@@ -134,8 +134,8 @@ impl DatabaseEngine for ClickHouseDatabaseEngine {
                 columns.push(ColumnInfo {
                     name,
                     r#type: data_type,
+                    nullable: is_nullable,
                     primary_key: false,
-                nullable: is_nullable,
                 });
             }
         }

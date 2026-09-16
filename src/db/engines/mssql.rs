@@ -105,7 +105,20 @@ impl DatabaseEngine for MssqlDatabaseEngine {
         let client_arc = self.client.as_ref().ok_or("Not connected")?;
         let mut client = client_arc.lock().await;
         
-        let mut query = tiberius::Query::new("SELECT COLUMN_NAME as column: column_name, DATA_TYPE as r#type: data_type, IS_NULLABLE as is_nullable FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = @P1 ORDER BY ORDINAL_POSITION");
+        let mut query = tiberius::Query::new("
+            SELECT 
+                c.COLUMN_NAME as column_name, 
+                c.DATA_TYPE as data_type, 
+                c.IS_NULLABLE as is_nullable,
+                CASE WHEN tc.CONSTRAINT_TYPE = 'PRIMARY KEY' THEN 'YES' ELSE 'NO' END as is_primary_key
+            FROM INFORMATION_SCHEMA.COLUMNS c
+            LEFT JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu 
+                ON c.TABLE_NAME = kcu.TABLE_NAME AND c.COLUMN_NAME = kcu.COLUMN_NAME
+            LEFT JOIN INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc 
+                ON kcu.CONSTRAINT_NAME = tc.CONSTRAINT_NAME AND tc.CONSTRAINT_TYPE = 'PRIMARY KEY'
+            WHERE c.TABLE_NAME = @P1 
+            ORDER BY c.ORDINAL_POSITION
+        ");
         query.bind(table);
         
         let stream = query.query(&mut *client).await?;
@@ -116,7 +129,7 @@ impl DatabaseEngine for MssqlDatabaseEngine {
             columns.push(ColumnInfo {
                 name: row.try_get::<&str, _>("column_name")?.unwrap_or_default().to_string(),
                 r#type: row.try_get::<&str, _>("data_type")?.unwrap_or_default().to_string(),
-                primary_key: false,
+                primary_key: row.try_get::<&str, _>("is_primary_key")?.unwrap_or("NO") == "YES",
                 nullable: row.try_get::<&str, _>("is_nullable")?.unwrap_or("YES") == "YES",
             });
         }
@@ -128,7 +141,7 @@ impl DatabaseEngine for MssqlDatabaseEngine {
         let mut client = client_arc.lock().await;
         
         let mut query = tiberius::Query::new("
-            SELECT col1.name as column: column_name, tab2.name as referenced_table: referenced_table_name, col2.name as referenced_column_name
+            SELECT col1.name as column_name, tab2.name as referenced_table_name, col2.name as referenced_column_name
             FROM sys.foreign_key_columns fkc
             INNER JOIN sys.objects obj ON obj.object_id = fkc.constraint_object_id
             INNER JOIN sys.tables tab1 ON tab1.object_id = fkc.parent_object_id

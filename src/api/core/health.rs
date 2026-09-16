@@ -87,7 +87,7 @@ async fn health(
         }
     }
 
-    let (cpu_percent, memory_used_mb) = get_system_stats();
+    let (cpu_percent, memory_used_mb) = tokio::task::spawn_blocking(get_system_stats).await.unwrap_or((0.0, 0));
 
     Ok(Json(json!({
         "status": if all_dbs_up { "healthy" } else { "degraded" },

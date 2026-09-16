@@ -1,4 +1,4 @@
-﻿<div align="center">
+<div align="center">
 
 # Axiom
 
@@ -39,8 +39,10 @@ Instead of building and maintaining database-specific APIs for every project, Ax
 flowchart TD
     A["Your Application"] -->|REST / HTTP| B["Axiom\nAPI Gateway"]
     B --> C[("PostgreSQL")]
-    B --> D[("MySQL")]
-    B --> E[("MariaDB")]
+    B --> D[("MySQL / MariaDB")]
+    B --> E[("SQL Server")]
+    B --> F[("SQLite / Turso")]
+    B --> G[("ClickHouse")]
 ```
 
 ## Why Axiom?
@@ -48,7 +50,7 @@ flowchart TD
 | Principle | Description |
 | --- | --- |
 |  **Lightweight** | Minimal overhead with a high-performance Rust implementation using `mimalloc`. |
-|  **Database Agnostic** | A unified API that works across PostgreSQL, MySQL, and MariaDB. |
+|  **Database Agnostic** | A unified API that works across PostgreSQL, MySQL, MariaDB, SQL Server, SQLite, Turso, and ClickHouse. |
 |  **Secure by Default** | Authentication, rate limiting, WAF protections, and request validation built-in. |
 |  **Zero-Contention Config** | Config is loaded once via `OnceLock<Arc<Config>>`  no locking overhead on every request. |
 
@@ -71,8 +73,10 @@ Interact with multiple SQL databases through a single, consistent REST interface
 flowchart LR
     App["Application"] --> Axiom["Axiom"]
     Axiom --> PG[("PostgreSQL")]
-    Axiom --> MY[("MySQL")]
-    Axiom --> MA[("MariaDB")]
+    Axiom --> MY[("MySQL / MariaDB")]
+    Axiom --> MS[("SQL Server")]
+    Axiom --> SL[("SQLite / Turso")]
+    Axiom --> CH[("ClickHouse")]
 ```
 
 ### Security

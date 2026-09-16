@@ -100,11 +100,22 @@ async fn execute_query(
         }
     }
 
-    let (_arc_result, json_bytes) = QueryExecutionPipeline::run_query(&db_name, &payload.sql, params_array, &auth, &db_cfg)
-        .await?;
+    let timeout_duration = std::time::Duration::from_secs(payload.timeout.unwrap_or(30) as u64);
+    let (_arc_result, json_bytes) = match tokio::time::timeout(
+        timeout_duration,
+        QueryExecutionPipeline::run_query(&db_name, &payload.sql, params_array, &auth, &db_cfg)
+    ).await {
+        Ok(result) => result?,
+        Err(_) => {
+            return Err(AxiomError::new("QUERY_TIMEOUT", "Query execution timed out", axum::http::StatusCode::GATEWAY_TIMEOUT));
+        }
+    };
 
-    Ok(axum::response::Response::builder()
+    axum::response::Response::builder()
         .header("content-type", "application/json")
         .body(axum::body::Body::from(json_bytes))
-        .unwrap())
+        .map_err(|e| {
+            tracing::error!("Response build failed: {}", e);
+            AxiomError::new("INTERNAL_ERROR", "Failed to build response", axum::http::StatusCode::INTERNAL_SERVER_ERROR)
+        })
 }

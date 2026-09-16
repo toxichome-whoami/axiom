@@ -283,6 +283,52 @@ curl -X DELETE "http://localhost:4500/api/v1/db/main_db/users/rows" \
 ```
 
 
+
+### `GET /api/v1/db/{alias}/{table}/schema` - Describe Table Schema
+
+Returns the full column schema and foreign key relationships for a table.
+
+```bash
+curl "http://localhost:4500/api/v1/db/main_db/users/schema" \
+  -H "X-Axiom-Key: <TOKEN>"
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "database": "main_db",
+    "table": "users",
+    "columns": [
+      { "name": "id",    "type": "integer", "nullable": false, "primary_key": true },
+      { "name": "email", "type": "text",    "nullable": false, "primary_key": false },
+      { "name": "org_id","type": "integer", "nullable": true,  "primary_key": false }
+    ],
+    "foreign_keys": [
+      { "column": "org_id", "referenced_table": "organisations", "referenced_column": "id" }
+    ]
+  }
+}
+```
+
+> [!NOTE]
+> ClickHouse does not enforce traditional foreign key constraints — `foreign_keys` will always be an empty array for ClickHouse databases.
+
+
+## Supported Database Engines
+
+| Engine | URL Prefix | Notes |
+|---|---|---|
+| PostgreSQL | `postgres://` / `postgresql://` | Includes Neon, Supabase, CockroachDB, Timescale |
+| MySQL | `mysql://` | Includes PlanetScale, TiDB |
+| MariaDB | `mariadb://` | |
+| Microsoft SQL Server | `mssql://` / `sqlserver://` | Includes Azure SQL |
+| SQLite (local) | `sqlite://` | Backed by the Turso `libsql` engine |
+| Turso (remote edge) | `libsql://` / `libsql+wss://` | |
+| ClickHouse | `clickhouse://` / `clickhouse+https://` | Analytics and big-data workloads |
+
+
 ## Filter Syntax
 
 Filters are JSON objects passed as a URL-encoded string to the `filter=` parameter.
@@ -305,7 +351,7 @@ Filters are JSON objects passed as a URL-encoded string to the `filter=` paramet
 | `$or` | Logical OR | `{"$or": [{"status": "active"}, {"role": "admin"}]}` |
 | `$and` | Logical AND | `{"$and": [{"verified": true}, {"age": {"$gte": 18}}]}` |
 
-**Nested example**  verified users who are active OR admins:
+**Nested example** — verified users who are active OR admins:
 
 ```json
 {
@@ -324,6 +370,6 @@ Filters are JSON objects passed as a URL-encoded string to the `filter=` paramet
 
 <div align="center">
 
-*Axiom  a [Toxichome](https://toxichome.cc) open-source project*
+*Axiom — a [Toxichome](https://toxichome.cc) open-source project*
 
 </div>

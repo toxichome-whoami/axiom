@@ -14,13 +14,18 @@ pub async fn rate_limit_middleware(req: Request, next: Next) -> Result<Response,
         return Ok(next.run(req).await);
     }
 
-    let client_ip = req
-        .headers()
-        .get("x-forwarded-for")
-        .or_else(|| req.headers().get("x-real-ip"))
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("127.0.0.1")
-        .to_string();
+    let mut client_ip = "127.0.0.1".to_string();
+    if let Some(connect_info) = req.extensions().get::<axum::extract::ConnectInfo<std::net::SocketAddr>>() {
+        client_ip = connect_info.0.ip().to_string();
+    }
+
+    if config.server.trusted_proxies.contains(&client_ip) || config.server.trusted_proxies.contains(&"*".to_string()) {
+        if let Some(forwarded) = req.headers().get("x-forwarded-for").or_else(|| req.headers().get("x-real-ip")) {
+            if let Ok(fwd_str) = forwarded.to_str() {
+                client_ip = fwd_str.split(',').next().unwrap_or(&client_ip).trim().to_string();
+            }
+        }
+    }
 
     let mut is_allowed = false;
     for allowed in &config.server.allowed_ips {

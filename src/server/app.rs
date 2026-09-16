@@ -20,7 +20,7 @@ async fn fallback_handler() -> impl IntoResponse {
 }
 
 async fn health_check() -> impl IntoResponse {
-    Json(json!({"status": "ok", "version": "1.0.5"}))
+    Json(json!({"status": "ok", "version": env!("CARGO_PKG_VERSION")}))
 }
 
 async fn favicon() -> impl IntoResponse {
@@ -33,10 +33,19 @@ async fn favicon() -> impl IntoResponse {
 pub fn create_app() -> Router {
     let config = ConfigManager::get();
 
-    let cors = CorsLayer::new()
-        .allow_origin(Any)
+    let mut cors = CorsLayer::new()
         .allow_methods(Any)
         .allow_headers(Any);
+        
+    if config.server.cors_origins.iter().any(|o| o == "*") {
+        cors = cors.allow_origin(Any);
+    } else {
+        let origins: Vec<axum::http::HeaderValue> = config.server.cors_origins
+            .iter()
+            .filter_map(|o| o.parse().ok())
+            .collect();
+        cors = cors.allow_origin(tower_http::cors::AllowOrigin::list(origins));
+    }
     // Core Routes
     let core_routes =
         crate::api::core::health::get_router();
@@ -71,6 +80,14 @@ pub fn create_app() -> Router {
         .layer(SetResponseHeaderLayer::overriding(
             header::X_FRAME_OPTIONS,
             header::HeaderValue::from_static("DENY"),
+        ))
+        .layer(SetResponseHeaderLayer::overriding(
+            header::STRICT_TRANSPORT_SECURITY,
+            header::HeaderValue::from_static("max-age=63072000; includeSubDomains; preload"),
+        ))
+        .layer(SetResponseHeaderLayer::overriding(
+            header::CONTENT_SECURITY_POLICY,
+            header::HeaderValue::from_static("default-src 'none'; frame-ancestors 'none';"),
         ))
         .layer(tower_http::trace::TraceLayer::new_for_http())
 }

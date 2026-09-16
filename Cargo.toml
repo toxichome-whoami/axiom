@@ -45,7 +45,8 @@ sysinfo = "0.38.4"
 ring = "0.17.14"
 sqlparser = "0.62.0"
 mimalloc = { version = "0.1", default-features = false }
-tiberius = "0.12.3"
+tiberius = "0.12"
+clickhouse = { version = "0.12", features = ["lz4"] }
 
 
 [profile.release]
@@ -53,6 +54,7 @@ lto = true
 codegen-units = 1
 panic = "abort"
 strip = true
+
 
 
 

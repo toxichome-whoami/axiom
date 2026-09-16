@@ -14,18 +14,32 @@ pub mod security;
 pub mod server;
 mod utils;
 
-#[tokio::main(flavor = "current_thread")]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = std::env::args().collect();
     if args.iter().any(|arg| arg == "--version" || arg == "-v") {
         println!("Axiom v{}", env!("CARGO_PKG_VERSION"));
         return Ok(());
     }
 
-    // 1. Load config
     config::loader::ConfigManager::load("config.toml").unwrap_or_else(|e| {
         eprintln!("Failed to load config: {}", e);
+        std::process::exit(1);
     });
+
+    let config = config::loader::ConfigManager::get();
+    let workers = config.server.workers as usize;
+    let mut builder = tokio::runtime::Builder::new_multi_thread();
+    builder.enable_all();
+    if workers > 0 {
+        builder.worker_threads(workers);
+    }
+    
+    let rt = builder.build()?;
+    rt.block_on(async_main())
+}
+
+async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
+    // 1. Load config (already done in sync main)
 
     // Initialize logging
     if let Err(e) = logging::setup::setup_logging() {
@@ -50,7 +64,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     tracing::info!("Axiom Native Core running on http://{}", addr);
     
-    axum::serve(listener, app)
+    axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>())
         .with_graceful_shutdown(shutdown_signal())
         .await?;
 

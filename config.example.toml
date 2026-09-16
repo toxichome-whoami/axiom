@@ -26,7 +26,7 @@ shutdown_timeout = 30            # Seconds to wait for active requests during sh
 [features]
 database = true                  # Enable SQL Database Gateway
 
-# ─── Model Context Protocol (MCP) ─────────────────────
+# ─── Logging ──────────────────────────────────────────
 [logging]
 enabled = true                   # false = suppress all logging
 level = "INFO"                   # TRACE | DEBUG | INFO | WARN | ERROR (Can be overridden by RUST_LOG env var)
@@ -88,17 +88,105 @@ rate_limit_override = 0          # 0 = use global limit, >0 = specific limit
 full_admin = true                # Bypass all scope checks
 
 # ─── Database Backends ────────────────────────────────
-# Configure your SQL targets (PostgreSQL, MySQL, SQLite, etc.)
-# Format: "<federation_server_alias>_<remote_db_name>"
-[database.main_db]
-engine = "postgres"              # postgres | mysql | sqlite | mariadb | mssql
-url = "postgresql://user:pass@localhost:5432/dbname"
-mode = "readwrite"               # readwrite | readonly
-pool_min = 5                     # Minimum idle connections
-pool_max = 80                    # Maximum concurrent connections (tune to your DB's max_connections)
-connection_timeout = 30          # Seconds to wait for a connection
-idle_timeout = 600               # Seconds to keep an idle connection alive
-max_lifetime = 3600              # Maximum age of a connection
-query_blacklist = ["DROP", "TRUNCATE", "ALTER"]
-dangerous_operations = false     # Allow/Disallow raw SQL outside of Axiom dialect
+# Connect any number of databases simultaneously under unique aliases.
+# Each alias becomes its own API namespace: /api/v1/db/<alias>/...
+#
+# Supported engines and their URL schemes:
+#   postgres://    -> PostgreSQL (also: Neon, Supabase, CockroachDB, Tembo, Timescale)
+#   mysql://       -> MySQL      (also: PlanetScale, TiDB)
+#   mariadb://     -> MariaDB
+#   mssql://       -> Microsoft SQL Server (also: Azure SQL, sqlserver://)
+#   sqlite://      -> SQLite (local file, via Turso libsql engine)
+#   libsql://      -> Turso (remote edge SQLite, also: libsql+wss://)
+#   clickhouse://  -> ClickHouse (also: clickhouse+https:// for TLS)
 
+# --- PostgreSQL ---
+[database.my_postgres]
+engine = "postgres"
+url = "postgres://user:password@localhost:5432/mydb"
+mode = "readwrite"               # readwrite | readonly
+pool_min = 2
+pool_max = 20
+connection_timeout = 30
+idle_timeout = 600
+max_lifetime = 3600
+query_blacklist = ["DROP", "TRUNCATE", "ALTER"]
+dangerous_operations = false
+
+# --- MySQL ---
+[database.my_mysql]
+engine = "mysql"
+url = "mysql://user:password@localhost:3306/mydb"
+mode = "readwrite"
+pool_min = 2
+pool_max = 20
+connection_timeout = 30
+idle_timeout = 600
+max_lifetime = 3600
+query_blacklist = ["DROP", "TRUNCATE", "ALTER"]
+dangerous_operations = false
+
+# --- MariaDB ---
+[database.my_mariadb]
+engine = "mariadb"
+url = "mariadb://user:password@localhost:3306/mydb"
+mode = "readwrite"
+pool_min = 2
+pool_max = 20
+connection_timeout = 30
+idle_timeout = 600
+max_lifetime = 3600
+query_blacklist = []
+dangerous_operations = false
+
+# --- Microsoft SQL Server ---
+[database.my_mssql]
+engine = "mssql"
+url = "mssql://user:password@localhost:1433/mydb"
+mode = "readwrite"
+pool_min = 2
+pool_max = 20
+connection_timeout = 30
+idle_timeout = 600
+max_lifetime = 3600
+query_blacklist = ["DROP", "TRUNCATE", "ALTER"]
+dangerous_operations = false
+
+# --- SQLite (local file) ---
+[database.my_sqlite]
+engine = "sqlite"
+url = "sqlite:///path/to/database.db"
+mode = "readwrite"
+pool_min = 1
+pool_max = 5
+connection_timeout = 10
+idle_timeout = 300
+max_lifetime = 3600
+query_blacklist = []
+dangerous_operations = false
+
+# --- Turso (remote edge SQLite) ---
+[database.my_turso]
+engine = "libsql"
+url = "libsql://your-db-name.turso.io?authToken=YOUR_TURSO_AUTH_TOKEN"
+mode = "readwrite"
+pool_min = 1
+pool_max = 10
+connection_timeout = 15
+idle_timeout = 300
+max_lifetime = 3600
+query_blacklist = []
+dangerous_operations = false
+
+# --- ClickHouse (analytics / big data) ---
+[database.my_clickhouse]
+engine = "clickhouse"
+url = "clickhouse://user:password@localhost:8123/default"
+mode = "readwrite"
+pool_min = 1
+pool_max = 10
+connection_timeout = 15
+idle_timeout = 300
+max_lifetime = 3600
+query_blacklist = ["DROP", "TRUNCATE", "ALTER"]
+dangerous_operations = false
