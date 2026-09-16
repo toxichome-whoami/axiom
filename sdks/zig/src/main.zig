@@ -30,7 +30,7 @@ pub const AxiomClient = struct {
         const token = try allocator.alloc(u8, token_len);
         _ = encoder.encode(token, auth_str);
 
-        const trimmed = std.mem.trimRight(u8, base_url, "/");
+        const trimmed = if (std.mem.endsWith(u8, base_url, "/")) base_url[0 .. base_url.len - 1] else base_url;
 
         return AxiomClient{
             .allocator = allocator,
@@ -145,7 +145,6 @@ pub const AxiomClient = struct {
             }
             if (p.fields) |fields| {
                 try qs.writer().print("{s}fields={s}", .{ if (first) "?" else "&", fields });
-                _ = first;
             }
         }
 
