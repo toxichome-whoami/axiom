@@ -38,15 +38,14 @@ type AxiomError struct {
 	Message string `json:"message"`
 }
 
-
 type TableInfo struct {
-	Name string json:"name"
+	Name string `json:"name"`
 }
 
 type TablesResponse struct {
-	Success bool         json:"success"
-	Tables  []TableInfo  json:"tables,omitempty"
-	Error   *AxiomError  json:"error,omitempty"
+	Success bool        `json:"success"`
+	Tables  []TableInfo `json:"tables,omitempty"`
+	Error   *AxiomError `json:"error,omitempty"`
 }
 
 type FetchRowsParams struct {
@@ -58,15 +57,14 @@ type FetchRowsParams struct {
 }
 
 type FetchResponse struct {
-	Success    bool                     json:"success"
-	Rows       []map[string]interface{} json:"rows,omitempty"
-	Pagination map[string]interface{}   json:"pagination,omitempty"
-	Error      *AxiomError              json:"error,omitempty"
+	Success    bool                     `json:"success"`
+	Rows       []map[string]interface{} `json:"rows,omitempty"`
+	Pagination map[string]interface{}   `json:"pagination,omitempty"`
+	Error      *AxiomError              `json:"error,omitempty"`
 }
 
 type MutationResponse struct {
-	Success      bool        json:"success"
-	AffectedRows int         json:"affected_rows,omitempty"
-	Error        *AxiomError json:"error,omitempty"
+	Success      bool        `json:"success"`
+	AffectedRows int         `json:"affected_rows,omitempty"`
+	Error        *AxiomError `json:"error,omitempty"`
 }
-
