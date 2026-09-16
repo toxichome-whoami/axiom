@@ -25,6 +25,13 @@ pub async fn start_daemons() {
     // Core daemons only
 }
 
+
+pub fn register_daemon(handle: tokio::task::JoinHandle<()>) {
+    if let Ok(mut tasks) = DAEMONS.lock() {
+        tasks.push(handle);
+    }
+}
+
 pub async fn stop_daemons() {
     let mut tasks = DAEMONS.lock().unwrap();
     for task in tasks.drain(..) {

@@ -76,9 +76,26 @@ async fn list_databases(
 
 async fn execute_query(
     Path(db_name): Path<String>,
+    headers: axum::http::HeaderMap,
     Extension(auth): Extension<AuthContext>,
     Json(payload): Json<QueryRequest>,
 ) -> Result<axum::response::Response, AxiomError> {
+    
+    static IDEMPOTENCY_CACHE: once_cell::sync::Lazy<dashmap::DashMap<String, bytes::Bytes>> = once_cell::sync::Lazy::new(dashmap::DashMap::new);
+    let idempotency_key = headers.get("Idempotency-Key").and_then(|v| v.to_str().ok()).map(|s| s.to_string());
+    
+    if let Some(ref key) = idempotency_key {
+        if let Some(cached_response) = IDEMPOTENCY_CACHE.get(key) {
+            return axum::response::Response::builder()
+                .header("content-type", "application/json")
+                .header("x-idempotency-hit", "true")
+                .body(axum::body::Body::from(cached_response.clone()))
+                .map_err(|e| {
+                    tracing::error!("Response build failed: {}", e);
+                    AxiomError::new("INTERNAL_ERROR", "Failed to build response", axum::http::StatusCode::INTERNAL_SERVER_ERROR)
+                });
+        }
+    }
     let db_cfg = get_db_config(&db_name, &auth).await?;
 
     // In Rust, parameters are typically array based for positional arguments
@@ -110,6 +127,10 @@ async fn execute_query(
             return Err(AxiomError::new("QUERY_TIMEOUT", "Query execution timed out", axum::http::StatusCode::GATEWAY_TIMEOUT));
         }
     };
+
+    if let Some(key) = idempotency_key {
+        IDEMPOTENCY_CACHE.insert(key, json_bytes.clone());
+    }
 
     axum::response::Response::builder()
         .header("content-type", "application/json")

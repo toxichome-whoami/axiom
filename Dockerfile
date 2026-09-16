@@ -53,7 +53,7 @@ WORKDIR /app
 COPY --from=builder /app/target/release/axiom /app/axiom
 
 # HTTP and gRPC ports
-EXPOSE 4500 4501
+EXPOSE 4500
 
 # Persistent volumes for config, storage, logs, and DB state
 VOLUME ["/app/config.toml", "/app/storage", "/app/logs", "/app/data"]

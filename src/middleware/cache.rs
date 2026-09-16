@@ -122,7 +122,7 @@ impl TursoCache {
         let _ = TURSO_DB.set(conn);
         
         // Start cleanup daemon
-        tokio::spawn(async move {
+        let handle = tokio::spawn(async move {
             let conn = TURSO_DB.get().unwrap();
             let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
             loop {
@@ -133,6 +133,7 @@ impl TursoCache {
                 let _ = conn.execute("DELETE FROM query_cache WHERE expires_at < ?1", libsql::params![now]).await;
             }
         });
+        crate::server::lifespan::register_daemon(handle);
 
         Ok(())
     }

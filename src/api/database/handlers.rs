@@ -20,6 +20,17 @@ impl QueryExecutionPipeline {
         auth: &AuthContext,
         db_cfg: &DatabaseDefConfig,
     ) -> Result<(Arc<QueryResult>, bytes::Bytes), AxiomError> {
+        static CIRCUIT_FAILURES: once_cell::sync::Lazy<dashmap::DashMap<String, u32>> = once_cell::sync::Lazy::new(dashmap::DashMap::new);
+        
+        let config = crate::config::loader::ConfigManager::get();
+        if config.circuit_breaker.enabled {
+            if let Some(failures) = CIRCUIT_FAILURES.get(db_name) {
+                if *failures.value() as i32 >= config.circuit_breaker.failure_threshold {
+                    return Err(AxiomError::new("CIRCUIT_BREAKER_OPEN", "Database connection temporarily blocked due to repeated failures", StatusCode::SERVICE_UNAVAILABLE));
+                }
+            }
+        }
+
         let engine = DatabasePoolManager::get_engine(db_name)
             .await
             .ok_or_else(|| {
@@ -174,6 +185,9 @@ impl QueryExecutionPipeline {
                         } else {
                             static QUERY_CACHE: once_cell::sync::Lazy<QueryCacheMap> = once_cell::sync::Lazy::new(dashmap::DashMap::new);
                             
+                            if QUERY_CACHE.len() > 10_000 {
+                                QUERY_CACHE.clear(); // Basic eviction when bound is reached
+                            }
                             QUERY_CACHE.insert(
                                 key,
                                 (
@@ -188,6 +202,10 @@ impl QueryExecutionPipeline {
                 Ok((arc_res, json_bytes))
             }
             Err(e) => {
+                if config.circuit_breaker.enabled {
+                    let mut count = CIRCUIT_FAILURES.entry(db_name.to_string()).or_insert(0);
+                    *count += 1;
+                }
                 tracing::error!("Database query failed: {}", e);
                 Err(AxiomError::new(
                     "DB_QUERY_FAILED",

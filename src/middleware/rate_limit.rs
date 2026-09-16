@@ -27,7 +27,12 @@ pub async fn rate_limit_middleware(req: Request, next: Next) -> Result<Response,
         }
     }
 
-    let mut is_allowed = false;
+        let (is_banned, reason) = crate::security::ban_list::BanList::is_ip_banned(&client_ip);
+    if is_banned {
+        return Err(AxiomError::new("BANNED", &format!("Your IP is banned: {}", reason), axum::http::StatusCode::FORBIDDEN));
+    }
+
+let mut is_allowed = false;
     for allowed in &config.server.allowed_ips {
         if allowed.ends_with('*') {
             let prefix = &allowed[..allowed.len() - 1];
