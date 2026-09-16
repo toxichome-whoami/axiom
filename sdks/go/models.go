@@ -47,9 +47,9 @@ type TablesData struct {
 }
 
 type TablesResponse struct {
-	Success bool         `json:"success"`
-	Data    *TablesData  `json:"data,omitempty"`
-	Error   *AxiomError  `json:"error,omitempty"`
+	Success bool        `json:"success"`
+	Data    *TablesData `json:"data,omitempty"`
+	Error   *AxiomError `json:"error,omitempty"`
 }
 
 type FetchRowsParams struct {
@@ -75,4 +75,30 @@ type MutationResponse struct {
 	Success      bool        `json:"success"`
 	AffectedRows int         `json:"affected_rows,omitempty"`
 	Error        *AxiomError `json:"error,omitempty"`
+}
+
+type ColumnInfo struct {
+	Name       string `json:"name"`
+	Type       string `json:"type"`
+	Nullable   bool   `json:"nullable"`
+	PrimaryKey bool   `json:"primary_key"`
+}
+
+type ForeignKeyInfo struct {
+	Column           string `json:"column"`
+	ReferencedTable  string `json:"referenced_table"`
+	ReferencedColumn string `json:"referenced_column"`
+}
+
+type SchemaData struct {
+	Database    string           `json:"database"`
+	Table       string           `json:"table"`
+	Columns     []ColumnInfo     `json:"columns"`
+	ForeignKeys []ForeignKeyInfo `json:"foreign_keys"`
+}
+
+type SchemaResponse struct {
+	Success bool        `json:"success"`
+	Data    *SchemaData `json:"data,omitempty"`
+	Error   *AxiomError `json:"error,omitempty"`
 }
