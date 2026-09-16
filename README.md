@@ -231,7 +231,6 @@ axiom/
 The `docs/` directory contains full documentation for Axiom:
 
 - API reference
-- Architecture overview
 - Configuration reference
 - Deployment guide
 - Security model

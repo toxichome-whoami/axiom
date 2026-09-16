@@ -1,4 +1,4 @@
-﻿<div align="center">
+<div align="center">
 
 # Axiom API Reference
 
@@ -93,7 +93,7 @@ curl http://localhost:4500/health \
 
 ### `GET /api/v1/db/databases` - List Databases
 
-Returns all databases the API key has access to, with live connection status and table count.
+Returns all databases the API key has access to, with live connection status and a bounded table count.
 
 ```bash
 curl http://localhost:4500/api/v1/db/databases \
@@ -110,7 +110,7 @@ curl http://localhost:4500/api/v1/db/databases \
       "engine": "postgres",
       "mode": "readwrite",
       "status": "connected",
-      "tables_count": 12
+      "tables_count": "99+"
     }
   ]
 }

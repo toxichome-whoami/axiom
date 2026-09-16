@@ -40,12 +40,17 @@ async fn list_databases(
         }
 
         let mut status = "down";
-        let mut tables_count = 0;
+        let mut tables_count_str = "0".to_string();
         if let Some(engine) = crate::db::pool::DatabasePoolManager::get_engine(name).await {
             if engine.health_check().await {
                 status = "connected";
-                if let Ok(tables) = engine.list_tables(None, 10000).await {
-                    tables_count = tables.len();
+                // Use a strict limit of 100 to prevent heavy schema scanning on the DB
+                if let Ok(tables) = engine.list_tables(None, 100).await {
+                    if tables.len() >= 100 {
+                        tables_count_str = "99+".to_string();
+                    } else {
+                        tables_count_str = tables.len().to_string();
+                    }
                 }
             }
         }
@@ -55,11 +60,14 @@ async fn list_databases(
             "engine": db_cfg.engine,
             "mode": db_cfg.mode,
             "status": status,
-            "tables_count": tables_count
+            "tables_count": tables_count_str
         }));
     }
 
-    Ok(Json(serde_json::json!({ "databases": active_dbs })))
+    Ok(Json(serde_json::json!({
+        "success": true,
+        "databases": active_dbs
+    })))
 }
 
 async fn execute_query(
