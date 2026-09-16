@@ -82,4 +82,10 @@ async fn shutdown_signal() {
 
     tracing::warn!("Shutdown signal received. Gracefully stopping Axiom...");
     server::lifespan::stop_daemons().await;
+
+    // Force exit after 2 seconds to drop lingering keep-alive connections
+    tokio::spawn(async {
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+        std::process::exit(0);
+    });
 }
