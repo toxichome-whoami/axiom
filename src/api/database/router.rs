@@ -18,6 +18,10 @@ pub fn get_router() -> Router {
             "/:db_name/tables",
             get(crate::api::database::handlers::list_tables),
         )
+        .route(
+            "/:db_name/:table_name/schema",
+            get(crate::api::database::handlers::describe_table),
+        )
         .route("/:db_name/query", post(execute_query))
         .route(
             "/:db_name/:table_name/rows",
@@ -81,10 +85,18 @@ async fn execute_query(
     // In Python they were dict based. For simplicity, we convert dict to array.
     let mut params_array = Vec::new();
     if let Some(map) = payload.params {
-        // Warning: This ignores parameter ordering.
-        // A true implementation maps named to positional via parsing.
-        for (_, v) in map {
-            params_array.push(v);
+        // Sort keys to ensure deterministic ordering
+        // The SDKs typically send "1", "2", "3" as keys for positional args
+        let mut keys: Vec<_> = map.keys().collect();
+        keys.sort_by(|a, b| {
+            match (a.parse::<i32>(), b.parse::<i32>()) {
+                (Ok(n1), Ok(n2)) => n1.cmp(&n2),
+                _ => a.cmp(b),
+            }
+        });
+        
+        for k in keys {
+            params_array.push(map.get(k).unwrap().clone());
         }
     }
 

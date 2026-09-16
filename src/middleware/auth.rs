@@ -95,7 +95,16 @@ pub fn validate_api_key(
     if let Some(decoded) = decoded_str {
         if let Some((key_name, key_secret)) = decoded.split_once(':') {
             if let Some(key_cfg) = config.api_key.get(key_name) {
-                if key_cfg.secret == key_secret && !key_cfg.secret.is_empty() {
+                
+                let mut match_result = 0;
+                if key_cfg.secret.len() == key_secret.len() {
+                    for (a, b) in key_cfg.secret.bytes().zip(key_secret.bytes()) {
+                        match_result |= a ^ b;
+                    }
+                } else {
+                    match_result = 1;
+                }
+                if !key_cfg.secret.is_empty() && match_result == 0 {
                     return Some(AuthContext {
                         api_key_name: key_name.to_string(),
                         mode: key_cfg.mode.clone(),

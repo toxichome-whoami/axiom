@@ -64,6 +64,8 @@ impl QueryExecutionPipeline {
 
         let ast_result = if dialect_name == "postgres" {
             sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::PostgreSqlDialect {}, sql)
+        } else if dialect_name == "clickhouse" {
+            sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::ClickHouseDialect {}, sql)
         } else if dialect_name == "mssql" {
             sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::MsSqlDialect {}, sql)
         } else if dialect_name == "mysql" {
@@ -75,9 +77,10 @@ impl QueryExecutionPipeline {
         };
 
         let statements = ast_result.map_err(|e| {
+            tracing::error!("SQL parse error: {}", e);
             AxiomError::new(
                 "SQL_PARSE_ERROR",
-                &format!("SQL parsing failed: {}", e),
+                "SQL parsing failed",
                 StatusCode::BAD_REQUEST,
             )
         })?;
@@ -168,11 +171,14 @@ impl QueryExecutionPipeline {
                 }
                 Ok((arc_res, json_bytes))
             }
-            Err(e) => Err(AxiomError::new(
-                "DB_QUERY_FAILED",
-                &e.to_string(),
-                StatusCode::INTERNAL_SERVER_ERROR,
-            )),
+            Err(e) => {
+                tracing::error!("Database query failed: {}", e);
+                Err(AxiomError::new(
+                    "DB_QUERY_FAILED",
+                    "Database query execution failed",
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                ))
+            },
         }
     }
 }
@@ -239,11 +245,14 @@ pub async fn list_tables(
                 }
             })))
         }
-        Err(e) => Err(AxiomError::new(
-            "DB_QUERY_FAILED",
-            &e.to_string(),
-            StatusCode::INTERNAL_SERVER_ERROR,
-        )),
+        Err(e) => {
+            tracing::error!("Database list tables failed: {}", e);
+            Err(AxiomError::new(
+                "DB_QUERY_FAILED",
+                "Database query execution failed",
+                StatusCode::INTERNAL_SERVER_ERROR,
+            ))
+        },
     }
 }
 
@@ -358,7 +367,10 @@ pub async fn fetch_rows(
     if let Some(cursor) = &params.cursor {
         // If WHERE already exists, append with AND, else start new WHERE
         let cursor_op = if order_dir == "DESC" { "<" } else { ">" };
-        let cursor_cond = format!("{} {} '{}'", order_col, cursor_op, cursor);
+        
+        // Parametrize the cursor to prevent SQL injection
+        let cursor_cond = format!("{} {} ?", order_col, cursor_op);
+        values.push(Value::String(cursor.clone()));
 
         if final_where.trim().is_empty() {
             final_where = format!("WHERE {}", cursor_cond);
@@ -467,3 +479,37 @@ pub async fn delete_rows(
     ))
 }
 
+
+
+pub async fn describe_table(
+    axum::extract::Path((db_name, table_name)): axum::extract::Path<(String, String)>,
+    axum::extract::Extension(auth): axum::extract::Extension<AuthContext>,
+) -> Result<axum::Json<serde_json::Value>, AxiomError> {
+    let _db_cfg = get_db_config(&db_name, &auth).await?;
+
+    let engine = DatabasePoolManager::get_engine(&db_name)
+        .await
+        .ok_or_else(|| {
+            AxiomError::new("DB_NOT_FOUND", "Database not found", axum::http::StatusCode::NOT_FOUND)
+        })?;
+
+    let columns = engine
+        .describe_table(&table_name)
+        .await
+        .map_err(|e| { tracing::error!("Describe failed: {}", e); AxiomError::new("DESCRIBE_FAILED", "Failed to retrieve table schema", axum::http::StatusCode::INTERNAL_SERVER_ERROR) })?;
+
+    let foreign_keys = engine
+        .get_foreign_keys(&table_name)
+        .await
+        .map_err(|e| { tracing::error!("FK fetch failed: {}", e); AxiomError::new("FK_FETCH_FAILED", "Failed to retrieve foreign keys", axum::http::StatusCode::INTERNAL_SERVER_ERROR) })?;
+
+    Ok(axum::Json(serde_json::json!({
+        "success": true,
+        "data": {
+            "database": db_name,
+            "table": table_name,
+            "columns": columns,
+            "foreign_keys": foreign_keys
+        }
+    })))
+}
