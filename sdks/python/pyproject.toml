@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "toxichome-axiom"
-version = "1.0.0"
+version = "2.1.0"
 authors = [
   { name="Toxichome", email="admin@toxichome.cc" },
 ]
@@ -22,4 +22,5 @@ classifiers = [
 
 [project.urls]
 "Homepage" = "https://toxichome.cc"
+
 
