@@ -20,7 +20,7 @@
 
 <div align="center">
 
-![Version](https://img.shields.io/badge/Version-2.0.0-brightgreen?style=for-the-badge)
+![Version](https://img.shields.io/badge/Version-2.1.0-brightgreen?style=for-the-badge)
 ![Rust](https://img.shields.io/badge/Rust-1.88%2B-orange?style=for-the-badge&logo=rust)
 ![License](https://img.shields.io/badge/License-Open%20Source-blue?style=for-the-badge)
 ![API](https://img.shields.io/badge/API-REST-green?style=for-the-badge)

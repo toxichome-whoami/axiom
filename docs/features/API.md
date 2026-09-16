@@ -62,7 +62,7 @@ curl http://localhost:4500/
 {
   "name": "Axiom",
   "status": "online",
-  "version": "2.0.0"
+  "version": "2.1.0"
 }
 ```
 

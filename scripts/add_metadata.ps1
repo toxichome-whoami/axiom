@@ -26,7 +26,7 @@ if ($CargoContent -match '(?m)^version\s*=\s*"([^"]+)"') {
     exit 1
 }
 
-# 2. Convert to X.X.X.X strict format for rcedit (e.g. "2.0.0-beta.1" -> "2.0.0.0")
+# 2. Convert to X.X.X.X strict format for rcedit
 $BaseVersion = ($ProductVersion -split '-')[0]
 $Parts = [System.Collections.ArrayList]($BaseVersion -split '\.')
 while ($Parts.Count -lt 4) {
