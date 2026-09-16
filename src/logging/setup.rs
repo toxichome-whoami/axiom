@@ -1,13 +1,55 @@
 use crate::config::loader::ConfigManager;
 use tracing_appender::rolling;
 use tracing_subscriber::{
-    fmt::{self, format::FmtSpan},
+    fmt::{self, format::FmtSpan, format::FormatEvent, format::FormatFields, FmtContext, format::Writer},
     layer::SubscriberExt,
     util::SubscriberInitExt,
     EnvFilter, Registry,
 };
+use tracing::{Event, Subscriber, Level};
+use tracing_subscriber::registry::LookupSpan;
+use std::fmt::Result as FmtResult;
 
-pub fn setup_logging() -> Result<(), Box<dyn std::error::Error>> {
+struct AxiomLogFormatter;
+
+impl<S, N> FormatEvent<S, N> for AxiomLogFormatter
+where
+    S: Subscriber + for<'a> LookupSpan<'a>,
+    N: for<'a> FormatFields<'a> + 'static,
+{
+    fn format_event(
+        &self,
+        ctx: &FmtContext<'_, S, N>,
+        mut writer: Writer<'_>,
+        event: &Event<'_>,
+    ) -> FmtResult {
+        let meta = event.metadata();
+        
+        let level = meta.level();
+        let color = match *level {
+            Level::TRACE => "\x1b[35m", // Magenta
+            Level::DEBUG => "\x1b[36m", // Cyan
+            Level::INFO  => "\x1b[32m", // Green
+            Level::WARN  => "\x1b[33m", // Yellow
+            Level::ERROR => "\x1b[31m\x1b[1m", // Bold Red
+        };
+        let reset = "\x1b[0m";
+        let dim = "\x1b[2m";
+        let bold = "\x1b[1m";
+
+        let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f");
+
+        write!(writer, "{dim}[{timestamp}]{reset} ")?;
+        write!(writer, "{color}{bold}{:<5}{reset} ", level.as_str())?;
+        
+        write!(writer, "{dim}[{}]{reset} ", meta.target())?;
+        
+        ctx.format_fields(writer.by_ref(), event)?;
+        writeln!(writer)
+    }
+}
+
+pub fn setup_logging() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let config = ConfigManager::get();
 
     if !config.logging.enabled {
@@ -43,7 +85,7 @@ pub fn setup_logging() -> Result<(), Box<dyn std::error::Error>> {
             let _ = subscriber.try_init();
         }
     } else {
-        let stdout_log = fmt::layer().with_span_events(FmtSpan::CLOSE);
+        let stdout_log = fmt::layer().event_format(AxiomLogFormatter);
         let file_log = fmt::layer().with_writer(non_blocking_file).with_ansi(false);
 
         let subscriber = Registry::default().with(env_filter).with(file_log);
@@ -55,10 +97,8 @@ pub fn setup_logging() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    // NOTE: The `_guard` will be dropped here, which flushes non_blocking_file.
-    // In a real app we need to return the WorkerGuard so it stays alive,
-    // but we can leak it for now to match the simplicity.
     std::mem::forget(_guard);
 
     Ok(())
 }
+
