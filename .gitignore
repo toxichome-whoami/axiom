@@ -89,6 +89,7 @@ how_to_run.txt
 graphify-out/
 fix_imports.py
 .zig-cache
+main.obj
 
 # ----------------------------------------------------------------------
 # Rust
