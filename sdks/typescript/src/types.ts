@@ -15,17 +15,6 @@ export interface Pagination {
   next_cursor: string | null;
 }
 
-export interface AxiomResponse<T = Record<string, unknown>> {
-  success: boolean;
-  error?: AxiomError;
-  pagination?: Pagination;
-  // The response fields are spread at the top level (e.g. rows, databases, tables)
-  // so T is intersected below per method rather than nested in data
-  rows?: T[];
-  databases?: unknown[];
-  tables?: unknown[];
-}
-
 export interface DatabaseInfo {
   name: string;
   engine: string;
@@ -38,13 +27,58 @@ export interface TableInfo {
   name: string;
 }
 
-export interface MutationResponse {
-  affected_rows?: number;
+// Server returns databases at top level
+export interface DatabasesResponse {
+  success: boolean;
+  databases?: DatabaseInfo[];
+  error?: AxiomError;
 }
 
+// Server returns tables inside data
+export interface TablesResponse {
+  success: boolean;
+  data?: {
+    database: string;
+    tables: TableInfo[];
+  };
+  error?: AxiomError;
+}
+
+// Server returns schema inside data
+export interface SchemaResponse {
+  success: boolean;
+  data?: {
+    database: string;
+    table: string;
+    columns: any[];
+    foreign_keys: any[];
+  };
+  error?: AxiomError;
+}
+
+// FetchRows returns rows and pagination inside data
+export interface FetchResponse<T = Record<string, unknown>> {
+  success: boolean;
+  data?: {
+    rows: T[];
+    pagination?: Pagination;
+  };
+  error?: AxiomError;
+}
+
+// Insert/Update/Delete returns affected_rows at top level
+export interface MutationResponse {
+  success: boolean;
+  affected_rows?: number;
+  error?: AxiomError;
+}
+
+// Query returns rows and affected_rows at top level
 export interface QueryResponse<T = Record<string, unknown>> {
+  success: boolean;
   rows?: T[];
   affected_rows?: number;
+  error?: AxiomError;
 }
 
 export interface FetchRowsParams {
