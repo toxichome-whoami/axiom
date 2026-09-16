@@ -48,8 +48,38 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let addr = SocketAddr::new(host_ip, config.server.port as u16);
     let listener = TcpListener::bind(addr).await?;
 
-    println!("Axiom Native Core running on http://{}", addr);
-    axum::serve(listener, app).await?;
+    tracing::info!("Axiom Native Core running on http://{}", addr);
+    
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal())
+        .await?;
 
     Ok(())
+}
+
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        tokio::signal::ctrl_c()
+            .await
+            .expect("Failed to install Ctrl+C handler");
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .expect("Failed to install SIGTERM handler")
+            .recv()
+            .await;
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {},
+        _ = terminate => {},
+    }
+
+    tracing::warn!("Shutdown signal received. Gracefully stopping Axiom...");
+    server::lifespan::stop_daemons().await;
 }
