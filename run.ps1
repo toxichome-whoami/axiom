@@ -1,4 +1,4 @@
-﻿param (
+param (
     [switch]$linux
 )
 
@@ -7,7 +7,19 @@ if ($linux) {
     $env:PATH = "D:\msys64_install\ucrt64\bin;" + $env:PATH
     
     Write-Host "Building Axiom for Linux (x86_64-unknown-linux-gnu.2.17)..." -ForegroundColor Cyan
-    cargo zigbuild --target x86_64-unknown-linux-gnu.2.17 --release
+    
+    cargo zigbuild --color always --target x86_64-unknown-linux-gnu.2.17 --release 2>&1 | ForEach-Object {
+        $line = $_.ToString()
+        if ($line -notmatch "ignoring deprecated linker optimization setting" -and
+            $line -notmatch "code that will be rejected by a future version of Rust" -and
+            $line -notmatch "sqlx-postgres v0.7.4" -and
+            $line -notmatch "to see what the problems were, use the option" -and
+            $line -notmatch "warn\(linker_messages\)" -and
+            $line -notmatch "axiom.*generated.*warning" -and
+            $line -notmatch "^\s*\|\s*$") {
+            Write-Host $line
+        }
+    }
     
     if ($LASTEXITCODE -ne 0) {
         Write-Host "Linux build failed! Aborting." -ForegroundColor Red
@@ -15,7 +27,7 @@ if ($linux) {
     }
     
     Write-Host "
-Linux build complete! Binary is located in the target directory (e.g., target\x86_64-unknown-linux-gnu\release\axiom)" -ForegroundColor Green
+Linux build complete! Binary is located in: target\x86_64-unknown-linux-gnu.2.17\release\axiom" -ForegroundColor Green
     Write-Host "(Skipping metadata injection and auto-run since Linux ELF binaries don't use Windows icons and cannot run natively on Windows)" -ForegroundColor DarkGray
 
 } else {
