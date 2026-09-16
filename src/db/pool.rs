@@ -5,6 +5,7 @@ use std::sync::Arc;
 use crate::config::loader::ConfigManager;
 use crate::db::engines::any::AnyDatabaseEngine;
 use crate::db::engines::libsql::LibsqlDatabaseEngine;
+use crate::db::engines::mssql::MssqlDatabaseEngine;
 use crate::db::engines::base::DatabaseEngine;
 
 static ENGINES: Lazy<DashMap<String, Arc<dyn DatabaseEngine>>> = Lazy::new(DashMap::new);
@@ -39,7 +40,14 @@ impl DatabasePoolManager {
 
         
         let url = db_config.url.as_str();
-        let arc_engine: Arc<dyn DatabaseEngine> = if url.starts_with("sqlite://") || url.starts_with("libsql://") {
+        let arc_engine: Arc<dyn DatabaseEngine> = if url.starts_with("mssql://") || url.starts_with("sqlserver://") {
+            let mut engine = MssqlDatabaseEngine::new(db_config.clone());
+            if let Err(e) = engine.connect().await {
+                eprintln!("Failed to connect to MSSQL {}: {}", alias, e);
+                return None;
+            }
+            Arc::new(engine)
+        } else if url.starts_with("sqlite://") || url.starts_with("libsql://") {
             let mut engine = LibsqlDatabaseEngine::new(db_config.clone());
             if let Err(e) = engine.connect().await {
                 eprintln!("Failed to connect to SQLite/Turso {}: {}", alias, e);
@@ -78,4 +86,6 @@ impl DatabasePoolManager {
         println!("Database shutdown complete");
     }
 }
+
+
 

@@ -64,6 +64,8 @@ impl QueryExecutionPipeline {
 
         let ast_result = if dialect_name == "postgres" {
             sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::PostgreSqlDialect {}, sql)
+        } else if dialect_name == "mssql" {
+            sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::MsSqlDialect {}, sql)
         } else if dialect_name == "mysql" {
             sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::MySqlDialect {}, sql)
         } else if dialect_name == "sqlite" {
@@ -464,3 +466,4 @@ pub async fn delete_rows(
         serde_json::json!({ "success": true, "affected_rows": result.affected_rows }),
     ))
 }
+
