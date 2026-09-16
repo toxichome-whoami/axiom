@@ -1,106 +1,244 @@
-# Axiom — Build & Deploy Reference
-*(Shared cPanel Hosting — No Root Required)*
+<div align="center">
 
----
+# Axiom - Build, Deploy & Run Guide
 
-## 1. Local Development (Windows / PowerShell)
+*Local development, Windows builds, Linux cross-compilation, VPS, cPanel, and Docker deployment*
 
-### Quick Check
-*(Validates code, no binary produced)*
+</div>
+
+
+## 1. Local Development (Windows)
+
+All Windows builds are handled by the `run.ps1` wrapper — it compiles, injects metadata, and starts the server automatically.
+
+### Quick Start
+
 ```powershell
-$env:PATH = "D:\msys64_install\ucrt64\bin;" + $env:PATH; cargo check
+# Build release + inject metadata + auto-launch
+.\run.ps1
 ```
 
-### Dev Build
-*(Fast, unoptimized, for testing)*
+### Dev Build (fast, unoptimized)
+
 ```powershell
-$env:PATH = "D:\msys64_install\ucrt64\bin;" + $env:PATH; cargo build
+cargo build
 .\target\debug\axiom.exe
 ```
 
-### Production Build for Windows
+### Validate Code (no binary produced)
+
 ```powershell
-$env:PATH = "D:\msys64_install\ucrt64\bin;" + $env:PATH; cargo build --release
-.\target\release\axiom.exe
+cargo check
+cargo clippy
 ```
 
-### Stop Server (Windows)
+### Stop the Server
+
 ```powershell
 Get-Process axiom -ErrorAction SilentlyContinue | Stop-Process -Force
 ```
 
----
 
-## 2. Build Linux Binary on Windows (One-Time Setup)
+## 2. Cross-Compile for Linux (One-Time Setup)
 
-**Step 1 — Install Zig** (Cross-linker, no Docker needed)
-- Download: [ziglang.org/download](https://ziglang.org/download/)
-- Extract to `C:\zig` and add `C:\zig` to your Windows PATH.
+Build a native Linux binary directly from Windows — no Docker, no VM needed.
 
-**Step 2 — Install cargo-zigbuild**
+### Step 1 - Install Zig (cross-linker)
+
+Download from [ziglang.org/download](https://ziglang.org/download/), extract to `C:\zig`, and add `C:\zig` to your Windows `PATH`.
+
+### Step 2 - Install cargo-zigbuild
+
 ```powershell
 cargo install cargo-zigbuild
 ```
 
-**Step 3 — Add Linux target to Rust**
+### Step 3 - Add Linux target to Rust
+
 ```powershell
 rustup target add x86_64-unknown-linux-gnu
 ```
 
----
+### Step 4 - Build
 
-## 3. Build & Deploy to cPanel (Run this every update)
-
-### Step 1: Build static Linux binary on your PC
 ```powershell
-$env:PATH = "D:\msys64_install\ucrt64\bin;" + $env:PATH; cargo zigbuild --target x86_64-unknown-linux-gnu.2.17 --release
+.\run.ps1 -linux
 ```
 
-**Binary output:** `target\x86_64-unknown-linux-gnu\release\axiom`
-- ✔️ Fully static — no shared libs needed on the server
-- ✔️ Works on CentOS 7, AlmaLinux, Ubuntu (any legacy cPanel host via glibc 2.17)
-- ✔️ No install, no root, just upload and run
+> [!NOTE]
+> The `-linux` flag injects the MSYS2 toolchain path and runs `cargo zigbuild --target x86_64-unknown-linux-gnu.2.17 --release`.
+> Targeting glibc `2.17` ensures the binary runs on any modern Linux host — CentOS 7, AlmaLinux, Ubuntu, Debian — with no shared libs required.
 
-### Step 2: Upload to cPanel
+**Output binary:**
+```
+target\x86_64-unknown-linux-gnu.2.17\release\axiom
+```
 
-**Via cPanel File Manager:**
+| Property | Value |
+|---|---|
+| Format | ELF 64-bit Linux binary |
+| glibc target | 2.17 (maximum compatibility) |
+| Dependencies | None — fully static |
+| Works on | CentOS 7+, AlmaLinux, Ubuntu, Debian, any cPanel host |
+
+
+## 3. Deploy to cPanel (Run on Every Update)
+
+```mermaid
+flowchart LR
+    A[".\run.ps1 -linux"] --> B["Upload binary\n+ config.toml"]
+    B --> C["SSH into server"]
+    C --> D["chmod + kill old\n+ nohup ./axiom"]
+    D --> E["Live on port 4500"]
+```
+
+### Step 1 - Build the Linux binary
+
+```powershell
+.\run.ps1 -linux
+```
+
+### Step 2 - Upload to cPanel
+
+**Option A - cPanel File Manager:**
 1. Login to cPanel → File Manager
-2. Go to your folder e.g., `/home/yourusername/axiom/`
-3. Upload the file: `target\x86_64-unknown-linux-gnu\release\axiom`
-4. Upload `config.toml` if it changed too.
+2. Navigate to your folder (e.g. `/home/yourusername/axiom/`)
+3. Upload `target\x86_64-unknown-linux-gnu.2.17\release\axiom`
+4. Upload `config.toml` if it changed
 
-**Via SCP (if SSH enabled on your host):**
+**Option B - SCP (if SSH is enabled):**
 ```bash
-scp target\x86_64-unknown-linux-gnu\release\axiom user@yourserver.com:/home/user/axiom/axiom
+scp target\x86_64-unknown-linux-gnu.2.17\release\axiom user@yourserver.com:/home/user/axiom/axiom
+scp config.toml user@yourserver.com:/home/user/axiom/config.toml
 ```
 
-### Step 3: Stop the old version (if running)
+### Step 3 - Stop the old version
 
 ```bash
-# Stop old version (use whichever works on your host)
 kill $(pgrep axiom)
-# OR if pgrep is not available:
-ps aux | grep axiom          # find the PID from output
+
+# If pgrep is not available:
+ps aux | grep axiom     # find the PID
 kill <PID>
 ```
 
-### Step 4: Run in the Background (nohup)
-
-To keep Axiom running even after you close your SSH terminal, you **must** use `nohup` (no hangup).
+### Step 4 - Make executable and run in background
 
 ```bash
-# First time only — make it executable
-cd /axiom # if you create folder with this name
+cd /home/yourusername/axiom
 
-chmod +x /axiom
+# First time only
+chmod +x axiom
+
+# Start in background (persists after SSH logout)
 nohup ./axiom > axiom.log 2>&1 &
-echo "Running. PID: $!"
+echo "Axiom started. PID: $!"
 ```
-*(This will write all logs to `axiom.log` and keep the server alive in the background)*
 
----
+> [!IMPORTANT]
+> Always use `nohup ... &` on shared hosting. Without it, Axiom will be killed the moment you close your SSH terminal.
 
-## 4. Useful Terminal Commands (No root needed)
+
+## 4. Deploy to VPS / Bare Metal (Linux)
+
+Upload the binary and config to your server, then run it as a systemd service for automatic startup and crash recovery.
+
+```bash
+# Upload binary and config
+scp target\x86_64-unknown-linux-gnu.2.17\release\axiom user@yourserver.com:/opt/axiom/axiom
+scp config.toml user@yourserver.com:/opt/axiom/config.toml
+```
+
+### Run as a Systemd Service
+
+Create `/etc/systemd/system/axiom.service`:
+
+```ini
+[Unit]
+Description=Axiom API Gateway
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+WorkingDirectory=/opt/axiom
+ExecStart=/opt/axiom/axiom
+Restart=on-failure
+RestartSec=5s
+Environment=RUST_LOG=warn
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Then enable and start:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable axiom
+sudo systemctl start axiom
+sudo systemctl status axiom
+```
+
+
+## 5. Deploy with Docker
+
+```bash
+# Build the image (multi-stage: compiles Rust then copies binary into slim runtime)
+docker build -t axiom:latest .
+
+# Run with config file mounted
+docker run -d \
+  --name axiom \
+  -p 4500:4500 \
+  -v $(pwd)/config.toml:/app/config.toml \
+  -v $(pwd)/data:/app/data \
+  -v $(pwd)/logs:/app/logs \
+  axiom:latest
+```
+
+### Docker Compose
+
+```bash
+cp config.example.toml config.toml
+docker compose up -d
+```
+
+
+## 6. Nginx Reverse Proxy
+
+> [!IMPORTANT]
+> Always place Axiom behind a reverse proxy in production. Never expose port `4500` directly to the internet — API keys travel in plain HTTP headers and must be encrypted by TLS.
+
+```nginx
+server {
+    listen 80;
+    server_name api.toxichome.cc;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    server_name api.toxichome.cc;
+
+    ssl_certificate     /etc/ssl/certs/api.crt;
+    ssl_certificate_key /etc/ssl/private/api.key;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+
+    client_max_body_size 10m;
+
+    location / {
+        proxy_pass         http://127.0.0.1:4500;
+        proxy_set_header   Host              $host;
+        proxy_set_header   X-Real-IP         $remote_addr;
+        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+
+## 7. Useful Server Commands
 
 **Is Axiom running?**
 ```bash
@@ -112,9 +250,14 @@ ps aux | grep axiom | grep -v grep
 tail -f ~/axiom/axiom.log
 ```
 
-**View last 50 log lines**
+**View last 100 log lines**
 ```bash
-tail -n 50 ~/axiom/axiom.log
+tail -n 100 ~/axiom/axiom.log
+```
+
+**Restart Axiom**
+```bash
+kill $(pgrep axiom) && nohup ~/axiom/axiom >> ~/axiom/axiom.log 2>&1 &
 ```
 
 **Stop Axiom**
@@ -122,26 +265,63 @@ tail -n 50 ~/axiom/axiom.log
 kill $(pgrep axiom)
 ```
 
----
 
-## 5. Auto-Restart if Axiom Crashes (cPanel Cron Job)
+## 8. Auto-Restart on Crash (cPanel Cron Job)
 
-*No root needed — uses cPanel's built-in cron system.*
+Set up a watchdog using cPanel's built-in cron system — no root required.
 
-1. Go to: **cPanel → Cron Jobs → Add New Cron Job**
-2. **Frequency:** Every Minute (`* * * * *`)
-3. **Command:** *(replace `yourusername` with your actual cPanel username)*
+1. Go to **cPanel → Cron Jobs → Add New Cron Job**
+2. Set frequency to **Every Minute** (`* * * * *`)
+3. Set the command *(replace `yourusername` with your actual cPanel username)*:
 
 ```bash
 pgrep -x axiom || (cd /home/yourusername/axiom && nohup ./axiom >> axiom.log 2>&1 &)
 ```
-*This checks every minute if Axiom is alive. If it crashed, it restarts it automatically.*
 
----
+## 9. Updating Axiom
 
-## 6. Ports
+```powershell
+# 1. Pull latest code
+git pull origin main
 
-- **HTTP / REST API:** `:4500`
+# 2. Rebuild Linux binary
+.\run.ps1 -linux
 
-> [!NOTE]
-> Shared cPanel hosts usually block custom ports. Ask your host to open port `4500`, or set up an Apache proxy in your `.htaccess` to forward requests from port `80` to `4500`.
+# 3. Upload and restart (see Section 3 or 4)
+```
+
+
+## 10. Production Checklist
+
+> [!CAUTION]
+> Do not skip this before going live.
+
+- [ ] Replace all placeholder secrets in `config.toml` with cryptographically random values (>= 32 chars)
+  ```bash
+  openssl rand -hex 32
+  ```
+- [ ] Set `server.host = "0.0.0.0"` only if behind a reverse proxy
+- [ ] Set `server.cors_origins` to your actual domain(s), not `"*"`
+- [ ] Terminate TLS at Nginx, Caddy, or Cloudflare — never expose port `4500` raw
+- [ ] Set `RUST_LOG=warn` to reduce log volume in production
+- [ ] Confirm `database.<alias>.dangerous_operations = false` on all databases
+- [ ] Add your server IP to `server.allowed_ips` to exempt it from rate limiting
+- [ ] Ensure `data/` and `logs/` directories are not web-accessible
+
+
+## 11. Port Reference
+
+| Port | Protocol | Description |
+|---|---|---|
+| `4500` | HTTP / REST | Primary API port (Axiom) |
+| `80` / `443` | HTTP / HTTPS | Public-facing (Apache/Nginx proxies to 4500) |
+
+> [!TIP]
+> Never expose port `4500` directly to the internet. Always proxy through Apache (`.htaccess`), Nginx, or Cloudflare so your API keys are encrypted in transit.
+
+
+<div align="center">
+
+*Axiom — a [Toxichome](https://toxichome.cc) open-source project*
+
+</div>

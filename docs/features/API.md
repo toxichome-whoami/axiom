@@ -1,171 +1,312 @@
-<div align="center">
-  <h1>Axiom API Reference</h1>
-  <p><em>Complete guide to REST endpoints for Databases</em></p>
-  <p><strong>Axiom is natively a high-performance REST API gateway.</strong></p>
+﻿<div align="center">
+
+# Axiom API Reference
+
+*Complete reference for all REST endpoints*
+
 </div>
 
-<hr/>
 
-# To generate the token in bash:
-# TOKEN=$(echo -n "admin:your_secret_here" | base64)
+## Authentication
 
-curl -X GET "http://localhost:4500/api/v1/db/databases" \
-     -H "X-Axiom-Key: $TOKEN"
+All protected endpoints require the `X-Axiom-Key` header containing a **Base64-encoded `key_name:secret`**.
+
+```bash
+# Generate your token
+TOKEN=$(echo -n "admin:your_secret_here" | base64)
+
+# Use it in requests
+curl -H "X-Axiom-Key: $TOKEN" http://localhost:4500/api/v1/db/databases
 ```
 
----
+> [!IMPORTANT]
+> All write requests (`POST`, `PATCH`, `DELETE`) also require `Content-Type: application/json`.
+
+
+## Response Envelope
+
+Every response follows this structure:
+
+**Success**
+```json
+{
+  "success": true,
+  "data": { ... }
+}
+```
+
+**Error**
+```json
+{
+  "success": false,
+  "error": {
+    "code": "DB_NOT_FOUND",
+    "message": "Database not found"
+  }
+}
+```
+
 
 ## Core Endpoints
 
-### 1. Server Info & Feature Flags
+### `GET /` - Server Info
+
+No authentication required.
+
 ```bash
-curl -X GET "http://localhost:4500/"
+curl http://localhost:4500/
 ```
 
-### 2. Kubernetes Readiness Probe
-Does not require authentication.
-```bash
-curl -X GET "http://localhost:4500/ready"
-```
-
-### 3. Deep Health Check
-```bash
-curl -X GET "http://localhost:4500/health" \
-     -H "X-Axiom-Key: <TOKEN>"
+**Response:**
+```json
+{
+  "name": "Axiom",
+  "status": "online",
+  "version": "2.0.0"
+}
 ```
 
 
+### `GET /ready` - Readiness Probe
 
----
+No authentication required. Returns `200 OK` when the server is ready to accept traffic. Used for Kubernetes liveness/readiness probes.
 
-## Database API <code>/api/v1/db</code>
-
-### 1. List Databases
 ```bash
-curl -X GET "http://localhost:4500/api/v1/db/databases" \
-     -H "X-Axiom-Key: <TOKEN>"
+curl http://localhost:4500/ready
 ```
-Returns all databases the key has access to with connection status and table count. Health checks are cached for 5 seconds.
 
-### 2. List Tables (Paginated)
+
+### `GET /health` - Deep Health Check
+
+Returns connection status for all configured databases.
+
 ```bash
-# Initial request
-curl -X GET "http://localhost:4500/api/v1/db/main_db/tables?limit=50" \
-     -H "X-Axiom-Key: <TOKEN>"
-
-# Subsequent pages
-curl -X GET "http://localhost:4500/api/v1/db/main_db/tables?limit=50&cursor=users_table" \
-     -H "X-Axiom-Key: <TOKEN>"
+curl http://localhost:4500/health \
+  -H "X-Axiom-Key: <TOKEN>"
 ```
-**Parameters:**
-- `limit` — Max tables per page (default 50, max 500)
-- `cursor` — Keyset cursor string returned from the previous page's `next_cursor` field. Omit for the first page.
 
-### 3. Execute Raw SQL
+
+## Database API — `/api/v1/db`
+
+> `{alias}` is the database name defined in `config.toml` under `[database.<alias>]`.
+
+
+### `GET /api/v1/db/databases` - List Databases
+
+Returns all databases the API key has access to, with live connection status and table count.
+
+```bash
+curl http://localhost:4500/api/v1/db/databases \
+  -H "X-Axiom-Key: <TOKEN>"
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "databases": [
+    {
+      "name": "main_db",
+      "engine": "postgres",
+      "mode": "readwrite",
+      "status": "connected",
+      "tables_count": 12
+    }
+  ]
+}
+```
+
+
+### `GET /api/v1/db/{alias}/tables` - List Tables
+
+Returns all tables in the database. Supports cursor-based pagination.
+
+```bash
+# First page
+curl "http://localhost:4500/api/v1/db/main_db/tables?limit=50" \
+  -H "X-Axiom-Key: <TOKEN>"
+
+# Next page
+curl "http://localhost:4500/api/v1/db/main_db/tables?limit=50&cursor=users" \
+  -H "X-Axiom-Key: <TOKEN>"
+```
+
+| Parameter | Default | Description |
+|---|---|---|
+| `limit` | `50` | Tables per page (max `500`) |
+| `cursor` |  | Keyset cursor from previous `next_cursor`. Omit for first page. |
+
+
+
+### `POST /api/v1/db/{alias}/query` - Raw SQL
+
 > [!CAUTION]
-> Raw SQL is validated by AST parser. Dangerous operations blocked per config.
+> All SQL is validated by the AST parser before execution. Operations in `query_blacklist` and DDL (when `dangerous_operations = false`) will be rejected.
 
 ```bash
 curl -X POST "http://localhost:4500/api/v1/db/main_db/query" \
-     -H "X-Axiom-Key: <TOKEN>" \
-     -H "Content-Type: application/json" \
-     -d '{
-           "sql": "SELECT * FROM users WHERE id = :id",
-           "params": {"id": 42}
-         }'
+  -H "X-Axiom-Key: <TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "sql": "SELECT id, name FROM users WHERE active = :active AND age > :min_age",
+    "params": { "active": true, "min_age": 18 }
+  }'
 ```
 
-### 4. Fetch Rows (Paginated)
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "rows": [
+      { "id": 1, "name": "Alice" }
+    ],
+    "affected_rows": 0,
+    "row_count": 1
+  }
+}
+```
+
+
+### `GET /api/v1/db/{alias}/{table}/rows` - Fetch Rows
+
+Fetches rows from a table with filtering, sorting, field selection, and cursor pagination.
+
 ```bash
-# Basic cursor pagination (ultra-fast for massive tables)
+# Basic fetch with filter and sorting
 curl -G "http://localhost:4500/api/v1/db/main_db/users/rows" \
-     -H "X-Axiom-Key: <TOKEN>" \
-     --data-urlencode "limit=50" \
-     --data-urlencode "sort=id" \
-     --data-urlencode "order=desc" \
-     --data-urlencode 'filter={"active":true,"age":{"$gte":18}}' \
-     --data-urlencode "fields=id,name,email"
+  -H "X-Axiom-Key: <TOKEN>" \
+  --data-urlencode "limit=50" \
+  --data-urlencode "sort=id" \
+  --data-urlencode "order=desc" \
+  --data-urlencode 'filter={"active":true,"age":{"$gte":18}}' \
+  --data-urlencode "fields=id,name,email"
 
 # Next page using cursor
 curl -G "http://localhost:4500/api/v1/db/main_db/users/rows" \
-     -H "X-Axiom-Key: <TOKEN>" \
-     --data-urlencode "limit=50" \
-     --data-urlencode "sort=id" \
-     --data-urlencode "cursor=eyJ2IjogNDV9"
+  -H "X-Axiom-Key: <TOKEN>" \
+  --data-urlencode "limit=50" \
+  --data-urlencode "sort=id" \
+  --data-urlencode "cursor=eyJpZCI6IDQ1fQ=="
 ```
 
-**Parameters:**
-- `cursor` — Keyset cursor string returned from the previous page's `next_cursor` field. Omit for the first page.
-- `limit` — Rows per page (default 50)
-- `sort` — Column to sort by (validated against real table columns)
-- `order` — `asc` or `desc` (default `asc`)
-- `filter` — JSON filter object
-- `fields` — Comma-separated columns to return (validated against real table columns)
-- `search` — Full-text search term
-- `search_fields` — Columns to search across
-- `count` — Set to `1` to include exact `total` in pagination (runs `SELECT COUNT(*)`)
-  — Omit for faster responses (infers `has_more` from row count)
+| Parameter | Description |
+|---|---|
+| `limit` | Rows per page (default `50`) |
+| `cursor` | Keyset cursor from `next_cursor`. Omit for first page. |
+| `sort` | Column to sort by |
+| `order` | `asc` or `desc` (default `asc`) |
+| `filter` | URL-encoded JSON filter object |
+| `fields` | Comma-separated columns to return |
+| `search` | Full-text search term |
+| `search_fields` | Columns to search across |
+| `count` | Set to `1` to include exact `total` count (slower  runs `SELECT COUNT(*)`) |
 
-### 5. Insert Rows
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "rows": [ { "id": 1, "name": "Alice", "email": "alice@example.com" } ]
+  },
+  "pagination": {
+    "limit": 50,
+    "has_more": true,
+    "next_cursor": "eyJpZCI6IDQ1fQ=="
+  }
+}
+```
+
+
+### `POST /api/v1/db/{alias}/{table}/rows` - Insert Rows
+
 ```bash
 curl -X POST "http://localhost:4500/api/v1/db/main_db/users/rows" \
-     -H "X-Axiom-Key: <TOKEN>" \
-     -H "Content-Type: application/json" \
-     -d '{
-           "rows": [{"name": "Alice", "active": true}]
-         }'
+  -H "X-Axiom-Key: <TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "rows": [
+      { "name": "Alice", "active": true },
+      { "name": "Bob",   "active": false }
+    ]
+  }'
 ```
 
-### 6. Update Rows
+**Response:**
+```json
+{
+  "success": true,
+  "affected_rows": 2
+}
+```
+
+
+
+### `PATCH /api/v1/db/{alias}/{table}/rows` - Update Rows
+
 ```bash
 curl -X PATCH "http://localhost:4500/api/v1/db/main_db/users/rows" \
-     -H "X-Axiom-Key: <TOKEN>" \
-     -H "Content-Type: application/json" \
-     -d '{
-           "filter": {"id": 42},
-           "update": {"active": false}
-         }'
+  -H "X-Axiom-Key: <TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "filter": { "id": 42 },
+    "update": { "active": false, "name": "Bob Updated" }
+  }'
 ```
 
-### 7. Delete Rows
+**Response:**
+```json
+{
+  "success": true,
+  "affected_rows": 1
+}
+```
+
+
+### `DELETE /api/v1/db/{alias}/{table}/rows` - Delete Rows
+
 ```bash
 curl -X DELETE "http://localhost:4500/api/v1/db/main_db/users/rows" \
-     -H "X-Axiom-Key: <TOKEN>" \
-     -H "Content-Type: application/json" \
-     -d '{
-           "filter": {"id": 42}
-         }'
+  -H "X-Axiom-Key: <TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "filter": { "id": 42 }
+  }'
 ```
 
+**Response:**
+```json
+{
+  "success": true,
+  "affected_rows": 1
+}
+```
 
 
 ## Filter Syntax
 
-Filters accept a JSON object of field-to-operator mappings:
+Filters are JSON objects passed as a URL-encoded string to the `filter=` parameter.
 
-<table style="width: 100%; border-collapse: collapse;">
-  <tr style="background-color: #2d2d2d; color: white;">
-    <th style="padding: 10px; text-align: left;">Operator</th>
-    <th style="padding: 10px; text-align: left;">Description</th>
-    <th style="padding: 10px; text-align: left;">Example</th>
-  </tr>
-  <tr><td style="padding: 10px;"><code>$eq</code></td><td style="padding: 10px;">Equal</td><td style="padding: 10px;"><code>{"age": {"$eq": 25}}</code> or <code>{"age": 25}</code></td></tr>
-  <tr><td style="padding: 10px;"><code>$ne</code></td><td style="padding: 10px;">Not equal</td><td style="padding: 10px;"><code>{"status": {"$ne": "banned"}}</code></td></tr>
-  <tr><td style="padding: 10px;"><code>$gt</code></td><td style="padding: 10px;">Greater than</td><td style="padding: 10px;"><code>{"score": {"$gt": 50}}</code></td></tr>
-  <tr><td style="padding: 10px;"><code>$gte</code></td><td style="padding: 10px;">Greater or equal</td><td style="padding: 10px;"><code>{"age": {"$gte": 18}}</code></td></tr>
-  <tr><td style="padding: 10px;"><code>$lt</code></td><td style="padding: 10px;">Less than</td><td style="padding: 10px;"><code>{"price": {"$lt": 100}}</code></td></tr>
-  <tr><td style="padding: 10px;"><code>$lte</code></td><td style="padding: 10px;">Less or equal</td><td style="padding: 10px;"><code>{"rank": {"$lte": 10}}</code></td></tr>
-  <tr><td style="padding: 10px;"><code>$in</code></td><td style="padding: 10px;">In list</td><td style="padding: 10px;"><code>{"role": {"$in": ["admin","mod"]}}</code></td></tr>
-  <tr><td style="padding: 10px;"><code>$nin</code></td><td style="padding: 10px;">Not in list</td><td style="padding: 10px;"><code>{"role": {"$nin": ["banned"]}}</code></td></tr>
-  <tr><td style="padding: 10px;"><code>$like</code></td><td style="padding: 10px;">SQL LIKE</td><td style="padding: 10px;"><code>{"email": {"$like": "%@gmail.com"}}</code></td></tr>
-  <tr><td style="padding: 10px;"><code>$null</code></td><td style="padding: 10px;">IS NULL / NOT NULL</td><td style="padding: 10px;"><code>{"deleted_at": {"$null": true}}</code></td></tr>
-  <tr><td style="padding: 10px;"><code>$between</code></td><td style="padding: 10px;">BETWEEN</td><td style="padding: 10px;"><code>{"age": {"$between": [18, 65]}}</code></td></tr>
-  <tr><td style="padding: 10px;"><code>$ilike</code></td><td style="padding: 10px;">Case-insensitive LIKE</td><td style="padding: 10px;"><code>{"name": {"$ilike": "%alice%"}}</code></td></tr>
-  <tr><td style="padding: 10px;"><code>$or</code></td><td style="padding: 10px;">Logical OR (list of sub-filters)</td><td style="padding: 10px;"><code>{"$or": [{"status": "active"}, {"role": "admin"}]}</code></td></tr>
-  <tr><td style="padding: 10px;"><code>$and</code></td><td style="padding: 10px;">Logical AND (list of sub-filters)</td><td style="padding: 10px;"><code>{"$and": [{"age": {"$gte": 18}}, {"verified": true}]}</code></td></tr>
-</table>
+| Operator | Description | Example |
+|---|---|---|
+| *(shorthand)* | Equality | `{"age": 25}` |
+| `$eq` | Equal | `{"age": {"$eq": 25}}` |
+| `$ne` | Not equal | `{"status": {"$ne": "banned"}}` |
+| `$gt` | Greater than | `{"score": {"$gt": 50}}` |
+| `$gte` | Greater or equal | `{"age": {"$gte": 18}}` |
+| `$lt` | Less than | `{"price": {"$lt": 100}}` |
+| `$lte` | Less or equal | `{"rank": {"$lte": 10}}` |
+| `$in` | In list | `{"role": {"$in": ["admin","mod"]}}` |
+| `$nin` | Not in list | `{"role": {"$nin": ["banned"]}}` |
+| `$like` | SQL LIKE | `{"email": {"$like": "%@gmail.com"}}` |
+| `$ilike` | Case-insensitive LIKE | `{"name": {"$ilike": "%alice%"}}` |
+| `$null` | IS NULL / NOT NULL | `{"deleted_at": {"$null": true}}` |
+| `$between` | BETWEEN | `{"age": {"$between": [18, 65]}}` |
+| `$or` | Logical OR | `{"$or": [{"status": "active"}, {"role": "admin"}]}` |
+| `$and` | Logical AND | `{"$and": [{"verified": true}, {"age": {"$gte": 18}}]}` |
 
-**Logical nesting example** — users who are active OR are admins, AND have a verified email:
+**Nested example**  verified users who are active OR admins:
+
 ```json
 {
   "$and": [
@@ -179,3 +320,10 @@ Filters accept a JSON object of field-to-operator mappings:
   ]
 }
 ```
+
+
+<div align="center">
+
+*Axiom  a [Toxichome](https://toxichome.cc) open-source project*
+
+</div>
