@@ -102,13 +102,30 @@ pub fn validate_api_key(
             if let Some(key_cfg) = config.api_key.get(key_name) {
                 
                 let mut match_result = 0;
-                if key_cfg.secret.len() == key_secret.len() {
-                    for (a, b) in key_cfg.secret.bytes().zip(key_secret.bytes()) {
-                        match_result |= a ^ b;
+                let mut dummy_result = 0;
+                let expected = key_cfg.secret.as_bytes();
+                let provided = key_secret.as_bytes();
+                let expected_len = expected.len();
+                let provided_len = provided.len();
+                
+                // Constant time comparison bounded to 128 bytes to prevent length-leak timing attacks
+                for i in 0..128 {
+                    let e_byte = if i < expected_len { expected[i] } else { 0 };
+                    let p_byte = if i < provided_len { provided[i] } else { 0 };
+                    
+                    if i < expected_len {
+                        match_result |= e_byte ^ p_byte;
+                    } else {
+                        dummy_result |= e_byte ^ p_byte;
                     }
-                } else {
+                }
+                
+                if expected_len != provided_len {
                     match_result = 1;
                 }
+                
+                // Prevent compiler from optimizing away dummy_result
+                std::hint::black_box(dummy_result);
                 if !key_cfg.secret.is_empty() && match_result == 0 {
                     return Some(AuthContext {
                         api_key_name: key_name.to_string(),
