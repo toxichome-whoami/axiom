@@ -5,24 +5,26 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
 
 type Client struct {
-	config AxiomConfig
-	http   *http.Client
-	token  string
+	baseURL string
+	http    *http.Client
+	token   string
 }
 
 func NewClient(config AxiomConfig) *Client {
+	// Trim trailing slash so URL construction is always consistent
 	baseURL := strings.TrimRight(config.BaseURL, "/")
 	token := base64.StdEncoding.EncodeToString([]byte(config.KeyName + ":" + config.KeySecret))
 
 	return &Client{
-		config: config,
+		baseURL: baseURL,
 		http: &http.Client{
 			Timeout: time.Second * 30,
 		},
@@ -42,9 +44,9 @@ func (c *Client) request(method, endpoint string, body interface{}, out interfac
 		bodyReader = bytes.NewReader([]byte{})
 	}
 
-	req, err := http.NewRequest(method, c.config.BaseURL+endpoint, bodyReader)
+	req, err := http.NewRequest(method, c.baseURL+endpoint, bodyReader)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create request: %w", err)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
@@ -56,7 +58,7 @@ func (c *Client) request(method, endpoint string, body interface{}, out interfac
 	}
 	defer res.Body.Close()
 
-	resBody, err := ioutil.ReadAll(res.Body)
+	resBody, err := io.ReadAll(res.Body)
 	if err != nil {
 		return err
 	}
@@ -75,20 +77,6 @@ func (c *Client) ListDatabases() (*DatabasesResponse, error) {
 	return &resp, err
 }
 
-func (c *Client) Query(db string, sql string, params map[string]interface{}) (*QueryResponse, error) {
-	payload := map[string]interface{}{
-		"sql": sql,
-	}
-	if params != nil {
-		payload["params"] = params
-	}
-
-	var resp QueryResponse
-	err := c.request("POST", fmt.Sprintf("/api/v1/db/%s/query", db), payload, &resp)
-	return &resp, err
-}
-
-
 func (c *Client) ListTables(db string) (*TablesResponse, error) {
 	var resp TablesResponse
 	err := c.request("GET", fmt.Sprintf("/api/v1/db/%s/tables", db), nil, &resp)
@@ -97,27 +85,31 @@ func (c *Client) ListTables(db string) (*TablesResponse, error) {
 
 func (c *Client) FetchRows(db, table string, params *FetchRowsParams) (*FetchResponse, error) {
 	endpoint := fmt.Sprintf("/api/v1/db/%s/%s/rows", db, table)
-	
+
 	if params != nil {
-		req, _ := http.NewRequest("GET", c.config.BaseURL+endpoint, nil)
-		q := req.URL.Query()
+		q := url.Values{}
 		if params.Limit > 0 {
-			q.Add("limit", fmt.Sprintf("%d", params.Limit))
+			q.Set("limit", fmt.Sprintf("%d", params.Limit))
 		}
 		if params.Cursor != "" {
-			q.Add("cursor", params.Cursor)
+			q.Set("cursor", params.Cursor)
 		}
 		if params.Sort != "" {
-			q.Add("sort", params.Sort)
+			q.Set("sort", params.Sort)
 		}
 		if params.Order != "" {
-			q.Add("order", params.Order)
+			q.Set("order", params.Order)
 		}
 		if params.Filter != nil {
-			fBytes, _ := json.Marshal(params.Filter)
-			q.Add("filter", string(fBytes))
+			fBytes, err := json.Marshal(params.Filter)
+			if err == nil {
+				// url.Values.Encode() percent-encodes all values automatically
+				q.Set("filter", string(fBytes))
+			}
 		}
-		endpoint = endpoint + "?" + q.Encode()
+		if qs := q.Encode(); qs != "" {
+			endpoint = endpoint + "?" + qs
+		}
 	}
 
 	var resp FetchResponse
@@ -144,5 +136,18 @@ func (c *Client) UpdateRows(db, table string, filter map[string]interface{}, upd
 func (c *Client) DeleteRows(db, table string, filter map[string]interface{}) (*MutationResponse, error) {
 	var resp MutationResponse
 	err := c.request("DELETE", fmt.Sprintf("/api/v1/db/%s/%s/rows", db, table), filter, &resp)
+	return &resp, err
+}
+
+func (c *Client) Query(db string, sql string, params map[string]interface{}) (*QueryResponse, error) {
+	payload := map[string]interface{}{
+		"sql": sql,
+	}
+	if params != nil {
+		payload["params"] = params
+	}
+
+	var resp QueryResponse
+	err := c.request("POST", fmt.Sprintf("/api/v1/db/%s/query", db), payload, &resp)
 	return &resp, err
 }

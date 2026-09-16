@@ -1,28 +1,25 @@
-import { AxiomConfig, AxiomResponse, DatabaseInfo, FetchRowsParams } from "./types";
+import { AxiomConfig, AxiomResponse, DatabaseInfo, FetchRowsParams, MutationResponse, QueryResponse, TableInfo } from "./types";
 
 export * from "./types";
 
 export class AxiomClient {
-  private config: AxiomConfig;
-  private headers: Headers;
+  private readonly baseUrl: string;
+  private readonly headers: HeadersInit;
 
   constructor(config: AxiomConfig) {
-    this.config = {
-      ...config,
-      baseUrl: config.baseUrl.replace(/\/$/, "")
-    };
+    this.baseUrl = config.baseUrl.replace(/\/$/, "");
 
-    const token = Buffer.from(`${config.keyName}:${config.keySecret}`).toString("base64");
-    
-    this.headers = new Headers({
+    // btoa is available natively in Browser, Node 16+, and Cloudflare Workers
+    const token = btoa(`${config.keyName}:${config.keySecret}`);
+    this.headers = {
       "Content-Type": "application/json",
       "X-Axiom-Key": token,
-    });
+    };
   }
 
-  private async request<T>(method: string, endpoint: string, body?: any): Promise<AxiomResponse<T>> {
-    const url = `${this.config.baseUrl}${endpoint}`;
-    
+  private async request<T>(method: string, endpoint: string, body?: unknown): Promise<AxiomResponse<T>> {
+    const url = `${this.baseUrl}${endpoint}`;
+
     const options: RequestInit = {
       method,
       headers: this.headers,
@@ -34,70 +31,114 @@ export class AxiomClient {
 
     try {
       const response = await fetch(url, options);
-      const json = await response.json() as any;
-      
+      const json = (await response.json()) as AxiomResponse<T>;
+
       if (!response.ok) {
         return {
           success: false,
-          error: json.error || { code: "UNKNOWN", message: `HTTP ${response.status}` }
+          error: json.error ?? { code: "UNKNOWN", message: `HTTP ${response.status}` },
         };
       }
-      
+
       return json;
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
       return {
         success: false,
-        error: { code: "NETWORK_ERROR", message: err.message }
+        error: { code: "NETWORK_ERROR", message },
       };
     }
   }
 
-  // List all databases
-  public async listDatabases(): Promise<AxiomResponse<{ databases: DatabaseInfo[] }>> {
+  /** List all databases the API key has access to. */
+  listDatabases(): Promise<AxiomResponse<{ databases: DatabaseInfo[] }>> {
     return this.request("GET", "/api/v1/db/databases");
   }
 
-    // List tables in a database
-  public async listTables(db: string): Promise<AxiomResponse<{ tables: TableInfo[] }>> {
-    return this.request("GET", /api/v1/db/ + db + /tables);
+  /** List all tables in a specific database. */
+  listTables(db: string): Promise<AxiomResponse<{ tables: TableInfo[] }>> {
+    return this.request("GET", `/api/v1/db/${db}/tables`);
   }
 
-  // Fetch rows with cursor pagination
-  public async fetchRows<T = any>(db: string, table: string, params?: FetchRowsParams): Promise<AxiomResponse<{ rows: T[] }>> {
-    const urlParams = new URLSearchParams();
+  /** Fetch rows from a table with full cursor pagination and filter support. */
+  fetchRows<T = Record<string, unknown>>(
+    db: string,
+    table: string,
+    params?: FetchRowsParams
+  ): Promise<AxiomResponse<{ rows: T[] }>> {
+    const qs = new URLSearchParams();
     if (params) {
-      Object.entries(params).forEach(([key, value]) => {
-        if (value !== undefined) {
-          urlParams.append(key, typeof value === "object" ? JSON.stringify(value) : String(value));
+      for (const [key, value] of Object.entries(params)) {
+        if (value !== undefined && value !== null) {
+          qs.append(key, typeof value === "object" ? JSON.stringify(value) : String(value));
         }
-      });
+      }
     }
-    
-    const qs = urlParams.toString();
-    const endpoint = `/api/v1/db/${db}/${table}/rows${qs ? "?" + qs : ""}`;
-    return this.request("GET", endpoint);
+    const query = qs.toString();
+    return this.request("GET", `/api/v1/db/${db}/${table}/rows${query ? "?" + query : ""}`);
   }
 
-  // Insert rows
-  public async insertRows<T = any>(db: string, table: string, rows: Partial<T> | Partial<T>[]): Promise<AxiomResponse<any>> {
+  /**
+   * Async generator that transparently paginates through ALL rows using the cursor.
+   *
+   * @example
+   * for await (const page of client.fetchAllRows("main_db", "users")) {
+   *   for (const row of page) console.log(row);
+   * }
+   */
+  async *fetchAllRows<T = Record<string, unknown>>(
+    db: string,
+    table: string,
+    params?: Omit<FetchRowsParams, "cursor">
+  ): AsyncGenerator<T[]> {
+    let cursor: string | null = null;
+
+    while (true) {
+      const result = await this.fetchRows<T>(db, table, { ...params, cursor: cursor ?? undefined });
+      const rows = result.rows ?? [];
+      yield rows;
+
+      const nextCursor = result.pagination?.next_cursor ?? null;
+      if (!nextCursor || rows.length === 0) break;
+      cursor = nextCursor;
+    }
+  }
+
+  /** Insert one row or an array of rows into a table. */
+  insertRows<T = Record<string, unknown>>(
+    db: string,
+    table: string,
+    rows: Partial<T> | Partial<T>[]
+  ): Promise<AxiomResponse<MutationResponse>> {
     const payload = Array.isArray(rows) ? rows : [rows];
     return this.request("POST", `/api/v1/db/${db}/${table}/rows`, payload);
   }
 
-  // Update rows
-  public async updateRows(db: string, table: string, filter: Record<string, any>, update: Record<string, any>): Promise<AxiomResponse<any>> {
+  /** Update rows matching filter with the values in update. */
+  updateRows(
+    db: string,
+    table: string,
+    filter: Record<string, unknown>,
+    update: Record<string, unknown>
+  ): Promise<AxiomResponse<MutationResponse>> {
     return this.request("PATCH", `/api/v1/db/${db}/${table}/rows`, { filter, update });
   }
 
-  // Delete rows
-  public async deleteRows(db: string, table: string, filter: Record<string, any>): Promise<AxiomResponse<any>> {
+  /** Delete rows matching the filter. */
+  deleteRows(
+    db: string,
+    table: string,
+    filter: Record<string, unknown>
+  ): Promise<AxiomResponse<MutationResponse>> {
     return this.request("DELETE", `/api/v1/db/${db}/${table}/rows`, filter);
   }
 
-  // Execute raw query
-  public async query<T = any>(db: string, sql: string, params?: Record<string, any>): Promise<AxiomResponse<{ rows: T[], affected_rows: number }>> {
+  /** Execute a raw SQL query. */
+  query<T = Record<string, unknown>>(
+    db: string,
+    sql: string,
+    params?: Record<string, unknown>
+  ): Promise<AxiomResponse<QueryResponse<T>>> {
     return this.request("POST", `/api/v1/db/${db}/query`, { sql, params });
   }
 }
-
-

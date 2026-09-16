@@ -69,3 +69,4 @@ type MutationResponse struct {
 	AffectedRows int         json:"affected_rows,omitempty"
 	Error        *AxiomError json:"error,omitempty"
 }
+

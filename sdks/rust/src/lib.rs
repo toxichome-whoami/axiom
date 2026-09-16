@@ -1,9 +1,10 @@
 pub mod models;
 
 use base64::{engine::general_purpose, Engine as _};
-use models::{DatabasesResponse, QueryResponse};
+use models::{DatabasesResponse, FetchRowsParams, FetchResponse, MutationResponse, QueryResponse, TablesResponse};
 use reqwest::{Client, header};
 use serde::de::DeserializeOwned;
+use serde::Serialize;
 use std::collections::HashMap;
 
 pub struct AxiomClient {
@@ -35,24 +36,7 @@ impl AxiomClient {
         self.client.get(&url).send().await?.json().await
     }
 
-    pub async fn query<T: DeserializeOwned>(
-        &self,
-        db: &str,
-        sql: &str,
-        params: Option<HashMap<String, serde_json::Value>>,
-    ) -> Result<QueryResponse<T>, reqwest::Error> {
-        let url = format!("{}/api/v1/db/{}/query", self.base_url, db);
-        
-        let mut payload = HashMap::new();
-        payload.insert("sql".to_string(), serde_json::json!(sql));
-        if let Some(p) = params {
-            payload.insert("params".to_string(), serde_json::json!(p));
-        }
-
-        self.client.post(&url).json(&payload).send().await?.json().await
-    }
-
-    pub async fn list_tables(&self, db: &str) -> Result<models::TablesResponse, reqwest::Error> {
+    pub async fn list_tables(&self, db: &str) -> Result<TablesResponse, reqwest::Error> {
         let url = format!("{}/api/v1/db/{}/tables", self.base_url, db);
         self.client.get(&url).send().await?.json().await
     }
@@ -61,12 +45,31 @@ impl AxiomClient {
         &self,
         db: &str,
         table: &str,
-        params: Option<HashMap<String, String>>,
-    ) -> Result<models::FetchResponse<T>, reqwest::Error> {
+        params: Option<FetchRowsParams>,
+    ) -> Result<FetchResponse<T>, reqwest::Error> {
         let mut url = format!("{}/api/v1/db/{}/{}/rows", self.base_url, db, table);
-        
+
         if let Some(p) = params {
-            let qs: Vec<String> = p.iter().map(|(k, v)| format!("{}={}", k, v)).collect();
+            let mut qs: Vec<String> = Vec::new();
+            if let Some(limit) = p.limit {
+                qs.push(format!("limit={}", limit));
+            }
+            if let Some(cursor) = &p.cursor {
+                // percent-encode cursor value in case it contains special characters
+                qs.push(format!("cursor={}", urlencoding::encode(cursor)));
+            }
+            if let Some(sort) = &p.sort {
+                qs.push(format!("sort={}", urlencoding::encode(sort)));
+            }
+            if let Some(order) = &p.order {
+                qs.push(format!("order={}", urlencoding::encode(order)));
+            }
+            if let Some(filter) = &p.filter {
+                if let Ok(f) = serde_json::to_string(filter) {
+                    // percent-encode the JSON string so {, }, :, " don't break the URL
+                    qs.push(format!("filter={}", urlencoding::encode(&f)));
+                }
+            }
             if !qs.is_empty() {
                 url.push('?');
                 url.push_str(&qs.join("&"));
@@ -76,12 +79,12 @@ impl AxiomClient {
         self.client.get(&url).send().await?.json().await
     }
 
-    pub async fn insert_rows<T: serde::Serialize>(
+    pub async fn insert_rows<T: Serialize>(
         &self,
         db: &str,
         table: &str,
-        rows: &Vec<T>,
-    ) -> Result<models::MutationResponse, reqwest::Error> {
+        rows: &[T],
+    ) -> Result<MutationResponse, reqwest::Error> {
         let url = format!("{}/api/v1/db/{}/{}/rows", self.base_url, db, table);
         self.client.post(&url).json(rows).send().await?.json().await
     }
@@ -92,12 +95,9 @@ impl AxiomClient {
         table: &str,
         filter: HashMap<String, serde_json::Value>,
         update: HashMap<String, serde_json::Value>,
-    ) -> Result<models::MutationResponse, reqwest::Error> {
+    ) -> Result<MutationResponse, reqwest::Error> {
         let url = format!("{}/api/v1/db/{}/{}/rows", self.base_url, db, table);
-        let mut payload = HashMap::new();
-        payload.insert("filter", filter);
-        payload.insert("update", update);
-        
+        let payload = serde_json::json!({ "filter": filter, "update": update });
         self.client.patch(&url).json(&payload).send().await?.json().await
     }
 
@@ -106,8 +106,22 @@ impl AxiomClient {
         db: &str,
         table: &str,
         filter: HashMap<String, serde_json::Value>,
-    ) -> Result<models::MutationResponse, reqwest::Error> {
+    ) -> Result<MutationResponse, reqwest::Error> {
         let url = format!("{}/api/v1/db/{}/{}/rows", self.base_url, db, table);
         self.client.delete(&url).json(&filter).send().await?.json().await
+    }
+
+    pub async fn query<T: DeserializeOwned>(
+        &self,
+        db: &str,
+        sql: &str,
+        params: Option<HashMap<String, serde_json::Value>>,
+    ) -> Result<QueryResponse<T>, reqwest::Error> {
+        let url = format!("{}/api/v1/db/{}/query", self.base_url, db);
+        let mut payload = serde_json::json!({ "sql": sql });
+        if let Some(p) = params {
+            payload["params"] = serde_json::json!(p);
+        }
+        self.client.post(&url).json(&payload).send().await?.json().await
     }
 }

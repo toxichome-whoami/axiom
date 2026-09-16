@@ -8,10 +8,17 @@
     "build": "tsc",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "keywords": ["axiom", "database", "api", "gateway", "toxichome"],
+  "keywords": [
+    "axiom",
+    "database",
+    "api",
+    "gateway",
+    "toxichome"
+  ],
   "author": "Toxichome",
   "license": "MIT",
   "devDependencies": {
+    "@types/node": "^22.20.3",
     "typescript": "^5.0.0"
   }
 }
