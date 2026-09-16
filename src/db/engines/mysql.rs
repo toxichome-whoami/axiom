@@ -1,0 +1,204 @@
+use crate::config::schema::DatabaseDefConfig;
+use crate::db::engines::base::{
+    ColumnInfo, DatabaseEngine, ForeignKeyInfo, QueryResult, TableInfo,
+};
+use async_trait::async_trait;
+use serde_json::Value;
+use sqlx::{any::AnyPoolOptions, Any, Column, Pool, Row};
+
+pub struct MysqlDatabaseEngine {
+    pool: Option<Pool<Any>>,
+    config: DatabaseDefConfig,
+}
+
+impl MysqlDatabaseEngine {
+    pub fn new(config: DatabaseDefConfig) -> Self {
+        sqlx::any::install_default_drivers();
+        Self { pool: None, config }
+    }
+}
+
+#[async_trait]
+impl DatabaseEngine for MysqlDatabaseEngine {
+    async fn connect(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        if self.pool.is_none() {
+            let pool = AnyPoolOptions::new()
+                .max_connections(self.config.pool_max as u32)
+                .min_connections(self.config.pool_min as u32)
+                .acquire_timeout(std::time::Duration::from_secs(
+                    self.config.connection_timeout as u64,
+                ))
+                .idle_timeout(std::time::Duration::from_secs(
+                    self.config.idle_timeout as u64,
+                ))
+                .max_lifetime(std::time::Duration::from_secs(
+                    self.config.max_lifetime as u64,
+                ))
+                .connect(&self.config.url)
+                .await?;
+            self.pool = Some(pool);
+        }
+        Ok(())
+    }
+
+    async fn disconnect(&self) -> Result<(), Box<dyn std::error::Error>> {
+        if let Some(pool) = &self.pool {
+            pool.close().await;
+        }
+        Ok(())
+    }
+
+    async fn health_check(&self) -> bool {
+        if let Some(pool) = &self.pool {
+            sqlx::query("SELECT 1").execute(pool).await.is_ok()
+        } else {
+            false
+        }
+    }
+
+    async fn list_tables(
+        &self,
+        cursor: Option<String>,
+        limit: usize,
+    ) -> Result<Vec<TableInfo>, Box<dyn std::error::Error>> {
+        let pool = self.pool.as_ref().ok_or("Not connected")?;
+
+        let mut query_str = "SELECT table_name FROM information_schema.tables WHERE table_schema = DATABASE()".to_string();
+        if cursor.is_some() {
+            query_str.push_str(" AND table_name > ?");
+        }
+        query_str.push_str(&format!(" ORDER BY table_name ASC LIMIT {}", limit));
+
+        let mut query = sqlx::query(&query_str);
+        if let Some(c) = cursor {
+            query = query.bind(c);
+        }
+
+        let rows = query.fetch_all(pool).await?;
+        let mut tables = Vec::new();
+
+        for row in rows {
+            if let Ok(name) = row.try_get::<String, _>("table_name") {
+                tables.push(TableInfo {
+                    name,
+                    row_count_estimate: 0,
+                    columns: None,
+                    foreign_keys: None,
+                });
+            }
+        }
+
+        Ok(tables)
+    }
+
+    async fn count_tables(&self) -> Result<i64, Box<dyn std::error::Error>> {
+        let pool = self.pool.as_ref().ok_or("Not connected")?;
+        let query_str = "SELECT count(*) as count FROM information_schema.tables WHERE table_schema = DATABASE()";
+        
+        let row = sqlx::query(query_str).fetch_one(pool).await?;
+        let count: i64 = row.try_get("count").unwrap_or(0);
+        Ok(count)
+    }
+
+    async fn describe_table(&self, table: &str) -> Result<Vec<ColumnInfo>, Box<dyn std::error::Error>> {
+        let pool = self.pool.as_ref().ok_or("Not connected")?;
+        let query_str = "SELECT COLUMN_NAME as column: column_name, DATA_TYPE as r#type: data_type, IS_NULLABLE as is_nullable FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = ? ORDER BY ORDINAL_POSITION";
+        let rows = sqlx::query(query_str).bind(table).fetch_all(pool).await?;
+        
+        let mut columns = Vec::new();
+        for row in rows {
+            columns.push(ColumnInfo {
+                name: row.try_get::<String, _>("column_name").unwrap_or_default(),
+                r#type: row.try_get::<String, _>("data_type").unwrap_or_default(),
+                primary_key: false,
+                nullable: row.try_get::<String, _>("is_nullable").unwrap_or("YES".to_string()) == "YES",
+            });
+        }
+        Ok(columns)
+    }
+
+    async fn get_foreign_keys(&self, table: &str) -> Result<Vec<ForeignKeyInfo>, Box<dyn std::error::Error>> {
+        let pool = self.pool.as_ref().ok_or("Not connected")?;
+        let query_str = "
+            SELECT COLUMN_NAME as column: column_name, REFERENCED_TABLE_NAME as referenced_table: referenced_table_name, REFERENCED_COLUMN_NAME as referenced_column_name
+            FROM information_schema.key_column_usage
+            WHERE REFERENCED_TABLE_NAME IS NOT NULL AND TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?";
+        let rows = sqlx::query(query_str).bind(table).fetch_all(pool).await?;
+        
+        let mut fks = Vec::new();
+        for row in rows {
+            fks.push(ForeignKeyInfo {
+                column: row.try_get::<String, _>("column_name").unwrap_or_default(),
+                referenced_table: row.try_get::<String, _>("referenced_table_name").unwrap_or_default(),
+                referenced_column: row.try_get::<String, _>("referenced_column_name").unwrap_or_default(),
+            });
+        }
+        Ok(fks)
+    }
+
+    async fn execute(&self, sql: &str, params: &[serde_json::Value]) -> Result<QueryResult, Box<dyn std::error::Error>> {
+        let pool = self.pool.as_ref().ok_or("Not connected")?;
+
+        let is_mutation = sql.trim().to_uppercase().starts_with("INSERT")
+            || sql.trim().to_uppercase().starts_with("UPDATE")
+            || sql.trim().to_uppercase().starts_with("DELETE");
+
+        let mut query = sqlx::query(sql);
+
+        for param in params {
+            match param {
+                Value::String(s) => { query = query.bind(s); }
+                Value::Number(n) => {
+                    if let Some(i) = n.as_i64() { query = query.bind(i); } 
+                    else if let Some(f) = n.as_f64() { query = query.bind(f); } 
+                    else { query = query.bind(n.to_string()); }
+                }
+                Value::Bool(b) => { query = query.bind(b); }
+                Value::Null => { query = query.bind(Option::<String>::None); }
+                _ => { query = query.bind(param.to_string()); }
+            }
+        }
+
+        if is_mutation {
+            let result = query.execute(pool).await?;
+            return Ok(QueryResult {
+                columns: None,
+                rows: None,
+                affected_rows: Some(result.rows_affected()),
+            });
+        }
+
+        let rows = query.fetch_all(pool).await?;
+        let mut result_rows = Vec::new();
+        let mut column_names = Vec::new();
+
+        if let Some(first_row) = rows.first() {
+            for col in first_row.columns() {
+                column_names.push(col.name().to_string());
+            }
+        }
+
+        for row in rows {
+            let mut json_obj = serde_json::Map::new();
+            for col in row.columns() {
+                let raw_val: Result<String, _> = row.try_get(col.ordinal());
+                if let Ok(val) = raw_val {
+                    json_obj.insert(col.name().to_string(), Value::String(val));
+                } else {
+                    json_obj.insert(col.name().to_string(), Value::Null);
+                }
+            }
+            result_rows.push(Value::Object(json_obj));
+        }
+
+        Ok(QueryResult {
+            columns: Some(column_names),
+            rows: Some(result_rows),
+            affected_rows: None,
+        })
+    }
+
+    fn dialect(&self) -> &str {
+        "mysql"
+    }
+}

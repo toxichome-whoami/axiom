@@ -6,12 +6,12 @@ use async_trait::async_trait;
 use serde_json::Value;
 use sqlx::{any::AnyPoolOptions, Any, Column, Pool, Row};
 
-pub struct AnyDatabaseEngine {
+pub struct PostgresDatabaseEngine {
     pool: Option<Pool<Any>>,
     config: DatabaseDefConfig,
 }
 
-impl AnyDatabaseEngine {
+impl PostgresDatabaseEngine {
     pub fn new(config: DatabaseDefConfig) -> Self {
         sqlx::any::install_default_drivers();
         Self { pool: None, config }
@@ -19,7 +19,7 @@ impl AnyDatabaseEngine {
 }
 
 #[async_trait]
-impl DatabaseEngine for AnyDatabaseEngine {
+impl DatabaseEngine for PostgresDatabaseEngine {
     async fn connect(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         if self.pool.is_none() {
             let pool = AnyPoolOptions::new()
@@ -62,24 +62,12 @@ impl DatabaseEngine for AnyDatabaseEngine {
         limit: usize,
     ) -> Result<Vec<TableInfo>, Box<dyn std::error::Error>> {
         let pool = self.pool.as_ref().ok_or("Not connected")?;
-        let dialect = self.config.url.split(':').next().unwrap_or("any");
 
-        let mut query_str = String::new();
-                if dialect == "postgres" {
-            query_str.push_str("SELECT table_name::text as table_name FROM information_schema.tables WHERE table_schema = 'public'");
-            if cursor.is_some() {
-                query_str.push_str(" AND table_name::text > ");
-            }
-            query_str.push_str(&format!(" ORDER BY table_name ASC LIMIT {}", limit));
-        } else if dialect == "mysql" {
-            query_str.push_str("SELECT table_name FROM information_schema.tables WHERE table_schema = DATABASE()");
-            if cursor.is_some() {
-                query_str.push_str(" AND table_name > ?");
-            }
-            query_str.push_str(&format!(" ORDER BY table_name ASC LIMIT {}", limit));
-        } else {
-            return Ok(vec![]); // Stub for unsupported dialects
+        let mut query_str = "SELECT table_name::text as table_name FROM information_schema.tables WHERE table_schema = 'public'".to_string();
+        if cursor.is_some() {
+            query_str.push_str(" AND table_name::text > ");
         }
+        query_str.push_str(&format!(" ORDER BY table_name ASC LIMIT {}", limit));
 
         let mut query = sqlx::query(&query_str);
         if let Some(c) = cursor {
@@ -89,7 +77,6 @@ impl DatabaseEngine for AnyDatabaseEngine {
         let rows = query.fetch_all(pool).await?;
         let mut tables = Vec::new();
 
-        use sqlx::Row;
         for row in rows {
             if let Ok(name) = row.try_get::<String, _>("table_name") {
                 tables.push(TableInfo {
@@ -104,43 +91,55 @@ impl DatabaseEngine for AnyDatabaseEngine {
         Ok(tables)
     }
 
-        async fn count_tables(&self) -> Result<i64, Box<dyn std::error::Error>> {
+    async fn count_tables(&self) -> Result<i64, Box<dyn std::error::Error>> {
         let pool = self.pool.as_ref().ok_or("Not connected")?;
-        let dialect = self.config.url.split(':').next().unwrap_or("any");
+        let query_str = "SELECT count(*)::bigint as count FROM information_schema.tables WHERE table_schema = 'public'";
         
-        let query_str = if dialect == "postgres" {
-            "SELECT count(*)::bigint as count FROM information_schema.tables WHERE table_schema = 'public'"
-        } else if dialect == "mysql" {
-            "SELECT count(*) as count FROM information_schema.tables WHERE table_schema = DATABASE()"
-        } else {
-            return Ok(0);
-        };
-        
-        use sqlx::Row;
         let row = sqlx::query(query_str).fetch_one(pool).await?;
         let count: i64 = row.try_get("count").unwrap_or(0);
         Ok(count)
     }
 
-    async fn describe_table(
-        &self,
-        _table: &str,
-    ) -> Result<Vec<ColumnInfo>, Box<dyn std::error::Error>> {
-        Ok(vec![])
+    async fn describe_table(&self, table: &str) -> Result<Vec<ColumnInfo>, Box<dyn std::error::Error>> {
+        let pool = self.pool.as_ref().ok_or("Not connected")?;
+        let query_str = "SELECT column::text, r#type::text, primary_key: false,
+                nullable::text FROM information_schema.columns WHERE table_schema = 'public' AND table_name =  ORDER BY ordinal_position";
+        let rows = sqlx::query(query_str).bind(table).fetch_all(pool).await?;
+        
+        let mut columns = Vec::new();
+        for row in rows {
+            columns.push(ColumnInfo {
+                name: row.try_get::<String, _>("column_name").unwrap_or_default(),
+                r#type: row.try_get::<String, _>("data_type").unwrap_or_default(),
+                primary_key: false,
+                nullable: row.try_get::<String, _>("is_nullable").unwrap_or("YES".to_string()) == "YES",
+            });
+        }
+        Ok(columns)
     }
 
-    async fn get_foreign_keys(
-        &self,
-        _table: &str,
-    ) -> Result<Vec<ForeignKeyInfo>, Box<dyn std::error::Error>> {
-        Ok(vec![])
+    async fn get_foreign_keys(&self, table: &str) -> Result<Vec<ForeignKeyInfo>, Box<dyn std::error::Error>> {
+        let pool = self.pool.as_ref().ok_or("Not connected")?;
+        let query_str = "
+            SELECT kcu.column::text, ccu.table_name::text AS referenced_table: referenced_table_name, ccu.column::text AS referenced_column_name
+            FROM information_schema.table_constraints AS tc
+            JOIN information_schema.key_column_usage AS kcu ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema
+            JOIN information_schema.constraint_column_usage AS ccu ON ccu.constraint_name = tc.constraint_name AND ccu.table_schema = tc.table_schema
+            WHERE tc.constraint_type = 'FOREIGN KEY' AND tc.table_name = ";
+        let rows = sqlx::query(query_str).bind(table).fetch_all(pool).await?;
+        
+        let mut fks = Vec::new();
+        for row in rows {
+            fks.push(ForeignKeyInfo {
+                column: row.try_get::<String, _>("column_name").unwrap_or_default(),
+                referenced_table: row.try_get::<String, _>("referenced_table_name").unwrap_or_default(),
+                referenced_column: row.try_get::<String, _>("referenced_column_name").unwrap_or_default(),
+            });
+        }
+        Ok(fks)
     }
 
-    async fn execute(
-        &self,
-        sql: &str,
-        params: &[serde_json::Value],
-    ) -> Result<QueryResult, Box<dyn std::error::Error>> {
+    async fn execute(&self, sql: &str, params: &[serde_json::Value]) -> Result<QueryResult, Box<dyn std::error::Error>> {
         let pool = self.pool.as_ref().ok_or("Not connected")?;
 
         let is_mutation = sql.trim().to_uppercase().starts_with("INSERT")
@@ -151,27 +150,15 @@ impl DatabaseEngine for AnyDatabaseEngine {
 
         for param in params {
             match param {
-                serde_json::Value::String(s) => {
-                    query = query.bind(s);
+                Value::String(s) => { query = query.bind(s); }
+                Value::Number(n) => {
+                    if let Some(i) = n.as_i64() { query = query.bind(i); } 
+                    else if let Some(f) = n.as_f64() { query = query.bind(f); } 
+                    else { query = query.bind(n.to_string()); }
                 }
-                serde_json::Value::Number(n) => {
-                    if let Some(i) = n.as_i64() {
-                        query = query.bind(i);
-                    } else if let Some(f) = n.as_f64() {
-                        query = query.bind(f);
-                    } else {
-                        query = query.bind(n.to_string());
-                    }
-                }
-                serde_json::Value::Bool(b) => {
-                    query = query.bind(b);
-                }
-                serde_json::Value::Null => {
-                    query = query.bind(Option::<String>::None);
-                }
-                _ => {
-                    query = query.bind(param.to_string());
-                }
+                Value::Bool(b) => { query = query.bind(b); }
+                Value::Null => { query = query.bind(Option::<String>::None); }
+                _ => { query = query.bind(param.to_string()); }
             }
         }
 
@@ -184,9 +171,7 @@ impl DatabaseEngine for AnyDatabaseEngine {
             });
         }
 
-        // Generic JSON mapping for read queries
         let rows = query.fetch_all(pool).await?;
-
         let mut result_rows = Vec::new();
         let mut column_names = Vec::new();
 
@@ -199,8 +184,6 @@ impl DatabaseEngine for AnyDatabaseEngine {
         for row in rows {
             let mut json_obj = serde_json::Map::new();
             for col in row.columns() {
-                // In AnyPool, value coercion to string is the safest generic fallback
-                // A production system would match on the TypeInfo
                 let raw_val: Result<String, _> = row.try_get(col.ordinal());
                 if let Ok(val) = raw_val {
                     json_obj.insert(col.name().to_string(), Value::String(val));
@@ -219,6 +202,6 @@ impl DatabaseEngine for AnyDatabaseEngine {
     }
 
     fn dialect(&self) -> &str {
-        "any"
+        "postgres"
     }
 }

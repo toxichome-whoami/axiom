@@ -101,12 +101,56 @@ impl DatabaseEngine for MssqlDatabaseEngine {
         Ok(0)
     }
 
-    async fn describe_table(&self, _table: &str) -> Result<Vec<ColumnInfo>, Box<dyn std::error::Error>> {
-        Ok(vec![])
+    async fn describe_table(&self, table: &str) -> Result<Vec<ColumnInfo>, Box<dyn std::error::Error>> {
+        let client_arc = self.client.as_ref().ok_or("Not connected")?;
+        let mut client = client_arc.lock().await;
+        
+        let mut query = tiberius::Query::new("SELECT COLUMN_NAME as column: column_name, DATA_TYPE as r#type: data_type, IS_NULLABLE as is_nullable FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = @P1 ORDER BY ORDINAL_POSITION");
+        query.bind(table);
+        
+        let stream = query.query(&mut *client).await?;
+        let rows = stream.into_first_result().await?;
+        
+        let mut columns = Vec::new();
+        for row in rows {
+            columns.push(ColumnInfo {
+                name: row.try_get::<&str, _>("column_name")?.unwrap_or_default().to_string(),
+                r#type: row.try_get::<&str, _>("data_type")?.unwrap_or_default().to_string(),
+                primary_key: false,
+                nullable: row.try_get::<&str, _>("is_nullable")?.unwrap_or("YES") == "YES",
+            });
+        }
+        Ok(columns)
     }
 
-    async fn get_foreign_keys(&self, _table: &str) -> Result<Vec<ForeignKeyInfo>, Box<dyn std::error::Error>> {
-        Ok(vec![])
+    async fn get_foreign_keys(&self, table: &str) -> Result<Vec<ForeignKeyInfo>, Box<dyn std::error::Error>> {
+        let client_arc = self.client.as_ref().ok_or("Not connected")?;
+        let mut client = client_arc.lock().await;
+        
+        let mut query = tiberius::Query::new("
+            SELECT col1.name as column: column_name, tab2.name as referenced_table: referenced_table_name, col2.name as referenced_column_name
+            FROM sys.foreign_key_columns fkc
+            INNER JOIN sys.objects obj ON obj.object_id = fkc.constraint_object_id
+            INNER JOIN sys.tables tab1 ON tab1.object_id = fkc.parent_object_id
+            INNER JOIN sys.columns col1 ON col1.column_id = parent_column_id AND col1.object_id = tab1.object_id
+            INNER JOIN sys.tables tab2 ON tab2.object_id = fkc.referenced_object_id
+            INNER JOIN sys.columns col2 ON col2.column_id = referenced_column_id AND col2.object_id = tab2.object_id
+            WHERE tab1.name = @P1
+        ");
+        query.bind(table);
+        
+        let stream = query.query(&mut *client).await?;
+        let rows = stream.into_first_result().await?;
+        
+        let mut fks = Vec::new();
+        for row in rows {
+            fks.push(ForeignKeyInfo {
+                column: row.try_get::<&str, _>("column_name")?.unwrap_or_default().to_string(),
+                referenced_table: row.try_get::<&str, _>("referenced_table_name")?.unwrap_or_default().to_string(),
+                referenced_column: row.try_get::<&str, _>("referenced_column_name")?.unwrap_or_default().to_string(),
+            });
+        }
+        Ok(fks)
     }
 
     async fn execute(&self, sql: &str, params: &[serde_json::Value]) -> Result<QueryResult, Box<dyn std::error::Error>> {
