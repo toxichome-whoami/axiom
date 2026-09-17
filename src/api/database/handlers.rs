@@ -537,7 +537,15 @@ pub async fn update_rows(
     if payload.filter.is_empty() {
         return Err(AxiomError::new(
             "BAD_REQUEST",
-            "Update requires a filter",
+            "Update requires a non-empty filter",
+            StatusCode::BAD_REQUEST,
+        ));
+    }
+
+    if payload.update.is_empty() {
+        return Err(AxiomError::new(
+            "BAD_REQUEST",
+            "Update requires non-empty update fields",
             StatusCode::BAD_REQUEST,
         ));
     }
@@ -548,10 +556,16 @@ pub async fn update_rows(
         &payload.filter,
     );
 
+    if sql.ends_with("WHERE ") || sql.contains("SET  WHERE") {
+        return Err(AxiomError::new(
+            "BAD_REQUEST",
+            "Invalid update or filter criteria",
+            StatusCode::BAD_REQUEST,
+        ));
+    }
+
     let (result, _) =
         QueryExecutionPipeline::run_query(&db_name, &sql, values, &auth, &db_cfg).await?;
-
-
 
     Ok(axum::Json(
         serde_json::json!({ "success": true, "affected_rows": result.affected_rows }),
@@ -568,7 +582,7 @@ pub async fn delete_rows(
     if payload.filter.is_empty() {
         return Err(AxiomError::new(
             "BAD_REQUEST",
-            "Delete requires a filter",
+            "Delete requires a non-empty filter",
             StatusCode::BAD_REQUEST,
         ));
     }
@@ -576,10 +590,16 @@ pub async fn delete_rows(
     let (sql, values) =
         crate::api::database::filter_builder::construct_delete(&table_name, &payload.filter);
 
+    if sql.ends_with("WHERE ") {
+        return Err(AxiomError::new(
+            "BAD_REQUEST",
+            "Invalid delete filter criteria",
+            StatusCode::BAD_REQUEST,
+        ));
+    }
+
     let (result, _) =
         QueryExecutionPipeline::run_query(&db_name, &sql, values, &auth, &db_cfg).await?;
-
-
 
     Ok(axum::Json(
         serde_json::json!({ "success": true, "affected_rows": result.affected_rows }),

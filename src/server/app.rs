@@ -33,9 +33,37 @@ async fn favicon() -> impl IntoResponse {
 pub fn create_app() -> Router {
     let config = ConfigManager::get();
 
+    let allowed_methods = [
+        axum::http::Method::GET,
+        axum::http::Method::POST,
+        axum::http::Method::PATCH,
+        axum::http::Method::DELETE,
+        axum::http::Method::HEAD,
+        axum::http::Method::OPTIONS,
+    ];
+
+    let allowed_headers = [
+        header::CONTENT_TYPE,
+        header::AUTHORIZATION,
+        header::ACCEPT,
+        header::ORIGIN,
+        header::HeaderName::from_static("x-axiom-key"),
+        header::HeaderName::from_static("x-api-key"),
+        header::HeaderName::from_static("idempotency-key"),
+        header::HeaderName::from_static("x-request-id"),
+    ];
+
+    let exposed_headers = [
+        header::HeaderName::from_static("x-request-id"),
+        header::HeaderName::from_static("x-idempotency-hit"),
+        header::HeaderName::from_static("x-ratelimit-limit"),
+        header::HeaderName::from_static("x-ratelimit-remaining"),
+    ];
+
     let mut cors = CorsLayer::new()
-        .allow_methods(Any)
-        .allow_headers(Any);
+        .allow_methods(allowed_methods)
+        .allow_headers(allowed_headers)
+        .expose_headers(exposed_headers);
         
     if config.server.cors_origins.iter().any(|o| o == "*") {
         cors = cors.allow_origin(Any);
