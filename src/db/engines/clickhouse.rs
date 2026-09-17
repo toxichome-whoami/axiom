@@ -73,16 +73,13 @@ impl DatabaseEngine for ClickHouseDatabaseEngine {
         cursor: Option<String>,
         limit: usize,
     ) -> Result<Vec<TableInfo>, Box<dyn std::error::Error>> {
-        let mut sql = format!("SELECT name as table_name FROM system.tables WHERE database = '{}'", self.database);
-        if cursor.is_some() {
-            sql.push_str(" AND name > ?");
-        }
-        sql.push_str(&format!(" ORDER BY name ASC LIMIT {}", limit));
-
-        let mut params = Vec::new();
+        let mut sql = "SELECT name as table_name FROM system.tables WHERE database = ?".to_string();
+        let mut params = vec![Value::String(self.database.clone())];
         if let Some(c) = cursor {
+            sql.push_str(" AND name > ?");
             params.push(Value::String(c));
         }
+        sql.push_str(&format!(" ORDER BY name ASC LIMIT {}", limit));
 
         let result = self.execute(&sql, &params).await?;
         let mut tables = Vec::new();
@@ -104,8 +101,8 @@ impl DatabaseEngine for ClickHouseDatabaseEngine {
     }
 
     async fn count_tables(&self) -> Result<i64, Box<dyn std::error::Error>> {
-        let sql = format!("SELECT count() as count FROM system.tables WHERE database = '{}'", self.database);
-        let result = self.execute(&sql, &[]).await?;
+        let sql = "SELECT count() as count FROM system.tables WHERE database = ?";
+        let result = self.execute(sql, &[Value::String(self.database.clone())]).await?;
         
         if let Some(rows) = result.rows {
             if let Some(row) = rows.first() {
@@ -122,8 +119,8 @@ impl DatabaseEngine for ClickHouseDatabaseEngine {
     }
 
     async fn describe_table(&self, table: &str) -> Result<Vec<ColumnInfo>, Box<dyn std::error::Error>> {
-        let sql = format!("SELECT name as column_name, type as data_type FROM system.columns WHERE database = '{}' AND table = '{}'", self.database, table.replace("'", "''"));
-        let result = self.execute(&sql, &[]).await?;
+        let sql = "SELECT name as column_name, type as data_type FROM system.columns WHERE database = ? AND table = ?";
+        let result = self.execute(sql, &[Value::String(self.database.clone()), Value::String(table.to_string())]).await?;
         
         let mut columns = Vec::new();
         if let Some(rows) = result.rows {
@@ -153,20 +150,58 @@ impl DatabaseEngine for ClickHouseDatabaseEngine {
             || sql.trim().to_uppercase().starts_with("DROP")
             || sql.trim().to_uppercase().starts_with("CREATE");
 
-        let mut final_sql = sql.to_string();
+        let mut query_params = vec![("database".to_string(), self.database.clone())];
+        let mut final_sql = String::with_capacity(sql.len() + params.len() * 16);
+        let mut parts = sql.split('?');
 
-        for param in params {
-            let val_str = match param {
-                Value::String(s) => format!("'{}'", s.replace("'", "''")),
-                Value::Number(n) => n.to_string(),
-                Value::Bool(b) => if *b { "1".to_string() } else { "0".to_string() },
-                Value::Null => "NULL".to_string(),
-                _ => format!("'{}'", param.to_string().replace("'", "''")),
-            };
-            final_sql = final_sql.replacen("?", &val_str, 1);
+        if let Some(first) = parts.next() {
+            final_sql.push_str(first);
         }
 
-        let url = format!("{}?database={}", self.endpoint, self.database);
+        for (i, param) in params.iter().enumerate() {
+            let p_name = format!("p{}", i);
+            let (placeholder, p_val) = match param {
+                Value::Number(n) => {
+                    if n.is_i64() {
+                        (format!("{{{}:Int64}}", p_name), n.to_string())
+                    } else {
+                        (format!("{{{}:Float64}}", p_name), n.to_string())
+                    }
+                }
+                Value::Bool(b) => {
+                    (format!("{{{}:UInt8}}", p_name), if *b { "1".to_string() } else { "0".to_string() })
+                }
+                Value::Null => {
+                    (format!("{{{}:Nullable(String)}}", p_name), "\\N".to_string())
+                }
+                Value::String(s) => {
+                    (format!("{{{}:String}}", p_name), s.clone())
+                }
+                _ => {
+                    (format!("{{{}:String}}", p_name), param.to_string())
+                }
+            };
+
+            final_sql.push_str(&placeholder);
+            query_params.push((format!("param_{}", p_name), p_val));
+
+            if let Some(next_part) = parts.next() {
+                final_sql.push_str(next_part);
+            }
+        }
+        for next_part in parts {
+            final_sql.push_str(next_part);
+        }
+
+        let mut url = format!("{}?database={}", self.endpoint, urlencoding::encode(&self.database));
+        for (k, v) in &query_params {
+            if k == "database" { continue; }
+            url.push('&');
+            url.push_str(k);
+            url.push('=');
+            url.push_str(&urlencoding::encode(v));
+        }
+
         let mut req = self.client.post(&url);
 
         // If the query does not explicitly ask for a format, append FORMAT JSON

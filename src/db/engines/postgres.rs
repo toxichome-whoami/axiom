@@ -238,12 +238,29 @@ impl DatabaseEngine for PostgresDatabaseEngine {
         for row in rows {
             let mut json_obj = serde_json::Map::new();
             for col in row.columns() {
-                let raw_val: Result<String, _> = row.try_get(col.ordinal());
-                if let Ok(val) = raw_val {
-                    json_obj.insert(col.name().to_string(), Value::String(val));
+                let name = col.name().to_string();
+                let val = if let Ok(s) = row.try_get::<String, _>(col.ordinal()) {
+                    if (s.starts_with('{') && s.ends_with('}')) || (s.starts_with('[') && s.ends_with(']')) {
+                        if let Ok(parsed) = serde_json::from_str::<Value>(&s) {
+                            parsed
+                        } else {
+                            Value::String(s)
+                        }
+                    } else {
+                        Value::String(s)
+                    }
+                } else if let Ok(i) = row.try_get::<i64, _>(col.ordinal()) {
+                    Value::Number(i.into())
+                } else if let Ok(i) = row.try_get::<i32, _>(col.ordinal()) {
+                    Value::Number(i.into())
+                } else if let Ok(f) = row.try_get::<f64, _>(col.ordinal()) {
+                    serde_json::Number::from_f64(f).map(Value::Number).unwrap_or(Value::Null)
+                } else if let Ok(b) = row.try_get::<bool, _>(col.ordinal()) {
+                    Value::Bool(b)
                 } else {
-                    json_obj.insert(col.name().to_string(), Value::Null);
-                }
+                    Value::Null
+                };
+                json_obj.insert(name, val);
             }
             result_rows.push(Value::Object(json_obj));
         }
