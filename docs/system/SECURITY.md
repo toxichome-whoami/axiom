@@ -15,7 +15,7 @@ Every request flows through a layered security stack before touching any databas
 flowchart TD
     A["Incoming Request"] --> B[" WAF Middleware\nNull-bytes · Path traversal · Oversized payloads"]
     B --> C[" Rate Limiter\nPer-IP · Per-key · Fixed-window · AtomicU32"]
-    C --> D[" API Key Auth\nX-Axiom-Key · HMAC · Constant-time comparison"]
+    C --> D[" API Key Auth\nX-Axiom-Key · Constant-time XOR comparison"]
     D --> E[" AST Query Validator\nParses SQL before execution · Blacklist enforcement"]
     E --> F[(" Database\nParameterized queries only")]
     style B fill:#c0392b,color:#fff

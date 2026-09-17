@@ -156,23 +156,31 @@ curl -X POST "http://localhost:4500/api/v1/db/main_db/query" \
   -d '{
     "sql": "SELECT id, name FROM users WHERE active = :active AND age > :min_age",
     "params": { "active": true, "min_age": 18 },
-    "timeout": 5000
+    "timeout": 30
   }'
 ```
 
-*Note: The `timeout` field in the JSON body allows specifying a per-query timeout in milliseconds.*
+*Note: The `timeout` field in the JSON body allows specifying a per-query timeout in seconds (default `30`).*
 
-**Response:**
+**Response (SELECT):**
 ```json
 {
   "success": true,
-  "data": {
-    "rows": [
-      { "id": 1, "name": "Alice" }
-    ],
-    "affected_rows": 0,
-    "row_count": 1
-  }
+  "columns": ["id", "name"],
+  "rows": [
+    { "id": 1, "name": "Alice" }
+  ],
+  "affected_rows": null
+}
+```
+
+**Response (INSERT / UPDATE / DELETE):**
+```json
+{
+  "success": true,
+  "columns": null,
+  "rows": null,
+  "affected_rows": 1
 }
 ```
 

@@ -62,6 +62,7 @@ default_ttl = 60                 # Default expiration for generic items (seconds
 query_cache = true               # Cache SQL query metadata/AST
 idempotency_ttl = 86400          # Duration to remember idempotent requests (24h)
 response_cache_ttl = 30          # Default Max-Age for cacheable GET responses
+query_results_ttl = 5            # SQL row data cache TTL in seconds
 
 # ─── Performance Tuning ───────────────────────────────
 # Low-level knobs for internal LRU caches and hot-path logic.
