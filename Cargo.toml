@@ -1,6 +1,6 @@
 [package]
 name = "axiom"
-version = "3.0.0"
+version = "3.0.1"
 edition = "2021"
 description = "Axiom API Gateway Backend"
 
