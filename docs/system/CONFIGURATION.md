@@ -132,8 +132,8 @@ Query result caching to avoid redundant database round-trips.
 | Key | Default | Description |
 |-----|---------|-------------|
 | `enabled` | `true` | Enable caching |
-| `backend` | `"memory"` | `memory \| turso` |
-| `turso_url` | `""` | Turso DB URL |
+| `backend` | `"memory"` | `memory \| turso \| hybrid (L1 RAM + L2 persistent)` |
+| `turso_url` | `""` | Turso DB URL (required if `backend = "turso"` or `"hybrid"`) |
 | `turso_token` | `""` | Turso auth token |
 | `max_memory` | `"100 MB"` | In-memory cache size bound |
 | `default_ttl` | `60` | Default cache TTL in seconds |

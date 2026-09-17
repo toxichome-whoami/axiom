@@ -221,4 +221,18 @@ impl TursoCache {
             ).await;
         }
     }
+
+    pub async fn get_all_active_query_cache() -> Vec<(String, bytes::Bytes, i64)> {
+        let Some(conn) = TURSO_DB.get() else { return Vec::new(); };
+        let now = now_secs() as i64;
+        let mut results = Vec::new();
+        if let Ok(mut rows) = conn.query("SELECT key, value, expires_at FROM query_cache WHERE expires_at > ?1", libsql::params![now]).await {
+            while let Ok(Some(row)) = rows.next().await {
+                if let (Ok(key), Ok(bytes), Ok(exp)) = (row.get::<String>(0), row.get::<Vec<u8>>(1), row.get::<i64>(2)) {
+                    results.push((key, bytes::Bytes::from(bytes), exp));
+                }
+            }
+        }
+        results
+    }
 }

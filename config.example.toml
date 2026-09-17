@@ -54,8 +54,8 @@ penalty_cooldown = 300           # IP ban duration in seconds
 # Mitigation for backend latency via internal response caching.
 [cache]
 enabled = true
-backend = "memory"               # memory | turso
-turso_url = "file:data/cache.db" # Required if backend = "turso"
+backend = "memory"               # memory | turso | hybrid (L1 RAM + L2 persistent)
+turso_url = "file:data/cache.db" # Required if backend = "turso" or "hybrid"
 turso_token = ""
 max_memory = "100mb"             # Memory limit for internal cache (approximate)
 default_ttl = 60                 # Default expiration for generic items (seconds)

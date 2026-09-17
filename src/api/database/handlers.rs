@@ -1,6 +1,7 @@
 use axum::http::StatusCode;
 use serde_json::Value;
 use std::sync::Arc;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use crate::api::errors::AxiomError;
 use crate::config::schema::DatabaseDefConfig;
@@ -13,6 +14,44 @@ type QueryCacheMap = dashmap::DashMap<String, (std::time::Instant, Arc<QueryResu
 // Single shared cache used by both the read and write branches of run_query.
 // Must be at module level — a static inside a block is a *different* instance every time.
 static QUERY_CACHE: once_cell::sync::Lazy<QueryCacheMap> = once_cell::sync::Lazy::new(dashmap::DashMap::new);
+
+pub fn warm_cache_from_turso(entries: Vec<(String, bytes::Bytes, i64)>) {
+    let arc_res = Arc::new(QueryResult { columns: None, rows: None, affected_rows: Some(0) });
+    let config = crate::config::loader::ConfigManager::get();
+    let cache_ttl = config.cache.query_results_ttl.max(1) as u64;
+    let now_unix = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
+    let now_instant = Instant::now();
+
+    for (key, bytes, expires_at) in entries {
+        let remaining = expires_at - now_unix;
+        if remaining <= 0 {
+            continue;
+        }
+
+        let entry_instant = if remaining >= cache_ttl as i64 {
+            now_instant
+        } else {
+            let elapsed_secs = (cache_ttl as i64 - remaining) as u64;
+            now_instant.checked_sub(Duration::from_secs(elapsed_secs)).unwrap_or(now_instant)
+        };
+
+        if QUERY_CACHE.len() >= 10_000 {
+            break;
+        }
+        QUERY_CACHE.insert(key, (entry_instant, arc_res.clone(), bytes));
+    }
+}
+
+fn evict_one_if_needed() {
+    if QUERY_CACHE.len() > 10_000 {
+        if let Some(entry) = QUERY_CACHE.iter().next().map(|e| e.key().clone()) {
+            QUERY_CACHE.remove(&entry);
+        }
+    }
+}
 
 pub struct QueryExecutionPipeline;
 
@@ -69,6 +108,27 @@ impl QueryExecutionPipeline {
             if config.cache.backend == "turso" {
                 if let Some(bytes) = crate::middleware::cache::TursoCache::get_query_cache(&key).await {
                     return Ok((Arc::new(QueryResult { columns: None, rows: None, affected_rows: Some(0) }), bytes));
+                }
+            } else if config.cache.backend == "hybrid" {
+                // L1 check (DashMap in RAM - ultra fast nanosecond lookup)
+                if let Some(entry) = QUERY_CACHE.get(&key) {
+                    if entry.0.elapsed().as_secs() < cache_ttl {
+                        return Ok((entry.1.clone(), entry.2.clone()));
+                    }
+                }
+                // L2 check (Turso SQLite persistent disk storage)
+                if let Some(bytes) = crate::middleware::cache::TursoCache::get_query_cache(&key).await {
+                    let arc_res = Arc::new(QueryResult { columns: None, rows: None, affected_rows: Some(0) });
+                    evict_one_if_needed();
+                    QUERY_CACHE.insert(
+                        key.clone(),
+                        (
+                            std::time::Instant::now(),
+                            arc_res.clone(),
+                            bytes.clone(),
+                        ),
+                    );
+                    return Ok((arc_res, bytes));
                 }
             } else {
                 if let Some(entry) = QUERY_CACHE.get(&key) {
@@ -184,10 +244,24 @@ impl QueryExecutionPipeline {
                     if let Some(key) = cache_key {
                         if config.cache.backend == "turso" {
                             crate::middleware::cache::TursoCache::set_query_cache(&key, &json_bytes, cache_ttl as u32).await;
+                        } else if config.cache.backend == "hybrid" {
+                            // L1 write (synchronous, instantaneous RAM insert)
+                            evict_one_if_needed();
+                            QUERY_CACHE.insert(
+                                key.clone(),
+                                (
+                                    std::time::Instant::now(),
+                                    arc_res.clone(),
+                                    json_bytes.clone(),
+                                ),
+                            );
+                            // L2 write (asynchronous background task, zero latency impact on HTTP client)
+                            let bytes_clone = json_bytes.clone();
+                            tokio::spawn(async move {
+                                crate::middleware::cache::TursoCache::set_query_cache(&key, &bytes_clone, cache_ttl as u32).await;
+                            });
                         } else {
-                            if QUERY_CACHE.len() > 10_000 {
-                                QUERY_CACHE.clear(); // Basic eviction when bound is reached
-                            }
+                            evict_one_if_needed();
                             QUERY_CACHE.insert(
                                 key,
                                 (
