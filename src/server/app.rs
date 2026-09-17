@@ -57,9 +57,7 @@ pub fn create_app() -> Router {
         .layer(middleware::from_fn(auth_middleware))
         .layer(middleware::from_fn(rate_limit_middleware))
         .layer(middleware::from_fn(waf_middleware))
-        .layer(middleware::map_response(
-            crate::middleware::response::envelope_middleware,
-        ));
+        ;
 
     
 
@@ -90,6 +88,6 @@ pub fn create_app() -> Router {
             header::HeaderValue::from_static("default-src 'none'; frame-ancestors 'none';"),
         ))
         .layer(tower_http::request_id::SetRequestIdLayer::x_request_id(tower_http::request_id::MakeRequestUuid))
-        .layer(tower_http::trace::TraceLayer::new_for_http())
+        
         .layer(axum::extract::DefaultBodyLimit::max(10 * 1024 * 1024))
 }

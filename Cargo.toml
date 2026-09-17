@@ -33,7 +33,7 @@ urlencoding = "2.1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 tracing-appender = "0.2"
-sqlx = { version = "0.8.0", features = ["runtime-tokio-rustls", "any", "postgres", "mysql", "json"] }
+sqlx = { version = "0.7.4", features = ["runtime-tokio-rustls", "any", "postgres", "mysql", "json"] }
 async-trait = "0.1.80"
 futures = "0.3.30"
 tokio-stream = "0.1.15"

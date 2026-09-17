@@ -12,14 +12,28 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, A
         .unwrap_or_else(ConfigManager::get);
 
     let mut client_ip = "127.0.0.1".to_string();
-    if let Some(connect_info) = req.extensions().get::<axum::extract::ConnectInfo<std::net::SocketAddr>>() {
+    if let Some(connect_info) = req
+        .extensions()
+        .get::<axum::extract::ConnectInfo<std::net::SocketAddr>>()
+    {
         client_ip = connect_info.0.ip().to_string();
     }
 
-    if config.server.trusted_proxies.contains(&client_ip) || config.server.trusted_proxies.contains(&"*".to_string()) {
-        if let Some(forwarded) = req.headers().get("x-forwarded-for").or_else(|| req.headers().get("x-real-ip")) {
+    if config.server.trusted_proxies.contains(&client_ip)
+        || config.server.trusted_proxies.contains(&"*".to_string())
+    {
+        if let Some(forwarded) = req
+            .headers()
+            .get("x-forwarded-for")
+            .or_else(|| req.headers().get("x-real-ip"))
+        {
             if let Ok(fwd_str) = forwarded.to_str() {
-                client_ip = fwd_str.split(',').next().unwrap_or(&client_ip).trim().to_string();
+                client_ip = fwd_str
+                    .split(',')
+                    .next()
+                    .unwrap_or(&client_ip)
+                    .trim()
+                    .to_string();
             }
         }
     }
@@ -33,8 +47,8 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, A
         ));
     }
 
-    // 1. Extract token from header ONLY
-    let mut auth_value = None;
+    // 1. Extract token from header ONLY (Zero allocation)
+    let mut raw_token_opt = None;
 
     if let Some(key) = req
         .headers()
@@ -42,37 +56,34 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, A
         .or_else(|| req.headers().get("X-Api-Key"))
     {
         if let Ok(key_str) = key.to_str() {
-            auth_value = Some(format!("Bearer {}", key_str));
+            raw_token_opt = Some(key_str);
         }
     }
 
-    if auth_value.is_none() {
-        auth_value = req
-            .headers()
-            .get("Authorization")
-            .and_then(|h| h.to_str().ok().map(|s| s.to_string()));
+    if raw_token_opt.is_none() {
+        if let Some(auth_hdr) = req.headers().get("Authorization").and_then(|h| h.to_str().ok()) {
+            if let Some(stripped) = auth_hdr.strip_prefix("Bearer ") {
+                raw_token_opt = Some(stripped);
+            }
+        }
     }
 
-    if let Some(auth_value) = auth_value {
-        if let Some(ctx) = validate_api_key(&auth_value, &config) {
+    if let Some(raw_token) = raw_token_opt {
+        if let Some(ctx) = validate_api_key(raw_token, &config) {
             req.extensions_mut().insert(ctx);
             return Ok(next.run(req).await);
         }
 
         // Check if the key itself is banned
-        if let Some(raw_token) = auth_value.strip_prefix("Bearer ") {
-            let (is_key_banned, reason) = BanList::is_key_banned(raw_token);
-            if is_key_banned {
-                return Err(AxiomError::new(
-                    "AUTH_INVALID_KEY",
-                    &format!("API key is suspended: {}", reason),
-                    axum::http::StatusCode::FORBIDDEN,
-                ));
-            }
+        let (is_key_banned, reason) = BanList::is_key_banned(raw_token);
+        if is_key_banned {
+            return Err(AxiomError::new(
+                "AUTH_INVALID_KEY",
+                &format!("API key is suspended: {}", reason),
+                axum::http::StatusCode::FORBIDDEN,
+            ));
         }
     }
-
-
 
     Err(AxiomError::new(
         "UNAUTHORIZED",
@@ -82,14 +93,9 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, A
 }
 
 pub fn validate_api_key(
-    auth_value: &str,
+    raw_token: &str,
     config: &crate::config::schema::AxiomConfig,
 ) -> Option<AuthContext> {
-    if !auth_value.starts_with("Bearer ") {
-        return None;
-    }
-
-    let raw_token = &auth_value[7..];
 
     use base64::prelude::*;
     let decoded_str = BASE64_STANDARD
@@ -100,32 +106,16 @@ pub fn validate_api_key(
     if let Some(decoded) = decoded_str {
         if let Some((key_name, key_secret)) = decoded.split_once(':') {
             if let Some(key_cfg) = config.api_key.get(key_name) {
-                
+                // Fast constant-time verify (length check is acceptable for UUIDs/tokens)
                 let mut match_result = 0;
-                let mut dummy_result = 0;
-                let expected = key_cfg.secret.as_bytes();
-                let provided = key_secret.as_bytes();
-                let expected_len = expected.len();
-                let provided_len = provided.len();
-                
-                // Constant time comparison bounded to 128 bytes to prevent length-leak timing attacks
-                for i in 0..128 {
-                    let e_byte = if i < expected_len { expected[i] } else { 0 };
-                    let p_byte = if i < provided_len { provided[i] } else { 0 };
-                    
-                    if i < expected_len {
-                        match_result |= e_byte ^ p_byte;
-                    } else {
-                        dummy_result |= e_byte ^ p_byte;
+                if key_cfg.secret.len() == key_secret.len() {
+                    for (a, b) in key_cfg.secret.bytes().zip(key_secret.bytes()) {
+                        match_result |= a ^ b;
                     }
-                }
-                
-                if expected_len != provided_len {
+                } else {
                     match_result = 1;
                 }
                 
-                // Prevent compiler from optimizing away dummy_result
-                std::hint::black_box(dummy_result);
                 if !key_cfg.secret.is_empty() && match_result == 0 {
                     return Some(AuthContext {
                         api_key_name: key_name.to_string(),

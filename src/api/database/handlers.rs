@@ -10,6 +10,10 @@ use crate::utils::types::{AuthContext, ServerMode};
 
 type QueryCacheMap = dashmap::DashMap<String, (std::time::Instant, Arc<QueryResult>, bytes::Bytes)>;
 
+// Single shared cache used by both the read and write branches of run_query.
+// Must be at module level — a static inside a block is a *different* instance every time.
+static QUERY_CACHE: once_cell::sync::Lazy<QueryCacheMap> = once_cell::sync::Lazy::new(dashmap::DashMap::new);
+
 pub struct QueryExecutionPipeline;
 
 impl QueryExecutionPipeline {
@@ -67,8 +71,6 @@ impl QueryExecutionPipeline {
                     return Ok((Arc::new(QueryResult { columns: None, rows: None, affected_rows: Some(0) }), bytes));
                 }
             } else {
-                static QUERY_CACHE: once_cell::sync::Lazy<QueryCacheMap> = once_cell::sync::Lazy::new(dashmap::DashMap::new);
-
                 if let Some(entry) = QUERY_CACHE.get(&key) {
                     if entry.0.elapsed().as_secs() < cache_ttl {
                         return Ok((entry.1.clone(), entry.2.clone()));
@@ -183,8 +185,6 @@ impl QueryExecutionPipeline {
                         if config.cache.backend == "turso" {
                             crate::middleware::cache::TursoCache::set_query_cache(&key, &json_bytes, cache_ttl as u32).await;
                         } else {
-                            static QUERY_CACHE: once_cell::sync::Lazy<QueryCacheMap> = once_cell::sync::Lazy::new(dashmap::DashMap::new);
-                            
                             if QUERY_CACHE.len() > 10_000 {
                                 QUERY_CACHE.clear(); // Basic eviction when bound is reached
                             }
