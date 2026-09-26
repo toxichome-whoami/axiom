@@ -48,6 +48,15 @@ Then a table of 10 architectural debt items:
 | 9 | cache.rs | Three disconnected cache stores, no shared eviction/observability |
 | 10 | All handlers | Response shape built inline in each handler — no shared schema |
 
+**Confirmed Security Bypasses (fix in Phase 0)**
+
+| # | Location | Bypass | Severity | Fix |
+|---|----------|--------|----------|-----|
+| S1 | rate_limit.rs:22 | If `trusted_proxies` is set to `"*"`, attacker sends arbitrary `X-Forwarded-For` header and Axiom rate-limits that spoofed IP instead of the real one — infinite bypass | Critical | Warn on startup if `trusted_proxies = ["*"]`; document that `"*"` must never be used in production |
+| S2 | rate_limit.rs:56 | Rate limit keyed only by IP (`rl:ip:{ip}`). An attacker with one valid API key rotating through multiple IPs gets a fresh rate limit bucket each time — key is never throttled | Medium | Add parallel `rl:key:{key_name}` counter; enforce the lower of IP limit and key limit |
+| S3 | rate_limit.rs | No global auth failure counter per key. Distributed brute-force (1000 IPs each trying 1 wrong key guess) never triggers per-IP ban | Medium | Track global failed-auth count per key name; ban key after threshold regardless of source IP |
+
+
 **Section 4: Competitive Research**
 
 - Faucet (Go): single binary, embedded SQLite config DB, RBAC, MCP, CLI-first, OpenAPI auto-gen. Key lessons: embedded config DB enables live reconfiguration; CLI and Web UI call same admin API.
