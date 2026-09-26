@@ -220,13 +220,11 @@ Copy `demos/.env.example` to `demos/.env` and fill in your server URL and API ke
 ```text
 axiom/
  src/                 # Core Rust implementation
- docs/                # Full documentation
-   AXIOM_MASTER_PLAN.md  # Architecture master plan and roadmap
+ docs/                # API and system documentation
+ v4-planning/         # v4.0 architecture redesign and roadmap
+   AXIOM_MASTER_PLAN.md  # Architecture master plan
+   UI_DESIGN_SYSTEM.md   # Web UI style specifications
    adr/              # Architecture Decision Records
-   architecture/     # Technical pipeline and internals
-   guides/           # Getting started and how-to guides
-   reference/        # API, configuration, and security reference
-   community/        # Contributing and code of conduct
  demos/               # Golang REST API usage examples
  benches/             # Go benchmark suite
  scripts/             # Build and metadata scripts
