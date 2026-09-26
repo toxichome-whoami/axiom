@@ -79,115 +79,24 @@ failure_threshold = 5            # Failures before tripping "OPEN" (rejecting al
 success_threshold = 3            # Successes required in "HALF-OPEN" to recover
 timeout = 30                     # Seconds to wait before testing recovery
 
-# ─── API Keys & Access Control ────────────────────────
-# Static administrative keys. Dynamic keys are managed via /api/admin.
-[api_key.admin]
-secret = "CHANGE_THIS_TO_A_SECURE_KEY_AT_LEAST_32_CHARS"
-mode = "readwrite"               # readwrite | readonly | writeonly
-db_scope = ["*"]                 # ["*"] for all, or ["db1", "db2"]
-rate_limit_override = 0          # 0 = use global limit, >0 = specific limit
-full_admin = true                # Bypass all scope checks
+# ─── Metadata Store (v4.0+) ───────────────────────────
+# Where Axiom stores its live state (API Keys, Roles, Database Connections).
+# You can change these values at runtime via the Web UI without restarting.
+[metadata]
+url = "file:data/axiom.db"       # Default: local SQLite file
+# url = "libsql://your-db.turso.io" # Or use a remote Turso URL for multi-node
+token = ""                       # Turso auth token (if remote)
+reload_interval = 30             # Seconds between hot-snapshot refreshes
 
-# ─── Database Backends ────────────────────────────────
-# Connect any number of databases simultaneously under unique aliases.
-# Each alias becomes its own API namespace: /api/v1/db/<alias>/...
+# ─────────────────────────────────────────────────────────────────────────────
+# v4.0 Transition Note for API Keys and Databases
+# ─────────────────────────────────────────────────────────────────────────────
+# In v4.0, API keys and Database connections are managed LIVE via the Web UI 
+# (http://localhost:4500/ui) and stored securely in the `metadata.url` database.
+# 
+# You DO NOT need to define them in this file anymore.
 #
-# Supported engines and their URL schemes:
-#   postgres://    -> PostgreSQL (also: Neon, Supabase, CockroachDB, Tembo, Timescale)
-#   mysql://       -> MySQL      (also: PlanetScale, TiDB)
-#   mariadb://     -> MariaDB
-#   mssql://       -> Microsoft SQL Server (also: Azure SQL, sqlserver://)
-#   sqlite://      -> SQLite (local file, via Turso libsql engine)
-#   libsql://      -> Turso (remote edge SQLite, also: libsql+wss://)
-#   clickhouse://  -> ClickHouse (also: clickhouse+https:// for TLS)
-
-# --- PostgreSQL ---
-[database.my_postgres]
-engine = "postgres"
-url = "postgres://user:password@localhost:5432/mydb"
-mode = "readwrite"               # readwrite | readonly
-pool_min = 2
-pool_max = 20
-connection_timeout = 30
-idle_timeout = 600
-max_lifetime = 3600
-query_blacklist = ["DROP", "TRUNCATE", "ALTER"]
-dangerous_operations = false
-
-# --- MySQL ---
-[database.my_mysql]
-engine = "mysql"
-url = "mysql://user:password@localhost:3306/mydb"
-mode = "readwrite"
-pool_min = 2
-pool_max = 20
-connection_timeout = 30
-idle_timeout = 600
-max_lifetime = 3600
-query_blacklist = ["DROP", "TRUNCATE", "ALTER"]
-dangerous_operations = false
-
-# --- MariaDB ---
-[database.my_mariadb]
-engine = "mariadb"
-url = "mariadb://user:password@localhost:3306/mydb"
-mode = "readwrite"
-pool_min = 2
-pool_max = 20
-connection_timeout = 30
-idle_timeout = 600
-max_lifetime = 3600
-query_blacklist = []
-dangerous_operations = false
-
-# --- Microsoft SQL Server ---
-[database.my_mssql]
-engine = "mssql"
-url = "mssql://user:password@localhost:1433/mydb"
-mode = "readwrite"
-pool_min = 2
-pool_max = 20
-connection_timeout = 30
-idle_timeout = 600
-max_lifetime = 3600
-query_blacklist = ["DROP", "TRUNCATE", "ALTER"]
-dangerous_operations = false
-
-# --- SQLite (local file) ---
-[database.my_sqlite]
-engine = "sqlite"
-url = "sqlite:///path/to/database.db"
-mode = "readwrite"
-pool_min = 1
-pool_max = 5
-connection_timeout = 10
-idle_timeout = 300
-max_lifetime = 3600
-query_blacklist = []
-dangerous_operations = false
-
-# --- Turso (remote edge SQLite) ---
-[database.my_turso]
-engine = "libsql"
-url = "libsql://your-db-name.turso.io?authToken=YOUR_TURSO_AUTH_TOKEN"
-mode = "readwrite"
-pool_min = 1
-pool_max = 10
-connection_timeout = 15
-idle_timeout = 300
-max_lifetime = 3600
-query_blacklist = []
-dangerous_operations = false
-
-# --- ClickHouse (analytics / big data) ---
-[database.my_clickhouse]
-engine = "clickhouse"
-url = "clickhouse://user:password@localhost:8123/default"
-mode = "readwrite"
-pool_min = 1
-pool_max = 10
-connection_timeout = 15
-idle_timeout = 300
-max_lifetime = 3600
-query_blacklist = ["DROP", "TRUNCATE", "ALTER"]
-dangerous_operations = false
+# BACKWARD COMPATIBILITY: If you DO define `[api_key.name]` or `[database.name]`
+# blocks here, Axiom will read them on first boot and automatically seed them 
+# into the live database. After that, changes made here are ignored.
+# ─────────────────────────────────────────────────────────────────────────────
