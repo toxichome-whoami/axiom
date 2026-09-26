@@ -100,6 +100,26 @@ flowchart TD
     O --> H
 ```
 
+**Section 5.1: Physical Workspace Structure (Cargo Workspace)**
+
+To enforce strict architectural boundaries and speed up compilation, Axiom v4.0 is structured as a **Cargo Workspace**. Each logical "Engine" is a physically isolated Rust crate.
+
+```text
+axiom/
+├── Cargo.toml (Workspace Root)
+├── crates/
+│   ├── core/         # Shared traits, Error enums, common types
+│   ├── metadata/     # libsql identity store (axiom.db), ArcSwap snapshots
+│   ├── policy/       # RBAC rules evaluation (depends on metadata)
+│   ├── cache/        # Unified L1/L2 cache engine (DashMap + AOF)
+│   ├── db/           # Connection pooling and SQL engine implementations
+│   └── api/          # Axum HTTP routes, Middlewares, Web UI embedding
+├── binaries/
+│   ├── server/       # Main daemon (glues crates together, starts listener)
+│   └── cli/          # 'axiom' command-line tool
+```
+*Rule: Higher-level crates (like `api`) can depend on lower-level crates (like `cache`), but never the reverse.*
+
 **Section 6: Identity and RBAC Model**
 
 A strict separation exists between **Human Admins** (who manage the system) and **API Keys** (which access data).
