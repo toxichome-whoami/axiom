@@ -220,12 +220,18 @@ Copy `demos/.env.example` to `demos/.env` and fill in your server URL and API ke
 ```text
 axiom/
  src/                 # Core Rust implementation
- demos/               # Golang REST API examples
- benches/             # Go benchmark suite
  docs/                # Full documentation
+   AXIOM_MASTER_PLAN.md  # Architecture master plan and roadmap
+   adr/              # Architecture Decision Records
+   architecture/     # Technical pipeline and internals
+   guides/           # Getting started and how-to guides
+   reference/        # API, configuration, and security reference
+   community/        # Contributing and code of conduct
+ demos/               # Golang REST API usage examples
+ benches/             # Go benchmark suite
  scripts/             # Build and metadata scripts
  tools/               # Build tooling (rcedit)
- run.ps1              # Windows build & run wrapper
+ run.py               # Build script (--linux, --linux --cpanel)
  config.example.toml  # Configuration template
  docker-compose.yml   # Docker deployment
  Cargo.toml           # Rust project manifest
@@ -234,14 +240,17 @@ axiom/
 
 ## Documentation
 
-The `docs/` directory contains full documentation for Axiom:
+The `docs/` directory contains the full Axiom documentation.
 
-- API reference
-- Configuration reference
-- Deployment guide
-- Security model
-
-**[ Read the Documentation](./docs/)**
+| Document | Description |
+|----------|-------------|
+| [Master Plan](./docs/AXIOM_MASTER_PLAN.md) | Architecture vision and v4.0 roadmap |
+| [API Reference](./docs/reference/api.md) | Complete REST API documentation |
+| [Configuration](./docs/reference/configuration.md) | All config.toml parameters |
+| [Security](./docs/reference/security.md) | Security architecture and threat model |
+| [Getting Started](./docs/guides/getting-started.md) | How to build and run Axiom |
+| [Request Pipeline](./docs/architecture/request-pipeline.md) | Request pipeline internals |
+| [ADRs](./docs/adr/) | Architecture Decision Records |
 
 
 ## Development

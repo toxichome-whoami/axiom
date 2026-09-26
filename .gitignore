@@ -100,3 +100,5 @@ Cargo.lock
 # Database files
 data/
 *.db
+
+planning-rn
