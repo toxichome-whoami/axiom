@@ -1,283 +1,230 @@
-# AXIOM MASTER PLAN — Enterprise-Grade Re-Architecture
-Version 4.0, Status: Active, Updated 2026-09-27
-Brief intro: this document is the source of truth; update it when implementation diverges
+# Axiom Master Plan - v4.0
 
-**Section 1: Product Vision**
-Axiom is a single-binary Rust API gateway that sits between applications and SQL databases. Two properties:
-- SMALL: download binary → run → connect DB → API works. <10MB RAM, fast startup.
-- POWERFUL: RBAC, audit, metrics, persistent caching, HA, CLI, Web UI, MCP.
+## Section 1: Product Vision
+Axiom is a single-binary Rust database API gateway. It provides a secure, fast, and configuration-driven HTTP layer over existing databases. Version 4.0 aims to consolidate internal architecture, introduce a unified control plane with a Web UI, establish a robust RBAC policy engine, and standardize caching mechanisms—all while maintaining the single-binary deployment model and achieving extreme performance.
 
-**Section 2: Architecture Principles (numbered list of 10)**
-1. Measure, don't assume. Every performance claim needs a reproducible benchmark.
-2. Hot path is sacred. Request path must allocate as little as possible.
-3. Engines are cooperating modules, not microservices. No inter-process comms.
-4. Control plane / data plane are logically separated (same process by default).
-5. Optional systems add zero CPU/memory when disabled.
-6. Server config is immutable at runtime. Metadata (keys, roles, DBs) is hot-reloadable.
-7. Security is centralized — auth + authz in one place, not scattered in handlers.
-8. Every error is typed. No Box<dyn Error> on hot paths.
-9. Binary stays small. Feature-gate heavy optional components.
-10. Compatibility over freshness. /api/v1/ must not break without a major version bump.
+## Section 2: Architecture Principles
+1. **Single Binary:** Everything (API, CLI, UI) is packaged in one binary.
+2. **Zero-DB Hot Path:** Data API requests never query the metadata store (`axiom.db`) synchronously.
+3. **Unified Caching:** One unified cache engine (DashMap + SQLite AOF) for all temporary data.
+4. **Configuration Hierarchy:** Defaults → `config.toml` (startup only) → Env Vars → CLI Flags.
+5. **Separation of Planes:** Distinct Data Plane (hot path) and Control Plane (UI, admin, metadata).
+6. **No Silent Failures:** Explicit error handling and structured observability.
+7. **Performance First:** No performance claim ships without a benchmark.
+8. **Stateless Scalability:** Nodes can scale horizontally if sharing a metadata store.
+9. **Backward Compatibility:** `X-Axiom-Key` and existing `config.toml` routing must not break.
+10. **Operator Centric:** Operator defines the roles and permissions; no built-in data plane roles.
 
-**Section 3: Current Architecture Audit**
+## Section 3: Existing Architecture Audit
+Phase 0 hot-path cleanup items to fix:
+1. `handlers.rs:68,91` — `ConfigManager::get()` called twice.
+2. `base.rs:42` — `Box<dyn Error>` on hot path.
+3. `auth.rs:41` + `rate_limit.rs:30` — BanList checked twice.
+4. `handlers.rs:66` — `CIRCUIT_FAILURES` static inside function body.
+5. `handlers.rs:48-53` — Arbitrary cache eviction (not LRU).
+6. `schema.rs:208` — `full_admin: bool` hardcoded privilege.
+7. `handlers.rs:89` — Regex + AST parse both run on every uncached request.
+8. `pool.rs:33` — Single global `INIT_LOCK`.
+9. `cache.rs` — 3 disconnected cache stores.
+10. All handlers — Response shape built inline.
 
-Describe the v3.0.1 request pipeline with this Mermaid flowchart:
+Security bypass fixes (Phase 0):
+- **S1:** Warn on startup if `trusted_proxies = ["*"]`.
+- **S2:** Add `rl:key:{name}` counter alongside `rl:ip:{ip}` in rate limiter.
+- **S3:** Global failed-auth counter per key name; ban key after threshold regardless of source IP.
+
+## Section 4: Competitive Research
+- **Faucet:** Simplicity is good, but lacks enterprise observability.
+- **Hasura:** Powerful, but complex runtime and heavy GraphQL focus. Axiom will remain REST/SQL focused.
+- **DreamFactory:** Good auto-generation of APIs, but bloated. Axiom must stay lightweight.
+- **Redis:** Exceptional caching models. Axiom's unified cache will adopt clear eviction policies and TTL sweeps akin to Redis.
+
+## Section 5: Target Architecture
 ```mermaid
-flowchart TD
-    A["Client"] --> B["Axum Router"]
-    B --> C["WAF Middleware"]
-    C --> D["Rate Limit Middleware"]
-    D --> E["Auth Middleware"]
-    E --> F["Handler"]
-    F --> G["QueryExecutionPipeline"]
-    G --> H["DatabasePoolManager"]
-    H --> I["DB Engine"]
-    I --> J["Response"]
+graph TD
+    Client --> API_Gateway
+    API_Gateway --> Rate_Limiter
+    Rate_Limiter --> Auth
+    Auth --> Policy_Engine
+    Policy_Engine --> Cache_Engine
+    Cache_Engine --> DB_Pool
+    DB_Pool --> External_DBs
+    Admin_UI --> Admin_API
+    Admin_API --> Metadata_Store
+    Metadata_Store -.-> ArcSwap_Snapshot -.-> Auth
 ```
 
-Then a table of 10 architectural debt items:
-| # | Location | Problem |
-| 1 | handlers.rs:68,91 | ConfigManager::get() called twice per request in run_query |
-| 2 | base.rs:42 | Box<dyn Error> return on DB engine hot path |
-| 3 | auth.rs:41 + rate_limit.rs:30 | Ban-list checked twice (both middlewares) |
-| 4 | handlers.rs:66 | CIRCUIT_FAILURES static defined inside a function body |
-| 5 | handlers.rs:48-53 | Cache evicts an arbitrary key, not LRU |
-| 6 | schema.rs:208 | full_admin: bool hardcoded privilege — no role model |
-| 7 | handlers.rs:89 | Regex mutation check + AST parse both run every uncached request |
-| 8 | pool.rs:33 | Single global INIT_LOCK blocks all DB cold-starts |
-| 9 | cache.rs | Three disconnected cache stores, no shared eviction/observability |
-| 10 | All handlers | Response shape built inline in each handler — no shared schema |
-
-**Confirmed Security Bypasses (fix in Phase 0)**
-
-| # | Location | Bypass | Severity | Fix |
-|---|----------|--------|----------|-----|
-| S1 | rate_limit.rs:22 | If `trusted_proxies` is set to `"*"`, attacker sends arbitrary `X-Forwarded-For` header and Axiom rate-limits that spoofed IP instead of the real one — infinite bypass | Critical | Warn on startup if `trusted_proxies = ["*"]`; document that `"*"` must never be used in production |
-| S2 | rate_limit.rs:56 | Rate limit keyed only by IP (`rl:ip:{ip}`). An attacker with one valid API key rotating through multiple IPs gets a fresh rate limit bucket each time — key is never throttled | Medium | Add parallel `rl:key:{key_name}` counter; enforce the lower of IP limit and key limit |
-| S3 | rate_limit.rs | No global auth failure counter per key. Distributed brute-force (1000 IPs each trying 1 wrong key guess) never triggers per-IP ban | Medium | Track global failed-auth count per key name; ban key after threshold regardless of source IP |
-
-
-**Section 4: Competitive Research**
-
-- Faucet (Go): single binary, embedded SQLite config DB, RBAC, MCP, CLI-first, OpenAPI auto-gen. Key lessons: embedded config DB enables live reconfiguration; CLI and Web UI call same admin API.
-- Hasura: control/data plane separation, metadata-driven API, permission predicate pushdown. Key lesson: compile-once metadata → execute-many pattern; auth constraints compiled into SQL.
-- PostgREST (Haskell): DB-as-authority, schema cache invalidated via NOTIFY, PostgreSQL binary protocol. Key lesson: cache the schema, not just queries.
-- Redis: single-threaded event loop, AOF+RDB persistence, LRU/LFU eviction. Key lesson: separate hot-data path from persistence; ack before fsync.
-
-**Section 5: Target Architecture**
-
-```mermaid
-flowchart TD
-    subgraph DataPlane["Data Plane"]
-        A["Client Request"] --> B["WAF"]
-        B --> C["Rate Limiter"]
-        C --> D["Auth + Policy Engine"]
-        D --> E["Router"]
-        E --> F["Query Engine"]
-        F --> G["Database Engine"]
-    end
-    subgraph ControlPlane["Control Plane"]
-        H["Metadata Store\n(libsql: local or remote Turso)"]
-        H --> I["Identity Engine"]
-        H --> J["Policy Engine"]
-        H --> K["Config Engine"]
-    end
-    subgraph SupportEngines["Support Engines"]
-        L["Cache Engine"]
-        M["Audit Engine"]
-        N["Metrics Engine"]
-        O["Admin API"]
-        P["CLI"]
-        Q["Web UI\n(Vite + TS + Tailwind)"]
-        R["MCP Engine"]
-    end
-    D -->|"reads ArcSwap snapshot"| ControlPlane
-    F --> L
-    F --> M
-    B --> N
-    P --> O
-    Q --> O
-    O --> H
+## Section 5.1: Physical Workspace Structure
 ```
-
-**Section 5.1: Physical Workspace Structure (Cargo Workspace)**
-
-To enforce strict architectural boundaries and speed up compilation, Axiom v4.0 is structured as a **Cargo Workspace**. Each logical "Engine" is a physically isolated Rust crate.
-
-```text
 axiom/
 ├── Cargo.toml (Workspace Root)
 ├── crates/
 │   ├── core/         # Shared traits, Error enums, common types
 │   ├── metadata/     # libsql identity store (axiom.db), ArcSwap snapshots
-│   ├── policy/       # RBAC rules evaluation (depends on metadata)
-│   ├── cache/        # Unified L1/L2 cache engine (DashMap + AOF)
+│   ├── policy/       # RBAC evaluation engine
+│   ├── cache/        # Unified L1/L2 cache engine (DashMap + AOF SQLite)
 │   ├── db/           # Connection pooling and SQL engine implementations
 │   └── api/          # Axum HTTP routes, Middlewares, Web UI embedding
 ├── binaries/
-│   ├── server/       # Main daemon (glues crates together, starts listener)
+│   ├── server/       # Main daemon binary
 │   └── cli/          # 'axiom' command-line tool
-```
-*Rule: Higher-level crates (like `api`) can depend on lower-level crates (like `cache`), but never the reverse.*
-
-**Section 6: Identity and RBAC Model**
-
-A strict separation exists between **Human Admins** (who manage the system) and **API Keys** (which access data).
-
-1. **Human Admins (`users` table)**
-   - Used *only* for logging into the Web UI.
-   - Admins have no "roles". An admin owns and manages the entire system.
-   - **Creation rule:** The first admin account is created via the `/ui/setup` wizard on first boot. After setup is complete, additional admins can *only* be created via the CLI (`axiom user add <username>`), preventing Web UI backdoor creation.
-
-2. **API Keys & Roles (`api_keys`, `roles`, `permissions`)**
-   - Used by external applications to access the data API.
-   - Admins use the Web UI/CLI to create custom Roles to restrict what an API key can do.
-   - There are no built-in roles; every role is custom-defined.
-
-```sql
--- Human Admins (Web UI login)
-CREATE TABLE users (
-    id INTEGER PRIMARY KEY,
-    username TEXT UNIQUE NOT NULL,
-    password_hash TEXT NOT NULL -- Argon2
-);
-
--- Machine API Keys (Data API access)
-CREATE TABLE roles (name TEXT PRIMARY KEY, description TEXT, created_at INTEGER);
-
-CREATE TABLE permissions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    role_name TEXT NOT NULL REFERENCES roles(name),
-    database TEXT NOT NULL,    -- '*' = all
-    table_name TEXT NOT NULL,  -- '*' = all
-    operations TEXT NOT NULL   -- JSON: ["SELECT","INSERT","UPDATE","DELETE"]
-);
-
-CREATE TABLE api_keys (
-    name TEXT PRIMARY KEY,
-    secret_hash BLOB NOT NULL,  -- BLAKE3(secret), never plaintext
-    role_name TEXT REFERENCES roles(name),
-    rate_limit INTEGER,
-    expires_at INTEGER,
-    created_at INTEGER NOT NULL
-);
+├── ui/               # Vite + TypeScript + Tailwind CSS web UI
+├── benches/          # Go benchmark suite
+├── docs/             # Public reference docs
+└── v4-planning/      # This folder
 ```
 
-Auth flow (Data API): extract X-Axiom-Key → base64 decode → lookup in metadata snapshot (ArcSwap<Metadata>, zero locks) → BLAKE3(secret) == stored_hash (constant-time) → load role permissions → PolicyEngine::evaluate → inject AuthContext.
+## Section 6: Core Engines
+- **Metadata Engine:** Manages `axiom.db` using libsql for storing users, api keys, and RBAC policies. Provides ArcSwap snapshots.
+- **Policy Engine:** Evaluates RBAC rules for incoming requests against the ArcSwap snapshot. Single authorization checkpoint.
+- **Cache Engine:** Unified L1 (DashMap) and L2 (SQLite AOF) cache for query results, rate limits, and idempotency.
+- **Database Engine:** Manages connection pools (sqlx, tiberius) and SQL dialect translations to target databases.
+- **API Engine:** Axum-based HTTP routing, middleware pipeline, and web UI embedding.
 
-Backward compat note: `[api_key.*]` in config.toml is seeded into axiom.db on first boot as API keys.
+## Section 7: API Specification
+- `/api/v1/*`: Data Plane (queries, operations). Response envelope unchanged.
+- `/admin/v1/*`: Control Plane (users, keys, metrics).
+- `/mcp/v1/*`: Model Context Protocol endpoints (Phase 4).
+- `/ui/`: Web UI interface.
+- `/ui/setup` (and `/admin/v1/setup/*`): First-time setup wizard.
 
-**Section 7: Metadata Store**
+## Section 8: Identity and RBAC Model
+- **Human Admins:** `users` table. Username + Argon2 hash. UI access only.
+- **API Keys:** Machine access to Data API. Format: `X-Axiom-Key: base64(name:secret)`. Secret stored as BLAKE3 hash.
+- **Tables:** `roles`, `permissions`, `api_keys`. Operations: SELECT, INSERT, UPDATE, DELETE. Supports wildcards.
+- **Flow:** Data API checks `ArcSwap<Metadata>` for key validity and RBAC policy. Zero hot-path DB calls.
 
-```toml
-[metadata]
-url   = "file:data/axiom.db"   # local SQLite, default
-token = ""                      # empty for local
-# url   = "libsql://your-db.turso.io"  # remote Turso
-# token = "your-turso-token"
-reload_interval = 30  # seconds between snapshot refreshes
-```
+## Section 9: Security Architecture
+- Pipeline: WAF → Rate Limit (`rl:ip` and `rl:key`) → Auth (BLAKE3 check against ArcSwap) → Policy (RBAC eval).
+- Security fixes (S1-S3) integrated to prevent proxy bypass and brute-force auth.
+- Standard security headers applied to all responses.
 
-Explain: data plane never queries axiom.db on hot path. Reads ArcSwap<Metadata> snapshot. Background daemon refreshes every 30s or on /admin/v1/reload.
+## Section 10: Cache Architecture
+- **L1 Cache:** DashMap RAM layer, true LRU eviction.
+- **L2 Cache:** Optional SQLite AOF persistence.
+- **Durability Levels:** ephemeral, memory-only, journaled, snapshot, journaled+snapshot.
+- **TTL Sweep:** Background sweep using `BinaryHeap`.
+- **Stats:** Hit/miss rates, memory usage, eviction counts exposed to metrics.
 
-**Section 8: Implementation Phases**
+## Section 11: Database Architecture
+- Engines supported via `sqlx` and `tiberius`.
+- Global `INIT_LOCK` removed; per-alias connection pools.
+- Circuit breaker implemented properly, independent of cache eviction.
 
-| Phase | Name | Goal |
-| 0 | Hot-path cleanup | Remove 10 debt items. No new features. |
-| 1 | Metadata Store + Identity | libsql axiom.db, ArcSwap snapshot, Admin API for keys/databases |
-| 2 | Policy Engine / RBAC | roles, permissions, PolicyEngine::evaluate, table-level access |
-| 3 | CLI | axiom key|db|cache|health|metrics|logs|benchmark subcommands |
-| 4 | MCP Engine | /mcp/v1 endpoint, AI agent SQL access, same policy enforcement |
-| 5 | Cache Engine | Unified L1+L2, LRU eviction, optional AOF, unified stats |
-| 6 | Observability | Prometheus /metrics, structured audit log |
-| 7 | Web UI | Vite+TS+Tailwind, embedded in binary, /ui/ |
-| 8 | Hardening | Security tests, fuzz, 30m soak, CI gates |
+## Section 12: Logging and Observability Architecture
+- Structured JSON logging.
+- Prometheus metrics endpoint for request stats, cache stats, and pool stats.
+- Audit log for all control plane modifications (admin actions).
 
-**Section 9: API Specification**
+## Section 13: Configuration Architecture
+- Hierarchy: Defaults → `config.toml` → Env Vars → CLI Flags.
+- `config.toml` contains ONLY startup settings (`server`, `logging`, `rate_limit`, `cache`, `circuit_breaker`, `metadata`).
+- API keys and DB connections managed at runtime via UI/API and persisted to `axiom.db`.
+- Legacy `[api_key.*]` / `[database.*]` blocks auto-seeded on first boot.
 
-URL map:
-```
-Data API (v1 — preserved, not breaking):
-  POST   /api/v1/db/:alias/query
-  GET    /api/v1/db/:alias/tables
-  GET    /api/v1/db/:alias/:table/rows
-  POST   /api/v1/db/:alias/:table/rows
-  PATCH  /api/v1/db/:alias/:table/rows
-  DELETE /api/v1/db/:alias/:table/rows
-  GET    /api/v1/db/:alias/:table/schema
-  GET    /api/v1/db/databases
+## Section 14: CLI Architecture
+- Subcommands: `axiom server run`, `axiom user add`, `axiom key create`, `axiom db add`.
+- Output formats: plain text, JSON (`--json`).
 
-Admin API (Phase 1+, requires admin role):
-  GET    /admin/v1/status
-  POST   /admin/v1/reload
-  GET    /admin/v1/keys
-  POST   /admin/v1/keys
-  DELETE /admin/v1/keys/:name
-  GET    /admin/v1/roles
-  POST   /admin/v1/roles
-  PATCH  /admin/v1/roles/:name
-  DELETE /admin/v1/roles/:name
-  GET    /admin/v1/databases
-  POST   /admin/v1/databases
-  DELETE /admin/v1/databases/:alias
-  GET    /admin/v1/audit
-  POST   /admin/v1/cache/flush
-  GET    /admin/v1/cache/stats
-  GET    /admin/v1/metrics
-  GET    /admin/v1/health
+## Section 15: Web UI Architecture
+- Stack: Vite + TypeScript + Tailwind CSS. Pre-built and embedded via `rust-embed` at `/ui/`.
+- Setup Wizard: `/ui/setup` (Welcome → Admin Account → Connect DB → Done). Locked after completion.
+- Design: Dark mode (bg `#1F1F1F`, surface `#454545`, text `#F5F5F5`, secondary `#A1A1A1`, accent orange `#F6821F`, accent blue `#4693FF`, danger `#AE292F`), GeistSans/Inter font, dense and technical.
+- Pages: Overview, Databases, API Keys, Roles, Cache, Logs, Audit, Metrics, Security, System.
 
-MCP: POST /mcp/v1
-Web UI: GET /ui/*
-Core: GET /health | GET /ready | GET /metrics (optional)
-```
+## Section 16: Federation Architecture
+- Out of scope for v4.
+- Extension points will be left in the API Engine and DB Engine to support future cross-node query federation.
 
-Response envelope:
-```json
-{
-  "success": true,
-  "data": { ... },
-  "meta": { "request_id": "uuid", "duration_ms": 1.23, "cached": false },
-  "error": null
-}
-```
+## Section 17: MCP Architecture
+- Phase 4 addition.
+- `/mcp/v1` endpoint for AI agent access.
+- Operates under the same RBAC policy enforcement as the data API.
 
-**Section 10: Resource Profiles**
+## Section 18: Scaling Strategy
+- Single node by default.
+- Stateless horizontally scalable nodes when pointing the `metadata` config to a central remote Turso DB.
 
-| Profile | Workers | Cache | Metrics | Web UI | Audit | Target RSS |
-|---------|---------|-------|---------|--------|-------|------------|
-| minimal | 1 | off | off | off | off | ~8 MB |
-| standard | auto | memory | basic | on | on | ~25 MB |
-| production | auto | memory+journal | full | on | on | ~50 MB |
-| enterprise | auto | snapshot | full+OTel | on | on | configurable |
+## Section 19: Resource Profiles
+| Profile | Description | Memory Target |
+|---|---|---|
+| Minimal | Edge, IoT, tight containers | <10MB Idle RSS |
+| Standard | Default server usage | <30MB Idle RSS |
+| Production | High throughput, large L1 | Configurable L1 size |
+| Enterprise | High HA, remote metadata | High cache + metrics |
 
-**Section 11: Performance Targets**
+## Section 20: Performance Targets
+| Metric | Target | Test Condition |
+|---|---|---|
+| Cache GET (L1 hot) | <1µs p50 | High concurrency GET |
+| Auth (warm snapshot) | <5µs | Pre-warmed ArcSwap |
+| Full pipeline, cache hit | <500µs p50 | HTTP to HTTP |
+| Full pipeline, local DB | <2ms p50 | SQLite backend |
+| Binary size stripped | <15MB | Cargo release build |
+| Cold start to first 200 | <200ms | System boot |
+| Idle RSS minimal | <10MB | Profile: minimal |
+| Idle RSS standard | <30MB | Profile: standard |
 
-Note clearly: "These are engineering targets. No target ships to public documentation without a linked benchmark result."
+## Section 21: Benchmark Methodology
+- Suites written in Go.
+- Compare against raw direct DB access and v3.0.1.
+- Record p50, p95, p99, max latency, throughput, and error rates.
 
-| Metric | Target | Test |
-|--------|--------|----- |
-| Cache GET (L1, hot) | < 1 µs p50 | bench_cache.go 1M ops |
-| Auth (warm snapshot) | < 5 µs | bench_auth.go |
-| Full pipeline, cache hit | < 500 µs p50 | bench_http.go |
-| Full pipeline, local DB query | < 2 ms p50 | bench_db.go localhost |
-| Binary size (stripped) | < 15 MB | cargo build --release |
-| Cold start to first 200 OK | < 200 ms | process timing |
-| Idle RSS (minimal profile) | < 10 MB | ps -o rss, 60s idle |
-| Idle RSS (standard profile) | < 30 MB | ps -o rss, 60s idle |
+## Section 22: Security Test Environment
+- Fuzz testing for header parsing and AST injection.
+- Automated rate-limit brute-force tests.
+- RBAC permutation checks to ensure no escalation.
 
-**Section 12: Compatibility Requirements**
+## Section 23: Failure and Recovery Strategy
+| Subsystem | Failure Policy |
+|---|---|
+| Metadata Store | Serve from ArcSwap; retry sync background |
+| Cache Engine L2 | Fallback to L1; log warning |
+| DB Connection | Trip circuit breaker; return 503 |
 
-- config.toml format: all existing keys continue to work
-- /api/v1/ endpoints: response shape unchanged
-- X-Axiom-Key auth header: unchanged
-- Linux glibc 2.17+ deployment: unchanged
-- Single binary + config.toml model: unchanged
-- [api_key.*] and [database.*] in TOML: still supported, seeded into axiom.db on first boot
+## Section 24: Testing Strategy
+- Unit: Core logic, cache LRU, policy eval.
+- Integration: HTTP API flows.
+- API/Load: Go bench suite.
+- Fuzz: Axum handlers.
+- Soak: 30min steady-state load test required before release.
 
-**Section 13: What Is Not Being Built**
+## Section 25: Migration Strategy
+- `config.toml` legacy keys (`[api_key.*]`, `[database.*]`) read once on startup and seeded to `axiom.db`.
+- Drop-in binary replacement.
 
-- GraphQL (out of scope)
-- gRPC (out of scope)
-- ORM or query builder
-- Multi-tenancy (isolation between unrelated organizations)
-- Performance claims in docs without benchmark citations
+## Section 26: Compatibility Requirements
+- `/api/v1/` responses shape unchanged.
+- `X-Axiom-Key` header format unchanged.
+- Legacy `config.toml` blocks must not break routing but will be migrated internally.
+- Single binary structure must remain.
+
+## Section 27: Implementation Phases
+| Phase | Name | Goal | Measurable Output |
+|---|---|---|---|
+| 0 | Hot-path cleanup | Fix 10 debt items + 3 security bypasses | PRs merged |
+| 1 | Metadata Store + Identity | `axiom.db`, ArcSwap, Admin API | API auth tests pass |
+| 2 | Policy Engine / RBAC | Enforce roles | RBAC unit tests pass |
+| 3 | CLI | `axiom` subcommands | CLI functional |
+| 4 | MCP Engine | `/mcp/v1` implementation | AI agents can query |
+| 5 | Cache Engine | L1/L2 unified cache | Benchmark target met |
+| 6 | Observability | Prometheus, audit log | Metrics endpoint active |
+| 7 | Web UI | Setup wizard, embedded Vite app | UI loads in browser |
+| 8 | Hardening | Fuzz, 30min soak, CI | CI green |
+
+## Section 28: Technical Decisions Log
+| Decision | Options | Chosen | Why |
+|---|---|---|---|
+| Cache | 3 separate vs Unified | Unified | Consistency, simpler memory tracking |
+| UI | React vs Vite+TS | Vite+TS | No framework runtime overhead, fast |
+| Admin Auth | JWT vs Argon2 Sessions | Argon2 | Simpler single-binary self-hosting |
+| Metadata | SQLite vs libsql | libsql | Allows remote Turso sync |
+
+## Section 29: Open Problems
+- Handling dynamic cluster re-elections for multi-node rate limiting without Redis.
+- Advanced SQL AST parsing overhead for highly complex wildcard policies.
+
+## Section 30: Future Work
+- GraphQL / gRPC support.
+- Vector DB adapters for AI RAG pipelines.
+- Distributed cache federation (Gossip).
