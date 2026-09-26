@@ -100,9 +100,29 @@ flowchart TD
     O --> H
 ```
 
-**Section 6: RBAC Auth Model**
+**Section 6: Identity and RBAC Model**
+
+A strict separation exists between **Human Admins** (who manage the system) and **API Keys** (which access data).
+
+1. **Human Admins (`users` table)**
+   - Used *only* for logging into the Web UI.
+   - Admins have no "roles". An admin owns and manages the entire system.
+   - **Creation rule:** The first admin account is created via the `/ui/setup` wizard on first boot. After setup is complete, additional admins can *only* be created via the CLI (`axiom user add <username>`), preventing Web UI backdoor creation.
+
+2. **API Keys & Roles (`api_keys`, `roles`, `permissions`)**
+   - Used by external applications to access the data API.
+   - Admins use the Web UI/CLI to create custom Roles to restrict what an API key can do.
+   - There are no built-in roles; every role is custom-defined.
 
 ```sql
+-- Human Admins (Web UI login)
+CREATE TABLE users (
+    id INTEGER PRIMARY KEY,
+    username TEXT UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL -- Argon2
+);
+
+-- Machine API Keys (Data API access)
 CREATE TABLE roles (name TEXT PRIMARY KEY, description TEXT, created_at INTEGER);
 
 CREATE TABLE permissions (
@@ -123,11 +143,9 @@ CREATE TABLE api_keys (
 );
 ```
 
-There are no built-in roles. Every role is user-defined. On first boot, Axiom creates no default roles — the operator must create at least one role and one key via the Admin API or CLI before the data API accepts requests.
+Auth flow (Data API): extract X-Axiom-Key → base64 decode → lookup in metadata snapshot (ArcSwap<Metadata>, zero locks) → BLAKE3(secret) == stored_hash (constant-time) → load role permissions → PolicyEngine::evaluate → inject AuthContext.
 
-Auth flow description: extract X-Axiom-Key → base64 decode → lookup in metadata snapshot (ArcSwap<Metadata>, zero locks) → BLAKE3(secret) == stored_hash (constant-time) → load role permissions → PolicyEngine::evaluate → inject AuthContext.
-
-Backward compat note: [api_key.*] in config.toml is seeded into axiom.db on first boot.
+Backward compat note: `[api_key.*]` in config.toml is seeded into axiom.db on first boot as API keys.
 
 **Section 7: Metadata Store**
 
