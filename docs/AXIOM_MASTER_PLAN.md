@@ -114,7 +114,7 @@ CREATE TABLE api_keys (
 );
 ```
 
-Built-in roles table: admin (all ops all DBs), readonly (SELECT only), readwrite (CRUD).
+There are no built-in roles. Every role is user-defined. On first boot, Axiom creates no default roles — the operator must create at least one role and one key via the Admin API or CLI before the data API accepts requests.
 
 Auth flow description: extract X-Axiom-Key → base64 decode → lookup in metadata snapshot (ArcSwap<Metadata>, zero locks) → BLAKE3(secret) == stored_hash (constant-time) → load role permissions → PolicyEngine::evaluate → inject AuthContext.
 
