@@ -758,9 +758,23 @@ pub async fn get_audit_log(
         .await
         .map_err(|e| AxiomError::new("AUDIT_QUERY_FAILED", &e, StatusCode::INTERNAL_SERVER_ERROR))?;
 
+    let has_more = logs.len() == limit as usize;
+    let next_cursor = if has_more {
+        logs.last().map(|r| r.id.to_string())
+    } else {
+        None
+    };
+
     Ok(Json(json!({
         "success": true,
         "data": logs,
+        "pagination": {
+            "limit": limit,
+            "offset": offset,
+            "has_more": has_more,
+            "next_offset": if has_more { Some(offset + limit) } else { None },
+            "next_cursor": next_cursor
+        },
         "error": Value::Null
     })))
 }
