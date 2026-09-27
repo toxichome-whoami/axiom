@@ -64,3 +64,81 @@ pub fn normalize_size(size_str: &str) -> String {
         Err(_) => size_str.to_string(),
     }
 }
+
+// ─── Tests ─────────────────────────────────────────────────────────────────
+// Tests for size parsing and formatting functionality.
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_size_kb() {
+        assert_eq!(parse_size("1KB").unwrap(), 1024);
+    }
+
+    #[test]
+    fn test_parse_size_mb() {
+        assert_eq!(parse_size("5MB").unwrap(), 5 * 1024 * 1024);
+    }
+
+    #[test]
+    fn test_parse_size_gb() {
+        assert_eq!(parse_size("2GB").unwrap(), 2 * 1024 * 1024 * 1024);
+    }
+
+    #[test]
+    fn test_parse_size_tb() {
+        assert_eq!(parse_size("1TB").unwrap(), 1024_u64.pow(4));
+    }
+
+    #[test]
+    fn test_parse_size_pb() {
+        assert_eq!(parse_size("1PB").unwrap(), 1024_u64.pow(5));
+    }
+
+    #[test]
+    fn test_parse_size_fractional_mb() {
+        assert_eq!(parse_size("1.5MB").unwrap(), (1.5 * 1024.0 * 1024.0) as u64);
+    }
+
+    #[test]
+    fn test_parse_size_whitespace_tolerance() {
+        assert_eq!(parse_size(" 10 MB ").unwrap(), 10 * 1024 * 1024);
+    }
+
+    #[test]
+    fn test_parse_size_raw_number() {
+        assert_eq!(parse_size("1024").unwrap(), 1024);
+    }
+
+    #[test]
+    fn test_parse_size_bad() {
+        assert!(parse_size("bad").is_err());
+    }
+
+    #[test]
+    fn test_parse_size_empty() {
+        assert!(parse_size("").is_err());
+    }
+
+    #[test]
+    fn test_format_size_zero() {
+        assert_eq!(format_size(0), "0 B");
+    }
+
+    #[test]
+    fn test_format_size_kb() {
+        assert_eq!(format_size(1024), "1.00 KB");
+    }
+
+    #[test]
+    fn test_format_size_mb() {
+        assert_eq!(format_size(1048576), "1.00 MB");
+    }
+
+    #[test]
+    fn test_normalize_size_invalid_passthrough() {
+        assert_eq!(normalize_size("invalid"), "invalid");
+    }
+}

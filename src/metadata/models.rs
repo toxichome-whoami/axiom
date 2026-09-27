@@ -81,3 +81,81 @@ pub struct AuditRecord {
     pub target: String,
     pub details: Option<String>,
 }
+
+// ─── Tests ─────────────────────────────────────────────────────────────────
+// Tests for security invariants around serialization of models.
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::{to_value, from_value};
+
+    #[test]
+    fn test_user_record_serialization_hides_password_hash() {
+        let user = UserRecord {
+            id: 1,
+            username: "test".to_string(),
+            password_hash: "secret_hash".to_string(),
+            created_at: 0,
+        };
+        let val = to_value(&user).unwrap();
+        assert!(val.get("password_hash").is_none());
+    }
+
+    #[test]
+    fn test_api_key_record_serialization_hides_secret_hash() {
+        let key = ApiKeyRecord {
+            name: "test_key".to_string(),
+            secret_hash: vec![1, 2, 3],
+            role_name: None,
+            rate_limit: 100,
+            expires_at: None,
+            created_at: 0,
+        };
+        let val = to_value(&key).unwrap();
+        assert!(val.get("secret_hash").is_none());
+    }
+
+    #[test]
+    fn test_database_record_serialization_hides_url() {
+        let db = DatabaseRecord {
+            alias: "test_db".to_string(),
+            url: "postgres://secret".to_string(),
+            engine: "postgres".to_string(),
+            pool_min: 1,
+            pool_max: 5,
+            created_at: 0,
+        };
+        let val = to_value(&db).unwrap();
+        assert!(val.get("url").is_none());
+    }
+
+    #[test]
+    fn test_role_record_serialization_contains_name_and_permissions() {
+        let role = RoleRecord {
+            name: "admin".to_string(),
+            description: None,
+            created_at: 0,
+            permissions: vec![],
+        };
+        let val = to_value(&role).unwrap();
+        assert!(val.get("name").is_some());
+        assert!(val.get("permissions").is_some());
+    }
+
+    #[test]
+    fn test_audit_record_roundtrip() {
+        let audit = AuditRecord {
+            id: 1,
+            timestamp: 1000,
+            actor: "user1".to_string(),
+            action: "CREATE".to_string(),
+            target: "table1".to_string(),
+            details: Some("info".to_string()),
+        };
+        let val = to_value(&audit).unwrap();
+        let decoded: AuditRecord = from_value(val).unwrap();
+        assert_eq!(decoded.id, 1);
+        assert_eq!(decoded.actor, "user1");
+    }
+}

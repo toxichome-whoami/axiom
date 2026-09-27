@@ -303,3 +303,50 @@ impl Default for AxiomConfig {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_server_config_default() {
+        let config = ServerConfig::default();
+        assert_eq!(config.port, 4500);
+        assert_eq!(config.host, "127.0.0.1");
+        assert!(config.trusted_proxies.contains(&"127.0.0.1".to_string()));
+    }
+
+    #[test]
+    fn test_logging_config_default() {
+        let config = LoggingConfig::default();
+        assert_eq!(config.enabled, true);
+        assert_eq!(config.level, "INFO");
+    }
+
+    #[test]
+    fn test_rate_limit_config_default() {
+        let config = RateLimitConfig::default();
+        assert_eq!(config.enabled, true);
+        assert_eq!(config.window, 60);
+    }
+
+    #[test]
+    fn test_cache_config_default() {
+        let config = CacheConfig::default();
+        assert_eq!(config.enabled, true);
+        assert_eq!(config.default_ttl, 60);
+    }
+
+    #[test]
+    fn test_axiom_config_default() {
+        let config: AxiomConfig = toml::from_str("").unwrap_or_default();
+        assert_eq!(config.server.port, 4500);
+    }
+
+    #[test]
+    fn test_axiom_config_deserialize_override() {
+        let toml_str = "[server]\nport = 9999";
+        let config = toml::from_str::<AxiomConfig>(toml_str).unwrap();
+        assert_eq!(config.server.port, 9999);
+        assert_eq!(config.server.host, "127.0.0.1");
+    }
+}

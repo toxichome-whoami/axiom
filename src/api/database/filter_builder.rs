@@ -181,3 +181,117 @@ pub fn construct_delete(table: &str, filter: &HashMap<String, Value>) -> (String
     );
     (sql, values)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn test_construct_insert() {
+        let mut data = HashMap::new();
+        data.insert("name".to_string(), json!("alice"));
+        data.insert("age".to_string(), json!(30));
+        let (sql, values) = construct_insert("users", &data);
+        assert!(sql.starts_with("INSERT INTO users"));
+        assert_eq!(values.len(), 2);
+    }
+
+    #[test]
+    fn test_construct_insert_sanitize_table() {
+        let data = HashMap::new();
+        let (sql, _) = construct_insert("users; DROP TABLE x", &data);
+        assert!(sql.contains("usersDROPTABLEx"));
+        assert!(!sql.contains(";"));
+    }
+
+    #[test]
+    fn test_construct_update() {
+        let mut update_data = HashMap::new();
+        update_data.insert("name".to_string(), json!("bob"));
+        
+        let mut filter = HashMap::new();
+        filter.insert("id".to_string(), json!({ "$eq": 1 }));
+        
+        let (sql, values) = construct_update("users", &update_data, &filter);
+        assert!(sql.starts_with("UPDATE users SET"));
+        assert!(sql.contains("WHERE id = ?"));
+        assert_eq!(values.len(), 2);
+    }
+
+    #[test]
+    fn test_construct_delete() {
+        let mut filter = HashMap::new();
+        filter.insert("id".to_string(), json!({ "$eq": 42 }));
+        
+        let (sql, values) = construct_delete("users", &filter);
+        assert_eq!(sql, "DELETE FROM users WHERE id = ?");
+        assert_eq!(values.len(), 1);
+    }
+
+    #[test]
+    fn test_build_where_clause_operators() {
+        let mut f = HashMap::new();
+        
+        f.insert("f_ne".to_string(), json!({ "$ne": 1 }));
+        let (sql, _) = build_where_clause(&f);
+        assert!(sql.contains("f_ne != ?"));
+
+        f.clear();
+        f.insert("f_gt".to_string(), json!({ "$gt": 1 }));
+        f.insert("f_gte".to_string(), json!({ "$gte": 1 }));
+        f.insert("f_lt".to_string(), json!({ "$lt": 1 }));
+        f.insert("f_lte".to_string(), json!({ "$lte": 1 }));
+        let (sql, _) = build_where_clause(&f);
+        assert!(sql.contains("f_gt > ?"));
+        assert!(sql.contains("f_gte >= ?"));
+        assert!(sql.contains("f_lt < ?"));
+        assert!(sql.contains("f_lte <= ?"));
+
+        f.clear();
+        f.insert("f_ilike".to_string(), json!({ "$ilike": "a" }));
+        let (sql, _) = build_where_clause(&f);
+        assert!(sql.contains("LOWER(f_ilike) LIKE LOWER(?)"));
+
+        f.clear();
+        f.insert("f_in".to_string(), json!({ "$in": [1, 2, 3] }));
+        let (sql, _) = build_where_clause(&f);
+        assert!(sql.contains("f_in IN (?, ?, ?)"));
+
+        f.clear();
+        f.insert("f_nin".to_string(), json!({ "$nin": [1] }));
+        let (sql, _) = build_where_clause(&f);
+        assert!(sql.contains("f_nin NOT IN (?)"));
+
+        f.clear();
+        f.insert("f_null_true".to_string(), json!({ "$null": true }));
+        let (sql, _) = build_where_clause(&f);
+        assert!(sql.contains("f_null_true IS NULL"));
+
+        f.clear();
+        f.insert("f_null_false".to_string(), json!({ "$null": false }));
+        let (sql, _) = build_where_clause(&f);
+        assert!(sql.contains("f_null_false IS NOT NULL"));
+
+        f.clear();
+        f.insert("f_not_null_true".to_string(), json!({ "$not_null": true }));
+        let (sql, _) = build_where_clause(&f);
+        assert!(sql.contains("f_not_null_true IS NOT NULL"));
+
+        f.clear();
+        f.insert("f_between".to_string(), json!({ "$between": [10, 20] }));
+        let (sql, vals) = build_where_clause(&f);
+        assert!(sql.contains("f_between BETWEEN ? AND ?"));
+        assert_eq!(vals.len(), 2);
+
+        f.clear();
+        f.insert("status".to_string(), json!("active"));
+        let (sql, _) = build_where_clause(&f);
+        assert!(sql.contains("status = ?"));
+    }
+
+    #[test]
+    fn test_sanitize_ident() {
+        assert_eq!(sanitize_ident("val!d_123;--"), "vald_123");
+    }
+}

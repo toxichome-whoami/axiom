@@ -110,3 +110,48 @@ impl BanList {
         FAILED_AUTH_BY_KEY.remove(key_name);
     }
 }
+
+// ─── Tests ─────────────────────────────────────────────────────────────────
+// Tests for brute-force protection logic and ban registries.
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_record_successful_auth_clears_failed_count() {
+        let key = "test_sp_key_clear_success_1";
+        // 4 failed attempts
+        for _ in 0..4 {
+            BanList::record_failed_auth(key, 5, 60);
+        }
+        BanList::record_successful_auth(key);
+        // 5th attempt after success should NOT ban (since it was cleared)
+        let banned = BanList::record_failed_auth(key, 5, 60);
+        assert!(!banned);
+        assert!(!BanList::is_key_banned(key).0);
+    }
+
+    #[test]
+    fn test_ban_key_and_is_key_banned() {
+        let key = "test_sp_key_manual_ban_1";
+        BanList::ban_key(key, "manual ban reason");
+        let (is_banned, reason) = BanList::is_key_banned(key);
+        assert!(is_banned);
+        assert_eq!(reason, "manual ban reason");
+    }
+
+    #[test]
+    fn test_key_suspension_reason_string() {
+        let key = "test_sp_key_suspension_reason_1";
+        for _ in 0..4 {
+            BanList::record_failed_auth(key, 5, 60);
+        }
+        let banned = BanList::record_failed_auth(key, 5, 60);
+        assert!(banned);
+        let (is_banned, reason) = BanList::is_key_banned(key);
+        assert!(is_banned);
+        assert!(reason.contains("5"));
+        assert!(reason.contains("60"));
+    }
+}

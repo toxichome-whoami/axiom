@@ -170,3 +170,56 @@ pub trait DatabaseEngine: Send + Sync {
     ///  - Idempotent: Yes.
     fn dialect(&self) -> &str;
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn test_engine_error_display() {
+        assert_eq!(EngineError::Connection("err".to_string()).to_string(), "Connection error: err");
+        assert_eq!(EngineError::Execution("err".to_string()).to_string(), "Execution error: err");
+        assert_eq!(EngineError::Schema("err".to_string()).to_string(), "Schema error: err");
+        assert_eq!(EngineError::Unsupported("err".to_string()).to_string(), "Unsupported dialect operation: err");
+        assert_eq!(EngineError::Internal("err".to_string()).to_string(), "Internal error: err");
+    }
+
+    #[test]
+    fn test_engine_error_from() {
+        let err1: EngineError = "test_str".into();
+        assert!(matches!(err1, EngineError::Internal(msg) if msg == "test_str"));
+        
+        let err2: EngineError = "test_string".to_string().into();
+        assert!(matches!(err2, EngineError::Internal(msg) if msg == "test_string"));
+    }
+
+    #[test]
+    fn test_column_info_serialization() {
+        let col = ColumnInfo {
+            name: "id".to_string(),
+            r#type: "INT".to_string(),
+            nullable: false,
+            primary_key: true,
+        };
+        let serialized = serde_json::to_value(&col).unwrap();
+        assert!(serialized.get("name").is_some());
+        assert!(serialized.get("type").is_some());
+        assert!(serialized.get("nullable").is_some());
+        assert!(serialized.get("primary_key").is_some());
+    }
+
+    #[test]
+    fn test_query_result_serialization_skips_none() {
+        let result = QueryResult {
+            columns: None,
+            rows: Some(vec![json!(1)]),
+            affected_rows: None,
+        };
+        let serialized = serde_json::to_value(&result).unwrap();
+        let obj = serialized.as_object().unwrap();
+        assert!(!obj.contains_key("columns"));
+        assert!(obj.contains_key("rows"));
+        assert!(!obj.contains_key("affected_rows"));
+    }
+}
