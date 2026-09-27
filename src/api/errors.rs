@@ -52,3 +52,18 @@ impl IntoResponse for AxiomError {
         (self.status, body).into_response()
     }
 }
+
+impl std::fmt::Display for AxiomError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "[{}]: {}", self.code, self.message)
+    }
+}
+
+impl std::fmt::Debug for AxiomError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "AxiomError({}: {})", self.code, self.message)
+    }
+}
+
+impl std::error::Error for AxiomError {}
+

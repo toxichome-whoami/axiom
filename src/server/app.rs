@@ -1,9 +1,9 @@
 /*
  * Axum application router assembly, CORS policy, security header layer, and middleware pipeline.
  * Owned by: server
- * Key deps: axum, tower_http, crate::middleware, crate::config, crate::api::admin
+ * Key deps: axum, tower_http, crate::middleware, crate::config, crate::api::admin, crate::api::mcp
  * Invariants: Middleware order is strictly WAF -> Rate Limit -> Auth -> Handlers; security headers attached to all responses.
- * Last structural change: Phase 1 mounting /admin/v1 Admin API router.
+ * Last structural change: Phase 4 mounting /mcp/v1 Model Context Protocol router.
  */
 
 use crate::api::errors::AxiomError;
@@ -100,9 +100,16 @@ pub fn create_app() -> Router {
         .layer(middleware::from_fn(rate_limit_middleware))
         .layer(middleware::from_fn(waf_middleware));
 
+    // Model Context Protocol (MCP) versioning wrapper
+    let mcp_routes = crate::api::mcp::router::get_router()
+        .layer(middleware::from_fn(auth_middleware))
+        .layer(middleware::from_fn(rate_limit_middleware))
+        .layer(middleware::from_fn(waf_middleware));
+
     Router::new()
         .nest("/api/v1", api_routes)
         .nest("/admin/v1", admin_routes)
+        .nest("/mcp/v1", mcp_routes)
         .layer(axum::extract::Extension(config.clone()))
         .merge(core_routes)
         .route("/favicon.ico", get(favicon))

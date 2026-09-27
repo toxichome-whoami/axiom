@@ -3,10 +3,11 @@
  * Owned by: api
  * Key deps: axum
  * Invariants: Routes are structured by operational plane and API version.
- * Last structural change: Phase 1 addition of admin control plane module.
+ * Last structural change: Phase 4 addition of Model Context Protocol (MCP) engine.
  */
 
 pub mod admin;
 pub mod core;
 pub mod database;
 pub mod errors;
+pub mod mcp;
