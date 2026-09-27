@@ -174,7 +174,7 @@ axiom/
 │   ├── server/       # Main daemon binary (axiom-server). Glues crates together, starts TCP listener.
 │   └── cli/          # CLI binary (axiom). Subcommands for key|db|user|cache|health|bench.
 ├── ui/               # Vite + TypeScript + Tailwind CSS. Pre-built bundle embedded in server binary.
-├── benches/          # Go benchmark suite (bench_db.go, bench_cache.go, bench_auth.go)
+├── benches/          # Native Rust Criterion benchmark suite (benches/benches/pipeline.rs)
 ├── tests/            # Integration and security test suites
 ├── docs/             # Public-facing reference documentation
 └── v4-planning/      # Architecture blueprints (this folder)
@@ -234,6 +234,7 @@ Admin API (requires admin user session):
   POST   /admin/v1/reload                 # Force ArcSwap snapshot refresh
   GET    /admin/v1/keys                   # List API keys
   POST   /admin/v1/keys                   # Create API key
+  POST   /admin/v1/keys/:name/rotate      # Rotate API key secret
   DELETE /admin/v1/keys/:name             # Delete API key
   GET    /admin/v1/roles                  # List roles
   POST   /admin/v1/roles                  # Create role with permissions
@@ -241,6 +242,7 @@ Admin API (requires admin user session):
   DELETE /admin/v1/roles/:name            # Delete role
   GET    /admin/v1/databases              # List database connections
   POST   /admin/v1/databases              # Add database connection
+  GET    /admin/v1/databases/:alias/test  # Test connection & probe dialect
   DELETE /admin/v1/databases/:alias       # Remove database connection
   GET    /admin/v1/audit                  # Query audit log
   POST   /admin/v1/cache/flush            # Flush all caches
@@ -872,10 +874,11 @@ Distributed cache (future)
 
 | Metric | Target | Test |
 |--------|--------|------|
-| Cache GET (L1, hot) | < 1 µs p50 | bench_cache.go 1M ops |
-| Auth (warm snapshot) | < 5 µs | bench_auth.go |
-| Full pipeline, cache hit | < 500 µs p50 | bench_http.go |
-| Full pipeline, local DB query | < 2 ms p50 | bench_db.go localhost |
+| Cache GET (L1, hot) | < 1 µs p50 | Criterion `cache/l1_get_hot` |
+| Auth (warm snapshot) | < 5 µs | Criterion `auth_validate_api_key_snapshot` |
+| Filter WHERE clause build | < 2 µs | Criterion `filter_build_where_clause` |
+| Full pipeline, cache hit | < 500 µs p50 | Criterion `http_pipeline/get_ready_endpoint` |
+| Full pipeline, local DB query | < 2 ms p50 | `axiom benchmark` / direct query |
 | Binary size (stripped) | < 15 MB | `cargo build --release` |
 | Cold start to first 200 OK | < 200 ms | Process timing |
 | Idle RSS (minimal profile) | < 10 MB | `ps -o rss`, 60s idle |
@@ -897,18 +900,18 @@ Distributed cache (future)
 | OS | `Ubuntu 22.04 LTS` |
 | Configuration | `workers=4, cache=memory, profile=standard` |
 | Dataset | `1000 rows, 10 columns, mixed types` |
-| Concurrency | `200 goroutines` |
+| Concurrency | `200 goroutines / threads` |
 | Duration / Requests | `5000 requests` |
 
 ### Benchmark Suites
 
-| Suite | File | What it measures |
-|-------|------|------------------|
-| HTTP pipeline | `bench_http.go` | Full request round-trip (no DB) |
-| Database query | `bench_db.go` | Full pipeline including DB query |
-| Cache operations | `bench_cache.go` | L1 GET/SET throughput |
-| Auth | `bench_auth.go` | ArcSwap snapshot lookup + BLAKE3 |
-| Rate limiter | `bench_ratelimit.go` | Counter increment throughput |
+| Suite | File / Runner | What it measures |
+|-------|---------------|------------------|
+| HTTP pipeline probe | `axiom benchmark` (CLI) | Sequential round-trip latency & throughput to `/health` |
+| HTTP pipeline | `benches/benches/pipeline.rs` | Tower service round-trip latency (`get_ready_endpoint`) |
+| Filter generation | `benches/benches/pipeline.rs` | `build_where_clause` AST parameterization overhead |
+| Cache operations | `benches/benches/pipeline.rs` | L1 GET / SET throughput via DashMap (`l1_get_hot`, `l1_set_memory_only`) |
+| Auth snapshot | `benches/benches/pipeline.rs` | ArcSwap snapshot lookup + BLAKE3 verification (`auth_validate_api_key_snapshot`) |
 
 ### Comparison Targets
 

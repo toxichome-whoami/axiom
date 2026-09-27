@@ -18,6 +18,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'keys', label: 'API Keys', iconName: 'key', hash: '#/keys' },
   { id: 'roles', label: 'Roles & RBAC', iconName: 'shield', hash: '#/roles' },
   { id: 'cache', label: 'Cache Engine', iconName: 'hard-drive', hash: '#/cache' },
+  { id: 'logs', label: 'Live Logs', iconName: 'file-text', hash: '#/logs' },
   { id: 'audit', label: 'Audit Trail', iconName: 'file-text', hash: '#/audit' },
   { id: 'metrics', label: 'Metrics', iconName: 'activity', hash: '#/metrics' },
   { id: 'system', label: 'System', iconName: 'server', hash: '#/system' },

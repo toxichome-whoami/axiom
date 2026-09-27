@@ -14,6 +14,7 @@ import { renderDatabases } from './pages/Databases';
 import { renderApiKeys } from './pages/ApiKeys';
 import { renderRoles } from './pages/Roles';
 import { renderCache } from './pages/Cache';
+import { renderLogs } from './pages/Logs';
 import { renderAudit } from './pages/Audit';
 import { renderMetrics } from './pages/Metrics';
 import { renderSystem } from './pages/System';
@@ -109,6 +110,9 @@ async function route() {
       break;
     case 'cache':
       renderCache(mainContent);
+      break;
+    case 'logs':
+      renderLogs(mainContent);
       break;
     case 'audit':
       renderAudit(mainContent);
