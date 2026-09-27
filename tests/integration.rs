@@ -18,15 +18,15 @@ use sqlparser::parser::Parser;
 use std::collections::HashMap;
 use tower::ServiceExt;
 
-use axiom::api::database::filter_builder::build_where_clause;
-use axiom::cache::{CacheEngine, Durability};
-use axiom::metadata::snapshot::{
+use axiom_api::database::filter_builder::build_where_clause;
+use axiom_cache::{CacheEngine, Durability};
+use axiom_metadata::snapshot::{
     update_snapshot, ApiKeySnapshot, MetadataSnapshot, PermissionSnapshot, RoleSnapshot,
 };
-use axiom::policy::engine::PolicyEngine;
-use axiom::security::ban_list::BanList;
-use axiom::server::app::create_app;
-use axiom::utils::types::AuthContext;
+use axiom_policy::PolicyEngine;
+use axiom_api::security::ban_list::BanList;
+use axiom_api::server::app::create_app;
+use axiom_core::AuthContext;
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  Fixtures
@@ -173,7 +173,7 @@ async fn auth_bypass_expired_key() {
 #[tokio::test]
 async fn authz_select_only_cannot_insert() {
     setup_test_metadata();
-    let snap = axiom::metadata::snapshot::get_snapshot();
+    let snap = axiom_metadata::snapshot::get_snapshot();
     let role = snap.roles.get("readonly_role").unwrap();
     let ctx = AuthContext {
         api_key_name: "ro_key".to_string(),
@@ -190,7 +190,7 @@ async fn authz_select_only_cannot_insert() {
 #[tokio::test]
 async fn authz_database_scope_isolation() {
     setup_test_metadata();
-    let snap = axiom::metadata::snapshot::get_snapshot();
+    let snap = axiom_metadata::snapshot::get_snapshot();
     let role = snap.roles.get("readonly_role").unwrap();
     let ctx = AuthContext {
         api_key_name: "ro_key".to_string(),

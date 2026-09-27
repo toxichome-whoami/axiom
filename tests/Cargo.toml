@@ -1,0 +1,25 @@
+[package]
+name = "axiom-integration-tests"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]
+axiom-core = { workspace = true }
+axiom-metadata = { workspace = true }
+axiom-policy = { workspace = true }
+axiom-cache = { workspace = true }
+axiom-db = { workspace = true }
+axiom-api = { workspace = true }
+axum = { workspace = true }
+tower = { workspace = true }
+tokio = { workspace = true }
+bytes = { workspace = true }
+serde_json = { workspace = true }
+base64 = { workspace = true }
+blake3 = { workspace = true }
+sqlparser = { workspace = true }
+
+[[test]]
+name = "integration"
+path = "integration.rs"

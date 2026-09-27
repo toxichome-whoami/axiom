@@ -1,0 +1,18 @@
+[package]
+name = "axiom-server"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Axiom API Gateway main daemon binary"
+
+[dependencies]
+axiom-core = { workspace = true }
+axiom-metadata = { workspace = true }
+axiom-cache = { workspace = true }
+axiom-db = { workspace = true }
+axiom-api = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+mimalloc = { workspace = true }
+axum = { workspace = true }

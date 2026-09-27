@@ -1,0 +1,13 @@
+[package]
+name = "axiom-policy"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Granular RBAC and authorization policy evaluation engine for Axiom"
+
+[dependencies]
+axiom-core = { workspace = true }
+axiom-metadata = { workspace = true }
+axum = { workspace = true }
+tracing = { workspace = true }

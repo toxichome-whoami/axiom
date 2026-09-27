@@ -1,0 +1,17 @@
+[package]
+name = "axiom-cache"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Unified L1 DashMap LRU and L2 LibSQL persistent cache engine for Axiom"
+
+[dependencies]
+axiom-core = { workspace = true }
+serde = { workspace = true }
+dashmap = { workspace = true }
+libsql = { workspace = true }
+once_cell = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+bytes = { workspace = true }

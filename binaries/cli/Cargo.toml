@@ -1,0 +1,18 @@
+[package]
+name = "axiom"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Axiom CLI management utility"
+
+[dependencies]
+axiom-core = { workspace = true }
+axiom-metadata = { workspace = true }
+clap = { workspace = true }
+rpassword = { workspace = true }
+reqwest = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+serde_json = { workspace = true }
+base64 = { workspace = true }

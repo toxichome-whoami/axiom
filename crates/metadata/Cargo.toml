@@ -1,0 +1,21 @@
+[package]
+name = "axiom-metadata"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Metadata store, SQLite/Turso persistence, and ArcSwap identity snapshots for Axiom"
+
+[dependencies]
+axiom-core = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+libsql = { workspace = true }
+arc-swap = { workspace = true }
+blake3 = { workspace = true }
+argon2 = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+once_cell = { workspace = true }
+rand = { workspace = true }
+uuid = { workspace = true }

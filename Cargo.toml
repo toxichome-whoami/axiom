@@ -1,12 +1,32 @@
-[package]
-name = "axiom"
-version = "3.0.1"
+[workspace]
+members = [
+    "crates/core",
+    "crates/metadata",
+    "crates/policy",
+    "crates/cache",
+    "crates/db",
+    "crates/api",
+    "binaries/server",
+    "binaries/cli",
+    "tests",
+]
+resolver = "2"
+
+[workspace.package]
+version = "4.0.0"
 edition = "2021"
-description = "Axiom API Gateway Backend"
+authors = ["Toxichome"]
+license = "MIT"
 
-[dependencies]
+[workspace.dependencies]
+axiom-core = { path = "crates/core" }
+axiom-metadata = { path = "crates/metadata" }
+axiom-policy = { path = "crates/policy" }
+axiom-cache = { path = "crates/cache" }
+axiom-db = { path = "crates/db" }
+axiom-api = { path = "crates/api" }
+
 dashmap = "5.5"
-
 tokio = { version = "1.37.0", features = ["full"] }
 libsql = "0.9.30"
 serde_json = "1.0.116"
@@ -26,7 +46,6 @@ tower-http = { version = "0.5.2", features = ["cors", "trace", "set-header", "co
 rust-embed = { version = "8.5", features = ["axum"] }
 tokio-util = { version = "0.7", features = ["compat", "io"] }
 urlencoding = "2.1"
-
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 tracing-appender = "0.2"
@@ -35,7 +54,6 @@ async-trait = "0.1.80"
 futures = "0.3.30"
 tokio-stream = "0.1.15"
 bytes = "1.6"
-
 figment = { version = "0.10.19", features = ["toml", "env"] }
 dotenvy = "0.15.7"
 sysinfo = "0.38.4"
