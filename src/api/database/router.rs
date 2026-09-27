@@ -32,16 +32,38 @@ pub fn get_router() -> Router {
         )
 }
 
+use crate::policy::PolicyEngine;
+
 async fn list_databases(
     Extension(auth): Extension<AuthContext>,
 ) -> Result<Json<Value>, AxiomError> {
     let config = ConfigManager::get();
+    let snapshot = crate::metadata::snapshot::get_snapshot();
+
+    // Aggregate unique database aliases from static config and dynamic metadata snapshot
+    let mut all_aliases = std::collections::HashSet::new();
+    for name in config.database.keys() {
+        all_aliases.insert(name.clone());
+    }
+    for name in snapshot.databases.keys() {
+        all_aliases.insert(name.clone());
+    }
+
+    let mut sorted_aliases: Vec<String> = all_aliases.into_iter().collect();
+    sorted_aliases.sort();
+
+    // Filter by user role permissions
+    let authorized_dbs = PolicyEngine::filter_databases(&auth, &sorted_aliases);
     let mut active_dbs = Vec::new();
 
-    for (name, db_cfg) in &config.database {
-        if !auth.db_scope.iter().any(|s| s == "*" || s == name) {
+    for name in &authorized_dbs {
+        let (engine_str, mode_str) = if let Some(db_cfg) = config.database.get(name) {
+            (format!("{:?}", db_cfg.engine).to_lowercase(), format!("{:?}", db_cfg.mode).to_lowercase())
+        } else if let Some(snap_db) = snapshot.databases.get(name) {
+            (snap_db.engine.clone(), "readwrite".to_string())
+        } else {
             continue;
-        }
+        };
 
         let mut status = "down";
         let mut tables_count_str = "0".to_string();
@@ -61,8 +83,8 @@ async fn list_databases(
 
         active_dbs.push(serde_json::json!({
             "name": name,
-            "engine": db_cfg.engine,
-            "mode": db_cfg.mode,
+            "engine": engine_str,
+            "mode": mode_str,
             "status": status,
             "tables_count": tables_count_str
         }));

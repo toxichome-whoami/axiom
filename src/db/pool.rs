@@ -42,7 +42,18 @@ impl DatabasePoolManager {
         }
 
         let config = ConfigManager::get();
-        let db_config = config.database.get(alias)?;
+        let db_config = if let Some(cfg) = config.database.get(alias) {
+            cfg.clone()
+        } else if let Some(snap_db) = crate::metadata::snapshot::get_snapshot().databases.get(alias) {
+            crate::config::schema::DatabaseDefConfig {
+                url: snap_db.url.clone(),
+                pool_min: snap_db.pool_min as i32,
+                pool_max: snap_db.pool_max as i32,
+                ..Default::default()
+            }
+        } else {
+            return None;
+        };
 
         // Do not attempt to connect if the URL is empty
         if db_config.url.is_empty() {

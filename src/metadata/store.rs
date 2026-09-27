@@ -3,7 +3,7 @@
  * Owned by: metadata
  * Key deps: libsql, argon2, blake3, crate::config, crate::metadata::snapshot
  * Invariants: Database mutations write to SQLite first, then immediately publish an updated ArcSwap snapshot.
- * Last structural change: Phase 1 initial implementation of MetadataStore with auto-seeding.
+ * Last structural change: Phase 2 addition of RBAC role and permission CRUD and audit logging.
  */
 
 use argon2::{
@@ -509,6 +509,204 @@ impl MetadataStore {
             });
         }
         Ok(keys)
+    }
+
+    // ─── Role & Permission Management ──────────────────────────────────────
+    // RBAC policies mapping roles to granular database, table, and operation permissions.
+    // Invariant: Modifying roles or permissions must immediately update the live snapshot.
+
+    /// Creates a new role along with its defined permission grants.
+    /// CONTRACT:
+    ///  - Precondition: `name` must be a valid, unique role identifier.
+    ///  - Side effects: Writes to `roles` and `permissions` tables, writes audit record, updates snapshot.
+    ///  - Idempotent: No (fails if role name already exists).
+    pub async fn create_role(
+        name: &str,
+        description: Option<&str>,
+        permissions: &[PermissionRecord],
+    ) -> Result<(), String> {
+        let _guard = STORE_LOCK.lock().await;
+        let conn = Self::get_conn().await?;
+
+        let now_unix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+
+        conn.execute(
+            "INSERT INTO roles (name, description, created_at) VALUES (?1, ?2, ?3)",
+            libsql::params![name, description.unwrap_or(""), now_unix],
+        )
+        .await
+        .map_err(|e| format!("Failed to create role '{}': {}", name, e))?;
+
+        for perm in permissions {
+            let ops_json = serde_json::to_string(&perm.operations)
+                .map_err(|e| format!("Invalid operations array: {}", e))?;
+
+            conn.execute(
+                "INSERT INTO permissions (role_name, database, table_name, operations) VALUES (?1, ?2, ?3, ?4)",
+                libsql::params![name, perm.database.as_str(), perm.table_name.as_str(), ops_json.as_str()],
+            )
+            .await
+            .map_err(|e| format!("Failed to create permission for role '{}': {}", name, e))?;
+        }
+
+        let _ = conn.execute(
+            "INSERT INTO audit_log (timestamp, actor, action, target, details) \
+             VALUES (?1, 'admin', 'role.create', ?2, ?3)",
+            libsql::params![now_unix, name, format!("permissions_count={}", permissions.len())],
+        ).await;
+
+        drop(conn);
+        Self::sync_snapshot().await?;
+
+        Ok(())
+    }
+
+    /// Updates role description and optionally replaces all its permission grants.
+    /// CONTRACT:
+    ///  - Precondition: Role `name` must exist.
+    ///  - Side effects: Modifies `roles`, replaces `permissions`, writes audit log, updates snapshot.
+    ///  - Idempotent: Yes.
+    pub async fn update_role(
+        name: &str,
+        description: Option<&str>,
+        permissions: Option<Vec<PermissionRecord>>,
+    ) -> Result<bool, String> {
+        let _guard = STORE_LOCK.lock().await;
+        let conn = Self::get_conn().await?;
+
+        let now_unix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+
+        if let Some(desc) = description {
+            conn.execute(
+                "UPDATE roles SET description = ?2 WHERE name = ?1",
+                libsql::params![name, desc],
+            )
+            .await
+            .map_err(|e| format!("Failed to update role description: {}", e))?;
+        }
+
+        if let Some(perms) = permissions {
+            conn.execute("DELETE FROM permissions WHERE role_name = ?1", [name])
+                .await
+                .map_err(|e| format!("Failed to clear old permissions: {}", e))?;
+
+            for perm in &perms {
+                let ops_json = serde_json::to_string(&perm.operations)
+                    .map_err(|e| format!("Invalid operations array: {}", e))?;
+
+                conn.execute(
+                    "INSERT INTO permissions (role_name, database, table_name, operations) VALUES (?1, ?2, ?3, ?4)",
+                    libsql::params![name, perm.database.as_str(), perm.table_name.as_str(), ops_json.as_str()],
+                )
+                .await
+                .map_err(|e| format!("Failed to insert updated permission: {}", e))?;
+            }
+        }
+
+        let _ = conn.execute(
+            "INSERT INTO audit_log (timestamp, actor, action, target, details) \
+             VALUES (?1, 'admin', 'role.update', ?2, NULL)",
+            libsql::params![now_unix, name],
+        ).await;
+
+        drop(conn);
+        Self::sync_snapshot().await?;
+
+        Ok(true)
+    }
+
+    /// Deletes a role by name and removes all of its associated permission grants.
+    /// CONTRACT:
+    ///  - Side effects: Deletes from `roles` and `permissions` tables, writes audit log, updates snapshot.
+    ///  - Idempotent: Yes.
+    pub async fn delete_role(name: &str) -> Result<bool, String> {
+        let _guard = STORE_LOCK.lock().await;
+        let conn = Self::get_conn().await?;
+
+        let _ = conn.execute("DELETE FROM permissions WHERE role_name = ?1", [name]).await;
+        let affected = conn
+            .execute("DELETE FROM roles WHERE name = ?1", [name])
+            .await
+            .map_err(|e| format!("Failed to delete role: {}", e))?;
+
+        if affected > 0 {
+            let now_unix = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs() as i64;
+
+            let _ = conn.execute(
+                "INSERT INTO audit_log (timestamp, actor, action, target, details) \
+                 VALUES (?1, 'admin', 'role.delete', ?2, NULL)",
+                libsql::params![now_unix, name],
+            ).await;
+        }
+
+        drop(conn);
+        Self::sync_snapshot().await?;
+
+        Ok(affected > 0)
+    }
+
+    /// Lists all roles registered in the metadata store, populated with their permissions.
+    /// CONTRACT:
+    ///  - Returns list of RoleRecord structs.
+    ///  - Idempotent: Yes.
+    pub async fn list_roles() -> Result<Vec<RoleRecord>, String> {
+        let conn = Self::get_conn().await?;
+        let mut role_rows = conn
+            .query("SELECT name, description, created_at FROM roles ORDER BY name ASC", ())
+            .await
+            .map_err(|e| e.to_string())?;
+
+        let mut roles = Vec::new();
+        while let Ok(Some(row)) = role_rows.next().await {
+            let name: String = row.get(0).map_err(|e| e.to_string())?;
+            let description: Option<String> = row.get(1).ok();
+            let created_at: i64 = row.get(2).unwrap_or(0);
+
+            roles.push(RoleRecord {
+                name,
+                description,
+                created_at,
+                permissions: Vec::new(),
+            });
+        }
+
+        // Populate permissions for each role
+        for role in &mut roles {
+            let mut perm_rows = conn
+                .query(
+                    "SELECT id, database, table_name, operations FROM permissions WHERE role_name = ?1",
+                    [role.name.as_str()],
+                )
+                .await
+                .map_err(|e| e.to_string())?;
+
+            while let Ok(Some(row)) = perm_rows.next().await {
+                let id: i64 = row.get(0).unwrap_or(0);
+                let database: String = row.get(1).map_err(|e| e.to_string())?;
+                let table_name: String = row.get(2).map_err(|e| e.to_string())?;
+                let ops_json: String = row.get(3).unwrap_or_else(|_| "[]".to_string());
+                let operations: Vec<String> = serde_json::from_str(&ops_json).unwrap_or_default();
+
+                role.permissions.push(PermissionRecord {
+                    id,
+                    role_name: role.name.clone(),
+                    database,
+                    table_name,
+                    operations,
+                });
+            }
+        }
+
+        Ok(roles)
     }
 
     // ─── Managed Database Management ──────────────────────────────────────

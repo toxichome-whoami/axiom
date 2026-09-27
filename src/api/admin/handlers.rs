@@ -18,6 +18,7 @@ use serde_json::{json, Value};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::api::errors::AxiomError;
+use crate::metadata::models::PermissionRecord;
 use crate::metadata::store::MetadataStore;
 use crate::utils::types::AuthContext;
 
@@ -39,6 +40,27 @@ pub struct AddDatabaseRequest {
     pub engine: Option<String>,
     pub pool_min: Option<i64>,
     pub pool_max: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PermissionPayload {
+    pub database: String,
+    pub table_name: String,
+    pub operations: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateRoleRequest {
+    pub name: String,
+    pub description: Option<String>,
+    #[serde(default)]
+    pub permissions: Vec<PermissionPayload>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateRoleRequest {
+    pub description: Option<String>,
+    pub permissions: Option<Vec<PermissionPayload>>,
 }
 
 // ─── Route Handlers ────────────────────────────────────────────────────────
@@ -351,4 +373,191 @@ pub async fn delete_database(
         "error": Value::Null
     })))
 }
+
+// ─── Role & Permission Endpoints ─────────────────────────────────────────
+// RBAC administrative endpoints allowing definition and assignment of fine-grained
+// table and operation permissions. Updates immediately sync to the ArcSwap snapshot.
+
+/// Lists all configured RBAC roles with their attached permission grants.
+/// CONTRACT:
+///  - Precondition: Verified admin AuthContext.
+///  - Returns list of role records and their operations.
+///  - Idempotent: Yes.
+pub async fn list_roles(
+    Extension(auth): Extension<AuthContext>,
+) -> Result<impl IntoResponse, AxiomError> {
+    if !auth.full_admin {
+        return Err(AxiomError::new(
+            "FORBIDDEN",
+            "Admin privileges required",
+            StatusCode::FORBIDDEN,
+        ));
+    }
+
+    let roles = MetadataStore::list_roles()
+        .await
+        .map_err(|e| AxiomError::new("METADATA_ERROR", &e, StatusCode::INTERNAL_SERVER_ERROR))?;
+
+    Ok(Json(json!({
+        "success": true,
+        "data": {
+            "roles": roles
+        },
+        "error": Value::Null
+    })))
+}
+
+/// Creates a new role and defines its initial permission grants.
+/// CONTRACT:
+///  - Precondition: `payload.name` must be non-empty and alphanumeric/underscores.
+///  - Side effects: Writes to SQLite `roles` and `permissions` tables, updates snapshot.
+///  - Idempotent: No (fails if role already exists).
+pub async fn create_role(
+    Extension(auth): Extension<AuthContext>,
+    Json(payload): Json<CreateRoleRequest>,
+) -> Result<impl IntoResponse, AxiomError> {
+    if !auth.full_admin {
+        return Err(AxiomError::new(
+            "FORBIDDEN",
+            "Admin privileges required",
+            StatusCode::FORBIDDEN,
+        ));
+    }
+
+    let role_name = payload.name.trim();
+    if role_name.is_empty() {
+        return Err(AxiomError::new(
+            "INVALID_ROLE_NAME",
+            "Role name cannot be empty",
+            StatusCode::BAD_REQUEST,
+        ));
+    }
+
+    let permissions: Vec<PermissionRecord> = payload
+        .permissions
+        .into_iter()
+        .map(|p| PermissionRecord {
+            id: 0,
+            role_name: role_name.to_string(),
+            database: p.database,
+            table_name: p.table_name,
+            operations: p.operations,
+        })
+        .collect();
+
+    MetadataStore::create_role(
+        role_name,
+        payload.description.as_deref(),
+        &permissions,
+    )
+    .await
+    .map_err(|e| AxiomError::new("ROLE_CREATION_FAILED", &e, StatusCode::BAD_REQUEST))?;
+
+    Ok((
+        StatusCode::CREATED,
+        Json(json!({
+            "success": true,
+            "data": {
+                "name": role_name,
+                "message": format!("Role '{}' created successfully", role_name)
+            },
+            "error": Value::Null
+        })),
+    ))
+}
+
+/// Updates an existing role's description and/or replaces its permission grants.
+/// CONTRACT:
+///  - Precondition: Verified admin AuthContext.
+///  - Side effects: Updates SQLite `roles` and `permissions` tables, updates snapshot.
+///  - Idempotent: Yes.
+pub async fn update_role(
+    Extension(auth): Extension<AuthContext>,
+    Path(name): Path<String>,
+    Json(payload): Json<UpdateRoleRequest>,
+) -> Result<impl IntoResponse, AxiomError> {
+    if !auth.full_admin {
+        return Err(AxiomError::new(
+            "FORBIDDEN",
+            "Admin privileges required",
+            StatusCode::FORBIDDEN,
+        ));
+    }
+
+    let permissions = payload.permissions.map(|perms| {
+        perms
+            .into_iter()
+            .map(|p| PermissionRecord {
+                id: 0,
+                role_name: name.clone(),
+                database: p.database,
+                table_name: p.table_name,
+                operations: p.operations,
+            })
+            .collect()
+    });
+
+    let updated = MetadataStore::update_role(
+        &name,
+        payload.description.as_deref(),
+        permissions,
+    )
+    .await
+    .map_err(|e| AxiomError::new("ROLE_UPDATE_FAILED", &e, StatusCode::INTERNAL_SERVER_ERROR))?;
+
+    if !updated {
+        return Err(AxiomError::new(
+            "ROLE_NOT_FOUND",
+            "Role does not exist",
+            StatusCode::NOT_FOUND,
+        ));
+    }
+
+    Ok(Json(json!({
+        "success": true,
+        "data": {
+            "message": format!("Role '{}' updated successfully", name)
+        },
+        "error": Value::Null
+    })))
+}
+
+/// Deletes a role and its attached permissions.
+/// CONTRACT:
+///  - Precondition: Verified admin AuthContext.
+///  - Side effects: Deletes from SQLite `roles` and `permissions` tables, updates snapshot.
+///  - Idempotent: Yes.
+pub async fn delete_role(
+    Extension(auth): Extension<AuthContext>,
+    Path(name): Path<String>,
+) -> Result<impl IntoResponse, AxiomError> {
+    if !auth.full_admin {
+        return Err(AxiomError::new(
+            "FORBIDDEN",
+            "Admin privileges required",
+            StatusCode::FORBIDDEN,
+        ));
+    }
+
+    let deleted = MetadataStore::delete_role(&name)
+        .await
+        .map_err(|e| AxiomError::new("ROLE_DELETION_FAILED", &e, StatusCode::INTERNAL_SERVER_ERROR))?;
+
+    if !deleted {
+        return Err(AxiomError::new(
+            "ROLE_NOT_FOUND",
+            "Role does not exist",
+            StatusCode::NOT_FOUND,
+        ));
+    }
+
+    Ok(Json(json!({
+        "success": true,
+        "data": {
+            "message": format!("Role '{}' deleted successfully", name)
+        },
+        "error": Value::Null
+    })))
+}
+
 

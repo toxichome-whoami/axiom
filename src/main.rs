@@ -18,6 +18,7 @@ pub mod db;
 pub mod logging;
 pub mod metadata;
 pub mod middleware;
+pub mod policy;
 pub mod security;
 pub mod server;
 mod utils;

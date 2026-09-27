@@ -1,9 +1,9 @@
 /*
  * Database HTTP API route handlers, AST validation, and query execution pipeline.
  * Owned by: api/database
- * Key deps: axum, sqlparser, crate::db::pool, crate::db::engines, crate::security
- * Invariants: Uncached queries parse through dialect AST parser; cache eviction follows timestamp LRU order.
- * Last structural change: Phase 0 cleanup fixing double ConfigManager fetch (Debt #1), static scope (Debt #4), and LRU eviction (Debt #5).
+ * Key deps: axum, sqlparser, crate::db::pool, crate::db::engines, crate::policy::PolicyEngine
+ * Invariants: Uncached queries parse through dialect AST parser; PolicyEngine evaluates table-level RBAC on every operation.
+ * Last structural change: Phase 2 integrating PolicyEngine authorization across queries, tables, and CRUD endpoints.
  */
 
 use axum::http::StatusCode;
@@ -15,7 +15,8 @@ use crate::api::errors::AxiomError;
 use crate::config::schema::DatabaseDefConfig;
 use crate::db::engines::base::QueryResult;
 use crate::db::pool::DatabasePoolManager;
-use crate::utils::types::{AuthContext, ServerMode};
+use crate::policy::PolicyEngine;
+use crate::utils::types::AuthContext;
 
 type QueryCacheMap = dashmap::DashMap<String, (std::time::Instant, Arc<QueryResult>, bytes::Bytes)>;
 
@@ -194,33 +195,57 @@ impl QueryExecutionPipeline {
         let mut is_mutation = false;
         let mut is_dangerous = false;
 
-        for stmt in statements {
-            match stmt {
-                sqlparser::ast::Statement::Query(_)
-                | sqlparser::ast::Statement::Explain { .. }
+        for stmt in &statements {
+            let (op, table_opt, is_dang) = match stmt {
+                sqlparser::ast::Statement::Query(query) => {
+                    let mut table = None;
+                    if let sqlparser::ast::SetExpr::Select(select) = &*query.body {
+                        if let Some(table_with_joins) = select.from.first() {
+                            if let sqlparser::ast::TableFactor::Table { name, .. } = &table_with_joins.relation {
+                                table = Some(name.to_string());
+                            }
+                        }
+                    }
+                    ("SELECT", table, false)
+                }
+                sqlparser::ast::Statement::Explain { .. }
                 | sqlparser::ast::Statement::ShowVariable { .. }
-                | sqlparser::ast::Statement::ShowColumns { .. } => {
-                    // Safe for readonly
+                | sqlparser::ast::Statement::ShowColumns { .. } => ("SELECT", None, false),
+                sqlparser::ast::Statement::Insert(insert) => {
+                    is_mutation = true;
+                    ("INSERT", Some(insert.table.to_string()), false)
+                }
+                sqlparser::ast::Statement::Update(update) => {
+                    is_mutation = true;
+                    ("UPDATE", Some(update.table.to_string()), false)
+                }
+                sqlparser::ast::Statement::Delete(delete) => {
+                    is_mutation = true;
+                    let t_name = if let sqlparser::ast::FromTable::WithFromKeyword(tables) = &delete.from {
+                        tables.first().map(|t| t.to_string())
+                    } else {
+                        delete.tables.first().map(|t| t.to_string())
+                    };
+                    ("DELETE", t_name, false)
                 }
                 sqlparser::ast::Statement::Drop { .. }
                 | sqlparser::ast::Statement::AlterTable { .. }
                 | sqlparser::ast::Statement::Truncate { .. } => {
                     is_mutation = true;
-                    is_dangerous = true;
+                    ("DELETE", None, true)
                 }
                 _ => {
-                    // Treat any other statements (Insert, Update, Delete, Create, etc.) as mutations
                     is_mutation = true;
+                    ("*", None, false)
                 }
-            }
-        }
+            };
 
-        if is_mutation && auth.mode == ServerMode::Readonly {
-            return Err(AxiomError::new(
-                "AUTH_INSUFFICIENT_MODE",
-                "Read-only keys cannot execute mutations or dangerous commands",
-                StatusCode::FORBIDDEN,
-            ));
+            if is_dang {
+                is_dangerous = true;
+            }
+
+            let target_table = table_opt.as_deref().unwrap_or("*");
+            PolicyEngine::evaluate(auth, db_name, target_table, op)?;
         }
 
         if is_dangerous && !db_cfg.dangerous_operations {
@@ -321,10 +346,22 @@ pub async fn get_db_config(
     db_name: &str,
     auth: &AuthContext,
 ) -> Result<DatabaseDefConfig, AxiomError> {
-    if !auth.db_scope.iter().any(|s| s == "*" || s == db_name) {
+    let allowed = if auth.full_admin {
+        true
+    } else if !auth.permissions.is_empty() {
+        auth.permissions
+            .iter()
+            .any(|p| p.database == "*" || p.database.eq_ignore_ascii_case(db_name))
+    } else {
+        auth.db_scope
+            .iter()
+            .any(|s| s == "*" || s.eq_ignore_ascii_case(db_name))
+    };
+
+    if !allowed {
         return Err(AxiomError::new(
             "AUTH_SCOPE_DENIED",
-            "API key does not have access to database",
+            &format!("API key does not have access to database '{}'", db_name),
             StatusCode::FORBIDDEN,
         ));
     }
@@ -332,6 +369,13 @@ pub async fn get_db_config(
     let config = crate::config::loader::ConfigManager::get();
     if let Some(db_cfg) = config.database.get(db_name) {
         Ok(db_cfg.clone())
+    } else if let Some(snap_db) = crate::metadata::snapshot::get_snapshot().databases.get(db_name) {
+        Ok(DatabaseDefConfig {
+            url: snap_db.url.clone(),
+            pool_min: snap_db.pool_min as i32,
+            pool_max: snap_db.pool_max as i32,
+            ..Default::default()
+        })
     } else {
         Err(AxiomError::new(
             "DB_NOT_FOUND",
@@ -348,6 +392,7 @@ pub async fn list_tables(
         crate::api::database::schemas::ListTablesParams,
     >,
 ) -> Result<axum::Json<Value>, AxiomError> {
+    PolicyEngine::evaluate(&auth, &db_name, "*", "SELECT")?;
     let _db_cfg = get_db_config(&db_name, &auth).await?;
 
     let engine = DatabasePoolManager::get_engine(&db_name)
@@ -395,6 +440,7 @@ pub async fn insert_rows(
     axum::extract::Extension(auth): axum::extract::Extension<AuthContext>,
     axum::Json(payload): axum::Json<crate::api::database::schemas::InsertRequest>,
 ) -> Result<axum::Json<Value>, AxiomError> {
+    PolicyEngine::evaluate(&auth, &db_name, &table_name, "INSERT")?;
     let db_cfg = get_db_config(&db_name, &auth).await?;
 
     let rows_to_insert = if let Some(r) = payload.rows {
@@ -453,6 +499,7 @@ pub async fn insert_rows(
         "affected_rows": result.affected_rows
     })))
 }
+
 pub async fn fetch_rows(
     axum::extract::Path((db_name, table_name)): axum::extract::Path<(String, String)>,
     axum::extract::Extension(auth): axum::extract::Extension<AuthContext>,
@@ -460,6 +507,7 @@ pub async fn fetch_rows(
         crate::api::database::schemas::FetchRowsParams,
     >,
 ) -> Result<axum::Json<Value>, AxiomError> {
+    PolicyEngine::evaluate(&auth, &db_name, &table_name, "SELECT")?;
     let db_cfg = get_db_config(&db_name, &auth).await?;
 
     let mut values = Vec::new();
@@ -558,6 +606,7 @@ pub async fn update_rows(
     axum::extract::Extension(auth): axum::extract::Extension<AuthContext>,
     axum::Json(payload): axum::Json<crate::api::database::schemas::UpdateRequest>,
 ) -> Result<axum::Json<Value>, AxiomError> {
+    PolicyEngine::evaluate(&auth, &db_name, &table_name, "UPDATE")?;
     let db_cfg = get_db_config(&db_name, &auth).await?;
 
     if payload.filter.is_empty() {
@@ -603,6 +652,7 @@ pub async fn delete_rows(
     axum::extract::Extension(auth): axum::extract::Extension<AuthContext>,
     axum::Json(payload): axum::Json<crate::api::database::schemas::DeleteRequest>,
 ) -> Result<axum::Json<Value>, AxiomError> {
+    PolicyEngine::evaluate(&auth, &db_name, &table_name, "DELETE")?;
     let db_cfg = get_db_config(&db_name, &auth).await?;
 
     if payload.filter.is_empty() {
@@ -632,12 +682,11 @@ pub async fn delete_rows(
     ))
 }
 
-
-
 pub async fn describe_table(
     axum::extract::Path((db_name, table_name)): axum::extract::Path<(String, String)>,
     axum::extract::Extension(auth): axum::extract::Extension<AuthContext>,
 ) -> Result<axum::Json<serde_json::Value>, AxiomError> {
+    PolicyEngine::evaluate(&auth, &db_name, &table_name, "SELECT")?;
     let _db_cfg = get_db_config(&db_name, &auth).await?;
 
     let engine = DatabasePoolManager::get_engine(&db_name)
@@ -666,3 +715,4 @@ pub async fn describe_table(
         }
     })))
 }
+

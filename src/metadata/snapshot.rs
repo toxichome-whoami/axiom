@@ -14,7 +14,7 @@ use std::sync::Arc;
 // ─── Fast-Lookup Snapshot Structures ───────────────────────────────────────
 // In-memory representations optimized for zero-copy, zero-allocation lookups during request handling.
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ApiKeySnapshot {
     pub name: String,
     pub secret_hash: [u8; 32], // BLAKE3 hash for constant-time comparison
@@ -23,20 +23,20 @@ pub struct ApiKeySnapshot {
     pub expires_at: Option<i64>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct PermissionSnapshot {
     pub database: String,
     pub table_name: String,
     pub operations: Vec<String>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct RoleSnapshot {
     pub name: String,
     pub permissions: Vec<PermissionSnapshot>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct DatabaseSnapshot {
     pub alias: String,
     pub url: String,

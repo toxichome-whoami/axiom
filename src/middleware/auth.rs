@@ -127,13 +127,33 @@ pub fn validate_api_key(
                 }
 
                 if match_result == 0 {
-                    let is_admin = key_snap.role_name.as_deref().map(|r| r.contains("admin")).unwrap_or(false);
+                    let mut is_admin = false;
+                    let mut permissions = Vec::new();
+
+                    if let Some(ref r_name) = key_snap.role_name {
+                        if let Some(role_snap) = snapshot.roles.get(r_name) {
+                            permissions = role_snap.permissions.clone();
+                            if r_name == "admin"
+                                || r_name.contains("admin")
+                                || permissions.iter().any(|p| {
+                                    p.database == "*"
+                                        && p.table_name == "*"
+                                        && p.operations.iter().any(|op| op == "*")
+                                })
+                            {
+                                is_admin = true;
+                            }
+                        }
+                    }
+
                     return Ok(AuthContext {
                         api_key_name: key_name.to_string(),
                         mode: crate::utils::types::ServerMode::Readwrite,
                         db_scope: vec!["*".to_string()],
                         rate_limit_override: key_snap.rate_limit_override,
                         full_admin: is_admin,
+                        role: key_snap.role_name.clone(),
+                        permissions,
                     });
                 }
             }
@@ -157,6 +177,8 @@ pub fn validate_api_key(
                         db_scope: key_cfg.db_scope.clone(),
                         rate_limit_override: key_cfg.rate_limit_override as u32,
                         full_admin: key_cfg.full_admin,
+                        role: None,
+                        permissions: Vec::new(),
                     });
                 } else {
                     // S3: Track distributed auth failures against recognized key name
