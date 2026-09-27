@@ -98,19 +98,16 @@ pub fn create_app() -> Router {
         .route("/health", get(health_check))
         .nest("/db", crate::api::database::router::get_router())
         .layer(middleware::from_fn(auth_middleware))
-        .layer(middleware::from_fn(rate_limit_middleware))
-        .layer(middleware::from_fn(waf_middleware));
+        .layer(middleware::from_fn(rate_limit_middleware));
 
     // Admin API versioning wrapper (auth applied inside get_router for protected routes)
     let admin_routes = crate::api::admin::get_router()
-        .layer(middleware::from_fn(rate_limit_middleware))
-        .layer(middleware::from_fn(waf_middleware));
+        .layer(middleware::from_fn(rate_limit_middleware));
 
     // Model Context Protocol (MCP) versioning wrapper
     let mcp_routes = crate::api::mcp::router::get_router()
         .layer(middleware::from_fn(auth_middleware))
-        .layer(middleware::from_fn(rate_limit_middleware))
-        .layer(middleware::from_fn(waf_middleware));
+        .layer(middleware::from_fn(rate_limit_middleware));
 
     // Web UI router
     let ui_routes = crate::api::ui::get_router();
@@ -146,7 +143,8 @@ pub fn create_app() -> Router {
             header::CONTENT_SECURITY_POLICY,
             header::HeaderValue::from_static("default-src 'none'; frame-ancestors 'none';"),
         ))
+        .layer(tower_http::request_id::PropagateRequestIdLayer::x_request_id())
         .layer(tower_http::request_id::SetRequestIdLayer::x_request_id(tower_http::request_id::MakeRequestUuid))
-        
         .layer(axum::extract::DefaultBodyLimit::max(10 * 1024 * 1024))
+        .layer(middleware::from_fn(waf_middleware))
 }

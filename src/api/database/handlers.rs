@@ -87,7 +87,7 @@ impl QueryExecutionPipeline {
         let cache_ttl = config.cache.query_results_ttl as u64;
 
         let cache_key = if cache_enabled && !is_mutation_regex {
-            let key = format!("{}:{}:{:?}", db_name, sql, params);
+            let key = format!("{}:{}:{}:{:?}", auth.api_key_name, db_name, sql, params);
 
             if let Some(bytes) = crate::cache::CacheEngine::get(&key).await {
                 return Ok((

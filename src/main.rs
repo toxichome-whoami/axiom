@@ -12,19 +12,7 @@ use tokio::net::TcpListener;
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
-pub mod api;
-pub mod cache;
-pub mod cli;
-pub mod config;
-pub mod db;
-pub mod logging;
-pub mod metadata;
-pub mod metrics;
-pub mod middleware;
-pub mod policy;
-pub mod security;
-pub mod server;
-mod utils;
+use axiom::*;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = std::env::args().collect();
