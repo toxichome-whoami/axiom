@@ -238,3 +238,137 @@ pub fn validate_api_key(
 
     Err(None)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+    use once_cell::sync::Lazy;
+    use std::sync::Mutex;
+    use axiom_metadata::snapshot::{
+        update_snapshot, ApiKeySnapshot, MetadataSnapshot, PermissionSnapshot, RoleSnapshot,
+    };
+
+    static TEST_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
+
+    #[test]
+    fn test_validate_api_key_invalid_base64() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        let config = axiom_core::AxiomConfig::default();
+        let result = validate_api_key("!not_valid_base64!@#", &config);
+        assert_eq!(result, Err(None));
+    }
+
+    #[test]
+    fn test_validate_api_key_missing_colon() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        let config = axiom_core::AxiomConfig::default();
+        let encoded = BASE64_STANDARD.encode("only_key_without_secret");
+        let result = validate_api_key(&encoded, &config);
+        assert_eq!(result, Err(None));
+    }
+
+    #[test]
+    fn test_validate_api_key_from_snapshot_success() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        let mut keys = HashMap::new();
+        let mut roles = HashMap::new();
+
+        roles.insert(
+            "admin".to_string(),
+            RoleSnapshot {
+                name: "admin".to_string(),
+                permissions: vec![PermissionSnapshot {
+                    database: "*".to_string(),
+                    table_name: "*".to_string(),
+                    operations: vec!["*".to_string()],
+                }],
+            },
+        );
+
+        keys.insert(
+            "test_user".to_string(),
+            ApiKeySnapshot {
+                name: "test_user".to_string(),
+                secret_hash: blake3::hash(b"correct_secret").into(),
+                role_name: Some("admin".to_string()),
+                rate_limit_override: 50,
+                expires_at: None,
+            },
+        );
+
+        update_snapshot(MetadataSnapshot {
+            keys,
+            roles,
+            databases: HashMap::new(),
+            loaded_at_unix: 0,
+        });
+
+        let config = axiom_core::AxiomConfig::default();
+        let valid_token = BASE64_STANDARD.encode("test_user:correct_secret");
+        let result = validate_api_key(&valid_token, &config);
+
+        assert!(result.is_ok());
+        let ctx = result.unwrap();
+        assert_eq!(ctx.api_key_name, "test_user");
+        assert!(ctx.full_admin);
+        assert_eq!(ctx.role, Some("admin".to_string()));
+    }
+
+    #[test]
+    fn test_validate_api_key_wrong_secret() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        let mut keys = HashMap::new();
+        keys.insert(
+            "test_wrong_secret_user".to_string(),
+            ApiKeySnapshot {
+                name: "test_wrong_secret_user".to_string(),
+                secret_hash: blake3::hash(b"actual_secret").into(),
+                role_name: None,
+                rate_limit_override: 0,
+                expires_at: None,
+            },
+        );
+
+        update_snapshot(MetadataSnapshot {
+            keys,
+            roles: HashMap::new(),
+            databases: HashMap::new(),
+            loaded_at_unix: 0,
+        });
+
+        let config = axiom_core::AxiomConfig::default();
+        let token = BASE64_STANDARD.encode("test_wrong_secret_user:wrong_password");
+        let result = validate_api_key(&token, &config);
+        assert_eq!(result, Err(None));
+    }
+
+    #[test]
+    fn test_validate_api_key_expired() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        let mut keys = HashMap::new();
+        keys.insert(
+            "expired_key".to_string(),
+            ApiKeySnapshot {
+                name: "expired_key".to_string(),
+                secret_hash: blake3::hash(b"my_secret").into(),
+                role_name: None,
+                rate_limit_override: 0,
+                expires_at: Some(1), // epoch + 1s, firmly in past
+            },
+        );
+
+        update_snapshot(MetadataSnapshot {
+            keys,
+            roles: HashMap::new(),
+            databases: HashMap::new(),
+            loaded_at_unix: 0,
+        });
+
+        let config = axiom_core::AxiomConfig::default();
+        let token = BASE64_STANDARD.encode("expired_key:my_secret");
+        let result = validate_api_key(&token, &config);
+
+        assert_eq!(result, Err(Some("API key has expired".to_string())));
+    }
+}

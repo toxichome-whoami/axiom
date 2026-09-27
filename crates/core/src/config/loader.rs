@@ -38,3 +38,23 @@ impl ConfigManager {
             .unwrap_or_else(|| Arc::new(AxiomConfig::default()))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_config_manager_get_default() {
+        let cfg = ConfigManager::get();
+        assert_eq!(cfg.server.port, 4500);
+        assert_eq!(cfg.server.host, "127.0.0.1");
+    }
+
+    #[test]
+    fn test_config_manager_load_nonexistent_file_falls_back_to_defaults() {
+        let result = ConfigManager::load("non_existent_config_file_for_test.toml");
+        assert!(result.is_ok());
+        let cfg = ConfigManager::get();
+        assert!(!cfg.server.host.is_empty());
+    }
+}

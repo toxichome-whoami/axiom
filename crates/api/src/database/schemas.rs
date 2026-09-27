@@ -71,3 +71,36 @@ pub struct VectorSearchRequest {
 fn default_k() -> i32 {
     10
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_query_request_deserialization() {
+        let json = r#"{"sql": "SELECT 1", "timeout": 30}"#;
+        let parsed: QueryRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(parsed.sql, "SELECT 1");
+        assert_eq!(parsed.timeout, Some(30));
+        assert!(parsed.params.is_none());
+    }
+
+    #[test]
+    fn test_fetch_rows_params_defaults() {
+        let json = r#"{}"#;
+        let parsed: FetchRowsParams = serde_json::from_str(json).unwrap();
+        assert_eq!(parsed.page, 1);
+        assert_eq!(parsed.limit, 50);
+        assert_eq!(parsed.order, "asc");
+        assert!(parsed.sort.is_none());
+        assert!(parsed.filter.is_none());
+    }
+
+    #[test]
+    fn test_update_request_structure() {
+        let json = r#"{"filter": {"id": 1}, "update": {"name": "alice"}}"#;
+        let parsed: UpdateRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(parsed.filter.get("id"), Some(&serde_json::json!(1)));
+        assert_eq!(parsed.update.get("name"), Some(&serde_json::json!("alice")));
+    }
+}

@@ -111,3 +111,101 @@ pub async fn waf_middleware(req: Request, next: Next) -> Result<Response, AxiomE
 
     Ok(next.run(req).await)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::{body::Body, http::Request, http::StatusCode, routing::get, Router};
+    use tower::ServiceExt;
+
+    fn build_waf_test_app() -> Router {
+        Router::new()
+            .route("/test", get(|| async { "ok" }))
+            .layer(axum::middleware::from_fn(waf_middleware))
+    }
+
+    #[tokio::test]
+    async fn test_waf_clean_uri_allowed() {
+        let app = build_waf_test_app();
+        let res = app
+            .oneshot(Request::get("/test").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn test_waf_null_byte_rejected() {
+        let app = build_waf_test_app();
+        let res = app
+            .oneshot(Request::get("/test%00evil").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn test_waf_path_traversal_triple_encoded_rejected() {
+        let app = build_waf_test_app();
+        let res = app
+            .oneshot(
+                Request::get("/test%25252e%25252e%25252fetc/passwd")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn test_waf_sql_keyword_rejected() {
+        let app = build_waf_test_app();
+        let res = app
+            .oneshot(
+                Request::get("/test?query=select%20*")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn test_waf_uri_too_long() {
+        let app = build_waf_test_app();
+        let long_path = format!("/test?param={}", "a".repeat(2050));
+        let res = app
+            .oneshot(Request::get(&long_path).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::URI_TOO_LONG);
+    }
+
+    #[tokio::test]
+    async fn test_waf_too_many_params() {
+        let app = build_waf_test_app();
+        let flood = format!("/test?{}", "a=1&".repeat(55));
+        let res = app
+            .oneshot(Request::get(&flood).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn test_waf_body_too_large() {
+        let app = build_waf_test_app();
+        let res = app
+            .oneshot(
+                Request::post("/test")
+                    .header("content-length", (20 * 1024 * 1024).to_string())
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::PAYLOAD_TOO_LARGE);
+    }
+}

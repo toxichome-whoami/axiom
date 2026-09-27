@@ -40,7 +40,7 @@ pub struct PermissionSnapshot {
     pub operations: Vec<String>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
 pub struct AuthContext {
     pub api_key_name: String,
     pub mode: ServerMode,

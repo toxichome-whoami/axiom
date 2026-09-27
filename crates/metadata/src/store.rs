@@ -1168,5 +1168,51 @@ mod tests {
         assert_eq!(rec.actor, "admin");
         assert_eq!(rec.target, "test_key");
     }
+
+    #[tokio::test]
+    async fn test_in_memory_metadata_tables_and_queries() {
+        let db = libsql::Builder::new_local(":memory:").build().await.unwrap();
+        let conn = db.connect().unwrap();
+        MetadataStore::create_tables(&conn).await.unwrap();
+
+        // Verify users table insertion & query
+        conn.execute(
+            "INSERT INTO users (username, password_hash, created_at) VALUES ('testadmin', 'argon_hash', 100)",
+            (),
+        )
+        .await
+        .unwrap();
+
+        let mut rows = conn
+            .query("SELECT username FROM users WHERE username = 'testadmin'", ())
+            .await
+            .unwrap();
+        let row = rows.next().await.unwrap().unwrap();
+        let user: String = row.get(0).unwrap();
+        assert_eq!(user, "testadmin");
+
+        // Verify roles & permissions table insertion & query
+        conn.execute(
+            "INSERT INTO roles (name, description, created_at) VALUES ('read_role', 'Read only', 100)",
+            (),
+        )
+        .await
+        .unwrap();
+
+        conn.execute(
+            "INSERT INTO permissions (role_name, database, table_name, operations) VALUES ('read_role', '*', '*', '[\"SELECT\"]')",
+            (),
+        )
+        .await
+        .unwrap();
+
+        let mut perm_rows = conn
+            .query("SELECT operations FROM permissions WHERE role_name = 'read_role'", ())
+            .await
+            .unwrap();
+        let perm_row = perm_rows.next().await.unwrap().unwrap();
+        let ops: String = perm_row.get(0).unwrap();
+        assert_eq!(ops, "[\"SELECT\"]");
+    }
 }
 

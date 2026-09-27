@@ -78,3 +78,34 @@ pub trait DatabaseEngine: Send + Sync {
     ///  - Idempotent: Yes.
     fn dialect(&self) -> &str;
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_table_info_model() {
+        let table = TableInfo {
+            name: "users".to_string(),
+            row_count_estimate: 42,
+            columns: None,
+            foreign_keys: None,
+        };
+        assert_eq!(table.name, "users");
+        assert_eq!(table.row_count_estimate, 42);
+        assert!(table.columns.is_none());
+        assert!(table.foreign_keys.is_none());
+    }
+
+    #[test]
+    fn test_foreign_key_info_model() {
+        let fk = ForeignKeyInfo {
+            column: "org_id".to_string(),
+            referenced_table: "organizations".to_string(),
+            referenced_column: "id".to_string(),
+        };
+        assert_eq!(fk.column, "org_id");
+        assert_eq!(fk.referenced_table, "organizations");
+        assert_eq!(fk.referenced_column, "id");
+    }
+}

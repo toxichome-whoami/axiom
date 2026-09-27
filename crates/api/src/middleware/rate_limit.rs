@@ -178,3 +178,112 @@ pub async fn rate_limit_middleware(req: Request, next: Next) -> Result<Response,
 
     Ok(response)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::{body::Body, http::Request, http::StatusCode, routing::get, Router};
+    use once_cell::sync::Lazy;
+    use std::sync::{Arc, Mutex};
+    use tower::ServiceExt;
+
+    static TEST_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
+
+    fn build_rl_test_app() -> Router {
+        Router::new()
+            .route("/test", get(|| async { "ok" }))
+            .layer(axum::middleware::from_fn(rate_limit_middleware))
+    }
+
+    #[tokio::test]
+    async fn test_rate_limit_disabled_passes_unconditionally() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        let mut cfg = axiom_core::AxiomConfig::default();
+        cfg.rate_limit.enabled = false;
+        let cfg_arc = Arc::new(cfg);
+
+        let app = build_rl_test_app();
+        let mut req = Request::get("/test").body(Body::empty()).unwrap();
+        req.extensions_mut().insert(cfg_arc);
+
+        let res = app.oneshot(req).await.unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn test_rate_limit_allowed_ips_bypass() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        let mut cfg = axiom_core::AxiomConfig::default();
+        cfg.rate_limit.enabled = true;
+        cfg.rate_limit.max_requests = 0; // limit 0 would block everyone
+        cfg.server.allowed_ips = vec!["127.0.0.1".to_string()];
+        let cfg_arc = Arc::new(cfg);
+
+        let app = build_rl_test_app();
+        let mut req = Request::get("/test").body(Body::empty()).unwrap();
+        req.extensions_mut().insert(cfg_arc);
+
+        let res = app.oneshot(req).await.unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn test_rate_limit_enforcement_and_headers() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        axiom_cache::CacheEngine::flush().await;
+
+        let mut cfg = axiom_core::AxiomConfig::default();
+        cfg.rate_limit.enabled = true;
+        cfg.rate_limit.max_requests = 2;
+        cfg.rate_limit.window = 60;
+        cfg.server.allowed_ips = Vec::new(); // empty
+        let cfg_arc = Arc::new(cfg);
+
+        // 1st request -> ok
+        let app = build_rl_test_app();
+        let mut req1 = Request::get("/test").body(Body::empty()).unwrap();
+        req1.extensions_mut().insert(cfg_arc.clone());
+        let res1 = app.oneshot(req1).await.unwrap();
+        assert_eq!(res1.status(), StatusCode::OK);
+        assert_eq!(res1.headers().get("x-ratelimit-remaining").unwrap(), "1");
+
+        // 2nd request -> ok
+        let app = build_rl_test_app();
+        let mut req2 = Request::get("/test").body(Body::empty()).unwrap();
+        req2.extensions_mut().insert(cfg_arc.clone());
+        let res2 = app.oneshot(req2).await.unwrap();
+        assert_eq!(res2.status(), StatusCode::OK);
+        assert_eq!(res2.headers().get("x-ratelimit-remaining").unwrap(), "0");
+
+        // 3rd request -> 429 Too Many Requests
+        let app = build_rl_test_app();
+        let mut req3 = Request::get("/test").body(Body::empty()).unwrap();
+        req3.extensions_mut().insert(cfg_arc.clone());
+        let res3 = app.oneshot(req3).await.unwrap();
+        assert_eq!(res3.status(), StatusCode::TOO_MANY_REQUESTS);
+
+        axiom_cache::CacheEngine::flush().await;
+    }
+
+    #[tokio::test]
+    async fn test_rate_limit_banned_ip_rejected() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        let banned_ip = "198.51.100.99";
+        crate::security::ban_list::BanList::ban_ip(banned_ip, "test manual ban");
+
+        let mut cfg = axiom_core::AxiomConfig::default();
+        cfg.rate_limit.enabled = true;
+        cfg.server.trusted_proxies = vec!["127.0.0.1".to_string()];
+        let cfg_arc = Arc::new(cfg);
+
+        let app = build_rl_test_app();
+        let mut req = Request::get("/test")
+            .header("x-forwarded-for", banned_ip)
+            .body(Body::empty())
+            .unwrap();
+        req.extensions_mut().insert(cfg_arc);
+
+        let res = app.oneshot(req).await.unwrap();
+        assert_eq!(res.status(), StatusCode::FORBIDDEN);
+    }
+}
