@@ -342,7 +342,8 @@ pub async fn list_tables(
                     "limit": limit,
                     "has_more": next_cursor.is_some(),
                     "next_cursor": next_cursor
-                }
+                },
+                "error": serde_json::Value::Null
             })))
         }
         Err(e) => {
@@ -417,7 +418,11 @@ pub async fn insert_rows(
 
     Ok(axum::Json(serde_json::json!({
         "success": true,
-        "affected_rows": result.affected_rows
+        "affected_rows": result.affected_rows,
+        "data": {
+            "affected_rows": result.affected_rows
+        },
+        "error": serde_json::Value::Null
     })))
 }
 
@@ -518,7 +523,13 @@ pub async fn fetch_rows(
                 "has_more": next_cursor.is_some(),
                 "next_cursor": next_cursor
             }
-        }
+        },
+        "pagination": {
+            "limit": limit,
+            "has_more": next_cursor.is_some(),
+            "next_cursor": next_cursor
+        },
+        "error": serde_json::Value::Null
     })))
 }
 
@@ -563,9 +574,14 @@ pub async fn update_rows(
     let (result, _) =
         QueryExecutionPipeline::run_query(&db_name, &sql, values, &auth, &db_cfg).await?;
 
-    Ok(axum::Json(
-        serde_json::json!({ "success": true, "affected_rows": result.affected_rows }),
-    ))
+    Ok(axum::Json(serde_json::json!({
+        "success": true,
+        "affected_rows": result.affected_rows,
+        "data": {
+            "affected_rows": result.affected_rows
+        },
+        "error": serde_json::Value::Null
+    })))
 }
 
 pub async fn delete_rows(
@@ -598,9 +614,14 @@ pub async fn delete_rows(
     let (result, _) =
         QueryExecutionPipeline::run_query(&db_name, &sql, values, &auth, &db_cfg).await?;
 
-    Ok(axum::Json(
-        serde_json::json!({ "success": true, "affected_rows": result.affected_rows }),
-    ))
+    Ok(axum::Json(serde_json::json!({
+        "success": true,
+        "affected_rows": result.affected_rows,
+        "data": {
+            "affected_rows": result.affected_rows
+        },
+        "error": serde_json::Value::Null
+    })))
 }
 
 pub async fn describe_table(
@@ -633,7 +654,8 @@ pub async fn describe_table(
             "table": table_name,
             "columns": columns,
             "foreign_keys": foreign_keys
-        }
+        },
+        "error": serde_json::Value::Null
     })))
 }
 

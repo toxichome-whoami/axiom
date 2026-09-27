@@ -92,7 +92,9 @@ async fn list_databases(
 
     Ok(Json(serde_json::json!({
         "success": true,
-        "databases": active_dbs
+        "databases": active_dbs,
+        "data": active_dbs,
+        "error": serde_json::Value::Null
     })))
 }
 
