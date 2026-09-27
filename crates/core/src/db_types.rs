@@ -95,6 +95,34 @@ pub struct TableInfo {
 /// Maximum rows returned by an unpaginated raw SQL query to protect server memory from exhaustion.
 pub const DEFAULT_MAX_QUERY_ROWS: usize = 10_000;
 
+/// Extracts a pagination cursor value from the last row of a query result.
+/// Prioritizes canonical "id" column, falling back to the first projected column name.
+pub fn extract_next_cursor(rows: &[Value], column_names: &[String]) -> Option<String> {
+    let last_row = rows.last()?.as_object()?;
+
+    // 1. Prioritize canonical "id" column
+    if let Some(val) = last_row.get("id") {
+        match val {
+            Value::String(s) => return Some(s.clone()),
+            Value::Number(n) => return Some(n.to_string()),
+            _ => {}
+        }
+    }
+
+    // 2. Fall back to first projected column
+    if let Some(first_col) = column_names.first() {
+        if let Some(val) = last_row.get(first_col) {
+            match val {
+                Value::String(s) => return Some(s.clone()),
+                Value::Number(n) => return Some(n.to_string()),
+                _ => {}
+            }
+        }
+    }
+
+    None
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct QueryResult {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -105,6 +133,8 @@ pub struct QueryResult {
     pub affected_rows: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub truncated: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
 }
 
 #[cfg(test)]
@@ -165,19 +195,45 @@ mod tests {
             rows: None,
             affected_rows: Some(42),
             truncated: None,
+            next_cursor: None,
         };
         let json = serde_json::to_string(&res).unwrap();
         assert!(!json.contains("rows\":null"));
         assert!(json.contains("\"affected_rows\":42"));
         assert!(!json.contains("truncated"));
+        assert!(!json.contains("next_cursor"));
 
         let res_trunc = QueryResult {
             columns: None,
             rows: None,
             affected_rows: None,
             truncated: Some(true),
+            next_cursor: Some("10000".into()),
         };
         let json_trunc = serde_json::to_string(&res_trunc).unwrap();
         assert!(json_trunc.contains("\"truncated\":true"));
+        assert!(json_trunc.contains("\"next_cursor\":\"10000\""));
+    }
+
+    #[test]
+    fn test_extract_next_cursor_priority() {
+        let cols = vec!["created_at".to_string(), "id".to_string()];
+        let mut row_map = serde_json::Map::new();
+        row_map.insert("created_at".to_string(), Value::String("2026-09-28".to_string()));
+        row_map.insert("id".to_string(), Value::Number(serde_json::Number::from(1054)));
+        let rows = vec![Value::Object(row_map)];
+
+        // Prioritizes "id" column
+        let cursor = extract_next_cursor(&rows, &cols);
+        assert_eq!(cursor, Some("1054".to_string()));
+
+        // When "id" is absent, falls back to first column
+        let cols_no_id = vec!["created_at".to_string(), "name".to_string()];
+        let mut row_no_id = serde_json::Map::new();
+        row_no_id.insert("created_at".to_string(), Value::String("2026-09-28".to_string()));
+        row_no_id.insert("name".to_string(), Value::String("test".to_string()));
+        let rows_no_id = vec![Value::Object(row_no_id)];
+        let cursor2 = extract_next_cursor(&rows_no_id, &cols_no_id);
+        assert_eq!(cursor2, Some("2026-09-28".to_string()));
     }
 }

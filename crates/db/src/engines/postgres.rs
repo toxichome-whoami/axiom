@@ -238,6 +238,7 @@ impl DatabaseEngine for PostgresDatabaseEngine {
                 rows: None,
                 affected_rows: Some(result.rows_affected()),
                 truncated: None,
+                next_cursor: None,
             });
         }
 
@@ -289,11 +290,18 @@ impl DatabaseEngine for PostgresDatabaseEngine {
             result_rows.push(Value::Object(json_obj));
         }
 
+        let next_cursor = if truncated {
+            axiom_core::extract_next_cursor(&result_rows, &column_names)
+        } else {
+            None
+        };
+
         Ok(QueryResult {
             columns: Some(column_names),
             rows: Some(result_rows),
             affected_rows: None,
             truncated: if truncated { Some(true) } else { None },
+            next_cursor,
         })
     }
 

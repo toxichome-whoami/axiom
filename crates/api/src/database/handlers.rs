@@ -91,7 +91,7 @@ impl QueryExecutionPipeline {
 
             if let Some(bytes) = axiom_cache::CacheEngine::get(&key).await {
                 return Ok((
-                    Arc::new(QueryResult { columns: None, rows: None, affected_rows: Some(0), truncated: None }),
+                    Arc::new(QueryResult { columns: None, rows: None, affected_rows: Some(0), truncated: None, next_cursor: None }),
                     bytes,
                 ));
             }

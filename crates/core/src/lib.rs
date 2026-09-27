@@ -16,7 +16,7 @@ pub mod uuid_util;
 
 pub use config::loader::ConfigManager;
 pub use config::schema::AxiomConfig;
-pub use db_types::{ColumnInfo, EngineError, ForeignKeyInfo, QueryResult, TableInfo, DEFAULT_MAX_QUERY_ROWS};
+pub use db_types::{ColumnInfo, EngineError, ForeignKeyInfo, QueryResult, TableInfo, DEFAULT_MAX_QUERY_ROWS, extract_next_cursor};
 pub use error::AxiomError;
 pub use size_parser::{format_size, normalize_size, parse_size};
 pub use types::{AuthContext, DbEngineType, PermissionSnapshot, ServerMode};

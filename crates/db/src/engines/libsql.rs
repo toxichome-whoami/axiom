@@ -211,6 +211,7 @@ impl DatabaseEngine for LibsqlDatabaseEngine {
                 rows: None,
                 affected_rows: Some(affected as u64),
                 truncated: None,
+                next_cursor: None,
             });
         }
 
@@ -256,11 +257,18 @@ impl DatabaseEngine for LibsqlDatabaseEngine {
             result_rows.push(serde_json::Value::Object(json_obj));
         }
 
+        let next_cursor = if truncated {
+            axiom_core::extract_next_cursor(&result_rows, &column_names)
+        } else {
+            None
+        };
+
         Ok(QueryResult {
             columns: Some(column_names),
             rows: Some(result_rows),
             affected_rows: None,
             truncated: if truncated { Some(true) } else { None },
+            next_cursor,
         })
     }
 
