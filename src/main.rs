@@ -13,6 +13,7 @@ use tokio::net::TcpListener;
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 pub mod api;
+pub mod cache;
 pub mod cli;
 pub mod config;
 pub mod db;

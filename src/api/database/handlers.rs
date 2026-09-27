@@ -9,7 +9,7 @@
 use axum::http::StatusCode;
 use serde_json::Value;
 use std::sync::Arc;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::api::errors::AxiomError;
 use crate::config::schema::DatabaseDefConfig;
@@ -17,12 +17,6 @@ use crate::db::engines::base::QueryResult;
 use crate::db::pool::DatabasePoolManager;
 use crate::policy::PolicyEngine;
 use crate::utils::types::AuthContext;
-
-type QueryCacheMap = dashmap::DashMap<String, (std::time::Instant, Arc<QueryResult>, bytes::Bytes)>;
-
-// ─── Module-Level Statics ──────────────────────────────────────────────────
-// Single shared cache used by both the read and write branches of run_query.
-static QUERY_CACHE: once_cell::sync::Lazy<QueryCacheMap> = once_cell::sync::Lazy::new(dashmap::DashMap::new);
 
 // Consecutive execution failure counter per database alias for circuit breaker (Debt #4 fix).
 static CIRCUIT_FAILURES: once_cell::sync::Lazy<dashmap::DashMap<String, u32>> = once_cell::sync::Lazy::new(dashmap::DashMap::new);
@@ -32,50 +26,16 @@ static MUTATION_RE: once_cell::sync::Lazy<regex::Regex> = once_cell::sync::Lazy:
     regex::Regex::new(r"(?i)\b(INSERT|UPDATE|DELETE|DROP|CREATE|ALTER|TRUNCATE|REPLACE|GRANT|REVOKE|PRAGMA)\b").unwrap()
 });
 
-pub fn warm_cache_from_turso(entries: Vec<(String, bytes::Bytes, i64)>) {
-    let arc_res = Arc::new(QueryResult { columns: None, rows: None, affected_rows: Some(0) });
-    let config = crate::config::loader::ConfigManager::get();
-    let cache_ttl = config.cache.query_results_ttl.max(1) as u64;
+pub async fn warm_cache_from_turso(entries: Vec<(String, bytes::Bytes, i64)>) {
     let now_unix = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs() as i64;
-    let now_instant = Instant::now();
 
     for (key, bytes, expires_at) in entries {
         let remaining = expires_at - now_unix;
-        if remaining <= 0 {
-            continue;
-        }
-
-        let entry_instant = if remaining >= cache_ttl as i64 {
-            now_instant
-        } else {
-            let elapsed_secs = (cache_ttl as i64 - remaining) as u64;
-            now_instant.checked_sub(Duration::from_secs(elapsed_secs)).unwrap_or(now_instant)
-        };
-
-        if QUERY_CACHE.len() >= 10_000 {
-            break;
-        }
-        QUERY_CACHE.insert(key, (entry_instant, arc_res.clone(), bytes));
-    }
-}
-
-/// Evicts the least recently inserted/accessed cache entry when capacity is reached.
-/// CONTRACT:
-///  - Side effects: Removes oldest entry from QUERY_CACHE if size >= 10,000.
-///  - Idempotent: Yes.
-fn evict_one_if_needed() {
-    if QUERY_CACHE.len() >= 10_000 {
-        // True LRU: Locate key with earliest timestamp instant (Debt #5 fix)
-        let oldest = QUERY_CACHE
-            .iter()
-            .min_by_key(|entry| entry.value().0)
-            .map(|entry| entry.key().clone());
-
-        if let Some(key) = oldest {
-            QUERY_CACHE.remove(&key);
+        if remaining > 0 {
+            crate::cache::CacheEngine::set(&key, bytes, remaining as u64, crate::cache::Durability::MemoryOnly).await;
         }
     }
 }
@@ -129,37 +89,11 @@ impl QueryExecutionPipeline {
         let cache_key = if cache_enabled && !is_mutation_regex {
             let key = format!("{}:{}:{:?}", db_name, sql, params);
 
-            if config.cache.backend == "turso" {
-                if let Some(bytes) = crate::middleware::cache::TursoCache::get_query_cache(&key).await {
-                    return Ok((Arc::new(QueryResult { columns: None, rows: None, affected_rows: Some(0) }), bytes));
-                }
-            } else if config.cache.backend == "hybrid" {
-                // L1 check (DashMap in RAM - ultra fast nanosecond lookup)
-                if let Some(entry) = QUERY_CACHE.get(&key) {
-                    if entry.0.elapsed().as_secs() < cache_ttl {
-                        return Ok((entry.1.clone(), entry.2.clone()));
-                    }
-                }
-                // L2 check (Turso SQLite persistent disk storage)
-                if let Some(bytes) = crate::middleware::cache::TursoCache::get_query_cache(&key).await {
-                    let arc_res = Arc::new(QueryResult { columns: None, rows: None, affected_rows: Some(0) });
-                    evict_one_if_needed();
-                    QUERY_CACHE.insert(
-                        key.clone(),
-                        (
-                            std::time::Instant::now(),
-                            arc_res.clone(),
-                            bytes.clone(),
-                        ),
-                    );
-                    return Ok((arc_res, bytes));
-                }
-            } else {
-                if let Some(entry) = QUERY_CACHE.get(&key) {
-                    if entry.0.elapsed().as_secs() < cache_ttl {
-                        return Ok((entry.1.clone(), entry.2.clone()));
-                    }
-                }
+            if let Some(bytes) = crate::cache::CacheEngine::get(&key).await {
+                return Ok((
+                    Arc::new(QueryResult { columns: None, rows: None, affected_rows: Some(0) }),
+                    bytes,
+                ));
             }
             Some(key)
         } else {
@@ -293,35 +227,11 @@ impl QueryExecutionPipeline {
 
                 if !is_mutation {
                     if let Some(key) = cache_key {
-                        if config.cache.backend == "turso" {
-                            crate::middleware::cache::TursoCache::set_query_cache(&key, &json_bytes, cache_ttl as u32).await;
-                        } else if config.cache.backend == "hybrid" {
-                            // L1 write (synchronous, instantaneous RAM insert)
-                            evict_one_if_needed();
-                            QUERY_CACHE.insert(
-                                key.clone(),
-                                (
-                                    std::time::Instant::now(),
-                                    arc_res.clone(),
-                                    json_bytes.clone(),
-                                ),
-                            );
-                            // L2 write (asynchronous background task, zero latency impact on HTTP client)
-                            let bytes_clone = json_bytes.clone();
-                            tokio::spawn(async move {
-                                crate::middleware::cache::TursoCache::set_query_cache(&key, &bytes_clone, cache_ttl as u32).await;
-                            });
-                        } else {
-                            evict_one_if_needed();
-                            QUERY_CACHE.insert(
-                                key,
-                                (
-                                    std::time::Instant::now(),
-                                    arc_res.clone(),
-                                    json_bytes.clone(),
-                                ),
-                            );
-                        }
+                        let durability = match config.cache.backend.as_str() {
+                            "turso" | "hybrid" => crate::cache::Durability::Journaled,
+                            _ => crate::cache::Durability::MemoryOnly,
+                        };
+                        crate::cache::CacheEngine::set(&key, json_bytes.clone(), cache_ttl, durability).await;
                     }
                 }
                 Ok((arc_res, json_bytes))

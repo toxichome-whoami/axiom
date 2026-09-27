@@ -8,7 +8,6 @@
 
 use crate::api::errors::AxiomError;
 use crate::config::loader::ConfigManager;
-use crate::middleware::cache::MemoryCache;
 use axum::{extract::Request, middleware::Next, response::Response};
 use base64::prelude::*;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -99,16 +98,14 @@ pub async fn rate_limit_middleware(req: Request, next: Next) -> Result<Response,
         )
         .await
     } else {
-        MemoryCache::check_rate_limit(
+        crate::cache::CacheEngine::check_rate_limit(
             &ip_limits_key,
             window,
             ip_limit as u32,
             &ip_penalty_key,
-            config.rate_limit.burst as u32,
             config.rate_limit.penalty_cooldown as u32,
             config.rate_limit.penalty_threshold as u32,
         )
-        .await
     };
 
     if ip_violated {
@@ -138,16 +135,14 @@ pub async fn rate_limit_middleware(req: Request, next: Next) -> Result<Response,
                         let key_rl_key = format!("rl:key:{}", key_name);
                         let key_penalty_key = format!("penalty:key:{}", key_name);
 
-                        let (key_violated, key_count) = MemoryCache::check_rate_limit(
+                        let (key_violated, key_count) = crate::cache::CacheEngine::check_rate_limit(
                             &key_rl_key,
                             window,
                             key_limit as u32,
                             &key_penalty_key,
-                            config.rate_limit.burst as u32,
                             config.rate_limit.penalty_cooldown as u32,
                             config.rate_limit.penalty_threshold as u32,
-                        )
-                        .await;
+                        );
 
                         if key_violated {
                             return Err(AxiomError::new(

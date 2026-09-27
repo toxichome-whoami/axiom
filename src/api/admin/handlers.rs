@@ -560,4 +560,54 @@ pub async fn delete_role(
     })))
 }
 
+/// Returns runtime caching performance statistics and memory usage.
+/// CONTRACT:
+///  - Precondition: Verified admin AuthContext.
+///  - Returns CacheStatsSnapshot JSON payload.
+///  - Idempotent: Yes.
+pub async fn get_cache_stats(
+    Extension(auth): Extension<AuthContext>,
+) -> Result<impl IntoResponse, AxiomError> {
+    if !auth.full_admin {
+        return Err(AxiomError::new(
+            "FORBIDDEN",
+            "Admin privileges required",
+            StatusCode::FORBIDDEN,
+        ));
+    }
+
+    let stats = crate::cache::CacheEngine::stats();
+    Ok(Json(json!({
+        "success": true,
+        "data": stats,
+        "error": Value::Null
+    })))
+}
+
+/// Flushes all entries from L1 RAM cache and persistent L2 disk cache.
+/// CONTRACT:
+///  - Precondition: Verified admin AuthContext.
+///  - Side effects: Clears DashMap and empties SQLite cache table.
+///  - Idempotent: Yes.
+pub async fn flush_cache(
+    Extension(auth): Extension<AuthContext>,
+) -> Result<impl IntoResponse, AxiomError> {
+    if !auth.full_admin {
+        return Err(AxiomError::new(
+            "FORBIDDEN",
+            "Admin privileges required",
+            StatusCode::FORBIDDEN,
+        ));
+    }
+
+    crate::cache::CacheEngine::flush().await;
+    Ok(Json(json!({
+        "success": true,
+        "data": {
+            "message": "All cache entries flushed successfully"
+        },
+        "error": Value::Null
+    })))
+}
+
 

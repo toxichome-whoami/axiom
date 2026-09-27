@@ -69,11 +69,25 @@ pub enum Commands {
         command: DbCommands,
     },
 
+    /// Cache engine inspection and management (via Admin API)
+    Cache {
+        #[command(subcommand)]
+        command: CacheCommands,
+    },
+
     /// Check server health and status
     Health,
 
     /// Diagnose system environment and database reachability
     Doctor,
+}
+
+#[derive(Subcommand, Debug, Clone)]
+pub enum CacheCommands {
+    /// Display cache hit/miss statistics and memory usage
+    Stats,
+    /// Flush all cache entries from L1 RAM and L2 persistent storage
+    Flush,
 }
 
 #[derive(Args, Debug, Default, Clone)]

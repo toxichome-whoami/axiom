@@ -22,6 +22,16 @@ pub async fn start_daemons() {
     let cache_needs_turso = config.cache.backend == "turso" || config.cache.backend == "hybrid";
     let rl_needs_turso = config.rate_limit.backend == "turso";
 
+    // Initialize Unified CacheEngine (L1 RAM + L2 Persistent Storage)
+    let max_l1 = if config.performance.query_cache_size > 0 {
+        config.performance.query_cache_size as usize
+    } else {
+        10_000
+    };
+    if let Err(e) = crate::cache::CacheEngine::init(&config.cache.turso_url, &config.cache.turso_token, max_l1).await {
+        tracing::warn!("Failed to initialize L2 cache persistence: {}", e);
+    }
+
     if cache_needs_turso || rl_needs_turso {
         let url = if cache_needs_turso { &config.cache.turso_url } else { &config.rate_limit.turso_url };
         let token = if cache_needs_turso { &config.cache.turso_token } else { &config.rate_limit.turso_token };
@@ -30,12 +40,22 @@ pub async fn start_daemons() {
         } else if config.cache.backend == "hybrid" && config.cache.enabled && config.cache.query_cache {
             let entries = crate::middleware::cache::TursoCache::get_all_active_query_cache().await;
             let count = entries.len();
-            crate::api::database::handlers::warm_cache_from_turso(entries);
+            crate::api::database::handlers::warm_cache_from_turso(entries).await;
             tracing::info!("Pre-warmed L1 RAM cache with {} entries from Turso L2 storage", count);
         }
     }
 
     let mut tasks = DAEMONS.lock().unwrap();
+
+    // Cache sweep daemon: purges expired entries every 60 seconds
+    let cache_sweep_handle = tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
+        loop {
+            interval.tick().await;
+            crate::cache::CacheEngine::sweep_expired().await;
+        }
+    });
+    tasks.push(cache_sweep_handle);
 
     // Log rotation daemon
     let rotator_handle = LogRotator::start();

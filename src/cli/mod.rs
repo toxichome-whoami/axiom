@@ -14,7 +14,9 @@ use serde_json::{json, Value};
 use std::path::Path;
 
 use crate::cli::client::AdminClient;
-use crate::cli::commands::{Cli, Commands, DbCommands, KeyCommands, RoleCommands, UserCommands};
+use crate::cli::commands::{
+    CacheCommands, Cli, Commands, DbCommands, KeyCommands, RoleCommands, UserCommands,
+};
 use crate::config::loader::ConfigManager;
 use crate::metadata::store::MetadataStore;
 
@@ -61,6 +63,12 @@ pub async fn run() -> Result<bool, Box<dyn std::error::Error>> {
         Some(Commands::Db { command }) => {
             let client = AdminClient::new(&cli.url, cli.key);
             handle_db_command(client, command, cli.json).await?;
+            Ok(true)
+        }
+
+        Some(Commands::Cache { command }) => {
+            let client = AdminClient::new(&cli.url, cli.key);
+            handle_cache_command(client, command, cli.json).await?;
             Ok(true)
         }
 
@@ -382,3 +390,45 @@ async fn run_doctor(json_output: bool) -> Result<(), Box<dyn std::error::Error>>
 
     Ok(())
 }
+
+// ─── Cache Command Handlers ────────────────────────────────────────────────
+
+async fn handle_cache_command(
+    client: AdminClient,
+    command: CacheCommands,
+    json_output: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    match command {
+        CacheCommands::Stats => {
+            let resp = client.get_cache_stats().await?;
+            if json_output {
+                println!("{}", serde_json::to_string_pretty(&resp)?);
+            } else {
+                let data = resp.get("data").cloned().unwrap_or(resp);
+                println!("Axiom Unified Cache Statistics");
+                println!("{:-<42}", "");
+                println!("{:<26} {:<12}", "METRIC", "VALUE");
+                println!("{:-<42}", "");
+                println!("{:<26} {:<12}", "L1 Cache Hits (RAM)", data.get("hits_l1").and_then(|v| v.as_u64()).unwrap_or(0));
+                println!("{:<26} {:<12}", "L2 Cache Hits (Disk)", data.get("hits_l2").and_then(|v| v.as_u64()).unwrap_or(0));
+                println!("{:<26} {:<12}", "Cache Misses", data.get("misses").and_then(|v| v.as_u64()).unwrap_or(0));
+                println!("{:<26} {:<12}", "Evictions (LRU)", data.get("evictions").and_then(|v| v.as_u64()).unwrap_or(0));
+                println!("{:<26} {:<12}", "Active L1 Entries", data.get("entries_count").and_then(|v| v.as_u64()).unwrap_or(0));
+                let hit_rate = data.get("hit_rate_pct").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                println!("{:<26} {:.2}%", "Hit Rate", hit_rate);
+                let mem = data.get("memory_bytes_approx").and_then(|v| v.as_u64()).unwrap_or(0);
+                println!("{:<26} {} bytes", "Approx Memory", mem);
+            }
+        }
+        CacheCommands::Flush => {
+            let resp = client.flush_cache().await?;
+            if json_output {
+                println!("{}", serde_json::to_string_pretty(&resp)?);
+            } else {
+                println!("All cache entries flushed successfully.");
+            }
+        }
+    }
+    Ok(())
+}
+

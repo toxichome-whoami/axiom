@@ -26,4 +26,6 @@ pub fn get_router() -> Router {
         .route("/roles/:name", patch(update_role).delete(delete_role))
         .route("/databases", get(list_databases).post(add_database))
         .route("/databases/:alias", delete(delete_database))
+        .route("/cache/stats", get(get_cache_stats))
+        .route("/cache/flush", post(flush_cache))
 }

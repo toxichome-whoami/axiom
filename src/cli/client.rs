@@ -166,4 +166,14 @@ impl AdminClient {
         let endpoint = format!("/admin/v1/databases/{}", alias);
         self.request(reqwest::Method::DELETE, &endpoint, None).await
     }
+
+    /// Fetches cache performance metrics and memory usage.
+    pub async fn get_cache_stats(&self) -> Result<Value, String> {
+        self.request(reqwest::Method::GET, "/admin/v1/cache/stats", None).await
+    }
+
+    /// Flushes all entries from L1 RAM and L2 persistent cache.
+    pub async fn flush_cache(&self) -> Result<Value, String> {
+        self.request(reqwest::Method::POST, "/admin/v1/cache/flush", None).await
+    }
 }
