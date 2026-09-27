@@ -41,7 +41,7 @@ async function route() {
       return;
     }
   } catch {
-    // If setup check fails, continue
+    // If setup check fails, continue to normal authentication pipeline
   }
 
   // Handle Login view
@@ -61,11 +61,11 @@ async function route() {
 
   // Render Dashboard Shell
   app.innerHTML = `
-    <div class="min-h-screen bg-background flex flex-col">
+    <div class="min-h-screen bg-background flex flex-col selection:bg-accent-orange selection:text-white">
       <div id="navbar-container"></div>
       <div class="flex-1 flex overflow-hidden">
         <div id="sidebar-container"></div>
-        <main id="main-content" class="flex-1 overflow-y-auto bg-background"></main>
+        <main id="main-content" class="flex-1 overflow-y-auto bg-background focus:outline-none"></main>
       </div>
     </div>
   `;
@@ -76,8 +76,10 @@ async function route() {
   };
 
   const closeSidebar = () => {
-    isMobileSidebarOpen = false;
-    updateSidebar();
+    if (isMobileSidebarOpen) {
+      isMobileSidebarOpen = false;
+      updateSidebar();
+    }
   };
 
   const updateSidebar = () => {
@@ -93,6 +95,7 @@ async function route() {
   updateSidebar();
 
   const mainContent = document.getElementById('main-content') as HTMLElement;
+  mainContent.scrollTop = 0;
 
   // Dispatch page view
   switch (routeName) {
@@ -128,6 +131,18 @@ async function route() {
       break;
   }
 }
+
+// Global escape key handler for drawer
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && isMobileSidebarOpen) {
+    isMobileSidebarOpen = false;
+    const sidebarContainer = document.getElementById('sidebar-container');
+    if (sidebarContainer) {
+      const routeName = (window.location.hash || '#/overview').replace('#/', '').split('?')[0] || 'overview';
+      sidebarContainer.innerHTML = renderSidebar(routeName, false, () => {});
+    }
+  }
+});
 
 window.addEventListener('hashchange', () => {
   isMobileSidebarOpen = false;

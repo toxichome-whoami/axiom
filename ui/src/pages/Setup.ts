@@ -5,6 +5,7 @@
 
 import { api } from '../api';
 import { icon } from '../components/Icons';
+import { toast } from '../components/Toast';
 
 export function renderSetup(container: HTMLElement) {
   let currentStep = 1;
@@ -18,12 +19,12 @@ export function renderSetup(container: HTMLElement) {
   function render() {
     container.innerHTML = `
       <div class="min-h-screen flex items-center justify-center p-4 bg-background">
-        <div class="w-full max-w-lg bg-surface border border-borderDefault rounded-lg p-6 sm:p-8 shadow-sm">
+        <div class="w-full max-w-lg bg-surface border border-surfaceBorder rounded-lg p-6 sm:p-8 shadow-xl">
           
           <!-- Stepper Indicator -->
           <div class="flex items-center justify-between mb-8 border-b border-surfaceBorder pb-4">
-            <div class="flex items-center space-x-2">
-              <div class="w-7 h-7 rounded-md bg-accent-orange text-white flex items-center justify-center font-bold text-xs">
+            <div class="flex items-center space-x-2.5">
+              <div class="w-7 h-7 rounded-md bg-accent-orange text-white flex items-center justify-center font-bold text-xs shadow-xs">
                 AX
               </div>
               <span class="text-sm font-semibold text-primary">Axiom Setup Wizard</span>
@@ -33,7 +34,7 @@ export function renderSetup(container: HTMLElement) {
             </div>
           </div>
 
-          <div id="setup-error" class="hidden mb-4 p-3 rounded-md bg-accent-danger/10 border border-accent-danger/30 text-xs text-red-400"></div>
+          <div id="setup-error" class="hidden mb-4 p-3 rounded-md bg-rose-500/10 border border-rose-500/20 text-xs text-rose-400"></div>
 
           ${renderStepContent()}
 
@@ -51,7 +52,7 @@ export function renderSetup(container: HTMLElement) {
           <div class="space-y-4">
             <h2 class="text-lg font-semibold text-primary">Welcome to Axiom Gateway</h2>
             <p class="text-xs text-secondary leading-relaxed">
-              Axiom is an enterprise-grade SQL API gateway that unifies database connectivity, 
+              Axiom is a high-performance SQL API gateway that unifies database pooling, 
               RBAC authorization, high-speed L1/L2 caching, and Model Context Protocol (MCP) into a single binary.
             </p>
             <div class="bg-background border border-surfaceBorder rounded-md p-4 space-y-2 text-xs text-secondary">
@@ -59,14 +60,14 @@ export function renderSetup(container: HTMLElement) {
                 ${icon('shield', 'w-4 h-4 text-accent-orange')}
                 <span>What we will configure:</span>
               </div>
-              <ul class="list-disc pl-5 space-y-1 text-secondary">
-                <li>Create the primary human administrative account.</li>
-                <li>Connect your first SQL database (PostgreSQL, MySQL, SQLite, MSSQL, or ClickHouse).</li>
-                <li>Initialize the cryptographic metadata store (<code class="text-primary font-mono">axiom.db</code>).</li>
+              <ul class="list-disc pl-5 space-y-1.5 text-secondary pt-1">
+                <li>Create the primary administrative owner account.</li>
+                <li>Connect your first upstream SQL database (PostgreSQL, MySQL, SQLite, MSSQL, ClickHouse).</li>
+                <li>Bootstrap the persistent cryptographic metadata store (<code class="text-primary font-mono">axiom.db</code>).</li>
               </ul>
             </div>
-            <button id="step1-next" class="w-full py-2.5 px-4 bg-accent-orange hover:bg-orange-600 text-white text-sm font-medium rounded-md transition-colors">
-              Begin Configuration
+            <button id="step1-next" class="w-full py-2.5 px-4 bg-accent-orange hover:bg-orange-600 text-white text-sm font-medium rounded-md transition-colors shadow-xs">
+              Begin Configuration &rarr;
             </button>
           </div>
         `;
@@ -75,8 +76,8 @@ export function renderSetup(container: HTMLElement) {
         return `
           <form id="step2-form" class="space-y-4">
             <div>
-              <h2 class="text-lg font-semibold text-primary">Create Primary Admin</h2>
-              <p class="text-xs text-secondary">This account manages the Web UI console and operator policies.</p>
+              <h2 class="text-lg font-semibold text-primary">Create Primary Administrator</h2>
+              <p class="text-xs text-secondary mt-0.5">This account owns and manages the Web UI console and operator policies.</p>
             </div>
 
             <div>
@@ -104,8 +105,8 @@ export function renderSetup(container: HTMLElement) {
               />
             </div>
 
-            <button type="submit" id="step2-next" class="w-full py-2.5 px-4 bg-accent-orange hover:bg-orange-600 text-white text-sm font-medium rounded-md transition-colors">
-              Continue to Database Setup
+            <button type="submit" id="step2-next" class="w-full py-2.5 px-4 bg-accent-orange hover:bg-orange-600 text-white text-sm font-medium rounded-md transition-colors shadow-xs">
+              Continue to Database Setup &rarr;
             </button>
           </form>
         `;
@@ -115,7 +116,7 @@ export function renderSetup(container: HTMLElement) {
           <form id="step3-form" class="space-y-4">
             <div>
               <h2 class="text-lg font-semibold text-primary">Connect First Database</h2>
-              <p class="text-xs text-secondary">Register a target database connection. You can also skip this and add databases later.</p>
+              <p class="text-xs text-secondary mt-0.5">Register an upstream SQL database pool. You can also skip this and add databases later.</p>
             </div>
 
             <div>
@@ -169,7 +170,7 @@ export function renderSetup(container: HTMLElement) {
               <button type="button" id="step3-skip" class="flex-1 py-2.5 px-4 bg-surfaceHover hover:bg-surfaceBorder text-secondary hover:text-primary text-sm font-medium rounded-md transition-colors">
                 Skip for Now
               </button>
-              <button type="submit" id="step3-next" class="flex-1 py-2.5 px-4 bg-accent-orange hover:bg-orange-600 text-white text-sm font-medium rounded-md transition-colors">
+              <button type="submit" id="step3-next" class="flex-1 py-2.5 px-4 bg-accent-orange hover:bg-orange-600 text-white text-sm font-medium rounded-md transition-colors shadow-xs">
                 Save & Continue
               </button>
             </div>
@@ -189,13 +190,13 @@ export function renderSetup(container: HTMLElement) {
 
             <div class="bg-background border border-surfaceBorder rounded-md p-4 space-y-2 text-xs">
               <div class="text-secondary font-medium">Session Token:</div>
-              <div class="flex items-center justify-between bg-surface p-2 rounded border border-surfaceBorder font-mono text-[11px] text-primary overflow-x-auto">
-                <span>${sessionToken || 'Active Session Established'}</span>
+              <div class="flex items-center justify-between bg-surface p-2.5 rounded border border-surfaceBorder font-mono text-[11px] text-primary overflow-x-auto">
+                <span class="truncate">${sessionToken || 'Active Session Established'}</span>
               </div>
             </div>
 
-            <button id="step4-finish" class="w-full py-2.5 px-4 bg-accent-orange hover:bg-orange-600 text-white text-sm font-medium rounded-md transition-colors">
-              Launch Dashboard
+            <button id="step4-finish" class="w-full py-2.5 px-4 bg-accent-orange hover:bg-orange-600 text-white text-sm font-medium rounded-md transition-colors shadow-xs">
+              Launch Gateway Dashboard &rarr;
             </button>
           </div>
         `;
@@ -213,6 +214,8 @@ export function renderSetup(container: HTMLElement) {
         render();
       });
     } else if (currentStep === 2) {
+      (document.getElementById('admin-user') as HTMLInputElement)?.focus();
+
       document.getElementById('step2-form')?.addEventListener('submit', async (e) => {
         e.preventDefault();
         adminUsername = (document.getElementById('admin-user') as HTMLInputElement).value.trim();
@@ -227,6 +230,7 @@ export function renderSetup(container: HTMLElement) {
           sessionToken = res.token;
           localStorage.setItem('axiom_session_token', res.token);
           localStorage.setItem('axiom_username', res.username);
+          toast.success('Admin account created');
           currentStep = 3;
           render();
         } catch (err: unknown) {
@@ -237,9 +241,12 @@ export function renderSetup(container: HTMLElement) {
         }
       });
     } else if (currentStep === 3) {
+      (document.getElementById('db-alias') as HTMLInputElement)?.focus();
+
       document.getElementById('step3-skip')?.addEventListener('click', async () => {
         try {
           await api.completeSetup();
+          toast.info('Database setup skipped');
           currentStep = 4;
           render();
         } catch {
@@ -257,6 +264,7 @@ export function renderSetup(container: HTMLElement) {
         if (dbAlias && dbUrl) {
           try {
             await api.setupDatabase({ alias: dbAlias, url: dbUrl, engine: dbEngine });
+            toast.success(`Connected database '${dbAlias}'`);
           } catch (err: unknown) {
             errorBox.textContent = err instanceof Error ? err.message : 'Failed to register database';
             errorBox.classList.remove('hidden');

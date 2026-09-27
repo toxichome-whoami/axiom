@@ -1,10 +1,11 @@
 /*
  * Managed SQL database connection registry interface.
- * Supports adding, inspecting, and deleting database pools at runtime.
+ * Supports adding, inspecting, live health-testing, and deleting database pools at runtime.
  */
 
 import { api, DatabaseRecord } from '../api';
 import { icon } from '../components/Icons';
+import { toast, confirmDialog } from '../components/Toast';
 
 export async function renderDatabases(container: HTMLElement) {
   container.innerHTML = `
@@ -12,15 +13,15 @@ export async function renderDatabases(container: HTMLElement) {
       <div class="flex items-center justify-between">
         <div>
           <h1 class="text-xl font-semibold text-primary">Databases</h1>
-          <p class="text-xs text-secondary mt-0.5">Manage live database connection pools and dialects.</p>
+          <p class="text-xs text-secondary mt-0.5">Manage live connection pools, upstream dialects, and health probes.</p>
         </div>
-        <button id="open-add-db-modal" class="flex items-center space-x-1.5 px-3 py-1.5 bg-accent-orange hover:bg-orange-600 text-white rounded-md text-xs font-medium transition-colors">
+        <button id="open-add-db-modal" class="flex items-center space-x-1.5 px-3 py-1.5 bg-accent-orange hover:bg-orange-600 text-white rounded-md text-xs font-medium transition-colors shadow-xs">
           ${icon('plus', 'w-3.5 h-3.5')}
           <span>Connect Database</span>
         </button>
       </div>
 
-      <!-- Databases Table -->
+      <!-- Databases Table Card -->
       <div class="bg-surface border border-surfaceBorder rounded-lg overflow-hidden shadow-sm">
         <div class="overflow-x-auto">
           <table class="w-full text-left text-xs text-secondary">
@@ -29,7 +30,7 @@ export async function renderDatabases(container: HTMLElement) {
                 <th class="py-3 px-4">Alias</th>
                 <th class="py-3 px-4">Engine Dialect</th>
                 <th class="py-3 px-4">Pool Bounds</th>
-                <th class="py-3 px-4">Created</th>
+                <th class="py-3 px-4">Registered</th>
                 <th class="py-3 px-4 text-right">Actions</th>
               </tr>
             </thead>
@@ -44,26 +45,35 @@ export async function renderDatabases(container: HTMLElement) {
     </div>
 
     <!-- Add Database Modal -->
-    <div id="add-db-modal" class="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 hidden">
-      <div class="bg-surface border border-surfaceBorder rounded-lg max-w-md w-full p-6 space-y-4 shadow-lg">
+    <div id="add-db-modal" class="fixed inset-0 bg-black/70 backdrop-blur-xs z-50 flex items-center justify-center p-4 hidden">
+      <div class="bg-surface border border-surfaceBorder rounded-lg max-w-md w-full p-6 space-y-4 shadow-xl">
         <div class="flex items-center justify-between pb-2 border-b border-surfaceBorder">
-          <h2 class="text-sm font-semibold text-primary">Connect New Database</h2>
-          <button id="close-add-db-modal" class="text-secondary hover:text-primary">
+          <h2 class="text-sm font-semibold text-primary">Connect Upstream Database</h2>
+          <button id="close-add-db-modal" class="text-secondary hover:text-primary p-1">
             ${icon('x', 'w-4 h-4')}
           </button>
         </div>
 
-        <div id="modal-error" class="hidden p-2 rounded bg-accent-danger/10 border border-accent-danger/30 text-xs text-red-400"></div>
+        <div id="modal-error" class="hidden p-2 rounded bg-rose-500/10 border border-rose-500/20 text-xs text-rose-400"></div>
 
-        <form id="add-db-form" class="space-y-3 text-xs">
+        <form id="add-db-form" class="space-y-3.5 text-xs">
           <div>
-            <label class="block text-secondary mb-1">Database Alias</label>
-            <input id="new-db-alias" type="text" required placeholder="e.g. analytics_db" class="w-full px-3 py-2 bg-background border border-surfaceBorder rounded-md text-primary focus:border-focusRing focus:outline-none" />
+            <label for="new-db-alias" class="block text-secondary mb-1">Database Alias</label>
+            <input 
+              id="new-db-alias" 
+              type="text" 
+              required 
+              placeholder="e.g. analytics_db" 
+              class="w-full px-3 py-2 bg-background border border-surfaceBorder rounded-md text-primary focus:border-focusRing focus:outline-none" 
+            />
           </div>
 
           <div>
-            <label class="block text-secondary mb-1">Engine Dialect</label>
-            <select id="new-db-engine" class="w-full px-3 py-2 bg-background border border-surfaceBorder rounded-md text-primary focus:border-focusRing focus:outline-none">
+            <label for="new-db-engine" class="block text-secondary mb-1">Engine Dialect</label>
+            <select 
+              id="new-db-engine" 
+              class="w-full px-3 py-2 bg-background border border-surfaceBorder rounded-md text-primary focus:border-focusRing focus:outline-none"
+            >
               <option value="postgres">PostgreSQL</option>
               <option value="mysql">MySQL / MariaDB</option>
               <option value="sqlite">SQLite / LibSQL</option>
@@ -73,24 +83,46 @@ export async function renderDatabases(container: HTMLElement) {
           </div>
 
           <div>
-            <label class="block text-secondary mb-1">Connection URL</label>
-            <input id="new-db-url" type="text" required placeholder="postgres://user:pass@localhost:5432/dbname" class="w-full px-3 py-2 bg-background border border-surfaceBorder rounded-md text-primary font-mono text-xs focus:border-focusRing focus:outline-none" />
+            <label for="new-db-url" class="block text-secondary mb-1">Connection URL</label>
+            <input 
+              id="new-db-url" 
+              type="text" 
+              required 
+              placeholder="postgres://user:pass@localhost:5432/dbname" 
+              class="w-full px-3 py-2 bg-background border border-surfaceBorder rounded-md text-primary font-mono text-xs focus:border-focusRing focus:outline-none" 
+            />
           </div>
 
           <div class="grid grid-cols-2 gap-3">
             <div>
-              <label class="block text-secondary mb-1">Min Pool</label>
-              <input id="new-db-min" type="number" value="1" min="1" class="w-full px-3 py-2 bg-background border border-surfaceBorder rounded-md text-primary focus:border-focusRing focus:outline-none" />
+              <label for="new-db-min" class="block text-secondary mb-1">Min Pool</label>
+              <input 
+                id="new-db-min" 
+                type="number" 
+                value="1" 
+                min="1" 
+                class="w-full px-3 py-2 bg-background border border-surfaceBorder rounded-md text-primary focus:border-focusRing focus:outline-none" 
+              />
             </div>
             <div>
-              <label class="block text-secondary mb-1">Max Pool</label>
-              <input id="new-db-max" type="number" value="10" min="1" class="w-full px-3 py-2 bg-background border border-surfaceBorder rounded-md text-primary focus:border-focusRing focus:outline-none" />
+              <label for="new-db-max" class="block text-secondary mb-1">Max Pool</label>
+              <input 
+                id="new-db-max" 
+                type="number" 
+                value="10" 
+                min="1" 
+                class="w-full px-3 py-2 bg-background border border-surfaceBorder rounded-md text-primary focus:border-focusRing focus:outline-none" 
+              />
             </div>
           </div>
 
-          <div class="flex justify-end space-x-2 pt-3">
-            <button type="button" id="cancel-add-db" class="px-3 py-1.5 bg-surfaceHover hover:bg-surfaceBorder text-secondary rounded-md">Cancel</button>
-            <button type="submit" id="submit-add-db" class="px-3 py-1.5 bg-accent-orange hover:bg-orange-600 text-white font-medium rounded-md">Connect</button>
+          <div class="flex justify-end space-x-2 pt-3 border-t border-surfaceBorder">
+            <button type="button" id="cancel-add-db" class="px-3 py-1.5 bg-surfaceHover hover:bg-surfaceBorder text-secondary hover:text-primary rounded-md transition-colors">
+              Cancel
+            </button>
+            <button type="submit" id="submit-add-db" class="px-3 py-1.5 bg-accent-orange hover:bg-orange-600 text-white font-medium rounded-md transition-colors">
+              Connect Pool
+            </button>
           </div>
         </form>
       </div>
@@ -107,8 +139,8 @@ export async function renderDatabases(container: HTMLElement) {
       if (dbs.length === 0) {
         tbody.innerHTML = `
           <tr>
-            <td colspan="5" class="py-8 text-center text-secondary">
-              No databases connected yet. Click "Connect Database" to add one.
+            <td colspan="5" class="py-12 text-center text-secondary">
+              No databases connected yet. Click "Connect Database" to register your first pool.
             </td>
           </tr>
         `;
@@ -116,49 +148,107 @@ export async function renderDatabases(container: HTMLElement) {
       }
 
       tbody.innerHTML = dbs.map((db) => `
-        <tr class="hover:bg-surfaceHover/50 transition-colors">
-          <td class="py-3 px-4 font-semibold text-primary">${db.alias}</td>
+        <tr class="hover:bg-surfaceHover/40 transition-colors">
+          <td class="py-3 px-4 font-semibold text-primary font-mono">${db.alias}</td>
           <td class="py-3 px-4">
             <span class="px-2 py-0.5 rounded text-[11px] font-mono uppercase bg-accent-blue/10 text-accent-blue border border-accent-blue/20">
               ${db.engine}
             </span>
           </td>
-          <td class="py-3 px-4 text-secondary">${db.pool_min} / ${db.pool_max} conns</td>
+          <td class="py-3 px-4 text-secondary">${db.pool_min} – ${db.pool_max} conns</td>
           <td class="py-3 px-4 text-secondary">${new Date(db.created_at * 1000).toLocaleDateString()}</td>
           <td class="py-3 px-4 text-right">
-            <button data-delete-alias="${db.alias}" class="p-1 text-secondary hover:text-red-400 rounded hover:bg-surfaceHover transition-colors" title="Delete connection">
-              ${icon('trash', 'w-4 h-4')}
-            </button>
+            <div class="inline-flex items-center space-x-1">
+              <button 
+                data-test-alias="${db.alias}" 
+                class="px-2 py-1 text-secondary hover:text-emerald-400 rounded hover:bg-surfaceHover transition-colors flex items-center space-x-1" 
+                title="Test live database connectivity"
+              >
+                ${icon('activity', 'w-3.5 h-3.5')}
+                <span class="text-[11px] font-sans">Test</span>
+              </button>
+              <button 
+                data-delete-alias="${db.alias}" 
+                class="p-1 text-secondary hover:text-rose-400 rounded hover:bg-surfaceHover transition-colors" 
+                title="Disconnect database pool"
+              >
+                ${icon('trash', 'w-4 h-4')}
+              </button>
+            </div>
           </td>
         </tr>
       `).join('');
 
-      tbody.querySelectorAll('[data-delete-alias]').forEach((btn) => {
+      // Bind Test Connection buttons
+      tbody.querySelectorAll('[data-test-alias]').forEach((btn) => {
         btn.addEventListener('click', async (e) => {
-          const alias = (e.currentTarget as HTMLElement).getAttribute('data-delete-alias');
-          if (alias && confirm(`Are you sure you want to disconnect database '${alias}'?`)) {
-            try {
-              await api.deleteDatabase(alias);
-              loadDatabases();
-            } catch (err: unknown) {
-              alert(err instanceof Error ? err.message : 'Failed to delete');
-            }
+          const alias = (e.currentTarget as HTMLElement).getAttribute('data-test-alias');
+          if (!alias) return;
+          const button = e.currentTarget as HTMLButtonElement;
+          button.disabled = true;
+          button.innerHTML = `${icon('refresh', 'w-3.5 h-3.5 animate-spin')} <span class="text-[11px] font-sans">Testing...</span>`;
+
+          try {
+            const res = await api.testDatabase(alias);
+            toast.success(`Database '${alias}' connected (${res.dialect})`);
+          } catch (err: unknown) {
+            toast.error(err instanceof Error ? err.message : `Connection test failed for '${alias}'`);
+          } finally {
+            button.disabled = false;
+            button.innerHTML = `${icon('activity', 'w-3.5 h-3.5')} <span class="text-[11px] font-sans">Test</span>`;
           }
         });
       });
+
+      // Bind Delete buttons
+      tbody.querySelectorAll('[data-delete-alias]').forEach((btn) => {
+        btn.addEventListener('click', (e) => {
+          const alias = (e.currentTarget as HTMLElement).getAttribute('data-delete-alias');
+          if (!alias) return;
+
+          confirmDialog({
+            title: 'Disconnect Database',
+            message: `Are you sure you want to disconnect database '${alias}'? In-flight queries will be closed.`,
+            confirmText: 'Disconnect',
+            danger: true,
+            onConfirm: async () => {
+              try {
+                await api.deleteDatabase(alias);
+                toast.success(`Database '${alias}' disconnected`);
+                loadDatabases();
+              } catch (err: unknown) {
+                toast.error(err instanceof Error ? err.message : 'Failed to disconnect database');
+              }
+            },
+          });
+        });
+      });
     } catch {
-      tbody.innerHTML = `<tr><td colspan="5" class="py-8 text-center text-red-400">Failed to load databases.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="5" class="py-8 text-center text-rose-400">Failed to load registered databases.</td></tr>`;
     }
   }
 
-  document.getElementById('open-add-db-modal')?.addEventListener('click', () => {
+  const closeModal = () => modal.classList.add('hidden');
+  const openModal = () => {
     modalError.classList.add('hidden');
     modal.classList.remove('hidden');
-  });
+    (document.getElementById('new-db-alias') as HTMLInputElement)?.focus();
+  };
 
-  const closeModal = () => modal.classList.add('hidden');
+  document.getElementById('open-add-db-modal')?.addEventListener('click', openModal);
   document.getElementById('close-add-db-modal')?.addEventListener('click', closeModal);
   document.getElementById('cancel-add-db')?.addEventListener('click', closeModal);
+
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) closeModal();
+  });
+
+  const onKey = (e: KeyboardEvent) => {
+    if (e.key === 'Escape' && !modal.classList.contains('hidden')) {
+      closeModal();
+    }
+  };
+  window.addEventListener('keydown', onKey);
 
   document.getElementById('add-db-form')?.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -175,6 +265,7 @@ export async function renderDatabases(container: HTMLElement) {
 
     try {
       await api.addDatabase({ alias, engine, url, pool_min, pool_max });
+      toast.success(`Database '${alias}' connected successfully`);
       closeModal();
       loadDatabases();
     } catch (err: unknown) {
@@ -182,7 +273,7 @@ export async function renderDatabases(container: HTMLElement) {
       modalError.classList.remove('hidden');
     } finally {
       submitBtn.disabled = false;
-      submitBtn.textContent = 'Connect';
+      submitBtn.textContent = 'Connect Pool';
     }
   });
 

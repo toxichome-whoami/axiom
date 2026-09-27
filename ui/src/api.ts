@@ -237,6 +237,27 @@ class ApiClient {
     return this.request<AuditRecord[]>(`/admin/v1/audit?limit=${limit}&offset=${offset}`);
   }
 
+  async testDatabase(alias: string): Promise<{ alias: string; status: string; dialect: string; message: string }> {
+    return this.request<{ alias: string; status: string; dialect: string; message: string }>(
+      `/admin/v1/databases/${encodeURIComponent(alias)}/test`
+    );
+  }
+
+  async rotateKey(name: string): Promise<{ name: string; token: string; secret: string; note: string }> {
+    return this.request<{ name: string; token: string; secret: string; note: string }>(
+      `/admin/v1/keys/${encodeURIComponent(name)}/rotate`,
+      { method: 'POST' }
+    );
+  }
+
+  async reloadMetadata(): Promise<{ message: string }> {
+    return this.request<{ message: string }>('/admin/v1/reload', { method: 'POST' });
+  }
+
+  async getHealth(): Promise<{ status: string; version: string }> {
+    return this.request<{ status: string; version: string }>('/health');
+  }
+
   async getRawMetrics(): Promise<string> {
     return this.request<string>('/metrics');
   }

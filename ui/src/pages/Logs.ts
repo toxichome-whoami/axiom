@@ -1,10 +1,11 @@
 /*
- * Live-tail structured logs viewer with filters and auto-scroll controls.
- * Adheres to Section 15 of AXIOM_MASTER_PLAN.md.
+ * Live-tail structured logs viewer with search filters and auto-scroll controls.
+ * Adheres to Section 15 of AXIOM_MASTER_PLAN.md with professional high-density layout.
  */
 
 import { api, AuditRecord } from '../api';
 import { icon } from '../components/Icons';
+import { toast } from '../components/Toast';
 
 export async function renderLogs(container: HTMLElement) {
   let isTailing = true;
@@ -40,8 +41,8 @@ export async function renderLogs(container: HTMLElement) {
           <input 
             id="log-search-input" 
             type="text" 
-            placeholder="Search log messages..." 
-            class="px-3 py-1.5 bg-surface border border-surfaceBorder rounded-md text-xs text-primary focus:outline-none focus:border-focusRing w-48 sm:w-64"
+            placeholder="Search events or targets..." 
+            class="px-3 py-1.5 bg-surface border border-surfaceBorder rounded-md text-xs text-primary focus:outline-none focus:border-focusRing w-48 sm:w-60"
           />
 
           <!-- Pause / Resume Button -->
@@ -51,26 +52,24 @@ export async function renderLogs(container: HTMLElement) {
           </button>
 
           <!-- Clear Console -->
-          <button id="clear-logs-btn" class="p-1.5 bg-surface hover:bg-surfaceHover border border-surfaceBorder rounded-md text-secondary hover:text-primary transition-colors" title="Clear console">
+          <button id="clear-logs-btn" class="p-1.5 bg-surface hover:bg-surfaceHover border border-surfaceBorder rounded-md text-secondary hover:text-primary transition-colors" title="Clear buffer">
             ${icon('trash', 'w-4 h-4')}
           </button>
         </div>
       </div>
 
-      <!-- Log Terminal Display -->
-      <div class="bg-[#121212] border border-surfaceBorder rounded-lg overflow-hidden shadow-inner flex flex-col font-mono text-xs">
-        <div class="bg-surface px-4 py-2 border-b border-surfaceBorder flex items-center justify-between text-[11px] text-secondary">
+      <!-- Log Terminal Display Card -->
+      <div class="bg-[#141416] border border-surfaceBorder rounded-lg overflow-hidden shadow-sm flex flex-col font-mono text-xs">
+        <div class="bg-surface px-4 py-2.5 border-b border-surfaceBorder flex items-center justify-between text-[11px] text-secondary">
           <div class="flex items-center space-x-2">
-            <span class="w-2.5 h-2.5 rounded-full bg-rose-500/80 inline-block"></span>
-            <span class="w-2.5 h-2.5 rounded-full bg-amber-500/80 inline-block"></span>
-            <span class="w-2.5 h-2.5 rounded-full bg-emerald-500/80 inline-block"></span>
-            <span class="ml-2 font-semibold text-primary">axiom-gateway.log</span>
+            ${icon('file-text', 'w-3.5 h-3.5 text-accent-orange')}
+            <span class="font-medium text-primary">axiom-event-stream</span>
           </div>
           <span id="log-count-indicator">0 events</span>
         </div>
 
-        <div id="log-console-body" class="p-4 space-y-1.5 overflow-y-auto max-h-[640px] min-h-[380px] divide-y divide-white/5">
-          <div class="text-secondary py-8 text-center">Connecting to event stream...</div>
+        <div id="log-console-body" class="p-3 sm:p-4 space-y-1 overflow-y-auto max-h-[640px] min-h-[380px] divide-y divide-white/5">
+          <div class="text-secondary py-12 text-center font-sans">Connecting to live event stream...</div>
         </div>
       </div>
     </div>
@@ -91,11 +90,11 @@ export async function renderLogs(container: HTMLElement) {
 
     const countIndicator = document.getElementById('log-count-indicator');
     if (countIndicator) {
-      countIndicator.textContent = `${filtered.length} events logged`;
+      countIndicator.textContent = `${filtered.length} events`;
     }
 
     if (filtered.length === 0) {
-      consoleBody.innerHTML = `<div class="text-secondary py-8 text-center">No log events matching active filter.</div>`;
+      consoleBody.innerHTML = `<div class="text-secondary py-12 text-center font-sans">No log events matching active filter.</div>`;
       return;
     }
 
@@ -107,15 +106,15 @@ export async function renderLogs(container: HTMLElement) {
         badgeClass = 'text-rose-400 bg-rose-500/10 border-rose-500/20';
       }
 
-      const timeStr = new Date(l.timestamp * 1000).toISOString().replace('T', ' ').substring(0, 19);
+      const timeStr = new Date(l.timestamp * 1000).toISOString().replace('T', ' ').substring(11, 19);
 
       return `
-        <div class="pt-1.5 flex items-start space-x-3 text-[11px] leading-relaxed hover:bg-white/[0.02] px-1 rounded">
-          <span class="text-secondary/70 shrink-0 select-none">${timeStr}</span>
+        <div class="pt-1 flex items-start space-x-2.5 text-[11px] leading-relaxed hover:bg-white/[0.02] px-1 rounded transition-colors">
+          <span class="text-secondary/60 shrink-0 select-none">${timeStr}</span>
           <span class="px-1.5 py-0.2 rounded text-[10px] uppercase font-bold border shrink-0 ${badgeClass}">${l.level}</span>
           <span class="text-accent-blue font-semibold shrink-0">[${l.target}]</span>
           <span class="text-primary flex-1 break-all">${l.message}</span>
-          ${l.details ? `<span class="text-secondary/80 text-[10px] shrink-0 truncate max-w-xs">{${l.details}}</span>` : ''}
+          ${l.details ? `<span class="text-secondary/70 text-[10px] shrink-0 truncate max-w-xs">{${l.details}}</span>` : ''}
         </div>
       `;
     }).join('');
@@ -130,7 +129,7 @@ export async function renderLogs(container: HTMLElement) {
       const records: AuditRecord[] = await api.getAuditLog(100, 0);
       logs = records.map((r) => {
         let level = 'INFO';
-        if (r.action.includes('delete') || r.action.includes('fail')) {
+        if (r.action.includes('delete') || r.action.includes('fail') || r.action.includes('rotate')) {
           level = 'WARN';
         } else if (r.action.includes('ban') || r.action.includes('error')) {
           level = 'ERROR';
@@ -141,18 +140,17 @@ export async function renderLogs(container: HTMLElement) {
           timestamp: r.timestamp,
           level,
           target: r.target,
-          message: `${r.actor} performed ${r.action}`,
+          message: `${r.actor} executed ${r.action}`,
           details: r.details,
         };
       });
 
       renderLogEntries();
     } catch {
-      // Background poll silently retries
+      // Retried on poll interval
     }
   }
 
-  // Bind controls
   document.getElementById('log-level-filter')?.addEventListener('change', (e) => {
     levelFilter = (e.target as HTMLSelectElement).value;
     renderLogEntries();
@@ -175,27 +173,28 @@ export async function renderLogs(container: HTMLElement) {
       if (btnText) btnText.textContent = 'Live Tail';
       fetchLatestLogs();
       pollTimer = setInterval(fetchLatestLogs, 2500);
+      toast.info('Log live-tail resumed');
     } else {
       indicator?.classList.remove('bg-emerald-500', 'animate-pulse');
       indicator?.classList.add('bg-amber-500');
       if (btnText) btnText.textContent = 'Paused';
       if (pollTimer) clearInterval(pollTimer);
+      toast.info('Log live-tail paused');
     }
   });
 
   document.getElementById('clear-logs-btn')?.addEventListener('click', () => {
     logs = [];
     renderLogEntries();
+    toast.info('Log buffer cleared');
   });
 
-  // Initial fetch and start live polling
   await fetchLatestLogs();
   pollTimer = setInterval(fetchLatestLogs, 2500);
 
-  // Clear timer when leaving route
-  const handleNav = () => {
+  const cleanup = () => {
     if (pollTimer) clearInterval(pollTimer);
-    window.removeEventListener('hashchange', handleNav);
+    window.removeEventListener('hashchange', cleanup);
   };
-  window.addEventListener('hashchange', handleNav);
+  window.addEventListener('hashchange', cleanup);
 }
