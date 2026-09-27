@@ -1,3 +1,11 @@
+/*
+ * Database HTTP API route handlers, AST validation, and query execution pipeline.
+ * Owned by: api/database
+ * Key deps: axum, sqlparser, crate::db::pool, crate::db::engines, crate::security
+ * Invariants: Uncached queries parse through dialect AST parser; cache eviction follows timestamp LRU order.
+ * Last structural change: Phase 0 cleanup fixing double ConfigManager fetch (Debt #1), static scope (Debt #4), and LRU eviction (Debt #5).
+ */
+
 use axum::http::StatusCode;
 use serde_json::Value;
 use std::sync::Arc;
@@ -11,9 +19,17 @@ use crate::utils::types::{AuthContext, ServerMode};
 
 type QueryCacheMap = dashmap::DashMap<String, (std::time::Instant, Arc<QueryResult>, bytes::Bytes)>;
 
+// ─── Module-Level Statics ──────────────────────────────────────────────────
 // Single shared cache used by both the read and write branches of run_query.
-// Must be at module level — a static inside a block is a *different* instance every time.
 static QUERY_CACHE: once_cell::sync::Lazy<QueryCacheMap> = once_cell::sync::Lazy::new(dashmap::DashMap::new);
+
+// Consecutive execution failure counter per database alias for circuit breaker (Debt #4 fix).
+static CIRCUIT_FAILURES: once_cell::sync::Lazy<dashmap::DashMap<String, u32>> = once_cell::sync::Lazy::new(dashmap::DashMap::new);
+
+// Fast heuristic regex to skip cache key allocation on obvious mutation statements.
+static MUTATION_RE: once_cell::sync::Lazy<regex::Regex> = once_cell::sync::Lazy::new(|| {
+    regex::Regex::new(r"(?i)\b(INSERT|UPDATE|DELETE|DROP|CREATE|ALTER|TRUNCATE|REPLACE|GRANT|REVOKE|PRAGMA)\b").unwrap()
+});
 
 pub fn warm_cache_from_turso(entries: Vec<(String, bytes::Bytes, i64)>) {
     let arc_res = Arc::new(QueryResult { columns: None, rows: None, affected_rows: Some(0) });
@@ -45,10 +61,20 @@ pub fn warm_cache_from_turso(entries: Vec<(String, bytes::Bytes, i64)>) {
     }
 }
 
+/// Evicts the least recently inserted/accessed cache entry when capacity is reached.
+/// CONTRACT:
+///  - Side effects: Removes oldest entry from QUERY_CACHE if size >= 10,000.
+///  - Idempotent: Yes.
 fn evict_one_if_needed() {
-    if QUERY_CACHE.len() > 10_000 {
-        if let Some(entry) = QUERY_CACHE.iter().next().map(|e| e.key().clone()) {
-            QUERY_CACHE.remove(&entry);
+    if QUERY_CACHE.len() >= 10_000 {
+        // True LRU: Locate key with earliest timestamp instant (Debt #5 fix)
+        let oldest = QUERY_CACHE
+            .iter()
+            .min_by_key(|entry| entry.value().0)
+            .map(|entry| entry.key().clone());
+
+        if let Some(key) = oldest {
+            QUERY_CACHE.remove(&key);
         }
     }
 }
@@ -56,6 +82,12 @@ fn evict_one_if_needed() {
 pub struct QueryExecutionPipeline;
 
 impl QueryExecutionPipeline {
+    /// Executes a database query through the complete pipeline: circuit breaker, cache, blacklist, AST, and engine.
+    /// CONTRACT:
+    ///  - Precondition: Caller holds valid AuthContext with database permissions.
+    ///  - Returns `Ok((Arc<QueryResult>, Bytes))` on success.
+    ///  - Throws `AxiomError` on timeout, circuit open, parse failure, or engine error.
+    ///  - Side effects: Writes to cache on cacheable queries; increments circuit breaker on engine failure.
     pub async fn run_query(
         db_name: &str,
         sql: &str,
@@ -63,8 +95,7 @@ impl QueryExecutionPipeline {
         auth: &AuthContext,
         db_cfg: &DatabaseDefConfig,
     ) -> Result<(Arc<QueryResult>, bytes::Bytes), AxiomError> {
-        static CIRCUIT_FAILURES: once_cell::sync::Lazy<dashmap::DashMap<String, u32>> = once_cell::sync::Lazy::new(dashmap::DashMap::new);
-        
+        // Debt #1: Fetch configuration once per request pipeline run
         let config = crate::config::loader::ConfigManager::get();
         if config.circuit_breaker.enabled {
             if let Some(failures) = CIRCUIT_FAILURES.get(db_name) {
@@ -80,15 +111,7 @@ impl QueryExecutionPipeline {
                 AxiomError::new("DB_NOT_FOUND", "Database not found", StatusCode::NOT_FOUND)
             })?;
 
-        static MUTATION_RE: once_cell::sync::Lazy<regex::Regex> = once_cell::sync::Lazy::new(
-            || {
-                regex::Regex::new(r"(?i)\b(INSERT|UPDATE|DELETE|DROP|CREATE|ALTER|TRUNCATE|REPLACE|GRANT|REVOKE|PRAGMA)\b").unwrap()
-            },
-        );
-
         let is_mutation_regex = MUTATION_RE.is_match(sql);
-
-        let config = crate::config::loader::ConfigManager::get();
         
         if let Some(blacklist) = &db_cfg.query_blacklist {
             let sql_upper = sql.to_uppercase();
@@ -231,6 +254,9 @@ impl QueryExecutionPipeline {
 
         match exec_result {
             Ok(res) => {
+                if config.circuit_breaker.enabled {
+                    CIRCUIT_FAILURES.remove(db_name);
+                }
                 let arc_res = Arc::new(res);
                 let json_bytes = match serde_json::to_vec(&*arc_res) {
                     Ok(b) => bytes::Bytes::from(b),

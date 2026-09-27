@@ -1,9 +1,18 @@
+/*
+ * SQLite and LibSQL (Turso) embedded database engine implementation.
+ * Owned by: db/engines
+ * Key deps: libsql, async_trait, serde_json
+ * Invariants: Supports local file paths and remote Turso URLs; all methods return strongly-typed EngineError.
+ * Last structural change: Phase 0 cleanup adopting EngineError to eliminate hot-path Box allocations (Debt #2).
+ */
+
 use async_trait::async_trait;
 use libsql::{Builder, Connection, Database};
 
-
 use crate::config::schema::DatabaseDefConfig;
-use crate::db::engines::base::{ColumnInfo, DatabaseEngine, ForeignKeyInfo, QueryResult, TableInfo};
+use crate::db::engines::base::{
+    ColumnInfo, DatabaseEngine, EngineError, ForeignKeyInfo, QueryResult, TableInfo,
+};
 
 pub struct LibsqlDatabaseEngine {
     config: DatabaseDefConfig,
@@ -12,6 +21,9 @@ pub struct LibsqlDatabaseEngine {
 }
 
 impl LibsqlDatabaseEngine {
+    /// Instantiates an uninitialized LibsqlDatabaseEngine.
+    /// CONTRACT:
+    ///  - Connection is None until `connect()` is awaited.
     pub fn new(config: DatabaseDefConfig) -> Self {
         Self {
             config,
@@ -23,7 +35,7 @@ impl LibsqlDatabaseEngine {
 
 #[async_trait]
 impl DatabaseEngine for LibsqlDatabaseEngine {
-    async fn connect(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+    async fn connect(&mut self) -> Result<(), EngineError> {
         let mut url = self.config.url.clone();
         let mut token = String::new();
         
@@ -37,21 +49,27 @@ impl DatabaseEngine for LibsqlDatabaseEngine {
 
         // Handle libsql:// or sqlite:// or file://
         let db = if url.starts_with("libsql://") || url.starts_with("https://") {
-            Builder::new_remote(url, token).build().await?
+            Builder::new_remote(url, token)
+                .build()
+                .await
+                .map_err(|e| EngineError::Connection(e.to_string()))?
         } else {
-            // Local SQLite
+            // Local SQLite file
             let path = url.replace("sqlite://", "").replace("file://", "");
-            Builder::new_local(path).build().await?
+            Builder::new_local(path)
+                .build()
+                .await
+                .map_err(|e| EngineError::Connection(e.to_string()))?
         };
         
-        let conn = db.connect()?;
+        let conn = db.connect().map_err(|e| EngineError::Connection(e.to_string()))?;
         self.db = Some(db);
         self.conn = Some(conn);
         Ok(())
     }
 
-    async fn disconnect(&self) -> Result<(), Box<dyn std::error::Error>> {
-        // Libsql drops connections automatically
+    async fn disconnect(&self) -> Result<(), EngineError> {
+        // Libsql drops connections automatically on drop
         Ok(())
     }
 
@@ -67,8 +85,8 @@ impl DatabaseEngine for LibsqlDatabaseEngine {
         &self,
         cursor: Option<String>,
         limit: usize,
-    ) -> Result<Vec<TableInfo>, Box<dyn std::error::Error>> {
-        let conn = self.conn.as_ref().ok_or("Not connected")?;
+    ) -> Result<Vec<TableInfo>, EngineError> {
+        let conn = self.conn.as_ref().ok_or_else(|| EngineError::Connection("Not connected".into()))?;
         
         let mut query_str = "SELECT name as table_name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'".to_string();
         
@@ -79,8 +97,8 @@ impl DatabaseEngine for LibsqlDatabaseEngine {
         }
         query_str.push_str(&format!(" ORDER BY name ASC LIMIT {}", limit));
 
-        let stmt = conn.prepare(&query_str).await?;
-        let mut rows = stmt.query(libsql::params_from_iter(params)).await?;
+        let stmt = conn.prepare(&query_str).await.map_err(|e| EngineError::Execution(e.to_string()))?;
+        let mut rows = stmt.query(libsql::params_from_iter(params)).await.map_err(|e| EngineError::Execution(e.to_string()))?;
         
         let mut tables = Vec::new();
         while let Ok(Some(row)) = rows.next().await {
@@ -97,9 +115,12 @@ impl DatabaseEngine for LibsqlDatabaseEngine {
         Ok(tables)
     }
 
-    async fn count_tables(&self) -> Result<i64, Box<dyn std::error::Error>> {
-        let conn = self.conn.as_ref().ok_or("Not connected")?;
-        let mut rows = conn.query("SELECT count(*) FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'", ()).await?;
+    async fn count_tables(&self) -> Result<i64, EngineError> {
+        let conn = self.conn.as_ref().ok_or_else(|| EngineError::Connection("Not connected".into()))?;
+        let mut rows = conn
+            .query("SELECT count(*) FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'", ())
+            .await
+            .map_err(|e| EngineError::Execution(e.to_string()))?;
         if let Ok(Some(row)) = rows.next().await {
             if let Ok(count) = row.get::<i64>(0) {
                 return Ok(count);
@@ -108,18 +129,18 @@ impl DatabaseEngine for LibsqlDatabaseEngine {
         Ok(0)
     }
 
-    async fn describe_table(&self, table: &str) -> Result<Vec<ColumnInfo>, Box<dyn std::error::Error>> {
-        let conn = self.conn.as_ref().ok_or("Not connected")?;
+    async fn describe_table(&self, table: &str) -> Result<Vec<ColumnInfo>, EngineError> {
+        let conn = self.conn.as_ref().ok_or_else(|| EngineError::Connection("Not connected".into()))?;
         
-        let sql = format!("PRAGMA table_info('{}')", table.replace("'", "''"));
-        let mut rows = conn.query(&sql, ()).await?;
+        let sql = format!("PRAGMA table_info('{}')", table.replace('\'', "''"));
+        let mut rows = conn.query(&sql, ()).await.map_err(|e| EngineError::Execution(e.to_string()))?;
         
         let mut columns = Vec::new();
         while let Ok(Some(row)) = rows.next().await {
-            let name: String = row.get(1)?;
-            let data_type: String = row.get(2)?;
-            let notnull: i32 = row.get(3)?;
-            let pk: i32 = row.get(5)?;
+            let name: String = row.get(1).map_err(|e| EngineError::Execution(e.to_string()))?;
+            let data_type: String = row.get(2).map_err(|e| EngineError::Execution(e.to_string()))?;
+            let notnull: i32 = row.get(3).map_err(|e| EngineError::Execution(e.to_string()))?;
+            let pk: i32 = row.get(5).map_err(|e| EngineError::Execution(e.to_string()))?;
             columns.push(ColumnInfo {
                 name,
                 r#type: data_type,
@@ -130,17 +151,17 @@ impl DatabaseEngine for LibsqlDatabaseEngine {
         Ok(columns)
     }
 
-    async fn get_foreign_keys(&self, table: &str) -> Result<Vec<ForeignKeyInfo>, Box<dyn std::error::Error>> {
-        let conn = self.conn.as_ref().ok_or("Not connected")?;
+    async fn get_foreign_keys(&self, table: &str) -> Result<Vec<ForeignKeyInfo>, EngineError> {
+        let conn = self.conn.as_ref().ok_or_else(|| EngineError::Connection("Not connected".into()))?;
         
-        let sql = format!("PRAGMA foreign_key_list('{}')", table.replace("'", "''"));
-        let mut rows = conn.query(&sql, ()).await?;
+        let sql = format!("PRAGMA foreign_key_list('{}')", table.replace('\'', "''"));
+        let mut rows = conn.query(&sql, ()).await.map_err(|e| EngineError::Execution(e.to_string()))?;
         
         let mut fks = Vec::new();
         while let Ok(Some(row)) = rows.next().await {
-            let referenced_table_name: String = row.get(2)?;
-            let column_name: String = row.get(3)?;
-            let referenced_column_name: String = row.get(4)?;
+            let referenced_table_name: String = row.get(2).map_err(|e| EngineError::Execution(e.to_string()))?;
+            let column_name: String = row.get(3).map_err(|e| EngineError::Execution(e.to_string()))?;
+            let referenced_column_name: String = row.get(4).map_err(|e| EngineError::Execution(e.to_string()))?;
             fks.push(ForeignKeyInfo {
                 column: column_name,
                 referenced_table: referenced_table_name,
@@ -154,8 +175,8 @@ impl DatabaseEngine for LibsqlDatabaseEngine {
         &self,
         sql: &str,
         params: &[serde_json::Value],
-    ) -> Result<QueryResult, Box<dyn std::error::Error>> {
-        let conn = self.conn.as_ref().ok_or("Not connected")?;
+    ) -> Result<QueryResult, EngineError> {
+        let conn = self.conn.as_ref().ok_or_else(|| EngineError::Connection("Not connected".into()))?;
 
         let is_mutation = sql.trim().to_uppercase().starts_with("INSERT")
             || sql.trim().to_uppercase().starts_with("UPDATE")
@@ -180,8 +201,11 @@ impl DatabaseEngine for LibsqlDatabaseEngine {
         }
 
         if is_mutation {
-            let stmt = conn.prepare(sql).await?;
-            let affected = stmt.execute(libsql::params_from_iter(libsql_params)).await?;
+            let stmt = conn.prepare(sql).await.map_err(|e| EngineError::Execution(e.to_string()))?;
+            let affected = stmt
+                .execute(libsql::params_from_iter(libsql_params))
+                .await
+                .map_err(|e| EngineError::Execution(e.to_string()))?;
             return Ok(QueryResult {
                 columns: None,
                 rows: None,
@@ -189,8 +213,11 @@ impl DatabaseEngine for LibsqlDatabaseEngine {
             });
         }
 
-        let stmt = conn.prepare(sql).await?;
-        let mut rows = stmt.query(libsql::params_from_iter(libsql_params)).await?;
+        let stmt = conn.prepare(sql).await.map_err(|e| EngineError::Execution(e.to_string()))?;
+        let mut rows = stmt
+            .query(libsql::params_from_iter(libsql_params))
+            .await
+            .map_err(|e| EngineError::Execution(e.to_string()))?;
 
         let mut column_names = Vec::new();
         for i in 0..rows.column_count() {
@@ -216,7 +243,7 @@ impl DatabaseEngine for LibsqlDatabaseEngine {
                         }
                     }
                     Ok(libsql::Value::Null) => serde_json::Value::Null,
-                    _ => serde_json::Value::Null, // Blobs, etc. fallback to null for JSON API
+                    _ => serde_json::Value::Null,
                 };
                 json_obj.insert(col_name.clone(), val);
             }
@@ -234,4 +261,3 @@ impl DatabaseEngine for LibsqlDatabaseEngine {
         "sqlite"
     }
 }
-

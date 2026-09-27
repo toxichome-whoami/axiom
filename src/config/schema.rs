@@ -1,3 +1,11 @@
+/*
+ * Application configuration schema definitions and default values.
+ * Owned by: config
+ * Key deps: serde, crate::utils::types
+ * Invariants: Config loaded once at startup; defaults must be secure and suitable for single-node deployments.
+ * Last structural change: Phase 0 cleanup documenting full_admin deprecation path for v4 RBAC (Debt #6).
+ */
+
 use crate::utils::types::*;
 use std::collections::HashMap;
 
@@ -205,6 +213,9 @@ pub struct ApiKeyDefConfig {
     pub secret: String,
     pub db_scope: Vec<String>,
     pub rate_limit_override: i32,
+    /// Deprecated in v4.0: Preserved for backward-compatibility with v3.0 config.toml.
+    /// CONTRACT: Automatically seeded as an admin role permission in axiom.db on first boot.
+    /// Will be deprecated and superseded by fine-grained RBAC in Phase 2.
     pub full_admin: bool,
 }
 

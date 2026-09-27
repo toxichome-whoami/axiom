@@ -1,9 +1,30 @@
+/*
+ * API key authentication and identity resolution middleware.
+ * Owned by: middleware
+ * Key deps: axum, base64, crate::config, crate::security::ban_list, crate::utils::types::AuthContext
+ * Invariants: Secrets verified using constant-time XOR comparison; IP bans checked exclusively upstream in rate limiter.
+ * Last structural change: Phase 0 cleanup removing duplicate IP ban check (Debt #3) and adding global key failure tracking (S3).
+ */
+
 use crate::api::errors::AxiomError;
 use crate::config::loader::ConfigManager;
 use crate::security::ban_list::BanList;
 use crate::utils::types::AuthContext;
 use axum::{extract::Request, middleware::Next, response::Response};
+use base64::prelude::*;
 
+// ─── Authentication Middleware ─────────────────────────────────────────────
+// Intercepts inbound requests, extracts API key tokens, and populates request extensions
+// with a verified AuthContext for downstream policy enforcement.
+
+/// Authenticates the request via X-Axiom-Key, X-Api-Key, or Bearer Authorization headers.
+/// CONTRACT:
+///  - Precondition: Upstream IP rate-limit and ban checks have already completed.
+///  - Injects `AuthContext` into request extensions upon successful verification.
+///  - Throws `AxiomError(UNAUTHORIZED, 401)` on missing/invalid credentials,
+///    or `AxiomError(AUTH_INVALID_KEY, 403)` if key identity is suspended.
+///  - Side effects: Updates failure/success counters in BanList.
+///  - Idempotent: Yes on success; increments failure bucket on invalid credentials.
 pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, AxiomError> {
     let config = req
         .extensions()
@@ -11,43 +32,7 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, A
         .cloned()
         .unwrap_or_else(ConfigManager::get);
 
-    let mut client_ip = "127.0.0.1".to_string();
-    if let Some(connect_info) = req
-        .extensions()
-        .get::<axum::extract::ConnectInfo<std::net::SocketAddr>>()
-    {
-        client_ip = connect_info.0.ip().to_string();
-    }
-
-    if config.server.trusted_proxies.contains(&client_ip)
-        || config.server.trusted_proxies.contains(&"*".to_string())
-    {
-        if let Some(forwarded) = req
-            .headers()
-            .get("x-forwarded-for")
-            .or_else(|| req.headers().get("x-real-ip"))
-        {
-            if let Ok(fwd_str) = forwarded.to_str() {
-                client_ip = fwd_str
-                    .split(',')
-                    .next()
-                    .unwrap_or(&client_ip)
-                    .trim()
-                    .to_string();
-            }
-        }
-    }
-
-    let (is_ip_banned, reason) = BanList::is_ip_banned(&client_ip);
-    if is_ip_banned {
-        return Err(AxiomError::new(
-            "RATE_LIMIT_BLOCKED",
-            &format!("IP address is banned: {}", reason),
-            axum::http::StatusCode::FORBIDDEN,
-        ));
-    }
-
-    // 1. Extract token from header ONLY (Zero allocation)
+    // Extract raw token from header (prefer dedicated Axiom headers over generic Bearer)
     let mut raw_token_opt = None;
 
     if let Some(key) = req
@@ -69,19 +54,22 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, A
     }
 
     if let Some(raw_token) = raw_token_opt {
-        if let Some(ctx) = validate_api_key(raw_token, &config) {
-            req.extensions_mut().insert(ctx);
-            return Ok(next.run(req).await);
-        }
-
-        // Check if the key itself is banned
-        let (is_key_banned, reason) = BanList::is_key_banned(raw_token);
-        if is_key_banned {
-            return Err(AxiomError::new(
-                "AUTH_INVALID_KEY",
-                &format!("API key is suspended: {}", reason),
-                axum::http::StatusCode::FORBIDDEN,
-            ));
+        match validate_api_key(raw_token, &config) {
+            Ok(ctx) => {
+                BanList::record_successful_auth(&ctx.api_key_name);
+                req.extensions_mut().insert(ctx);
+                return Ok(next.run(req).await);
+            }
+            Err(Some(ban_reason)) => {
+                return Err(AxiomError::new(
+                    "AUTH_INVALID_KEY",
+                    &format!("API key is suspended: {}", ban_reason),
+                    axum::http::StatusCode::FORBIDDEN,
+                ));
+            }
+            Err(None) => {
+                // Invalid credentials or unparseable token
+            }
         }
     }
 
@@ -92,12 +80,18 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, A
     ))
 }
 
+/// Parses base64 encoded `name:secret` token and verifies secret in constant time.
+/// CONTRACT:
+///  - Precondition: `raw_token` must be a base64 encoded string.
+///  - Returns `Ok(AuthContext)` on valid credentials.
+///  - Returns `Err(Some(reason))` if the key exists but is currently suspended.
+///  - Returns `Err(None)` if key format is invalid, unknown, or secret mismatch.
+///  - Side effects: Increments failure counter for recognized key names when secret fails.
+///  - Idempotent: No (modifies BanList failure tracking state).
 pub fn validate_api_key(
     raw_token: &str,
     config: &crate::config::schema::AxiomConfig,
-) -> Option<AuthContext> {
-
-    use base64::prelude::*;
+) -> Result<AuthContext, Option<String>> {
     let decoded_str = BASE64_STANDARD
         .decode(raw_token)
         .ok()
@@ -105,8 +99,14 @@ pub fn validate_api_key(
 
     if let Some(decoded) = decoded_str {
         if let Some((key_name, key_secret)) = decoded.split_once(':') {
+            // Check if key identifier is currently suspended
+            let (is_banned, reason) = BanList::is_key_banned(key_name);
+            if is_banned {
+                return Err(Some(reason));
+            }
+
             if let Some(key_cfg) = config.api_key.get(key_name) {
-                // Fast constant-time verify (length check is acceptable for UUIDs/tokens)
+                // Constant-time comparison preventing timing-attack oracle on secret bytes
                 let mut match_result = 0;
                 if key_cfg.secret.len() == key_secret.len() {
                     for (a, b) in key_cfg.secret.bytes().zip(key_secret.bytes()) {
@@ -115,19 +115,27 @@ pub fn validate_api_key(
                 } else {
                     match_result = 1;
                 }
-                
+
                 if !key_cfg.secret.is_empty() && match_result == 0 {
-                    return Some(AuthContext {
+                    return Ok(AuthContext {
                         api_key_name: key_name.to_string(),
                         mode: key_cfg.mode.clone(),
                         db_scope: key_cfg.db_scope.clone(),
                         rate_limit_override: key_cfg.rate_limit_override as u32,
                         full_admin: key_cfg.full_admin,
                     });
+                } else {
+                    // S3: Track distributed auth failures against recognized key name
+                    let penalty_threshold = if config.rate_limit.penalty_threshold > 0 {
+                        config.rate_limit.penalty_threshold as u32
+                    } else {
+                        5
+                    };
+                    BanList::record_failed_auth(key_name, penalty_threshold, 60);
                 }
             }
         }
     }
 
-    None
+    Err(None)
 }

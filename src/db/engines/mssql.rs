@@ -1,13 +1,23 @@
+/*
+ * Microsoft SQL Server database engine implementation backed by Tiberius driver.
+ * Owned by: db/engines
+ * Key deps: tiberius, tokio::net::TcpStream, tokio_util::compat, async_trait
+ * Invariants: All error results return strongly-typed EngineError; parameter binding uses '@P1, @P2' ordinal tags.
+ * Last structural change: Phase 0 cleanup adopting EngineError to eliminate hot-path Box allocations (Debt #2).
+ */
+
 use async_trait::async_trait;
 use std::sync::Arc;
 use tiberius::{Client, Config, Query};
 use tokio::net::TcpStream;
-use tokio_util::compat::{TokioAsyncWriteCompatExt, Compat};
+use tokio_util::compat::{Compat, TokioAsyncWriteCompatExt};
 use tokio::sync::Mutex;
 use serde_json::Value;
 
 use crate::config::schema::DatabaseDefConfig;
-use crate::db::engines::base::{ColumnInfo, DatabaseEngine, ForeignKeyInfo, QueryResult, TableInfo};
+use crate::db::engines::base::{
+    ColumnInfo, DatabaseEngine, EngineError, ForeignKeyInfo, QueryResult, TableInfo,
+};
 
 pub struct MssqlDatabaseEngine {
     config: DatabaseDefConfig,
@@ -15,6 +25,9 @@ pub struct MssqlDatabaseEngine {
 }
 
 impl MssqlDatabaseEngine {
+    /// Instantiates an uninitialized MssqlDatabaseEngine.
+    /// CONTRACT:
+    ///  - Connection is None until `connect()` is awaited.
     pub fn new(config: DatabaseDefConfig) -> Self {
         Self {
             config,
@@ -25,25 +38,32 @@ impl MssqlDatabaseEngine {
 
 #[async_trait]
 impl DatabaseEngine for MssqlDatabaseEngine {
-    async fn connect(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        let config = Config::from_jdbc_string(&self.config.url)?;
-        let tcp = TcpStream::connect(config.get_addr()).await?;
-        tcp.set_nodelay(true)?;
+    async fn connect(&mut self) -> Result<(), EngineError> {
+        let config = Config::from_jdbc_string(&self.config.url)
+            .map_err(|e| EngineError::Connection(e.to_string()))?;
+        let tcp = TcpStream::connect(config.get_addr())
+            .await
+            .map_err(|e| EngineError::Connection(e.to_string()))?;
+        tcp.set_nodelay(true)
+            .map_err(|e| EngineError::Connection(e.to_string()))?;
         
-        let client = Client::connect(config, tcp.compat_write()).await?;
+        let client = Client::connect(config, tcp.compat_write())
+            .await
+            .map_err(|e| EngineError::Connection(e.to_string()))?;
         self.client = Some(Arc::new(Mutex::new(client)));
         
         Ok(())
     }
 
-    async fn disconnect(&self) -> Result<(), Box<dyn std::error::Error>> {
+    async fn disconnect(&self) -> Result<(), EngineError> {
         Ok(())
     }
 
     async fn health_check(&self) -> bool {
         if let Some(client) = &self.client {
             let mut guard = client.lock().await;
-            let ok = guard.query("SELECT 1", &[]).await.is_ok(); ok
+            let ok = guard.query("SELECT 1", &[]).await.is_ok();
+            ok
         } else {
             false
         }
@@ -53,8 +73,8 @@ impl DatabaseEngine for MssqlDatabaseEngine {
         &self,
         cursor: Option<String>,
         limit: usize,
-    ) -> Result<Vec<TableInfo>, Box<dyn std::error::Error>> {
-        let client_arc = self.client.as_ref().ok_or("Not connected")?;
+    ) -> Result<Vec<TableInfo>, EngineError> {
+        let client_arc = self.client.as_ref().ok_or_else(|| EngineError::Connection("Not connected".into()))?;
         let mut client = client_arc.lock().await;
         
         let mut query_str = "SELECT TABLE_NAME as table_name FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE = 'BASE TABLE'".to_string();
@@ -70,12 +90,12 @@ impl DatabaseEngine for MssqlDatabaseEngine {
             query.bind(c.clone());
         }
         
-        let stream = query.query(&mut *client).await?;
-        let rows = stream.into_first_result().await?;
+        let stream = query.query(&mut *client).await.map_err(|e| EngineError::Execution(e.to_string()))?;
+        let rows = stream.into_first_result().await.map_err(|e| EngineError::Execution(e.to_string()))?;
         
         let mut tables = Vec::new();
         for row in rows {
-            if let Some(name) = row.try_get::<&str, _>("table_name")? {
+            if let Some(name) = row.try_get::<&str, _>("table_name").map_err(|e| EngineError::Execution(e.to_string()))? {
                 tables.push(TableInfo {
                     name: name.to_string(),
                     row_count_estimate: 0,
@@ -87,22 +107,25 @@ impl DatabaseEngine for MssqlDatabaseEngine {
         Ok(tables)
     }
 
-    async fn count_tables(&self) -> Result<i64, Box<dyn std::error::Error>> {
-        let client_arc = self.client.as_ref().ok_or("Not connected")?;
+    async fn count_tables(&self) -> Result<i64, EngineError> {
+        let client_arc = self.client.as_ref().ok_or_else(|| EngineError::Connection("Not connected".into()))?;
         let mut client = client_arc.lock().await;
-        let stream = client.query("SELECT COUNT(*) as count FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE = 'BASE TABLE'", &[]).await?;
-        let rows = stream.into_first_result().await?;
+        let stream = client
+            .query("SELECT COUNT(*) as count FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE = 'BASE TABLE'", &[])
+            .await
+            .map_err(|e| EngineError::Execution(e.to_string()))?;
+        let rows = stream.into_first_result().await.map_err(|e| EngineError::Execution(e.to_string()))?;
         
         if let Some(row) = rows.first() {
-            if let Some(count) = row.try_get::<i32, _>("count")? {
+            if let Some(count) = row.try_get::<i32, _>("count").map_err(|e| EngineError::Execution(e.to_string()))? {
                 return Ok(count as i64);
             }
         }
         Ok(0)
     }
 
-    async fn describe_table(&self, table: &str) -> Result<Vec<ColumnInfo>, Box<dyn std::error::Error>> {
-        let client_arc = self.client.as_ref().ok_or("Not connected")?;
+    async fn describe_table(&self, table: &str) -> Result<Vec<ColumnInfo>, EngineError> {
+        let client_arc = self.client.as_ref().ok_or_else(|| EngineError::Connection("Not connected".into()))?;
         let mut client = client_arc.lock().await;
         
         let mut query = tiberius::Query::new("
@@ -121,23 +144,23 @@ impl DatabaseEngine for MssqlDatabaseEngine {
         ");
         query.bind(table);
         
-        let stream = query.query(&mut *client).await?;
-        let rows = stream.into_first_result().await?;
+        let stream = query.query(&mut *client).await.map_err(|e| EngineError::Execution(e.to_string()))?;
+        let rows = stream.into_first_result().await.map_err(|e| EngineError::Execution(e.to_string()))?;
         
         let mut columns = Vec::new();
         for row in rows {
             columns.push(ColumnInfo {
-                name: row.try_get::<&str, _>("column_name")?.unwrap_or_default().to_string(),
-                r#type: row.try_get::<&str, _>("data_type")?.unwrap_or_default().to_string(),
-                primary_key: row.try_get::<&str, _>("is_primary_key")?.unwrap_or("NO") == "YES",
-                nullable: row.try_get::<&str, _>("is_nullable")?.unwrap_or("YES") == "YES",
+                name: row.try_get::<&str, _>("column_name").map_err(|e| EngineError::Execution(e.to_string()))?.unwrap_or_default().to_string(),
+                r#type: row.try_get::<&str, _>("data_type").map_err(|e| EngineError::Execution(e.to_string()))?.unwrap_or_default().to_string(),
+                primary_key: row.try_get::<&str, _>("is_primary_key").map_err(|e| EngineError::Execution(e.to_string()))?.unwrap_or("NO") == "YES",
+                nullable: row.try_get::<&str, _>("is_nullable").map_err(|e| EngineError::Execution(e.to_string()))?.unwrap_or("YES") == "YES",
             });
         }
         Ok(columns)
     }
 
-    async fn get_foreign_keys(&self, table: &str) -> Result<Vec<ForeignKeyInfo>, Box<dyn std::error::Error>> {
-        let client_arc = self.client.as_ref().ok_or("Not connected")?;
+    async fn get_foreign_keys(&self, table: &str) -> Result<Vec<ForeignKeyInfo>, EngineError> {
+        let client_arc = self.client.as_ref().ok_or_else(|| EngineError::Connection("Not connected".into()))?;
         let mut client = client_arc.lock().await;
         
         let mut query = tiberius::Query::new("
@@ -152,29 +175,29 @@ impl DatabaseEngine for MssqlDatabaseEngine {
         ");
         query.bind(table);
         
-        let stream = query.query(&mut *client).await?;
-        let rows = stream.into_first_result().await?;
+        let stream = query.query(&mut *client).await.map_err(|e| EngineError::Execution(e.to_string()))?;
+        let rows = stream.into_first_result().await.map_err(|e| EngineError::Execution(e.to_string()))?;
         
         let mut fks = Vec::new();
         for row in rows {
             fks.push(ForeignKeyInfo {
-                column: row.try_get::<&str, _>("column_name")?.unwrap_or_default().to_string(),
-                referenced_table: row.try_get::<&str, _>("referenced_table_name")?.unwrap_or_default().to_string(),
-                referenced_column: row.try_get::<&str, _>("referenced_column_name")?.unwrap_or_default().to_string(),
+                column: row.try_get::<&str, _>("column_name").map_err(|e| EngineError::Execution(e.to_string()))?.unwrap_or_default().to_string(),
+                referenced_table: row.try_get::<&str, _>("referenced_table_name").map_err(|e| EngineError::Execution(e.to_string()))?.unwrap_or_default().to_string(),
+                referenced_column: row.try_get::<&str, _>("referenced_column_name").map_err(|e| EngineError::Execution(e.to_string()))?.unwrap_or_default().to_string(),
             });
         }
         Ok(fks)
     }
 
-    async fn execute(&self, sql: &str, params: &[serde_json::Value]) -> Result<QueryResult, Box<dyn std::error::Error>> {
-        let client_arc = self.client.as_ref().ok_or("Not connected")?;
+    async fn execute(&self, sql: &str, params: &[serde_json::Value]) -> Result<QueryResult, EngineError> {
+        let client_arc = self.client.as_ref().ok_or_else(|| EngineError::Connection("Not connected".into()))?;
         let mut client = client_arc.lock().await;
         
         let is_mutation = sql.trim().to_uppercase().starts_with("INSERT")
             || sql.trim().to_uppercase().starts_with("UPDATE")
             || sql.trim().to_uppercase().starts_with("DELETE");
 
-        // Keep allocations alive during query
+        // Keep allocations alive during query lifetime
         let mut string_params = Vec::new();
         let mut int_params = Vec::new();
         let mut float_params = Vec::new();
@@ -237,17 +260,16 @@ impl DatabaseEngine for MssqlDatabaseEngine {
         }
 
         if is_mutation {
-            let result = query.execute(&mut *client).await?;
+            let result = query.execute(&mut *client).await.map_err(|e| EngineError::Execution(e.to_string()))?;
             return Ok(QueryResult {
                 columns: None,
                 rows: None,
-                // tiberius execute result gives total rows affected
                 affected_rows: Some(result.total() as u64),
             });
         }
 
-        let stream = query.query(&mut *client).await?;
-        let rows = stream.into_first_result().await?;
+        let stream = query.query(&mut *client).await.map_err(|e| EngineError::Execution(e.to_string()))?;
+        let rows = stream.into_first_result().await.map_err(|e| EngineError::Execution(e.to_string()))?;
 
         let mut column_names = Vec::new();
         let mut result_rows = Vec::new();
@@ -261,7 +283,6 @@ impl DatabaseEngine for MssqlDatabaseEngine {
         for row in rows {
             let mut json_obj = serde_json::Map::new();
             for col in row.columns() {
-                // Simplified stringification for JSON dump, fallback to generic formatting
                 let name = col.name();
                 if let Ok(Some(s)) = row.try_get::<&str, _>(name) {
                     json_obj.insert(name.to_string(), Value::String(s.to_string()));
@@ -270,7 +291,6 @@ impl DatabaseEngine for MssqlDatabaseEngine {
                 } else if let Ok(Some(b)) = row.try_get::<bool, _>(name) {
                     json_obj.insert(name.to_string(), Value::Bool(b));
                 } else {
-                    // Very generic fallback
                     json_obj.insert(name.to_string(), Value::Null);
                 }
             }
@@ -288,4 +308,3 @@ impl DatabaseEngine for MssqlDatabaseEngine {
         "mssql"
     }
 }
-

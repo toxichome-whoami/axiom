@@ -1,3 +1,11 @@
+/*
+ * In-memory and persistent caching backends for rate limiting, penalties, and query caching.
+ * Owned by: middleware/cache
+ * Key deps: dashmap::DashMap, libsql, once_cell
+ * Invariants: Cache entries expire according to TTL timestamps; backend switchable between memory and turso.
+ * Last structural change: Phase 0 cleanup documenting cache consolidation plan for Phase 5 (Debt #9).
+ */
+
 use dashmap::DashMap;
 use once_cell::sync::Lazy;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -15,6 +23,12 @@ static PENALTY_CACHE: Lazy<DashMap<String, (u32, u64)>> = Lazy::new(DashMap::new
 pub struct MemoryCache;
 
 impl MemoryCache {
+    /// Evaluates rate-limit buckets and updates penalty records in memory.
+    /// CONTRACT:
+    ///  - Precondition: `limits_key` and `penalty_key` must be uniquely namespaced.
+    ///  - Returns `(violated, current_count)`.
+    ///  - Side effects: Updates count and expiry timestamps in DashMap.
+    ///  - Idempotent: No (increments request counter).
     pub async fn check_rate_limit(
         limits_key: &str,
         window: u32,

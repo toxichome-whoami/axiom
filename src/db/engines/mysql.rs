@@ -1,6 +1,14 @@
+/*
+ * MySQL and MariaDB database engine implementation backed by SQLx connection pool.
+ * Owned by: db/engines
+ * Key deps: sqlx::any, async_trait, serde_json
+ * Invariants: All error results return strongly-typed EngineError; parameter binding uses '?' positional placeholders.
+ * Last structural change: Phase 0 cleanup adopting EngineError to eliminate hot-path Box allocations (Debt #2).
+ */
+
 use crate::config::schema::DatabaseDefConfig;
 use crate::db::engines::base::{
-    ColumnInfo, DatabaseEngine, ForeignKeyInfo, QueryResult, TableInfo,
+    ColumnInfo, DatabaseEngine, EngineError, ForeignKeyInfo, QueryResult, TableInfo,
 };
 use async_trait::async_trait;
 use serde_json::Value;
@@ -12,6 +20,10 @@ pub struct MysqlDatabaseEngine {
 }
 
 impl MysqlDatabaseEngine {
+    /// Instantiates an uninitialized MysqlDatabaseEngine.
+    /// CONTRACT:
+    ///  - Driver registration happens once during instantiation.
+    ///  - Pool is None until `connect()` is awaited.
     pub fn new(config: DatabaseDefConfig) -> Self {
         sqlx::any::install_default_drivers();
         Self { pool: None, config }
@@ -20,7 +32,7 @@ impl MysqlDatabaseEngine {
 
 #[async_trait]
 impl DatabaseEngine for MysqlDatabaseEngine {
-    async fn connect(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+    async fn connect(&mut self) -> Result<(), EngineError> {
         if self.pool.is_none() {
             let pool = AnyPoolOptions::new()
                 .max_connections(self.config.pool_max as u32)
@@ -35,13 +47,14 @@ impl DatabaseEngine for MysqlDatabaseEngine {
                     self.config.max_lifetime as u64,
                 ))
                 .connect(&self.config.url)
-                .await?;
+                .await
+                .map_err(|e| EngineError::Connection(e.to_string()))?;
             self.pool = Some(pool);
         }
         Ok(())
     }
 
-    async fn disconnect(&self) -> Result<(), Box<dyn std::error::Error>> {
+    async fn disconnect(&self) -> Result<(), EngineError> {
         if let Some(pool) = &self.pool {
             pool.close().await;
         }
@@ -60,9 +73,10 @@ impl DatabaseEngine for MysqlDatabaseEngine {
         &self,
         cursor: Option<String>,
         limit: usize,
-    ) -> Result<Vec<TableInfo>, Box<dyn std::error::Error>> {
-        let pool = self.pool.as_ref().ok_or("Not connected")?;
+    ) -> Result<Vec<TableInfo>, EngineError> {
+        let pool = self.pool.as_ref().ok_or_else(|| EngineError::Connection("Not connected".into()))?;
 
+        // MySQL parameter binding uses '?' placeholder
         let query_str = if cursor.is_some() {
             format!(
                 "SELECT TABLE_NAME as table_name FROM information_schema.tables \
@@ -84,7 +98,7 @@ impl DatabaseEngine for MysqlDatabaseEngine {
             query = query.bind(c);
         }
 
-        let rows = query.fetch_all(pool).await?;
+        let rows = query.fetch_all(pool).await.map_err(|e| EngineError::Execution(e.to_string()))?;
         let mut tables = Vec::new();
 
         for row in rows {
@@ -101,13 +115,14 @@ impl DatabaseEngine for MysqlDatabaseEngine {
         Ok(tables)
     }
 
-    async fn count_tables(&self) -> Result<i64, Box<dyn std::error::Error>> {
-        let pool = self.pool.as_ref().ok_or("Not connected")?;
+    async fn count_tables(&self) -> Result<i64, EngineError> {
+        let pool = self.pool.as_ref().ok_or_else(|| EngineError::Connection("Not connected".into()))?;
         let row = sqlx::query(
             "SELECT COUNT(*) as cnt FROM information_schema.tables WHERE table_schema = DATABASE()",
         )
         .fetch_one(pool)
-        .await?;
+        .await
+        .map_err(|e| EngineError::Execution(e.to_string()))?;
         let count: i64 = row.try_get("cnt").unwrap_or(0);
         Ok(count)
     }
@@ -115,8 +130,8 @@ impl DatabaseEngine for MysqlDatabaseEngine {
     async fn describe_table(
         &self,
         table: &str,
-    ) -> Result<Vec<ColumnInfo>, Box<dyn std::error::Error>> {
-        let pool = self.pool.as_ref().ok_or("Not connected")?;
+    ) -> Result<Vec<ColumnInfo>, EngineError> {
+        let pool = self.pool.as_ref().ok_or_else(|| EngineError::Connection("Not connected".into()))?;
 
         let rows = sqlx::query(
             "SELECT COLUMN_NAME as column_name, DATA_TYPE as data_type, \
@@ -127,7 +142,8 @@ impl DatabaseEngine for MysqlDatabaseEngine {
         )
         .bind(table)
         .fetch_all(pool)
-        .await?;
+        .await
+        .map_err(|e| EngineError::Execution(e.to_string()))?;
 
         let mut columns = Vec::new();
         for row in rows {
@@ -144,8 +160,8 @@ impl DatabaseEngine for MysqlDatabaseEngine {
     async fn get_foreign_keys(
         &self,
         table: &str,
-    ) -> Result<Vec<ForeignKeyInfo>, Box<dyn std::error::Error>> {
-        let pool = self.pool.as_ref().ok_or("Not connected")?;
+    ) -> Result<Vec<ForeignKeyInfo>, EngineError> {
+        let pool = self.pool.as_ref().ok_or_else(|| EngineError::Connection("Not connected".into()))?;
 
         let rows = sqlx::query(
             "SELECT COLUMN_NAME as column_name, \
@@ -157,7 +173,8 @@ impl DatabaseEngine for MysqlDatabaseEngine {
         )
         .bind(table)
         .fetch_all(pool)
-        .await?;
+        .await
+        .map_err(|e| EngineError::Execution(e.to_string()))?;
 
         let mut fks = Vec::new();
         for row in rows {
@@ -178,8 +195,8 @@ impl DatabaseEngine for MysqlDatabaseEngine {
         &self,
         sql: &str,
         params: &[serde_json::Value],
-    ) -> Result<QueryResult, Box<dyn std::error::Error>> {
-        let pool = self.pool.as_ref().ok_or("Not connected")?;
+    ) -> Result<QueryResult, EngineError> {
+        let pool = self.pool.as_ref().ok_or_else(|| EngineError::Connection("Not connected".into()))?;
 
         let is_mutation = sql.trim().to_uppercase().starts_with("INSERT")
             || sql.trim().to_uppercase().starts_with("UPDATE")
@@ -202,7 +219,7 @@ impl DatabaseEngine for MysqlDatabaseEngine {
         }
 
         if is_mutation {
-            let result = query.execute(pool).await?;
+            let result = query.execute(pool).await.map_err(|e| EngineError::Execution(e.to_string()))?;
             return Ok(QueryResult {
                 columns: None,
                 rows: None,
@@ -210,7 +227,7 @@ impl DatabaseEngine for MysqlDatabaseEngine {
             });
         }
 
-        let rows = query.fetch_all(pool).await?;
+        let rows = query.fetch_all(pool).await.map_err(|e| EngineError::Execution(e.to_string()))?;
         let mut result_rows = Vec::new();
         let mut column_names = Vec::new();
 

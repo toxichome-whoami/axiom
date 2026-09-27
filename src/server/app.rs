@@ -1,3 +1,11 @@
+/*
+ * Axum application router assembly, CORS policy, security header layer, and middleware pipeline.
+ * Owned by: server
+ * Key deps: axum, tower_http, crate::middleware, crate::config
+ * Invariants: Middleware order is strictly WAF -> Rate Limit -> Auth -> Handlers; security headers attached to all responses.
+ * Last structural change: Phase 0 cleanup documenting layered middleware order and contracts.
+ */
+
 use crate::api::errors::AxiomError;
 use crate::config::loader::ConfigManager;
 use crate::middleware::{
