@@ -1,6 +1,6 @@
 /*
  * Live-tail structured logs viewer with search filters and auto-scroll controls.
- * Adheres to Section 15 of AXIOM_MASTER_PLAN.md with professional high-density layout.
+ * Ported from binary_alive Terminal & Logs architecture.
  */
 
 import { api, AuditRecord } from '../api';
@@ -22,15 +22,23 @@ export async function renderLogs(container: HTMLElement) {
   }> = [];
 
   container.innerHTML = `
-    <div class="p-4 sm:p-6 lg:p-8 space-y-6 max-w-7xl mx-auto">
+    <div class="space-y-6 max-w-7xl w-full mx-auto select-none">
+      <!-- Header -->
       <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 class="text-xl font-semibold text-primary">Structured Logs</h1>
-          <p class="text-xs text-secondary mt-0.5">Live-tail execution events, control plane mutations, and security telemetry.</p>
+          <div class="flex items-center gap-2.5">
+            <h1 class="text-xl font-semibold text-white tracking-tight">Structured Logs</h1>
+            <span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-[#141414] border border-[#262626] text-[#8c8c8c]">Stdout/JSON</span>
+          </div>
+          <p class="text-xs text-[#8c8c8c] mt-0.5">Live-tail execution events, control plane mutations, and security telemetry.</p>
         </div>
-        <div class="flex items-center space-x-2">
+
+        <div class="flex flex-wrap items-center gap-2">
           <!-- Level Filter -->
-          <select id="log-level-filter" class="px-2.5 py-1.5 bg-surface border border-surfaceBorder rounded-md text-xs text-primary focus:outline-none focus:border-focusRing">
+          <select 
+            id="log-level-filter" 
+            class="h-8 px-2.5 rounded-lg bg-[#0c0c0c] border border-[#262626] text-xs text-white focus:border-[#3b82f6] outline-none transition-colors"
+          >
             <option value="ALL">All Levels</option>
             <option value="INFO">INFO</option>
             <option value="WARN">WARN</option>
@@ -38,38 +46,52 @@ export async function renderLogs(container: HTMLElement) {
           </select>
 
           <!-- Search Input -->
-          <input 
-            id="log-search-input" 
-            type="text" 
-            placeholder="Search events or targets..." 
-            class="px-3 py-1.5 bg-surface border border-surfaceBorder rounded-md text-xs text-primary focus:outline-none focus:border-focusRing w-48 sm:w-60"
-          />
+          <div class="relative w-44 sm:w-56">
+            <span class="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-[#8c8c8c]">
+              ${icon('search', 'w-3.5 h-3.5 opacity-60')}
+            </span>
+            <input 
+              id="log-search-input" 
+              type="text" 
+              placeholder="Search events..." 
+              class="w-full h-8 pl-8 pr-3 rounded-lg bg-[#0c0c0c] border border-[#262626] text-xs text-white placeholder-[#666666] focus:border-[#3b82f6] outline-none transition-colors"
+            />
+          </div>
 
           <!-- Pause / Resume Button -->
-          <button id="toggle-tail-btn" class="px-3 py-1.5 bg-surface hover:bg-surfaceHover border border-surfaceBorder rounded-md text-xs font-medium text-primary transition-colors flex items-center space-x-1.5">
-            <span id="tail-status-indicator" class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+          <button 
+            id="toggle-tail-btn" 
+            type="button"
+            class="h-8 px-3 rounded-lg bg-[#0c0c0c] hover:bg-[#161616] border border-[#262626] text-xs font-medium text-white transition-colors flex items-center gap-2 cursor-pointer"
+          >
+            <span id="tail-status-indicator" class="size-2 rounded-full bg-emerald-400 animate-pulse"></span>
             <span id="tail-btn-text">Live Tail</span>
           </button>
 
           <!-- Clear Console -->
-          <button id="clear-logs-btn" class="p-1.5 bg-surface hover:bg-surfaceHover border border-surfaceBorder rounded-md text-secondary hover:text-primary transition-colors" title="Clear buffer">
-            ${icon('trash', 'w-4 h-4')}
+          <button 
+            id="clear-logs-btn" 
+            type="button"
+            class="size-8 rounded-lg bg-[#0c0c0c] hover:bg-[#161616] border border-[#262626] text-[#8c8c8c] hover:text-white transition-colors flex items-center justify-center cursor-pointer" 
+            title="Clear buffer"
+          >
+            ${icon('trash', 'w-3.5 h-3.5')}
           </button>
         </div>
       </div>
 
-      <!-- Log Terminal Display Card -->
-      <div class="bg-[#141416] border border-surfaceBorder rounded-lg overflow-hidden shadow-sm flex flex-col font-mono text-xs">
-        <div class="bg-surface px-4 py-2.5 border-b border-surfaceBorder flex items-center justify-between text-[11px] text-secondary">
-          <div class="flex items-center space-x-2">
-            ${icon('file-text', 'w-3.5 h-3.5 text-accent-orange')}
-            <span class="font-medium text-primary">axiom-event-stream</span>
+      <!-- Log Terminal Display Container matching binary_alive Terminal -->
+      <div class="border border-[#262626] rounded-lg overflow-hidden bg-[#000000] flex flex-col font-mono text-xs shadow-2xl">
+        <div class="bg-[#141414] px-4 h-[40px] border-b border-[#222222] flex items-center justify-between text-[11px] text-[#8c8c8c]">
+          <div class="flex items-center gap-2">
+            <span class="size-2 rounded-full bg-emerald-400"></span>
+            <span class="font-medium text-white">axiom-event-stream</span>
           </div>
-          <span id="log-count-indicator">0 events</span>
+          <span id="log-count-indicator" class="tabular-nums">0 events</span>
         </div>
 
-        <div id="log-console-body" class="p-3 sm:p-4 space-y-1 overflow-y-auto max-h-[640px] min-h-[380px] divide-y divide-white/5">
-          <div class="text-secondary py-12 text-center font-sans">Connecting to live event stream...</div>
+        <div id="log-console-body" class="p-4 space-y-1 overflow-y-auto max-h-[640px] min-h-[400px] select-text">
+          <div class="text-[#666666] py-12 text-center font-sans">Connecting to live event stream...</div>
         </div>
       </div>
     </div>
@@ -81,8 +103,9 @@ export async function renderLogs(container: HTMLElement) {
 
     const filtered = logs.filter((l) => {
       const matchesLevel = levelFilter === 'ALL' || l.level === levelFilter;
-      const matchesSearch = !searchTerm || 
-        l.message.toLowerCase().includes(searchTerm) || 
+      const matchesSearch =
+        !searchTerm ||
+        l.message.toLowerCase().includes(searchTerm) ||
         l.target.toLowerCase().includes(searchTerm) ||
         (l.details && l.details.toLowerCase().includes(searchTerm));
       return matchesLevel && matchesSearch;
@@ -90,34 +113,36 @@ export async function renderLogs(container: HTMLElement) {
 
     const countIndicator = document.getElementById('log-count-indicator');
     if (countIndicator) {
-      countIndicator.textContent = `${filtered.length} events`;
+      countIndicator.textContent = `${filtered.length} event${filtered.length === 1 ? '' : 's'}`;
     }
 
     if (filtered.length === 0) {
-      consoleBody.innerHTML = `<div class="text-secondary py-12 text-center font-sans">No log events matching active filter.</div>`;
+      consoleBody.innerHTML = `<div class="text-[#666666] py-12 text-center font-sans">No log events matching active filter.</div>`;
       return;
     }
 
-    consoleBody.innerHTML = filtered.map((l) => {
-      let badgeClass = 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20';
-      if (l.level === 'WARN') {
-        badgeClass = 'text-amber-400 bg-amber-500/10 border-amber-500/20';
-      } else if (l.level === 'ERROR') {
-        badgeClass = 'text-rose-400 bg-rose-500/10 border-rose-500/20';
-      }
+    consoleBody.innerHTML = filtered
+      .map((l) => {
+        let badgeColor = 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20';
+        if (l.level === 'WARN') {
+          badgeColor = 'text-amber-400 bg-amber-500/10 border-amber-500/20';
+        } else if (l.level === 'ERROR') {
+          badgeColor = 'text-rose-400 bg-rose-500/10 border-rose-500/20';
+        }
 
-      const timeStr = new Date(l.timestamp * 1000).toISOString().replace('T', ' ').substring(11, 19);
+        const timeStr = new Date(l.timestamp * 1000).toISOString().replace('T', ' ').substring(11, 19);
 
-      return `
-        <div class="pt-1 flex items-start space-x-2.5 text-[11px] leading-relaxed hover:bg-white/[0.02] px-1 rounded transition-colors">
-          <span class="text-secondary/60 shrink-0 select-none">${timeStr}</span>
-          <span class="px-1.5 py-0.2 rounded text-[10px] uppercase font-bold border shrink-0 ${badgeClass}">${l.level}</span>
-          <span class="text-accent-blue font-semibold shrink-0">[${l.target}]</span>
-          <span class="text-primary flex-1 break-all">${l.message}</span>
-          ${l.details ? `<span class="text-secondary/70 text-[10px] shrink-0 truncate max-w-xs">{${l.details}}</span>` : ''}
+        return `
+        <div class="py-0.5 flex items-start gap-2.5 text-[12px] leading-relaxed hover:bg-[#111111] px-1.5 rounded transition-colors font-mono">
+          <span class="text-[#666666] shrink-0 select-none tabular-nums">${timeStr}</span>
+          <span class="px-1.5 py-0.2 rounded text-[10px] uppercase font-bold border shrink-0 ${badgeColor}">${l.level}</span>
+          <span class="text-[#3b82f6] font-medium shrink-0">[${l.target}]</span>
+          <span class="text-[#f3f4f6] flex-1 break-all">${l.message}</span>
+          ${l.details ? `<span class="text-[#8c8c8c] text-[11px] shrink-0 truncate max-w-xs">{${l.details}}</span>` : ''}
         </div>
       `;
-    }).join('');
+      })
+      .join('');
 
     if (isTailing) {
       consoleBody.scrollTop = consoleBody.scrollHeight;
@@ -146,9 +171,7 @@ export async function renderLogs(container: HTMLElement) {
       });
 
       renderLogEntries();
-    } catch {
-      // Retried on poll interval
-    }
+    } catch {}
   }
 
   document.getElementById('log-level-filter')?.addEventListener('change', (e) => {
@@ -168,15 +191,15 @@ export async function renderLogs(container: HTMLElement) {
   toggleBtn?.addEventListener('click', () => {
     isTailing = !isTailing;
     if (isTailing) {
-      indicator?.classList.remove('bg-amber-500');
-      indicator?.classList.add('bg-emerald-500', 'animate-pulse');
+      indicator?.classList.remove('bg-amber-400');
+      indicator?.classList.add('bg-emerald-400', 'animate-pulse');
       if (btnText) btnText.textContent = 'Live Tail';
       fetchLatestLogs();
       pollTimer = setInterval(fetchLatestLogs, 2500);
       toast.info('Log live-tail resumed');
     } else {
-      indicator?.classList.remove('bg-emerald-500', 'animate-pulse');
-      indicator?.classList.add('bg-amber-500');
+      indicator?.classList.remove('bg-emerald-400', 'animate-pulse');
+      indicator?.classList.add('bg-amber-400');
       if (btnText) btnText.textContent = 'Paused';
       if (pollTimer) clearInterval(pollTimer);
       toast.info('Log live-tail paused');

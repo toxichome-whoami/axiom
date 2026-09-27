@@ -25,14 +25,14 @@ class ToastManager {
 
     const toast = document.createElement('div');
     toast.className = `
-      pointer-events-auto flex items-center space-x-3 px-3.5 py-2.5 rounded-lg border shadow-lg text-xs font-medium
-      transition-all duration-200 transform translate-y-2 opacity-0
+      pointer-events-auto flex items-center space-x-3 px-3.5 py-2.5 rounded-lg border shadow-2xl text-xs font-medium
+      transition-all duration-200 transform translate-y-2 opacity-0 select-none
       ${
         type === 'success'
-          ? 'bg-[#18181B] border-emerald-500/30 text-emerald-400'
+          ? 'bg-[#0e0e0e] border-emerald-500/40 text-emerald-400'
           : type === 'error'
-          ? 'bg-[#18181B] border-rose-500/30 text-rose-400'
-          : 'bg-[#18181B] border-surfaceBorder text-primary'
+          ? 'bg-[#0e0e0e] border-rose-500/40 text-rose-400'
+          : 'bg-[#0e0e0e] border-[#262626] text-white'
       }
     `;
 
@@ -41,12 +41,12 @@ class ToastManager {
         ? icon('check', 'w-4 h-4 text-emerald-400 shrink-0')
         : type === 'error'
         ? icon('x', 'w-4 h-4 text-rose-400 shrink-0')
-        : icon('activity', 'w-4 h-4 text-accent-blue shrink-0');
+        : icon('activity', 'w-4 h-4 text-[#3b82f6] shrink-0');
 
     toast.innerHTML = `
       ${iconHtml}
-      <span class="flex-1 text-primary leading-tight">${message}</span>
-      <button class="toast-close text-secondary hover:text-primary p-0.5 ml-2 transition-colors">
+      <span class="flex-1 text-[#f3f4f6] leading-tight">${message}</span>
+      <button class="toast-close text-[#8c8c8c] hover:text-white p-0.5 ml-2 transition-colors cursor-pointer">
         ${icon('x', 'w-3.5 h-3.5')}
       </button>
     `;
@@ -105,22 +105,22 @@ export function confirmDialog(options: ConfirmOptions) {
 
   const backdrop = document.createElement('div');
   backdrop.id = 'axiom-confirm-modal';
-  backdrop.className = 'fixed inset-0 bg-black/70 backdrop-blur-xs z-50 flex items-center justify-center p-4 transition-opacity';
+  backdrop.className = 'fixed inset-0 bg-black/80 backdrop-blur-xs z-50 flex items-center justify-center p-4 transition-opacity select-none';
 
   backdrop.innerHTML = `
-    <div class="bg-surface border border-surfaceBorder rounded-lg max-w-sm w-full p-5 space-y-4 shadow-xl transform transition-transform scale-95 animate-in">
-      <div class="flex items-center space-x-2 text-primary font-semibold text-sm">
-        ${options.danger ? icon('trash', 'w-4 h-4 text-accent-danger') : icon('shield', 'w-4 h-4 text-accent-orange')}
+    <div class="bg-[#0e0e0e] border border-[#262626] rounded-lg max-w-sm w-full p-5 space-y-4 shadow-2xl transform transition-transform scale-95 animate-in">
+      <div class="flex items-center space-x-2.5 text-white font-semibold text-sm">
+        ${options.danger ? icon('trash', 'w-4 h-4 text-[#ef4444]') : icon('shield', 'w-4 h-4 text-[#f38020]')}
         <span>${options.title}</span>
       </div>
-      <p class="text-xs text-secondary leading-relaxed">${options.message}</p>
+      <p class="text-xs text-[#8c8c8c] leading-relaxed">${options.message}</p>
       <div class="flex justify-end space-x-2 pt-2">
-        <button id="axiom-confirm-cancel" class="px-3 py-1.5 bg-surfaceHover hover:bg-surfaceBorder text-secondary hover:text-primary rounded-md text-xs font-medium transition-colors">
+        <button id="axiom-confirm-cancel" class="h-8 px-3 rounded-md bg-[#141414] hover:bg-[#1a1a1a] border border-[#262626] text-[#cccccc] hover:text-white text-xs font-medium transition-colors cursor-pointer">
           ${options.cancelText || 'Cancel'}
         </button>
-        <button id="axiom-confirm-ok" class="px-3 py-1.5 ${
-          options.danger ? 'bg-accent-danger hover:bg-red-700' : 'bg-accent-orange hover:bg-orange-600'
-        } text-white rounded-md text-xs font-medium transition-colors">
+        <button id="axiom-confirm-ok" class="h-8 px-3.5 rounded-md ${
+          options.danger ? 'bg-[#ef4444] hover:bg-red-600' : 'bg-[#f38020] hover:bg-[#e07018]'
+        } text-white text-xs font-medium transition-colors shadow-xs cursor-pointer">
           ${options.confirmText || 'Confirm'}
         </button>
       </div>

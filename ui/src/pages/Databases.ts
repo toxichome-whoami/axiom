@@ -1,6 +1,7 @@
 /*
  * Managed SQL database connection registry interface.
- * Supports adding, inspecting, live health-testing, and deleting database pools at runtime.
+ * Ported from binary_alive DataTable & Dialog architecture.
+ * Supports searching, live ping health-testing, and managing database pools.
  */
 
 import { api, DatabaseRecord } from '../api';
@@ -8,71 +9,111 @@ import { icon } from '../components/Icons';
 import { toast, confirmDialog } from '../components/Toast';
 
 export async function renderDatabases(container: HTMLElement) {
+  let allDatabases: DatabaseRecord[] = [];
+  let filterQuery = '';
+
   container.innerHTML = `
-    <div class="p-4 sm:p-6 lg:p-8 space-y-6 max-w-7xl mx-auto">
-      <div class="flex items-center justify-between">
+    <div class="space-y-6 max-w-7xl w-full mx-auto select-none">
+      <!-- Page Header & Action Controls -->
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 class="text-xl font-semibold text-primary">Databases</h1>
-          <p class="text-xs text-secondary mt-0.5">Manage live connection pools, upstream dialects, and health probes.</p>
+          <div class="flex items-center gap-2.5">
+            <h1 class="text-xl font-semibold text-white tracking-tight">Databases</h1>
+            <span id="db-count-badge" class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-[#141414] border border-[#262626] text-[#8c8c8c]">0 pools</span>
+          </div>
+          <p class="text-xs text-[#8c8c8c] mt-0.5">Manage live connection pools, upstream dialects, and health probes.</p>
         </div>
-        <button id="open-add-db-modal" class="flex items-center space-x-1.5 px-3 py-1.5 bg-accent-orange hover:bg-orange-600 text-white rounded-md text-xs font-medium transition-colors shadow-xs">
-          ${icon('plus', 'w-3.5 h-3.5')}
-          <span>Connect Database</span>
-        </button>
+
+        <div class="flex items-center gap-2.5">
+          <!-- Search input -->
+          <div class="relative w-48 sm:w-64">
+            <span class="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-[#8c8c8c]">
+              ${icon('search', 'w-3.5 h-3.5 opacity-60')}
+            </span>
+            <input
+              id="db-search-input"
+              type="text"
+              placeholder="Filter databases..."
+              class="w-full h-8 pl-8 pr-3 rounded-lg bg-[#0c0c0c] border border-[#262626] text-xs text-white placeholder-[#666666] focus:border-[#3b82f6] outline-none transition-colors"
+            />
+          </div>
+
+          <button 
+            id="open-add-db-modal" 
+            type="button"
+            class="flex items-center gap-1.5 px-3 h-8 bg-[#f38020] hover:bg-[#e07018] text-white rounded-lg text-xs font-medium transition-colors shadow-xs cursor-pointer shrink-0"
+          >
+            ${icon('plus', 'w-3.5 h-3.5')}
+            <span>Connect Database</span>
+          </button>
+        </div>
       </div>
 
-      <!-- Databases Table Card -->
-      <div class="bg-surface border border-surfaceBorder rounded-lg overflow-hidden shadow-sm">
-        <div class="overflow-x-auto">
-          <table class="w-full text-left text-xs text-secondary">
-            <thead class="bg-background text-[11px] font-semibold uppercase tracking-wider text-secondary border-b border-surfaceBorder">
-              <tr>
-                <th class="py-3 px-4">Alias</th>
-                <th class="py-3 px-4">Engine Dialect</th>
-                <th class="py-3 px-4">Pool Bounds</th>
-                <th class="py-3 px-4">Registered</th>
-                <th class="py-3 px-4 text-right">Actions</th>
+      <!-- Databases Table Container in Cloudflare DataTable Pattern -->
+      <div class="border border-[#262626] rounded-lg overflow-hidden bg-[#0e0e0e] flex flex-col text-[14px]">
+        <div class="overflow-x-auto w-full">
+          <table class="w-full text-left border-collapse min-w-[700px]">
+            <thead class="sticky top-0 z-10">
+              <tr class="border-b border-[#222222] bg-[#141414] h-[40px] text-[13px] font-medium text-white">
+                <th class="px-4">Database Alias</th>
+                <th class="px-4">Engine Dialect</th>
+                <th class="px-4">Pool Bounds</th>
+                <th class="px-4">Registered Date</th>
+                <th class="px-4 text-right">Actions</th>
               </tr>
             </thead>
-            <tbody id="db-table-body" class="divide-y divide-surfaceBorder font-mono">
+            <tbody id="db-table-body" class="divide-y divide-[#1e1e1e] text-[13px] text-[#cccccc]">
               <tr>
-                <td colspan="5" class="py-8 text-center text-secondary">Loading registered databases...</td>
+                <td colspan="5" class="px-4 py-12 text-center text-xs text-[#666666]">
+                  <div class="h-4 w-1/3 mx-auto rounded bg-[#1a1a1a] animate-pulse"></div>
+                </td>
               </tr>
             </tbody>
           </table>
         </div>
+
+        <!-- Table Footer -->
+        <div class="flex items-center justify-between px-4 py-2.5 border-t border-[#222222] bg-[#0e0e0e] text-[12px] text-[#8c8c8c]">
+          <span id="db-footer-status">Showing databases</span>
+          <span class="font-mono text-[11px] text-[#666666]">DashMap Pool Registry</span>
+        </div>
       </div>
     </div>
 
-    <!-- Add Database Modal -->
-    <div id="add-db-modal" class="fixed inset-0 bg-black/70 backdrop-blur-xs z-50 flex items-center justify-center p-4 hidden">
-      <div class="bg-surface border border-surfaceBorder rounded-lg max-w-md w-full p-6 space-y-4 shadow-xl">
-        <div class="flex items-center justify-between pb-2 border-b border-surfaceBorder">
-          <h2 class="text-sm font-semibold text-primary">Connect Upstream Database</h2>
-          <button id="close-add-db-modal" class="text-secondary hover:text-primary p-1">
+    <!-- Connect Database Modal matching Dialog.tsx in binary_alive -->
+    <div id="add-db-modal" class="fixed inset-0 bg-black/80 backdrop-blur-xs z-50 flex items-center justify-center p-4 hidden select-none animate-in fade-in">
+      <div class="bg-[#0e0e0e] border border-[#262626] rounded-lg max-w-md w-full p-6 space-y-4 shadow-2xl">
+        <div class="flex items-center justify-between pb-3 border-b border-[#222222]">
+          <div class="flex items-center gap-2">
+            <span class="p-1.5 rounded-md bg-[#3b82f6]/10 text-[#3b82f6]">
+              ${icon('database', 'w-4 h-4')}
+            </span>
+            <h2 class="text-sm font-semibold text-white">Connect Upstream Database</h2>
+          </div>
+          <button id="close-add-db-modal" class="text-[#8c8c8c] hover:text-white p-1 cursor-pointer">
             ${icon('x', 'w-4 h-4')}
           </button>
         </div>
 
-        <div id="modal-error" class="hidden p-2 rounded bg-rose-500/10 border border-rose-500/20 text-xs text-rose-400"></div>
+        <div id="modal-error" class="hidden p-2.5 rounded-lg bg-rose-500/10 border border-rose-500/20 text-xs text-rose-400"></div>
 
-        <form id="add-db-form" class="space-y-3.5 text-xs">
+        <form id="add-db-form" class="space-y-4 text-xs">
           <div>
-            <label for="new-db-alias" class="block text-secondary mb-1">Database Alias</label>
+            <label for="new-db-alias" class="block text-[#8c8c8c] mb-1 font-medium">Database Alias</label>
             <input 
               id="new-db-alias" 
               type="text" 
               required 
               placeholder="e.g. analytics_db" 
-              class="w-full px-3 py-2 bg-background border border-surfaceBorder rounded-md text-primary focus:border-focusRing focus:outline-none" 
+              class="w-full h-9 px-3 bg-[#141414] border border-[#262626] rounded-lg text-white placeholder-[#666666] focus:border-[#3b82f6] outline-none font-mono text-xs transition-colors" 
             />
           </div>
 
           <div>
-            <label for="new-db-engine" class="block text-secondary mb-1">Engine Dialect</label>
+            <label for="new-db-engine" class="block text-[#8c8c8c] mb-1 font-medium">Engine Dialect</label>
             <select 
               id="new-db-engine" 
-              class="w-full px-3 py-2 bg-background border border-surfaceBorder rounded-md text-primary focus:border-focusRing focus:outline-none"
+              class="w-full h-9 px-3 bg-[#141414] border border-[#262626] rounded-lg text-white focus:border-[#3b82f6] outline-none text-xs transition-colors"
             >
               <option value="postgres">PostgreSQL</option>
               <option value="mysql">MySQL / MariaDB</option>
@@ -83,44 +124,44 @@ export async function renderDatabases(container: HTMLElement) {
           </div>
 
           <div>
-            <label for="new-db-url" class="block text-secondary mb-1">Connection URL</label>
+            <label for="new-db-url" class="block text-[#8c8c8c] mb-1 font-medium">Connection URL</label>
             <input 
               id="new-db-url" 
               type="text" 
               required 
               placeholder="postgres://user:pass@localhost:5432/dbname" 
-              class="w-full px-3 py-2 bg-background border border-surfaceBorder rounded-md text-primary font-mono text-xs focus:border-focusRing focus:outline-none" 
+              class="w-full h-9 px-3 bg-[#141414] border border-[#262626] rounded-lg text-white placeholder-[#666666] font-mono text-xs focus:border-[#3b82f6] outline-none transition-colors" 
             />
           </div>
 
           <div class="grid grid-cols-2 gap-3">
             <div>
-              <label for="new-db-min" class="block text-secondary mb-1">Min Pool</label>
+              <label for="new-db-min" class="block text-[#8c8c8c] mb-1 font-medium">Min Connections</label>
               <input 
                 id="new-db-min" 
                 type="number" 
                 value="1" 
                 min="1" 
-                class="w-full px-3 py-2 bg-background border border-surfaceBorder rounded-md text-primary focus:border-focusRing focus:outline-none" 
+                class="w-full h-9 px-3 bg-[#141414] border border-[#262626] rounded-lg text-white font-mono text-xs focus:border-[#3b82f6] outline-none transition-colors" 
               />
             </div>
             <div>
-              <label for="new-db-max" class="block text-secondary mb-1">Max Pool</label>
+              <label for="new-db-max" class="block text-[#8c8c8c] mb-1 font-medium">Max Connections</label>
               <input 
                 id="new-db-max" 
                 type="number" 
                 value="10" 
                 min="1" 
-                class="w-full px-3 py-2 bg-background border border-surfaceBorder rounded-md text-primary focus:border-focusRing focus:outline-none" 
+                class="w-full h-9 px-3 bg-[#141414] border border-[#262626] rounded-lg text-white font-mono text-xs focus:border-[#3b82f6] outline-none transition-colors" 
               />
             </div>
           </div>
 
-          <div class="flex justify-end space-x-2 pt-3 border-t border-surfaceBorder">
-            <button type="button" id="cancel-add-db" class="px-3 py-1.5 bg-surfaceHover hover:bg-surfaceBorder text-secondary hover:text-primary rounded-md transition-colors">
+          <div class="flex justify-end gap-2 pt-3 border-t border-[#222222]">
+            <button type="button" id="cancel-add-db" class="h-8 px-3 rounded-lg bg-[#141414] hover:bg-[#1a1a1a] border border-[#262626] text-[#cccccc] hover:text-white font-medium transition-colors cursor-pointer">
               Cancel
             </button>
-            <button type="submit" id="submit-add-db" class="px-3 py-1.5 bg-accent-orange hover:bg-orange-600 text-white font-medium rounded-md transition-colors">
+            <button type="submit" id="submit-add-db" class="h-8 px-3.5 rounded-lg bg-[#f38020] hover:bg-[#e07018] text-white font-medium transition-colors shadow-xs cursor-pointer">
               Connect Pool
             </button>
           </div>
@@ -132,101 +173,144 @@ export async function renderDatabases(container: HTMLElement) {
   const modal = document.getElementById('add-db-modal') as HTMLElement;
   const modalError = document.getElementById('modal-error') as HTMLElement;
 
-  async function loadDatabases() {
+  function renderTableRows(dbs: DatabaseRecord[]) {
     const tbody = document.getElementById('db-table-body') as HTMLElement;
-    try {
-      const dbs = await api.getDatabases();
-      if (dbs.length === 0) {
-        tbody.innerHTML = `
-          <tr>
-            <td colspan="5" class="py-12 text-center text-secondary">
-              No databases connected yet. Click "Connect Database" to register your first pool.
-            </td>
-          </tr>
-        `;
-        return;
-      }
+    const countBadge = document.getElementById('db-count-badge') as HTMLElement;
+    const footerStatus = document.getElementById('db-footer-status') as HTMLElement;
 
-      tbody.innerHTML = dbs.map((db) => `
-        <tr class="hover:bg-surfaceHover/40 transition-colors">
-          <td class="py-3 px-4 font-semibold text-primary font-mono">${db.alias}</td>
-          <td class="py-3 px-4">
-            <span class="px-2 py-0.5 rounded text-[11px] font-mono uppercase bg-accent-blue/10 text-accent-blue border border-accent-blue/20">
-              ${db.engine}
-            </span>
-          </td>
-          <td class="py-3 px-4 text-secondary">${db.pool_min} – ${db.pool_max} conns</td>
-          <td class="py-3 px-4 text-secondary">${new Date(db.created_at * 1000).toLocaleDateString()}</td>
-          <td class="py-3 px-4 text-right">
-            <div class="inline-flex items-center space-x-1">
-              <button 
-                data-test-alias="${db.alias}" 
-                class="px-2 py-1 text-secondary hover:text-emerald-400 rounded hover:bg-surfaceHover transition-colors flex items-center space-x-1" 
-                title="Test live database connectivity"
-              >
-                ${icon('activity', 'w-3.5 h-3.5')}
-                <span class="text-[11px] font-sans">Test</span>
-              </button>
-              <button 
-                data-delete-alias="${db.alias}" 
-                class="p-1 text-secondary hover:text-rose-400 rounded hover:bg-surfaceHover transition-colors" 
-                title="Disconnect database pool"
-              >
-                ${icon('trash', 'w-4 h-4')}
-              </button>
-            </div>
+    if (countBadge) countBadge.textContent = `${allDatabases.length} pool${allDatabases.length === 1 ? '' : 's'}`;
+
+    if (dbs.length === 0) {
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="5" class="px-4 py-12 text-center text-xs text-[#666666]">
+            ${
+              filterQuery
+                ? `No databases match "${filterQuery}".`
+                : 'No databases connected yet. Click "Connect Database" to register your first pool.'
+            }
           </td>
         </tr>
-      `).join('');
+      `;
+      if (footerStatus) footerStatus.textContent = 'Showing 0 databases';
+      return;
+    }
 
-      // Bind Test Connection buttons
-      tbody.querySelectorAll('[data-test-alias]').forEach((btn) => {
-        btn.addEventListener('click', async (e) => {
-          const alias = (e.currentTarget as HTMLElement).getAttribute('data-test-alias');
-          if (!alias) return;
-          const button = e.currentTarget as HTMLButtonElement;
-          button.disabled = true;
-          button.innerHTML = `${icon('refresh', 'w-3.5 h-3.5 animate-spin')} <span class="text-[11px] font-sans">Testing...</span>`;
+    if (footerStatus) footerStatus.textContent = `Showing ${dbs.length} of ${allDatabases.length} database pool${allDatabases.length === 1 ? '' : 's'}`;
 
-          try {
-            const res = await api.testDatabase(alias);
-            toast.success(`Database '${alias}' connected (${res.dialect})`);
-          } catch (err: unknown) {
-            toast.error(err instanceof Error ? err.message : `Connection test failed for '${alias}'`);
-          } finally {
-            button.disabled = false;
-            button.innerHTML = `${icon('activity', 'w-3.5 h-3.5')} <span class="text-[11px] font-sans">Test</span>`;
-          }
+    tbody.innerHTML = dbs
+      .map(
+        (db) => `
+      <tr class="h-[44px] hover:bg-[#161616] transition-colors">
+        <td class="px-4 py-2 font-mono font-medium text-white text-xs">
+          <div class="flex items-center gap-2">
+            <span class="size-2 rounded-full bg-emerald-400"></span>
+            <span>${db.alias}</span>
+          </div>
+        </td>
+        <td class="px-4 py-2">
+          <span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-mono uppercase bg-[#141414] border border-[#262626] text-[#3b82f6]">
+            ${db.engine}
+          </span>
+        </td>
+        <td class="px-4 py-2 font-mono text-xs text-[#8c8c8c]">
+          ${db.pool_min}..${db.pool_max} conns
+        </td>
+        <td class="px-4 py-2 font-mono text-xs text-[#8c8c8c]">
+          ${new Date(db.created_at * 1000).toLocaleDateString()}
+        </td>
+        <td class="px-4 py-2 text-right">
+          <div class="inline-flex items-center gap-1.5 justify-end">
+            <button 
+              data-test-alias="${db.alias}" 
+              class="h-7 px-2.5 rounded bg-[#141414] hover:bg-[#1a1a1a] border border-[#262626] hover:border-[#383838] text-xs font-medium text-[#cccccc] hover:text-white transition-colors flex items-center gap-1 cursor-pointer" 
+              title="Test database pool connectivity"
+            >
+              ${icon('activity', 'w-3 h-3 text-[#3b82f6]')}
+              <span>Ping</span>
+            </button>
+            <button 
+              data-delete-alias="${db.alias}" 
+              class="size-7 rounded bg-[#141414] hover:bg-rose-500/20 border border-[#262626] hover:border-rose-500/30 text-[#8c8c8c] hover:text-rose-400 transition-colors flex items-center justify-center cursor-pointer" 
+              title="Disconnect database pool"
+            >
+              ${icon('trash', 'w-3.5 h-3.5')}
+            </button>
+          </div>
+        </td>
+      </tr>
+    `
+      )
+      .join('');
+
+    // Bind Test Connection buttons
+    tbody.querySelectorAll('[data-test-alias]').forEach((btn) => {
+      btn.addEventListener('click', async (e) => {
+        const alias = (e.currentTarget as HTMLElement).getAttribute('data-test-alias');
+        if (!alias) return;
+        const button = e.currentTarget as HTMLButtonElement;
+        button.disabled = true;
+        button.innerHTML = `${icon('refresh', 'w-3 h-3 animate-spin')} <span>Pinging...</span>`;
+
+        try {
+          const res = await api.testDatabase(alias);
+          toast.success(`Pool '${alias}' healthy (dialect: ${res.dialect})`);
+        } catch (err: unknown) {
+          toast.error(err instanceof Error ? err.message : `Ping failed for '${alias}'`);
+        } finally {
+          button.disabled = false;
+          button.innerHTML = `${icon('activity', 'w-3 h-3 text-[#3b82f6]')} <span>Ping</span>`;
+        }
+      });
+    });
+
+    // Bind Delete buttons
+    tbody.querySelectorAll('[data-delete-alias]').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        const alias = (e.currentTarget as HTMLElement).getAttribute('data-delete-alias');
+        if (!alias) return;
+
+        confirmDialog({
+          title: 'Disconnect Database',
+          message: `Are you sure you want to disconnect database '${alias}'? In-flight queries will be closed.`,
+          confirmText: 'Disconnect',
+          danger: true,
+          onConfirm: async () => {
+            try {
+              await api.deleteDatabase(alias);
+              toast.success(`Database '${alias}' disconnected`);
+              loadDatabases();
+            } catch (err: unknown) {
+              toast.error(err instanceof Error ? err.message : 'Failed to disconnect database');
+            }
+          },
         });
       });
+    });
+  }
 
-      // Bind Delete buttons
-      tbody.querySelectorAll('[data-delete-alias]').forEach((btn) => {
-        btn.addEventListener('click', (e) => {
-          const alias = (e.currentTarget as HTMLElement).getAttribute('data-delete-alias');
-          if (!alias) return;
-
-          confirmDialog({
-            title: 'Disconnect Database',
-            message: `Are you sure you want to disconnect database '${alias}'? In-flight queries will be closed.`,
-            confirmText: 'Disconnect',
-            danger: true,
-            onConfirm: async () => {
-              try {
-                await api.deleteDatabase(alias);
-                toast.success(`Database '${alias}' disconnected`);
-                loadDatabases();
-              } catch (err: unknown) {
-                toast.error(err instanceof Error ? err.message : 'Failed to disconnect database');
-              }
-            },
-          });
-        });
-      });
+  async function loadDatabases() {
+    try {
+      allDatabases = await api.getDatabases();
+      applyFilter();
     } catch {
-      tbody.innerHTML = `<tr><td colspan="5" class="py-8 text-center text-rose-400">Failed to load registered databases.</td></tr>`;
+      const tbody = document.getElementById('db-table-body') as HTMLElement;
+      tbody.innerHTML = `<tr><td colspan="5" class="px-4 py-8 text-center text-rose-400 text-xs">Failed to load registered databases.</td></tr>`;
     }
   }
+
+  function applyFilter() {
+    const q = filterQuery.trim().toLowerCase();
+    const filtered = q
+      ? allDatabases.filter((d) => d.alias.toLowerCase().includes(q) || d.engine.toLowerCase().includes(q))
+      : allDatabases;
+    renderTableRows(filtered);
+  }
+
+  document.getElementById('db-search-input')?.addEventListener('input', (e) => {
+    filterQuery = (e.target as HTMLInputElement).value;
+    applyFilter();
+  });
 
   const closeModal = () => modal.classList.add('hidden');
   const openModal = () => {

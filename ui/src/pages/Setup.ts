@@ -1,5 +1,6 @@
 /*
  * Axiom first-time setup wizard (4-step walkthrough).
+ * Ported from binary_alive Setup / Wizard architecture (Cloudflare & Vercel design system).
  * Locks permanently after completion to prevent administrative hijacking.
  */
 
@@ -18,23 +19,23 @@ export function renderSetup(container: HTMLElement) {
 
   function render() {
     container.innerHTML = `
-      <div class="min-h-screen flex items-center justify-center p-4 bg-background">
-        <div class="w-full max-w-lg bg-surface border border-surfaceBorder rounded-lg p-6 sm:p-8 shadow-xl">
+      <div class="min-h-screen flex items-center justify-center p-4 bg-[#000000] select-none font-sans">
+        <div class="w-full max-w-lg bg-[#0e0e0e] border border-[#262626] rounded-xl p-6 sm:p-8 shadow-2xl space-y-6 animate-in fade-in zoom-in-95">
           
           <!-- Stepper Indicator -->
-          <div class="flex items-center justify-between mb-8 border-b border-surfaceBorder pb-4">
-            <div class="flex items-center space-x-2.5">
-              <div class="w-7 h-7 rounded-md bg-accent-orange text-white flex items-center justify-center font-bold text-xs shadow-xs">
+          <div class="flex items-center justify-between border-b border-[#222222] pb-4">
+            <div class="flex items-center gap-2.5">
+              <div class="size-7 rounded-[4px] bg-[#f38020] text-white flex items-center justify-center font-bold text-xs tracking-wider shadow-xs">
                 AX
               </div>
-              <span class="text-sm font-semibold text-primary">Axiom Setup Wizard</span>
+              <span class="text-sm font-semibold text-white">Axiom Setup Wizard</span>
             </div>
-            <div class="text-xs text-secondary font-mono">
+            <div class="text-xs text-[#8c8c8c] font-mono">
               Step ${currentStep} of 4
             </div>
           </div>
 
-          <div id="setup-error" class="hidden mb-4 p-3 rounded-md bg-rose-500/10 border border-rose-500/20 text-xs text-rose-400"></div>
+          <div id="setup-error" class="hidden p-2.5 rounded-lg bg-rose-500/10 border border-rose-500/20 text-xs text-rose-400"></div>
 
           ${renderStepContent()}
 
@@ -49,24 +50,24 @@ export function renderSetup(container: HTMLElement) {
     switch (currentStep) {
       case 1:
         return `
-          <div class="space-y-4">
-            <h2 class="text-lg font-semibold text-primary">Welcome to Axiom Gateway</h2>
-            <p class="text-xs text-secondary leading-relaxed">
-              Axiom is a high-performance SQL API gateway that unifies database pooling, 
+          <div class="space-y-4 text-xs">
+            <h2 class="text-lg font-semibold text-white">Welcome to Axiom Gateway</h2>
+            <p class="text-xs text-[#8c8c8c] leading-relaxed">
+              Axiom is a high-performance SQL API gateway that unifies connection pooling, 
               RBAC authorization, high-speed L1/L2 caching, and Model Context Protocol (MCP) into a single binary.
             </p>
-            <div class="bg-background border border-surfaceBorder rounded-md p-4 space-y-2 text-xs text-secondary">
-              <div class="flex items-center space-x-2 text-primary font-medium">
-                ${icon('shield', 'w-4 h-4 text-accent-orange')}
+            <div class="bg-[#141414] border border-[#262626] rounded-lg p-4 space-y-2 text-[#8c8c8c]">
+              <div class="flex items-center gap-2 text-white font-medium">
+                ${icon('shield', 'w-4 h-4 text-[#f38020]')}
                 <span>What we will configure:</span>
               </div>
-              <ul class="list-disc pl-5 space-y-1.5 text-secondary pt-1">
+              <ul class="list-disc pl-5 space-y-1.5 pt-1 text-[#cccccc]">
                 <li>Create the primary administrative owner account.</li>
                 <li>Connect your first upstream SQL database (PostgreSQL, MySQL, SQLite, MSSQL, ClickHouse).</li>
-                <li>Bootstrap the persistent cryptographic metadata store (<code class="text-primary font-mono">axiom.db</code>).</li>
+                <li>Bootstrap the persistent cryptographic metadata store (<code class="text-white font-mono">axiom.db</code>).</li>
               </ul>
             </div>
-            <button id="step1-next" class="w-full py-2.5 px-4 bg-accent-orange hover:bg-orange-600 text-white text-sm font-medium rounded-md transition-colors shadow-xs">
+            <button id="step1-next" class="w-full h-9 bg-[#f38020] hover:bg-[#e07018] text-white text-xs font-medium rounded-lg transition-colors shadow-xs cursor-pointer">
               Begin Configuration &rarr;
             </button>
           </div>
@@ -74,26 +75,26 @@ export function renderSetup(container: HTMLElement) {
 
       case 2:
         return `
-          <form id="step2-form" class="space-y-4">
+          <form id="step2-form" class="space-y-4 text-xs">
             <div>
-              <h2 class="text-lg font-semibold text-primary">Create Primary Administrator</h2>
-              <p class="text-xs text-secondary mt-0.5">This account owns and manages the Web UI console and operator policies.</p>
+              <h2 class="text-lg font-semibold text-white">Create Primary Administrator</h2>
+              <p class="text-xs text-[#8c8c8c] mt-0.5">This account owns and manages the Web UI console and operator policies.</p>
             </div>
 
             <div>
-              <label for="admin-user" class="block text-xs font-medium text-secondary mb-1">Admin Username</label>
+              <label for="admin-user" class="block text-xs font-medium text-[#8c8c8c] mb-1.5">Admin Username</label>
               <input 
                 id="admin-user" 
                 type="text" 
                 required 
                 placeholder="admin"
                 value="${adminUsername}"
-                class="w-full px-3 py-2 text-sm bg-background border border-surfaceBorder rounded-md text-primary focus:border-focusRing focus:outline-none focus:ring-1 focus:ring-focusRing"
+                class="w-full h-9 px-3 text-xs bg-[#141414] border border-[#262626] rounded-lg text-white placeholder-[#666666] focus:border-[#3b82f6] outline-none transition-colors"
               />
             </div>
 
             <div>
-              <label for="admin-pass" class="block text-xs font-medium text-secondary mb-1">Master Password</label>
+              <label for="admin-pass" class="block text-xs font-medium text-[#8c8c8c] mb-1.5">Master Password</label>
               <input 
                 id="admin-pass" 
                 type="password" 
@@ -101,11 +102,11 @@ export function renderSetup(container: HTMLElement) {
                 minlength="8"
                 placeholder="Minimum 8 characters"
                 value="${adminPassword}"
-                class="w-full px-3 py-2 text-sm bg-background border border-surfaceBorder rounded-md text-primary focus:border-focusRing focus:outline-none focus:ring-1 focus:ring-focusRing"
+                class="w-full h-9 px-3 text-xs bg-[#141414] border border-[#262626] rounded-lg text-white placeholder-[#666666] focus:border-[#3b82f6] outline-none transition-colors"
               />
             </div>
 
-            <button type="submit" id="step2-next" class="w-full py-2.5 px-4 bg-accent-orange hover:bg-orange-600 text-white text-sm font-medium rounded-md transition-colors shadow-xs">
+            <button type="submit" id="step2-next" class="w-full h-9 bg-[#f38020] hover:bg-[#e07018] text-white text-xs font-medium rounded-lg transition-colors shadow-xs cursor-pointer">
               Continue to Database Setup &rarr;
             </button>
           </form>
@@ -113,29 +114,29 @@ export function renderSetup(container: HTMLElement) {
 
       case 3:
         return `
-          <form id="step3-form" class="space-y-4">
+          <form id="step3-form" class="space-y-4 text-xs">
             <div>
-              <h2 class="text-lg font-semibold text-primary">Connect First Database</h2>
-              <p class="text-xs text-secondary mt-0.5">Register an upstream SQL database pool. You can also skip this and add databases later.</p>
+              <h2 class="text-lg font-semibold text-white">Connect First Database</h2>
+              <p class="text-xs text-[#8c8c8c] mt-0.5">Register an upstream SQL database pool. You can also skip this and add databases later.</p>
             </div>
 
             <div>
-              <label for="db-alias" class="block text-xs font-medium text-secondary mb-1">Database Alias</label>
+              <label for="db-alias" class="block text-xs font-medium text-[#8c8c8c] mb-1.5">Database Alias</label>
               <input 
                 id="db-alias" 
                 type="text" 
                 placeholder="main_db"
                 value="${dbAlias}"
-                class="w-full px-3 py-2 text-sm bg-background border border-surfaceBorder rounded-md text-primary focus:border-focusRing focus:outline-none focus:ring-1 focus:ring-focusRing"
+                class="w-full h-9 px-3 text-xs bg-[#141414] border border-[#262626] rounded-lg text-white placeholder-[#666666] focus:border-[#3b82f6] outline-none transition-colors font-mono"
               />
             </div>
 
             <div class="grid grid-cols-2 gap-3">
               <div>
-                <label for="db-engine" class="block text-xs font-medium text-secondary mb-1">Engine Dialect</label>
+                <label for="db-engine" class="block text-xs font-medium text-[#8c8c8c] mb-1.5">Engine Dialect</label>
                 <select 
                   id="db-engine"
-                  class="w-full px-3 py-2 text-sm bg-background border border-surfaceBorder rounded-md text-primary focus:border-focusRing focus:outline-none focus:ring-1 focus:ring-focusRing"
+                  class="w-full h-9 px-3 text-xs bg-[#141414] border border-[#262626] rounded-lg text-white focus:border-[#3b82f6] outline-none transition-colors"
                 >
                   <option value="postgres" ${dbEngine === 'postgres' ? 'selected' : ''}>PostgreSQL</option>
                   <option value="mysql" ${dbEngine === 'mysql' ? 'selected' : ''}>MySQL / MariaDB</option>
@@ -145,32 +146,32 @@ export function renderSetup(container: HTMLElement) {
                 </select>
               </div>
               <div>
-                <label for="pool-size" class="block text-xs font-medium text-secondary mb-1">Max Pool Size</label>
+                <label for="pool-size" class="block text-xs font-medium text-[#8c8c8c] mb-1.5">Max Connections</label>
                 <input 
                   id="pool-size" 
                   type="number" 
                   value="10" 
-                  class="w-full px-3 py-2 text-sm bg-background border border-surfaceBorder rounded-md text-primary focus:border-focusRing focus:outline-none focus:ring-1 focus:ring-focusRing"
+                  class="w-full h-9 px-3 text-xs bg-[#141414] border border-[#262626] rounded-lg text-white font-mono focus:border-[#3b82f6] outline-none transition-colors"
                 />
               </div>
             </div>
 
             <div>
-              <label for="db-url" class="block text-xs font-medium text-secondary mb-1">Connection URL</label>
+              <label for="db-url" class="block text-xs font-medium text-[#8c8c8c] mb-1.5">Connection URL</label>
               <input 
                 id="db-url" 
                 type="text" 
                 placeholder="postgres://user:pass@localhost:5432/mydb"
                 value="${dbUrl}"
-                class="w-full px-3 py-2 text-sm bg-background border border-surfaceBorder rounded-md text-primary focus:border-focusRing focus:outline-none focus:ring-1 focus:ring-focusRing font-mono text-xs"
+                class="w-full h-9 px-3 text-xs bg-[#141414] border border-[#262626] rounded-lg text-white placeholder-[#666666] focus:border-[#3b82f6] outline-none transition-colors font-mono"
               />
             </div>
 
-            <div class="flex space-x-3 pt-2">
-              <button type="button" id="step3-skip" class="flex-1 py-2.5 px-4 bg-surfaceHover hover:bg-surfaceBorder text-secondary hover:text-primary text-sm font-medium rounded-md transition-colors">
+            <div class="flex gap-2.5 pt-2">
+              <button type="button" id="step3-skip" class="flex-1 h-9 bg-[#141414] hover:bg-[#1a1a1a] border border-[#262626] text-[#cccccc] hover:text-white text-xs font-medium rounded-lg transition-colors cursor-pointer">
                 Skip for Now
               </button>
-              <button type="submit" id="step3-next" class="flex-1 py-2.5 px-4 bg-accent-orange hover:bg-orange-600 text-white text-sm font-medium rounded-md transition-colors shadow-xs">
+              <button type="submit" id="step3-next" class="flex-1 h-9 bg-[#f38020] hover:bg-[#e07018] text-white text-xs font-medium rounded-lg transition-colors shadow-xs cursor-pointer">
                 Save & Continue
               </button>
             </div>
@@ -179,23 +180,23 @@ export function renderSetup(container: HTMLElement) {
 
       case 4:
         return `
-          <div class="space-y-4">
+          <div class="space-y-4 text-xs">
             <div class="text-center py-4">
-              <div class="w-12 h-12 rounded-full bg-emerald-500/10 text-emerald-400 mx-auto flex items-center justify-center mb-3">
+              <div class="size-12 rounded-full bg-emerald-500/10 text-emerald-400 mx-auto flex items-center justify-center mb-3">
                 ${icon('check', 'w-6 h-6')}
               </div>
-              <h2 class="text-xl font-semibold text-primary">Setup Complete!</h2>
-              <p class="text-xs text-secondary mt-1">Axiom Gateway is initialized and the wizard is now permanently locked.</p>
+              <h2 class="text-xl font-semibold text-white">Setup Complete!</h2>
+              <p class="text-xs text-[#8c8c8c] mt-1">Axiom Gateway is initialized and the wizard is now permanently locked.</p>
             </div>
 
-            <div class="bg-background border border-surfaceBorder rounded-md p-4 space-y-2 text-xs">
-              <div class="text-secondary font-medium">Session Token:</div>
-              <div class="flex items-center justify-between bg-surface p-2.5 rounded border border-surfaceBorder font-mono text-[11px] text-primary overflow-x-auto">
+            <div class="bg-[#141414] border border-[#262626] rounded-lg p-4 space-y-2">
+              <div class="text-[#8c8c8c] font-medium">Session Token:</div>
+              <div class="flex items-center justify-between bg-[#0e0e0e] p-2.5 rounded border border-[#262626] font-mono text-[11px] text-white overflow-x-auto">
                 <span class="truncate">${sessionToken || 'Active Session Established'}</span>
               </div>
             </div>
 
-            <button id="step4-finish" class="w-full py-2.5 px-4 bg-accent-orange hover:bg-orange-600 text-white text-sm font-medium rounded-md transition-colors shadow-xs">
+            <button id="step4-finish" class="w-full h-9 bg-[#f38020] hover:bg-[#e07018] text-white text-xs font-medium rounded-lg transition-colors shadow-xs cursor-pointer">
               Launch Gateway Dashboard &rarr;
             </button>
           </div>

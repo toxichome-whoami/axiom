@@ -8,24 +8,59 @@ export default {
   theme: {
     extend: {
       colors: {
-        background: '#1F1F1F',
-        surface: '#262626',
-        surfaceHover: '#333333',
-        surfaceBorder: '#404040',
-        primary: '#F5F5F5',
-        secondary: '#A1A1A1',
-        borderDefault: '#454545',
-        focusRing: '#F59E0B',
+        brand: {
+          DEFAULT: '#3b82f6',
+          hover: '#2563eb',
+          muted: 'rgba(59, 130, 246, 0.15)',
+        },
+        surface: {
+          DEFAULT: '#ffffff',
+          dark: '#0f0f0f',
+        },
+        base: {
+          DEFAULT: '#f8fafc',
+          dark: '#000000',
+        },
+        elevated: {
+          DEFAULT: '#f1f5f9',
+          dark: '#161616',
+        },
+        border: {
+          DEFAULT: '#e2e8f0',
+          dark: '#222222',
+        },
+        // Axiom convenience and backward compatibility mappings
+        background: '#000000',
+        surfaceBorder: '#222222',
+        surfaceHover: '#161616',
+        borderDefault: '#262626',
+        primary: '#f3f4f6',
+        secondary: '#8c8c8c',
+        focusRing: '#3b82f6',
         accent: {
-          orange: '#F6821F',
-          blue: '#4693FF',
-          danger: '#AE292F',
-          green: '#10B981',
+          orange: '#f38020',
+          blue: '#3b82f6',
+          danger: '#ef4444',
+          green: '#10b981',
         },
       },
+      fontFamily: {
+        sans: [
+          'Inter',
+          '-apple-system',
+          'BlinkMacSystemFont',
+          'system-ui',
+          'sans-serif',
+        ],
+        mono: [
+          '"JetBrains Mono"',
+          'Consolas',
+          'monospace',
+        ],
+      },
       borderRadius: {
-        md: '4px',
-        lg: '6px',
+        md: '6px',
+        lg: '8px',
       },
     },
   },

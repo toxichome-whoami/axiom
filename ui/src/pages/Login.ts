@@ -1,5 +1,6 @@
 /*
  * Administrative authentication screen for Web UI.
+ * Ported from binary_alive Login architecture (Cloudflare & Vercel design system).
  * Enforces constant-time Argon2 verification on the gateway.
  */
 
@@ -8,23 +9,23 @@ import { toast } from '../components/Toast';
 
 export function renderLogin(container: HTMLElement) {
   container.innerHTML = `
-    <div class="min-h-screen flex items-center justify-center p-4 bg-background">
-      <div class="w-full max-w-sm bg-surface border border-surfaceBorder rounded-lg p-6 sm:p-8 shadow-xl">
-        <div class="flex items-center space-x-3 mb-6">
-          <div class="w-8 h-8 rounded-md bg-accent-orange flex items-center justify-center font-bold text-white tracking-wider shadow-xs">
+    <div class="min-h-screen flex items-center justify-center p-4 bg-[#000000] select-none font-sans">
+      <div class="w-full max-w-sm bg-[#0e0e0e] border border-[#262626] rounded-xl p-8 shadow-2xl space-y-6 animate-in fade-in zoom-in-95">
+        <div class="flex items-center gap-3">
+          <div class="size-9 rounded-lg bg-[#f38020] flex items-center justify-center font-bold text-white tracking-wider shadow-xs text-sm">
             AX
           </div>
           <div>
-            <h1 class="text-base font-semibold text-primary">Axiom Gateway</h1>
-            <p class="text-xs text-secondary">Administrative Console</p>
+            <h1 class="text-base font-semibold text-white tracking-tight">Axiom Gateway</h1>
+            <p class="text-xs text-[#8c8c8c]">Administrative Console</p>
           </div>
         </div>
 
-        <div id="login-error" class="hidden mb-4 p-3 rounded-md bg-rose-500/10 border border-rose-500/20 text-xs text-rose-400"></div>
+        <div id="login-error" class="hidden p-2.5 rounded-lg bg-rose-500/10 border border-rose-500/20 text-xs text-rose-400"></div>
 
-        <form id="login-form" class="space-y-4">
+        <form id="login-form" class="space-y-4 text-xs">
           <div>
-            <label for="username" class="block text-xs font-medium text-secondary mb-1">Username</label>
+            <label for="username" class="block text-xs font-medium text-[#8c8c8c] mb-1.5">Username</label>
             <input 
               id="username" 
               name="username" 
@@ -32,12 +33,12 @@ export function renderLogin(container: HTMLElement) {
               required 
               autocomplete="username"
               placeholder="admin"
-              class="w-full px-3 py-2 text-sm bg-background border border-surfaceBorder rounded-md text-primary placeholder:text-secondary/50 focus:border-focusRing focus:outline-none focus:ring-1 focus:ring-focusRing"
+              class="w-full h-9 px-3 text-xs bg-[#141414] border border-[#262626] rounded-lg text-white placeholder-[#666666] focus:border-[#3b82f6] outline-none transition-colors"
             />
           </div>
 
           <div>
-            <label for="password" class="block text-xs font-medium text-secondary mb-1">Password</label>
+            <label for="password" class="block text-xs font-medium text-[#8c8c8c] mb-1.5">Password</label>
             <input 
               id="password" 
               name="password" 
@@ -45,18 +46,22 @@ export function renderLogin(container: HTMLElement) {
               required 
               autocomplete="current-password"
               placeholder="••••••••••••"
-              class="w-full px-3 py-2 text-sm bg-background border border-surfaceBorder rounded-md text-primary placeholder:text-secondary/50 focus:border-focusRing focus:outline-none focus:ring-1 focus:ring-focusRing"
+              class="w-full h-9 px-3 text-xs bg-[#141414] border border-[#262626] rounded-lg text-white placeholder-[#666666] focus:border-[#3b82f6] outline-none transition-colors"
             />
           </div>
 
           <button 
             type="submit" 
             id="login-btn"
-            class="w-full py-2.5 px-4 bg-accent-orange hover:bg-orange-600 active:bg-orange-700 text-white text-sm font-medium rounded-md transition-colors duration-150 flex items-center justify-center shadow-xs"
+            class="w-full h-9 bg-[#f38020] hover:bg-[#e07018] active:bg-[#d06810] text-white text-xs font-medium rounded-lg transition-colors flex items-center justify-center shadow-xs cursor-pointer mt-2"
           >
             <span>Sign In</span>
           </button>
         </form>
+
+        <div class="pt-2 border-t border-[#222222] text-center text-[11px] text-[#666666] font-mono">
+          Engine v4.0.0 • Pure Single-Binary
+        </div>
       </div>
     </div>
   `;

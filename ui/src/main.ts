@@ -7,6 +7,7 @@ import './style.css';
 import { api } from './api';
 import { renderNavbar } from './components/Navbar';
 import { renderSidebar } from './components/Sidebar';
+import { initGlobalSearch } from './components/GlobalSearchModal';
 import { renderSetup } from './pages/Setup';
 import { renderLogin } from './pages/Login';
 import { renderOverview } from './pages/Overview';
@@ -21,6 +22,9 @@ import { renderSystem } from './pages/System';
 
 const app = document.getElementById('app') as HTMLElement;
 let isMobileSidebarOpen = false;
+
+// Initialize global search listener (Ctrl+K)
+initGlobalSearch();
 
 async function route() {
   const hash = window.location.hash || '#/overview';
@@ -59,13 +63,13 @@ async function route() {
 
   const routeName = hash.replace('#/', '').split('?')[0] || 'overview';
 
-  // Render Dashboard Shell
+  // Render Dashboard Shell matching binary_alive Layout
   app.innerHTML = `
-    <div class="min-h-screen bg-background flex flex-col selection:bg-accent-orange selection:text-white">
-      <div id="navbar-container"></div>
-      <div class="flex-1 flex overflow-hidden">
-        <div id="sidebar-container"></div>
-        <main id="main-content" class="flex-1 overflow-y-auto bg-background focus:outline-none"></main>
+    <div class="flex min-h-screen bg-[#000000] text-[#f3f4f6] font-sans">
+      <div id="sidebar-container"></div>
+      <div class="flex-1 flex flex-col min-w-0 min-h-screen">
+        <div id="navbar-container"></div>
+        <main id="main-content" class="flex-1 overflow-y-auto px-4 sm:px-6 lg:px-8 py-6 w-full flex flex-col focus:outline-none"></main>
       </div>
     </div>
   `;
