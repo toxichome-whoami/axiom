@@ -12,10 +12,17 @@ use tokio::net::TcpListener;
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let args: Vec<String> = std::env::args().collect();
+fn handle_cli_args(args: &[String]) -> bool {
     if args.iter().any(|arg| arg == "--version" || arg == "-v") {
         println!("Axiom Server v{}", env!("CARGO_PKG_VERSION"));
+        return true;
+    }
+    false
+}
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let args: Vec<String> = std::env::args().collect();
+    if handle_cli_args(&args) {
         return Ok(());
     }
 
@@ -118,3 +125,28 @@ async fn shutdown_signal() {
         std::process::exit(0);
     });
 }
+
+// ─── Tests ─────────────────────────────────────────────────────────────────
+// Tests for daemon CLI argument handling and runtime configurations.
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_handle_cli_args_version() {
+        assert!(handle_cli_args(&["axiom-server".into(), "--version".into()]));
+        assert!(handle_cli_args(&["axiom-server".into(), "-v".into()]));
+        assert!(!handle_cli_args(&["axiom-server".into()]));
+        assert!(!handle_cli_args(&["axiom-server".into(), "--unknown".into()]));
+    }
+
+    #[test]
+    fn test_server_config_defaults() {
+        let config = axiom_core::AxiomConfig::default();
+        assert_eq!(config.server.port, 4500);
+        assert_eq!(config.server.host, "127.0.0.1");
+        assert_eq!(config.server.shutdown_timeout, 30);
+    }
+}
+

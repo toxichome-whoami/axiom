@@ -261,3 +261,83 @@ impl DatabaseEngine for LibsqlDatabaseEngine {
         "sqlite"
     }
 }
+
+// ─── Tests ─────────────────────────────────────────────────────────────────
+// Unit tests for the SQLite / LibSQL embedded engine with in-memory execution.
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[tokio::test]
+    async fn test_libsql_in_memory_full_lifecycle() {
+        let config = DatabaseDefConfig {
+            url: "sqlite://:memory:".to_string(),
+            pool_min: 1,
+            pool_max: 5,
+            ..Default::default()
+        };
+
+        let mut engine = LibsqlDatabaseEngine::new(config);
+
+        // 1. Connect & Dialect
+        assert!(engine.connect().await.is_ok());
+        assert_eq!(engine.dialect(), "sqlite");
+        assert!(engine.health_check().await);
+
+        // 2. DDL Execution: Create table
+        let ddl = "CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT NOT NULL, score REAL);";
+        let create_res = engine.execute(ddl, &[]).await;
+        assert!(create_res.is_ok());
+
+        // 3. Introspect: Table listing & Count
+        let count = engine.count_tables().await.unwrap();
+        assert_eq!(count, 1);
+
+        let tables = engine.list_tables(None, 10).await.unwrap();
+        assert_eq!(tables.len(), 1);
+        assert_eq!(tables[0].name, "users");
+
+        // 4. Introspect: Describe table
+        let cols = engine.describe_table("users").await.unwrap();
+        assert_eq!(cols.len(), 3);
+        let id_col = cols.iter().find(|c| c.name == "id").unwrap();
+        assert!(id_col.primary_key);
+
+        let name_col = cols.iter().find(|c| c.name == "name").unwrap();
+        assert!(!name_col.nullable);
+
+        // 5. Insert rows with parameter bindings
+        let insert_sql = "INSERT INTO users (id, name, score) VALUES (?, ?, ?);";
+        let insert_res = engine.execute(insert_sql, &[json!(1), json!("Alice"), json!(99.5)]).await.unwrap();
+        assert_eq!(insert_res.affected_rows, Some(1));
+
+        // 6. Query rows with parameter bindings
+        let query_sql = "SELECT id, name, score FROM users WHERE name = ?;";
+        let query_res = engine.execute(query_sql, &[json!("Alice")]).await.unwrap();
+        assert!(query_res.rows.is_some());
+        let rows = query_res.rows.unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0]["name"], "Alice");
+        assert_eq!(rows[0]["id"], 1);
+
+        // 7. Disconnect
+        assert!(engine.disconnect().await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_libsql_foreign_keys_empty_when_none() {
+        let config = DatabaseDefConfig {
+            url: "sqlite://:memory:".to_string(),
+            ..Default::default()
+        };
+        let mut engine = LibsqlDatabaseEngine::new(config);
+        engine.connect().await.unwrap();
+
+        engine.execute("CREATE TABLE standalone (id INTEGER PRIMARY KEY);", &[]).await.unwrap();
+        let fks = engine.get_foreign_keys("standalone").await.unwrap();
+        assert!(fks.is_empty());
+    }
+}
+

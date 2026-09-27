@@ -148,3 +148,49 @@ impl DatabasePoolManager {
         tracing::info!("Database shutdown complete");
     }
 }
+
+// ─── Tests ─────────────────────────────────────────────────────────────────
+// Unit tests for the connection pool manager, dynamic lazy loading, and shutdown.
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_pool_manager_unknown_alias_returns_none() {
+        let engine = DatabasePoolManager::get_engine("unknown_alias_xyz_123").await;
+        assert!(engine.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_pool_manager_dynamic_metadata_lookup_and_removal() {
+        let snapshot = axiom_metadata::get_snapshot();
+        let db_snap = axiom_metadata::DatabaseSnapshot {
+            alias: "unit_test_mem_db".to_string(),
+            url: "sqlite://:memory:".to_string(),
+            engine: "sqlite".to_string(),
+            pool_min: 1,
+            pool_max: 2,
+        };
+        let mut databases = snapshot.databases.clone();
+        databases.insert("unit_test_mem_db".to_string(), db_snap);
+        axiom_metadata::update_snapshot(axiom_metadata::MetadataSnapshot {
+            keys: snapshot.keys.clone(),
+            roles: snapshot.roles.clone(),
+            databases,
+            loaded_at_unix: 1,
+        });
+
+        // 1. Lazy connect through pool manager
+        let engine = DatabasePoolManager::get_engine("unit_test_mem_db").await;
+        assert!(engine.is_some());
+        let engine = engine.unwrap();
+        assert_eq!(engine.dialect(), "sqlite");
+        assert!(engine.health_check().await);
+
+        // 2. Remove engine from active pool
+        DatabasePoolManager::remove_engine("unit_test_mem_db").await;
+        assert!(!ENGINES.contains_key("unit_test_mem_db"));
+    }
+}
+
