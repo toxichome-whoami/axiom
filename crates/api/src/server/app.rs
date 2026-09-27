@@ -117,6 +117,7 @@ pub fn create_app() -> Router {
         .nest("/admin/v1", admin_routes)
         .nest("/mcp/v1", mcp_routes)
         .nest("/ui", ui_routes)
+        .route("/ui/", get(crate::ui::index_handler))
         .layer(axum::extract::Extension(config.clone()))
         .merge(core_routes)
         .route("/favicon.ico", get(favicon))

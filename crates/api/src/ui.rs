@@ -29,7 +29,7 @@ pub fn get_router() -> Router {
         .route("/*path", get(static_handler))
 }
 
-async fn index_handler() -> impl IntoResponse {
+pub async fn index_handler() -> impl IntoResponse {
     serve_asset("index.html")
 }
 
@@ -113,5 +113,21 @@ mod tests {
     fn test_embedded_index_html_exists() {
         let asset = Assets::get("index.html");
         assert!(asset.is_some(), "Embedded ui/dist/index.html must be present in the binary");
+    }
+
+    #[tokio::test]
+    async fn test_ui_routes_serve_html() {
+        use axum::http::Request;
+        use tower::ServiceExt;
+        let app = crate::server::app::create_app();
+
+        let res = app.clone().oneshot(Request::get("/ui").body(axum::body::Body::empty()).unwrap()).await.unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+
+        let res2 = app.clone().oneshot(Request::get("/ui/").body(axum::body::Body::empty()).unwrap()).await.unwrap();
+        assert_eq!(res2.status(), StatusCode::OK);
+
+        let res3 = app.clone().oneshot(Request::get("/ui/databases").body(axum::body::Body::empty()).unwrap()).await.unwrap();
+        assert_eq!(res3.status(), StatusCode::OK);
     }
 }
