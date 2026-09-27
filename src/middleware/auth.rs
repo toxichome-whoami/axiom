@@ -1,9 +1,9 @@
 /*
  * API key authentication and identity resolution middleware.
  * Owned by: middleware
- * Key deps: axum, base64, crate::config, crate::security::ban_list, crate::utils::types::AuthContext
- * Invariants: Secrets verified using constant-time XOR comparison; IP bans checked exclusively upstream in rate limiter.
- * Last structural change: Phase 0 cleanup removing duplicate IP ban check (Debt #3) and adding global key failure tracking (S3).
+ * Key deps: axum, base64, blake3, crate::config, crate::metadata::snapshot, crate::security::ban_list, crate::utils::types::AuthContext
+ * Invariants: Secrets verified using constant-time XOR comparison; data plane reads lock-free from ArcSwap snapshot with zero DB queries.
+ * Last structural change: Phase 1 ArcSwap snapshot BLAKE3 verification with zero-lock hot path.
  */
 
 use crate::api::errors::AxiomError;
@@ -105,6 +105,40 @@ pub fn validate_api_key(
                 return Err(Some(reason));
             }
 
+            // 1. Check live ArcSwap metadata snapshot (zero-lock hot path)
+            let snapshot = crate::metadata::snapshot::get_snapshot();
+            if let Some(key_snap) = snapshot.keys.get(key_name) {
+                // Check key expiration if configured
+                if let Some(exp) = key_snap.expires_at {
+                    let now = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs() as i64;
+                    if now > exp {
+                        return Err(Some("API key has expired".to_string()));
+                    }
+                }
+
+                // Compute BLAKE3 hash of incoming secret and compare constant-time
+                let computed_hash = blake3::hash(key_secret.as_bytes());
+                let mut match_result = 0;
+                for (a, b) in computed_hash.as_bytes().iter().zip(key_snap.secret_hash.iter()) {
+                    match_result |= a ^ b;
+                }
+
+                if match_result == 0 {
+                    let is_admin = key_snap.role_name.as_deref().map(|r| r.contains("admin")).unwrap_or(false);
+                    return Ok(AuthContext {
+                        api_key_name: key_name.to_string(),
+                        mode: crate::utils::types::ServerMode::Readwrite,
+                        db_scope: vec!["*".to_string()],
+                        rate_limit_override: key_snap.rate_limit_override,
+                        full_admin: is_admin,
+                    });
+                }
+            }
+
+            // 2. Fallback check for static config.toml entries (backward compatibility)
             if let Some(key_cfg) = config.api_key.get(key_name) {
                 // Constant-time comparison preventing timing-attack oracle on secret bytes
                 let mut match_result = 0;
@@ -133,6 +167,14 @@ pub fn validate_api_key(
                     };
                     BanList::record_failed_auth(key_name, penalty_threshold, 60);
                 }
+            } else if snapshot.keys.contains_key(key_name) {
+                // Key exists in metadata snapshot but secret hash check failed
+                let penalty_threshold = if config.rate_limit.penalty_threshold > 0 {
+                    config.rate_limit.penalty_threshold as u32
+                } else {
+                    5
+                };
+                BanList::record_failed_auth(key_name, penalty_threshold, 60);
             }
         }
     }

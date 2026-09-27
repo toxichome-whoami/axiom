@@ -41,6 +41,9 @@ sysinfo = "0.38.4"
 sqlparser = "0.62.0"
 mimalloc = { version = "0.1", default-features = false, features = ["secure"] }
 tiberius = { version = "0.12", default-features = false, features = ["rustls", "tds73", "tokio", "tokio-util"] }
+arc-swap = "1.7"
+blake3 = "1.5"
+argon2 = "0.5"
 
 [profile.release]
 opt-level = 3

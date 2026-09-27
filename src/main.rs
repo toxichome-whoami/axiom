@@ -1,3 +1,11 @@
+/*
+ * Axiom process entrypoint, Tokio runtime bootstrap, and server lifespan coordinator.
+ * Owned by: root
+ * Key deps: tokio, mimalloc, crate::config, crate::metadata, crate::server
+ * Invariants: Config loaded synchronously before runtime build; metadata store initialized before app router.
+ * Last structural change: Phase 1 initialization of metadata store and ArcSwap snapshot distribution.
+ */
+
 use std::net::SocketAddr;
 use tokio::net::TcpListener;
 
@@ -5,10 +13,10 @@ use tokio::net::TcpListener;
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 pub mod api;
-
 pub mod config;
 pub mod db;
 pub mod logging;
+pub mod metadata;
 pub mod middleware;
 pub mod security;
 pub mod server;
@@ -39,9 +47,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
-    // 1. Load config (already done in sync main)
+    let config = config::loader::ConfigManager::get();
 
-    // Initialize logging
+    // 1. Initialize structured logging
     let _log_guard = match logging::setup::setup_logging() {
         Ok(guard) => Some(guard),
         Err(e) => {
@@ -49,6 +57,18 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
             None
         }
     };
+
+    // 2. Initialize Persistent Metadata Store (axiom.db) and publish initial ArcSwap snapshot
+    let metadata_url = &config.metadata.url;
+    let metadata_token = &config.metadata.token;
+    if let Err(e) = metadata::store::MetadataStore::init(metadata_url, metadata_token).await {
+        tracing::error!("Failed to initialize metadata store ({}): {}", metadata_url, e);
+    } else {
+        // Auto-seed legacy api_key and database entries on first boot if store is empty
+        if let Err(e) = metadata::store::MetadataStore::seed_from_config(&config).await {
+            tracing::error!("Failed to auto-seed metadata: {}", e);
+        }
+    }
 
     // 3. Start Background Daemons
     server::lifespan::start_daemons().await;

@@ -1,3 +1,10 @@
+/*
+ * Background worker task supervisor coordinating log rotation, cache eviction, and metadata synchronization.
+ * Owned by: server
+ * Key deps: tokio::task::JoinHandle, crate::logging, crate::metadata
+ * Invariants: All spawned background tasks must be registered in DAEMONS and aborted on stop_daemons.
+ * Last structural change: Phase 1 periodic metadata snapshot synchronization background task.
+ */
 
 use crate::logging::rotator::LogRotator;
 use once_cell::sync::Lazy;
@@ -6,8 +13,11 @@ use tokio::task::JoinHandle;
 
 static DAEMONS: Lazy<Mutex<Vec<JoinHandle<()>>>> = Lazy::new(|| Mutex::new(Vec::new()));
 
+/// Launches all long-running background tasks.
+/// CONTRACT:
+///  - Side effects: Spawns Tokio tasks and registers their handles in `DAEMONS`.
+///  - Idempotent: No (spawns tasks each time called).
 pub async fn start_daemons() {
-
     let config = crate::config::loader::ConfigManager::get();
     let cache_needs_turso = config.cache.backend == "turso" || config.cache.backend == "hybrid";
     let rl_needs_turso = config.rate_limit.backend == "turso";
@@ -27,19 +37,32 @@ pub async fn start_daemons() {
 
     let mut tasks = DAEMONS.lock().unwrap();
 
+    // Log rotation daemon
     let rotator_handle = LogRotator::start();
     tasks.push(rotator_handle);
 
-    // Core daemons only
+    // Periodic metadata snapshot refresh daemon (reloads axiom.db every reload_interval seconds)
+    let reload_interval = config.metadata.reload_interval.max(5);
+    let metadata_sync_handle = tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(reload_interval));
+        loop {
+            interval.tick().await;
+            if let Err(e) = crate::metadata::store::MetadataStore::sync_snapshot().await {
+                tracing::warn!("Periodic metadata snapshot sync failed: {}", e);
+            }
+        }
+    });
+    tasks.push(metadata_sync_handle);
 }
 
-
+/// Registers an externally spawned daemon handle with the lifecycle supervisor.
 pub fn register_daemon(handle: tokio::task::JoinHandle<()>) {
     if let Ok(mut tasks) = DAEMONS.lock() {
         tasks.push(handle);
     }
 }
 
+/// Aborts all active background daemon tasks during graceful server shutdown.
 pub async fn stop_daemons() {
     let mut tasks = DAEMONS.lock().unwrap();
     for task in tasks.drain(..) {

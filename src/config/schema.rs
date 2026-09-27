@@ -3,7 +3,7 @@
  * Owned by: config
  * Key deps: serde, crate::utils::types
  * Invariants: Config loaded once at startup; defaults must be secure and suitable for single-node deployments.
- * Last structural change: Phase 0 cleanup documenting full_admin deprecation path for v4 RBAC (Debt #6).
+ * Last structural change: Phase 1 addition of MetadataConfig for SQLite/Turso store backing.
  */
 
 use crate::utils::types::*;
@@ -253,6 +253,24 @@ impl Default for CircuitBreakerConfig {
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 #[serde(default)]
+pub struct MetadataConfig {
+    pub url: String,
+    pub token: String,
+    pub reload_interval: u64,
+}
+
+impl Default for MetadataConfig {
+    fn default() -> Self {
+        Self {
+            url: "file:data/axiom.db".to_string(),
+            token: "".to_string(),
+            reload_interval: 30,
+        }
+    }
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
+#[serde(default)]
 pub struct AxiomConfig {
     pub server: ServerConfig,
     pub version: String,
@@ -264,6 +282,7 @@ pub struct AxiomConfig {
     pub database: HashMap<String, DatabaseDefConfig>,
     pub api_key: HashMap<String, ApiKeyDefConfig>,
     pub circuit_breaker: CircuitBreakerConfig,
+    pub metadata: MetadataConfig,
 }
 
 impl Default for AxiomConfig {
@@ -279,6 +298,7 @@ impl Default for AxiomConfig {
             database: HashMap::new(),
             api_key: HashMap::new(),
             circuit_breaker: CircuitBreakerConfig::default(),
+            metadata: MetadataConfig::default(),
         }
     }
 }
