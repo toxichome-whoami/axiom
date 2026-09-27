@@ -19,6 +19,7 @@ pub mod config;
 pub mod db;
 pub mod logging;
 pub mod metadata;
+pub mod metrics;
 pub mod middleware;
 pub mod policy;
 pub mod security;

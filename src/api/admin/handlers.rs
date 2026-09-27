@@ -7,7 +7,7 @@
  */
 
 use axum::{
-    extract::Path,
+    extract::{Path, Query},
     http::StatusCode,
     response::IntoResponse,
     Extension, Json,
@@ -23,6 +23,12 @@ use crate::metadata::store::MetadataStore;
 use crate::utils::types::AuthContext;
 
 // ─── Request Schemas ───────────────────────────────────────────────────────
+
+#[derive(Debug, Deserialize)]
+pub struct AuditQuery {
+    pub limit: Option<usize>,
+    pub offset: Option<usize>,
+}
 
 #[derive(Debug, Deserialize)]
 pub struct CreateKeyRequest {
@@ -608,6 +614,62 @@ pub async fn flush_cache(
         },
         "error": Value::Null
     })))
+}
+
+/// Retrieves paginated audit logs documenting administrative control plane events.
+/// CONTRACT:
+///  - Precondition: Verified admin AuthContext.
+///  - Returns JSON list of AuditRecord entries.
+///  - Side effects: None.
+///  - Idempotent: Yes.
+pub async fn get_audit_log(
+    Extension(auth): Extension<AuthContext>,
+    Query(query): Query<AuditQuery>,
+) -> Result<impl IntoResponse, AxiomError> {
+    if !auth.full_admin {
+        return Err(AxiomError::new(
+            "FORBIDDEN",
+            "Admin privileges required",
+            StatusCode::FORBIDDEN,
+        ));
+    }
+
+    let limit = query.limit.unwrap_or(50).clamp(1, 500);
+    let offset = query.offset.unwrap_or(0);
+
+    let logs = MetadataStore::query_audit_log(limit, offset)
+        .await
+        .map_err(|e| AxiomError::new("AUDIT_QUERY_FAILED", &e, StatusCode::INTERNAL_SERVER_ERROR))?;
+
+    Ok(Json(json!({
+        "success": true,
+        "data": logs,
+        "error": Value::Null
+    })))
+}
+
+/// Returns Prometheus exposition format metrics for admin monitoring.
+/// CONTRACT:
+///  - Precondition: Verified admin AuthContext.
+///  - Returns text/plain formatted Prometheus metrics.
+///  - Side effects: None.
+///  - Idempotent: Yes.
+pub async fn get_metrics(
+    Extension(auth): Extension<AuthContext>,
+) -> Result<impl IntoResponse, AxiomError> {
+    if !auth.full_admin {
+        return Err(AxiomError::new(
+            "FORBIDDEN",
+            "Admin privileges required",
+            StatusCode::FORBIDDEN,
+        ));
+    }
+
+    let metrics_text = crate::metrics::MetricsEngine::render_prometheus();
+    Ok((
+        [(axum::http::header::CONTENT_TYPE, "text/plain; version=0.0.4; charset=utf-8")],
+        metrics_text,
+    ))
 }
 
 

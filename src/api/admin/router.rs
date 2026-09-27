@@ -28,4 +28,6 @@ pub fn get_router() -> Router {
         .route("/databases/:alias", delete(delete_database))
         .route("/cache/stats", get(get_cache_stats))
         .route("/cache/flush", post(flush_cache))
+        .route("/audit", get(get_audit_log))
+        .route("/metrics", get(get_metrics))
 }

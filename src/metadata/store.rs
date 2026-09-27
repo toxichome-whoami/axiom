@@ -458,6 +458,12 @@ impl MetadataStore {
         .await
         .map_err(|e| format!("Failed to create API key: {}", e))?;
 
+        let _ = conn.execute(
+            "INSERT INTO audit_log (timestamp, actor, action, target, details) \
+             VALUES (?1, 'admin', 'key.create', ?2, ?3)",
+            libsql::params![now_unix, name, format!("role={}", role_name.unwrap_or("none"))],
+        ).await;
+
         drop(conn);
         Self::sync_snapshot().await?;
 
@@ -473,6 +479,19 @@ impl MetadataStore {
             .execute("DELETE FROM api_keys WHERE name = ?1", [name])
             .await
             .map_err(|e| format!("Failed to delete API key: {}", e))?;
+
+        if affected > 0 {
+            let now_unix = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs() as i64;
+
+            let _ = conn.execute(
+                "INSERT INTO audit_log (timestamp, actor, action, target, details) \
+                 VALUES (?1, 'admin', 'key.delete', ?2, NULL)",
+                libsql::params![now_unix, name],
+            ).await;
+        }
 
         drop(conn);
         Self::sync_snapshot().await?;
@@ -963,6 +982,51 @@ impl MetadataStore {
 
         Ok(affected > 0)
     }
+
+    // ─── Audit Trail Management ────────────────────────────────────────────
+    // Exposes immutable historical records of system modifications for compliance and forensic auditing.
+
+    /// Queries paginated audit log entries ordered chronologically descending (newest first).
+    /// CONTRACT:
+    ///  - Precondition: `limit` clamped to safe bounds (max 500) to prevent memory exhaustion.
+    ///  - Returns: `Result<Vec<AuditRecord>, String>` containing historical audit rows.
+    ///  - Side effects: None (read-only SQLite query).
+    ///  - Idempotency: Yes.
+    pub async fn query_audit_log(limit: usize, offset: usize) -> Result<Vec<AuditRecord>, String> {
+        let conn = Self::get_conn().await?;
+        let safe_limit = limit.min(500) as i64;
+        let safe_offset = offset as i64;
+
+        let mut rows = conn
+            .query(
+                "SELECT id, timestamp, actor, action, target, details \
+                 FROM audit_log ORDER BY id DESC LIMIT ?1 OFFSET ?2",
+                libsql::params![safe_limit, safe_offset],
+            )
+            .await
+            .map_err(|e| format!("Query audit_log failed: {}", e))?;
+
+        let mut records = Vec::new();
+        while let Ok(Some(row)) = rows.next().await {
+            let id: i64 = row.get(0).map_err(|e| e.to_string())?;
+            let timestamp: i64 = row.get(1).unwrap_or(0);
+            let actor: String = row.get(2).map_err(|e| e.to_string())?;
+            let action: String = row.get(3).map_err(|e| e.to_string())?;
+            let target: String = row.get(4).map_err(|e| e.to_string())?;
+            let details: Option<String> = row.get(5).ok();
+
+            records.push(AuditRecord {
+                id,
+                timestamp,
+                actor,
+                action,
+                target,
+                details,
+            });
+        }
+
+        Ok(records)
+    }
 }
 
 #[cfg(test)]
@@ -996,6 +1060,22 @@ mod tests {
         let parsed = PasswordHash::new(&hash).unwrap();
         assert!(argon2.verify_password(password.as_bytes(), &parsed).is_ok());
         assert!(argon2.verify_password(b"WrongPassword", &parsed).is_err());
+    }
+
+    #[test]
+    fn test_audit_record_model() {
+        let rec = AuditRecord {
+            id: 1,
+            timestamp: 1727400000,
+            actor: "admin".to_string(),
+            action: "key.create".to_string(),
+            target: "test_key".to_string(),
+            details: Some("role=analyst".to_string()),
+        };
+        assert_eq!(rec.id, 1);
+        assert_eq!(rec.action, "key.create");
+        assert_eq!(rec.actor, "admin");
+        assert_eq!(rec.target, "test_key");
     }
 }
 

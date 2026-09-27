@@ -38,6 +38,13 @@ async fn favicon() -> impl IntoResponse {
     )
 }
 
+async fn prometheus_metrics() -> impl IntoResponse {
+    (
+        [(header::CONTENT_TYPE, "text/plain; version=0.0.4; charset=utf-8")],
+        crate::metrics::MetricsEngine::render_prometheus(),
+    )
+}
+
 pub fn create_app() -> Router {
     let config = ConfigManager::get();
 
@@ -113,7 +120,9 @@ pub fn create_app() -> Router {
         .layer(axum::extract::Extension(config.clone()))
         .merge(core_routes)
         .route("/favicon.ico", get(favicon))
+        .route("/metrics", get(prometheus_metrics))
         .fallback(fallback_handler)
+        .layer(middleware::from_fn(crate::middleware::metrics::metrics_middleware))
         .layer(cors)
         .layer(tower_http::timeout::TimeoutLayer::new(
             std::time::Duration::from_secs(30),

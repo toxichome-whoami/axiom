@@ -61,6 +61,7 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, A
                 return Ok(next.run(req).await);
             }
             Err(Some(ban_reason)) => {
+                crate::metrics::MetricsEngine::record_auth_failure("key_suspended");
                 return Err(AxiomError::new(
                     "AUTH_INVALID_KEY",
                     &format!("API key is suspended: {}", ban_reason),
@@ -69,8 +70,11 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, A
             }
             Err(None) => {
                 // Invalid credentials or unparseable token
+                crate::metrics::MetricsEngine::record_auth_failure("invalid_credentials");
             }
         }
+    } else {
+        crate::metrics::MetricsEngine::record_auth_failure("missing_key");
     }
 
     Err(AxiomError::new(

@@ -109,6 +109,7 @@ pub async fn rate_limit_middleware(req: Request, next: Next) -> Result<Response,
     };
 
     if ip_violated {
+        crate::metrics::MetricsEngine::record_rate_limit_rejection();
         return Err(AxiomError::new(
             "RATE_LIMIT_EXCEEDED",
             "Rate limit exceeded or IP temporarily blocked.",
@@ -145,6 +146,7 @@ pub async fn rate_limit_middleware(req: Request, next: Next) -> Result<Response,
                         );
 
                         if key_violated {
+                            crate::metrics::MetricsEngine::record_rate_limit_rejection();
                             return Err(AxiomError::new(
                                 "RATE_LIMIT_EXCEEDED",
                                 "API key rate limit exceeded.",

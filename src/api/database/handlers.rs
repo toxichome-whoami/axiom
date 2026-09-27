@@ -209,7 +209,11 @@ impl QueryExecutionPipeline {
             sql.to_string()
         };
 
+        let start_time = std::time::Instant::now();
         let exec_result = engine.execute(&formatted_sql, &params).await.map_err(|e| e.to_string());
+        let duration_secs = start_time.elapsed().as_secs_f64();
+        let op_label = if is_mutation { "MUTATION" } else { "SELECT" };
+        crate::metrics::MetricsEngine::record_db_query(db_name, op_label, duration_secs);
 
         match exec_result {
             Ok(res) => {
