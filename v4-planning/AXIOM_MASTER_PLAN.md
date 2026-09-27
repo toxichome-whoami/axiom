@@ -758,12 +758,81 @@ Federation would involve multiple Axiom nodes sharing a remote Turso metadata st
 
 ## Section 17: MCP Architecture
 
-Phase 4. `/mcp/v1` endpoint following the Model Context Protocol specification.
+Phase 4 implements the `/mcp/v1` endpoint conforming to the **Model Context Protocol (JSON-RPC 2.0)** specification. It allows autonomous AI agents (such as Claude Desktop, Cursor, or custom LLM orchestrators) to safely discover, inspect, and manipulate databases connected to Axiom.
 
-- AI agents authenticate with an API key (same `X-Axiom-Key` header)
-- Same RBAC policy enforcement as the data API — an AI agent's key can be restricted to read-only on specific databases/tables
-- Supports: list databases, list tables, describe schema, execute query
-- Rate limited and audit-logged like any other API consumer
+### 17.1 Protocol Specification & Transport
+- **Endpoint:** `POST /mcp/v1`
+- **Transport:** JSON-RPC 2.0 over HTTP (stateless request/response)
+- **Authentication:** Standard `X-Axiom-Key: base64(name:secret)` header.
+- **Authorization:** Every tool execution passes through `PolicyEngine::evaluate(database, table, operation)` against the caller's active metadata snapshot.
+
+### 17.2 Supported MCP Protocol Methods
+
+| JSON-RPC Method | Purpose | Implementation Notes |
+|---|---|---|
+| `initialize` | Client handshake | Returns server metadata (`"axiom"`), protocol version, and server capabilities. |
+| `tools/list` | Tool discovery | Returns schemas for all 8 database tools. Filtered by the API key's RBAC scope. |
+| `tools/call` | Tool execution | Dispatches tool call to data plane engines; enforces AST validation and RBAC. |
+| `resources/list` | Context discovery | Exposes database schemas as URI resources (`axiom://{database}/schema`). |
+| `resources/read` | Context retrieval | Returns formatted table and column schemas for immediate LLM context loading. |
+
+### 17.3 The 8-Tool Database Suite
+
+To optimize for LLM reliability and eliminate SQL syntax hallucinations, the MCP engine provides both structured (dialect-agnostic) tools and raw SQL access:
+
+| Tool Name | Operation | Input Parameters | Description & Guardrails |
+|---|---|---|---|
+| **`list_services`** *(alias `list_databases`)* | Discovery | *(none)* | Enumerates all database aliases configured in Axiom that the caller's API key is authorized to access. |
+| **`list_tables`** | Discovery | `database: string`<br>`cursor?: int`<br>`limit?: int` | Lists all tables in the specified database. Filtered by table-level permissions. |
+| **`describe_table`** | Discovery | `database: string`<br>`table: string` | Returns column names, data types, nullability, primary keys, and foreign key relationships. |
+| **`query`** | Structured Read | `database: string`<br>`table: string`<br>`filter?: object`<br>`sort?: string`<br>`order?: "asc"\|"desc"`<br>`limit?: int`<br>`cursor?: int` | Executes a structured, parameterized SELECT using Axiom's `filter_builder`. Eliminates SQL dialect quirks (Postgres `$1` vs MySQL `?` vs MSSQL `@P1`). Requires `SELECT` permission. |
+| **`insert`** | Structured Write | `database: string`<br>`table: string`<br>`rows: object[]` | Inserts one or more rows into the table. Parameters are strictly bound. Requires `INSERT` permission. |
+| **`update`** | Structured Write | `database: string`<br>`table: string`<br>`filter: object`<br>`data: object` | Updates rows matching the filter criteria. **Mandatory filter:** rejects unconstrained updates to prevent accidental full-table modification. Requires `UPDATE` permission. |
+| **`delete`** | Structured Write | `database: string`<br>`table: string`<br>`filter: object` | Deletes rows matching the filter criteria. **Mandatory filter:** rejects unconstrained deletes to prevent catastrophic accidental data loss. Requires `DELETE` permission. |
+| **`raw_sql`** | Raw SQL Execution | `database: string`<br>`sql: string`<br>`params?: any[]` | Executes arbitrary SQL for complex joins, aggregations, and CTEs. Inspected by SQL AST firewall (rejects blacklisted queries and multiple statements). Requires appropriate RBAC operations. |
+
+### 17.4 Structured Tools vs. Raw SQL Rationale
+
+1. **Dialect Hallucination Resistance:** LLMs frequently produce syntax errors when switching between Postgres, MySQL, MSSQL, ClickHouse, and LibSQL. The structured tools (`query`, `insert`, `update`, `delete`) accept clean JSON payloads and delegate dialect-specific SQL generation to Axiom's internal query builder.
+2. **Granular Operator Guardrails:** Operators can define roles that grant access to structured CRUD tools (`query`, `insert`) while **disabling `raw_sql` completely**. This eliminates SQL injection risks and prevents agents from executing DDL (`DROP`, `ALTER`, `TRUNCATE`) or expensive table scans.
+3. **Mandatory Safety Filters:** AI agents executing destructive operations are prevented from making catastrophic mistakes; `update` and `delete` strictly require a non-empty `filter` block.
+4. **Code Reuse:** Structured tools map 1:1 to Axiom's existing `/api/v1/db/:alias/:table/rows` handlers, while `raw_sql` maps to `/api/v1/db/:alias/query`. No database logic is duplicated.
+
+### 17.5 JSON-RPC Request & Response Examples
+
+#### Tool Call: `tools/call` (`query`)
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "tools/call",
+  "params": {
+    "name": "query",
+    "arguments": {
+      "database": "main_db",
+      "table": "users",
+      "filter": { "status": { "eq": "active" } },
+      "limit": 10
+    }
+  }
+}
+```
+
+#### Response Envelope:
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "{\"rows\": [{\"id\": 1, \"name\": \"Alice\", \"status\": \"active\"}], \"meta\": {\"rows_returned\": 1, \"duration_ms\": 0.84}}"
+      }
+    ]
+  }
+}
+```
 
 ---
 
@@ -1007,7 +1076,7 @@ Nothing. The data API (`/api/v1/*`) response shape, auth header format, and endp
 | 1 | Metadata Store + Identity | libsql `axiom.db`, ArcSwap snapshot, users table, Admin API for keys/databases | `POST /admin/v1/keys` works. Auth reads from ArcSwap. |
 | 2 | Policy Engine / RBAC | roles, permissions, `PolicyEngine::evaluate`, table-level access control | Key with SELECT-only role cannot INSERT. Integration test proves it. |
 | 3 | CLI | `axiom user|key|role|db|cache|health|benchmark` subcommands | CLI can create a key and query the server. |
-| 4 | MCP Engine | `/mcp/v1` endpoint, AI agent SQL access, same policy enforcement | AI agent can list tables and run a SELECT query. |
+| 4 | MCP Engine | `/mcp/v1` JSON-RPC endpoint, 8 AI agent tools (`list_services`, `list_tables`, `describe_table`, `query`, `insert`, `update`, `delete`, `raw_sql`), RBAC policy enforcement | AI agent can discover schemas and execute structured/raw queries via MCP. |
 | 5 | Cache Engine | Unified L1+L2, LRU eviction, optional AOF, unified stats | `bench_cache.go` meets < 1 µs p50 target. |
 | 6 | Observability | Prometheus `/metrics`, structured audit log, `/admin/v1/audit` | Grafana can scrape `/metrics`. Audit log records key creation. |
 | 7 | Web UI | Vite+TS+Tailwind, setup wizard, login, all management pages | UI loads in browser. Can create a role via the UI. |
