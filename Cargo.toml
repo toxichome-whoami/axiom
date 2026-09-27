@@ -9,6 +9,7 @@ members = [
     "binaries/server",
     "binaries/cli",
     "tests",
+    "benches",
 ]
 resolver = "2"
 

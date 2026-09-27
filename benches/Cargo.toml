@@ -1,0 +1,28 @@
+[package]
+name = "axiom-benches"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+axiom-core = { workspace = true }
+axiom-metadata = { workspace = true }
+axiom-policy = { workspace = true }
+axiom-cache = { workspace = true }
+axiom-db = { workspace = true }
+axiom-api = { workspace = true }
+tokio = { workspace = true }
+bytes = { workspace = true }
+base64 = { workspace = true }
+blake3 = "1.8.7"
+tower = { workspace = true }
+axum = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+criterion = { version = "0.5", features = ["async_tokio"] }
+
+[[bench]]
+name = "pipeline"
+harness = false
