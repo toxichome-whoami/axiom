@@ -6,11 +6,12 @@ members = [
     "crates/cache",
     "crates/db",
     "crates/api",
-    "binaries/server",
-    "binaries/cli",
+    "crates/cli",
+    "crates/server",
     "tests",
     "benches",
 ]
+default-members = ["crates/server"]
 resolver = "2"
 
 [workspace.package]
@@ -26,6 +27,7 @@ axiom-policy = { path = "crates/policy" }
 axiom-cache = { path = "crates/cache" }
 axiom-db = { path = "crates/db" }
 axiom-api = { path = "crates/api" }
+axiom-cli = { path = "crates/cli" }
 
 dashmap = "5.5"
 tokio = { version = "1.37.0", features = ["full"] }

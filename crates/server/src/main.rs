@@ -1,15 +1,12 @@
 /*
  * Axiom Unified Binary — Combined CLI management utility and embedded API gateway server.
- * Owned by: cli
+ * Owned by: crates/server
  * Key deps: tokio, mimalloc, axiom-core, axiom-metadata, axiom-api, clap
  * Invariants: Single binary dispatches to CLI subcommands if specified, or launches the full
  *             server daemon and embedded Web UI if run without subcommands or with `server`.
  * Last structural change: Unified single-binary out-of-the-box architecture (Phase 8 -> v4.0).
  */
 
-pub mod client;
-pub mod commands;
-pub mod cli;
 pub mod server_runner;
 
 #[global_allocator]
@@ -42,7 +39,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let rt = builder.build()?;
     rt.block_on(async {
-        let ran_cli = cli::run().await?;
+        let ran_cli = axiom_cli::run().await?;
         if !ran_cli {
             server_runner::run_server().await?;
         }
@@ -62,5 +59,13 @@ mod tests {
         assert!(handle_version_flag(&["axiom".into(), "-v".into()]));
         assert!(!handle_version_flag(&["axiom".into()]));
         assert!(!handle_version_flag(&["axiom".into(), "user".into(), "list".into()]));
+    }
+
+    #[test]
+    fn test_server_config_defaults() {
+        let config = axiom_core::AxiomConfig::default();
+        assert_eq!(config.server.port, 4500);
+        assert_eq!(config.server.host, "127.0.0.1");
+        assert_eq!(config.server.shutdown_timeout, 30);
     }
 }

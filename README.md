@@ -199,12 +199,12 @@ For the full API reference, see **[docs/reference/api.md](./docs/reference/api.m
 
 ```text
 axiom/
-  crates/              # Core modular crates (core, metadata, policy, cache, db, api)
-  binaries/            # Binary crates (axiom-server, axiom CLI)
+  crates/              # Modular crates (core, metadata, policy, cache, db, api, cli, server)
   ui/                  # Embedded Web UI (Vite + TypeScript + Tailwind)
   docs/                # Public reference documentation
   v4-planning/         # v4.0 architecture blueprints and roadmap
-  benches/             # Go benchmark and soak suite
+  benches/             # Criterion benchmark suite
+  tests/               # Unified integration and security tests
   scripts/             # Build and metadata scripts
   tools/               # Build tooling (rcedit)
   run.py               # Build script (--linux, --linux --cpanel)

@@ -169,10 +169,9 @@ axiom/
 │   ├── policy/       # RBAC evaluation engine (PolicyEngine::evaluate), depends on metadata
 │   ├── cache/        # Unified L1/L2 cache engine (DashMap + AOF SQLite), LRU eviction, TTL sweep
 │   ├── db/           # Connection pooling (per-alias locks), SQL engine implementations (PG, MySQL, MSSQL, LibSQL, ClickHouse)
-│   └── api/          # Axum HTTP routes, middleware pipeline (WAF, rate_limit, auth), Web UI embedding (rust-embed)
-├── binaries/
-│   ├── server/       # Main daemon binary (axiom-server). Glues crates together, starts TCP listener.
-│   └── cli/          # CLI binary (axiom). Subcommands for key|db|user|cache|health|bench.
+│   ├── api/          # Axum HTTP routes, middleware pipeline (WAF, rate_limit, auth), Web UI embedding (rust-embed)
+│   ├── cli/          # CLI library (axiom-cli) with subcommands for key|db|user|cache|health|bench
+│   └── server/       # Unified single binary (axiom). Glues crates together, handles CLI and server dispatch
 ├── ui/               # Vite + TypeScript + Tailwind CSS. Pre-built bundle embedded in server binary.
 ├── benches/          # Native Rust Criterion benchmark suite (benches/benches/pipeline.rs)
 ├── tests/            # Integration and security test suites
@@ -180,7 +179,7 @@ axiom/
 └── v4-planning/      # Architecture blueprints (this folder)
 ```
 
-**Dependency rule:** Higher-level crates (like `api`) can depend on lower-level crates (like `cache`, `policy`), but never the reverse.
+**Dependency rule:** Higher-level crates (like `api`, `server`) can depend on lower-level crates (like `cache`, `policy`, `core`), but never the reverse.
 
 ---
 
@@ -206,7 +205,8 @@ axiom/
 | **Secrets Engine** | `crates/metadata` | BLAKE3 hashing for API key secrets, Argon2 for admin passwords. Never stores plaintext. |
 | **Audit Engine** | `crates/metadata` | Structured audit log for all control plane mutations (key created, role modified, DB added). |
 | **Metadata Engine** | `crates/metadata` | libsql read/write to `axiom.db`, ArcSwap snapshot publication, config.toml auto-seeding. |
-| **CLI Engine** | `binaries/cli` | `clap`-based subcommand tree. Calls Admin API over HTTP. |
+| **CLI Engine** | `crates/cli` | `clap`-based subcommand tree and client library (`axiom-cli`). |
+| **Server Binary** | `crates/server` | Unified single binary entrypoint, daemon lifespan, and CLI dispatch (`axiom`). |
 | **Admin/Web UI** | `ui/` + `crates/api` | Vite+TS+Tailwind pre-built, embedded via rust-embed, served at `/ui/`. |
 | **MCP Engine** | `crates/api` (routes) | `/mcp/v1` endpoint for AI agent access. Same RBAC policy enforcement as data API. |
 | **Federation Engine** | Not implemented | Extension points left in API and DB engines for future cross-node query routing. |

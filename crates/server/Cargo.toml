@@ -1,10 +1,10 @@
 [package]
-name = "axiom-server"
+name = "axiom"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
-description = "Axiom API Gateway main daemon binary"
+description = "Axiom unified single-binary API gateway daemon and CLI management utility"
 
 [dependencies]
 axiom-core = { workspace = true }
@@ -12,6 +12,7 @@ axiom-metadata = { workspace = true }
 axiom-cache = { workspace = true }
 axiom-db = { workspace = true }
 axiom-api = { workspace = true }
+axiom-cli = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 mimalloc = { workspace = true }

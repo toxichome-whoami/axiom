@@ -13,7 +13,7 @@ YELLOW = "\033[33m"
 CYAN = "\033[36m"
 DARK_GRAY = "\033[90m"
 
-MAIN_RS = os.path.join("src", "main.rs")
+MAIN_RS = os.path.join("crates", "server", "src", "main.rs")
 
 # Tokio runtime builder strings to swap in main.rs
 MULTI_THREAD_MARKER = "tokio::runtime::Builder::new_multi_thread()"
