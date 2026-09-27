@@ -9,7 +9,7 @@
 <p align="center">
   <a href="./docs/">Documentation</a>
   &nbsp;&nbsp;•&nbsp;&nbsp;
-  <a href="./demos/">Examples</a>
+  <a href="./benches/">Benchmarks</a>
   &nbsp;&nbsp;•&nbsp;&nbsp;
   <a href="./LICENSE">License</a>
 </p>
@@ -192,47 +192,25 @@ curl -G "http://localhost:4500/api/v1/db/main_db/users/rows" \
   --data-urlencode "order=desc"
 ```
 
-For the full API reference, see **[docs/features/API.md](./docs/features/API.md)**.
-
-
-## Golang Demos
-
-Axiom includes a collection of **Go demos** showing how to interact with the gateway over REST.
-
-```bash
-cd demos
-go run . [demo_name]
-```
-
-### Available demos
-
-| Demo | Purpose |
-| --- | --- |
-| `db_fetch` | Fetch rows from a database |
-| `db_insert` | Insert rows into a database |
-| `db_drop` | Drop database tables |
-
-Copy `demos/.env.example` to `demos/.env` and fill in your server URL and API key before running.
+For the full API reference, see **[docs/reference/api.md](./docs/reference/api.md)**.
 
 
 ## Project Structure
 
 ```text
 axiom/
- src/                 # Core Rust implementation
- docs/                # API and system documentation
- v4-planning/         # v4.0 architecture redesign and roadmap
-   AXIOM_MASTER_PLAN.md  # Architecture master plan
-   UI_DESIGN_SYSTEM.md   # Web UI style specifications
-   adr/              # Architecture Decision Records
- demos/               # Golang REST API usage examples
- benches/             # Go benchmark suite
- scripts/             # Build and metadata scripts
- tools/               # Build tooling (rcedit)
- run.py               # Build script (--linux, --linux --cpanel)
- config.example.toml  # Configuration template
- docker-compose.yml   # Docker deployment
- Cargo.toml           # Rust project manifest
+  crates/              # Core modular crates (core, metadata, policy, cache, db, api)
+  binaries/            # Binary crates (axiom-server, axiom CLI)
+  ui/                  # Embedded Web UI (Vite + TypeScript + Tailwind)
+  docs/                # Public reference documentation
+  v4-planning/         # v4.0 architecture blueprints and roadmap
+  benches/             # Go benchmark and soak suite
+  scripts/             # Build and metadata scripts
+  tools/               # Build tooling (rcedit)
+  run.py               # Build script (--linux, --linux --cpanel)
+  config.example.toml  # Configuration template
+  docker-compose.yml   # Docker deployment
+  Cargo.toml           # Workspace root manifest
 ```
 
 

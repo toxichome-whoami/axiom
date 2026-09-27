@@ -1,4 +1,4 @@
-﻿<div align="center">
+<div align="center">
 
 # Contributing to Axiom
 
@@ -58,7 +58,6 @@ axiom/
     utils/        # Shared types and helpers
     main.rs       # Entry point
  docs/             # All documentation
- demos/            # Go REST API examples
  benches/          # Go benchmark suite
  scripts/          # Build tooling
  run.ps1           # Windows build wrapper
