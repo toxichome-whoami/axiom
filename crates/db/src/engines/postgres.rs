@@ -237,20 +237,29 @@ impl DatabaseEngine for PostgresDatabaseEngine {
                 columns: None,
                 rows: None,
                 affected_rows: Some(result.rows_affected()),
+                truncated: None,
             });
         }
 
-        let rows = query.fetch_all(pool).await.map_err(|e| EngineError::Execution(e.to_string()))?;
+        use futures::StreamExt;
+        let mut stream = query.fetch(pool);
         let mut result_rows = Vec::new();
         let mut column_names = Vec::new();
+        let mut truncated = false;
 
-        if let Some(first_row) = rows.first() {
-            for col in first_row.columns() {
-                column_names.push(col.name().to_string());
+        while let Some(row_res) = stream.next().await {
+            let row = row_res.map_err(|e| EngineError::Execution(e.to_string()))?;
+            if column_names.is_empty() {
+                for col in row.columns() {
+                    column_names.push(col.name().to_string());
+                }
             }
-        }
 
-        for row in rows {
+            if result_rows.len() >= axiom_core::DEFAULT_MAX_QUERY_ROWS {
+                truncated = true;
+                break;
+            }
+
             let mut json_obj = serde_json::Map::new();
             for col in row.columns() {
                 let name = col.name().to_string();
@@ -284,6 +293,7 @@ impl DatabaseEngine for PostgresDatabaseEngine {
             columns: Some(column_names),
             rows: Some(result_rows),
             affected_rows: None,
+            truncated: if truncated { Some(true) } else { None },
         })
     }
 

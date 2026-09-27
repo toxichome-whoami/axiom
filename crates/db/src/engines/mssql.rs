@@ -265,6 +265,7 @@ impl DatabaseEngine for MssqlDatabaseEngine {
                 columns: None,
                 rows: None,
                 affected_rows: Some(result.total() as u64),
+                truncated: None,
             });
         }
 
@@ -280,7 +281,12 @@ impl DatabaseEngine for MssqlDatabaseEngine {
             }
         }
 
+        let mut truncated = false;
         for row in rows {
+            if result_rows.len() >= axiom_core::DEFAULT_MAX_QUERY_ROWS {
+                truncated = true;
+                break;
+            }
             let mut json_obj = serde_json::Map::new();
             for col in row.columns() {
                 let name = col.name();
@@ -301,6 +307,7 @@ impl DatabaseEngine for MssqlDatabaseEngine {
             columns: Some(column_names),
             rows: Some(result_rows),
             affected_rows: None,
+            truncated: if truncated { Some(true) } else { None },
         })
     }
 

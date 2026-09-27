@@ -9,7 +9,7 @@
 use async_trait::async_trait;
 use serde_json::Value;
 
-pub use axiom_core::{ColumnInfo, EngineError, ForeignKeyInfo, QueryResult, TableInfo};
+pub use axiom_core::{ColumnInfo, EngineError, ForeignKeyInfo, QueryResult, TableInfo, DEFAULT_MAX_QUERY_ROWS};
 
 // ─── Database Engine Trait ─────────────────────────────────────────────────
 

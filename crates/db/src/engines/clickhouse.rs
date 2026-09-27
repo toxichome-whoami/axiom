@@ -249,6 +249,7 @@ impl DatabaseEngine for ClickHouseDatabaseEngine {
                 columns: None,
                 rows: None,
                 affected_rows: Some(0), // ClickHouse doesn't return affected rows via standard HTTP
+                truncated: None,
             });
         }
 
@@ -264,8 +265,13 @@ impl DatabaseEngine for ClickHouseDatabaseEngine {
         }
 
         let mut result_rows = Vec::new();
+        let mut truncated = false;
         if let Some(data) = body.get("data").and_then(|d| d.as_array()) {
             for row in data {
+                if result_rows.len() >= axiom_core::DEFAULT_MAX_QUERY_ROWS {
+                    truncated = true;
+                    break;
+                }
                 result_rows.push(row.clone());
             }
         }
@@ -274,6 +280,7 @@ impl DatabaseEngine for ClickHouseDatabaseEngine {
             columns: Some(column_names),
             rows: Some(result_rows),
             affected_rows: None,
+            truncated: if truncated { Some(true) } else { None },
         })
     }
 

@@ -92,6 +92,9 @@ pub struct TableInfo {
     pub foreign_keys: Option<Vec<ForeignKeyInfo>>,
 }
 
+/// Maximum rows returned by an unpaginated raw SQL query to protect server memory from exhaustion.
+pub const DEFAULT_MAX_QUERY_ROWS: usize = 10_000;
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct QueryResult {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -100,6 +103,8 @@ pub struct QueryResult {
     pub rows: Option<Vec<Value>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub affected_rows: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub truncated: Option<bool>,
 }
 
 #[cfg(test)]
@@ -159,9 +164,20 @@ mod tests {
             columns: None,
             rows: None,
             affected_rows: Some(42),
+            truncated: None,
         };
         let json = serde_json::to_string(&res).unwrap();
         assert!(!json.contains("rows\":null"));
         assert!(json.contains("\"affected_rows\":42"));
+        assert!(!json.contains("truncated"));
+
+        let res_trunc = QueryResult {
+            columns: None,
+            rows: None,
+            affected_rows: None,
+            truncated: Some(true),
+        };
+        let json_trunc = serde_json::to_string(&res_trunc).unwrap();
+        assert!(json_trunc.contains("\"truncated\":true"));
     }
 }

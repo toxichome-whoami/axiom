@@ -210,6 +210,7 @@ impl DatabaseEngine for LibsqlDatabaseEngine {
                 columns: None,
                 rows: None,
                 affected_rows: Some(affected as u64),
+                truncated: None,
             });
         }
 
@@ -229,7 +230,12 @@ impl DatabaseEngine for LibsqlDatabaseEngine {
         }
 
         let mut result_rows = Vec::new();
+        let mut truncated = false;
         while let Ok(Some(row)) = rows.next().await {
+            if result_rows.len() >= axiom_core::DEFAULT_MAX_QUERY_ROWS {
+                truncated = true;
+                break;
+            }
             let mut json_obj = serde_json::Map::new();
             for (i, col_name) in column_names.iter().enumerate() {
                 let val = match row.get_value(i as i32) {
@@ -254,6 +260,7 @@ impl DatabaseEngine for LibsqlDatabaseEngine {
             columns: Some(column_names),
             rows: Some(result_rows),
             affected_rows: None,
+            truncated: if truncated { Some(true) } else { None },
         })
     }
 
@@ -338,6 +345,23 @@ mod tests {
         engine.execute("CREATE TABLE standalone (id INTEGER PRIMARY KEY);", &[]).await.unwrap();
         let fks = engine.get_foreign_keys("standalone").await.unwrap();
         assert!(fks.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_query_truncation_when_exceeding_max_rows() {
+        let config = DatabaseDefConfig {
+            url: "sqlite://:memory:".to_string(),
+            ..Default::default()
+        };
+        let mut engine = LibsqlDatabaseEngine::new(config);
+        engine.connect().await.unwrap();
+
+        engine.execute("CREATE TABLE items (id INTEGER);", &[]).await.unwrap();
+        engine.execute("INSERT INTO items VALUES (1);", &[]).await.unwrap();
+
+        let res = engine.execute("SELECT * FROM items;", &[]).await.unwrap();
+        assert_eq!(res.rows.as_ref().unwrap().len(), 1);
+        assert_eq!(res.truncated, None);
     }
 }
 

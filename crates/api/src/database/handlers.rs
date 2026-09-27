@@ -91,7 +91,7 @@ impl QueryExecutionPipeline {
 
             if let Some(bytes) = axiom_cache::CacheEngine::get(&key).await {
                 return Ok((
-                    Arc::new(QueryResult { columns: None, rows: None, affected_rows: Some(0) }),
+                    Arc::new(QueryResult { columns: None, rows: None, affected_rows: Some(0), truncated: None }),
                     bytes,
                 ));
             }
@@ -219,6 +219,13 @@ impl QueryExecutionPipeline {
             Ok(res) => {
                 if config.circuit_breaker.enabled {
                     CIRCUIT_FAILURES.remove(db_name);
+                }
+                if res.truncated == Some(true) {
+                    tracing::warn!(
+                        "Database query on '{}' exceeded max row limit ({}). Results were truncated to protect server memory.",
+                        db_name,
+                        axiom_core::DEFAULT_MAX_QUERY_ROWS
+                    );
                 }
                 let arc_res = Arc::new(res);
                 let json_bytes = match serde_json::to_vec(&*arc_res) {
