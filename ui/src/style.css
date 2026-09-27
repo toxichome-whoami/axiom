@@ -3,8 +3,10 @@
 @tailwind utilities;
 
 @layer base {
-  :root {
+  :root, html {
     color-scheme: dark;
+    background-color: #1F1F1F;
+    color: #F5F5F5;
   }
   
   body {

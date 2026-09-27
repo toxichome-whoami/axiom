@@ -140,7 +140,9 @@ pub fn create_app() -> Router {
             header::STRICT_TRANSPORT_SECURITY,
             header::HeaderValue::from_static("max-age=63072000; includeSubDomains; preload"),
         ))
-        .layer(SetResponseHeaderLayer::overriding(
+        // If an inner handler (such as the embedded Web UI) already specified its own
+        // tailored Content-Security-Policy, preserve it; otherwise apply strict default-src 'none'.
+        .layer(SetResponseHeaderLayer::if_not_present(
             header::CONTENT_SECURITY_POLICY,
             header::HeaderValue::from_static("default-src 'none'; frame-ancestors 'none';"),
         ))

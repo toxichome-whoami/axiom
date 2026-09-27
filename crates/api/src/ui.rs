@@ -19,6 +19,11 @@ use rust_embed::RustEmbed;
 #[folder = "../../ui/dist/"]
 struct Assets;
 
+/// Content-Security-Policy header configured specifically for the embedded Web UI.
+/// Relaxes default-src to 'self' and permits Google Fonts stylesheets/webfonts and inline scripts/styles
+/// required for SPA hash routing and reactive DOM updates, while forbidding embedding (clickjacking defense).
+pub const UI_CSP: &str = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: https:; connect-src 'self'; frame-ancestors 'none';";
+
 /// Constructs the Web UI sub-router mounted under `/ui`.
 /// CONTRACT:
 ///  - Returns Router serving embedded HTML/CSS/JS assets.
@@ -70,6 +75,7 @@ async fn static_handler(uri: Uri) -> impl IntoResponse {
             let mime = get_mime(path);
             Response::builder()
                 .header(header::CONTENT_TYPE, HeaderValue::from_static(mime))
+                .header(header::CONTENT_SECURITY_POLICY, HeaderValue::from_static(UI_CSP))
                 .body(Body::from(content.data))
                 .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
         }
@@ -86,11 +92,14 @@ fn serve_asset(path: &str) -> Response {
             let mime = get_mime(path);
             Response::builder()
                 .header(header::CONTENT_TYPE, HeaderValue::from_static(mime))
+                .header(header::CONTENT_SECURITY_POLICY, HeaderValue::from_static(UI_CSP))
                 .body(Body::from(content.data))
                 .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
         }
         None => Response::builder()
             .status(StatusCode::NOT_FOUND)
+            .header(header::CONTENT_TYPE, HeaderValue::from_static("text/plain; charset=utf-8"))
+            .header(header::CONTENT_SECURITY_POLICY, HeaderValue::from_static(UI_CSP))
             .body(Body::from("Axiom Web UI asset not found."))
             .unwrap_or_else(|_| StatusCode::NOT_FOUND.into_response()),
     }
@@ -129,5 +138,31 @@ mod tests {
 
         let res3 = app.clone().oneshot(Request::get("/ui/databases").body(axum::body::Body::empty()).unwrap()).await.unwrap();
         assert_eq!(res3.status(), StatusCode::OK);
+        assert_eq!(
+            res3.headers().get("content-security-policy").unwrap(),
+            UI_CSP
+        );
+
+        // Find the embedded CSS asset dynamically so hash updates never break tests
+        let css_file = Assets::iter()
+            .find(|p| p.ends_with(".css"))
+            .expect("Embedded bundle must include at least one compiled CSS stylesheet");
+        let asset_url = format!("/ui/{}", css_file);
+
+        let res_css = app.clone().oneshot(Request::get(&asset_url).body(axum::body::Body::empty()).unwrap()).await.unwrap();
+        assert_eq!(res_css.status(), StatusCode::OK);
+        let content_type = res_css.headers().get("content-type").unwrap().to_str().unwrap();
+        assert!(content_type.contains("text/css"));
+        assert_eq!(
+            res_css.headers().get("content-security-policy").unwrap(),
+            UI_CSP
+        );
+
+        // Also verify that non-UI API endpoints retain the strict default-src 'none' CSP
+        let res_api = app.clone().oneshot(Request::get("/api/v1/health").body(axum::body::Body::empty()).unwrap()).await.unwrap();
+        assert_eq!(
+            res_api.headers().get("content-security-policy").unwrap(),
+            "default-src 'none'; frame-ancestors 'none';"
+        );
     }
 }
