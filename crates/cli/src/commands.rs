@@ -1,6 +1,6 @@
 /*
  * Command-line interface argument definitions and subcommand schema parsing.
- * Owned by: cli
+ * Owned by: crates/cli
  * Key deps: clap
  * Invariants: Parsed arguments must provide sensible defaults for host, port, and output formatting.
  * Last structural change: Phase 3 initial implementation of CLI subcommand tree.

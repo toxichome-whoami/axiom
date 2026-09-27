@@ -1,6 +1,6 @@
 /*
  * Admin API HTTP client for CLI subcommands.
- * Owned by: cli
+ * Owned by: crates/cli
  * Key deps: reqwest, serde_json
  * Invariants: Injects X-Axiom-Key or Authorization header when provided; parses standard response envelope.
  * Last structural change: Phase 3 initial implementation of CLI HTTP client.

@@ -1,3 +1,11 @@
+/*
+ * Response envelope formatting middleware.
+ * Owned by: crates/api (middleware)
+ * Key deps: axum, serde_json
+ * Invariants: Injects top-level 'success' boolean into JSON payloads if omitted by route handlers.
+ * Last structural change: Workspace modularization (Phase 8 -> v4.0).
+ */
+
 use axum::{
     body::Body,
     http::{header, Response, StatusCode},
@@ -5,6 +13,11 @@ use axum::{
 };
 use serde_json::{json, Value};
 
+/// Formats outgoing JSON responses to ensure top-level `success` indicator is always present.
+/// CONTRACT:
+///  - Precondition: Inbound `Response<Body>`.
+///  - Preserves non-JSON streams and responses without alteration.
+///  - Updates `content-length` header upon JSON envelope modification.
 pub async fn envelope_middleware(res: Response<Body>) -> Response<Body> {
     let (mut parts, body) = res.into_parts();
     

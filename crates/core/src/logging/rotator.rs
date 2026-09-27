@@ -1,3 +1,11 @@
+/*
+ * Background file log rotation and garbage collection daemon.
+ * Owned by: crates/core (logging)
+ * Key deps: tokio, std::fs
+ * Invariants: Retains up to `max_files` rolling log files; removes oldest files first.
+ * Last structural change: Workspace modularization (Phase 8 -> v4.0).
+ */
+
 use crate::config::loader::ConfigManager;
 use std::fs;
 use std::path::Path;
@@ -7,6 +15,9 @@ use tokio::time::sleep;
 pub struct LogRotator;
 
 impl LogRotator {
+    /// Spawns background worker task that purges expired log files every 60 seconds.
+    /// CONTRACT:
+    ///  - Returns `JoinHandle<()>` for daemon task lifecycle tracking.
     pub fn start() -> tokio::task::JoinHandle<()> {
         tokio::spawn(async move {
             loop {

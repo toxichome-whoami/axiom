@@ -1,3 +1,11 @@
+/*
+ * Core health check, readiness probe, and system telemetry endpoints.
+ * Owned by: crates/api (core)
+ * Key deps: sysinfo, once_cell, axum, axiom_core, axiom_db
+ * Invariants: Detailed infrastructure checks are restricted to full_admin API keys to avoid reconnaissance leakage.
+ * Last structural change: Workspace modularization (Phase 8 -> v4.0).
+ */
+
 use axum::{routing::get, Json, Router};
 use once_cell::sync::Lazy;
 use serde_json::{json, Value};
@@ -14,6 +22,11 @@ static SYSTEM: Lazy<Mutex<System>> = Lazy::new(|| {
     Mutex::new(sys)
 });
 
+/// Collects current process CPU utilization and resident memory consumption.
+/// CONTRACT:
+///  - Precondition: None.
+///  - Returns `(cpu_percent: f32, memory_used_mb: u64)`.
+///  - Side effects: Refreshes sysinfo process handle.
 pub fn get_system_stats() -> (f32, u64) {
     if let Ok(mut sys) = SYSTEM.lock() {
         let pid = sysinfo::Pid::from_u32(std::process::id());
@@ -29,6 +42,10 @@ pub fn get_system_stats() -> (f32, u64) {
     }
 }
 
+/// Returns elapsed seconds since server initialization.
+/// CONTRACT:
+///  - Returns fractional seconds as f64.
+///  - Idempotent: Pure monotonic reading.
 pub fn get_uptime() -> f64 {
     START_TIME.elapsed().as_secs_f64()
 }
@@ -38,6 +55,9 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 use crate::middleware::auth::auth_middleware;
 use axum::middleware;
 
+/// Builds and returns the router for `/`, `/ready`, and `/health` endpoints.
+/// CONTRACT:
+///  - Returns `axum::Router`.
 pub fn get_router() -> Router {
     Router::new()
         .route("/", get(root))
@@ -50,6 +70,9 @@ pub fn get_router() -> Router {
         )
 }
 
+/// Initializes the server start time monotonic instant.
+/// CONTRACT:
+///  - Precondition: Called during daemon bootstrap.
 pub fn init_health_timer() {
     let _ = *START_TIME;
 }

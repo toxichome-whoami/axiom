@@ -1,3 +1,11 @@
+/*
+ * Structured tracing subscriber initialization and log formatting.
+ * Owned by: crates/core (logging)
+ * Key deps: tracing, tracing_subscriber, tracing_appender
+ * Invariants: Returns WorkerGuard which MUST be held in the process main scope to guarantee log flushes upon termination.
+ * Last structural change: Workspace modularization (Phase 8 -> v4.0).
+ */
+
 use crate::config::loader::ConfigManager;
 use tracing_appender::rolling;
 use tracing_subscriber::{
@@ -49,6 +57,10 @@ where
     }
 }
 
+/// Configures and initializes global tracing subscriber with console and rotating file appenders.
+/// CONTRACT:
+///  - Returns `Ok(Some(WorkerGuard))` if file logging is enabled; caller must retain guard in main scope.
+///  - Respects `logging.format` (json vs pretty) and `logging.level` from configuration.
 pub fn setup_logging() -> std::result::Result<Option<tracing_appender::non_blocking::WorkerGuard>, Box<dyn std::error::Error>> {
     let config = ConfigManager::get();
 

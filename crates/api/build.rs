@@ -1,12 +1,9 @@
 /*
- * Cargo build script for axiom-api.
- * Automatically checks and compiles the Vite + TypeScript frontend in `ui/`
- * into `ui/dist/` before rust-embed packs it into the binary.
- *
- * Owned by: api
+ * Cargo build script compiling Vite frontend into ui/dist before rust-embed packaging.
+ * Owned by: crates/api
  * Key deps: std::process::Command, std::fs
- * Invariants: If Node/npm is available and UI sources changed, rebuilds Vite bundle.
- * If Node/npm is not available or build is offline, falls back to existing ui/dist.
+ * Invariants: If npm is available and UI sources changed, rebuilds Vite bundle; otherwise falls back to existing ui/dist.
+ * Last structural change: Workspace modularization (Phase 8 -> v4.0).
  */
 
 use std::path::Path;

@@ -1,6 +1,20 @@
+/*
+ * Safe SQL WHERE clause generator, CRUD SQL builder, and SQL identifier sanitizer.
+ * Owned by: crates/api (database)
+ * Key deps: serde_json
+ * Invariants: All user-supplied column/table identifiers are strictly filtered to alphanumeric and underscore characters;
+ *             all literal values are extracted into parameterized positional values with '?' placeholders to prevent SQL injection.
+ * Last structural change: Workspace modularization (Phase 8 -> v4.0).
+ */
+
 use serde_json::Value;
 use std::collections::HashMap;
 
+/// Strips all characters from an identifier except alphanumeric characters and underscores.
+/// CONTRACT:
+///  - Precondition: `ident` string reference.
+///  - Returns sanitized string safe for unquoted SQL identifier placement.
+///  - Idempotent: Yes. Pure function with zero allocations beyond the returned string.
 pub fn sanitize_ident(ident: &str) -> String {
     ident
         .chars()
@@ -8,8 +22,11 @@ pub fn sanitize_ident(ident: &str) -> String {
         .collect()
 }
 
-/// Recursively builds a WHERE clause and a vector of positional values.
-/// Returns (clause, values).
+/// Recursively builds a parameterized SQL WHERE clause and corresponding positional parameter values.
+/// CONTRACT:
+///  - Precondition: `filter` map representing JSON query expressions (supports `$eq`, `$gt`, `$in`, `$or`, etc.).
+///  - Returns `(clause_string, values_vector)`. If filter is empty, clause_string is empty.
+///  - Guarantees: All identifiers sanitized via `sanitize_ident`; all values returned separately for parameterized execution.
 pub fn build_where_clause(filter: &HashMap<String, Value>) -> (String, Vec<Value>) {
     build_where_clause_inner(filter.iter())
 }
@@ -125,6 +142,14 @@ where
     (parts.join(" AND "), values)
 }
 
+// ─── CRUD Statement Generation ──────────────────────────────────────────────
+// Parameterized SQL generation for direct single-table operations.
+
+/// Generates a parameterized INSERT statement and parameter bindings from a key-value record map.
+/// CONTRACT:
+///  - Precondition: `table` is non-empty; `data` contains column-to-value mappings.
+///  - Returns `(sql_string, parameters)`.
+///  - Guarantees: All column names sanitized via `sanitize_ident`.
 pub fn construct_insert(table: &str, data: &HashMap<String, Value>) -> (String, Vec<Value>) {
     let mut cols = Vec::new();
     let mut placeholders = Vec::new();
@@ -146,6 +171,10 @@ pub fn construct_insert(table: &str, data: &HashMap<String, Value>) -> (String, 
     (sql, values)
 }
 
+/// Generates a parameterized UPDATE statement with sanitized SET columns and WHERE predicate.
+/// CONTRACT:
+///  - Precondition: `table` is non-empty; `update_data` contains new values; `filter` defines target rows.
+///  - Returns `(sql_string, parameters)`.
 pub fn construct_update(
     table: &str,
     update_data: &HashMap<String, Value>,
@@ -172,6 +201,10 @@ pub fn construct_update(
     (sql, values)
 }
 
+/// Generates a parameterized DELETE statement with a sanitized WHERE predicate.
+/// CONTRACT:
+///  - Precondition: `table` is non-empty; `filter` defines rows to delete.
+///  - Returns `(sql_string, parameters)`.
 pub fn construct_delete(table: &str, filter: &HashMap<String, Value>) -> (String, Vec<Value>) {
     let (where_clause, values) = build_where_clause(filter);
     let sql = format!(

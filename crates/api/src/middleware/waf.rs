@@ -1,8 +1,21 @@
+/*
+ * Web Application Firewall (WAF) middleware for HTTP edge sanitization.
+ * Owned by: crates/api (middleware)
+ * Key deps: axiom_core, axum, urlencoding
+ * Invariants: Blocks path traversal (deep 3x decoding), null bytes, oversized payloads, and SQL injection in URL parameters.
+ * Last structural change: Workspace modularization (Phase 8 -> v4.0).
+ */
+
 use axiom_core::AxiomError;
 use axiom_core::ConfigManager;
 use axiom_core::parse_size;
 use axum::{extract::Request, middleware::Next, response::Response};
 
+/// Intercepts incoming HTTP requests to block protocol-level attacks before route matching.
+/// CONTRACT:
+///  - Precondition: Inbound HTTP `Request`.
+///  - Rejects: URI > 2048 chars, null bytes (%00), body > configured limit, SQL keywords in URL, traversal (`..` and `%252e%252e`).
+///  - Returns `Ok(Response)` if request is clean; returns `Err(AxiomError)` with 400, 413, or 414 otherwise.
 pub async fn waf_middleware(req: Request, next: Next) -> Result<Response, AxiomError> {
     static BODY_LIMIT: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
     let body_limit = *BODY_LIMIT.get_or_init(|| {

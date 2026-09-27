@@ -1,7 +1,7 @@
 /*
  * Command-line interface dispatcher coordinating argument parsing, API client calls, and database tasks.
- * Owned by: cli
- * Key deps: clap, rpassword, crate::cli::commands, crate::cli::client, crate::metadata::store
+ * Owned by: crates/cli
+ * Key deps: clap, rpassword, crate::commands, crate::client, axiom_metadata::MetadataStore
  * Invariants: User management runs out-of-band directly against axiom.db; all other commands communicate via HTTP.
  * Last structural change: Phase 3 initial implementation of CLI entrypoint.
  */

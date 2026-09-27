@@ -1,7 +1,16 @@
+/*
+ * Request and query parameter deserialization schemas for database endpoints.
+ * Owned by: crates/api (database)
+ * Key deps: serde, serde_json
+ * Invariants: Default values clamp query limits to prevent volumetric denial-of-service.
+ * Last structural change: Workspace modularization (Phase 8 -> v4.0).
+ */
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 
+/// Request payload for raw SQL query execution.
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct QueryRequest {
     pub sql: String,
@@ -9,6 +18,7 @@ pub struct QueryRequest {
     pub timeout: Option<i32>,
 }
 
+/// Query parameters for listing database tables with cursor pagination.
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct ListTablesParams {
     #[serde(default = "default_limit")]
@@ -16,6 +26,7 @@ pub struct ListTablesParams {
     pub cursor: Option<String>,
 }
 
+/// Request payload for single or batch row insertion.
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct InsertRequest {
     pub rows: Option<Vec<HashMap<String, Value>>>,

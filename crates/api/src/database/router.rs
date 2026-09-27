@@ -1,3 +1,11 @@
+/*
+ * Database route dispatcher for Data API v1 endpoints.
+ * Owned by: crates/api (database)
+ * Key deps: axum, axiom_core, axiom_policy, axiom_db
+ * Invariants: Endpoints require valid AuthContext extension injected by authentication middleware.
+ * Last structural change: Standardized response envelope and cursor pagination (v4.0).
+ */
+
 use axum::{
     extract::{Extension, Path},
     routing::{get, post},
@@ -11,6 +19,10 @@ use axiom_core::AxiomError;
 use axiom_core::ConfigManager;
 use axiom_core::AuthContext;
 
+/// Builds and returns the Axum router for the `/api/v1/db` endpoint subtree.
+/// CONTRACT:
+///  - Returns `axum::Router` configured with routes for databases, tables, schemas, queries, and CRUD rows.
+///  - Idempotent: Yes.
 pub fn get_router() -> Router {
     Router::new()
         .route("/databases", get(list_databases))
@@ -34,6 +46,11 @@ pub fn get_router() -> Router {
 
 use axiom_policy::PolicyEngine;
 
+/// Lists all configured and active databases authorized for the caller's role.
+/// CONTRACT:
+///  - Precondition: Caller holds valid AuthContext.
+///  - Returns list of database telemetry objects (name, engine, mode, status, tables_count).
+///  - Side effects: Performs lightweight health check probe per alias.
 async fn list_databases(
     Extension(auth): Extension<AuthContext>,
 ) -> Result<Json<Value>, AxiomError> {
@@ -98,6 +115,11 @@ async fn list_databases(
     })))
 }
 
+/// Executes a raw SQL query against a configured database engine with AST validation and timeouts.
+/// CONTRACT:
+///  - Precondition: Valid AuthContext with database permissions; non-empty SQL string in payload.
+///  - Supports `Idempotency-Key` header for deduplicated safe retries on mutation/query replays.
+///  - Returns HTTP Response with tabular rows, columns, affected_rows, and next_cursor.
 async fn execute_query(
     Path(db_name): Path<String>,
     headers: axum::http::HeaderMap,
