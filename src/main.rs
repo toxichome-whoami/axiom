@@ -1,9 +1,9 @@
 /*
  * Axiom process entrypoint, Tokio runtime bootstrap, and server lifespan coordinator.
  * Owned by: root
- * Key deps: tokio, mimalloc, crate::config, crate::metadata, crate::server
- * Invariants: Config loaded synchronously before runtime build; metadata store initialized before app router.
- * Last structural change: Phase 1 initialization of metadata store and ArcSwap snapshot distribution.
+ * Key deps: tokio, mimalloc, crate::cli, crate::config, crate::metadata, crate::server
+ * Invariants: Config loaded synchronously before runtime build; CLI subcommands dispatched before server boot.
+ * Last structural change: Phase 3 CLI integration dispatching subcommands before server boot.
  */
 
 use std::net::SocketAddr;
@@ -13,6 +13,7 @@ use tokio::net::TcpListener;
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 pub mod api;
+pub mod cli;
 pub mod config;
 pub mod db;
 pub mod logging;
@@ -44,7 +45,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     
     let rt = builder.build()?;
-    rt.block_on(async_main())
+    rt.block_on(async {
+        if cli::run().await? {
+            return Ok(());
+        }
+        async_main().await
+    })
 }
 
 async fn async_main() -> Result<(), Box<dyn std::error::Error>> {

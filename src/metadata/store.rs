@@ -907,6 +907,62 @@ impl MetadataStore {
             Ok(false)
         }
     }
+
+    /// Lists all administrative users registered in the metadata store.
+    /// CONTRACT:
+    ///  - Invariant: Password hashes are redacted from UserRecord.
+    ///  - Idempotent: Yes.
+    pub async fn list_users() -> Result<Vec<UserRecord>, String> {
+        let conn = Self::get_conn().await?;
+        let mut rows = conn
+            .query("SELECT id, username, created_at FROM users ORDER BY id ASC", ())
+            .await
+            .map_err(|e| e.to_string())?;
+
+        let mut users = Vec::new();
+        while let Ok(Some(row)) = rows.next().await {
+            let id: i64 = row.get(0).map_err(|e| e.to_string())?;
+            let username: String = row.get(1).map_err(|e| e.to_string())?;
+            let created_at: i64 = row.get(2).unwrap_or(0);
+
+            users.push(UserRecord {
+                id,
+                username,
+                password_hash: String::new(),
+                created_at,
+            });
+        }
+        Ok(users)
+    }
+
+    /// Deletes an administrative user by username.
+    /// CONTRACT:
+    ///  - Side effects: Removes row from SQLite `users` table and writes audit log.
+    ///  - Idempotent: Yes.
+    pub async fn delete_user(username: &str) -> Result<bool, String> {
+        let _guard = STORE_LOCK.lock().await;
+        let conn = Self::get_conn().await?;
+
+        let affected = conn
+            .execute("DELETE FROM users WHERE username = ?1", [username])
+            .await
+            .map_err(|e| format!("Failed to delete user: {}", e))?;
+
+        if affected > 0 {
+            let now_unix = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs() as i64;
+
+            let _ = conn.execute(
+                "INSERT INTO audit_log (timestamp, actor, action, target, details) \
+                 VALUES (?1, 'cli', 'user.delete', ?2, NULL)",
+                libsql::params![now_unix, username],
+            ).await;
+        }
+
+        Ok(affected > 0)
+    }
 }
 
 #[cfg(test)]
