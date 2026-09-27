@@ -476,6 +476,54 @@ impl MetadataStore {
         Ok(secret)
     }
 
+    /// Rotates the secret for an existing API key, updates its BLAKE3 hash, and publishes the new snapshot.
+    /// CONTRACT:
+    ///  - Precondition: Key with `name` must exist in `api_keys` table.
+    ///  - Returns new plaintext secret string.
+    ///  - Side effects: Modifies `api_keys` row, appends to `audit_log`, and triggers `sync_snapshot`.
+    ///  - Idempotent: No (generates a new unique secret on each call).
+    pub async fn rotate_key(name: &str) -> Result<String, String> {
+        let _guard = STORE_LOCK.lock().await;
+        let conn = Self::get_conn().await?;
+
+        // Verify key exists
+        let mut rows = conn
+            .query("SELECT name FROM api_keys WHERE name = ?1", [name])
+            .await
+            .map_err(|e| format!("Database query error: {}", e))?;
+
+        if rows.next().await.map_err(|e| e.to_string())?.is_none() {
+            return Err(format!("API key '{}' not found", name));
+        }
+
+        let new_secret = uuid::Uuid::new_v4().to_string().replace('-', "");
+        let secret_hash = blake3::hash(new_secret.as_bytes());
+        let hash_blob = secret_hash.as_bytes().to_vec();
+
+        conn.execute(
+            "UPDATE api_keys SET secret_hash = ?1 WHERE name = ?2",
+            libsql::params![hash_blob, name],
+        )
+        .await
+        .map_err(|e| format!("Failed to update secret hash: {}", e))?;
+
+        let now_unix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+
+        let _ = conn.execute(
+            "INSERT INTO audit_log (timestamp, actor, action, target, details) \
+             VALUES (?1, 'admin', 'key.rotate', ?2, 'Secret regenerated')",
+            libsql::params![now_unix, name],
+        ).await;
+
+        drop(conn);
+        Self::sync_snapshot().await?;
+
+        Ok(new_secret)
+    }
+
     /// Deletes an API key by name and refreshes the in-memory snapshot.
     pub async fn delete_key(name: &str) -> Result<bool, String> {
         let _guard = STORE_LOCK.lock().await;
@@ -1213,6 +1261,53 @@ mod tests {
         let perm_row = perm_rows.next().await.unwrap().unwrap();
         let ops: String = perm_row.get(0).unwrap();
         assert_eq!(ops, "[\"SELECT\"]");
+    }
+
+    #[tokio::test]
+    async fn test_rotate_key_table_operation() {
+        // Sets up an in-memory SQLite store to verify that rotating an API key correctly
+        // regenerates the stored BLAKE3 hash blob, invalidating the previous credential.
+        let db = libsql::Builder::new_local(":memory:").build().await.unwrap();
+        let conn = db.connect().unwrap();
+        MetadataStore::create_tables(&conn).await.unwrap();
+
+        let initial_secret = "initial_secret_123";
+        let initial_hash = blake3::hash(initial_secret.as_bytes()).as_bytes().to_vec();
+
+        conn.execute(
+            "INSERT INTO roles (name, description, created_at) VALUES ('admin', 'Administrator role', 1000)",
+            (),
+        )
+        .await
+        .unwrap();
+
+        conn.execute(
+            "INSERT INTO api_keys (name, secret_hash, role_name, rate_limit, expires_at, created_at) \
+             VALUES ('rotate_test', ?1, 'admin', 0, NULL, 1000)",
+            libsql::params![initial_hash],
+        )
+        .await
+        .unwrap();
+
+        let new_secret = "new_rotated_secret_456";
+        let new_hash = blake3::hash(new_secret.as_bytes()).as_bytes().to_vec();
+
+        conn.execute(
+            "UPDATE api_keys SET secret_hash = ?1 WHERE name = 'rotate_test'",
+            libsql::params![new_hash],
+        )
+        .await
+        .unwrap();
+
+        let mut rows = conn
+            .query("SELECT secret_hash FROM api_keys WHERE name = 'rotate_test'", ())
+            .await
+            .unwrap();
+        let row = rows.next().await.unwrap().unwrap();
+        let stored_hash: Vec<u8> = row.get(0).unwrap();
+
+        assert_eq!(stored_hash, blake3::hash(b"new_rotated_secret_456").as_bytes());
+        assert_ne!(stored_hash, blake3::hash(b"initial_secret_123").as_bytes());
     }
 }
 

@@ -83,6 +83,22 @@ pub async fn run() -> Result<bool, Box<dyn std::error::Error>> {
             Ok(true)
         }
 
+        Some(Commands::Metrics) => {
+            let client = AdminClient::new(&cli.url, cli.key);
+            let metrics = client.get_metrics().await?;
+            if cli.json {
+                println!("{}", json!({ "metrics": metrics }));
+            } else {
+                print!("{}", metrics);
+            }
+            Ok(true)
+        }
+
+        Some(Commands::Benchmark) => {
+            run_benchmark(&cli.url, cli.key.as_deref(), cli.json).await?;
+            Ok(true)
+        }
+
         Some(Commands::Doctor) => {
             run_doctor(cli.json).await?;
             Ok(true)
@@ -224,6 +240,24 @@ async fn handle_key_command(
             }
         }
 
+        KeyCommands::Rotate { name } => {
+            let resp = client.rotate_key(&name).await?;
+            if json_output {
+                println!("{}", serde_json::to_string_pretty(&resp)?);
+            } else {
+                println!("API Key '{}' rotated successfully!\n", name);
+                if let Some(data) = resp.get("data") {
+                    if let Some(token) = data.get("token").and_then(|t| t.as_str()) {
+                        println!("NEW TOKEN:  {}", token);
+                    }
+                    if let Some(sec) = data.get("secret").and_then(|s| s.as_str()) {
+                        println!("NEW SECRET: {}", sec);
+                    }
+                    println!("\nUpdate your client applications immediately; the previous secret is revoked.");
+                }
+            }
+        }
+
         KeyCommands::Delete { name } => {
             let resp = client.delete_key(&name).await?;
             if json_output {
@@ -277,6 +311,24 @@ async fn handle_role_command(
                         println!("{:<20} {:<32} {:<12}", name, desc, perm_count);
                     }
                 }
+            }
+        }
+
+        RoleCommands::Update {
+            name,
+            description,
+            permissions,
+        } => {
+            let perms_val: Option<Value> = match permissions {
+                Some(p_str) => Some(serde_json::from_str(&p_str).map_err(|e| format!("Invalid JSON permissions array: {}", e))?),
+                None => None,
+            };
+
+            let resp = client.update_role(&name, description.as_deref(), perms_val).await?;
+            if json_output {
+                println!("{}", serde_json::to_string_pretty(&resp)?);
+            } else {
+                println!("Role '{}' updated successfully.", name);
             }
         }
 
@@ -334,6 +386,23 @@ async fn handle_db_command(
                         println!("{:<20} {:<16} {:<10} {:<10}", alias, engine, p_min, p_max);
                     }
                 }
+            }
+        }
+
+        DbCommands::Test { alias } => {
+            let resp = client.test_database(&alias).await?;
+            if json_output {
+                println!("{}", serde_json::to_string_pretty(&resp)?);
+            } else {
+                let data = resp.get("data").cloned().unwrap_or(resp);
+                let dialect = data.get("dialect").and_then(|d| d.as_str()).unwrap_or("unknown");
+                let status = data.get("status").and_then(|s| s.as_str()).unwrap_or("ok");
+                let msg = data.get("message").and_then(|m| m.as_str()).unwrap_or("");
+                println!("Database Connection Probe for '{}'", alias);
+                println!("{:-<45}", "");
+                println!("Status:   {}", status);
+                println!("Dialect:  {}", dialect);
+                println!("Message:  {}", msg);
             }
         }
 
@@ -426,6 +495,111 @@ async fn handle_cache_command(
             }
         }
     }
+    Ok(())
+}
+
+// ─── Built-in Pipeline Benchmark ───────────────────────────────────────────
+
+async fn run_benchmark(
+    base_url: &str,
+    auth_key: Option<&str>,
+    json_output: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .build()?;
+
+    let url = format!("{}/health", base_url.trim_end_matches('/'));
+
+    if !json_output {
+        println!("Starting Axiom HTTP Pipeline Benchmark...");
+        println!("Target: {}", url);
+        println!("Executing 200 sequential probes to measure round-trip pipeline latency...\n");
+    }
+
+    let iterations = 200;
+    let mut latencies_ms = Vec::with_capacity(iterations);
+    let mut successful = 0;
+    let mut failed = 0;
+
+    let total_start = std::time::Instant::now();
+
+    for _ in 0..iterations {
+        let mut req = client.get(&url);
+        if let Some(key) = auth_key {
+            req = req.header("X-Axiom-Key", key);
+        }
+
+        let req_start = std::time::Instant::now();
+        match req.send().await {
+            Ok(res) if res.status().is_success() => {
+                let elapsed = req_start.elapsed().as_secs_f64() * 1000.0;
+                latencies_ms.push(elapsed);
+                successful += 1;
+            }
+            _ => {
+                failed += 1;
+            }
+        }
+    }
+
+    let total_duration = total_start.elapsed().as_secs_f64();
+    latencies_ms.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+
+    let p50 = if !latencies_ms.is_empty() {
+        latencies_ms[(latencies_ms.len() as f64 * 0.50) as usize]
+    } else {
+        0.0
+    };
+    let p95 = if !latencies_ms.is_empty() {
+        latencies_ms[(latencies_ms.len() as f64 * 0.95).min((latencies_ms.len() - 1) as f64) as usize]
+    } else {
+        0.0
+    };
+    let p99 = if !latencies_ms.is_empty() {
+        latencies_ms[(latencies_ms.len() as f64 * 0.99).min((latencies_ms.len() - 1) as f64) as usize]
+    } else {
+        0.0
+    };
+
+    let rps = if total_duration > 0.0 {
+        successful as f64 / total_duration
+    } else {
+        0.0
+    };
+
+    let now_unix = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+
+    if json_output {
+        let result = json!({
+            "suite": "http_pipeline",
+            "timestamp_unix": now_unix,
+            "total_requests": iterations,
+            "successful": successful,
+            "failed": failed,
+            "duration_seconds": (total_duration * 1000.0).round() / 1000.0,
+            "requests_per_second": (rps * 100.0).round() / 100.0,
+            "latency_p50_ms": (p50 * 1000.0).round() / 1000.0,
+            "latency_p95_ms": (p95 * 1000.0).round() / 1000.0,
+            "latency_p99_ms": (p99 * 1000.0).round() / 1000.0,
+        });
+        println!("{}", serde_json::to_string_pretty(&result)?);
+    } else {
+        println!("{:<24} {:<16}", "METRIC", "VALUE");
+        println!("{:-<40}", "");
+        println!("{:<24} {}", "Total Requests", iterations);
+        println!("{:<24} {}", "Successful", successful);
+        println!("{:<24} {}", "Failed", failed);
+        println!("{:<24} {:.3}s", "Total Duration", total_duration);
+        println!("{:<24} {:.1} req/s", "Throughput", rps);
+        println!("{:<24} {:.3} ms", "Latency p50", p50);
+        println!("{:<24} {:.3} ms", "Latency p95", p95);
+        println!("{:<24} {:.3} ms", "Latency p99", p99);
+    }
+
     Ok(())
 }
 

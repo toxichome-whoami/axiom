@@ -78,6 +78,12 @@ pub enum Commands {
     /// Check server health and status
     Health,
 
+    /// Dump Prometheus exposition metrics
+    Metrics,
+
+    /// Run built-in benchmark suite
+    Benchmark,
+
     /// Diagnose system environment and database reachability
     Doctor,
 }
@@ -129,6 +135,11 @@ pub enum KeyCommands {
         #[arg(long, help = "Expiration Unix timestamp")]
         expires_at: Option<i64>,
     },
+    /// Rotate the secret for an existing API key
+    Rotate {
+        #[arg(help = "Key name")]
+        name: String,
+    },
     /// List all API keys
     List,
     /// Delete an API key
@@ -143,6 +154,19 @@ pub enum RoleCommands {
     /// Create a new RBAC role with permissions JSON
     Create {
         #[arg(short, long, help = "Role name")]
+        name: String,
+        #[arg(short, long, help = "Role description")]
+        description: Option<String>,
+        #[arg(
+            short,
+            long,
+            help = r#"Permissions JSON array, e.g. '[{"database":"*","table_name":"*","operations":["SELECT"]}]'"#
+        )]
+        permissions: Option<String>,
+    },
+    /// Update an existing RBAC role description or permissions
+    Update {
+        #[arg(help = "Role name")]
         name: String,
         #[arg(short, long, help = "Role description")]
         description: Option<String>,
@@ -180,6 +204,11 @@ pub enum DbCommands {
         pool_min: Option<i64>,
         #[arg(long, help = "Maximum connection pool size")]
         pool_max: Option<i64>,
+    },
+    /// Test connection to an upstream database
+    Test {
+        #[arg(help = "Database alias")]
+        alias: String,
     },
     /// List all registered database connections
     List,
@@ -241,6 +270,58 @@ mod tests {
             }
             _ => panic!("Expected User Add command"),
         }
+    }
+
+    #[test]
+    fn test_cli_parse_key_rotate() {
+        let args = ["axiom", "key", "rotate", "app_service_key"];
+        let cli = Cli::try_parse_from(args).expect("Failed to parse key rotate");
+        match cli.command {
+            Some(Commands::Key { command: KeyCommands::Rotate { name } }) => {
+                assert_eq!(name, "app_service_key");
+            }
+            _ => panic!("Expected Key Rotate command"),
+        }
+    }
+
+    #[test]
+    fn test_cli_parse_role_update() {
+        let args = ["axiom", "role", "update", "analyst", "-d", "Updated role description"];
+        let cli = Cli::try_parse_from(args).expect("Failed to parse role update");
+        match cli.command {
+            Some(Commands::Role { command: RoleCommands::Update { name, description, permissions } }) => {
+                assert_eq!(name, "analyst");
+                assert_eq!(description, Some("Updated role description".to_string()));
+                assert!(permissions.is_none());
+            }
+            _ => panic!("Expected Role Update command"),
+        }
+    }
+
+    #[test]
+    fn test_cli_parse_db_test() {
+        let args = ["axiom", "db", "test", "production_pg"];
+        let cli = Cli::try_parse_from(args).expect("Failed to parse db test");
+        match cli.command {
+            Some(Commands::Db { command: DbCommands::Test { alias } }) => {
+                assert_eq!(alias, "production_pg");
+            }
+            _ => panic!("Expected Db Test command"),
+        }
+    }
+
+    #[test]
+    fn test_cli_parse_metrics() {
+        let args = ["axiom", "metrics"];
+        let cli = Cli::try_parse_from(args).expect("Failed to parse metrics");
+        assert!(matches!(cli.command, Some(Commands::Metrics)));
+    }
+
+    #[test]
+    fn test_cli_parse_benchmark() {
+        let args = ["axiom", "benchmark"];
+        let cli = Cli::try_parse_from(args).expect("Failed to parse benchmark");
+        assert!(matches!(cli.command, Some(Commands::Benchmark)));
     }
 }
 

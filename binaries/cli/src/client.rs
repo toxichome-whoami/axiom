@@ -105,6 +105,12 @@ impl AdminClient {
         self.request(reqwest::Method::POST, "/admin/v1/keys", Some(body)).await
     }
 
+    /// Rotates the secret for an existing API key.
+    pub async fn rotate_key(&self, name: &str) -> Result<Value, String> {
+        let endpoint = format!("/admin/v1/keys/{}/rotate", name);
+        self.request(reqwest::Method::POST, &endpoint, None).await
+    }
+
     /// Deletes an API key identity.
     pub async fn delete_key(&self, name: &str) -> Result<Value, String> {
         let endpoint = format!("/admin/v1/keys/{}", name);
@@ -129,6 +135,24 @@ impl AdminClient {
             "permissions": permissions,
         });
         self.request(reqwest::Method::POST, "/admin/v1/roles", Some(body)).await
+    }
+
+    /// Updates an existing RBAC role description or permissions.
+    pub async fn update_role(
+        &self,
+        name: &str,
+        description: Option<&str>,
+        permissions: Option<Value>,
+    ) -> Result<Value, String> {
+        let endpoint = format!("/admin/v1/roles/{}", name);
+        let mut body = serde_json::Map::new();
+        if let Some(desc) = description {
+            body.insert("description".to_string(), json!(desc));
+        }
+        if let Some(perms) = permissions {
+            body.insert("permissions".to_string(), perms);
+        }
+        self.request(reqwest::Method::PATCH, &endpoint, Some(Value::Object(body))).await
     }
 
     /// Deletes an RBAC role.
@@ -161,6 +185,12 @@ impl AdminClient {
         self.request(reqwest::Method::POST, "/admin/v1/databases", Some(body)).await
     }
 
+    /// Tests connectivity and health for an upstream database connection.
+    pub async fn test_database(&self, alias: &str) -> Result<Value, String> {
+        let endpoint = format!("/admin/v1/databases/{}/test", alias);
+        self.request(reqwest::Method::GET, &endpoint, None).await
+    }
+
     /// Removes an upstream database connection.
     pub async fn delete_database(&self, alias: &str) -> Result<Value, String> {
         let endpoint = format!("/admin/v1/databases/{}", alias);
@@ -175,5 +205,26 @@ impl AdminClient {
     /// Flushes all entries from L1 RAM and L2 persistent cache.
     pub async fn flush_cache(&self) -> Result<Value, String> {
         self.request(reqwest::Method::POST, "/admin/v1/cache/flush", None).await
+    }
+
+    /// Fetches Prometheus exposition format metrics text.
+    pub async fn get_metrics(&self) -> Result<String, String> {
+        let url = format!("{}/metrics", self.base_url);
+        let mut req = self.client.get(&url);
+        if let Some(ref key) = self.auth_key {
+            req = req.header("X-Axiom-Key", key);
+        }
+        let res = req
+            .send()
+            .await
+            .map_err(|e| format!("Network request to '{}' failed: {}", url, e))?;
+
+        if !res.status().is_success() {
+            return Err(format!("Server returned HTTP {}", res.status().as_u16()));
+        }
+
+        res.text()
+            .await
+            .map_err(|e| format!("Failed to read metrics response from '{}': {}", url, e))
     }
 }

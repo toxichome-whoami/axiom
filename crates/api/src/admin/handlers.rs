@@ -17,10 +17,10 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use axiom_core::AxiomError;
+use axiom_core::{AxiomError, AuthContext, ConfigManager};
+use axiom_db::DatabasePoolManager;
 use axiom_metadata::models::PermissionRecord;
 use axiom_metadata::store::MetadataStore;
-use axiom_core::AuthContext;
 
 // ─── Request Schemas ───────────────────────────────────────────────────────
 
@@ -265,6 +265,51 @@ pub async fn delete_key(
     })))
 }
 
+/// Rotates the secret for an existing API key, updates its BLAKE3 hash, and returns the new credentials token.
+/// CONTRACT:
+///  - Precondition: Verified admin AuthContext.
+///  - Precondition: Key `name` must exist in `api_keys` table.
+///  - Side effects: Modifies `api_keys` row, appends to `audit_log`, and triggers `sync_snapshot`.
+///  - Returns JSON containing the new single-use token and secret.
+///  - Idempotent: No (generates a new unique secret).
+pub async fn rotate_key(
+    Extension(auth): Extension<AuthContext>,
+    Path(name): Path<String>,
+) -> Result<impl IntoResponse, AxiomError> {
+    if !auth.full_admin {
+        return Err(AxiomError::new(
+            "FORBIDDEN",
+            "Admin privileges required",
+            StatusCode::FORBIDDEN,
+        ));
+    }
+
+    let secret = MetadataStore::rotate_key(&name)
+        .await
+        .map_err(|e| {
+            if e.contains("not found") {
+                AxiomError::new("KEY_NOT_FOUND", &e, StatusCode::NOT_FOUND)
+            } else {
+                AxiomError::new("KEY_ROTATION_FAILED", &e, StatusCode::INTERNAL_SERVER_ERROR)
+            }
+        })?;
+
+    // Encode standard base64(name:secret) token payload for API client authentication
+    let raw_token = format!("{}:{}", name, secret);
+    let encoded_token = BASE64_STANDARD.encode(raw_token.as_bytes());
+
+    Ok(Json(json!({
+        "success": true,
+        "data": {
+            "name": name,
+            "token": encoded_token,
+            "secret": secret,
+            "note": "Save this token now; the plaintext secret cannot be recovered."
+        },
+        "error": Value::Null
+    })))
+}
+
 // ─── Managed Database Endpoints ──────────────────────────────────────────
 // Database endpoints allow live registration and deregistration of upstream engines.
 // Passwords and raw connection strings must never leak in API response bodies.
@@ -387,6 +432,66 @@ pub async fn delete_database(
         "success": true,
         "data": {
             "message": format!("Database '{}' deleted successfully", alias)
+        },
+        "error": Value::Null
+    })))
+}
+
+/// Tests connectivity and queries health status for a configured database target.
+/// CONTRACT:
+///  - Precondition: Verified admin AuthContext.
+///  - Precondition: `alias` must match a configured database connection.
+///  - Returns JSON payload reporting health status and engine dialect.
+///  - Idempotent: Yes.
+pub async fn test_database(
+    Extension(auth): Extension<AuthContext>,
+    Path(alias): Path<String>,
+) -> Result<impl IntoResponse, AxiomError> {
+    if !auth.full_admin {
+        return Err(AxiomError::new(
+            "FORBIDDEN",
+            "Admin privileges required",
+            StatusCode::FORBIDDEN,
+        ));
+    }
+
+    let exists = axiom_metadata::snapshot::get_snapshot().databases.contains_key(&alias)
+        || ConfigManager::get().database.contains_key(&alias);
+
+    if !exists {
+        return Err(AxiomError::new(
+            "DATABASE_NOT_FOUND",
+            &format!("Database alias '{}' not configured", alias),
+            StatusCode::NOT_FOUND,
+        ));
+    }
+
+    let engine = DatabasePoolManager::get_engine(&alias)
+        .await
+        .ok_or_else(|| {
+            AxiomError::new(
+                "CONNECTION_FAILED",
+                &format!("Failed to connect to database '{}'", alias),
+                StatusCode::BAD_GATEWAY,
+            )
+        })?;
+
+    let healthy = engine.health_check().await;
+    if !healthy {
+        return Err(AxiomError::new(
+            "HEALTH_CHECK_FAILED",
+            &format!("Database '{}' health check failed", alias),
+            StatusCode::BAD_GATEWAY,
+        ));
+    }
+
+    Ok(Json(json!({
+        "success": true,
+        "data": {
+            "alias": alias,
+            "status": "connected",
+            "dialect": engine.dialect(),
+            "message": "Connection healthy"
         },
         "error": Value::Null
     })))
@@ -682,6 +787,63 @@ pub async fn get_metrics(
         [(axum::http::header::CONTENT_TYPE, "text/plain; version=0.0.4; charset=utf-8")],
         metrics_text,
     ))
+}
+
+/// Detailed health check for administrators.
+/// CONTRACT:
+///  - Precondition: Verified admin AuthContext.
+///  - Returns JSON status of server uptime, system metrics, and upstream database targets.
+///  - Idempotent: Yes.
+pub async fn get_admin_health(
+    Extension(auth): Extension<AuthContext>,
+) -> Result<impl IntoResponse, AxiomError> {
+    if !auth.full_admin {
+        return Err(AxiomError::new(
+            "FORBIDDEN",
+            "Admin privileges required",
+            StatusCode::FORBIDDEN,
+        ));
+    }
+
+    let snapshot = axiom_metadata::snapshot::get_snapshot();
+    let config = ConfigManager::get();
+
+    let mut db_status = serde_json::Map::new();
+    let mut all_dbs_up = true;
+
+    for alias in snapshot.databases.keys().chain(config.database.keys()) {
+        if db_status.contains_key(alias) {
+            continue;
+        }
+        if let Some(engine) = DatabasePoolManager::get_engine(alias).await {
+            let is_up = engine.health_check().await;
+            db_status.insert(alias.clone(), json!(if is_up { "up" } else { "down" }));
+            if !is_up {
+                all_dbs_up = false;
+            }
+        } else {
+            db_status.insert(alias.clone(), json!("down"));
+            all_dbs_up = false;
+        }
+    }
+
+    let (cpu_percent, memory_used_mb) = tokio::task::spawn_blocking(crate::core::health::get_system_stats)
+        .await
+        .unwrap_or((0.0, 0));
+
+    Ok(Json(json!({
+        "success": true,
+        "data": {
+            "status": if all_dbs_up { "healthy" } else { "degraded" },
+            "uptime_seconds": crate::core::health::get_uptime(),
+            "system": {
+                "cpu_percent": cpu_percent,
+                "memory_used_mb": memory_used_mb
+            },
+            "databases": db_status
+        },
+        "error": Value::Null
+    })))
 }
 
 // ─── Setup Wizard Handlers ─────────────────────────────────────────────────
