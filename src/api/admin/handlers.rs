@@ -31,6 +31,18 @@ pub struct AuditQuery {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct LoginRequest {
+    pub username: String,
+    pub password: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SetupAccountRequest {
+    pub username: String,
+    pub password: String,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct CreateKeyRequest {
     pub name: String,
     pub role: Option<String>,
@@ -669,6 +681,202 @@ pub async fn get_metrics(
     Ok((
         [(axum::http::header::CONTENT_TYPE, "text/plain; version=0.0.4; charset=utf-8")],
         metrics_text,
+    ))
+}
+
+// ─── Setup Wizard Handlers ─────────────────────────────────────────────────
+
+/// Evaluates if the initial setup wizard needs to be run.
+/// CONTRACT:
+///  - Returns: { setup_required: bool }
+///  - Side effects: None.
+///  - Idempotent: Yes.
+pub async fn setup_begin() -> Result<impl IntoResponse, AxiomError> {
+    let has_users = MetadataStore::has_users().await.unwrap_or(false);
+    Ok(Json(json!({
+        "success": true,
+        "data": {
+            "setup_required": !has_users
+        },
+        "error": Value::Null
+    })))
+}
+
+/// Creates the initial administrative account and logs in automatically.
+/// CONTRACT:
+///  - Precondition: No admin users exist in axiom.db.
+///  - Returns: Session token and Set-Cookie header.
+///  - Throws: 403 FORBIDDEN if setup has already been completed.
+///  - Side effects: Inserts user and session, logs audit event.
+pub async fn setup_account(
+    Json(payload): Json<SetupAccountRequest>,
+) -> Result<impl IntoResponse, AxiomError> {
+    let has_users = MetadataStore::has_users().await.unwrap_or(false);
+    if has_users {
+        return Err(AxiomError::new(
+            "SETUP_ALREADY_COMPLETED",
+            "Setup wizard is permanently locked.",
+            StatusCode::FORBIDDEN,
+        ));
+    }
+
+    if payload.username.trim().is_empty() || payload.password.len() < 8 {
+        return Err(AxiomError::new(
+            "INVALID_INPUT",
+            "Username required and password must be at least 8 characters",
+            StatusCode::BAD_REQUEST,
+        ));
+    }
+
+    MetadataStore::create_user(&payload.username, &payload.password)
+        .await
+        .map_err(|e| AxiomError::new("USER_CREATION_FAILED", &e, StatusCode::INTERNAL_SERVER_ERROR))?;
+
+    let session_id = MetadataStore::create_session(&payload.username, 86400 * 30)
+        .await
+        .map_err(|e| AxiomError::new("SESSION_CREATION_FAILED", &e, StatusCode::INTERNAL_SERVER_ERROR))?;
+
+    let cookie_header = format!(
+        "axiom_session={}; HttpOnly; SameSite=Strict; Path=/; Max-Age={}",
+        session_id,
+        86400 * 30
+    );
+
+    Ok((
+        [(axum::http::header::SET_COOKIE, cookie_header)],
+        Json(json!({
+            "success": true,
+            "data": {
+                "token": session_id,
+                "username": payload.username
+            },
+            "error": Value::Null
+        }))
+    ))
+}
+
+/// Adds the first database during the setup wizard.
+/// CONTRACT:
+///  - Side effects: Registers database in axiom.db.
+pub async fn setup_database(
+    Json(payload): Json<AddDatabaseRequest>,
+) -> Result<impl IntoResponse, AxiomError> {
+    MetadataStore::add_database(
+        &payload.alias,
+        &payload.url,
+        payload.engine.as_deref(),
+        payload.pool_min,
+        payload.pool_max,
+    )
+    .await
+    .map_err(|e| AxiomError::new("DATABASE_REGISTRATION_FAILED", &e, StatusCode::INTERNAL_SERVER_ERROR))?;
+
+    Ok(Json(json!({
+        "success": true,
+        "data": {
+            "message": format!("Database '{}' registered", payload.alias)
+        },
+        "error": Value::Null
+    })))
+}
+
+/// Finalizes the setup wizard, permanently locking it.
+/// CONTRACT:
+///  - Returns: Success confirmation.
+pub async fn setup_complete() -> Result<impl IntoResponse, AxiomError> {
+    Ok(Json(json!({
+        "success": true,
+        "data": {
+            "message": "Axiom setup finalized successfully"
+        },
+        "error": Value::Null
+    })))
+}
+
+// ─── Authentication Handlers ───────────────────────────────────────────────
+
+/// Verifies admin credentials and issues a session token and cookie.
+/// CONTRACT:
+///  - Precondition: `payload` contains valid username and password.
+///  - Returns: Session token and Set-Cookie header.
+///  - Side effects: Inserts session row.
+pub async fn login_handler(
+    Json(payload): Json<LoginRequest>,
+) -> Result<impl IntoResponse, AxiomError> {
+    let valid = MetadataStore::verify_user(&payload.username, &payload.password)
+        .await
+        .unwrap_or(false);
+
+    if !valid {
+        crate::metrics::MetricsEngine::record_auth_failure("invalid_admin_password");
+        return Err(AxiomError::new(
+            "INVALID_CREDENTIALS",
+            "Invalid administrative username or password",
+            StatusCode::UNAUTHORIZED,
+        ));
+    }
+
+    let session_id = MetadataStore::create_session(&payload.username, 86400 * 7)
+        .await
+        .map_err(|e| AxiomError::new("SESSION_CREATION_FAILED", &e, StatusCode::INTERNAL_SERVER_ERROR))?;
+
+    let cookie_header = format!(
+        "axiom_session={}; HttpOnly; SameSite=Strict; Path=/; Max-Age={}",
+        session_id,
+        86400 * 7
+    );
+
+    Ok((
+        [(axum::http::header::SET_COOKIE, cookie_header)],
+        Json(json!({
+            "success": true,
+            "data": {
+                "token": session_id,
+                "username": payload.username
+            },
+            "error": Value::Null
+        }))
+    ))
+}
+
+/// Revokes an active administrative session.
+/// CONTRACT:
+///  - Side effects: Removes session from axiom.db and clears cookie.
+pub async fn logout_handler(
+    headers: axum::http::HeaderMap,
+) -> Result<impl IntoResponse, AxiomError> {
+    let mut token = None;
+    if let Some(auth_hdr) = headers.get(axum::http::header::AUTHORIZATION).and_then(|h| h.to_str().ok()) {
+        if let Some(stripped) = auth_hdr.strip_prefix("Bearer ") {
+            token = Some(stripped.to_string());
+        }
+    }
+    if token.is_none() {
+        if let Some(cookie_hdr) = headers.get(axum::http::header::COOKIE).and_then(|h| h.to_str().ok()) {
+            for part in cookie_hdr.split(';') {
+                let trimmed = part.trim();
+                if let Some(val) = trimmed.strip_prefix("axiom_session=") {
+                    token = Some(val.to_string());
+                    break;
+                }
+            }
+        }
+    }
+
+    if let Some(t) = token {
+        let _ = MetadataStore::delete_session(&t).await;
+    }
+
+    let clear_cookie = "axiom_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0";
+    Ok((
+        [(axum::http::header::SET_COOKIE, clear_cookie)],
+        Json(json!({
+            "success": true,
+            "data": {
+                "message": "Logged out successfully"
+            },
+            "error": Value::Null
+        }))
     ))
 }
 

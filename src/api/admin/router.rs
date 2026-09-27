@@ -14,10 +14,15 @@ use crate::api::admin::handlers::*;
 
 /// Constructs the Admin API sub-router.
 /// CONTRACT:
-///  - Returns Router configured with `/status`, `/reload`, `/keys`, `/roles`, and `/databases` endpoints.
-///  - Upstream must attach authentication middleware to populate AuthContext extension.
+///  - Returns Router with public endpoints (/setup/begin, /setup/account, /auth/login)
+///    and protected endpoints (/status, /keys, /databases, etc.) guarded by auth_middleware.
 pub fn get_router() -> Router {
-    Router::new()
+    let public_routes = Router::new()
+        .route("/setup/begin", post(setup_begin))
+        .route("/setup/account", post(setup_account))
+        .route("/auth/login", post(login_handler));
+
+    let protected_routes = Router::new()
         .route("/status", get(get_status))
         .route("/reload", post(reload_metadata))
         .route("/keys", get(list_keys).post(create_key))
@@ -30,4 +35,12 @@ pub fn get_router() -> Router {
         .route("/cache/flush", post(flush_cache))
         .route("/audit", get(get_audit_log))
         .route("/metrics", get(get_metrics))
+        .route("/setup/database", post(setup_database))
+        .route("/setup/complete", post(setup_complete))
+        .route("/auth/logout", post(logout_handler))
+        .layer(axum::middleware::from_fn(crate::middleware::auth::auth_middleware));
+
+    Router::new()
+        .merge(public_routes)
+        .merge(protected_routes)
 }

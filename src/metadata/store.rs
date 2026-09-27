@@ -124,6 +124,12 @@ impl MetadataStore {
                 target TEXT NOT NULL,
                 details TEXT
             );",
+            "CREATE TABLE IF NOT EXISTS sessions (
+                id TEXT PRIMARY KEY,
+                username TEXT NOT NULL,
+                expires_at INTEGER NOT NULL,
+                created_at INTEGER NOT NULL
+            );",
         ];
 
         for stmt in statements {
@@ -979,6 +985,91 @@ impl MetadataStore {
                 libsql::params![now_unix, username],
             ).await;
         }
+
+        Ok(affected > 0)
+    }
+
+    // ─── Session Management ────────────────────────────────────────────────
+    // Ephemeral administrator sessions for Web UI access without exposing API key secrets.
+
+    /// Creates a new authenticated session for an administrative user.
+    /// CONTRACT:
+    ///  - Precondition: `username` must be an existing verified administrator.
+    ///  - Returns: Session UUID token string.
+    ///  - Side effects: Inserts session row into SQLite `sessions` table.
+    ///  - Idempotent: No (generates a new unique session).
+    pub async fn create_session(username: &str, ttl_secs: i64) -> Result<String, String> {
+        let _guard = STORE_LOCK.lock().await;
+        let conn = Self::get_conn().await?;
+
+        let session_id = uuid::Uuid::new_v4().to_string().replace('-', "");
+        let now_unix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+        let expires_at = now_unix + ttl_secs;
+
+        conn.execute(
+            "INSERT INTO sessions (id, username, expires_at, created_at) VALUES (?1, ?2, ?3, ?4)",
+            libsql::params![session_id.as_str(), username, expires_at, now_unix],
+        )
+        .await
+        .map_err(|e| format!("Failed to create session: {}", e))?;
+
+        Ok(session_id)
+    }
+
+    /// Validates an active session token and returns the associated username if not expired.
+    /// CONTRACT:
+    ///  - Precondition: `session_id` token string.
+    ///  - Returns: `Ok(Some(username))` if valid, `Ok(None)` if expired or not found.
+    ///  - Side effects: Deletes expired session if encountered.
+    ///  - Idempotent: Yes.
+    pub async fn validate_session(session_id: &str) -> Result<Option<String>, String> {
+        let conn = Self::get_conn().await?;
+        let now_unix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+
+        let mut rows = conn
+            .query(
+                "SELECT username, expires_at FROM sessions WHERE id = ?1",
+                [session_id],
+            )
+            .await
+            .map_err(|e| e.to_string())?;
+
+        if let Ok(Some(row)) = rows.next().await {
+            let username: String = row.get(0).map_err(|e| e.to_string())?;
+            let expires_at: i64 = row.get(1).unwrap_or(0);
+
+            if expires_at > now_unix {
+                return Ok(Some(username));
+            } else {
+                // Opportunistic cleanup of expired session
+                drop(rows);
+                drop(conn);
+                let _ = Self::delete_session(session_id).await;
+                return Ok(None);
+            }
+        }
+
+        Ok(None)
+    }
+
+    /// Revokes an active administrative session.
+    /// CONTRACT:
+    ///  - Side effects: Deletes row from `sessions` table.
+    ///  - Idempotent: Yes.
+    pub async fn delete_session(session_id: &str) -> Result<bool, String> {
+        let _guard = STORE_LOCK.lock().await;
+        let conn = Self::get_conn().await?;
+
+        let affected = conn
+            .execute("DELETE FROM sessions WHERE id = ?1", [session_id])
+            .await
+            .map_err(|e| format!("Failed to delete session: {}", e))?;
 
         Ok(affected > 0)
     }

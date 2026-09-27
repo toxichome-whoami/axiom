@@ -23,6 +23,7 @@ chrono = "0.4"
 axum = "0.7.5"
 tower = "0.4.13"
 tower-http = { version = "0.5.2", features = ["cors", "trace", "set-header", "compression-gzip", "request-id", "util", "timeout"] }
+rust-embed = { version = "8.5", features = ["axum"] }
 tokio-util = { version = "0.7", features = ["compat", "io"] }
 urlencoding = "2.1"
 

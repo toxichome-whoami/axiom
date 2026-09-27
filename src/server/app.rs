@@ -101,9 +101,8 @@ pub fn create_app() -> Router {
         .layer(middleware::from_fn(rate_limit_middleware))
         .layer(middleware::from_fn(waf_middleware));
 
-    // Admin API versioning wrapper
+    // Admin API versioning wrapper (auth applied inside get_router for protected routes)
     let admin_routes = crate::api::admin::get_router()
-        .layer(middleware::from_fn(auth_middleware))
         .layer(middleware::from_fn(rate_limit_middleware))
         .layer(middleware::from_fn(waf_middleware));
 
@@ -113,10 +112,14 @@ pub fn create_app() -> Router {
         .layer(middleware::from_fn(rate_limit_middleware))
         .layer(middleware::from_fn(waf_middleware));
 
+    // Web UI router
+    let ui_routes = crate::api::ui::get_router();
+
     Router::new()
         .nest("/api/v1", api_routes)
         .nest("/admin/v1", admin_routes)
         .nest("/mcp/v1", mcp_routes)
+        .nest("/ui", ui_routes)
         .layer(axum::extract::Extension(config.clone()))
         .merge(core_routes)
         .route("/favicon.ico", get(favicon))

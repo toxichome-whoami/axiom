@@ -11,3 +11,4 @@ pub mod core;
 pub mod database;
 pub mod errors;
 pub mod mcp;
+pub mod ui;

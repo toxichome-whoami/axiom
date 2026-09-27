@@ -1,0 +1,45 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+  
+  body {
+    background-color: #1F1F1F;
+    color: #F5F5F5;
+    font-family: 'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  }
+
+  code, pre, kbd {
+    font-family: 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  }
+
+  /* Accessible focus states matching adaptive-ui & ui-design-system */
+  button, input, select, textarea, a {
+    touch-action: manipulation;
+  }
+
+  button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, a:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px #F59E0B;
+  }
+}
+
+/* Subtle clean scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #1F1F1F;
+}
+::-webkit-scrollbar-thumb {
+  background: #404040;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #555555;
+}

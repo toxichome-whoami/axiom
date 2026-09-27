@@ -69,17 +69,48 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, A
                 ));
             }
             Err(None) => {
-                // Invalid credentials or unparseable token
-                crate::metrics::MetricsEngine::record_auth_failure("invalid_credentials");
+                // Not a valid API key token; fall through to test administrative session
             }
         }
-    } else {
-        crate::metrics::MetricsEngine::record_auth_failure("missing_key");
     }
+
+    // Check for administrative session token (via Bearer header or Cookie)
+    let mut session_id_opt = None;
+    if let Some(raw_token) = raw_token_opt {
+        if !raw_token.contains(':') && raw_token.len() == 32 {
+            session_id_opt = Some(raw_token);
+        }
+    }
+    if session_id_opt.is_none() {
+        if let Some(cookie_hdr) = req.headers().get("Cookie").and_then(|h| h.to_str().ok()) {
+            for part in cookie_hdr.split(';') {
+                let trimmed = part.trim();
+                if let Some(val) = trimmed.strip_prefix("axiom_session=") {
+                    session_id_opt = Some(val);
+                    break;
+                }
+            }
+        }
+    }
+
+    if let Some(session_id) = session_id_opt {
+        if let Ok(Some(username)) = crate::metadata::store::MetadataStore::validate_session(session_id).await {
+            let ctx = AuthContext {
+                api_key_name: format!("user:{}", username),
+                role: Some("admin".to_string()),
+                full_admin: true,
+                ..Default::default()
+            };
+            req.extensions_mut().insert(ctx);
+            return Ok(next.run(req).await);
+        }
+    }
+
+    crate::metrics::MetricsEngine::record_auth_failure("invalid_credentials");
 
     Err(AxiomError::new(
         "UNAUTHORIZED",
-        "Missing or invalid API key.",
+        "Missing or invalid API key or administrative session.",
         axum::http::StatusCode::UNAUTHORIZED,
     ))
 }

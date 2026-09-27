@@ -105,6 +105,13 @@ fn current_unix_secs() -> u64 {
         .as_secs()
 }
 
+fn current_unix_nanos() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos() as u64
+}
+
 // ─── CacheEngine Public Interface ──────────────────────────────────────────
 
 pub struct CacheEngine;
@@ -167,7 +174,7 @@ impl CacheEngine {
         // 1. Check L1 RAM cache (ultra-fast sub-microsecond lookup)
         if let Some(mut entry) = L1_CACHE.get_mut(key) {
             if entry.expires_at > now {
-                entry.last_accessed = now;
+                entry.last_accessed = current_unix_nanos();
                 STATS.hits_l1.fetch_add(1, Ordering::Relaxed);
                 return Some(entry.value.clone());
             }
@@ -197,7 +204,7 @@ impl CacheEngine {
                             L1Entry {
                                 value: val_bytes.clone(),
                                 expires_at,
-                                last_accessed: now,
+                                last_accessed: current_unix_nanos(),
                                 durability,
                             },
                         );
@@ -229,7 +236,7 @@ impl CacheEngine {
             L1Entry {
                 value: value.clone(),
                 expires_at,
-                last_accessed: now,
+                last_accessed: current_unix_nanos(),
                 durability,
             },
         );
@@ -347,12 +354,12 @@ impl CacheEngine {
                 if let Ok(c) = std::str::from_utf8(&entry.value).map(|s| s.parse::<u32>().unwrap_or(0)) {
                     count = c + 1;
                     entry.value = Bytes::from(count.to_string());
-                    entry.last_accessed = now;
+                    entry.last_accessed = current_unix_nanos();
                 }
             } else {
                 entry.value = Bytes::from("1");
                 entry.expires_at = now + window_secs as u64;
-                entry.last_accessed = now;
+                entry.last_accessed = current_unix_nanos();
             }
         } else {
             Self::evict_if_needed();
@@ -361,7 +368,7 @@ impl CacheEngine {
                 L1Entry {
                     value: Bytes::from("1"),
                     expires_at: now + window_secs as u64,
-                    last_accessed: now,
+                    last_accessed: current_unix_nanos(),
                     durability: Durability::Ephemeral,
                 },
             );
@@ -376,11 +383,11 @@ impl CacheEngine {
                         .and_then(|s| s.parse::<u32>().ok())
                         .unwrap_or(0) + 1;
                     entry.value = Bytes::from(penalty_count.to_string());
-                    entry.last_accessed = now;
+                    entry.last_accessed = current_unix_nanos();
                 } else {
                     entry.value = Bytes::from("1");
                     entry.expires_at = now + penalty_cooldown as u64;
-                    entry.last_accessed = now;
+                    entry.last_accessed = current_unix_nanos();
                 }
             } else {
                 Self::evict_if_needed();
@@ -389,7 +396,7 @@ impl CacheEngine {
                     L1Entry {
                         value: Bytes::from("1"),
                         expires_at: now + penalty_cooldown as u64,
-                        last_accessed: now,
+                        last_accessed: current_unix_nanos(),
                         durability: Durability::Ephemeral,
                     },
                 );
