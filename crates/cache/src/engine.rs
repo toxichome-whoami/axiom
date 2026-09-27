@@ -455,9 +455,20 @@ mod tests {
         assert_eq!(retrieved, None);
     }
 
+    /// RAII guard ensuring `MAX_L1_ENTRIES` is always reset to its previous value upon test completion or panic.
+    struct LruLimitGuard(u64);
+    impl Drop for LruLimitGuard {
+        fn drop(&mut self) {
+            MAX_L1_ENTRIES.store(self.0, Ordering::Relaxed);
+        }
+    }
+
     #[tokio::test]
     async fn test_true_lru_eviction() {
         let _guard = TEST_LOCK.lock().await;
+        let prev_limit = MAX_L1_ENTRIES.load(Ordering::Relaxed);
+        let _limit_guard = LruLimitGuard(prev_limit);
+
         // Set small limit
         MAX_L1_ENTRIES.store(2, Ordering::Relaxed);
         CacheEngine::flush().await;
@@ -478,13 +489,13 @@ mod tests {
         assert_eq!(CacheEngine::get("item_3").await, Some(Bytes::from("3")));
         assert_eq!(CacheEngine::get("item_2").await, None); // Evicted!
 
-        // Restore default limit
-        MAX_L1_ENTRIES.store(10_000, Ordering::Relaxed);
+        CacheEngine::flush().await;
     }
 
     #[tokio::test]
     async fn test_flush_clears_all() {
         let _guard = TEST_LOCK.lock().await;
+        CacheEngine::flush().await;
         CacheEngine::set("flush:1", Bytes::from("val1"), 60, Durability::MemoryOnly).await;
         CacheEngine::set("flush:2", Bytes::from("val2"), 60, Durability::MemoryOnly).await;
         assert!(CacheEngine::get("flush:1").await.is_some());
@@ -494,8 +505,10 @@ mod tests {
         assert_eq!(CacheEngine::get("flush:2").await, None);
     }
 
-    #[test]
-    fn test_rate_limit_checking() {
+    #[tokio::test]
+    async fn test_rate_limit_checking() {
+        let _guard = TEST_LOCK.lock().await;
+        CacheEngine::flush().await;
         let key = "rl:test:ip_unique";
         let pen = "pen:test:ip_unique";
 
@@ -512,6 +525,8 @@ mod tests {
         let (violated, count) = CacheEngine::check_rate_limit(key, 60, 2, pen, 300, 5);
         assert!(violated);
         assert_eq!(count, 3);
+
+        CacheEngine::flush().await;
     }
 }
 
