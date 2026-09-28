@@ -1,7 +1,28 @@
+/*
+ * Overview dashboard page built with Shadcn UI primitives.
+ * Owned by: ui/pages
+ * Key deps: ../components/ui, ../api
+ * Invariants: Real-time telemetry cards, quick-navigation cards, recent audit event log.
+ */
+
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, type SystemStatus, type AuditRecord } from '../api';
-import { TelemetryCard } from '../components/ui/TelemetryCard';
+import {
+  Button,
+  Badge,
+  Card,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  Table,
+  TableHeader,
+  TableBody,
+  TableHead,
+  TableRow,
+  TableCell,
+  TelemetryCard,
+} from '../components/ui';
 import { Database, Key, Zap, Clock, ArrowRight, ShieldCheck, Activity } from 'lucide-react';
 
 export const Overview: React.FC = () => {
@@ -54,18 +75,20 @@ export const Overview: React.FC = () => {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <button
+          <Button
+            size="sm"
             onClick={() => navigate('/databases')}
-            className="h-8 px-3 rounded text-xs font-semibold bg-[#f38020] hover:bg-[#fa8c16] text-black transition-colors"
+            className="bg-[#f38020] hover:bg-[#fa8c16] text-black font-semibold border-none"
           >
             + Connect Database
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
             onClick={() => navigate('/keys')}
-            className="h-8 px-3 rounded text-xs font-medium text-[#cccccc] hover:text-white bg-[#141414] hover:bg-[#1a1a1a] border border-[#262626] transition-colors"
           >
             Manage Keys
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -99,11 +122,11 @@ export const Overview: React.FC = () => {
 
       {/* Quick Action Navigation Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div
+        <Card
           onClick={() => navigate('/databases')}
-          className="p-4 rounded-lg border border-[#222222] bg-[#0c0c0c] hover:border-[#383838] transition-colors cursor-pointer group"
+          className="hover:border-[#383838] transition-colors cursor-pointer group p-4 space-y-2 bg-[#0c0c0c]"
         >
-          <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Database className="w-4 h-4 text-[#f38020]" />
               <span className="text-sm font-semibold text-white">Database Pools</span>
@@ -113,13 +136,13 @@ export const Overview: React.FC = () => {
           <p className="text-xs text-[#8c8c8c] leading-relaxed">
             Attach PostgreSQL, MySQL, MSSQL, ClickHouse or LibSQL instances to the live data plane.
           </p>
-        </div>
+        </Card>
 
-        <div
+        <Card
           onClick={() => navigate('/keys')}
-          className="p-4 rounded-lg border border-[#222222] bg-[#0c0c0c] hover:border-[#383838] transition-colors cursor-pointer group"
+          className="hover:border-[#383838] transition-colors cursor-pointer group p-4 space-y-2 bg-[#0c0c0c]"
         >
-          <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Key className="w-4 h-4 text-[#3b82f6]" />
               <span className="text-sm font-semibold text-white">API Keys & Tokens</span>
@@ -129,13 +152,13 @@ export const Overview: React.FC = () => {
           <p className="text-xs text-[#8c8c8c] leading-relaxed">
             Generate BLAKE3-hashed credentials, configure per-key rate limits, and assign RBAC roles.
           </p>
-        </div>
+        </Card>
 
-        <div
+        <Card
           onClick={() => navigate('/metrics')}
-          className="p-4 rounded-lg border border-[#222222] bg-[#0c0c0c] hover:border-[#383838] transition-colors cursor-pointer group"
+          className="hover:border-[#383838] transition-colors cursor-pointer group p-4 space-y-2 bg-[#0c0c0c]"
         >
-          <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Activity className="w-4 h-4 text-emerald-400" />
               <span className="text-sm font-semibold text-white">Prometheus Metrics</span>
@@ -145,7 +168,7 @@ export const Overview: React.FC = () => {
           <p className="text-xs text-[#8c8c8c] leading-relaxed">
             Inspect real-time HTTP throughput, query latency histograms, and rate-limit drops.
           </p>
-        </div>
+        </Card>
       </div>
 
       {/* Recent Audit Log Feed */}
@@ -157,51 +180,51 @@ export const Overview: React.FC = () => {
               Recent Control Plane Activity
             </h2>
           </div>
-          <button
+          <Button
+            variant="ghost"
+            size="sm"
             onClick={() => navigate('/audit')}
-            className="text-xs text-[#8c8c8c] hover:text-white transition-colors flex items-center gap-1"
+            className="text-xs text-[#8c8c8c] hover:text-white flex items-center gap-1 h-7"
           >
             <span>View all audit events</span>
             <ArrowRight className="w-3 h-3" />
-          </button>
+          </Button>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead className="bg-[#141414] text-[#8c8c8c] border-b border-[#222222]">
-              <tr>
-                <th className="px-4 py-2.5 font-medium">Timestamp</th>
-                <th className="px-4 py-2.5 font-medium">Actor</th>
-                <th className="px-4 py-2.5 font-medium">Action</th>
-                <th className="px-4 py-2.5 font-medium">Target</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[#1e1e1e]">
-              {(!Array.isArray(audit) || audit.length === 0) ? (
-                <tr>
-                  <td colSpan={4} className="px-4 py-8 text-center text-[#666666]">
-                    No control plane mutations recorded yet.
-                  </td>
-                </tr>
-              ) : (
-                audit.map((evt) => (
-                  <tr key={evt.id} className="hover:bg-[#141414] transition-colors">
-                    <td className="px-4 py-2.5 font-mono text-[#8c8c8c]">
-                      {new Date(evt.timestamp * 1000).toLocaleString()}
-                    </td>
-                    <td className="px-4 py-2.5 font-medium text-white">{evt.actor}</td>
-                    <td className="px-4 py-2.5">
-                      <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-mono bg-[#141414] border border-[#262626] text-[#f38020]">
-                        {evt.action}
-                      </span>
-                    </td>
-                    <td className="px-4 py-2.5 font-mono text-[#8c8c8c]">{evt.target}</td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Timestamp</TableHead>
+              <TableHead>Actor</TableHead>
+              <TableHead>Action</TableHead>
+              <TableHead>Target</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {(!Array.isArray(audit) || audit.length === 0) ? (
+              <TableRow>
+                <TableCell colSpan={4} className="h-20 text-center text-[#666666]">
+                  No control plane mutations recorded yet.
+                </TableCell>
+              </TableRow>
+            ) : (
+              audit.map((evt) => (
+                <TableRow key={evt.id}>
+                  <TableCell className="font-mono text-[#8c8c8c]">
+                    {new Date(evt.timestamp * 1000).toLocaleString()}
+                  </TableCell>
+                  <TableCell className="font-medium text-white">{evt.actor}</TableCell>
+                  <TableCell>
+                    <Badge variant="orange">
+                      {evt.action}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="font-mono text-[#8c8c8c]">{evt.target}</TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
       </div>
     </div>
   );

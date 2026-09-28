@@ -1,8 +1,27 @@
+/*
+ * Roles and granular RBAC permissions management page built with Shadcn UI primitives.
+ * Owned by: ui/pages
+ * Key deps: ../components/ui, ../api
+ * Invariants: Multi-operation permissions builder, database/table scoping, safe array iteration.
+ */
+
 import React, { useState, useEffect } from 'react';
 import { api, type RoleRecord, type PermissionRecord, type DatabaseRecord } from '../api';
-import { toast } from '../components/ui/Toast';
-import { confirmAction } from '../components/ui/ConfirmDialog';
-import { Shield, Plus, Search, Trash2, AlertCircle, X } from 'lucide-react';
+import {
+  Button,
+  Badge,
+  Input,
+  Dialog,
+  Table,
+  TableHeader,
+  TableBody,
+  TableHead,
+  TableRow,
+  TableCell,
+  toast,
+  confirmAction,
+} from '../components/ui';
+import { Shield, Plus, Search, Trash2, AlertCircle } from 'lucide-react';
 
 export const Roles: React.FC = () => {
   const [roles, setRoles] = useState<RoleRecord[]>([]);
@@ -122,25 +141,25 @@ export const Roles: React.FC = () => {
             Configure granular table-level and operation-level (SELECT, INSERT, UPDATE, DELETE) access rules.
           </p>
         </div>
-        <button
+        <Button
           onClick={() => setIsModalOpen(true)}
-          className="h-8 px-3.5 rounded text-xs font-semibold bg-[#f38020] hover:bg-[#fa8c16] text-black transition-colors flex items-center gap-1.5 self-start sm:self-auto"
+          className="bg-[#f38020] hover:bg-[#fa8c16] text-black font-semibold border-none self-start sm:self-auto"
+          size="sm"
         >
           <Plus className="w-3.5 h-3.5" />
           <span>Create Role</span>
-        </button>
+        </Button>
       </div>
 
       {/* Filter / Search Bar */}
       <div className="flex items-center justify-between gap-3">
         <div className="relative w-full max-w-xs">
           <Search className="w-3.5 h-3.5 text-[#666666] absolute left-3 top-2.5" />
-          <input
-            type="text"
+          <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search roles..."
-            className="w-full h-8 pl-8 pr-3 rounded bg-[#0e0e0e] border border-[#222222] text-xs text-white placeholder-[#666666] focus:border-[#f38020] focus:outline-none"
+            className="pl-8"
           />
         </div>
         <span className="text-xs text-[#666666] font-mono">
@@ -150,244 +169,225 @@ export const Roles: React.FC = () => {
 
       {/* Roles DataTable */}
       <div className="rounded-lg border border-[#222222] bg-[#0c0c0c] overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead className="bg-[#141414] text-[#8c8c8c] border-b border-[#222222]">
-              <tr>
-                <th className="px-4 py-3 font-medium">Role Name</th>
-                <th className="px-4 py-3 font-medium">Description</th>
-                <th className="px-4 py-3 font-medium">Permissions Matrix</th>
-                <th className="px-4 py-3 font-medium">Created</th>
-                <th className="px-4 py-3 font-medium text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[#1e1e1e]">
-              {loading ? (
-                <tr>
-                  <td colSpan={5} className="px-4 py-8 text-center text-[#666666]">
-                    Loading roles...
-                  </td>
-                </tr>
-              ) : filtered.length === 0 ? (
-                <tr>
-                  <td colSpan={5} className="px-4 py-12 text-center text-[#666666]">
-                    {search ? `No roles match "${search}".` : 'No roles created yet. Click "Create Role" to define one.'}
-                  </td>
-                </tr>
-              ) : (
-                filtered.map((r) => (
-                  <tr key={r.name} className="hover:bg-[#141414] transition-colors">
-                    <td className="px-4 py-3 font-mono font-medium text-white">
-                      <div className="flex items-center gap-2">
-                        <Shield className="w-3.5 h-3.5 text-[#f38020]" />
-                        <span>{r.name}</span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-[#8c8c8c]">
-                      {r.description || '—'}
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex flex-wrap gap-1.5">
-                        {r.permissions && r.permissions.length > 0 ? (
-                          r.permissions.map((p, i) => (
-                            <span
-                              key={i}
-                              className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-mono bg-[#141414] border border-[#262626] text-[#cccccc]"
-                            >
-                              {p.database}.{p.table_name}: [{p.operations.join(', ')}]
-                            </span>
-                          ))
-                        ) : (
-                          <span className="text-[#666666]">No rules defined</span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 font-mono text-[#8c8c8c]">
-                      {new Date(r.created_at * 1000).toLocaleDateString()}
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <button
-                        onClick={() => handleDelete(r.name)}
-                        className="h-7 w-7 rounded bg-[#141414] hover:bg-rose-500/20 border border-[#262626] hover:border-rose-500/30 text-[#8c8c8c] hover:text-rose-400 transition-colors inline-flex items-center justify-center"
-                        title="Delete role"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Role Name</TableHead>
+              <TableHead>Description</TableHead>
+              <TableHead>Permissions Matrix</TableHead>
+              <TableHead>Created</TableHead>
+              <TableHead className="text-right">Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {loading ? (
+              <TableRow>
+                <TableCell colSpan={5} className="h-24 text-center text-[#666666]">
+                  Loading roles...
+                </TableCell>
+              </TableRow>
+            ) : filtered.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={5} className="h-32 text-center text-[#666666]">
+                  {search ? `No roles match "${search}".` : 'No roles created yet. Click "Create Role" to define one.'}
+                </TableCell>
+              </TableRow>
+            ) : (
+              filtered.map((r) => (
+                <TableRow key={r.name}>
+                  <TableCell className="font-mono font-medium text-white">
+                    <div className="flex items-center gap-2">
+                      <Shield className="w-3.5 h-3.5 text-[#f38020]" />
+                      <span>{r.name}</span>
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-[#8c8c8c]">
+                    {r.description || '—'}
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex flex-wrap gap-1.5">
+                      {r.permissions && r.permissions.length > 0 ? (
+                        r.permissions.map((p, i) => (
+                          <Badge
+                            key={i}
+                            variant="secondary"
+                            className="font-mono text-[10px]"
+                          >
+                            {p.database}.{p.table_name}: [{p.operations.join(', ')}]
+                          </Badge>
+                        ))
+                      ) : (
+                        <span className="text-[#666666]">No rules defined</span>
+                      )}
+                    </div>
+                  </TableCell>
+                  <TableCell className="font-mono text-[#8c8c8c]">
+                    {new Date(r.created_at * 1000).toLocaleDateString()}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={() => handleDelete(r.name)}
+                      className="hover:border-rose-500/40 hover:bg-rose-950/20 hover:text-rose-400"
+                      title="Delete role"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
       </div>
 
-      {/* Create Role Modal */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-150">
-          <div className="w-full max-w-[560px] rounded-lg border border-[#262626] bg-[#0c0c0c] p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <Shield className="w-4 h-4 text-[#f38020]" />
-                <h3 className="text-sm font-semibold text-white">Create RBAC Role</h3>
-              </div>
-              <button
-                onClick={() => setIsModalOpen(false)}
-                className="text-[#666666] hover:text-white p-1 rounded transition-colors"
+      {/* Create Role Dialog */}
+      <Dialog
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        title="Create RBAC Role"
+        description="Define an identity profile restricting machine queries by database, table, and operation."
+        className="max-w-[560px]"
+      >
+        {formError && (
+          <div className="mb-4 p-2.5 rounded bg-rose-500/10 border border-rose-500/20 text-xs text-rose-400 flex items-center gap-2">
+            <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+            <span>{formError}</span>
+          </div>
+        )}
+
+        <form onSubmit={handleCreate} className="space-y-4">
+          <div>
+            <label className="block text-xs font-medium text-[#cccccc] mb-1">
+              Role Identifier <span className="text-rose-400">*</span>
+            </label>
+            <Input
+              value={roleName}
+              onChange={(e) => setRoleName(e.target.value)}
+              placeholder="e.g. analytics_readonly"
+              required
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-[#cccccc] mb-1">Description</label>
+            <Input
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Describe access level or intended service"
+            />
+          </div>
+
+          <div className="pt-2">
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-xs font-medium text-[#cccccc]">Permission Rules</label>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={handleAddPermissionRule}
+                className="text-[#f38020] hover:text-[#fa8c16]"
               >
-                <X className="w-4 h-4" />
-              </button>
+                <Plus className="w-3 h-3" />
+                <span>Add Rule</span>
+              </Button>
             </div>
 
-            {formError && (
-              <div className="mb-4 p-2.5 rounded bg-rose-500/10 border border-rose-500/20 text-xs text-rose-400 flex items-center gap-2">
-                <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                <span>{formError}</span>
-              </div>
-            )}
-
-            <form onSubmit={handleCreate} className="space-y-4">
-              <div>
-                <label className="block text-xs font-medium text-[#cccccc] mb-1">
-                  Role Name <span className="text-rose-400">*</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. read_only, customer_service, data_engineer"
-                  value={roleName}
-                  onChange={(e) => setRoleName(e.target.value)}
-                  className="w-full h-8 px-3 rounded bg-[#141414] border border-[#262626] text-xs text-white placeholder-[#555555] focus:border-[#f38020] focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-[#cccccc] mb-1">
-                  Description
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. Allows read access to all public tables"
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  className="w-full h-8 px-3 rounded bg-[#141414] border border-[#262626] text-xs text-white placeholder-[#555555] focus:border-[#f38020] focus:outline-none"
-                />
-              </div>
-
-              {/* Permissions List */}
-              <div className="space-y-2 pt-2 border-t border-[#222222]">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-medium text-[#cccccc]">Permission Rules</span>
-                  <button
-                    type="button"
-                    onClick={handleAddPermissionRule}
-                    className="text-[11px] text-[#f38020] hover:text-[#fa8c16] font-medium flex items-center gap-1"
-                  >
-                    <Plus className="w-3 h-3" />
-                    <span>Add Rule</span>
-                  </button>
-                </div>
-
-                <div className="space-y-2.5">
-                  {permissions.map((p, idx) => (
-                    <div
-                      key={idx}
-                      className="p-3 rounded bg-[#121212] border border-[#262626] space-y-2 relative"
-                    >
-                      <div className="grid grid-cols-2 gap-2">
-                        <div>
-                          <label className="block text-[10px] text-[#777777] mb-0.5">Database</label>
-                          <input
-                            type="text"
-                            value={p.database}
-                            onChange={(e) => {
-                              const val = e.target.value;
-                              setPermissions(
-                                permissions.map((item, i) =>
-                                  i === idx ? { ...item, database: val } : item
-                                )
-                              );
-                            }}
-                            placeholder="* for all"
-                            className="w-full h-7 px-2 rounded bg-[#181818] border border-[#2c2c2c] text-xs font-mono text-white focus:outline-none"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-[10px] text-[#777777] mb-0.5">Table</label>
-                          <input
-                            type="text"
-                            value={p.table_name}
-                            onChange={(e) => {
-                              const val = e.target.value;
-                              setPermissions(
-                                permissions.map((item, i) =>
-                                  i === idx ? { ...item, table_name: val } : item
-                                )
-                              );
-                            }}
-                            placeholder="* for all"
-                            className="w-full h-7 px-2 rounded bg-[#181818] border border-[#2c2c2c] text-xs font-mono text-white focus:outline-none"
-                          />
-                        </div>
-                      </div>
-
-                      {/* Operations Checkboxes */}
-                      <div className="flex items-center justify-between pt-1">
-                        <div className="flex items-center gap-3">
-                          {['SELECT', 'INSERT', 'UPDATE', 'DELETE'].map((op) => {
-                            const isChecked = p.operations.includes(op);
-                            return (
-                              <label
-                                key={op}
-                                className="flex items-center gap-1.5 text-[11px] font-mono text-[#a1a1a1] cursor-pointer"
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={isChecked}
-                                  onChange={() => handleToggleOperation(idx, op)}
-                                  className="rounded border-[#333333] bg-[#1a1a1a] text-[#f38020] focus:ring-0 cursor-pointer"
-                                />
-                                <span>{op}</span>
-                              </label>
-                            );
-                          })}
-                        </div>
-                        {permissions.length > 1 && (
-                          <button
-                            type="button"
-                            onClick={() => handleRemovePermissionRule(idx)}
-                            className="text-[#666666] hover:text-rose-400 p-0.5"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        )}
-                      </div>
+            <div className="space-y-3 max-h-[220px] overflow-y-auto pr-1">
+              {permissions.map((p, idx) => (
+                <div
+                  key={idx}
+                  className="p-3 rounded border border-[#222222] bg-[#080808] space-y-2.5"
+                >
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <span className="block text-[10px] text-[#666666] mb-1 uppercase font-mono">Database</span>
+                      <select
+                        value={p.database}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setPermissions(permissions.map((rule, i) => (i === idx ? { ...rule, database: val } : rule)));
+                        }}
+                        className="w-full h-8 px-2 rounded bg-[#0c0c0c] border border-[#222222] text-xs text-white"
+                      >
+                        <option value="*">* (All Databases)</option>
+                        {databases.map((d) => (
+                          <option key={d.alias} value={d.alias}>
+                            {d.alias}
+                          </option>
+                        ))}
+                      </select>
                     </div>
-                  ))}
-                </div>
-              </div>
+                    <div>
+                      <span className="block text-[10px] text-[#666666] mb-1 uppercase font-mono">Table</span>
+                      <Input
+                        value={p.table_name}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setPermissions(permissions.map((rule, i) => (i === idx ? { ...rule, table_name: val } : rule)));
+                        }}
+                        placeholder="* or table_name"
+                        className="h-8"
+                      />
+                    </div>
+                  </div>
 
-              <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-[#222222]">
-                <button
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  className="h-8 px-3.5 rounded text-xs font-medium text-[#cccccc] hover:text-white bg-[#141414] hover:bg-[#1a1a1a] border border-[#262626] transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="h-8 px-3.5 rounded text-xs font-semibold bg-[#f38020] hover:bg-[#fa8c16] text-black transition-colors disabled:opacity-50 flex items-center gap-1.5"
-                >
-                  {submitting && <span className="animate-spin w-3 h-3 border-2 border-black border-t-transparent rounded-full" />}
-                  <span>Save Role</span>
-                </button>
-              </div>
-            </form>
+                  <div>
+                    <span className="block text-[10px] text-[#666666] mb-1 uppercase font-mono">Operations</span>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {['SELECT', 'INSERT', 'UPDATE', 'DELETE'].map((op) => {
+                        const active = p.operations.includes(op);
+                        return (
+                          <button
+                            key={op}
+                            type="button"
+                            onClick={() => handleToggleOperation(idx, op)}
+                            className={`px-2 py-0.5 rounded text-[11px] font-mono transition-colors border ${
+                              active
+                                ? 'bg-[#3b82f6]/20 border-[#3b82f6]/40 text-[#60a5fa]'
+                                : 'bg-[#141414] border-[#222222] text-[#666666] hover:text-[#cccccc]'
+                            }`}
+                          >
+                            {op}
+                          </button>
+                        );
+                      })}
+                      {permissions.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => handleRemovePermissionRule(idx)}
+                          className="ml-auto text-[#666666] hover:text-rose-400 p-1 transition-colors"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
-        </div>
-      )}
+
+          <div className="flex items-center justify-end gap-2 pt-3 border-t border-[#1e1e1e]">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setIsModalOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              size="sm"
+              isLoading={submitting}
+            >
+              Save Role
+            </Button>
+          </div>
+        </form>
+      </Dialog>
     </div>
   );
 };

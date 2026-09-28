@@ -1,7 +1,18 @@
+/*
+ * Telemetry and Prometheus metrics exposition page built with Shadcn UI primitives.
+ * Owned by: ui/pages
+ * Key deps: ../components/ui, ../api
+ * Invariants: Real Prometheus metric parsing, expandable raw exposition inspector, zero fake mock numbers.
+ */
+
 import React, { useState, useEffect } from 'react';
 import { api } from '../api';
-import { TelemetryCard } from '../components/ui/TelemetryCard';
-import { toast } from '../components/ui/Toast';
+import {
+  Button,
+  Card,
+  TelemetryCard,
+  toast,
+} from '../components/ui';
 import { Activity, RefreshCw, Copy, Check, ChevronDown, ChevronUp, Globe, Database, ShieldAlert, Cpu } from 'lucide-react';
 
 export const Metrics: React.FC = () => {
@@ -61,13 +72,14 @@ export const Metrics: React.FC = () => {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <button
+          <Button
+            variant="secondary"
+            size="sm"
             onClick={loadMetrics}
-            className="h-8 px-3 rounded text-xs font-medium text-[#cccccc] hover:text-white bg-[#141414] hover:bg-[#1a1a1a] border border-[#262626] transition-colors flex items-center gap-1.5"
           >
-            <RefreshCw className="w-3.5 h-3.5 text-[#8c8c8c]" />
+            <RefreshCw className="w-3.5 h-3.5" />
             <span>Scrape /metrics</span>
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -76,38 +88,26 @@ export const Metrics: React.FC = () => {
         <TelemetryCard
           title="TOTAL HTTP REQUESTS"
           value={loading ? '...' : httpRequests.toLocaleString()}
-          change="+18.4%"
-          isPositive={true}
           subtext="via Axum Data Plane"
           icon={<Globe className="w-4 h-4 text-[#3b82f6]" />}
-          sparkline={[80, 110, 150, 200, 260, 310, 420]}
         />
         <TelemetryCard
           title="DB QUERIES EXECUTED"
           value={loading ? '...' : dbQueries.toLocaleString()}
-          change="+12.1%"
-          isPositive={true}
           subtext="Parameterized queries"
           icon={<Database className="w-4 h-4 text-[#f38020]" />}
-          sparkline={[200, 280, 390, 440, 520, 680, 890]}
         />
         <TelemetryCard
           title="ACTIVE POOL SOCKETS"
           value={loading ? '...' : activeSockets}
-          change="healthy"
-          isPositive={true}
           subtext="Across all aliases"
           icon={<Cpu className="w-4 h-4 text-emerald-400" />}
-          sparkline={[4, 6, 6, 8, 8, 8, 8]}
         />
         <TelemetryCard
           title="WAF / RATE DROPS"
           value={loading ? '...' : rateLimitDrops}
-          change="0.0% rejected"
-          isPositive={true}
-          subtext="No attacks detected"
+          subtext="Blocked violations"
           icon={<ShieldAlert className="w-4 h-4 text-amber-400" />}
-          sparkline={[0, 0, 0, 0, 0, 0, 0]}
         />
       </div>
 
@@ -124,16 +124,18 @@ export const Metrics: React.FC = () => {
             </h2>
           </div>
           <div className="flex items-center gap-3">
-            <button
+            <Button
+              variant="outline"
+              size="sm"
               onClick={(e) => {
                 e.stopPropagation();
                 copyMetrics();
               }}
-              className="h-6 px-2 rounded bg-[#161616] hover:bg-[#202020] border border-[#262626] text-[10px] font-mono text-[#cccccc] hover:text-white flex items-center gap-1"
+              className="h-7 text-xs"
             >
-              {hasCopied ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+              {hasCopied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
               <span>{hasCopied ? 'Copied' : 'Copy'}</span>
-            </button>
+            </Button>
             {showRaw ? <ChevronUp className="w-4 h-4 text-[#8c8c8c]" /> : <ChevronDown className="w-4 h-4 text-[#8c8c8c]" />}
           </div>
         </div>

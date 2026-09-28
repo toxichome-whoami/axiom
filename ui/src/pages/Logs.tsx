@@ -1,19 +1,27 @@
+/*
+ * System live log stream and audit trace built with Shadcn UI primitives.
+ * Owned by: ui/pages
+ * Key deps: ../components/ui, ../api
+ * Invariants: Real-time event log, dynamic level filter, autoscrolling ANSI-styled output container.
+ */
+
 import React, { useState, useEffect, useRef } from 'react';
 import { api } from '../api';
-import { Terminal, Search, Trash2, ArrowDown } from 'lucide-react';
+import { Button, Badge, Input } from '../components/ui';
+import { Search, Trash2, ArrowDown } from 'lucide-react';
 
 interface LogEntry {
   id: string;
   timestamp: string;
   level: 'INFO' | 'WARN' | 'ERROR';
-  message: string;
   source: string;
+  message: string;
 }
 
 export const Logs: React.FC = () => {
   const [logs, setLogs] = useState<LogEntry[]>([]);
-  const [levelFilter, setLevelFilter] = useState<'ALL' | 'INFO' | 'WARN' | 'ERROR'>('ALL');
   const [search, setSearch] = useState('');
+  const [levelFilter, setLevelFilter] = useState<'ALL' | 'INFO' | 'WARN' | 'ERROR'>('ALL');
   const [autoScroll, setAutoScroll] = useState(true);
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -120,13 +128,14 @@ export const Logs: React.FC = () => {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <button
+          <Button
+            variant="secondary"
+            size="sm"
             onClick={() => setLogs([])}
-            className="h-8 px-3 rounded text-xs font-medium text-[#cccccc] hover:text-white bg-[#141414] hover:bg-[#1a1a1a] border border-[#262626] transition-colors flex items-center gap-1.5"
           >
             <Trash2 className="w-3.5 h-3.5" />
             <span>Clear Buffer</span>
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -135,30 +144,27 @@ export const Logs: React.FC = () => {
         {/* Level Filters */}
         <div className="flex items-center gap-1">
           {(['ALL', 'INFO', 'WARN', 'ERROR'] as const).map((lvl) => (
-            <button
+            <Button
               key={lvl}
+              variant={levelFilter === lvl ? 'secondary' : 'ghost'}
+              size="sm"
               onClick={() => setLevelFilter(lvl)}
-              className={`h-7 px-2.5 rounded text-xs font-mono font-medium transition-colors ${
-                levelFilter === lvl
-                  ? 'bg-[#202020] text-white border border-[#333333]'
-                  : 'text-[#8c8c8c] hover:text-white'
-              }`}
+              className="h-7 px-2.5 font-mono text-xs"
             >
               {lvl}
-            </button>
+            </Button>
           ))}
         </div>
 
         {/* Search & Auto-scroll */}
         <div className="flex items-center gap-3">
           <div className="relative">
-            <Search className="w-3.5 h-3.5 text-[#666666] absolute left-2.5 top-2" />
-            <input
-              type="text"
+            <Search className="w-3.5 h-3.5 text-[#666666] absolute left-2.5 top-2.5" />
+            <Input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Filter logs..."
-              className="h-7 pl-7 pr-2.5 rounded bg-[#141414] border border-[#262626] text-xs text-white placeholder-[#666666] focus:border-[#f38020] focus:outline-none"
+              className="h-8 pl-8 pr-2.5 w-48 text-xs font-sans"
             />
           </div>
 
@@ -184,21 +190,21 @@ export const Logs: React.FC = () => {
           </div>
         ) : (
           filtered.map((log) => {
-            const levelColor =
+            const badgeVariant =
               log.level === 'ERROR'
-                ? 'text-rose-400 bg-rose-500/10 border-rose-500/20'
+                ? 'destructive'
                 : log.level === 'WARN'
-                ? 'text-amber-400 bg-amber-500/10 border-amber-500/20'
-                : 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20';
+                ? 'warning'
+                : 'success';
 
             return (
               <div key={log.id} className="flex items-start gap-2.5 leading-relaxed hover:bg-[#0e0e0e] px-1.5 py-0.5 rounded transition-colors">
                 <span className="text-[#555555] shrink-0 text-[11px]">
                   {log.timestamp.split('T')[1].replace('Z', '')}
                 </span>
-                <span className={`px-1.5 py-0.2 rounded text-[10px] font-bold border shrink-0 ${levelColor}`}>
+                <Badge variant={badgeVariant} className="text-[10px] py-0 px-1.5">
                   {log.level}
-                </span>
+                </Badge>
                 <span className="text-[#8c8c8c] shrink-0 font-medium">
                   [{log.source}]
                 </span>
