@@ -34,6 +34,12 @@ const SEARCH_ITEMS: SearchItem[] = [
   { id: 'system', title: 'Host Specs & Runtime Process', category: 'System & Telemetry', to: '/system', icon: Server },
 ];
 
+/*
+ * GlobalSearchModal command palette component.
+ * Supports Ctrl+K / Cmd+K shortcuts and custom 'open-search-palette' events.
+ * Invariant: Allows instant keyboard navigation across all administrative routes.
+ */
+
 export const GlobalSearchModal: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -50,8 +56,14 @@ export const GlobalSearchModal: React.FC = () => {
       }
     };
 
+    const handleOpenEvent = () => setIsOpen(true);
+
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    window.addEventListener('open-search-palette', handleOpenEvent);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('open-search-palette', handleOpenEvent);
+    };
   }, []);
 
   const filtered = SEARCH_ITEMS.filter(

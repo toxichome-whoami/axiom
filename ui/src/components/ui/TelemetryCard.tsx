@@ -1,3 +1,9 @@
+/*
+ * TelemetryCard component displaying metric values with optional micro sparklines.
+ * Handles boundary conditions (empty, single-item sparklines) without NaN coordinates.
+ * Invariant: Renders numeric/string metrics with standard monospace styling and trend deltas.
+ */
+
 import React from 'react';
 import { ArrowUpRight, ArrowDownRight } from 'lucide-react';
 
@@ -18,22 +24,27 @@ export const TelemetryCard: React.FC<TelemetryCardProps> = ({
   isPositive = true,
   subtext,
   icon,
-  sparkline = [12, 18, 14, 22, 19, 28, 25, 34, 30, 42],
+  sparkline = [],
 }) => {
-  // Generate SVG path from points for the micro sparkline
-  const min = Math.min(...sparkline);
-  const max = Math.max(...sparkline);
-  const range = max - min || 1;
-  const height = 24;
-  const width = 80;
+  // Guard against empty or single-point sparkline arrays which would divide by zero
+  const hasSparkline = Array.isArray(sparkline) && sparkline.length > 1;
+  let points = '';
 
-  const points = sparkline
-    .map((val, idx) => {
-      const x = (idx / (sparkline.length - 1)) * width;
-      const y = height - ((val - min) / range) * (height - 4) - 2;
-      return `${x},${y}`;
-    })
-    .join(' ');
+  if (hasSparkline) {
+    const min = Math.min(...sparkline);
+    const max = Math.max(...sparkline);
+    const range = max - min || 1;
+    const height = 24;
+    const width = 80;
+
+    points = sparkline
+      .map((val, idx) => {
+        const x = (idx / (sparkline.length - 1)) * width;
+        const y = height - ((val - min) / range) * (height - 4) - 2;
+        return `${x.toFixed(1)},${y.toFixed(1)}`;
+      })
+      .join(' ');
+  }
 
   return (
     <div className="rounded-lg border border-[#222222] bg-[#0c0c0c] p-4 flex flex-col justify-between hover:border-[#333333] transition-colors relative overflow-hidden">
@@ -44,8 +55,8 @@ export const TelemetryCard: React.FC<TelemetryCardProps> = ({
 
       <div className="flex items-baseline justify-between gap-2 my-1">
         <div className="text-2xl font-bold tracking-tight text-white font-mono">{value}</div>
-        {sparkline.length > 0 && (
-          <svg className="w-20 h-6 shrink-0 overflow-visible" viewBox={`0 0 ${width} ${height}`}>
+        {hasSparkline && points && (
+          <svg className="w-20 h-6 shrink-0 overflow-visible" viewBox="0 0 80 24">
             <polyline
               fill="none"
               stroke="#f38020"

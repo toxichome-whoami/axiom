@@ -104,7 +104,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
             type="button"
             onClick={() => {
               onClose();
-              window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true }));
+              window.dispatchEvent(new CustomEvent('open-search-palette'));
             }}
             className="w-full flex items-center justify-between h-8 px-2.5 rounded bg-[#101010] hover:bg-[#161616] border border-[#222222] text-[#8c8c8c] hover:text-white transition-colors text-xs"
           >

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Terminal, Search, Trash2, ArrowDown, Shield } from 'lucide-react';
+import { api } from '../api';
+import { Terminal, Search, Trash2, ArrowDown } from 'lucide-react';
 
 interface LogEntry {
   id: string;
@@ -17,60 +18,81 @@ export const Logs: React.FC = () => {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    // Generate initial live telemetry log lines
-    const now = new Date();
-    const initial: LogEntry[] = [
-      {
-        id: '1',
-        timestamp: new Date(now.getTime() - 60000).toISOString(),
-        level: 'INFO',
-        source: 'server::lifespan',
-        message: 'Axiom Gateway v4.0.0 initialized on multi-thread Tokio runtime',
-      },
-      {
-        id: '2',
-        timestamp: new Date(now.getTime() - 55000).toISOString(),
-        level: 'INFO',
-        source: 'metadata::store',
-        message: 'Loaded ArcSwap metadata snapshot from local libsql data/axiom.db',
-      },
-      {
-        id: '3',
-        timestamp: new Date(now.getTime() - 45000).toISOString(),
-        level: 'INFO',
-        source: 'db::pool',
-        message: 'Initialized connection pools with per-alias non-blocking mutex locks',
-      },
-      {
-        id: '4',
-        timestamp: new Date(now.getTime() - 30000).toISOString(),
-        level: 'INFO',
-        source: 'cache::engine',
-        message: 'L1 DashMap and L2 AOF cache subsystem ready (10k entries bounded)',
-      },
-      {
-        id: '5',
-        timestamp: new Date(now.getTime() - 15000).toISOString(),
-        level: 'INFO',
-        source: 'api::server',
-        message: 'TCP listener accepting traffic on 0.0.0.0:4500',
-      },
-    ];
-    setLogs(initial);
+    let mounted = true;
 
-    // Periodically add simulated heartbeat log entries
-    const interval = setInterval(() => {
-      const entry: LogEntry = {
-        id: Math.random().toString(36).substring(2, 9),
-        timestamp: new Date().toISOString(),
-        level: 'INFO',
-        source: 'health::probe',
-        message: 'Connection pool heartbeat check OK. Memory RSS stable.',
-      };
-      setLogs((prev) => [...prev.slice(-300), entry]);
-    }, 12000);
+    const loadRealEvents = async () => {
+      try {
+        const [auditRecords, health] = await Promise.all([
+          api.getAuditLog(50, 0).catch(() => []),
+          api.getHealth().catch(() => null),
+        ]);
 
-    return () => clearInterval(interval);
+        if (!mounted) return;
+
+        const entries: LogEntry[] = [];
+
+        if (health) {
+          entries.push({
+            id: 'health-boot',
+            timestamp: new Date().toISOString(),
+            level: 'INFO',
+            source: 'system::health',
+            message: `Gateway status: ${health.status} (version ${health.version})`,
+          });
+        }
+
+        if (Array.isArray(auditRecords)) {
+          auditRecords.forEach((rec) => {
+            entries.push({
+              id: `audit-${rec.id}`,
+              timestamp: new Date(rec.timestamp * 1000).toISOString(),
+              level: rec.action.includes('fail') || rec.action.includes('deny') ? 'WARN' : 'INFO',
+              source: `audit::${rec.actor}`,
+              message: `Action '${rec.action}' on target '${rec.target}'${rec.details ? ` - ${rec.details}` : ''}`,
+            });
+          });
+        }
+
+        setLogs(entries.sort((a, b) => a.timestamp.localeCompare(b.timestamp)));
+      } catch (err) {
+        console.error('Failed to load system events', err);
+      }
+    };
+
+    loadRealEvents();
+
+    // Live probe every 15s to append health heartbeat
+    const interval = setInterval(async () => {
+      try {
+        const h = await api.getHealth();
+        if (mounted && h) {
+          const entry: LogEntry = {
+            id: Math.random().toString(36).substring(2, 9),
+            timestamp: new Date().toISOString(),
+            level: 'INFO',
+            source: 'health::probe',
+            message: `Live health probe OK (${h.status})`,
+          };
+          setLogs((prev) => [...prev.slice(-300), entry]);
+        }
+      } catch {
+        if (mounted) {
+          const entry: LogEntry = {
+            id: Math.random().toString(36).substring(2, 9),
+            timestamp: new Date().toISOString(),
+            level: 'WARN',
+            source: 'health::probe',
+            message: 'Heartbeat probe timed out or returned error',
+          };
+          setLogs((prev) => [...prev.slice(-300), entry]);
+        }
+      }
+    }, 15000);
+
+    return () => {
+      mounted = false;
+      clearInterval(interval);
+    };
   }, []);
 
   useEffect(() => {

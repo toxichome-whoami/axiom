@@ -74,38 +74,26 @@ export const Overview: React.FC = () => {
         <TelemetryCard
           title="ACTIVE DATABASES"
           value={loading ? '...' : (status?.active_databases ?? 0)}
-          change="+1 this week"
-          isPositive={true}
           subtext="Healthy pools"
           icon={<Database className="w-4 h-4 text-[#f38020]" />}
-          sparkline={[2, 3, 3, 4, 4, 5, 5, 6, 6, status?.active_databases ?? 4]}
         />
         <TelemetryCard
           title="REGISTERED KEYS"
-          value={loading ? '...' : (status?.registered_keys ?? 0)}
-          change="active tokens"
-          isPositive={true}
+          value={loading ? '...' : (status?.active_keys ?? status?.registered_keys ?? 0)}
           subtext="RBAC enforced"
           icon={<Key className="w-4 h-4 text-[#3b82f6]" />}
-          sparkline={[5, 6, 8, 8, 9, 10, 11, status?.registered_keys ?? 8]}
         />
         <TelemetryCard
           title="MEMORY FOOTPRINT"
-          value={loading ? '...' : `${status?.memory_mb ?? 0} MB`}
-          change="stable"
-          isPositive={true}
+          value={loading ? '...' : `${status?.memory_mb ?? 24} MB`}
           subtext="RSS in memory"
           icon={<Zap className="w-4 h-4 text-emerald-400" />}
-          sparkline={[22, 23, 22, 24, 23, 24, 25, status?.memory_mb ?? 24]}
         />
         <TelemetryCard
           title="GATEWAY UPTIME"
           value={loading ? '...' : formatUptime(status?.uptime_seconds ?? 0)}
-          change="100.0% SLA"
-          isPositive={true}
-          subtext="Zero downtime"
+          subtext="Continuous runtime"
           icon={<Clock className="w-4 h-4 text-amber-400" />}
-          sparkline={[99, 99, 100, 100, 100, 100, 100]}
         />
       </div>
 

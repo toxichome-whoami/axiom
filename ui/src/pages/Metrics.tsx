@@ -44,10 +44,11 @@ export const Metrics: React.FC = () => {
     return match ? parseFloat(match[1]) : 0;
   };
 
-  const httpRequests = extractMetric('axiom_http_requests_total') || 1420;
-  const dbQueries = extractMetric('axiom_db_queries_total') || 3890;
-  const activeSockets = extractMetric('axiom_db_pool_connections_active') || 8;
-  const rateLimitDrops = extractMetric('axiom_rate_limit_rejections_total') || 0;
+  // Extract real metric values without fake mock fallbacks
+  const httpRequests = extractMetric('axiom_http_requests_total');
+  const dbQueries = extractMetric('axiom_db_queries_total');
+  const activeSockets = extractMetric('axiom_db_pool_connections_active');
+  const rateLimitDrops = extractMetric('axiom_rate_limit_rejections_total');
 
   return (
     <div className="space-y-6">

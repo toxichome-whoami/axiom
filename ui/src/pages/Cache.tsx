@@ -80,38 +80,27 @@ export const Cache: React.FC = () => {
         <TelemetryCard
           title="L1 MEMORY HITS"
           value={loading ? '...' : (stats?.hits_l1 ?? 0)}
-          change="< 1 µs latency"
-          isPositive={true}
-          subtext="DashMap RAM"
+          subtext="DashMap RAM (< 1 µs)"
           icon={<Zap className="w-4 h-4 text-[#f38020]" />}
-          sparkline={[10, 25, 45, 80, 110, 160, 220, stats?.hits_l1 ?? 250]}
         />
         <TelemetryCard
           title="L2 PERSISTENT HITS"
           value={loading ? '...' : (stats?.hits_l2 ?? 0)}
-          change="~ 50 µs latency"
-          isPositive={true}
-          subtext="SQLite AOF"
+          subtext="SQLite AOF (~ 50 µs)"
           icon={<Database className="w-4 h-4 text-[#3b82f6]" />}
-          sparkline={[5, 12, 18, 25, 30, stats?.hits_l2 ?? 35]}
         />
         <TelemetryCard
           title="CACHE HIT RATIO"
           value={loading ? '...' : `${hitRatePct}%`}
-          change="p50 pipeline"
           isPositive={Number(hitRatePct) > 50}
-          subtext="Throughput boost"
+          subtext="L1/L2 Combined"
           icon={<Cpu className="w-4 h-4 text-emerald-400" />}
-          sparkline={[70, 75, 82, 85, 88, 92, 95]}
         />
         <TelemetryCard
           title="ACTIVE ENTRIES"
           value={loading ? '...' : (stats?.entries_count ?? 0)}
-          change="bounded"
-          isPositive={true}
           subtext="LRU managed"
           icon={<ShieldAlert className="w-4 h-4 text-amber-400" />}
-          sparkline={[100, 150, 180, 210, stats?.entries_count ?? 220]}
         />
       </div>
 

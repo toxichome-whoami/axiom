@@ -106,7 +106,7 @@ export const TopBar: React.FC<TopBarProps> = ({ onToggleSidebar }) => {
         {/* Quick Search Shortcut */}
         <button
           onClick={() => {
-            window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true }));
+            window.dispatchEvent(new CustomEvent('open-search-palette'));
           }}
           className="hidden sm:flex items-center gap-2 h-8 px-2.5 rounded bg-[#101010] hover:bg-[#161616] border border-[#262626] text-xs text-[#8c8c8c] hover:text-white transition-colors"
           type="button"
