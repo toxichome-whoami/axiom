@@ -1,8 +1,16 @@
-import React, { useState } from 'react';
+/*
+ * Dashboard root Layout wrapping the Shadcn SidebarProvider, AppSidebar, TopBar, and Outlet.
+ * Owned by: ui/components/layout
+ * Key deps: ./Sidebar, ./TopBar, ./Footer, ../ui/sidebar
+ * Invariants: Single root shell providing error boundary, global keyboard shortcuts, and modals.
+ */
+
+import React from 'react';
 import { Outlet } from 'react-router-dom';
-import { Sidebar } from './Sidebar';
+import { AppSidebar } from './Sidebar';
 import { TopBar } from './TopBar';
 import { Footer } from './Footer';
+import { SidebarProvider, SidebarInset } from '../ui/sidebar';
 import { GlobalSearchModal } from '../shared/GlobalSearchModal';
 import { ToastContainer } from '../ui/Toast';
 import { ConfirmDialogContainer } from '../ui/ConfirmDialog';
@@ -49,27 +57,27 @@ class LayoutErrorBoundary extends React.Component<
 }
 
 export const Layout: React.FC = () => {
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-
   return (
-    <div className="flex min-h-screen bg-[#000000] text-gray-100 font-sans selection:bg-[#f38020] selection:text-black">
-      <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
+    <SidebarProvider defaultOpen={false} defaultCollapsed={false}>
+      <div className="flex min-h-screen bg-[#000000] text-gray-100 font-sans selection:bg-[#f38020] selection:text-black w-full">
+        <AppSidebar />
 
-      <div className="flex-1 flex flex-col min-w-0 min-h-screen">
-        <TopBar onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} />
+        <SidebarInset>
+          <TopBar />
 
-        <main className="flex-1 px-4 sm:px-6 py-6 w-full max-w-[1440px] mx-auto flex flex-col">
-          <LayoutErrorBoundary>
-            <Outlet />
-          </LayoutErrorBoundary>
-        </main>
+          <main className="flex-1 px-4 sm:px-6 py-6 w-full max-w-[1440px] mx-auto flex flex-col">
+            <LayoutErrorBoundary>
+              <Outlet />
+            </LayoutErrorBoundary>
+          </main>
 
-        <Footer />
+          <Footer />
+        </SidebarInset>
+
+        <GlobalSearchModal />
+        <ToastContainer />
+        <ConfirmDialogContainer />
       </div>
-
-      <GlobalSearchModal />
-      <ToastContainer />
-      <ConfirmDialogContainer />
-    </div>
+    </SidebarProvider>
   );
 };

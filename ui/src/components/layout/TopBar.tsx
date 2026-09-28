@@ -1,9 +1,15 @@
+/*
+ * TopBar navigation header built with Shadcn UI primitives.
+ * Owned by: ui/components/layout
+ * Key deps: ../ui, react-router-dom, lucide-react, ../../api
+ * Invariants: Hosts SidebarTrigger, live probe latency ping, search palette trigger, and snapshot reload.
+ */
+
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../../api';
-import { toast } from '../ui/Toast';
+import { Button, Badge, SidebarTrigger, toast } from '../ui';
 import {
-  Menu,
   Search,
   RefreshCw,
   LogOut,
@@ -13,18 +19,14 @@ import {
   ChevronDown,
 } from 'lucide-react';
 
-interface TopBarProps {
-  onToggleSidebar: () => void;
-}
-
-export const TopBar: React.FC<TopBarProps> = ({ onToggleSidebar }) => {
+export const TopBar: React.FC = () => {
   const navigate = useNavigate();
   const [latencyMs, setLatencyMs] = useState<number | null>(null);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [isReloading, setIsReloading] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
 
-  const username = localStorage.getItem('axiom_username') || 'Administrator';
+  const username = localStorage.getItem('axiom_username') || 'admin';
 
   // Live ping probe
   useEffect(() => {
@@ -80,18 +82,11 @@ export const TopBar: React.FC<TopBarProps> = ({ onToggleSidebar }) => {
 
   return (
     <header className="h-[58px] bg-[#000000] shrink-0 border-b border-[#222222] flex items-center px-4 z-20 sticky top-0 gap-3 select-none">
-      {/* Mobile drawer toggle */}
-      <button
-        onClick={onToggleSidebar}
-        className="p-1.5 -ml-1 text-[#8c8c8c] hover:text-white rounded-md md:hidden hover:bg-[#161616] transition-colors"
-        aria-label="Toggle navigation"
-        type="button"
-      >
-        <Menu className="w-5 h-5" />
-      </button>
+      {/* Sidebar toggle button (collapses desktop, opens mobile) */}
+      <SidebarTrigger />
 
       {/* Latency Probe Status */}
-      <div className="flex items-center gap-2 px-2.5 py-1 rounded bg-[#0e0e0e] border border-[#222222]">
+      <div className="flex items-center gap-2 px-2.5 py-1 rounded-md bg-[#0e0e0e] border border-[#222222]">
         <div className="relative flex items-center justify-center">
           <span className={`w-2 h-2 rounded-full ${latencyMs !== null ? 'bg-emerald-500' : 'bg-amber-500'}`} />
           <span className={`absolute w-3.5 h-3.5 rounded-full animate-ping opacity-30 ${latencyMs !== null ? 'bg-emerald-500' : 'bg-amber-500'}`} />
@@ -108,66 +103,74 @@ export const TopBar: React.FC<TopBarProps> = ({ onToggleSidebar }) => {
           onClick={() => {
             window.dispatchEvent(new CustomEvent('open-search-palette'));
           }}
-          className="hidden sm:flex items-center gap-2 h-8 px-2.5 rounded bg-[#101010] hover:bg-[#161616] border border-[#262626] text-xs text-[#8c8c8c] hover:text-white transition-colors"
+          className="hidden sm:flex items-center gap-2 h-8 px-2.5 rounded-md bg-[#0c0c0c] hover:bg-[#141414] border border-[#222222] text-xs text-[#8c8c8c] hover:text-white transition-colors"
           type="button"
         >
           <Search className="w-3.5 h-3.5" />
           <span>Search...</span>
-          <kbd className="px-1.5 py-0.5 rounded bg-[#1c1c1c] border border-[#2e2e2e] text-[10px] font-mono text-[#777777]">
+          <kbd className="px-1.5 py-0.5 rounded bg-[#181818] border border-[#262626] text-[10px] font-mono text-[#777777]">
             Ctrl K
           </kbd>
         </button>
 
         {/* Reload Snapshot */}
-        <button
+        <Button
+          variant="outline"
+          size="sm"
           onClick={handleReloadSnapshot}
           disabled={isReloading}
-          className="h-8 px-2.5 rounded bg-[#101010] hover:bg-[#161616] border border-[#262626] text-xs font-medium text-[#cccccc] hover:text-white transition-colors flex items-center gap-1.5"
+          className="h-8 gap-1.5"
           title="Force ArcSwap Metadata Snapshot Refresh"
-          type="button"
         >
           <RefreshCw className={`w-3.5 h-3.5 text-[#f38020] ${isReloading ? 'animate-spin' : ''}`} />
           <span className="hidden md:inline">Sync Snapshot</span>
-        </button>
+        </Button>
 
-        {/* User Profile Popover */}
+        {/* User profile dropdown */}
         <div className="relative" ref={userMenuRef}>
           <button
             onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
-            className="flex items-center gap-2 h-8 px-2 rounded hover:bg-[#161616] transition-colors text-left"
+            className="flex items-center gap-2 h-8 px-2 rounded-md hover:bg-[#141414] border border-transparent hover:border-[#222222] transition-colors"
             type="button"
           >
-            <div className="w-6 h-6 rounded-full bg-[#1c1c1c] border border-[#2a2a2a] flex items-center justify-center text-[#f38020]">
+            <div className="w-6 h-6 rounded-full bg-[#181818] border border-[#282828] flex items-center justify-center text-[#cccccc] text-xs">
               <User className="w-3.5 h-3.5" />
             </div>
-            <span className="text-xs font-medium text-[#eaeaea] hidden md:inline">{username}</span>
-            <ChevronDown className="w-3 h-3 text-[#666666]" />
+            <span className="text-xs font-medium text-white hidden sm:inline">
+              {username}
+            </span>
+            <ChevronDown className="w-3 h-3 text-[#8c8c8c]" />
           </button>
 
           {isUserMenuOpen && (
-            <div className="absolute right-0 mt-2 w-56 rounded-lg border border-[#262626] bg-[#0c0c0c] shadow-2xl p-1.5 z-50 animate-in fade-in zoom-in-95 duration-150">
-              <div className="px-2.5 py-2 border-b border-[#222222] mb-1">
-                <div className="text-xs font-semibold text-white">{username}</div>
-                <div className="text-[11px] text-[#666666] flex items-center gap-1 mt-0.5">
-                  <Shield className="w-3 h-3 text-[#f38020]" />
-                  <span>Admin Role</span>
-                </div>
+            <div className="absolute right-0 top-full mt-1.5 w-48 rounded-md border border-[#262626] bg-[#0c0c0c] p-1 shadow-2xl z-50 text-xs">
+              <div className="px-2.5 py-1.5 border-b border-[#1e1e1e] mb-1">
+                <span className="block font-medium text-white truncate">{username}</span>
+                <span className="block text-[10px] font-mono text-[#666666]">Operator Session</span>
               </div>
-
+              <button
+                onClick={() => {
+                  setIsUserMenuOpen(false);
+                  navigate('/system');
+                }}
+                className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded hover:bg-[#161616] text-[#cccccc] hover:text-white transition-colors"
+              >
+                <Shield className="w-3.5 h-3.5 text-[#f38020]" />
+                <span>System Specs</span>
+              </button>
               <a
-                href="https://github.com/toxichome-whoami/axiom"
+                href="/health"
                 target="_blank"
                 rel="noreferrer"
-                className="flex items-center justify-between px-2.5 py-1.5 rounded text-xs text-[#a1a1a1] hover:text-white hover:bg-[#161616] transition-colors"
+                className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded hover:bg-[#161616] text-[#cccccc] hover:text-white transition-colors"
               >
-                <span>Documentation</span>
-                <ExternalLink className="w-3 h-3 text-[#666666]" />
+                <ExternalLink className="w-3.5 h-3.5 text-[#3b82f6]" />
+                <span>Health Probe</span>
               </a>
-
+              <div className="border-t border-[#1e1e1e] my-1" />
               <button
                 onClick={handleLogout}
-                className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded text-xs text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 transition-colors mt-1"
-                type="button"
+                className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded hover:bg-rose-500/20 text-[#8c8c8c] hover:text-rose-400 transition-colors"
               >
                 <LogOut className="w-3.5 h-3.5" />
                 <span>Sign Out</span>

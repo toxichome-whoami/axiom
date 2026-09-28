@@ -1,5 +1,25 @@
+/*
+ * AppSidebar component implementing the Shadcn UI Sidebar architecture.
+ * Owned by: ui/components/layout
+ * Key deps: ../ui/sidebar, react-router-dom, lucide-react, ../../api
+ * Invariants: Semantic navigation hierarchy, collapsible off-canvas/icon states, live user/status footer.
+ */
+
 import React from 'react';
-import { NavLink } from 'react-router-dom';
+import { NavLink, useNavigate } from 'react-router-dom';
+import {
+  Sidebar,
+  SidebarHeader,
+  SidebarContent,
+  SidebarFooter,
+  SidebarGroup,
+  SidebarGroupLabel,
+  SidebarGroupContent,
+  SidebarMenu,
+  SidebarMenuItem,
+  SidebarMenuButton,
+  useSidebar,
+} from '../ui/sidebar';
 import {
   LayoutDashboard,
   Database,
@@ -11,13 +31,13 @@ import {
   Activity,
   Server,
   Search,
+  LogOut,
+  User,
+  Radio,
   X,
 } from 'lucide-react';
-
-interface SidebarProps {
-  isOpen: boolean;
-  onClose: () => void;
-}
+import { api } from '../../api';
+import { toast } from '../ui/Toast';
 
 interface NavItem {
   id: string;
@@ -26,145 +46,156 @@ interface NavItem {
   icon: React.ComponentType<{ className?: string }>;
 }
 
-interface NavSection {
-  title: string;
-  items: NavItem[];
-}
-
-const SECTIONS: NavSection[] = [
-  {
-    title: 'DATA PLANE',
-    items: [
-      { id: 'overview', label: 'Overview', to: '/overview', icon: LayoutDashboard },
-      { id: 'databases', label: 'Databases', to: '/databases', icon: Database },
-      { id: 'cache', label: 'Cache Engine', to: '/cache', icon: Zap },
-    ],
-  },
-  {
-    title: 'ACCESS & SECURITY',
-    items: [
-      { id: 'keys', label: 'API Keys', to: '/keys', icon: Key },
-      { id: 'roles', label: 'Roles & RBAC', to: '/roles', icon: Shield },
-      { id: 'audit', label: 'Audit Log', to: '/audit', icon: FileText },
-    ],
-  },
-  {
-    title: 'SYSTEM & TELEMETRY',
-    items: [
-      { id: 'logs', label: 'Live Logs', to: '/logs', icon: Terminal },
-      { id: 'metrics', label: 'Metrics', to: '/metrics', icon: Activity },
-      { id: 'system', label: 'System Specs', to: '/system', icon: Server },
-    ],
-  },
+const NAV_MAIN: NavItem[] = [
+  { id: 'overview', label: 'Overview', to: '/overview', icon: LayoutDashboard },
+  { id: 'databases', label: 'Database Pools', to: '/databases', icon: Database },
+  { id: 'cache', label: 'Cache Engine', to: '/cache', icon: Zap },
 ];
 
-export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
-  return (
-    <>
-      {/* Mobile backdrop */}
-      {isOpen && (
-        <div
-          onClick={onClose}
-          className="fixed inset-0 z-30 bg-black/80 backdrop-blur-sm md:hidden"
-        />
-      )}
+const NAV_SECURITY: NavItem[] = [
+  { id: 'keys', label: 'API Keys', to: '/keys', icon: Key },
+  { id: 'roles', label: 'Roles & RBAC', to: '/roles', icon: Shield },
+  { id: 'audit', label: 'Audit Log', to: '/audit', icon: FileText },
+];
 
-      <aside
-        className={`fixed md:sticky top-0 left-0 z-40 h-screen w-[260px] bg-[#000000] border-r border-[#222222] flex flex-col shrink-0 transition-transform duration-200 ease-in-out select-none ${
-          isOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
-        }`}
-      >
-        {/* Brand Header */}
-        <div className="h-[58px] px-5 flex items-center justify-between border-b border-[#222222] shrink-0">
+const NAV_SYSTEM: NavItem[] = [
+  { id: 'logs', label: 'Live Logs', to: '/logs', icon: Terminal },
+  { id: 'metrics', label: 'Metrics', to: '/metrics', icon: Activity },
+  { id: 'system', label: 'System Specs', to: '/system', icon: Server },
+];
+
+export const AppSidebar: React.FC = () => {
+  const navigate = useNavigate();
+  const { isCollapsed, setIsOpen } = useSidebar();
+  const username = localStorage.getItem('axiom_username') || 'admin';
+
+  const handleLogout = async () => {
+    await api.logout();
+    toast.info('Signed out of Axiom Gateway');
+    navigate('/login');
+  };
+
+  const renderNavGroup = (title: string, items: NavItem[]) => (
+    <SidebarGroup>
+      <SidebarGroupLabel>{title}</SidebarGroupLabel>
+      <SidebarGroupContent>
+        <SidebarMenu>
+          {items.map((item) => {
+            const Icon = item.icon;
+            return (
+              <SidebarMenuItem key={item.id}>
+                <NavLink
+                  to={item.to}
+                  onClick={() => setIsOpen(false)}
+                  className="w-full block"
+                >
+                  {({ isActive }) => (
+                    <SidebarMenuButton
+                      isActive={isActive}
+                      title={isCollapsed ? item.label : undefined}
+                    >
+                      <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-[#f38020]' : 'text-[#8c8c8c]'}`} />
+                      {!isCollapsed && <span className="truncate">{item.label}</span>}
+                    </SidebarMenuButton>
+                  )}
+                </NavLink>
+              </SidebarMenuItem>
+            );
+          })}
+        </SidebarMenu>
+      </SidebarGroupContent>
+    </SidebarGroup>
+  );
+
+  return (
+    <Sidebar collapsible="offcanvas">
+      {/* Brand Header */}
+      <SidebarHeader>
+        <div className="flex items-center justify-between w-full">
           <div className="flex items-center gap-2.5">
-            {/* Axiom Emblem */}
-            <div className="w-6 h-6 rounded bg-[#f38020] flex items-center justify-center text-black font-bold text-xs tracking-tighter shadow-sm">
+            <div className="w-6 h-6 rounded bg-[#f38020] flex items-center justify-center text-black font-bold text-xs tracking-tighter shrink-0 shadow-sm">
               ▲
             </div>
-            <div className="flex items-baseline gap-2">
-              <span className="font-semibold text-sm tracking-tight text-white">AXIOM</span>
-              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-[#161718] border border-[#26282a] text-[#a1a1a1]">
-                v4.0.0
-              </span>
-            </div>
+            {!isCollapsed && (
+              <div className="flex items-baseline gap-2">
+                <span className="font-semibold text-sm tracking-tight text-white font-mono">AXIOM</span>
+                <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-[#161718] border border-[#26282a] text-[#a1a1a1]">
+                  v4.0.0
+                </span>
+              </div>
+            )}
           </div>
-
           <button
-            onClick={onClose}
+            onClick={() => setIsOpen(false)}
             className="md:hidden text-[#8c8c8c] hover:text-white p-1 rounded hover:bg-[#161616]"
             aria-label="Close sidebar"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
+      </SidebarHeader>
 
-        {/* Quick Search Button */}
-        <div className="px-3 pt-3 pb-1">
-          <button
-            type="button"
-            onClick={() => {
-              onClose();
-              window.dispatchEvent(new CustomEvent('open-search-palette'));
-            }}
-            className="w-full flex items-center justify-between h-8 px-2.5 rounded bg-[#101010] hover:bg-[#161616] border border-[#222222] text-[#8c8c8c] hover:text-white transition-colors text-xs"
-          >
-            <div className="flex items-center gap-2">
-              <Search className="w-3.5 h-3.5" />
-              <span>Quick search...</span>
-            </div>
-            <kbd className="px-1.5 py-0.5 rounded bg-[#1c1c1c] border border-[#2c2c2c] text-[10px] font-mono text-[#777777]">
-              Ctrl K
-            </kbd>
-          </button>
-        </div>
-
-        {/* Navigation Section Groups */}
-        <div className="flex-1 overflow-y-auto px-3 py-2 space-y-4">
-          {SECTIONS.map((section) => (
-            <div key={section.title} className="space-y-1">
-              <div className="px-2.5 text-[10px] font-mono font-medium text-[#555555] tracking-wider uppercase">
-                {section.title}
+      {/* Navigation Content */}
+      <SidebarContent>
+        {/* Quick Search palette trigger */}
+        {!isCollapsed && (
+          <div className="px-1 pb-1">
+            <button
+              type="button"
+              onClick={() => {
+                setIsOpen(false);
+                window.dispatchEvent(new CustomEvent('open-search-palette'));
+              }}
+              className="w-full flex items-center justify-between h-8 px-2.5 rounded bg-[#0c0c0c] hover:bg-[#141414] border border-[#222222] text-[#8c8c8c] hover:text-white transition-colors text-xs"
+            >
+              <div className="flex items-center gap-2">
+                <Search className="w-3.5 h-3.5" />
+                <span>Quick search...</span>
               </div>
-              <div className="space-y-0.5">
-                {section.items.map((item) => {
-                  const Icon = item.icon;
-                  return (
-                    <NavLink
-                      key={item.id}
-                      to={item.to}
-                      onClick={() => onClose()}
-                      className={({ isActive }) =>
-                        `flex items-center gap-2.5 px-2.5 py-2 rounded-md text-xs font-medium transition-colors relative ${
-                          isActive
-                            ? 'bg-[#141414] text-white font-semibold'
-                            : 'text-[#8c8c8c] hover:text-white hover:bg-[#101010]'
-                        }`
-                      }
-                    >
-                      {({ isActive }) => (
-                        <>
-                          {isActive && (
-                            <span className="absolute left-0 top-1.5 bottom-1.5 w-1 bg-[#f38020] rounded-r" />
-                          )}
-                          <Icon className={`w-4 h-4 ${isActive ? 'text-[#f38020]' : 'text-[#666666]'}`} />
-                          <span>{item.label}</span>
-                        </>
-                      )}
-                    </NavLink>
-                  );
-                })}
-              </div>
-            </div>
-          ))}
-        </div>
-
-        {/* Footer info badge */}
-        <div className="p-3 border-t border-[#222222] shrink-0 text-center">
-          <div className="text-[11px] font-mono text-[#555555]">
-            Axiom High-Performance Gateway
+              <kbd className="px-1.5 py-0.5 rounded bg-[#181818] border border-[#262626] text-[10px] font-mono text-[#666666]">
+                Ctrl K
+              </kbd>
+            </button>
           </div>
+        )}
+
+        {renderNavGroup('DATA PLANE', NAV_MAIN)}
+        {renderNavGroup('ACCESS & SECURITY', NAV_SECURITY)}
+        {renderNavGroup('SYSTEM & TELEMETRY', NAV_SYSTEM)}
+      </SidebarContent>
+
+      {/* User / Session Footer */}
+      <SidebarFooter>
+        <div className="flex items-center justify-between w-full">
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="w-7 h-7 rounded-full bg-[#181818] border border-[#282828] flex items-center justify-center text-[#cccccc] shrink-0">
+              <User className="w-3.5 h-3.5" />
+            </div>
+            {!isCollapsed && (
+              <div className="min-w-0 flex flex-col">
+                <span className="text-xs font-medium text-white truncate">{username}</span>
+                <span className="text-[10px] text-emerald-400 flex items-center gap-1">
+                  <Radio className="w-2.5 h-2.5 animate-pulse" />
+                  <span>online</span>
+                </span>
+              </div>
+            )}
+          </div>
+
+          {!isCollapsed && (
+            <button
+              onClick={handleLogout}
+              className="p-1.5 rounded text-[#8c8c8c] hover:text-rose-400 hover:bg-[#181818] transition-colors"
+              title="Sign Out"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
-      </aside>
-    </>
+      </SidebarFooter>
+    </Sidebar>
   );
 };
+
+// Backward compatibility export alias
+export const SidebarComponent = AppSidebar;
