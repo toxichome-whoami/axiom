@@ -54,7 +54,7 @@ export const TelemetryCard: React.FC<TelemetryCardProps> = ({
       </div>
 
       <div className="flex items-baseline justify-between gap-2 my-1">
-        <div className="text-2xl font-bold tracking-tight text-white font-mono">{value}</div>
+        <div className="text-2xl font-bold tracking-tight text-white ">{value}</div>
         {hasSparkline && points && (
           <svg className="w-20 h-6 shrink-0 overflow-visible" viewBox="0 0 80 24">
             <polyline

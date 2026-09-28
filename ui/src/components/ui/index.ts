@@ -15,3 +15,5 @@ export * from './TelemetryCard';
 export * from './ConfirmDialog';
 export * from './Toast';
 export * from './sidebar';
+export * from './Avatar';
+export * from './DropdownMenu';

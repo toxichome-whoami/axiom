@@ -177,7 +177,7 @@ export const ApiKeys: React.FC = () => {
             className="pl-8"
           />
         </div>
-        <span className="text-xs text-[#666666] font-mono">
+        <span className="text-xs text-[#666666] ">
           {keys.length} active key{keys.length === 1 ? '' : 's'}
         </span>
       </div>
@@ -211,7 +211,7 @@ export const ApiKeys: React.FC = () => {
             ) : (
               filtered.map((k) => (
                 <TableRow key={k.name}>
-                  <TableCell className="font-mono font-medium text-white">
+                  <TableCell className=" font-medium text-white">
                     <div className="flex items-center gap-2">
                       <Key className="w-3.5 h-3.5 text-[#f38020]" />
                       <span>{k.name}</span>
@@ -219,7 +219,11 @@ export const ApiKeys: React.FC = () => {
                   </TableCell>
                   <TableCell>
                     {k.role_name ? (
-                      <Badge variant="orange">
+                      <Badge variant="outline">
+                        <span
+                          aria-hidden="true"
+                          className="size-1.5 rounded-full bg-amber-500"
+                        />
                         {k.role_name}
                       </Badge>
                     ) : (
@@ -228,14 +232,14 @@ export const ApiKeys: React.FC = () => {
                       </Badge>
                     )}
                   </TableCell>
-                  <TableCell className="font-mono text-[#8c8c8c]">
+                  <TableCell className=" text-[#8c8c8c]">
                     {k.rate_limit > 0 ? `${k.rate_limit} req/min` : 'global'}
                   </TableCell>
-                  <TableCell className="font-mono text-[#8c8c8c]">
+                  <TableCell className=" text-[#8c8c8c]">
                     {k.expires_at ? new Date(k.expires_at * 1000).toLocaleDateString() : 'never'}
                   </TableCell>
-                  <TableCell className="font-mono text-[#8c8c8c]">
-                    {new Date(k.created_at * 1000).toLocaleDateString()}
+                  <TableCell className=" text-[#8c8c8c]">
+                    {k.created_at ? new Date(k.created_at * 1000).toLocaleDateString() : '—'}
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="inline-flex items-center gap-1.5 justify-end">
@@ -372,14 +376,14 @@ export const ApiKeys: React.FC = () => {
 
         <div className="space-y-3">
           <div>
-            <label className="block text-[11px] uppercase tracking-wider font-mono text-[#8c8c8c] mb-1">
+            <label className="block text-[11px]    text-[#8c8c8c] mb-1">
               X-Axiom-Key Header Value
             </label>
             <div className="flex items-center gap-2">
               <Input
                 readOnly
                 value={revealedToken || ''}
-                className="font-mono text-xs select-all text-emerald-400 bg-[#080808]"
+                className=" text-xs select-all text-emerald-400 bg-[#080808]"
               />
               <Button
                 variant="secondary"

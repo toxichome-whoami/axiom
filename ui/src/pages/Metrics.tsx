@@ -119,7 +119,7 @@ export const Metrics: React.FC = () => {
         >
           <div className="flex items-center gap-2">
             <Activity className="w-4 h-4 text-[#f38020]" />
-            <h2 className="text-xs font-semibold text-white uppercase tracking-wider">
+            <h2 className="text-xs font-semibold text-white  ">
               Raw Prometheus Exposition (/metrics)
             </h2>
           </div>
@@ -142,7 +142,7 @@ export const Metrics: React.FC = () => {
 
         {showRaw && (
           <div className="p-4 bg-[#050505]">
-            <pre className="p-3 rounded bg-[#090909] border border-[#1e1e1e] font-mono text-xs text-[#a1a1a1] overflow-x-auto max-h-[480px]">
+            <pre className="p-3 rounded bg-[#090909] border border-[#1e1e1e]  text-xs text-[#a1a1a1] overflow-x-auto max-h-[480px]">
               {rawMetrics || 'Scraping metrics endpoint...'}
             </pre>
           </div>

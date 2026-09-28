@@ -107,7 +107,7 @@ export const Login: React.FC = () => {
         </div>
 
         {/* Footer info */}
-        <div className="text-center text-[11px] font-mono text-[#555555]">
+        <div className="text-center text-[11px]  text-[#555555]">
           Axiom Enterprise Gateway Core v4.0.0
         </div>
       </div>

@@ -84,7 +84,7 @@ export const Audit: React.FC = () => {
             className="pl-8"
           />
         </div>
-        <span className="text-xs text-[#666666] font-mono">
+        <span className="text-xs text-[#666666] ">
           {filtered.length} total events
         </span>
       </div>
@@ -117,16 +117,20 @@ export const Audit: React.FC = () => {
             ) : (
               displayed.map((rec) => (
                 <TableRow key={rec.id}>
-                  <TableCell className="font-mono text-[#8c8c8c]">
+                  <TableCell className=" text-[#8c8c8c]">
                     {new Date(rec.timestamp * 1000).toLocaleString()}
                   </TableCell>
                   <TableCell className="font-medium text-white">{rec.actor}</TableCell>
                   <TableCell>
-                    <Badge variant="orange">
+                    <Badge variant="outline">
+                      <span
+                        aria-hidden="true"
+                        className="size-1.5 rounded-full bg-amber-500"
+                      />
                       {rec.action}
                     </Badge>
                   </TableCell>
-                  <TableCell className="font-mono text-[#8c8c8c]">{rec.target}</TableCell>
+                  <TableCell className=" text-[#8c8c8c]">{rec.target}</TableCell>
                   <TableCell className="text-right">
                     <Button
                       variant="outline"
@@ -183,30 +187,36 @@ export const Audit: React.FC = () => {
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-3 text-xs">
               <div>
-                <span className="block text-[#666666] font-mono text-[10px] uppercase">Actor</span>
+                <span className="block text-[#666666]  text-[10px] ">Actor</span>
                 <span className="font-medium text-white">{selectedRecord.actor}</span>
               </div>
               <div>
-                <span className="block text-[#666666] font-mono text-[10px] uppercase">Timestamp</span>
-                <span className="font-mono text-[#cccccc]">
+                <span className="block text-[#666666]  text-[10px] ">Timestamp</span>
+                <span className=" text-[#cccccc]">
                   {new Date(selectedRecord.timestamp * 1000).toISOString()}
                 </span>
               </div>
               <div>
-                <span className="block text-[#666666] font-mono text-[10px] uppercase">Action</span>
-                <Badge variant="orange">{selectedRecord.action}</Badge>
+                <span className="block text-[#666666]  text-[10px] ">Action</span>
+                <Badge variant="outline">
+                  <span
+                    aria-hidden="true"
+                    className="size-1.5 rounded-full bg-amber-500"
+                  />
+                  {selectedRecord.action}
+                </Badge>
               </div>
               <div>
-                <span className="block text-[#666666] font-mono text-[10px] uppercase">Target</span>
-                <span className="font-mono text-white">{selectedRecord.target}</span>
+                <span className="block text-[#666666]  text-[10px] ">Target</span>
+                <span className=" text-white">{selectedRecord.target}</span>
               </div>
             </div>
 
             <div>
-              <span className="block text-[#666666] font-mono text-[10px] uppercase mb-1">
+              <span className="block text-[#666666]  text-[10px]  mb-1">
                 Metadata / Event Details
               </span>
-              <pre className="p-3 rounded bg-[#080808] border border-[#222222] font-mono text-xs text-[#a1a1a1] overflow-x-auto whitespace-pre-wrap">
+              <pre className="p-3 rounded bg-[#080808] border border-[#222222]  text-xs text-[#a1a1a1] overflow-x-auto whitespace-pre-wrap">
                 {selectedRecord.details || 'No additional metadata attached.'}
               </pre>
             </div>

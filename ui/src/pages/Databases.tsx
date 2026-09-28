@@ -156,7 +156,7 @@ export const Databases: React.FC = () => {
             className="pl-8"
           />
         </div>
-        <span className="text-xs text-[#666666] font-mono">
+        <span className="text-xs text-[#666666] ">
           {databases.length} configured pool{databases.length === 1 ? '' : 's'}
         </span>
       </div>
@@ -190,7 +190,7 @@ export const Databases: React.FC = () => {
             ) : (
               filtered.map((db) => (
                 <TableRow key={db.alias}>
-                  <TableCell className="font-mono font-medium text-white">
+                  <TableCell className=" font-medium text-white">
                     <div className="flex items-center gap-2">
                       <Database className="w-3.5 h-3.5 text-[#f38020]" />
                       <span>{db.alias}</span>
@@ -201,14 +201,14 @@ export const Databases: React.FC = () => {
                       {db.engine.toUpperCase()}
                     </Badge>
                   </TableCell>
-                  <TableCell className="font-mono text-[#8c8c8c]">
+                  <TableCell className=" text-[#8c8c8c]">
                     {db.url || '●●●●●●●● (masked)'}
                   </TableCell>
-                  <TableCell className="font-mono text-[#8c8c8c]">
+                  <TableCell className=" text-[#8c8c8c]">
                     {db.pool_min} / {db.pool_max} conn
                   </TableCell>
-                  <TableCell className="font-mono text-[#8c8c8c]">
-                    {new Date(db.created_at * 1000).toLocaleDateString()}
+                  <TableCell className=" text-[#8c8c8c]">
+                    {db.created_at ? new Date(db.created_at * 1000).toLocaleDateString() : '—'}
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="inline-flex items-center gap-1.5 justify-end">

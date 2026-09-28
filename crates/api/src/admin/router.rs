@@ -41,6 +41,7 @@ pub fn get_router() -> Router {
         .route("/setup/database", post(setup_database))
         .route("/setup/complete", post(setup_complete))
         .route("/auth/logout", post(logout_handler))
+        .route("/users", get(list_users_handler))
         .layer(axum::middleware::from_fn(crate::middleware::auth::auth_middleware));
 
     Router::new()

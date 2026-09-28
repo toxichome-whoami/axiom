@@ -131,7 +131,7 @@ export const Cache: React.FC = () => {
           <p className="text-xs text-[#8c8c8c] leading-relaxed">
             High-concurrency lock-sharded key-value storage. Evaluated on the hot query path before routing to downstream SQL engines. Evicts via least-recently-used heuristics when reaching memory bounds.
           </p>
-          <div className="pt-2 flex items-center justify-between text-xs text-[#666666] font-mono border-t border-[#1e1e1e]">
+          <div className="pt-2 flex items-center justify-between text-xs text-[#666666]  border-t border-[#1e1e1e]">
             <span>Latency Target: &lt; 1 µs</span>
             <span>Eviction: LRU</span>
           </div>
@@ -145,7 +145,7 @@ export const Cache: React.FC = () => {
           <p className="text-xs text-[#8c8c8c] leading-relaxed">
             Write-ahead journaled SQLite layer for preserving idempotency tokens and critical query plans across daemon restarts. Provides durability without requiring external Redis instances.
           </p>
-          <div className="pt-2 flex items-center justify-between text-xs text-[#666666] font-mono border-t border-[#1e1e1e]">
+          <div className="pt-2 flex items-center justify-between text-xs text-[#666666]  border-t border-[#1e1e1e]">
             <span>Latency Target: ~ 50 µs</span>
             <span>Persistence: AOF WAL</span>
           </div>

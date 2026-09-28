@@ -162,7 +162,7 @@ export const Roles: React.FC = () => {
             className="pl-8"
           />
         </div>
-        <span className="text-xs text-[#666666] font-mono">
+        <span className="text-xs text-[#666666] ">
           {roles.length} custom role{roles.length === 1 ? '' : 's'}
         </span>
       </div>
@@ -195,7 +195,7 @@ export const Roles: React.FC = () => {
             ) : (
               filtered.map((r) => (
                 <TableRow key={r.name}>
-                  <TableCell className="font-mono font-medium text-white">
+                  <TableCell className=" font-medium text-white">
                     <div className="flex items-center gap-2">
                       <Shield className="w-3.5 h-3.5 text-[#f38020]" />
                       <span>{r.name}</span>
@@ -211,7 +211,7 @@ export const Roles: React.FC = () => {
                           <Badge
                             key={i}
                             variant="secondary"
-                            className="font-mono text-[10px]"
+                            className=" text-[10px]"
                           >
                             {p.database}.{p.table_name}: [{p.operations.join(', ')}]
                           </Badge>
@@ -221,8 +221,8 @@ export const Roles: React.FC = () => {
                       )}
                     </div>
                   </TableCell>
-                  <TableCell className="font-mono text-[#8c8c8c]">
-                    {new Date(r.created_at * 1000).toLocaleDateString()}
+                  <TableCell className=" text-[#8c8c8c]">
+                    {r.created_at ? new Date(r.created_at * 1000).toLocaleDateString() : '—'}
                   </TableCell>
                   <TableCell className="text-right">
                     <Button
@@ -302,7 +302,7 @@ export const Roles: React.FC = () => {
                 >
                   <div className="grid grid-cols-2 gap-2">
                     <div>
-                      <span className="block text-[10px] text-[#666666] mb-1 uppercase font-mono">Database</span>
+                      <span className="block text-[10px] text-[#666666] mb-1  ">Database</span>
                       <select
                         value={p.database}
                         onChange={(e) => {
@@ -320,7 +320,7 @@ export const Roles: React.FC = () => {
                       </select>
                     </div>
                     <div>
-                      <span className="block text-[10px] text-[#666666] mb-1 uppercase font-mono">Table</span>
+                      <span className="block text-[10px] text-[#666666] mb-1  ">Table</span>
                       <Input
                         value={p.table_name}
                         onChange={(e) => {
@@ -334,7 +334,7 @@ export const Roles: React.FC = () => {
                   </div>
 
                   <div>
-                    <span className="block text-[10px] text-[#666666] mb-1 uppercase font-mono">Operations</span>
+                    <span className="block text-[10px] text-[#666666] mb-1  ">Operations</span>
                     <div className="flex items-center gap-1.5 flex-wrap">
                       {['SELECT', 'INSERT', 'UPDATE', 'DELETE'].map((op) => {
                         const active = p.operations.includes(op);
@@ -343,7 +343,7 @@ export const Roles: React.FC = () => {
                             key={op}
                             type="button"
                             onClick={() => handleToggleOperation(idx, op)}
-                            className={`px-2 py-0.5 rounded text-[11px] font-mono transition-colors border ${
+                            className={`px-2 py-0.5 rounded text-[11px]  transition-colors border ${
                               active
                                 ? 'bg-[#3b82f6]/20 border-[#3b82f6]/40 text-[#60a5fa]'
                                 : 'bg-[#141414] border-[#222222] text-[#666666] hover:text-[#cccccc]'

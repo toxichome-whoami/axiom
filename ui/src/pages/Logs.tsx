@@ -149,7 +149,7 @@ export const Logs: React.FC = () => {
               variant={levelFilter === lvl ? 'secondary' : 'ghost'}
               size="sm"
               onClick={() => setLevelFilter(lvl)}
-              className="h-7 px-2.5 font-mono text-xs"
+              className="h-7 px-2.5  text-xs"
             >
               {lvl}
             </Button>
@@ -183,7 +183,7 @@ export const Logs: React.FC = () => {
       </div>
 
       {/* Terminal View */}
-      <div className="flex-1 min-h-[420px] rounded-lg border border-[#222222] bg-[#050505] p-4 font-mono text-xs overflow-y-auto max-h-[620px] space-y-1.5 select-text shadow-inner">
+      <div className="flex-1 min-h-[420px] rounded-lg border border-[#222222] bg-[#050505] p-4  text-xs overflow-y-auto max-h-[620px] space-y-1.5 select-text shadow-inner">
         {filtered.length === 0 ? (
           <div className="text-center py-16 text-[#555555]">
             No logs match the current filters.

@@ -1056,4 +1056,19 @@ pub async fn logout_handler(
     ))
 }
 
+/// Lists all registered administrative accounts.
+/// CONTRACT:
+///  - Invariant: Password hashes are redacted.
+pub async fn list_users_handler() -> Result<impl IntoResponse, AxiomError> {
+    let users = MetadataStore::list_users()
+        .await
+        .map_err(|e| AxiomError::new("USERS_FETCH_FAILED", &e, StatusCode::INTERNAL_SERVER_ERROR))?;
+
+    Ok(Json(json!({
+        "success": true,
+        "data": users,
+        "error": Value::Null
+    })))
+}
+
 

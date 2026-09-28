@@ -49,7 +49,7 @@ export const App: React.FC = () => {
           <div className="w-8 h-8 rounded-lg bg-[#f38020] flex items-center justify-center text-black font-bold animate-pulse">
             ▲
           </div>
-          <span className="text-xs font-mono text-[#8c8c8c]">Initializing Gateway UI...</span>
+          <span className="text-xs  text-[#8c8c8c]">Initializing Gateway UI...</span>
         </div>
       </div>
     );

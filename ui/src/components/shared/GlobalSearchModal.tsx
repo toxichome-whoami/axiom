@@ -114,7 +114,7 @@ export const GlobalSearchModal: React.FC = () => {
             placeholder="Type a command or search routes..."
             className="w-full h-11 bg-transparent px-3 text-xs text-white placeholder-[#666666] focus:outline-none"
           />
-          <kbd className="px-1.5 py-0.5 rounded bg-[#1a1a1a] border border-[#2c2c2c] text-[10px] font-mono text-[#8c8c8c]">
+          <kbd className="px-1.5 py-0.5 rounded bg-[#1a1a1a] border border-[#2c2c2c] text-[10px]  text-[#8c8c8c]">
             ESC
           </kbd>
         </div>
@@ -158,10 +158,10 @@ export const GlobalSearchModal: React.FC = () => {
         <div className="px-4 py-2 border-t border-[#222222] bg-[#080808] flex items-center justify-between text-[11px] text-[#666666]">
           <div className="flex items-center gap-3">
             <span>
-              <kbd className="font-mono text-[#888888]">↑↓</kbd> Navigate
+              <kbd className=" text-[#888888]">↑↓</kbd> Navigate
             </span>
             <span>
-              <kbd className="font-mono text-[#888888]">Enter</kbd> Select
+              <kbd className=" text-[#888888]">Enter</kbd> Select
             </span>
           </div>
           <span>Axiom Command Palette</span>

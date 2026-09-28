@@ -289,7 +289,7 @@ export const Setup: React.FC = () => {
                   placeholder="e.g. postgres://user:pass@localhost:5432/dbname"
                   value={url}
                   onChange={(e) => setUrl(e.target.value)}
-                  className="w-full h-8 px-3 rounded bg-[#141414] border border-[#262626] text-xs text-white focus:border-[#f38020] focus:outline-none font-mono"
+                  className="w-full h-8 px-3 rounded bg-[#141414] border border-[#262626] text-xs text-white focus:border-[#f38020] focus:outline-none "
                 />
               </div>
 
@@ -327,7 +327,7 @@ export const Setup: React.FC = () => {
 
               {adminToken && (
                 <div>
-                  <label className="block text-[11px] font-mono text-[#8c8c8c] mb-1">
+                  <label className="block text-[11px]  text-[#8c8c8c] mb-1">
                     Your Session Token:
                   </label>
                   <div className="flex items-center gap-2">
@@ -335,7 +335,7 @@ export const Setup: React.FC = () => {
                       type="text"
                       readOnly
                       value={adminToken}
-                      className="w-full h-8 px-2.5 rounded bg-[#141414] border border-[#262626] text-xs font-mono text-white select-all focus:outline-none"
+                      className="w-full h-8 px-2.5 rounded bg-[#141414] border border-[#262626] text-xs  text-white select-all focus:outline-none"
                     />
                     <button
                       onClick={copyToken}
