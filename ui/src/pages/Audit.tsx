@@ -27,11 +27,12 @@ export const Audit: React.FC = () => {
     loadAudit();
   }, []);
 
-  const filtered = records.filter(
+  const safeRecords = Array.isArray(records) ? records : [];
+  const filtered = safeRecords.filter(
     (r) =>
-      r.actor.toLowerCase().includes(search.toLowerCase()) ||
-      r.action.toLowerCase().includes(search.toLowerCase()) ||
-      r.target.toLowerCase().includes(search.toLowerCase()) ||
+      (r.actor && r.actor.toLowerCase().includes(search.toLowerCase())) ||
+      (r.action && r.action.toLowerCase().includes(search.toLowerCase())) ||
+      (r.target && r.target.toLowerCase().includes(search.toLowerCase())) ||
       (r.details && r.details.toLowerCase().includes(search.toLowerCase()))
   );
 

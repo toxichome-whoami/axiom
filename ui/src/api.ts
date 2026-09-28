@@ -4,14 +4,16 @@
  */
 
 export interface SystemStatus {
-  gateway: string;
+  gateway?: string;
   version: string;
-  uptime_seconds: number;
-  cpu_percent: number;
-  memory_mb: number;
+  status?: string;
+  uptime_seconds?: number;
+  cpu_percent?: number;
+  memory_mb?: number;
   active_databases: number;
-  registered_keys: number;
-  registered_roles: number;
+  active_keys?: number;
+  registered_keys?: number;
+  registered_roles?: number;
 }
 
 export interface DatabaseRecord {
@@ -168,7 +170,12 @@ class ApiClient {
   }
 
   async getDatabases(): Promise<DatabaseRecord[]> {
-    return this.request<DatabaseRecord[]>('/admin/v1/databases');
+    const res = await this.request<{ databases?: DatabaseRecord[] } | DatabaseRecord[]>('/admin/v1/databases');
+    if (Array.isArray(res)) return res;
+    if (res && Array.isArray((res as { databases?: DatabaseRecord[] }).databases)) {
+      return (res as { databases: DatabaseRecord[] }).databases;
+    }
+    return [];
   }
 
   async addDatabase(data: { alias: string; url: string; engine?: string; pool_min?: number; pool_max?: number }): Promise<void> {
@@ -185,7 +192,12 @@ class ApiClient {
   }
 
   async getKeys(): Promise<ApiKeyRecord[]> {
-    return this.request<ApiKeyRecord[]>('/admin/v1/keys');
+    const res = await this.request<{ keys?: ApiKeyRecord[] } | ApiKeyRecord[]>('/admin/v1/keys');
+    if (Array.isArray(res)) return res;
+    if (res && Array.isArray((res as { keys?: ApiKeyRecord[] }).keys)) {
+      return (res as { keys: ApiKeyRecord[] }).keys;
+    }
+    return [];
   }
 
   async createKey(data: { name: string; role?: string; secret?: string; rate_limit?: number }): Promise<{ secret: string; key_name: string; token_header: string }> {
@@ -202,7 +214,12 @@ class ApiClient {
   }
 
   async getRoles(): Promise<RoleRecord[]> {
-    return this.request<RoleRecord[]>('/admin/v1/roles');
+    const res = await this.request<{ roles?: RoleRecord[] } | RoleRecord[]>('/admin/v1/roles');
+    if (Array.isArray(res)) return res;
+    if (res && Array.isArray((res as { roles?: RoleRecord[] }).roles)) {
+      return (res as { roles: RoleRecord[] }).roles;
+    }
+    return [];
   }
 
   async createRole(data: { name: string; description?: string; permissions: PermissionRecord[] }): Promise<void> {
@@ -234,7 +251,11 @@ class ApiClient {
   }
 
   async getAuditLog(limit = 100, offset = 0): Promise<AuditRecord[]> {
-    return this.request<AuditRecord[]>(`/admin/v1/audit?limit=${limit}&offset=${offset}`);
+    const res = await this.request<any>(`/admin/v1/audit?limit=${limit}&offset=${offset}`);
+    if (Array.isArray(res)) return res;
+    if (res && Array.isArray(res.logs)) return res.logs;
+    if (res && Array.isArray(res.audit)) return res.audit;
+    return [];
   }
 
   async testDatabase(alias: string): Promise<{ alias: string; status: string; dialect: string; message: string }> {

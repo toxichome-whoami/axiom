@@ -99,10 +99,11 @@ export const Databases: React.FC = () => {
     }
   };
 
-  const filtered = databases.filter(
+  const safeDatabases = Array.isArray(databases) ? databases : [];
+  const filtered = safeDatabases.filter(
     (d) =>
-      d.alias.toLowerCase().includes(search.toLowerCase()) ||
-      d.engine.toLowerCase().includes(search.toLowerCase())
+      (d.alias && d.alias.toLowerCase().includes(search.toLowerCase())) ||
+      (d.engine && d.engine.toLowerCase().includes(search.toLowerCase()))
   );
 
   return (

@@ -120,9 +120,10 @@ export const ApiKeys: React.FC = () => {
     }
   };
 
-  const filtered = keys.filter(
+  const safeKeys = Array.isArray(keys) ? keys : [];
+  const filtered = safeKeys.filter(
     (k) =>
-      k.name.toLowerCase().includes(search.toLowerCase()) ||
+      (k.name && k.name.toLowerCase().includes(search.toLowerCase())) ||
       (k.role_name && k.role_name.toLowerCase().includes(search.toLowerCase()))
   );
 

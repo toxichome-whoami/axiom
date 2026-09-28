@@ -105,9 +105,10 @@ export const Roles: React.FC = () => {
     });
   };
 
-  const filtered = roles.filter(
+  const safeRoles = Array.isArray(roles) ? roles : [];
+  const filtered = safeRoles.filter(
     (r) =>
-      r.name.toLowerCase().includes(search.toLowerCase()) ||
+      (r.name && r.name.toLowerCase().includes(search.toLowerCase())) ||
       (r.description && r.description.toLowerCase().includes(search.toLowerCase()))
   );
 

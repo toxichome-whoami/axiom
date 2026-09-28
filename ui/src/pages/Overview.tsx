@@ -189,7 +189,7 @@ export const Overview: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-[#1e1e1e]">
-              {audit.length === 0 ? (
+              {(!Array.isArray(audit) || audit.length === 0) ? (
                 <tr>
                   <td colSpan={4} className="px-4 py-8 text-center text-[#666666]">
                     No control plane mutations recorded yet.
