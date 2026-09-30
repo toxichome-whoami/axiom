@@ -2,81 +2,48 @@
 export default {
   content: [
     "./index.html",
-    "./src/**/*.{js,ts,jsx,tsx,html}",
+    "./src/**/*.{js,ts,jsx,tsx}",
   ],
   darkMode: 'class',
   theme: {
     extend: {
       colors: {
-        background: 'var(--background, #09090b)',
-        foreground: 'var(--foreground, #f4f4f5)',
-        card: {
-          DEFAULT: 'var(--card, #121214)',
-          foreground: 'var(--card-foreground, #f4f4f5)',
-        },
-        popover: {
-          DEFAULT: 'var(--popover, #121214)',
-          foreground: 'var(--popover-foreground, #f4f4f5)',
-        },
-        primary: {
-          DEFAULT: 'var(--primary, #ececef)',
-          foreground: 'var(--primary-foreground, #09090b)',
-        },
-        secondary: {
-          DEFAULT: 'var(--secondary, #18181b)',
-          foreground: 'var(--secondary-foreground, #f4f4f5)',
-        },
-        muted: {
-          DEFAULT: 'var(--muted, #18181b)',
-          foreground: 'var(--muted-foreground, #71717a)',
-        },
-        accent: {
-          DEFAULT: 'var(--accent, #262626)',
-          foreground: 'var(--accent-foreground, #ffffff)',
-          orange: '#f38020',
-          blue: '#3b82f6',
-          danger: '#ef4444',
-          green: '#10b981',
-        },
-        destructive: {
-          DEFAULT: 'var(--destructive, #ef4444)',
-          foreground: 'var(--destructive-foreground, #ffffff)',
-        },
-        success: {
-          DEFAULT: 'var(--success, #10b981)',
-          foreground: 'var(--success-foreground, #34d399)',
-        },
-        warning: {
-          DEFAULT: 'var(--warning, #f59e0b)',
-          foreground: 'var(--warning-foreground, #fbbf24)',
-        },
-        info: {
-          DEFAULT: 'var(--info, #3b82f6)',
-          foreground: 'var(--info-foreground, #60a5fa)',
-        },
-        border: 'var(--border, #262626)',
-        input: 'var(--input, #262626)',
-        ring: 'var(--ring, #3b82f6)',
-        sidebar: {
-          DEFAULT: 'var(--sidebar, #171717)',
-          foreground: 'var(--sidebar-foreground, #f4f4f5)',
-          primary: 'var(--sidebar-primary, #ffffff)',
-          'primary-foreground': 'var(--sidebar-primary-foreground, #171717)',
-          accent: 'var(--sidebar-accent, #262626)',
-          'accent-foreground': 'var(--sidebar-accent-foreground, #ffffff)',
-          border: 'var(--sidebar-border, #262626)',
-          ring: 'var(--sidebar-ring, #3b82f6)',
-        },
-        // Axiom convenience mappings
         brand: {
           DEFAULT: '#3b82f6',
           hover: '#2563eb',
           muted: 'rgba(59, 130, 246, 0.15)',
         },
-        surfaceBorder: '#262626',
-        surfaceHover: '#262626',
-        borderDefault: '#262626',
-        focusRing: '#3b82f6',
+        surface: {
+          DEFAULT: '#0f0f0f',
+          dark: '#0f0f0f',
+        },
+        base: {
+          DEFAULT: '#000000',
+          dark: '#000000',
+        },
+        elevated: {
+          DEFAULT: '#161616',
+          dark: '#161616',
+        },
+        border: {
+          DEFAULT: '#222222',
+          dark: '#222222',
+        },
+        background: '#000000',
+        hairline: '#262626',
+        accent: {
+          DEFAULT: '#3b82f6',
+          hover: '#2563eb',
+          soft: 'rgba(59, 130, 246, 0.12)',
+        },
+        status: {
+          green: '#30a46c',
+          amber: '#f59e0b',
+          red: '#e5484d',
+        },
+        primary: '#f3f4f6',
+        secondary: '#8c8c8c',
+        muted: '#555555',
       },
       fontFamily: {
         sans: [
@@ -84,20 +51,29 @@ export default {
           '-apple-system',
           'BlinkMacSystemFont',
           'system-ui',
+          'Segoe UI',
+          'Roboto',
           'sans-serif',
         ],
         mono: [
           '"JetBrains Mono"',
           'Consolas',
+          'Menlo',
           'monospace',
         ],
       },
       borderRadius: {
-        lg: 'var(--radius, 0.5rem)',
-        md: 'calc(var(--radius, 0.5rem) - 2px)',
-        sm: 'calc(var(--radius, 0.5rem) - 4px)',
+        none: '0',
+        sm: '4px',
+        DEFAULT: '6px',
+        md: '6px',
+        lg: '8px',
+        xl: '8px',
+        '2xl': '8px',
+        '3xl': '8px',
+        full: '9999px',
       },
     },
   },
   plugins: [],
-};
+}

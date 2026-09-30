@@ -1,93 +1,82 @@
 import React, { useState, useEffect } from 'react';
-import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { api } from './api';
-import { Layout } from './components/layout/Layout';
+import { Layout, NavPath } from './components/Layout';
 import { Overview } from './pages/Overview';
 import { Databases } from './pages/Databases';
-import { ApiKeys } from './pages/ApiKeys';
+import { Keys } from './pages/Keys';
 import { Roles } from './pages/Roles';
-import { Cache } from './pages/Cache';
-import { Logs } from './pages/Logs';
-import { Audit } from './pages/Audit';
+import { Mcp } from './pages/Mcp';
+import { Tester } from './pages/Tester';
 import { Metrics } from './pages/Metrics';
-import { System } from './pages/System';
-import { Login } from './pages/Login';
-import { Setup } from './pages/Setup';
+import { Audit } from './pages/Audit';
+import { Settings } from './pages/Settings';
 
-const AuthGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const token = localStorage.getItem('axiom_session_token');
-  if (!token) {
-    return <Navigate to="/login" replace />;
-  }
-  return <>{children}</>;
-};
-
-export const App: React.FC = () => {
-  const [checkingSetup, setCheckingSetup] = useState(true);
-  const [setupRequired, setSetupRequired] = useState(false);
+export function App() {
+  const [currentPath, setCurrentPath] = useState<NavPath>(() => {
+    const p = window.location.pathname.replace(/\/$/, '') || '/ui';
+    const validPaths: NavPath[] = [
+      '/ui',
+      '/ui/databases',
+      '/ui/keys',
+      '/ui/roles',
+      '/ui/mcp',
+      '/ui/tester',
+      '/ui/metrics',
+      '/ui/audit',
+      '/ui/settings',
+    ];
+    return validPaths.includes(p as NavPath) ? (p as NavPath) : '/ui';
+  });
 
   useEffect(() => {
-    const check = async () => {
-      try {
-        const res = await api.checkSetupStatus();
-        if (res.setup_required) {
-          setSetupRequired(true);
-        }
-      } catch {
-        // If check fails (e.g. already setup and restricted), proceed normally
-      } finally {
-        setCheckingSetup(false);
-      }
+    function handlePopState() {
+      const p = window.location.pathname.replace(/\/$/, '') || '/ui';
+      setCurrentPath(p as NavPath);
+    }
+    window.addEventListener('popstate', handlePopState);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
     };
-    check();
   }, []);
 
-  if (checkingSetup) {
-    return (
-      <div className="min-h-screen bg-[#000000] flex items-center justify-center text-white">
-        <div className="flex flex-col items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-[#f38020] flex items-center justify-center text-black font-bold animate-pulse">
-            ▲
-          </div>
-          <span className="text-xs  text-[#8c8c8c]">Initializing Gateway UI...</span>
-        </div>
-      </div>
-    );
+  function handleNavigate(path: NavPath) {
+    if (path !== currentPath) {
+      window.history.pushState(null, '', path);
+      setCurrentPath(path);
+      window.scrollTo(0, 0);
+    }
   }
 
+  function getPageDetails(): { title: string; component: React.ReactNode } {
+    switch (currentPath) {
+      case '/ui/databases':
+        return { title: 'Database Pools', component: <Databases /> };
+      case '/ui/keys':
+        return { title: 'API Keys', component: <Keys /> };
+      case '/ui/roles':
+        return { title: 'Roles & RBAC', component: <Roles /> };
+      case '/ui/mcp':
+        return { title: 'MCP Protocol', component: <Mcp /> };
+      case '/ui/tester':
+        return { title: 'Database API Explorer', component: <Tester /> };
+      case '/ui/metrics':
+        return { title: 'Telemetry & Metrics', component: <Metrics /> };
+      case '/ui/audit':
+        return { title: 'Audit Trail', component: <Audit /> };
+      case '/ui/settings':
+        return { title: 'Settings & Administration', component: <Settings /> };
+      case '/ui':
+      default:
+        return { title: 'Overview', component: <Overview onNavigate={handleNavigate} /> };
+    }
+  }
+
+  const { title, component } = getPageDetails();
+
   return (
-    <HashRouter>
-      <Routes>
-        <Route path="/login" element={<Login />} />
-        <Route path="/setup" element={<Setup />} />
-
-        {setupRequired && (
-          <Route path="*" element={<Navigate to="/setup" replace />} />
-        )}
-
-        {/* Authenticated Dashboard Routes */}
-        <Route
-          element={
-            <AuthGuard>
-              <Layout />
-            </AuthGuard>
-          }
-        >
-          <Route path="/" element={<Navigate to="/overview" replace />} />
-          <Route path="/overview" element={<Overview />} />
-          <Route path="/databases" element={<Databases />} />
-          <Route path="/keys" element={<ApiKeys />} />
-          <Route path="/roles" element={<Roles />} />
-          <Route path="/cache" element={<Cache />} />
-          <Route path="/logs" element={<Logs />} />
-          <Route path="/audit" element={<Audit />} />
-          <Route path="/metrics" element={<Metrics />} />
-          <Route path="/system" element={<System />} />
-          <Route path="*" element={<Navigate to="/overview" replace />} />
-        </Route>
-      </Routes>
-    </HashRouter>
+    <Layout currentPath={currentPath} onNavigate={handleNavigate} title={title}>
+      {component}
+    </Layout>
   );
-};
+}
 
 export default App;

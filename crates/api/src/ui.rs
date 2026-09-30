@@ -70,20 +70,39 @@ async fn static_handler(uri: Uri) -> impl IntoResponse {
         return serve_asset("index.html");
     }
 
-    match Assets::get(path) {
-        Some(content) => {
-            let mime = get_mime(path);
-            Response::builder()
-                .header(header::CONTENT_TYPE, HeaderValue::from_static(mime))
-                .header(header::CONTENT_SECURITY_POLICY, HeaderValue::from_static(UI_CSP))
-                .body(Body::from(content.data))
-                .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
-        }
-        None => {
-            // SPA client-side routing fallback: serve index.html
-            serve_asset("index.html")
-        }
+    // 1. Try exact asset path (e.g. _astro/style.css, favicon.ico)
+    if let Some(content) = Assets::get(path) {
+        let mime = get_mime(path);
+        return Response::builder()
+            .header(header::CONTENT_TYPE, HeaderValue::from_static(mime))
+            .header(header::CONTENT_SECURITY_POLICY, HeaderValue::from_static(UI_CSP))
+            .body(Body::from(content.data))
+            .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response());
     }
+
+    // 2. Try nested index.html (e.g. databases/index.html)
+    let clean_path = path.trim_end_matches('/');
+    let index_subpath = format!("{clean_path}/index.html");
+    if let Some(content) = Assets::get(&index_subpath) {
+        return Response::builder()
+            .header(header::CONTENT_TYPE, HeaderValue::from_static("text/html; charset=utf-8"))
+            .header(header::CONTENT_SECURITY_POLICY, HeaderValue::from_static(UI_CSP))
+            .body(Body::from(content.data))
+            .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response());
+    }
+
+    // 3. Try clean URL .html file (e.g. databases.html)
+    let html_subpath = format!("{clean_path}.html");
+    if let Some(content) = Assets::get(&html_subpath) {
+        return Response::builder()
+            .header(header::CONTENT_TYPE, HeaderValue::from_static("text/html; charset=utf-8"))
+            .header(header::CONTENT_SECURITY_POLICY, HeaderValue::from_static(UI_CSP))
+            .body(Body::from(content.data))
+            .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response());
+    }
+
+    // 4. SPA client-side routing fallback: serve index.html
+    serve_asset("index.html")
 }
 
 fn serve_asset(path: &str) -> Response {
@@ -142,6 +161,18 @@ mod tests {
             res3.headers().get("content-security-policy").unwrap(),
             UI_CSP
         );
+
+        let res_keys = app.clone().oneshot(Request::get("/ui/keys").body(axum::body::Body::empty()).unwrap()).await.unwrap();
+        assert_eq!(res_keys.status(), StatusCode::OK);
+
+        let res_roles = app.clone().oneshot(Request::get("/ui/roles").body(axum::body::Body::empty()).unwrap()).await.unwrap();
+        assert_eq!(res_roles.status(), StatusCode::OK);
+
+        let res_metrics = app.clone().oneshot(Request::get("/ui/metrics").body(axum::body::Body::empty()).unwrap()).await.unwrap();
+        assert_eq!(res_metrics.status(), StatusCode::OK);
+
+        let res_audit = app.clone().oneshot(Request::get("/ui/audit").body(axum::body::Body::empty()).unwrap()).await.unwrap();
+        assert_eq!(res_audit.status(), StatusCode::OK);
 
         // Find the embedded CSS asset dynamically so hash updates never break tests
         let css_file = Assets::iter()

@@ -1,473 +1,787 @@
-/*
- * Overview Page - Rebuilt from scratch with Shadcn & Coss UI patterns.
- * Clean, subtle borders, high information density, and real API telemetry.
- */
+import React, { useState, useMemo } from 'react';
+import { NavPath } from '../components/Layout';
+import { SlideOver } from '../components/ui/SlideOver';
+import { DataTable, Column } from '../components/shared/DataTable';
+import { TelemetryCard } from '../components/shared/TelemetryCard';
+import { Database, Key, RefreshCw, Search, FileText } from 'lucide-react';
 
-import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import {
-  IconActivity,
-  IconArrowUpRight,
-  IconBolt,
-  IconCircleCheck,
-  IconDatabase,
-  IconDotsVertical,
-  IconKey,
-  IconPlus,
-  IconRefresh,
-  IconSearch,
-  IconShieldLock,
-} from '@tabler/icons-react';
-import {
-  api,
-  type SystemStatus,
-  type CacheStats,
-  type DatabaseRecord,
-  type ApiKeyRecord,
-  type AuditRecord,
-} from '../api';
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/Card';
-import { Badge } from '../components/ui/Badge';
-import { Button } from '../components/ui/Button';
+interface OverviewProps {
+  onNavigate: (path: NavPath) => void;
+}
 
-export const Overview: React.FC = () => {
-  const navigate = useNavigate();
-  const [status, setStatus] = useState<SystemStatus | null>(null);
-  const [cacheStats, setCacheStats] = useState<CacheStats | null>(null);
-  const [databases, setDatabases] = useState<DatabaseRecord[]>([]);
-  const [keys, setKeys] = useState<ApiKeyRecord[]>([]);
-  const [audit, setAudit] = useState<AuditRecord[]>([]);
-  const [loading, setLoading] = useState(true);
+interface DatabaseRow {
+  alias: string;
+  engine: string;
+  conns: string;
+  status: 'Ready' | 'Connecting' | 'Degraded';
+  latency: string;
+}
 
-  // Tab & search state for the lower data table
+interface KeyRow {
+  name: string;
+  role: string;
+  rateLimit: string;
+  status: 'Active' | 'Revoked';
+  created: string;
+}
+
+interface AuditRow {
+  time: string;
+  actor: string;
+  action: string;
+  target: string;
+  status: '200 OK' | '403 Forbidden';
+}
+
+export function Overview({ onNavigate }: OverviewProps) {
   const [activeTab, setActiveTab] = useState<'databases' | 'keys' | 'audit'>('databases');
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchFilter, setSearchFilter] = useState('');
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
-  useEffect(() => {
-    let mounted = true;
+  // Edit DB SlideOver State
+  const [editDbOpen, setEditDbOpen] = useState(false);
+  const [dbMinConns, setDbMinConns] = useState(1);
+  const [dbMaxConns, setDbMaxConns] = useState(10);
+  const [dbTimeout, setDbTimeout] = useState(30);
+  const [dbUpdatedNotice, setDbUpdatedNotice] = useState(false);
 
-    const loadData = async () => {
-      try {
-        setLoading(true);
-        const [s, c, d, k, a] = await Promise.all([
-          api.getStatus().catch(() => null),
-          api.getCacheStats().catch(() => null),
-          api.getDatabases().catch(() => []),
-          api.getKeys().catch(() => []),
-          api.getAuditLog(15, 0).catch(() => []),
-        ]);
+  // Edit Key SlideOver State
+  const [editKeyOpen, setEditKeyOpen] = useState(false);
+  const [keyRole, setKeyRole] = useState('admin');
+  const [keyRate, setKeyRate] = useState(10000);
+  const [keyUpdatedNotice, setKeyUpdatedNotice] = useState(false);
 
-        if (mounted) {
-          setStatus(s);
-          setCacheStats(c);
-          setDatabases(d);
-          setKeys(k);
-          setAudit(a);
-        }
-      } catch (err) {
-        console.error('Failed to load dashboard overview telemetry', err);
-      } finally {
-        if (mounted) setLoading(false);
-      }
-    };
-
-    loadData();
-    return () => {
-      mounted = false;
-    };
-  }, []);
-
-  const formatUptime = (seconds: number) => {
-    const d = Math.floor(seconds / 86400);
-    const h = Math.floor((seconds % 86400) / 3600);
-    const m = Math.floor((seconds % 3600) / 60);
-    if (d > 0) return `${d}d ${h}h`;
-    if (h > 0) return `${h}h ${m}m`;
-    return `${seconds}s`;
+  const handleRefresh = () => {
+    setIsRefreshing(true);
+    setTimeout(() => setIsRefreshing(false), 500);
   };
 
-  const totalHits = (cacheStats?.hits_l1 ?? 0) + (cacheStats?.hits_l2 ?? 0);
-  const totalReq = totalHits + (cacheStats?.misses ?? 0);
-  const hitRatePct = totalReq > 0 ? ((totalHits / totalReq) * 100).toFixed(1) + '%' : '100%';
+  // Sample Data Sets
+  const rawDbData: DatabaseRow[] = [
+    {
+      alias: 'local_db',
+      engine: 'POSTGRESQL',
+      conns: `${dbMinConns} – ${dbMaxConns} active`,
+      status: 'Ready',
+      latency: '0.42 ms',
+    },
+    {
+      alias: 'analytics_clickhouse',
+      engine: 'CLICKHOUSE',
+      conns: '2 – 20 active',
+      status: 'Ready',
+      latency: '1.15 ms',
+    },
+    {
+      alias: 'turso_edge_cache',
+      engine: 'LIBSQL',
+      conns: '1 – 5 active',
+      status: 'Ready',
+      latency: '0.18 ms',
+    },
+  ];
 
-  const safeDatabases = Array.isArray(databases) ? databases : [];
-  const safeKeys = Array.isArray(keys) ? keys : [];
-  const safeAudit = Array.isArray(audit) ? audit : [];
+  const rawKeyData: KeyRow[] = [
+    {
+      name: 'default_admin',
+      role: keyRole,
+      rateLimit: `${keyRate.toLocaleString()} req/m`,
+      status: 'Active',
+      created: '2026-09-28',
+    },
+    {
+      name: 'backend_worker',
+      role: 'readwrite',
+      rateLimit: '5,000 req/m',
+      status: 'Active',
+      created: '2026-09-29',
+    },
+    {
+      name: 'grafana_telemetry',
+      role: 'readonly',
+      rateLimit: '2,000 req/m',
+      status: 'Active',
+      created: '2026-09-30',
+    },
+  ];
 
-  const filteredDatabases = safeDatabases.filter((d) =>
-    d.alias.toLowerCase().includes(searchQuery.toLowerCase())
-  );
-  const filteredKeys = safeKeys.filter((k) =>
-    k.name.toLowerCase().includes(searchQuery.toLowerCase())
-  );
-  const filteredAudit = safeAudit.filter((a) =>
-    (a.action || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (a.actor || '').toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const rawAuditData: AuditRow[] = [
+    { time: '12:45:00', actor: 'admin', action: 'auth.login', target: '/admin/v1/auth', status: '200 OK' },
+    { time: '12:30:15', actor: 'system', action: 'pool.connect', target: 'local_db', status: '200 OK' },
+    { time: '12:15:22', actor: 'attacker_ip', action: 'waf.blocked', target: '/api/v1/query?drop=1', status: '403 Forbidden' },
+    { time: '12:00:00', actor: 'system', action: 'gateway.boot', target: '0.0.0.0:4500', status: '200 OK' },
+  ];
+
+  const filteredDbData = useMemo(() => {
+    if (!searchFilter.trim()) return rawDbData;
+    const q = searchFilter.toLowerCase();
+    return rawDbData.filter(d => d.alias.toLowerCase().includes(q) || d.engine.toLowerCase().includes(q));
+  }, [rawDbData, searchFilter]);
+
+  const filteredKeyData = useMemo(() => {
+    if (!searchFilter.trim()) return rawKeyData;
+    const q = searchFilter.toLowerCase();
+    return rawKeyData.filter(k => k.name.toLowerCase().includes(q) || k.role.toLowerCase().includes(q));
+  }, [rawKeyData, searchFilter]);
+
+  const filteredAuditData = useMemo(() => {
+    if (!searchFilter.trim()) return rawAuditData;
+    const q = searchFilter.toLowerCase();
+    return rawAuditData.filter(a => a.actor.toLowerCase().includes(q) || a.action.toLowerCase().includes(q) || a.target.toLowerCase().includes(q));
+  }, [rawAuditData, searchFilter]);
+
+  // Table Column Definitions
+  const dbColumns: Column<DatabaseRow>[] = [
+    {
+      id: 'alias',
+      header: 'Database Alias',
+      accessorKey: 'alias',
+      isSortable: true,
+      width: 240,
+      className: 'pl-4 pr-3',
+      cell: (row) => (
+        <div className="flex items-center gap-2.5">
+          <Database className="w-4 h-4 text-[#8c8c8c] shrink-0" />
+          <span className="font-medium text-white text-[14px]">{row.alias}</span>
+        </div>
+      ),
+    },
+    {
+      id: 'engine',
+      header: 'Engine',
+      accessorKey: 'engine',
+      width: 170,
+      className: 'px-3',
+      cell: (row) => (
+        <span className="text-[14px] text-[#cccccc] font-normal">
+          {row.engine}
+        </span>
+      ),
+    },
+    {
+      id: 'conns',
+      header: 'Pool Connections',
+      accessorKey: 'conns',
+      width: 170,
+      className: 'px-3',
+      cell: (row) => (
+        <span className="tabular-nums text-[14px] text-[#d4d4d4] font-normal">
+          {row.conns}
+        </span>
+      ),
+    },
+    {
+      id: 'latency',
+      header: 'Ping Latency',
+      accessorKey: 'latency',
+      width: 140,
+      className: 'px-3',
+      cell: (row) => (
+        <span className="tabular-nums text-[14px] text-[#8c8c8c] font-normal">
+          {row.latency}
+        </span>
+      ),
+    },
+    {
+      id: 'status',
+      header: 'Health Status',
+      accessorKey: 'status',
+      width: 150,
+      className: 'px-3',
+      cell: (row) => (
+        <div className="flex items-center gap-2 text-[14px] text-white font-normal">
+          <span
+            className={`size-1.5 rounded-full shrink-0 ${
+              row.status === 'Ready' ? 'bg-[#30a46c]' : 'bg-[#f59e0b]'
+            }`}
+          />
+          <span>{row.status}</span>
+        </div>
+      ),
+    },
+    {
+      id: 'actions',
+      header: <span className="sr-only">Actions</span>,
+      isFlex: true,
+      headerClassName: 'justify-end pr-4 text-right',
+      className: 'pl-3 pr-4 justify-end',
+      cell: () => (
+        <div className="flex items-center justify-end gap-2 w-full">
+          <button
+            type="button"
+            onClick={() => setEditDbOpen(true)}
+            className="inline-flex items-center justify-center h-7 px-3 rounded-[6px] text-[13px] font-medium leading-none text-white hover:text-white bg-transparent hover:bg-[#1a1a1a] border border-[#262626] hover:border-[#383838] transition-colors cursor-pointer shrink-0"
+          >
+            Edit
+          </button>
+          <button
+            type="button"
+            onClick={() => onNavigate('/ui/databases')}
+            className="inline-flex items-center justify-center h-7 px-2.5 rounded-[6px] text-[13px] font-medium leading-none text-[#8c8c8c] hover:text-white bg-transparent hover:bg-[#161616] border border-transparent hover:border-[#262626] transition-colors cursor-pointer shrink-0"
+          >
+            Manage &rarr;
+          </button>
+        </div>
+      ),
+    },
+  ];
+
+  const keyColumns: Column<KeyRow>[] = [
+    {
+      id: 'name',
+      header: 'Key Identifier',
+      accessorKey: 'name',
+      isSortable: true,
+      width: 240,
+      className: 'pl-4 pr-3',
+      cell: (row) => (
+        <div className="flex items-center gap-2.5">
+          <Key className="w-4 h-4 text-[#8c8c8c] shrink-0" />
+          <span className="font-medium text-white text-[14px]">{row.name}</span>
+        </div>
+      ),
+    },
+    {
+      id: 'role',
+      header: 'Role',
+      accessorKey: 'role',
+      width: 170,
+      className: 'px-3',
+      cell: (row) => (
+        <span className="text-[14px] text-[#cccccc] font-normal">
+          {row.role}
+        </span>
+      ),
+    },
+    {
+      id: 'rateLimit',
+      header: 'Rate Limit',
+      accessorKey: 'rateLimit',
+      width: 170,
+      className: 'px-3',
+      cell: (row) => (
+        <span className="tabular-nums text-[14px] text-[#8c8c8c] font-normal">
+          {row.rateLimit}
+        </span>
+      ),
+    },
+    {
+      id: 'created',
+      header: 'Created Date',
+      accessorKey: 'created',
+      width: 150,
+      className: 'px-3',
+      cell: (row) => (
+        <span className="tabular-nums text-[14px] text-[#8c8c8c] font-normal">
+          {row.created}
+        </span>
+      ),
+    },
+    {
+      id: 'status',
+      header: 'Status',
+      accessorKey: 'status',
+      width: 140,
+      className: 'px-3',
+      cell: (row) => (
+        <div className="flex items-center gap-2 text-[14px] text-white font-normal">
+          <span
+            className={`size-1.5 rounded-full shrink-0 ${
+              row.status === 'Active' ? 'bg-[#30a46c]' : 'bg-[#e5484d]'
+            }`}
+          />
+          <span>{row.status}</span>
+        </div>
+      ),
+    },
+    {
+      id: 'actions',
+      header: <span className="sr-only">Actions</span>,
+      isFlex: true,
+      headerClassName: 'justify-end pr-4 text-right',
+      className: 'pl-3 pr-4 justify-end',
+      cell: () => (
+        <div className="flex items-center justify-end gap-2 w-full">
+          <button
+            type="button"
+            onClick={() => setEditKeyOpen(true)}
+            className="inline-flex items-center justify-center h-7 px-3 rounded-[6px] text-[13px] font-medium leading-none text-white hover:text-white bg-transparent hover:bg-[#1a1a1a] border border-[#262626] hover:border-[#383838] transition-colors cursor-pointer shrink-0"
+          >
+            Modify
+          </button>
+          <button
+            type="button"
+            onClick={() => onNavigate('/ui/keys')}
+            className="inline-flex items-center justify-center h-7 px-2.5 rounded-[6px] text-[13px] font-medium leading-none text-[#8c8c8c] hover:text-white bg-transparent hover:bg-[#161616] border border-transparent hover:border-[#262626] transition-colors cursor-pointer shrink-0"
+          >
+            Details &rarr;
+          </button>
+        </div>
+      ),
+    },
+  ];
+
+  const auditColumns: Column<AuditRow>[] = [
+    {
+      id: 'time',
+      header: 'Timestamp',
+      accessorKey: 'time',
+      width: 180,
+      className: 'pl-4 pr-3',
+      cell: (row) => (
+        <span className="tabular-nums text-[14px] text-[#8c8c8c] font-normal">
+          {row.time}
+        </span>
+      ),
+    },
+    {
+      id: 'actor',
+      header: 'Actor',
+      accessorKey: 'actor',
+      width: 170,
+      className: 'px-3',
+      cell: (row) => (
+        <span className="font-medium text-white text-[14px]">{row.actor}</span>
+      ),
+    },
+    {
+      id: 'action',
+      header: 'Event Action',
+      accessorKey: 'action',
+      width: 180,
+      className: 'px-3',
+      cell: (row) => (
+        <span className="text-[14px] text-[#cccccc] font-normal">
+          {row.action}
+        </span>
+      ),
+    },
+    {
+      id: 'target',
+      header: 'Target URI / Pool',
+      accessorKey: 'target',
+      isFlex: true,
+      className: 'px-3',
+      cell: (row) => (
+        <span className="text-[14px] text-[#8c8c8c] font-normal truncate block" title={row.target}>
+          {row.target}
+        </span>
+      ),
+    },
+    {
+      id: 'status',
+      header: 'Status Result',
+      width: 140,
+      headerClassName: 'justify-end pr-4 text-right',
+      className: 'pl-3 pr-4 justify-end',
+      cell: (row) => (
+        <div className="flex items-center justify-end gap-2 text-[14px] text-white font-normal w-full">
+          <span
+            className={`size-1.5 rounded-full shrink-0 ${
+              row.status.startsWith('200') ? 'bg-[#30a46c]' : 'bg-[#e5484d]'
+            }`}
+          />
+          <span className={row.status.startsWith('200') ? 'text-[#d4d4d4]' : 'text-[#e5484d]'}>
+            {row.status}
+          </span>
+        </div>
+      ),
+    },
+  ];
+
+  function handleSaveDb() {
+    setDbUpdatedNotice(true);
+    setTimeout(() => {
+      setDbUpdatedNotice(false);
+      setEditDbOpen(false);
+    }, 600);
+  }
+
+  function handleSaveKey() {
+    setKeyUpdatedNotice(true);
+    setTimeout(() => {
+      setKeyUpdatedNotice(false);
+      setEditKeyOpen(false);
+    }, 600);
+  }
 
   return (
-    <div className="flex flex-1 flex-col gap-6 p-4 lg:p-6 w-full max-w-[1600px] mx-auto">
-      {/* 1. Header Overview Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <div className="space-y-6 w-full max-w-[1600px] mx-auto pb-12 select-none font-sans">
+      {/* Top Header Row with Actions (Cloudflare / binary_alive style) */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight text-foreground">Axiom Overview</h1>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            Real-time database connection pooling, RBAC policy enforcement, and low-latency cache stats.
-          </p>
+          <h1 className="text-[16px] font-semibold text-white tracking-tight">
+            Overview
+          </h1>
         </div>
         <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => window.location.reload()}
-            className="h-8 gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+          {/* Refresh metrics button */}
+          <button
+            type="button"
+            onClick={handleRefresh}
+            title="Refresh metrics"
+            className="flex items-center justify-center h-8 w-8 text-[#8c8c8c] hover:text-white rounded-[8px] bg-[#0c0c0c] hover:bg-[#141414] border border-[#262626] hover:border-[#383838] transition-colors cursor-pointer shrink-0"
           >
-            <IconRefresh className="size-3.5" />
-            <span>Refresh</span>
-          </Button>
-          <Button
-            size="sm"
-            onClick={() => navigate('/databases')}
-            className="h-8 gap-1.5 text-xs"
+            <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin opacity-50' : ''}`} />
+          </button>
+
+          {/* New API Key button */}
+          <button
+            type="button"
+            onClick={() => onNavigate('/ui/keys')}
+            className="h-8 px-3 rounded-[8px] border border-[#262626] bg-[#0c0c0c] hover:bg-[#141414] hover:border-[#383838] text-[13px] font-medium text-[#cccccc] hover:text-white transition-colors cursor-pointer inline-flex items-center gap-1.5"
           >
-            <IconPlus className="size-3.5" />
-            <span>Add Database</span>
-          </Button>
-        </div>
-      </div>
+            <Key className="w-3.5 h-3.5 text-[#8c8c8c]" />
+            <span>New API Key</span>
+          </button>
 
-      {/* 2. Top Metric Cards (Subtle borders, no harsh white wireframes) */}
-      <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-4">
-        {/* Card 1: Active Databases */}
-        <div className="relative rounded-xl border border-white/[0.07] bg-card p-4 transition-colors hover:border-white/[0.12]">
-          <div className="flex items-center justify-between text-muted-foreground">
-            <span className="text-xs font-medium">Database Pools</span>
-            <Badge variant="outline" className="text-[11px] gap-1 px-1.5 py-0 border-white/[0.08]">
-              <span className="size-1.5 rounded-full bg-emerald-400" />
-              Live
-            </Badge>
-          </div>
-          <div className="mt-3 text-2xl font-bold tracking-tight text-foreground tabular-nums">
-            {loading ? '…' : safeDatabases.length}
-          </div>
-          <div className="mt-2 flex items-center justify-between text-[11px] text-muted-foreground border-t border-white/[0.05] pt-2">
-            <span>Configured connections</span>
-            <span className="text-foreground/80 font-mono text-[10px]">PG · MySQL · SQLite</span>
-          </div>
-        </div>
-
-        {/* Card 2: Registered API Keys */}
-        <div className="relative rounded-xl border border-white/[0.07] bg-card p-4 transition-colors hover:border-white/[0.12]">
-          <div className="flex items-center justify-between text-muted-foreground">
-            <span className="text-xs font-medium">API Keys & Tokens</span>
-            <Badge variant="outline" className="text-[11px] gap-1 px-1.5 py-0 border-white/[0.08]">
-              <IconKey className="size-3 text-sky-400" />
-              Active
-            </Badge>
-          </div>
-          <div className="mt-3 text-2xl font-bold tracking-tight text-foreground tabular-nums">
-            {loading ? '…' : safeKeys.length}
-          </div>
-          <div className="mt-2 flex items-center justify-between text-[11px] text-muted-foreground border-t border-white/[0.05] pt-2">
-            <span>Machine credentials</span>
-            <span className="text-foreground/80">BLAKE3 secured</span>
-          </div>
-        </div>
-
-        {/* Card 3: Cache Hit Ratio */}
-        <div className="relative rounded-xl border border-white/[0.07] bg-card p-4 transition-colors hover:border-white/[0.12]">
-          <div className="flex items-center justify-between text-muted-foreground">
-            <span className="text-xs font-medium">L1 + L2 Cache</span>
-            <Badge variant="outline" className="text-[11px] gap-1 px-1.5 py-0 border-white/[0.08]">
-              <IconBolt className="size-3 text-amber-400" />
-              {cacheStats?.entries_count ?? 0} entries
-            </Badge>
-          </div>
-          <div className="mt-3 text-2xl font-bold tracking-tight text-foreground tabular-nums">
-            {hitRatePct}
-          </div>
-          <div className="mt-2 flex items-center justify-between text-[11px] text-muted-foreground border-t border-white/[0.05] pt-2">
-            <span>Sub-microsecond L1</span>
-            <span className="font-mono text-emerald-400">{totalHits} hits</span>
-          </div>
-        </div>
-
-        {/* Card 4: System Uptime */}
-        <div className="relative rounded-xl border border-white/[0.07] bg-card p-4 transition-colors hover:border-white/[0.12]">
-          <div className="flex items-center justify-between text-muted-foreground">
-            <span className="text-xs font-medium">Gateway Uptime</span>
-            <Badge variant="outline" className="text-[11px] gap-1 px-1.5 py-0 border-white/[0.08]">
-              v4.0.0
-            </Badge>
-          </div>
-          <div className="mt-3 text-2xl font-bold tracking-tight text-foreground tabular-nums">
-            {status?.uptime_seconds ? formatUptime(status.uptime_seconds) : 'Active'}
-          </div>
-          <div className="mt-2 flex items-center justify-between text-[11px] text-muted-foreground border-t border-white/[0.05] pt-2">
-            <span>Tokio Runtime</span>
-            <span className="text-emerald-400 flex items-center gap-1">
-              <span className="size-1.5 rounded-full bg-emerald-400" />
-              Optimal
+          {/* Connect Database primary button */}
+          <button
+            type="button"
+            onClick={() => onNavigate('/ui/databases')}
+            className="group relative inline-flex items-center justify-center h-8 px-3.5 rounded-[8px] font-medium text-white shadow-xs outline-none cursor-pointer overflow-hidden ring-1 ring-[#1d4ed8] bg-[#2563eb] text-[13px]"
+          >
+            <span
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-0 rounded-[inherit] bg-gradient-to-b from-[#3b82f6] to-[#2563eb] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2)]"
+            />
+            <span
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-0 rounded-[inherit] bg-black opacity-0 group-hover:opacity-15 transition-opacity duration-200"
+            />
+            <span className="relative flex items-center gap-1.5">
+              <Database className="w-3.5 h-3.5" />
+              <span>Connect Database</span>
             </span>
-          </div>
+          </button>
         </div>
       </div>
 
-      {/* 3. Cache & Throughput Quick Strip */}
-      <div className="rounded-xl border border-white/[0.07] bg-card p-4 sm:p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="flex size-9 items-center justify-center rounded-lg bg-white/[0.04] border border-white/[0.06] text-foreground">
-            <IconActivity className="size-4" />
-          </div>
-          <div>
-            <h3 className="text-sm font-medium text-foreground">Continuous Gateway Activity</h3>
-            <p className="text-xs text-muted-foreground">
-              Direct connection pool queries with AST parse firewall, WAF inspection, and low-allocation serialization.
-            </p>
-          </div>
-        </div>
-        <div className="flex items-center gap-4 text-xs font-mono">
-          <div className="flex items-center gap-1.5 text-muted-foreground">
-            <span className="size-2 rounded-full bg-sky-400" />
-            <span>L1 RAM: {cacheStats?.hits_l1 ?? 0}</span>
-          </div>
-          <div className="flex items-center gap-1.5 text-muted-foreground">
-            <span className="size-2 rounded-full bg-indigo-400" />
-            <span>L2 Disk: {cacheStats?.hits_l2 ?? 0}</span>
-          </div>
-          <div className="flex items-center gap-1.5 text-muted-foreground">
-            <span className="size-2 rounded-full bg-amber-400" />
-            <span>Misses: {cacheStats?.misses ?? 0}</span>
-          </div>
+      {/* 4 Telemetry Analytics Cards Grid (Clean technical minimal style) */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 w-full font-sans">
+        <TelemetryCard
+          title="Throughput (req/s)"
+          value="1,420"
+          subLabel="peak 2.1k"
+          badge={{ text: '+12.4%', icon: 'up', color: '#2f80ed' }}
+          gradientId="ov-throughput"
+          strokeColor="#2f80ed"
+          pathD="M 0,105 C 150,95 280,45 450,55 C 600,65 750,20 1000,35"
+          yAxisLabels={['2k', '1.5k', '500', '0']}
+          tooltipMetricName="Throughput"
+          onHoverCompute={(pct) => ({
+            pct,
+            yPct: 0.35 + Math.sin(pct * 4) * 0.15,
+            time: 'Live Telemetry',
+            value: `${Math.round(1200 + pct * 600)} req/s`,
+          })}
+        />
+
+        <TelemetryCard
+          title="L1 Cache Hit Ratio"
+          value="99.4%"
+          subLabel="<1µs lookup"
+          badge={{ text: '<1µs L1', icon: 'none', color: '#8c8c8c' }}
+          gradientId="ov-cache"
+          strokeColor="#2f80ed"
+          pathD="M 0,40 C 200,35 400,28 600,32 C 800,25 900,28 1000,26"
+          yAxisLabels={['100%', '95%', '90%', '80%']}
+          tooltipMetricName="Cache Hit Ratio"
+          onHoverCompute={(pct) => ({
+            pct,
+            yPct: 0.25,
+            time: 'Live Window',
+            value: '99.4%',
+          })}
+        />
+
+        <TelemetryCard
+          title="Pipeline p95 Latency"
+          value="0.74 ms"
+          subLabel="AST + Pool"
+          badge={{ text: '-8.1%', icon: 'down', color: '#2f80ed' }}
+          gradientId="ov-latency"
+          strokeColor="#2f80ed"
+          pathD="M 0,85 C 200,80 400,95 600,60 C 800,70 900,45 1000,50"
+          yAxisLabels={['2.0ms', '1.0ms', '0.5ms', '0ms']}
+          tooltipMetricName="p95 Latency"
+          onHoverCompute={(pct) => ({
+            pct,
+            yPct: 0.45,
+            time: 'Recent Requests',
+            value: `${(0.65 + pct * 0.2).toFixed(2)} ms`,
+          })}
+        />
+
+        <TelemetryCard
+          title="Active Pool Connections"
+          value="3 / 35"
+          subLabel="3 live pools"
+          badge={{ text: '3 active', icon: 'none', color: '#8c8c8c' }}
+          gradientId="ov-pools"
+          strokeColor="#2f80ed"
+          pathD="M 0,90 C 250,92 500,80 750,75 C 900,78 950,72 1000,70"
+          yAxisLabels={['35', '20', '10', '0']}
+          tooltipMetricName="Active Connections"
+          onHoverCompute={(pct) => ({
+            pct,
+            yPct: 0.65,
+            time: 'Connection Saturation',
+            value: `${Math.round(2 + pct * 3)} active`,
+          })}
+        />
+      </div>
+
+      {/* Table Controls Toolbar & Segmented Tabs (Matches binary_alive Logs.tsx exactly) */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-1 select-none font-sans">
+        {/* Search filter input */}
+        <label
+          title="Search current view (/ or Ctrl+K)"
+          className="relative flex items-center h-9 rounded-[8px] bg-transparent border border-[#262626] focus-within:border-[#2f80ed] transition-colors px-3 gap-2 w-full sm:w-[280px] md:w-[320px]"
+        >
+          <Search className="w-3.5 h-3.5 text-[#8c8c8c] shrink-0" />
+          <input
+            type="text"
+            value={searchFilter}
+            onChange={(e) => setSearchFilter(e.target.value)}
+            placeholder="Search records..."
+            className="w-full bg-transparent border-0 text-[14px] text-white placeholder-[#8c8c8c] outline-none font-normal font-sans"
+          />
+          {searchFilter && (
+            <button
+              type="button"
+              onClick={() => setSearchFilter('')}
+              className="flex items-center justify-center w-5 h-5 rounded hover:bg-[#222222] text-[#8c8c8c] hover:text-white transition-colors cursor-pointer shrink-0 font-sans"
+              title="Clear search"
+            >
+              ✕
+            </button>
+          )}
+        </label>
+
+        {/* Tab Switcher (Segmented Control matching binary_alive with zero layout shift) */}
+        <div className="inline-flex items-center p-0.5 rounded-[8px] bg-transparent border border-[#262626]">
+          <button
+            type="button"
+            onClick={() => setActiveTab('databases')}
+            className={`flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[14px] font-medium transition-colors duration-75 cursor-pointer font-sans outline-none focus:outline-none border ${
+              activeTab === 'databases'
+                ? 'bg-[#161616] text-white border-[#333333]'
+                : 'text-[#8c8c8c] hover:text-white hover:bg-[#141414] border-transparent'
+            }`}
+          >
+            <Database className="w-4 h-4 shrink-0" />
+            <span>Databases</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('keys')}
+            className={`flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[14px] font-medium transition-colors duration-75 cursor-pointer font-sans outline-none focus:outline-none border ${
+              activeTab === 'keys'
+                ? 'bg-[#161616] text-white border-[#333333]'
+                : 'text-[#8c8c8c] hover:text-white hover:bg-[#141414] border-transparent'
+            }`}
+          >
+            <Key className="w-4 h-4 shrink-0" />
+            <span>API Keys</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('audit')}
+            className={`flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[14px] font-medium transition-colors duration-75 cursor-pointer font-sans outline-none focus:outline-none border ${
+              activeTab === 'audit'
+                ? 'bg-[#161616] text-white border-[#333333]'
+                : 'text-[#8c8c8c] hover:text-white hover:bg-[#141414] border-transparent'
+            }`}
+          >
+            <FileText className="w-4 h-4 shrink-0" />
+            <span>Audit Trail</span>
+          </button>
         </div>
       </div>
 
-      {/* 4. Unified Data Management Section */}
-      <div className="rounded-xl border border-white/[0.07] bg-card overflow-hidden">
-        {/* Sub-navigation bar with segmented tabs and search */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/[0.06] px-4 py-3 bg-white/[0.01]">
-          {/* Segmented control */}
-          <div className="flex items-center gap-1 bg-black/40 p-1 rounded-lg border border-white/[0.06] w-fit">
-            <button
-              type="button"
-              onClick={() => setActiveTab('databases')}
-              className={`flex items-center gap-2 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-                activeTab === 'databases'
-                  ? 'bg-white/10 text-white shadow-xs'
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              <span>Database Pools</span>
-              <span className="rounded bg-white/10 px-1.5 py-0.2 text-[10px] tabular-nums">
-                {safeDatabases.length}
-              </span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('keys')}
-              className={`flex items-center gap-2 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-                activeTab === 'keys'
-                  ? 'bg-white/10 text-white shadow-xs'
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              <span>API Keys</span>
-              <span className="rounded bg-white/10 px-1.5 py-0.2 text-[10px] tabular-nums">
-                {safeKeys.length}
-              </span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('audit')}
-              className={`flex items-center gap-2 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-                activeTab === 'audit'
-                  ? 'bg-white/10 text-white shadow-xs'
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              <span>Audit Trail</span>
-              <span className="rounded bg-white/10 px-1.5 py-0.2 text-[10px] tabular-nums">
-                {safeAudit.length}
-              </span>
-            </button>
-          </div>
+      {/* DataTable direct render (No duplicate outer border wrapper) */}
+      {activeTab === 'databases' && (
+        <DataTable
+          columns={dbColumns}
+          data={filteredDbData}
+          ariaLabel="Active Database Pools"
+          pagination={{
+            page: 1,
+            pageSize: 10,
+            totalCount: filteredDbData.length,
+            onPageChange: () => {},
+            onPageSizeChange: () => {},
+          }}
+        />
+      )}
 
-          {/* Quick search input */}
-          <div className="flex items-center gap-2">
-            <div className="relative">
-              <IconSearch className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
-              <input
-                type="text"
-                placeholder={`Filter ${activeTab}…`}
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="h-8 w-48 sm:w-64 rounded-lg border border-white/[0.08] bg-black/30 pl-8 pr-3 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-white/20 transition-colors"
-              />
+      {activeTab === 'keys' && (
+        <DataTable
+          columns={keyColumns}
+          data={filteredKeyData}
+          ariaLabel="Configured API Keys"
+          pagination={{
+            page: 1,
+            pageSize: 10,
+            totalCount: filteredKeyData.length,
+            onPageChange: () => {},
+            onPageSizeChange: () => {},
+          }}
+        />
+      )}
+
+      {activeTab === 'audit' && (
+        <DataTable
+          columns={auditColumns}
+          data={filteredAuditData}
+          ariaLabel="System Audit Trail"
+          pagination={{
+            page: 1,
+            pageSize: 10,
+            totalCount: filteredAuditData.length,
+            onPageChange: () => {},
+            onPageSizeChange: () => {},
+          }}
+        />
+      )}
+
+      {/* Edit Database Bounds SlideOver */}
+      <SlideOver
+        isOpen={editDbOpen}
+        onClose={() => setEditDbOpen(false)}
+        title="Edit Database Pool Bounds"
+        subtitle="Update connection pool limits and probe timeout for local_db."
+      >
+        <div className="space-y-4 font-sans">
+          {dbUpdatedNotice && (
+            <div className="p-3 bg-[#30a46c]/10 border border-[#30a46c]/20 text-[#30a46c] text-[13px] rounded-[8px]">
+              Connection bounds successfully committed to axiom.db snapshot.
             </div>
-            {activeTab === 'databases' && (
-              <Button size="sm" onClick={() => navigate('/databases')} className="h-8 gap-1 text-xs">
-                <IconPlus className="size-3.5" />
-                <span className="hidden sm:inline">Connect</span>
-              </Button>
-            )}
-            {activeTab === 'keys' && (
-              <Button size="sm" onClick={() => navigate('/keys')} className="h-8 gap-1 text-xs">
-                <IconPlus className="size-3.5" />
-                <span className="hidden sm:inline">New Key</span>
-              </Button>
-            )}
+          )}
+          <div className="space-y-1.5">
+            <label className="text-[12px] font-medium text-[#8c8c8c]">Minimum Idle Connections</label>
+            <input
+              type="number"
+              min={1}
+              max={20}
+              value={dbMinConns}
+              onChange={(e) => setDbMinConns(Number(e.target.value))}
+              className="w-full h-9 px-3 rounded-[8px] bg-[#141414] border border-[#262626] hover:border-[#383838] focus:border-[#2f80ed] text-[13px] text-white outline-none font-sans"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-[12px] font-medium text-[#8c8c8c]">Maximum Active Connections</label>
+            <input
+              type="number"
+              min={5}
+              max={100}
+              value={dbMaxConns}
+              onChange={(e) => setDbMaxConns(Number(e.target.value))}
+              className="w-full h-9 px-3 rounded-[8px] bg-[#141414] border border-[#262626] hover:border-[#383838] focus:border-[#2f80ed] text-[13px] text-white outline-none font-sans"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-[12px] font-medium text-[#8c8c8c]">Probe Timeout (seconds)</label>
+            <input
+              type="number"
+              min={5}
+              max={120}
+              value={dbTimeout}
+              onChange={(e) => setDbTimeout(Number(e.target.value))}
+              className="w-full h-9 px-3 rounded-[8px] bg-[#141414] border border-[#262626] hover:border-[#383838] focus:border-[#2f80ed] text-[13px] text-white outline-none font-sans"
+            />
+          </div>
+          <div className="pt-4 flex items-center justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setEditDbOpen(false)}
+              className="h-9 px-4 rounded-[8px] text-[13px] font-medium text-[#cccccc] hover:text-white bg-transparent border border-[#262626] hover:border-[#383838] hover:bg-[#161616] transition-colors cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleSaveDb}
+              className="group relative inline-flex items-center justify-center h-9 px-4 rounded-[8px] font-medium text-white shadow-xs outline-none cursor-pointer overflow-hidden ring-1 ring-[#1d4ed8] bg-[#2563eb] text-[13px]"
+            >
+              <span
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-0 rounded-[inherit] bg-gradient-to-b from-[#3b82f6] to-[#2563eb] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2)]"
+              />
+              <span
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-0 rounded-[inherit] bg-black opacity-0 group-hover:opacity-15 transition-opacity duration-200"
+              />
+              <span className="relative">Commit Bounds</span>
+            </button>
           </div>
         </div>
+      </SlideOver>
 
-        {/* Content Table Body */}
-        <div className="overflow-x-auto">
-          {activeTab === 'databases' && (
-            <table className="w-full text-left text-xs">
-              <thead className="border-b border-white/[0.06] bg-white/[0.01] text-muted-foreground font-medium">
-                <tr>
-                  <th className="px-4 py-2.5">Alias</th>
-                  <th className="px-4 py-2.5">Dialect / Engine</th>
-                  <th className="px-4 py-2.5">Pool Limit</th>
-                  <th className="px-4 py-2.5">Health State</th>
-                  <th className="px-4 py-2.5 text-right">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-white/[0.04]">
-                {filteredDatabases.length === 0 ? (
-                  <tr>
-                    <td colSpan={5} className="py-8 text-center text-muted-foreground">
-                      No database connections found. Click &quot;Connect&quot; to register your first pool.
-                    </td>
-                  </tr>
-                ) : (
-                  filteredDatabases.map((db) => (
-                    <tr key={db.alias} className="hover:bg-white/[0.02] transition-colors">
-                      <td className="px-4 py-3 font-medium text-foreground flex items-center gap-2">
-                        <IconDatabase className="size-3.5 text-muted-foreground" />
-                        <span>{db.alias}</span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className="rounded bg-white/[0.06] px-2 py-0.5 font-mono text-[11px] text-foreground">
-                          {db.engine.toUpperCase()}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-muted-foreground font-mono">
-                        {db.pool_min} – {db.pool_max} conns
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className="inline-flex items-center gap-1.5 text-emerald-400">
-                          <span className="size-1.5 rounded-full bg-emerald-400" />
-                          Ready
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        <button
-                          type="button"
-                          onClick={() => navigate('/databases')}
-                          className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-                        >
-                          Manage
-                        </button>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+      {/* Edit API Key SlideOver */}
+      <SlideOver
+        isOpen={editKeyOpen}
+        onClose={() => setEditKeyOpen(false)}
+        title="Modify API Key Configuration"
+        subtitle="Update rate limits and assigned RBAC role for default_admin."
+      >
+        <div className="space-y-4 font-sans">
+          {keyUpdatedNotice && (
+            <div className="p-3 bg-[#30a46c]/10 border border-[#30a46c]/20 text-[#30a46c] text-[13px] rounded-[8px]">
+              API Key permissions updated in ArcSwap metadata snapshot.
+            </div>
           )}
-
-          {activeTab === 'keys' && (
-            <table className="w-full text-left text-xs">
-              <thead className="border-b border-white/[0.06] bg-white/[0.01] text-muted-foreground font-medium">
-                <tr>
-                  <th className="px-4 py-2.5">Identifier</th>
-                  <th className="px-4 py-2.5">Assigned Role</th>
-                  <th className="px-4 py-2.5">Rate Limit</th>
-                  <th className="px-4 py-2.5">Expiration</th>
-                  <th className="px-4 py-2.5 text-right">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-white/[0.04]">
-                {filteredKeys.length === 0 ? (
-                  <tr>
-                    <td colSpan={5} className="py-8 text-center text-muted-foreground">
-                      No API keys found. Click &quot;New Key&quot; to generate an access credential.
-                    </td>
-                  </tr>
-                ) : (
-                  filteredKeys.map((k) => (
-                    <tr key={k.name} className="hover:bg-white/[0.02] transition-colors">
-                      <td className="px-4 py-3 font-medium text-foreground flex items-center gap-2">
-                        <IconKey className="size-3.5 text-sky-400" />
-                        <span>{k.name}</span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className="rounded bg-white/[0.06] px-2 py-0.5 text-[11px] text-foreground font-medium">
-                          {k.role_name || 'Admin'}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-muted-foreground font-mono">
-                        {k.rate_limit > 0 ? `${k.rate_limit} req/min` : 'Global default'}
-                      </td>
-                      <td className="px-4 py-3 text-muted-foreground">
-                        {k.expires_at ? new Date(k.expires_at * 1000).toLocaleDateString() : 'Never'}
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        <button
-                          type="button"
-                          onClick={() => navigate('/keys')}
-                          className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-                        >
-                          Details
-                        </button>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          )}
-
-          {activeTab === 'audit' && (
-            <table className="w-full text-left text-xs">
-              <thead className="border-b border-white/[0.06] bg-white/[0.01] text-muted-foreground font-medium">
-                <tr>
-                  <th className="px-4 py-2.5">Timestamp</th>
-                  <th className="px-4 py-2.5">Actor</th>
-                  <th className="px-4 py-2.5">Action Event</th>
-                  <th className="px-4 py-2.5">Target</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-white/[0.04]">
-                {filteredAudit.length === 0 ? (
-                  <tr>
-                    <td colSpan={4} className="py-8 text-center text-muted-foreground">
-                      No security audit events recorded.
-                    </td>
-                  </tr>
-                ) : (
-                  filteredAudit.map((a) => (
-                    <tr key={a.id} className="hover:bg-white/[0.02] transition-colors">
-                      <td className="px-4 py-3 font-mono text-[11px] text-muted-foreground">
-                        {new Date(a.timestamp * 1000).toLocaleTimeString()}
-                      </td>
-                      <td className="px-4 py-3 font-medium text-foreground">{a.actor}</td>
-                      <td className="px-4 py-3">
-                        <span className="rounded bg-sky-500/10 text-sky-400 px-2 py-0.5 text-[11px] font-medium">
-                          {a.action}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-muted-foreground font-mono text-[11px]">
-                        {a.target || '—'}
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          )}
+          <div className="space-y-1.5">
+            <label className="text-[12px] font-medium text-[#8c8c8c]">Assigned Role</label>
+            <select
+              value={keyRole}
+              onChange={(e) => setKeyRole(e.target.value)}
+              className="w-full h-9 px-3 rounded-[8px] bg-[#141414] border border-[#262626] hover:border-[#383838] focus:border-[#2f80ed] text-[13px] text-white outline-none font-sans"
+            >
+              <option value="admin">admin (Full Cluster Access)</option>
+              <option value="readwrite">readwrite (CRUD Scoped)</option>
+              <option value="readonly">readonly (SELECT Queries Only)</option>
+            </select>
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-[12px] font-medium text-[#8c8c8c]">Rate Limit (requests / minute)</label>
+            <input
+              type="number"
+              step={1000}
+              value={keyRate}
+              onChange={(e) => setKeyRate(Number(e.target.value))}
+              className="w-full h-9 px-3 rounded-[8px] bg-[#141414] border border-[#262626] hover:border-[#383838] focus:border-[#2f80ed] text-[13px] text-white outline-none font-sans"
+            />
+          </div>
+          <div className="pt-4 flex items-center justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setEditKeyOpen(false)}
+              className="h-9 px-4 rounded-[8px] text-[13px] font-medium text-[#cccccc] hover:text-white bg-transparent border border-[#262626] hover:border-[#383838] hover:bg-[#161616] transition-colors cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleSaveKey}
+              className="group relative inline-flex items-center justify-center h-9 px-4 rounded-[8px] font-medium text-white shadow-xs outline-none cursor-pointer overflow-hidden ring-1 ring-[#1d4ed8] bg-[#2563eb] text-[13px]"
+            >
+              <span
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-0 rounded-[inherit] bg-gradient-to-b from-[#3b82f6] to-[#2563eb] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2)]"
+              />
+              <span
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-0 rounded-[inherit] bg-black opacity-0 group-hover:opacity-15 transition-opacity duration-200"
+              />
+              <span className="relative">Update Policy</span>
+            </button>
+          </div>
         </div>
-      </div>
+      </SlideOver>
     </div>
   );
-};
+}

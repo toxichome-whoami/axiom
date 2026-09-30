@@ -2,9 +2,8 @@ import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
 /**
- * Merges Tailwind CSS class names safely, deduplicating conflicting classes.
- * Follows the standard pattern used across Vercel & Cloudflare design systems.
+ * Utility to merge Tailwind classes safely with clsx and tailwind-merge.
  */
-export function cn(...inputs: ClassValue[]): string {
+export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }

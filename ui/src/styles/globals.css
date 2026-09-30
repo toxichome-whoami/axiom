@@ -1,0 +1,171 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=JetBrains+Mono:wght@400;500;600&family=Montserrat:wght@500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    --font-mono: 'JetBrains Mono', Consolas, monospace;
+  }
+
+  html {
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+    font-optical-sizing: auto;
+    background-color: #000000;
+    color: #f3f4f6;
+  }
+
+  body {
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+    font-optical-sizing: auto;
+    background-color: #000000;
+    color: #f3f4f6;
+    letter-spacing: -0.011em;
+    @apply selection:bg-brand selection:text-white;
+  }
+
+  button, input, optgroup, select, textarea, a[href] {
+    font-family: inherit;
+    font-feature-settings: inherit;
+    letter-spacing: inherit;
+    touch-action: manipulation;
+  }
+
+  body {
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+}
+
+/* Thin, elegant, modern scrollbars everywhere */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #2b2b2b transparent;
+}
+
+::-webkit-scrollbar,
+*::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+::-webkit-scrollbar-track,
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb,
+*::-webkit-scrollbar-thumb {
+  background-color: #282828;
+  border-radius: 9999px;
+  border: 1px solid transparent;
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover,
+*::-webkit-scrollbar-thumb:hover {
+  background-color: #444444;
+}
+
+::-webkit-scrollbar-thumb:active,
+*::-webkit-scrollbar-thumb:active {
+  background-color: #555555;
+}
+
+::-webkit-scrollbar-corner,
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Scrollbar utility classes */
+.scrollbar-thin {
+  scrollbar-width: thin;
+}
+
+.scrollbar-none {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
+/* ========================================================= */
+/* Responsive Analytics Cards Stages:                        */
+/* When screen gets small:                                   */
+/* 1. First the right text will disappear                    */
+/* 2. Then the hover will disappear                          */
+/* 3. Then the line will disappear                           */
+/* 4. Then the padding for the graph will disappear          */
+/* ========================================================= */
+.analytics-card {
+  container-type: inline-size;
+}
+
+/* 1. First the right text will disappear */
+@media (max-width: 1100px) {
+  .chart-y-axis {
+    display: none !important;
+  }
+}
+@container (max-width: 360px) {
+  .chart-y-axis {
+    display: none !important;
+  }
+}
+
+/* 2. Then the hover will disappear */
+@media (max-width: 860px) {
+  .chart-hover-overlay {
+    display: none !important;
+  }
+  .chart-canvas {
+    cursor: default !important;
+  }
+}
+@container (max-width: 290px) {
+  .chart-hover-overlay {
+    display: none !important;
+  }
+  .chart-canvas {
+    cursor: default !important;
+  }
+}
+
+/* 3. Then the line will disappear */
+@media (max-width: 640px) {
+  .chart-grid-line {
+    display: none !important;
+  }
+}
+@container (max-width: 230px) {
+  .chart-grid-line {
+    display: none !important;
+  }
+}
+
+/* 4. Then the padding for the graph will disappear */
+@media (max-width: 480px) {
+  .chart-graph-container {
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+  }
+}
+@container (max-width: 180px) {
+  .chart-graph-container {
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+  }
+}

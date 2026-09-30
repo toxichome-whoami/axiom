@@ -1,66 +1,72 @@
-/*
- * Shadcn UI Button component.
- * Owned by: ui/components/ui
- * Key deps: clsx, tailwind-merge, lucide-react
- * Invariants: Accessible button supporting variants, sizes, loading spinners, and forwardRef.
- */
-
 import React from 'react';
-import { Slot } from '@radix-ui/react-slot';
-import { cva, type VariantProps } from 'class-variance-authority';
 import { cn } from '../../utils/cn';
-import { Loader2 } from 'lucide-react';
 
-export const buttonVariants = cva(
-  'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*="size-"])]:size-4 shrink-0',
-  {
-    variants: {
-      variant: {
-        default: 'bg-primary text-primary-foreground shadow-xs hover:bg-primary/90',
-        destructive: 'bg-destructive text-destructive-foreground shadow-xs hover:bg-destructive/90',
-        outline: 'border border-border/50 bg-background shadow-xs hover:bg-accent hover:text-accent-foreground',
-        secondary: 'bg-secondary text-secondary-foreground shadow-xs hover:bg-secondary/80',
-        ghost: 'hover:bg-accent hover:text-accent-foreground',
-        link: 'text-primary underline-offset-4 hover:underline',
-      },
-      size: {
-        default: 'h-9 px-4 py-2 text-xs',
-        sm: 'h-8 rounded-md px-3 text-xs',
-        lg: 'h-10 rounded-md px-8 text-sm',
-        icon: 'size-9',
-      },
-    },
-    defaultVariants: {
-      variant: 'default',
-      size: 'default',
-    },
-  }
-);
+export type ButtonVariant = 'primary' | 'secondary' | 'danger' | 'outline' | 'ghost';
+export type ButtonSize = 'sm' | 'md' | 'lg' | 'icon';
 
-export type ButtonVariant = 'default' | 'secondary' | 'destructive' | 'outline' | 'ghost' | 'link';
-export type ButtonSize = 'default' | 'sm' | 'lg' | 'icon';
-
-export interface ButtonProps
-  extends React.ButtonHTMLAttributes<HTMLButtonElement>,
-    VariantProps<typeof buttonVariants> {
-  asChild?: boolean;
+interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+  variant?: ButtonVariant;
+  size?: ButtonSize;
   isLoading?: boolean;
 }
 
+/**
+ * Vercel/Cloudflare technical button with subtle glossy gradient,
+ * high-contrast focus rings, and clean loading state.
+ */
 export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant, size, asChild = false, isLoading = false, children, disabled, ...props }, ref) => {
-    const Comp = asChild ? Slot : 'button';
+  ({ children, variant = 'primary', size = 'md', isLoading = false, disabled, className, ...props }, ref) => {
+    const baseStyles =
+      'group relative inline-flex items-center justify-center font-medium rounded-lg transition-all focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed select-none overflow-hidden';
+
+    const variantStyles: Record<ButtonVariant, string> = {
+      primary: 'text-white shadow-xs ring-1 ring-[#1d4ed8] bg-[#2563eb]',
+      secondary: 'bg-[#141415] hover:bg-[#1a1a1c] text-white border border-[#2a2a2d]',
+      danger: 'text-white shadow-xs ring-1 ring-[#be123c] bg-[#e11d48]',
+      outline: 'border border-[#2a2a2d] hover:bg-[#141415] text-gray-300',
+      ghost: 'hover:bg-[#141415] text-gray-300',
+    };
+
+    const sizeStyles: Record<ButtonSize, string> = {
+      sm: 'text-[13px] h-8 px-3 gap-1.5',
+      md: 'text-[14px] h-9 px-4 gap-2',
+      lg: 'text-[15px] h-10 px-5 gap-2.5',
+      icon: 'h-9 w-9 p-2',
+    };
+
     return (
-      <Comp
-        className={cn(buttonVariants({ variant, size, className }))}
+      <button
         ref={ref}
         disabled={disabled || isLoading}
+        className={cn(baseStyles, variantStyles[variant], sizeStyles[size], className)}
         {...props}
       >
-        {isLoading && <Loader2 className="size-3.5 animate-spin" />}
-        {children}
-      </Comp>
+        {/* Glossy gradient effect for primary and danger variants */}
+        {(variant === 'primary' || variant === 'danger') && (
+          <>
+            <span 
+              aria-hidden="true" 
+              className={cn(
+                "pointer-events-none absolute inset-0 rounded-[inherit] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2)]",
+                variant === 'primary' ? 'bg-gradient-to-b from-[#3b82f6] to-[#2563eb]' : 'bg-gradient-to-b from-[#f43f5e] to-[#e11d48]'
+              )} 
+            />
+            <span aria-hidden="true" className="pointer-events-none absolute inset-0 rounded-[inherit] bg-black opacity-0 group-hover:opacity-15 transition-opacity duration-200" />
+          </>
+        )}
+        
+        <span className="relative flex items-center justify-center gap-2">
+          {isLoading && (
+            <svg className="animate-spin h-3.5 w-3.5 text-current" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+            </svg>
+          )}
+          {children}
+        </span>
+      </button>
     );
   }
 );
+
 Button.displayName = 'Button';
