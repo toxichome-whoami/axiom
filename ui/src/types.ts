@@ -1,4 +1,38 @@
-export type EngineType = 'POSTGRESQL' | 'MYSQL' | 'MSSQL' | 'CLICKHOUSE' | 'LIBSQL';
+export type EngineType =
+  | 'PostgreSQL'
+  | 'MySQL'
+  | 'MSSQL'
+  | 'ClickHouse'
+  | 'LibSQL'
+  | 'POSTGRESQL'
+  | 'MYSQL'
+  | 'MSSQL'
+  | 'CLICKHOUSE'
+  | 'LIBSQL';
+
+export function formatEngine(engine: string): string {
+  if (!engine) return '';
+  const norm = engine.trim().toLowerCase();
+  switch (norm) {
+    case 'postgresql':
+    case 'postgres':
+      return 'PostgreSQL';
+    case 'mysql':
+      return 'MySQL';
+    case 'mariadb':
+      return 'MariaDB';
+    case 'mssql':
+    case 'sqlserver':
+      return 'MSSQL';
+    case 'clickhouse':
+      return 'ClickHouse';
+    case 'libsql':
+    case 'sqlite':
+      return 'LibSQL';
+    default:
+      return engine.charAt(0).toUpperCase() + engine.slice(1).toLowerCase();
+  }
+}
 
 export interface DatabasePool {
   alias: string;

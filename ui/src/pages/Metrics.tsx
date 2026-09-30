@@ -1,5 +1,5 @@
 import React from 'react';
-import { TelemetryCard } from '../components/shared/TelemetryCard';
+import { TelemetryCard, formatTimeFromPct } from '../components/shared/TelemetryCard';
 import { Button } from '../components/ui/Button';
 import { Activity, ExternalLink, RefreshCw, Zap, Server, ShieldCheck } from 'lucide-react';
 
@@ -36,12 +36,16 @@ export function Metrics() {
           pathD="M 0,110 C 150,90 300,50 450,60 C 600,70 750,25 1000,40"
           yAxisLabels={['2.5k', '1.5k', '500', '0']}
           tooltipMetricName="Throughput"
-          onHoverCompute={(pct) => ({
-            pct,
-            yPct: 0.38,
-            time: 'Throughput Trend',
-            value: `${Math.round(1400 + pct * 700)} req/s`,
-          })}
+          onHoverCompute={(pct, _svgX, exactYPct) => {
+            const norm = exactYPct !== undefined ? Math.max(0, Math.min(1, (116 - exactYPct * 130) / 102)) : pct;
+            const val = Math.round(1100 + norm * 1050);
+            return {
+              pct,
+              yPct: exactYPct ?? 0.38,
+              time: formatTimeFromPct(pct),
+              value: `${val.toLocaleString()} req/s`,
+            };
+          }}
         />
 
         <TelemetryCard
@@ -54,12 +58,16 @@ export function Metrics() {
           pathD="M 0,70 C 200,65 400,68 600,55 C 800,58 900,48 1000,50"
           yAxisLabels={['1.5ms', '1.0ms', '0.5ms', '0ms']}
           tooltipMetricName="p50 Latency"
-          onHoverCompute={(pct) => ({
-            pct,
-            yPct: 0.42,
-            time: 'Pipeline Transit',
-            value: `${(0.62 + pct * 0.1).toFixed(2)} ms`,
-          })}
+          onHoverCompute={(pct, _svgX, exactYPct) => {
+            const norm = exactYPct !== undefined ? Math.max(0, Math.min(1, (116 - exactYPct * 130) / 102)) : 0.5;
+            const val = (0.45 + norm * 0.55).toFixed(2);
+            return {
+              pct,
+              yPct: exactYPct ?? 0.42,
+              time: formatTimeFromPct(pct),
+              value: `${val} ms`,
+            };
+          }}
         />
 
         <TelemetryCard
@@ -72,12 +80,16 @@ export function Metrics() {
           pathD="M 0,95 C 200,90 400,80 600,70 C 800,65 900,55 1000,60"
           yAxisLabels={['5.0ms', '3.0ms', '1.5ms', '0ms']}
           tooltipMetricName="p99 Latency"
-          onHoverCompute={(pct) => ({
-            pct,
-            yPct: 0.52,
-            time: 'Tail Latency',
-            value: `${(2.6 + pct * 0.4).toFixed(2)} ms`,
-          })}
+          onHoverCompute={(pct, _svgX, exactYPct) => {
+            const norm = exactYPct !== undefined ? Math.max(0, Math.min(1, (116 - exactYPct * 130) / 102)) : 0.5;
+            const val = (1.5 + norm * 2.5).toFixed(2);
+            return {
+              pct,
+              yPct: exactYPct ?? 0.52,
+              time: formatTimeFromPct(pct),
+              value: `${val} ms`,
+            };
+          }}
         />
 
         <TelemetryCard
@@ -90,10 +102,10 @@ export function Metrics() {
           pathD="M 0,55 C 250,54 500,53 750,52 C 900,52 950,51 1000,50"
           yAxisLabels={['30M', '20M', '10M', '0M']}
           tooltipMetricName="Memory RSS"
-          onHoverCompute={(pct) => ({
+          onHoverCompute={(pct, _svgX, exactYPct) => ({
             pct,
-            yPct: 0.45,
-            time: 'Process Memory',
+            yPct: exactYPct ?? 0.45,
+            time: formatTimeFromPct(pct),
             value: '18.4 MB',
           })}
         />

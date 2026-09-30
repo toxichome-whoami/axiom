@@ -1,8 +1,10 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { NavPath } from '../components/Layout';
 import { SlideOver } from '../components/ui/SlideOver';
 import { DataTable, Column } from '../components/shared/DataTable';
-import { TelemetryCard } from '../components/shared/TelemetryCard';
+import { TelemetryCard, formatTimeFromPct } from '../components/shared/TelemetryCard';
+import { CustomSelect } from '../components/shared/CustomSelect';
+import { formatEngine } from '../types';
 import { Database, Key, RefreshCw, Search, FileText } from 'lucide-react';
 
 interface OverviewProps {
@@ -33,6 +35,13 @@ interface AuditRow {
   status: '200 OK' | '403 Forbidden';
 }
 
+export interface FilterRule {
+  id: string;
+  field: string;
+  operator: 'contains' | 'equals' | 'starts_with';
+  value: string;
+}
+
 export function Overview({ onNavigate }: OverviewProps) {
   const [activeTab, setActiveTab] = useState<'databases' | 'keys' | 'audit'>('databases');
   const [searchFilter, setSearchFilter] = useState('');
@@ -51,6 +60,64 @@ export function Overview({ onNavigate }: OverviewProps) {
   const [keyRate, setKeyRate] = useState(10000);
   const [keyUpdatedNotice, setKeyUpdatedNotice] = useState(false);
 
+  // Filter & Display options state
+  const [showFilters, setShowFilters] = useState(false);
+  const filtersRef = useRef<HTMLDivElement | null>(null);
+
+  const [showDisplayOptions, setShowDisplayOptions] = useState(false);
+  const displayOptionsRef = useRef<HTMLDivElement | null>(null);
+
+  const [matchMode, setMatchMode] = useState<'all' | 'any'>('all');
+
+  const [dbFilterRules, setDbFilterRules] = useState<FilterRule[]>([]);
+  const [appliedDbFilterRules, setAppliedDbFilterRules] = useState<FilterRule[]>([]);
+
+  const [keyFilterRules, setKeyFilterRules] = useState<FilterRule[]>([]);
+  const [appliedKeyFilterRules, setAppliedKeyFilterRules] = useState<FilterRule[]>([]);
+
+  const [auditFilterRules, setAuditFilterRules] = useState<FilterRule[]>([]);
+  const [appliedAuditFilterRules, setAppliedAuditFilterRules] = useState<FilterRule[]>([]);
+
+  // Visible columns map per tab
+  const [visibleDbCols, setVisibleDbCols] = useState<Record<string, boolean>>({
+    status: true,
+    alias: true,
+    engine: true,
+    conns: true,
+    latency: true,
+  });
+
+  const [visibleKeyCols, setVisibleKeyCols] = useState<Record<string, boolean>>({
+    status: true,
+    name: true,
+    role: true,
+    rateLimit: true,
+    created: true,
+  });
+
+  const [visibleAuditCols, setVisibleAuditCols] = useState<Record<string, boolean>>({
+    time: true,
+    actor: true,
+    action: true,
+    target: true,
+    status: true,
+  });
+
+  useEffect(() => {
+    if (!showFilters && !showDisplayOptions) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (showFilters && filtersRef.current && !filtersRef.current.contains(target)) {
+        setShowFilters(false);
+      }
+      if (showDisplayOptions && displayOptionsRef.current && !displayOptionsRef.current.contains(target)) {
+        setShowDisplayOptions(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showFilters, showDisplayOptions]);
+
   const handleRefresh = () => {
     setIsRefreshing(true);
     setTimeout(() => setIsRefreshing(false), 500);
@@ -60,21 +127,21 @@ export function Overview({ onNavigate }: OverviewProps) {
   const rawDbData: DatabaseRow[] = [
     {
       alias: 'local_db',
-      engine: 'POSTGRESQL',
+      engine: 'PostgreSQL',
       conns: `${dbMinConns} – ${dbMaxConns} active`,
       status: 'Ready',
       latency: '0.42 ms',
     },
     {
       alias: 'analytics_clickhouse',
-      engine: 'CLICKHOUSE',
+      engine: 'ClickHouse',
       conns: '2 – 20 active',
       status: 'Ready',
       latency: '1.15 ms',
     },
     {
       alias: 'turso_edge_cache',
-      engine: 'LIBSQL',
+      engine: 'LibSQL',
       conns: '1 – 5 active',
       status: 'Ready',
       latency: '0.18 ms',
@@ -112,33 +179,212 @@ export function Overview({ onNavigate }: OverviewProps) {
     { time: '12:00:00', actor: 'system', action: 'gateway.boot', target: '0.0.0.0:4500', status: '200 OK' },
   ];
 
+  function matchesRule(itemVal: string, operator: string, ruleVal: string): boolean {
+    const i = (itemVal || '').toLowerCase();
+    const r = (ruleVal || '').toLowerCase();
+    if (operator === 'equals') return i === r;
+    if (operator === 'starts_with') return i.startsWith(r);
+    return i.includes(r);
+  }
+
+  const currentFilterFieldOptions = useMemo(() => {
+    if (activeTab === 'databases') {
+      return [
+        { value: 'alias', label: 'Database Alias' },
+        { value: 'engine', label: 'Engine' },
+        { value: 'status', label: 'Status' },
+      ];
+    }
+    if (activeTab === 'keys') {
+      return [
+        { value: 'name', label: 'Key Identifier' },
+        { value: 'role', label: 'Role' },
+        { value: 'status', label: 'Status' },
+      ];
+    }
+    return [
+      { value: 'actor', label: 'Actor' },
+      { value: 'action', label: 'Event Action' },
+      { value: 'target', label: 'Target URI / Pool' },
+      { value: 'status', label: 'Status Result' },
+    ];
+  }, [activeTab]);
+
+  const currentDisplayColumns = useMemo(() => {
+    if (activeTab === 'databases') {
+      return [
+        { id: 'status', label: 'Status' },
+        { id: 'alias', label: 'Database Alias' },
+        { id: 'engine', label: 'Engine' },
+        { id: 'conns', label: 'Pool Connections' },
+        { id: 'latency', label: 'Ping Latency' },
+      ];
+    }
+    if (activeTab === 'keys') {
+      return [
+        { id: 'status', label: 'Status' },
+        { id: 'name', label: 'Key Identifier' },
+        { id: 'role', label: 'Role' },
+        { id: 'rateLimit', label: 'Rate Limit' },
+        { id: 'created', label: 'Created Date' },
+      ];
+    }
+    return [
+      { id: 'time', label: 'Timestamp' },
+      { id: 'actor', label: 'Actor' },
+      { id: 'action', label: 'Event Action' },
+      { id: 'target', label: 'Target URI / Pool' },
+      { id: 'status', label: 'Status Result' },
+    ];
+  }, [activeTab]);
+
+  const currentFilterRules = activeTab === 'databases' ? dbFilterRules : activeTab === 'keys' ? keyFilterRules : auditFilterRules;
+  const currentAppliedFilterRules = activeTab === 'databases' ? appliedDbFilterRules : activeTab === 'keys' ? appliedKeyFilterRules : appliedAuditFilterRules;
+
+  const setCurrentFilterRules = (fn: (prev: FilterRule[]) => FilterRule[]) => {
+    if (activeTab === 'databases') setDbFilterRules(fn);
+    else if (activeTab === 'keys') setKeyFilterRules(fn);
+    else setAuditFilterRules(fn);
+  };
+
+  const setAppliedRules = (rules: FilterRule[]) => {
+    if (activeTab === 'databases') setAppliedDbFilterRules(rules);
+    else if (activeTab === 'keys') setAppliedKeyFilterRules(rules);
+    else setAppliedAuditFilterRules(rules);
+  };
+
+  const handleAddRule = () => {
+    const newId = String(Date.now());
+    setCurrentFilterRules((prev) => [
+      ...prev,
+      { id: newId, field: currentFilterFieldOptions[0].value, operator: 'contains', value: '' },
+    ]);
+  };
+
+  const handleRemoveRule = (id: string) => {
+    setCurrentFilterRules((prev) => prev.filter((r) => r.id !== id));
+  };
+
+  const handleUpdateRule = (id: string, updates: Partial<FilterRule>) => {
+    setCurrentFilterRules((prev) =>
+      prev.map((r) => (r.id === id ? { ...r, ...updates } : r))
+    );
+  };
+
+  const handleApplyFilters = () => {
+    setAppliedRules(currentFilterRules.filter((r) => r.value.trim() !== ''));
+    setShowFilters(false);
+  };
+
+  const handleClearFilters = () => {
+    setCurrentFilterRules(() => []);
+    setAppliedRules([]);
+    setShowFilters(false);
+  };
+
+  const currentVisibleMap = activeTab === 'databases' ? visibleDbCols : activeTab === 'keys' ? visibleKeyCols : visibleAuditCols;
+  const toggleColVisibility = (colId: string) => {
+    if (activeTab === 'databases') {
+      setVisibleDbCols((prev) => ({ ...prev, [colId]: !prev[colId] }));
+    } else if (activeTab === 'keys') {
+      setVisibleKeyCols((prev) => ({ ...prev, [colId]: !prev[colId] }));
+    } else {
+      setVisibleAuditCols((prev) => ({ ...prev, [colId]: !prev[colId] }));
+    }
+  };
+
+  const handleResetColumns = () => {
+    if (activeTab === 'databases') {
+      setVisibleDbCols({ status: true, alias: true, engine: true, conns: true, latency: true });
+    } else if (activeTab === 'keys') {
+      setVisibleKeyCols({ status: true, name: true, role: true, rateLimit: true, created: true });
+    } else {
+      setVisibleAuditCols({ time: true, actor: true, action: true, target: true, status: true });
+    }
+  };
+
   const filteredDbData = useMemo(() => {
-    if (!searchFilter.trim()) return rawDbData;
-    const q = searchFilter.toLowerCase();
-    return rawDbData.filter(d => d.alias.toLowerCase().includes(q) || d.engine.toLowerCase().includes(q));
-  }, [rawDbData, searchFilter]);
+    let list = rawDbData;
+    if (searchFilter.trim()) {
+      const q = searchFilter.toLowerCase();
+      list = list.filter((d) => d.alias.toLowerCase().includes(q) || d.engine.toLowerCase().includes(q));
+    }
+    if (appliedDbFilterRules.length > 0) {
+      list = list.filter((d) => {
+        const tests = appliedDbFilterRules.map((rule) => {
+          const val = ((d as unknown) as Record<string, string>)[rule.field] || '';
+          return matchesRule(val, rule.operator, rule.value);
+        });
+        return matchMode === 'any' ? tests.some(Boolean) : tests.every(Boolean);
+      });
+    }
+    return list;
+  }, [rawDbData, searchFilter, appliedDbFilterRules, matchMode]);
 
   const filteredKeyData = useMemo(() => {
-    if (!searchFilter.trim()) return rawKeyData;
-    const q = searchFilter.toLowerCase();
-    return rawKeyData.filter(k => k.name.toLowerCase().includes(q) || k.role.toLowerCase().includes(q));
-  }, [rawKeyData, searchFilter]);
+    let list = rawKeyData;
+    if (searchFilter.trim()) {
+      const q = searchFilter.toLowerCase();
+      list = list.filter((k) => k.name.toLowerCase().includes(q) || k.role.toLowerCase().includes(q));
+    }
+    if (appliedKeyFilterRules.length > 0) {
+      list = list.filter((k) => {
+        const tests = appliedKeyFilterRules.map((rule) => {
+          const val = ((k as unknown) as Record<string, string>)[rule.field] || '';
+          return matchesRule(val, rule.operator, rule.value);
+        });
+        return matchMode === 'any' ? tests.some(Boolean) : tests.every(Boolean);
+      });
+    }
+    return list;
+  }, [rawKeyData, searchFilter, appliedKeyFilterRules, matchMode]);
 
   const filteredAuditData = useMemo(() => {
-    if (!searchFilter.trim()) return rawAuditData;
-    const q = searchFilter.toLowerCase();
-    return rawAuditData.filter(a => a.actor.toLowerCase().includes(q) || a.action.toLowerCase().includes(q) || a.target.toLowerCase().includes(q));
-  }, [rawAuditData, searchFilter]);
+    let list = rawAuditData;
+    if (searchFilter.trim()) {
+      const q = searchFilter.toLowerCase();
+      list = list.filter((a) => a.actor.toLowerCase().includes(q) || a.action.toLowerCase().includes(q) || a.target.toLowerCase().includes(q));
+    }
+    if (appliedAuditFilterRules.length > 0) {
+      list = list.filter((a) => {
+        const tests = appliedAuditFilterRules.map((rule) => {
+          const val = ((a as unknown) as Record<string, string>)[rule.field] || '';
+          return matchesRule(val, rule.operator, rule.value);
+        });
+        return matchMode === 'any' ? tests.some(Boolean) : tests.every(Boolean);
+      });
+    }
+    return list;
+  }, [rawAuditData, searchFilter, appliedAuditFilterRules, matchMode]);
 
   // Table Column Definitions
   const dbColumns: Column<DatabaseRow>[] = [
+    {
+      id: 'status',
+      header: 'Status',
+      accessorKey: 'status',
+      width: 130,
+      isResizable: true,
+      className: 'pl-4 pr-3',
+      cell: (row) => (
+        <div className="flex items-center gap-2 text-[14px] text-white font-normal">
+          <span
+            className={`size-1.5 rounded-full shrink-0 ${
+              row.status === 'Ready' ? 'bg-[#30a46c]' : 'bg-[#f59e0b]'
+            }`}
+          />
+          <span>{row.status}</span>
+        </div>
+      ),
+    },
     {
       id: 'alias',
       header: 'Database Alias',
       accessorKey: 'alias',
       isSortable: true,
+      isResizable: true,
       width: 240,
-      className: 'pl-4 pr-3',
+      className: 'px-3',
       cell: (row) => (
         <div className="flex items-center gap-2.5">
           <Database className="w-4 h-4 text-[#8c8c8c] shrink-0" />
@@ -151,10 +397,11 @@ export function Overview({ onNavigate }: OverviewProps) {
       header: 'Engine',
       accessorKey: 'engine',
       width: 170,
+      isResizable: true,
       className: 'px-3',
       cell: (row) => (
         <span className="text-[14px] text-[#cccccc] font-normal">
-          {row.engine}
+          {formatEngine(row.engine)}
         </span>
       ),
     },
@@ -163,6 +410,7 @@ export function Overview({ onNavigate }: OverviewProps) {
       header: 'Pool Connections',
       accessorKey: 'conns',
       width: 170,
+      isResizable: true,
       className: 'px-3',
       cell: (row) => (
         <span className="tabular-nums text-[14px] text-[#d4d4d4] font-normal">
@@ -175,28 +423,12 @@ export function Overview({ onNavigate }: OverviewProps) {
       header: 'Ping Latency',
       accessorKey: 'latency',
       width: 140,
+      isResizable: true,
       className: 'px-3',
       cell: (row) => (
         <span className="tabular-nums text-[14px] text-[#8c8c8c] font-normal">
           {row.latency}
         </span>
-      ),
-    },
-    {
-      id: 'status',
-      header: 'Health Status',
-      accessorKey: 'status',
-      width: 150,
-      className: 'px-3',
-      cell: (row) => (
-        <div className="flex items-center gap-2 text-[14px] text-white font-normal">
-          <span
-            className={`size-1.5 rounded-full shrink-0 ${
-              row.status === 'Ready' ? 'bg-[#30a46c]' : 'bg-[#f59e0b]'
-            }`}
-          />
-          <span>{row.status}</span>
-        </div>
       ),
     },
     {
@@ -225,15 +457,33 @@ export function Overview({ onNavigate }: OverviewProps) {
       ),
     },
   ];
-
   const keyColumns: Column<KeyRow>[] = [
+    {
+      id: 'status',
+      header: 'Status',
+      accessorKey: 'status',
+      width: 130,
+      isResizable: true,
+      className: 'pl-4 pr-3',
+      cell: (row) => (
+        <div className="flex items-center gap-2 text-[14px] text-white font-normal">
+          <span
+            className={`size-1.5 rounded-full shrink-0 ${
+              row.status === 'Active' ? 'bg-[#30a46c]' : 'bg-[#e5484d]'
+            }`}
+          />
+          <span>{row.status}</span>
+        </div>
+      ),
+    },
     {
       id: 'name',
       header: 'Key Identifier',
       accessorKey: 'name',
       isSortable: true,
+      isResizable: true,
       width: 240,
-      className: 'pl-4 pr-3',
+      className: 'px-3',
       cell: (row) => (
         <div className="flex items-center gap-2.5">
           <Key className="w-4 h-4 text-[#8c8c8c] shrink-0" />
@@ -246,6 +496,7 @@ export function Overview({ onNavigate }: OverviewProps) {
       header: 'Role',
       accessorKey: 'role',
       width: 170,
+      isResizable: true,
       className: 'px-3',
       cell: (row) => (
         <span className="text-[14px] text-[#cccccc] font-normal">
@@ -258,6 +509,7 @@ export function Overview({ onNavigate }: OverviewProps) {
       header: 'Rate Limit',
       accessorKey: 'rateLimit',
       width: 170,
+      isResizable: true,
       className: 'px-3',
       cell: (row) => (
         <span className="tabular-nums text-[14px] text-[#8c8c8c] font-normal">
@@ -270,28 +522,12 @@ export function Overview({ onNavigate }: OverviewProps) {
       header: 'Created Date',
       accessorKey: 'created',
       width: 150,
+      isResizable: true,
       className: 'px-3',
       cell: (row) => (
         <span className="tabular-nums text-[14px] text-[#8c8c8c] font-normal">
           {row.created}
         </span>
-      ),
-    },
-    {
-      id: 'status',
-      header: 'Status',
-      accessorKey: 'status',
-      width: 140,
-      className: 'px-3',
-      cell: (row) => (
-        <div className="flex items-center gap-2 text-[14px] text-white font-normal">
-          <span
-            className={`size-1.5 rounded-full shrink-0 ${
-              row.status === 'Active' ? 'bg-[#30a46c]' : 'bg-[#e5484d]'
-            }`}
-          />
-          <span>{row.status}</span>
-        </div>
       ),
     },
     {
@@ -327,6 +563,7 @@ export function Overview({ onNavigate }: OverviewProps) {
       header: 'Timestamp',
       accessorKey: 'time',
       width: 180,
+      isResizable: true,
       className: 'pl-4 pr-3',
       cell: (row) => (
         <span className="tabular-nums text-[14px] text-[#8c8c8c] font-normal">
@@ -339,6 +576,7 @@ export function Overview({ onNavigate }: OverviewProps) {
       header: 'Actor',
       accessorKey: 'actor',
       width: 170,
+      isResizable: true,
       className: 'px-3',
       cell: (row) => (
         <span className="font-medium text-white text-[14px]">{row.actor}</span>
@@ -349,6 +587,7 @@ export function Overview({ onNavigate }: OverviewProps) {
       header: 'Event Action',
       accessorKey: 'action',
       width: 180,
+      isResizable: true,
       className: 'px-3',
       cell: (row) => (
         <span className="text-[14px] text-[#cccccc] font-normal">
@@ -372,6 +611,8 @@ export function Overview({ onNavigate }: OverviewProps) {
       id: 'status',
       header: 'Status Result',
       width: 140,
+      isResizable: true,
+      resizerPosition: 'before',
       headerClassName: 'justify-end pr-4 text-right',
       className: 'pl-3 pr-4 justify-end',
       cell: (row) => (
@@ -388,6 +629,18 @@ export function Overview({ onNavigate }: OverviewProps) {
       ),
     },
   ];
+
+  const activeDbColumns = useMemo(() => {
+    return dbColumns.filter((col) => col.id === 'actions' || visibleDbCols[col.id] !== false);
+  }, [dbColumns, visibleDbCols]);
+
+  const activeKeyColumns = useMemo(() => {
+    return keyColumns.filter((col) => col.id === 'actions' || visibleKeyCols[col.id] !== false);
+  }, [keyColumns, visibleKeyCols]);
+
+  const activeAuditColumns = useMemo(() => {
+    return auditColumns.filter((col) => visibleAuditCols[col.id] !== false);
+  }, [auditColumns, visibleAuditCols]);
 
   function handleSaveDb() {
     setDbUpdatedNotice(true);
@@ -424,36 +677,6 @@ export function Overview({ onNavigate }: OverviewProps) {
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin opacity-50' : ''}`} />
           </button>
-
-          {/* New API Key button */}
-          <button
-            type="button"
-            onClick={() => onNavigate('/ui/keys')}
-            className="h-8 px-3 rounded-[8px] border border-[#262626] bg-[#0c0c0c] hover:bg-[#141414] hover:border-[#383838] text-[13px] font-medium text-[#cccccc] hover:text-white transition-colors cursor-pointer inline-flex items-center gap-1.5"
-          >
-            <Key className="w-3.5 h-3.5 text-[#8c8c8c]" />
-            <span>New API Key</span>
-          </button>
-
-          {/* Connect Database primary button */}
-          <button
-            type="button"
-            onClick={() => onNavigate('/ui/databases')}
-            className="group relative inline-flex items-center justify-center h-8 px-3.5 rounded-[8px] font-medium text-white shadow-xs outline-none cursor-pointer overflow-hidden ring-1 ring-[#1d4ed8] bg-[#2563eb] text-[13px]"
-          >
-            <span
-              aria-hidden="true"
-              className="pointer-events-none absolute inset-0 rounded-[inherit] bg-gradient-to-b from-[#3b82f6] to-[#2563eb] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2)]"
-            />
-            <span
-              aria-hidden="true"
-              className="pointer-events-none absolute inset-0 rounded-[inherit] bg-black opacity-0 group-hover:opacity-15 transition-opacity duration-200"
-            />
-            <span className="relative flex items-center gap-1.5">
-              <Database className="w-3.5 h-3.5" />
-              <span>Connect Database</span>
-            </span>
-          </button>
         </div>
       </div>
 
@@ -469,12 +692,16 @@ export function Overview({ onNavigate }: OverviewProps) {
           pathD="M 0,105 C 150,95 280,45 450,55 C 600,65 750,20 1000,35"
           yAxisLabels={['2k', '1.5k', '500', '0']}
           tooltipMetricName="Throughput"
-          onHoverCompute={(pct) => ({
-            pct,
-            yPct: 0.35 + Math.sin(pct * 4) * 0.15,
-            time: 'Live Telemetry',
-            value: `${Math.round(1200 + pct * 600)} req/s`,
-          })}
+          onHoverCompute={(pct, _svgX, exactYPct) => {
+            const norm = exactYPct !== undefined ? Math.max(0, Math.min(1, (116 - exactYPct * 130) / 102)) : pct;
+            const val = Math.round(950 + norm * 1150);
+            return {
+              pct,
+              yPct: exactYPct ?? 0.35,
+              time: formatTimeFromPct(pct),
+              value: `${val.toLocaleString()} req/s`,
+            };
+          }}
         />
 
         <TelemetryCard
@@ -487,12 +714,16 @@ export function Overview({ onNavigate }: OverviewProps) {
           pathD="M 0,40 C 200,35 400,28 600,32 C 800,25 900,28 1000,26"
           yAxisLabels={['100%', '95%', '90%', '80%']}
           tooltipMetricName="Cache Hit Ratio"
-          onHoverCompute={(pct) => ({
-            pct,
-            yPct: 0.25,
-            time: 'Live Window',
-            value: '99.4%',
-          })}
+          onHoverCompute={(pct, _svgX, exactYPct) => {
+            const norm = exactYPct !== undefined ? Math.max(0, Math.min(1, (116 - exactYPct * 130) / 102)) : 0.8;
+            const val = (98.9 + norm * 0.8).toFixed(1);
+            return {
+              pct,
+              yPct: exactYPct ?? 0.25,
+              time: formatTimeFromPct(pct),
+              value: `${val}%`,
+            };
+          }}
         />
 
         <TelemetryCard
@@ -505,12 +736,16 @@ export function Overview({ onNavigate }: OverviewProps) {
           pathD="M 0,85 C 200,80 400,95 600,60 C 800,70 900,45 1000,50"
           yAxisLabels={['2.0ms', '1.0ms', '0.5ms', '0ms']}
           tooltipMetricName="p95 Latency"
-          onHoverCompute={(pct) => ({
-            pct,
-            yPct: 0.45,
-            time: 'Recent Requests',
-            value: `${(0.65 + pct * 0.2).toFixed(2)} ms`,
-          })}
+          onHoverCompute={(pct, _svgX, exactYPct) => {
+            const norm = exactYPct !== undefined ? Math.max(0, Math.min(1, (116 - exactYPct * 130) / 102)) : 0.5;
+            const val = (0.45 + norm * 1.55).toFixed(2);
+            return {
+              pct,
+              yPct: exactYPct ?? 0.45,
+              time: formatTimeFromPct(pct),
+              value: `${val} ms`,
+            };
+          }}
         />
 
         <TelemetryCard
@@ -523,21 +758,25 @@ export function Overview({ onNavigate }: OverviewProps) {
           pathD="M 0,90 C 250,92 500,80 750,75 C 900,78 950,72 1000,70"
           yAxisLabels={['35', '20', '10', '0']}
           tooltipMetricName="Active Connections"
-          onHoverCompute={(pct) => ({
-            pct,
-            yPct: 0.65,
-            time: 'Connection Saturation',
-            value: `${Math.round(2 + pct * 3)} active`,
-          })}
+          onHoverCompute={(pct, _svgX, exactYPct) => {
+            const norm = exactYPct !== undefined ? Math.max(0, Math.min(1, (116 - exactYPct * 130) / 102)) : 0.4;
+            const val = Math.max(1, Math.round(1 + norm * 6));
+            return {
+              pct,
+              yPct: exactYPct ?? 0.65,
+              time: formatTimeFromPct(pct),
+              value: `${val} / 35 active`,
+            };
+          }}
         />
       </div>
 
-      {/* Table Controls Toolbar & Segmented Tabs (Matches binary_alive Logs.tsx exactly) */}
+      {/* Table Controls Toolbar & Segmented Tabs (Matches binary_alive style exactly) */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-1 select-none font-sans">
         {/* Search filter input */}
         <label
           title="Search current view (/ or Ctrl+K)"
-          className="relative flex items-center h-9 rounded-[8px] bg-transparent border border-[#262626] focus-within:border-[#2f80ed] transition-colors px-3 gap-2 w-full sm:w-[280px] md:w-[320px]"
+          className="relative flex items-center h-9 rounded-[8px] bg-transparent border border-[#262626] focus-within:border-[#2f80ed] transition-colors px-3 gap-2 w-full sm:w-[260px] md:w-[300px]"
         >
           <Search className="w-3.5 h-3.5 text-[#8c8c8c] shrink-0" />
           <input
@@ -559,53 +798,289 @@ export function Overview({ onNavigate }: OverviewProps) {
           )}
         </label>
 
-        {/* Tab Switcher (Segmented Control matching binary_alive with zero layout shift) */}
-        <div className="inline-flex items-center p-0.5 rounded-[8px] bg-transparent border border-[#262626]">
-          <button
-            type="button"
-            onClick={() => setActiveTab('databases')}
-            className={`flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[14px] font-medium transition-colors duration-75 cursor-pointer font-sans outline-none focus:outline-none border ${
-              activeTab === 'databases'
-                ? 'bg-[#161616] text-white border-[#333333]'
-                : 'text-[#8c8c8c] hover:text-white hover:bg-[#141414] border-transparent'
-            }`}
-          >
-            <Database className="w-4 h-4 shrink-0" />
-            <span>Databases</span>
-          </button>
+        {/* Right cluster: Filters, Display options, and Segmented Tab Switcher */}
+        <div className="flex flex-wrap items-center gap-2 font-sans">
+          {/* Filters dropdown button & popover */}
+          <div className="relative" ref={filtersRef}>
+            <button
+              type="button"
+              onClick={() => {
+                setShowFilters((prev) => {
+                  const next = !prev;
+                  if (next) {
+                    setShowDisplayOptions(false);
+                    if (currentAppliedFilterRules.length > 0) {
+                      setCurrentFilterRules(() => currentAppliedFilterRules.map((r) => ({ ...r })));
+                    } else if (currentFilterRules.length === 0) {
+                      setCurrentFilterRules(() => [
+                        { id: '1', field: currentFilterFieldOptions[0].value, operator: 'contains', value: '' },
+                      ]);
+                    }
+                  }
+                  return next;
+                });
+              }}
+              className={`flex items-center gap-1.5 h-9 px-3 rounded-[8px] bg-transparent border text-[14px] font-medium transition-colors cursor-pointer shrink-0 font-sans ${
+                showFilters || currentAppliedFilterRules.length > 0
+                  ? 'border-[#444444] text-white bg-[#141414]'
+                  : 'border-[#262626] text-white hover:bg-[#141414] hover:border-[#383838]'
+              }`}
+              title="Filter records"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="14"
+                height="14"
+                fill="currentColor"
+                viewBox="0 0 256 256"
+                className="text-[#8c8c8c] shrink-0"
+              >
+                <path d="M230.6,49.53A15.81,15.81,0,0,0,216,40H40A16,16,0,0,0,28.19,66.76l.08.09L96,139.17V216a16,16,0,0,0,24.87,13.32l32-21.34A16,16,0,0,0,160,194.66V139.17l67.74-72.32.08-.09A15.8,15.8,0,0,0,230.6,49.53ZM40,56h0Zm106.18,74.58A8,8,0,0,0,144,136v58.66L112,216V136a8,8,0,0,0-2.16-5.47L40,56H216Z" />
+              </svg>
+              <span>Filters</span>
+              {currentAppliedFilterRules.length > 0 && (
+                <span className="text-[12px] text-[#8c8c8c] font-normal font-mono">
+                  ({currentAppliedFilterRules.length})
+                </span>
+              )}
+            </button>
 
-          <button
-            type="button"
-            onClick={() => setActiveTab('keys')}
-            className={`flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[14px] font-medium transition-colors duration-75 cursor-pointer font-sans outline-none focus:outline-none border ${
-              activeTab === 'keys'
-                ? 'bg-[#161616] text-white border-[#333333]'
-                : 'text-[#8c8c8c] hover:text-white hover:bg-[#141414] border-transparent'
-            }`}
-          >
-            <Key className="w-4 h-4 shrink-0" />
-            <span>API Keys</span>
-          </button>
+            {showFilters && (
+              <div className="absolute right-0 top-10 w-[540px] max-w-[calc(100vw-32px)] rounded-[8px] bg-[#0c0c0c] border border-[#262626] shadow-2xl p-4 z-50 select-none animate-in fade-in font-sans">
+                {/* Header */}
+                <div className="flex items-center justify-between pb-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[14px] font-semibold text-white font-sans">
+                      {activeTab === 'databases' ? 'Database Filters' : activeTab === 'keys' ? 'API Key Filters' : 'Audit Filters'}
+                    </span>
+                    {currentFilterRules.length >= 2 && (
+                      <button
+                        type="button"
+                        onClick={() => setMatchMode((prev) => (prev === 'any' ? 'all' : 'any'))}
+                        className="px-2.5 py-0.5 rounded text-[13px] text-[#cccccc] hover:text-white bg-[#141414] border border-[#2e2e2e] hover:border-[#444444] transition-colors cursor-pointer font-sans"
+                      >
+                        Match {matchMode === 'any' ? 'any (OR)' : 'all (AND)'}
+                      </button>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowFilters(false)}
+                    className="text-[#888888] hover:text-white transition-colors cursor-pointer text-[14px] p-1 leading-none"
+                    title="Close filters"
+                  >
+                    ✕
+                  </button>
+                </div>
 
-          <button
-            type="button"
-            onClick={() => setActiveTab('audit')}
-            className={`flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[14px] font-medium transition-colors duration-75 cursor-pointer font-sans outline-none focus:outline-none border ${
-              activeTab === 'audit'
-                ? 'bg-[#161616] text-white border-[#333333]'
-                : 'text-[#8c8c8c] hover:text-white hover:bg-[#141414] border-transparent'
-            }`}
-          >
-            <FileText className="w-4 h-4 shrink-0" />
-            <span>Audit Trail</span>
-          </button>
+                {/* Rules List */}
+                <div className={`space-y-2.5 ${currentFilterRules.length > 3 ? 'max-h-[320px] overflow-y-auto pr-0.5' : ''}`}>
+                  {currentFilterRules.map((rule) => (
+                    <div key={rule.id} className="flex items-center gap-2">
+                      <CustomSelect
+                        value={rule.field}
+                        options={currentFilterFieldOptions}
+                        onChange={(val) => handleUpdateRule(rule.id, { field: val })}
+                        className="w-32 sm:w-36 shrink-0"
+                        menuWidth="w-40"
+                      />
+
+                      <CustomSelect
+                        value={rule.operator}
+                        options={[
+                          { value: 'contains', label: 'contains' },
+                          { value: 'equals', label: 'equals' },
+                          { value: 'starts_with', label: 'starts with' },
+                        ]}
+                        onChange={(val) => handleUpdateRule(rule.id, { operator: val as 'contains' | 'equals' | 'starts_with' })}
+                        className="w-32 sm:w-36 shrink-0"
+                        menuWidth="w-44"
+                      />
+
+                      <input
+                        type="text"
+                        value={rule.value}
+                        onChange={(e) => handleUpdateRule(rule.id, { value: e.target.value })}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') handleApplyFilters();
+                        }}
+                        placeholder="Filter value..."
+                        className="flex-1 min-w-0 h-9 px-3 rounded-[8px] bg-[#141414] border border-[#262626] hover:border-[#383838] focus:border-[#2f80ed] text-[14px] text-white placeholder-[#555555] outline-none transition-colors font-sans"
+                      />
+
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveRule(rule.id)}
+                        className="w-8 h-8 flex items-center justify-center text-[#777777] hover:text-white cursor-pointer transition-colors shrink-0"
+                        title="Delete filter rule"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="currentColor" viewBox="0 0 256 256">
+                          <path d="M216,48H176V40a24,24,0,0,0-24-24H104A24,24,0,0,0,80,40v8H40a8,8,0,0,0,0,16h8V208a16,16,0,0,0,16,16H192a16,16,0,0,0,16-16V64h8a8,8,0,0,0,0-16ZM96,40a8,8,0,0,1,8-8h48a8,8,0,0,1,8,8v8H96Zm96,168H64V64H192ZM112,104v64a8,8,0,0,1-16,0V104a8,8,0,0,1,16,0Zm48,0v64a8,8,0,0,1-16,0V104a8,8,0,0,1,16,0Z" />
+                        </svg>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Footer Controls */}
+                <div className="flex items-center justify-between pt-2.5 mt-1 font-sans">
+                  <button
+                    type="button"
+                    onClick={handleAddRule}
+                    className="text-[14px] text-white hover:text-[#2f80ed] font-medium flex items-center gap-1.5 transition-colors cursor-pointer font-sans"
+                  >
+                    <span>+ Add filter</span>
+                  </button>
+                  <div className="flex items-center gap-3">
+                    <span className="text-[12px] text-[#666666] font-sans">Press Enter to apply</span>
+                    {currentAppliedFilterRules.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={handleClearFilters}
+                        className="text-[14px] text-[#888888] hover:text-white transition-colors cursor-pointer font-sans"
+                      >
+                        Clear
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={handleApplyFilters}
+                      className="group relative flex shrink-0 items-center justify-center h-8 px-3.5 rounded-[8px] font-medium text-white shadow-xs outline-none cursor-pointer disabled:opacity-50 overflow-hidden ring-1 ring-[#1d4ed8] bg-[#2563eb] font-sans"
+                    >
+                      <span aria-hidden="true" className="pointer-events-none absolute inset-0 rounded-[inherit] bg-gradient-to-b from-[#3b82f6] to-[#2563eb] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2)]" />
+                      <span aria-hidden="true" className="pointer-events-none absolute inset-0 rounded-[inherit] bg-black opacity-0 group-hover:opacity-15 transition-opacity duration-200" />
+                      <span className="relative flex items-center gap-1.5 text-[14px] font-sans">
+                        Apply filters
+                      </span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Display options dropdown */}
+          <div className="relative" ref={displayOptionsRef}>
+            <button
+              type="button"
+              onClick={() => {
+                setShowDisplayOptions((prev) => !prev);
+                setShowFilters(false);
+              }}
+              className={`flex items-center gap-1.5 h-9 px-3 rounded-[8px] bg-transparent border text-[14px] font-medium transition-colors cursor-pointer shrink-0 font-sans ${
+                showDisplayOptions
+                  ? 'border-[#444444] text-white bg-[#141414]'
+                  : 'border-[#262626] text-white hover:bg-[#141414] hover:border-[#383838]'
+              }`}
+              title="Toggle visible table columns"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 256 256" className="text-[#8c8c8c] shrink-0">
+                <path d="M222.87,74.56,134.87,23.75a16,16,0,0,0-15.74,0L31.13,74.56A16,16,0,0,0,23.26,88.4v101.6a16,16,0,0,0,7.87,13.84l88,50.81a16,16,0,0,0,15.74,0l88-50.81a16,16,0,0,0,7.87-13.84V88.4A16,16,0,0,0,222.87,74.56ZM127,160a32,32,0,1,1,32-32A32,32,0,0,1,127,160Z" />
+              </svg>
+              <span>Display options</span>
+            </button>
+
+            {showDisplayOptions && (
+              <div className="absolute right-0 top-10 w-52 rounded-md bg-[#0c0c0c] border border-[#262626] shadow-xl p-1 z-40 select-none font-sans">
+                {currentDisplayColumns.map((col) => {
+                  const isVisible = currentVisibleMap[col.id] !== false;
+                  return (
+                    <button
+                      key={col.id}
+                      type="button"
+                      onClick={() => toggleColVisibility(col.id)}
+                      className="w-full flex items-center justify-between px-2.5 py-1.5 rounded text-[14px] text-[#cccccc] hover:text-white hover:bg-[#1a1a1a] transition-colors cursor-pointer font-sans"
+                    >
+                      <span className={isVisible ? 'text-white' : 'text-[#777777]'}>
+                        {col.label}
+                      </span>
+                      {isVisible && (
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          width="14"
+                          height="14"
+                          viewBox="0 0 256 256"
+                          fill="currentColor"
+                          className="text-[#2f80ed] shrink-0"
+                        >
+                          <path d="M229.66,77.66l-128,128a8,8,0,0,1-11.32,0l-56-56a8,8,0,0,1,11.32-11.32L96,188.69,218.34,66.34a8,8,0,0,1,11.32,11.32Z" />
+                        </svg>
+                      )}
+                    </button>
+                  );
+                })}
+                <div className="-mx-1 my-1 border-t border-[#222222]" />
+                <button
+                  type="button"
+                  onClick={handleResetColumns}
+                  className="w-full text-left px-2.5 py-1.5 rounded text-[14px] text-[#888888] hover:text-white hover:bg-[#1a1a1a] transition-colors cursor-pointer font-sans"
+                >
+                  Reset columns
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Tab Switcher (Segmented Control matching binary_alive with zero layout shift) */}
+          <div className="inline-flex items-center p-0.5 rounded-[8px] bg-transparent border border-[#262626]">
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTab('databases');
+                setShowFilters(false);
+                setShowDisplayOptions(false);
+              }}
+              className={`flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[14px] font-medium transition-colors duration-75 cursor-pointer font-sans outline-none focus:outline-none border ${
+                activeTab === 'databases'
+                  ? 'bg-[#161616] text-white border-[#333333]'
+                  : 'text-[#8c8c8c] hover:text-white hover:bg-[#141414] border-transparent'
+              }`}
+            >
+              <Database className="w-4 h-4 shrink-0" />
+              <span>Databases</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTab('keys');
+                setShowFilters(false);
+                setShowDisplayOptions(false);
+              }}
+              className={`flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[14px] font-medium transition-colors duration-75 cursor-pointer font-sans outline-none focus:outline-none border ${
+                activeTab === 'keys'
+                  ? 'bg-[#161616] text-white border-[#333333]'
+                  : 'text-[#8c8c8c] hover:text-white hover:bg-[#141414] border-transparent'
+              }`}
+            >
+              <Key className="w-4 h-4 shrink-0" />
+              <span>API Keys</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTab('audit');
+                setShowFilters(false);
+                setShowDisplayOptions(false);
+              }}
+              className={`flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[14px] font-medium transition-colors duration-75 cursor-pointer font-sans outline-none focus:outline-none border ${
+                activeTab === 'audit'
+                  ? 'bg-[#161616] text-white border-[#333333]'
+                  : 'text-[#8c8c8c] hover:text-white hover:bg-[#141414] border-transparent'
+              }`}
+            >
+              <FileText className="w-4 h-4 shrink-0" />
+              <span>Audit Trail</span>
+            </button>
+          </div>
         </div>
       </div>
 
       {/* DataTable direct render (No duplicate outer border wrapper) */}
       {activeTab === 'databases' && (
         <DataTable
-          columns={dbColumns}
+          columns={activeDbColumns}
           data={filteredDbData}
           ariaLabel="Active Database Pools"
           pagination={{
@@ -620,7 +1095,7 @@ export function Overview({ onNavigate }: OverviewProps) {
 
       {activeTab === 'keys' && (
         <DataTable
-          columns={keyColumns}
+          columns={activeKeyColumns}
           data={filteredKeyData}
           ariaLabel="Configured API Keys"
           pagination={{
@@ -635,7 +1110,7 @@ export function Overview({ onNavigate }: OverviewProps) {
 
       {activeTab === 'audit' && (
         <DataTable
-          columns={auditColumns}
+          columns={activeAuditColumns}
           data={filteredAuditData}
           ariaLabel="System Audit Trail"
           pagination={{

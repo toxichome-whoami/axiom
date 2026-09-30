@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { AuditLogEntry } from '../types';
 import { DataTable, Column } from '../components/shared/DataTable';
-import { TelemetryCard } from '../components/shared/TelemetryCard';
+import { TelemetryCard, formatTimeFromPct } from '../components/shared/TelemetryCard';
 import { SlideOver } from '../components/ui/SlideOver';
 import {
   FileText,
@@ -427,12 +427,16 @@ export function Audit() {
           pathD="M 0,100 C 180,85 360,50 540,65 C 720,40 900,30 1000,28"
           yAxisLabels={['2.5k', '1.5k', '500', '0']}
           tooltipMetricName="Audit Events"
-          onHoverCompute={(pct) => ({
-            pct,
-            yPct: 0.32,
-            time: 'Live Audit Log',
-            value: `${Math.round(1100 + pct * 550)} events`,
-          })}
+          onHoverCompute={(pct, _svgX, exactYPct) => {
+            const norm = exactYPct !== undefined ? Math.max(0, Math.min(1, (116 - exactYPct * 130) / 102)) : pct;
+            const val = Math.round(1000 + norm * 800);
+            return {
+              pct,
+              yPct: exactYPct ?? 0.32,
+              time: formatTimeFromPct(pct),
+              value: `${val.toLocaleString()} events`,
+            };
+          }}
         />
 
         <TelemetryCard
@@ -445,12 +449,16 @@ export function Audit() {
           pathD="M 0,35 C 250,32 500,28 750,30 C 900,26 950,28 1000,25"
           yAxisLabels={['100%', '98%', '95%', '90%']}
           tooltipMetricName="Success Rate"
-          onHoverCompute={(pct) => ({
-            pct,
-            yPct: 0.25,
-            time: 'Security Ring',
-            value: '99.1%',
-          })}
+          onHoverCompute={(pct, _svgX, exactYPct) => {
+            const norm = exactYPct !== undefined ? Math.max(0, Math.min(1, (116 - exactYPct * 130) / 102)) : 0.8;
+            const val = (98.5 + norm * 1.2).toFixed(1);
+            return {
+              pct,
+              yPct: exactYPct ?? 0.25,
+              time: formatTimeFromPct(pct),
+              value: `${val}%`,
+            };
+          }}
         />
 
         <TelemetryCard
@@ -463,12 +471,16 @@ export function Audit() {
           pathD="M 0,85 C 200,80 400,65 600,70 C 800,55 900,50 1000,45"
           yAxisLabels={['50', '35', '15', '0']}
           tooltipMetricName="Policy Updates"
-          onHoverCompute={(pct) => ({
-            pct,
-            yPct: 0.45,
-            time: 'ArcSwap Snapshot',
-            value: `${Math.round(20 + pct * 25)} mutations`,
-          })}
+          onHoverCompute={(pct, _svgX, exactYPct) => {
+            const norm = exactYPct !== undefined ? Math.max(0, Math.min(1, (116 - exactYPct * 130) / 102)) : 0.5;
+            const val = Math.round(15 + norm * 35);
+            return {
+              pct,
+              yPct: exactYPct ?? 0.45,
+              time: formatTimeFromPct(pct),
+              value: `${val} mutations`,
+            };
+          }}
         />
 
         <TelemetryCard
@@ -481,10 +493,10 @@ export function Audit() {
           pathD="M 0,60 C 250,62 500,58 750,55 C 900,58 950,52 1000,50"
           yAxisLabels={['15', '10', '5', '0']}
           tooltipMetricName="Active Principals"
-          onHoverCompute={(pct) => ({
+          onHoverCompute={(pct, _svgX, exactYPct) => ({
             pct,
-            yPct: 0.5,
-            time: 'Connected Identities',
+            yPct: exactYPct ?? 0.5,
+            time: formatTimeFromPct(pct),
             value: '9 active',
           })}
         />

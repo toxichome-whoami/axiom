@@ -158,9 +158,9 @@ export function Tester() {
       let mockData: unknown = { acknowledged: true };
       if (activePreset.id === 'databases') {
         mockData = [
-          { alias: 'prod_pg', engine: 'POSTGRESQL', status: 'Ready' },
-          { alias: 'local_db', engine: 'POSTGRESQL', status: 'Ready' },
-          { alias: 'analytics_ch', engine: 'CLICKHOUSE', status: 'Ready' },
+          { alias: 'prod_pg', engine: 'PostgreSQL', status: 'Ready' },
+          { alias: 'local_db', engine: 'PostgreSQL', status: 'Ready' },
+          { alias: 'analytics_ch', engine: 'ClickHouse', status: 'Ready' },
         ];
       } else if (activePreset.id === 'tables') {
         mockData = ['users', 'orders', 'products', 'audit_logs', 'rate_limits'];

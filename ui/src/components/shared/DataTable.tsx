@@ -306,10 +306,10 @@ export function DataTable<T>({
                         title="Drag to resize column (double-click to reset)"
                       >
                         <span
-                          className={`w-px h-3.5 transition-colors ${
+                          className={`w-px h-4 transition-colors ${
                             resizingCol === col.id
-                              ? 'bg-[#3b82f6] h-full'
-                              : 'bg-[#262626] group-hover/resizer:bg-[#3b82f6]'
+                              ? 'bg-[#2f80ed] h-full'
+                              : 'bg-[#262626] group-hover/resizer:bg-[#2f80ed]'
                           }`}
                         />
                       </div>

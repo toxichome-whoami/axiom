@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { ArrowUpRight, ArrowDownRight } from 'lucide-react';
 
 export interface TelemetryHoverData {
@@ -30,9 +30,54 @@ export interface TelemetryCardProps {
   fillD?: string;
   yAxisLabels?: (string | number)[];
   tooltipMetricName?: string;
-  onHoverCompute?: (pct: number, svgX: number) => TelemetryHoverData | null;
+  onHoverCompute?: (pct: number, svgX: number, exactYPct?: number) => TelemetryHoverData | null;
   noData?: boolean;
   noDataId?: string;
+}
+
+export function formatTimeFromPct(pct: number): string {
+  const now = new Date();
+  const pointTime = new Date(now.getTime() - (1 - pct) * 24 * 60 * 60 * 1000);
+  const day = pointTime.getDate();
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sept', 'Oct', 'Nov', 'Dec'];
+  const month = months[pointTime.getMonth()];
+  const hh = String(pointTime.getHours()).padStart(2, '0');
+  const mm = String(pointTime.getMinutes()).padStart(2, '0');
+  const ss = String(pointTime.getSeconds()).padStart(2, '0');
+  return `${day} ${month}, ${hh}:${mm}:${ss}`;
+}
+
+export function cubicBezierY(
+  targetX: number,
+  p0: [number, number],
+  p1: [number, number],
+  p2: [number, number],
+  p3: [number, number]
+): number {
+  let low = 0;
+  let high = 1;
+  let t = 0.5;
+  for (let i = 0; i < 16; i++) {
+    t = (low + high) / 2;
+    const inv = 1 - t;
+    const x =
+      inv * inv * inv * p0[0] +
+      3 * inv * inv * t * p1[0] +
+      3 * inv * t * t * p2[0] +
+      t * t * t * p3[0];
+    if (x < targetX) {
+      low = t;
+    } else {
+      high = t;
+    }
+  }
+  const inv = 1 - t;
+  return (
+    inv * inv * inv * p0[1] +
+    3 * inv * inv * t * p1[1] +
+    3 * inv * t * t * p2[1] +
+    t * t * t * p3[1]
+  );
 }
 
 const WAVY_NO_DATA_PATH =
@@ -58,15 +103,56 @@ export const TelemetryCard: React.FC<TelemetryCardProps> = ({
   noDataId = 'nodata',
 }) => {
   const [hoverData, setHoverData] = useState<TelemetryHoverData | null>(null);
+  const pathRef = useRef<SVGPathElement>(null);
 
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!onHoverCompute || noData) return;
     const rect = e.currentTarget.getBoundingClientRect();
+    if (rect.width <= 0) return;
     const x = Math.max(0, Math.min(e.clientX - rect.left, rect.width));
     const pct = x / rect.width;
     const svgX = pct * 1000;
-    const computed = onHoverCompute(pct, svgX);
-    setHoverData(computed);
+
+    let calculatedYPct: number | null = null;
+    if (pathRef.current && typeof pathRef.current.getTotalLength === 'function') {
+      try {
+        const totalLen = pathRef.current.getTotalLength();
+        if (totalLen > 0) {
+          const startPt = pathRef.current.getPointAtLength(0);
+          const endPt = pathRef.current.getPointAtLength(totalLen);
+          if (svgX <= startPt.x) {
+            calculatedYPct = startPt.y / 130;
+          } else if (svgX >= endPt.x) {
+            calculatedYPct = endPt.y / 130;
+          } else {
+            let low = 0;
+            let high = totalLen;
+            for (let i = 0; i < 18; i++) {
+              const mid = (low + high) / 2;
+              const pt = pathRef.current.getPointAtLength(mid);
+              if (pt.x < svgX) {
+                low = mid;
+              } else {
+                high = mid;
+              }
+            }
+            const pt = pathRef.current.getPointAtLength((low + high) / 2);
+            calculatedYPct = pt.y / 130;
+          }
+        }
+      } catch {
+        // fallback
+      }
+    }
+
+    const computed = onHoverCompute(pct, svgX, calculatedYPct ?? undefined);
+    if (computed) {
+      setHoverData({
+        ...computed,
+        pct,
+        yPct: calculatedYPct !== null ? calculatedYPct : computed.yPct,
+      });
+    }
   };
 
   const gColor = gradientColor || strokeColor;
@@ -74,13 +160,13 @@ export const TelemetryCard: React.FC<TelemetryCardProps> = ({
 
   return (
     <div
-      className={`analytics-card relative flex flex-col justify-between rounded-[8px] bg-[#0c0c0c] border border-[#222222] hover:border-[#333333] transition-colors h-[200px] overflow-hidden group select-none ${
+      className={`analytics-card relative flex flex-col justify-between rounded-[8px] bg-[#0e0e0e] border border-[#222222] hover:border-[#383838] transition-colors h-[241px] overflow-hidden group select-none ${
         onClick ? 'cursor-pointer' : ''
       } ${className}`}
       onClick={onClick}
     >
       {/* Header */}
-      <div className="p-3.5 pb-0">
+      <div className="p-4 pb-0">
         <div className="flex items-center justify-between">
           <span className="text-[12px] font-normal text-[#8c8c8c] group-hover:text-[#cccccc] transition-colors font-sans">
             {title}
@@ -91,14 +177,14 @@ export const TelemetryCard: React.FC<TelemetryCardProps> = ({
                 e.stopPropagation();
                 onMenuClick(e);
               }}
-              className="text-[#555555] hover:text-gray-300 text-xs cursor-pointer font-bold leading-none p-1 rounded hover:bg-[#1a1a1a] transition-colors"
+              className="text-[#555555] hover:text-gray-300 text-[12px] cursor-pointer font-bold leading-none p-1 rounded hover:bg-[#1a1a1a] transition-colors"
             >
               •••
             </span>
           )}
         </div>
         <div className="flex items-baseline gap-2 mt-1">
-          <span className="text-[22px] font-semibold text-white tracking-[-0.02em] leading-tight font-sans tabular-nums">
+          <span className="text-[26px] font-semibold text-white tracking-[-0.02em] leading-tight font-sans tabular-nums">
             {value}
           </span>
           {subLabel && (
@@ -124,7 +210,7 @@ export const TelemetryCard: React.FC<TelemetryCardProps> = ({
 
       {/* Chart Section */}
       {noData ? (
-        <div className="relative w-full h-[125px] mt-auto flex items-end justify-center overflow-hidden">
+        <div className="relative w-full h-[160px] mt-auto flex items-end justify-center overflow-hidden">
           <svg
             aria-hidden="true"
             width="100%"
@@ -135,8 +221,8 @@ export const TelemetryCard: React.FC<TelemetryCardProps> = ({
           >
             <defs>
               <linearGradient id={`kumo-nodata-fill-${noDataId}`} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#5C5C5C" stopOpacity="0.15" />
-                <stop offset="100%" stopColor="#5C5C5C" stopOpacity="0.0" />
+                <stop offset="0%" stopColor="#5C5C5C" stopOpacity="0.2" />
+                <stop offset="100%" stopColor="#5C5C5C" stopOpacity="0.02" />
               </linearGradient>
             </defs>
             <path
@@ -153,7 +239,7 @@ export const TelemetryCard: React.FC<TelemetryCardProps> = ({
               vectorEffect="non-scaling-stroke"
             />
           </svg>
-          <div className="pointer-events-none absolute left-1/2 top-[40%] -translate-x-1/2 -translate-y-1/2 whitespace-nowrap rounded-full bg-[#141414] px-2.5 py-0.5 text-xs font-medium text-[#8c8c8c] border border-[#262626] font-sans">
+          <div className="pointer-events-none absolute left-1/2 top-[40%] -translate-x-1/2 -translate-y-1/2 whitespace-nowrap rounded-full bg-[#141414] px-2.5 py-0.5 text-[11px] font-medium text-[#8c8c8c] border border-[#262626] font-sans">
             No data
           </div>
           <span className="absolute bottom-1 right-1 pointer-events-none opacity-40">
@@ -163,7 +249,7 @@ export const TelemetryCard: React.FC<TelemetryCardProps> = ({
           </span>
         </div>
       ) : (
-        <div className="chart-graph-container relative w-full h-[125px] mt-auto select-none flex items-stretch pl-4 pr-3 overflow-hidden">
+        <div className="chart-graph-container relative w-full h-[155px] mt-auto select-none flex items-stretch pl-4 pr-3 overflow-hidden">
           <div
             className="chart-canvas relative flex-1 h-full cursor-crosshair overflow-visible"
             onMouseMove={handleMouseMove}
@@ -172,14 +258,14 @@ export const TelemetryCard: React.FC<TelemetryCardProps> = ({
             <svg className="w-full h-full block" viewBox="0 0 1000 130" preserveAspectRatio="none">
               <defs>
                 <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor={gColor} stopOpacity="0.16" />
+                  <stop offset="0%" stopColor={gColor} stopOpacity="0.25" />
                   <stop offset="100%" stopColor={gColor} stopOpacity="0.0" />
                 </linearGradient>
               </defs>
               <line className="chart-grid-line" x1="0" y1="14" x2="1000" y2="14" stroke="#1c1c1c" strokeWidth="1" />
               <line className="chart-grid-line" x1="0" y1="48" x2="1000" y2="48" stroke="#1c1c1c" strokeWidth="1" />
               <line className="chart-grid-line" x1="0" y1="82" x2="1000" y2="82" stroke="#1c1c1c" strokeWidth="1" />
-              <line className="chart-grid-line" x1="0" y1="116" x2="1000" y2="116" stroke="#222222" strokeWidth="1" />
+              <line className="chart-grid-line" x1="0" y1="116" x2="1000" y2="116" stroke="#262626" strokeWidth="1" />
 
               <path
                 d={effectiveFillD}
@@ -187,10 +273,11 @@ export const TelemetryCard: React.FC<TelemetryCardProps> = ({
                 stroke="none"
               />
               <path
+                ref={pathRef}
                 d={pathD}
                 fill="none"
                 stroke={strokeColor}
-                strokeWidth="1.5"
+                strokeWidth="1.8"
                 strokeLinejoin="round"
                 strokeLinecap="round"
                 vectorEffect="non-scaling-stroke"
@@ -201,7 +288,7 @@ export const TelemetryCard: React.FC<TelemetryCardProps> = ({
             {hoverData && (
               <div className="chart-hover-overlay pointer-events-none">
                 <div
-                  className="absolute top-[10.8%] bottom-[10.8%] w-px border-r border-dashed border-[#666666] pointer-events-none z-10"
+                  className="absolute top-[10.8%] bottom-[10.8%] w-px border-r border-dashed border-[#666666] -translate-x-1/2 pointer-events-none z-10"
                   style={{ left: `${hoverData.pct * 100}%` }}
                 />
                 <div
