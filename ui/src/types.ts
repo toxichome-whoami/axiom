@@ -68,7 +68,7 @@ export interface RbacRole {
   name: string;
   description: string;
   createdAt: string;
-  permissions: PermissionRule[];
+  permissions: { database: string; table: string; operations: ('SELECT' | 'INSERT' | 'UPDATE' | 'DELETE')[] }[];
 }
 
 export interface McpTool {

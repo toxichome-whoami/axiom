@@ -123,7 +123,7 @@ export function Metrics() {
             <div>
               <div className="flex justify-between mb-1.5 text-white">
                 <span className="text-[#cccccc]">&lt; 1 ms (L1 Cache / Hot Pipeline)</span>
-                <span className="tabular-nums text-[#3b82f6] font-medium">86.4%</span>
+                <span className="tabular-nums text-[#cccccc] font-normal">86.4%</span>
               </div>
               <div className="h-1.5 rounded-full bg-[#1a1a1a] overflow-hidden">
                 <div className="h-full bg-[#3b82f6] rounded-full" style={{ width: '86.4%' }} />
@@ -132,28 +132,28 @@ export function Metrics() {
             <div>
               <div className="flex justify-between mb-1.5 text-white">
                 <span className="text-[#cccccc]">1 – 5 ms (Local Engine Queries)</span>
-                <span className="tabular-nums text-[#30a46c] font-medium">10.8%</span>
+                <span className="tabular-nums text-[#cccccc] font-normal">10.8%</span>
               </div>
               <div className="h-1.5 rounded-full bg-[#1a1a1a] overflow-hidden">
-                <div className="h-full bg-[#30a46c] rounded-full" style={{ width: '10.8%' }} />
+                <div className="h-full bg-[#3b82f6] rounded-full" style={{ width: '10.8%' }} />
               </div>
             </div>
             <div>
               <div className="flex justify-between mb-1.5 text-white">
                 <span className="text-[#cccccc]">5 – 20 ms (Complex Analytical Queries)</span>
-                <span className="tabular-nums text-[#f59e0b] font-medium">2.4%</span>
+                <span className="tabular-nums text-[#cccccc] font-normal">2.4%</span>
               </div>
               <div className="h-1.5 rounded-full bg-[#1a1a1a] overflow-hidden">
-                <div className="h-full bg-[#f59e0b] rounded-full" style={{ width: '2.4%' }} />
+                <div className="h-full bg-[#3b82f6] rounded-full" style={{ width: '2.4%' }} />
               </div>
             </div>
             <div>
               <div className="flex justify-between mb-1.5 text-white">
                 <span className="text-[#cccccc]">&gt; 20 ms (Table Introspections)</span>
-                <span className="tabular-nums text-[#e5484d] font-medium">0.4%</span>
+                <span className="tabular-nums text-[#cccccc] font-normal">0.4%</span>
               </div>
               <div className="h-1.5 rounded-full bg-[#1a1a1a] overflow-hidden">
-                <div className="h-full bg-[#e5484d] rounded-full" style={{ width: '0.4%' }} />
+                <div className="h-full bg-[#3b82f6] rounded-full" style={{ width: '0.4%' }} />
               </div>
             </div>
           </div>
@@ -168,38 +168,29 @@ export function Metrics() {
           <div className="space-y-3.5 text-[12px]">
             <div>
               <div className="flex justify-between mb-1.5 text-white">
-                <span className="flex items-center gap-2">
-                  <span className="size-2 rounded-full bg-[#30a46c]" />
-                  <span className="text-[#cccccc]">2xx Success (200 OK, 201 Created)</span>
-                </span>
-                <span className="tabular-nums text-white font-normal">1,418,220 (99.8%)</span>
+                <span className="text-[#cccccc]">2xx Success (200 OK, 201 Created)</span>
+                <span className="tabular-nums text-[#cccccc] font-normal">1,418,220 (99.8%)</span>
               </div>
               <div className="h-1.5 rounded-full bg-[#1a1a1a] overflow-hidden">
-                <div className="h-full bg-[#30a46c] rounded-full" style={{ width: '99.8%' }} />
+                <div className="h-full bg-[#3b82f6] rounded-full" style={{ width: '99.8%' }} />
               </div>
             </div>
             <div>
               <div className="flex justify-between mb-1.5 text-white">
-                <span className="flex items-center gap-2">
-                  <span className="size-2 rounded-full bg-[#f59e0b]" />
-                  <span className="text-[#cccccc]">4xx Client Errors (WAF blocked / Bad Auth)</span>
-                </span>
-                <span className="tabular-nums text-white font-normal">2,710 (0.19%)</span>
+                <span className="text-[#cccccc]">4xx Client Errors (WAF blocked / Bad Auth)</span>
+                <span className="tabular-nums text-[#cccccc] font-normal">2,710 (0.19%)</span>
               </div>
               <div className="h-1.5 rounded-full bg-[#1a1a1a] overflow-hidden">
-                <div className="h-full bg-[#f59e0b] rounded-full" style={{ width: '1.9%' }} />
+                <div className="h-full bg-[#3b82f6] rounded-full" style={{ width: '1.9%' }} />
               </div>
             </div>
             <div>
               <div className="flex justify-between mb-1.5 text-white">
-                <span className="flex items-center gap-2">
-                  <span className="size-2 rounded-full bg-[#e5484d]" />
-                  <span className="text-[#cccccc]">5xx Gateway Failures (Timeout / Saturation)</span>
-                </span>
-                <span className="tabular-nums text-white font-normal">20 (0.01%)</span>
+                <span className="text-[#cccccc]">5xx Gateway Failures (Timeout / Saturation)</span>
+                <span className="tabular-nums text-[#cccccc] font-normal">20 (0.01%)</span>
               </div>
               <div className="h-1.5 rounded-full bg-[#1a1a1a] overflow-hidden">
-                <div className="h-full bg-[#e5484d] rounded-full" style={{ width: '0.2%' }} />
+                <div className="h-full bg-[#3b82f6] rounded-full" style={{ width: '0.2%' }} />
               </div>
             </div>
           </div>

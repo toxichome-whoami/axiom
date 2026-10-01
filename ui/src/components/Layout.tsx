@@ -49,7 +49,7 @@ export function Layout({ currentPath, onNavigate, title, children }: LayoutProps
     { label: 'Overview', path: '/ui' as NavPath, icon: LayoutDashboard, category: 'Data & Access' },
     { label: 'Database Pools', path: '/ui/databases' as NavPath, icon: Database, category: 'Data & Access' },
     { label: 'API Keys', path: '/ui/keys' as NavPath, icon: Key, category: 'Data & Access' },
-    { label: 'Roles & RBAC', path: '/ui/roles' as NavPath, icon: Shield, category: 'Data & Access' },
+    { label: 'Roles', path: '/ui/roles' as NavPath, icon: Shield, category: 'Data & Access' },
     { label: 'MCP Protocol', path: '/ui/mcp' as NavPath, icon: Bot, category: 'Protocols & Tools' },
     { label: 'API Explorer', path: '/ui/tester' as NavPath, icon: Terminal, category: 'Protocols & Tools' },
     { label: 'Metrics', path: '/ui/metrics' as NavPath, icon: Activity, category: 'Observability' },
@@ -147,7 +147,7 @@ export function Layout({ currentPath, onNavigate, title, children }: LayoutProps
         },
         {
           path: '/ui/roles' as NavPath,
-          label: 'Roles & RBAC',
+          label: 'Roles',
           icon: Shield,
         },
       ],
@@ -309,17 +309,17 @@ export function Layout({ currentPath, onNavigate, title, children }: LayoutProps
                         }}
                         title={item.label}
                         className={cn(
-                          'group/menu-button relative flex w-full min-w-0 cursor-pointer items-center rounded-[8px] outline-none min-h-[34px] py-0 text-sm font-medium transition-colors duration-150',
+                          'group/menu-button relative flex w-full min-w-0 cursor-pointer items-center rounded-[8px] outline-none min-h-[34px] py-0 text-sm font-medium transition-colors duration-200',
                           isCollapsed ? 'justify-center px-0' : 'gap-2.5 px-3',
                           isActive
                             ? 'bg-[#111111] text-white'
-                            : 'text-[#d4d4d4] hover:bg-[#161616] hover:text-white'
+                            : 'bg-transparent text-[#d4d4d4] hover:bg-[#161616] hover:text-white'
                         )}
                       >
                         <div className={cn('flex min-w-0 flex-1 items-center', isCollapsed ? 'justify-center' : 'gap-3')}>
                           <Icon
                             className={cn(
-                              'w-4 h-4 shrink-0 transition-opacity duration-150',
+                              'w-4 h-4 shrink-0 transition duration-200',
                               isActive
                                 ? 'opacity-100 text-[#3b82f6]'
                                 : 'opacity-50 group-hover/menu-button:opacity-80'

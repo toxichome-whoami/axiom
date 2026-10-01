@@ -367,13 +367,13 @@ export function Overview({ onNavigate }: OverviewProps) {
       isResizable: true,
       className: 'pl-4 pr-3',
       cell: (row) => (
-        <div className="flex items-center gap-2 text-[14px] text-white font-normal">
+        <div className="flex items-center gap-2 text-[14px] text-white font-normal truncate whitespace-nowrap" title={row.status}>
           <span
             className={`size-1.5 rounded-full shrink-0 ${
               row.status === 'Ready' ? 'bg-[#30a46c]' : 'bg-[#f59e0b]'
             }`}
           />
-          <span>{row.status}</span>
+          <span className="truncate whitespace-nowrap">{row.status}</span>
         </div>
       ),
     },
@@ -386,9 +386,9 @@ export function Overview({ onNavigate }: OverviewProps) {
       width: 240,
       className: 'px-3',
       cell: (row) => (
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-2.5 min-w-0">
           <Database className="w-4 h-4 text-[#8c8c8c] shrink-0" />
-          <span className="font-medium text-white text-[14px]">{row.alias}</span>
+          <span className="font-medium text-white text-[14px] truncate whitespace-nowrap" title={row.alias}>{row.alias}</span>
         </div>
       ),
     },
@@ -400,7 +400,7 @@ export function Overview({ onNavigate }: OverviewProps) {
       isResizable: true,
       className: 'px-3',
       cell: (row) => (
-        <span className="text-[14px] text-[#cccccc] font-normal">
+        <span className="text-[14px] text-[#cccccc] font-normal truncate whitespace-nowrap block" title={formatEngine(row.engine)}>
           {formatEngine(row.engine)}
         </span>
       ),
@@ -413,7 +413,7 @@ export function Overview({ onNavigate }: OverviewProps) {
       isResizable: true,
       className: 'px-3',
       cell: (row) => (
-        <span className="tabular-nums text-[14px] text-[#d4d4d4] font-normal">
+        <span className="tabular-nums text-[14px] text-[#d4d4d4] font-normal truncate whitespace-nowrap block" title={row.conns}>
           {row.conns}
         </span>
       ),
@@ -423,10 +423,9 @@ export function Overview({ onNavigate }: OverviewProps) {
       header: 'Ping Latency',
       accessorKey: 'latency',
       width: 140,
-      isResizable: true,
       className: 'px-3',
       cell: (row) => (
-        <span className="tabular-nums text-[14px] text-[#8c8c8c] font-normal">
+        <span className="tabular-nums text-[14px] text-[#8c8c8c] font-normal truncate whitespace-nowrap block" title={row.latency}>
           {row.latency}
         </span>
       ),
@@ -438,20 +437,13 @@ export function Overview({ onNavigate }: OverviewProps) {
       headerClassName: 'justify-end pr-4 text-right',
       className: 'pl-3 pr-4 justify-end',
       cell: () => (
-        <div className="flex items-center justify-end gap-2 w-full">
-          <button
-            type="button"
-            onClick={() => setEditDbOpen(true)}
-            className="inline-flex items-center justify-center h-7 px-3 rounded-[6px] text-[13px] font-medium leading-none text-white hover:text-white bg-transparent hover:bg-[#1a1a1a] border border-[#262626] hover:border-[#383838] transition-colors cursor-pointer shrink-0"
-          >
-            Edit
-          </button>
+        <div className="flex items-center justify-end w-full">
           <button
             type="button"
             onClick={() => onNavigate('/ui/databases')}
-            className="inline-flex items-center justify-center h-7 px-2.5 rounded-[6px] text-[13px] font-medium leading-none text-[#8c8c8c] hover:text-white bg-transparent hover:bg-[#161616] border border-transparent hover:border-[#262626] transition-colors cursor-pointer shrink-0"
+            className="inline-flex items-center justify-center h-7 px-3 rounded-[6px] text-[13px] font-medium leading-none text-[#8c8c8c] hover:text-white bg-transparent hover:bg-[#1a1a1a] border border-[#262626] hover:border-[#383838] transition-colors cursor-pointer shrink-0"
           >
-            Manage &rarr;
+            Manage
           </button>
         </div>
       ),
@@ -466,13 +458,13 @@ export function Overview({ onNavigate }: OverviewProps) {
       isResizable: true,
       className: 'pl-4 pr-3',
       cell: (row) => (
-        <div className="flex items-center gap-2 text-[14px] text-white font-normal">
+        <div className="flex items-center gap-2 text-[14px] text-white font-normal truncate whitespace-nowrap" title={row.status}>
           <span
             className={`size-1.5 rounded-full shrink-0 ${
               row.status === 'Active' ? 'bg-[#30a46c]' : 'bg-[#e5484d]'
             }`}
           />
-          <span>{row.status}</span>
+          <span className="truncate whitespace-nowrap">{row.status}</span>
         </div>
       ),
     },
@@ -485,9 +477,9 @@ export function Overview({ onNavigate }: OverviewProps) {
       width: 240,
       className: 'px-3',
       cell: (row) => (
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-2.5 min-w-0">
           <Key className="w-4 h-4 text-[#8c8c8c] shrink-0" />
-          <span className="font-medium text-white text-[14px]">{row.name}</span>
+          <span className="font-medium text-white text-[14px] truncate whitespace-nowrap" title={row.name}>{row.name}</span>
         </div>
       ),
     },
@@ -499,7 +491,7 @@ export function Overview({ onNavigate }: OverviewProps) {
       isResizable: true,
       className: 'px-3',
       cell: (row) => (
-        <span className="text-[14px] text-[#cccccc] font-normal">
+        <span className="text-[14px] text-[#cccccc] font-normal truncate whitespace-nowrap block" title={row.role}>
           {row.role}
         </span>
       ),
@@ -512,7 +504,7 @@ export function Overview({ onNavigate }: OverviewProps) {
       isResizable: true,
       className: 'px-3',
       cell: (row) => (
-        <span className="tabular-nums text-[14px] text-[#8c8c8c] font-normal">
+        <span className="tabular-nums text-[14px] text-[#8c8c8c] font-normal truncate whitespace-nowrap block" title={row.rateLimit}>
           {row.rateLimit}
         </span>
       ),
@@ -522,10 +514,9 @@ export function Overview({ onNavigate }: OverviewProps) {
       header: 'Created Date',
       accessorKey: 'created',
       width: 150,
-      isResizable: true,
       className: 'px-3',
       cell: (row) => (
-        <span className="tabular-nums text-[14px] text-[#8c8c8c] font-normal">
+        <span className="tabular-nums text-[14px] text-[#8c8c8c] font-normal truncate whitespace-nowrap block" title={row.created}>
           {row.created}
         </span>
       ),
@@ -537,20 +528,13 @@ export function Overview({ onNavigate }: OverviewProps) {
       headerClassName: 'justify-end pr-4 text-right',
       className: 'pl-3 pr-4 justify-end',
       cell: () => (
-        <div className="flex items-center justify-end gap-2 w-full">
-          <button
-            type="button"
-            onClick={() => setEditKeyOpen(true)}
-            className="inline-flex items-center justify-center h-7 px-3 rounded-[6px] text-[13px] font-medium leading-none text-white hover:text-white bg-transparent hover:bg-[#1a1a1a] border border-[#262626] hover:border-[#383838] transition-colors cursor-pointer shrink-0"
-          >
-            Modify
-          </button>
+        <div className="flex items-center justify-end w-full">
           <button
             type="button"
             onClick={() => onNavigate('/ui/keys')}
-            className="inline-flex items-center justify-center h-7 px-2.5 rounded-[6px] text-[13px] font-medium leading-none text-[#8c8c8c] hover:text-white bg-transparent hover:bg-[#161616] border border-transparent hover:border-[#262626] transition-colors cursor-pointer shrink-0"
+            className="inline-flex items-center justify-center h-7 px-3 rounded-[6px] text-[13px] font-medium leading-none text-[#8c8c8c] hover:text-white bg-transparent hover:bg-[#1a1a1a] border border-[#262626] hover:border-[#383838] transition-colors cursor-pointer shrink-0"
           >
-            Details &rarr;
+            Manage
           </button>
         </div>
       ),
@@ -566,7 +550,7 @@ export function Overview({ onNavigate }: OverviewProps) {
       isResizable: true,
       className: 'pl-4 pr-3',
       cell: (row) => (
-        <span className="tabular-nums text-[14px] text-[#8c8c8c] font-normal">
+        <span className="tabular-nums text-[14px] text-[#8c8c8c] font-normal truncate whitespace-nowrap block" title={row.time}>
           {row.time}
         </span>
       ),
@@ -579,7 +563,7 @@ export function Overview({ onNavigate }: OverviewProps) {
       isResizable: true,
       className: 'px-3',
       cell: (row) => (
-        <span className="font-medium text-white text-[14px]">{row.actor}</span>
+        <span className="font-medium text-white text-[14px] truncate whitespace-nowrap block" title={row.actor}>{row.actor}</span>
       ),
     },
     {
@@ -590,7 +574,7 @@ export function Overview({ onNavigate }: OverviewProps) {
       isResizable: true,
       className: 'px-3',
       cell: (row) => (
-        <span className="text-[14px] text-[#cccccc] font-normal">
+        <span className="text-[14px] text-[#cccccc] font-normal truncate whitespace-nowrap block" title={row.action}>
           {row.action}
         </span>
       ),
@@ -602,7 +586,7 @@ export function Overview({ onNavigate }: OverviewProps) {
       isFlex: true,
       className: 'px-3',
       cell: (row) => (
-        <span className="text-[14px] text-[#8c8c8c] font-normal truncate block" title={row.target}>
+        <span className="text-[14px] text-[#8c8c8c] font-normal truncate whitespace-nowrap block" title={row.target}>
           {row.target}
         </span>
       ),
@@ -611,18 +595,16 @@ export function Overview({ onNavigate }: OverviewProps) {
       id: 'status',
       header: 'Status Result',
       width: 140,
-      isResizable: true,
-      resizerPosition: 'before',
       headerClassName: 'justify-end pr-4 text-right',
       className: 'pl-3 pr-4 justify-end',
       cell: (row) => (
-        <div className="flex items-center justify-end gap-2 text-[14px] text-white font-normal w-full">
+        <div className="flex items-center justify-end gap-2 text-[14px] text-white font-normal w-full truncate whitespace-nowrap" title={row.status}>
           <span
             className={`size-1.5 rounded-full shrink-0 ${
               row.status.startsWith('200') ? 'bg-[#30a46c]' : 'bg-[#e5484d]'
             }`}
           />
-          <span className={row.status.startsWith('200') ? 'text-[#d4d4d4]' : 'text-[#e5484d]'}>
+          <span className={`truncate whitespace-nowrap ${row.status.startsWith('200') ? 'text-[#d4d4d4]' : 'text-[#e5484d]'}`}>
             {row.status}
           </span>
         </div>
@@ -631,15 +613,30 @@ export function Overview({ onNavigate }: OverviewProps) {
   ];
 
   const activeDbColumns = useMemo(() => {
-    return dbColumns.filter((col) => col.id === 'actions' || visibleDbCols[col.id] !== false);
+    const visible = dbColumns.filter((col) => col.id === 'actions' || visibleDbCols[col.id] !== false);
+    const lastDataId = [...visible].reverse().find((c) => c.id !== 'actions')?.id;
+    return visible.map((col) => ({
+      ...col,
+      isResizable: col.id !== 'actions' && col.id !== lastDataId && Boolean(col.isResizable),
+    }));
   }, [dbColumns, visibleDbCols]);
 
   const activeKeyColumns = useMemo(() => {
-    return keyColumns.filter((col) => col.id === 'actions' || visibleKeyCols[col.id] !== false);
+    const visible = keyColumns.filter((col) => col.id === 'actions' || visibleKeyCols[col.id] !== false);
+    const lastDataId = [...visible].reverse().find((c) => c.id !== 'actions')?.id;
+    return visible.map((col) => ({
+      ...col,
+      isResizable: col.id !== 'actions' && col.id !== lastDataId && Boolean(col.isResizable),
+    }));
   }, [keyColumns, visibleKeyCols]);
 
   const activeAuditColumns = useMemo(() => {
-    return auditColumns.filter((col) => visibleAuditCols[col.id] !== false);
+    const visible = auditColumns.filter((col) => visibleAuditCols[col.id] !== false);
+    const lastColId = visible[visible.length - 1]?.id;
+    return visible.map((col) => ({
+      ...col,
+      isResizable: col.id !== lastColId && Boolean(col.isResizable),
+    }));
   }, [auditColumns, visibleAuditCols]);
 
   function handleSaveDb() {

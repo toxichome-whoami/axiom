@@ -1,16 +1,94 @@
+/*
+ * Database management interface for monitoring, attaching, and configuring pools.
+ * Owned by: ui/databases
+ * Key deps: CustomSelect, SlideOver, DataTable, lucide-react
+ * Invariants: Pool URLs are verified against engine protocol schemes before handshake.
+ * Last structural change: Added dialect-aware connection URL format validation.
+ */
+
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { DatabasePool, EngineType, formatEngine } from '../types';
 import { DataTable, Column } from '../components/shared/DataTable';
 import { SlideOver } from '../components/ui/SlideOver';
 import { Button } from '../components/ui/Button';
+import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { CustomSelect } from '../components/shared/CustomSelect';
-import { Database, Plus, CheckCircle2, Search, Trash2, RefreshCw } from 'lucide-react';
+import { Database, Plus, CheckCircle2, Search, Trash2, RefreshCw, AlertTriangle, Check } from 'lucide-react';
 
 export interface FilterRule {
   id: string;
   field: string;
   operator: 'contains' | 'equals' | 'starts_with';
   value: string;
+}
+
+/**
+ * Expected URL prefix mappings and examples per database engine dialect.
+ * Contract: Matches the connection routing table implemented in crates/db/src/pool.rs.
+ */
+export const ENGINE_URL_SCHEMES: Record<string, { prefixes: string[]; example: string }> = {
+  postgresql: {
+    prefixes: ['postgres://', 'postgresql://'],
+    example: 'postgres://user:secret@host:5432/dbname',
+  },
+  mysql: {
+    prefixes: ['mysql://', 'mariadb://'],
+    example: 'mysql://user:secret@host:3306/dbname',
+  },
+  mssql: {
+    prefixes: ['mssql://', 'sqlserver://'],
+    example: 'mssql://user:secret@host:1433/dbname',
+  },
+  clickhouse: {
+    prefixes: ['clickhouse://', 'clickhouse+https://', 'http://', 'https://'],
+    example: 'clickhouse://user:secret@host:8123/default',
+  },
+  libsql: {
+    prefixes: ['libsql://', 'sqlite://', 'file:'],
+    example: 'libsql://database.turso.io or sqlite://local.db',
+  },
+};
+
+/**
+ * Validates connection URI scheme against target database engine dialect.
+ * CONTRACT:
+ *  - Fails closed on empty, whitespace, or invalid scheme prefix.
+ *  - Case-insensitive on protocol scheme.
+ *  - Enforces minimum URI structure (scheme + target endpoint).
+ * @param engine - Dialect identifier (e.g. 'PostgreSQL', 'MySQL', 'LibSQL')
+ * @param rawUrl - Input URI string to validate
+ */
+export function validateDatabaseUrl(engine: string, rawUrl: string): { valid: boolean; error?: string } {
+  const trimmed = rawUrl.trim();
+  if (!trimmed) {
+    return { valid: false, error: 'Connection URL is required.' };
+  }
+
+  const normEngine = engine.toLowerCase().trim();
+  const spec = ENGINE_URL_SCHEMES[normEngine];
+  if (!spec) {
+    return { valid: trimmed.includes('://') || trimmed.startsWith('file:') };
+  }
+
+  const lowerUrl = trimmed.toLowerCase();
+  const matched = spec.prefixes.some((p) => lowerUrl.startsWith(p));
+  if (!matched) {
+    return {
+      valid: false,
+      error: `Invalid URL protocol for ${formatEngine(engine)}. Expected prefix: ${spec.prefixes.join(' or ')}`,
+    };
+  }
+
+  const matchedPrefix = spec.prefixes.find((p) => lowerUrl.startsWith(p))!;
+  const remainder = trimmed.slice(matchedPrefix.length).trim();
+  if (!remainder) {
+    return {
+      valid: false,
+      error: 'URL is missing host or target path after protocol prefix.',
+    };
+  }
+
+  return { valid: true };
 }
 
 export function Databases() {
@@ -106,35 +184,96 @@ export function Databases() {
   const [newAlias, setNewAlias] = useState('');
   const [newEngine, setNewEngine] = useState<string>('PostgreSQL');
   const [newUrl, setNewUrl] = useState('');
+  const [newMin, setNewMin] = useState(1);
+  const [newMax, setNewMax] = useState(10);
+  const [newTimeout, setNewTimeout] = useState(30);
   const [testResult, setTestResult] = useState<string | null>(null);
+  const [attachError, setAttachError] = useState<string | null>(null);
 
-  // Edit DB SlideOver State
-  const [editOpen, setEditOpen] = useState(false);
+  // Manage DB SlideOver State
+  const [manageOpen, setManageOpen] = useState(false);
+  const [manageTab, setManageTab] = useState<'details' | 'danger'>('details');
   const [selectedPool, setSelectedPool] = useState<DatabasePool | null>(null);
+  const [editAlias, setEditAlias] = useState('');
+  const [editEngine, setEditEngine] = useState<EngineType>('PostgreSQL');
+  const [editUrl, setEditUrl] = useState('');
   const [editMin, setEditMin] = useState(1);
   const [editMax, setEditMax] = useState(10);
   const [editTimeout, setEditTimeout] = useState(30);
-
-  // Schema SlideOver State
-  const [schemaOpen, setSchemaOpen] = useState(false);
-  const [schemaPool, setSchemaPool] = useState<DatabasePool | null>(null);
+  const [manageTestResult, setManageTestResult] = useState<'testing' | 'success' | 'fail' | null>(null);
+  const [manageError, setManageError] = useState<string | null>(null);
+  const [confirmDisconnectOpen, setConfirmDisconnectOpen] = useState(false);
 
   function handleTestConnection() {
+    const validation = validateDatabaseUrl(newEngine, newUrl);
+    if (!validation.valid) {
+      setAttachError(validation.error || 'Invalid URL format for selected engine.');
+      setTestResult('fail');
+      return;
+    }
+
+    setAttachError(null);
     setTestResult('testing');
     setTimeout(() => {
       setTestResult('success');
     }, 450);
   }
 
+  function handleManageTestConnection() {
+    if (urlChanged) {
+      const validation = validateDatabaseUrl(editEngine, editUrl);
+      if (!validation.valid) {
+        setManageError(validation.error || 'Invalid URL format for selected engine.');
+        setManageTestResult('fail');
+        return;
+      }
+    }
+
+    setManageError(null);
+    setManageTestResult('testing');
+    setTimeout(() => {
+      setManageTestResult('success');
+    }, 450);
+  }
+
+  const urlChanged = Boolean(editUrl.trim().length > 0);
+  const editUrlValidation = urlChanged ? validateDatabaseUrl(editEngine, editUrl) : { valid: true };
+
+  const isChanged = Boolean(
+    selectedPool && (
+      editAlias.trim() !== selectedPool.alias ||
+      editEngine !== selectedPool.engine ||
+      urlChanged ||
+      editMin !== selectedPool.minConnections ||
+      editMax !== selectedPool.maxConnections ||
+      editTimeout !== selectedPool.idleTimeoutSeconds
+    )
+  );
+
+  const canSave = Boolean(
+    isChanged &&
+    editAlias.trim().length > 0 &&
+    editUrlValidation.valid &&
+    (!urlChanged || manageTestResult === 'success') &&
+    manageTestResult !== 'testing'
+  );
+
   function handleAttach() {
     if (!newAlias.trim()) return;
+    const validation = validateDatabaseUrl(newEngine, newUrl);
+    if (!validation.valid) {
+      setAttachError(validation.error || 'Invalid URL format for selected engine.');
+      setTestResult('fail');
+      return;
+    }
+
     const newPool: DatabasePool = {
       alias: newAlias.trim(),
       engine: newEngine as EngineType,
       url: newUrl,
-      minConnections: 1,
-      maxConnections: 10,
-      idleTimeoutSeconds: 30,
+      minConnections: newMin,
+      maxConnections: newMax,
+      idleTimeoutSeconds: newTimeout,
       readonly: false,
       status: 'Ready',
       latencyMs: 0.85,
@@ -143,19 +282,33 @@ export function Databases() {
     setAttachOpen(false);
     setNewAlias('');
     setNewUrl('');
+    setNewMin(1);
+    setNewMax(10);
+    setNewTimeout(30);
     setTestResult(null);
+    setAttachError(null);
   }
 
   function handleSaveEdit() {
-    if (!selectedPool) return;
+    if (!selectedPool || !canSave) return;
+    const updatedAlias = editAlias.trim();
+    const updatedUrl = editUrl.trim() ? editUrl.trim() : selectedPool.url;
     setPools(
       pools.map((p) =>
         p.alias === selectedPool.alias
-          ? { ...p, minConnections: editMin, maxConnections: editMax, idleTimeoutSeconds: editTimeout }
+          ? {
+              ...p,
+              alias: updatedAlias,
+              engine: editEngine,
+              url: updatedUrl,
+              minConnections: editMin,
+              maxConnections: editMax,
+              idleTimeoutSeconds: editTimeout,
+            }
           : p
       )
     );
-    setEditOpen(false);
+    setManageOpen(false);
   }
 
   function matchesRule(itemVal: string, operator: string, ruleVal: string): boolean {
@@ -165,6 +318,14 @@ export function Databases() {
     if (operator === 'starts_with') return i.startsWith(r);
     return i.includes(r);
   }
+
+  const engineOptions: { value: EngineType; label: string }[] = [
+    { value: 'PostgreSQL', label: 'PostgreSQL 14 / 15 / 16 (sqlx driver)' },
+    { value: 'MySQL', label: 'MySQL 8.0 / MariaDB (sqlx driver)' },
+    { value: 'MSSQL', label: 'Microsoft SQL Server (tiberius TDS)' },
+    { value: 'ClickHouse', label: 'ClickHouse OLAP (HTTP engine)' },
+    { value: 'LibSQL', label: 'LibSQL / SQLite (Turso & local)' },
+  ];
 
   const filterFieldOptions = [
     { value: 'alias', label: 'Pool Alias' },
@@ -244,7 +405,7 @@ export function Databases() {
       isResizable: true,
       className: 'pl-4 pr-3',
       cell: (row) => (
-        <div className="flex items-center gap-2 text-[14px] text-white font-normal">
+        <div className="flex items-center gap-2 text-[14px] text-white font-normal truncate whitespace-nowrap" title={row.status}>
           <span
             className={`size-1.5 rounded-full shrink-0 ${
               row.status === 'Ready'
@@ -254,7 +415,7 @@ export function Databases() {
                 : 'bg-[#e5484d]'
             }`}
           />
-          <span>{row.status}</span>
+          <span className="truncate whitespace-nowrap">{row.status}</span>
         </div>
       ),
     },
@@ -267,9 +428,9 @@ export function Databases() {
       width: 220,
       className: 'px-3',
       cell: (row) => (
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-2.5 min-w-0">
           <Database className="w-4 h-4 text-[#8c8c8c] shrink-0" />
-          <span className="font-medium text-white text-[14px]">{row.alias}</span>
+          <span className="font-medium text-white text-[14px] truncate whitespace-nowrap" title={row.alias}>{row.alias}</span>
         </div>
       ),
     },
@@ -281,7 +442,7 @@ export function Databases() {
       isResizable: true,
       className: 'px-3',
       cell: (row) => (
-        <span className="text-[14px] text-[#cccccc] font-normal">
+        <span className="text-[14px] text-[#cccccc] font-normal truncate whitespace-nowrap block" title={formatEngine(row.engine)}>
           {formatEngine(row.engine)}
         </span>
       ),
@@ -293,7 +454,7 @@ export function Databases() {
       isResizable: true,
       className: 'px-3',
       cell: (row) => (
-        <span className="tabular-nums text-[14px] text-[#d4d4d4] font-normal">
+        <span className="tabular-nums text-[14px] text-[#d4d4d4] font-normal truncate whitespace-nowrap block" title={`${row.minConnections} min / ${row.maxConnections} max`}>
           {row.minConnections} min / {row.maxConnections} max
         </span>
       ),
@@ -302,10 +463,9 @@ export function Databases() {
       id: 'latency',
       header: 'Ping Latency',
       width: 140,
-      isResizable: true,
       className: 'px-3',
       cell: (row) => (
-        <span className="tabular-nums text-[14px] text-[#8c8c8c] font-normal">
+        <span className="tabular-nums text-[14px] text-[#8c8c8c] font-normal truncate whitespace-nowrap block" title={`${row.latencyMs} ms`}>
           {row.latencyMs} ms
         </span>
       ),
@@ -317,40 +477,25 @@ export function Databases() {
       headerClassName: 'justify-end pr-4 text-right',
       className: 'pl-3 pr-4 justify-end',
       cell: (row) => (
-        <div className="flex items-center justify-end gap-2 w-full">
+        <div className="flex items-center justify-end w-full">
           <button
             type="button"
             onClick={() => {
               setSelectedPool(row);
+              setEditAlias(row.alias);
+              setEditEngine(row.engine);
+              setEditUrl('');
               setEditMin(row.minConnections);
               setEditMax(row.maxConnections);
               setEditTimeout(row.idleTimeoutSeconds);
-              setEditOpen(true);
+              setManageTestResult(null);
+              setManageError(null);
+              setManageTab('details');
+              setManageOpen(true);
             }}
-            className="inline-flex items-center justify-center h-7 px-3 rounded-[6px] text-[13px] font-medium leading-none text-white hover:text-white bg-transparent hover:bg-[#1a1a1a] border border-[#262626] hover:border-[#383838] transition-colors cursor-pointer shrink-0"
+            className="inline-flex items-center justify-center h-7 px-3 rounded-[6px] text-[13px] font-medium leading-none text-[#8c8c8c] hover:text-white bg-transparent hover:bg-[#1a1a1a] border border-[#262626] hover:border-[#383838] transition-colors cursor-pointer shrink-0"
           >
-            Edit Bounds
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setSchemaPool(row);
-              setSchemaOpen(true);
-            }}
-            className="inline-flex items-center justify-center h-7 px-3 rounded-[6px] text-[13px] font-medium leading-none text-[#cccccc] hover:text-white bg-transparent hover:bg-[#161616] border border-[#262626] hover:border-[#383838] transition-colors cursor-pointer shrink-0"
-          >
-            Schema
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              if (confirm(`Disconnect database pool "${row.alias}"?`)) {
-                setPools(pools.filter((p) => p.alias !== row.alias));
-              }
-            }}
-            className="inline-flex items-center justify-center h-7 px-2.5 rounded-[6px] text-[13px] font-medium leading-none text-[#8c8c8c] hover:text-[#e5484d] bg-transparent hover:bg-[#161616] border border-transparent hover:border-[#262626] transition-colors cursor-pointer shrink-0"
-          >
-            Disconnect
+            Manage
           </button>
         </div>
       ),
@@ -358,7 +503,12 @@ export function Databases() {
   ];
 
   const activeColumns = useMemo(() => {
-    return columns.filter((col) => col.id === 'actions' || visibleCols[col.id] !== false);
+    const visible = columns.filter((col) => col.id === 'actions' || visibleCols[col.id] !== false);
+    const lastDataId = [...visible].reverse().find((c) => c.id !== 'actions')?.id;
+    return visible.map((col) => ({
+      ...col,
+      isResizable: col.id !== 'actions' && col.id !== lastDataId && Boolean(col.isResizable),
+    }));
   }, [columns, visibleCols]);
 
   return (
@@ -373,6 +523,10 @@ export function Databases() {
           size="sm"
           onClick={() => {
             setTestResult(null);
+            setAttachError(null);
+            setNewMin(1);
+            setNewMax(10);
+            setNewTimeout(30);
             setAttachOpen(true);
           }}
         >
@@ -587,7 +741,7 @@ export function Databases() {
             </button>
 
             {showDisplayOptions && (
-              <div className="absolute right-0 top-10 w-52 rounded-md bg-[#0c0c0c] border border-[#262626] shadow-xl p-1 z-40 select-none font-sans">
+              <div className="absolute right-0 top-[calc(100%+4px)] w-52 rounded-[8px] bg-[#0c0c0c] border border-[#262626] shadow-2xl p-1 z-50 select-none font-sans animate-in fade-in duration-100">
                 {displayColumnOptions.map((col) => {
                   const isVisible = visibleCols[col.id] !== false;
                   return (
@@ -595,22 +749,13 @@ export function Databases() {
                       key={col.id}
                       type="button"
                       onClick={() => toggleColVisibility(col.id)}
-                      className="w-full flex items-center justify-between px-2.5 py-1.5 rounded text-[14px] text-[#cccccc] hover:text-white hover:bg-[#1a1a1a] transition-colors cursor-pointer font-sans"
+                      className="w-full flex items-center justify-between px-3 py-2 rounded-[6px] text-[14px] text-[#cccccc] hover:text-white hover:bg-[#141414] transition-colors cursor-pointer font-sans"
                     >
-                      <span className={isVisible ? 'text-white' : 'text-[#777777]'}>
+                      <span className={isVisible ? 'text-white font-medium' : 'text-[#8c8c8c]'}>
                         {col.label}
                       </span>
                       {isVisible && (
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          width="14"
-                          height="14"
-                          viewBox="0 0 256 256"
-                          fill="currentColor"
-                          className="text-[#2f80ed] shrink-0"
-                        >
-                          <path d="M229.66,77.66l-128,128a8,8,0,0,1-11.32,0l-56-56a8,8,0,0,1,11.32-11.32L96,188.69,218.34,66.34a8,8,0,0,1,11.32,11.32Z" />
-                        </svg>
+                        <Check className="w-3.5 h-3.5 text-[#3b82f6] shrink-0" />
                       )}
                     </button>
                   );
@@ -619,7 +764,7 @@ export function Databases() {
                 <button
                   type="button"
                   onClick={handleResetColumns}
-                  className="w-full text-left px-2.5 py-1.5 rounded text-[14px] text-[#888888] hover:text-white hover:bg-[#1a1a1a] transition-colors cursor-pointer font-sans"
+                  className="w-full text-left px-3 py-2 rounded-[6px] text-[13px] text-[#8c8c8c] hover:text-white hover:bg-[#141414] transition-colors cursor-pointer font-sans"
                 >
                   Reset columns
                 </button>
@@ -652,39 +797,47 @@ export function Databases() {
       >
         <div className="flex-1 p-5 overflow-y-auto space-y-4">
           <div>
-            <label className="block text-[12px] font-medium text-[#cccccc] mb-1.5">Database Engine</label>
-            <select
-              value={newEngine}
-              onChange={(e) => setNewEngine(e.target.value)}
-              className="h-9 w-full rounded-md border border-[#262626] bg-[#121212] px-3 text-[13px] text-white focus:outline-none focus:border-[#3b82f6]"
-            >
-              <option value="PostgreSQL">PostgreSQL 14 / 15 / 16 (sqlx driver)</option>
-              <option value="MySQL">MySQL 8.0 / MariaDB (sqlx driver)</option>
-              <option value="MSSQL">Microsoft SQL Server (tiberius TDS)</option>
-              <option value="ClickHouse">ClickHouse OLAP (HTTP engine)</option>
-              <option value="LibSQL">LibSQL / SQLite (Turso &amp; local)</option>
-            </select>
+            <h3 className="text-[16px] font-semibold text-white tracking-tight">Pool Configuration</h3>
+            <p className="text-[13px] text-[#8c8c8c] mt-0.5">Provide connection endpoint, dialect engine, and credential URI.</p>
           </div>
 
           <div>
-            <label className="block text-[12px] font-medium text-[#cccccc] mb-1.5">Pool Alias (Identifier)</label>
+            <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">Database Engine</label>
+            <CustomSelect
+              value={newEngine}
+              options={engineOptions}
+              onChange={(val) => {
+                setNewEngine(val);
+                setTestResult(null);
+                setAttachError(null);
+              }}
+              menuWidth="w-full"
+            />
+          </div>
+
+          <div>
+            <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">Pool Alias (Identifier)</label>
             <input
               type="text"
               value={newAlias}
               onChange={(e) => setNewAlias(e.target.value)}
               placeholder="e.g. analytics_warehouse"
-              className="h-9 w-full rounded-md border border-[#262626] bg-[#121212] px-3 text-[13px] text-white focus:outline-none focus:border-[#3b82f6]"
+              className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] px-3 text-[14px] text-white focus:outline-none focus:border-[#3b82f6]"
             />
           </div>
 
           <div>
-            <label className="block text-[12px] font-medium text-[#cccccc] mb-1.5">Connection URL (Encrypted)</label>
+            <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">Connection URL (Encrypted)</label>
             <input
               type="password"
               value={newUrl}
-              onChange={(e) => setNewUrl(e.target.value)}
-              placeholder="postgres://user:secret@host:5432/dbname"
-              className="h-9 w-full rounded-md border border-[#262626] bg-[#121212] px-3 text-[13px] text-white focus:outline-none focus:border-[#3b82f6]"
+              onChange={(e) => {
+                setNewUrl(e.target.value);
+                setTestResult(null);
+                setAttachError(null);
+              }}
+              placeholder={ENGINE_URL_SCHEMES[newEngine.toLowerCase()]?.example || 'postgres://user:secret@host:5432/dbname'}
+              className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] px-3 text-[14px] text-white focus:outline-none focus:border-[#3b82f6]"
             />
           </div>
 
@@ -692,7 +845,7 @@ export function Databases() {
             <button
               type="button"
               onClick={handleTestConnection}
-              className="h-8 px-3 rounded-md text-[12px] font-medium border border-[#262626] bg-[#161616] text-[#cccccc] hover:text-white hover:border-[#383838] transition-colors inline-flex items-center gap-1.5 cursor-pointer"
+              className="h-8 px-3 rounded-[6px] text-[13px] font-medium border border-[#262626] bg-[#161616] text-[#cccccc] hover:text-white hover:border-[#383838] transition-colors inline-flex items-center gap-1.5 cursor-pointer"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${testResult === 'testing' ? 'animate-spin text-[#3b82f6]' : ''}`} />
               <span>Test Connection Handshake</span>
@@ -700,140 +853,338 @@ export function Databases() {
           </div>
 
           {testResult === 'testing' && (
-            <div className="rounded-md border border-[#262626] bg-[#141414] p-3 text-[12px] text-[#8c8c8c]">
+            <div className="rounded-[6px] border border-[#262626] bg-[#141414] p-3 text-[13px] text-[#8c8c8c]">
               Probing TCP handshake and validating dialect authentication...
             </div>
           )}
 
           {testResult === 'success' && (
-            <div className="rounded-md border border-[#30a46c]/30 bg-[#30a46c]/10 p-3 text-[12px] text-[#30a46c] font-medium flex items-center gap-2">
+            <div className="rounded-[6px] border border-[#30a46c]/30 bg-[#30a46c]/10 p-3 text-[13px] text-[#30a46c] font-medium flex items-center gap-2">
               <CheckCircle2 className="w-4 h-4 shrink-0" />
               Connection handshake verified. Round-trip: 0.94 ms.
             </div>
           )}
-        </div>
 
-        <div className="p-4 border-t border-[#222222] bg-[#000000] flex items-center justify-end gap-2.5">
-          <Button variant="outline" size="sm" onClick={() => setAttachOpen(false)}>
-            Cancel
-          </Button>
-          <Button variant="primary" size="sm" onClick={handleAttach}>
-            Attach Pool
-          </Button>
-        </div>
-      </SlideOver>
+          {testResult === 'fail' && (
+            <div className="rounded-[6px] border border-[#e5484d]/30 bg-[#e5484d]/10 p-3 text-[13px] text-[#e5484d] font-medium flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 shrink-0" />
+              <span>{attachError || 'Connection failed. Invalid URL format for selected engine.'}</span>
+            </div>
+          )}
 
-      {/* Edit Pool Bounds SlideOver */}
-      <SlideOver
-        isOpen={editOpen}
-        onClose={() => setEditOpen(false)}
-        title={`Edit Pool: ${selectedPool?.alias}`}
-        subtitle="Update concurrency thresholds and statement timeouts"
-      >
-        <div className="flex-1 p-5 overflow-y-auto space-y-4">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="pt-2">
+            <h3 className="text-[16px] font-semibold text-white tracking-tight">Connection Bounds</h3>
+            <p className="text-[13px] text-[#8c8c8c] mt-0.5">Configure scaling limits and idle timeout thresholds.</p>
+          </div>
+
+          <div className="space-y-3.5">
             <div>
-              <label className="block text-[12px] font-medium text-[#cccccc] mb-1.5">Min Connections</label>
+              <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">Min Connections</label>
               <input
                 type="number"
-                value={editMin}
-                onChange={(e) => setEditMin(Number(e.target.value))}
-                className="h-9 w-full rounded-md border border-[#262626] bg-[#121212] px-3 text-[13px] text-white focus:outline-none focus:border-[#3b82f6] tabular-nums"
+                value={newMin}
+                onChange={(e) => setNewMin(Number(e.target.value))}
+                className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] px-3 text-[14px] text-white focus:outline-none focus:border-[#3b82f6]"
               />
             </div>
             <div>
-              <label className="block text-[12px] font-medium text-[#cccccc] mb-1.5">Max Connections</label>
+              <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">Max Connections</label>
               <input
                 type="number"
-                value={editMax}
-                onChange={(e) => setEditMax(Number(e.target.value))}
-                className="h-9 w-full rounded-md border border-[#262626] bg-[#121212] px-3 text-[13px] text-white focus:outline-none focus:border-[#3b82f6] tabular-nums"
+                value={newMax}
+                onChange={(e) => setNewMax(Number(e.target.value))}
+                className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] px-3 text-[14px] text-white focus:outline-none focus:border-[#3b82f6]"
+              />
+            </div>
+            <div>
+              <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">Idle Timeout (seconds)</label>
+              <input
+                type="number"
+                value={newTimeout}
+                onChange={(e) => setNewTimeout(Number(e.target.value))}
+                className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] px-3 text-[14px] text-white focus:outline-none focus:border-[#3b82f6]"
               />
             </div>
           </div>
-
-          <div>
-            <label className="block text-[12px] font-medium text-[#cccccc] mb-1.5">Idle Timeout (seconds)</label>
-            <input
-              type="number"
-              value={editTimeout}
-              onChange={(e) => setEditTimeout(Number(e.target.value))}
-              className="h-9 w-full rounded-md border border-[#262626] bg-[#121212] px-3 text-[13px] text-white focus:outline-none focus:border-[#3b82f6] tabular-nums"
-            />
-          </div>
         </div>
 
-        <div className="p-4 border-t border-[#222222] bg-[#000000] flex items-center justify-end gap-2.5">
-          <Button variant="outline" size="sm" onClick={() => setEditOpen(false)}>
+        <div className="p-4 bg-[#0e0e0e] flex items-center justify-end gap-2.5">
+          <button
+            type="button"
+            onClick={() => setAttachOpen(false)}
+            className="inline-flex items-center justify-center h-9 px-4 rounded-[8px] text-[14px] font-medium text-[#cccccc] hover:text-white bg-transparent hover:bg-[#161616] border border-[#262626] hover:border-[#383838] transition-colors cursor-pointer font-sans"
+          >
             Cancel
-          </Button>
-          <Button variant="primary" size="sm" onClick={handleSaveEdit}>
-            Save Changes
-          </Button>
+          </button>
+          <button
+            type="button"
+            onClick={handleAttach}
+            className="group relative flex shrink-0 items-center justify-center h-9 px-4 rounded-[8px] font-medium text-white shadow-xs outline-none cursor-pointer overflow-hidden ring-1 ring-[#1d4ed8] bg-[#2563eb] font-sans"
+          >
+            <span aria-hidden="true" className="pointer-events-none absolute inset-0 rounded-[inherit] bg-gradient-to-b from-[#3b82f6] to-[#2563eb] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2)]" />
+            <span aria-hidden="true" className="pointer-events-none absolute inset-0 rounded-[inherit] bg-black opacity-0 group-hover:opacity-15 transition-opacity duration-200" />
+            <span className="relative flex items-center gap-1.5 text-[14px] font-sans">
+              Attach Pool
+            </span>
+          </button>
         </div>
       </SlideOver>
 
-      {/* Schema Inspector SlideOver */}
+      {/* Manage Pool SlideOver */}
       <SlideOver
-        isOpen={schemaOpen}
-        onClose={() => setSchemaOpen(false)}
-        title={`Introspected Schema: ${schemaPool?.alias}`}
-        subtitle="Cataloged tables, column types, and foreign key relations"
+        isOpen={manageOpen}
+        onClose={() => { setManageOpen(false); setManageTab('details'); }}
+        title={selectedPool?.alias ?? ''}
+        subtitle={selectedPool ? `${selectedPool.engine} · ${selectedPool.status}` : ''}
       >
-        <div className="flex-1 p-5 overflow-y-auto space-y-4">
-          <div className="rounded-lg border border-[#222222] bg-[#121212] p-3.5 space-y-2">
-            <span className="text-[13px] font-semibold text-white font-mono flex items-center gap-2">
-              <Database className="w-3.5 h-3.5 text-[#3b82f6]" />
-              users
-            </span>
-            <div className="text-[12px] text-[#8c8c8c] space-y-1 font-mono divide-y divide-[#1e1e1e]">
-              <div className="flex justify-between py-1">
-                <span className="text-white">id</span>
-                <span className="text-[#3b82f6]">INTEGER (PK)</span>
-              </div>
-              <div className="flex justify-between py-1">
-                <span className="text-white">email</span>
-                <span>VARCHAR(255) NOT NULL</span>
-              </div>
-              <div className="flex justify-between py-1">
-                <span className="text-white">status</span>
-                <span>VARCHAR(50) DEFAULT 'active'</span>
-              </div>
-              <div className="flex justify-between py-1">
-                <span className="text-white">created_at</span>
-                <span>TIMESTAMPTZ</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="rounded-lg border border-[#222222] bg-[#121212] p-3.5 space-y-2">
-            <span className="text-[13px] font-semibold text-white font-mono flex items-center gap-2">
-              <Database className="w-3.5 h-3.5 text-[#3b82f6]" />
-              orders
-            </span>
-            <div className="text-[12px] text-[#8c8c8c] space-y-1 font-mono divide-y divide-[#1e1e1e]">
-              <div className="flex justify-between py-1">
-                <span className="text-white">id</span>
-                <span className="text-[#3b82f6]">INTEGER (PK)</span>
-              </div>
-              <div className="flex justify-between py-1">
-                <span className="text-white">user_id</span>
-                <span className="text-[#f59e0b]">INTEGER (FK &rarr; users.id)</span>
-              </div>
-              <div className="flex justify-between py-1">
-                <span className="text-white">total_amount</span>
-                <span>NUMERIC(12, 2)</span>
-              </div>
-            </div>
+        {/* Tab bar (Segmented control matching dashboard) */}
+        <div className="px-5 py-3 border-b border-[#222222] bg-[#0e0e0e]">
+          <div className="inline-flex items-center p-0.5 rounded-[8px] bg-transparent border border-[#262626]">
+            <button
+              type="button"
+              onClick={() => setManageTab('details')}
+              className={`flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[14px] font-medium transition-colors duration-75 cursor-pointer font-sans outline-none focus:outline-none border ${
+                manageTab === 'details'
+                  ? 'bg-[#161616] text-white border-[#333333]'
+                  : 'text-[#8c8c8c] hover:text-white hover:bg-[#141414] border-transparent'
+              }`}
+            >
+              <span>Connection</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setManageTab('danger')}
+              className={`flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[14px] font-medium transition-colors duration-75 cursor-pointer font-sans outline-none focus:outline-none border ${
+                manageTab === 'danger'
+                  ? 'bg-[#161616] text-white border-[#333333]'
+                  : 'text-[#8c8c8c] hover:text-white hover:bg-[#141414] border-transparent'
+              }`}
+            >
+              <span>Danger</span>
+            </button>
           </div>
         </div>
 
-        <div className="p-4 border-t border-[#222222] bg-[#000000] flex items-center justify-end">
-          <Button variant="outline" size="sm" onClick={() => setSchemaOpen(false)}>
-            Close
-          </Button>
-        </div>
+        {manageTab === 'details' && (
+          <div className="flex-1 p-5 overflow-y-auto space-y-5">
+            {/* Pool Settings */}
+            <div className="space-y-4">
+              <div>
+                <h3 className="text-[16px] font-semibold text-white tracking-tight">Pool Settings</h3>
+                <p className="text-[13px] text-[#8c8c8c] mt-0.5">Configure pool identity, engine dialect, and connection target.</p>
+              </div>
+
+              <div className="space-y-3.5">
+                <div>
+                  <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">Pool Name (Alias)</label>
+                  <input
+                    type="text"
+                    value={editAlias}
+                    onChange={(e) => setEditAlias(e.target.value)}
+                    placeholder="e.g. analytics_warehouse"
+                    className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] px-3 text-[14px] text-white font-mono focus:outline-none focus:border-[#3b82f6]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">Database Engine</label>
+                  <CustomSelect
+                    value={editEngine}
+                    options={engineOptions}
+                    onChange={(val) => {
+                      setEditEngine(val as EngineType);
+                      setManageTestResult(null);
+                      setManageError(null);
+                    }}
+                    menuWidth="w-full"
+                  />
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block text-[13px] font-medium text-[#cccccc]">Connection URL</label>
+                    {urlChanged && (
+                      editUrlValidation.valid ? (
+                        <span className="text-[12px] text-[#f59e0b] font-medium flex items-center gap-1">
+                          New URI · Test required
+                        </span>
+                      ) : (
+                        <span className="text-[12px] text-[#e5484d] font-medium flex items-center gap-1">
+                          Invalid {formatEngine(editEngine)} scheme
+                        </span>
+                      )
+                    )}
+                  </div>
+                  <input
+                    type="password"
+                    value={editUrl}
+                    onChange={(e) => {
+                      setEditUrl(e.target.value);
+                      setManageTestResult(null);
+                      setManageError(null);
+                    }}
+                    placeholder="Leave blank to keep the existing"
+                    className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] px-3 text-[14px] text-white font-mono focus:outline-none focus:border-[#3b82f6]"
+                  />
+                  <p className="text-[12px] text-[#8c8c8c] mt-1">
+                    Hidden for security reasons.
+                  </p>
+                </div>
+
+                <div>
+                  <button
+                    type="button"
+                    disabled={manageTestResult === 'testing'}
+                    onClick={handleManageTestConnection}
+                    className="h-8 px-3 rounded-[6px] text-[13px] font-medium border border-[#262626] bg-[#161616] text-[#cccccc] hover:text-white hover:border-[#383838] disabled:opacity-50 transition-colors inline-flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${manageTestResult === 'testing' ? 'animate-spin text-[#3b82f6]' : ''}`} />
+                    <span>
+                      {manageTestResult === 'testing'
+                        ? 'Testing Connection...'
+                        : urlChanged
+                        ? 'Test New Connection'
+                        : 'Test Connection Handshake'}
+                    </span>
+                  </button>
+                </div>
+
+                {manageTestResult === 'testing' && (
+                  <div className="rounded-[6px] border border-[#262626] bg-[#141414] p-3 text-[13px] text-[#8c8c8c] flex items-center gap-2">
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin text-[#3b82f6] shrink-0" />
+                    <span>Probing TCP handshake and validating dialect authentication...</span>
+                  </div>
+                )}
+
+                {manageTestResult === 'success' && (
+                  <div className="rounded-[6px] border border-[#30a46c]/30 bg-[#30a46c]/10 p-3 text-[13px] text-[#30a46c] font-medium flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 shrink-0" />
+                    <span>Connection handshake verified. Round-trip: 0.94 ms.</span>
+                  </div>
+                )}
+
+                {manageTestResult === 'fail' && (
+                  <div className="rounded-[6px] border border-[#e5484d]/30 bg-[#e5484d]/10 p-3 text-[13px] text-[#e5484d] font-medium flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 shrink-0" />
+                    <span>{manageError || 'Connection failed. Unable to reach database host or invalid credentials.'}</span>
+                  </div>
+                )}
+              </div>
+
+              <div className="pt-2">
+                <h3 className="text-[16px] font-semibold text-white tracking-tight">Connection Bounds</h3>
+                <p className="text-[13px] text-[#8c8c8c] mt-0.5">Configure scaling limits and idle timeout thresholds.</p>
+              </div>
+
+              <div className="space-y-3.5">
+                <div>
+                  <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">Min Connections</label>
+                  <input
+                    type="number"
+                    value={editMin}
+                    onChange={(e) => setEditMin(Number(e.target.value))}
+                    className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] px-3 text-[14px] text-white focus:outline-none focus:border-[#3b82f6]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">Max Connections</label>
+                  <input
+                    type="number"
+                    value={editMax}
+                    onChange={(e) => setEditMax(Number(e.target.value))}
+                    className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] px-3 text-[14px] text-white focus:outline-none focus:border-[#3b82f6]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">Idle Timeout (seconds)</label>
+                  <input
+                    type="number"
+                    value={editTimeout}
+                    onChange={(e) => setEditTimeout(Number(e.target.value))}
+                    className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] px-3 text-[14px] text-white focus:outline-none focus:border-[#3b82f6]"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {manageTab === 'danger' && (
+          <div className="flex-1 p-5 overflow-y-auto">
+            <div className="rounded-[8px] border border-[#3a1515] bg-[#0e0404] p-4">
+              <h3 className="text-[16px] font-semibold text-[#e5484d] mb-1">Disconnect Pool</h3>
+              <p className="text-[13px] text-[#8c8c8c] mb-4">
+                Permanently remove <span className="text-white font-mono text-[13px]">{selectedPool?.alias}</span> from the gateway. All active connections will be terminated.
+              </p>
+              <button
+                type="button"
+                onClick={() => setConfirmDisconnectOpen(true)}
+                className="group relative flex shrink-0 items-center justify-center h-8 px-3.5 rounded-[8px] font-medium text-white shadow-xs outline-none cursor-pointer overflow-hidden ring-1 ring-[#be123c] bg-[#e11d48] font-sans text-[13px]"
+              >
+                <span
+                  aria-hidden="true"
+                  className="pointer-events-none absolute inset-0 rounded-[inherit] bg-gradient-to-b from-[#f43f5e] to-[#e11d48] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2)]"
+                />
+                <span
+                  aria-hidden="true"
+                  className="pointer-events-none absolute inset-0 rounded-[inherit] bg-black opacity-0 group-hover:opacity-15 transition-opacity duration-200"
+                />
+                <span className="relative flex items-center gap-1.5 font-sans">
+                  Disconnect Pool
+                </span>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Footer */}
+        {manageTab === 'details' && (
+          <div className="p-4 bg-[#0e0e0e] flex items-center justify-end gap-2.5">
+            <button
+              type="button"
+              onClick={() => setManageOpen(false)}
+              className="inline-flex items-center justify-center h-9 px-4 rounded-[8px] text-[14px] font-medium text-[#cccccc] hover:text-white bg-transparent hover:bg-[#161616] border border-[#262626] hover:border-[#383838] transition-colors cursor-pointer font-sans"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={!canSave}
+              onClick={handleSaveEdit}
+              className="group relative flex shrink-0 items-center justify-center h-9 px-4 rounded-[8px] font-medium text-white shadow-xs outline-none cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed overflow-hidden ring-1 ring-[#1d4ed8] bg-[#2563eb] font-sans"
+            >
+              <span aria-hidden="true" className="pointer-events-none absolute inset-0 rounded-[inherit] bg-gradient-to-b from-[#3b82f6] to-[#2563eb] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2)]" />
+              <span aria-hidden="true" className="pointer-events-none absolute inset-0 rounded-[inherit] bg-black opacity-0 group-hover:opacity-15 transition-opacity duration-200" />
+              <span className="relative flex items-center gap-1.5 text-[14px] font-sans">
+                Save
+              </span>
+            </button>
+          </div>
+        )}
       </SlideOver>
+
+      {/* Delete / Disconnect Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={confirmDisconnectOpen}
+        onClose={() => setConfirmDisconnectOpen(false)}
+        onConfirm={() => {
+          if (selectedPool) {
+            setPools(pools.filter((p) => p.alias !== selectedPool.alias));
+          }
+          setConfirmDisconnectOpen(false);
+          setManageOpen(false);
+        }}
+        title="Disconnect Database Pool"
+        description={
+          <>
+            Permanently remove database pool{' '}
+            <span className="font-mono text-white font-medium">{selectedPool?.alias}</span>{' '}
+            from the gateway? All active connections will be terminated.
+          </>
+        }
+        confirmLabel="Disconnect Pool"
+        cancelLabel="Cancel"
+      />
     </div>
   );
 }

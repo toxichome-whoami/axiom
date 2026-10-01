@@ -1,158 +1,69 @@
 import React, { useState } from 'react';
-import { RbacRole, PermissionOperation } from '../types';
+import { RbacRole } from '../types';
 import { DataTable, Column } from '../components/shared/DataTable';
-import { PermissionTable, AxiomPermissions } from '../components/shared/PermissionTable';
+import { PermissionTable, DbPermissionRule } from '../components/shared/PermissionTable';
 import { SlideOver } from '../components/ui/SlideOver';
-import { Button } from '../components/ui/Button';
-import { Shield, Plus, CheckCircle2, Lock, Edit3, Trash2 } from 'lucide-react';
+import { ConfirmDialog } from '../components/ui/ConfirmDialog';
+import { Shield, Plus } from 'lucide-react';
 
-const DEFAULT_ADMIN_PERMISSIONS: AxiomPermissions = {
-  db_select: true,
-  db_insert: true,
-  db_update: true,
-  db_delete: true,
-  db_execute_raw: true,
-  db_schema_describe: true,
-  keys_view: true,
-  keys_create: true,
-  keys_rotate: true,
-  keys_delete: true,
-  pools_view: true,
-  pools_add: true,
-  pools_delete: true,
-  roles_view: true,
-  roles_create: true,
-  roles_edit: true,
-  roles_delete: true,
-  mcp_access: true,
-  mcp_tools_invoke: true,
-  tester_execute: true,
-  logs_view_audit: true,
-  metrics_view: true,
-  cache_stats_view: true,
-  cache_flush: true,
-  settings_view: true,
-};
+const DEFAULT_RULES: DbPermissionRule[] = [
+  { database: '*', table: '*', operations: ['SELECT', 'INSERT', 'UPDATE', 'DELETE'] },
+];
 
-const READWRITE_PERMISSIONS: AxiomPermissions = {
-  db_select: true,
-  db_insert: true,
-  db_update: true,
-  db_delete: true,
-  db_execute_raw: false,
-  db_schema_describe: true,
-  keys_view: true,
-  keys_create: false,
-  keys_rotate: false,
-  keys_delete: false,
-  pools_view: true,
-  pools_add: false,
-  pools_delete: false,
-  roles_view: true,
-  roles_create: false,
-  roles_edit: false,
-  roles_delete: false,
-  mcp_access: true,
-  mcp_tools_invoke: true,
-  tester_execute: true,
-  logs_view_audit: false,
-  metrics_view: true,
-  cache_stats_view: true,
-  cache_flush: false,
-  settings_view: false,
-};
-
-const READONLY_PERMISSIONS: AxiomPermissions = {
-  db_select: true,
-  db_insert: false,
-  db_update: false,
-  db_delete: false,
-  db_execute_raw: false,
-  db_schema_describe: true,
-  keys_view: false,
-  keys_create: false,
-  keys_rotate: false,
-  keys_delete: false,
-  pools_view: true,
-  pools_add: false,
-  pools_delete: false,
-  roles_view: false,
-  roles_create: false,
-  roles_edit: false,
-  roles_delete: false,
-  mcp_access: true,
-  mcp_tools_invoke: false,
-  tester_execute: false,
-  logs_view_audit: false,
-  metrics_view: true,
-  cache_stats_view: true,
-  cache_flush: false,
-  settings_view: false,
-};
+const READONLY_RULES: DbPermissionRule[] = [
+  { database: '*', table: '*', operations: ['SELECT'] },
+];
 
 export function Roles() {
   const [roles, setRoles] = useState<RbacRole[]>([
     {
       name: 'admin',
-      description: 'Superuser policy granting full access to all databases, management routes, and schemas.',
+      description: 'Full access to all databases and tables.',
       createdAt: '2026-09-27',
-      permissions: [
-        {
-          database: '*',
-          table: '*',
-          operations: ['SELECT', 'INSERT', 'UPDATE', 'DELETE'],
-        },
-      ],
+      permissions: [{ database: '*', table: '*', operations: ['SELECT', 'INSERT', 'UPDATE', 'DELETE'] }],
     },
     {
       name: 'readwrite',
-      description: 'Operational service access allowing CRUD data manipulation across application tables.',
+      description: 'CRUD access to production databases.',
       createdAt: '2026-09-28',
       permissions: [
-        {
-          database: 'prod_pg',
-          table: '*',
-          operations: ['SELECT', 'INSERT', 'UPDATE', 'DELETE'],
-        },
-        {
-          database: 'local_db',
-          table: '*',
-          operations: ['SELECT', 'INSERT', 'UPDATE'],
-        },
+        { database: 'prod_pg', table: '*', operations: ['SELECT', 'INSERT', 'UPDATE', 'DELETE'] },
+        { database: 'local_db', table: '*', operations: ['SELECT', 'INSERT', 'UPDATE'] },
       ],
     },
     {
       name: 'readonly',
-      description: 'Inspection and analytics access restricted strictly to SELECT operations.',
+      description: 'SELECT-only access across all databases.',
       createdAt: '2026-09-29',
-      permissions: [
-        {
-          database: '*',
-          table: '*',
-          operations: ['SELECT'],
-        },
-      ],
+      permissions: [{ database: '*', table: '*', operations: ['SELECT'] }],
     },
   ]);
 
-  // Matrix Viewer / Editor State
-  const [activeMatrixRole, setActiveMatrixRole] = useState<'admin' | 'readwrite' | 'readonly'>('admin');
-  const [matrixValues, setMatrixValues] = useState<Record<string, AxiomPermissions>>({
-    admin: DEFAULT_ADMIN_PERMISSIONS,
-    readwrite: READWRITE_PERMISSIONS,
-    readonly: READONLY_PERMISSIONS,
-  });
+  // Manage panel
+  const [manageOpen, setManageOpen] = useState(false);
+  const [manageTab, setManageTab] = useState<'permissions' | 'danger'>('permissions');
+  const [selectedRole, setSelectedRole] = useState<RbacRole | null>(null);
+  const [editPerms, setEditPerms] = useState<DbPermissionRule[]>([]);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
 
-  // Create Role SlideOver
+  // Create panel
   const [createOpen, setCreateOpen] = useState(false);
   const [newRoleName, setNewRoleName] = useState('');
   const [newRoleDesc, setNewRoleDesc] = useState('');
-  const [newPerms, setNewPerms] = useState<AxiomPermissions>({ ...READWRITE_PERMISSIONS });
+  const [newPerms, setNewPerms] = useState<DbPermissionRule[]>([...READONLY_RULES]);
 
-  // Edit Role SlideOver
-  const [editOpen, setEditOpen] = useState(false);
-  const [selectedRole, setSelectedRole] = useState<RbacRole | null>(null);
-  const [editDesc, setEditDesc] = useState('');
+  function openManage(role: RbacRole) {
+    setSelectedRole(role);
+    setEditPerms(role.permissions.map((p) => ({ ...p, operations: [...p.operations] })));
+    setManageTab('permissions');
+    setManageOpen(true);
+  }
+
+  function handleSavePerms() {
+    if (!selectedRole) return;
+    setRoles(roles.map((r) => r.name === selectedRole.name ? { ...r, permissions: editPerms } : r));
+    setManageOpen(false);
+  }
 
   function handleCreateRole() {
     if (!newRoleName.trim()) return;
@@ -160,36 +71,24 @@ export function Roles() {
       name: newRoleName.trim(),
       description: newRoleDesc,
       createdAt: new Date().toISOString().split('T')[0],
-      permissions: [
-        {
-          database: '*',
-          table: '*',
-          operations: ['SELECT', 'INSERT', 'UPDATE'],
-        },
-      ],
+      permissions: newPerms,
     };
     setRoles([...roles, role]);
-    setMatrixValues((prev) => ({ ...prev, [role.name]: newPerms }));
     setCreateOpen(false);
     setNewRoleName('');
     setNewRoleDesc('');
-  }
-
-  function handleSaveEdit() {
-    if (!selectedRole) return;
-    setRoles(
-      roles.map((r) => (r.name === selectedRole.name ? { ...r, description: editDesc } : r))
-    );
-    setEditOpen(false);
+    setNewPerms([...READONLY_RULES]);
   }
 
   const columns: Column<RbacRole>[] = [
     {
       id: 'name',
-      header: 'Role Name',
+      header: 'Role',
       accessorKey: 'name',
       isSortable: true,
-      width: 200,
+      isResizable: true,
+      width: 180,
+      className: 'pl-4 pr-3',
       cell: (row) => (
         <div className="flex items-center gap-2.5">
           <Shield className="w-4 h-4 text-[#8c8c8c] shrink-0" />
@@ -199,9 +98,10 @@ export function Roles() {
     },
     {
       id: 'description',
-      header: 'Scope Description',
+      header: 'Description',
       accessorKey: 'description',
       isFlex: true,
+      isResizable: true,
       className: 'px-3',
       cell: (row) => (
         <span className="text-[14px] text-[#8c8c8c] font-normal truncate block" title={row.description}>
@@ -211,25 +111,25 @@ export function Roles() {
     },
     {
       id: 'rules',
-      header: 'Rule Sets',
-      width: 130,
+      header: 'Rules',
+      width: 80,
+      isResizable: true,
       className: 'px-3',
       cell: (row) => (
-        <span className="text-[14px] text-[#cccccc] font-normal">
-          {row.permissions.length} rule{row.permissions.length > 1 ? 's' : ''}
+        <span className="text-[14px] text-[#cccccc] font-normal tabular-nums">
+          {row.permissions.length}
         </span>
       ),
     },
     {
       id: 'createdAt',
-      header: 'Created Date',
+      header: 'Created',
       accessorKey: 'createdAt',
-      width: 140,
+      width: 130,
+      isResizable: true,
       className: 'px-3',
       cell: (row) => (
-        <span className="tabular-nums text-[14px] text-[#8c8c8c] font-normal">
-          {row.createdAt}
-        </span>
+        <span className="tabular-nums text-[14px] text-[#8c8c8c] font-normal">{row.createdAt}</span>
       ),
     },
     {
@@ -239,69 +139,46 @@ export function Roles() {
       headerClassName: 'justify-end pr-4 text-right',
       className: 'pl-3 pr-4 justify-end',
       cell: (row) => (
-        <div className="flex items-center justify-end gap-2 w-full">
+        <div className="flex items-center justify-end w-full">
           <button
             type="button"
-            onClick={() => {
-              setActiveMatrixRole(row.name as any);
-              const element = document.getElementById('permission-matrix-section');
-              element?.scrollIntoView({ behavior: 'smooth' });
-            }}
-            className="inline-flex items-center justify-center h-7 px-3 rounded-[6px] text-[13px] font-medium leading-none text-white hover:text-white bg-transparent hover:bg-[#1a1a1a] border border-[#262626] hover:border-[#383838] transition-colors cursor-pointer shrink-0"
+            onClick={() => openManage(row)}
+            className="inline-flex items-center justify-center h-7 px-3 rounded-[6px] text-[13px] font-medium leading-none text-[#8c8c8c] hover:text-white bg-transparent hover:bg-[#1a1a1a] border border-[#262626] hover:border-[#383838] transition-colors cursor-pointer shrink-0"
           >
-            Inspect Matrix
+            Manage
           </button>
-          <button
-            type="button"
-            onClick={() => {
-              setSelectedRole(row);
-              setEditDesc(row.description);
-              setEditOpen(true);
-            }}
-            className="inline-flex items-center justify-center h-7 px-3 rounded-[6px] text-[13px] font-medium leading-none text-[#cccccc] hover:text-white bg-transparent hover:bg-[#161616] border border-[#262626] hover:border-[#383838] transition-colors cursor-pointer shrink-0"
-          >
-            Edit
-          </button>
-          {row.name !== 'admin' && (
-            <button
-              type="button"
-              onClick={() => {
-                if (confirm(`Delete role "${row.name}"?`)) {
-                  setRoles(roles.filter((r) => r.name !== row.name));
-                }
-              }}
-              className="inline-flex items-center justify-center h-7 px-2.5 rounded-[6px] text-[13px] font-medium leading-none text-[#8c8c8c] hover:text-[#e5484d] bg-transparent hover:bg-[#161616] border border-transparent hover:border-[#262626] transition-colors cursor-pointer shrink-0"
-            >
-              Delete
-            </button>
-          )}
         </div>
       ),
     },
   ];
 
   return (
-    <div className="space-y-8">
-      {/* Top Header */}
+    <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-[16px] font-semibold text-white tracking-tight">Roles</h1>
-        </div>
-        <Button
-          variant="primary"
-          size="sm"
-          onClick={() => setCreateOpen(true)}
+        <h1 className="text-[16px] font-semibold text-white tracking-tight">Roles</h1>
+        <button
+          type="button"
+          onClick={() => {
+            setNewRoleName('');
+            setNewRoleDesc('');
+            setNewPerms([...READONLY_RULES]);
+            setCreateOpen(true);
+          }}
+          className="group relative inline-flex items-center justify-center h-8 px-3.5 rounded-[8px] font-medium text-white shadow-xs outline-none cursor-pointer overflow-hidden ring-1 ring-[#1d4ed8] bg-[#2563eb] text-[13px]"
         >
-          <Plus className="w-3.5 h-3.5 mr-1" />
-          Create Role
-        </Button>
+          <span aria-hidden="true" className="pointer-events-none absolute inset-0 rounded-[inherit] bg-gradient-to-b from-[#3b82f6] to-[#2563eb] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2)]" />
+          <span aria-hidden="true" className="pointer-events-none absolute inset-0 rounded-[inherit] bg-black opacity-0 group-hover:opacity-15 transition-opacity duration-200" />
+          <span className="relative flex items-center gap-1.5">
+            <Plus className="w-3.5 h-3.5" />
+            Create Role
+          </span>
+        </button>
       </div>
 
-      {/* Roles Read-Only Table */}
       <DataTable
         columns={columns}
         data={roles}
-        ariaLabel="Configured RBAC Roles Table"
+        ariaLabel="RBAC Roles"
         pagination={{
           page: 1,
           pageSize: 10,
@@ -311,57 +188,96 @@ export function Roles() {
         }}
       />
 
-      {/* Interactive Permission Matrix Section */}
-      <div id="permission-matrix-section" className="space-y-3 pt-2">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div>
-            <h2 className="text-[15px] font-semibold text-white tracking-tight flex items-center gap-2">
-              <Lock className="w-4 h-4 text-[#3b82f6]" />
-              Role Permission Matrix
-            </h2>
-            <p className="text-[12px] text-[#8c8c8c]">
-              Interactive permission toggles with parent-child enforcement for role: <span className="text-[#3b82f6] font-mono font-medium">{activeMatrixRole}</span>
-            </p>
-          </div>
-
-          {/* Role Selector Tabs */}
-          <div className="flex items-center gap-1.5 p-0.5 rounded-lg bg-[#0c0c0c] border border-[#222222]">
-            {roles.map((r) => (
-              <button
-                key={r.name}
-                type="button"
-                onClick={() => setActiveMatrixRole(r.name as any)}
-                className={`px-3 py-1.5 text-[12px] font-medium rounded-md transition-colors cursor-pointer ${
-                  activeMatrixRole === r.name
-                    ? 'bg-[#1a1a1a] text-white shadow-xs'
-                    : 'text-[#8c8c8c] hover:text-white hover:bg-[#141414]'
-                }`}
-              >
-                {r.name}
-              </button>
-            ))}
-          </div>
+      {/* Manage Role SlideOver */}
+      <SlideOver
+        isOpen={manageOpen}
+        onClose={() => { setManageOpen(false); }}
+        title={selectedRole?.name ?? ''}
+        subtitle={selectedRole?.description ?? ''}
+      >
+        <div className="flex items-center gap-0 border-b border-[#222222] px-5">
+          {(['permissions', 'danger'] as const).map((tab) => (
+            <button
+              key={tab}
+              type="button"
+              onClick={() => setManageTab(tab)}
+              className={`h-10 px-4 text-[13px] font-medium border-b-2 transition-colors cursor-pointer capitalize ${
+                manageTab === tab
+                  ? 'border-[#2f80ed] text-white'
+                  : 'border-transparent text-[#8c8c8c] hover:text-white'
+              }`}
+            >
+              {tab === 'permissions' ? 'Permissions' : 'Danger'}
+            </button>
+          ))}
         </div>
 
-        {/* PermissionTable Component Instance */}
-        <PermissionTable
-          value={matrixValues[activeMatrixRole] || READONLY_PERMISSIONS}
-          readOnly={activeMatrixRole === 'admin'}
-          onChange={(newVal) => {
-            setMatrixValues((prev) => ({
-              ...prev,
-              [activeMatrixRole]: newVal,
-            }));
-          }}
-        />
-      </div>
+        {manageTab === 'permissions' && (
+          <div className="flex-1 p-5 overflow-y-auto">
+            <div className="mb-3 text-[12px] text-[#8c8c8c]">
+              Database and table access rules for <span className="text-white font-mono">{selectedRole?.name}</span>. Use <code className="text-[#3b82f6]">*</code> to match all databases or tables.
+            </div>
+            <PermissionTable
+              value={editPerms}
+              onChange={setEditPerms}
+            />
+          </div>
+        )}
+
+        {manageTab === 'danger' && (
+          <div className="flex-1 p-5 overflow-y-auto">
+            <div className="rounded-[8px] border border-[#3a1515] bg-[#0e0404] p-4">
+              <div className="text-[13px] font-medium text-[#e5484d] mb-1">Delete Role</div>
+              <div className="text-[12px] text-[#8c8c8c] mb-4">
+                Permanently delete <span className="text-white font-mono">{selectedRole?.name}</span>. API keys assigned to this role will lose access.
+              </div>
+              <button
+                type="button"
+                onClick={() => setConfirmDeleteOpen(true)}
+                className="group relative flex shrink-0 items-center justify-center h-8 px-3.5 rounded-[8px] font-medium text-white shadow-xs outline-none cursor-pointer overflow-hidden ring-1 ring-[#be123c] bg-[#e11d48] font-sans text-[13px]"
+              >
+                <span
+                  aria-hidden="true"
+                  className="pointer-events-none absolute inset-0 rounded-[inherit] bg-gradient-to-b from-[#f43f5e] to-[#e11d48] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2)]"
+                />
+                <span
+                  aria-hidden="true"
+                  className="pointer-events-none absolute inset-0 rounded-[inherit] bg-black opacity-0 group-hover:opacity-15 transition-opacity duration-200"
+                />
+                <span className="relative flex items-center gap-1.5 font-sans">
+                  Delete Role
+                </span>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {manageTab === 'permissions' && (
+          <div className="p-4 border-t border-[#222222] bg-[#000000] flex items-center justify-end gap-2.5">
+            <button
+              type="button"
+              onClick={() => setManageOpen(false)}
+              className="h-8 px-3 rounded-[6px] text-[13px] font-medium text-[#8c8c8c] hover:text-white border border-[#262626] hover:border-[#383838] bg-transparent hover:bg-[#141414] transition-colors cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleSavePerms}
+              className="h-8 px-3 rounded-[6px] text-[13px] font-medium text-white bg-[#2563eb] hover:bg-[#1d4ed8] transition-colors cursor-pointer"
+            >
+              Save
+            </button>
+          </div>
+        )}
+      </SlideOver>
 
       {/* Create Role SlideOver */}
       <SlideOver
         isOpen={createOpen}
         onClose={() => setCreateOpen(false)}
-        title="Create New RBAC Policy"
-        subtitle="Define a custom role and assign initial permissions matrix"
+        title="Create Role"
+        subtitle="Define database access rules for this role"
         width="w-[560px] max-w-full"
       >
         <div className="flex-1 p-5 overflow-y-auto space-y-5">
@@ -371,69 +287,65 @@ export function Roles() {
               type="text"
               value={newRoleName}
               onChange={(e) => setNewRoleName(e.target.value)}
-              placeholder="e.g. data_analyst"
-              className="h-9 w-full rounded-md border border-[#262626] bg-[#121212] px-3 text-[13px] text-white focus:outline-none focus:border-[#3b82f6]"
+              placeholder="e.g. analytics_reader"
+              className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] px-3 text-[13px] text-white focus:outline-none focus:border-[#3b82f6]"
             />
           </div>
-
           <div>
             <label className="block text-[12px] font-medium text-[#cccccc] mb-1.5">Description</label>
             <textarea
               rows={2}
               value={newRoleDesc}
               onChange={(e) => setNewRoleDesc(e.target.value)}
-              placeholder="Summary of services or applications assigned to this role..."
-              className="w-full rounded-md border border-[#262626] bg-[#121212] p-3 text-[13px] text-white focus:outline-none focus:border-[#3b82f6]"
+              placeholder="What services or teams use this role..."
+              className="w-full rounded-[6px] border border-[#262626] bg-[#121212] p-3 text-[13px] text-white focus:outline-none focus:border-[#3b82f6] resize-none"
             />
           </div>
-
           <div>
-            <label className="block text-[12px] font-medium text-[#cccccc] mb-2">Configure Role Permissions</label>
-            <PermissionTable
-              value={newPerms}
-              onChange={setNewPerms}
-            />
+            <label className="block text-[12px] font-medium text-[#cccccc] mb-2">Database Access Rules</label>
+            <PermissionTable value={newPerms} onChange={setNewPerms} />
           </div>
         </div>
-
         <div className="p-4 border-t border-[#222222] bg-[#000000] flex items-center justify-end gap-2.5">
-          <Button variant="outline" size="sm" onClick={() => setCreateOpen(false)}>
+          <button
+            type="button"
+            onClick={() => setCreateOpen(false)}
+            className="h-8 px-3 rounded-[6px] text-[13px] font-medium text-[#8c8c8c] hover:text-white border border-[#262626] hover:border-[#383838] bg-transparent hover:bg-[#141414] transition-colors cursor-pointer"
+          >
             Cancel
-          </Button>
-          <Button variant="primary" size="sm" onClick={handleCreateRole}>
+          </button>
+          <button
+            type="button"
+            onClick={handleCreateRole}
+            className="h-8 px-3 rounded-[6px] text-[13px] font-medium text-white bg-[#2563eb] hover:bg-[#1d4ed8] transition-colors cursor-pointer"
+          >
             Create Role
-          </Button>
+          </button>
         </div>
       </SlideOver>
 
-      {/* Edit Role Description SlideOver */}
-      <SlideOver
-        isOpen={editOpen}
-        onClose={() => setEditOpen(false)}
-        title={`Edit Role: ${selectedRole?.name}`}
-        subtitle="Update scope summary and policy annotations"
-      >
-        <div className="flex-1 p-5 overflow-y-auto space-y-4">
-          <div>
-            <label className="block text-[12px] font-medium text-[#cccccc] mb-1.5">Description</label>
-            <textarea
-              rows={4}
-              value={editDesc}
-              onChange={(e) => setEditDesc(e.target.value)}
-              className="w-full rounded-md border border-[#262626] bg-[#121212] p-3 text-[13px] text-white focus:outline-none focus:border-[#3b82f6]"
-            />
-          </div>
-        </div>
-
-        <div className="p-4 border-t border-[#222222] bg-[#000000] flex items-center justify-end gap-2.5">
-          <Button variant="outline" size="sm" onClick={() => setEditOpen(false)}>
-            Cancel
-          </Button>
-          <Button variant="primary" size="sm" onClick={handleSaveEdit}>
-            Save Changes
-          </Button>
-        </div>
-      </SlideOver>
+      {/* Delete Role Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={confirmDeleteOpen}
+        onClose={() => setConfirmDeleteOpen(false)}
+        onConfirm={() => {
+          if (selectedRole) {
+            setRoles(roles.filter((r) => r.name !== selectedRole.name));
+          }
+          setConfirmDeleteOpen(false);
+          setManageOpen(false);
+        }}
+        title="Delete Role"
+        description={
+          <>
+            Permanently delete role{' '}
+            <span className="font-mono text-white font-medium">{selectedRole?.name}</span>?
+            All API keys and client identities assigned to this role will lose database permissions.
+          </>
+        }
+        confirmLabel="Delete Role"
+        cancelLabel="Cancel"
+      />
     </div>
   );
 }

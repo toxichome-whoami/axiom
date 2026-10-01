@@ -169,3 +169,148 @@
     padding-right: 0 !important;
   }
 }
+
+/* ========================================================= */
+/* Axiom DatePicker / @daypicker/react Edge-to-Edge Theme    */
+/* ========================================================= */
+.axiom-datepicker-wrapper {
+  width: 100%;
+}
+.axiom-datepicker-wrapper .rdp-root {
+  --rdp-accent-color: #2563eb;
+  --rdp-accent-background-color: #1d4ed8;
+  --rdp-day-height: 30px;
+  --rdp-day-width: 30px;
+  --rdp-day_button-height: 28px;
+  --rdp-day_button-width: 28px;
+  --rdp-day_button-border-radius: 5px;
+  --rdp-nav_button-height: 24px;
+  --rdp-nav_button-width: 24px;
+  --rdp-today-color: #3b82f6;
+  color: #f5f5f5;
+  font-family: var(--font-sans);
+  margin: 0;
+  width: 100%;
+  box-sizing: border-box;
+}
+.axiom-datepicker-wrapper .rdp-months {
+  width: 100%;
+  position: relative;
+}
+.axiom-datepicker-wrapper .rdp-month {
+  width: 100%;
+}
+.axiom-datepicker-wrapper .rdp-month_caption {
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  padding-left: 2px;
+  margin-bottom: 4px;
+}
+.axiom-datepicker-wrapper .rdp-caption_label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #ffffff;
+  letter-spacing: -0.01em;
+}
+.axiom-datepicker-wrapper .rdp-nav {
+  position: absolute;
+  right: 0;
+  top: 2px;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+.axiom-datepicker-wrapper .rdp-button_next,
+.axiom-datepicker-wrapper .rdp-button_previous {
+  width: 24px;
+  height: 24px;
+  border-radius: 5px;
+  border: 1px solid #262626;
+  background-color: #141414;
+  color: #8c8c8c;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.axiom-datepicker-wrapper .rdp-button_next:hover,
+.axiom-datepicker-wrapper .rdp-button_previous:hover {
+  background-color: #1f1f1f;
+  color: #ffffff;
+  border-color: #383838;
+}
+.axiom-datepicker-wrapper .rdp-chevron {
+  fill: #8c8c8c;
+  width: 14px;
+  height: 14px;
+}
+.axiom-datepicker-wrapper .rdp-button_next:hover .rdp-chevron,
+.axiom-datepicker-wrapper .rdp-button_previous:hover .rdp-chevron {
+  fill: #ffffff;
+}
+.axiom-datepicker-wrapper .rdp-month_grid {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+}
+.axiom-datepicker-wrapper .rdp-weekdays {
+  width: 100%;
+}
+.axiom-datepicker-wrapper .rdp-weekday {
+  width: 14.285%;
+  text-align: center;
+  color: #666666;
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  padding-bottom: 4px;
+  letter-spacing: 0.04em;
+}
+.axiom-datepicker-wrapper .rdp-weeks {
+  width: 100%;
+}
+.axiom-datepicker-wrapper .rdp-week {
+  width: 100%;
+}
+.axiom-datepicker-wrapper .rdp-day {
+  width: 14.285%;
+  height: 30px;
+  text-align: center;
+  padding: 1px 0;
+  vertical-align: middle;
+}
+.axiom-datepicker-wrapper .rdp-day_button {
+  width: 28px;
+  height: 28px;
+  margin: 0 auto;
+  border-radius: 5px;
+  font-size: 12px;
+  font-weight: 400;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.1s ease;
+  cursor: pointer;
+}
+.axiom-datepicker-wrapper .rdp-day_button:hover {
+  background-color: #1f1f1f;
+  color: #ffffff;
+}
+.axiom-datepicker-wrapper .rdp-selected .rdp-day_button,
+.axiom-datepicker-wrapper .rdp-day_button[aria-selected="true"] {
+  background-color: #2563eb !important;
+  color: #ffffff !important;
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+.axiom-datepicker-wrapper .rdp-today:not(.rdp-selected) .rdp-day_button {
+  color: #3b82f6;
+  font-weight: 600;
+}
+.axiom-datepicker-wrapper .rdp-outside {
+  opacity: 0.22;
+}
+

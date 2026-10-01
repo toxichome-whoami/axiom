@@ -119,7 +119,7 @@ export function Settings() {
         {/* CLI Management Callout Note Banner */}
         <div className="rounded-lg border border-[#222222] bg-[#0c0c0c] p-4 text-[12px] text-[#8c8c8c] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="space-y-1">
-            <span className="text-white font-medium block flex items-center gap-1.5">
+            <span className="text-white font-medium flex items-center gap-1.5">
               <Terminal className="w-3.5 h-3.5 text-[#3b82f6]" />
               Host CLI Zero-Trust Policy
             </span>

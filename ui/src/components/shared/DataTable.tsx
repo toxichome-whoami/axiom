@@ -269,14 +269,25 @@ export function DataTable<T>({
                       }
                     }}
                     style={widthStyle}
-                    className={`group relative flex items-center shrink-0 h-[40px] ${
+                    className={`group relative flex items-center shrink-0 h-[40px] min-w-0 ${
                       col.isFlex ? 'flex-1' : ''
                     } ${isFirst ? 'rounded-tl-lg' : ''} ${
                       col.isSortable ? 'cursor-pointer select-none' : ''
                     } ${col.headerClassName || col.className || 'px-3'}`}
                   >
-                    <span className="inline-flex items-center gap-1.5 text-[14px] font-medium text-white leading-none">
-                      <span>{col.header}</span>
+                    <span
+                      className={`inline-flex items-center gap-1.5 text-[14px] font-medium text-white leading-none min-w-0 max-w-full overflow-hidden ${
+                        (col.headerClassName || col.className)?.includes('justify-end')
+                          ? 'justify-end'
+                          : ''
+                      }`}
+                    >
+                      <span
+                        className="truncate whitespace-nowrap block min-w-0"
+                        title={typeof col.header === 'string' ? col.header : undefined}
+                      >
+                        {col.header}
+                      </span>
                       {col.isSortable && onSort && (
                         <CaretUpDownIcon active={isSortActive} direction={sortDirection} />
                       )}
@@ -387,18 +398,22 @@ export function DataTable<T>({
                           style={widthStyle}
                           className={`flex max-md:w-full max-md:h-auto max-md:py-1.5 ${
                             col.isFlex ? 'max-md:flex-col max-md:items-start max-md:gap-1' : 'max-md:justify-between max-md:items-center'
-                          } shrink-0 md:items-center ${allowRowExpansion ? 'h-auto min-h-[40px]' : 'md:h-[40px]'} overflow-hidden ${
+                          } shrink-0 md:items-center ${allowRowExpansion ? 'h-auto min-h-[40px]' : 'md:h-[40px]'} overflow-hidden min-w-0 ${
                             col.isFlex ? 'md:flex-1' : ''
                           } ${col.className || 'px-3'}`}
                         >
                           <span className="md:hidden text-[12px] text-[#888888] font-medium mr-4 select-none shrink-0 truncate">
                             {col.header}
                           </span>
-                          <div className={`flex min-w-0 ${col.isFlex ? 'w-full max-md:justify-start' : 'items-center max-md:justify-end'}`}>
+                          <div className={`flex min-w-0 max-w-full overflow-hidden whitespace-nowrap ${col.isFlex ? 'w-full max-md:justify-start' : 'items-center max-md:justify-end'}`}>
                             {col.cell
                               ? col.cell(row, rowIdx)
                               : col.accessorKey
-                              ? String(row[col.accessorKey] ?? '')
+                              ? (
+                                <span className="truncate whitespace-nowrap block min-w-0">
+                                  {String(row[col.accessorKey] ?? '')}
+                                </span>
+                              )
                               : null}
                           </div>
                         </td>

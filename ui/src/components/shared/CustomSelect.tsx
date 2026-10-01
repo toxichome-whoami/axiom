@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { Check, ChevronDown } from 'lucide-react';
 
 export const CustomSelect = <T extends string>({
   value,
@@ -8,7 +9,7 @@ export const CustomSelect = <T extends string>({
   menuWidth = 'w-full min-w-[140px]',
 }: {
   value: T;
-  options: { value: T; label: string }[];
+  options: { value: T; label: string; icon?: React.ReactNode }[];
   onChange: (val: T) => void;
   className?: string;
   menuWidth?: string;
@@ -34,28 +35,26 @@ export const CustomSelect = <T extends string>({
       <button
         type="button"
         onClick={() => setIsOpen((prev) => !prev)}
-        className={`w-full h-9 px-3 rounded-[8px] bg-[#141414] border text-[14px] text-white flex items-center justify-between cursor-pointer transition-colors ${
-          isOpen ? 'border-[#2f80ed]' : 'border-[#262626] hover:border-[#383838]'
+        className={`w-full h-9 px-3 rounded-[6px] bg-[#121212] border text-[14px] text-white flex items-center justify-between cursor-pointer transition-colors outline-none font-sans ${
+          isOpen
+            ? 'border-[#3b82f6] ring-1 ring-[#3b82f6]/20'
+            : 'border-[#262626] hover:border-[#383838] focus:border-[#3b82f6]'
         }`}
       >
-        <span className="truncate">{currentOption?.label || value}</span>
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          width="12"
-          height="12"
-          fill="currentColor"
-          viewBox="0 0 256 256"
-          className={`text-[#777777] shrink-0 ml-1.5 transition-transform duration-150 ${
+        <div className="flex items-center gap-2 truncate">
+          {currentOption?.icon}
+          <span className="truncate">{currentOption?.label || value}</span>
+        </div>
+        <ChevronDown
+          className={`w-3.5 h-3.5 text-[#8c8c8c] shrink-0 ml-2 transition-transform duration-150 ${
             isOpen ? 'rotate-180 text-white' : ''
           }`}
-        >
-          <path d="M213.66,101.66l-80,80a8,8,0,0,1-11.32,0l-80-80A8,8,0,0,1,53.66,90.34L128,164.69l74.34-74.35a8,8,0,0,1,11.32,11.32Z" />
-        </svg>
+        />
       </button>
 
       {isOpen && (
         <div
-          className={`absolute left-0 top-10 rounded-md bg-[#0c0c0c] border border-[#262626] shadow-2xl p-1 z-50 select-none ${menuWidth}`}
+          className={`absolute left-0 top-[calc(100%+4px)] rounded-[8px] bg-[#0c0c0c] border border-[#262626] shadow-2xl p-1 z-50 select-none animate-in fade-in duration-100 font-sans max-h-60 overflow-y-auto ${menuWidth}`}
         >
           {options.map((opt) => {
             const isSelected = opt.value === value;
@@ -67,24 +66,18 @@ export const CustomSelect = <T extends string>({
                   onChange(opt.value);
                   setIsOpen(false);
                 }}
-                className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded text-[14px] transition-colors cursor-pointer text-left ${
+                className={`w-full flex items-center justify-between px-3 py-2 rounded-[6px] text-[14px] transition-colors cursor-pointer text-left font-sans ${
                   isSelected
-                    ? 'bg-[#181818] text-white font-medium'
-                    : 'text-[#cccccc] hover:bg-[#141414] hover:text-white'
+                    ? 'bg-[#161616] text-white font-medium border border-[#333333]'
+                    : 'text-[#cccccc] hover:bg-[#141414] hover:text-white border border-transparent'
                 }`}
               >
-                <span>{opt.label}</span>
+                <div className="flex items-center gap-2 truncate">
+                  {opt.icon}
+                  <span className="truncate">{opt.label}</span>
+                </div>
                 {isSelected && (
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    width="12"
-                    height="12"
-                    fill="currentColor"
-                    viewBox="0 0 256 256"
-                    className="text-[#2f80ed] shrink-0"
-                  >
-                    <path d="M229.66,77.66l-128,128a8,8,0,0,1-11.32,0l-56-56a8,8,0,0,1,11.32-11.32L96,188.69,218.34,66.34a8,8,0,0,1,11.32,11.32Z" />
-                  </svg>
+                  <Check className="w-3.5 h-3.5 text-[#3b82f6] shrink-0 ml-2" />
                 )}
               </button>
             );

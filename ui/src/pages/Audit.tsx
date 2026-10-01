@@ -303,6 +303,7 @@ export function Audit() {
       id: 'timestamp',
       header: 'Timestamp',
       accessorKey: 'timestamp',
+      isResizable: true,
       width: 170,
       className: 'pl-4 pr-3',
       cell: (row) => (
@@ -315,6 +316,7 @@ export function Audit() {
       id: 'actor',
       header: 'Actor / Principal',
       accessorKey: 'actor',
+      isResizable: true,
       width: 180,
       className: 'px-3',
       cell: (row) => (
@@ -328,6 +330,7 @@ export function Audit() {
       id: 'action',
       header: 'Event Action',
       accessorKey: 'action',
+      isResizable: true,
       width: 190,
       className: 'px-3',
       cell: (row) => (
@@ -352,6 +355,7 @@ export function Audit() {
       id: 'ipAddress',
       header: 'Source IP',
       accessorKey: 'ipAddress',
+      isResizable: true,
       width: 140,
       className: 'px-3',
       cell: (row) => (
@@ -363,6 +367,7 @@ export function Audit() {
     {
       id: 'status',
       header: 'Status Result',
+      isResizable: true,
       width: 130,
       className: 'px-3',
       cell: (row) => (
@@ -381,6 +386,7 @@ export function Audit() {
     {
       id: 'durationMs',
       header: 'Duration',
+      isResizable: true,
       width: 110,
       headerClassName: 'justify-end pr-4 text-right',
       className: 'pl-3 pr-4 justify-end text-right',
