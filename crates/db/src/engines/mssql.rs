@@ -295,8 +295,16 @@ impl DatabaseEngine for MssqlDatabaseEngine {
             for name in &column_names {
                 let val = if let Ok(Some(s)) = row.try_get::<&str, _>(name.as_str()) {
                     Value::String(s.to_string())
+                } else if let Ok(Some(i)) = row.try_get::<i64, _>(name.as_str()) {
+                    Value::Number(i.into())
                 } else if let Ok(Some(i)) = row.try_get::<i32, _>(name.as_str()) {
                     Value::Number(i.into())
+                } else if let Ok(Some(i)) = row.try_get::<i16, _>(name.as_str()) {
+                    Value::Number(i.into())
+                } else if let Ok(Some(f)) = row.try_get::<f64, _>(name.as_str()) {
+                    serde_json::Number::from_f64(f).map(Value::Number).unwrap_or(Value::Null)
+                } else if let Ok(Some(f)) = row.try_get::<f32, _>(name.as_str()) {
+                    serde_json::Number::from_f64(f as f64).map(Value::Number).unwrap_or(Value::Null)
                 } else if let Ok(Some(b)) = row.try_get::<bool, _>(name.as_str()) {
                     Value::Bool(b)
                 } else {

@@ -12,20 +12,18 @@ use crate::engines::base::{
 };
 use async_trait::async_trait;
 use serde_json::Value;
-use sqlx::{any::AnyPoolOptions, Any, Column, Pool, Row};
+use sqlx::{mysql::MySqlPoolOptions, Column, MySqlPool, Row};
 
 pub struct MysqlDatabaseEngine {
-    pool: Option<Pool<Any>>,
+    pool: Option<MySqlPool>,
     config: DatabaseDefConfig,
 }
 
 impl MysqlDatabaseEngine {
     /// Instantiates an uninitialized MysqlDatabaseEngine.
     /// CONTRACT:
-    ///  - Driver registration happens once during instantiation.
     ///  - Pool is None until `connect()` is awaited.
     pub fn new(config: DatabaseDefConfig) -> Self {
-        sqlx::any::install_default_drivers();
         Self { pool: None, config }
     }
 }
@@ -34,7 +32,7 @@ impl MysqlDatabaseEngine {
 impl DatabaseEngine for MysqlDatabaseEngine {
     async fn connect(&mut self) -> Result<(), EngineError> {
         if self.pool.is_none() {
-            let pool = AnyPoolOptions::new()
+            let pool = MySqlPoolOptions::new()
                 .max_connections(self.config.pool_max as u32)
                 .min_connections(self.config.pool_min as u32)
                 .acquire_timeout(std::time::Duration::from_secs(
@@ -273,6 +271,12 @@ impl DatabaseEngine for MysqlDatabaseEngine {
                     serde_json::Number::from_f64(f as f64).map(Value::Number).unwrap_or(Value::Null)
                 } else if let Ok(b) = row.try_get::<bool, _>(idx) {
                     Value::Bool(b)
+                } else if let Ok(dt) = row.try_get::<chrono::NaiveDateTime, _>(idx) {
+                    Value::String(dt.to_string())
+                } else if let Ok(dt) = row.try_get::<chrono::DateTime<chrono::Utc>, _>(idx) {
+                    Value::String(dt.to_rfc3339())
+                } else if let Ok(d) = row.try_get::<chrono::NaiveDate, _>(idx) {
+                    Value::String(d.to_string())
                 } else {
                     Value::Null
                 };

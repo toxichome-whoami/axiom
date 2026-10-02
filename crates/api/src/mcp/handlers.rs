@@ -270,7 +270,7 @@ async fn handle_tools_call(
             let text = if val.is_string() {
                 val.as_str().unwrap().to_string()
             } else {
-                serde_json::to_string_pretty(&val).unwrap_or_default()
+                serde_json::to_string(&val).unwrap_or_default()
             };
             JsonRpcResponse::success(id, serde_json::to_value(McpToolCallResult::success(text)).unwrap())
         }
