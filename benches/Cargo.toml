@@ -24,10 +24,6 @@ libsql = { workspace = true }
 [dev-dependencies]
 criterion = { version = "0.5", features = ["async_tokio"] }
 
-[[bin]]
-name = "bench-throughput"
-path = "src/main.rs"
-
 [[bench]]
 name = "pipeline"
 harness = false
