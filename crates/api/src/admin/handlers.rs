@@ -1052,8 +1052,17 @@ pub struct TestUrlRequest {
 
 /// Tests connectivity against a raw database URL directly without saving it.
 pub async fn test_database_url(
+    Extension(auth): Extension<AuthContext>,
     Json(payload): Json<TestUrlRequest>,
 ) -> Result<impl IntoResponse, AxiomError> {
+    if !auth.full_admin {
+        return Err(AxiomError::new(
+            "FORBIDDEN",
+            "Admin privileges required",
+            StatusCode::FORBIDDEN,
+        ));
+    }
+
     let dialect = DatabasePoolManager::test_url(&payload.url)
         .await
         .map_err(|e| AxiomError::new("DATABASE_CONNECTION_FAILED", &e, StatusCode::BAD_REQUEST))?;
@@ -1103,8 +1112,17 @@ pub async fn test_database_url(
 ///  - Tests database connection before registering.
 ///  - Side effects: Registers database in axiom.db.
 pub async fn setup_database(
+    Extension(auth): Extension<AuthContext>,
     Json(payload): Json<AddDatabaseRequest>,
 ) -> Result<impl IntoResponse, AxiomError> {
+    if !auth.full_admin {
+        return Err(AxiomError::new(
+            "FORBIDDEN",
+            "Admin privileges required",
+            StatusCode::FORBIDDEN,
+        ));
+    }
+
     // 1. Verify database connectivity before saving
     let dialect = DatabasePoolManager::test_url(&payload.url)
         .await
@@ -1149,7 +1167,17 @@ pub async fn setup_database(
 /// Finalizes the setup wizard, permanently locking it.
 /// CONTRACT:
 ///  - Returns: Success confirmation.
-pub async fn setup_complete() -> Result<impl IntoResponse, AxiomError> {
+pub async fn setup_complete(
+    Extension(auth): Extension<AuthContext>,
+) -> Result<impl IntoResponse, AxiomError> {
+    if !auth.full_admin {
+        return Err(AxiomError::new(
+            "FORBIDDEN",
+            "Admin privileges required",
+            StatusCode::FORBIDDEN,
+        ));
+    }
+
     Ok(Json(json!({
         "success": true,
         "data": {
@@ -1251,7 +1279,17 @@ pub async fn logout_handler(
 /// Lists all registered administrative accounts.
 /// CONTRACT:
 ///  - Invariant: Password hashes are redacted.
-pub async fn list_users_handler() -> Result<impl IntoResponse, AxiomError> {
+pub async fn list_users_handler(
+    Extension(auth): Extension<AuthContext>,
+) -> Result<impl IntoResponse, AxiomError> {
+    if !auth.full_admin {
+        return Err(AxiomError::new(
+            "FORBIDDEN",
+            "Admin privileges required",
+            StatusCode::FORBIDDEN,
+        ));
+    }
+
     let users = MetadataStore::list_users()
         .await
         .map_err(|e| AxiomError::new("USERS_FETCH_FAILED", &e, StatusCode::INTERNAL_SERVER_ERROR))?;

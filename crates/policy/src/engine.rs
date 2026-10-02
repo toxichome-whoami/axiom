@@ -90,11 +90,27 @@ impl PolicyEngine {
                         "Write-only keys cannot execute SELECT queries",
                         StatusCode::FORBIDDEN,
                     ))
+                } else if op_normalized == "INSERT" || op_normalized == "UPDATE" || op_normalized == "DELETE" {
+                    Ok(())
+                } else {
+                    Err(AxiomError::new(
+                        "AUTH_INSUFFICIENT_MODE",
+                        "Write-only keys can only execute INSERT, UPDATE, or DELETE operations",
+                        StatusCode::FORBIDDEN,
+                    ))
+                }
+            }
+            ServerMode::Readwrite => {
+                if op_normalized == "DENY" {
+                    Err(AxiomError::new(
+                        "AUTH_FORBIDDEN",
+                        "Operation forbidden",
+                        StatusCode::FORBIDDEN,
+                    ))
                 } else {
                     Ok(())
                 }
             }
-            ServerMode::Readwrite => Ok(()),
         }
     }
 

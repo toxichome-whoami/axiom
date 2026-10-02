@@ -20,7 +20,6 @@ pub fn get_router() -> Router {
     let public_routes = Router::new()
         .route("/setup/begin", get(setup_begin).post(setup_begin))
         .route("/setup/account", post(setup_account))
-        .route("/setup/database/test", post(test_database_url))
         .route("/auth/login", post(login_handler));
 
     let protected_routes = Router::new()
@@ -33,6 +32,7 @@ pub fn get_router() -> Router {
         .route("/roles/:name", patch(update_role).delete(delete_role))
         .route("/databases", get(list_databases).post(add_database))
         .route("/databases/test-url", post(test_database_url))
+        .route("/setup/database/test", post(test_database_url))
         .route("/databases/:alias/test", get(test_database))
         .route("/databases/:alias", delete(delete_database))
         .route("/cache/stats", get(get_cache_stats))

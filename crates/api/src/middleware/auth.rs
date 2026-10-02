@@ -192,7 +192,6 @@ pub fn validate_api_key(
                         if let Some(role_snap) = snapshot.roles.get(r_name) {
                             permissions = role_snap.permissions.clone();
                             if r_name == "admin"
-                                || r_name.contains("admin")
                                 || permissions.iter().any(|p| {
                                     p.database == "*"
                                         && p.table_name == "*"
@@ -218,14 +217,23 @@ pub fn validate_api_key(
 
             // 2. Fallback check for static config.toml entries (backward compatibility)
             if let Some(key_cfg) = config.api_key.get(key_name) {
-                // Constant-time comparison preventing timing-attack oracle on secret bytes
-                let mut match_result = 0;
-                if key_cfg.secret.len() == key_secret.len() {
-                    for (a, b) in key_cfg.secret.bytes().zip(key_secret.bytes()) {
-                        match_result |= a ^ b;
+                // Check key expiration if configured
+                if let Some(exp) = key_cfg.expires_at {
+                    let now = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs() as i64;
+                    if now > exp {
+                        return Err(Some("API key has expired".to_string()));
                     }
-                } else {
-                    match_result = 1;
+                }
+
+                // Constant-time BLAKE3 comparison eliminating length leak and timing attack oracle
+                let expected_hash = blake3::hash(key_cfg.secret.as_bytes());
+                let actual_hash = blake3::hash(key_secret.as_bytes());
+                let mut match_result = 0;
+                for (a, b) in expected_hash.as_bytes().iter().zip(actual_hash.as_bytes().iter()) {
+                    match_result |= a ^ b;
                 }
 
                 if !key_cfg.secret.is_empty() && match_result == 0 {

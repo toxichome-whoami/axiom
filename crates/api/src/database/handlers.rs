@@ -42,6 +42,64 @@ pub async fn warm_cache_from_turso(entries: Vec<(String, bytes::Bytes, i64)>) {
 
 pub struct QueryExecutionPipeline;
 
+fn extract_table_name(raw: &str) -> String {
+    let clean = raw.trim().trim_matches('"').trim_matches('`').trim_matches('\'');
+    if let Some((_, right)) = clean.rsplit_once('.') {
+        right.trim_matches('"').trim_matches('`').to_string()
+    } else {
+        clean.to_string()
+    }
+}
+
+fn collect_tables_from_factor(factor: &sqlparser::ast::TableFactor, tables: &mut Vec<String>) {
+    match factor {
+        sqlparser::ast::TableFactor::Table { name, .. } => {
+            tables.push(extract_table_name(&name.to_string()));
+        }
+        sqlparser::ast::TableFactor::Derived { subquery, .. } => {
+            collect_tables_from_query(subquery, tables);
+        }
+        sqlparser::ast::TableFactor::NestedJoin { table_with_joins, .. } => {
+            collect_tables_from_table_with_joins(table_with_joins, tables);
+        }
+        _ => {}
+    }
+}
+
+fn collect_tables_from_table_with_joins(twj: &sqlparser::ast::TableWithJoins, tables: &mut Vec<String>) {
+    collect_tables_from_factor(&twj.relation, tables);
+    for join in &twj.joins {
+        collect_tables_from_factor(&join.relation, tables);
+    }
+}
+
+fn collect_tables_from_set_expr(expr: &sqlparser::ast::SetExpr, tables: &mut Vec<String>) {
+    match expr {
+        sqlparser::ast::SetExpr::Select(select) => {
+            for twj in &select.from {
+                collect_tables_from_table_with_joins(twj, tables);
+            }
+        }
+        sqlparser::ast::SetExpr::Query(q) => {
+            collect_tables_from_query(q, tables);
+        }
+        sqlparser::ast::SetExpr::SetOperation { left, right, .. } => {
+            collect_tables_from_set_expr(left, tables);
+            collect_tables_from_set_expr(right, tables);
+        }
+        _ => {}
+    }
+}
+
+fn collect_tables_from_query(query: &sqlparser::ast::Query, tables: &mut Vec<String>) {
+    if let Some(with) = &query.with {
+        for cte in &with.cte_tables {
+            collect_tables_from_query(&cte.query, tables);
+        }
+    }
+    collect_tables_from_set_expr(&query.body, tables);
+}
+
 impl QueryExecutionPipeline {
     /// Executes a database query through the complete pipeline: circuit breaker, cache, blacklist, AST, and engine.
     /// CONTRACT:
@@ -121,52 +179,61 @@ impl QueryExecutionPipeline {
         let mut is_mutation = false;
 
         for stmt in &statements {
-            let (op, table_opt) = match stmt {
+            let (op, tables) = match stmt {
                 sqlparser::ast::Statement::Query(query) => {
-                    let mut table = None;
-                    if let sqlparser::ast::SetExpr::Select(select) = &*query.body {
-                        if let Some(table_with_joins) = select.from.first() {
-                            if let sqlparser::ast::TableFactor::Table { name, .. } = &table_with_joins.relation {
-                                table = Some(name.to_string());
-                            }
-                        }
-                    }
-                    ("SELECT", table)
+                    let mut tbls = Vec::new();
+                    collect_tables_from_query(query, &mut tbls);
+                    ("SELECT", tbls)
                 }
                 sqlparser::ast::Statement::Explain { .. }
                 | sqlparser::ast::Statement::ShowVariable { .. }
-                | sqlparser::ast::Statement::ShowColumns { .. } => ("SELECT", None),
+                | sqlparser::ast::Statement::ShowColumns { .. } => ("SELECT", Vec::new()),
                 sqlparser::ast::Statement::Insert(insert) => {
                     is_mutation = true;
-                    ("INSERT", Some(insert.table.to_string()))
+                    ("INSERT", vec![extract_table_name(&insert.table.to_string())])
                 }
                 sqlparser::ast::Statement::Update(update) => {
                     is_mutation = true;
-                    ("UPDATE", Some(update.table.to_string()))
+                    let mut tbls = Vec::new();
+                    collect_tables_from_table_with_joins(&update.table, &mut tbls);
+                    if tbls.is_empty() {
+                        tbls.push(extract_table_name(&update.table.to_string()));
+                    }
+                    ("UPDATE", tbls)
                 }
                 sqlparser::ast::Statement::Delete(delete) => {
                     is_mutation = true;
-                    let t_name = if let sqlparser::ast::FromTable::WithFromKeyword(tables) = &delete.from {
-                        tables.first().map(|t| t.to_string())
+                    let mut tbls = Vec::new();
+                    if let sqlparser::ast::FromTable::WithFromKeyword(from_tables) = &delete.from {
+                        for twj in from_tables {
+                            collect_tables_from_table_with_joins(twj, &mut tbls);
+                        }
                     } else {
-                        delete.tables.first().map(|t| t.to_string())
+                        for name in &delete.tables {
+                            tbls.push(extract_table_name(&name.to_string()));
+                        }
                     };
-                    ("DELETE", t_name)
+                    ("DELETE", tbls)
                 }
                 sqlparser::ast::Statement::Drop { .. }
                 | sqlparser::ast::Statement::AlterTable { .. }
                 | sqlparser::ast::Statement::Truncate { .. } => {
                     is_mutation = true;
-                    ("DELETE", None)
+                    ("DDL", Vec::new())
                 }
                 _ => {
                     is_mutation = true;
-                    ("*", None)
+                    ("DENY", Vec::new())
                 }
             };
 
-            let target_table = table_opt.as_deref().unwrap_or("*");
-            PolicyEngine::evaluate(auth, db_name, target_table, op)?;
+            if tables.is_empty() {
+                PolicyEngine::evaluate(auth, db_name, "*", op)?;
+            } else {
+                for tbl in &tables {
+                    PolicyEngine::evaluate(auth, db_name, tbl, op)?;
+                }
+            }
         }
 
         // Format placeholders based on engine dialect
@@ -282,19 +349,15 @@ impl QueryExecutionPipeline {
                     let mut count = CIRCUIT_FAILURES.entry(db_name.to_string()).or_insert(0);
                     *count += 1;
                 }
-                tracing::error!("Database query failed: {}", e);
+                tracing::error!("Database query failed on '{}': {}", db_name, e);
 
-                let status = if is_connection_failure {
-                    StatusCode::SERVICE_UNAVAILABLE
+                let (status, err_code, client_msg) = if is_connection_failure {
+                    (StatusCode::SERVICE_UNAVAILABLE, "DB_CONNECTION_FAILED", "Upstream database unavailable")
                 } else {
-                    StatusCode::BAD_REQUEST
+                    (StatusCode::BAD_REQUEST, "DB_QUERY_FAILED", "Database query execution failed")
                 };
 
-                Err(AxiomError::new(
-                    if is_connection_failure { "DB_CONNECTION_FAILED" } else { "DB_QUERY_FAILED" },
-                    &e,
-                    status,
-                ))
+                Err(AxiomError::new(err_code, client_msg, status))
             },
         }
     }

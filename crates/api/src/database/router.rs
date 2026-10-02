@@ -129,7 +129,7 @@ async fn execute_query(
     let idempotency_key = headers
         .get("Idempotency-Key")
         .and_then(|v| v.to_str().ok())
-        .map(|s| format!("idemp:{}", s));
+        .map(|s| format!("idemp:{}:{}", auth.api_key_name, s));
     
     if let Some(ref key) = idempotency_key {
         if let Some(cached_response) = axiom_cache::CacheEngine::get(key).await {
@@ -170,7 +170,7 @@ async fn execute_query(
         }
     }
 
-    let timeout_duration = std::time::Duration::from_secs(payload.timeout.unwrap_or(30) as u64);
+    let timeout_duration = std::time::Duration::from_secs(payload.timeout.unwrap_or(30).clamp(1, 300) as u64);
     let (_arc_result, json_bytes) = match tokio::time::timeout(
         timeout_duration,
         QueryExecutionPipeline::run_query(&db_name, &payload.sql, params_array, &auth, &db_cfg)
