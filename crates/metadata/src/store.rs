@@ -791,26 +791,105 @@ impl MetadataStore {
     ///  - Precondition: `alias` non-empty identifier; `url` valid connection string.
     ///  - Side effects: Writes to SQLite `databases` table, logs audit event, updates ArcSwap snapshot.
     ///  - Idempotent: Yes (upsert behavior).
+    /// Evaluates if two database connection strings refer to the same underlying database target.
+    /// Invariant: Protocol aliases (e.g. postgresql:// vs postgres://, mysql:// vs mariadb://)
+    /// and trailing slashes are canonicalized.
+    pub fn urls_match(url1: &str, url2: &str) -> bool {
+        let u1 = url1.trim().trim_end_matches('/');
+        let u2 = url2.trim().trim_end_matches('/');
+        if u1.eq_ignore_ascii_case(u2) {
+            return true;
+        }
+
+        fn canonicalize_scheme(s: &str) -> &str {
+            if let Some(rest) = s.strip_prefix("postgresql://") {
+                rest
+            } else if let Some(rest) = s.strip_prefix("postgres://") {
+                rest
+            } else if let Some(rest) = s.strip_prefix("mariadb://") {
+                rest
+            } else if let Some(rest) = s.strip_prefix("mysql://") {
+                rest
+            } else if let Some(rest) = s.strip_prefix("sqlserver://") {
+                rest
+            } else if let Some(rest) = s.strip_prefix("mssql://") {
+                rest
+            } else if let Some(rest) = s.strip_prefix("clickhouse+https://") {
+                rest
+            } else if let Some(rest) = s.strip_prefix("clickhouse://") {
+                rest
+            } else {
+                s
+            }
+        }
+
+        let c1 = canonicalize_scheme(u1);
+        let c2 = canonicalize_scheme(u2);
+        c1.eq_ignore_ascii_case(c2)
+    }
+
+    /// Adds or updates a target database configuration and refreshes the snapshot.
+    /// CONTRACT:
+    ///  - Precondition: `alias` non-empty identifier; `url` valid connection string.
+    ///  - Side effects: Writes to SQLite `databases` table, logs audit event, updates ArcSwap snapshot.
+    ///  - Idempotent: Yes (upsert behavior).
     pub async fn add_database(
         alias: &str,
         url: &str,
         engine: Option<&str>,
         pool_min: Option<i64>,
         pool_max: Option<i64>,
+        old_alias: Option<&str>,
     ) -> Result<(), String> {
         let _guard = STORE_LOCK.lock().await;
         let conn = Self::get_conn().await?;
 
+        let lookup_alias = old_alias.unwrap_or(alias);
+
+        // If URL is empty or masked, fetch the existing URL from the database for lookup_alias
+        let effective_url = if url.trim().is_empty() || url.contains('•') {
+            let mut rows = conn
+                .query("SELECT url FROM databases WHERE alias = ?1", [lookup_alias])
+                .await
+                .map_err(|e| format!("Database query error: {}", e))?;
+            if let Ok(Some(row)) = rows.next().await {
+                row.get::<String>(0).map_err(|e| format!("Failed to read existing url: {}", e))?
+            } else {
+                return Err("Database connection URL cannot be empty for a new database".to_string());
+            }
+        } else {
+            url.to_string()
+        };
+
+        // Enforce uniqueness: Reject if another database alias is already using this same URL
+        let mut check_rows = conn
+            .query(
+                "SELECT alias, url FROM databases WHERE alias != ?1 AND alias != ?2",
+                [alias, lookup_alias],
+            )
+            .await
+            .map_err(|e| format!("Database query error: {}", e))?;
+        while let Ok(Some(row)) = check_rows.next().await {
+            let other_alias: String = row.get(0).unwrap_or_default();
+            let other_url: String = row.get(1).unwrap_or_default();
+            if Self::urls_match(&other_url, &effective_url) {
+                return Err(format!(
+                    "This database connection URL is already registered under alias '{}'",
+                    other_alias
+                ));
+            }
+        }
+
         // Dialect inference if not explicitly provided
         let engine_dialect = if let Some(e) = engine {
             e.to_string()
-        } else if url.starts_with("postgres") {
+        } else if effective_url.starts_with("postgres") {
             "postgres".to_string()
-        } else if url.starts_with("mysql") || url.starts_with("mariadb") {
+        } else if effective_url.starts_with("mysql") || effective_url.starts_with("mariadb") {
             "mysql".to_string()
-        } else if url.starts_with("mssql") || url.starts_with("sqlserver") {
+        } else if effective_url.starts_with("mssql") || effective_url.starts_with("sqlserver") {
             "mssql".to_string()
-        } else if url.starts_with("clickhouse") {
+        } else if effective_url.starts_with("clickhouse") {
             "clickhouse".to_string()
         } else {
             "sqlite".to_string()
@@ -821,12 +900,22 @@ impl MetadataStore {
             .unwrap_or_default()
             .as_secs() as i64;
 
+        if let Some(old) = old_alias {
+            if old != alias {
+                let _ = conn.execute("DELETE FROM databases WHERE alias = ?1", [old]).await;
+                let _ = conn.execute(
+                    "UPDATE permissions SET database = ?1 WHERE database = ?2",
+                    libsql::params![alias, old],
+                ).await;
+            }
+        }
+
         conn.execute(
             "INSERT OR REPLACE INTO databases (alias, url, engine, pool_min, pool_max, created_at) \
              VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             libsql::params![
                 alias,
-                url,
+                effective_url.as_str(),
                 engine_dialect.as_str(),
                 pool_min.unwrap_or(1),
                 pool_max.unwrap_or(10),

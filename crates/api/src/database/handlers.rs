@@ -54,7 +54,7 @@ impl QueryExecutionPipeline {
         sql: &str,
         params: Vec<Value>,
         auth: &AuthContext,
-        db_cfg: &DatabaseDefConfig,
+        _db_cfg: &DatabaseDefConfig,
     ) -> Result<(Arc<QueryResult>, bytes::Bytes), AxiomError> {
         // Debt #1: Fetch configuration once per request pipeline run
         let config = axiom_core::ConfigManager::get();
@@ -74,14 +74,6 @@ impl QueryExecutionPipeline {
 
         let is_mutation_regex = MUTATION_RE.is_match(sql);
         
-        if let Some(blacklist) = &db_cfg.query_blacklist {
-            let sql_upper = sql.to_uppercase();
-            for blacklisted in blacklist {
-                if sql_upper.contains(&blacklisted.to_uppercase()) {
-                    return Err(AxiomError::new("QUERY_BLACKLISTED", "Query contains blacklisted keyword", StatusCode::FORBIDDEN));
-                }
-            }
-        }
 
         let cache_enabled = config.cache.enabled && config.cache.query_cache;
         let cache_ttl = config.cache.query_results_ttl as u64;
@@ -91,7 +83,7 @@ impl QueryExecutionPipeline {
 
             if let Some(bytes) = axiom_cache::CacheEngine::get(&key).await {
                 return Ok((
-                    Arc::new(QueryResult { columns: None, rows: None, affected_rows: Some(0), truncated: None, next_cursor: None }),
+                    Arc::new(QueryResult { affected_rows: Some(0), ..Default::default() }),
                     bytes,
                 ));
             }
@@ -127,10 +119,9 @@ impl QueryExecutionPipeline {
         })?;
 
         let mut is_mutation = false;
-        let mut is_dangerous = false;
 
         for stmt in &statements {
-            let (op, table_opt, is_dang) = match stmt {
+            let (op, table_opt) = match stmt {
                 sqlparser::ast::Statement::Query(query) => {
                     let mut table = None;
                     if let sqlparser::ast::SetExpr::Select(select) = &*query.body {
@@ -140,18 +131,18 @@ impl QueryExecutionPipeline {
                             }
                         }
                     }
-                    ("SELECT", table, false)
+                    ("SELECT", table)
                 }
                 sqlparser::ast::Statement::Explain { .. }
                 | sqlparser::ast::Statement::ShowVariable { .. }
-                | sqlparser::ast::Statement::ShowColumns { .. } => ("SELECT", None, false),
+                | sqlparser::ast::Statement::ShowColumns { .. } => ("SELECT", None),
                 sqlparser::ast::Statement::Insert(insert) => {
                     is_mutation = true;
-                    ("INSERT", Some(insert.table.to_string()), false)
+                    ("INSERT", Some(insert.table.to_string()))
                 }
                 sqlparser::ast::Statement::Update(update) => {
                     is_mutation = true;
-                    ("UPDATE", Some(update.table.to_string()), false)
+                    ("UPDATE", Some(update.table.to_string()))
                 }
                 sqlparser::ast::Statement::Delete(delete) => {
                     is_mutation = true;
@@ -160,34 +151,22 @@ impl QueryExecutionPipeline {
                     } else {
                         delete.tables.first().map(|t| t.to_string())
                     };
-                    ("DELETE", t_name, false)
+                    ("DELETE", t_name)
                 }
                 sqlparser::ast::Statement::Drop { .. }
                 | sqlparser::ast::Statement::AlterTable { .. }
                 | sqlparser::ast::Statement::Truncate { .. } => {
                     is_mutation = true;
-                    ("DELETE", None, true)
+                    ("DELETE", None)
                 }
                 _ => {
                     is_mutation = true;
-                    ("*", None, false)
+                    ("*", None)
                 }
             };
 
-            if is_dang {
-                is_dangerous = true;
-            }
-
             let target_table = table_opt.as_deref().unwrap_or("*");
             PolicyEngine::evaluate(auth, db_name, target_table, op)?;
-        }
-
-        if is_dangerous && !db_cfg.dangerous_operations {
-            return Err(AxiomError::new(
-                "DB_DANGEROUS_OP_DENIED",
-                "Dangerous operations are disabled",
-                StatusCode::FORBIDDEN,
-            ));
         }
 
         // Format placeholders based on engine dialect
@@ -210,7 +189,50 @@ impl QueryExecutionPipeline {
         };
 
         let start_time = std::time::Instant::now();
-        let exec_result = engine.execute(&formatted_sql, &params).await.map_err(|e| e.to_string());
+        let exec_result: Result<QueryResult, String> = if statements.len() > 1 {
+            let mut last_res = None;
+            let mut exec_err = None;
+            for (idx, stmt) in statements.iter().enumerate() {
+                let stmt_str = stmt.to_string();
+                let stmt_formatted = if dialect_name == "postgres" || dialect_name == "any" {
+                    let mut s = String::new();
+                    let mut p_idx = 1;
+                    for c in stmt_str.chars() {
+                        if c == '?' {
+                            s.push_str(&format!("${}", p_idx));
+                            p_idx += 1;
+                        } else {
+                            s.push(c);
+                        }
+                    }
+                    s
+                } else {
+                    stmt_str
+                };
+
+                let is_last = idx == statements.len() - 1;
+                let stmt_params = if is_last { params.as_slice() } else { &[] };
+                match engine.execute(&stmt_formatted, stmt_params).await {
+                    Ok(r) => {
+                        last_res = Some(r);
+                    }
+                    Err(e) => {
+                        exec_err = Some(e.to_string());
+                        break;
+                    }
+                }
+            }
+            if let Some(err) = exec_err {
+                Err(err)
+            } else {
+                Ok(last_res.unwrap_or_else(|| QueryResult {
+                    affected_rows: Some(0),
+                    ..Default::default()
+                }))
+            }
+        } else {
+            engine.execute(&formatted_sql, &params).await.map_err(|e| e.to_string())
+        };
         let duration_secs = start_time.elapsed().as_secs_f64();
         let op_label = if is_mutation { "MUTATION" } else { "SELECT" };
         crate::metrics::MetricsEngine::record_db_query(db_name, op_label, duration_secs);
@@ -248,15 +270,29 @@ impl QueryExecutionPipeline {
                 Ok((arc_res, json_bytes))
             }
             Err(e) => {
-                if config.circuit_breaker.enabled {
+                let err_lower = e.to_lowercase();
+                let is_connection_failure = err_lower.contains("connection")
+                    || err_lower.contains("refused")
+                    || err_lower.contains("timed out")
+                    || err_lower.contains("broken pipe")
+                    || err_lower.contains("closed pool");
+
+                if config.circuit_breaker.enabled && is_connection_failure {
                     let mut count = CIRCUIT_FAILURES.entry(db_name.to_string()).or_insert(0);
                     *count += 1;
                 }
                 tracing::error!("Database query failed: {}", e);
+
+                let status = if is_connection_failure {
+                    StatusCode::SERVICE_UNAVAILABLE
+                } else {
+                    StatusCode::BAD_REQUEST
+                };
+
                 Err(AxiomError::new(
-                    "DB_QUERY_FAILED",
-                    "Database query execution failed",
-                    StatusCode::INTERNAL_SERVER_ERROR,
+                    if is_connection_failure { "DB_CONNECTION_FAILED" } else { "DB_QUERY_FAILED" },
+                    &e,
+                    status,
                 ))
             },
         }
@@ -387,19 +423,23 @@ pub async fn insert_rows(
 
     // Dynamically build a parameterized multi-insert query from the provided rows.
     let first_row = &rows_to_insert[0];
-    let columns: Vec<String> = first_row
+    let column_pairs: Vec<(&String, String)> = first_row
         .keys()
-        .map(|k| crate::database::filter_builder::sanitize_ident(k))
+        .map(|k| (k, crate::database::filter_builder::sanitize_ident(k)))
         .collect();
-    let cols_str = columns.join(", ");
+    let cols_str = column_pairs
+        .iter()
+        .map(|(_, col)| col.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
 
     let mut all_params = Vec::new();
     let mut values_strings = Vec::new();
 
     for row in &rows_to_insert {
         let mut row_placeholders = Vec::new();
-        for col in &columns {
-            let val = row.get(col).unwrap_or(&Value::Null);
+        for (raw_k, _) in &column_pairs {
+            let val = row.get(*raw_k).unwrap_or(&Value::Null);
             all_params.push(val.clone());
             row_placeholders.push("?");
         }
@@ -657,5 +697,19 @@ pub async fn describe_table(
         },
         "error": serde_json::Value::Null
     })))
+}
+
+#[cfg(test)]
+mod tests {
+
+    #[test]
+    fn test_multi_statement_sqlparser() {
+        let sql = "CREATE TABLE customers (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(100) NOT NULL); INSERT INTO customers (name) VALUES ('Alice'); SELECT * FROM customers;";
+        let stmts = sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::MySqlDialect {}, sql).unwrap();
+        assert_eq!(stmts.len(), 3);
+        assert_eq!(stmts[0].to_string(), "CREATE TABLE customers (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(100) NOT NULL)");
+        assert_eq!(stmts[1].to_string(), "INSERT INTO customers (name) VALUES ('Alice')");
+        assert_eq!(stmts[2].to_string(), "SELECT * FROM customers");
+    }
 }
 

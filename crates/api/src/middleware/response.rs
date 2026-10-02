@@ -42,6 +42,14 @@ pub async fn envelope_middleware(res: Response<Body>) -> Response<Body> {
         return Response::from_parts(parts, Body::from(bytes));
     }
 
+    // Fast-path: if the JSON response already defines "success", pass bytes through directly
+    // with zero DOM allocations, zero JSON parsing, and zero re-serialization overhead.
+    let prefix_len = bytes.len().min(64);
+    let prefix = &bytes[..prefix_len];
+    if prefix.windows(9).any(|w| w == b"\"success\"") {
+        return Response::from_parts(parts, Body::from(bytes));
+    }
+
     if let Ok(mut json_val) = serde_json::from_slice::<Value>(&bytes) {
         if let Some(obj) = json_val.as_object_mut() {
             if !obj.contains_key("success") {

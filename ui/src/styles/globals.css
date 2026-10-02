@@ -295,22 +295,52 @@
   transition: all 0.1s ease;
   cursor: pointer;
 }
-.axiom-datepicker-wrapper .rdp-day_button:hover {
+.axiom-datepicker-wrapper .rdp-day_button:hover:not([disabled]) {
   background-color: #1f1f1f;
   color: #ffffff;
 }
 .axiom-datepicker-wrapper .rdp-selected .rdp-day_button,
+.axiom-datepicker-wrapper .rdp-day[data-selected="true"] .rdp-day_button,
 .axiom-datepicker-wrapper .rdp-day_button[aria-selected="true"] {
   background-color: #2563eb !important;
   color: #ffffff !important;
-  font-weight: 600;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+  font-weight: 600 !important;
+  border-radius: 5px !important;
+  box-shadow: 0 1px 3px rgba(37, 99, 235, 0.4);
 }
-.axiom-datepicker-wrapper .rdp-today:not(.rdp-selected) .rdp-day_button {
-  color: #3b82f6;
+.axiom-datepicker-wrapper .rdp-today:not(.rdp-selected) .rdp-day_button,
+.axiom-datepicker-wrapper .rdp-day[data-today="true"]:not([data-selected="true"]) .rdp-day_button {
+  color: #3b82f6 !important;
   font-weight: 600;
+  position: relative;
+}
+.axiom-datepicker-wrapper .rdp-today:not(.rdp-selected) .rdp-day_button::after,
+.axiom-datepicker-wrapper .rdp-day[data-today="true"]:not([data-selected="true"]) .rdp-day_button::after {
+  content: '';
+  position: absolute;
+  bottom: 2px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 3px;
+  height: 3px;
+  border-radius: 9999px;
+  background-color: #3b82f6;
+}
+.axiom-datepicker-wrapper .rdp-disabled,
+.axiom-datepicker-wrapper .rdp-day[data-disabled="true"] {
+  opacity: 1 !important;
+}
+.axiom-datepicker-wrapper .rdp-disabled .rdp-day_button,
+.axiom-datepicker-wrapper .rdp-day_button[disabled],
+.axiom-datepicker-wrapper .rdp-day[data-disabled="true"] .rdp-day_button {
+  opacity: 1 !important;
+  color: #737373 !important;
+  text-decoration: line-through !important;
+  text-decoration-color: #555555 !important;
+  cursor: not-allowed !important;
+  pointer-events: none !important;
 }
 .axiom-datepicker-wrapper .rdp-outside {
-  opacity: 0.22;
+  opacity: 0.18;
 }
 

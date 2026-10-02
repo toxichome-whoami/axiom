@@ -1,46 +1,92 @@
-import React, { useState } from 'react';
+/*
+ * Cluster Settings and Administrative Operator directory interface.
+ * Owned by: ui/settings
+ * Key deps: DataTable, Button, lucide-react, ../api/client
+ * Invariants: Human admin users can only be created via initial setup or CLI command (axiom user add).
+ * Last structural change: Connected to live /admin/v1/users, /admin/v1/status, and /admin/v1/reload.
+ */
+
+import React, { useState, useEffect } from 'react';
 import { AdminUser } from '../types';
 import { DataTable, Column } from '../components/shared/DataTable';
 import { Button } from '../components/ui/Button';
-import { RefreshCw, CheckCircle2, Terminal, Shield, Copy, Check } from 'lucide-react';
+import {
+  RefreshCw,
+  CheckCircle2,
+  Terminal,
+  Shield,
+  Copy,
+  Check,
+  Server,
+  Users,
+  Info,
+  LayoutGrid,
+} from 'lucide-react';
+import { api, SystemStatusData, HealthData, UserRecordApi } from '../api/client';
 
 export function Settings() {
-  const [admins] = useState<AdminUser[]>([
-    {
-      username: 'admin',
-      email: 'admin@axiom.local',
-      createdAt: '2026-09-27',
-    },
-    {
-      username: 'devops_lead',
-      email: 'devops@axiom.local',
-      createdAt: '2026-09-29',
-    },
-  ]);
-
-  const [host, setHost] = useState('0.0.0.0');
-  const [port, setPort] = useState(4500);
-  const [workers, setWorkers] = useState('auto');
-  const [bodyLimit, setBodyLimit] = useState('10MB');
-  const [mcpStatus, setMcpStatus] = useState('enabled');
-  const [statementTimeout, setStatementTimeout] = useState(30);
-  const [saveNotice, setSaveNotice] = useState(false);
+  const [activeNav, setActiveNav] = useState<'server' | 'admins' | 'about'>('server');
+  const [admins, setAdmins] = useState<AdminUser[]>([]);
+  const [statusData, setStatusData] = useState<SystemStatusData | null>(null);
+  const [healthData, setHealthData] = useState<HealthData | null>(null);
+  const [isReloading, setIsReloading] = useState(false);
   const [snapshotNotice, setSnapshotNotice] = useState(false);
+  const [snapshotMessage, setSnapshotMessage] = useState('');
   const [copiedCli, setCopiedCli] = useState(false);
 
-  function handleSaveSettings(e: React.FormEvent) {
-    e.preventDefault();
-    setSaveNotice(true);
-    setTimeout(() => {
-      setSaveNotice(false);
-    }, 2500);
-  }
+  const loadLiveSettings = async () => {
+    try {
+      const [usersRes, statusRes, healthRes] = await Promise.allSettled([
+        api.listUsers(),
+        api.getStatus(),
+        api.getHealth(),
+      ]);
 
-  function handleReloadSnapshot() {
-    setSnapshotNotice(true);
-    setTimeout(() => {
-      setSnapshotNotice(false);
-    }, 2500);
+      if (usersRes.status === 'fulfilled') {
+        const userList: UserRecordApi[] = usersRes.value;
+        setAdmins(
+          userList.map((u) => ({
+            username: u.username,
+            email: `${u.username}@axiom.local`,
+            createdAt: new Date(u.created_at * 1000).toISOString().split('T')[0],
+          }))
+        );
+      }
+
+      if (statusRes.status === 'fulfilled') {
+        setStatusData(statusRes.value);
+      }
+      if (healthRes.status === 'fulfilled') {
+        setHealthData(healthRes.value);
+      }
+    } catch {
+      // Keep existing state
+    }
+  };
+
+  useEffect(() => {
+    loadLiveSettings();
+  }, []);
+
+  async function handleReloadSnapshot() {
+    setIsReloading(true);
+    try {
+      const res = await api.reloadMetadata();
+      setSnapshotMessage(res.message || 'Metadata snapshot synchronized');
+      setSnapshotNotice(true);
+      await loadLiveSettings();
+      setTimeout(() => {
+        setSnapshotNotice(false);
+      }, 3000);
+    } catch (err: unknown) {
+      setSnapshotMessage(err instanceof Error ? err.message : 'Failed to reload snapshot');
+      setSnapshotNotice(true);
+      setTimeout(() => {
+        setSnapshotNotice(false);
+      }, 3000);
+    } finally {
+      setIsReloading(false);
+    }
   }
 
   // Exactly 3 Columns: Username, Email, Created Date (No UI Add/Remove)
@@ -75,172 +121,286 @@ export function Settings() {
     },
   ];
 
+  const apiEndpoints = [
+    { method: 'GET', path: '/api/v1/db/{alias}/tables', desc: 'List tables' },
+    { method: 'GET', path: '/api/v1/db/{alias}/{table}/schema', desc: 'Describe table schema' },
+    { method: 'GET', path: '/api/v1/db/{alias}/{table}/rows', desc: 'Query records' },
+    { method: 'POST', path: '/api/v1/db/{alias}/{table}/rows', desc: 'Create records' },
+    { method: 'PATCH', path: '/api/v1/db/{alias}/{table}/rows', desc: 'Update records' },
+    { method: 'DELETE', path: '/api/v1/db/{alias}/{table}/rows', desc: 'Delete records' },
+    { method: 'POST', path: '/api/v1/db/{alias}/query', desc: 'Execute raw SQL query' },
+  ];
+
   return (
-    <div className="space-y-6 max-w-[1200px]">
+    <div className="w-full space-y-6 font-sans">
       {/* Top Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-[#222222] pb-4">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-[16px] font-semibold text-white tracking-tight">Settings</h1>
+          <h1 className="text-[16px] font-medium text-white tracking-tight">Settings</h1>
         </div>
         <Button
           variant="secondary"
           size="sm"
+          disabled={isReloading}
           onClick={handleReloadSnapshot}
         >
-          <RefreshCw className="w-3.5 h-3.5 mr-1 text-[#8c8c8c]" />
+          <RefreshCw className={`w-3.5 h-3.5 mr-1 text-[#8c8c8c] ${isReloading ? 'animate-spin' : ''}`} />
           Reload Metadata Snapshot
         </Button>
       </div>
 
       {/* Snapshot Feedback Toast */}
       {snapshotNotice && (
-        <div className="rounded-lg border border-[#30a46c]/30 bg-[#30a46c]/10 p-3 text-[12px] text-[#30a46c] font-medium flex items-center gap-2">
+        <div className="rounded-[8px] border border-[#30a46c]/30 bg-[#30a46c]/10 p-3 text-[13px] text-[#30a46c] font-medium flex items-center gap-2">
           <CheckCircle2 className="w-4 h-4 shrink-0" />
-          ArcSwap metadata snapshot reloaded. Worker caches updated from axiom.db.
+          {snapshotMessage || 'ArcSwap metadata snapshot reloaded. Worker caches updated from axiom.db.'}
         </div>
       )}
 
-      {/* Section 1: Human Administrator Accounts */}
-      <div className="space-y-3">
-        <div>
-          <h2 className="text-[15px] font-semibold text-white tracking-tight">Administrator Accounts</h2>
-          <p className="text-[12px] text-[#8c8c8c] mt-0.5">
-            Human operators authorized to access this dashboard. Accounts are managed exclusively via host CLI.
-          </p>
-        </div>
-
-        {/* 3 Columns Table: Username, Email, Created Date */}
-        <DataTable
-          columns={adminColumns}
-          data={admins}
-          ariaLabel="Admin Users Table"
-        />
-
-        {/* CLI Management Callout Note Banner */}
-        <div className="rounded-lg border border-[#222222] bg-[#0c0c0c] p-4 text-[12px] text-[#8c8c8c] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="space-y-1">
-            <span className="text-white font-medium flex items-center gap-1.5">
-              <Terminal className="w-3.5 h-3.5 text-[#3b82f6]" />
-              Host CLI Zero-Trust Policy
-            </span>
-            <p className="text-[#8c8c8c]">
-              To prevent web backdoors, administrator accounts cannot be created or deleted via the UI.
-            </p>
-            <code className="text-[#3b82f6] font-mono text-[11px] block mt-1">
-              axiom user add &lt;username&gt; --email &lt;email&gt;
-            </code>
-          </div>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => {
-              navigator.clipboard.writeText('axiom user add <username> --email <email>');
-              setCopiedCli(true);
-              setTimeout(() => setCopiedCli(false), 2000);
-            }}
+      {/* Main Two-Column Layout (Matching Overview and Databases styling) */}
+      <div className="flex flex-col md:flex-row gap-5 items-start">
+        {/* Left Sub-Navigation */}
+        <div className="w-full md:w-48 shrink-0 flex md:flex-col gap-1 font-sans">
+          <button
+            type="button"
+            onClick={() => setActiveNav('server')}
+            className={`group w-full h-8 flex items-center gap-2 px-2.5 rounded-[6px] text-[13px] transition-colors cursor-pointer text-left outline-none ${
+              activeNav === 'server'
+                ? 'bg-[#161616] text-white border border-[#333333] font-medium'
+                : 'text-[#8c8c8c] hover:text-white hover:bg-[#141414] border border-transparent font-normal'
+            }`}
           >
-            {copiedCli ? <Check className="w-3.5 h-3.5 text-[#30a46c]" /> : <Copy className="w-3.5 h-3.5" />}
-            <span>{copiedCli ? 'Copied' : 'Copy CLI'}</span>
-          </Button>
-        </div>
-      </div>
+            <Server
+              className={`w-3.5 h-3.5 shrink-0 transition-colors ${
+                activeNav === 'server' ? 'text-[#2f80ed]' : 'text-[#8c8c8c] group-hover:text-white'
+              }`}
+            />
+            <span>Server Info</span>
+          </button>
 
-      {/* Section 2: Gateway Runtime Configuration */}
-      <form onSubmit={handleSaveSettings} className="rounded-lg border border-[#222222] bg-[#0e0e0e] overflow-hidden">
-        <div className="px-5 py-4 border-b border-[#222222] flex items-center justify-between">
-          <div>
-            <h2 className="text-[14px] font-semibold text-white">Runtime Daemon Configuration</h2>
-            <p className="text-[12px] text-[#8c8c8c] mt-0.5">
-              Network listener interface, concurrency limits, and protocol behavior.
-            </p>
-          </div>
-          {saveNotice && (
-            <span className="text-[12px] text-[#30a46c] font-medium flex items-center gap-1.5">
-              <CheckCircle2 className="w-3.5 h-3.5" />
-              Settings saved
+          <button
+            type="button"
+            onClick={() => setActiveNav('admins')}
+            className={`group w-full h-8 flex items-center gap-2 px-2.5 rounded-[6px] text-[13px] transition-colors cursor-pointer text-left outline-none ${
+              activeNav === 'admins'
+                ? 'bg-[#161616] text-white border border-[#333333] font-medium'
+                : 'text-[#8c8c8c] hover:text-white hover:bg-[#141414] border border-transparent font-normal'
+            }`}
+          >
+            <Users
+              className={`w-3.5 h-3.5 shrink-0 transition-colors ${
+                activeNav === 'admins' ? 'text-[#2f80ed]' : 'text-[#8c8c8c] group-hover:text-white'
+              }`}
+            />
+            <span>Admins</span>
+            <span
+              className={`ml-auto text-[11px] px-1.5 py-0.2 rounded-full tabular-nums transition-colors ${
+                activeNav === 'admins'
+                  ? 'bg-[#1d4ed8]/20 text-[#60a5fa]'
+                  : 'bg-[#161616] text-[#737373] group-hover:text-[#a3a3a3]'
+              }`}
+            >
+              {admins.length}
             </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveNav('about')}
+            className={`group w-full h-8 flex items-center gap-2 px-2.5 rounded-[6px] text-[13px] transition-colors cursor-pointer text-left outline-none ${
+              activeNav === 'about'
+                ? 'bg-[#161616] text-white border border-[#333333] font-medium'
+                : 'text-[#8c8c8c] hover:text-white hover:bg-[#141414] border border-transparent font-normal'
+            }`}
+          >
+            <Info
+              className={`w-3.5 h-3.5 shrink-0 transition-colors ${
+                activeNav === 'about' ? 'text-[#2f80ed]' : 'text-[#8c8c8c] group-hover:text-white'
+              }`}
+            />
+            <span>About</span>
+          </button>
+        </div>
+
+        {/* Right Main Content */}
+        <div className="flex-1 w-full min-w-0">
+          {/* TAB 1: SERVER INFO */}
+          {activeNav === 'server' && (
+            <div className="space-y-4">
+              {/* Server Information & Endpoints Card */}
+              <div className="rounded-[8px] border border-[#262626] bg-[#0e0e0e] p-5 space-y-4">
+                <div className="space-y-0.5">
+                  <h2 className="text-[14px] font-medium text-white">Server Information</h2>
+                  <p className="text-[13px] text-[#8c8c8c]">
+                    Current configuration and runtime details
+                  </p>
+                </div>
+
+                {/* 2x2 Grid Info Tiles */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                  <div className="rounded-[8px] border border-[#262626] bg-[#111111] p-3.5 space-y-1">
+                    <span className="text-[12px] font-normal text-[#8c8c8c]">Server Version</span>
+                    <div className="font-mono text-[13px] text-white font-normal">v{statusData?.version || '4.0.0'}</div>
+                  </div>
+
+                  <div className="rounded-[8px] border border-[#262626] bg-[#111111] p-3.5 space-y-1">
+                    <span className="text-[12px] font-normal text-[#8c8c8c]">Process Uptime</span>
+                    <div className="font-mono text-[13px] text-white font-normal">
+                      {healthData?.uptime_seconds
+                        ? `${Math.floor(healthData.uptime_seconds / 3600)}h ${Math.floor((healthData.uptime_seconds % 3600) / 60)}m ${healthData.uptime_seconds % 60}s`
+                        : 'Active'}
+                    </div>
+                  </div>
+
+                  <div className="rounded-[8px] border border-[#262626] bg-[#111111] p-3.5 space-y-1">
+                    <span className="text-[12px] font-normal text-[#8c8c8c]">Cluster Health</span>
+                    <div className="font-mono text-[13px] text-[#30a46c] font-normal flex items-center gap-1.5 capitalize">
+                      <span className="size-1.5 rounded-full bg-[#30a46c]" />
+                      {healthData?.status || 'healthy'}
+                    </div>
+                  </div>
+
+                  <div className="rounded-[8px] border border-[#262626] bg-[#111111] p-3.5 space-y-1">
+                    <span className="text-[12px] font-normal text-[#8c8c8c]">Active DB Pools</span>
+                    <div className="font-mono text-[13px] text-white font-normal">
+                      {statusData?.active_databases ?? 0} connected
+                    </div>
+                  </div>
+                </div>
+
+                {/* API Endpoints Section */}
+                <div className="space-y-2 pt-1">
+                  <span className="text-[13px] font-medium text-white block">API Endpoints</span>
+                  <div className="rounded-[8px] border border-[#262626] bg-[#111111] divide-y divide-[#262626] overflow-hidden">
+                    {apiEndpoints.map((ep) => (
+                      <div
+                        key={`${ep.method}-${ep.path}`}
+                        className="px-3.5 py-2.5 flex items-center justify-between gap-3 hover:bg-[#141414] transition-colors"
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <span
+                            className={`px-2 py-0.5 rounded-[4px] text-[11px] font-medium font-sans shrink-0 ${
+                              ep.method === 'GET'
+                                ? 'bg-[#072714]/70 text-[#34d399] border border-[#059669]/30'
+                                : ep.method === 'POST'
+                                ? 'bg-[#0c1f3d]/70 text-[#60a5fa] border border-[#2563eb]/30'
+                                : ep.method === 'PATCH'
+                                ? 'bg-[#2b1704]/70 text-[#fb923c] border border-[#ea580c]/30'
+                                : 'bg-[#370e11]/70 text-[#f87171] border border-[#dc2626]/30'
+                            }`}
+                          >
+                            {ep.method}
+                          </span>
+                          <span className="font-mono text-[13px] text-white truncate font-normal">{ep.path}</span>
+                        </div>
+                        <span className="text-[13px] text-[#8c8c8c] shrink-0 font-normal">{ep.desc}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 2: ADMINS */}
+          {activeNav === 'admins' && (
+            <div className="space-y-4">
+              <div className="rounded-[8px] border border-[#262626] bg-[#0e0e0e] p-5 space-y-4">
+                <div className="space-y-0.5">
+                  <h2 className="text-[14px] font-medium text-white">Administrator Accounts</h2>
+                  <p className="text-[13px] text-[#8c8c8c]">
+                    Human operators authorized to access this dashboard. Accounts are managed exclusively via host CLI.
+                  </p>
+                </div>
+
+                <DataTable
+                  columns={adminColumns}
+                  data={admins}
+                  ariaLabel="Admin Users Table"
+                />
+              </div>
+
+              {/* CLI Management Callout Note Banner */}
+              <div className="rounded-[8px] border border-[#262626] bg-[#111111] p-4 text-[13px] text-[#8c8c8c] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="space-y-1">
+                  <span className="text-white font-medium flex items-center gap-1.5 text-[13px]">
+                    <Terminal className="w-3.5 h-3.5 text-[#2f80ed]" />
+                    Host CLI Zero-Trust Policy
+                  </span>
+                  <p className="text-[#8c8c8c] text-[13px]">
+                    To prevent web backdoors, administrator accounts cannot be created or deleted via the UI.
+                  </p>
+                  <code className="text-[#60a5fa] font-mono text-[12px] block mt-1">
+                    axiom user add &lt;username&gt; --email &lt;email&gt;
+                  </code>
+                </div>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => {
+                    navigator.clipboard.writeText('axiom user add <username> --email <email>');
+                    setCopiedCli(true);
+                    setTimeout(() => setCopiedCli(false), 2000);
+                  }}
+                >
+                  {copiedCli ? <Check className="w-3.5 h-3.5 text-[#30a46c]" /> : <Copy className="w-3.5 h-3.5" />}
+                  <span>{copiedCli ? 'Copied' : 'Copy CLI'}</span>
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 3: ABOUT */}
+          {activeNav === 'about' && (
+            <div className="space-y-4">
+              <div className="rounded-[8px] border border-[#262626] bg-[#0e0e0e] p-5 space-y-4">
+                <div className="space-y-0.5">
+                  <h2 className="text-[14px] font-medium text-white">About Axiom</h2>
+                  <p className="text-[13px] text-[#8c8c8c]">
+                    Open-source database-to-REST API generator
+                  </p>
+                </div>
+
+                {/* Hero App Banner */}
+                <div className="rounded-[8px] border border-[#262626] bg-[#111111] p-4 flex items-center gap-3.5">
+                  <div className="w-10 h-10 rounded-[8px] bg-gradient-to-br from-[#0091ff] to-[#0066cc] flex items-center justify-center shrink-0 shadow-sm">
+                    <LayoutGrid className="w-5 h-5 text-white" />
+                  </div>
+                  <div className="space-y-0.5 min-w-0">
+                    <div className="text-[14px] font-medium text-white">Axiom</div>
+                    <p className="text-[13px] text-[#8c8c8c]">
+                      Turn any SQL database into a secure REST API. Single binary, zero configuration.
+                    </p>
+                  </div>
+                </div>
+
+                {/* 2x2 Grid Info Tiles */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="rounded-[8px] border border-[#262626] bg-[#111111] p-3.5 space-y-1">
+                    <span className="text-[12px] font-normal text-[#8c8c8c]">Built With</span>
+                    <div className="text-[14px] text-white font-medium">Rust + Axum + Tokio</div>
+                  </div>
+
+                  <div className="rounded-[8px] border border-[#262626] bg-[#111111] p-3.5 space-y-1">
+                    <span className="text-[12px] font-normal text-[#8c8c8c]">Frontend</span>
+                    <div className="text-[14px] text-white font-medium">React + Tailwind</div>
+                  </div>
+
+                  <div className="rounded-[8px] border border-[#262626] bg-[#111111] p-3.5 space-y-1">
+                    <span className="text-[12px] font-normal text-[#8c8c8c]">Supported DBs</span>
+                    <div className="text-[14px] text-white font-medium">PostgreSQL, MySQL, MSSQL, LibSQL, ClickHouse</div>
+                  </div>
+
+                  <div className="rounded-[8px] border border-[#262626] bg-[#111111] p-3.5 space-y-1">
+                    <span className="text-[12px] font-normal text-[#8c8c8c]">Features</span>
+                    <div className="text-[14px] text-white font-medium">RBAC, MCP Server, AST Firewall, L1/L2 Cache</div>
+                  </div>
+                </div>
+              </div>
+            </div>
           )}
         </div>
-
-        <div className="p-5 space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-[12px] font-medium text-[#cccccc] mb-1.5">Listener Host</label>
-              <input
-                type="text"
-                value={host}
-                onChange={(e) => setHost(e.target.value)}
-                className="h-9 w-full rounded-md border border-[#262626] bg-[#000000] px-3 font-mono text-[12px] text-white focus:outline-none focus:border-[#3b82f6]"
-              />
-            </div>
-
-            <div>
-              <label className="block text-[12px] font-medium text-[#cccccc] mb-1.5">Listener Port</label>
-              <input
-                type="number"
-                value={port}
-                onChange={(e) => setPort(Number(e.target.value))}
-                className="h-9 w-full rounded-md border border-[#262626] bg-[#000000] px-3 font-mono text-[12px] text-white focus:outline-none focus:border-[#3b82f6]"
-              />
-            </div>
-
-            <div>
-              <label className="block text-[12px] font-medium text-[#cccccc] mb-1.5">Tokio Worker Threads</label>
-              <select
-                value={workers}
-                onChange={(e) => setWorkers(e.target.value)}
-                className="h-9 w-full rounded-md border border-[#262626] bg-[#000000] px-3 text-[12px] text-white focus:outline-none focus:border-[#3b82f6]"
-              >
-                <option value="auto">Auto (Matches CPU Cores)</option>
-                <option value="1">1 Worker (cPanel / current_thread)</option>
-                <option value="4">4 Workers (Standard VPS)</option>
-                <option value="8">8 Workers (High Throughput)</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-[12px] font-medium text-[#cccccc] mb-1.5">Max Request Body Limit</label>
-              <select
-                value={bodyLimit}
-                onChange={(e) => setBodyLimit(e.target.value)}
-                className="h-9 w-full rounded-md border border-[#262626] bg-[#000000] px-3 text-[12px] text-white focus:outline-none focus:border-[#3b82f6]"
-              >
-                <option value="5MB">5 MB (Conservative)</option>
-                <option value="10MB">10 MB (Default WAF Hard Cap)</option>
-                <option value="25MB">25 MB (Large Ingestions)</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-[12px] font-medium text-[#cccccc] mb-1.5">Statement Timeout (seconds)</label>
-              <input
-                type="number"
-                value={statementTimeout}
-                onChange={(e) => setStatementTimeout(Number(e.target.value))}
-                className="h-9 w-full rounded-md border border-[#262626] bg-[#000000] px-3 text-[12px] text-white focus:outline-none focus:border-[#3b82f6] tabular-nums"
-              />
-            </div>
-
-            <div>
-              <label className="block text-[12px] font-medium text-[#cccccc] mb-1.5">MCP Protocol Gateway</label>
-              <select
-                value={mcpStatus}
-                onChange={(e) => setMcpStatus(e.target.value)}
-                className="h-9 w-full rounded-md border border-[#262626] bg-[#000000] px-3 text-[12px] text-white focus:outline-none focus:border-[#3b82f6]"
-              >
-                <option value="enabled">Enabled (POST /mcp/v1)</option>
-                <option value="disabled">Disabled (404 Not Found)</option>
-              </select>
-            </div>
-          </div>
-        </div>
-
-        <div className="border-t border-[#222222] px-5 py-3.5 bg-[#000000] flex items-center justify-end">
-          <Button variant="primary" size="sm" type="submit">
-            Save Changes
-          </Button>
-        </div>
-      </form>
+      </div>
     </div>
   );
 }

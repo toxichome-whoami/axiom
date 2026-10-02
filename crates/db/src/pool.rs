@@ -133,6 +133,62 @@ impl DatabasePoolManager {
         }
     }
 
+    /// Tests connectivity to a raw database URL by creating a temporary engine and executing health_check.
+    /// CONTRACT:
+    ///  - Precondition: URL must have a supported protocol scheme.
+    ///  - Enforces 5-second timeout on connection and 3-second timeout on health check query.
+    ///  - Returns `Ok(dialect)` if connection and health check succeed, or `Err(reason)` on failure.
+    pub async fn test_url(url: &str) -> Result<String, String> {
+        let trimmed = url.trim();
+        if trimmed.is_empty() {
+            return Err("Database URL cannot be empty".to_string());
+        }
+
+        let db_config = axiom_core::config::schema::DatabaseDefConfig {
+            url: trimmed.to_string(),
+            pool_min: 1,
+            pool_max: 2,
+            connection_timeout: 5,
+            ..Default::default()
+        };
+
+        let mut engine: Box<dyn DatabaseEngine> =
+            if trimmed.starts_with("mssql://") || trimmed.starts_with("sqlserver://") {
+                Box::new(MssqlDatabaseEngine::new(db_config))
+            } else if trimmed.starts_with("sqlite://") || trimmed.starts_with("libsql://") {
+                Box::new(LibsqlDatabaseEngine::new(db_config))
+            } else if trimmed.starts_with("postgres://") || trimmed.starts_with("postgresql://") {
+                Box::new(PostgresDatabaseEngine::new(db_config))
+            } else if trimmed.starts_with("clickhouse://") || trimmed.starts_with("clickhouse+https://") {
+                Box::new(ClickHouseDatabaseEngine::new(db_config))
+            } else if trimmed.starts_with("mysql://") || trimmed.starts_with("mariadb://") {
+                Box::new(MysqlDatabaseEngine::new(db_config))
+            } else {
+                return Err(format!(
+                    "Unsupported database URL protocol: '{}'. Expected postgres://, mysql://, sqlite://, libsql://, mssql://, or clickhouse://",
+                    trimmed
+                ));
+            };
+
+        tokio::time::timeout(std::time::Duration::from_secs(5), engine.connect())
+            .await
+            .map_err(|_| "Connection timed out after 5 seconds".to_string())?
+            .map_err(|e| format!("Connection error: {}", e))?;
+
+        let is_healthy = tokio::time::timeout(std::time::Duration::from_secs(3), engine.health_check())
+            .await
+            .unwrap_or(false);
+
+        let dialect = engine.dialect().to_string();
+        let _ = engine.disconnect().await;
+
+        if !is_healthy {
+            return Err("Database reached but health check probe failed".to_string());
+        }
+
+        Ok(dialect)
+    }
+
     /// Gracefully closes all active database connections during server shutdown.
     /// CONTRACT:
     ///  - Side effects: Drains `ENGINES` map and awaits `disconnect()` across all active pools.

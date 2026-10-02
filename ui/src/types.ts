@@ -47,6 +47,13 @@ export interface DatabasePool {
   latencyMs: number;
 }
 
+export interface RetiringSecret {
+  maskedSecret: string;
+  expiresAt: string;
+  expiresTimestamp: number;
+  gracePeriod: string;
+}
+
 export interface ApiKey {
   name: string;
   role: string;
@@ -54,6 +61,8 @@ export interface ApiKey {
   status: 'Active' | 'Revoked' | 'Expired';
   expiresAt: string | null;
   createdAt: string;
+  currentSecretMasked?: string;
+  retiringSecret?: RetiringSecret | null;
 }
 
 export type PermissionOperation = 'SELECT' | 'INSERT' | 'UPDATE' | 'DELETE';
@@ -86,18 +95,6 @@ export interface AdminUser {
   username: string;
   email: string;
   createdAt: string;
-}
-
-export interface AuditLogEntry {
-  id: string;
-  timestamp: string;
-  actor: string;
-  action: string;
-  target: string;
-  status: '200 OK' | '403 Forbidden' | '404 Not Found' | '500 Internal';
-  durationMs: number;
-  ipAddress?: string;
-  details?: Record<string, any>;
 }
 
 export interface ApiRoutePreset {

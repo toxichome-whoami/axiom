@@ -193,9 +193,11 @@ impl DatabaseEngine for MssqlDatabaseEngine {
         let client_arc = self.client.as_ref().ok_or_else(|| EngineError::Connection("Not connected".into()))?;
         let mut client = client_arc.lock().await;
         
-        let is_mutation = sql.trim().to_uppercase().starts_with("INSERT")
-            || sql.trim().to_uppercase().starts_with("UPDATE")
-            || sql.trim().to_uppercase().starts_with("DELETE");
+        let first_word = sql.trim().split_whitespace().next().unwrap_or("").to_uppercase();
+        let is_mutation = matches!(
+            first_word.as_str(),
+            "INSERT" | "UPDATE" | "DELETE" | "CREATE" | "DROP" | "ALTER" | "TRUNCATE" | "REPLACE" | "SET" | "GRANT" | "REVOKE"
+        );
 
         // Keep allocations alive during query lifetime
         let mut string_params = Vec::new();
@@ -262,6 +264,7 @@ impl DatabaseEngine for MssqlDatabaseEngine {
         if is_mutation {
             let result = query.execute(&mut *client).await.map_err(|e| EngineError::Execution(e.to_string()))?;
             return Ok(QueryResult {
+                success: true,
                 columns: None,
                 rows: None,
                 affected_rows: Some(result.total() as u64),
@@ -311,6 +314,7 @@ impl DatabaseEngine for MssqlDatabaseEngine {
         };
 
         Ok(QueryResult {
+            success: true,
             columns: Some(column_names),
             rows: Some(result_rows),
             affected_rows: None,

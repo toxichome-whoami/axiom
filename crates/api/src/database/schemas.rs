@@ -14,7 +14,7 @@ use std::collections::HashMap;
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct QueryRequest {
     pub sql: String,
-    pub params: Option<HashMap<String, Value>>,
+    pub params: Option<Value>,
     pub timeout: Option<i32>,
 }
 

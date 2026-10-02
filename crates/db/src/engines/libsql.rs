@@ -7,6 +7,7 @@
  */
 
 use async_trait::async_trait;
+use base64::Engine;
 use libsql::{Builder, Connection, Database};
 
 use axiom_core::config::schema::DatabaseDefConfig;
@@ -178,9 +179,11 @@ impl DatabaseEngine for LibsqlDatabaseEngine {
     ) -> Result<QueryResult, EngineError> {
         let conn = self.conn.as_ref().ok_or_else(|| EngineError::Connection("Not connected".into()))?;
 
-        let is_mutation = sql.trim().to_uppercase().starts_with("INSERT")
-            || sql.trim().to_uppercase().starts_with("UPDATE")
-            || sql.trim().to_uppercase().starts_with("DELETE");
+        let first_word = sql.trim().split_whitespace().next().unwrap_or("").to_uppercase();
+        let is_mutation = matches!(
+            first_word.as_str(),
+            "INSERT" | "UPDATE" | "DELETE" | "CREATE" | "DROP" | "ALTER" | "TRUNCATE" | "REPLACE" | "SET" | "GRANT" | "REVOKE"
+        );
 
         let mut libsql_params = Vec::new();
         for param in params {
@@ -207,6 +210,7 @@ impl DatabaseEngine for LibsqlDatabaseEngine {
                 .await
                 .map_err(|e| EngineError::Execution(e.to_string()))?;
             return Ok(QueryResult {
+                success: true,
                 columns: None,
                 rows: None,
                 affected_rows: Some(affected as u64),
@@ -240,7 +244,17 @@ impl DatabaseEngine for LibsqlDatabaseEngine {
             let mut json_obj = serde_json::Map::new();
             for (i, col_name) in column_names.iter().enumerate() {
                 let val = match row.get_value(i as i32) {
-                    Ok(libsql::Value::Text(s)) => serde_json::Value::String(s),
+                    Ok(libsql::Value::Text(s)) => {
+                        if (s.starts_with('{') && s.ends_with('}')) || (s.starts_with('[') && s.ends_with(']')) {
+                            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&s) {
+                                parsed
+                            } else {
+                                serde_json::Value::String(s)
+                            }
+                        } else {
+                            serde_json::Value::String(s)
+                        }
+                    }
                     Ok(libsql::Value::Integer(n)) => serde_json::Value::Number(serde_json::Number::from(n)),
                     Ok(libsql::Value::Real(f)) => {
                         if let Some(num) = serde_json::Number::from_f64(f) {
@@ -248,6 +262,9 @@ impl DatabaseEngine for LibsqlDatabaseEngine {
                         } else {
                             serde_json::Value::Null
                         }
+                    }
+                    Ok(libsql::Value::Blob(b)) => {
+                        serde_json::Value::String(base64::prelude::BASE64_STANDARD.encode(&b))
                     }
                     Ok(libsql::Value::Null) => serde_json::Value::Null,
                     _ => serde_json::Value::Null,
@@ -264,6 +281,7 @@ impl DatabaseEngine for LibsqlDatabaseEngine {
         };
 
         Ok(QueryResult {
+            success: true,
             columns: Some(column_names),
             rows: Some(result_rows),
             affected_rows: None,

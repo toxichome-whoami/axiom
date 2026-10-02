@@ -222,6 +222,7 @@ The `docs/` directory contains the full Axiom documentation.
 |----------|-------------|
 | [Master Plan](./docs/AXIOM_MASTER_PLAN.md) | Architecture vision and v4.0 roadmap |
 | [API Reference](./docs/reference/api.md) | Complete REST API documentation |
+| [DB APIs & Monitoring](./docs/reference/db-apis-monitoring.md) | Database endpoints & response latency monitoring |
 | [Configuration](./docs/reference/configuration.md) | All config.toml parameters |
 | [Security](./docs/reference/security.md) | Security architecture and threat model |
 | [Getting Started](./docs/guides/getting-started.md) | How to build and run Axiom |

@@ -24,3 +24,5 @@ tracing = { workspace = true }
 futures = { workspace = true }
 url = { workspace = true }
 urlencoding = { workspace = true }
+chrono = { workspace = true }
+base64 = { workspace = true }

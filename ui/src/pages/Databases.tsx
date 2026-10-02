@@ -13,7 +13,8 @@ import { SlideOver } from '../components/ui/SlideOver';
 import { Button } from '../components/ui/Button';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { CustomSelect } from '../components/shared/CustomSelect';
-import { Database, Plus, CheckCircle2, Search, Trash2, RefreshCw, AlertTriangle, Check } from 'lucide-react';
+import { Database, Plus, CheckCircle2, Search, Trash2, RefreshCw, AlertTriangle, Check, Eye, EyeOff } from 'lucide-react';
+import { api, DatabaseRecordApi } from '../api/client';
 
 export interface FilterRule {
   id: string;
@@ -92,56 +93,54 @@ export function validateDatabaseUrl(engine: string, rawUrl: string): { valid: bo
 }
 
 export function Databases() {
-  const [pools, setPools] = useState<DatabasePool[]>([
-    {
-      alias: 'local_db',
-      engine: 'PostgreSQL',
-      version: 'PostgreSQL 16.2',
-      url: 'postgres://app:secret@127.0.0.1:5432/axiom_local',
-      minConnections: 1,
-      maxConnections: 10,
-      idleTimeoutSeconds: 30,
-      readonly: false,
-      status: 'Ready',
-      latencyMs: 0.42,
-    },
-    {
-      alias: 'prod_pg',
-      engine: 'PostgreSQL',
-      version: 'PostgreSQL 16.1',
-      url: 'postgres://prod_app:******@prod-db.internal:5432/primary',
-      minConnections: 5,
-      maxConnections: 50,
-      idleTimeoutSeconds: 15,
-      readonly: false,
-      status: 'Ready',
-      latencyMs: 1.15,
-    },
-    {
-      alias: 'analytics_ch',
-      engine: 'ClickHouse',
-      version: 'ClickHouse 24.3',
-      url: 'clickhouse://analytics:******@ch-cluster:8123/default',
-      minConnections: 2,
-      maxConnections: 20,
-      idleTimeoutSeconds: 60,
-      readonly: true,
-      status: 'Ready',
-      latencyMs: 2.75,
-    },
-    {
-      alias: 'edge_turso_db',
-      engine: 'LibSQL',
-      version: 'LibSQL 0.14',
-      url: 'libsql://cache-edge.turso.io',
-      minConnections: 1,
-      maxConnections: 5,
-      idleTimeoutSeconds: 120,
-      readonly: false,
-      status: 'Ready',
-      latencyMs: 0.18,
-    },
-  ]);
+  const [pools, setPools] = useState<DatabasePool[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  // Load database connections and live health state from backend
+  const loadDatabases = async () => {
+    try {
+      const [dbRes, healthRes] = await Promise.allSettled([
+        api.listDatabases(),
+        api.getHealth(),
+      ]);
+
+      const dbList: DatabaseRecordApi[] = dbRes.status === 'fulfilled' ? dbRes.value.databases : [];
+      const healthMap = healthRes.status === 'fulfilled' ? healthRes.value.databases : {};
+
+      const loadedPools: DatabasePool[] = dbList.map((db) => {
+        const isUp = healthMap[db.alias] === 'up';
+        return {
+          alias: db.alias,
+          engine: (db.engine || 'PostgreSQL') as EngineType,
+          version: `${db.engine} (live)`,
+          url: '••••••••••••••••',
+          minConnections: db.pool_min || 1,
+          maxConnections: db.pool_max || 10,
+          idleTimeoutSeconds: 30,
+          readonly: false,
+          status: isUp ? 'Ready' : 'Degraded',
+          latencyMs: isUp ? 0.45 : 12.0,
+        };
+      });
+
+      setPools(loadedPools);
+      setSelectedPool((prev) => {
+        if (!prev) return null;
+        const found = loadedPools.find((p) => p.alias === prev.alias);
+        return found ? found : prev;
+      });
+    } catch {
+      // In case of error keep existing state
+    } finally {
+      setIsLoading(false);
+      setIsRefreshing(false);
+    }
+  };
+
+  useEffect(() => {
+    loadDatabases();
+  }, []);
 
   // Toolbar & Filtering State
   const [searchQuery, setSearchQuery] = useState('');
@@ -184,11 +183,13 @@ export function Databases() {
   const [newAlias, setNewAlias] = useState('');
   const [newEngine, setNewEngine] = useState<string>('PostgreSQL');
   const [newUrl, setNewUrl] = useState('');
+  const [showNewUrl, setShowNewUrl] = useState(false);
   const [newMin, setNewMin] = useState(1);
   const [newMax, setNewMax] = useState(10);
   const [newTimeout, setNewTimeout] = useState(30);
   const [testResult, setTestResult] = useState<string | null>(null);
   const [attachError, setAttachError] = useState<string | null>(null);
+  const [isAttaching, setIsAttaching] = useState(false);
 
   // Manage DB SlideOver State
   const [manageOpen, setManageOpen] = useState(false);
@@ -197,14 +198,16 @@ export function Databases() {
   const [editAlias, setEditAlias] = useState('');
   const [editEngine, setEditEngine] = useState<EngineType>('PostgreSQL');
   const [editUrl, setEditUrl] = useState('');
+  const [showEditUrl, setShowEditUrl] = useState(false);
   const [editMin, setEditMin] = useState(1);
   const [editMax, setEditMax] = useState(10);
   const [editTimeout, setEditTimeout] = useState(30);
   const [manageTestResult, setManageTestResult] = useState<'testing' | 'success' | 'fail' | null>(null);
   const [manageError, setManageError] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
   const [confirmDisconnectOpen, setConfirmDisconnectOpen] = useState(false);
 
-  function handleTestConnection() {
+  async function handleTestConnection() {
     const validation = validateDatabaseUrl(newEngine, newUrl);
     if (!validation.valid) {
       setAttachError(validation.error || 'Invalid URL format for selected engine.');
@@ -214,26 +217,59 @@ export function Databases() {
 
     setAttachError(null);
     setTestResult('testing');
-    setTimeout(() => {
+    try {
+      await api.testDatabaseUrl(newUrl.trim(), newAlias.trim() || undefined);
       setTestResult('success');
-    }, 450);
+    } catch (err: unknown) {
+      setTestResult('fail');
+      setAttachError(err instanceof Error ? err.message : 'Connection test failed.');
+    }
   }
 
-  function handleManageTestConnection() {
-    if (urlChanged) {
-      const validation = validateDatabaseUrl(editEngine, editUrl);
-      if (!validation.valid) {
-        setManageError(validation.error || 'Invalid URL format for selected engine.');
-        setManageTestResult('fail');
-        return;
-      }
-    }
-
+  async function handleManageTestConnection() {
+    if (!selectedPool) return;
     setManageError(null);
     setManageTestResult('testing');
-    setTimeout(() => {
-      setManageTestResult('success');
-    }, 450);
+    try {
+      if (urlChanged) {
+        const validation = validateDatabaseUrl(editEngine, editUrl);
+        if (!validation.valid) {
+          setManageTestResult('fail');
+          setManageError(validation.error || 'Invalid URL format for selected engine.');
+          return;
+        }
+        await api.testDatabaseUrl(editUrl.trim(), selectedPool.alias);
+        setManageTestResult('success');
+        setSelectedPool((prev) => (prev ? { ...prev, status: 'Ready' } : null));
+        setPools((prev) =>
+          prev.map((p) => (p.alias === selectedPool.alias ? { ...p, status: 'Ready' } : p))
+        );
+      } else {
+        const test = await api.testDatabase(selectedPool.alias);
+        if (test.status === 'up' || test.status === 'connected') {
+          setManageTestResult('success');
+          setSelectedPool((prev) => (prev ? { ...prev, status: 'Ready' } : null));
+          setPools((prev) =>
+            prev.map((p) => (p.alias === selectedPool.alias ? { ...p, status: 'Ready' } : p))
+          );
+        } else {
+          setManageTestResult('fail');
+          setManageError('Target reported down during health probe.');
+          setSelectedPool((prev) => (prev ? { ...prev, status: 'Degraded' } : null));
+          setPools((prev) =>
+            prev.map((p) => (p.alias === selectedPool.alias ? { ...p, status: 'Degraded' } : p))
+          );
+        }
+      }
+    } catch (err: unknown) {
+      setManageTestResult('fail');
+      const msg = err instanceof Error ? err.message : 'Database test failed.';
+      setManageError(msg);
+      setSelectedPool((prev) => (prev ? { ...prev, status: 'Degraded' } : null));
+      setPools((prev) =>
+        prev.map((p) => (p.alias === selectedPool.alias ? { ...p, status: 'Degraded' } : p))
+      );
+    }
   }
 
   const urlChanged = Boolean(editUrl.trim().length > 0);
@@ -254,11 +290,11 @@ export function Databases() {
     isChanged &&
     editAlias.trim().length > 0 &&
     editUrlValidation.valid &&
-    (!urlChanged || manageTestResult === 'success') &&
+    !isSaving &&
     manageTestResult !== 'testing'
   );
 
-  function handleAttach() {
+  async function handleAttach() {
     if (!newAlias.trim()) return;
     const validation = validateDatabaseUrl(newEngine, newUrl);
     if (!validation.valid) {
@@ -267,48 +303,81 @@ export function Databases() {
       return;
     }
 
-    const newPool: DatabasePool = {
-      alias: newAlias.trim(),
-      engine: newEngine as EngineType,
-      url: newUrl,
-      minConnections: newMin,
-      maxConnections: newMax,
-      idleTimeoutSeconds: newTimeout,
-      readonly: false,
-      status: 'Ready',
-      latencyMs: 0.85,
-    };
-    setPools([...pools, newPool]);
-    setAttachOpen(false);
-    setNewAlias('');
-    setNewUrl('');
-    setNewMin(1);
-    setNewMax(10);
-    setNewTimeout(30);
-    setTestResult(null);
     setAttachError(null);
+    setTestResult('testing');
+    setIsAttaching(true);
+
+    try {
+      // 1. Mandatory live connection check every time when adding
+      await api.testDatabaseUrl(newUrl.trim(), newAlias.trim() || undefined);
+      setTestResult('success');
+
+      // 2. Register database once connection is verified
+      await api.addDatabase({
+        alias: newAlias.trim(),
+        url: newUrl.trim(),
+        engine: newEngine,
+        pool_min: newMin,
+        pool_max: newMax,
+      });
+      await loadDatabases();
+      setAttachOpen(false);
+      setNewAlias('');
+      setNewUrl('');
+      setNewMin(1);
+      setNewMax(10);
+      setNewTimeout(30);
+      setTestResult(null);
+      setAttachError(null);
+    } catch (err: unknown) {
+      setTestResult('fail');
+      setAttachError(err instanceof Error ? err.message : 'Database connection test failed. Please verify URL.');
+    } finally {
+      setIsAttaching(false);
+    }
   }
 
-  function handleSaveEdit() {
+  async function handleSaveEdit() {
     if (!selectedPool || !canSave) return;
+    const oldAlias = selectedPool.alias;
     const updatedAlias = editAlias.trim();
-    const updatedUrl = editUrl.trim() ? editUrl.trim() : selectedPool.url;
-    setPools(
-      pools.map((p) =>
-        p.alias === selectedPool.alias
-          ? {
-              ...p,
-              alias: updatedAlias,
-              engine: editEngine,
-              url: updatedUrl,
-              minConnections: editMin,
-              maxConnections: editMax,
-              idleTimeoutSeconds: editTimeout,
-            }
-          : p
-      )
-    );
-    setManageOpen(false);
+    const updatedUrl = urlChanged ? editUrl.trim() : '';
+    setManageError(null);
+    setManageTestResult('testing');
+    setIsSaving(true);
+
+    try {
+      // 1. Mandatory live connection check every time when updating
+      if (urlChanged) {
+        await api.testDatabaseUrl(updatedUrl, selectedPool.alias);
+      } else {
+        const test = await api.testDatabase(oldAlias);
+        if (test.status !== 'up' && test.status !== 'connected') {
+          throw new Error('Target database connection check failed.');
+        }
+      }
+      setManageTestResult('success');
+
+      // 2. Persist updated configuration once connection is verified
+      await api.addDatabase({
+        alias: updatedAlias,
+        url: updatedUrl,
+        engine: editEngine,
+        pool_min: editMin,
+        pool_max: editMax,
+        old_alias: oldAlias,
+      });
+      if (oldAlias !== updatedAlias) {
+        await api.deleteDatabase(oldAlias).catch(() => {});
+      }
+      await loadDatabases();
+      setManageOpen(false);
+    } catch (err: unknown) {
+      setManageTestResult('fail');
+      setManageError(err instanceof Error ? err.message : 'Database connection test failed. Unable to save.');
+    } finally {
+      setIsSaving(false);
+    }
   }
 
   function matchesRule(itemVal: string, operator: string, ruleVal: string): boolean {
@@ -516,23 +585,36 @@ export function Databases() {
       {/* Top Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-[16px] font-semibold text-white tracking-tight">Databases</h1>
+          <h1 className="text-[16px] font-medium text-white tracking-tight">Databases</h1>
         </div>
-        <Button
-          variant="primary"
-          size="sm"
-          onClick={() => {
-            setTestResult(null);
-            setAttachError(null);
-            setNewMin(1);
-            setNewMax(10);
-            setNewTimeout(30);
-            setAttachOpen(true);
-          }}
-        >
-          <Plus className="w-3.5 h-3.5 mr-1" />
-          Attach Database
-        </Button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              setIsRefreshing(true);
+              loadDatabases();
+            }}
+            title="Refresh database pools"
+            className="flex items-center justify-center h-8 w-8 text-[#8c8c8c] hover:text-white rounded-[8px] bg-[#0c0c0c] hover:bg-[#141414] border border-[#262626] hover:border-[#383838] transition-colors cursor-pointer shrink-0"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin opacity-50' : ''}`} />
+          </button>
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={() => {
+              setTestResult(null);
+              setAttachError(null);
+              setNewMin(1);
+              setNewMax(10);
+              setNewTimeout(30);
+              setAttachOpen(true);
+            }}
+          >
+            <Plus className="w-3.5 h-3.5 mr-1" />
+            Attach Database
+          </Button>
+        </div>
       </div>
 
       {/* Table Controls Toolbar (Search, Filters, Display Options) */}
@@ -601,7 +683,7 @@ export function Databases() {
               </svg>
               <span>Filters</span>
               {appliedFilterRules.length > 0 && (
-                <span className="text-[12px] text-[#8c8c8c] font-normal font-mono">
+                <span className="text-[12px] text-[#8c8c8c] font-normal">
                   ({appliedFilterRules.length})
                 </span>
               )}
@@ -612,7 +694,7 @@ export function Databases() {
                 {/* Header */}
                 <div className="flex items-center justify-between pb-3">
                   <div className="flex items-center gap-2">
-                    <span className="text-[14px] font-semibold text-white font-sans">Database Filters</span>
+                    <span className="text-[14px] font-medium text-white font-sans">Database Filters</span>
                     {filterRules.length >= 2 && (
                       <button
                         type="button"
@@ -797,7 +879,7 @@ export function Databases() {
       >
         <div className="flex-1 p-5 overflow-y-auto space-y-4">
           <div>
-            <h3 className="text-[16px] font-semibold text-white tracking-tight">Pool Configuration</h3>
+            <h3 className="text-[16px] font-medium text-white tracking-tight">Pool Configuration</h3>
             <p className="text-[13px] text-[#8c8c8c] mt-0.5">Provide connection endpoint, dialect engine, and credential URI.</p>
           </div>
 
@@ -827,41 +909,89 @@ export function Databases() {
           </div>
 
           <div>
-            <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">Connection URL (Encrypted)</label>
-            <input
-              type="password"
-              value={newUrl}
-              onChange={(e) => {
-                setNewUrl(e.target.value);
-                setTestResult(null);
-                setAttachError(null);
-              }}
-              placeholder={ENGINE_URL_SCHEMES[newEngine.toLowerCase()]?.example || 'postgres://user:secret@host:5432/dbname'}
-              className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] px-3 text-[14px] text-white focus:outline-none focus:border-[#3b82f6]"
-            />
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="block text-[13px] font-medium text-[#cccccc]">Connection URL</label>
+              {newUrl.trim().length > 0 && (
+                validateDatabaseUrl(newEngine, newUrl).valid ? (
+                  <span className="text-[12px] text-[#30a46c] font-medium flex items-center gap-1">
+                    Valid scheme
+                  </span>
+                ) : (
+                  <span className="text-[12px] text-[#e5484d] font-medium flex items-center gap-1">
+                    Invalid {formatEngine(newEngine)} scheme
+                  </span>
+                )
+              )}
+            </div>
+            <div className="relative">
+              <input
+                type={showNewUrl ? 'text' : 'password'}
+                value={newUrl}
+                onChange={(e) => {
+                  setNewUrl(e.target.value);
+                  setTestResult(null);
+                  setAttachError(null);
+                }}
+                placeholder={ENGINE_URL_SCHEMES[newEngine.toLowerCase()]?.example || 'postgres://user:secret@host:5432/dbname'}
+                className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] pl-3 pr-10 text-[14px] text-white focus:outline-none focus:border-[#3b82f6] font-mono"
+              />
+              <button
+                type="button"
+                onClick={() => setShowNewUrl(!showNewUrl)}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#777777] hover:text-[#cccccc] transition-colors cursor-pointer"
+                tabIndex={-1}
+                aria-label={showNewUrl ? 'Hide password' : 'Show password'}
+              >
+                {showNewUrl ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+              </button>
+            </div>
           </div>
 
           <div>
             <button
               type="button"
+              disabled={testResult === 'testing' || !newUrl.trim()}
               onClick={handleTestConnection}
-              className="h-8 px-3 rounded-[6px] text-[13px] font-medium border border-[#262626] bg-[#161616] text-[#cccccc] hover:text-white hover:border-[#383838] transition-colors inline-flex items-center gap-1.5 cursor-pointer"
+              className={`h-8 px-3 rounded-[6px] text-[13px] font-medium border transition-colors inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50 ${
+                testResult === 'success'
+                  ? 'border-[#30a46c]/40 bg-[#30a46c]/10 text-[#30a46c] hover:bg-[#30a46c]/20'
+                  : testResult === 'fail'
+                  ? 'border-[#e5484d]/40 bg-[#e5484d]/10 text-[#e5484d] hover:bg-[#e5484d]/20'
+                  : 'border-[#262626] bg-[#161616] text-[#cccccc] hover:text-white hover:border-[#383838]'
+              }`}
             >
-              <RefreshCw className={`w-3.5 h-3.5 ${testResult === 'testing' ? 'animate-spin text-[#3b82f6]' : ''}`} />
-              <span>Test Connection Handshake</span>
+              {testResult === 'testing' ? (
+                <RefreshCw className="w-3.5 h-3.5 animate-spin text-[#3b82f6]" />
+              ) : testResult === 'success' ? (
+                <CheckCircle2 className="w-3.5 h-3.5 text-[#30a46c]" />
+              ) : testResult === 'fail' ? (
+                <AlertTriangle className="w-3.5 h-3.5 text-[#e5484d]" />
+              ) : (
+                <RefreshCw className="w-3.5 h-3.5" />
+              )}
+              <span>
+                {testResult === 'testing'
+                  ? 'Testing Connection...'
+                  : testResult === 'success'
+                  ? 'Connection Verified'
+                  : testResult === 'fail'
+                  ? 'Test Failed · Retry'
+                  : 'Test Connection Handshake'}
+              </span>
             </button>
           </div>
 
           {testResult === 'testing' && (
-            <div className="rounded-[6px] border border-[#262626] bg-[#141414] p-3 text-[13px] text-[#8c8c8c]">
-              Probing TCP handshake and validating dialect authentication...
+            <div className="rounded-[6px] border border-[#262626] bg-[#141414] p-3 text-[13px] text-[#8c8c8c] flex items-center gap-2">
+              <RefreshCw className="w-3.5 h-3.5 animate-spin text-[#3b82f6] shrink-0" />
+              <span>Probing TCP handshake and validating dialect authentication...</span>
             </div>
           )}
 
           {testResult === 'success' && (
             <div className="rounded-[6px] border border-[#30a46c]/30 bg-[#30a46c]/10 p-3 text-[13px] text-[#30a46c] font-medium flex items-center gap-2">
               <CheckCircle2 className="w-4 h-4 shrink-0" />
-              Connection handshake verified. Round-trip: 0.94 ms.
+              <span>Connection handshake verified. Database target is reachable and credentials are valid.</span>
             </div>
           )}
 
@@ -873,7 +1003,7 @@ export function Databases() {
           )}
 
           <div className="pt-2">
-            <h3 className="text-[16px] font-semibold text-white tracking-tight">Connection Bounds</h3>
+            <h3 className="text-[16px] font-medium text-white tracking-tight">Connection Bounds</h3>
             <p className="text-[13px] text-[#8c8c8c] mt-0.5">Configure scaling limits and idle timeout thresholds.</p>
           </div>
 
@@ -908,7 +1038,7 @@ export function Databases() {
           </div>
         </div>
 
-        <div className="p-4 bg-[#0e0e0e] flex items-center justify-end gap-2.5">
+        <div className="p-4 border-t border-[#222222] bg-[#0e0e0e] flex items-center justify-end gap-2.5 font-sans">
           <button
             type="button"
             onClick={() => setAttachOpen(false)}
@@ -919,12 +1049,20 @@ export function Databases() {
           <button
             type="button"
             onClick={handleAttach}
-            className="group relative flex shrink-0 items-center justify-center h-9 px-4 rounded-[8px] font-medium text-white shadow-xs outline-none cursor-pointer overflow-hidden ring-1 ring-[#1d4ed8] bg-[#2563eb] font-sans"
+            disabled={isAttaching}
+            className="group relative flex shrink-0 items-center justify-center h-9 px-4 rounded-[8px] font-medium text-white shadow-xs outline-none cursor-pointer overflow-hidden ring-1 ring-[#1d4ed8] bg-[#2563eb] font-sans disabled:opacity-50"
           >
             <span aria-hidden="true" className="pointer-events-none absolute inset-0 rounded-[inherit] bg-gradient-to-b from-[#3b82f6] to-[#2563eb] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2)]" />
             <span aria-hidden="true" className="pointer-events-none absolute inset-0 rounded-[inherit] bg-black opacity-0 group-hover:opacity-15 transition-opacity duration-200" />
             <span className="relative flex items-center gap-1.5 text-[14px] font-sans">
-              Attach Pool
+              {isAttaching ? (
+                <>
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  <span>Verifying & Attaching...</span>
+                </>
+              ) : (
+                <span>Attach Pool</span>
+              )}
             </span>
           </button>
         </div>
@@ -970,7 +1108,7 @@ export function Databases() {
             {/* Pool Settings */}
             <div className="space-y-4">
               <div>
-                <h3 className="text-[16px] font-semibold text-white tracking-tight">Pool Settings</h3>
+                <h3 className="text-[16px] font-medium text-white tracking-tight">Pool Settings</h3>
                 <p className="text-[13px] text-[#8c8c8c] mt-0.5">Configure pool identity, engine dialect, and connection target.</p>
               </div>
 
@@ -982,7 +1120,7 @@ export function Databases() {
                     value={editAlias}
                     onChange={(e) => setEditAlias(e.target.value)}
                     placeholder="e.g. analytics_warehouse"
-                    className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] px-3 text-[14px] text-white font-mono focus:outline-none focus:border-[#3b82f6]"
+                    className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] px-3 text-[14px] text-white focus:outline-none focus:border-[#3b82f6]"
                   />
                 </div>
 
@@ -1015,17 +1153,28 @@ export function Databases() {
                       )
                     )}
                   </div>
-                  <input
-                    type="password"
-                    value={editUrl}
-                    onChange={(e) => {
-                      setEditUrl(e.target.value);
-                      setManageTestResult(null);
-                      setManageError(null);
-                    }}
-                    placeholder="Leave blank to keep the existing"
-                    className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] px-3 text-[14px] text-white font-mono focus:outline-none focus:border-[#3b82f6]"
-                  />
+                  <div className="relative">
+                    <input
+                      type={showEditUrl ? 'text' : 'password'}
+                      value={editUrl}
+                      onChange={(e) => {
+                        setEditUrl(e.target.value);
+                        setManageTestResult(null);
+                        setManageError(null);
+                      }}
+                      placeholder="Leave blank to keep the existing"
+                      className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] pl-3 pr-10 text-[14px] text-white focus:outline-none focus:border-[#3b82f6] font-mono"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowEditUrl(!showEditUrl)}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#777777] hover:text-[#cccccc] transition-colors cursor-pointer"
+                      tabIndex={-1}
+                      aria-label={showEditUrl ? 'Hide password' : 'Show password'}
+                    >
+                      {showEditUrl ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
                   <p className="text-[12px] text-[#8c8c8c] mt-1">
                     Hidden for security reasons.
                   </p>
@@ -1036,12 +1185,30 @@ export function Databases() {
                     type="button"
                     disabled={manageTestResult === 'testing'}
                     onClick={handleManageTestConnection}
-                    className="h-8 px-3 rounded-[6px] text-[13px] font-medium border border-[#262626] bg-[#161616] text-[#cccccc] hover:text-white hover:border-[#383838] disabled:opacity-50 transition-colors inline-flex items-center gap-1.5 cursor-pointer"
+                    className={`h-8 px-3 rounded-[6px] text-[13px] font-medium border transition-colors inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50 ${
+                      manageTestResult === 'success'
+                        ? 'border-[#30a46c]/40 bg-[#30a46c]/10 text-[#30a46c] hover:bg-[#30a46c]/20'
+                        : manageTestResult === 'fail'
+                        ? 'border-[#e5484d]/40 bg-[#e5484d]/10 text-[#e5484d] hover:bg-[#e5484d]/20'
+                        : 'border-[#262626] bg-[#161616] text-[#cccccc] hover:text-white hover:border-[#383838]'
+                    }`}
                   >
-                    <RefreshCw className={`w-3.5 h-3.5 ${manageTestResult === 'testing' ? 'animate-spin text-[#3b82f6]' : ''}`} />
+                    {manageTestResult === 'testing' ? (
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin text-[#3b82f6]" />
+                    ) : manageTestResult === 'success' ? (
+                      <CheckCircle2 className="w-3.5 h-3.5 text-[#30a46c]" />
+                    ) : manageTestResult === 'fail' ? (
+                      <AlertTriangle className="w-3.5 h-3.5 text-[#e5484d]" />
+                    ) : (
+                      <RefreshCw className="w-3.5 h-3.5" />
+                    )}
                     <span>
                       {manageTestResult === 'testing'
                         ? 'Testing Connection...'
+                        : manageTestResult === 'success'
+                        ? 'Connection Verified'
+                        : manageTestResult === 'fail'
+                        ? 'Test Failed · Retry'
                         : urlChanged
                         ? 'Test New Connection'
                         : 'Test Connection Handshake'}
@@ -1072,7 +1239,7 @@ export function Databases() {
               </div>
 
               <div className="pt-2">
-                <h3 className="text-[16px] font-semibold text-white tracking-tight">Connection Bounds</h3>
+                <h3 className="text-[16px] font-medium text-white tracking-tight">Connection Bounds</h3>
                 <p className="text-[13px] text-[#8c8c8c] mt-0.5">Configure scaling limits and idle timeout thresholds.</p>
               </div>
 
@@ -1112,9 +1279,9 @@ export function Databases() {
         {manageTab === 'danger' && (
           <div className="flex-1 p-5 overflow-y-auto">
             <div className="rounded-[8px] border border-[#3a1515] bg-[#0e0404] p-4">
-              <h3 className="text-[16px] font-semibold text-[#e5484d] mb-1">Disconnect Pool</h3>
+              <h3 className="text-[16px] font-medium text-[#e5484d] mb-1">Disconnect Pool</h3>
               <p className="text-[13px] text-[#8c8c8c] mb-4">
-                Permanently remove <span className="text-white font-mono text-[13px]">{selectedPool?.alias}</span> from the gateway. All active connections will be terminated.
+                Permanently remove <span className="text-white font-medium text-[13px]">{selectedPool?.alias}</span> from the gateway. All active connections will be terminated.
               </p>
               <button
                 type="button"
@@ -1139,7 +1306,7 @@ export function Databases() {
 
         {/* Footer */}
         {manageTab === 'details' && (
-          <div className="p-4 bg-[#0e0e0e] flex items-center justify-end gap-2.5">
+          <div className="p-4 border-t border-[#222222] bg-[#0e0e0e] flex items-center justify-end gap-2.5 font-sans">
             <button
               type="button"
               onClick={() => setManageOpen(false)}
@@ -1149,14 +1316,21 @@ export function Databases() {
             </button>
             <button
               type="button"
-              disabled={!canSave}
+              disabled={!canSave || isSaving}
               onClick={handleSaveEdit}
               className="group relative flex shrink-0 items-center justify-center h-9 px-4 rounded-[8px] font-medium text-white shadow-xs outline-none cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed overflow-hidden ring-1 ring-[#1d4ed8] bg-[#2563eb] font-sans"
             >
               <span aria-hidden="true" className="pointer-events-none absolute inset-0 rounded-[inherit] bg-gradient-to-b from-[#3b82f6] to-[#2563eb] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2)]" />
               <span aria-hidden="true" className="pointer-events-none absolute inset-0 rounded-[inherit] bg-black opacity-0 group-hover:opacity-15 transition-opacity duration-200" />
               <span className="relative flex items-center gap-1.5 text-[14px] font-sans">
-                Save
+                {isSaving ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Verifying & Saving...</span>
+                  </>
+                ) : (
+                  <span>Save</span>
+                )}
               </span>
             </button>
           </div>
@@ -1167,9 +1341,14 @@ export function Databases() {
       <ConfirmDialog
         isOpen={confirmDisconnectOpen}
         onClose={() => setConfirmDisconnectOpen(false)}
-        onConfirm={() => {
+        onConfirm={async () => {
           if (selectedPool) {
-            setPools(pools.filter((p) => p.alias !== selectedPool.alias));
+            try {
+              await api.deleteDatabase(selectedPool.alias);
+              await loadDatabases();
+            } catch (err) {
+              console.error('Failed to disconnect database pool:', err);
+            }
           }
           setConfirmDisconnectOpen(false);
           setManageOpen(false);
@@ -1178,7 +1357,7 @@ export function Databases() {
         description={
           <>
             Permanently remove database pool{' '}
-            <span className="font-mono text-white font-medium">{selectedPool?.alias}</span>{' '}
+            <span className="text-white font-medium">{selectedPool?.alias}</span>{' '}
             from the gateway? All active connections will be terminated.
           </>
         }

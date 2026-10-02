@@ -127,10 +127,17 @@ pub async fn rate_limit_middleware(req: Request, next: Next) -> Result<Response,
             if let Ok(decoded) = BASE64_STANDARD.decode(token_str) {
                 if let Ok(ident) = String::from_utf8(decoded) {
                     if let Some((key_name, _)) = ident.split_once(':') {
-                        let key_limit = config
-                            .api_key
+                        let snapshot = axiom_metadata::snapshot::get_snapshot();
+                        let key_limit = snapshot
+                            .keys
                             .get(key_name)
-                            .map(|k| if k.rate_limit_override > 0 { k.rate_limit_override } else { ip_limit })
+                            .and_then(|k| if k.rate_limit_override > 0 { Some(k.rate_limit_override as i32) } else { None })
+                            .or_else(|| {
+                                config
+                                    .api_key
+                                    .get(key_name)
+                                    .map(|k| if k.rate_limit_override > 0 { k.rate_limit_override } else { ip_limit })
+                            })
                             .unwrap_or(ip_limit);
 
                         let key_rl_key = format!("rl:key:{}", key_name);

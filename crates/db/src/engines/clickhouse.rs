@@ -246,6 +246,7 @@ impl DatabaseEngine for ClickHouseDatabaseEngine {
 
         if is_mutation {
             return Ok(QueryResult {
+                success: true,
                 columns: None,
                 rows: None,
                 affected_rows: Some(0), // ClickHouse doesn't return affected rows via standard HTTP
@@ -284,6 +285,7 @@ impl DatabaseEngine for ClickHouseDatabaseEngine {
         };
 
         Ok(QueryResult {
+            success: true,
             columns: Some(column_names),
             rows: Some(result_rows),
             affected_rows: None,

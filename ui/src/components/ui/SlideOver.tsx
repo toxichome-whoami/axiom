@@ -115,7 +115,7 @@ export const SlideOver: React.FC<SlideOverProps> = ({
           <div className="flex items-center justify-between px-4 sm:px-5 py-3.5 bg-black shrink-0 font-sans">
             <div className="min-w-0 pr-3 flex-1">
               <h2
-                className="text-[16px] font-semibold text-white tracking-[-0.015em] leading-snug font-sans truncate"
+                className="text-[16px] font-medium text-white tracking-[-0.015em] leading-snug font-sans truncate"
                 title={typeof title === 'string' ? title : undefined}
               >
                 {title}

@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { cn } from '../utils/cn';
+import { api } from '../api/client';
 import {
   LayoutDashboard,
   Database,
@@ -7,8 +8,6 @@ import {
   Shield,
   Bot,
   Terminal,
-  Activity,
-  ScrollText,
   Settings,
   LogOut,
   Search,
@@ -17,24 +16,23 @@ import {
 } from 'lucide-react';
 
 export type NavPath =
-  | '/ui'
-  | '/ui/databases'
-  | '/ui/keys'
-  | '/ui/roles'
-  | '/ui/mcp'
-  | '/ui/tester'
-  | '/ui/metrics'
-  | '/ui/audit'
-  | '/ui/settings';
+  | '/system'
+  | '/system/databases'
+  | '/system/keys'
+  | '/system/roles'
+  | '/system/mcp'
+  | '/system/tester'
+  | '/system/settings';
 
 interface LayoutProps {
   currentPath: NavPath;
   onNavigate: (path: NavPath) => void;
   title: string;
   children: React.ReactNode;
+  onLogout?: () => void;
 }
 
-export function Layout({ currentPath, onNavigate, title, children }: LayoutProps) {
+export function Layout({ currentPath, onNavigate, title, children, onLogout }: LayoutProps) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [userOpen, setUserOpen] = useState(false);
@@ -46,15 +44,13 @@ export function Layout({ currentPath, onNavigate, title, children }: LayoutProps
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   const searchItems = [
-    { label: 'Overview', path: '/ui' as NavPath, icon: LayoutDashboard, category: 'Data & Access' },
-    { label: 'Database Pools', path: '/ui/databases' as NavPath, icon: Database, category: 'Data & Access' },
-    { label: 'API Keys', path: '/ui/keys' as NavPath, icon: Key, category: 'Data & Access' },
-    { label: 'Roles', path: '/ui/roles' as NavPath, icon: Shield, category: 'Data & Access' },
-    { label: 'MCP Protocol', path: '/ui/mcp' as NavPath, icon: Bot, category: 'Protocols & Tools' },
-    { label: 'API Explorer', path: '/ui/tester' as NavPath, icon: Terminal, category: 'Protocols & Tools' },
-    { label: 'Metrics', path: '/ui/metrics' as NavPath, icon: Activity, category: 'Observability' },
-    { label: 'Audit Trail', path: '/ui/audit' as NavPath, icon: ScrollText, category: 'Observability' },
-    { label: 'Settings & Admin', path: '/ui/settings' as NavPath, icon: Settings, category: 'Observability' },
+    { label: 'Overview', path: '/system' as NavPath, icon: LayoutDashboard, category: 'Data & Access' },
+    { label: 'Database Pools', path: '/system/databases' as NavPath, icon: Database, category: 'Data & Access' },
+    { label: 'API Keys', path: '/system/keys' as NavPath, icon: Key, category: 'Data & Access' },
+    { label: 'Roles', path: '/system/roles' as NavPath, icon: Shield, category: 'Data & Access' },
+    { label: 'MCP Protocol', path: '/system/mcp' as NavPath, icon: Bot, category: 'Protocols & Tools' },
+    { label: 'API Explorer', path: '/system/tester' as NavPath, icon: Terminal, category: 'Protocols & Tools' },
+    { label: 'Settings', path: '/system/settings' as NavPath, icon: Settings, category: 'Configuration' },
   ];
 
   const filteredSearchItems = searchItems.filter(
@@ -131,22 +127,22 @@ export function Layout({ currentPath, onNavigate, title, children }: LayoutProps
       title: 'Data & Access',
       items: [
         {
-          path: '/ui' as NavPath,
+          path: '/system' as NavPath,
           label: 'Overview',
           icon: LayoutDashboard,
         },
         {
-          path: '/ui/databases' as NavPath,
+          path: '/system/databases' as NavPath,
           label: 'Database Pools',
           icon: Database,
         },
         {
-          path: '/ui/keys' as NavPath,
+          path: '/system/keys' as NavPath,
           label: 'API Keys',
           icon: Key,
         },
         {
-          path: '/ui/roles' as NavPath,
+          path: '/system/roles' as NavPath,
           label: 'Roles',
           icon: Shield,
         },
@@ -156,33 +152,23 @@ export function Layout({ currentPath, onNavigate, title, children }: LayoutProps
       title: 'Protocols & Tools',
       items: [
         {
-          path: '/ui/mcp' as NavPath,
+          path: '/system/mcp' as NavPath,
           label: 'MCP Protocol',
           icon: Bot,
         },
         {
-          path: '/ui/tester' as NavPath,
+          path: '/system/tester' as NavPath,
           label: 'API Explorer',
           icon: Terminal,
         },
       ],
     },
     {
-      title: 'Observability',
+      title: 'Configuration',
       items: [
         {
-          path: '/ui/metrics' as NavPath,
-          label: 'Metrics',
-          icon: Activity,
-        },
-        {
-          path: '/ui/audit' as NavPath,
-          label: 'Audit Trail',
-          icon: ScrollText,
-        },
-        {
-          path: '/ui/settings' as NavPath,
-          label: 'Settings & Admin',
+          path: '/system/settings' as NavPath,
+          label: 'Settings',
           icon: Settings,
         },
       ],
@@ -218,7 +204,7 @@ export function Layout({ currentPath, onNavigate, title, children }: LayoutProps
           )}
         >
           <button
-            onClick={() => onNavigate('/ui')}
+            onClick={() => onNavigate('/system')}
             aria-label="Axiom Gateway"
             className="flex items-center justify-center gap-2 bg-transparent border-0 p-0 text-center cursor-pointer min-w-0 group"
           >
@@ -384,21 +370,16 @@ export function Layout({ currentPath, onNavigate, title, children }: LayoutProps
       <div className="flex-1 flex flex-col min-w-0 min-h-screen bg-[#000000]">
         {/* Top Header Bar (matched to Cloudflare TopBar in binary_alive) */}
         <header className="h-[58px] bg-[#000000] shrink-0 border-b border-[#222222] flex items-center px-4 sm:px-6 z-20 sticky top-0 gap-2 select-none justify-between">
-          <div className="flex items-center gap-2 text-[13px]">
-            <button
-              onClick={() => setIsSidebarOpen(true)}
-              className="p-1.5 -ml-1 text-[#8c8c8c] hover:text-white rounded-lg md:hidden hover:bg-[#161616] transition-colors cursor-pointer"
-              aria-label="Toggle navigation"
-              type="button"
-            >
-              <Menu className="w-5 h-5" />
-            </button>
-            <span className="text-[#8c8c8c] hidden sm:inline">Axiom</span>
-            <span className="text-[#444444] hidden sm:inline">/</span>
-            <span className="text-[#f3f4f6] font-medium">{title}</span>
-          </div>
+          <button
+            onClick={() => setIsSidebarOpen(true)}
+            className="p-1.5 -ml-1 text-[#8c8c8c] hover:text-white rounded-lg md:hidden hover:bg-[#161616] transition-colors cursor-pointer"
+            aria-label="Toggle navigation"
+            type="button"
+          >
+            <Menu className="w-5 h-5" />
+          </button>
 
-          <div className="flex items-center gap-2 sm:gap-3">
+          <div className="flex items-center gap-2 sm:gap-3 ml-auto">
             {/* Cluster Status Pill */}
             <div className="hidden sm:inline-flex items-center gap-1.5 rounded-full border border-[#222222] bg-[#0c0c0c] px-2.5 py-1 text-[11px] font-medium text-[#8c8c8c]">
               <span className="size-1.5 rounded-full bg-[#30a46c]"></span>
@@ -452,35 +433,24 @@ export function Layout({ currentPath, onNavigate, title, children }: LayoutProps
                     <button
                       type="button"
                       onClick={() => {
-                        onNavigate('/ui/settings');
+                        onNavigate('/system/settings');
                         setUserOpen(false);
                       }}
                       className="w-full flex items-center gap-2.5 px-2.5 py-1.5 text-[14px] font-normal text-[#d4d4d4] hover:text-white hover:bg-[#1a1a1a] rounded-lg transition-colors cursor-pointer text-left"
                     >
                       <Settings className="w-4 h-4 text-[#8c8c8c] shrink-0" />
-                      <span>Settings & Admin</span>
+                      <span>Settings</span>
                     </button>
                     <button
                       type="button"
                       onClick={() => {
-                        onNavigate('/ui/keys');
+                        onNavigate('/system/keys');
                         setUserOpen(false);
                       }}
                       className="w-full flex items-center gap-2.5 px-2.5 py-1.5 text-[14px] font-normal text-[#d4d4d4] hover:text-white hover:bg-[#1a1a1a] rounded-lg transition-colors cursor-pointer text-left"
                     >
                       <Key className="w-4 h-4 text-[#8c8c8c] shrink-0" />
                       <span>API Key Vault</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        onNavigate('/ui/audit');
-                        setUserOpen(false);
-                      }}
-                      className="w-full flex items-center gap-2.5 px-2.5 py-1.5 text-[14px] font-normal text-[#d4d4d4] hover:text-white hover:bg-[#1a1a1a] rounded-lg transition-colors cursor-pointer text-left"
-                    >
-                      <ScrollText className="w-4 h-4 text-[#8c8c8c] shrink-0" />
-                      <span>Audit Trail</span>
                     </button>
                   </div>
 
@@ -490,9 +460,21 @@ export function Layout({ currentPath, onNavigate, title, children }: LayoutProps
                   {/* Sign out */}
                   <button
                     type="button"
-                    onClick={() => {
-                      alert('Operator session cleared.');
+                    onClick={async () => {
                       setUserOpen(false);
+                      try {
+                        await api.logout();
+                      } catch {
+                        // Ignore network logout errors
+                      }
+                      if (onLogout) {
+                        onLogout();
+                      } else {
+                        localStorage.removeItem('axiom_session_active');
+                        localStorage.removeItem('axiom_session_token');
+                        localStorage.removeItem('axiom_operator_user');
+                        window.location.href = '/system';
+                      }
                     }}
                     className="w-full flex items-center gap-2.5 px-2.5 py-1.5 text-[14px] font-normal text-[#d4d4d4] hover:text-white hover:bg-[#1a1a1a] rounded-lg transition-colors cursor-pointer text-left"
                   >

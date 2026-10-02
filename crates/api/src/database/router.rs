@@ -71,45 +71,46 @@ async fn list_databases(
 
     // Filter by user role permissions
     let authorized_dbs = PolicyEngine::filter_databases(&auth, &sorted_aliases);
-    let mut active_dbs = Vec::new();
 
-    for name in &authorized_dbs {
-        let (engine_str, mode_str) = if let Some(db_cfg) = config.database.get(name) {
-            (format!("{:?}", db_cfg.engine).to_lowercase(), format!("{:?}", db_cfg.mode).to_lowercase())
-        } else if let Some(snap_db) = snapshot.databases.get(name) {
-            (snap_db.engine.clone(), "readwrite".to_string())
-        } else {
-            continue;
-        };
+    // Parallelize connectivity probes across authorized databases for minimum latency
+    let check_futures = authorized_dbs.into_iter().map(|name| {
+        let config = config.clone();
+        let snapshot = snapshot.clone();
+        async move {
+            let (engine_str, mode_str) = if let Some(db_cfg) = config.database.get(&name) {
+                (format!("{:?}", db_cfg.engine).to_lowercase(), format!("{:?}", db_cfg.mode).to_lowercase())
+            } else if let Some(snap_db) = snapshot.databases.get(&name) {
+                (snap_db.engine.clone(), "readwrite".to_string())
+            } else {
+                return None;
+            };
 
-        let mut status = "down";
-        let mut tables_count_str = "0".to_string();
-        if let Some(engine) = axiom_db::DatabasePoolManager::get_engine(name).await {
-            if engine.health_check().await {
-                status = "connected";
-                // Use a strict limit of 100 to prevent heavy schema scanning on the DB
-                if let Ok(tables) = engine.list_tables(None, 100).await {
-                    if tables.len() >= 100 {
-                        tables_count_str = "99+".to_string();
-                    } else {
-                        tables_count_str = tables.len().to_string();
+            let mut status = "down";
+            let mut tables_count_str = "0".to_string();
+            if let Some(engine) = axiom_db::DatabasePoolManager::get_engine(&name).await {
+                if engine.health_check().await {
+                    status = "connected";
+                    if let Ok(count) = engine.count_tables().await {
+                        tables_count_str = count.to_string();
                     }
                 }
             }
-        }
 
-        active_dbs.push(serde_json::json!({
-            "name": name,
-            "engine": engine_str,
-            "mode": mode_str,
-            "status": status,
-            "tables_count": tables_count_str
-        }));
-    }
+            Some(serde_json::json!({
+                "name": name,
+                "engine": engine_str,
+                "mode": mode_str,
+                "status": status,
+                "tables_count": tables_count_str
+            }))
+        }
+    });
+
+    let results = futures::future::join_all(check_futures).await;
+    let active_dbs: Vec<Value> = results.into_iter().flatten().collect();
 
     Ok(Json(serde_json::json!({
         "success": true,
-        "databases": active_dbs,
         "data": active_dbs,
         "error": serde_json::Value::Null
     })))
@@ -126,16 +127,17 @@ async fn execute_query(
     Extension(auth): Extension<AuthContext>,
     Json(payload): Json<QueryRequest>,
 ) -> Result<axum::response::Response, AxiomError> {
-    
-    static IDEMPOTENCY_CACHE: once_cell::sync::Lazy<dashmap::DashMap<String, bytes::Bytes>> = once_cell::sync::Lazy::new(dashmap::DashMap::new);
-    let idempotency_key = headers.get("Idempotency-Key").and_then(|v| v.to_str().ok()).map(|s| s.to_string());
+    let idempotency_key = headers
+        .get("Idempotency-Key")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| format!("idemp:{}", s));
     
     if let Some(ref key) = idempotency_key {
-        if let Some(cached_response) = IDEMPOTENCY_CACHE.get(key) {
+        if let Some(cached_response) = axiom_cache::CacheEngine::get(key).await {
             return axum::response::Response::builder()
                 .header("content-type", "application/json")
                 .header("x-idempotency-hit", "true")
-                .body(axum::body::Body::from(cached_response.clone()))
+                .body(axum::body::Body::from(cached_response))
                 .map_err(|e| {
                     tracing::error!("Response build failed: {}", e);
                     AxiomError::new("INTERNAL_ERROR", "Failed to build response", axum::http::StatusCode::INTERNAL_SERVER_ERROR)
@@ -144,20 +146,28 @@ async fn execute_query(
     }
     let db_cfg = get_db_config(&db_name, &auth).await?;
 
-    // Named params arrive as a JSON object {"1": val, "2": val}.
-    // Sort numerically so positional binding order is always deterministic.
+    // Params can arrive as a JSON array [val1, val2] or object {"1": val1, "2": val2}.
     let mut params_array = Vec::new();
-    if let Some(map) = payload.params {
-        let mut keys: Vec<_> = map.keys().collect();
-        keys.sort_by(|a, b| {
-            match (a.parse::<i32>(), b.parse::<i32>()) {
-                (Ok(n1), Ok(n2)) => n1.cmp(&n2),
-                _ => a.cmp(b),
+    if let Some(ref p) = payload.params {
+        match p {
+            serde_json::Value::Array(arr) => {
+                params_array = arr.clone();
             }
-        });
-        
-        for k in keys {
-            params_array.push(map.get(k).unwrap().clone());
+            serde_json::Value::Object(map) => {
+                let mut keys: Vec<_> = map.keys().collect();
+                keys.sort_by(|a, b| {
+                    match (a.parse::<i32>(), b.parse::<i32>()) {
+                        (Ok(n1), Ok(n2)) => n1.cmp(&n2),
+                        _ => a.cmp(b),
+                    }
+                });
+                for k in keys {
+                    if let Some(val) = map.get(k) {
+                        params_array.push(val.clone());
+                    }
+                }
+            }
+            _ => {}
         }
     }
 
@@ -173,7 +183,13 @@ async fn execute_query(
     };
 
     if let Some(key) = idempotency_key {
-        IDEMPOTENCY_CACHE.insert(key, json_bytes.clone());
+        axiom_cache::CacheEngine::set(
+            &key,
+            json_bytes.clone(),
+            86400,
+            axiom_cache::Durability::Journaled,
+        )
+        .await;
     }
 
     axum::response::Response::builder()

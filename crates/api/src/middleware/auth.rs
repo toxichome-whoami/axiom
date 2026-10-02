@@ -94,7 +94,30 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, A
     }
 
     if let Some(session_id) = session_id_opt {
+        // Fast-path: Check RAM cache for active session before hitting SQLite
+        let cache_key = format!("sess:{}", session_id);
+        if let Some(user_bytes) = axiom_cache::CacheEngine::get(&cache_key).await {
+            if let Ok(username) = String::from_utf8(user_bytes.to_vec()) {
+                let ctx = AuthContext {
+                    api_key_name: format!("user:{}", username),
+                    role: Some("admin".to_string()),
+                    full_admin: true,
+                    ..Default::default()
+                };
+                req.extensions_mut().insert(ctx);
+                return Ok(next.run(req).await);
+            }
+        }
+
         if let Ok(Some(username)) = axiom_metadata::store::MetadataStore::validate_session(session_id).await {
+            // Cache active session in RAM for 60 seconds
+            axiom_cache::CacheEngine::set(
+                &cache_key,
+                bytes::Bytes::from(username.clone()),
+                60,
+                axiom_cache::Durability::MemoryOnly,
+            ).await;
+
             let ctx = AuthContext {
                 api_key_name: format!("user:{}", username),
                 role: Some("admin".to_string()),

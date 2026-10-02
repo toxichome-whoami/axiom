@@ -17,6 +17,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 static HTTP_REQUESTS_TOTAL: AtomicU64 = AtomicU64::new(0);
 static HTTP_ERRORS_TOTAL: AtomicU64 = AtomicU64::new(0);
+static DB_QUERIES_TOTAL: AtomicU64 = AtomicU64::new(0);
 static AUTH_FAILURES_TOTAL: AtomicU64 = AtomicU64::new(0);
 static RATE_LIMIT_REJECTIONS_TOTAL: AtomicU64 = AtomicU64::new(0);
 
@@ -24,6 +25,9 @@ static RATE_LIMIT_REJECTIONS_TOTAL: AtomicU64 = AtomicU64::new(0);
 pub struct MetricsSnapshot {
     pub http_requests_total: u64,
     pub http_errors_total: u64,
+    pub queries_total: u64,
+    pub auth_failures_total: u64,
+    pub rate_limit_rejections_total: u64,
     pub process_uptime_seconds: f64,
 }
 
@@ -39,6 +43,9 @@ impl MetricsEngine {
         MetricsSnapshot {
             http_requests_total: HTTP_REQUESTS_TOTAL.load(Ordering::Relaxed),
             http_errors_total: HTTP_ERRORS_TOTAL.load(Ordering::Relaxed),
+            queries_total: DB_QUERIES_TOTAL.load(Ordering::Relaxed),
+            auth_failures_total: AUTH_FAILURES_TOTAL.load(Ordering::Relaxed),
+            rate_limit_rejections_total: RATE_LIMIT_REJECTIONS_TOTAL.load(Ordering::Relaxed),
             process_uptime_seconds: crate::core::health::get_uptime(),
         }
     }
@@ -55,12 +62,14 @@ impl MetricsEngine {
         }
     }
 
-    /// No-op query recorder stub maintaining API contract without collecting internal DB query metrics.
+    /// Records an executed database query counter.
     /// CONTRACT:
-    ///  - Side effects: None.
-    ///  - Idempotent: Yes.
+    ///  - Side effects: Increments atomic DB queries counter.
+    ///  - Idempotent: No.
     #[inline]
-    pub fn record_db_query(_alias: &str, _operation: &str, _duration_secs: f64) {}
+    pub fn record_db_query(_alias: &str, _operation: &str, _duration_secs: f64) {
+        DB_QUERIES_TOTAL.fetch_add(1, Ordering::Relaxed);
+    }
 
     /// Records a failed authentication attempt.
     /// CONTRACT:
@@ -86,7 +95,7 @@ impl MetricsEngine {
     ///  - Does not leak live cache internals, auth failure counters, database query counters, or internal secrets.
     ///  - Idempotent: Yes (pure observation).
     pub fn render_prometheus() -> String {
-        let mut out = String::with_capacity(512);
+        let mut out = String::with_capacity(768);
 
         out.push_str("# HELP axiom_http_requests_total Total number of HTTP requests processed\n");
         out.push_str("# TYPE axiom_http_requests_total counter\n");
@@ -100,6 +109,27 @@ impl MetricsEngine {
         out.push_str(&format!(
             "axiom_http_errors_total {}\n",
             HTTP_ERRORS_TOTAL.load(Ordering::Relaxed)
+        ));
+
+        out.push_str("# HELP axiom_db_queries_total Total number of database queries executed\n");
+        out.push_str("# TYPE axiom_db_queries_total counter\n");
+        out.push_str(&format!(
+            "axiom_db_queries_total {}\n",
+            DB_QUERIES_TOTAL.load(Ordering::Relaxed)
+        ));
+
+        out.push_str("# HELP axiom_auth_failures_total Total number of failed authentication attempts\n");
+        out.push_str("# TYPE axiom_auth_failures_total counter\n");
+        out.push_str(&format!(
+            "axiom_auth_failures_total {}\n",
+            AUTH_FAILURES_TOTAL.load(Ordering::Relaxed)
+        ));
+
+        out.push_str("# HELP axiom_rate_limit_rejections_total Total requests rejected by rate limits\n");
+        out.push_str("# TYPE axiom_rate_limit_rejections_total counter\n");
+        out.push_str(&format!(
+            "axiom_rate_limit_rejections_total {}\n",
+            RATE_LIMIT_REJECTIONS_TOTAL.load(Ordering::Relaxed)
         ));
 
         out.push_str("# HELP axiom_process_uptime_seconds Gateway uptime in seconds\n");

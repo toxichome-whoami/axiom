@@ -196,12 +196,8 @@ impl Default for DatabaseDefConfig {
             idle_timeout: 600,
             max_lifetime: 3600,
             query_whitelist: None,
-            query_blacklist: Some(vec![
-                "DROP".to_string(),
-                "TRUNCATE".to_string(),
-                "ALTER".to_string(),
-            ]),
-            dangerous_operations: false,
+            query_blacklist: None,
+            dangerous_operations: true,
         }
     }
 }

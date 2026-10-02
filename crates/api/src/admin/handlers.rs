@@ -58,6 +58,8 @@ pub struct AddDatabaseRequest {
     pub engine: Option<String>,
     pub pool_min: Option<i64>,
     pub pool_max: Option<i64>,
+    #[serde(default)]
+    pub old_alias: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -368,23 +370,99 @@ pub async fn add_database(
         ));
     }
 
-    if payload.url.trim().is_empty() {
+    let url_trimmed = payload.url.trim();
+    let lookup_alias = payload.old_alias.as_deref().unwrap_or(&payload.alias);
+    let is_existing = axiom_metadata::snapshot::get_snapshot().databases.contains_key(lookup_alias)
+        || ConfigManager::get().database.contains_key(lookup_alias);
+    if url_trimmed.is_empty() && !is_existing {
+        return Err(AxiomError::new(
+            "INVALID_URL",
+            "Database connection URL cannot be empty for new database",
+            StatusCode::BAD_REQUEST,
+        ));
+    }
+
+    // Determine the effective connection URL to test and save
+    let effective_url = if !url_trimmed.is_empty() && !url_trimmed.contains('•') {
+        url_trimmed.to_string()
+    } else if let Some(existing) = axiom_metadata::snapshot::get_snapshot().databases.get(lookup_alias) {
+        existing.url.clone()
+    } else if let Some(cfg) = ConfigManager::get().database.get(lookup_alias) {
+        cfg.url.clone()
+    } else {
         return Err(AxiomError::new(
             "INVALID_URL",
             "Database connection URL cannot be empty",
             StatusCode::BAD_REQUEST,
         ));
+    };
+
+    // Enforce uniqueness: Reject if another database alias already uses this connection URL
+    let snapshot = axiom_metadata::snapshot::get_snapshot();
+    for (existing_alias, existing_db) in snapshot.databases.iter() {
+        if existing_alias != &payload.alias
+            && existing_alias != lookup_alias
+            && MetadataStore::urls_match(&existing_db.url, &effective_url)
+        {
+            return Err(AxiomError::new(
+                "DATABASE_URL_ALREADY_EXISTS",
+                &format!(
+                    "This database connection URL is already registered under alias '{}'",
+                    existing_alias
+                ),
+                StatusCode::CONFLICT,
+            ));
+        }
     }
+
+    let config = ConfigManager::get();
+    for (existing_alias, existing_cfg) in config.database.iter() {
+        if existing_alias != &payload.alias
+            && existing_alias != lookup_alias
+            && MetadataStore::urls_match(&existing_cfg.url, &effective_url)
+        {
+            return Err(AxiomError::new(
+                "DATABASE_URL_ALREADY_EXISTS",
+                &format!(
+                    "This database connection URL is already registered in configuration under alias '{}'",
+                    existing_alias
+                ),
+                StatusCode::CONFLICT,
+            ));
+        }
+    }
+
+    // Mandatory live connection check every time when adding or updating
+    let dialect = DatabasePoolManager::test_url(&effective_url)
+        .await
+        .map_err(|e| {
+            AxiomError::new(
+                "DATABASE_CONNECTION_FAILED",
+                &format!("Connection check failed: {}", e),
+                StatusCode::BAD_REQUEST,
+            )
+        })?;
+
+    let engine_to_use = payload.engine.as_deref().unwrap_or(&dialect);
 
     MetadataStore::add_database(
         &payload.alias,
-        &payload.url,
-        payload.engine.as_deref(),
+        &effective_url,
+        Some(engine_to_use),
         payload.pool_min,
         payload.pool_max,
+        payload.old_alias.as_deref(),
     )
     .await
     .map_err(|e| AxiomError::new("DATABASE_REGISTRATION_FAILED", &e, StatusCode::BAD_REQUEST))?;
+
+    // Invalidate cached engine in pool manager so next call connects with updated configuration
+    if let Some(ref old) = payload.old_alias {
+        if old != &payload.alias {
+            DatabasePoolManager::remove_engine(old).await;
+        }
+    }
+    DatabasePoolManager::remove_engine(&payload.alias).await;
 
     Ok((
         StatusCode::CREATED,
@@ -392,7 +470,9 @@ pub async fn add_database(
             "success": true,
             "data": {
                 "alias": payload.alias,
-                "message": format!("Database '{}' successfully configured", payload.alias)
+                "dialect": dialect,
+                "engine": engine_to_use,
+                "message": format!("Database '{}' successfully verified and configured", payload.alias)
             },
             "error": Value::Null
         })),
@@ -427,6 +507,9 @@ pub async fn delete_database(
             StatusCode::NOT_FOUND,
         ));
     }
+
+    // Invalidate and disconnect cached pool in DatabasePoolManager
+    DatabasePoolManager::remove_engine(&alias).await;
 
     Ok(Json(json!({
         "success": true,
@@ -953,6 +1036,7 @@ pub async fn setup_account(
             "success": true,
             "data": {
                 "token": session_id,
+                "session_token": session_id,
                 "username": payload.username
             },
             "error": Value::Null
@@ -960,18 +1044,94 @@ pub async fn setup_account(
     ))
 }
 
+#[derive(Debug, Deserialize)]
+pub struct TestUrlRequest {
+    pub url: String,
+    pub alias: Option<String>,
+}
+
+/// Tests connectivity against a raw database URL directly without saving it.
+pub async fn test_database_url(
+    Json(payload): Json<TestUrlRequest>,
+) -> Result<impl IntoResponse, AxiomError> {
+    let dialect = DatabasePoolManager::test_url(&payload.url)
+        .await
+        .map_err(|e| AxiomError::new("DATABASE_CONNECTION_FAILED", &e, StatusCode::BAD_REQUEST))?;
+
+    // Check if this URL is already registered under another database alias
+    let snapshot = axiom_metadata::snapshot::get_snapshot();
+    for (existing_alias, existing_db) in snapshot.databases.iter() {
+        if Some(existing_alias) != payload.alias.as_ref() && MetadataStore::urls_match(&existing_db.url, &payload.url) {
+            return Err(AxiomError::new(
+                "DATABASE_URL_ALREADY_EXISTS",
+                &format!(
+                    "This database connection URL is already registered under alias '{}'",
+                    existing_alias
+                ),
+                StatusCode::CONFLICT,
+            ));
+        }
+    }
+
+    let config = ConfigManager::get();
+    for (existing_alias, existing_cfg) in config.database.iter() {
+        if Some(existing_alias) != payload.alias.as_ref() && MetadataStore::urls_match(&existing_cfg.url, &payload.url) {
+            return Err(AxiomError::new(
+                "DATABASE_URL_ALREADY_EXISTS",
+                &format!(
+                    "This database connection URL is already registered in configuration under alias '{}'",
+                    existing_alias
+                ),
+                StatusCode::CONFLICT,
+            ));
+        }
+    }
+
+    Ok(Json(json!({
+        "success": true,
+        "data": {
+            "status": "connected",
+            "dialect": dialect,
+            "message": "Connection healthy"
+        },
+        "error": Value::Null
+    })))
+}
+
 /// Adds the first database during the setup wizard.
 /// CONTRACT:
+///  - Tests database connection before registering.
 ///  - Side effects: Registers database in axiom.db.
 pub async fn setup_database(
     Json(payload): Json<AddDatabaseRequest>,
 ) -> Result<impl IntoResponse, AxiomError> {
+    // 1. Verify database connectivity before saving
+    let dialect = DatabasePoolManager::test_url(&payload.url)
+        .await
+        .map_err(|e| AxiomError::new("DATABASE_CONNECTION_FAILED", &format!("Connection failed: {}", e), StatusCode::BAD_REQUEST))?;
+
+    // 2. Enforce uniqueness: Check if this URL is already registered
+    let snapshot = axiom_metadata::snapshot::get_snapshot();
+    for (existing_alias, existing_db) in snapshot.databases.iter() {
+        if existing_alias != &payload.alias && MetadataStore::urls_match(&existing_db.url, &payload.url) {
+            return Err(AxiomError::new(
+                "DATABASE_URL_ALREADY_EXISTS",
+                &format!(
+                    "This database connection URL is already registered under alias '{}'",
+                    existing_alias
+                ),
+                StatusCode::CONFLICT,
+            ));
+        }
+    }
+
     MetadataStore::add_database(
         &payload.alias,
         &payload.url,
-        payload.engine.as_deref(),
+        payload.engine.as_deref().or(Some(&dialect)),
         payload.pool_min,
         payload.pool_max,
+        None,
     )
     .await
     .map_err(|e| AxiomError::new("DATABASE_REGISTRATION_FAILED", &e, StatusCode::INTERNAL_SERVER_ERROR))?;
@@ -979,7 +1139,8 @@ pub async fn setup_database(
     Ok(Json(json!({
         "success": true,
         "data": {
-            "message": format!("Database '{}' registered", payload.alias)
+            "message": format!("Database '{}' registered and verified", payload.alias),
+            "dialect": dialect
         },
         "error": Value::Null
     })))
@@ -1037,6 +1198,7 @@ pub async fn login_handler(
             "success": true,
             "data": {
                 "token": session_id,
+                "session_token": session_id,
                 "username": payload.username
             },
             "error": Value::Null
@@ -1070,6 +1232,7 @@ pub async fn logout_handler(
 
     if let Some(t) = token {
         let _ = MetadataStore::delete_session(&t).await;
+        axiom_cache::CacheEngine::delete(&format!("sess:{}", t)).await;
     }
 
     let clear_cookie = "axiom_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0";

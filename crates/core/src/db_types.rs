@@ -123,8 +123,14 @@ pub fn extract_next_cursor(rows: &[Value], column_names: &[String]) -> Option<St
     None
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+fn default_true() -> bool {
+    true
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QueryResult {
+    #[serde(default = "default_true")]
+    pub success: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub columns: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -135,6 +141,19 @@ pub struct QueryResult {
     pub truncated: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub next_cursor: Option<String>,
+}
+
+impl Default for QueryResult {
+    fn default() -> Self {
+        Self {
+            success: true,
+            columns: None,
+            rows: None,
+            affected_rows: None,
+            truncated: None,
+            next_cursor: None,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -191,6 +210,7 @@ mod tests {
     #[test]
     fn test_query_result_serialization_skips_none() {
         let res = QueryResult {
+            success: true,
             columns: None,
             rows: None,
             affected_rows: Some(42),
@@ -204,6 +224,7 @@ mod tests {
         assert!(!json.contains("next_cursor"));
 
         let res_trunc = QueryResult {
+            success: true,
             columns: None,
             rows: None,
             affected_rows: None,

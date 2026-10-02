@@ -198,9 +198,11 @@ impl DatabaseEngine for MysqlDatabaseEngine {
     ) -> Result<QueryResult, EngineError> {
         let pool = self.pool.as_ref().ok_or_else(|| EngineError::Connection("Not connected".into()))?;
 
-        let is_mutation = sql.trim().to_uppercase().starts_with("INSERT")
-            || sql.trim().to_uppercase().starts_with("UPDATE")
-            || sql.trim().to_uppercase().starts_with("DELETE");
+        let first_word = sql.trim().split_whitespace().next().unwrap_or("").to_uppercase();
+        let is_mutation = matches!(
+            first_word.as_str(),
+            "INSERT" | "UPDATE" | "DELETE" | "CREATE" | "DROP" | "ALTER" | "TRUNCATE" | "REPLACE" | "SET" | "GRANT" | "REVOKE"
+        );
 
         let mut query = sqlx::query(sql);
 
@@ -221,6 +223,7 @@ impl DatabaseEngine for MysqlDatabaseEngine {
         if is_mutation {
             let result = query.execute(pool).await.map_err(|e| EngineError::Execution(e.to_string()))?;
             return Ok(QueryResult {
+                success: true,
                 columns: None,
                 rows: None,
                 affected_rows: Some(result.rows_affected()),
@@ -267,6 +270,8 @@ impl DatabaseEngine for MysqlDatabaseEngine {
                     Value::Number(i.into())
                 } else if let Ok(f) = row.try_get::<f64, _>(col.ordinal()) {
                     serde_json::Number::from_f64(f).map(Value::Number).unwrap_or(Value::Null)
+                } else if let Ok(f) = row.try_get::<f32, _>(col.ordinal()) {
+                    serde_json::Number::from_f64(f as f64).map(Value::Number).unwrap_or(Value::Null)
                 } else if let Ok(b) = row.try_get::<bool, _>(col.ordinal()) {
                     Value::Bool(b)
                 } else {
@@ -284,6 +289,7 @@ impl DatabaseEngine for MysqlDatabaseEngine {
         };
 
         Ok(QueryResult {
+            success: true,
             columns: Some(column_names),
             rows: Some(result_rows),
             affected_rows: None,

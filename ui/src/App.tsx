@@ -6,31 +6,46 @@ import { Keys } from './pages/Keys';
 import { Roles } from './pages/Roles';
 import { Mcp } from './pages/Mcp';
 import { Tester } from './pages/Tester';
-import { Metrics } from './pages/Metrics';
-import { Audit } from './pages/Audit';
 import { Settings } from './pages/Settings';
+import { AuthPage } from './pages/AuthPage';
 
 export function App() {
-  const [currentPath, setCurrentPath] = useState<NavPath>(() => {
-    const p = window.location.pathname.replace(/\/$/, '') || '/ui';
+  function normalizePath(path: string): NavPath {
+    let p = path.replace(/\/$/, '');
+    if (!p || p === '/') return '/system';
+
+    // Convenience aliases
+    if (p === '/settings') p = '/system/settings';
+    if (p === '/databases') p = '/system/databases';
+    if (p === '/keys') p = '/system/keys';
+    if (p === '/roles') p = '/system/roles';
+    if (p === '/mcp') p = '/system/mcp';
+    if (p === '/tester') p = '/system/tester';
+
     const validPaths: NavPath[] = [
-      '/ui',
-      '/ui/databases',
-      '/ui/keys',
-      '/ui/roles',
-      '/ui/mcp',
-      '/ui/tester',
-      '/ui/metrics',
-      '/ui/audit',
-      '/ui/settings',
+      '/system',
+      '/system/databases',
+      '/system/keys',
+      '/system/roles',
+      '/system/mcp',
+      '/system/tester',
+      '/system/settings',
     ];
-    return validPaths.includes(p as NavPath) ? (p as NavPath) : '/ui';
+    return validPaths.includes(p as NavPath) ? (p as NavPath) : '/system';
+  }
+
+  const [currentPath, setCurrentPath] = useState<NavPath>(() => {
+    return normalizePath(window.location.pathname);
+  });
+
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
+    // Check localStorage or cookies for active session
+    return Boolean(localStorage.getItem('axiom_session_active'));
   });
 
   useEffect(() => {
     function handlePopState() {
-      const p = window.location.pathname.replace(/\/$/, '') || '/ui';
-      setCurrentPath(p as NavPath);
+      setCurrentPath(normalizePath(window.location.pathname));
     }
     window.addEventListener('popstate', handlePopState);
     return () => {
@@ -46,34 +61,56 @@ export function App() {
     }
   }
 
+  function handleLoginSuccess(token: string, username: string) {
+    localStorage.setItem('axiom_session_active', 'true');
+    localStorage.setItem('axiom_session_token', token);
+    localStorage.setItem('axiom_operator_user', username);
+    setIsAuthenticated(true);
+    handleNavigate('/system');
+  }
+
+  // If user visits /system/login or is unauthenticated, render AuthPage with Stepper
+  if (!isAuthenticated || window.location.pathname.includes('/login') || window.location.pathname.includes('/setup')) {
+    const isSetup = window.location.pathname.includes('/setup');
+    return (
+      <AuthPage
+        onLoginSuccess={handleLoginSuccess}
+        initialMode={isSetup ? 'setup' : 'login'}
+      />
+    );
+  }
+
   function getPageDetails(): { title: string; component: React.ReactNode } {
     switch (currentPath) {
-      case '/ui/databases':
+      case '/system/databases':
         return { title: 'Database Pools', component: <Databases /> };
-      case '/ui/keys':
+      case '/system/keys':
         return { title: 'API Keys', component: <Keys /> };
-      case '/ui/roles':
+      case '/system/roles':
         return { title: 'Roles & RBAC', component: <Roles /> };
-      case '/ui/mcp':
+      case '/system/mcp':
         return { title: 'MCP Protocol', component: <Mcp /> };
-      case '/ui/tester':
+      case '/system/tester':
         return { title: 'Database API Explorer', component: <Tester /> };
-      case '/ui/metrics':
-        return { title: 'Telemetry & Metrics', component: <Metrics /> };
-      case '/ui/audit':
-        return { title: 'Audit Trail', component: <Audit /> };
-      case '/ui/settings':
-        return { title: 'Settings & Administration', component: <Settings /> };
-      case '/ui':
+      case '/system/settings':
+        return { title: 'Settings', component: <Settings /> };
+      case '/system':
       default:
         return { title: 'Overview', component: <Overview onNavigate={handleNavigate} /> };
     }
   }
 
+  function handleLogout() {
+    localStorage.removeItem('axiom_session_active');
+    localStorage.removeItem('axiom_session_token');
+    localStorage.removeItem('axiom_operator_user');
+    setIsAuthenticated(false);
+  }
+
   const { title, component } = getPageDetails();
 
   return (
-    <Layout currentPath={currentPath} onNavigate={handleNavigate} title={title}>
+    <Layout currentPath={currentPath} onNavigate={handleNavigate} title={title} onLogout={handleLogout}>
       {component}
     </Layout>
   );
