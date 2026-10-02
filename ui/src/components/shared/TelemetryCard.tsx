@@ -1,4 +1,12 @@
-import React, { useState, useRef } from 'react';
+/*
+ * Performance-optimized telemetry and metrics sparkline card with interactive scrubbing.
+ * Owned by: ui/components/shared
+ * Key deps: lucide-react
+ * Invariants: Throttles mouseover geometry interpolation via requestAnimationFrame to maintain 60fps rendering.
+ * Last structural change: Performance hardening per UI audit component F6.
+ */
+
+import React, { useState, useRef, useEffect } from 'react';
 import { ArrowUpRight, ArrowDownRight } from 'lucide-react';
 
 export interface TelemetryHoverData {
@@ -101,55 +109,90 @@ export const TelemetryCard: React.FC<TelemetryCardProps> = ({
 }) => {
   const [hoverData, setHoverData] = useState<TelemetryHoverData | null>(null);
   const pathRef = useRef<SVGPathElement>(null);
+  const rafRef = useRef<number | null>(null);
+  const totalLengthRef = useRef<number | null>(null);
+
+  // Invalidate cached path length whenever geometry data changes
+  useEffect(() => {
+    totalLengthRef.current = null;
+  }, [pathD]);
+
+  // Clean up any pending animation frame on unmount
+  useEffect(() => {
+    return () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    };
+  }, []);
 
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!onHoverCompute) return;
     const rect = e.currentTarget.getBoundingClientRect();
     if (rect.width <= 0) return;
-    const x = Math.max(0, Math.min(e.clientX - rect.left, rect.width));
-    const pct = x / rect.width;
-    const svgX = pct * 1000;
+    const clientX = e.clientX;
+    const rectLeft = rect.left;
+    const rectWidth = rect.width;
 
-    let calculatedYPct: number | null = null;
-    if (pathRef.current && typeof pathRef.current.getTotalLength === 'function') {
-      try {
-        const totalLen = pathRef.current.getTotalLength();
-        if (totalLen > 0) {
-          const startPt = pathRef.current.getPointAtLength(0);
-          const endPt = pathRef.current.getPointAtLength(totalLen);
-          if (svgX <= startPt.x) {
-            calculatedYPct = startPt.y / 130;
-          } else if (svgX >= endPt.x) {
-            calculatedYPct = endPt.y / 130;
-          } else {
-            let low = 0;
-            let high = totalLen;
-            for (let i = 0; i < 18; i++) {
-              const mid = (low + high) / 2;
-              const pt = pathRef.current.getPointAtLength(mid);
-              if (pt.x < svgX) {
-                low = mid;
-              } else {
-                high = mid;
-              }
-            }
-            const pt = pathRef.current.getPointAtLength((low + high) / 2);
-            calculatedYPct = pt.y / 130;
+    if (rafRef.current) {
+      cancelAnimationFrame(rafRef.current);
+    }
+
+    rafRef.current = requestAnimationFrame(() => {
+      const x = Math.max(0, Math.min(clientX - rectLeft, rectWidth));
+      const pct = x / rectWidth;
+      const svgX = pct * 1000;
+
+      let calculatedYPct: number | null = null;
+      if (pathRef.current && typeof pathRef.current.getTotalLength === 'function') {
+        try {
+          if (totalLengthRef.current === null) {
+            totalLengthRef.current = pathRef.current.getTotalLength();
           }
+          const totalLen = totalLengthRef.current;
+          if (totalLen > 0) {
+            const startPt = pathRef.current.getPointAtLength(0);
+            const endPt = pathRef.current.getPointAtLength(totalLen);
+            if (svgX <= startPt.x) {
+              calculatedYPct = startPt.y / 130;
+            } else if (svgX >= endPt.x) {
+              calculatedYPct = endPt.y / 130;
+            } else {
+              let low = 0;
+              let high = totalLen;
+              for (let i = 0; i < 18; i++) {
+                const mid = (low + high) / 2;
+                const pt = pathRef.current.getPointAtLength(mid);
+                if (pt.x < svgX) {
+                  low = mid;
+                } else {
+                  high = mid;
+                }
+              }
+              const pt = pathRef.current.getPointAtLength((low + high) / 2);
+              calculatedYPct = pt.y / 130;
+            }
+          }
+        } catch {
+          // fallback
         }
-      } catch {
-        // fallback
       }
-    }
 
-    const computed = onHoverCompute(pct, svgX, calculatedYPct ?? undefined);
-    if (computed) {
-      setHoverData({
-        ...computed,
-        pct,
-        yPct: calculatedYPct !== null ? calculatedYPct : computed.yPct,
-      });
+      const computed = onHoverCompute(pct, svgX, calculatedYPct ?? undefined);
+      if (computed) {
+        setHoverData({
+          ...computed,
+          pct,
+          yPct: calculatedYPct !== null ? calculatedYPct : computed.yPct,
+        });
+      }
+    });
+  };
+
+  const handleMouseLeave = () => {
+    if (rafRef.current) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
     }
+    setHoverData(null);
   };
 
   const gColor = gradientColor || strokeColor;
@@ -210,7 +253,7 @@ export const TelemetryCard: React.FC<TelemetryCardProps> = ({
         <div
           className="chart-canvas relative flex-1 h-full cursor-crosshair overflow-visible"
           onMouseMove={handleMouseMove}
-          onMouseLeave={() => setHoverData(null)}
+          onMouseLeave={handleMouseLeave}
         >
           <svg className="w-full h-full block" viewBox="0 0 1000 130" preserveAspectRatio="none">
             <defs>

@@ -1,5 +1,12 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { ChevronLeft, ChevronRight, ChevronDown } from 'lucide-react';
+/**
+ * DataTable.tsx
+ * High-performance data table component with bounded DOM rendering and column resizing.
+ * Enforces client row slicing and a 500-row cap on unpaginated data (F-06 / F1) to prevent tab freezes.
+ * Throttles column drag-resizing via requestAnimationFrame and satisfies WCAG table semantics.
+ */
+
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { ChevronLeft, ChevronRight, ChevronDown, AlertTriangle } from 'lucide-react';
 
 export interface Column<T> {
   id: string;
@@ -179,6 +186,16 @@ export function DataTable<T>({
   });
 
   const [resizingCol, setResizingCol] = useState<string | null>(null);
+  const rafIdRef = useRef<number | null>(null);
+
+  // Clean up any pending animation frame on unmount
+  useEffect(() => {
+    return () => {
+      if (rafIdRef.current !== null) {
+        cancelAnimationFrame(rafIdRef.current);
+      }
+    };
+  }, []);
 
   const handleResizeStart = (colId: string, e: React.MouseEvent, isBefore = false) => {
     e.preventDefault();
@@ -202,12 +219,21 @@ export function DataTable<T>({
       if (Math.abs(delta) > 2) {
         hasMoved = true;
       }
-      const effectiveDelta = isBefore ? -delta : delta;
-      const newWidth = Math.max(minW, Math.min(maxW, startWidth + effectiveDelta));
-      setColumnWidths((prev) => ({ ...prev, [colId]: newWidth }));
+      if (rafIdRef.current !== null) {
+        cancelAnimationFrame(rafIdRef.current);
+      }
+      rafIdRef.current = requestAnimationFrame(() => {
+        const effectiveDelta = isBefore ? -delta : delta;
+        const newWidth = Math.max(minW, Math.min(maxW, startWidth + effectiveDelta));
+        setColumnWidths((prev) => ({ ...prev, [colId]: newWidth }));
+      });
     };
 
     const onMouseUp = () => {
+      if (rafIdRef.current !== null) {
+        cancelAnimationFrame(rafIdRef.current);
+        rafIdRef.current = null;
+      }
       setResizingCol(null);
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
@@ -232,12 +258,38 @@ export function DataTable<T>({
     document.addEventListener('mouseup', onMouseUp);
   };
 
-  const totalPages = pagination ? Math.max(1, Math.ceil(pagination.totalCount / pagination.pageSize)) : 1;
-  const startItem = pagination && pagination.totalCount > 0 ? (pagination.page - 1) * pagination.pageSize + 1 : 0;
-  const endItem = pagination ? Math.min(pagination.page * pagination.pageSize, pagination.totalCount) : data.length;
+  // Safe pagination math clamped against negative or non-finite inputs
+  const safePageSize = pagination ? Math.max(1, Math.min(pagination.pageSize || 10, 500)) : 50;
+  const totalCount = pagination ? Math.max(0, pagination.totalCount) : data.length;
+  const totalPages = pagination ? Math.max(1, Math.ceil(totalCount / safePageSize)) : 1;
+  const safePage = pagination ? Math.max(1, Math.min(pagination.page, totalPages)) : 1;
+
+  // Bounded row calculation (F-06 / F1)
+  const visibleData = useMemo(() => {
+    if (pagination) {
+      // If dataset contains more items than pageSize, caller passed an unpaginated array
+      if (data.length > safePageSize) {
+        const startIndex = (safePage - 1) * safePageSize;
+        return data.slice(startIndex, startIndex + safePageSize);
+      }
+      return data;
+    }
+    // Hard ceiling on unpaginated tables to prevent DOM memory/render exhaustion
+    return data.slice(0, 500);
+  }, [data, pagination, safePage, safePageSize]);
+
+  const startItem = pagination && totalCount > 0 ? (safePage - 1) * safePageSize + 1 : 0;
+  const endItem = pagination ? Math.min(safePage * safePageSize, totalCount) : visibleData.length;
 
   return (
     <div className={`border border-[#262626] rounded-lg overflow-hidden bg-[#0e0e0e] flex flex-col text-[14px] ${className}`}>
+      {data.length > 500 && !pagination && (
+        <div className="flex items-center gap-2 px-3 py-1.5 bg-[#2a1708] border-b border-[#59300e] text-[#f5a623] text-[12px]">
+          <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+          <span>Large dataset detected. Rendering capped at 500 rows for browser stability.</span>
+        </div>
+      )}
+
       <div className="overflow-x-auto w-full">
         <table role="table" aria-label={ariaLabel} className={`w-full max-md:min-w-0 ${minTableWidth} text-left border-collapse`}>
           {/* Table Header */}
@@ -263,35 +315,54 @@ export function DataTable<T>({
                   <th
                     key={col.id}
                     role="columnheader"
-                    onClick={() => {
-                      if (col.isSortable && onSort) {
-                        onSort(sortTarget);
-                      }
-                    }}
+                    aria-sort={
+                      col.isSortable
+                        ? isSortActive
+                          ? sortDirection === 'asc'
+                            ? 'ascending'
+                            : 'descending'
+                          : 'none'
+                        : undefined
+                    }
                     style={widthStyle}
                     className={`group relative flex items-center shrink-0 h-[40px] min-w-0 ${
                       col.isFlex ? 'flex-1' : ''
-                    } ${isFirst ? 'rounded-tl-lg' : ''} ${
-                      col.isSortable ? 'cursor-pointer select-none' : ''
-                    } ${col.headerClassName || col.className || 'px-3'}`}
+                    } ${isFirst ? 'rounded-tl-lg' : ''} ${col.headerClassName || col.className || 'px-3'}`}
                   >
-                    <span
-                      className={`inline-flex items-center gap-1.5 text-[14px] font-medium text-white leading-none min-w-0 max-w-full overflow-hidden ${
-                        (col.headerClassName || col.className)?.includes('justify-end')
-                          ? 'justify-end'
-                          : ''
-                      }`}
-                    >
-                      <span
-                        className="truncate whitespace-nowrap block min-w-0"
-                        title={typeof col.header === 'string' ? col.header : undefined}
+                    {col.isSortable && onSort ? (
+                      <button
+                        type="button"
+                        onClick={() => onSort(sortTarget)}
+                        className={`inline-flex items-center gap-1.5 text-[14px] font-medium text-white leading-none min-w-0 max-w-full overflow-hidden text-left focus:outline-none focus-visible:ring-1 focus-visible:ring-[#2f80ed] rounded cursor-pointer select-none ${
+                          (col.headerClassName || col.className)?.includes('justify-end')
+                            ? 'justify-end w-full'
+                            : ''
+                        }`}
                       >
-                        {col.header}
-                      </span>
-                      {col.isSortable && onSort && (
+                        <span
+                          className="truncate whitespace-nowrap block min-w-0"
+                          title={typeof col.header === 'string' ? col.header : undefined}
+                        >
+                          {col.header}
+                        </span>
                         <CaretUpDownIcon active={isSortActive} direction={sortDirection} />
-                      )}
-                    </span>
+                      </button>
+                    ) : (
+                      <span
+                        className={`inline-flex items-center gap-1.5 text-[14px] font-medium text-white leading-none min-w-0 max-w-full overflow-hidden ${
+                          (col.headerClassName || col.className)?.includes('justify-end')
+                            ? 'justify-end w-full'
+                            : ''
+                        }`}
+                      >
+                        <span
+                          className="truncate whitespace-nowrap block min-w-0"
+                          title={typeof col.header === 'string' ? col.header : undefined}
+                        >
+                          {col.header}
+                        </span>
+                      </span>
+                    )}
 
                     {/* Resizable handle */}
                     {col.isResizable && !col.isFlex && (
@@ -364,7 +435,7 @@ export function DataTable<T>({
                   })}
                 </tr>
               ))
-            ) : data.length === 0 ? (
+            ) : visibleData.length === 0 ? (
               // Empty State
               <tr role="row">
                 <td role="cell" colSpan={columns.length} className="px-4 py-12 text-center bg-[#0e0e0e]">
@@ -374,9 +445,9 @@ export function DataTable<T>({
                 </td>
               </tr>
             ) : (
-              // Rows
-              data.map((row, rowIdx) => {
-                const key = keyExtractor ? keyExtractor(row, rowIdx) : (row as { id?: string | number }).id ?? rowIdx;
+              // Rows rendered from visibleData
+              visibleData.map((row, rowIdx) => {
+                const key = keyExtractor ? keyExtractor(row, rowIdx) : (row as { id?: string | number; name?: string }).id ?? (row as { name?: string }).name ?? rowIdx;
                 return (
                   <tr
                     key={key}
@@ -436,12 +507,12 @@ export function DataTable<T>({
               <span className="text-[#cccccc] font-medium tabular-nums">
                 {startItem}–{endItem}
               </span>{' '}
-              of <span className="text-[#cccccc] font-medium tabular-nums">{pagination.totalCount}</span>
+              of <span className="text-[#cccccc] font-medium tabular-nums">{totalCount}</span>
             </span>
             <div className="flex items-center gap-2 text-[12px] text-[#8c8c8c] select-none ml-2">
               <span>Rows:</span>
               <PageSizeDropdown
-                pageSize={pagination.pageSize}
+                pageSize={safePageSize}
                 onChange={pagination.onPageSizeChange}
                 options={pagination.pageSizeOptions}
               />
@@ -451,23 +522,23 @@ export function DataTable<T>({
           <div className="flex items-center gap-2 select-none">
             <button
               type="button"
-              disabled={pagination.page <= 1 || isLoading}
-              onClick={() => pagination.onPageChange(pagination.page - 1)}
-              className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md text-[12px] font-normal text-[#8c8c8c] hover:text-white hover:bg-[#161616] border border-[#262626] hover:border-[#383838] disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:border-[#262626] disabled:hover:text-[#8c8c8c] disabled:cursor-not-allowed transition-all cursor-pointer"
+              disabled={safePage <= 1 || isLoading}
+              onClick={() => pagination.onPageChange(safePage - 1)}
+              className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md text-[12px] font-normal text-[#8c8c8c] hover:text-white hover:bg-[#161616] border border-[#262626] hover:border-[#383838] disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:border-[#262626] disabled:hover:text-[#8c8c8c] disabled:cursor-not-allowed transition-all cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-[#2f80ed]"
             >
               <ChevronLeft className="w-3.5 h-3.5 shrink-0" />
               <span>Previous</span>
             </button>
 
             <span className="text-[12px] text-[#8c8c8c] font-normal px-2">
-              Page <span className="text-[#cccccc] font-medium tabular-nums">{pagination.page}</span> of <span className="text-[#cccccc] font-medium tabular-nums">{totalPages}</span>
+              Page <span className="text-[#cccccc] font-medium tabular-nums">{safePage}</span> of <span className="text-[#cccccc] font-medium tabular-nums">{totalPages}</span>
             </span>
 
             <button
               type="button"
-              disabled={pagination.page >= totalPages || isLoading}
-              onClick={() => pagination.onPageChange(pagination.page + 1)}
-              className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md text-[12px] font-normal text-[#8c8c8c] hover:text-white hover:bg-[#161616] border border-[#262626] hover:border-[#383838] disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:border-[#262626] disabled:hover:text-[#8c8c8c] disabled:cursor-not-allowed transition-all cursor-pointer"
+              disabled={safePage >= totalPages || isLoading}
+              onClick={() => pagination.onPageChange(safePage + 1)}
+              className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md text-[12px] font-normal text-[#8c8c8c] hover:text-white hover:bg-[#161616] border border-[#262626] hover:border-[#383838] disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:border-[#262626] disabled:hover:text-[#8c8c8c] disabled:cursor-not-allowed transition-all cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-[#2f80ed]"
             >
               <span>Next</span>
               <ChevronRight className="w-3.5 h-3.5 shrink-0" />
@@ -478,3 +549,4 @@ export function DataTable<T>({
     </div>
   );
 }
+

@@ -1,6 +1,15 @@
+/*
+ * Primary administrative layout shell and navigation chrome.
+ * Owned by: ui/components
+ * Key deps: lucide-react, ../api/session, ../api/client
+ * Invariants: Keeps authenticated session identity synchronized; provides responsive navigation drawer and keyboard shortcuts.
+ * Last structural change: Layout audit hardening per UI audit component F5.
+ */
+
 import React, { useState, useRef, useEffect } from 'react';
 import { cn } from '../utils/cn';
 import { api } from '../api/client';
+import { getOperatorUser, clearSession } from '../api/session';
 import {
   LayoutDashboard,
   Database,
@@ -32,6 +41,9 @@ interface LayoutProps {
   onLogout?: () => void;
 }
 
+/**
+ * Main application shell wrapping content with top-level navigation, sidebar, and profile actions.
+ */
 export function Layout({ currentPath, onNavigate, title, children, onLogout }: LayoutProps) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
@@ -42,6 +54,11 @@ export function Layout({ currentPath, onNavigate, title, children, onLogout }: L
 
   const userRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // Synchronize document title with active page view
+  useEffect(() => {
+    document.title = title ? `${title} — Axiom Gateway` : 'Axiom Gateway';
+  }, [title]);
 
   const searchItems = [
     { label: 'Overview', path: '/system' as NavPath, icon: LayoutDashboard, category: 'Data & Access' },
@@ -246,7 +263,7 @@ export function Layout({ currentPath, onNavigate, title, children, onLogout }: L
                 type="button"
                 onClick={() => setSearchModalOpen(true)}
                 title="Quick search (Ctrl K)"
-                className="flex size-8.5 items-center justify-center rounded-[8px] bg-[#0c0c0c] ring-1 ring-[#262626] text-[#8c8c8c] hover:bg-[#161616] hover:text-white mx-auto transition-colors cursor-pointer"
+                className="flex w-[34px] h-[34px] items-center justify-center rounded-[8px] bg-[#0c0c0c] ring-1 ring-[#262626] text-[#8c8c8c] hover:bg-[#161616] hover:text-white mx-auto transition-colors cursor-pointer"
               >
                 <Search className="w-4 h-4 opacity-60" />
               </button>
@@ -340,7 +357,7 @@ export function Layout({ currentPath, onNavigate, title, children, onLogout }: L
             aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
             title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
             onClick={() => setIsCollapsed(!isCollapsed)}
-            className="flex size-8.5 shrink-0 items-center justify-center rounded-[8px] text-[#8c8c8c] hover:bg-[#161616] hover:text-neutral-200 cursor-pointer transition-colors"
+            className="flex w-[34px] h-[34px] shrink-0 items-center justify-center rounded-[8px] text-[#8c8c8c] hover:bg-[#161616] hover:text-neutral-200 cursor-pointer transition-colors"
           >
             <svg
               width="18"
@@ -416,15 +433,15 @@ export function Layout({ currentPath, onNavigate, title, children, onLogout }: L
                   {/* Account info header */}
                   <div className="p-2.5 rounded-lg bg-[#141414] border border-[#1f1f1f] mb-1">
                     <div className="flex items-center justify-between gap-1">
-                      <span className="text-[14px] font-medium text-white truncate leading-tight">
-                        admin
+                      <span className="text-[14px] font-medium text-white truncate leading-tight font-mono">
+                        {getOperatorUser()}
                       </span>
                       <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-medium text-[#8c8c8c] bg-[#1a1a1a] border border-[#262626] capitalize shrink-0">
                         Operator
                       </span>
                     </div>
-                    <p className="text-[13px] text-[#8c8c8c] truncate leading-tight mt-1">
-                      admin@axiom.local
+                    <p className="text-[13px] text-[#8c8c8c] truncate leading-tight mt-1 font-mono">
+                      {getOperatorUser()}@axiom.local
                     </p>
                   </div>
 
@@ -470,9 +487,7 @@ export function Layout({ currentPath, onNavigate, title, children, onLogout }: L
                       if (onLogout) {
                         onLogout();
                       } else {
-                        localStorage.removeItem('axiom_session_active');
-                        localStorage.removeItem('axiom_session_token');
-                        localStorage.removeItem('axiom_operator_user');
+                        clearSession();
                         window.location.href = '/system';
                       }
                     }}

@@ -1,9 +1,10 @@
-/*
+/**
+ * Keys.tsx
  * API Key Vault interface for managing machine credentials and token lifecycle.
- * Owned by: ui/keys
- * Key deps: DataTable, SlideOver, ConfirmDialog, CustomSelect, DatePicker, ../api/client
- * Invariants: Secrets are displayed only once upon generation; secrets stored as BLAKE3 hashes.
- * Last structural change: Connected directly to live /admin/v1/keys Axiom backend.
+ * Invariants:
+ * - Plaintext secrets are cleared upon modal dismissal and never persisted to localStorage.
+ * - Key rotation requires explicit confirmation and sends an Idempotency-Key.
+ * - Table rendering is paginated client-side to prevent DOM saturation.
  */
 
 import React, { useState, useMemo, useRef, useEffect } from 'react';
@@ -14,7 +15,7 @@ import { Button } from '../components/ui/Button';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { CustomSelect } from '../components/shared/CustomSelect';
 import { DatePicker } from '../components/shared/DatePicker';
-import { Key, Plus, RefreshCw, Copy, Check, Clock, X, Search } from 'lucide-react';
+import { Key, Plus, RefreshCw, Copy, Check, Clock, X, Search, Eye, EyeOff, AlertTriangle } from 'lucide-react';
 import { api, ApiKeyRecordApi } from '../api/client';
 
 export interface FilterRule {
@@ -65,14 +66,25 @@ export function Keys() {
   const [keys, setKeys] = useState<ApiKey[]>([]);
   const [roleOptions, setRoleOptions] = useState(DEFAULT_ROLE_OPTIONS);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const fetchGenRef = useRef(0);
 
-  // Load registered API keys and roles from backend
+  // Pagination State (F-06)
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
+  // Load registered API keys and roles from backend with race guard (F-07)
   const loadKeys = async () => {
+    const curGen = ++fetchGenRef.current;
+    setLoadError(null);
     try {
       const [keyRes, roleRes] = await Promise.allSettled([
         api.listKeys(),
         api.listRoles(),
       ]);
+
+      if (curGen !== fetchGenRef.current) return;
 
       if (roleRes.status === 'fulfilled' && roleRes.value.roles.length > 0) {
         setRoleOptions(
@@ -99,11 +111,18 @@ export function Keys() {
           };
         });
         setKeys(formatted);
+      } else {
+        setLoadError(keyRes.reason?.message || 'Failed to load API keys');
       }
-    } catch {
-      // Keep existing state on error
+    } catch (err: unknown) {
+      if (curGen === fetchGenRef.current) {
+        setLoadError(err instanceof Error ? err.message : 'Unexpected error loading keys');
+      }
     } finally {
-      setIsRefreshing(false);
+      if (curGen === fetchGenRef.current) {
+        setIsRefreshing(false);
+        setIsLoading(false);
+      }
     }
   };
 
@@ -244,6 +263,11 @@ export function Keys() {
     return list;
   }, [keys, searchQuery, appliedFilterRules, matchMode]);
 
+  // Reset pagination on query or filter changes (F-06)
+  useEffect(() => {
+    setPage(1);
+  }, [searchQuery, appliedFilterRules, matchMode]);
+
   // Create Key SlideOver State
   const [createOpen, setCreateOpen] = useState(false);
   const [newName, setNewName] = useState('');
@@ -251,6 +275,7 @@ export function Keys() {
   const [newRateLimit, setNewRateLimit] = useState(1000);
   const [newExpiresAt, setNewExpiresAt] = useState<string | null>(null);
   const [createdSecret, setCreatedSecret] = useState<string | null>(null);
+  const [showCreatedSecret, setShowCreatedSecret] = useState(false);
   const [copiedKey, setCopiedKey] = useState(false);
 
   // Manage SlideOver State
@@ -265,10 +290,13 @@ export function Keys() {
   const [gracePeriod, setGracePeriod] = useState('24h');
   const [confirmRevokeOpen, setConfirmRevokeOpen] = useState(false);
   const [confirmRevokeRetiringOpen, setConfirmRevokeRetiringOpen] = useState(false);
+  const [confirmRotateOpen, setConfirmRotateOpen] = useState(false);
+  const [isRotating, setIsRotating] = useState(false);
 
   // Secret Rotation Dialog State
   const [rotateDialogOpen, setRotateDialogOpen] = useState(false);
   const [newlyRotatedSecret, setNewlyRotatedSecret] = useState<string | null>(null);
+  const [showRotatedSecret, setShowRotatedSecret] = useState(false);
   const [copiedRotatedKey, setCopiedRotatedKey] = useState(false);
 
   const isModified = Boolean(
@@ -281,20 +309,38 @@ export function Keys() {
         editExpiresAt !== selectedKey.expiresAt)
   );
 
+  function closeCreate() {
+    setCreateOpen(false);
+    setCreatedSecret(null);
+    setShowCreatedSecret(false);
+    setNewName('');
+    setNewExpiresAt(null);
+  }
+
+  function closeRotateDialog() {
+    setRotateDialogOpen(false);
+    setNewlyRotatedSecret(null);
+    setShowRotatedSecret(false);
+  }
+
   async function handleCreateKey() {
-    if (!newName.trim()) return;
+    const trimmed = newName.trim();
+    if (!trimmed || !/^[a-zA-Z0-9_-]{1,64}$/.test(trimmed)) return;
     let expiresUnix: number | null = null;
     if (newExpiresAt) {
-      expiresUnix = Math.floor(new Date(newExpiresAt).getTime() / 1000);
+      const expMs = new Date(newExpiresAt).getTime();
+      if (expMs <= Date.now()) return;
+      expiresUnix = Math.floor(expMs / 1000);
     }
     try {
       const res = await api.createKey({
-        name: newName.trim(),
+        name: trimmed,
         role: newRole,
-        rate_limit: newRateLimit,
+        rate_limit: Math.max(0, Math.min(1000000, Number(newRateLimit) || 0)),
         expires_at: expiresUnix,
       });
       setCreatedSecret(res.token);
+      setShowCreatedSecret(false);
       await loadKeys();
     } catch (err: unknown) {
       console.error('Failed to create key:', err);
@@ -306,16 +352,38 @@ export function Keys() {
     setManageOpen(false);
   }
 
-  async function handleRotateKey() {
-    if (!selectedKey) return;
+  function handleRotateKey() {
+    if (!selectedKey || isRotating) return;
+    setConfirmRotateOpen(true);
+  }
+
+  async function executeRotateKey() {
+    if (!selectedKey || isRotating) return;
+    setIsRotating(true);
     try {
-      const res = await api.rotateKey(selectedKey.name);
+      const graceSeconds =
+        gracePeriod === '1h'
+          ? 3600
+          : gracePeriod === '6h'
+          ? 21600
+          : gracePeriod === '72h'
+          ? 259200
+          : 86400;
+
+      const res = await api.rotateKey(selectedKey.name, {
+        grace_period: graceSeconds,
+        idempotencyKey: crypto.randomUUID(),
+      });
       setNewlyRotatedSecret(res.token);
+      setShowRotatedSecret(false);
       setCopiedRotatedKey(false);
+      setConfirmRotateOpen(false);
       setRotateDialogOpen(true);
       await loadKeys();
     } catch (err: unknown) {
       console.error('Failed to rotate key:', err);
+    } finally {
+      setIsRotating(false);
     }
   }
 
@@ -759,24 +827,36 @@ export function Keys() {
         </div>
       </div>
 
+      {/* Error Banner (F-09) */}
+      {loadError && (
+        <div className="flex items-center gap-2 p-3 rounded-lg bg-[#2a1113] border border-[#5c1d24] text-[#f87171] text-[13px]">
+          <AlertTriangle className="w-4 h-4 shrink-0 text-[#ef4444]" />
+          <span>{loadError}</span>
+        </div>
+      )}
+
       {/* Keys Read-Only DataTable */}
       <DataTable
         columns={activeColumns}
         data={filteredKeys}
+        isLoading={isLoading}
         ariaLabel="API Keys Table"
         pagination={{
-          page: 1,
-          pageSize: 10,
+          page,
+          pageSize,
           totalCount: filteredKeys.length,
-          onPageChange: () => {},
-          onPageSizeChange: () => {},
+          onPageChange: setPage,
+          onPageSizeChange: (newSize) => {
+            setPageSize(newSize);
+            setPage(1);
+          },
         }}
       />
 
       {/* Create Key SlideOver */}
       <SlideOver
         isOpen={createOpen}
-        onClose={() => setCreateOpen(false)}
+        onClose={closeCreate}
         title="Generate Machine API Key"
         subtitle="Issue an authorized cryptographic credential with attached RBAC role"
       >
@@ -793,18 +873,30 @@ export function Keys() {
                 </p>
                 <div className="flex items-center gap-2 pt-1">
                   <input
-                    type="text"
+                    type={showCreatedSecret ? "text" : "password"}
                     readOnly
                     value={createdSecret}
-                    className="h-9 flex-1 rounded-md border border-[#262626] bg-[#0c0c0c] px-3 font-mono text-[12px] text-[#3b82f6] select-all"
+                    className="h-9 flex-1 rounded-md border border-[#262626] bg-[#0c0c0c] px-3 font-mono text-[12px] text-[#3b82f6] select-all outline-none"
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowCreatedSecret((v) => !v)}
+                    className="h-9 px-2.5 rounded-md border border-[#262626] bg-[#141414] hover:bg-[#1c1c1c] text-[#8c8c8c] hover:text-white text-[12px] flex items-center justify-center cursor-pointer transition-colors"
+                    title={showCreatedSecret ? "Hide secret" : "Show secret"}
+                  >
+                    {showCreatedSecret ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
                   <Button
                     variant="secondary"
                     size="sm"
-                    onClick={() => {
-                      navigator.clipboard.writeText(createdSecret);
-                      setCopiedKey(true);
-                      setTimeout(() => setCopiedKey(false), 2000);
+                    onClick={async () => {
+                      try {
+                        await navigator.clipboard.writeText(createdSecret);
+                        setCopiedKey(true);
+                        setTimeout(() => setCopiedKey(false), 2000);
+                      } catch {
+                        // Clipboard write error
+                      }
                     }}
                   >
                     {copiedKey ? <Check className="w-3.5 h-3.5 text-[#30a46c]" /> : <Copy className="w-3.5 h-3.5" />}
@@ -815,9 +907,18 @@ export function Keys() {
 
               <div className="rounded-lg border border-[#222222] bg-[#121212] p-3 text-[12px] text-[#8c8c8c] space-y-1">
                 <span className="font-medium text-white block">Usage Example:</span>
+                <p className="text-[11px] text-[#8c8c8c]">
+                  Header format: <code className="text-[#cccccc]">X-Axiom-Key: base64(name:secret)</code>
+                </p>
                 <pre className="p-2 rounded bg-[#0a0a0a] border border-[#1e1e1e] font-mono text-[11px] text-[#3b82f6] overflow-x-auto">
-                  {`curl -X POST https://axiom.internal/api/v1/db/local_db/query \\\n  -H "X-Axiom-Key: ${typeof btoa !== 'undefined' ? btoa(`${newName}:${createdSecret}`) : 'base64(name:secret)'}" \\\n  -d '{"sql": "SELECT 1"}'`}
+                  {`# Generate base64 token securely in terminal:\n# export AXIOM_TOKEN=$(echo -n "${newName || '$KEY_NAME'}:${createdSecret ? '••••••••' : '$SECRET'}" | base64)\n\ncurl -X POST https://axiom.internal/api/v1/db/local_db/query \\\n  -H "X-Axiom-Key: $AXIOM_TOKEN" \\\n  -d '{"sql": "SELECT 1"}'`}
                 </pre>
+              </div>
+
+              <div className="pt-2">
+                <Button variant="primary" className="w-full" onClick={closeCreate}>
+                  Done (Dismiss Plaintext Secret)
+                </Button>
               </div>
             </div>
           ) : (
@@ -1249,6 +1350,24 @@ export function Keys() {
         cancelLabel="Cancel"
       />
 
+      {/* Confirmation Dialog for Secret Rotation (F-01) */}
+      <ConfirmDialog
+        isOpen={confirmRotateOpen}
+        onClose={() => setConfirmRotateOpen(false)}
+        onConfirm={executeRotateKey}
+        title="Rotate API Key Secret"
+        description={
+          <>
+            Rotate the cryptographic secret for key{' '}
+            <span className="text-white font-medium">{selectedKey?.name}</span>?
+            The previous secret will remain active for{' '}
+            <span className="text-white font-medium">{selectedKey?.retiringSecret?.gracePeriod || gracePeriod}</span> before retiring.
+          </>
+        }
+        confirmLabel={isRotating ? "Rotating..." : "Rotate Secret"}
+        cancelLabel="Cancel"
+      />
+
       {/* Secret Rotated Modal Dialog */}
       {rotateDialogOpen && newlyRotatedSecret && (
         <div
@@ -1258,7 +1377,7 @@ export function Keys() {
         >
           <div
             className="fixed inset-0 bg-black/75 backdrop-blur-xs transition-opacity"
-            onClick={() => setRotateDialogOpen(false)}
+            onClick={closeRotateDialog}
             aria-hidden="true"
           />
 
@@ -1271,7 +1390,7 @@ export function Keys() {
                 </h3>
                 <button
                   type="button"
-                  onClick={() => setRotateDialogOpen(false)}
+                  onClick={closeRotateDialog}
                   className="w-7 h-7 flex items-center justify-center text-[#888888] hover:text-white rounded-[6px] hover:bg-[#1a1a1a] transition-colors cursor-pointer shrink-0 -mr-1 -mt-1"
                   title="Close (Esc)"
                 >
@@ -1285,17 +1404,29 @@ export function Keys() {
 
               <div className="flex items-center gap-2">
                 <input
-                  type="text"
+                  type={showRotatedSecret ? "text" : "password"}
                   readOnly
                   value={newlyRotatedSecret}
                   className="h-9 flex-1 rounded-[6px] border border-[#262626] bg-[#050505] px-3 font-mono text-[13px] text-[#3b82f6] select-all outline-none"
                 />
                 <button
                   type="button"
-                  onClick={() => {
-                    navigator.clipboard.writeText(newlyRotatedSecret);
-                    setCopiedRotatedKey(true);
-                    setTimeout(() => setCopiedRotatedKey(false), 2000);
+                  onClick={() => setShowRotatedSecret((v) => !v)}
+                  className="h-9 px-2.5 rounded-[6px] border border-[#262626] bg-[#141414] hover:bg-[#1c1c1c] text-[#8c8c8c] hover:text-white text-[13px] flex items-center justify-center cursor-pointer transition-colors shrink-0"
+                  title={showRotatedSecret ? "Hide secret" : "Show secret"}
+                >
+                  {showRotatedSecret ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(newlyRotatedSecret);
+                      setCopiedRotatedKey(true);
+                      setTimeout(() => setCopiedRotatedKey(false), 2000);
+                    } catch {
+                      // Clipboard copy error
+                    }
                   }}
                   className="h-9 px-3 rounded-[6px] border border-[#262626] bg-[#141414] hover:bg-[#1c1c1c] text-[#cccccc] hover:text-white text-[13px] font-medium transition-colors flex items-center gap-1.5 cursor-pointer shrink-0"
                 >
@@ -1309,7 +1440,7 @@ export function Keys() {
             <div className="px-5 py-3.5 bg-[#0e0e0e] border-t border-[#222222] flex items-center justify-end font-sans">
               <button
                 type="button"
-                onClick={() => setRotateDialogOpen(false)}
+                onClick={closeRotateDialog}
                 className="group relative flex shrink-0 items-center justify-center h-8 px-4 rounded-[8px] font-medium text-black shadow-xs outline-none cursor-pointer overflow-hidden ring-1 ring-white/90 bg-white font-sans text-[13px]"
               >
                 <span
@@ -1331,3 +1462,4 @@ export function Keys() {
     </div>
   );
 }
+

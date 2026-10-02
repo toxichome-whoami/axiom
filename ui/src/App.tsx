@@ -1,5 +1,7 @@
 import React, { useState, useEffect, Suspense, lazy } from 'react';
 import { Layout, NavPath } from './components/Layout';
+import { setSession, clearSession, hasActiveSession } from './api/session';
+import { api } from './api/client';
 
 const Overview = lazy(() => import('./pages/Overview').then((m) => ({ default: m.Overview })));
 const Databases = lazy(() => import('./pages/Databases').then((m) => ({ default: m.Databases })));
@@ -51,8 +53,7 @@ export function App() {
   });
 
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
-    // Check localStorage or cookies for active session
-    return Boolean(localStorage.getItem('axiom_session_active'));
+    return hasActiveSession();
   });
 
   useEffect(() => {
@@ -65,6 +66,26 @@ export function App() {
     };
   }, []);
 
+  // Listen for unauthorized 401/403 events from client.ts to force logout
+  useEffect(() => {
+    function onUnauthorized() {
+      handleLogout();
+    }
+    window.addEventListener('axiom:unauthorized', onUnauthorized);
+    return () => {
+      window.removeEventListener('axiom:unauthorized', onUnauthorized);
+    };
+  }, []);
+
+  // Probe server status on mount to verify session validity with backend
+  useEffect(() => {
+    if (isAuthenticated) {
+      api.getStatus().catch(() => {
+        handleLogout();
+      });
+    }
+  }, [isAuthenticated]);
+
   function handleNavigate(path: NavPath) {
     if (path !== currentPath) {
       window.history.pushState(null, '', path);
@@ -73,10 +94,8 @@ export function App() {
     }
   }
 
-  function handleLoginSuccess(token: string, username: string) {
-    localStorage.setItem('axiom_session_active', 'true');
-    localStorage.setItem('axiom_session_token', token);
-    localStorage.setItem('axiom_operator_user', username);
+  function handleLoginSuccess(token: string, username: string, expiresAt?: number) {
+    setSession(token, expiresAt, username);
     setIsAuthenticated(true);
     handleNavigate('/system');
   }
@@ -114,11 +133,14 @@ export function App() {
     }
   }
 
-  function handleLogout() {
-    localStorage.removeItem('axiom_session_active');
-    localStorage.removeItem('axiom_session_token');
-    localStorage.removeItem('axiom_operator_user');
+  async function handleLogout() {
+    clearSession();
     setIsAuthenticated(false);
+    try {
+      await api.logout();
+    } catch {
+      // Best-effort server session revocation
+    }
   }
 
   const { title, component } = getPageDetails();

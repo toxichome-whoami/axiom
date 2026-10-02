@@ -1,12 +1,12 @@
-/*
- * RBAC Permission Table component for configuring database, table, and CRUD rules.
- * Owned by: ui/components/shared
- * Key deps: lucide-react (Plus, Trash2, Database, Table)
- * Invariants: Operations follow standard Axiom RBAC verbs: SELECT, INSERT, UPDATE, DELETE.
+/**
+ * PermissionTable.tsx
+ * RBAC permission rule builder for defining database, table, and operation scopes.
+ * Enforces deny-by-default (Component F2) with empty default targets, mandatory operations,
+ * a 100-rule ceiling, a 50-item split ceiling, and security warnings on wildcard grants.
  */
 
-import React from 'react';
-import { Plus, Trash2, Database, Table as TableIcon, AlertCircle } from 'lucide-react';
+import React, { useState } from 'react';
+import { Plus, Trash2, Database, Table as TableIcon, AlertCircle, AlertTriangle } from 'lucide-react';
 
 export interface DbPermissionRule {
   database: string;
@@ -23,8 +23,12 @@ export interface PermissionTableProps {
 export type AxiomPermissions = DbPermissionRule[];
 
 const ALL_OPS = ['SELECT', 'INSERT', 'UPDATE', 'DELETE'] as const;
+const MAX_RULES = 100;
+const MAX_SPLIT = 50;
 
 export function PermissionTable({ value, onChange, readOnly = false }: PermissionTableProps) {
+  const [splitError, setSplitError] = useState<string | null>(null);
+
   function setRule(idx: number, patch: Partial<DbPermissionRule>) {
     if (!onChange) return;
     onChange(value.map((r, i) => (i === idx ? { ...r, ...patch } : r)));
@@ -33,14 +37,19 @@ export function PermissionTable({ value, onChange, readOnly = false }: Permissio
   function toggleOp(idx: number, op: typeof ALL_OPS[number]) {
     const rule = value[idx];
     const has = rule.operations.includes(op);
+    // Forbid completely empty operations array (Component F2)
+    if (has && rule.operations.length === 1) {
+      return;
+    }
     setRule(idx, {
       operations: has ? rule.operations.filter((o) => o !== op) : [...rule.operations, op],
     });
   }
 
   function addRule() {
-    if (!onChange) return;
-    onChange([...value, { database: '*', table: '*', operations: ['SELECT'] }]);
+    if (!onChange || value.length >= MAX_RULES) return;
+    // Deny-by-default: start with empty identifiers instead of wildcards
+    onChange([...value, { database: '', table: '', operations: ['SELECT'] }]);
   }
 
   function removeRule(idx: number) {
@@ -50,11 +59,23 @@ export function PermissionTable({ value, onChange, readOnly = false }: Permissio
 
   function splitRule(idx: number) {
     if (!onChange) return;
+    setSplitError(null);
     const rule = value[idx];
-    const dbs = rule.database.split(',').map((s) => s.trim()).filter(Boolean);
-    const tbls = rule.table.split(',').map((s) => s.trim()).filter(Boolean);
+    const dbs = rule.database.split(',').map((s) => s.trim().slice(0, 64)).filter(Boolean);
+    const tbls = rule.table.split(',').map((s) => s.trim().slice(0, 64)).filter(Boolean);
     const dbList = dbs.length > 0 ? dbs : ['*'];
     const tblList = tbls.length > 0 ? tbls : ['*'];
+
+    const totalNew = dbList.length * tblList.length;
+    if (totalNew > MAX_SPLIT) {
+      setSplitError(`Cannot split rule: combination results in ${totalNew} rules (limit is ${MAX_SPLIT}).`);
+      return;
+    }
+
+    if (value.length - 1 + totalNew > MAX_RULES) {
+      setSplitError(`Cannot split rule: exceeds maximum limit of ${MAX_RULES} rules.`);
+      return;
+    }
 
     const newRules: DbPermissionRule[] = [];
     for (const d of dbList) {
@@ -94,23 +115,39 @@ export function PermissionTable({ value, onChange, readOnly = false }: Permissio
 
   return (
     <div className="space-y-3 font-sans">
+      {splitError && (
+        <div className="flex items-center gap-2 p-2.5 rounded-lg bg-[#2a1113] border border-[#5c1d24] text-[#f87171] text-[12px]" role="alert">
+          <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+          <span>{splitError}</span>
+        </div>
+      )}
+
       {value.map((rule, idx) => {
         const dbHasComma = rule.database.includes(',');
         const tableHasComma = rule.table.includes(',');
         const hasCommaError = dbHasComma || tableHasComma;
+        const isWildcard = rule.database.trim() === '*' && rule.table.trim() === '*';
 
         return (
           <div
             key={idx}
             className={`rounded-[8px] border bg-[#121212] p-4 space-y-3.5 transition-colors ${
-              hasCommaError ? 'border-[#e5484d]/40' : 'border-[#262626]'
+              hasCommaError ? 'border-[#e5484d]/40' : isWildcard ? 'border-[#59300e]' : 'border-[#262626]'
             }`}
           >
             {/* Card Top: Rule Header & Action */}
             <div className="flex items-center justify-between pb-0.5">
-              <span className="text-[13px] font-medium text-[#8c8c8c] font-sans">
-                Rule {idx + 1}
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="text-[13px] font-medium text-[#8c8c8c] font-sans">
+                  Rule {idx + 1}
+                </span>
+                {isWildcard && (
+                  <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-[#2a1708] text-[#f5a623] border border-[#59300e]">
+                    <AlertTriangle className="w-3 h-3" />
+                    Global Wildcard
+                  </span>
+                )}
+              </div>
 
               {!readOnly && (
                 <button

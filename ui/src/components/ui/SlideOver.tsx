@@ -1,5 +1,30 @@
-import React, { useEffect } from 'react';
+/**
+ * SlideOver.tsx
+ * Drawer modal adhering to Axiom's container-in-container dark theme.
+ * Enforces panel-scoped touch gestures (Component F4) to prevent hijacking scroll in tables,
+ * ref-counts body scroll locks, restores focus on close, and wires proper ARIA attributes.
+ */
+
+import React, { useEffect, useRef } from 'react';
 import { cn } from '../../utils/cn';
+
+let scrollLockCount = 0;
+let originalOverflow = '';
+
+function lockScroll() {
+  if (scrollLockCount === 0) {
+    originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+  }
+  scrollLockCount++;
+}
+
+function unlockScroll() {
+  scrollLockCount = Math.max(0, scrollLockCount - 1);
+  if (scrollLockCount === 0) {
+    document.body.style.overflow = originalOverflow || '';
+  }
+}
 
 interface SlideOverProps {
   isOpen: boolean;
@@ -10,11 +35,6 @@ interface SlideOverProps {
   width?: string;
 }
 
-/**
- * SlideOver drawer with "container in container" design:
- * Outer pure black frame (#000000) with rounded corners,
- * and an inset deep slate panel (#0e0e0e) with subtle border (#262626).
- */
 export const SlideOver: React.FC<SlideOverProps> = ({
   isOpen,
   onClose,
@@ -23,22 +43,28 @@ export const SlideOver: React.FC<SlideOverProps> = ({
   children,
   width = 'w-[520px] max-w-full',
 }) => {
-  // Lock body scroll when open
+  const panelRef = useRef<HTMLDivElement>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
+
+  // Scroll lock and focus restoration
   useEffect(() => {
-    if (isOpen) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = 'unset';
-    }
+    if (!isOpen) return;
+
+    previousFocusRef.current = document.activeElement as HTMLElement | null;
+    lockScroll();
+
     return () => {
-      document.body.style.overflow = 'unset';
+      unlockScroll();
+      previousFocusRef.current?.focus();
     };
   }, [isOpen]);
 
   // Handle ESC key
   useEffect(() => {
+    if (!isOpen) return;
+
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isOpen) {
+      if (e.key === 'Escape') {
         onClose();
       }
     };
@@ -48,55 +74,67 @@ export const SlideOver: React.FC<SlideOverProps> = ({
     };
   }, [isOpen, onClose]);
 
-  // Handle Swipe right to dismiss
+  // Panel-scoped touch gestures: only trigger dismiss from left-edge drag
   useEffect(() => {
     if (!isOpen) return;
-    
+    const panel = panelRef.current;
+    if (!panel) return;
+
     let touchStartX = 0;
     let touchStartY = 0;
-    let isSwiping = false;
+    let isEdgeSwipe = false;
 
     const handleTouchStart = (e: TouchEvent) => {
-      touchStartX = e.changedTouches[0].screenX;
-      touchStartY = e.changedTouches[0].screenY;
-      isSwiping = true;
+      const touch = e.changedTouches[0];
+      const panelRect = panel.getBoundingClientRect();
+      const relativeX = touch.clientX - panelRect.left;
+
+      // Only initiate gesture if touch starts within 40px of left edge of drawer
+      if (relativeX >= 0 && relativeX <= 40) {
+        touchStartX = touch.clientX;
+        touchStartY = touch.clientY;
+        isEdgeSwipe = true;
+      } else {
+        isEdgeSwipe = false;
+      }
     };
 
     const handleTouchMove = (e: TouchEvent) => {
-      if (!isSwiping) return;
-      const touchEndX = e.changedTouches[0].screenX;
-      const touchEndY = e.changedTouches[0].screenY;
-      const deltaX = touchEndX - touchStartX;
-      const deltaY = Math.abs(touchEndY - touchStartY);
+      if (!isEdgeSwipe) return;
+      const touch = e.changedTouches[0];
+      const deltaX = touch.clientX - touchStartX;
+      const deltaY = Math.abs(touch.clientY - touchStartY);
 
+      // Require significant rightward motion with horizontal dominance
       if (deltaX > 80 && deltaX > deltaY * 2) {
-        isSwiping = false;
+        isEdgeSwipe = false;
         onClose();
       }
     };
 
     const handleTouchEnd = () => {
-      isSwiping = false;
+      isEdgeSwipe = false;
     };
 
-    window.addEventListener('touchstart', handleTouchStart, { passive: true });
-    window.addEventListener('touchmove', handleTouchMove, { passive: true });
-    window.addEventListener('touchend', handleTouchEnd);
+    panel.addEventListener('touchstart', handleTouchStart, { passive: true });
+    panel.addEventListener('touchmove', handleTouchMove, { passive: true });
+    panel.addEventListener('touchend', handleTouchEnd);
 
     return () => {
-      window.removeEventListener('touchstart', handleTouchStart);
-      window.removeEventListener('touchmove', handleTouchMove);
-      window.removeEventListener('touchend', handleTouchEnd);
+      panel.removeEventListener('touchstart', handleTouchStart);
+      panel.removeEventListener('touchmove', handleTouchMove);
+      panel.removeEventListener('touchend', handleTouchEnd);
     };
   }, [isOpen, onClose]);
 
   if (!isOpen) return null;
 
   return (
-    <div 
+    <div
       className="fixed inset-0 z-50 overflow-hidden select-none font-sans"
       role="dialog"
       aria-modal="true"
+      aria-labelledby="slideover-title"
     >
       <div
         className="fixed inset-0 bg-black/70 backdrop-blur-xs transition-opacity animate-in fade-in duration-150"
@@ -106,6 +144,7 @@ export const SlideOver: React.FC<SlideOverProps> = ({
       <div className="fixed inset-y-0 sm:inset-y-2.5 right-0 flex max-w-full pl-0 sm:pl-10 pointer-events-none font-sans">
         {/* Outer Container (Matching Table outer black frame) */}
         <div
+          ref={panelRef}
           className={cn(
             'w-screen pointer-events-auto bg-black border-l border-y border-[#222222] rounded-tl-[8px] rounded-bl-[8px] shadow-2xl flex flex-col animate-in slide-in-from-right duration-200 ease-out select-text overflow-hidden font-sans',
             width
@@ -115,6 +154,7 @@ export const SlideOver: React.FC<SlideOverProps> = ({
           <div className="flex items-center justify-between px-4 sm:px-5 py-3.5 bg-black shrink-0 font-sans">
             <div className="min-w-0 pr-3 flex-1">
               <h2
+                id="slideover-title"
                 className="text-[16px] font-medium text-white tracking-[-0.015em] leading-snug font-sans truncate"
                 title={typeof title === 'string' ? title : undefined}
               >
@@ -125,8 +165,8 @@ export const SlideOver: React.FC<SlideOverProps> = ({
             <button
               onClick={onClose}
               className="w-7 h-7 flex items-center justify-center text-[#888888] hover:text-white rounded-[8px] hover:bg-[#1a1a1a] transition-colors cursor-pointer shrink-0 ml-2"
-              title="Close (Esc)"
-              aria-label="Close"
+              title="Close"
+              aria-label="Close drawer"
             >
               <svg
                 xmlns="http://www.w3.org/2000/svg"

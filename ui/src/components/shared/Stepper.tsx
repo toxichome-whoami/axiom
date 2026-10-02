@@ -1,7 +1,9 @@
 /*
- * Stepper navigation component for multi-step onboarding & wizard workflows.
- * Matches Vercel/Linear technical minimal design:
- * Clean interconnected circle nodes, active state indicator, check icon for completed steps.
+ * Multi-step wizard and onboarding progress indicator component.
+ * Owned by: ui/components/shared
+ * Key deps: lucide-react, ../../utils/cn
+ * Invariants: Accepts 1-indexed steps; safely handles single-step or empty arrays without division by zero.
+ * Last structural change: Form controls hardening per UI audit component F6.
  */
 
 import React from 'react';
@@ -21,7 +23,16 @@ interface StepperProps {
   className?: string;
 }
 
+/**
+ * Renders an accessible visual stepper with interconnected progress indicators and milestone labels.
+ */
 export function Stepper({ steps, currentStep, onStepClick, className }: StepperProps) {
+  if (!steps || steps.length === 0) return null;
+
+  const totalSteps = steps.length;
+  const stepSpan = Math.max(1, totalSteps - 1);
+  const safeCurrent = Math.max(1, Math.min(currentStep, totalSteps));
+
   return (
     <div className={cn('w-full max-w-md mx-auto py-4 select-none', className)}>
       <div className="relative flex items-center justify-between">
@@ -29,9 +40,9 @@ export function Stepper({ steps, currentStep, onStepClick, className }: StepperP
         <div className="absolute left-4 right-4 top-1/2 -translate-y-1/2 h-[2px] bg-[#222222] z-0" />
 
         {steps.map((step, index) => {
-          const isCompleted = step.id < currentStep;
-          const isActive = step.id === currentStep;
-          const isUpcoming = step.id > currentStep;
+          const isCompleted = step.id < safeCurrent;
+          const isActive = step.id === safeCurrent;
+          const isUpcoming = step.id > safeCurrent;
 
           return (
             <React.Fragment key={step.id}>
@@ -43,8 +54,8 @@ export function Stepper({ steps, currentStep, onStepClick, className }: StepperP
                     isCompleted || isActive ? 'bg-white' : 'bg-transparent'
                   )}
                   style={{
-                    left: `${((index - 1) / (steps.length - 1)) * 100}%`,
-                    width: `${(1 / (steps.length - 1)) * 100}%`,
+                    left: `${((index - 1) / stepSpan) * 100}%`,
+                    width: `${(1 / stepSpan) * 100}%`,
                   }}
                 />
               )}

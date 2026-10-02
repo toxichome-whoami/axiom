@@ -120,20 +120,45 @@ export interface UserRecordApi {
   created_at: number;
 }
 
+import { getSessionToken, clearSession } from './session';
+
+const API_BASE = import.meta.env.VITE_API_URL ?? '';
+
+const CODE_MAP: Record<string, string> = {
+  UNAUTHORIZED: 'Authentication required or session expired',
+  FORBIDDEN: 'Access denied: insufficient administrative privileges',
+  NOT_FOUND: 'Requested resource does not exist',
+  RATE_LIMIT_EXCEEDED: 'Rate limit exceeded. Please wait before retrying',
+  SERVICE_UNAVAILABLE: 'Upstream database or service temporarily unavailable',
+  DB_CONNECTION_FAILED: 'Could not connect to the specified database',
+  DB_QUERY_FAILED: 'Query execution failed on target database',
+  INVALID_CREDENTIALS: 'Invalid username or password',
+  SETUP_ALREADY_COMPLETED: 'Setup wizard is permanently finalized',
+};
+
+function resolveEndpoint(endpoint: string): string {
+  if (endpoint.startsWith('http://') || endpoint.startsWith('https://')) {
+    throw new Error('Absolute URLs are prohibited for internal API calls');
+  }
+  return `${API_BASE}${endpoint}`;
+}
+
 // ─── Network Request Utility ─────────────────────────────────────────────────
-// Ensures session tokens from localStorage and cookies are sent with every call.
+// Ensures session tokens from session manager and cookies are sent with every call.
 
 /**
  * Executes a typed HTTP request against the Axiom backend API.
  * CONTRACT:
  *  - Automatically attaches session credentials and Authorization header.
+ *  - Dispatches 'axiom:unauthorized' event on 401 or 403 responses.
+ *  - 15-second AbortController timeout prevents hung requests.
  *  - Rejects if server responds with error or non-2xx status.
- *  - Safe to retry idempotent GET calls.
+ *  - Sanitizes error messages to protect against server detail leakage.
  * @param endpoint Relative URL starting with /admin/v1 or /api/v1
  * @param options Standard RequestInit options
  */
 async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
-  const token = localStorage.getItem('axiom_session_token');
+  const token = getSessionToken();
   const headers = new Headers(options.headers || {});
 
   if (!headers.has('Content-Type') && !(options.body instanceof FormData)) {
@@ -144,26 +169,55 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
     headers.set('Authorization', `Bearer ${token}`);
   }
 
-  const res = await fetch(endpoint, {
-    ...options,
-    headers,
-    credentials: 'include',
-  });
+  // 15-second abort controller prevents UI locks on hung network calls
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 15_000);
 
-  const text = await res.text();
-  let json: ApiResponse<T>;
+  if (options.signal) {
+    if (options.signal.aborted) {
+      controller.abort();
+    } else {
+      options.signal.addEventListener('abort', () => controller.abort());
+    }
+  }
+
   try {
-    json = JSON.parse(text);
-  } catch {
-    throw new Error(`Invalid server response (${res.status}): ${text.slice(0, 100)}`);
-  }
+    const targetUrl = resolveEndpoint(endpoint);
+    const res = await fetch(targetUrl, {
+      ...options,
+      headers,
+      signal: controller.signal,
+      credentials: 'include',
+    });
 
-  if (!res.ok || !json.success) {
-    const errorMsg = json.error?.message || `Request failed with status ${res.status}`;
-    throw new Error(errorMsg);
-  }
+    if (res.status === 401 || res.status === 403) {
+      clearSession();
+      window.dispatchEvent(new CustomEvent('axiom:unauthorized', { detail: { status: res.status } }));
+    }
 
-  return json.data;
+    const text = await res.text();
+    let json: ApiResponse<T>;
+    try {
+      json = JSON.parse(text);
+    } catch {
+      throw new Error(`Unexpected server response (HTTP ${res.status})`);
+    }
+
+    if (!res.ok || !json.success) {
+      const code = json.error?.code;
+      const sanitized = (code && CODE_MAP[code]) || json.error?.message || `Request failed (HTTP ${res.status})`;
+      throw new Error(sanitized);
+    }
+
+    return json.data;
+  } catch (err: unknown) {
+    if (err instanceof Error && err.name === 'AbortError') {
+      throw new Error('Request timed out. Please try again.');
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 // ─── Admin API Operations ────────────────────────────────────────────────────
@@ -195,9 +249,11 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(data),
     }),
-  rotateKey: (name: string) =>
+  rotateKey: (name: string, options?: { grace_period?: number; idempotencyKey?: string }) =>
     request<{ name: string; token: string; secret: string; note: string }>(`/admin/v1/keys/${encodeURIComponent(name)}/rotate`, {
       method: 'POST',
+      headers: options?.idempotencyKey ? { 'Idempotency-Key': options.idempotencyKey } : undefined,
+      body: options?.grace_period ? JSON.stringify({ grace_period: options.grace_period }) : undefined,
     }),
   deleteKey: (name: string) =>
     request<{ message: string }>(`/admin/v1/keys/${encodeURIComponent(name)}`, {
@@ -227,8 +283,11 @@ export const api = {
 
   // Metrics & Observability
   getMetricsSnapshot: () => request<MetricsSnapshotApi>('/admin/v1/metrics?format=json'),
-  getAuditLog: (limit = 50, offset = 0) =>
-    request<AuditRecordApi[]>(`/admin/v1/audit?limit=${limit}&offset=${offset}`),
+  getAuditLog: (limit = 50, offset = 0) => {
+    const safeLimit = Math.max(1, Math.min(200, Math.floor(limit) || 50));
+    const safeOffset = Math.max(0, Math.floor(offset) || 0);
+    return request<AuditRecordApi[]>(`/admin/v1/audit?limit=${safeLimit}&offset=${safeOffset}`);
+  },
 
   // Users & Authentication
   listUsers: () => request<UserRecordApi[]>('/admin/v1/users'),

@@ -13,7 +13,7 @@ import { SlideOver } from '../components/ui/SlideOver';
 import { Button } from '../components/ui/Button';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { CustomSelect } from '../components/shared/CustomSelect';
-import { Shield, Plus, Search, Check, AlertCircle, RefreshCw } from 'lucide-react';
+import { Shield, Plus, Search, Check, AlertCircle, AlertTriangle, RefreshCw } from 'lucide-react';
 import { api, RoleRecordApi, PermissionRecordApi } from '../api/client';
 
 export interface FilterRule {
@@ -24,17 +24,27 @@ export interface FilterRule {
 }
 
 const READONLY_RULES: DbPermissionRule[] = [
-  { database: '*', table: '*', operations: ['SELECT'] },
+  { database: '', table: '', operations: ['SELECT'] },
 ];
 
 export function Roles() {
   const [roles, setRoles] = useState<RbacRole[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const fetchGenRef = useRef(0);
 
-  // Load RBAC roles and permissions from backend
+  // Pagination State (F-06)
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
+  // Load RBAC roles and permissions from backend with race guard (F-07)
   const loadRoles = async () => {
+    const curGen = ++fetchGenRef.current;
+    setLoadError(null);
     try {
       const res = await api.listRoles();
+      if (curGen !== fetchGenRef.current) return;
       const loaded: RbacRole[] = res.roles.map((r) => ({
         name: r.name,
         description: r.description || '',
@@ -46,10 +56,15 @@ export function Roles() {
         })),
       }));
       setRoles(loaded);
-    } catch {
-      // Keep existing state on error
+    } catch (err: unknown) {
+      if (curGen === fetchGenRef.current) {
+        setLoadError(err instanceof Error ? err.message : 'Failed to load RBAC roles');
+      }
     } finally {
-      setIsRefreshing(false);
+      if (curGen === fetchGenRef.current) {
+        setIsLoading(false);
+        setIsRefreshing(false);
+      }
     }
   };
 
@@ -91,6 +106,11 @@ export function Roles() {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [showFilters, showDisplayOptions]);
+
+  // Reset pagination on query or filter changes (F-06)
+  useEffect(() => {
+    setPage(1);
+  }, [searchQuery, appliedFilterRules, matchMode]);
 
   // Manage panel state
   const [manageOpen, setManageOpen] = useState(false);
@@ -633,17 +653,29 @@ export function Roles() {
         </div>
       </div>
 
+      {/* Error Banner (F-09) */}
+      {loadError && (
+        <div className="flex items-center gap-2 p-3 rounded-lg bg-[#2a1113] border border-[#5c1d24] text-[#f87171] text-[13px]">
+          <AlertTriangle className="w-4 h-4 shrink-0 text-[#ef4444]" />
+          <span>{loadError}</span>
+        </div>
+      )}
+
       {/* Roles Read-Only DataTable */}
       <DataTable
         columns={activeColumns}
         data={filteredRoles}
+        isLoading={isLoading}
         ariaLabel="RBAC Roles"
         pagination={{
-          page: 1,
-          pageSize: 10,
+          page,
+          pageSize,
           totalCount: filteredRoles.length,
-          onPageChange: () => {},
-          onPageSizeChange: () => {},
+          onPageChange: setPage,
+          onPageSizeChange: (newSize) => {
+            setPageSize(newSize);
+            setPage(1);
+          },
         }}
       />
 

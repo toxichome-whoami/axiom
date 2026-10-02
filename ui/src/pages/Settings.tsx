@@ -21,6 +21,7 @@ import {
   Users,
   Info,
   LayoutGrid,
+  AlertTriangle,
 } from 'lucide-react';
 import { api, SystemStatusData, HealthData, UserRecordApi } from '../api/client';
 
@@ -30,17 +31,23 @@ export function Settings() {
   const [statusData, setStatusData] = useState<SystemStatusData | null>(null);
   const [healthData, setHealthData] = useState<HealthData | null>(null);
   const [isReloading, setIsReloading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [snapshotNotice, setSnapshotNotice] = useState(false);
+  const [snapOk, setSnapOk] = useState(true);
   const [snapshotMessage, setSnapshotMessage] = useState('');
   const [copiedCli, setCopiedCli] = useState(false);
+  const fetchGenRef = React.useRef(0);
 
   const loadLiveSettings = async () => {
+    const curGen = ++fetchGenRef.current;
     try {
       const [usersRes, statusRes, healthRes] = await Promise.allSettled([
         api.listUsers(),
         api.getStatus(),
         api.getHealth(),
       ]);
+
+      if (curGen !== fetchGenRef.current) return;
 
       if (usersRes.status === 'fulfilled') {
         const userList: UserRecordApi[] = usersRes.value;
@@ -61,6 +68,10 @@ export function Settings() {
       }
     } catch {
       // Keep existing state
+    } finally {
+      if (curGen === fetchGenRef.current) {
+        setIsLoading(false);
+      }
     }
   };
 
@@ -72,6 +83,7 @@ export function Settings() {
     setIsReloading(true);
     try {
       const res = await api.reloadMetadata();
+      setSnapOk(true);
       setSnapshotMessage(res.message || 'Metadata snapshot synchronized');
       setSnapshotNotice(true);
       await loadLiveSettings();
@@ -79,11 +91,12 @@ export function Settings() {
         setSnapshotNotice(false);
       }, 3000);
     } catch (err: unknown) {
+      setSnapOk(false);
       setSnapshotMessage(err instanceof Error ? err.message : 'Failed to reload snapshot');
       setSnapshotNotice(true);
       setTimeout(() => {
         setSnapshotNotice(false);
-      }, 3000);
+      }, 4000);
     } finally {
       setIsReloading(false);
     }
@@ -149,11 +162,22 @@ export function Settings() {
         </Button>
       </div>
 
-      {/* Snapshot Feedback Toast */}
+      {/* Snapshot Feedback Toast (F-09) */}
       {snapshotNotice && (
-        <div className="rounded-[8px] border border-[#30a46c]/30 bg-[#30a46c]/10 p-3 text-[13px] text-[#30a46c] font-medium flex items-center gap-2">
-          <CheckCircle2 className="w-4 h-4 shrink-0" />
-          {snapshotMessage || 'ArcSwap metadata snapshot reloaded. Worker caches updated from axiom.db.'}
+        <div
+          className={`rounded-[8px] border p-3 text-[13px] font-medium flex items-center gap-2 ${
+            snapOk
+              ? 'border-[#30a46c]/30 bg-[#30a46c]/10 text-[#30a46c]'
+              : 'border-[#e5484d]/30 bg-[#e5484d]/10 text-[#e5484d]'
+          }`}
+          role="status"
+        >
+          {snapOk ? (
+            <CheckCircle2 className="w-4 h-4 shrink-0 text-[#30a46c]" />
+          ) : (
+            <AlertTriangle className="w-4 h-4 shrink-0 text-[#e5484d]" />
+          )}
+          <span>{snapshotMessage || (snapOk ? 'ArcSwap metadata snapshot reloaded. Worker caches updated from axiom.db.' : 'Failed to reload snapshot.')}</span>
         </div>
       )}
 
@@ -316,6 +340,7 @@ export function Settings() {
                 <DataTable
                   columns={adminColumns}
                   data={admins}
+                  isLoading={isLoading}
                   ariaLabel="Admin Users Table"
                 />
               </div>
@@ -337,10 +362,14 @@ export function Settings() {
                 <Button
                   variant="secondary"
                   size="sm"
-                  onClick={() => {
-                    navigator.clipboard.writeText('axiom user add <username> --email <email>');
-                    setCopiedCli(true);
-                    setTimeout(() => setCopiedCli(false), 2000);
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText('axiom user add <username> --email <email>');
+                      setCopiedCli(true);
+                      setTimeout(() => setCopiedCli(false), 2000);
+                    } catch {
+                      // Clipboard access error
+                    }
                   }}
                 >
                   {copiedCli ? <Check className="w-3.5 h-3.5 text-[#30a46c]" /> : <Copy className="w-3.5 h-3.5" />}

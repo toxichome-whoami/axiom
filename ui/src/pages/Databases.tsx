@@ -92,49 +92,73 @@ export function validateDatabaseUrl(engine: string, rawUrl: string): { valid: bo
   return { valid: true };
 }
 
+function toSafeInt(val: unknown, fallback: number, min: number, max: number): number {
+  const n = typeof val === 'number' ? val : parseInt(String(val), 10);
+  if (isNaN(n)) return fallback;
+  return Math.max(min, Math.min(max, n));
+}
+
 export function Databases() {
   const [pools, setPools] = useState<DatabasePool[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const fetchGenRef = useRef(0);
 
-  // Load database connections and live health state from backend
+  // Pagination State (F-06)
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
+  // Load database connections and live health state from backend with race guard (F-07)
   const loadDatabases = async () => {
+    const curGen = ++fetchGenRef.current;
+    setLoadError(null);
     try {
       const [dbRes, healthRes] = await Promise.allSettled([
         api.listDatabases(),
         api.getHealth(),
       ]);
 
-      const dbList: DatabaseRecordApi[] = dbRes.status === 'fulfilled' ? dbRes.value.databases : [];
-      const healthMap = healthRes.status === 'fulfilled' ? healthRes.value.databases : {};
+      if (curGen !== fetchGenRef.current) return;
 
-      const loadedPools: DatabasePool[] = dbList.map((db) => {
-        const isUp = healthMap[db.alias] === 'up';
-        return {
-          alias: db.alias,
-          engine: (db.engine || 'PostgreSQL') as EngineType,
-          version: `${db.engine} (live)`,
-          url: '••••••••••••••••',
-          minConnections: db.pool_min || 1,
-          maxConnections: db.pool_max || 10,
-          idleTimeoutSeconds: 30,
-          readonly: false,
-          status: isUp ? 'Ready' : 'Degraded',
-          latencyMs: isUp ? 0.45 : 12.0,
-        };
-      });
+      if (dbRes.status === 'fulfilled') {
+        const dbList: DatabaseRecordApi[] = dbRes.value.databases;
+        const healthMap = healthRes.status === 'fulfilled' ? healthRes.value.databases : {};
 
-      setPools(loadedPools);
-      setSelectedPool((prev) => {
-        if (!prev) return null;
-        const found = loadedPools.find((p) => p.alias === prev.alias);
-        return found ? found : prev;
-      });
-    } catch {
-      // In case of error keep existing state
+        const loadedPools: DatabasePool[] = dbList.map((db) => {
+          const isUp = healthMap[db.alias] === 'up';
+          return {
+            alias: db.alias,
+            engine: (db.engine || 'PostgreSQL') as EngineType,
+            version: `${db.engine} (live)`,
+            url: '••••••••••••••••',
+            minConnections: db.pool_min || 1,
+            maxConnections: db.pool_max || 10,
+            idleTimeoutSeconds: 30,
+            readonly: false,
+            status: isUp ? 'Ready' : 'Degraded',
+            latencyMs: isUp ? 0.45 : 12.0,
+          };
+        });
+
+        setPools(loadedPools);
+        setSelectedPool((prev) => {
+          if (!prev) return null;
+          const found = loadedPools.find((p) => p.alias === prev.alias);
+          return found ? found : prev;
+        });
+      } else {
+        setLoadError(dbRes.reason?.message || 'Failed to load database connections');
+      }
+    } catch (err: unknown) {
+      if (curGen === fetchGenRef.current) {
+        setLoadError(err instanceof Error ? err.message : 'Unexpected error loading databases');
+      }
     } finally {
-      setIsLoading(false);
-      setIsRefreshing(false);
+      if (curGen === fetchGenRef.current) {
+        setIsLoading(false);
+        setIsRefreshing(false);
+      }
     }
   };
 
@@ -275,6 +299,14 @@ export function Databases() {
   const urlChanged = Boolean(editUrl.trim().length > 0);
   const editUrlValidation = urlChanged ? validateDatabaseUrl(editEngine, editUrl) : { valid: true };
 
+  const poolOk = newMin >= 0 && newMax >= newMin && newTimeout >= 1;
+  const editPoolOk = editMin >= 0 && editMax >= editMin && editTimeout >= 1;
+
+  // Reset pagination on query or filter changes (F-06)
+  useEffect(() => {
+    setPage(1);
+  }, [searchQuery, appliedFilterRules, matchMode]);
+
   const isChanged = Boolean(
     selectedPool && (
       editAlias.trim() !== selectedPool.alias ||
@@ -290,12 +322,13 @@ export function Databases() {
     isChanged &&
     editAlias.trim().length > 0 &&
     editUrlValidation.valid &&
+    editPoolOk &&
     !isSaving &&
     manageTestResult !== 'testing'
   );
 
   async function handleAttach() {
-    if (!newAlias.trim()) return;
+    if (!newAlias.trim() || !poolOk) return;
     const validation = validateDatabaseUrl(newEngine, newUrl);
     if (!validation.valid) {
       setAttachError(validation.error || 'Invalid URL format for selected engine.');
@@ -856,17 +889,29 @@ export function Databases() {
         </div>
       </div>
 
+      {/* Error Banner (F-09) */}
+      {loadError && (
+        <div className="flex items-center gap-2 p-3 rounded-lg bg-[#2a1113] border border-[#5c1d24] text-[#f87171] text-[13px]">
+          <AlertTriangle className="w-4 h-4 shrink-0 text-[#ef4444]" />
+          <span>{loadError}</span>
+        </div>
+      )}
+
       {/* Pools Read-Only DataTable */}
       <DataTable
         columns={activeColumns}
         data={filteredPools}
+        isLoading={isLoading}
         ariaLabel="Database Pools Table"
         pagination={{
-          page: 1,
-          pageSize: 10,
+          page,
+          pageSize,
           totalCount: filteredPools.length,
-          onPageChange: () => {},
-          onPageSizeChange: () => {},
+          onPageChange: setPage,
+          onPageSizeChange: (newSize) => {
+            setPageSize(newSize);
+            setPage(1);
+          },
         }}
       />
 
@@ -1012,8 +1057,10 @@ export function Databases() {
               <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">Min Connections</label>
               <input
                 type="number"
+                min={0}
+                max={1000}
                 value={newMin}
-                onChange={(e) => setNewMin(Number(e.target.value))}
+                onChange={(e) => setNewMin(toSafeInt(e.target.value, 1, 0, 1000))}
                 className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] px-3 text-[14px] text-white focus:outline-none focus:border-[#3b82f6]"
               />
             </div>
@@ -1021,8 +1068,10 @@ export function Databases() {
               <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">Max Connections</label>
               <input
                 type="number"
+                min={0}
+                max={1000}
                 value={newMax}
-                onChange={(e) => setNewMax(Number(e.target.value))}
+                onChange={(e) => setNewMax(toSafeInt(e.target.value, 10, 0, 1000))}
                 className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] px-3 text-[14px] text-white focus:outline-none focus:border-[#3b82f6]"
               />
             </div>
@@ -1030,11 +1079,18 @@ export function Databases() {
               <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">Idle Timeout (seconds)</label>
               <input
                 type="number"
+                min={1}
+                max={3600}
                 value={newTimeout}
-                onChange={(e) => setNewTimeout(Number(e.target.value))}
+                onChange={(e) => setNewTimeout(toSafeInt(e.target.value, 30, 1, 3600))}
                 className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] px-3 text-[14px] text-white focus:outline-none focus:border-[#3b82f6]"
               />
             </div>
+            {!poolOk && (
+              <p className="text-[12px] text-[#f87171] leading-relaxed">
+                Pool bounds violation: Min must be ≥ 0, Max must be ≥ Min ({newMin}), and Timeout must be ≥ 1.
+              </p>
+            )}
           </div>
         </div>
 
@@ -1049,8 +1105,8 @@ export function Databases() {
           <button
             type="button"
             onClick={handleAttach}
-            disabled={isAttaching}
-            className="group relative flex shrink-0 items-center justify-center h-9 px-4 rounded-[8px] font-medium text-white shadow-xs outline-none cursor-pointer overflow-hidden ring-1 ring-[#1d4ed8] bg-[#2563eb] font-sans disabled:opacity-50"
+            disabled={isAttaching || !poolOk || !newAlias.trim() || !newUrl.trim()}
+            className="group relative flex shrink-0 items-center justify-center h-9 px-4 rounded-[8px] font-medium text-white shadow-xs outline-none cursor-pointer overflow-hidden ring-1 ring-[#1d4ed8] bg-[#2563eb] font-sans disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <span aria-hidden="true" className="pointer-events-none absolute inset-0 rounded-[inherit] bg-gradient-to-b from-[#3b82f6] to-[#2563eb] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2)]" />
             <span aria-hidden="true" className="pointer-events-none absolute inset-0 rounded-[inherit] bg-black opacity-0 group-hover:opacity-15 transition-opacity duration-200" />

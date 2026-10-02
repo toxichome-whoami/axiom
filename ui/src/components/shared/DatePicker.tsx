@@ -1,3 +1,11 @@
+/*
+ * Accessible and resilient date picker component with presets and ISO calendar integration.
+ * Owned by: ui/components/shared
+ * Key deps: @daypicker/react, lucide-react
+ * Invariants: Operates on 'YYYY-MM-DD' ISO date strings; fails safely to undefined on invalid or non-date inputs.
+ * Last structural change: Form controls hardening per UI audit component F6.
+ */
+
 import React, { useState, useRef, useEffect } from 'react';
 import { DayPicker } from '@daypicker/react';
 import '@daypicker/react/dist/style.css';
@@ -27,11 +35,15 @@ export const DatePicker: React.FC<DatePickerProps> = ({
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  // Convert 'YYYY-MM-DD' string to local Date object
+  // Convert 'YYYY-MM-DD' string to local Date object safely guarding against NaN
   const selectedDate = value
     ? (() => {
-        const [year, month, day] = value.split('-').map(Number);
-        return new Date(year, month - 1, day);
+        const parts = value.split('-').map(Number);
+        if (parts.length === 3 && parts.every((p) => !isNaN(p))) {
+          const d = new Date(parts[0], parts[1] - 1, parts[2]);
+          return isNaN(d.getTime()) ? undefined : d;
+        }
+        return undefined;
       })()
     : undefined;
 
@@ -94,13 +106,18 @@ export const DatePicker: React.FC<DatePickerProps> = ({
   const formatDisplay = (dateStr: string | null) => {
     if (!dateStr) return null;
     try {
-      const [year, month, day] = dateStr.split('-').map(Number);
-      const d = new Date(year, month - 1, day);
-      return d.toLocaleDateString('en-US', {
-        month: 'short',
-        day: 'numeric',
-        year: 'numeric',
-      });
+      const parts = dateStr.split('-').map(Number);
+      if (parts.length === 3 && parts.every((p) => !isNaN(p))) {
+        const d = new Date(parts[0], parts[1] - 1, parts[2]);
+        if (!isNaN(d.getTime())) {
+          return d.toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+          });
+        }
+      }
+      return dateStr;
     } catch {
       return dateStr;
     }
@@ -112,6 +129,9 @@ export const DatePicker: React.FC<DatePickerProps> = ({
       <div
         role="button"
         tabIndex={0}
+        aria-haspopup="dialog"
+        aria-expanded={isOpen}
+        aria-label="Expiration date selector"
         onClick={() => setIsOpen((prev) => !prev)}
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') {

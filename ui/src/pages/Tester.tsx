@@ -6,12 +6,43 @@
  * Last structural change: Removed synthetic mock fallbacks; connected execution directly to live endpoints.
  */
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { ApiRoutePreset } from '../types';
 import { CustomSelect } from '../components/shared/CustomSelect';
 import { Button } from '../components/ui/Button';
+import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { Play, Copy, Check, Terminal } from 'lucide-react';
 import { api, DatabaseRecordApi, ApiKeyRecordApi } from '../api/client';
+import { getSessionToken } from '../api/session';
+
+function toSafePath(input: string): string {
+  const trimmed = input.trim();
+  if (
+    !trimmed.startsWith('/') ||
+    trimmed.startsWith('//') ||
+    trimmed.includes('..') ||
+    trimmed.includes('\\') ||
+    trimmed.toLowerCase().includes('javascript:')
+  ) {
+    throw new Error('Target path must be a relative gateway endpoint starting with / (e.g. /api/v1/...)');
+  }
+  if (trimmed.includes('://')) {
+    throw new Error('Absolute URLs are prohibited. Use relative gateway endpoints only.');
+  }
+  return trimmed;
+}
+
+function hasNonEmptyFilter(bodyStr: string): boolean {
+  try {
+    const parsed = JSON.parse(bodyStr);
+    if (!parsed.filter || typeof parsed.filter !== 'object' || Object.keys(parsed.filter).length === 0) {
+      return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 function tokenizeJsonLine(line: string): React.ReactNode[] {
   if (!line) return [' '];
@@ -306,6 +337,15 @@ export function Tester() {
   const [authIdentity, setAuthIdentity] = useState<string>('__session__');
   const [customKeyToken, setCustomKeyToken] = useState<string>('');
 
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const reqIdRef = useRef<number>(0);
+
+  useEffect(() => {
+    return () => {
+      abortControllerRef.current?.abort();
+    };
+  }, []);
+
   useEffect(() => {
     let isMounted = true;
     Promise.allSettled([api.listDatabases(), api.listKeys()]).then(([dbRes, keyRes]) => {
@@ -388,7 +428,7 @@ export function Tester() {
         method: 'PATCH',
         path: `/api/v1/db/${db}/table_name/rows`,
         description: 'Update matching records. Strict safety requires a non-empty filter.',
-        defaultBody: '{\n  "filter": {},\n  "set": {}\n}',
+        defaultBody: '{\n  "filter": {\n    "id": { "eq": 1 }\n  },\n  "set": {\n    "status": "active"\n  }\n}',
         defaultParams: '',
       },
       {
@@ -397,7 +437,7 @@ export function Tester() {
         method: 'DELETE',
         path: `/api/v1/db/${db}/table_name/rows`,
         description: 'Delete matching records with mandatory safety filter predicate.',
-        defaultBody: '{\n  "filter": {}\n}',
+        defaultBody: '{\n  "filter": {\n    "id": { "eq": 1 }\n  }\n}',
         defaultParams: '',
       },
     ];
@@ -452,6 +492,7 @@ export function Tester() {
   const [responseDuration, setResponseDuration] = useState<number | null>(null);
   const [responseCached, setResponseCached] = useState<boolean | null>(null);
   const [responseBody, setResponseBody] = useState<string | null>(null);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
 
   function handleSelectPreset(preset: ApiRoutePreset) {
     setActivePresetId(preset.id);
@@ -461,11 +502,95 @@ export function Tester() {
     setRequestBody(preset.defaultBody);
   }
 
+  function onExecuteClick() {
+    if (method === 'DELETE') {
+      setConfirmDeleteOpen(true);
+    } else {
+      handleExecute();
+    }
+  }
+
   async function handleExecute() {
+    let safePath = '';
+    try {
+      safePath = toSafePath(urlPath);
+    } catch (pathErr) {
+      setResponseStatus('400 Blocked by Client Guard');
+      setResponseDuration(0);
+      setResponseCached(false);
+      setResponseBody(
+        JSON.stringify(
+          {
+            success: false,
+            error: {
+              code: 'UNSAFE_ENDPOINT_PATH',
+              message: pathErr instanceof Error ? pathErr.message : 'Invalid target URL path',
+            },
+          },
+          null,
+          2
+        )
+      );
+      return;
+    }
+
+    if (method !== 'GET' && requestBody.trim()) {
+      try {
+        JSON.parse(requestBody);
+      } catch {
+        setResponseStatus('400 Invalid JSON');
+        setResponseDuration(0);
+        setResponseCached(false);
+        setResponseBody(
+          JSON.stringify(
+            {
+              success: false,
+              error: {
+                code: 'INVALID_JSON_BODY',
+                message: 'Request body must be valid JSON syntax for mutation requests',
+              },
+            },
+            null,
+            2
+          )
+        );
+        return;
+      }
+    }
+
+    // Guard against empty-filter mass DELETE/PATCH on /rows
+    if ((method === 'DELETE' || method === 'PATCH') && safePath.includes('/rows')) {
+      if (!hasNonEmptyFilter(requestBody)) {
+        setResponseStatus('400 Filter Required');
+        setResponseDuration(0);
+        setResponseCached(false);
+        setResponseBody(
+          JSON.stringify(
+            {
+              success: false,
+              error: {
+                code: 'EMPTY_FILTER_FORBIDDEN',
+                message:
+                  'DELETE and PATCH operations on /rows require a non-empty filter object to prevent full-table operations',
+              },
+            },
+            null,
+            2
+          )
+        );
+        return;
+      }
+    }
+
+    abortControllerRef.current?.abort();
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+    const currentReqId = ++reqIdRef.current;
+
     setIsLoading(true);
     const start = performance.now();
-
-    const fullPath = queryParams ? `${urlPath}?${queryParams}` : urlPath;
+    const cleanParams = queryParams.trim();
+    const fullPath = cleanParams ? `${safePath}?${cleanParams}` : safePath;
 
     try {
       const headers: Record<string, string> = {
@@ -473,7 +598,7 @@ export function Tester() {
       };
 
       if (authIdentity === '__session__') {
-        const token = localStorage.getItem('axiom_session_token');
+        const token = getSessionToken();
         if (token && token !== 'undefined' && token !== 'null') {
           headers['Authorization'] = `Bearer ${token}`;
         }
@@ -485,12 +610,20 @@ export function Tester() {
         headers['X-Axiom-Key'] = btoa(`${authIdentity}:secret`);
       }
 
+      if (method !== 'GET') {
+        headers['Idempotency-Key'] = crypto.randomUUID();
+      }
+
       const res = await fetch(fullPath, {
         method,
         headers,
+        signal: controller.signal,
         credentials: 'include',
         body: method !== 'GET' && requestBody.trim() ? requestBody : undefined,
       });
+
+      if (reqIdRef.current !== currentReqId) return;
+
       const end = performance.now();
       const dur = parseFloat((end - start).toFixed(2));
       const text = await res.text();
@@ -505,6 +638,7 @@ export function Tester() {
       setResponseCached(res.headers.get('x-axiom-cache') === 'HIT');
       setResponseBody(JSON.stringify(json, null, 2));
     } catch (err: unknown) {
+      if (reqIdRef.current !== currentReqId) return;
       const end = performance.now();
       const dur = parseFloat((end - start).toFixed(2));
       setResponseStatus('500 Network Error');
@@ -524,21 +658,21 @@ export function Tester() {
         )
       );
     } finally {
-      setIsLoading(false);
+      if (reqIdRef.current === currentReqId) {
+        setIsLoading(false);
+      }
     }
   }
 
-  const sessionToken = localStorage.getItem('axiom_session_token');
-  const validSessionToken = sessionToken && sessionToken !== 'undefined' && sessionToken !== 'null' ? sessionToken : '$AXIOM_SESSION_TOKEN';
-
   const curlAuthHeader =
     authIdentity === '__session__'
-      ? `-H "Authorization: Bearer ${validSessionToken}"`
+      ? `-H "Authorization: Bearer $AXIOM_SESSION_TOKEN"`
       : authIdentity === '__custom__' && customKeyToken.trim()
-      ? `-H "X-Axiom-Key: ${customKeyToken.trim()}"`
-      : `-H "X-Axiom-Key: ${authIdentity === '__session__' ? '$AXIOM_API_KEY' : btoa(`${authIdentity}:secret`)}"`;
+      ? `-H "X-Axiom-Key: $AXIOM_API_KEY"`
+      : `-H "X-Axiom-Key: $AXIOM_API_KEY"`;
 
-  const generatedCurl = `curl -X ${method} "http://localhost:4500${urlPath}${queryParams ? `?${queryParams}` : ''}" \\
+  const safeCurlPath = urlPath.trim().startsWith('/') ? urlPath.trim() : `/${urlPath.trim()}`;
+  const generatedCurl = `curl -X ${method} "http://localhost:4500${safeCurlPath}${queryParams ? `?${queryParams}` : ''}" \\
   -H "Content-Type: application/json" \\
   ${curlAuthHeader}${
     method !== 'GET' && requestBody.trim() ? ` \\\n  -d '${requestBody.replace(/'/g, "\\'")}'` : ''
@@ -597,7 +731,7 @@ export function Tester() {
         <div className="flex items-center gap-2 bg-[#0c0d10] border border-[#1e2025] rounded-[8px] px-3 py-1.5 shrink-0">
           <span className="text-[12.5px] text-[#8c8c8c] shrink-0">X-Axiom-Key:</span>
           <input
-            type="text"
+            type="password"
             value={customKeyToken}
             onChange={(e) => setCustomKeyToken(e.target.value)}
             placeholder="Paste base64 key token (name:secret)..."
@@ -662,7 +796,7 @@ export function Tester() {
           variant="primary"
           size="md"
           isLoading={isLoading}
-          onClick={handleExecute}
+          onClick={onExecuteClick}
           className="shrink-0 h-9 px-4 text-[14px] font-medium"
         >
           <Play className="w-3.5 h-3.5 mr-1.5 fill-current" />
@@ -842,6 +976,27 @@ export function Tester() {
           </div>
         </div>
       </div>
+
+      {/* Confirmation Dialog for DELETE Requests (F-05) */}
+      <ConfirmDialog
+        isOpen={confirmDeleteOpen}
+        onClose={() => setConfirmDeleteOpen(false)}
+        onConfirm={async () => {
+          setConfirmDeleteOpen(false);
+          await handleExecute();
+        }}
+        title="Confirm DELETE Request"
+        description={
+          <>
+            You are executing an HTTP DELETE mutation against{' '}
+            <span className="text-white font-mono text-[12px]">{urlPath}</span>.
+            This operation will permanently delete matching records.
+          </>
+        }
+        confirmLabel="Execute DELETE"
+        cancelLabel="Cancel"
+        variant="danger"
+      />
     </div>
   );
 }

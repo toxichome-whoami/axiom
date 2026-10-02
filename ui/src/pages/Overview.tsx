@@ -94,34 +94,39 @@ export function Overview({ onNavigate }: OverviewProps) {
     created: true,
   });
 
+  const [isLoading, setIsLoading] = useState(true);
+  const fetchGenRef = useRef(0);
+
+  // Pagination states for DB and Keys sub-tables
+  const [dbPage, setDbPage] = useState(1);
+  const [dbPageSize, setDbPageSize] = useState(10);
+  const [keyPage, setKeyPage] = useState(1);
+  const [keyPageSize, setKeyPageSize] = useState(10);
+
   const loadData = useCallback(async () => {
+    const curGen = ++fetchGenRef.current;
     setIsRefreshing(true);
     try {
-      const [statusRes, healthRes, cacheRes, metricsRes, dbRes, keysRes] = await Promise.all([
-        api.getStatus().catch(() => null),
-        api.getHealth().catch(() => null),
-        api.getCacheStats().catch(() => null),
-        api.getMetricsSnapshot().catch(() => null),
-        api.listDatabases().catch(() => null),
-        api.listKeys().catch(() => null),
+      const [statusRes, healthRes, cacheRes, metricsRes, dbRes, keysRes] = await Promise.allSettled([
+        api.getStatus(),
+        api.getHealth(),
+        api.getCacheStats(),
+        api.getMetricsSnapshot(),
+        api.listDatabases(),
+        api.listKeys(),
       ]);
 
-      if (statusRes) {
-        setStatus(statusRes);
-      }
-      if (healthRes) {
-        setHealth(healthRes);
-      }
-      if (cacheRes) {
-        setCacheStats(cacheRes);
-      }
-      if (metricsRes) {
-        setMetrics(metricsRes);
-      }
+      if (curGen !== fetchGenRef.current) return;
 
-      if (dbRes?.databases && Array.isArray(dbRes.databases)) {
-        const rows: DatabaseRow[] = dbRes.databases.map((d: DatabaseRecordApi) => {
-          const isDown = healthRes?.databases?.[d.alias] === 'down';
+      if (statusRes.status === 'fulfilled') setStatus(statusRes.value);
+      if (healthRes.status === 'fulfilled') setHealth(healthRes.value);
+      if (cacheRes.status === 'fulfilled') setCacheStats(cacheRes.value);
+      if (metricsRes.status === 'fulfilled') setMetrics(metricsRes.value);
+
+      if (dbRes.status === 'fulfilled' && dbRes.value?.databases && Array.isArray(dbRes.value.databases)) {
+        const healthMap = healthRes.status === 'fulfilled' ? healthRes.value?.databases : {};
+        const rows: DatabaseRow[] = dbRes.value.databases.map((d: DatabaseRecordApi) => {
+          const isDown = healthMap?.[d.alias] === 'down';
           return {
             alias: d.alias,
             engine: d.engine,
@@ -133,8 +138,8 @@ export function Overview({ onNavigate }: OverviewProps) {
         setRawDbData(rows);
       }
 
-      if (keysRes?.keys && Array.isArray(keysRes.keys)) {
-        const rows: KeyRow[] = keysRes.keys.map((k: ApiKeyRecordApi) => {
+      if (keysRes.status === 'fulfilled' && keysRes.value?.keys && Array.isArray(keysRes.value.keys)) {
+        const rows: KeyRow[] = keysRes.value.keys.map((k: ApiKeyRecordApi) => {
           const isExpired = k.expires_at ? k.expires_at * 1000 < Date.now() : false;
           return {
             name: k.name,
@@ -147,7 +152,10 @@ export function Overview({ onNavigate }: OverviewProps) {
         setRawKeyData(rows);
       }
     } finally {
-      setIsRefreshing(false);
+      if (curGen === fetchGenRef.current) {
+        setIsRefreshing(false);
+        setIsLoading(false);
+      }
     }
   }, []);
 
@@ -539,9 +547,11 @@ export function Overview({ onNavigate }: OverviewProps) {
           {/* Refresh metrics button */}
           <button
             type="button"
+            disabled={isRefreshing}
             onClick={handleRefresh}
             title="Refresh metrics"
-            className="flex items-center justify-center h-8 w-8 text-[#8c8c8c] hover:text-white rounded-[8px] bg-[#0c0c0c] hover:bg-[#141414] border border-[#262626] hover:border-[#383838] transition-colors cursor-pointer shrink-0"
+            aria-label="Refresh metrics"
+            className="flex items-center justify-center h-8 w-8 text-[#8c8c8c] hover:text-white rounded-[8px] bg-[#0c0c0c] hover:bg-[#141414] border border-[#262626] hover:border-[#383838] transition-colors cursor-pointer shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin opacity-50' : ''}`} />
           </button>
@@ -946,13 +956,17 @@ export function Overview({ onNavigate }: OverviewProps) {
         <DataTable
           columns={activeDbColumns}
           data={filteredDbData}
+          isLoading={isLoading}
           ariaLabel="Active Database Pools"
           pagination={{
-            page: 1,
-            pageSize: 10,
+            page: dbPage,
+            pageSize: dbPageSize,
             totalCount: filteredDbData.length,
-            onPageChange: () => {},
-            onPageSizeChange: () => {},
+            onPageChange: setDbPage,
+            onPageSizeChange: (newSize) => {
+              setDbPageSize(newSize);
+              setDbPage(1);
+            },
           }}
         />
       )}
@@ -961,13 +975,17 @@ export function Overview({ onNavigate }: OverviewProps) {
         <DataTable
           columns={activeKeyColumns}
           data={filteredKeyData}
+          isLoading={isLoading}
           ariaLabel="Configured API Keys"
           pagination={{
-            page: 1,
-            pageSize: 10,
+            page: keyPage,
+            pageSize: keyPageSize,
             totalCount: filteredKeyData.length,
-            onPageChange: () => {},
-            onPageSizeChange: () => {},
+            onPageChange: setKeyPage,
+            onPageSizeChange: (newSize) => {
+              setKeyPageSize(newSize);
+              setKeyPage(1);
+            },
           }}
         />
       )}

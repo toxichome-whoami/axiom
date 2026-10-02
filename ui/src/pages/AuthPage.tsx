@@ -10,6 +10,7 @@ import React, { useState, useEffect } from 'react';
 import { Stepper, StepItem } from '../components/shared/Stepper';
 import { CustomSelect } from '../components/shared/CustomSelect';
 import { api } from '../api/client';
+import { getSessionToken } from '../api/session';
 import {
   Shield,
   Key,
@@ -31,7 +32,7 @@ import {
 } from 'lucide-react';
 
 interface AuthPageProps {
-  onLoginSuccess: (token: string, username: string) => void;
+  onLoginSuccess: (token: string, username: string, expiresAt?: number) => void;
   initialMode?: 'setup' | 'login';
 }
 
@@ -79,13 +80,14 @@ export function AuthPage({ onLoginSuccess, initialMode = 'login' }: AuthPageProp
   // Setup Wizard Step 3: Database Target
   const [dbAlias, setDbAlias] = useState('main_db');
   const [dbEngine, setDbEngine] = useState('PostgreSQL');
-  const [dbUrl, setDbUrl] = useState('postgres://postgres:password@127.0.0.1:5432/postgres');
+  const [dbUrl, setDbUrl] = useState('postgresql://127.0.0.1:5432/localdb');
   const [dbTesting, setDbTesting] = useState(false);
   const [dbTestSuccess, setDbTestSuccess] = useState<boolean | null>(null);
 
   // Setup Wizard Step 4: Token Generation
   const [copiedToken, setCopiedToken] = useState(false);
   const [generatedToken, setGeneratedToken] = useState('');
+  const [showGeneratedToken, setShowGeneratedToken] = useState(false);
 
   // ─── Initialization & Setup Status Probe ───────────────────────────────────
 
@@ -145,7 +147,8 @@ export function AuthPage({ onLoginSuccess, initialMode = 'login' }: AuthPageProp
       }
 
       const token = data.session_token || data.token || '';
-      onLoginSuccess(token, data.username);
+      setLoginPassword('');
+      onLoginSuccess(token, data.username, data.expires_at);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Invalid credentials or connection error.';
       setErrorMessage(msg);
@@ -289,8 +292,16 @@ export function AuthPage({ onLoginSuccess, initialMode = 'login' }: AuthPageProp
   }
 
   function handleFinishAndEnter() {
-    const sessionToken = localStorage.getItem('axiom_session_token') || 'setup_completed';
+    const sessionToken = getSessionToken();
+    if (!sessionToken) {
+      setErrorMessage('Active setup session not found. Please re-enter your credentials.');
+      setCurrentStep(2);
+      return;
+    }
     const user = adminUsername.trim() || 'admin';
+    setAdminPassword('');
+    setAdminConfirmPassword('');
+    setGeneratedToken('');
     onLoginSuccess(sessionToken, user);
   }
 
@@ -688,11 +699,19 @@ export function AuthPage({ onLoginSuccess, initialMode = 'login' }: AuthPageProp
                 </label>
                 <div className="flex items-center gap-1.5">
                   <input
-                    type="text"
+                    type={showGeneratedToken ? 'text' : 'password'}
                     readOnly
                     value={generatedToken}
                     className="h-10 flex-1 rounded-[8px] bg-[#141414] border border-[#262626] px-3 font-mono text-[12px] text-white outline-none"
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowGeneratedToken(!showGeneratedToken)}
+                    className="h-10 px-3 rounded-[8px] bg-[#141414] border border-[#262626] hover:bg-[#202020] text-white transition-colors cursor-pointer"
+                    title={showGeneratedToken ? 'Hide token' : 'Show token'}
+                  >
+                    {showGeneratedToken ? <EyeOff className="w-4 h-4 text-[#8c8c8c]" /> : <Eye className="w-4 h-4 text-[#8c8c8c]" />}
+                  </button>
                   <button
                     type="button"
                     onClick={handleCopyToken}
