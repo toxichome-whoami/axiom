@@ -97,7 +97,7 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, A
         // Fast-path: Check RAM cache for active session before hitting SQLite
         let cache_key = format!("sess:{}", session_id);
         if let Some(user_bytes) = axiom_cache::CacheEngine::get(&cache_key).await {
-            if let Ok(username) = String::from_utf8(user_bytes.to_vec()) {
+            if let Ok(username) = std::str::from_utf8(&user_bytes) {
                 let ctx = AuthContext {
                     api_key_name: format!("user:{}", username),
                     role: Some("admin".to_string()),

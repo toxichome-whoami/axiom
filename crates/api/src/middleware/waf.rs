@@ -38,7 +38,7 @@ pub async fn waf_middleware(req: Request, next: Next) -> Result<Response, AxiomE
     }
 
     let uri = req.uri();
-    let raw_uri = uri.to_string();
+    let raw_uri = uri.path_and_query().map(|pq| pq.as_str()).unwrap_or_else(|| uri.path());
     let path = uri.path();
     let query = uri.query().unwrap_or("");
 
@@ -50,7 +50,7 @@ pub async fn waf_middleware(req: Request, next: Next) -> Result<Response, AxiomE
         ));
     }
 
-    if path.contains('\0') || query.contains('\0') || raw_uri.to_lowercase().contains("%00") {
+    if path.contains('\0') || query.contains('\0') || raw_uri.contains("%00") {
         return Err(AxiomError::new(
             "WAF_NULL_BYTE",
             "Null byte detected",

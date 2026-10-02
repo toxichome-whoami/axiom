@@ -291,18 +291,18 @@ impl DatabaseEngine for MssqlDatabaseEngine {
                 truncated = true;
                 break;
             }
-            let mut json_obj = serde_json::Map::new();
-            for col in row.columns() {
-                let name = col.name();
-                if let Ok(Some(s)) = row.try_get::<&str, _>(name) {
-                    json_obj.insert(name.to_string(), Value::String(s.to_string()));
-                } else if let Ok(Some(i)) = row.try_get::<i32, _>(name) {
-                    json_obj.insert(name.to_string(), Value::Number(i.into()));
-                } else if let Ok(Some(b)) = row.try_get::<bool, _>(name) {
-                    json_obj.insert(name.to_string(), Value::Bool(b));
+            let mut json_obj = serde_json::Map::with_capacity(column_names.len());
+            for name in &column_names {
+                let val = if let Ok(Some(s)) = row.try_get::<&str, _>(name.as_str()) {
+                    Value::String(s.to_string())
+                } else if let Ok(Some(i)) = row.try_get::<i32, _>(name.as_str()) {
+                    Value::Number(i.into())
+                } else if let Ok(Some(b)) = row.try_get::<bool, _>(name.as_str()) {
+                    Value::Bool(b)
                 } else {
-                    json_obj.insert(name.to_string(), Value::Null);
-                }
+                    Value::Null
+                };
+                json_obj.insert(name.clone(), val);
             }
             result_rows.push(Value::Object(json_obj));
         }

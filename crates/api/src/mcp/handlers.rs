@@ -491,7 +491,7 @@ async fn exec_insert(
     }
 
     let first_row = &rows_to_insert[0];
-    let columns: Vec<String> = first_row.keys().map(|k| filter_builder::sanitize_ident(k)).collect();
+    let columns: Vec<std::borrow::Cow<'_, str>> = first_row.keys().map(|k| filter_builder::sanitize_ident(k)).collect();
     let cols_str = columns.join(", ");
 
     let mut all_params = Vec::new();
@@ -500,7 +500,7 @@ async fn exec_insert(
     for row in &rows_to_insert {
         let mut row_placeholders = Vec::new();
         for col in &columns {
-            let val = row.get(col).unwrap_or(&Value::Null);
+            let val = row.get(col.as_ref()).unwrap_or(&Value::Null);
             all_params.push(val.clone());
             row_placeholders.push("?");
         }

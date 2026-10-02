@@ -148,13 +148,13 @@ async fn execute_query(
 
     // Params can arrive as a JSON array [val1, val2] or object {"1": val1, "2": val2}.
     let mut params_array = Vec::new();
-    if let Some(ref p) = payload.params {
+    if let Some(p) = payload.params {
         match p {
             serde_json::Value::Array(arr) => {
-                params_array = arr.clone();
+                params_array = arr;
             }
-            serde_json::Value::Object(map) => {
-                let mut keys: Vec<_> = map.keys().collect();
+            serde_json::Value::Object(mut map) => {
+                let mut keys: Vec<String> = map.keys().cloned().collect();
                 keys.sort_by(|a, b| {
                     match (a.parse::<i32>(), b.parse::<i32>()) {
                         (Ok(n1), Ok(n2)) => n1.cmp(&n2),
@@ -162,8 +162,8 @@ async fn execute_query(
                     }
                 });
                 for k in keys {
-                    if let Some(val) = map.get(k) {
-                        params_array.push(val.clone());
+                    if let Some(val) = map.remove(&k) {
+                        params_array.push(val);
                     }
                 }
             }

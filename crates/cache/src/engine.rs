@@ -82,13 +82,23 @@ impl CacheStats {
 
 // ─── L1 Memory Entry Model ─────────────────────────────────────────────────
 
-#[derive(Clone)]
 struct L1Entry {
     value: Bytes,
     expires_at: u64,
-    last_accessed: u64,
+    last_accessed: AtomicU64,
     #[allow(dead_code)]
     durability: Durability,
+}
+
+impl Clone for L1Entry {
+    fn clone(&self) -> Self {
+        Self {
+            value: self.value.clone(),
+            expires_at: self.expires_at,
+            last_accessed: AtomicU64::new(self.last_accessed.load(Ordering::Relaxed)),
+            durability: self.durability,
+        }
+    }
 }
 
 // ─── Engine Statics ────────────────────────────────────────────────────────
@@ -171,10 +181,10 @@ impl CacheEngine {
     pub async fn get(key: &str) -> Option<Bytes> {
         let now = current_unix_secs();
 
-        // 1. Check L1 RAM cache (ultra-fast sub-microsecond lookup)
-        if let Some(mut entry) = L1_CACHE.get_mut(key) {
+        // 1. Check L1 RAM cache (ultra-fast sub-microsecond shared read lock)
+        if let Some(entry) = L1_CACHE.get(key) {
             if entry.expires_at > now {
-                entry.last_accessed = current_unix_nanos();
+                entry.last_accessed.store(current_unix_nanos(), Ordering::Relaxed);
                 STATS.hits_l1.fetch_add(1, Ordering::Relaxed);
                 return Some(entry.value.clone());
             }
@@ -204,7 +214,7 @@ impl CacheEngine {
                             L1Entry {
                                 value: val_bytes.clone(),
                                 expires_at,
-                                last_accessed: current_unix_nanos(),
+                                last_accessed: AtomicU64::new(current_unix_nanos()),
                                 durability,
                             },
                         );
@@ -236,7 +246,7 @@ impl CacheEngine {
             L1Entry {
                 value: value.clone(),
                 expires_at,
-                last_accessed: current_unix_nanos(),
+                last_accessed: AtomicU64::new(current_unix_nanos()),
                 durability,
             },
         );
@@ -354,12 +364,12 @@ impl CacheEngine {
                 if let Ok(c) = std::str::from_utf8(&entry.value).map(|s| s.parse::<u32>().unwrap_or(0)) {
                     count = c + 1;
                     entry.value = Bytes::from(count.to_string());
-                    entry.last_accessed = current_unix_nanos();
+                    entry.last_accessed.store(current_unix_nanos(), Ordering::Relaxed);
                 }
             } else {
                 entry.value = Bytes::from("1");
                 entry.expires_at = now + window_secs as u64;
-                entry.last_accessed = current_unix_nanos();
+                entry.last_accessed.store(current_unix_nanos(), Ordering::Relaxed);
             }
         } else {
             Self::evict_if_needed();
@@ -368,7 +378,7 @@ impl CacheEngine {
                 L1Entry {
                     value: Bytes::from("1"),
                     expires_at: now + window_secs as u64,
-                    last_accessed: current_unix_nanos(),
+                    last_accessed: AtomicU64::new(current_unix_nanos()),
                     durability: Durability::Ephemeral,
                 },
             );
@@ -383,11 +393,11 @@ impl CacheEngine {
                         .and_then(|s| s.parse::<u32>().ok())
                         .unwrap_or(0) + 1;
                     entry.value = Bytes::from(penalty_count.to_string());
-                    entry.last_accessed = current_unix_nanos();
+                    entry.last_accessed.store(current_unix_nanos(), Ordering::Relaxed);
                 } else {
                     entry.value = Bytes::from("1");
                     entry.expires_at = now + penalty_cooldown as u64;
-                    entry.last_accessed = current_unix_nanos();
+                    entry.last_accessed.store(current_unix_nanos(), Ordering::Relaxed);
                 }
             } else {
                 Self::evict_if_needed();
@@ -396,7 +406,7 @@ impl CacheEngine {
                     L1Entry {
                         value: Bytes::from("1"),
                         expires_at: now + penalty_cooldown as u64,
-                        last_accessed: current_unix_nanos(),
+                        last_accessed: AtomicU64::new(current_unix_nanos()),
                         durability: Durability::Ephemeral,
                     },
                 );
@@ -408,18 +418,27 @@ impl CacheEngine {
     }
 
     /// Enforces true LRU eviction by removing the entry with the oldest access timestamp.
+    /// Employs sampled batch eviction (Redis-style) to avoid full O(N) table scans on the hot path.
     fn evict_if_needed() {
         let max = MAX_L1_ENTRIES.load(Ordering::Relaxed) as usize;
-        if L1_CACHE.len() >= max {
-            // Find key with lowest last_accessed timestamp
-            let oldest_key = L1_CACHE
+        let current_len = L1_CACHE.len();
+        if current_len >= max {
+            let mut sample: Vec<(String, u64)> = L1_CACHE
                 .iter()
-                .min_by_key(|entry| entry.value().last_accessed)
-                .map(|entry| entry.key().clone());
+                .take(64)
+                .map(|entry| (entry.key().clone(), entry.value().last_accessed.load(Ordering::Relaxed)))
+                .collect();
 
-            if let Some(k) = oldest_key {
-                L1_CACHE.remove(&k);
-                STATS.evictions.fetch_add(1, Ordering::Relaxed);
+            if !sample.is_empty() {
+                sample.sort_unstable_by_key(|(_, ts)| *ts);
+                // Evict enough to make room; when max is large, amortize by evicting up to 16
+                let target_evictions = (current_len.saturating_sub(max) + 1).max(if max > 64 { 16 } else { 1 });
+                let to_evict = target_evictions.min(sample.len()).min(current_len);
+                for (k, _) in sample.into_iter().take(to_evict) {
+                    if L1_CACHE.remove(&k).is_some() {
+                        STATS.evictions.fetch_add(1, Ordering::Relaxed);
+                    }
+                }
             }
         }
     }

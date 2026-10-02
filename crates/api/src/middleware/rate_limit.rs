@@ -175,12 +175,13 @@ pub async fn rate_limit_middleware(req: Request, next: Next) -> Result<Response,
     let mut response = next.run(req).await;
 
     let remaining = std::cmp::max(0, effective_limit - effective_count);
-    response
-        .headers_mut()
-        .insert("x-ratelimit-limit", effective_limit.to_string().parse().unwrap());
+    response.headers_mut().insert(
+        "x-ratelimit-limit",
+        axum::http::HeaderValue::from(effective_limit.max(0) as u64),
+    );
     response.headers_mut().insert(
         "x-ratelimit-remaining",
-        remaining.to_string().parse().unwrap(),
+        axum::http::HeaderValue::from(remaining as u64),
     );
 
     Ok(response)

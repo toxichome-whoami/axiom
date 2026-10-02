@@ -15,11 +15,17 @@ use std::collections::HashMap;
 ///  - Precondition: `ident` string reference.
 ///  - Returns sanitized string safe for unquoted SQL identifier placement.
 ///  - Idempotent: Yes. Pure function with zero allocations beyond the returned string.
-pub fn sanitize_ident(ident: &str) -> String {
-    ident
-        .chars()
-        .filter(|c| c.is_alphanumeric() || *c == '_')
-        .collect()
+pub fn sanitize_ident(ident: &str) -> std::borrow::Cow<'_, str> {
+    if ident.chars().all(|c| c.is_alphanumeric() || c == '_') {
+        std::borrow::Cow::Borrowed(ident)
+    } else {
+        std::borrow::Cow::Owned(
+            ident
+                .chars()
+                .filter(|c| c.is_alphanumeric() || *c == '_')
+                .collect(),
+        )
+    }
 }
 
 /// Recursively builds a parameterized SQL WHERE clause and corresponding positional parameter values.

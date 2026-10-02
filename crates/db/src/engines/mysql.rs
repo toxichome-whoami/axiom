@@ -251,10 +251,9 @@ impl DatabaseEngine for MysqlDatabaseEngine {
                 break;
             }
 
-            let mut json_obj = serde_json::Map::new();
-            for col in row.columns() {
-                let name = col.name().to_string();
-                let val = if let Ok(s) = row.try_get::<String, _>(col.ordinal()) {
+            let mut json_obj = serde_json::Map::with_capacity(column_names.len());
+            for (idx, name) in column_names.iter().enumerate() {
+                let val = if let Ok(s) = row.try_get::<String, _>(idx) {
                     if (s.starts_with('{') && s.ends_with('}')) || (s.starts_with('[') && s.ends_with(']')) {
                         if let Ok(parsed) = serde_json::from_str::<Value>(&s) {
                             parsed
@@ -264,20 +263,20 @@ impl DatabaseEngine for MysqlDatabaseEngine {
                     } else {
                         Value::String(s)
                     }
-                } else if let Ok(i) = row.try_get::<i64, _>(col.ordinal()) {
+                } else if let Ok(i) = row.try_get::<i64, _>(idx) {
                     Value::Number(i.into())
-                } else if let Ok(i) = row.try_get::<i32, _>(col.ordinal()) {
+                } else if let Ok(i) = row.try_get::<i32, _>(idx) {
                     Value::Number(i.into())
-                } else if let Ok(f) = row.try_get::<f64, _>(col.ordinal()) {
+                } else if let Ok(f) = row.try_get::<f64, _>(idx) {
                     serde_json::Number::from_f64(f).map(Value::Number).unwrap_or(Value::Null)
-                } else if let Ok(f) = row.try_get::<f32, _>(col.ordinal()) {
+                } else if let Ok(f) = row.try_get::<f32, _>(idx) {
                     serde_json::Number::from_f64(f as f64).map(Value::Number).unwrap_or(Value::Null)
-                } else if let Ok(b) = row.try_get::<bool, _>(col.ordinal()) {
+                } else if let Ok(b) = row.try_get::<bool, _>(idx) {
                     Value::Bool(b)
                 } else {
                     Value::Null
                 };
-                json_obj.insert(name, val);
+                json_obj.insert(name.clone(), val);
             }
             result_rows.push(Value::Object(json_obj));
         }

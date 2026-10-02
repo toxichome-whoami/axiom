@@ -241,7 +241,7 @@ impl DatabaseEngine for LibsqlDatabaseEngine {
                 truncated = true;
                 break;
             }
-            let mut json_obj = serde_json::Map::new();
+            let mut json_obj = serde_json::Map::with_capacity(column_names.len());
             for (i, col_name) in column_names.iter().enumerate() {
                 let val = match row.get_value(i as i32) {
                     Ok(libsql::Value::Text(s)) => {

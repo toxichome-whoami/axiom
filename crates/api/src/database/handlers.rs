@@ -170,22 +170,22 @@ impl QueryExecutionPipeline {
         }
 
         // Format placeholders based on engine dialect
-        let formatted_sql = if dialect_name == "postgres" || dialect_name == "any" {
+        let formatted_sql = if (dialect_name == "postgres" || dialect_name == "any") && sql.contains('?') {
             // Primitive placeholder conversion for postgres `$1, $2`
-            let mut final_sql = String::new();
+            use std::fmt::Write;
+            let mut final_sql = String::with_capacity(sql.len() + 16);
             let mut param_index = 1;
-            let chars = sql.chars().peekable();
-            for c in chars {
+            for c in sql.chars() {
                 if c == '?' {
-                    final_sql.push_str(&format!("${}", param_index));
+                    let _ = write!(final_sql, "${}", param_index);
                     param_index += 1;
                 } else {
                     final_sql.push(c);
                 }
             }
-            final_sql
+            std::borrow::Cow::Owned(final_sql)
         } else {
-            sql.to_string()
+            std::borrow::Cow::Borrowed(sql)
         };
 
         let start_time = std::time::Instant::now();
@@ -194,12 +194,13 @@ impl QueryExecutionPipeline {
             let mut exec_err = None;
             for (idx, stmt) in statements.iter().enumerate() {
                 let stmt_str = stmt.to_string();
-                let stmt_formatted = if dialect_name == "postgres" || dialect_name == "any" {
-                    let mut s = String::new();
+                let stmt_formatted = if (dialect_name == "postgres" || dialect_name == "any") && stmt_str.contains('?') {
+                    use std::fmt::Write;
+                    let mut s = String::with_capacity(stmt_str.len() + 16);
                     let mut p_idx = 1;
                     for c in stmt_str.chars() {
                         if c == '?' {
-                            s.push_str(&format!("${}", p_idx));
+                            let _ = write!(s, "${}", p_idx);
                             p_idx += 1;
                         } else {
                             s.push(c);
@@ -423,13 +424,13 @@ pub async fn insert_rows(
 
     // Dynamically build a parameterized multi-insert query from the provided rows.
     let first_row = &rows_to_insert[0];
-    let column_pairs: Vec<(&String, String)> = first_row
+    let column_pairs: Vec<(&String, std::borrow::Cow<'_, str>)> = first_row
         .keys()
         .map(|k| (k, crate::database::filter_builder::sanitize_ident(k)))
         .collect();
     let cols_str = column_pairs
         .iter()
-        .map(|(_, col)| col.as_str())
+        .map(|(_, col)| col.as_ref())
         .collect::<Vec<_>>()
         .join(", ");
 
@@ -498,10 +499,9 @@ pub async fn fetch_rows(
         format!("WHERE {}", where_clauses.join(" AND "))
     };
 
-    let order_col = crate::database::filter_builder::sanitize_ident(
-        &params.sort.clone().unwrap_or_else(|| "id".to_string()),
-    );
-    let order_dir = if params.order.to_lowercase() == "desc" {
+    let sort_col = params.sort.as_deref().unwrap_or("id");
+    let order_col = crate::database::filter_builder::sanitize_ident(sort_col);
+    let order_dir = if params.order.eq_ignore_ascii_case("desc") {
         "DESC"
     } else {
         "ASC"
@@ -538,12 +538,14 @@ pub async fn fetch_rows(
     let (result, _) =
         QueryExecutionPipeline::run_query(&db_name, &sql, values, &auth, &db_cfg).await?;
 
+    let result_inner = Arc::try_unwrap(result).unwrap_or_else(|arc| (*arc).clone());
+
     let mut next_cursor = None;
-    if let Some(rows) = &result.rows {
+    if let Some(ref rows) = result_inner.rows {
         if !rows.is_empty() && rows.len() == limit as usize {
             if let Some(last_row) = rows.last() {
                 // Determine cursor value by grabbing the column we sorted by
-                if let Some(val) = last_row.get(&order_col) {
+                if let Some(val) = last_row.get(&*order_col) {
                     next_cursor = match val {
                         Value::String(s) => Some(s.clone()),
                         Value::Number(n) => Some(n.to_string()),
@@ -554,10 +556,12 @@ pub async fn fetch_rows(
         }
     }
 
+    let rows_data = result_inner.rows.unwrap_or_default();
+
     Ok(axum::Json(serde_json::json!({
         "success": true,
         "data": {
-            "rows": result.rows,
+            "rows": rows_data,
             "pagination": {
                 "limit": limit,
                 "has_more": next_cursor.is_some(),
