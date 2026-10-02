@@ -24,7 +24,7 @@ struct Assets;
 /// required for SPA hash routing and reactive DOM updates, while forbidding embedding (clickjacking defense).
 pub const UI_CSP: &str = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: https:; connect-src 'self'; frame-ancestors 'none';";
 
-/// Constructs the Web UI sub-router mounted under `/ui`.
+/// Constructs the Web UI sub-router mounted under `/system`.
 /// CONTRACT:
 ///  - Returns Router serving embedded HTML/CSS/JS assets.
 ///  - Falls back to `index.html` on unmatched paths for client-side SPA routing.
@@ -63,7 +63,7 @@ fn get_mime(path: &str) -> &'static str {
 async fn static_handler(uri: Uri) -> impl IntoResponse {
     let raw_path = uri.path();
     let path = raw_path
-        .trim_start_matches("/ui")
+        .trim_start_matches("/system")
         .trim_start_matches('/');
 
     if path.is_empty() {
@@ -149,36 +149,40 @@ mod tests {
         use tower::ServiceExt;
         let app = crate::server::app::create_app();
 
-        let res = app.clone().oneshot(Request::get("/ui").body(axum::body::Body::empty()).unwrap()).await.unwrap();
-        assert_eq!(res.status(), StatusCode::OK);
+        let res_sys = app.clone().oneshot(Request::get("/system").body(axum::body::Body::empty()).unwrap()).await.unwrap();
+        assert_eq!(res_sys.status(), StatusCode::OK);
 
-        let res2 = app.clone().oneshot(Request::get("/ui/").body(axum::body::Body::empty()).unwrap()).await.unwrap();
+        let res2 = app.clone().oneshot(Request::get("/system/").body(axum::body::Body::empty()).unwrap()).await.unwrap();
         assert_eq!(res2.status(), StatusCode::OK);
 
-        let res3 = app.clone().oneshot(Request::get("/ui/databases").body(axum::body::Body::empty()).unwrap()).await.unwrap();
+        let res3 = app.clone().oneshot(Request::get("/system/databases").body(axum::body::Body::empty()).unwrap()).await.unwrap();
         assert_eq!(res3.status(), StatusCode::OK);
         assert_eq!(
             res3.headers().get("content-security-policy").unwrap(),
             UI_CSP
         );
 
-        let res_keys = app.clone().oneshot(Request::get("/ui/keys").body(axum::body::Body::empty()).unwrap()).await.unwrap();
+        let res_keys = app.clone().oneshot(Request::get("/system/keys").body(axum::body::Body::empty()).unwrap()).await.unwrap();
         assert_eq!(res_keys.status(), StatusCode::OK);
 
-        let res_roles = app.clone().oneshot(Request::get("/ui/roles").body(axum::body::Body::empty()).unwrap()).await.unwrap();
+        let res_roles = app.clone().oneshot(Request::get("/system/roles").body(axum::body::Body::empty()).unwrap()).await.unwrap();
         assert_eq!(res_roles.status(), StatusCode::OK);
 
-        let res_metrics = app.clone().oneshot(Request::get("/ui/metrics").body(axum::body::Body::empty()).unwrap()).await.unwrap();
+        let res_metrics = app.clone().oneshot(Request::get("/system/metrics").body(axum::body::Body::empty()).unwrap()).await.unwrap();
         assert_eq!(res_metrics.status(), StatusCode::OK);
 
-        let res_audit = app.clone().oneshot(Request::get("/ui/audit").body(axum::body::Body::empty()).unwrap()).await.unwrap();
+        let res_audit = app.clone().oneshot(Request::get("/system/audit").body(axum::body::Body::empty()).unwrap()).await.unwrap();
         assert_eq!(res_audit.status(), StatusCode::OK);
+
+        // Verify /ui is no longer served
+        let res_old_ui = app.clone().oneshot(Request::get("/ui").body(axum::body::Body::empty()).unwrap()).await.unwrap();
+        assert_ne!(res_old_ui.status(), StatusCode::OK);
 
         // Find the embedded CSS asset dynamically so hash updates never break tests
         let css_file = Assets::iter()
             .find(|p| p.ends_with(".css"))
             .expect("Embedded bundle must include at least one compiled CSS stylesheet");
-        let asset_url = format!("/ui/{}", css_file);
+        let asset_url = format!("/system/{}", css_file);
 
         let res_css = app.clone().oneshot(Request::get(&asset_url).body(axum::body::Body::empty()).unwrap()).await.unwrap();
         assert_eq!(res_css.status(), StatusCode::OK);

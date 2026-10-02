@@ -130,7 +130,7 @@ pub async fn rate_limit_middleware(req: Request, next: Next) -> Result<Response,
                         let key_limit = config
                             .api_key
                             .get(key_name)
-                            .map(|k| if k.rate_limit_override > 0 { k.rate_limit_override as i32 } else { ip_limit })
+                            .map(|k| if k.rate_limit_override > 0 { k.rate_limit_override } else { ip_limit })
                             .unwrap_or(ip_limit);
 
                         let key_rl_key = format!("rl:key:{}", key_name);

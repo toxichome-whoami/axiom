@@ -44,15 +44,15 @@ impl DatabasePoolManager {
         let config = ConfigManager::get();
         let db_config = if let Some(cfg) = config.database.get(alias) {
             cfg.clone()
-        } else if let Some(snap_db) = axiom_metadata::get_snapshot().databases.get(alias) {
+        } else {
+            let snapshot = axiom_metadata::get_snapshot();
+            let snap_db = snapshot.databases.get(alias)?;
             axiom_core::config::schema::DatabaseDefConfig {
                 url: snap_db.url.clone(),
                 pool_min: snap_db.pool_min as i32,
                 pool_max: snap_db.pool_max as i32,
                 ..Default::default()
             }
-        } else {
-            return None;
         };
 
         // Do not attempt to connect if the URL is empty

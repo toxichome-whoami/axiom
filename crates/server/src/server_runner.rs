@@ -50,15 +50,20 @@ pub async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
     axiom_api::core::health::init_health_timer();
     let app = axiom_api::server::app::create_app();
 
-    // 5. Resolve host and port from configuration with safe fallback to loopback
+    // 5. Resolve host and port from configuration with safe fallback
     let config = axiom_core::ConfigManager::get();
-    let host_ip = config.server.host.parse::<std::net::IpAddr>().unwrap_or_else(|_| {
-        eprintln!(
-            "Invalid host IP '{}' in config.toml, falling back to 0.0.0.0",
-            config.server.host
-        );
-        std::net::IpAddr::V4(std::net::Ipv4Addr::new(0, 0, 0, 0))
-    });
+    let host_str = config.server.host.trim();
+    let host_ip = if host_str.eq_ignore_ascii_case("localhost") {
+        std::net::IpAddr::V4(std::net::Ipv4Addr::new(127, 0, 0, 1))
+    } else {
+        host_str.parse::<std::net::IpAddr>().unwrap_or_else(|_| {
+            eprintln!(
+                "Invalid host IP '{}' in config.toml, falling back to 0.0.0.0",
+                config.server.host
+            );
+            std::net::IpAddr::V4(std::net::Ipv4Addr::new(0, 0, 0, 0))
+        })
+    };
     let addr = SocketAddr::new(host_ip, config.server.port as u16);
     let listener = TcpListener::bind(addr).await?;
 
@@ -68,7 +73,7 @@ pub async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
         addr
     );
     println!("Axiom Server v{} running on http://{}", env!("CARGO_PKG_VERSION"), addr);
-    println!("Web UI dashboard available at http://{}/ui/", addr);
+    println!("Web UI dashboard available at http://{}/system", addr);
 
     axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>())
         .with_graceful_shutdown(shutdown_signal())

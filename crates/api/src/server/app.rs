@@ -28,7 +28,7 @@ async fn fallback_handler() -> impl IntoResponse {
 }
 
 async fn health_check() -> impl IntoResponse {
-    Json(json!({"status": "ok", "version": env!("CARGO_PKG_VERSION")}))
+    Json(json!({"status": "ok"}))
 }
 
 async fn favicon() -> impl IntoResponse {
@@ -38,11 +38,49 @@ async fn favicon() -> impl IntoResponse {
     )
 }
 
-async fn prometheus_metrics() -> impl IntoResponse {
-    (
-        [(header::CONTENT_TYPE, "text/plain; version=0.0.4; charset=utf-8")],
-        crate::metrics::MetricsEngine::render_prometheus(),
-    )
+#[derive(serde::Deserialize)]
+pub struct MetricsQuery {
+    pub format: Option<String>,
+}
+
+async fn prometheus_metrics(
+    axum::extract::Query(query): axum::extract::Query<MetricsQuery>,
+    headers: axum::http::HeaderMap,
+    axum::extract::Extension(auth): axum::extract::Extension<axiom_core::AuthContext>,
+) -> Result<axum::response::Response, AxiomError> {
+    if !auth.full_admin {
+        return Err(AxiomError::new(
+            "FORBIDDEN",
+            "Admin privileges required to access metrics",
+            StatusCode::FORBIDDEN,
+        ));
+    }
+
+    let is_json = query.format.as_deref() == Some("json")
+        || headers
+            .get(header::ACCEPT)
+            .and_then(|h| h.to_str().ok())
+            .map(|a| a.contains("application/json"))
+            .unwrap_or(false);
+
+    if is_json {
+        let snapshot = crate::metrics::MetricsEngine::snapshot();
+        let body = serde_json::to_string(&serde_json::json!({
+            "success": true,
+            "data": snapshot,
+            "error": serde_json::Value::Null
+        }))
+        .unwrap_or_default();
+        return Ok(axum::response::Response::builder()
+            .header(header::CONTENT_TYPE, "application/json; charset=utf-8")
+            .body(axum::body::Body::from(body))
+            .unwrap());
+    }
+
+    Ok(axum::response::Response::builder()
+        .header(header::CONTENT_TYPE, "text/plain; version=0.0.4; charset=utf-8")
+        .body(axum::body::Body::from(crate::metrics::MetricsEngine::render_prometheus()))
+        .unwrap())
 }
 
 pub fn create_app() -> Router {
@@ -116,12 +154,15 @@ pub fn create_app() -> Router {
         .nest("/api/v1", api_routes)
         .nest("/admin/v1", admin_routes)
         .nest("/mcp/v1", mcp_routes)
-        .nest("/ui", ui_routes)
-        .route("/ui/", get(crate::ui::index_handler))
+        .nest("/system", ui_routes)
+        .route("/system/", get(crate::ui::index_handler))
         .layer(axum::extract::Extension(config.clone()))
         .merge(core_routes)
         .route("/favicon.ico", get(favicon))
-        .route("/metrics", get(prometheus_metrics))
+        .route(
+            "/metrics",
+            get(prometheus_metrics).layer(middleware::from_fn(auth_middleware)),
+        )
         .fallback(fallback_handler)
         .layer(middleware::from_fn(crate::middleware::metrics::metrics_middleware))
         .layer(cors)

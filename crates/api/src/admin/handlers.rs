@@ -758,7 +758,7 @@ pub async fn get_audit_log(
         .await
         .map_err(|e| AxiomError::new("AUDIT_QUERY_FAILED", &e, StatusCode::INTERNAL_SERVER_ERROR))?;
 
-    let has_more = logs.len() == limit as usize;
+    let has_more = logs.len() == limit;
     let next_cursor = if has_more {
         logs.last().map(|r| r.id.to_string())
     } else {
@@ -779,13 +779,21 @@ pub async fn get_audit_log(
     })))
 }
 
-/// Returns Prometheus exposition format metrics for admin monitoring.
+#[derive(Debug, Deserialize)]
+pub struct MetricsQuery {
+    pub format: Option<String>,
+}
+
+/// Returns Prometheus exposition format or JSON metrics for admin monitoring.
 /// CONTRACT:
 ///  - Precondition: Verified admin AuthContext.
-///  - Returns text/plain formatted Prometheus metrics.
+///  - Supports `?format=json` or `Accept: application/json` for structured JSON output.
+///  - Defaults to text/plain formatted Prometheus metrics.
 ///  - Side effects: None.
 ///  - Idempotent: Yes.
 pub async fn get_metrics(
+    Query(query): Query<MetricsQuery>,
+    headers: axum::http::HeaderMap,
     Extension(auth): Extension<AuthContext>,
 ) -> Result<impl IntoResponse, AxiomError> {
     if !auth.full_admin {
@@ -796,11 +804,32 @@ pub async fn get_metrics(
         ));
     }
 
+    let is_json = query.format.as_deref() == Some("json")
+        || headers
+            .get(axum::http::header::ACCEPT)
+            .and_then(|h| h.to_str().ok())
+            .map(|a| a.contains("application/json"))
+            .unwrap_or(false);
+
+    if is_json {
+        let snapshot = crate::metrics::MetricsEngine::snapshot();
+        let body = serde_json::to_string(&json!({
+            "success": true,
+            "data": snapshot,
+            "error": Value::Null
+        }))
+        .unwrap_or_default();
+        return Ok(axum::response::Response::builder()
+            .header(axum::http::header::CONTENT_TYPE, "application/json; charset=utf-8")
+            .body(axum::body::Body::from(body))
+            .unwrap());
+    }
+
     let metrics_text = crate::metrics::MetricsEngine::render_prometheus();
-    Ok((
-        [(axum::http::header::CONTENT_TYPE, "text/plain; version=0.0.4; charset=utf-8")],
-        metrics_text,
-    ))
+    Ok(axum::response::Response::builder()
+        .header(axum::http::header::CONTENT_TYPE, "text/plain; version=0.0.4; charset=utf-8")
+        .body(axum::body::Body::from(metrics_text))
+        .unwrap())
 }
 
 /// Detailed health check for administrators.

@@ -55,18 +55,17 @@ impl MemoryCache {
             }
         }
 
-        let current_count;
         let mut rl_entry = RATE_LIMIT_CACHE
             .entry(limits_key.to_string())
             .or_insert((0, now + window as u64));
-        if rl_entry.1 < now {
+        let current_count = if rl_entry.1 < now {
             rl_entry.0 = 1;
             rl_entry.1 = now + window as u64;
-            current_count = 1;
+            1
         } else {
             rl_entry.0 += 1;
-            current_count = rl_entry.0;
-        }
+            rl_entry.0
+        };
 
         if current_count > limit {
             let mut penalty_entry = PENALTY_CACHE

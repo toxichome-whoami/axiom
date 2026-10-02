@@ -50,7 +50,6 @@ pub fn get_uptime() -> f64 {
     START_TIME.elapsed().as_secs_f64()
 }
 
-const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 use crate::middleware::auth::auth_middleware;
 use axum::middleware;
@@ -80,7 +79,6 @@ pub fn init_health_timer() {
 async fn root() -> Json<Value> {
     Json(json!({
         "name": "Axiom",
-        "version": VERSION,
         "status": "online"
     }))
 }
@@ -94,23 +92,19 @@ async fn health(
 ) -> Result<Json<Value>, axiom_core::AxiomError> {
     let config = ConfigManager::get();
 
-    let mut db_status = serde_json::Map::new();
     let mut all_dbs_up = true;
 
     for alias in config.database.keys() {
         if let Some(engine) = DatabasePoolManager::get_engine(alias).await {
-            let is_up = engine.health_check().await;
-            db_status.insert(alias.clone(), json!(if is_up { "up" } else { "down" }));
-            if !is_up {
+            if !engine.health_check().await {
                 all_dbs_up = false;
+                break;
             }
         } else {
-            db_status.insert(alias.clone(), json!("down"));
             all_dbs_up = false;
+            break;
         }
     }
-
-    let (cpu_percent, memory_used_mb) = tokio::task::spawn_blocking(get_system_stats).await.unwrap_or((0.0, 0));
 
     if !ctx.full_admin {
         return Ok(Json(json!({
@@ -120,19 +114,6 @@ async fn health(
 
     Ok(Json(json!({
         "status": if all_dbs_up { "healthy" } else { "degraded" },
-        "checks": {
-            "server": {
-                "status": "up",
-                "host": &config.server.host,
-                "port": config.server.port,
-                "max_connections": config.server.max_connections
-            },
-            "databases": db_status
-        },
-        "system": {
-            "memory_used_mb": memory_used_mb,
-            "cpu_percent": cpu_percent,
-            "uptime_seconds": START_TIME.elapsed().as_secs()
-        }
+        "uptime_seconds": START_TIME.elapsed().as_secs()
     })))
 }
