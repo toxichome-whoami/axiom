@@ -122,53 +122,68 @@ pub async fn rate_limit_middleware(req: Request, next: Next) -> Result<Response,
     let mut effective_limit = ip_limit;
     let mut effective_count = ip_current_count as i32;
 
+    let mut key_name_opt = None;
     if let Some(key_header) = req.headers().get("x-axiom-key").or_else(|| req.headers().get("x-api-key")) {
         if let Ok(token_str) = key_header.to_str() {
             if let Ok(decoded) = BASE64_STANDARD.decode(token_str) {
                 if let Ok(ident) = String::from_utf8(decoded) {
                     if let Some((key_name, _)) = ident.split_once(':') {
-                        let snapshot = axiom_metadata::snapshot::get_snapshot();
-                        let key_limit = snapshot
-                            .keys
-                            .get(key_name)
-                            .and_then(|k| if k.rate_limit_override > 0 { Some(k.rate_limit_override as i32) } else { None })
-                            .or_else(|| {
-                                config
-                                    .api_key
-                                    .get(key_name)
-                                    .map(|k| if k.rate_limit_override > 0 { k.rate_limit_override } else { ip_limit })
-                            })
-                            .unwrap_or(ip_limit);
-
-                        let key_rl_key = format!("rl:key:{}", key_name);
-                        let key_penalty_key = format!("penalty:key:{}", key_name);
-
-                        let (key_violated, key_count) = axiom_cache::CacheEngine::check_rate_limit(
-                            &key_rl_key,
-                            window,
-                            key_limit as u32,
-                            &key_penalty_key,
-                            config.rate_limit.penalty_cooldown as u32,
-                            config.rate_limit.penalty_threshold as u32,
-                        );
-
-                        if key_violated {
-                            crate::metrics::MetricsEngine::record_rate_limit_rejection();
-                            return Err(AxiomError::new(
-                                "RATE_LIMIT_EXCEEDED",
-                                "API key rate limit exceeded.",
-                                axum::http::StatusCode::TOO_MANY_REQUESTS,
-                            ));
-                        }
-
-                        // Enforce the more restrictive of the two counters for telemetry headers
-                        if key_limit < effective_limit {
-                            effective_limit = key_limit;
-                            effective_count = key_count as i32;
-                        }
+                        key_name_opt = Some(key_name.to_string());
                     }
                 }
             }
+        }
+    } else if let Some(auth_hdr) = req.headers().get("Authorization").and_then(|h| h.to_str().ok()) {
+        if let Some(stripped) = auth_hdr.strip_prefix("Bearer ") {
+            if let Ok(decoded) = BASE64_STANDARD.decode(stripped) {
+                if let Ok(ident) = String::from_utf8(decoded) {
+                    if let Some((key_name, _)) = ident.split_once(':') {
+                        key_name_opt = Some(key_name.to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    if let Some(key_name) = key_name_opt {
+        let snapshot = axiom_metadata::snapshot::get_snapshot();
+        let key_limit = snapshot
+            .keys
+            .get(&key_name)
+            .and_then(|k| if k.rate_limit_override > 0 { Some(k.rate_limit_override as i32) } else { None })
+            .or_else(|| {
+                config
+                    .api_key
+                    .get(&key_name)
+                    .map(|k| if k.rate_limit_override > 0 { k.rate_limit_override } else { ip_limit })
+            })
+            .unwrap_or(ip_limit);
+
+        let key_rl_key = format!("rl:key:{}", key_name);
+        let key_penalty_key = format!("penalty:key:{}", key_name);
+
+        let (key_violated, key_count) = axiom_cache::CacheEngine::check_rate_limit(
+            &key_rl_key,
+            window,
+            key_limit as u32,
+            &key_penalty_key,
+            config.rate_limit.penalty_cooldown as u32,
+            config.rate_limit.penalty_threshold as u32,
+        );
+
+        if key_violated {
+            crate::metrics::MetricsEngine::record_rate_limit_rejection();
+            return Err(AxiomError::new(
+                "RATE_LIMIT_EXCEEDED",
+                "API key rate limit exceeded.",
+                axum::http::StatusCode::TOO_MANY_REQUESTS,
+            ));
+        }
+
+        // Enforce the more restrictive of the two counters for telemetry headers
+        if key_limit < effective_limit {
+            effective_limit = key_limit;
+            effective_count = key_count as i32;
         }
     }
 
@@ -192,7 +207,8 @@ mod tests {
     use super::*;
     use axum::{body::Body, http::Request, http::StatusCode, routing::get, Router};
     use once_cell::sync::Lazy;
-    use std::sync::{Arc, Mutex};
+    use std::sync::Arc;
+    use tokio::sync::Mutex;
     use tower::ServiceExt;
 
     static TEST_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
@@ -205,7 +221,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_rate_limit_disabled_passes_unconditionally() {
-        let _guard = TEST_LOCK.lock().unwrap();
+        let _guard = TEST_LOCK.lock().await;
         let mut cfg = axiom_core::AxiomConfig::default();
         cfg.rate_limit.enabled = false;
         let cfg_arc = Arc::new(cfg);
@@ -220,7 +236,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_rate_limit_allowed_ips_bypass() {
-        let _guard = TEST_LOCK.lock().unwrap();
+        let _guard = TEST_LOCK.lock().await;
         let mut cfg = axiom_core::AxiomConfig::default();
         cfg.rate_limit.enabled = true;
         cfg.rate_limit.max_requests = 0; // limit 0 would block everyone
@@ -237,7 +253,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_rate_limit_enforcement_and_headers() {
-        let _guard = TEST_LOCK.lock().unwrap();
+        let _guard = TEST_LOCK.lock().await;
         axiom_cache::CacheEngine::flush().await;
 
         let mut cfg = axiom_core::AxiomConfig::default();
@@ -275,7 +291,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_rate_limit_banned_ip_rejected() {
-        let _guard = TEST_LOCK.lock().unwrap();
+        let _guard = TEST_LOCK.lock().await;
         let banned_ip = "198.51.100.99";
         crate::security::ban_list::BanList::ban_ip(banned_ip, "test manual ban");
 

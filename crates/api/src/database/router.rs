@@ -79,10 +79,9 @@ async fn list_databases(
         async move {
             let (engine_str, mode_str) = if let Some(db_cfg) = config.database.get(&name) {
                 (format!("{:?}", db_cfg.engine).to_lowercase(), format!("{:?}", db_cfg.mode).to_lowercase())
-            } else if let Some(snap_db) = snapshot.databases.get(&name) {
-                (snap_db.engine.clone(), "readwrite".to_string())
             } else {
-                return None;
+                let snap_db = snapshot.databases.get(&name)?;
+                (snap_db.engine.clone(), "readwrite".to_string())
             };
 
             let mut status = "down";

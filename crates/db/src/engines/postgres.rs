@@ -211,7 +211,7 @@ impl DatabaseEngine for PostgresDatabaseEngine {
     ) -> Result<QueryResult, EngineError> {
         let pool = self.pool.as_ref().ok_or_else(|| EngineError::Connection("Not connected".into()))?;
 
-        let first_word = sql.trim().split_whitespace().next().unwrap_or("").to_uppercase();
+        let first_word = sql.split_whitespace().next().unwrap_or("").to_uppercase();
         let is_mutation = matches!(
             first_word.as_str(),
             "INSERT" | "UPDATE" | "DELETE" | "CREATE" | "DROP" | "ALTER" | "TRUNCATE" | "REPLACE" | "SET" | "GRANT" | "REVOKE"

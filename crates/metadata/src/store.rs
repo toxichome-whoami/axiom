@@ -785,13 +785,8 @@ impl MetadataStore {
     // ─── Managed Database Management ──────────────────────────────────────
     // Direct manipulation of connected upstream databases. Any mutation here must
     // sync to the live snapshot to maintain routing integrity across concurrent queries.
-
-    /// Adds or updates a target database configuration and refreshes the snapshot.
-    /// CONTRACT:
-    ///  - Precondition: `alias` non-empty identifier; `url` valid connection string.
-    ///  - Side effects: Writes to SQLite `databases` table, logs audit event, updates ArcSwap snapshot.
-    ///  - Idempotent: Yes (upsert behavior).
     /// Evaluates if two database connection strings refer to the same underlying database target.
+    ///
     /// Invariant: Protocol aliases (e.g. postgresql:// vs postgres://, mysql:// vs mariadb://)
     /// and trailing slashes are canonicalized.
     pub fn urls_match(url1: &str, url2: &str) -> bool {

@@ -314,21 +314,21 @@ mod tests {
     #[test]
     fn test_logging_config_default() {
         let config = LoggingConfig::default();
-        assert_eq!(config.enabled, true);
+        assert!(config.enabled);
         assert_eq!(config.level, "INFO");
     }
 
     #[test]
     fn test_rate_limit_config_default() {
         let config = RateLimitConfig::default();
-        assert_eq!(config.enabled, true);
+        assert!(config.enabled);
         assert_eq!(config.window, 60);
     }
 
     #[test]
     fn test_cache_config_default() {
         let config = CacheConfig::default();
-        assert_eq!(config.enabled, true);
+        assert!(config.enabled);
         assert_eq!(config.default_ttl, 60);
     }
 
