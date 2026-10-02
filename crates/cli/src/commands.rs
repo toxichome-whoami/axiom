@@ -105,6 +105,45 @@ pub enum Commands {
 
     /// Diagnose system environment and database reachability
     Doctor,
+
+    /// Configuration initialization, conversion, and inspection
+    Config {
+        #[command(subcommand)]
+        command: ConfigCommands,
+    },
+}
+
+#[derive(Subcommand, Debug, Clone)]
+pub enum ConfigCommands {
+    /// Initialize a new default config.toml file
+    Init {
+        #[arg(short, long, help = "Output path for the config file", default_value = "config.toml")]
+        path: String,
+
+        #[arg(short, long, help = "Force overwrite if file already exists")]
+        force: bool,
+
+        #[arg(long, help = "Also generate a matching .env file")]
+        to_env: bool,
+    },
+
+    /// Convert a config.toml file into an environment variable .env file
+    ToEnv {
+        #[arg(short, long, help = "Path to input TOML file", default_value = "config.toml")]
+        input: String,
+
+        #[arg(short, long, help = "Path to output .env file", default_value = ".env")]
+        output: String,
+
+        #[arg(short, long, help = "Force overwrite if output file already exists")]
+        force: bool,
+    },
+
+    /// Validate and display active configuration values
+    Show {
+        #[arg(short, long, help = "Path to config file", default_value = "config.toml")]
+        config: String,
+    },
 }
 
 #[derive(Subcommand, Debug, Clone)]
@@ -412,6 +451,34 @@ mod tests {
         assert!(cli.jsonl);
         assert!(!cli.json);
         assert!(matches!(cli.command, Some(Commands::Doctor)));
+    }
+
+    #[test]
+    fn test_cli_parse_config_init() {
+        let args = ["axiom", "config", "init", "--path", "custom.toml", "--force", "--to-env"];
+        let cli = Cli::try_parse_from(args).expect("Failed to parse config init");
+        match cli.command {
+            Some(Commands::Config { command: ConfigCommands::Init { path, force, to_env } }) => {
+                assert_eq!(path, "custom.toml");
+                assert!(force);
+                assert!(to_env);
+            }
+            _ => panic!("Expected Config Init command"),
+        }
+    }
+
+    #[test]
+    fn test_cli_parse_config_to_env() {
+        let args = ["axiom", "config", "to-env", "-i", "in.toml", "-o", "out.env", "-f"];
+        let cli = Cli::try_parse_from(args).expect("Failed to parse config to-env");
+        match cli.command {
+            Some(Commands::Config { command: ConfigCommands::ToEnv { input, output, force } }) => {
+                assert_eq!(input, "in.toml");
+                assert_eq!(output, "out.env");
+                assert!(force);
+            }
+            _ => panic!("Expected Config ToEnv command"),
+        }
     }
 }
 

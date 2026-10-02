@@ -205,7 +205,6 @@ axiom/
   v4-planning/         # v4.0 architecture blueprints and roadmap
   benches/             # Criterion benchmark suite
   tests/               # Unified integration and security tests
-  scripts/             # Build and metadata scripts
   tools/               # Build tooling (rcedit)
   run.py               # Build script (--linux, --linux --cpanel)
   config.example.toml  # Configuration template

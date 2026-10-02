@@ -129,12 +129,45 @@ fn bench_policy_evaluation(c: &mut Criterion) {
         ..Default::default()
     };
 
-    group.bench_function("deny_scan_10k_rules", |b| {
+    // Fast length-mismatch rejection: db_i string length (4..8) != "nonexistent_db" (14),
+    // demonstrating fast-path rejection via pointer/length bounds check.
+    group.bench_function("deny_scan_10k_rules_fast_rejection", |b| {
         b.iter(|| {
             let res = PolicyEngine::evaluate(
                 black_box(&auth_10k),
                 black_box("nonexistent_db"),
                 black_box("nonexistent_table"),
+                black_box("INSERT"),
+            );
+            let _ = black_box(res);
+        });
+    });
+
+    // True worst-case linear scan: database and table_name match all 10,000 entries,
+    // forcing complete string comparisons and operations array scans before final denial.
+    let mut rules_10k_worst = Vec::with_capacity(10_000);
+    for _ in 0..10_000 {
+        rules_10k_worst.push(PermissionSnapshot {
+            database: "target_database".to_string(),
+            table_name: "target_table".to_string(),
+            operations: vec!["SELECT".to_string(), "UPDATE".to_string()],
+        });
+    }
+
+    let auth_10k_worst = AuthContext {
+        api_key_name: "test_key_10k_worst".to_string(),
+        role: Some("restricted".to_string()),
+        full_admin: false,
+        permissions: rules_10k_worst,
+        ..Default::default()
+    };
+
+    group.bench_function("deny_scan_10k_rules_worst_case", |b| {
+        b.iter(|| {
+            let res = PolicyEngine::evaluate(
+                black_box(&auth_10k_worst),
+                black_box("target_database"),
+                black_box("target_table"),
                 black_box("INSERT"),
             );
             let _ = black_box(res);
@@ -298,40 +331,44 @@ fn bench_auth_verification(c: &mut Criterion) {
 fn bench_filter_builder(c: &mut Criterion) {
     let mut group = c.benchmark_group("database");
 
+    // Simple multi-field filter with $eq, $gte, and small $in array
     let mut simple_filter = HashMap::new();
-    simple_filter.insert("status".to_string(), serde_json::json!({ "eq": "active" }));
-    simple_filter.insert("age".to_string(), serde_json::json!({ "gte": 21 }));
-    simple_filter.insert("role".to_string(), serde_json::json!({ "in": ["admin", "operator"] }));
+    simple_filter.insert("status".to_string(), serde_json::json!({ "$eq": "active" }));
+    simple_filter.insert("age".to_string(), serde_json::json!({ "$gte": 21 }));
+    simple_filter.insert("role".to_string(), serde_json::json!({ "$in": ["admin", "operator"] }));
 
     group.bench_function("filter_build_simple", |b| {
         b.iter(|| {
-            let res = build_where_clause(black_box(&simple_filter));
-            black_box(res);
+            let (sql, params) = build_where_clause(black_box(&simple_filter));
+            black_box((sql.len(), params.len()));
         });
     });
 
+    // 500-element $in array stress test: verifies full placeholder generation (?, ?, ...)
+    // and parameter extraction without lazy drops or dead-code elimination.
     let in_items: Vec<String> = (0..500).map(|i| format!("item_{}", i)).collect();
     let mut in_500_filter = HashMap::new();
-    in_500_filter.insert("item_id".to_string(), serde_json::json!({ "in": in_items }));
+    in_500_filter.insert("item_id".to_string(), serde_json::json!({ "$in": in_items }));
 
     group.bench_function("filter_build_in_500", |b| {
         b.iter(|| {
-            let res = build_where_clause(black_box(&in_500_filter));
-            black_box(res);
+            let (sql, params) = build_where_clause(black_box(&in_500_filter));
+            black_box((sql.len(), params.len()));
         });
     });
 
+    // Multi-clause mixed comparison filter
     let mut nested_filter = HashMap::new();
-    nested_filter.insert("group1".to_string(), serde_json::json!({ "eq": "alpha" }));
-    nested_filter.insert("group2".to_string(), serde_json::json!({ "neq": "beta" }));
-    nested_filter.insert("group3".to_string(), serde_json::json!({ "gt": 100 }));
-    nested_filter.insert("group4".to_string(), serde_json::json!({ "lte": 500 }));
-    nested_filter.insert("group5".to_string(), serde_json::json!({ "like": "%search%" }));
+    nested_filter.insert("group1".to_string(), serde_json::json!({ "$eq": "alpha" }));
+    nested_filter.insert("group2".to_string(), serde_json::json!({ "$ne": "beta" }));
+    nested_filter.insert("group3".to_string(), serde_json::json!({ "$gt": 100 }));
+    nested_filter.insert("group4".to_string(), serde_json::json!({ "$lte": 500 }));
+    nested_filter.insert("group5".to_string(), serde_json::json!({ "$like": "%search%" }));
 
     group.bench_function("filter_build_multi_clause", |b| {
         b.iter(|| {
-            let res = build_where_clause(black_box(&nested_filter));
-            black_box(res);
+            let (sql, params) = build_where_clause(black_box(&nested_filter));
+            black_box((sql.len(), params.len()));
         });
     });
 

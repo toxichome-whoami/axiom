@@ -12,7 +12,7 @@ use std::path::Path;
 
 use crate::client::AdminClient;
 use crate::commands::{
-    CacheCommands, Cli, Commands, DbCommands, KeyCommands, RoleCommands, UserCommands,
+    CacheCommands, Cli, Commands, ConfigCommands, DbCommands, KeyCommands, RoleCommands, UserCommands,
 };
 use axiom_core::ConfigManager;
 use axiom_metadata::MetadataStore;
@@ -132,6 +132,11 @@ pub async fn run() -> Result<bool, Box<dyn std::error::Error>> {
 
         Some(Commands::Doctor) => {
             run_doctor(&cli.url, format).await?;
+            Ok(true)
+        }
+
+        Some(Commands::Config { command }) => {
+            handle_config_command(command, format).await?;
             Ok(true)
         }
     }
@@ -897,4 +902,320 @@ async fn run_benchmark(
     }
 
     Ok(())
+}
+
+// ─── Configuration Management Command Handlers ──────────────────────────────
+// Handles config initialization, toml-to-env conversion, and validation.
+
+/// Dispatches configuration subcommands (`init`, `to-env`, `show`).
+/// CONTRACT:
+///  - Precondition: `command` is a valid `ConfigCommands` variant.
+///  - Returns `Ok(())` on successful operation.
+///  - Side effects: May write or overwrite files on disk; may output to stdout.
+pub async fn handle_config_command(
+    command: ConfigCommands,
+    format: OutputFormat,
+) -> Result<(), Box<dyn std::error::Error>> {
+    match command {
+        ConfigCommands::Init { path, force, to_env } => {
+            let target_path = Path::new(&path);
+            let mut do_write = true;
+            let mut do_convert = false;
+
+            if target_path.exists() && !force {
+                println!("Configuration file '{}' already exists.", path);
+                print!("Choose action: [o]verwrite, [c]onvert to .env, or [a]bort (default): ");
+                use std::io::Write;
+                let _ = std::io::stdout().flush();
+
+                let mut input = String::new();
+                if std::io::stdin().read_line(&mut input).is_ok() {
+                    let choice = input.trim().to_lowercase();
+                    if choice == "o" || choice == "overwrite" {
+                        do_write = true;
+                    } else if choice == "c" || choice == "convert" {
+                        do_write = false;
+                        do_convert = true;
+                    } else {
+                        println!("Aborted. Existing configuration file was left untouched.");
+                        return Ok(());
+                    }
+                } else {
+                    return Err(format!("File '{}' already exists. Use --force to overwrite.", path).into());
+                }
+            }
+
+            if do_write {
+                let template = get_default_config_template();
+                if let Some(parent) = target_path.parent() {
+                    if !parent.as_os_str().is_empty() {
+                        std::fs::create_dir_all(parent)?;
+                    }
+                }
+                std::fs::write(&path, template)?;
+                if format == OutputFormat::Json {
+                    println!("{}", json!({ "status": "success", "file": path, "action": "created" }));
+                } else if format == OutputFormat::Jsonl {
+                    println!("{}", serde_json::to_string(&json!({ "status": "success", "file": path, "action": "created" }))?);
+                } else {
+                    println!("Successfully initialized new configuration file at '{}'.", path);
+                }
+            }
+
+            if do_convert || to_env {
+                let env_path = ".env";
+                let toml_content = std::fs::read_to_string(&path)?;
+                let env_content = toml_to_env_string(&toml_content)?;
+                std::fs::write(env_path, env_content)?;
+                if format == OutputFormat::Json {
+                    println!("{}", json!({ "status": "success", "file": env_path, "action": "converted" }));
+                } else if format == OutputFormat::Jsonl {
+                    println!("{}", serde_json::to_string(&json!({ "status": "success", "file": env_path, "action": "converted" }))?);
+                } else {
+                    println!("Successfully converted '{}' into '{}'.", path, env_path);
+                }
+            }
+
+            Ok(())
+        }
+
+        ConfigCommands::ToEnv { input, output, force } => {
+            let out_path = Path::new(&output);
+            if out_path.exists() && !force {
+                print!("Output file '{}' already exists. Overwrite? (y/N): ", output);
+                use std::io::Write;
+                let _ = std::io::stdout().flush();
+                let mut resp = String::new();
+                if std::io::stdin().read_line(&mut resp).is_ok() {
+                    let resp = resp.trim().to_lowercase();
+                    if resp != "y" && resp != "yes" {
+                        println!("Aborted.");
+                        return Ok(());
+                    }
+                } else {
+                    return Err(format!("File '{}' already exists. Use --force to overwrite.", output).into());
+                }
+            }
+
+            let toml_content = std::fs::read_to_string(&input)
+                .map_err(|e| format!("Failed to read input TOML file '{}': {}", input, e))?;
+            let env_content = toml_to_env_string(&toml_content)?;
+            if let Some(parent) = out_path.parent() {
+                if !parent.as_os_str().is_empty() {
+                    std::fs::create_dir_all(parent)?;
+                }
+            }
+            std::fs::write(&output, env_content)?;
+
+            if format == OutputFormat::Json {
+                println!("{}", json!({ "status": "success", "input": input, "output": output }));
+            } else if format == OutputFormat::Jsonl {
+                println!("{}", serde_json::to_string(&json!({ "status": "success", "input": input, "output": output }))?);
+            } else {
+                println!("Successfully converted '{}' to '{}'.", input, output);
+            }
+            Ok(())
+        }
+
+        ConfigCommands::Show { config } => {
+            let content = std::fs::read_to_string(&config)
+                .map_err(|e| format!("Failed to read config file '{}': {}", config, e))?;
+            let val: toml::Value = toml::from_str(&content)
+                .map_err(|e| format!("Invalid TOML in '{}': {}", config, e))?;
+
+            if format == OutputFormat::Json || format == OutputFormat::Jsonl {
+                let json_val = serde_json::to_value(&val)?;
+                if format == OutputFormat::Json {
+                    println!("{}", serde_json::to_string_pretty(&json_val)?);
+                } else {
+                    println!("{}", serde_json::to_string(&json_val)?);
+                }
+            } else {
+                println!("{:<28} {:<32}", "SECTION/KEY", "VALUE");
+                println!("{:-<60}", "");
+                if let toml::Value::Table(tbl) = val {
+                    for (k, v) in tbl {
+                        match v {
+                            toml::Value::Table(sub) => {
+                                println!("[{}]", k);
+                                for (sub_k, sub_v) in sub {
+                                    println!("  {:<26} {}", sub_k, sub_v);
+                                }
+                            }
+                            other => {
+                                println!("{:<28} {}", k, other);
+                            }
+                        }
+                    }
+                }
+            }
+            Ok(())
+        }
+    }
+}
+
+/// Converts a TOML configuration string into formatted KEY=VALUE environment variable lines.
+/// CONTRACT:
+///  - Precondition: `toml_str` must be valid TOML syntax.
+///  - Returns formatted string suitable for `.env` files.
+///  - Sections are mapped to double-underscore uppercase prefixes (e.g. `[server]` -> `SERVER__`).
+///  - Arrays are formatted as single-line JSON/brackets (e.g. `["127.0.0.1"]`).
+///  - Strings containing spaces or symbols are safely quoted.
+pub fn toml_to_env_string(toml_str: &str) -> Result<String, Box<dyn std::error::Error>> {
+    let table: toml::Table = toml::from_str(toml_str)?;
+    let mut lines = Vec::new();
+    lines.push("# ─────────────────────────────────────────────────────────────────────────────".to_string());
+    lines.push("# Axiom Environment Configuration (Generated from TOML)".to_string());
+    lines.push("# ─────────────────────────────────────────────────────────────────────────────".to_string());
+    lines.push("".to_string());
+
+    for (section_or_key, val) in table {
+        match val {
+            toml::Value::Table(sub_table) => {
+                let section_prefix = section_or_key.to_uppercase().replace('.', "__");
+                lines.push(format!("# ─── [{}] ───", section_or_key));
+                for (k, v) in sub_table {
+                    let env_key = format!("{}__{}", section_prefix, k.to_uppercase());
+                    lines.push(format_env_line(&env_key, &v));
+                }
+                lines.push("".to_string());
+            }
+            _ => {
+                let env_key = section_or_key.to_uppercase();
+                lines.push(format_env_line(&env_key, &val));
+            }
+        }
+    }
+
+    Ok(lines.join("\n"))
+}
+
+fn format_env_line(key: &str, val: &toml::Value) -> String {
+    let formatted_val = match val {
+        toml::Value::String(s) => {
+            if s.contains(' ') || s.contains('#') || s.contains('=') || s.contains('"') {
+                format!("\"{}\"", s.replace('"', "\\\""))
+            } else {
+                s.clone()
+            }
+        }
+        toml::Value::Integer(i) => i.to_string(),
+        toml::Value::Float(f) => f.to_string(),
+        toml::Value::Boolean(b) => b.to_string(),
+        toml::Value::Array(arr) => {
+            let elements: Vec<String> = arr.iter().map(|item| match item {
+                toml::Value::String(s) => format!("\"{}\"", s.replace('"', "\\\"")),
+                other => other.to_string(),
+            }).collect();
+            format!("[{}]", elements.join(","))
+        }
+        toml::Value::Datetime(dt) => dt.to_string(),
+        toml::Value::Table(_) => "{}".to_string(),
+    };
+    format!("{}={}", key, formatted_val)
+}
+
+fn get_default_config_template() -> &'static str {
+r#"# ─────────────────────────────────────────────────────────────────────────────
+# Axiom API Gateway - Production-Ready Industrial Configuration
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ─── Server Infrastructure ───────────────────────────────────────────────────
+[server]
+host = "0.0.0.0"                 # Listen on all network interfaces (container/reverse-proxy ready)
+port = 4500                      # Primary HTTP REST and Admin API port
+workers = 0                      # Tokio runtime threads (0 = auto-saturate all physical/vCPU cores)
+max_connections = 25000          # High-concurrency TCP limit for bursty microservice traffic
+request_timeout = 30             # Hard cap on slow/hanging client queries in seconds
+body_limit = "10mb"              # Enforced payload ceiling blocking payload-exhaustion attacks
+allowed_ips = ["127.0.0.1"]      # Internal health probes exempt from rate limiting
+trusted_proxies = ["127.0.0.1", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"]  # Trusted reverse proxies for X-Forwarded-For
+cors_origins = ["*"]             # Allowed CORS origins
+shutdown_timeout = 30            # Maximum drain window for in-flight requests during SIGTERM
+
+# ─── High-Throughput Structured Logging ──────────────────────────────────────
+[logging]
+enabled = true
+level = "WARN"                   # Production recommendation: INFO or WARN to eliminate disk I/O bottlenecks
+format = "json"                  # Structured JSON format ready for Datadog, CloudWatch, Loki, ELK
+directory = "./logs"
+file_prefix = "axiom"
+max_file_size = "100mb"          # Auto-rotation threshold
+max_files = 10                   # Number of rotated logs retained before automatic purging
+stdout = true                    # Mirror logs to stdout for Docker/Kubernetes container collectors
+
+# ─── Control Plane & Metadata Store ──────────────────────────────────────────
+[metadata]
+url = "file:data/axiom.db"       # Embedded high-concurrency SQLite (or remote Turso libsql:// endpoint)
+token = ""                       # Turso authentication token (leave blank for local embedded SQLite)
+reload_interval = 30             # Periodic background snapshot synchronization interval in seconds
+
+# ─── Edge Security & Rate Limiting ───────────────────────────────────────────
+[rate_limit]
+enabled = true
+backend = "memory"               # Fast L1 in-memory DashMap (zero allocations on hot path)
+turso_url = "file:data/cache.db"
+turso_token = ""
+window = 60                      # Sliding rate window in seconds
+max_requests = 1000              # Baseline throughput ceiling (1,000 requests / minute)
+burst = 200                      # Absorbs transient high-concurrency traffic bursts
+penalty_threshold = 10           # Limit violations before IP ban
+penalty_cooldown = 300           # Quarantine ban duration in seconds (5 minutes)
+
+# ─── Two-Tier Hybrid Cache Engine (L1 RAM + L2 Persistent Storage) ───────────
+[cache]
+enabled = true
+backend = "hybrid"               # "hybrid" = Sub-microsecond L1 DashMap RAM + L2 Persistent SQLite WAL storage
+turso_url = "file:data/cache.db" # Persistent disk storage location
+turso_token = ""
+max_memory = "512mb"             # Dedicated RAM budget for hot query results
+default_ttl = 60                 # General-purpose cache time-to-live in seconds
+query_cache = true               # Cache read query results automatically
+query_results_ttl = 30           # Hot query result retention in seconds
+response_cache_ttl = 30          # HTTP response cache retention in seconds
+idempotency_ttl = 86400          # 24-hour retention for Idempotency-Key retry requests
+
+# ─── Upstream Fault Tolerance (Circuit Breaker) ──────────────────────────────
+[circuit_breaker]
+enabled = true
+failure_threshold = 5            # Consecutive database dropouts before tripping breaker open
+recovery_time = 15               # Cool-down period before attempting a probe request (seconds)
+half_open_max_requests = 5       # Number of trial probes allowed in half-open state before closing
+timeout = 30                     # Timeout for upstream queries before marking a connection failure
+"#
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_toml_to_env_string_basic() {
+        let toml_sample = r#"
+[server]
+host = "0.0.0.0"
+port = 4500
+allowed_ips = ["127.0.0.1", "10.0.0.1"]
+
+[rate_limit]
+enabled = true
+window = 60
+"#;
+        let env_str = toml_to_env_string(toml_sample).expect("Should convert to env string");
+        assert!(env_str.contains("SERVER__HOST=0.0.0.0"));
+        assert!(env_str.contains("SERVER__PORT=4500"));
+        assert!(env_str.contains("SERVER__ALLOWED_IPS=[\"127.0.0.1\",\"10.0.0.1\"]"));
+        assert!(env_str.contains("RATE_LIMIT__ENABLED=true"));
+        assert!(env_str.contains("RATE_LIMIT__WINDOW=60"));
+    }
+
+    #[test]
+    fn test_toml_to_env_string_quoted_strings() {
+        let toml_sample = r#"
+[server]
+description = "Axiom Gateway = Prod #1"
+"#;
+        let env_str = toml_to_env_string(toml_sample).expect("Should convert to env string");
+        assert!(env_str.contains("SERVER__DESCRIPTION=\"Axiom Gateway = Prod #1\""));
+    }
 }
