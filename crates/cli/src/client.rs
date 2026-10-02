@@ -227,4 +227,34 @@ impl AdminClient {
             .await
             .map_err(|e| format!("Failed to read metrics response from '{}': {}", url, e))
     }
+
+    /// Triggers an immediate reload of the dynamic metadata store and ArcSwap snapshot.
+    pub async fn reload_metadata(&self) -> Result<Value, String> {
+        self.request(reqwest::Method::POST, "/admin/v1/reload", None).await
+    }
+
+    /// Fetches audit log records with optional pagination.
+    pub async fn get_audit_log(&self, limit: Option<usize>, offset: Option<usize>) -> Result<Value, String> {
+        let mut endpoint = "/admin/v1/audit".to_string();
+        let mut params = Vec::new();
+        if let Some(l) = limit {
+            params.push(format!("limit={}", l));
+        }
+        if let Some(o) = offset {
+            params.push(format!("offset={}", o));
+        }
+        if !params.is_empty() {
+            endpoint = format!("{}?{}", endpoint, params.join("&"));
+        }
+        self.request(reqwest::Method::GET, &endpoint, None).await
+    }
+
+    /// Tests connectivity against a raw database URL without registering it.
+    pub async fn test_database_url(&self, url: &str, alias: Option<&str>) -> Result<Value, String> {
+        let body = json!({
+            "url": url,
+            "alias": alias,
+        });
+        self.request(reqwest::Method::POST, "/admin/v1/databases/test-url", Some(body)).await
+    }
 }

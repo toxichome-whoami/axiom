@@ -36,6 +36,9 @@ pub struct Cli {
     #[arg(long, global = true, help = "Format output as JSON")]
     pub json: bool,
 
+    #[arg(long, global = true, help = "Format output as JSON Lines (JSONL)")]
+    pub jsonl: bool,
+
     #[command(subcommand)]
     pub command: Option<Commands>,
 }
@@ -75,14 +78,30 @@ pub enum Commands {
         command: CacheCommands,
     },
 
+    /// Query administrative audit logs (via Admin API)
+    Audit {
+        #[arg(short, long, help = "Number of audit entries to retrieve", default_value = "50")]
+        limit: usize,
+        #[arg(short, long, help = "Offset for pagination", default_value = "0")]
+        offset: usize,
+    },
+
+    /// Force dynamic reload and synchronization of metadata snapshots
+    Reload,
+
     /// Check server health and status
     Health,
 
     /// Dump Prometheus exposition metrics
     Metrics,
 
-    /// Run built-in benchmark suite
-    Benchmark,
+    /// Run built-in HTTP pipeline latency and throughput benchmark
+    Benchmark {
+        #[arg(short, long, default_value = "200", help = "Total number of benchmark requests")]
+        requests: usize,
+        #[arg(short, long, default_value = "10", help = "Concurrent worker tasks")]
+        concurrency: usize,
+    },
 
     /// Diagnose system environment and database reachability
     Doctor,
@@ -98,6 +117,9 @@ pub enum CacheCommands {
 
 #[derive(Args, Debug, Default, Clone)]
 pub struct ServerArgs {
+    #[arg(value_name = "ACTION", help = "Optional server action (e.g. 'run')")]
+    pub action: Option<String>,
+
     #[arg(short, long, help = "Path to config file", default_value = "config.toml")]
     pub config: String,
 }
@@ -210,6 +232,13 @@ pub enum DbCommands {
         #[arg(help = "Database alias")]
         alias: String,
     },
+    /// Test connection to a raw database URL before registering
+    TestUrl {
+        #[arg(help = "Database connection URL to probe")]
+        url: String,
+        #[arg(short, long, help = "Optional existing alias to exclude from duplicate checks")]
+        alias: Option<String>,
+    },
     /// List all registered database connections
     List,
     /// Remove an upstream database connection
@@ -319,9 +348,70 @@ mod tests {
 
     #[test]
     fn test_cli_parse_benchmark() {
-        let args = ["axiom", "benchmark"];
+        let args = ["axiom", "benchmark", "-r", "500", "-c", "25"];
         let cli = Cli::try_parse_from(args).expect("Failed to parse benchmark");
-        assert!(matches!(cli.command, Some(Commands::Benchmark)));
+        match cli.command {
+            Some(Commands::Benchmark { requests, concurrency }) => {
+                assert_eq!(requests, 500);
+                assert_eq!(concurrency, 25);
+            }
+            _ => panic!("Expected Benchmark command"),
+        }
+    }
+
+    #[test]
+    fn test_cli_parse_audit() {
+        let args = ["axiom", "audit", "-l", "25", "-o", "5"];
+        let cli = Cli::try_parse_from(args).expect("Failed to parse audit");
+        match cli.command {
+            Some(Commands::Audit { limit, offset }) => {
+                assert_eq!(limit, 25);
+                assert_eq!(offset, 5);
+            }
+            _ => panic!("Expected Audit command"),
+        }
+    }
+
+    #[test]
+    fn test_cli_parse_reload() {
+        let args = ["axiom", "reload"];
+        let cli = Cli::try_parse_from(args).expect("Failed to parse reload");
+        assert!(matches!(cli.command, Some(Commands::Reload)));
+    }
+
+    #[test]
+    fn test_cli_parse_db_test_url() {
+        let args = ["axiom", "db", "test-url", "sqlite://data/custom.db"];
+        let cli = Cli::try_parse_from(args).expect("Failed to parse db test-url");
+        match cli.command {
+            Some(Commands::Db { command: DbCommands::TestUrl { url, alias } }) => {
+                assert_eq!(url, "sqlite://data/custom.db");
+                assert!(alias.is_none());
+            }
+            _ => panic!("Expected Db TestUrl command"),
+        }
+    }
+
+    #[test]
+    fn test_cli_parse_server_run() {
+        let args = ["axiom", "server", "run", "--config", "axiom.toml"];
+        let cli = Cli::try_parse_from(args).expect("Failed to parse server run");
+        match cli.command {
+            Some(Commands::Server(ServerArgs { action, config })) => {
+                assert_eq!(action, Some("run".to_string()));
+                assert_eq!(config, "axiom.toml");
+            }
+            _ => panic!("Expected Server command"),
+        }
+    }
+
+    #[test]
+    fn test_cli_parse_jsonl_flag() {
+        let args = ["axiom", "--jsonl", "doctor"];
+        let cli = Cli::try_parse_from(args).expect("Failed to parse jsonl doctor");
+        assert!(cli.jsonl);
+        assert!(!cli.json);
+        assert!(matches!(cli.command, Some(Commands::Doctor)));
     }
 }
 
