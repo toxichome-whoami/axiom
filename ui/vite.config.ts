@@ -11,7 +11,15 @@ export default defineConfig({
   },
   build: {
     outDir: 'dist',
-    emptyOutDir: false,
+    emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vendor: ['react', 'react-dom'],
+          icons: ['lucide-react'],
+        },
+      },
+    },
   },
   resolve: {
     alias: {

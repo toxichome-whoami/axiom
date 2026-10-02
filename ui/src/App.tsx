@@ -1,13 +1,25 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense, lazy } from 'react';
 import { Layout, NavPath } from './components/Layout';
-import { Overview } from './pages/Overview';
-import { Databases } from './pages/Databases';
-import { Keys } from './pages/Keys';
-import { Roles } from './pages/Roles';
-import { Mcp } from './pages/Mcp';
-import { Tester } from './pages/Tester';
-import { Settings } from './pages/Settings';
-import { AuthPage } from './pages/AuthPage';
+
+const Overview = lazy(() => import('./pages/Overview').then((m) => ({ default: m.Overview })));
+const Databases = lazy(() => import('./pages/Databases').then((m) => ({ default: m.Databases })));
+const Keys = lazy(() => import('./pages/Keys').then((m) => ({ default: m.Keys })));
+const Roles = lazy(() => import('./pages/Roles').then((m) => ({ default: m.Roles })));
+const Mcp = lazy(() => import('./pages/Mcp').then((m) => ({ default: m.Mcp })));
+const Tester = lazy(() => import('./pages/Tester').then((m) => ({ default: m.Tester })));
+const Settings = lazy(() => import('./pages/Settings').then((m) => ({ default: m.Settings })));
+const AuthPage = lazy(() => import('./pages/AuthPage').then((m) => ({ default: m.AuthPage })));
+
+function PageFallback() {
+  return (
+    <div className="flex-1 flex items-center justify-center p-12 min-h-[300px]">
+      <svg className="animate-spin h-6 w-6 text-[#2563eb]" fill="none" viewBox="0 0 24 24">
+        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+      </svg>
+    </div>
+  );
+}
 
 export function App() {
   function normalizePath(path: string): NavPath {
@@ -73,10 +85,12 @@ export function App() {
   if (!isAuthenticated || window.location.pathname.includes('/login') || window.location.pathname.includes('/setup')) {
     const isSetup = window.location.pathname.includes('/setup');
     return (
-      <AuthPage
-        onLoginSuccess={handleLoginSuccess}
-        initialMode={isSetup ? 'setup' : 'login'}
-      />
+      <Suspense fallback={<PageFallback />}>
+        <AuthPage
+          onLoginSuccess={handleLoginSuccess}
+          initialMode={isSetup ? 'setup' : 'login'}
+        />
+      </Suspense>
     );
   }
 
@@ -111,7 +125,9 @@ export function App() {
 
   return (
     <Layout currentPath={currentPath} onNavigate={handleNavigate} title={title} onLogout={handleLogout}>
-      {component}
+      <Suspense fallback={<PageFallback />}>
+        {component}
+      </Suspense>
     </Layout>
   );
 }
