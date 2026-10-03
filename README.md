@@ -1,310 +1,150 @@
-<div align="center">
-
 # Axiom
 
-### Ultra-Lightweight Database API Gateway
+A zero-allocation, single-binary API gateway that sits between applications and SQL databases, providing secure HTTP access, granular RBAC, and caching.
 
-**One API. Multiple SQL backends. Built for speed, security, and simplicity.**
+**Status:** v4.0.0. Active development.
 
-<p align="center">
-  <a href="./docs/">Documentation</a>
-  &nbsp;&nbsp;•&nbsp;&nbsp;
-  <a href="./benches/">Benchmarks</a>
-  &nbsp;&nbsp;•&nbsp;&nbsp;
-  <a href="./LICENSE">License</a>
-</p>
-
-</div>
-
-<br>
-
-<div align="center">
-
-![Version](https://img.shields.io/badge/Version-3.0.1-brightgreen?style=for-the-badge)
-![Rust](https://img.shields.io/badge/Rust-1.88%2B-orange?style=for-the-badge&logo=rust)
-![License](https://img.shields.io/badge/License-Open%20Source-blue?style=for-the-badge)
-![API](https://img.shields.io/badge/API-REST-green?style=for-the-badge)
-![Docker](https://img.shields.io/badge/Docker-Supported-2496ED?style=for-the-badge&logo=docker)
-![By](https://img.shields.io/badge/By-Toxichome-black?style=for-the-badge)
-
-</div>
-
-## Overview
-
-**Axiom** is an open-source, ultra-lightweight API gateway developed by **[Toxichome](https://toxichome.cc)** that exposes SQL databases through a unified, secure REST API.
-
-Instead of building and maintaining database-specific APIs for every project, Axiom sits between your application and your SQL backends as a single, hardened gateway layer.
-
-```mermaid
-flowchart TD
-    A["Your Application"] -->|REST / HTTP| B["Axiom\nAPI Gateway"]
-    B --> C[("PostgreSQL")]
-    B --> D[("MySQL / MariaDB")]
-    B --> E[("SQL Server")]
-    B --> F[("SQLite / Turso")]
-    B --> G[("ClickHouse")]
-```
-
-## Why Axiom?
-
-| Principle | Description |
-| --- | --- |
-|  **Lightweight** | Minimal overhead with a high-performance Rust implementation using `mimalloc`. |
-|  **Database Agnostic** | A unified API that works across PostgreSQL, MySQL, MariaDB, SQL Server, SQLite, Turso, and ClickHouse. |
-|  **Secure by Default** | Authentication, rate limiting, WAF protections, and request validation built-in. |
-|  **Zero-Contention Config** | Config is loaded once via `OnceLock<Arc<Config>>`  no locking overhead on every request. |
-
-
-## Core Features
-
-### High Performance
-
-- Rust-based implementation with `mimalloc` global allocator (developed by Microsoft)
-- Fully asynchronous request handling via `tokio`
-- Dynamic database connection pooling via `sqlx`
-- Lock-free rate-limit counters using `AtomicU32`
-- Zero-copy JSON streaming cache  cache hits skip SQL compilation and memory allocation entirely
-
-### Unified Database API
-
-Interact with multiple SQL databases through a single, consistent REST interface:
-
-```mermaid
-flowchart LR
-    App["Application"] --> Axiom["Axiom"]
-    Axiom --> PG[("PostgreSQL")]
-    Axiom --> MY[("MySQL / MariaDB")]
-    Axiom --> MS[("SQL Server")]
-    Axiom --> SL[("SQLite / Turso")]
-    Axiom --> CH[("ClickHouse")]
-```
-
-### Security
-
-Security is enforced at the gateway layer before any query reaches the database:
-
-- `X-Axiom-Key` API key authentication with constant-time XOR validation
-- AST-based SQL query validation (blocks injections at the parse tree level)
-- Multi-tier rate limiting with automatic IP ban list for brute-force attacks
-- Idempotency engine for safe request retries
-- Circuit breaker for database health tracking and connection shedding
-- WAF middleware (blocks path traversal via deep-decode, null-byte injections, 10MB default body limit)
-- Configurable per-database query blacklists and dangerous operation guards
-- Structured audit logging per query including UUID tracing
-
-### Lock-Free Configuration
-
-Global configuration is loaded once at startup and shared immutably:
-
-```rust
-OnceLock<Arc<AxiomConfig>>
-```
-
-Every worker thread reads config with zero lock acquisition overhead.
-
+## Requirements
+- Rust 1.70+
+- Cargo
 
 ## Quick Start
 
-### 1. Clone the repository
-
 ```bash
-git clone https://github.com/toxichome-whoami/axiom.git
-cd axiom
-```
-
-### 2. Configure
-
-Copy the example config and fill in your database credentials:
-
-```bash
-cp config.example.toml config.toml
-```
-
-Edit `config.toml` and add your database connection and API key.
-
-### 3. Build & Run
-
-**Windows (recommended  uses `run.ps1` wrapper):**
-
-```powershell
-.\run.ps1
-```
-
-This builds the release binary, injects Windows metadata, and starts the server automatically.
-
-**Manual build:**
-
-```bash
+# 1. Build the single binary
 cargo build --release
-./target/release/axiom        # Linux / macOS
-.\target\release\axiom.exe   # Windows
+
+# 2. Initialize the configuration
+./target/release/axiom config init
+
+# 3. Start the server
+./target/release/axiom server
 ```
 
-**Cross-compile for Linux from Windows:**
+By default, the server runs on `127.0.0.1:4500` and generates an initial `config.toml` file in the current directory.
 
-```powershell
-.\run.ps1 -linux
+## Configuration
+
+Axiom is configured via `config.toml`. A minimal example:
+
+```toml
+[server]
+host = "0.0.0.0"
+port = 4500
+workers = 4 # Number of tokio worker threads. 0 = auto.
+
+[metadata]
+url = "file:data/axiom.db"
+
+[cache]
+enabled = true
+backend = "memory"
+query_results_ttl = 60
+
+[database.primary]
+url = "postgres://user:pass@localhost:5432/mydb"
+pool_max = 50
+
+[api_key.admin_key]
+secret = "super_secret_string"
+full_admin = true
 ```
 
-### Docker
+### Supported Databases
 
+| Engine | URL Format | Notes |
+|---|---|---|
+| PostgreSQL | `postgres://...` | Supports `statement_cache_capacity` |
+| MySQL | `mysql://...` | |
+| SQL Server | `mssql://...` | Date/time types output as ISO 8601 strings |
+| SQLite | `sqlite://...` | Local files or `:memory:` |
+| LibSQL / Turso | `libsql://...` or `https://...` | Tuned with `PRAGMA journal_mode = WAL` |
+| ClickHouse | `clickhouse://...` | Uses HTTP interface internally |
+
+## Usage
+
+Queries are executed via HTTP POST to `/api/v1/db/:alias/query`. The query body must contain a parameterized `sql` string and `params` array to prevent SQL injection.
+
+**Basic Query (Common case)**
 ```bash
-docker compose up -d
-```
-
-### Default Port
-
-```text
-HTTP / REST  localhost:4500
-```
-
-
-## API Example
-
-Authenticate all requests using the `X-Axiom-Key` header.
-
-### Query a Database
-
-```bash
-curl -X POST "http://localhost:4500/api/v1/db/main_db/query" \
-  -H "X-Axiom-Key: <YOUR_API_KEY>" \
+curl -X POST http://127.0.0.1:4500/api/v1/db/primary/query \
+  -H "X-Axiom-Key: admin_key:super_secret_string" \
   -H "Content-Type: application/json" \
   -d '{
-    "sql": "SELECT id, name FROM users WHERE active = $1",
-    "params": {"1": true}
+    "sql": "SELECT id, email FROM users WHERE status = ?",
+    "params": ["active"]
   }'
 ```
 
-### List Databases
-
+**Idempotent Mutation (Advanced case)**
+Use the `Idempotency-Key` header for safe retries on mutations.
 ```bash
-curl -X GET "http://localhost:4500/api/v1/db/databases" \
-  -H "X-Axiom-Key: <YOUR_API_KEY>"
+curl -X POST http://127.0.0.1:4500/api/v1/db/primary/query \
+  -H "X-Axiom-Key: admin_key:super_secret_string" \
+  -H "Idempotency-Key: req-593a2-1" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "sql": "UPDATE accounts SET balance = balance - ? WHERE id = ?",
+    "params": [100.50, 42]
+  }'
 ```
 
-### Fetch Rows (Paginated)
+## How It Works
 
-```bash
-curl -G "http://localhost:4500/api/v1/db/main_db/users/rows" \
-  -H "X-Axiom-Key: <YOUR_API_KEY>" \
-  --data-urlencode "limit=50" \
-  --data-urlencode "sort=id" \
-  --data-urlencode "order=desc"
+Axiom intercepts incoming HTTP requests, validates API keys against an `ArcSwap` metadata snapshot (zero-lock hot path), parses the SQL using an AST cache to ensure no destructive operations bypass the Role-Based Access Control (RBAC), and routes the parameterized query to the requested upstream database pool.
+
+```text
+Request -> WAF -> Auth -> RBAC/AST Parser -> Result Cache -> DB Engine -> Response
 ```
-
-For the full API reference, see **[docs/reference/api.md](./docs/reference/api.md)**.
-
 
 ## Project Structure
 
+- `benches/` - Criterion performance benchmarks
+- `crates/api/` - HTTP router, middlewares, AST parser, and cache logic
+- `crates/cache/` - Unified L1/L2 cache engine
+- `crates/cli/` - CLI interface
+- `crates/core/` - Shared types, config, error handling
+- `crates/db/` - Upstream database engine implementations
+- `crates/metadata/` - Internal SQLite store for RBAC, keys, and audit logs
+- `crates/policy/` - RBAC policy evaluation engine
+- `crates/server/` - Tokio runtime setup and TCP socket tuning
+- `tests/` - Integration tests
+
+## API Surface & CLI
+
+The CLI (`axiom.exe`) manages the gateway and internal metadata.
+
 ```text
-axiom/
-  crates/              # Modular crates (core, metadata, policy, cache, db, api, cli, server)
-  ui/                  # Embedded Web UI (Vite + TypeScript + Tailwind)
-  docs/                # Public reference documentation
-  v4-planning/         # v4.0 architecture blueprints and roadmap
-  benches/             # Criterion benchmark suite
-  tests/               # Unified integration and security tests
-  tools/               # Build tooling (rcedit)
-  run.py               # Build script (--linux, --linux --cpanel)
-  config.example.toml  # Configuration template
-  docker-compose.yml   # Docker deployment
-  Cargo.toml           # Workspace root manifest
+server     Start the Axiom gateway daemon
+user       Administrative user management
+key        API machine key management
+role       RBAC role and permission management
+db         Upstream database connection management
+cache      Cache engine inspection and management
+audit      Query administrative audit logs
+reload     Force dynamic reload of metadata snapshots
+health     Check server health and status
+metrics    Dump Prometheus exposition metrics
+benchmark  Run built-in HTTP pipeline benchmark
+doctor     Diagnose system environment
+config     Configuration initialization and conversion
 ```
 
+## Troubleshooting
 
-## Documentation
-
-The `docs/` directory contains the full Axiom documentation.
-
-| Document | Description |
-|----------|-------------|
-| [Master Plan](./docs/AXIOM_MASTER_PLAN.md) | Architecture vision and v4.0 roadmap |
-| [API Reference](./docs/reference/api.md) | Complete REST API documentation |
-| [DB APIs & Monitoring](./docs/reference/db-apis-monitoring.md) | Database endpoints & response latency monitoring |
-| [Configuration](./docs/reference/configuration.md) | All config.toml parameters |
-| [Security](./docs/reference/security.md) | Security architecture and threat model |
-| [Getting Started](./docs/guides/getting-started.md) | How to build and run Axiom |
-| [Request Pipeline](./docs/architecture/request-pipeline.md) | Request pipeline internals |
-| [ADRs](./docs/adr/) | Architecture Decision Records |
-
-
-## Development
-
-```bash
-# Debug build
-cargo build
-
-# Run directly
-cargo run
-
-# Optimized release
-cargo build --release
-
-# Lint and auto-fix
-cargo clippy --fix
-```
-
-
-## Deployment
-
-### Binary
-
-Upload the compiled binary and your `config.toml` to your server:
-
-```bash
-chmod +x axiom
-./axiom
-```
-
-### Docker
-
-```bash
-docker compose up -d
-```
-
-### Reverse Proxy (Recommended for Production)
-
-Always place Axiom behind a reverse proxy for HTTPS termination:
-
-```mermaid
-flowchart TD
-    I[" Internet"] --> RP["Nginx / Caddy / Cloudflare\n(HTTPS termination)"]
-    RP -->|HTTP internally| AX["Axiom :4500"]
-    AX --> DB[("Database")]
-```
-
-> Never expose port `4500` directly to the public internet without HTTPS in front of it.
-
-
-## Security Model
-
-```mermaid
-flowchart TD
-    A["Client Request"] --> B["WAF Middleware\nDeep-decodes URLs, blocks path traversal, null-bytes, oversized payloads"]
-    B --> C["Rate Limiter & Ban List\nPer-IP and per-key fixed-window counter, auto-bans on brute force"]
-    C --> D["API Key Auth\nX-Axiom-Key validation via constant-time XOR"]
-    D --> E["AST Query Validator\nParses and validates SQL before execution"]
-    E --> F["Circuit Breaker\nMonitors failure rates and sheds load"]
-    F --> G[("Database Layer\nParameterized query execution")]
-```
-
+| Error | Cause | Fix |
+|---|---|---|
+| `AUTH_INVALID_KEY` | Key missing or suspended due to brute force protection | Use correct key, or wait for the ban window to expire |
+| `DB_CONNECTION_FAILED` | Upstream database is unreachable | Check DB URL in config, ensure firewall allows connection |
+| `CIRCUIT_BREAKER_OPEN` | DB failed too many times, circuit tripped | Wait for circuit reset or fix upstream DB |
+| `AUTH_SCOPE_DENIED` | API key lacks permission for the requested DB or table | Update `db_scope` or Role permissions via the CLI |
+| `SERIALIZATION_FAILED` | DB returned an unrepresentable value | Ensure query doesn't select raw binary blobs |
 
 ## Contributing
-
-Contributions are welcome.
-
-Before submitting changes:
-
-```bash
-cargo check
-cargo clippy
-cargo build
-```
-
-For larger changes, review the architecture and docs under `docs/`.
-
+- **Format:** `cargo fmt`
+- **Lint:** `cargo clippy --workspace -- -D warnings`
+- **Test:** `cargo test --workspace`
+- **Benchmark:** `cargo bench`
 
 ## License
-
-MIT © [Toxichome](https://toxichome.cc)
+MIT
