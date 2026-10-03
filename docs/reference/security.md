@@ -41,7 +41,7 @@ Session tokens (Web UI) are 32-character random strings validated via `MetadataS
 `PolicyEngine::evaluate(auth, database, table, operation)` is the single authorization checkpoint.
 
 **Priority order:**
-1. `full_admin = true` → bypass all checks
+1. `is_session = true` (Admin UI) → bypass all checks
 2. `auth.permissions` non-empty → evaluate granular RBAC rules
 3. Fallback → evaluate legacy `db_scope` and `mode` (readonly / writeonly / readwrite)
 

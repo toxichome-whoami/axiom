@@ -161,8 +161,8 @@ Returns column definitions (name, type, nullable, primary key) and foreign key r
 ```
 GET /           {"name":"Axiom","status":"online"}
 GET /ready      {"ready":true}
-GET /health     Requires auth. Full infra details for full_admin keys only.
-GET /metrics    Requires full_admin. Prometheus exposition text or JSON (?format=json).
+GET /health     Requires auth. Full infra details for admin sessions only.
+GET /metrics    Requires admin session. Prometheus exposition text or JSON (?format=json).
 GET /favicon.ico
 ```
 
@@ -170,7 +170,7 @@ GET /favicon.ico
 
 ## Admin API — `/admin/v1`
 
-All protected endpoints require a full_admin API key or active session token.
+All protected endpoints require an active admin session token.
 
 ### Setup (first boot only)
 

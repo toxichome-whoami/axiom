@@ -2,7 +2,7 @@
  * Admin HTTP API route handlers for keys, databases, status, and metadata synchronization.
  * Owned by: api/admin
  * Key deps: axum, serde, serde_json, base64, crate::metadata
- * Invariants: Endpoints require full_admin or admin role privileges; keys are returned in plaintext only upon creation.
+ * Invariants: Endpoints require an active admin session token; keys are returned in plaintext only upon creation.
  * Last structural change: Phase 1 initial implementation of Admin API.
  */
 

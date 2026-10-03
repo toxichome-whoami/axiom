@@ -67,7 +67,7 @@ curl -H "X-Axiom-Key: bXlrZXk6bXktc2VjcmV0" \
      http://localhost:4500/api/v1/db/databases
 ```
 
-Admin API (`/admin/v1`) requires a key with `full_admin: true` or admin role.
+Admin API (`/admin/v1`) requires an active admin session token.
 Session tokens for the Web UI are obtained via `POST /admin/v1/auth/login`.
 
 ---

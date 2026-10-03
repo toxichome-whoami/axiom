@@ -37,7 +37,7 @@ Auth Middleware (auth.rs)
 Axum Route Handler
   │
   ├─ PolicyEngine::evaluate(auth, database, table, operation)
-  │    Denies by default. Checks full_admin → RBAC permissions → legacy db_scope/mode.
+  │    Denies by default. Checks admin session → RBAC permissions → legacy db_scope/mode.
   │
   ├─ QueryExecutionPipeline::run_query (database/query endpoints)
   │    1. Circuit breaker check (CIRCUIT_FAILURES DashMap per alias)

@@ -137,7 +137,7 @@ If `[api_key.name]` or `[database.alias]` blocks exist in `config.toml`, Axiom r
 # Legacy (v3 style) — seeded on first boot then ignored
 [api_key.mykey]
 secret = "plaintext-secret"
-full_admin = true
+# Admin UI sessions handle admin access
 db_scope = ["*"]
 
 [database.main_db]
@@ -146,4 +146,4 @@ pool_min = 5
 pool_max = 50
 ```
 
-`full_admin = true` on a legacy key is preserved as an admin role. `db_scope` becomes a `permissions` entry scoping that key to the listed databases.
+The `db_scope` becomes a `permissions` entry scoping that key to the listed databases.
