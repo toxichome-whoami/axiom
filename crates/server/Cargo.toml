@@ -17,3 +17,4 @@ tokio = { workspace = true }
 tracing = { workspace = true }
 mimalloc = { workspace = true }
 axum = { workspace = true }
+socket2 = { workspace = true }

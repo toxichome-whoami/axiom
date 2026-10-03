@@ -19,6 +19,42 @@ use crate::engines::base::{
     ColumnInfo, DatabaseEngine, EngineError, ForeignKeyInfo, QueryResult, TableInfo,
 };
 
+/// Precomputed column classification for fast zero-trial MSSQL row decoding.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum MsSqlColKind {
+    Bool,
+    Int16,
+    Int32,
+    Int64,
+    Float32,
+    Float64,
+    String,
+    Fallback,
+}
+
+impl MsSqlColKind {
+    #[inline]
+    fn from_column_type(ct: tiberius::ColumnType) -> Self {
+        use tiberius::ColumnType;
+        match ct {
+            ColumnType::Bit => MsSqlColKind::Bool,
+            ColumnType::Int1 | ColumnType::Int2 => MsSqlColKind::Int16,
+            ColumnType::Int4 => MsSqlColKind::Int32,
+            ColumnType::Int8 => MsSqlColKind::Int64,
+            ColumnType::Float4 => MsSqlColKind::Float32,
+            ColumnType::Float8 => MsSqlColKind::Float64,
+            ColumnType::NVarchar
+            | ColumnType::BigVarChar
+            | ColumnType::NChar
+            | ColumnType::BigChar
+            | ColumnType::Text
+            | ColumnType::NText
+            | ColumnType::Guid => MsSqlColKind::String,
+            _ => MsSqlColKind::Fallback,
+        }
+    }
+}
+
 pub struct MssqlDatabaseEngine {
     config: DatabaseDefConfig,
     client: Option<Arc<Mutex<Client<Compat<TcpStream>>>>>,
@@ -277,11 +313,13 @@ impl DatabaseEngine for MssqlDatabaseEngine {
         let rows = stream.into_first_result().await.map_err(|e| EngineError::Execution(e.to_string()))?;
 
         let mut column_names = Vec::new();
+        let mut column_kinds = Vec::new();
         let mut result_rows = Vec::new();
 
         if let Some(first) = rows.first() {
             for col in first.columns() {
                 column_names.push(col.name().to_string());
+                column_kinds.push(MsSqlColKind::from_column_type(col.column_type()));
             }
         }
 
@@ -292,23 +330,76 @@ impl DatabaseEngine for MssqlDatabaseEngine {
                 break;
             }
             let mut json_obj = serde_json::Map::with_capacity(column_names.len());
-            for name in &column_names {
-                let val = if let Ok(Some(s)) = row.try_get::<&str, _>(name.as_str()) {
-                    Value::String(s.to_string())
-                } else if let Ok(Some(i)) = row.try_get::<i64, _>(name.as_str()) {
-                    Value::Number(i.into())
-                } else if let Ok(Some(i)) = row.try_get::<i32, _>(name.as_str()) {
-                    Value::Number(i.into())
-                } else if let Ok(Some(i)) = row.try_get::<i16, _>(name.as_str()) {
-                    Value::Number(i.into())
-                } else if let Ok(Some(f)) = row.try_get::<f64, _>(name.as_str()) {
-                    serde_json::Number::from_f64(f).map(Value::Number).unwrap_or(Value::Null)
-                } else if let Ok(Some(f)) = row.try_get::<f32, _>(name.as_str()) {
-                    serde_json::Number::from_f64(f as f64).map(Value::Number).unwrap_or(Value::Null)
-                } else if let Ok(Some(b)) = row.try_get::<bool, _>(name.as_str()) {
-                    Value::Bool(b)
-                } else {
-                    Value::Null
+            for (idx, name) in column_names.iter().enumerate() {
+                let val = match column_kinds.get(idx).copied().unwrap_or(MsSqlColKind::Fallback) {
+                    MsSqlColKind::String => {
+                        if let Ok(Some(s)) = row.try_get::<&str, _>(idx) {
+                            if (s.starts_with('{') && s.ends_with('}')) || (s.starts_with('[') && s.ends_with(']')) {
+                                serde_json::from_str::<Value>(s).unwrap_or_else(|_| Value::String(s.to_string()))
+                            } else {
+                                Value::String(s.to_string())
+                            }
+                        } else {
+                            Value::Null
+                        }
+                    }
+                    MsSqlColKind::Int64 => {
+                        if let Ok(Some(i)) = row.try_get::<i64, _>(idx) {
+                            Value::Number(i.into())
+                        } else {
+                            Value::Null
+                        }
+                    }
+                    MsSqlColKind::Int32 => {
+                        if let Ok(Some(i)) = row.try_get::<i32, _>(idx) {
+                            Value::Number(i.into())
+                        } else {
+                            Value::Null
+                        }
+                    }
+                    MsSqlColKind::Int16 => {
+                        if let Ok(Some(i)) = row.try_get::<i16, _>(idx) {
+                            Value::Number(i.into())
+                        } else {
+                            Value::Null
+                        }
+                    }
+                    MsSqlColKind::Float64 => {
+                        if let Ok(Some(f)) = row.try_get::<f64, _>(idx) {
+                            serde_json::Number::from_f64(f).map(Value::Number).unwrap_or(Value::Null)
+                        } else {
+                            Value::Null
+                        }
+                    }
+                    MsSqlColKind::Float32 => {
+                        if let Ok(Some(f)) = row.try_get::<f32, _>(idx) {
+                            serde_json::Number::from_f64(f as f64).map(Value::Number).unwrap_or(Value::Null)
+                        } else {
+                            Value::Null
+                        }
+                    }
+                    MsSqlColKind::Bool => {
+                        if let Ok(Some(b)) = row.try_get::<bool, _>(idx) {
+                            Value::Bool(b)
+                        } else {
+                            Value::Null
+                        }
+                    }
+                    MsSqlColKind::Fallback => {
+                        if let Ok(Some(s)) = row.try_get::<&str, _>(idx) {
+                            Value::String(s.to_string())
+                        } else if let Ok(Some(i)) = row.try_get::<i64, _>(idx) {
+                            Value::Number(i.into())
+                        } else if let Ok(Some(i)) = row.try_get::<i32, _>(idx) {
+                            Value::Number(i.into())
+                        } else if let Ok(Some(f)) = row.try_get::<f64, _>(idx) {
+                            serde_json::Number::from_f64(f).map(Value::Number).unwrap_or(Value::Null)
+                        } else if let Ok(Some(b)) = row.try_get::<bool, _>(idx) {
+                            Value::Bool(b)
+                        } else {
+                            Value::Null
+                        }
+                    }
                 };
                 json_obj.insert(name.clone(), val);
             }

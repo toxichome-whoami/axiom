@@ -75,6 +75,10 @@ impl DatabaseEngine for ClickHouseDatabaseEngine {
 
         self.client = Client::builder()
             .default_headers(headers)
+            .tcp_nodelay(true)
+            .pool_max_idle_per_host(self.config.pool_max as usize)
+            .pool_idle_timeout(std::time::Duration::from_secs(self.config.idle_timeout as u64))
+            .timeout(std::time::Duration::from_secs(self.config.connection_timeout as u64))
             .build()
             .map_err(|e| EngineError::Connection(e.to_string()))?;
 
@@ -255,7 +259,7 @@ impl DatabaseEngine for ClickHouseDatabaseEngine {
             });
         }
 
-        let body: Value = res.json().await.map_err(|e| EngineError::Execution(e.to_string()))?;
+        let mut body: Value = res.json().await.map_err(|e| EngineError::Execution(e.to_string()))?;
         
         let mut column_names = Vec::new();
         if let Some(meta) = body.get("meta").and_then(|m| m.as_array()) {
@@ -268,13 +272,13 @@ impl DatabaseEngine for ClickHouseDatabaseEngine {
 
         let mut result_rows = Vec::new();
         let mut truncated = false;
-        if let Some(data) = body.get("data").and_then(|d| d.as_array()) {
-            for row in data {
-                if result_rows.len() >= axiom_core::DEFAULT_MAX_QUERY_ROWS {
-                    truncated = true;
-                    break;
-                }
-                result_rows.push(row.clone());
+        if let Some(Value::Array(data)) = body.as_object_mut().and_then(|m| m.remove("data")) {
+            if data.len() > axiom_core::DEFAULT_MAX_QUERY_ROWS {
+                truncated = true;
+                result_rows = data;
+                result_rows.truncate(axiom_core::DEFAULT_MAX_QUERY_ROWS);
+            } else {
+                result_rows = data;
             }
         }
 

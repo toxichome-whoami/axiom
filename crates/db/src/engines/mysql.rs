@@ -12,7 +12,44 @@ use crate::engines::base::{
 };
 use async_trait::async_trait;
 use serde_json::Value;
-use sqlx::{mysql::MySqlPoolOptions, Column, MySqlPool, Row};
+use sqlx::{mysql::MySqlPoolOptions, Column, MySqlPool, Row, TypeInfo};
+
+/// Precomputed column classification for fast zero-trial MySQL row decoding.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum MySqlColKind {
+    Bool,
+    Int16,
+    Int32,
+    Int64,
+    Float32,
+    Float64,
+    Numeric,
+    Json,
+    DateTime,
+    Date,
+    String,
+    Fallback,
+}
+
+impl MySqlColKind {
+    #[inline]
+    fn from_type_name(name: &str) -> Self {
+        match name.to_ascii_uppercase().as_str() {
+            "BOOLEAN" | "BOOL" => MySqlColKind::Bool,
+            "TINYINT" | "SMALLINT" | "YEAR" => MySqlColKind::Int16,
+            "INT" | "INTEGER" | "MEDIUMINT" => MySqlColKind::Int32,
+            "BIGINT" => MySqlColKind::Int64,
+            "FLOAT" => MySqlColKind::Float32,
+            "DOUBLE" => MySqlColKind::Float64,
+            "DECIMAL" | "NUMERIC" => MySqlColKind::Numeric,
+            "JSON" => MySqlColKind::Json,
+            "TIMESTAMP" | "DATETIME" => MySqlColKind::DateTime,
+            "DATE" => MySqlColKind::Date,
+            "VARCHAR" | "CHAR" | "TEXT" | "TINYTEXT" | "MEDIUMTEXT" | "LONGTEXT" | "ENUM" | "SET" => MySqlColKind::String,
+            _ => MySqlColKind::Fallback,
+        }
+    }
+}
 
 pub struct MysqlDatabaseEngine {
     pool: Option<MySqlPool>,
@@ -32,6 +69,10 @@ impl MysqlDatabaseEngine {
 impl DatabaseEngine for MysqlDatabaseEngine {
     async fn connect(&mut self) -> Result<(), EngineError> {
         if self.pool.is_none() {
+            let connect_options = self.config.url.parse::<sqlx::mysql::MySqlConnectOptions>()
+                .map_err(|e| EngineError::Connection(e.to_string()))?
+                .statement_cache_capacity(1024);
+
             let pool = MySqlPoolOptions::new()
                 .max_connections(self.config.pool_max as u32)
                 .min_connections(self.config.pool_min as u32)
@@ -44,7 +85,7 @@ impl DatabaseEngine for MysqlDatabaseEngine {
                 .max_lifetime(std::time::Duration::from_secs(
                     self.config.max_lifetime as u64,
                 ))
-                .connect(&self.config.url)
+                .connect_with(connect_options)
                 .await
                 .map_err(|e| EngineError::Connection(e.to_string()))?;
             self.pool = Some(pool);
@@ -234,6 +275,7 @@ impl DatabaseEngine for MysqlDatabaseEngine {
         let mut stream = query.fetch(pool);
         let mut result_rows = Vec::new();
         let mut column_names = Vec::new();
+        let mut column_kinds = Vec::new();
         let mut truncated = false;
 
         while let Some(row_res) = stream.next().await {
@@ -241,6 +283,7 @@ impl DatabaseEngine for MysqlDatabaseEngine {
             if column_names.is_empty() {
                 for col in row.columns() {
                     column_names.push(col.name().to_string());
+                    column_kinds.push(MySqlColKind::from_type_name(col.type_info().name()));
                 }
             }
 
@@ -251,34 +294,117 @@ impl DatabaseEngine for MysqlDatabaseEngine {
 
             let mut json_obj = serde_json::Map::with_capacity(column_names.len());
             for (idx, name) in column_names.iter().enumerate() {
-                let val = if let Ok(s) = row.try_get::<String, _>(idx) {
-                    if (s.starts_with('{') && s.ends_with('}')) || (s.starts_with('[') && s.ends_with(']')) {
-                        if let Ok(parsed) = serde_json::from_str::<Value>(&s) {
-                            parsed
+                let val = match column_kinds[idx] {
+                    MySqlColKind::String => {
+                        if let Ok(Some(s)) = row.try_get::<Option<String>, _>(idx) {
+                            if (s.starts_with('{') && s.ends_with('}')) || (s.starts_with('[') && s.ends_with(']')) {
+                                serde_json::from_str::<Value>(&s).unwrap_or(Value::String(s))
+                            } else {
+                                Value::String(s)
+                            }
                         } else {
-                            Value::String(s)
+                            Value::Null
                         }
-                    } else {
-                        Value::String(s)
                     }
-                } else if let Ok(i) = row.try_get::<i64, _>(idx) {
-                    Value::Number(i.into())
-                } else if let Ok(i) = row.try_get::<i32, _>(idx) {
-                    Value::Number(i.into())
-                } else if let Ok(f) = row.try_get::<f64, _>(idx) {
-                    serde_json::Number::from_f64(f).map(Value::Number).unwrap_or(Value::Null)
-                } else if let Ok(f) = row.try_get::<f32, _>(idx) {
-                    serde_json::Number::from_f64(f as f64).map(Value::Number).unwrap_or(Value::Null)
-                } else if let Ok(b) = row.try_get::<bool, _>(idx) {
-                    Value::Bool(b)
-                } else if let Ok(dt) = row.try_get::<chrono::NaiveDateTime, _>(idx) {
-                    Value::String(dt.to_string())
-                } else if let Ok(dt) = row.try_get::<chrono::DateTime<chrono::Utc>, _>(idx) {
-                    Value::String(dt.to_rfc3339())
-                } else if let Ok(d) = row.try_get::<chrono::NaiveDate, _>(idx) {
-                    Value::String(d.to_string())
-                } else {
-                    Value::Null
+                    MySqlColKind::Json => {
+                        if let Ok(Some(v)) = row.try_get::<Option<Value>, _>(idx) {
+                            v
+                        } else if let Ok(Some(s)) = row.try_get::<Option<String>, _>(idx) {
+                            serde_json::from_str::<Value>(&s).unwrap_or(Value::String(s))
+                        } else {
+                            Value::Null
+                        }
+                    }
+                    MySqlColKind::Int64 => {
+                        if let Ok(Some(i)) = row.try_get::<Option<i64>, _>(idx) {
+                            Value::Number(i.into())
+                        } else {
+                            Value::Null
+                        }
+                    }
+                    MySqlColKind::Int32 => {
+                        if let Ok(Some(i)) = row.try_get::<Option<i32>, _>(idx) {
+                            Value::Number(i.into())
+                        } else {
+                            Value::Null
+                        }
+                    }
+                    MySqlColKind::Int16 => {
+                        if let Ok(Some(i)) = row.try_get::<Option<i16>, _>(idx) {
+                            Value::Number(i.into())
+                        } else {
+                            Value::Null
+                        }
+                    }
+                    MySqlColKind::Float64 => {
+                        if let Ok(Some(f)) = row.try_get::<Option<f64>, _>(idx) {
+                            serde_json::Number::from_f64(f).map(Value::Number).unwrap_or(Value::Null)
+                        } else {
+                            Value::Null
+                        }
+                    }
+                    MySqlColKind::Float32 => {
+                        if let Ok(Some(f)) = row.try_get::<Option<f32>, _>(idx) {
+                            serde_json::Number::from_f64(f as f64).map(Value::Number).unwrap_or(Value::Null)
+                        } else {
+                            Value::Null
+                        }
+                    }
+                    MySqlColKind::Numeric => {
+                        if let Ok(Some(s)) = row.try_get::<Option<String>, _>(idx) {
+                            if let Ok(num) = s.parse::<serde_json::Number>() {
+                                Value::Number(num)
+                            } else {
+                                Value::String(s)
+                            }
+                        } else if let Ok(Some(f)) = row.try_get::<Option<f64>, _>(idx) {
+                            serde_json::Number::from_f64(f).map(Value::Number).unwrap_or(Value::Null)
+                        } else {
+                            Value::Null
+                        }
+                    }
+                    MySqlColKind::Bool => {
+                        if let Ok(Some(b)) = row.try_get::<Option<bool>, _>(idx) {
+                            Value::Bool(b)
+                        } else {
+                            Value::Null
+                        }
+                    }
+                    MySqlColKind::DateTime => {
+                        if let Ok(Some(dt)) = row.try_get::<Option<chrono::DateTime<chrono::Utc>>, _>(idx) {
+                            Value::String(dt.to_rfc3339())
+                        } else if let Ok(Some(dt)) = row.try_get::<Option<chrono::NaiveDateTime>, _>(idx) {
+                            Value::String(dt.to_string())
+                        } else {
+                            Value::Null
+                        }
+                    }
+                    MySqlColKind::Date => {
+                        if let Ok(Some(d)) = row.try_get::<Option<chrono::NaiveDate>, _>(idx) {
+                            Value::String(d.to_string())
+                        } else {
+                            Value::Null
+                        }
+                    }
+                    MySqlColKind::Fallback => {
+                        if let Ok(Some(s)) = row.try_get::<Option<String>, _>(idx) {
+                            if (s.starts_with('{') && s.ends_with('}')) || (s.starts_with('[') && s.ends_with(']')) {
+                                serde_json::from_str::<Value>(&s).unwrap_or(Value::String(s))
+                            } else {
+                                Value::String(s)
+                            }
+                        } else if let Ok(Some(i)) = row.try_get::<Option<i64>, _>(idx) {
+                            Value::Number(i.into())
+                        } else if let Ok(Some(i)) = row.try_get::<Option<i32>, _>(idx) {
+                            Value::Number(i.into())
+                        } else if let Ok(Some(f)) = row.try_get::<Option<f64>, _>(idx) {
+                            serde_json::Number::from_f64(f).map(Value::Number).unwrap_or(Value::Null)
+                        } else if let Ok(Some(b)) = row.try_get::<Option<bool>, _>(idx) {
+                            Value::Bool(b)
+                        } else {
+                            Value::Null
+                        }
+                    }
                 };
                 json_obj.insert(name.clone(), val);
             }

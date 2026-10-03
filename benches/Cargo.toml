@@ -20,6 +20,8 @@ tower = { workspace = true }
 axum = { workspace = true }
 serde_json = { workspace = true }
 libsql = { workspace = true }
+sqlparser = { workspace = true }
+dashmap = { workspace = true }
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["async_tokio"] }

@@ -372,6 +372,32 @@ fn bench_filter_builder(c: &mut Criterion) {
         });
     });
 
+    // AST Validation: Uncached SQL AST parse vs Cached AST metadata lookup
+    let sql_stmt = "SELECT id, name, email, created_at FROM users WHERE status = ? AND age >= ? ORDER BY created_at DESC";
+    group.bench_function("ast_uncached_parse", |b| {
+        b.iter(|| {
+            let res = sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::PostgreSqlDialect {}, black_box(sql_stmt));
+            black_box(res.map(|s| s.len()).unwrap_or(0));
+        });
+    });
+
+    let ast_cache = dashmap::DashMap::new();
+    let sample_info = std::sync::Arc::new(axiom_api::database::handlers::CachedAstInfo {
+        is_mutation: false,
+        operations: vec![("SELECT", vec!["users".to_string()])],
+        formatted_sql: Some(sql_stmt.replace('?', "$1")),
+        multiple_statements: None,
+    });
+    ast_cache.insert(format!("postgres:{}", sql_stmt), sample_info);
+
+    group.bench_function("ast_cache_lookup_hot", |b| {
+        let key = format!("postgres:{}", sql_stmt);
+        b.iter(|| {
+            let entry = ast_cache.get(black_box(&key));
+            black_box(entry.is_some());
+        });
+    });
+
     group.finish();
 }
 

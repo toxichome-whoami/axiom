@@ -26,6 +26,22 @@ static MUTATION_RE: once_cell::sync::Lazy<regex::Regex> = once_cell::sync::Lazy:
     regex::Regex::new(r"(?i)\b(INSERT|UPDATE|DELETE|DROP|CREATE|ALTER|TRUNCATE|REPLACE|GRANT|REVOKE|PRAGMA)\b").unwrap()
 });
 
+/// Precomputed AST analysis and formatted query statement for fast-path execution.
+#[derive(Clone, Debug)]
+pub struct CachedAstInfo {
+    pub is_mutation: bool,
+    pub operations: Vec<(&'static str, Vec<String>)>,
+    pub formatted_sql: Option<String>,
+    pub multiple_statements: Option<Vec<String>>,
+}
+
+/// Bounded AST metadata cache mapping "{dialect}:{sql}" -> CachedAstInfo.
+/// Avoids repeated sqlparser allocations and AST tree traversals on frequent parameterized queries.
+static AST_CACHE: once_cell::sync::Lazy<dashmap::DashMap<String, Arc<CachedAstInfo>>> =
+    once_cell::sync::Lazy::new(dashmap::DashMap::new);
+
+const MAX_AST_CACHE_ENTRIES: usize = 4096;
+
 pub async fn warm_cache_from_turso(entries: Vec<(String, bytes::Bytes, i64)>) {
     let now_unix = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -150,117 +166,153 @@ impl QueryExecutionPipeline {
             None
         };
 
-        // Cache miss or mutation. Now we MUST run the strict AST parser to prevent bypasses.
+        // Cache miss or mutation. Check AST Cache before falling back to full sqlparser.
         let dialect_name = engine.dialect();
+        let ast_cache_key = format!("{}:{}", dialect_name, sql);
 
-        let ast_result = if dialect_name == "postgres" {
-            sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::PostgreSqlDialect {}, sql)
-        } else if dialect_name == "clickhouse" {
-            sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::ClickHouseDialect {}, sql)
-        } else if dialect_name == "mssql" {
-            sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::MsSqlDialect {}, sql)
-        } else if dialect_name == "mysql" {
-            sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::MySqlDialect {}, sql)
-        } else if dialect_name == "sqlite" {
-            sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::SQLiteDialect {}, sql)
-        } else {
-            sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::GenericDialect {}, sql)
-        };
-
-        let statements = ast_result.map_err(|e| {
-            tracing::error!("SQL parse error: {}", e);
-            AxiomError::new(
-                "SQL_PARSE_ERROR",
-                "SQL parsing failed",
-                StatusCode::BAD_REQUEST,
-            )
-        })?;
-
-        let mut is_mutation = false;
-
-        for stmt in &statements {
-            let (op, tables) = match stmt {
-                sqlparser::ast::Statement::Query(query) => {
-                    let mut tbls = Vec::new();
-                    collect_tables_from_query(query, &mut tbls);
-                    ("SELECT", tbls)
-                }
-                sqlparser::ast::Statement::Explain { .. }
-                | sqlparser::ast::Statement::ShowVariable { .. }
-                | sqlparser::ast::Statement::ShowColumns { .. } => ("SELECT", Vec::new()),
-                sqlparser::ast::Statement::Insert(insert) => {
-                    is_mutation = true;
-                    ("INSERT", vec![extract_table_name(&insert.table.to_string())])
-                }
-                sqlparser::ast::Statement::Update(update) => {
-                    is_mutation = true;
-                    let mut tbls = Vec::new();
-                    collect_tables_from_table_with_joins(&update.table, &mut tbls);
-                    if tbls.is_empty() {
-                        tbls.push(extract_table_name(&update.table.to_string()));
+        let (is_mutation, formatted_sql, multiple_statements) = if let Some(cached) = AST_CACHE.get(&ast_cache_key) {
+            for (op, tables) in &cached.operations {
+                if tables.is_empty() {
+                    PolicyEngine::evaluate(auth, db_name, "*", op)?;
+                } else {
+                    for tbl in tables {
+                        PolicyEngine::evaluate(auth, db_name, tbl, op)?;
                     }
-                    ("UPDATE", tbls)
                 }
-                sqlparser::ast::Statement::Delete(delete) => {
-                    is_mutation = true;
-                    let mut tbls = Vec::new();
-                    if let sqlparser::ast::FromTable::WithFromKeyword(from_tables) = &delete.from {
-                        for twj in from_tables {
-                            collect_tables_from_table_with_joins(twj, &mut tbls);
-                        }
-                    } else {
-                        for name in &delete.tables {
-                            tbls.push(extract_table_name(&name.to_string()));
-                        }
-                    };
-                    ("DELETE", tbls)
-                }
-                sqlparser::ast::Statement::Drop { .. }
-                | sqlparser::ast::Statement::AlterTable { .. }
-                | sqlparser::ast::Statement::Truncate { .. } => {
-                    is_mutation = true;
-                    ("DDL", Vec::new())
-                }
-                _ => {
-                    is_mutation = true;
-                    ("DENY", Vec::new())
-                }
+            }
+            let cow = cached.formatted_sql.clone().map(std::borrow::Cow::Owned).unwrap_or_else(|| std::borrow::Cow::Borrowed(sql));
+            (cached.is_mutation, cow, cached.multiple_statements.clone())
+        } else {
+            let ast_result = if dialect_name == "postgres" {
+                sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::PostgreSqlDialect {}, sql)
+            } else if dialect_name == "clickhouse" {
+                sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::ClickHouseDialect {}, sql)
+            } else if dialect_name == "mssql" {
+                sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::MsSqlDialect {}, sql)
+            } else if dialect_name == "mysql" {
+                sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::MySqlDialect {}, sql)
+            } else if dialect_name == "sqlite" {
+                sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::SQLiteDialect {}, sql)
+            } else {
+                sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::GenericDialect {}, sql)
             };
 
-            if tables.is_empty() {
-                PolicyEngine::evaluate(auth, db_name, "*", op)?;
-            } else {
-                for tbl in &tables {
-                    PolicyEngine::evaluate(auth, db_name, tbl, op)?;
-                }
-            }
-        }
+            let statements = ast_result.map_err(|e| {
+                tracing::error!("SQL parse error: {}", e);
+                AxiomError::new(
+                    "SQL_PARSE_ERROR",
+                    "SQL parsing failed",
+                    StatusCode::BAD_REQUEST,
+                )
+            })?;
 
-        // Format placeholders based on engine dialect
-        let formatted_sql = if (dialect_name == "postgres" || dialect_name == "any") && sql.contains('?') {
-            // Primitive placeholder conversion for postgres `$1, $2`
-            use std::fmt::Write;
-            let mut final_sql = String::with_capacity(sql.len() + 16);
-            let mut param_index = 1;
-            for c in sql.chars() {
-                if c == '?' {
-                    let _ = write!(final_sql, "${}", param_index);
-                    param_index += 1;
+            let mut is_mutation = false;
+            let mut operations = Vec::with_capacity(statements.len());
+
+            for stmt in &statements {
+                let (op, tables) = match stmt {
+                    sqlparser::ast::Statement::Query(query) => {
+                        let mut tbls = Vec::new();
+                        collect_tables_from_query(query, &mut tbls);
+                        ("SELECT", tbls)
+                    }
+                    sqlparser::ast::Statement::Explain { .. }
+                    | sqlparser::ast::Statement::ShowVariable { .. }
+                    | sqlparser::ast::Statement::ShowColumns { .. } => ("SELECT", Vec::new()),
+                    sqlparser::ast::Statement::Insert(insert) => {
+                        is_mutation = true;
+                        ("INSERT", vec![extract_table_name(&insert.table.to_string())])
+                    }
+                    sqlparser::ast::Statement::Update(update) => {
+                        is_mutation = true;
+                        let mut tbls = Vec::new();
+                        collect_tables_from_table_with_joins(&update.table, &mut tbls);
+                        if tbls.is_empty() {
+                            tbls.push(extract_table_name(&update.table.to_string()));
+                        }
+                        ("UPDATE", tbls)
+                    }
+                    sqlparser::ast::Statement::Delete(delete) => {
+                        is_mutation = true;
+                        let mut tbls = Vec::new();
+                        if let sqlparser::ast::FromTable::WithFromKeyword(from_tables) = &delete.from {
+                            for twj in from_tables {
+                                collect_tables_from_table_with_joins(twj, &mut tbls);
+                            }
+                        } else {
+                            for name in &delete.tables {
+                                tbls.push(extract_table_name(&name.to_string()));
+                            }
+                        };
+                        ("DELETE", tbls)
+                    }
+                    sqlparser::ast::Statement::Drop { .. }
+                    | sqlparser::ast::Statement::AlterTable { .. }
+                    | sqlparser::ast::Statement::Truncate { .. } => {
+                        is_mutation = true;
+                        ("DDL", Vec::new())
+                    }
+                    _ => {
+                        is_mutation = true;
+                        ("DENY", Vec::new())
+                    }
+                };
+
+                if tables.is_empty() {
+                    PolicyEngine::evaluate(auth, db_name, "*", op)?;
                 } else {
-                    final_sql.push(c);
+                    for tbl in &tables {
+                        PolicyEngine::evaluate(auth, db_name, tbl, op)?;
+                    }
                 }
+                operations.push((op, tables));
             }
-            std::borrow::Cow::Owned(final_sql)
-        } else {
-            std::borrow::Cow::Borrowed(sql)
+
+            // Format placeholders based on engine dialect
+            let opt_formatted_sql = if (dialect_name == "postgres" || dialect_name == "any") && sql.contains('?') {
+                use std::fmt::Write;
+                let mut final_sql = String::with_capacity(sql.len() + 16);
+                let mut param_index = 1;
+                for c in sql.chars() {
+                    if c == '?' {
+                        let _ = write!(final_sql, "${}", param_index);
+                        param_index += 1;
+                    } else {
+                        final_sql.push(c);
+                    }
+                }
+                Some(final_sql)
+            } else {
+                None
+            };
+
+            let mult_stmts = if statements.len() > 1 {
+                Some(statements.iter().map(|s| s.to_string()).collect())
+            } else {
+                None
+            };
+
+            if AST_CACHE.len() < MAX_AST_CACHE_ENTRIES {
+                AST_CACHE.insert(
+                    ast_cache_key,
+                    Arc::new(CachedAstInfo {
+                        is_mutation,
+                        operations,
+                        formatted_sql: opt_formatted_sql.clone(),
+                        multiple_statements: mult_stmts.clone(),
+                    }),
+                );
+            }
+
+            let cow = opt_formatted_sql.map(std::borrow::Cow::Owned).unwrap_or_else(|| std::borrow::Cow::Borrowed(sql));
+            (is_mutation, cow, mult_stmts)
         };
 
         let start_time = std::time::Instant::now();
-        let exec_result: Result<QueryResult, String> = if statements.len() > 1 {
+        let exec_result: Result<QueryResult, String> = if let Some(stmt_strs) = multiple_statements {
             let mut last_res = None;
             let mut exec_err = None;
-            for (idx, stmt) in statements.iter().enumerate() {
-                let stmt_str = stmt.to_string();
+            for (idx, stmt_str) in stmt_strs.iter().enumerate() {
                 let stmt_formatted = if (dialect_name == "postgres" || dialect_name == "any") && stmt_str.contains('?') {
                     use std::fmt::Write;
                     let mut s = String::with_capacity(stmt_str.len() + 16);
@@ -275,10 +327,10 @@ impl QueryExecutionPipeline {
                     }
                     s
                 } else {
-                    stmt_str
+                    stmt_str.clone()
                 };
 
-                let is_last = idx == statements.len() - 1;
+                let is_last = idx == stmt_strs.len() - 1;
                 let stmt_params = if is_last { params.as_slice() } else { &[] };
                 match engine.execute(&stmt_formatted, stmt_params).await {
                     Ok(r) => {
@@ -777,6 +829,26 @@ mod tests {
         assert_eq!(stmts[0].to_string(), "CREATE TABLE customers (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(100) NOT NULL)");
         assert_eq!(stmts[1].to_string(), "INSERT INTO customers (name) VALUES ('Alice')");
         assert_eq!(stmts[2].to_string(), "SELECT * FROM customers");
+    }
+
+    #[test]
+    fn test_ast_cache_hit_and_consistency() {
+        let sql = "SELECT id, name, email FROM users WHERE status = ? AND active = true";
+        let cache_key = format!("postgres:{}", sql);
+
+        let info = std::sync::Arc::new(super::CachedAstInfo {
+            is_mutation: false,
+            operations: vec![("SELECT", vec!["users".to_string()])],
+            formatted_sql: Some("SELECT id, name, email FROM users WHERE status = $1 AND active = true".to_string()),
+            multiple_statements: None,
+        });
+
+        super::AST_CACHE.insert(cache_key.clone(), info);
+        let cached = super::AST_CACHE.get(&cache_key).expect("cached AST entry should exist");
+        assert_eq!(cached.is_mutation, false);
+        assert_eq!(cached.operations[0].0, "SELECT");
+        assert_eq!(cached.operations[0].1, vec!["users".to_string()]);
+        assert_eq!(cached.formatted_sql.as_deref(), Some("SELECT id, name, email FROM users WHERE status = $1 AND active = true"));
     }
 }
 

@@ -49,7 +49,8 @@ impl DatabaseEngine for LibsqlDatabaseEngine {
         }
 
         // Handle libsql:// or sqlite:// or file://
-        let db = if url.starts_with("libsql://") || url.starts_with("https://") {
+        let is_remote = url.starts_with("libsql://") || url.starts_with("https://");
+        let db = if is_remote {
             Builder::new_remote(url, token)
                 .build()
                 .await
@@ -64,6 +65,21 @@ impl DatabaseEngine for LibsqlDatabaseEngine {
         };
         
         let conn = db.connect().map_err(|e| EngineError::Connection(e.to_string()))?;
+
+        // High-concurrency tuning for local SQLite storage:
+        // - WAL journal mode: concurrent readers do not block writers and vice versa
+        // - synchronous = NORMAL: safe fsync policy with 10x-50x faster write throughput
+        // - busy_timeout = 5000: wait up to 5s on lock contention rather than failing immediately
+        // - temp_store = MEMORY: stores temp tables and sort results in RAM
+        // - cache_size = -64000: allocates 64MB memory page cache
+        if !is_remote {
+            let _ = conn.execute("PRAGMA journal_mode = WAL;", ()).await;
+            let _ = conn.execute("PRAGMA synchronous = NORMAL;", ()).await;
+            let _ = conn.execute("PRAGMA busy_timeout = 5000;", ()).await;
+            let _ = conn.execute("PRAGMA temp_store = MEMORY;", ()).await;
+            let _ = conn.execute("PRAGMA cache_size = -64000;", ()).await;
+        }
+
         self.db = Some(db);
         self.conn = Some(conn);
         Ok(())
