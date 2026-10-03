@@ -1,7 +1,14 @@
-# API Reference
+<div align="center">
+
+# API REFERENCE
+
+**Complete REST API documentation for the Axiom data and administration endpoints.**
+
+</div>
+
+---
 
 Base URL: `http://localhost:4500`
-
 All data API endpoints require `X-Axiom-Key: base64(name:secret)`.
 
 ---

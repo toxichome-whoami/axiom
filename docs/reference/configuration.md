@@ -1,4 +1,12 @@
-# Configuration Reference
+<div align="center">
+
+# CONFIGURATION REFERENCE
+
+**Complete reference for `config.toml` settings, environment variables, and startup behavior.**
+
+</div>
+
+---
 
 Config is loaded once at startup from `config.toml`. A server restart is required for changes to take effect.
 

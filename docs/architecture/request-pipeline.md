@@ -1,4 +1,10 @@
-# Request Pipeline Architecture
+<div align="center">
+
+# REQUEST PIPELINE ARCHITECTURE
+
+**Internal request lifecycle, engine routing, metadata refreshing, and cache architecture.**
+
+</div>
 
 ---
 

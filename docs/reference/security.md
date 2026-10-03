@@ -1,4 +1,10 @@
-# Security Reference
+<div align="center">
+
+# SECURITY REFERENCE
+
+**Defense-in-depth architecture, WAF rules, rate limiting, and RBAC enforcement.**
+
+</div>
 
 ---
 
