@@ -50,6 +50,8 @@ impl DatabaseEngine for LibsqlDatabaseEngine {
 
         // Handle libsql:// or sqlite:// or file://
         let is_remote = url.starts_with("libsql://") || url.starts_with("https://");
+        // WHY computed before builder: Builder::new_remote moves url, so we must check first.
+        let is_memory = !is_remote && (url == ":memory:" || url.contains(":memory:?") || url.ends_with("/:memory:"));
         let db = if is_remote {
             Builder::new_remote(url, token)
                 .build()
@@ -72,7 +74,9 @@ impl DatabaseEngine for LibsqlDatabaseEngine {
         // - busy_timeout = 5000: wait up to 5s on lock contention rather than failing immediately
         // - temp_store = MEMORY: stores temp tables and sort results in RAM
         // - cache_size = -64000: allocates 64MB memory page cache
-        if !is_remote {
+        // WHY skip for :memory: — WAL requires a VFS-level file; in-memory DBs always use
+        // journal_mode=MEMORY regardless, and the other pragmas are irrelevant.
+        if !is_remote && !is_memory {
             let _ = conn.execute("PRAGMA journal_mode = WAL;", ()).await;
             let _ = conn.execute("PRAGMA synchronous = NORMAL;", ()).await;
             let _ = conn.execute("PRAGMA busy_timeout = 5000;", ()).await;

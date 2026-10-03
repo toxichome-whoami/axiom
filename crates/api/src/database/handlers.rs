@@ -147,21 +147,15 @@ impl QueryExecutionPipeline {
             })?;
 
         let is_mutation_regex = MUTATION_RE.is_match(sql);
-        
 
         let cache_enabled = config.cache.enabled && config.cache.query_cache;
         let cache_ttl = config.cache.query_results_ttl as u64;
 
+        // Cache key computed now but the lookup is deferred until AFTER RBAC passes.
+        // WHY: returning bytes before PolicyEngine::evaluate would silently bypass
+        // permission revocations for the duration of the TTL.
         let cache_key = if cache_enabled && !is_mutation_regex {
-            let key = format!("{}:{}:{}:{:?}", auth.api_key_name, db_name, sql, params);
-
-            if let Some(bytes) = axiom_cache::CacheEngine::get(&key).await {
-                return Ok((
-                    Arc::new(QueryResult { affected_rows: Some(0), ..Default::default() }),
-                    bytes,
-                ));
-            }
-            Some(key)
+            Some(format!("{}:{}:{}:{:?}", auth.api_key_name, db_name, sql, params))
         } else {
             None
         };
@@ -307,6 +301,19 @@ impl QueryExecutionPipeline {
             let cow = opt_formatted_sql.map(std::borrow::Cow::Owned).unwrap_or_else(|| std::borrow::Cow::Borrowed(sql));
             (is_mutation, cow, mult_stmts)
         };
+
+        // Result cache lookup: only reached after PolicyEngine::evaluate passes above.
+        // WHY deferred: permission revocations must take effect immediately, not after TTL.
+        if !is_mutation {
+            if let Some(ref key) = cache_key {
+                if let Some(bytes) = axiom_cache::CacheEngine::get(key).await {
+                    return Ok((
+                        Arc::new(QueryResult { affected_rows: Some(0), ..Default::default() }),
+                        bytes,
+                    ));
+                }
+            }
+        }
 
         let start_time = std::time::Instant::now();
         let exec_result: Result<QueryResult, String> = if let Some(stmt_strs) = multiple_statements {

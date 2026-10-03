@@ -49,7 +49,16 @@ impl MsSqlColKind {
             | ColumnType::BigChar
             | ColumnType::Text
             | ColumnType::NText
-            | ColumnType::Guid => MsSqlColKind::String,
+            | ColumnType::Guid
+            // Date/time types: tiberius surfaces these as formatted strings (&str) via try_get.
+            // Storing as String preserves ISO 8601 representation in JSON output.
+            | ColumnType::Datetimen
+            | ColumnType::Datetime4
+            | ColumnType::Datetime
+            | ColumnType::Datetime2
+            | ColumnType::DatetimeOffsetn
+            | ColumnType::Daten
+            | ColumnType::Timen => MsSqlColKind::String,
             _ => MsSqlColKind::Fallback,
         }
     }

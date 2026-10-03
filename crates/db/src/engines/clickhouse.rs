@@ -202,7 +202,10 @@ impl DatabaseEngine for ClickHouseDatabaseEngine {
                     (format!("{{{}:UInt8}}", p_name), if *b { "1".to_string() } else { "0".to_string() })
                 }
                 Value::Null => {
-                    (format!("{{{}:Nullable(String)}}", p_name), "\\N".to_string())
+                    // WHY Nullable(Nothing): ClickHouse infers the concrete null type from the
+                    // target column's schema. Hardcoding Nullable(String) causes type coercion
+                    // errors when inserting NULL into Int64/Float64/Date columns.
+                    (format!("{{{}:Nullable(Nothing)}}", p_name), "\\N".to_string())
                 }
                 Value::String(s) => {
                     (format!("{{{}:String}}", p_name), s.clone())
