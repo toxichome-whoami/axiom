@@ -1,73 +1,57 @@
 # Axiom
 
-A zero-allocation, single-binary API gateway that sits between applications and SQL databases, providing secure HTTP access, granular RBAC, and caching.
+Axiom is a single-binary API gateway that sits between web applications and SQL databases to provide unified REST endpoints with AST-validated role-based access control.
 
-**Status:** v4.0.0. Active development.
+## Status
+
+Active development (v4.0.0). Production-ready for single-node deployments.
 
 ## Requirements
-- Rust 1.70+
+
+- Rust stable (1.75+)
 - Cargo
 
-## Quick Start
+## Quick start
 
 ```bash
-# 1. Build the single binary
+git clone https://github.com/toxichome-whoami/axiom.git
+cd axiom
+cp config.example.toml config.toml
+
+# Edit config.toml to add your database and API key
 cargo build --release
-
-# 2. Initialize the configuration
-./target/release/axiom config init
-
-# 3. Start the server
-./target/release/axiom server
+./target/release/axiom
 ```
 
-By default, the server runs on `127.0.0.1:4500` and generates an initial `config.toml` file in the current directory.
+To verify the server is running:
+
+```bash
+curl -X GET http://localhost:4500/health
+```
 
 ## Configuration
 
-Axiom is configured via `config.toml`. A minimal example:
+Axiom loads configuration from `config.toml` at startup.
 
-```toml
-[server]
-host = "0.0.0.0"
-port = 4500
-workers = 4 # Number of tokio worker threads. 0 = auto.
-
-[metadata]
-url = "file:data/axiom.db"
-
-[cache]
-enabled = true
-backend = "memory"
-query_results_ttl = 60
-
-[database.primary]
-url = "postgres://user:pass@localhost:5432/mydb"
-pool_max = 50
-
-[api_key.admin_key]
-secret = "super_secret_string"
-full_admin = true
-```
-
-### Supported Databases
-
-| Engine | URL Format | Notes |
-|---|---|---|
-| PostgreSQL | `postgres://...` | Supports `statement_cache_capacity` |
-| MySQL | `mysql://...` | |
-| SQL Server | `mssql://...` | Date/time types output as ISO 8601 strings |
-| SQLite | `sqlite://...` | Local files or `:memory:` |
-| LibSQL / Turso | `libsql://...` or `https://...` | Tuned with `PRAGMA journal_mode = WAL` |
-| ClickHouse | `clickhouse://...` | Uses HTTP interface internally |
+| Section | Key | Default | Effect |
+|---|---|---|---|
+| `[server]` | `host` | `127.0.0.1` | Network interface to bind. |
+| `[server]` | `port` | `4500` | HTTP port. |
+| `[server]` | `body_limit` | `"10 MB"` | Hard limit for HTTP request bodies. |
+| `[logging]` | `level` | `"INFO"` | Log output level (DEBUG, INFO, WARN, ERROR). |
+| `[cache]` | `backend` | `"memory"` | Result cache backend (`memory` or `turso`). |
+| `[rate_limit]` | `max_requests` | `100` | Max requests per IP within the window. |
+| `[database.alias]` | `url` | - | Upstream database URL (Postgres, MySQL, LibSQL, MSSQL, ClickHouse). |
+| `[api_key.name]` | `secret` | - | Plaintext secret used for `X-Axiom-Key` auth. |
 
 ## Usage
 
-Queries are executed via HTTP POST to `/api/v1/db/:alias/query`. The query body must contain a parameterized `sql` string and `params` array to prevent SQL injection.
+Authenticate all requests using the `X-Axiom-Key` header with the format `key_name:secret`.
 
-**Basic Query (Common case)**
+### Execute a read query
+
 ```bash
-curl -X POST http://127.0.0.1:4500/api/v1/db/primary/query \
+curl -X POST http://localhost:4500/api/v1/db/primary/query \
   -H "X-Axiom-Key: admin_key:super_secret_string" \
   -H "Content-Type: application/json" \
   -d '{
@@ -76,75 +60,72 @@ curl -X POST http://127.0.0.1:4500/api/v1/db/primary/query \
   }'
 ```
 
-**Idempotent Mutation (Advanced case)**
-Use the `Idempotency-Key` header for safe retries on mutations.
+### Idempotent mutation with timeout
+
 ```bash
-curl -X POST http://127.0.0.1:4500/api/v1/db/primary/query \
+curl -X POST http://localhost:4500/api/v1/db/primary/query \
   -H "X-Axiom-Key: admin_key:super_secret_string" \
   -H "Idempotency-Key: req-593a2-1" \
   -H "Content-Type: application/json" \
   -d '{
     "sql": "UPDATE accounts SET balance = balance - ? WHERE id = ?",
-    "params": [100.50, 42]
+    "params": [100.50, 42],
+    "timeout": 15
   }'
 ```
 
-## How It Works
+## How it works
 
-Axiom intercepts incoming HTTP requests, validates API keys against an `ArcSwap` metadata snapshot (zero-lock hot path), parses the SQL using an AST cache to ensure no destructive operations bypass the Role-Based Access Control (RBAC), and routes the parameterized query to the requested upstream database pool.
+Axiom intercepts HTTP requests, extracts the API key, and validates it against a zero-lock metadata snapshot. Queries are parsed into an Abstract Syntax Tree (AST). The AST is checked against the caller's Role-Based Access Control (RBAC) permissions to ensure they are allowed to perform the requested operations on the target tables. If approved, the parameterized query is routed to the configured upstream database pool and executed.
 
-```text
-Request -> WAF -> Auth -> RBAC/AST Parser -> Result Cache -> DB Engine -> Response
-```
-
-## Project Structure
-
-- `benches/` - Criterion performance benchmarks
-- `crates/api/` - HTTP router, middlewares, AST parser, and cache logic
-- `crates/cache/` - Unified L1/L2 cache engine
-- `crates/cli/` - CLI interface
-- `crates/core/` - Shared types, config, error handling
-- `crates/db/` - Upstream database engine implementations
-- `crates/metadata/` - Internal SQLite store for RBAC, keys, and audit logs
-- `crates/policy/` - RBAC policy evaluation engine
-- `crates/server/` - Tokio runtime setup and TCP socket tuning
-- `tests/` - Integration tests
-
-## API Surface & CLI
-
-The CLI (`axiom.exe`) manages the gateway and internal metadata.
+## Project structure
 
 ```text
-server     Start the Axiom gateway daemon
-user       Administrative user management
-key        API machine key management
-role       RBAC role and permission management
-db         Upstream database connection management
-cache      Cache engine inspection and management
-audit      Query administrative audit logs
-reload     Force dynamic reload of metadata snapshots
-health     Check server health and status
-metrics    Dump Prometheus exposition metrics
-benchmark  Run built-in HTTP pipeline benchmark
-doctor     Diagnose system environment
-config     Configuration initialization and conversion
+crates/
+  api/       # HTTP router, middleware, and request handlers
+  cache/     # DashMap and SQLite/AOF cache engine
+  cli/       # Command-line interface definitions
+  core/      # Error types, configuration structs, and schemas
+  db/        # Abstract database traits and engine implementations
+  metadata/  # Internal SQLite store for RBAC, keys, and audit logs
+  policy/    # RBAC evaluation and AST validation engine
+  server/    # Tokio runtime and TCP listener setup
+tests/       # Integration and security test suite
+benches/     # Criterion performance benchmarks
+ui/          # Embedded Vite+React admin interface
 ```
+
+## API surface
+
+Axiom exposes the following primary REST endpoints under `/api/v1/db/`:
+
+- `GET /databases`
+- `GET /:db_alias/tables`
+- `GET /:db_alias/:table/schema`
+- `POST /:db_alias/query` (Raw parameterized SQL execution)
+- `GET /:db_alias/:table/rows` (Cursor-paginated reads)
+- `POST /:db_alias/:table/rows` (Insert rows)
+- `PATCH /:db_alias/:table/rows` (Update rows)
+- `DELETE /:db_alias/:table/rows` (Delete rows)
 
 ## Troubleshooting
 
-| Error | Cause | Fix |
-|---|---|---|
-| `AUTH_INVALID_KEY` | Key missing or suspended due to brute force protection | Use correct key, or wait for the ban window to expire |
-| `DB_CONNECTION_FAILED` | Upstream database is unreachable | Check DB URL in config, ensure firewall allows connection |
-| `CIRCUIT_BREAKER_OPEN` | DB failed too many times, circuit tripped | Wait for circuit reset or fix upstream DB |
-| `AUTH_SCOPE_DENIED` | API key lacks permission for the requested DB or table | Update `db_scope` or Role permissions via the CLI |
-| `SERIALIZATION_FAILED` | DB returned an unrepresentable value | Ensure query doesn't select raw binary blobs |
+- **`DB_CONNECTION_FAILED`**: The upstream database is unreachable. Check your `config.toml` database URL and firewall rules.
+- **`AUTH_SCOPE_DENIED`**: The API key lacks permission to access the requested database or table. Verify the role permissions or `db_scope` in your configuration.
+- **`QUERY_TIMEOUT`**: The database query took longer than the request's specified timeout or the server's global request timeout.
+- **`SQL_PARSE_ERROR`**: The SQL query failed AST parsing. Axiom requires valid SQL to enforce table-level permissions. Ensure your dialect syntax is correct.
+- **`RATE_LIMIT_EXCEEDED`**: The IP or API key has made too many requests. Wait for the penalty cooldown window to expire.
 
 ## Contributing
-- **Format:** `cargo fmt`
-- **Lint:** `cargo clippy --workspace -- -D warnings`
-- **Test:** `cargo test --workspace`
-- **Benchmark:** `cargo bench`
+
+Format, lint, and test before submitting patches:
+
+```bash
+cargo fmt
+cargo clippy --workspace -- -D warnings
+cargo test --workspace
+```
 
 ## License
+
 MIT
