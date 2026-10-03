@@ -426,7 +426,7 @@ pub async fn get_db_config(
     db_name: &str,
     auth: &AuthContext,
 ) -> Result<DatabaseDefConfig, AxiomError> {
-    let allowed = if auth.full_admin {
+    let allowed = if auth.is_session {
         true
     } else if !auth.permissions.is_empty() {
         auth.permissions

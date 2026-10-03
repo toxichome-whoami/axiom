@@ -363,7 +363,7 @@ impl MetadataStore {
             .map_err(|e| format!("Seeding role {} failed: {}", role_name, e))?;
 
             // Determine permissions based on full_admin or mode
-            let ops = if key_cfg.full_admin {
+            let ops = if false {
                 vec!["SELECT", "INSERT", "UPDATE", "DELETE"]
             } else {
                 match key_cfg.mode {

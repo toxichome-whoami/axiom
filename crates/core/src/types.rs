@@ -47,7 +47,7 @@ pub struct AuthContext {
     pub db_scope: Vec<String>,
     pub rate_limit_override: u32,
     #[serde(default)]
-    pub full_admin: bool,
+    pub is_session: bool,
     #[serde(default)]
     pub role: Option<String>,
     #[serde(default)]

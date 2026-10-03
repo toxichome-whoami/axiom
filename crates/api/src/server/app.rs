@@ -48,7 +48,7 @@ async fn prometheus_metrics(
     headers: axum::http::HeaderMap,
     axum::extract::Extension(auth): axum::extract::Extension<axiom_core::AuthContext>,
 ) -> Result<axum::response::Response, AxiomError> {
-    if !auth.full_admin {
+    if !auth.is_session {
         return Err(AxiomError::new(
             "FORBIDDEN",
             "Admin privileges required to access metrics",

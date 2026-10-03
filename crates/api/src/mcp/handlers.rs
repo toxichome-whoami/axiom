@@ -731,7 +731,7 @@ mod tests {
     fn test_mcp_tools_list_contains_all_8_tools() {
         let ctx = AuthContext {
             api_key_name: "test_key".to_string(),
-            full_admin: true,
+            is_session: true,
             ..Default::default()
         };
         let resp = handle_tools_list(Some(json!(2)), &ctx);
@@ -754,7 +754,7 @@ mod tests {
     async fn test_mcp_unknown_tool_returns_is_error() {
         let ctx = AuthContext {
             api_key_name: "test_key".to_string(),
-            full_admin: true,
+            is_session: true,
             ..Default::default()
         };
         let params = json!({
@@ -772,7 +772,7 @@ mod tests {
     async fn test_mcp_update_empty_filter_guardrail_rejected() {
         let ctx = AuthContext {
             api_key_name: "test_key".to_string(),
-            full_admin: true,
+            is_session: true,
             ..Default::default()
         };
         let mut args = serde_json::Map::new();
@@ -789,7 +789,7 @@ mod tests {
     async fn test_mcp_delete_empty_filter_guardrail_rejected() {
         let ctx = AuthContext {
             api_key_name: "test_key".to_string(),
-            full_admin: true,
+            is_session: true,
             ..Default::default()
         };
         let mut args = serde_json::Map::new();
@@ -805,7 +805,7 @@ mod tests {
     async fn test_mcp_resources_list_contains_services_catalog() {
         let ctx = AuthContext {
             api_key_name: "test_key".to_string(),
-            full_admin: true,
+            is_session: true,
             ..Default::default()
         };
         let resp = handle_resources_list(Some(json!(4)), &ctx).await;

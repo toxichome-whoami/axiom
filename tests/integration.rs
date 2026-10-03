@@ -179,7 +179,7 @@ async fn authz_select_only_cannot_insert() {
         api_key_name: "ro_key".to_string(),
         role: Some("readonly_role".to_string()),
         permissions: role.permissions.clone(),
-        full_admin: false,
+        is_session: false,
         ..Default::default()
     };
     assert!(PolicyEngine::evaluate(&ctx, "db_alpha", "users", "SELECT").is_ok());
@@ -196,7 +196,7 @@ async fn authz_database_scope_isolation() {
         api_key_name: "ro_key".to_string(),
         role: Some("readonly_role".to_string()),
         permissions: role.permissions.clone(),
-        full_admin: false,
+        is_session: false,
         ..Default::default()
     };
     let err = PolicyEngine::evaluate(&ctx, "db_beta", "users", "SELECT").unwrap_err();
@@ -648,7 +648,7 @@ async fn health_endpoint_returns_200() {
 }
 
 #[tokio::test]
-async fn valid_admin_key_accesses_admin_api() {
+async fn api_key_cannot_access_admin_api() {
     setup_test_metadata();
     let token = BASE64_STANDARD.encode("admin_key:secret_admin");
     let res = create_app()
@@ -663,6 +663,6 @@ async fn valid_admin_key_accesses_admin_api() {
     println!("ADMIN STATUS: {}", res.status());
     // The request should pass auth (no 401/403). It returns 500 here because the SQLite metadata store isn't initialized in this test fixture, which proves it reached the handler!
     assert!(res.status() != StatusCode::UNAUTHORIZED);
-    assert!(res.status() != StatusCode::FORBIDDEN);
+    assert_eq!(res.status(), StatusCode::FORBIDDEN);
 }
 

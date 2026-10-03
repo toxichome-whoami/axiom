@@ -93,7 +93,7 @@ pub struct UpdateRoleRequest {
 pub async fn get_status(
     Extension(auth): Extension<AuthContext>,
 ) -> Result<impl IntoResponse, AxiomError> {
-    if !auth.full_admin {
+    if !auth.is_session {
         return Err(AxiomError::new(
             "FORBIDDEN",
             "Admin privileges required",
@@ -128,7 +128,7 @@ pub async fn get_status(
 pub async fn reload_metadata(
     Extension(auth): Extension<AuthContext>,
 ) -> Result<impl IntoResponse, AxiomError> {
-    if !auth.full_admin {
+    if !auth.is_session {
         return Err(AxiomError::new(
             "FORBIDDEN",
             "Admin privileges required",
@@ -157,7 +157,7 @@ pub async fn reload_metadata(
 pub async fn list_keys(
     Extension(auth): Extension<AuthContext>,
 ) -> Result<impl IntoResponse, AxiomError> {
-    if !auth.full_admin {
+    if !auth.is_session {
         return Err(AxiomError::new(
             "FORBIDDEN",
             "Admin privileges required",
@@ -187,7 +187,7 @@ pub async fn create_key(
     Extension(auth): Extension<AuthContext>,
     Json(payload): Json<CreateKeyRequest>,
 ) -> Result<impl IntoResponse, AxiomError> {
-    if !auth.full_admin {
+    if !auth.is_session {
         return Err(AxiomError::new(
             "FORBIDDEN",
             "Admin privileges required",
@@ -238,7 +238,7 @@ pub async fn delete_key(
     Extension(auth): Extension<AuthContext>,
     Path(name): Path<String>,
 ) -> Result<impl IntoResponse, AxiomError> {
-    if !auth.full_admin {
+    if !auth.is_session {
         return Err(AxiomError::new(
             "FORBIDDEN",
             "Admin privileges required",
@@ -278,7 +278,7 @@ pub async fn rotate_key(
     Extension(auth): Extension<AuthContext>,
     Path(name): Path<String>,
 ) -> Result<impl IntoResponse, AxiomError> {
-    if !auth.full_admin {
+    if !auth.is_session {
         return Err(AxiomError::new(
             "FORBIDDEN",
             "Admin privileges required",
@@ -324,7 +324,7 @@ pub async fn rotate_key(
 pub async fn list_databases(
     Extension(auth): Extension<AuthContext>,
 ) -> Result<impl IntoResponse, AxiomError> {
-    if !auth.full_admin {
+    if !auth.is_session {
         return Err(AxiomError::new(
             "FORBIDDEN",
             "Admin privileges required",
@@ -354,7 +354,7 @@ pub async fn add_database(
     Extension(auth): Extension<AuthContext>,
     Json(payload): Json<AddDatabaseRequest>,
 ) -> Result<impl IntoResponse, AxiomError> {
-    if !auth.full_admin {
+    if !auth.is_session {
         return Err(AxiomError::new(
             "FORBIDDEN",
             "Admin privileges required",
@@ -488,7 +488,7 @@ pub async fn delete_database(
     Extension(auth): Extension<AuthContext>,
     Path(alias): Path<String>,
 ) -> Result<impl IntoResponse, AxiomError> {
-    if !auth.full_admin {
+    if !auth.is_session {
         return Err(AxiomError::new(
             "FORBIDDEN",
             "Admin privileges required",
@@ -530,7 +530,7 @@ pub async fn test_database(
     Extension(auth): Extension<AuthContext>,
     Path(alias): Path<String>,
 ) -> Result<impl IntoResponse, AxiomError> {
-    if !auth.full_admin {
+    if !auth.is_session {
         return Err(AxiomError::new(
             "FORBIDDEN",
             "Admin privileges required",
@@ -592,7 +592,7 @@ pub async fn test_database(
 pub async fn list_roles(
     Extension(auth): Extension<AuthContext>,
 ) -> Result<impl IntoResponse, AxiomError> {
-    if !auth.full_admin {
+    if !auth.is_session {
         return Err(AxiomError::new(
             "FORBIDDEN",
             "Admin privileges required",
@@ -622,7 +622,7 @@ pub async fn create_role(
     Extension(auth): Extension<AuthContext>,
     Json(payload): Json<CreateRoleRequest>,
 ) -> Result<impl IntoResponse, AxiomError> {
-    if !auth.full_admin {
+    if !auth.is_session {
         return Err(AxiomError::new(
             "FORBIDDEN",
             "Admin privileges required",
@@ -682,7 +682,7 @@ pub async fn update_role(
     Path(name): Path<String>,
     Json(payload): Json<UpdateRoleRequest>,
 ) -> Result<impl IntoResponse, AxiomError> {
-    if !auth.full_admin {
+    if !auth.is_session {
         return Err(AxiomError::new(
             "FORBIDDEN",
             "Admin privileges required",
@@ -737,7 +737,7 @@ pub async fn delete_role(
     Extension(auth): Extension<AuthContext>,
     Path(name): Path<String>,
 ) -> Result<impl IntoResponse, AxiomError> {
-    if !auth.full_admin {
+    if !auth.is_session {
         return Err(AxiomError::new(
             "FORBIDDEN",
             "Admin privileges required",
@@ -774,7 +774,7 @@ pub async fn delete_role(
 pub async fn get_cache_stats(
     Extension(auth): Extension<AuthContext>,
 ) -> Result<impl IntoResponse, AxiomError> {
-    if !auth.full_admin {
+    if !auth.is_session {
         return Err(AxiomError::new(
             "FORBIDDEN",
             "Admin privileges required",
@@ -798,7 +798,7 @@ pub async fn get_cache_stats(
 pub async fn flush_cache(
     Extension(auth): Extension<AuthContext>,
 ) -> Result<impl IntoResponse, AxiomError> {
-    if !auth.full_admin {
+    if !auth.is_session {
         return Err(AxiomError::new(
             "FORBIDDEN",
             "Admin privileges required",
@@ -826,7 +826,7 @@ pub async fn get_audit_log(
     Extension(auth): Extension<AuthContext>,
     Query(query): Query<AuditQuery>,
 ) -> Result<impl IntoResponse, AxiomError> {
-    if !auth.full_admin {
+    if !auth.is_session {
         return Err(AxiomError::new(
             "FORBIDDEN",
             "Admin privileges required",
@@ -879,7 +879,7 @@ pub async fn get_metrics(
     headers: axum::http::HeaderMap,
     Extension(auth): Extension<AuthContext>,
 ) -> Result<impl IntoResponse, AxiomError> {
-    if !auth.full_admin {
+    if !auth.is_session {
         return Err(AxiomError::new(
             "FORBIDDEN",
             "Admin privileges required",
@@ -923,7 +923,7 @@ pub async fn get_metrics(
 pub async fn get_admin_health(
     Extension(auth): Extension<AuthContext>,
 ) -> Result<impl IntoResponse, AxiomError> {
-    if !auth.full_admin {
+    if !auth.is_session {
         return Err(AxiomError::new(
             "FORBIDDEN",
             "Admin privileges required",
@@ -1055,7 +1055,7 @@ pub async fn test_database_url(
     Extension(auth): Extension<AuthContext>,
     Json(payload): Json<TestUrlRequest>,
 ) -> Result<impl IntoResponse, AxiomError> {
-    if !auth.full_admin {
+    if !auth.is_session {
         return Err(AxiomError::new(
             "FORBIDDEN",
             "Admin privileges required",
@@ -1115,7 +1115,7 @@ pub async fn setup_database(
     Extension(auth): Extension<AuthContext>,
     Json(payload): Json<AddDatabaseRequest>,
 ) -> Result<impl IntoResponse, AxiomError> {
-    if !auth.full_admin {
+    if !auth.is_session {
         return Err(AxiomError::new(
             "FORBIDDEN",
             "Admin privileges required",
@@ -1170,7 +1170,7 @@ pub async fn setup_database(
 pub async fn setup_complete(
     Extension(auth): Extension<AuthContext>,
 ) -> Result<impl IntoResponse, AxiomError> {
-    if !auth.full_admin {
+    if !auth.is_session {
         return Err(AxiomError::new(
             "FORBIDDEN",
             "Admin privileges required",
@@ -1282,7 +1282,7 @@ pub async fn logout_handler(
 pub async fn list_users_handler(
     Extension(auth): Extension<AuthContext>,
 ) -> Result<impl IntoResponse, AxiomError> {
-    if !auth.full_admin {
+    if !auth.is_session {
         return Err(AxiomError::new(
             "FORBIDDEN",
             "Admin privileges required",

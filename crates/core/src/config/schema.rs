@@ -212,7 +212,7 @@ pub struct ApiKeyDefConfig {
     /// Deprecated in v4.0: Preserved for backward-compatibility with v3.0 config.toml.
     /// CONTRACT: Automatically seeded as an admin role permission in axiom.db on first boot.
     /// Will be deprecated and superseded by fine-grained RBAC in Phase 2.
-    pub full_admin: bool,
+    
     pub expires_at: Option<i64>,
 }
 
@@ -223,7 +223,7 @@ impl Default for ApiKeyDefConfig {
             secret: "".to_string(),
             db_scope: vec!["*".to_string()],
             rate_limit_override: 0,
-            full_admin: false,
+            
             expires_at: None,
         }
     }

@@ -91,7 +91,7 @@ fn bench_policy_evaluation(c: &mut Criterion) {
     let auth_single = AuthContext {
         api_key_name: "test_key".to_string(),
         role: Some("operator".to_string()),
-        full_admin: false,
+        is_session: false,
         permissions: vec![PermissionSnapshot {
             database: "main_db".to_string(),
             table_name: "users".to_string(),
@@ -124,7 +124,7 @@ fn bench_policy_evaluation(c: &mut Criterion) {
     let auth_10k = AuthContext {
         api_key_name: "test_key_10k".to_string(),
         role: Some("restricted".to_string()),
-        full_admin: false,
+        is_session: false,
         permissions: rules_10k,
         ..Default::default()
     };
@@ -157,7 +157,7 @@ fn bench_policy_evaluation(c: &mut Criterion) {
     let auth_10k_worst = AuthContext {
         api_key_name: "test_key_10k_worst".to_string(),
         role: Some("restricted".to_string()),
-        full_admin: false,
+        is_session: false,
         permissions: rules_10k_worst,
         ..Default::default()
     };
@@ -177,7 +177,7 @@ fn bench_policy_evaluation(c: &mut Criterion) {
     let auth_wildcard = AuthContext {
         api_key_name: "admin_wildcard".to_string(),
         role: Some("admin".to_string()),
-        full_admin: false,
+        is_session: false,
         permissions: vec![PermissionSnapshot {
             database: "*".to_string(),
             table_name: "*".to_string(),

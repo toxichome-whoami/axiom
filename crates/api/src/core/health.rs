@@ -2,7 +2,7 @@
  * Core health check, readiness probe, and system telemetry endpoints.
  * Owned by: crates/api (core)
  * Key deps: sysinfo, once_cell, axum, axiom_core, axiom_db
- * Invariants: Detailed infrastructure checks are restricted to full_admin API keys to avoid reconnaissance leakage.
+ * Invariants: Detailed infrastructure checks are restricted to is_session API keys to avoid reconnaissance leakage.
  * Last structural change: Workspace modularization (Phase 8 -> v4.0).
  */
 
@@ -106,7 +106,7 @@ async fn health(
         }
     }
 
-    if !ctx.full_admin {
+    if !ctx.is_session {
         return Ok(Json(json!({
             "status": if all_dbs_up { "healthy" } else { "degraded" }
         })));

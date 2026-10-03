@@ -27,7 +27,7 @@ impl PolicyEngine {
         operation: &str,
     ) -> Result<(), AxiomError> {
         // Fast-path: Full system administrators bypass granular policy evaluation
-        if auth.full_admin {
+        if auth.is_session {
             return Ok(());
         }
 
@@ -119,7 +119,7 @@ impl PolicyEngine {
     ///  - Returns vector of database alias strings authorized for the caller.
     ///  - Idempotent: Yes.
     pub fn filter_databases(auth: &AuthContext, databases: &[String]) -> Vec<String> {
-        if auth.full_admin {
+        if auth.is_session {
             return databases.to_vec();
         }
 
@@ -151,7 +151,7 @@ mod tests {
             mode: ServerMode::Readwrite,
             db_scope: vec![],
             rate_limit_override: 0,
-            full_admin: true,
+            is_session: true,
             role: Some("admin".to_string()),
             permissions: vec![],
         };
@@ -166,7 +166,7 @@ mod tests {
             mode: ServerMode::Readwrite,
             db_scope: vec!["*".to_string()],
             rate_limit_override: 0,
-            full_admin: false,
+            is_session: false,
             role: Some("app_role".to_string()),
             permissions: vec![PermissionSnapshot {
                 database: "analytics".to_string(),
@@ -196,7 +196,7 @@ mod tests {
             mode: ServerMode::Readwrite,
             db_scope: vec![],
             rate_limit_override: 0,
-            full_admin: false,
+            is_session: false,
             role: Some("auditor".to_string()),
             permissions: vec![PermissionSnapshot {
                 database: "*".to_string(),
@@ -217,7 +217,7 @@ mod tests {
             mode: ServerMode::Readonly,
             db_scope: vec!["my_db".to_string()],
             rate_limit_override: 0,
-            full_admin: false,
+            is_session: false,
             role: None,
             permissions: vec![],
         };
@@ -234,7 +234,7 @@ mod tests {
             mode: ServerMode::Readwrite,
             db_scope: vec![],
             rate_limit_override: 0,
-            full_admin: false,
+            is_session: false,
             role: Some("readonly_role".to_string()),
             permissions: vec![PermissionSnapshot {
                 database: "app_db".to_string(),

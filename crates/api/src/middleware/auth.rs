@@ -101,7 +101,7 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, A
                 let ctx = AuthContext {
                     api_key_name: format!("user:{}", username),
                     role: Some("admin".to_string()),
-                    full_admin: true,
+                    is_session: true,
                     ..Default::default()
                 };
                 req.extensions_mut().insert(ctx);
@@ -121,7 +121,7 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, A
             let ctx = AuthContext {
                 api_key_name: format!("user:{}", username),
                 role: Some("admin".to_string()),
-                full_admin: true,
+                is_session: true,
                 ..Default::default()
             };
             req.extensions_mut().insert(ctx);
@@ -185,7 +185,7 @@ pub fn validate_api_key(
                 }
 
                 if match_result == 0 {
-                    let mut is_admin = false;
+                    
                     let mut permissions = Vec::new();
 
                     if let Some(ref r_name) = key_snap.role_name {
@@ -198,7 +198,7 @@ pub fn validate_api_key(
                                         && p.operations.iter().any(|op| op == "*")
                                 })
                             {
-                                is_admin = true;
+                                
                             }
                         }
                     }
@@ -208,7 +208,7 @@ pub fn validate_api_key(
                         mode: axiom_core::ServerMode::Readwrite,
                         db_scope: vec!["*".to_string()],
                         rate_limit_override: key_snap.rate_limit_override,
-                        full_admin: is_admin,
+                        is_session: false,
                         role: key_snap.role_name.clone(),
                         permissions,
                     });
@@ -242,7 +242,7 @@ pub fn validate_api_key(
                         mode: key_cfg.mode.clone(),
                         db_scope: key_cfg.db_scope.clone(),
                         rate_limit_override: key_cfg.rate_limit_override as u32,
-                        full_admin: key_cfg.full_admin,
+                        is_session: false,
                         role: None,
                         permissions: Vec::new(),
                     });
@@ -342,7 +342,7 @@ mod tests {
         assert!(result.is_ok());
         let ctx = result.unwrap();
         assert_eq!(ctx.api_key_name, "test_user");
-        assert!(ctx.full_admin);
+        assert!(!ctx.is_session);
         assert_eq!(ctx.role, Some("admin".to_string()));
     }
 

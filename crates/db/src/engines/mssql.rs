@@ -84,7 +84,15 @@ impl MssqlDatabaseEngine {
 #[async_trait]
 impl DatabaseEngine for MssqlDatabaseEngine {
     async fn connect(&mut self) -> Result<(), EngineError> {
-        let config = Config::from_jdbc_string(&self.config.url)
+        // WHY: pool routing accepts mssql:// and sqlserver://, but tiberius's JDBC parser
+        // rejects anything not starting with the literal "jdbc:" sub-protocol.
+        let url = &self.config.url;
+        let jdbc_url = if let Some(rest) = url.strip_prefix("mssql://").or_else(|| url.strip_prefix("sqlserver://")) {
+            format!("jdbc:sqlserver://{}", rest)
+        } else {
+            url.clone()
+        };
+        let config = Config::from_jdbc_string(&jdbc_url)
             .map_err(|e| EngineError::Connection(e.to_string()))?;
         let tcp = TcpStream::connect(config.get_addr())
             .await
