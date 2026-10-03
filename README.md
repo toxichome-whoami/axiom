@@ -328,7 +328,7 @@ axiom/
   ui/           # Web UI source (Vite + TypeScript + Tailwind)
   tests/        # Integration and security test suite (37 tests)
   benches/      # Criterion benchmark suite
-  v4-planning/  # Architecture blueprints and ADRs
+
   config.example.toml
   Cargo.toml    # Workspace root
 ```
