@@ -25,11 +25,7 @@ export interface FilterRule {
   value: string;
 }
 
-const DEFAULT_ROLE_OPTIONS = [
-  { value: 'admin', label: 'admin (Full Root Privileges)' },
-  { value: 'readwrite', label: 'readwrite (CRUD Access)' },
-  { value: 'readonly', label: 'readonly (SELECT Queries Only)' },
-];
+const UNASSIGNED_ROLE_OPTION = { value: '', label: 'None (No Role Assigned)' };
 
 const STATUS_OPTIONS: { value: 'Active' | 'Revoked'; label: string; icon: React.ReactNode }[] = [
   {
@@ -64,7 +60,9 @@ function formatRemainingTime(expiresTimestamp: number): string {
 
 export function Keys() {
   const [keys, setKeys] = useState<ApiKey[]>([]);
-  const [roleOptions, setRoleOptions] = useState(DEFAULT_ROLE_OPTIONS);
+  const [roleOptions, setRoleOptions] = useState<{ value: string; label: string }[]>([
+    UNASSIGNED_ROLE_OPTION,
+  ]);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -86,13 +84,19 @@ export function Keys() {
 
       if (curGen !== fetchGenRef.current) return;
 
-      if (roleRes.status === 'fulfilled' && roleRes.value.roles.length > 0) {
-        setRoleOptions(
-          roleRes.value.roles.map((r) => ({
-            value: r.name,
-            label: `${r.name} (${r.description || 'Custom Role'})`,
-          }))
-        );
+      if (roleRes.status === 'fulfilled') {
+        const customRoles = roleRes.value.roles || [];
+        if (customRoles.length > 0) {
+          setRoleOptions([
+            UNASSIGNED_ROLE_OPTION,
+            ...customRoles.map((r) => ({
+              value: r.name,
+              label: `${r.name}${r.description ? ` (${r.description})` : ''}`,
+            })),
+          ]);
+        } else {
+          setRoleOptions([UNASSIGNED_ROLE_OPTION]);
+        }
       }
 
       if (keyRes.status === 'fulfilled') {
@@ -101,7 +105,7 @@ export function Keys() {
           const isExpired = k.expires_at ? k.expires_at * 1000 < Date.now() : false;
           return {
             name: k.name,
-            role: k.role_name || 'admin',
+            role: k.role_name || '',
             rateLimit: k.rate_limit || 0,
             status: isExpired ? 'Expired' : 'Active',
             expiresAt: k.expires_at ? new Date(k.expires_at * 1000).toISOString().split('T')[0] : null,
@@ -271,7 +275,7 @@ export function Keys() {
   // Create Key SlideOver State
   const [createOpen, setCreateOpen] = useState(false);
   const [newName, setNewName] = useState('');
-  const [newRole, setNewRole] = useState('readwrite');
+  const [newRole, setNewRole] = useState('');
   const [newRateLimit, setNewRateLimit] = useState(1000);
   const [newExpiresAt, setNewExpiresAt] = useState<string | null>(null);
   const [createdSecret, setCreatedSecret] = useState<string | null>(null);
@@ -284,7 +288,7 @@ export function Keys() {
   const [selectedKey, setSelectedKey] = useState<ApiKey | null>(null);
   const [editStatus, setEditStatus] = useState<'Active' | 'Revoked'>('Active');
   const [editName, setEditName] = useState('');
-  const [editRole, setEditRole] = useState('admin');
+  const [editRole, setEditRole] = useState('');
   const [editRate, setEditRate] = useState(10000);
   const [editExpiresAt, setEditExpiresAt] = useState<string | null>(null);
   const [gracePeriod, setGracePeriod] = useState('24h');
@@ -335,7 +339,7 @@ export function Keys() {
     try {
       const res = await api.createKey({
         name: trimmed,
-        role: newRole,
+        role: newRole ? newRole : undefined,
         rate_limit: Math.max(0, Math.min(1000000, Number(newRateLimit) || 0)),
         expires_at: expiresUnix,
       });
@@ -575,7 +579,7 @@ export function Keys() {
             onClick={() => {
               setCreatedSecret(null);
               setNewName('');
-              setNewRole('readwrite');
+              setNewRole(roleOptions.length > 1 ? roleOptions[1].value : '');
               setNewRateLimit(1000);
               setNewExpiresAt(null);
               setCopiedKey(false);
@@ -949,6 +953,11 @@ export function Keys() {
                   onChange={(val) => setNewRole(val)}
                   menuWidth="w-full"
                 />
+                {roleOptions.length <= 1 && (
+                  <p className="text-[12px] text-[#8c8c8c] mt-1.5">
+                    No custom RBAC roles have been created yet. You can create roles in the Roles tab, or leave this unassigned.
+                  </p>
+                )}
               </div>
 
               {/* 3. Rate Limit */}
