@@ -1209,6 +1209,28 @@ impl MetadataStore {
     // ─── Audit Trail Management ────────────────────────────────────────────
     // Exposes immutable historical records of system modifications for compliance and forensic auditing.
 
+    /// Records an audit log entry in the metadata database.
+    /// CONTRACT:
+    ///  - Precondition: `actor`, `action`, and `target` non-empty strings.
+    ///  - Side effects: Appends an immutable record to SQLite `audit_log` table.
+    ///  - Idempotency: No (appends new historical log entry).
+    pub async fn record_audit(actor: &str, action: &str, target: &str, details: Option<&str>) -> Result<(), String> {
+        let conn = Self::get_conn().await?;
+        let now_unix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+
+        conn.execute(
+            "INSERT INTO audit_log (timestamp, actor, action, target, details) VALUES (?1, ?2, ?3, ?4, ?5)",
+            libsql::params![now_unix, actor, action, target, details.unwrap_or("")],
+        )
+        .await
+        .map_err(|e| format!("Failed to record audit log: {}", e))?;
+
+        Ok(())
+    }
+
     /// Queries paginated audit log entries ordered chronologically descending (newest first).
     /// CONTRACT:
     ///  - Precondition: `limit` clamped to safe bounds (max 500) to prevent memory exhaustion.

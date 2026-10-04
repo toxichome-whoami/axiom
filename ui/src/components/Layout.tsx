@@ -22,11 +22,13 @@ import {
   Search,
   Menu,
   X,
+  HardDrive,
 } from 'lucide-react';
 
 export type NavPath =
   | '/system'
   | '/system/databases'
+  | '/system/storage'
   | '/system/keys'
   | '/system/roles'
   | '/system/mcp'
@@ -63,6 +65,7 @@ export function Layout({ currentPath, onNavigate, title, children, onLogout }: L
   const searchItems = [
     { label: 'Overview', path: '/system' as NavPath, icon: LayoutDashboard, category: 'Data & Access' },
     { label: 'Database Pools', path: '/system/databases' as NavPath, icon: Database, category: 'Data & Access' },
+    { label: 'Blob Storage', path: '/system/storage' as NavPath, icon: HardDrive, category: 'Data & Access' },
     { label: 'API Keys', path: '/system/keys' as NavPath, icon: Key, category: 'Data & Access' },
     { label: 'Roles', path: '/system/roles' as NavPath, icon: Shield, category: 'Data & Access' },
     { label: 'MCP Protocol', path: '/system/mcp' as NavPath, icon: Bot, category: 'Protocols & Tools' },
@@ -152,6 +155,11 @@ export function Layout({ currentPath, onNavigate, title, children, onLogout }: L
           path: '/system/databases' as NavPath,
           label: 'Database Pools',
           icon: Database,
+        },
+        {
+          path: '/system/storage' as NavPath,
+          label: 'Blob Storage',
+          icon: HardDrive,
         },
         {
           path: '/system/keys' as NavPath,

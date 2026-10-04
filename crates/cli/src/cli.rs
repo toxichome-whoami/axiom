@@ -1063,11 +1063,12 @@ pub async fn handle_config_command(
 ///  - Strings containing spaces or symbols are safely quoted.
 pub fn toml_to_env_string(toml_str: &str) -> Result<String, Box<dyn std::error::Error>> {
     let table: toml::Table = toml::from_str(toml_str)?;
-    let mut lines = Vec::new();
-    lines.push("# ─────────────────────────────────────────────────────────────────────────────".to_string());
-    lines.push("# Axiom Environment Configuration (Generated from TOML)".to_string());
-    lines.push("# ─────────────────────────────────────────────────────────────────────────────".to_string());
-    lines.push("".to_string());
+    let mut lines = vec![
+        "# ─────────────────────────────────────────────────────────────────────────────".to_string(),
+        "# Axiom Environment Configuration (Generated from TOML)".to_string(),
+        "# ─────────────────────────────────────────────────────────────────────────────".to_string(),
+        "".to_string(),
+    ];
 
     for (section_or_key, val) in table {
         match val {

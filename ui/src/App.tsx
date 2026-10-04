@@ -5,6 +5,7 @@ import { api } from './api/client';
 
 const Overview = lazy(() => import('./pages/Overview').then((m) => ({ default: m.Overview })));
 const Databases = lazy(() => import('./pages/Databases').then((m) => ({ default: m.Databases })));
+const Storage = lazy(() => import('./pages/Storage').then((m) => ({ default: m.Storage })));
 const Keys = lazy(() => import('./pages/Keys').then((m) => ({ default: m.Keys })));
 const Roles = lazy(() => import('./pages/Roles').then((m) => ({ default: m.Roles })));
 const Mcp = lazy(() => import('./pages/Mcp').then((m) => ({ default: m.Mcp })));
@@ -31,6 +32,7 @@ export function App() {
     // Convenience aliases
     if (p === '/settings') p = '/system/settings';
     if (p === '/databases') p = '/system/databases';
+    if (p === '/storage' || p === '/blobs') p = '/system/storage';
     if (p === '/keys') p = '/system/keys';
     if (p === '/roles') p = '/system/roles';
     if (p === '/mcp') p = '/system/mcp';
@@ -39,6 +41,7 @@ export function App() {
     const validPaths: NavPath[] = [
       '/system',
       '/system/databases',
+      '/system/storage',
       '/system/keys',
       '/system/roles',
       '/system/mcp',
@@ -117,6 +120,8 @@ export function App() {
     switch (currentPath) {
       case '/system/databases':
         return { title: 'Database Pools', component: <Databases /> };
+      case '/system/storage':
+        return { title: 'Native Blob Storage', component: <Storage /> };
       case '/system/keys':
         return { title: 'API Keys', component: <Keys /> };
       case '/system/roles':

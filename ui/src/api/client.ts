@@ -121,6 +121,7 @@ export interface UserRecordApi {
 }
 
 import { getSessionToken, clearSession } from './session';
+import type { BlobMetadata, BlobStats, ListBlobsResult } from '../types';
 
 const API_BASE = import.meta.env.VITE_API_URL ?? '';
 
@@ -330,4 +331,54 @@ export const api = {
     request<{ message: string; api_key: { name: string; token: string } }>('/admin/v1/setup/complete', {
       method: 'POST',
     }),
+
+  // Native Blob Storage Subsystem
+  getBlobStats: () => request<BlobStats>('/admin/v1/blobs/stats'),
+  listBlobNamespaces: () => request<string[]>('/admin/v1/blobs/namespaces'),
+  listBlobs: (namespace: string, prefix?: string, cursor?: string, limit?: number) => {
+    const params = new URLSearchParams();
+    if (prefix) params.set('prefix', prefix);
+    if (cursor) params.set('cursor', cursor);
+    if (limit) params.set('limit', String(limit));
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    return request<ListBlobsResult>(`/api/v1/blobs/${encodeURIComponent(namespace)}${qs}`);
+  },
+  uploadBlob: async (namespace: string, key: string, data: BodyInit, contentType?: string) => {
+    const sanitizedKey = key.split('/').map(encodeURIComponent).join('/');
+    return request<BlobMetadata>(`/api/v1/blobs/${encodeURIComponent(namespace)}/${sanitizedKey}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': contentType || 'application/octet-stream',
+      },
+      body: data,
+    });
+  },
+  deleteBlob: (namespace: string, key: string) => {
+    const sanitizedKey = key.split('/').map(encodeURIComponent).join('/');
+    return request<{ deleted: boolean }>(`/api/v1/blobs/${encodeURIComponent(namespace)}/${sanitizedKey}`, {
+      method: 'DELETE',
+    });
+  },
+  verifyBlob: (namespace: string, key: string) => {
+    const sanitizedKey = key.split('/').map(encodeURIComponent).join('/');
+    return request<{ valid: boolean }>(`/admin/v1/blobs/verify/${encodeURIComponent(namespace)}/${sanitizedKey}`, {
+      method: 'POST',
+    });
+  },
+  getBlobDownloadUrl: (namespace: string, key: string) => {
+    const sanitizedKey = key.split('/').map(encodeURIComponent).join('/');
+    return `/api/v1/blobs/${encodeURIComponent(namespace)}/${sanitizedKey}`;
+  },
+  downloadBlob: async (namespace: string, key: string) => {
+    const token = getSessionToken();
+    const sanitizedKey = key.split('/').map(encodeURIComponent).join('/');
+    const url = `/api/v1/blobs/${encodeURIComponent(namespace)}/${sanitizedKey}`;
+    const res = await fetch(url, {
+      headers: token && token !== 'undefined' ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) {
+      throw new Error(`Download failed with HTTP ${res.status}`);
+    }
+    return res.blob();
+  },
 };

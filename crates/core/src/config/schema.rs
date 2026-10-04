@@ -269,6 +269,28 @@ impl Default for MetadataConfig {
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 #[serde(default)]
+pub struct BlobConfig {
+    pub enabled: bool,
+    pub path: String,
+    pub inline_max: String,
+    pub max_object: String,
+    pub verify_reads: bool,
+}
+
+impl Default for BlobConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            path: "data/blobs".to_string(),
+            inline_max: "64kb".to_string(),
+            max_object: "5gb".to_string(),
+            verify_reads: false,
+        }
+    }
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
+#[serde(default)]
 pub struct AxiomConfig {
     pub server: ServerConfig,
     pub version: String,
@@ -281,6 +303,7 @@ pub struct AxiomConfig {
     pub api_key: HashMap<String, ApiKeyDefConfig>,
     pub circuit_breaker: CircuitBreakerConfig,
     pub metadata: MetadataConfig,
+    pub blob: BlobConfig,
 }
 
 impl Default for AxiomConfig {
@@ -297,6 +320,7 @@ impl Default for AxiomConfig {
             api_key: HashMap::new(),
             circuit_breaker: CircuitBreakerConfig::default(),
             metadata: MetadataConfig::default(),
+            blob: BlobConfig::default(),
         }
     }
 }
@@ -332,6 +356,16 @@ mod tests {
         let config = CacheConfig::default();
         assert!(config.enabled);
         assert_eq!(config.default_ttl, 60);
+    }
+
+    #[test]
+    fn test_blob_config_default() {
+        let config = BlobConfig::default();
+        assert!(!config.enabled);
+        assert_eq!(config.path, "data/blobs");
+        assert_eq!(config.inline_max, "64kb");
+        assert_eq!(config.max_object, "5gb");
+        assert!(!config.verify_reads);
     }
 
     #[test]

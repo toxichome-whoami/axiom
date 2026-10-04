@@ -88,6 +88,16 @@ url = "file:data/axiom.db"       # Default: local SQLite file
 token = ""                       # Turso auth token (if remote)
 reload_interval = 30             # Seconds between hot-snapshot refreshes
 
+# ─── Native Blob Storage Engine (Optional) ────────────
+# Embedded high-performance content-addressed object storage.
+# Keeps zero CPU/RAM footprint when disabled (default: false).
+[blob]
+enabled = false                  # Enable embedded blob engine
+path = "data/blobs"              # Base directory for LSM index and blob files
+inline_max = "64kb"              # Payloads <= this threshold are stored inline in Fjall LSM
+max_object = "5gb"               # Hard ceiling on single blob upload size
+verify_reads = false             # Re-verify BLAKE3 checksums on reads (integrity guard)
+
 # ─────────────────────────────────────────────────────────────────────────────
 # v4.0 Transition Note for API Keys and Databases
 # ─────────────────────────────────────────────────────────────────────────────

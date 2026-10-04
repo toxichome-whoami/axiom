@@ -97,6 +97,29 @@ fn setup_test_metadata() {
         },
     );
 
+    // ── blob reader role + key (blob:reports, READ only) ───────────────
+    roles.insert(
+        "blob_reader_role".to_string(),
+        RoleSnapshot {
+            name: "blob_reader_role".to_string(),
+            permissions: vec![PermissionSnapshot {
+                database: "blob:reports".to_string(),
+                table_name: "*".to_string(),
+                operations: vec!["READ".to_string()],
+            }],
+        },
+    );
+    keys.insert(
+        "blob_reader_key".to_string(),
+        ApiKeySnapshot {
+            name: "blob_reader_key".to_string(),
+            secret_hash: blake3::hash(b"secret_blob_ro").into(),
+            role_name: Some("blob_reader_role".to_string()),
+            rate_limit_override: 0,
+            expires_at: None,
+        },
+    );
+
     update_snapshot(MetadataSnapshot {
         keys,
         roles,
@@ -664,5 +687,190 @@ async fn api_key_cannot_access_admin_api() {
     // The request should pass auth (no 401/403). It returns 500 here because the SQLite metadata store isn't initialized in this test fixture, which proves it reached the handler!
     assert!(res.status() != StatusCode::UNAUTHORIZED);
     assert_eq!(res.status(), StatusCode::FORBIDDEN);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  17. Native Blob Storage Lifecycle & Policy
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// Lazily initializes a global temporary BlobEngine instance for integration tests.
+/// Invariant: Only initialized once across all test workers to avoid keyspace lock contention.
+async fn ensure_blob_engine() {
+    static ENGINE_INIT: tokio::sync::OnceCell<tempfile::TempDir> = tokio::sync::OnceCell::const_new();
+    let _ = ENGINE_INIT
+        .get_or_init(|| async {
+            let tmp = tempfile::tempdir().expect("Failed to create tempdir for blob engine test");
+            axiom_api::blobs::init_blob_engine(
+                tmp.path().to_str().unwrap(),
+                64 * 1024,                  // 64 KB inline threshold
+                5 * 1024 * 1024 * 1024,     // 5 GB max object
+                true,                       // verify reads
+            )
+            .await
+            .expect("Failed to init blob engine in test fixture");
+            tmp
+        })
+        .await;
+}
+
+#[tokio::test]
+async fn blob_storage_crud_lifecycle_and_headers() {
+    setup_test_metadata();
+    ensure_blob_engine().await;
+
+    let admin_token = BASE64_STANDARD.encode("admin_key:secret_admin");
+    let test_data = b"Hello Axiom Native Embedded Blob Engine!".to_vec();
+
+    // 1. PUT blob
+    let put_req = Request::put("/api/v1/blobs/testns/docs/hello.txt")
+        .header("X-Axiom-Key", &admin_token)
+        .header("Content-Type", "text/plain; charset=utf-8")
+        .body(Body::from(test_data.clone()))
+        .unwrap();
+
+    let put_res = create_app().oneshot(put_req).await.unwrap();
+    assert_eq!(put_res.status(), StatusCode::CREATED);
+    let put_body = axum::body::to_bytes(put_res.into_body(), usize::MAX).await.unwrap();
+    let put_json: serde_json::Value = serde_json::from_slice(&put_body).unwrap();
+    assert_eq!(put_json["success"], true);
+    let hash = put_json["data"]["hash"].as_str().unwrap().to_string();
+    let etag = format!("\"{}\"", hash);
+    assert_eq!(put_json["data"]["inline"], true);
+    assert_eq!(put_json["data"]["size"], test_data.len() as u64);
+
+    // 2. HEAD blob - verify headers and empty body
+    let head_req = Request::head("/api/v1/blobs/testns/docs/hello.txt")
+        .header("X-Axiom-Key", &admin_token)
+        .body(Body::empty())
+        .unwrap();
+    let head_res = create_app().oneshot(head_req).await.unwrap();
+    assert_eq!(head_res.status(), StatusCode::OK);
+    assert_eq!(head_res.headers().get("etag").unwrap(), &etag);
+    assert_eq!(head_res.headers().get("x-content-type-options").unwrap(), "nosniff");
+    assert_eq!(head_res.headers().get("content-type").unwrap(), "text/plain; charset=utf-8");
+    assert!(head_res.headers().get("content-disposition").unwrap().to_str().unwrap().contains("hello.txt"));
+
+    // 3. GET blob - verify data integrity
+    let get_req = Request::get("/api/v1/blobs/testns/docs/hello.txt")
+        .header("X-Axiom-Key", &admin_token)
+        .body(Body::empty())
+        .unwrap();
+    let get_res = create_app().oneshot(get_req).await.unwrap();
+    assert_eq!(get_res.status(), StatusCode::OK);
+    let get_body = axum::body::to_bytes(get_res.into_body(), usize::MAX).await.unwrap();
+    assert_eq!(get_body.as_ref(), test_data.as_slice());
+
+    // 4. GET blob with matching If-None-Match -> 304 Not Modified
+    let conditional_req = Request::get("/api/v1/blobs/testns/docs/hello.txt")
+        .header("X-Axiom-Key", &admin_token)
+        .header("If-None-Match", &etag)
+        .body(Body::empty())
+        .unwrap();
+    let cond_res = create_app().oneshot(conditional_req).await.unwrap();
+    assert_eq!(cond_res.status(), StatusCode::NOT_MODIFIED);
+
+    // 5. LIST blobs in namespace
+    let list_req = Request::get("/api/v1/blobs/testns")
+        .header("X-Axiom-Key", &admin_token)
+        .body(Body::empty())
+        .unwrap();
+    let list_res = create_app().oneshot(list_req).await.unwrap();
+    assert_eq!(list_res.status(), StatusCode::OK);
+    let list_body = axum::body::to_bytes(list_res.into_body(), usize::MAX).await.unwrap();
+    let list_json: serde_json::Value = serde_json::from_slice(&list_body).unwrap();
+    assert_eq!(list_json["success"], true);
+    let items = list_json["data"]["items"].as_array().unwrap();
+    assert!(items.iter().any(|item| item["key"] == "docs/hello.txt"));
+
+    // 6. DELETE blob
+    let del_req = Request::delete("/api/v1/blobs/testns/docs/hello.txt")
+        .header("X-Axiom-Key", &admin_token)
+        .body(Body::empty())
+        .unwrap();
+    let del_res = create_app().oneshot(del_req).await.unwrap();
+    assert_eq!(del_res.status(), StatusCode::OK);
+
+    // 7. GET after DELETE -> 404 NOT_FOUND
+    let post_del_req = Request::get("/api/v1/blobs/testns/docs/hello.txt")
+        .header("X-Axiom-Key", &admin_token)
+        .body(Body::empty())
+        .unwrap();
+    let post_del_res = create_app().oneshot(post_del_req).await.unwrap();
+    assert_eq!(post_del_res.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn blob_storage_rbac_policy_enforcement() {
+    setup_test_metadata();
+    ensure_blob_engine().await;
+
+    let admin_token = BASE64_STANDARD.encode("admin_key:secret_admin");
+    let reader_token = BASE64_STANDARD.encode("blob_reader_key:secret_blob_ro");
+    let unauthorized_token = BASE64_STANDARD.encode("ro_key:secret_ro");
+
+    // 1. ro_key has no blob permissions (only db_alpha SELECT) -> 403 Forbidden
+    let unauth_put = Request::put("/api/v1/blobs/reports/q3_summary.pdf")
+        .header("X-Axiom-Key", &unauthorized_token)
+        .body(Body::from(b"Q3 confidential report".to_vec()))
+        .unwrap();
+    let unauth_res = create_app().oneshot(unauth_put).await.unwrap();
+    assert_eq!(unauth_res.status(), StatusCode::FORBIDDEN);
+
+    // 2. blob_reader_key only has READ on blob:reports -> PUT returns 403 Forbidden
+    let ro_put = Request::put("/api/v1/blobs/reports/q3_summary.pdf")
+        .header("X-Axiom-Key", &reader_token)
+        .body(Body::from(b"Q3 confidential report".to_vec()))
+        .unwrap();
+    let ro_res = create_app().oneshot(ro_put).await.unwrap();
+    assert_eq!(ro_res.status(), StatusCode::FORBIDDEN);
+
+    // 3. Admin successfully uploads blob
+    let admin_put = Request::put("/api/v1/blobs/reports/q3_summary.pdf")
+        .header("X-Axiom-Key", &admin_token)
+        .header("Content-Type", "application/pdf")
+        .body(Body::from(b"Q3 confidential report".to_vec()))
+        .unwrap();
+    let admin_res = create_app().oneshot(admin_put).await.unwrap();
+    assert_eq!(admin_res.status(), StatusCode::CREATED);
+
+    // 4. blob_reader_key CAN read the blob (200 OK)
+    let ro_get = Request::get("/api/v1/blobs/reports/q3_summary.pdf")
+        .header("X-Axiom-Key", &reader_token)
+        .body(Body::empty())
+        .unwrap();
+    let ro_get_res = create_app().oneshot(ro_get).await.unwrap();
+    assert_eq!(ro_get_res.status(), StatusCode::OK);
+
+    // 5. blob_reader_key CANNOT delete the blob (403 Forbidden)
+    let ro_del = Request::delete("/api/v1/blobs/reports/q3_summary.pdf")
+        .header("X-Axiom-Key", &reader_token)
+        .body(Body::empty())
+        .unwrap();
+    let ro_del_res = create_app().oneshot(ro_del).await.unwrap();
+    assert_eq!(ro_del_res.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn blob_storage_validation_rejections() {
+    setup_test_metadata();
+    ensure_blob_engine().await;
+
+    let admin_token = BASE64_STANDARD.encode("admin_key:secret_admin");
+
+    // Invalid namespace: directory traversal sequence ".."
+    let bad_ns_req = Request::put("/api/v1/blobs/..%2Fbad/file.txt")
+        .header("X-Axiom-Key", &admin_token)
+        .body(Body::from(b"test".to_vec()))
+        .unwrap();
+    let bad_ns_res = create_app().oneshot(bad_ns_req).await.unwrap();
+    assert!(bad_ns_res.status() == StatusCode::BAD_REQUEST || bad_ns_res.status() == StatusCode::FORBIDDEN);
+
+    // Invalid key: containing ".."
+    let bad_key_req = Request::put("/api/v1/blobs/testns/sub/../../etc/passwd")
+        .header("X-Axiom-Key", &admin_token)
+        .body(Body::from(b"test".to_vec()))
+        .unwrap();
+    let bad_key_res = create_app().oneshot(bad_key_req).await.unwrap();
+    assert!(bad_key_res.status() == StatusCode::BAD_REQUEST || bad_key_res.status() == StatusCode::FORBIDDEN);
 }
 

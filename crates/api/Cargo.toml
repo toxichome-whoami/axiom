@@ -12,6 +12,7 @@ axiom-metadata = { workspace = true }
 axiom-policy = { workspace = true }
 axiom-cache = { workspace = true }
 axiom-db = { workspace = true }
+axiom-blob = { workspace = true }
 axum = { workspace = true }
 tower = { workspace = true }
 tower-http = { workspace = true }
@@ -24,6 +25,7 @@ dashmap = { workspace = true }
 once_cell = { workspace = true }
 sqlparser = { workspace = true }
 tokio = { workspace = true }
+tokio-util = { workspace = true }
 tracing = { workspace = true }
 urlencoding = { workspace = true }
 sysinfo = { workspace = true }

@@ -106,3 +106,36 @@ export interface ApiRoutePreset {
   defaultBody: string;
   defaultParams: string;
 }
+
+export interface BlobMetadata {
+  hash: string;
+  size: number;
+  content_type: string;
+  created_at: number;
+  inline: boolean;
+}
+
+export interface BlobEntry {
+  namespace: string;
+  key: string;
+  hash: string;
+  size: number;
+  content_type: string;
+  created_at: number;
+  inline: boolean;
+}
+
+export interface BlobStats {
+  total_objects: number;
+  unique_blobs: number;
+  total_logical_bytes: number;
+  total_physical_bytes: number;
+  dedup_saved_bytes: number;
+  inline_objects: number;
+  file_objects: number;
+}
+
+export interface ListBlobsResult {
+  items: BlobEntry[];
+  next_cursor: string | null;
+}
