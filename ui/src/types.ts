@@ -139,3 +139,11 @@ export interface ListBlobsResult {
   items: BlobEntry[];
   next_cursor: string | null;
 }
+
+export interface NamespaceInfo {
+  name: string;
+  created_at: number;
+  max_bytes: number | null;
+  total_objects: number;
+  total_bytes: number;
+}

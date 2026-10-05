@@ -121,7 +121,7 @@ export interface UserRecordApi {
 }
 
 import { getSessionToken, clearSession } from './session';
-import type { BlobMetadata, BlobStats, ListBlobsResult } from '../types';
+import type { BlobMetadata, BlobStats, ListBlobsResult, NamespaceInfo } from '../types';
 
 const API_BASE = import.meta.env.VITE_API_URL ?? '';
 
@@ -158,7 +158,10 @@ function resolveEndpoint(endpoint: string): string {
  * @param endpoint Relative URL starting with /admin/v1 or /api/v1
  * @param options Standard RequestInit options
  */
-async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+async function request<T>(
+  endpoint: string,
+  options: RequestInit & { timeoutMs?: number } = {}
+): Promise<T> {
   const token = getSessionToken();
   const headers = new Headers(options.headers || {});
 
@@ -170,9 +173,10 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
     headers.set('Authorization', `Bearer ${token}`);
   }
 
-  // 15-second abort controller prevents UI locks on hung network calls
+  // Configurable abort timeout prevents UI locks on hung network calls (defaults to 15s)
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 15_000);
+  const timeoutMs = options.timeoutMs ?? 15_000;
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
   if (options.signal) {
     if (options.signal.aborted) {
@@ -334,7 +338,21 @@ export const api = {
 
   // Native Blob Storage Subsystem
   getBlobStats: () => request<BlobStats>('/admin/v1/blobs/stats'),
-  listBlobNamespaces: () => request<string[]>('/admin/v1/blobs/namespaces'),
+  listBlobNamespaces: () => request<NamespaceInfo[]>('/admin/v1/blobs/namespaces'),
+  createBlobNamespace: (name: string, max_bytes?: number | null) =>
+    request<NamespaceInfo>('/admin/v1/blobs/namespaces', {
+      method: 'POST',
+      body: JSON.stringify({ name, max_bytes: max_bytes ?? null }),
+    }),
+  updateBlobNamespace: (name: string, data: { new_name?: string; max_bytes?: number | null }) =>
+    request<NamespaceInfo>(`/admin/v1/blobs/namespaces/${encodeURIComponent(name)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+  deleteBlobNamespace: (name: string) =>
+    request<{ deleted_objects: number }>(`/admin/v1/blobs/namespaces/${encodeURIComponent(name)}`, {
+      method: 'DELETE',
+    }),
   listBlobs: (namespace: string, prefix?: string, cursor?: string, limit?: number) => {
     const params = new URLSearchParams();
     if (prefix) params.set('prefix', prefix);
@@ -343,7 +361,13 @@ export const api = {
     const qs = params.toString() ? `?${params.toString()}` : '';
     return request<ListBlobsResult>(`/api/v1/blobs/${encodeURIComponent(namespace)}${qs}`);
   },
-  uploadBlob: async (namespace: string, key: string, data: BodyInit, contentType?: string) => {
+  uploadBlob: async (
+    namespace: string,
+    key: string,
+    data: BodyInit,
+    contentType?: string,
+    signal?: AbortSignal
+  ) => {
     const sanitizedKey = key.split('/').map(encodeURIComponent).join('/');
     return request<BlobMetadata>(`/api/v1/blobs/${encodeURIComponent(namespace)}/${sanitizedKey}`, {
       method: 'PUT',
@@ -351,6 +375,8 @@ export const api = {
         'Content-Type': contentType || 'application/octet-stream',
       },
       body: data,
+      signal,
+      timeoutMs: 600_000, // 10-minute timeout allows large payloads
     });
   },
   deleteBlob: (namespace: string, key: string) => {
@@ -359,6 +385,45 @@ export const api = {
       method: 'DELETE',
     });
   },
+  copyBlob: (
+    src_namespace: string,
+    src_key: string,
+    dest_key: string,
+    dest_namespace?: string,
+    is_prefix?: boolean
+  ) =>
+    request<BlobMetadata | { copied_count: number }>('/admin/v1/blobs/copy', {
+      method: 'POST',
+      body: JSON.stringify({
+        src_namespace,
+        src_key,
+        dest_namespace: dest_namespace || src_namespace,
+        dest_key,
+        is_prefix: !!is_prefix,
+      }),
+    }),
+  moveBlob: (
+    src_namespace: string,
+    src_key: string,
+    dest_key: string,
+    dest_namespace?: string,
+    is_prefix?: boolean
+  ) =>
+    request<BlobMetadata | { moved_count: number }>('/admin/v1/blobs/move', {
+      method: 'POST',
+      body: JSON.stringify({
+        src_namespace,
+        src_key,
+        dest_namespace: dest_namespace || src_namespace,
+        dest_key,
+        is_prefix: !!is_prefix,
+      }),
+    }),
+  deleteBlobPrefix: (namespace: string, prefix: string) =>
+    request<{ deleted_objects: number }>('/admin/v1/blobs/delete-prefix', {
+      method: 'POST',
+      body: JSON.stringify({ namespace, prefix }),
+    }),
   verifyBlob: (namespace: string, key: string) => {
     const sanitizedKey = key.split('/').map(encodeURIComponent).join('/');
     return request<{ valid: boolean }>(`/admin/v1/blobs/verify/${encodeURIComponent(namespace)}/${sanitizedKey}`, {

@@ -24,6 +24,7 @@ export interface CustomSelectProps<T extends string> {
   size?: 'sm' | 'md';
   placeholder?: string;
   disabled?: boolean;
+  variant?: 'default' | 'neutral';
 }
 
 /**
@@ -38,10 +39,29 @@ export const CustomSelect = <T extends string>({
   size = 'md',
   placeholder = 'Select option...',
   disabled = false,
-}: CustomSelectProps<T>) => {
+  direction = 'auto',
+  variant = 'default',
+}: CustomSelectProps<T> & { direction?: 'down' | 'up' | 'auto' }) => {
   const [isOpen, setIsOpen] = useState(false);
+  const [openUpward, setOpenUpward] = useState(false);
   const [highlightedIndex, setHighlightedIndex] = useState(0);
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  const calculateDirection = () => {
+    if (direction === 'up') {
+      setOpenUpward(true);
+    } else if (direction === 'down') {
+      setOpenUpward(false);
+    } else if (dropdownRef.current) {
+      const rect = dropdownRef.current.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - rect.bottom;
+      if (spaceBelow < 250 && rect.top > spaceBelow) {
+        setOpenUpward(true);
+      } else {
+        setOpenUpward(false);
+      }
+    }
+  };
 
   // Close dropdown on click outside
   useEffect(() => {
@@ -72,6 +92,7 @@ export const CustomSelect = <T extends string>({
     if (!isOpen) {
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Enter' || e.key === ' ') {
         e.preventDefault();
+        calculateDirection();
         setIsOpen(true);
       }
       return;
@@ -104,12 +125,19 @@ export const CustomSelect = <T extends string>({
         aria-expanded={isOpen}
         disabled={disabled}
         onClick={() => {
-          if (!disabled) setIsOpen((prev) => !prev);
+          if (!disabled) {
+            if (!isOpen) calculateDirection();
+            setIsOpen((prev) => !prev);
+          }
         }}
         className={`w-full ${heightClass} px-3 rounded-[8px] bg-[#141414] border flex items-center justify-between cursor-pointer transition-all outline-none font-sans select-none disabled:opacity-50 disabled:cursor-not-allowed ${
           isOpen
-            ? 'border-[#3b82f6] ring-1 ring-[#3b82f6]/20 bg-[#161616] text-white'
-            : 'border-[#262626] hover:border-[#383838] focus:border-[#3b82f6] text-white'
+            ? variant === 'neutral'
+              ? 'border-[#383838] ring-1 ring-white/10 bg-[#161616] text-white'
+              : 'border-[#3b82f6] ring-1 ring-[#3b82f6]/20 bg-[#161616] text-white'
+            : variant === 'neutral'
+              ? 'border-[#262626] hover:border-[#383838] focus:border-[#383838] text-white'
+              : 'border-[#262626] hover:border-[#383838] focus:border-[#3b82f6] text-white'
         }`}
       >
         <div className="flex items-center gap-2 truncate">
@@ -126,7 +154,9 @@ export const CustomSelect = <T extends string>({
       {isOpen && (
         <div
           role="listbox"
-          className={`absolute left-0 top-[calc(100%+4px)] rounded-[8px] bg-[#0e0e0e] border border-[#262626] shadow-2xl p-1 z-50 select-none animate-in fade-in duration-100 font-sans max-h-60 overflow-y-auto ${menuWidth}`}
+          className={`absolute left-0 ${
+            openUpward ? 'bottom-[calc(100%+4px)]' : 'top-[calc(100%+4px)]'
+          } rounded-[8px] bg-[#0e0e0e] border border-[#262626] shadow-2xl p-1 z-50 select-none animate-in fade-in duration-100 font-sans max-h-60 overflow-y-auto ${menuWidth}`}
         >
           {options.length === 0 ? (
             <div className="px-3 py-2 text-xs text-[#8c8c8c] text-center font-sans">
@@ -160,7 +190,11 @@ export const CustomSelect = <T extends string>({
                     <span className="truncate">{opt.label}</span>
                   </div>
                   {isSelected && (
-                    <Check className="w-3.5 h-3.5 text-[#3b82f6] shrink-0 ml-2" />
+                    <Check
+                      className={`w-3.5 h-3.5 shrink-0 ml-2 ${
+                        variant === 'neutral' ? 'text-white' : 'text-[#3b82f6]'
+                      }`}
+                    />
                   )}
                 </button>
               );
