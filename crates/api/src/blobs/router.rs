@@ -8,7 +8,7 @@
 
 use crate::blobs::handlers::*;
 use axum::{
-    routing::{get, post, put},
+    routing::{get, patch, post, put},
     Router,
 };
 
@@ -29,6 +29,16 @@ pub fn get_router() -> Router {
 pub fn get_admin_router() -> Router {
     Router::new()
         .route("/stats", get(blob_stats_handler))
-        .route("/namespaces", get(list_namespaces_handler))
+        .route(
+            "/namespaces",
+            get(list_namespaces_handler).post(create_namespace_handler),
+        )
+        .route(
+            "/namespaces/:namespace",
+            patch(update_namespace_handler).delete(delete_namespace_handler),
+        )
+        .route("/copy", post(copy_blob_handler))
+        .route("/move", post(move_blob_handler))
+        .route("/delete-prefix", post(delete_prefix_handler))
         .route("/verify/:namespace/*key", post(verify_blob_handler))
 }

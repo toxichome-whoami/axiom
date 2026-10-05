@@ -9,7 +9,7 @@
 use crate::error::BlobError;
 use crate::hash::{constant_time_eq, hash_bytes};
 use crate::index::BlobIndex;
-use crate::models::{BlobMetadata, BlobStats, ListResult};
+use crate::models::{BlobMetadata, BlobStats, ListResult, NamespaceInfo};
 use crate::store::FileStore;
 use crate::validation::{validate_key, validate_namespace};
 use bytes::Bytes;
@@ -87,6 +87,22 @@ impl BlobEngine {
                 size,
                 max: self.max_object_bytes,
             });
+        }
+
+        // Enforce namespace storage quota ceiling if configured
+        if let Some(info) = self.index.get_namespace_info(namespace)? {
+            if let Some(max_quota) = info.max_bytes {
+                let existing_size = self.index.get_metadata(namespace, key)?.map(|m| m.size).unwrap_or(0);
+                let net_bytes = info.total_bytes.saturating_sub(existing_size);
+                if net_bytes + size > max_quota {
+                    return Err(BlobError::QuotaExceeded {
+                        namespace: namespace.to_string(),
+                        current: net_bytes,
+                        requested: size,
+                        max: max_quota,
+                    });
+                }
+            }
         }
 
         let hash = hash_bytes(data);
@@ -239,6 +255,186 @@ impl BlobEngine {
     pub fn list_namespaces(&self) -> Result<Vec<String>, BlobError> {
         self.index.list_namespaces()
     }
+
+    /// Registers a new namespace with an optional quota limit.
+    pub fn create_namespace(&self, name: &str, max_bytes: Option<u64>) -> Result<NamespaceInfo, BlobError> {
+        validate_namespace(name)?;
+        self.index.create_namespace(name, max_bytes)
+    }
+
+    /// Retrieves detailed info and live metrics for a single namespace.
+    pub fn get_namespace(&self, name: &str) -> Result<Option<NamespaceInfo>, BlobError> {
+        validate_namespace(name)?;
+        self.index.get_namespace_info(name)
+    }
+
+    /// Lists all namespaces with their metadata and storage usage metrics.
+    pub fn list_namespaces_info(&self) -> Result<Vec<NamespaceInfo>, BlobError> {
+        self.index.list_namespaces_info()
+    }
+
+    /// Updates quota or renames a namespace.
+    pub fn update_namespace(
+        &self,
+        name: &str,
+        new_name: Option<&str>,
+        max_bytes: Option<Option<u64>>,
+    ) -> Result<NamespaceInfo, BlobError> {
+        validate_namespace(name)?;
+        if let Some(nn) = new_name {
+            validate_namespace(nn)?;
+        }
+        self.index.update_namespace(name, new_name, max_bytes)
+    }
+
+    /// Duplicates an existing object into a target key/namespace at zero physical I/O cost (content-addressed refcount increment).
+    /// CONTRACT:
+    ///  - Precondition: Source object must exist.
+    ///  - Precondition: Target namespace must have sufficient quota headroom.
+    ///  - Side effects: Increments BLAKE3 hash refcount; writes new metadata record.
+    pub async fn copy_blob(
+        &self,
+        src_ns: &str,
+        src_key: &str,
+        dest_ns: &str,
+        dest_key: &str,
+    ) -> Result<BlobMetadata, BlobError> {
+        validate_namespace(src_ns)?;
+        validate_key(src_key)?;
+        validate_namespace(dest_ns)?;
+        validate_key(dest_key)?;
+
+        let src_meta = self.index.get_metadata(src_ns, src_key)?.ok_or_else(|| {
+            BlobError::NotFound {
+                namespace: src_ns.to_string(),
+                key: src_key.to_string(),
+            }
+        })?;
+
+        // Enforce destination quota ceiling
+        if let Some(info) = self.index.get_namespace_info(dest_ns)? {
+            if let Some(max_quota) = info.max_bytes {
+                let existing_size = self
+                    .index
+                    .get_metadata(dest_ns, dest_key)?
+                    .map(|m| m.size)
+                    .unwrap_or(0);
+                let net_bytes = info.total_bytes.saturating_sub(existing_size);
+                if net_bytes + src_meta.size > max_quota {
+                    return Err(BlobError::QuotaExceeded {
+                        namespace: dest_ns.to_string(),
+                        current: net_bytes,
+                        requested: src_meta.size,
+                        max: max_quota,
+                    });
+                }
+            }
+        }
+
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+
+        let dest_meta = BlobMetadata {
+            hash: src_meta.hash.clone(),
+            size: src_meta.size,
+            content_type: src_meta.content_type.clone(),
+            created_at: now,
+            inline: src_meta.inline,
+        };
+
+        self.index.commit_put(dest_ns, dest_key, &dest_meta)?;
+        Ok(dest_meta)
+    }
+
+    /// Moves or renames an existing object to a target key or namespace.
+    /// CONTRACT:
+    ///  - Precondition: Source object must exist.
+    ///  - Side effects: Performs zero-cost copy then deletes source key.
+    pub async fn move_blob(
+        &self,
+        src_ns: &str,
+        src_key: &str,
+        dest_ns: &str,
+        dest_key: &str,
+    ) -> Result<BlobMetadata, BlobError> {
+        if src_ns == dest_ns && src_key == dest_key {
+            return self.head(src_ns, src_key);
+        }
+        let meta = self.copy_blob(src_ns, src_key, dest_ns, dest_key).await?;
+        let _ = self.delete(src_ns, src_key).await?;
+        Ok(meta)
+    }
+
+    /// Recursively copies all objects matching a prefix into a destination prefix.
+    pub async fn copy_prefix(
+        &self,
+        src_ns: &str,
+        src_prefix: &str,
+        dest_ns: &str,
+        dest_prefix: &str,
+    ) -> Result<u64, BlobError> {
+        validate_namespace(src_ns)?;
+        validate_namespace(dest_ns)?;
+        let (items, _) = self.index.list(src_ns, Some(src_prefix), None, 100_000)?;
+        let mut count = 0u64;
+        for entry in items {
+            let rel = &entry.key[src_prefix.len()..];
+            let new_key = format!("{}{}", dest_prefix, rel);
+            self.copy_blob(src_ns, &entry.key, dest_ns, &new_key).await?;
+            count += 1;
+        }
+        Ok(count)
+    }
+
+    /// Recursively moves all objects matching a prefix into a destination prefix.
+    pub async fn move_prefix(
+        &self,
+        src_ns: &str,
+        src_prefix: &str,
+        dest_ns: &str,
+        dest_prefix: &str,
+    ) -> Result<u64, BlobError> {
+        validate_namespace(src_ns)?;
+        validate_namespace(dest_ns)?;
+        let (items, _) = self.index.list(src_ns, Some(src_prefix), None, 100_000)?;
+        let mut count = 0u64;
+        for entry in items {
+            let rel = &entry.key[src_prefix.len()..];
+            let new_key = format!("{}{}", dest_prefix, rel);
+            self.move_blob(src_ns, &entry.key, dest_ns, &new_key).await?;
+            count += 1;
+        }
+        Ok(count)
+    }
+
+    /// Recursively deletes all objects matching a prefix.
+    pub async fn delete_prefix(&self, ns: &str, prefix: &str) -> Result<u64, BlobError> {
+        validate_namespace(ns)?;
+        let (items, _) = self.index.list(ns, Some(prefix), None, 100_000)?;
+        let mut count = 0u64;
+        for entry in items {
+            if self.delete(ns, &entry.key).await? {
+                count += 1;
+            }
+        }
+        Ok(count)
+    }
+
+    /// Deletes a namespace and purges all objects inside it.
+    pub async fn delete_namespace(&self, namespace: &str) -> Result<u64, BlobError> {
+        validate_namespace(namespace)?;
+        let (items, _) = self.index.list(namespace, None, None, 100_000)?;
+        let mut deleted_count = 0u64;
+        for entry in items {
+            if self.delete(namespace, &entry.key).await? {
+                deleted_count += 1;
+            }
+        }
+        self.index.remove_namespace_record(namespace)?;
+        Ok(deleted_count)
+    }
 }
 
 #[cfg(test)]
@@ -298,5 +494,43 @@ mod tests {
         // 7. Delete second large copy (now physical file is deleted)
         assert!(engine.delete(ns, "copy_large.bin").await.unwrap());
         assert!(engine.get(ns, "copy_large.bin").await.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_blob_engine_filesystem_operations() {
+        let tmp = tempfile::tempdir().unwrap();
+        let engine = BlobEngine::new(tmp.path(), 64, 1024 * 1024, true)
+            .await
+            .unwrap();
+
+        let ns = "fs-test";
+
+        // 1. Put initial files in virtual directory
+        engine.put(ns, "docs/readme.txt", Some("text/plain"), b"hello world").await.unwrap();
+        engine.put(ns, "docs/spec.pdf", Some("application/pdf"), b"pdf content").await.unwrap();
+
+        // 2. Copy blob
+        let copied = engine.copy_blob(ns, "docs/readme.txt", ns, "docs/readme_copy.txt").await.unwrap();
+        assert_eq!(copied.size, 11);
+        let (_, copy_bytes) = engine.get_bytes(ns, "docs/readme_copy.txt").await.unwrap();
+        assert_eq!(&copy_bytes[..], b"hello world");
+
+        // 3. Move blob (rename)
+        let moved = engine.move_blob(ns, "docs/readme_copy.txt", ns, "docs/readme_renamed.txt").await.unwrap();
+        assert_eq!(moved.size, 11);
+        assert!(engine.get(ns, "docs/readme_copy.txt").await.is_err());
+        assert!(engine.get(ns, "docs/readme_renamed.txt").await.is_ok());
+
+        // 4. Copy prefix (folder copy)
+        let copied_count = engine.copy_prefix(ns, "docs/", ns, "backup/docs/").await.unwrap();
+        assert_eq!(copied_count, 3);
+        assert!(engine.get(ns, "backup/docs/readme.txt").await.is_ok());
+        assert!(engine.get(ns, "backup/docs/spec.pdf").await.is_ok());
+        assert!(engine.get(ns, "backup/docs/readme_renamed.txt").await.is_ok());
+
+        // 5. Delete prefix (folder delete)
+        let deleted_count = engine.delete_prefix(ns, "backup/").await.unwrap();
+        assert_eq!(deleted_count, 3);
+        assert!(engine.get(ns, "backup/docs/readme.txt").await.is_err());
     }
 }

@@ -1,4 +1,4 @@
-/*
+ /*
  * Axum HTTP request handlers for native embedded blob storage operations.
  * Owned by: api/blobs
  * Key deps: axum, bytes, axiom-blob, axiom-policy, axiom-metadata
@@ -49,6 +49,19 @@ fn map_blob_error(err: BlobError) -> AxiomError {
             "PAYLOAD_TOO_LARGE",
             &format!("Payload size {} exceeds allowed max of {} bytes", size, max),
             StatusCode::PAYLOAD_TOO_LARGE,
+        ),
+        BlobError::QuotaExceeded {
+            namespace,
+            current,
+            requested,
+            max,
+        } => AxiomError::new(
+            "QUOTA_EXCEEDED",
+            &format!(
+                "Namespace '{}' storage quota exceeded (current: {} B, requested: {} B, quota: {} B)",
+                namespace, current, requested, max
+            ),
+            StatusCode::INSUFFICIENT_STORAGE,
         ),
         BlobError::ChecksumMismatch { expected, actual } => AxiomError::new(
             "CHECKSUM_MISMATCH",
@@ -284,7 +297,19 @@ pub async fn blob_stats_handler(
     })))
 }
 
-/// Administrative handler returning all active namespaces.
+#[derive(serde::Deserialize)]
+pub struct CreateNamespaceRequest {
+    pub name: String,
+    pub max_bytes: Option<u64>,
+}
+
+#[derive(serde::Deserialize)]
+pub struct UpdateNamespaceRequest {
+    pub new_name: Option<String>,
+    pub max_bytes: Option<Option<u64>>,
+}
+
+/// Administrative handler returning all configured storage namespaces with usage metrics.
 pub async fn list_namespaces_handler(
     Extension(auth): Extension<AuthContext>,
 ) -> Result<impl IntoResponse, AxiomError> {
@@ -297,11 +322,88 @@ pub async fn list_namespaces_handler(
     }
 
     let engine = get_blob_engine()?;
-    let namespaces = engine.list_namespaces().map_err(map_blob_error)?;
+    let namespaces = engine.list_namespaces_info().map_err(map_blob_error)?;
 
     Ok(Json(json!({
         "success": true,
         "data": namespaces,
+        "error": serde_json::Value::Null
+    })))
+}
+
+/// Administrative handler creating a new storage namespace with an optional quota.
+pub async fn create_namespace_handler(
+    Extension(auth): Extension<AuthContext>,
+    Json(payload): Json<CreateNamespaceRequest>,
+) -> Result<impl IntoResponse, AxiomError> {
+    if !auth.is_session {
+        return Err(AxiomError::new(
+            "FORBIDDEN",
+            "Admin session required to create storage namespaces",
+            StatusCode::FORBIDDEN,
+        ));
+    }
+
+    let engine = get_blob_engine()?;
+    let info = engine
+        .create_namespace(&payload.name, payload.max_bytes)
+        .map_err(map_blob_error)?;
+
+    Ok((
+        StatusCode::CREATED,
+        Json(json!({
+            "success": true,
+            "data": info,
+            "error": serde_json::Value::Null
+        })),
+    ))
+}
+
+/// Administrative handler updating an existing namespace quota or renaming it.
+pub async fn update_namespace_handler(
+    Path(namespace): Path<String>,
+    Extension(auth): Extension<AuthContext>,
+    Json(payload): Json<UpdateNamespaceRequest>,
+) -> Result<impl IntoResponse, AxiomError> {
+    if !auth.is_session {
+        return Err(AxiomError::new(
+            "FORBIDDEN",
+            "Admin session required to update storage namespaces",
+            StatusCode::FORBIDDEN,
+        ));
+    }
+
+    let engine = get_blob_engine()?;
+    let info = engine
+        .update_namespace(&namespace, payload.new_name.as_deref(), payload.max_bytes)
+        .map_err(map_blob_error)?;
+
+    Ok(Json(json!({
+        "success": true,
+        "data": info,
+        "error": serde_json::Value::Null
+    })))
+}
+
+/// Administrative handler permanently deleting a namespace and all stored objects inside it.
+pub async fn delete_namespace_handler(
+    Path(namespace): Path<String>,
+    Extension(auth): Extension<AuthContext>,
+) -> Result<impl IntoResponse, AxiomError> {
+    if !auth.is_session {
+        return Err(AxiomError::new(
+            "FORBIDDEN",
+            "Admin session required to delete storage namespaces",
+            StatusCode::FORBIDDEN,
+        ));
+    }
+
+    let engine = get_blob_engine()?;
+    let deleted_count = engine.delete_namespace(&namespace).await.map_err(map_blob_error)?;
+
+    Ok(Json(json!({
+        "success": true,
+        "data": { "deleted_objects": deleted_count },
         "error": serde_json::Value::Null
     })))
 }
@@ -328,3 +430,211 @@ pub async fn verify_blob_handler(
         "error": serde_json::Value::Null
     })))
 }
+
+#[derive(Debug, Deserialize)]
+pub struct CopyBlobRequest {
+    pub src_namespace: String,
+    pub src_key: String,
+    pub dest_namespace: Option<String>,
+    pub dest_key: String,
+    pub is_prefix: Option<bool>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct MoveBlobRequest {
+    pub src_namespace: String,
+    pub src_key: String,
+    pub dest_namespace: Option<String>,
+    pub dest_key: String,
+    pub is_prefix: Option<bool>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct DeletePrefixRequest {
+    pub namespace: String,
+    pub prefix: String,
+}
+
+/// Administrative handler copying an object or folder prefix.
+pub async fn copy_blob_handler(
+    Extension(auth): Extension<AuthContext>,
+    Json(payload): Json<CopyBlobRequest>,
+) -> Result<impl IntoResponse, AxiomError> {
+    let dest_ns = payload
+        .dest_namespace
+        .as_deref()
+        .unwrap_or(&payload.src_namespace);
+
+    if !auth.is_session {
+        PolicyEngine::evaluate_blob(&auth, &payload.src_namespace, &payload.src_key, "READ")?;
+        PolicyEngine::evaluate_blob(&auth, dest_ns, &payload.dest_key, "WRITE")?;
+    }
+
+    let engine = get_blob_engine()?;
+
+    if payload.is_prefix.unwrap_or(false) {
+        let count = engine
+            .copy_prefix(
+                &payload.src_namespace,
+                &payload.src_key,
+                dest_ns,
+                &payload.dest_key,
+            )
+            .await
+            .map_err(map_blob_error)?;
+
+        let actor = if auth.is_session { "admin" } else { &auth.api_key_name };
+        let _ = MetadataStore::record_audit(
+            actor,
+            "blob.copy_prefix",
+            &format!("{}/{} -> {}/{}", payload.src_namespace, payload.src_key, dest_ns, payload.dest_key),
+            Some(&format!("copied_count={}", count)),
+        )
+        .await;
+
+        Ok((
+            StatusCode::OK,
+            Json(json!({
+                "success": true,
+                "data": { "copied_count": count },
+                "error": serde_json::Value::Null
+            })),
+        ))
+    } else {
+        let meta = engine
+            .copy_blob(
+                &payload.src_namespace,
+                &payload.src_key,
+                dest_ns,
+                &payload.dest_key,
+            )
+            .await
+            .map_err(map_blob_error)?;
+
+        let actor = if auth.is_session { "admin" } else { &auth.api_key_name };
+        let _ = MetadataStore::record_audit(
+            actor,
+            "blob.copy",
+            &format!("{}/{} -> {}/{}", payload.src_namespace, payload.src_key, dest_ns, payload.dest_key),
+            Some(&format!("hash={}, size={}", meta.hash, meta.size)),
+        )
+        .await;
+
+        Ok((
+            StatusCode::OK,
+            Json(json!({
+                "success": true,
+                "data": meta,
+                "error": serde_json::Value::Null
+            })),
+        ))
+    }
+}
+
+/// Administrative handler moving or renaming an object or folder prefix.
+pub async fn move_blob_handler(
+    Extension(auth): Extension<AuthContext>,
+    Json(payload): Json<MoveBlobRequest>,
+) -> Result<impl IntoResponse, AxiomError> {
+    let dest_ns = payload
+        .dest_namespace
+        .as_deref()
+        .unwrap_or(&payload.src_namespace);
+
+    if !auth.is_session {
+        PolicyEngine::evaluate_blob(&auth, &payload.src_namespace, &payload.src_key, "WRITE")?;
+        PolicyEngine::evaluate_blob(&auth, dest_ns, &payload.dest_key, "WRITE")?;
+    }
+
+    let engine = get_blob_engine()?;
+
+    if payload.is_prefix.unwrap_or(false) {
+        let count = engine
+            .move_prefix(
+                &payload.src_namespace,
+                &payload.src_key,
+                dest_ns,
+                &payload.dest_key,
+            )
+            .await
+            .map_err(map_blob_error)?;
+
+        let actor = if auth.is_session { "admin" } else { &auth.api_key_name };
+        let _ = MetadataStore::record_audit(
+            actor,
+            "blob.move_prefix",
+            &format!("{}/{} -> {}/{}", payload.src_namespace, payload.src_key, dest_ns, payload.dest_key),
+            Some(&format!("moved_count={}", count)),
+        )
+        .await;
+
+        Ok((
+            StatusCode::OK,
+            Json(json!({
+                "success": true,
+                "data": { "moved_count": count },
+                "error": serde_json::Value::Null
+            })),
+        ))
+    } else {
+        let meta = engine
+            .move_blob(
+                &payload.src_namespace,
+                &payload.src_key,
+                dest_ns,
+                &payload.dest_key,
+            )
+            .await
+            .map_err(map_blob_error)?;
+
+        let actor = if auth.is_session { "admin" } else { &auth.api_key_name };
+        let _ = MetadataStore::record_audit(
+            actor,
+            "blob.move",
+            &format!("{}/{} -> {}/{}", payload.src_namespace, payload.src_key, dest_ns, payload.dest_key),
+            Some(&format!("hash={}, size={}", meta.hash, meta.size)),
+        )
+        .await;
+
+        Ok((
+            StatusCode::OK,
+            Json(json!({
+                "success": true,
+                "data": meta,
+                "error": serde_json::Value::Null
+            })),
+        ))
+    }
+}
+
+/// Administrative handler deleting an entire directory/prefix.
+pub async fn delete_prefix_handler(
+    Extension(auth): Extension<AuthContext>,
+    Json(payload): Json<DeletePrefixRequest>,
+) -> Result<impl IntoResponse, AxiomError> {
+    if !auth.is_session {
+        PolicyEngine::evaluate_blob(&auth, &payload.namespace, &payload.prefix, "WRITE")?;
+    }
+
+    let engine = get_blob_engine()?;
+    let count = engine
+        .delete_prefix(&payload.namespace, &payload.prefix)
+        .await
+        .map_err(map_blob_error)?;
+
+    let actor = if auth.is_session { "admin" } else { &auth.api_key_name };
+    let _ = MetadataStore::record_audit(
+        actor,
+        "blob.delete_prefix",
+        &format!("{}/{}", payload.namespace, payload.prefix),
+        Some(&format!("deleted_count={}", count)),
+    )
+    .await;
+
+    Ok(Json(json!({
+        "success": true,
+        "data": { "deleted_objects": count },
+        "error": serde_json::Value::Null
+    })))
+}
+

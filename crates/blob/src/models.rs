@@ -68,3 +68,18 @@ pub struct BlobStats {
     /// Count of large objects stored as content-addressed files on disk.
     pub file_objects: u64,
 }
+
+/// Metadata and quota configuration for an isolated storage partition (namespace bucket).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NamespaceInfo {
+    /// Namespace identifier string (1-64 alphanumeric, '.', '_', '-').
+    pub name: String,
+    /// Unix creation timestamp.
+    pub created_at: i64,
+    /// Optional hard ceiling on total logical byte consumption (None = unlimited).
+    pub max_bytes: Option<u64>,
+    /// Total logical object count inside this namespace.
+    pub total_objects: u64,
+    /// Total logical bytes occupied by objects inside this namespace.
+    pub total_bytes: u64,
+}

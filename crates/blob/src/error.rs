@@ -31,6 +31,13 @@ pub enum BlobError {
         size: u64,
         max: u64,
     },
+    /// Storage quota for the target namespace would be exceeded.
+    QuotaExceeded {
+        namespace: String,
+        current: u64,
+        requested: u64,
+        max: u64,
+    },
     /// BLAKE3 cryptographic checksum mismatch during verification.
     ChecksumMismatch {
         expected: String,
@@ -56,6 +63,13 @@ impl fmt::Display for BlobError {
             }
             Self::PayloadTooLarge { size, max } => {
                 write!(f, "Payload size {} exceeds limit of {} bytes", size, max)
+            }
+            Self::QuotaExceeded { namespace, current, requested, max } => {
+                write!(
+                    f,
+                    "Namespace '{}' quota exceeded: current {} B + payload {} B exceeds limit of {} B",
+                    namespace, current, requested, max
+                )
             }
             Self::ChecksumMismatch { expected, actual } => write!(
                 f,
