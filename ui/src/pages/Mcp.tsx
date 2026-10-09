@@ -392,10 +392,10 @@ export function Mcp() {
             />
             <span>Tools</span>
             <span
-              className={`ml-auto text-[11px] px-1.5 py-0.2 rounded-full transition-colors ${
+              className={`ml-auto text-[11px] font-mono transition-colors ${
                 activeNav === 'tools'
-                  ? 'bg-[#1d4ed8]/20 text-[#60a5fa]'
-                  : 'bg-[#161616] text-[#737373] group-hover:text-[#a3a3a3]'
+                  ? 'text-[#60a5fa]'
+                  : 'text-[#737373] group-hover:text-[#a3a3a3]'
               }`}
             >
               {tools.length}
@@ -442,7 +442,7 @@ export function Mcp() {
                     <button
                       type="button"
                       onClick={() => setActiveCategory('database')}
-                      className={`px-3 py-1 text-[12px] rounded-[5px] transition-colors cursor-pointer flex items-center gap-1.5 ${
+                      className={`h-7 px-3 text-[12px] rounded-[5px] transition-colors cursor-pointer flex items-center gap-1.5 ${
                         activeCategory === 'database'
                           ? 'bg-[#181920] text-white shadow-xs font-medium'
                           : 'text-[#8c8c8c] hover:text-white font-normal'
@@ -450,13 +450,7 @@ export function Mcp() {
                     >
                       <Database className="w-3.5 h-3.5 text-[#60a5fa]" />
                       <span>Database</span>
-                      <span
-                        className={`text-[10px] font-mono px-1.5 py-0.2 rounded-full ${
-                          activeCategory === 'database'
-                            ? 'bg-[#1d4ed8]/20 text-[#60a5fa]'
-                            : 'bg-[#14151a] text-[#71717a]'
-                        }`}
-                      >
+                      <span className={`text-[11px] font-mono ${activeCategory === 'database' ? 'text-[#93c5fd]' : 'text-[#71717a]'}`}>
                         {tools.filter((t) => t.category === 'database').length}
                       </span>
                     </button>
@@ -464,7 +458,7 @@ export function Mcp() {
                     <button
                       type="button"
                       onClick={() => setActiveCategory('blob')}
-                      className={`px-3 py-1 text-[12px] rounded-[5px] transition-colors cursor-pointer flex items-center gap-1.5 ${
+                      className={`h-7 px-3 text-[12px] rounded-[5px] transition-colors cursor-pointer flex items-center gap-1.5 ${
                         activeCategory === 'blob'
                           ? 'bg-[#181920] text-white shadow-xs font-medium'
                           : 'text-[#8c8c8c] hover:text-white font-normal'
@@ -472,13 +466,7 @@ export function Mcp() {
                     >
                       <HardDrive className="w-3.5 h-3.5 text-[#eab308]" />
                       <span>Blob Storage</span>
-                      <span
-                        className={`text-[10px] font-mono px-1.5 py-0.2 rounded-full ${
-                          activeCategory === 'blob'
-                            ? 'bg-[#d97706]/20 text-[#fbbf24]'
-                            : 'bg-[#14151a] text-[#71717a]'
-                        }`}
-                      >
+                      <span className={`text-[11px] font-mono ${activeCategory === 'blob' ? 'text-[#fde047]' : 'text-[#71717a]'}`}>
                         {tools.filter((t) => t.category === 'blob').length}
                       </span>
                     </button>
