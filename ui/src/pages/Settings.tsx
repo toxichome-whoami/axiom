@@ -13,7 +13,6 @@ import { Button } from '../components/ui/Button';
 import { Skeleton } from '../components/ui/Skeleton';
 import {
   RefreshCw,
-  CheckCircle2,
   Terminal,
   Shield,
   Copy,
@@ -22,7 +21,6 @@ import {
   Users,
   Info,
   LayoutGrid,
-  AlertTriangle,
 } from 'lucide-react';
 import { api, SystemStatusData, HealthData, UserRecordApi } from '../api/client';
 
@@ -33,9 +31,6 @@ export function Settings() {
   const [healthData, setHealthData] = useState<HealthData | null>(null);
   const [isReloading, setIsReloading] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
-  const [snapshotNotice, setSnapshotNotice] = useState(false);
-  const [snapOk, setSnapOk] = useState(true);
-  const [snapshotMessage, setSnapshotMessage] = useState('');
   const [copiedCli, setCopiedCli] = useState(false);
   const [endpointCategory, setEndpointCategory] = useState<'database' | 'storage'>('database');
   const fetchGenRef = React.useRef(0);
@@ -83,22 +78,12 @@ export function Settings() {
 
   async function handleReloadSnapshot() {
     setIsReloading(true);
+    const minSpinPromise = new Promise((resolve) => setTimeout(resolve, 600));
     try {
-      const res = await api.reloadMetadata();
-      setSnapOk(true);
-      setSnapshotMessage(res.message || 'Metadata snapshot synchronized');
-      setSnapshotNotice(true);
+      await Promise.all([api.reloadMetadata(), minSpinPromise]);
       await loadLiveSettings();
-      setTimeout(() => {
-        setSnapshotNotice(false);
-      }, 3000);
-    } catch (err: unknown) {
-      setSnapOk(false);
-      setSnapshotMessage(err instanceof Error ? err.message : 'Failed to reload snapshot');
-      setSnapshotNotice(true);
-      setTimeout(() => {
-        setSnapshotNotice(false);
-      }, 4000);
+    } catch {
+      // Keep existing state
     } finally {
       setIsReloading(false);
     }
@@ -181,35 +166,19 @@ export function Settings() {
         <div>
           <h1 className="text-[16px] font-medium text-white tracking-tight">Settings</h1>
         </div>
-        <Button
-          variant="secondary"
-          size="sm"
-          disabled={isReloading}
-          onClick={handleReloadSnapshot}
-        >
-          <RefreshCw className={`w-3.5 h-3.5 mr-1 text-[#8c8c8c] ${isReloading ? 'animate-spin' : ''}`} />
-          Reload Metadata Snapshot
-        </Button>
-      </div>
-
-      {/* Snapshot Feedback Toast (F-09) */}
-      {snapshotNotice && (
-        <div
-          className={`rounded-[8px] border p-3 text-[13px] font-medium flex items-center gap-2 ${
-            snapOk
-              ? 'border-[#30a46c]/30 bg-[#30a46c]/10 text-[#30a46c]'
-              : 'border-[#e5484d]/30 bg-[#e5484d]/10 text-[#e5484d]'
-          }`}
-          role="status"
-        >
-          {snapOk ? (
-            <CheckCircle2 className="w-4 h-4 shrink-0 text-[#30a46c]" />
-          ) : (
-            <AlertTriangle className="w-4 h-4 shrink-0 text-[#e5484d]" />
-          )}
-          <span>{snapshotMessage || (snapOk ? 'ArcSwap metadata snapshot reloaded. Worker caches updated from axiom.db.' : 'Failed to reload snapshot.')}</span>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            disabled={isReloading}
+            onClick={handleReloadSnapshot}
+            title="Reload metadata snapshot"
+            aria-label="Reload metadata snapshot"
+            className="flex items-center justify-center h-8 w-8 text-[#8c8c8c] hover:text-white rounded-[8px] bg-[#0c0c0c] hover:bg-[#141414] border border-[#262626] hover:border-[#383838] transition-colors cursor-pointer shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isReloading ? 'animate-spin opacity-50' : ''}`} />
+          </button>
         </div>
-      )}
+      </div>
 
       {/* Main Two-Column Layout (Matching Overview and Databases styling) */}
       <div className="flex flex-col md:flex-row gap-5 items-start">

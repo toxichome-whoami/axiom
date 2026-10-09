@@ -245,9 +245,6 @@ export function Layout({ currentPath, onNavigate, title, children, onLogout }: L
                 <span className="font-['Montserrat',sans-serif] text-[17px] text-[#F2F3F3] font-semibold tracking-[0.1em] truncate">
                   Axiom Gateway
                 </span>
-                <span className="inline-flex items-center px-1.5 py-0.5 rounded-[4px] bg-[#161718] border border-[#26282A] text-[12px] text-[#A1A1A1] tracking-normal font-mono">
-                  v4.0
-                </span>
               </div>
             )}
           </button>
