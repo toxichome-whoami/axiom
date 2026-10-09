@@ -429,7 +429,7 @@ export function DataTable<T>({
                         <span className="md:hidden text-[12px] text-[#888888] font-medium mr-4 select-none shrink-0 truncate">
                           {col.header}
                         </span>
-                        <div className="h-3.5 max-md:flex-1 md:w-3/4 rounded bg-[#1a1a1a] animate-pulse" />
+                        <div className="h-3.5 max-md:flex-1 md:w-3/4 rounded-[4px] bg-[#16171d]/80 border border-[#1e2025]/40 animate-pulse" />
                       </td>
                     );
                   })}

@@ -10,6 +10,7 @@ import React, { useState, useEffect } from 'react';
 import { AdminUser } from '../types';
 import { DataTable, Column } from '../components/shared/DataTable';
 import { Button } from '../components/ui/Button';
+import { Skeleton } from '../components/ui/Skeleton';
 import {
   RefreshCw,
   CheckCircle2,
@@ -264,31 +265,47 @@ export function Settings() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                   <div className="rounded-[8px] border border-[#262626] bg-[#111111] p-3.5 space-y-1">
                     <span className="text-[12px] font-normal text-[#8c8c8c]">Server Version</span>
-                    <div className="font-mono text-[13px] text-white font-normal">v{statusData?.version || '4.0.0'}</div>
+                    {isLoading ? (
+                      <Skeleton className="h-4 w-16" />
+                    ) : (
+                      <div className="font-mono text-[13px] text-white font-normal">v{statusData?.version || '4.0.0'}</div>
+                    )}
                   </div>
 
                   <div className="rounded-[8px] border border-[#262626] bg-[#111111] p-3.5 space-y-1">
                     <span className="text-[12px] font-normal text-[#8c8c8c]">Process Uptime</span>
-                    <div className="font-mono text-[13px] text-white font-normal">
-                      {healthData?.uptime_seconds
-                        ? `${Math.floor(healthData.uptime_seconds / 3600)}h ${Math.floor((healthData.uptime_seconds % 3600) / 60)}m ${healthData.uptime_seconds % 60}s`
-                        : 'Active'}
-                    </div>
+                    {isLoading ? (
+                      <Skeleton className="h-4 w-24" />
+                    ) : (
+                      <div className="font-mono text-[13px] text-white font-normal">
+                        {healthData?.uptime_seconds
+                          ? `${Math.floor(healthData.uptime_seconds / 3600)}h ${Math.floor((healthData.uptime_seconds % 3600) / 60)}m ${healthData.uptime_seconds % 60}s`
+                          : 'Active'}
+                      </div>
+                    )}
                   </div>
 
                   <div className="rounded-[8px] border border-[#262626] bg-[#111111] p-3.5 space-y-1">
                     <span className="text-[12px] font-normal text-[#8c8c8c]">Cluster Health</span>
-                    <div className="font-mono text-[13px] text-[#30a46c] font-normal flex items-center gap-1.5 capitalize">
-                      <span className="size-1.5 rounded-full bg-[#30a46c]" />
-                      {healthData?.status || 'healthy'}
-                    </div>
+                    {isLoading ? (
+                      <Skeleton className="h-4 w-20" />
+                    ) : (
+                      <div className="font-mono text-[13px] text-[#30a46c] font-normal flex items-center gap-1.5 capitalize">
+                        <span className="size-1.5 rounded-full bg-[#30a46c]" />
+                        {healthData?.status || 'healthy'}
+                      </div>
+                    )}
                   </div>
 
                   <div className="rounded-[8px] border border-[#262626] bg-[#111111] p-3.5 space-y-1">
                     <span className="text-[12px] font-normal text-[#8c8c8c]">Active DB Pools</span>
-                    <div className="font-mono text-[13px] text-white font-normal">
-                      {statusData?.active_databases ?? 0} connected
-                    </div>
+                    {isLoading ? (
+                      <Skeleton className="h-4 w-24" />
+                    ) : (
+                      <div className="font-mono text-[13px] text-white font-normal">
+                        {statusData?.active_databases ?? 0} connected
+                      </div>
+                    )}
                   </div>
                 </div>
 

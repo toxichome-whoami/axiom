@@ -205,6 +205,7 @@ export interface FileTreeProps {
   onItemDragEnd?: (e: React.DragEvent) => void;
   onDropOnFolder?: (targetFolderPath: string, droppedItem?: StorageItem) => void;
   canDropOnFolder?: (dragged: StorageItem | null, targetFolderKey: string) => boolean;
+  isLoading?: boolean;
 }
 
 export function FileTree({
@@ -223,6 +224,7 @@ export function FileTree({
   onItemDragEnd,
   onDropOnFolder,
   canDropOnFolder,
+  isLoading = false,
 }: FileTreeProps) {
   const treeNodes = useMemo(() => buildFileTree(blobs), [blobs]);
 
@@ -495,7 +497,30 @@ export function FileTree({
 
       {/* Tree View Scrolling List */}
       <div className="flex-1 overflow-y-auto px-1 py-1.5 space-y-0.5 scrollbar-thin scrollbar-thumb-[#222222]">
-        {treeNodes.length === 0 ? (
+        {isLoading ? (
+          <div className="p-2 space-y-2 animate-pulse">
+            <div className="flex items-center gap-2 py-1">
+              <div className="w-4 h-4 rounded-[3px] bg-[#16171d]/80 border border-[#1e2025]/40" />
+              <div className="h-3.5 w-24 rounded-[4px] bg-[#16171d]/80 border border-[#1e2025]/40" />
+            </div>
+            <div className="flex items-center gap-2 py-1 pl-4">
+              <div className="w-4 h-4 rounded-[3px] bg-[#16171d]/60 border border-[#1e2025]/30" />
+              <div className="h-3.5 w-28 rounded-[4px] bg-[#16171d]/60 border border-[#1e2025]/30" />
+            </div>
+            <div className="flex items-center gap-2 py-1 pl-4">
+              <div className="w-4 h-4 rounded-[3px] bg-[#16171d]/60 border border-[#1e2025]/30" />
+              <div className="h-3.5 w-20 rounded-[4px] bg-[#16171d]/60 border border-[#1e2025]/30" />
+            </div>
+            <div className="flex items-center gap-2 py-1 pl-8">
+              <div className="w-4 h-4 rounded-[3px] bg-[#16171d]/50 border border-[#1e2025]/20" />
+              <div className="h-3.5 w-24 rounded-[4px] bg-[#16171d]/50 border border-[#1e2025]/20" />
+            </div>
+            <div className="flex items-center gap-2 py-1">
+              <div className="w-4 h-4 rounded-[3px] bg-[#16171d]/80 border border-[#1e2025]/40" />
+              <div className="h-3.5 w-32 rounded-[4px] bg-[#16171d]/80 border border-[#1e2025]/40" />
+            </div>
+          </div>
+        ) : treeNodes.length === 0 ? (
           <div className="p-4 text-center text-[12px] text-[#666666]">
             No files or folders yet.
           </div>

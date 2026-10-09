@@ -47,6 +47,7 @@ import { ContextMenu, ContextMenuPosition } from './ContextMenu';
 import { FileTree } from './FileTree';
 import { Button } from '../../components/ui/Button';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
+import { Skeleton } from '../../components/ui/Skeleton';
 import { CustomSelect } from '../../components/shared/CustomSelect';
 import { UploadProgressDrawer, UploadTask } from './UploadProgressDrawer';
 
@@ -995,9 +996,13 @@ export function StoragePage() {
             >
               <div className="flex items-center gap-2 truncate min-w-0">
                 <HardDrive className="w-3.5 h-3.5 text-white shrink-0" />
-                <span className="text-[13px] font-medium text-white truncate">
-                  {activeNamespace || 'Select Namespace'}
-                </span>
+                {isLoading && !activeNamespace ? (
+                  <Skeleton className="w-24 h-3.5" />
+                ) : (
+                  <span className="text-[13px] font-medium text-white truncate">
+                    {activeNamespace || 'Select Namespace'}
+                  </span>
+                )}
               </div>
               <ChevronDown className="w-3.5 h-3.5 text-[#777777] shrink-0" />
             </button>
@@ -1149,6 +1154,7 @@ export function StoragePage() {
             onItemDragEnd={handleItemDragEnd}
             onDropOnFolder={handleDropOnFolder}
             canDropOnFolder={canDropOnFolder}
+            isLoading={isLoading}
           />
         </div>
       </aside>
@@ -1355,7 +1361,7 @@ export function StoragePage() {
         </div>
 
         {/* Edge-to-Edge List View Column Headers */}
-        {viewMode === 'list' && (folderItems.length > 0 || fileItems.length > 0) && (
+        {viewMode === 'list' && (isLoading || folderItems.length > 0 || fileItems.length > 0) && (
           <div className="h-[38px] shrink-0 px-4 border-b border-[#222222] bg-[#0c0c0c] flex items-center text-[12px] font-medium text-[#777777] select-none z-10 w-full font-sans">
             <div className="flex-1 min-w-0 pr-4 truncate">Name</div>
             <div className="w-28 shrink-0 text-left whitespace-nowrap">Storage Tier</div>
@@ -1401,6 +1407,82 @@ export function StoragePage() {
           className={`flex-1 overflow-y-auto ${viewMode === 'list' ? 'p-0' : 'p-4 space-y-6'}`}
           onContextMenu={(e) => handleContextMenu(e, null)}
         >
+          {/* Skeleton Canvas Loading State */}
+          {isLoading && viewMode === 'grid' && (
+            <div className="space-y-6">
+              {/* Skeleton Folders */}
+              <div className="space-y-2.5">
+                <div className="flex items-center justify-between px-1">
+                  <div className="h-3.5 w-16 rounded-[4px] bg-[#16171d]/80 border border-[#1e2025]/40 animate-pulse" />
+                  <div className="h-3 w-6 rounded-[4px] bg-[#16171d]/60 border border-[#1e2025]/30 animate-pulse" />
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3">
+                  {Array.from({ length: 4 }).map((_, i) => (
+                    <div
+                      key={`skel-folder-${i}`}
+                      className="flex items-center gap-2.5 p-3 rounded-[6px] bg-[#121316]/70 border border-[#1e2025]/50 animate-pulse"
+                    >
+                      <div className="w-4 h-4 rounded-[3px] bg-[#1a1b22] border border-[#232530]" />
+                      <div className="h-3.5 w-3/4 rounded-[3px] bg-[#1a1b22]" />
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Skeleton Files */}
+              <div className="space-y-2.5">
+                <div className="flex items-center justify-between px-1">
+                  <div className="h-3.5 w-12 rounded-[4px] bg-[#16171d]/80 border border-[#1e2025]/40 animate-pulse" />
+                  <div className="h-3 w-6 rounded-[4px] bg-[#16171d]/60 border border-[#1e2025]/30 animate-pulse" />
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3">
+                  {Array.from({ length: 8 }).map((_, i) => (
+                    <div
+                      key={`skel-file-${i}`}
+                      className="flex flex-col justify-between p-3.5 rounded-[6px] bg-[#121316]/70 border border-[#1e2025]/50 h-36 animate-pulse"
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="w-8 h-8 rounded-[4px] bg-[#1a1b22] border border-[#232530]" />
+                        <div className="w-3.5 h-3.5 rounded-[3px] bg-[#1a1b22]" />
+                      </div>
+                      <div className="space-y-1.5 pt-2">
+                        <div className="h-3.5 w-4/5 rounded-[3px] bg-[#1a1b22]" />
+                        <div className="h-3 w-1/2 rounded-[3px] bg-[#1a1b22]/70" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {isLoading && viewMode === 'list' && (
+            <div className="flex flex-col w-full divide-y divide-[#1c1c1c]">
+              {Array.from({ length: 8 }).map((_, i) => (
+                <div
+                  key={`skel-row-${i}`}
+                  className="flex items-center px-4 py-3 text-[13px] animate-pulse"
+                >
+                  <div className="flex-1 min-w-0 flex items-center gap-2.5 pr-4">
+                    <div className="w-4 h-4 rounded-[3px] bg-[#16171d]/80 border border-[#1e2025]/40" />
+                    <div className="h-3.5 w-48 rounded-[4px] bg-[#16171d]/80 border border-[#1e2025]/40" />
+                  </div>
+                  <div className="w-28 shrink-0">
+                    <div className="h-4 w-16 rounded-[4px] bg-[#16171d]/60 border border-[#1e2025]/30" />
+                  </div>
+                  <div className="w-24 shrink-0 text-right pr-4 flex justify-end">
+                    <div className="h-3.5 w-12 rounded-[4px] bg-[#16171d]/60 border border-[#1e2025]/30" />
+                  </div>
+                  <div className="w-28 shrink-0 text-right pr-4 hidden sm:flex justify-end">
+                    <div className="h-3.5 w-16 rounded-[4px] bg-[#16171d]/50 border border-[#1e2025]/20" />
+                  </div>
+                  <div className="w-20 shrink-0 text-right flex justify-end">
+                    <div className="h-3.5 w-8 rounded-[4px] bg-[#16171d]/40 border border-[#1e2025]/20" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
 
           {/* Empty State when no namespaces exist */}
           {!isLoading && namespaces.length === 0 && (
@@ -2001,6 +2083,24 @@ export function StoragePage() {
                   </div>
                 )}
               </>
+            ) : isLoading && !currentNsInfo ? (
+              <div className="space-y-4 text-[12px] animate-pulse">
+                <div className="p-3.5 rounded-[8px] bg-[#111111] border border-[#202020] space-y-2">
+                  <div className="h-4 w-32 rounded-[4px] bg-[#16171d]/80 border border-[#1e2025]/40" />
+                  <div className="h-3 w-44 rounded-[4px] bg-[#16171d]/60 border border-[#1e2025]/30" />
+                </div>
+                <div className="p-3.5 rounded-[8px] bg-[#111111] border border-[#202020] space-y-3">
+                  <div className="flex justify-between">
+                    <div className="h-3 w-20 rounded-[4px] bg-[#16171d]/60" />
+                    <div className="h-3 w-16 rounded-[4px] bg-[#16171d]/60" />
+                  </div>
+                  <div className="w-full h-1.5 rounded-full bg-[#1e1e1e]" />
+                  <div className="flex justify-between">
+                    <div className="h-3 w-14 rounded-[4px] bg-[#16171d]/50" />
+                    <div className="h-3 w-14 rounded-[4px] bg-[#16171d]/50" />
+                  </div>
+                </div>
+              </div>
             ) : (
               /* Namespace General Overview when no single item is selected */
               <div className="space-y-4 text-[12px]">
