@@ -16,7 +16,6 @@ import {
   Key,
   Shield,
   Bot,
-  Terminal,
   Settings,
   LogOut,
   Search,
@@ -32,7 +31,6 @@ export type NavPath =
   | '/system/keys'
   | '/system/roles'
   | '/system/mcp'
-  | '/system/tester'
   | '/system/settings';
 
 interface LayoutProps {
@@ -69,7 +67,6 @@ export function Layout({ currentPath, onNavigate, title, children, onLogout }: L
     { label: 'API Keys', path: '/system/keys' as NavPath, icon: Key, category: 'Data & Access' },
     { label: 'Roles', path: '/system/roles' as NavPath, icon: Shield, category: 'Data & Access' },
     { label: 'MCP Protocol', path: '/system/mcp' as NavPath, icon: Bot, category: 'Protocols & Tools' },
-    { label: 'API Explorer', path: '/system/tester' as NavPath, icon: Terminal, category: 'Protocols & Tools' },
     { label: 'Settings', path: '/system/settings' as NavPath, icon: Settings, category: 'Configuration' },
   ];
 
@@ -180,11 +177,6 @@ export function Layout({ currentPath, onNavigate, title, children, onLogout }: L
           path: '/system/mcp' as NavPath,
           label: 'MCP Protocol',
           icon: Bot,
-        },
-        {
-          path: '/system/tester' as NavPath,
-          label: 'API Explorer',
-          icon: Terminal,
         },
       ],
     },

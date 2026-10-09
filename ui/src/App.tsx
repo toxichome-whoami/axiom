@@ -9,7 +9,6 @@ const Storage = lazy(() => import('./pages/Storage').then((m) => ({ default: m.S
 const Keys = lazy(() => import('./pages/Keys').then((m) => ({ default: m.Keys })));
 const Roles = lazy(() => import('./pages/Roles').then((m) => ({ default: m.Roles })));
 const Mcp = lazy(() => import('./pages/Mcp').then((m) => ({ default: m.Mcp })));
-const Tester = lazy(() => import('./pages/Tester').then((m) => ({ default: m.Tester })));
 const Settings = lazy(() => import('./pages/Settings').then((m) => ({ default: m.Settings })));
 const AuthPage = lazy(() => import('./pages/AuthPage').then((m) => ({ default: m.AuthPage })));
 
@@ -36,7 +35,6 @@ export function App() {
     if (p === '/keys') p = '/system/keys';
     if (p === '/roles') p = '/system/roles';
     if (p === '/mcp') p = '/system/mcp';
-    if (p === '/tester') p = '/system/tester';
 
     const validPaths: NavPath[] = [
       '/system',
@@ -45,7 +43,6 @@ export function App() {
       '/system/keys',
       '/system/roles',
       '/system/mcp',
-      '/system/tester',
       '/system/settings',
     ];
     return validPaths.includes(p as NavPath) ? (p as NavPath) : '/system';
@@ -128,8 +125,6 @@ export function App() {
         return { title: 'Roles & RBAC', component: <Roles /> };
       case '/system/mcp':
         return { title: 'MCP Protocol', component: <Mcp /> };
-      case '/system/tester':
-        return { title: 'Database API Explorer', component: <Tester /> };
       case '/system/settings':
         return { title: 'Settings', component: <Settings /> };
       case '/system':
