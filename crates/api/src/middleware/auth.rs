@@ -129,6 +129,55 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, A
         }
     }
 
+    // Check for pre-signed capability tickets on native blob endpoints
+    let path = req.uri().path();
+    let stripped_blob_path = path.strip_prefix("/api/v1/blobs/").or_else(|| path.strip_prefix("/blobs/"));
+    if let Some(stripped) = stripped_blob_path {
+        if let Some(query) = req.uri().query() {
+            let mut ticket_sig = None;
+            let mut ticket_exp_str = None;
+            for pair in query.split('&') {
+                if let Some((k, v)) = pair.split_once('=') {
+                    if k == "ticket_sig" {
+                        ticket_sig = Some(v);
+                    } else if k == "ticket_exp" {
+                        ticket_exp_str = Some(v);
+                    }
+                }
+            }
+
+            if let (Some(sig), Some(exp_str)) = (ticket_sig, ticket_exp_str) {
+                if let Ok(exp) = exp_str.parse::<i64>() {
+                    if let Some((ns, key)) = stripped.split_once('/') {
+                        let op = match *req.method() {
+                            axum::http::Method::GET | axum::http::Method::HEAD => "READ",
+                            axum::http::Method::PUT => "WRITE",
+                            _ => "UNKNOWN",
+                        };
+
+                        let secret = if !config.blob.ticket_secret.is_empty() {
+                            &config.blob.ticket_secret
+                        } else {
+                            "axiom_default_ticket_secret_change_in_production"
+                        };
+
+                        if axiom_blob::tickets::verify_ticket(secret, ns, key, op, exp, sig).is_ok() {
+                            let ctx = AuthContext {
+                                api_key_name: format!("ticket:{}:{}", ns, key),
+                                role: Some("ticket".to_string()),
+                                mode: if op == "READ" { axiom_core::ServerMode::Readonly } else { axiom_core::ServerMode::Readwrite },
+                                db_scope: vec![ns.to_string()],
+                                ..Default::default()
+                            };
+                            req.extensions_mut().insert(ctx);
+                            return Ok(next.run(req).await);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     crate::metrics::MetricsEngine::record_auth_failure("invalid_credentials");
 
     Err(AxiomError::new(

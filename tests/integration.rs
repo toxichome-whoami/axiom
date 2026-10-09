@@ -874,3 +874,214 @@ async fn blob_storage_validation_rejections() {
     assert!(bad_key_res.status() == StatusCode::BAD_REQUEST || bad_key_res.status() == StatusCode::FORBIDDEN);
 }
 
+#[tokio::test]
+async fn blob_storage_range_requests_partial_content() {
+    setup_test_metadata();
+    ensure_blob_engine().await;
+
+    let admin_token = BASE64_STANDARD.encode("admin_key:secret_admin");
+
+    // 1. Upload a 16-byte test blob
+    let payload = b"HELLO_WORLD_TEST";
+    let put_req = Request::put("/api/v1/blobs/media/range_file.txt")
+        .header("X-Axiom-Key", &admin_token)
+        .header("Content-Type", "text/plain")
+        .body(Body::from(payload.to_vec()))
+        .unwrap();
+    let put_res = create_app().oneshot(put_req).await.unwrap();
+    assert_eq!(put_res.status(), StatusCode::CREATED);
+
+    // 2. Fetch partial range bytes=0-4 (5 bytes: "HELLO")
+    let range_req1 = Request::get("/api/v1/blobs/media/range_file.txt")
+        .header("X-Axiom-Key", &admin_token)
+        .header("Range", "bytes=0-4")
+        .body(Body::empty())
+        .unwrap();
+    let range_res1 = create_app().oneshot(range_req1).await.unwrap();
+    assert_eq!(range_res1.status(), StatusCode::PARTIAL_CONTENT);
+    assert_eq!(range_res1.headers().get("Content-Range").unwrap(), "bytes 0-4/16");
+    assert_eq!(range_res1.headers().get("Content-Length").unwrap(), "5");
+    assert_eq!(range_res1.headers().get("Accept-Ranges").unwrap(), "bytes");
+
+    let body_bytes1 = axum::body::to_bytes(range_res1.into_body(), 1024).await.unwrap();
+    assert_eq!(&body_bytes1[..], b"HELLO");
+
+    // 3. Fetch partial range bytes=6-10 (5 bytes: "WORLD")
+    let range_req2 = Request::get("/api/v1/blobs/media/range_file.txt")
+        .header("X-Axiom-Key", &admin_token)
+        .header("Range", "bytes=6-10")
+        .body(Body::empty())
+        .unwrap();
+    let range_res2 = create_app().oneshot(range_req2).await.unwrap();
+    assert_eq!(range_res2.status(), StatusCode::PARTIAL_CONTENT);
+    assert_eq!(range_res2.headers().get("Content-Range").unwrap(), "bytes 6-10/16");
+    let body_bytes2 = axum::body::to_bytes(range_res2.into_body(), 1024).await.unwrap();
+    assert_eq!(&body_bytes2[..], b"WORLD");
+
+    // 4. Invalid range bytes=100-200 -> 416 Range Not Satisfiable
+    let invalid_range = Request::get("/api/v1/blobs/media/range_file.txt")
+        .header("X-Axiom-Key", &admin_token)
+        .header("Range", "bytes=100-200")
+        .body(Body::empty())
+        .unwrap();
+    let invalid_res = create_app().oneshot(invalid_range).await.unwrap();
+    assert_eq!(invalid_res.status(), StatusCode::RANGE_NOT_SATISFIABLE);
+}
+
+#[tokio::test]
+async fn blob_storage_presigned_capability_ticket_download() {
+    setup_test_metadata();
+    ensure_blob_engine().await;
+
+    let admin_token = BASE64_STANDARD.encode("admin_key:secret_admin");
+
+    // 1. Upload private blob
+    let put_req = Request::put("/api/v1/blobs/secure/secret_doc.txt")
+        .header("X-Axiom-Key", &admin_token)
+        .body(Body::from(b"Top secret capability test".to_vec()))
+        .unwrap();
+    let put_res = create_app().oneshot(put_req).await.unwrap();
+    assert_eq!(put_res.status(), StatusCode::CREATED);
+
+    // 2. Request capability ticket
+    let ticket_req = Request::post("/api/v1/blobs/secure/ticket")
+        .header("X-Axiom-Key", &admin_token)
+        .header("Content-Type", "application/json")
+        .body(Body::from(serde_json::to_vec(&serde_json::json!({
+            "key": "secret_doc.txt",
+            "operation": "READ",
+            "ttl_seconds": 120
+        })).unwrap()))
+        .unwrap();
+    let ticket_res = create_app().oneshot(ticket_req).await.unwrap();
+    assert_eq!(ticket_res.status(), StatusCode::CREATED);
+
+    let ticket_body = axum::body::to_bytes(ticket_res.into_body(), 4096).await.unwrap();
+    let ticket_json: serde_json::Value = serde_json::from_slice(&ticket_body).unwrap();
+    let ticket_sig = ticket_json["data"]["ticket"]["signature"].as_str().unwrap();
+    let ticket_exp = ticket_json["data"]["ticket"]["expires_at"].as_i64().unwrap();
+
+    // 3. Download using ticket URL query string WITHOUT any X-Axiom-Key header
+    let dl_url = format!("/api/v1/blobs/secure/secret_doc.txt?ticket_sig={}&ticket_exp={}", ticket_sig, ticket_exp);
+    let dl_req = Request::get(&dl_url)
+        .body(Body::empty())
+        .unwrap();
+    let dl_res = create_app().oneshot(dl_req).await.unwrap();
+    assert_eq!(dl_res.status(), StatusCode::OK);
+    let dl_bytes = axum::body::to_bytes(dl_res.into_body(), 1024).await.unwrap();
+    assert_eq!(&dl_bytes[..], b"Top secret capability test");
+
+    // 4. Download with tampered signature fails with 401 Unauthorized
+    let bad_dl_url = format!("/api/v1/blobs/secure/secret_doc.txt?ticket_sig=0000000000000000&ticket_exp={}", ticket_exp);
+    let bad_dl_req = Request::get(&bad_dl_url)
+        .body(Body::empty())
+        .unwrap();
+    let bad_dl_res = create_app().oneshot(bad_dl_req).await.unwrap();
+    assert_eq!(bad_dl_res.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn blob_storage_chunked_upload_lifecycle() {
+    setup_test_metadata();
+    ensure_blob_engine().await;
+
+    let admin_token = BASE64_STANDARD.encode("admin_key:secret_admin");
+
+    // 1. Initialize chunked upload session
+    let init_req = Request::post("/api/v1/blobs/multichunk/uploads")
+        .header("X-Axiom-Key", &admin_token)
+        .header("Content-Type", "application/json")
+        .body(Body::from(serde_json::to_vec(&serde_json::json!({
+            "key": "archive.tar",
+            "content_type": "application/x-tar"
+        })).unwrap()))
+        .unwrap();
+    let init_res = create_app().oneshot(init_req).await.unwrap();
+    assert_eq!(init_res.status(), StatusCode::CREATED);
+
+    let init_body = axum::body::to_bytes(init_res.into_body(), 4096).await.unwrap();
+    let init_json: serde_json::Value = serde_json::from_slice(&init_body).unwrap();
+    let upload_id = init_json["data"]["upload_id"].as_str().unwrap();
+
+    // 2. Upload part 1
+    let part1_req = Request::put(&format!("/api/v1/blobs/multichunk/uploads/{}/parts/1", upload_id))
+        .header("X-Axiom-Key", &admin_token)
+        .body(Body::from(b"CHUNK1_DATA_".to_vec()))
+        .unwrap();
+    let part1_res = create_app().oneshot(part1_req).await.unwrap();
+    assert_eq!(part1_res.status(), StatusCode::OK);
+
+    // 3. Upload part 2
+    let part2_req = Request::put(&format!("/api/v1/blobs/multichunk/uploads/{}/parts/2", upload_id))
+        .header("X-Axiom-Key", &admin_token)
+        .body(Body::from(b"CHUNK2_DATA".to_vec()))
+        .unwrap();
+    let part2_res = create_app().oneshot(part2_req).await.unwrap();
+    assert_eq!(part2_res.status(), StatusCode::OK);
+
+    // 4. Complete upload
+    let complete_req = Request::post(&format!("/api/v1/blobs/multichunk/uploads/{}/complete", upload_id))
+        .header("X-Axiom-Key", &admin_token)
+        .body(Body::empty())
+        .unwrap();
+    let complete_res = create_app().oneshot(complete_req).await.unwrap();
+    assert_eq!(complete_res.status(), StatusCode::OK);
+
+    // 5. Download and verify assembled content
+    let get_req = Request::get("/api/v1/blobs/multichunk/archive.tar")
+        .header("X-Axiom-Key", &admin_token)
+        .body(Body::empty())
+        .unwrap();
+    let get_res = create_app().oneshot(get_req).await.unwrap();
+    assert_eq!(get_res.status(), StatusCode::OK);
+    let get_bytes = axum::body::to_bytes(get_res.into_body(), 1024).await.unwrap();
+    assert_eq!(&get_bytes[..], b"CHUNK1_DATA_CHUNK2_DATA");
+}
+
+#[tokio::test]
+async fn blob_storage_integrity_scrub_and_ttl() {
+    setup_test_metadata();
+    ensure_blob_engine().await;
+
+    // Login admin session to access admin endpoints via CacheEngine session cache
+    let session_token = "admin_session_token_32_bytes_xyz";
+    let cookie_header = format!("axiom_session={}", session_token);
+    axiom_cache::CacheEngine::set(
+        &format!("sess:{}", session_token),
+        bytes::Bytes::from("admin_user"),
+        60,
+        axiom_cache::Durability::MemoryOnly,
+    ).await;
+
+    // 1. Upload temporary blob with TTL 0
+    let admin_token = BASE64_STANDARD.encode("admin_key:secret_admin");
+    let ttl_req = Request::put("/api/v1/blobs/temp/ephemeral.log")
+        .header("X-Axiom-Key", &admin_token)
+        .header("X-Axiom-TTL", "0")
+        .body(Body::from(b"Temporary log payload".to_vec()))
+        .unwrap();
+    let ttl_res = create_app().oneshot(ttl_req).await.unwrap();
+    assert_eq!(ttl_res.status(), StatusCode::CREATED);
+
+    // 2. Perform scrub
+    let scrub_req = Request::post("/admin/v1/blobs/scrub")
+        .header("Cookie", &cookie_header)
+        .body(Body::empty())
+        .unwrap();
+    let scrub_res = create_app().oneshot(scrub_req).await.unwrap();
+    assert_eq!(scrub_res.status(), StatusCode::OK);
+
+    // 3. Perform TTL sweep
+    let sweep_req = Request::post("/admin/v1/blobs/sweep")
+        .header("Cookie", &cookie_header)
+        .body(Body::empty())
+        .unwrap();
+    let sweep_res = create_app().oneshot(sweep_req).await.unwrap();
+    assert_eq!(sweep_res.status(), StatusCode::OK);
+
+    let sweep_body = axum::body::to_bytes(sweep_res.into_body(), 1024).await.unwrap();
+    let sweep_json: serde_json::Value = serde_json::from_slice(&sweep_body).unwrap();
+    assert!(sweep_json["data"]["swept_objects"].as_u64().unwrap() >= 1);
+}
+
+

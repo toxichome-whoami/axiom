@@ -21,6 +21,51 @@ pub struct BlobMetadata {
     pub created_at: i64,
     /// Flag indicating whether payload is stored inline in the LSM keyspace or in the file store.
     pub inline: bool,
+    /// Optional expiration timestamp in Unix epoch seconds (TTL).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expires_at: Option<i64>,
+}
+
+/// Concrete byte boundary for HTTP 206 Partial Content slicing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ByteRange {
+    /// 0-indexed starting byte offset (inclusive).
+    pub start: u64,
+    /// 0-indexed ending byte offset (inclusive).
+    pub end: u64,
+    /// Total byte length of the underlying object.
+    pub total: u64,
+}
+
+impl ByteRange {
+    /// Returns the length in bytes of the slice represented by this range.
+    #[inline]
+    pub fn length(&self) -> u64 {
+        if self.end >= self.start {
+            self.end - self.start + 1
+        } else {
+            0
+        }
+    }
+}
+
+/// Active multipart/chunked upload session metadata.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UploadSession {
+    /// Unique identifier for the staged upload session.
+    pub upload_id: String,
+    /// Target namespace partition.
+    pub namespace: String,
+    /// Target object key.
+    pub key: String,
+    /// MIME content type for the final blob.
+    pub content_type: String,
+    /// Creation timestamp in Unix seconds.
+    pub created_at: i64,
+    /// Optional expiration timestamp for this upload session.
+    pub expires_at: i64,
+    /// List of 1-indexed part numbers successfully received.
+    pub parts: Vec<u32>,
 }
 
 /// Content-addressed reference tracking deduplication and garbage collection lifecycle.

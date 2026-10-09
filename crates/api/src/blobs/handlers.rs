@@ -8,7 +8,7 @@
 
 use crate::blobs::get_blob_engine;
 use axiom_blob::{BlobData, BlobError};
-use axiom_core::{AxiomError, AuthContext};
+use axiom_core::{AxiomError, AuthContext, ConfigManager};
 use axiom_metadata::MetadataStore;
 use axiom_policy::PolicyEngine;
 use axum::{
@@ -68,6 +68,21 @@ fn map_blob_error(err: BlobError) -> AxiomError {
             &format!("Integrity check failed: expected {}, got {}", expected, actual),
             StatusCode::UNPROCESSABLE_ENTITY,
         ),
+        BlobError::InvalidRange(msg) => AxiomError::new(
+            "BLOB_RANGE_NOT_SATISFIABLE",
+            &msg,
+            StatusCode::RANGE_NOT_SATISFIABLE,
+        ),
+        BlobError::InvalidTicket(msg) => AxiomError::new(
+            "BLOB_INVALID_TICKET",
+            &msg,
+            StatusCode::UNAUTHORIZED,
+        ),
+        BlobError::UploadSessionNotFound(id) => AxiomError::new(
+            "BLOB_UPLOAD_SESSION_NOT_FOUND",
+            &format!("Upload session '{}' not found or expired", id),
+            StatusCode::NOT_FOUND,
+        ),
         BlobError::Io(msg) => AxiomError::new(
             "STORAGE_IO_ERROR",
             &format!("Storage I/O error: {}", msg),
@@ -101,8 +116,13 @@ pub async fn put_blob_handler(
         .and_then(|h| h.to_str().ok())
         .unwrap_or("application/octet-stream");
 
+    let ttl_seconds = headers
+        .get("X-Axiom-TTL")
+        .and_then(|h| h.to_str().ok())
+        .and_then(|v| v.parse::<u64>().ok());
+
     let meta = engine
-        .put(&namespace, &key, Some(content_type), &body)
+        .put_with_options(&namespace, &key, Some(content_type), &body, ttl_seconds)
         .await
         .map_err(map_blob_error)?;
 
@@ -129,6 +149,7 @@ pub async fn put_blob_handler(
 /// Retrieves an existing blob payload from storage.
 /// CONTRACT:
 ///  - Precondition: Caller must be authorized for `READ` on `namespace/key`.
+///  - Supports: HTTP 206 Partial Content via `Range: bytes=start-end`.
 ///  - Enforces: `nosniff`, `attachment` disposition (stored XSS defense), ETag calculation.
 pub async fn get_blob_handler(
     Path((namespace, key)): Path<(String, String)>,
@@ -138,16 +159,6 @@ pub async fn get_blob_handler(
     PolicyEngine::evaluate_blob(&auth, &namespace, &key, "READ")?;
 
     let engine = get_blob_engine()?;
-    let (meta, data) = engine.get(&namespace, &key).await.map_err(map_blob_error)?;
-
-    let etag_val = format!("\"{}\"", meta.hash);
-
-    // Conditional GET: check If-None-Match for cache revalidation
-    if let Some(inm) = headers.get(header::IF_NONE_MATCH).and_then(|h| h.to_str().ok()) {
-        if inm.trim() == etag_val.as_str() || inm.trim() == meta.hash.as_str() {
-            return Ok(StatusCode::NOT_MODIFIED.into_response());
-        }
-    }
 
     // Determine filename for safe Content-Disposition
     let filename = key.rsplit(['/', '\\']).next().unwrap_or("blob.bin");
@@ -157,10 +168,93 @@ pub async fn get_blob_handler(
         .collect();
     let disposition = format!("attachment; filename=\"{}\"", safe_filename);
 
+    // Check for HTTP Range header
+    let range_hdr = headers.get(header::RANGE).and_then(|h| h.to_str().ok());
+    let parsed_range = if let Some(r) = range_hdr {
+        if let Some(spec) = r.strip_prefix("bytes=") {
+            let mut parts = spec.split('-');
+            let start_str = parts.next().unwrap_or("").trim();
+            let end_str = parts.next().unwrap_or("").trim();
+
+            if start_str.is_empty() && !end_str.is_empty() {
+                // Suffix range: bytes=-500 (last 500 bytes)
+                if let Ok(suffix) = end_str.parse::<u64>() {
+                    let total = engine.head(&namespace, &key).map_err(map_blob_error)?.size;
+                    let start = total.saturating_sub(suffix);
+                    Some((start, None))
+                } else {
+                    None
+                }
+            } else if let Ok(start) = start_str.parse::<u64>() {
+                let end = if end_str.is_empty() {
+                    None
+                } else {
+                    end_str.parse::<u64>().ok()
+                };
+                Some((start, end))
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    if let Some((start, end)) = parsed_range {
+        let (meta, byte_range, data) = engine
+            .get_range(&namespace, &key, start, end)
+            .await
+            .map_err(map_blob_error)?;
+
+        let etag_val = format!("\"{}\"", meta.hash);
+        let range_len = byte_range.length();
+        let content_range = format!("bytes {}-{}/{}", byte_range.start, byte_range.end, byte_range.total);
+
+        let response_builder = Response::builder()
+            .status(StatusCode::PARTIAL_CONTENT)
+            .header(header::CONTENT_TYPE, meta.content_type)
+            .header(header::CONTENT_LENGTH, range_len.to_string())
+            .header(header::CONTENT_RANGE, content_range)
+            .header(header::ACCEPT_RANGES, "bytes")
+            .header(header::ETAG, etag_val)
+            .header(header::X_CONTENT_TYPE_OPTIONS, "nosniff")
+            .header(header::CONTENT_DISPOSITION, disposition);
+
+        return match data {
+            BlobData::Inline(bytes) => {
+                let body = Body::from(bytes);
+                response_builder
+                    .body(body)
+                    .map_err(|e| AxiomError::new("RESPONSE_BUILD_FAILED", &e.to_string(), StatusCode::INTERNAL_SERVER_ERROR))
+            }
+            BlobData::File(file, len) => {
+                use tokio::io::AsyncReadExt;
+                let stream = ReaderStream::new(file.take(len));
+                let body = Body::from_stream(stream);
+                response_builder
+                    .body(body)
+                    .map_err(|e| AxiomError::new("RESPONSE_BUILD_FAILED", &e.to_string(), StatusCode::INTERNAL_SERVER_ERROR))
+            }
+        };
+    }
+
+    let (meta, data) = engine.get(&namespace, &key).await.map_err(map_blob_error)?;
+    let etag_val = format!("\"{}\"", meta.hash);
+
+    // Conditional GET: check If-None-Match for cache revalidation
+    if let Some(inm) = headers.get(header::IF_NONE_MATCH).and_then(|h| h.to_str().ok()) {
+        if inm.trim() == etag_val.as_str() || inm.trim() == meta.hash.as_str() {
+            return Ok(StatusCode::NOT_MODIFIED.into_response());
+        }
+    }
+
     let response_builder = Response::builder()
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, meta.content_type)
         .header(header::CONTENT_LENGTH, meta.size.to_string())
+        .header(header::ACCEPT_RANGES, "bytes")
         .header(header::ETAG, etag_val)
         .header(header::X_CONTENT_TYPE_OPTIONS, "nosniff")
         .header(header::CONTENT_DISPOSITION, disposition);
@@ -172,8 +266,9 @@ pub async fn get_blob_handler(
                 .body(body)
                 .map_err(|e| AxiomError::new("RESPONSE_BUILD_FAILED", &e.to_string(), StatusCode::INTERNAL_SERVER_ERROR))
         }
-        BlobData::File(file, _) => {
-            let stream = ReaderStream::new(file);
+        BlobData::File(file, len) => {
+            use tokio::io::AsyncReadExt;
+            let stream = ReaderStream::new(file.take(len));
             let body = Body::from_stream(stream);
             response_builder
                 .body(body)
@@ -634,6 +729,224 @@ pub async fn delete_prefix_handler(
     Ok(Json(json!({
         "success": true,
         "data": { "deleted_objects": count },
+        "error": serde_json::Value::Null
+    })))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateTicketRequest {
+    pub key: String,
+    pub operation: Option<String>,
+    pub ttl_seconds: Option<u64>,
+}
+
+/// Generates a pre-signed cryptographic capability ticket URL for browser or client use.
+pub async fn create_ticket_handler(
+    Path(namespace): Path<String>,
+    Extension(auth): Extension<AuthContext>,
+    Json(payload): Json<CreateTicketRequest>,
+) -> Result<impl IntoResponse, AxiomError> {
+    let op = payload.operation.as_deref().unwrap_or("READ").to_uppercase();
+    PolicyEngine::evaluate_blob(&auth, &namespace, &payload.key, &op)?;
+
+    let config = ConfigManager::get();
+    let secret = if !config.blob.ticket_secret.is_empty() {
+        &config.blob.ticket_secret
+    } else {
+        "axiom_default_ticket_secret_change_in_production"
+    };
+
+    let ttl = payload.ttl_seconds.unwrap_or(3600);
+    let ticket = axiom_blob::generate_ticket(secret, &namespace, &payload.key, &op, ttl);
+
+    let url = format!(
+        "/api/v1/blobs/{}/{}?ticket_sig={}&ticket_exp={}",
+        namespace, payload.key, ticket.signature, ticket.expires_at
+    );
+
+    Ok((
+        StatusCode::CREATED,
+        Json(json!({
+            "success": true,
+            "data": {
+                "ticket": ticket,
+                "url": url,
+            },
+            "error": serde_json::Value::Null
+        })),
+    ))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct InitUploadRequest {
+    pub key: String,
+    pub content_type: Option<String>,
+    pub ttl_seconds: Option<u64>,
+}
+
+/// Starts an asynchronous chunked upload session for large objects.
+pub async fn init_upload_handler(
+    Path(namespace): Path<String>,
+    Extension(auth): Extension<AuthContext>,
+    Json(payload): Json<InitUploadRequest>,
+) -> Result<impl IntoResponse, AxiomError> {
+    PolicyEngine::evaluate_blob(&auth, &namespace, &payload.key, "WRITE")?;
+
+    let engine = get_blob_engine()?;
+    let session = engine
+        .init_chunked_upload(
+            &namespace,
+            &payload.key,
+            payload.content_type.as_deref(),
+            payload.ttl_seconds,
+        )
+        .await
+        .map_err(map_blob_error)?;
+
+    Ok((
+        StatusCode::CREATED,
+        Json(json!({
+            "success": true,
+            "data": session,
+            "error": serde_json::Value::Null
+        })),
+    ))
+}
+
+/// Uploads an individual chunk part into an active upload session.
+pub async fn put_part_handler(
+    Path((namespace, upload_id, part)): Path<(String, String, u32)>,
+    Extension(auth): Extension<AuthContext>,
+    body: Bytes,
+) -> Result<impl IntoResponse, AxiomError> {
+    let engine = get_blob_engine()?;
+    let session = engine
+        .get_upload_session(&upload_id)
+        .map_err(map_blob_error)?
+        .ok_or_else(|| AxiomError::new("UPLOAD_SESSION_NOT_FOUND", "Upload session not found", StatusCode::NOT_FOUND))?;
+
+    if session.namespace != namespace {
+        return Err(AxiomError::new("INVALID_NAMESPACE", "Upload session belongs to different namespace", StatusCode::BAD_REQUEST));
+    }
+
+    PolicyEngine::evaluate_blob(&auth, &namespace, &session.key, "WRITE")?;
+
+    engine
+        .write_chunk(&upload_id, part, &body)
+        .await
+        .map_err(map_blob_error)?;
+
+    Ok(Json(json!({
+        "success": true,
+        "data": {
+            "upload_id": upload_id,
+            "part": part,
+            "size": body.len()
+        },
+        "error": serde_json::Value::Null
+    })))
+}
+
+/// Completes a chunked upload by assembling parts and committing metadata.
+pub async fn complete_upload_handler(
+    Path((namespace, upload_id)): Path<(String, String)>,
+    Extension(auth): Extension<AuthContext>,
+) -> Result<impl IntoResponse, AxiomError> {
+    let engine = get_blob_engine()?;
+    let session = engine
+        .get_upload_session(&upload_id)
+        .map_err(map_blob_error)?
+        .ok_or_else(|| AxiomError::new("UPLOAD_SESSION_NOT_FOUND", "Upload session not found", StatusCode::NOT_FOUND))?;
+
+    if session.namespace != namespace {
+        return Err(AxiomError::new("INVALID_NAMESPACE", "Upload session belongs to different namespace", StatusCode::BAD_REQUEST));
+    }
+
+    PolicyEngine::evaluate_blob(&auth, &namespace, &session.key, "WRITE")?;
+
+    let meta = engine
+        .complete_chunked_upload(&upload_id)
+        .await
+        .map_err(map_blob_error)?;
+
+    let actor = if auth.is_session { "admin" } else { &auth.api_key_name };
+    let target = format!("{}/{}", namespace, session.key);
+    let details = format!("hash={}, size={}, parts={}", meta.hash, meta.size, session.parts.len());
+    let _ = MetadataStore::record_audit(actor, "blob.upload_complete", &target, Some(&details)).await;
+
+    Ok(Json(json!({
+        "success": true,
+        "data": meta,
+        "error": serde_json::Value::Null
+    })))
+}
+
+/// Aborts an active chunked upload and purges staging data.
+pub async fn abort_upload_handler(
+    Path((namespace, upload_id)): Path<(String, String)>,
+    Extension(auth): Extension<AuthContext>,
+) -> Result<impl IntoResponse, AxiomError> {
+    let engine = get_blob_engine()?;
+    let session = engine
+        .get_upload_session(&upload_id)
+        .map_err(map_blob_error)?
+        .ok_or_else(|| AxiomError::new("UPLOAD_SESSION_NOT_FOUND", "Upload session not found", StatusCode::NOT_FOUND))?;
+
+    if session.namespace != namespace {
+        return Err(AxiomError::new("INVALID_NAMESPACE", "Upload session belongs to different namespace", StatusCode::BAD_REQUEST));
+    }
+
+    PolicyEngine::evaluate_blob(&auth, &namespace, &session.key, "WRITE")?;
+
+    engine
+        .abort_chunked_upload(&upload_id)
+        .await
+        .map_err(map_blob_error)?;
+
+    Ok(Json(json!({
+        "success": true,
+        "data": { "aborted": upload_id },
+        "error": serde_json::Value::Null
+    })))
+}
+
+/// Administrative handler performing storage-wide cryptographic integrity audit.
+pub async fn scrub_blobs_handler(
+    Extension(auth): Extension<AuthContext>,
+) -> Result<impl IntoResponse, AxiomError> {
+    if !auth.is_session {
+        return Err(AxiomError::new("FORBIDDEN", "Admin session required for integrity scrubbing", StatusCode::FORBIDDEN));
+    }
+
+    let engine = get_blob_engine()?;
+    let (verified, corrupted) = engine.scrub_all().await.map_err(map_blob_error)?;
+
+    Ok(Json(json!({
+        "success": true,
+        "data": {
+            "verified_blobs": verified,
+            "corrupted_blobs": corrupted,
+        },
+        "error": serde_json::Value::Null
+    })))
+}
+
+/// Administrative handler triggering automatic cleanup of expired objects (TTL sweep).
+pub async fn sweep_expired_handler(
+    Extension(auth): Extension<AuthContext>,
+) -> Result<impl IntoResponse, AxiomError> {
+    if !auth.is_session {
+        return Err(AxiomError::new("FORBIDDEN", "Admin session required for TTL sweep", StatusCode::FORBIDDEN));
+    }
+
+    let engine = get_blob_engine()?;
+    let count = engine.sweep_expired().await.map_err(map_blob_error)?;
+
+    Ok(Json(json!({
+        "success": true,
+        "data": {
+            "swept_objects": count,
+        },
         "error": serde_json::Value::Null
     })))
 }

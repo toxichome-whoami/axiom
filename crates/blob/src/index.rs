@@ -30,13 +30,15 @@ pub struct BlobIndex {
     inline_keyspace: Keyspace,
     /// Keyspace `namespaces`: key is `{namespace}` -> JSON NamespaceRecord
     namespaces_keyspace: Keyspace,
+    /// Keyspace `uploads`: key is `{upload_id}` -> JSON UploadSession
+    uploads_keyspace: Keyspace,
 }
 
 impl BlobIndex {
     /// Opens or creates the Fjall LSM keyspaces for blob metadata indexing.
     /// CONTRACT:
     ///  - Precondition: `path` must be a directory path with write permissions.
-    ///  - Returns `BlobIndex` with `meta`, `content`, `inline`, and `namespaces` keyspaces ready.
+    ///  - Returns `BlobIndex` with `meta`, `content`, `inline`, `namespaces`, and `uploads` keyspaces ready.
     ///  - Idempotent: Yes.
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self, BlobError> {
         let db = Database::builder(path.as_ref()).open()?;
@@ -45,6 +47,7 @@ impl BlobIndex {
         let content_keyspace = db.keyspace("content", KeyspaceCreateOptions::default)?;
         let inline_keyspace = db.keyspace("inline", KeyspaceCreateOptions::default)?;
         let namespaces_keyspace = db.keyspace("namespaces", KeyspaceCreateOptions::default)?;
+        let uploads_keyspace = db.keyspace("uploads", KeyspaceCreateOptions::default)?;
 
         Ok(Self {
             db,
@@ -52,6 +55,7 @@ impl BlobIndex {
             content_keyspace,
             inline_keyspace,
             namespaces_keyspace,
+            uploads_keyspace,
         })
     }
 
@@ -542,5 +546,75 @@ impl BlobIndex {
     pub fn list_namespaces(&self) -> Result<Vec<String>, BlobError> {
         let infos = self.list_namespaces_info()?;
         Ok(infos.into_iter().map(|i| i.name).collect())
+    }
+
+    /// Persists an active chunked upload session descriptor.
+    pub fn save_upload_session(&self, session: &crate::models::UploadSession) -> Result<(), BlobError> {
+        let bytes = serde_json::to_vec(session)
+            .map_err(|e| BlobError::Engine(format!("Failed to serialize upload session: {}", e)))?;
+        self.uploads_keyspace.insert(session.upload_id.as_bytes(), bytes)?;
+        Ok(())
+    }
+
+    /// Retrieves an active upload session by its upload_id.
+    pub fn get_upload_session(&self, upload_id: &str) -> Result<Option<crate::models::UploadSession>, BlobError> {
+        if let Some(slice) = self.uploads_keyspace.get(upload_id.as_bytes())? {
+            let session: crate::models::UploadSession = serde_json::from_slice(&slice)
+                .map_err(|e| BlobError::Engine(format!("Corrupt upload session record: {}", e)))?;
+            Ok(Some(session))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Deletes an upload session from the index.
+    pub fn delete_upload_session(&self, upload_id: &str) -> Result<bool, BlobError> {
+        let exists = self.uploads_keyspace.get(upload_id.as_bytes())?.is_some();
+        if exists {
+            self.uploads_keyspace.remove(upload_id.as_bytes())?;
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
+    /// Returns a list of all distinct content hashes stored across the index for integrity scrubbing.
+    pub fn list_content_hashes(&self) -> Result<Vec<String>, BlobError> {
+        let mut hashes = Vec::new();
+        for guard in self.content_keyspace.iter() {
+            let (raw_key, _) = guard.into_inner()?;
+            if let Ok(hash_str) = std::str::from_utf8(&raw_key) {
+                hashes.push(hash_str.to_string());
+            }
+        }
+        Ok(hashes)
+    }
+
+    /// Identifies and purges blobs whose expires_at timestamp is in the past.
+    /// Returns a list of (namespace, key, hash, should_delete_physical_file).
+    pub fn sweep_expired_blobs(&self, now: i64) -> Result<Vec<(String, String, String, bool)>, BlobError> {
+        let mut expired = Vec::new();
+
+        for guard in self.meta_keyspace.iter() {
+            let (raw_key, raw_val) = guard.into_inner()?;
+            if let Some((ns, key)) = Self::parse_meta_key(&raw_key) {
+                if let Ok(meta) = serde_json::from_slice::<BlobMetadata>(&raw_val) {
+                    if let Some(exp) = meta.expires_at {
+                        if exp <= now {
+                            expired.push((ns, key));
+                        }
+                    }
+                }
+            }
+        }
+
+        let mut deleted = Vec::with_capacity(expired.len());
+        for (ns, key) in expired {
+            if let Ok((Some(meta), should_delete)) = self.commit_delete(&ns, &key) {
+                deleted.push((ns, key, meta.hash, should_delete));
+            }
+        }
+
+        Ok(deleted)
     }
 }

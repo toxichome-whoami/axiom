@@ -16,6 +16,20 @@ use axum::{
 pub fn get_router() -> Router {
     Router::new()
         .route("/:namespace", get(list_blobs_handler))
+        .route("/:namespace/ticket", post(create_ticket_handler))
+        .route("/:namespace/uploads", post(init_upload_handler))
+        .route(
+            "/:namespace/uploads/:upload_id/parts/:part",
+            put(put_part_handler),
+        )
+        .route(
+            "/:namespace/uploads/:upload_id/complete",
+            post(complete_upload_handler),
+        )
+        .route(
+            "/:namespace/uploads/:upload_id",
+            axum::routing::delete(abort_upload_handler),
+        )
         .route(
             "/:namespace/*key",
             put(put_blob_handler)
@@ -29,6 +43,8 @@ pub fn get_router() -> Router {
 pub fn get_admin_router() -> Router {
     Router::new()
         .route("/stats", get(blob_stats_handler))
+        .route("/scrub", post(scrub_blobs_handler))
+        .route("/sweep", post(sweep_expired_handler))
         .route(
             "/namespaces",
             get(list_namespaces_handler).post(create_namespace_handler),

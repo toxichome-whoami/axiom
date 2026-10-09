@@ -153,6 +153,130 @@ impl FileStore {
     pub fn base_dir(&self) -> &Path {
         &self.base_dir
     }
+
+    /// Writes an individual chunk/part into upload staging storage.
+    /// CONTRACT:
+    ///  - Precondition: `upload_id` must consist of alphanumeric, '-', or '_' chars.
+    ///  - Part numbers must be >= 1.
+    ///  - Atomically creates staging folder and writes chunk file.
+    pub async fn write_upload_part(&self, upload_id: &str, part_number: u32, data: &[u8]) -> Result<(), BlobError> {
+        if !upload_id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+            return Err(BlobError::InvalidKey("Invalid upload session id".to_string()));
+        }
+        let staging_dir = self.tmp_dir.join("staging").join(upload_id);
+        tokio::fs::create_dir_all(&staging_dir).await?;
+
+        let part_filename = format!("part_{:06}.part", part_number);
+        let part_path = staging_dir.join(part_filename);
+
+        let mut file = tokio::fs::File::create(&part_path).await?;
+        file.write_all(data).await?;
+        file.sync_all().await?;
+        Ok(())
+    }
+
+    /// Assembles all ordered parts of a chunked upload into final content-addressed storage.
+    /// CONTRACT:
+    ///  - Streams each part in order, calculating BLAKE3 hash incrementally without holding entire file in RAM.
+    ///  - Dedup: if content with identical hash exists, skips duplicate file creation.
+    ///  - Atomically commits blob to content-addressed storage and purges staging directory.
+    ///  - Returns `(hash, total_bytes)`.
+    pub async fn assemble_upload_parts(&self, upload_id: &str, parts: &[u32]) -> Result<(String, u64), BlobError> {
+        let staging_dir = self.tmp_dir.join("staging").join(upload_id);
+        if !tokio::fs::try_exists(&staging_dir).await.unwrap_or(false) {
+            return Err(BlobError::UploadSessionNotFound(upload_id.to_string()));
+        }
+
+        let mut sorted_parts = parts.to_vec();
+        sorted_parts.sort_unstable();
+
+        let temp_filename = format!("assembly_{}_{}.tmp", upload_id, uuid::Uuid::new_v4());
+        let temp_path = self.tmp_dir.join(temp_filename);
+        let mut dest_file = tokio::fs::File::create(&temp_path).await?;
+
+        let mut hasher = crate::hash::Blake3StreamHasher::new();
+        let mut buffer = vec![0u8; 64 * 1024]; // 64KB stream buffer for constant memory usage
+
+        for part_num in &sorted_parts {
+            let part_filename = format!("part_{:06}.part", part_num);
+            let part_path = staging_dir.join(&part_filename);
+            let mut src_file = tokio::fs::File::open(&part_path).await.map_err(|e| {
+                BlobError::Io(format!("Missing part {} in staging: {}", part_num, e))
+            })?;
+
+            loop {
+                use tokio::io::AsyncReadExt;
+                let n = src_file.read(&mut buffer).await?;
+                if n == 0 {
+                    break;
+                }
+                hasher.update(&buffer[..n]);
+                dest_file.write_all(&buffer[..n]).await?;
+            }
+        }
+
+        dest_file.sync_all().await?;
+        drop(dest_file);
+
+        let hash = hasher.finalize_hex();
+        let total_bytes = hasher.bytes_read();
+        let target_path = self.content_path(&hash)?;
+
+        // Deduplication check: if target already exists, drop temp file
+        if tokio::fs::try_exists(&target_path).await.unwrap_or(false) {
+            let _ = tokio::fs::remove_file(&temp_path).await;
+        } else {
+            if let Some(parent) = target_path.parent() {
+                tokio::fs::create_dir_all(parent).await?;
+            }
+            if let Err(e) = tokio::fs::rename(&temp_path, &target_path).await {
+                if !tokio::fs::try_exists(&target_path).await.unwrap_or(false) {
+                    let _ = tokio::fs::remove_file(&temp_path).await;
+                    return Err(BlobError::Io(format!("Failed to commit assembled blob: {}", e)));
+                }
+                let _ = tokio::fs::remove_file(&temp_path).await;
+            }
+        }
+
+        // Clean up staging folder
+        let _ = tokio::fs::remove_dir_all(&staging_dir).await;
+
+        Ok((hash, total_bytes))
+    }
+
+    /// Aborts an active upload session and cleans up its staged parts.
+    pub async fn abort_upload_staging(&self, upload_id: &str) -> Result<(), BlobError> {
+        let staging_dir = self.tmp_dir.join("staging").join(upload_id);
+        if tokio::fs::try_exists(&staging_dir).await.unwrap_or(false) {
+            tokio::fs::remove_dir_all(staging_dir).await?;
+        }
+        Ok(())
+    }
+
+    /// Verifies physical file integrity against its expected BLAKE3 hash.
+    /// Returns `Ok(true)` if intact, `Ok(false)` on checksum mismatch.
+    pub async fn scrub_file(&self, hash: &str) -> Result<bool, BlobError> {
+        let path = self.content_path(hash)?;
+        if !tokio::fs::try_exists(&path).await.unwrap_or(false) {
+            return Ok(false);
+        }
+
+        use tokio::io::AsyncReadExt;
+        let mut file = tokio::fs::File::open(path).await?;
+        let mut hasher = crate::hash::Blake3StreamHasher::new();
+        let mut buffer = vec![0u8; 64 * 1024];
+
+        loop {
+            let n = file.read(&mut buffer).await?;
+            if n == 0 {
+                break;
+            }
+            hasher.update(&buffer[..n]);
+        }
+
+        let actual = hasher.finalize_hex();
+        Ok(crate::hash::constant_time_eq(&actual, hash))
+    }
 }
 
 #[cfg(test)]

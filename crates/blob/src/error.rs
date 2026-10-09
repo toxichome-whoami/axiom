@@ -43,6 +43,12 @@ pub enum BlobError {
         expected: String,
         actual: String,
     },
+    /// HTTP Range specification was malformed or unsatisfiable.
+    InvalidRange(String),
+    /// Capability ticket signature or expiration was invalid.
+    InvalidTicket(String),
+    /// Multipart / chunked upload session was not found or expired.
+    UploadSessionNotFound(String),
     /// Host filesystem input/output failure.
     Io(String),
     /// Underlying LSM database or indexing failure.
@@ -76,6 +82,9 @@ impl fmt::Display for BlobError {
                 "Integrity failure: expected checksum {}, calculated {}",
                 expected, actual
             ),
+            Self::InvalidRange(msg) => write!(f, "Invalid range: {}", msg),
+            Self::InvalidTicket(msg) => write!(f, "Invalid capability ticket: {}", msg),
+            Self::UploadSessionNotFound(id) => write!(f, "Upload session '{}' not found", id),
             Self::Io(msg) => write!(f, "Storage I/O failure: {}", msg),
             Self::Engine(msg) => write!(f, "Storage engine error: {}", msg),
         }

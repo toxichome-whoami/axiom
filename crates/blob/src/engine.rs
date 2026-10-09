@@ -9,7 +9,7 @@
 use crate::error::BlobError;
 use crate::hash::{constant_time_eq, hash_bytes};
 use crate::index::BlobIndex;
-use crate::models::{BlobMetadata, BlobStats, ListResult, NamespaceInfo};
+use crate::models::{BlobMetadata, BlobStats, ByteRange, ListResult, NamespaceInfo, UploadSession};
 use crate::store::FileStore;
 use crate::validation::{validate_key, validate_namespace};
 use bytes::Bytes;
@@ -78,6 +78,18 @@ impl BlobEngine {
         content_type: Option<&str>,
         data: &[u8],
     ) -> Result<BlobMetadata, BlobError> {
+        self.put_with_options(namespace, key, content_type, data, None).await
+    }
+
+    /// Stores a binary payload with optional TTL lifecycle expiration.
+    pub async fn put_with_options(
+        &self,
+        namespace: &str,
+        key: &str,
+        content_type: Option<&str>,
+        data: &[u8],
+        ttl_seconds: Option<u64>,
+    ) -> Result<BlobMetadata, BlobError> {
         validate_namespace(namespace)?;
         validate_key(key)?;
 
@@ -118,16 +130,89 @@ impl BlobEngine {
             self.store.write_bytes(&hash, data).await?;
         }
 
+        let expires_at = ttl_seconds.map(|ttl| now + ttl as i64);
+
         let meta = BlobMetadata {
             hash: hash.clone(),
             size,
             content_type: content_type.unwrap_or("application/octet-stream").to_string(),
             created_at: now,
             inline: is_inline,
+            expires_at,
         };
 
         self.index.commit_put(namespace, key, &meta)?;
         Ok(meta)
+    }
+
+    /// Retrieves an arbitrary sub-slice of an object (HTTP 206 Partial Content).
+    /// CONTRACT:
+    ///  - Precondition: `start < meta.size`.
+    ///  - Zero-copy slicing for inlined blobs in RAM.
+    ///  - Asynchronous file seeking for disk blobs.
+    ///  - Returns `(BlobMetadata, ByteRange, BlobData)` with bounded length.
+    pub async fn get_range(
+        &self,
+        namespace: &str,
+        key: &str,
+        start: u64,
+        end: Option<u64>,
+    ) -> Result<(BlobMetadata, ByteRange, BlobData), BlobError> {
+        validate_namespace(namespace)?;
+        validate_key(key)?;
+
+        let meta = self
+            .index
+            .get_metadata(namespace, key)?
+            .ok_or_else(|| BlobError::NotFound {
+                namespace: namespace.to_string(),
+                key: key.to_string(),
+            })?;
+
+        if meta.size == 0 {
+            return Err(BlobError::InvalidRange("Cannot slice empty blob".to_string()));
+        }
+
+        if start >= meta.size {
+            return Err(BlobError::InvalidRange(format!(
+                "Range start {} exceeds blob size {}",
+                start, meta.size
+            )));
+        }
+
+        let end = end.unwrap_or(meta.size - 1).min(meta.size - 1);
+        if start > end {
+            return Err(BlobError::InvalidRange(format!(
+                "Range start {} cannot exceed end {}",
+                start, end
+            )));
+        }
+
+        let range = ByteRange {
+            start,
+            end,
+            total: meta.size,
+        };
+        let slice_len = range.length();
+
+        if meta.inline {
+            let bytes_vec = self
+                .index
+                .get_inline_payload(&meta.hash)?
+                .ok_or_else(|| BlobError::NotFound {
+                    namespace: namespace.to_string(),
+                    key: key.to_string(),
+                })?;
+
+            let bytes = Bytes::from(bytes_vec);
+            let sliced = bytes.slice((start as usize)..=(end as usize));
+            Ok((meta, range, BlobData::Inline(sliced)))
+        } else {
+            use tokio::io::AsyncSeekExt;
+            let mut file = self.store.open(&meta.hash).await?;
+            file.seek(std::io::SeekFrom::Start(start)).await?;
+            Ok((meta, range, BlobData::File(file, slice_len)))
+        }
     }
 
     /// Retrieves an object's metadata and data stream.
@@ -342,6 +427,7 @@ impl BlobEngine {
             content_type: src_meta.content_type.clone(),
             created_at: now,
             inline: src_meta.inline,
+            expires_at: src_meta.expires_at,
         };
 
         self.index.commit_put(dest_ns, dest_key, &dest_meta)?;
@@ -434,6 +520,191 @@ impl BlobEngine {
         }
         self.index.remove_namespace_record(namespace)?;
         Ok(deleted_count)
+    }
+
+    /// Initializes a new multipart / chunked upload session.
+    pub async fn init_chunked_upload(
+        &self,
+        namespace: &str,
+        key: &str,
+        content_type: Option<&str>,
+        ttl_seconds: Option<u64>,
+    ) -> Result<UploadSession, BlobError> {
+        validate_namespace(namespace)?;
+        validate_key(key)?;
+
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+        let expires_at = now + ttl_seconds.unwrap_or(86400) as i64;
+
+        let upload_id = uuid::Uuid::new_v4().to_string();
+        let session = UploadSession {
+            upload_id,
+            namespace: namespace.to_string(),
+            key: key.to_string(),
+            content_type: content_type.unwrap_or("application/octet-stream").to_string(),
+            created_at: now,
+            expires_at,
+            parts: Vec::new(),
+        };
+
+        self.index.save_upload_session(&session)?;
+        Ok(session)
+    }
+
+    /// Retrieves an active upload session by its upload_id.
+    pub fn get_upload_session(&self, upload_id: &str) -> Result<Option<UploadSession>, BlobError> {
+        self.index.get_upload_session(upload_id)
+    }
+
+    /// Writes an individual chunk to upload staging storage.
+    pub async fn write_chunk(
+        &self,
+        upload_id: &str,
+        part_number: u32,
+        data: &[u8],
+    ) -> Result<(), BlobError> {
+        if part_number == 0 {
+            return Err(BlobError::InvalidKey("Part number must be >= 1".to_string()));
+        }
+
+        let mut session = self
+            .index
+            .get_upload_session(upload_id)?
+            .ok_or_else(|| BlobError::UploadSessionNotFound(upload_id.to_string()))?;
+
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+        if now > session.expires_at {
+            let _ = self.abort_chunked_upload(upload_id).await;
+            return Err(BlobError::UploadSessionNotFound("Upload session expired".to_string()));
+        }
+
+        self.store.write_upload_part(upload_id, part_number, data).await?;
+
+        if !session.parts.contains(&part_number) {
+            session.parts.push(part_number);
+            session.parts.sort_unstable();
+            self.index.save_upload_session(&session)?;
+        }
+
+        Ok(())
+    }
+
+    /// Completes a chunked upload by assembling parts and committing object metadata.
+    pub async fn complete_chunked_upload(
+        &self,
+        upload_id: &str,
+    ) -> Result<BlobMetadata, BlobError> {
+        let session = self
+            .index
+            .get_upload_session(upload_id)?
+            .ok_or_else(|| BlobError::UploadSessionNotFound(upload_id.to_string()))?;
+
+        if session.parts.is_empty() {
+            return Err(BlobError::InvalidKey("Cannot complete upload with 0 parts".to_string()));
+        }
+
+        let (hash, size) = self.store.assemble_upload_parts(upload_id, &session.parts).await?;
+
+        if size > self.max_object_bytes {
+            let _ = self.store.remove(&hash).await;
+            return Err(BlobError::PayloadTooLarge {
+                size,
+                max: self.max_object_bytes,
+            });
+        }
+
+        // Check namespace quota
+        if let Some(info) = self.index.get_namespace_info(&session.namespace)? {
+            if let Some(max_quota) = info.max_bytes {
+                let existing_size = self
+                    .index
+                    .get_metadata(&session.namespace, &session.key)?
+                    .map(|m| m.size)
+                    .unwrap_or(0);
+                let net_bytes = info.total_bytes.saturating_sub(existing_size);
+                if net_bytes + size > max_quota {
+                    let _ = self.store.remove(&hash).await;
+                    return Err(BlobError::QuotaExceeded {
+                        namespace: session.namespace.clone(),
+                        current: net_bytes,
+                        requested: size,
+                        max: max_quota,
+                    });
+                }
+            }
+        }
+
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+
+        let meta = BlobMetadata {
+            hash,
+            size,
+            content_type: session.content_type,
+            created_at: now,
+            inline: false,
+            expires_at: None,
+        };
+
+        self.index.commit_put(&session.namespace, &session.key, &meta)?;
+        let _ = self.index.delete_upload_session(upload_id);
+
+        Ok(meta)
+    }
+
+    /// Aborts an active chunked upload session and purges staging data.
+    pub async fn abort_chunked_upload(&self, upload_id: &str) -> Result<(), BlobError> {
+        self.store.abort_upload_staging(upload_id).await?;
+        self.index.delete_upload_session(upload_id)?;
+        Ok(())
+    }
+
+    /// Scrubs an individual stored blob file against its expected BLAKE3 checksum.
+    pub async fn scrub_blob(&self, hash: &str) -> Result<bool, BlobError> {
+        self.store.scrub_file(hash).await
+    }
+
+    /// Performs a full storage integrity audit, returning `(verified_count, corrupted_count)`.
+    pub async fn scrub_all(&self) -> Result<(u64, u64), BlobError> {
+        let hashes = self.index.list_content_hashes()?;
+        let mut verified = 0u64;
+        let mut corrupted = 0u64;
+
+        for hash in hashes {
+            match self.scrub_blob(&hash).await {
+                Ok(true) => verified += 1,
+                _ => corrupted += 1,
+            }
+        }
+
+        Ok((verified, corrupted))
+    }
+
+    /// Identifies and removes expired blobs, reclaiming disk space when refcounts reach 0.
+    pub async fn sweep_expired(&self) -> Result<usize, BlobError> {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+
+        let deleted = self.index.sweep_expired_blobs(now)?;
+        let count = deleted.len();
+
+        for (_, _, hash, should_delete) in deleted {
+            if should_delete {
+                let _ = self.store.remove(&hash).await;
+            }
+        }
+
+        Ok(count)
     }
 }
 
@@ -532,5 +803,105 @@ mod tests {
         let deleted_count = engine.delete_prefix(ns, "backup/").await.unwrap();
         assert_eq!(deleted_count, 3);
         assert!(engine.get(ns, "backup/docs/readme.txt").await.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_blob_engine_range_requests() {
+        let tmp = tempfile::tempdir().unwrap();
+        let engine = BlobEngine::new(tmp.path(), 16, 1024 * 1024, false)
+            .await
+            .unwrap();
+
+        let ns = "range-test";
+
+        // 1. Inline payload (10 bytes <= 16)
+        let inline_data = b"0123456789";
+        engine.put(ns, "inline.txt", None, inline_data).await.unwrap();
+
+        let (_, r1, data1) = engine.get_range(ns, "inline.txt", 2, Some(6)).await.unwrap();
+        assert_eq!(r1.start, 2);
+        assert_eq!(r1.end, 6);
+        assert_eq!(r1.length(), 5);
+        if let BlobData::Inline(b) = data1 {
+            assert_eq!(&b[..], b"23456");
+        } else {
+            panic!("Expected inline blob");
+        }
+
+        // 2. Large disk payload (100 bytes > 16)
+        let large_data: Vec<u8> = (0..100).collect();
+        engine.put(ns, "large.bin", None, &large_data).await.unwrap();
+
+        let (_, r2, data2) = engine.get_range(ns, "large.bin", 10, Some(19)).await.unwrap();
+        assert_eq!(r2.start, 10);
+        assert_eq!(r2.end, 19);
+        assert_eq!(r2.length(), 10);
+        if let BlobData::File(mut file, len) = data2 {
+            assert_eq!(len, 10);
+            use tokio::io::AsyncReadExt;
+            let mut buf = vec![0u8; 10];
+            file.read_exact(&mut buf).await.unwrap();
+            assert_eq!(buf, (10..20).collect::<Vec<u8>>());
+        } else {
+            panic!("Expected file blob");
+        }
+
+        // 3. Out-of-bounds range checks
+        assert!(engine.get_range(ns, "large.bin", 100, None).await.is_err());
+        assert!(engine.get_range(ns, "large.bin", 50, Some(40)).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_blob_engine_chunked_upload_lifecycle() {
+        let tmp = tempfile::tempdir().unwrap();
+        let engine = BlobEngine::new(tmp.path(), 64, 1024 * 1024, false)
+            .await
+            .unwrap();
+
+        let ns = "chunk-test";
+        let session = engine.init_chunked_upload(ns, "assembled.bin", Some("application/octet-stream"), None).await.unwrap();
+
+        let part1 = b"AAAA";
+        let part2 = b"BBBB";
+        let part3 = b"CCCC";
+
+        // Write parts (even in out-of-order sequence)
+        engine.write_chunk(&session.upload_id, 2, part2).await.unwrap();
+        engine.write_chunk(&session.upload_id, 1, part1).await.unwrap();
+        engine.write_chunk(&session.upload_id, 3, part3).await.unwrap();
+
+        // Complete upload
+        let meta = engine.complete_chunked_upload(&session.upload_id).await.unwrap();
+        assert_eq!(meta.size, 12);
+
+        // Verify assembled content
+        let (_, content) = engine.get_bytes(ns, "assembled.bin").await.unwrap();
+        assert_eq!(&content[..], b"AAAABBBBCCCC");
+
+        // Verify session deleted after completion
+        assert!(engine.complete_chunked_upload(&session.upload_id).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_blob_engine_scrubbing_and_expiry() {
+        let tmp = tempfile::tempdir().unwrap();
+        let engine = BlobEngine::new(tmp.path(), 8, 1024 * 1024, false)
+            .await
+            .unwrap();
+
+        let ns = "scrub-test";
+        let payload = vec![77u8; 128]; // Disk file
+        let meta = engine.put_with_options(ns, "temp.bin", None, &payload, Some(0)).await.unwrap();
+
+        // Scrub check passes
+        assert!(engine.scrub_blob(&meta.hash).await.unwrap());
+        let (verified, corrupted) = engine.scrub_all().await.unwrap();
+        assert_eq!(verified, 1);
+        assert_eq!(corrupted, 0);
+
+        // Sweep expired blobs (TTL = 0s)
+        let swept_count = engine.sweep_expired().await.unwrap();
+        assert_eq!(swept_count, 1);
+        assert!(engine.get(ns, "temp.bin").await.is_err());
     }
 }

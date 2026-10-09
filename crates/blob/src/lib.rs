@@ -12,10 +12,12 @@ pub mod hash;
 pub mod index;
 pub mod models;
 pub mod store;
+pub mod tickets;
 pub mod validation;
 
 pub use engine::{BlobData, BlobEngine};
 pub use error::BlobError;
 pub use hash::{constant_time_eq, hash_bytes, Blake3StreamHasher};
-pub use models::{BlobEntry, BlobMetadata, BlobStats, ContentRef, ListResult};
+pub use models::{BlobEntry, BlobMetadata, BlobStats, ByteRange, ContentRef, ListResult, UploadSession};
+pub use tickets::{generate_ticket, verify_ticket, SignedTicket};
 pub use validation::{validate_key, validate_namespace};
