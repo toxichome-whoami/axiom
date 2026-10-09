@@ -1148,4 +1148,116 @@ async fn blob_storage_integrity_scrub_and_ttl() {
     assert!(sweep_json["data"]["swept_objects"].as_u64().unwrap() >= 1);
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+//  18. Model Context Protocol (MCP) — Tools List & Blob Storage Tool Calls
+// ═══════════════════════════════════════════════════════════════════════════
+
+#[tokio::test]
+async fn mcp_tools_list_and_blob_tools_execution() {
+    setup_test_metadata();
+    ensure_blob_engine().await;
+
+    let admin_token = BASE64_STANDARD.encode("admin_key:secret_admin");
+
+    // 1. tools/list - verify 15 tools returned (8 DB + 7 Blob)
+    let list_req = Request::post("/mcp/v1")
+        .header("X-Axiom-Key", &admin_token)
+        .header("Content-Type", "application/json")
+        .body(Body::from(serde_json::to_vec(&serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/list",
+            "params": {}
+        })).unwrap()))
+        .unwrap();
+
+    let list_res = create_app().oneshot(list_req).await.unwrap();
+    assert_eq!(list_res.status(), StatusCode::OK);
+    let list_bytes = axum::body::to_bytes(list_res.into_body(), 65536).await.unwrap();
+    let list_json: serde_json::Value = serde_json::from_slice(&list_bytes).unwrap();
+    assert_eq!(list_json["jsonrpc"], "2.0");
+    let tools = list_json["result"]["tools"].as_array().expect("tools array");
+    assert_eq!(tools.len(), 15);
+
+    // 2. tools/call - axiom_write_blob
+    let write_req = Request::post("/mcp/v1")
+        .header("X-Axiom-Key", &admin_token)
+        .header("Content-Type", "application/json")
+        .body(Body::from(serde_json::to_vec(&serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "tools/call",
+            "params": {
+                "name": "axiom_write_blob",
+                "arguments": {
+                    "namespace": "mcp_ns",
+                    "key": "notes/todo.txt",
+                    "data": "1. Test MCP blob integration\n2. Verify clean execution",
+                    "content_type": "text/plain"
+                }
+            }
+        })).unwrap()))
+        .unwrap();
+
+    let write_res = create_app().oneshot(write_req).await.unwrap();
+    assert_eq!(write_res.status(), StatusCode::OK);
+    let write_bytes = axum::body::to_bytes(write_res.into_body(), 65536).await.unwrap();
+    let write_json: serde_json::Value = serde_json::from_slice(&write_bytes).unwrap();
+    assert_eq!(write_json["result"]["isError"], false);
+
+    // 3. tools/call - axiom_read_blob
+    let read_req = Request::post("/mcp/v1")
+        .header("X-Axiom-Key", &admin_token)
+        .header("Content-Type", "application/json")
+        .body(Body::from(serde_json::to_vec(&serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 3,
+            "method": "tools/call",
+            "params": {
+                "name": "axiom_read_blob",
+                "arguments": {
+                    "namespace": "mcp_ns",
+                    "key": "notes/todo.txt"
+                }
+            }
+        })).unwrap()))
+        .unwrap();
+
+    let read_res = create_app().oneshot(read_req).await.unwrap();
+    assert_eq!(read_res.status(), StatusCode::OK);
+    let read_bytes = axum::body::to_bytes(read_res.into_body(), 65536).await.unwrap();
+    let read_json: serde_json::Value = serde_json::from_slice(&read_bytes).unwrap();
+    assert_eq!(read_json["result"]["isError"], false);
+    let read_text = read_json["result"]["content"][0]["text"].as_str().unwrap();
+    assert!(read_text.contains("1. Test MCP blob integration"));
+
+    // 4. tools/call - axiom_create_download_ticket
+    let ticket_req = Request::post("/mcp/v1")
+        .header("X-Axiom-Key", &admin_token)
+        .header("Content-Type", "application/json")
+        .body(Body::from(serde_json::to_vec(&serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 4,
+            "method": "tools/call",
+            "params": {
+                "name": "axiom_create_download_ticket",
+                "arguments": {
+                    "namespace": "mcp_ns",
+                    "key": "notes/todo.txt",
+                    "ttl_seconds": 300
+                }
+            }
+        })).unwrap()))
+        .unwrap();
+
+    let ticket_res = create_app().oneshot(ticket_req).await.unwrap();
+    assert_eq!(ticket_res.status(), StatusCode::OK);
+    let ticket_bytes = axum::body::to_bytes(ticket_res.into_body(), 65536).await.unwrap();
+    let ticket_json: serde_json::Value = serde_json::from_slice(&ticket_bytes).unwrap();
+    assert_eq!(ticket_json["result"]["isError"], false);
+    let ticket_data_text = ticket_json["result"]["content"][0]["text"].as_str().unwrap();
+    assert!(ticket_data_text.contains("download_url"));
+}
+
+
 

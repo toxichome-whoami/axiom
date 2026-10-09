@@ -1,13 +1,14 @@
 /*
  * Model Context Protocol (MCP) JSON-RPC 2.0 handler and tool execution pipeline.
  * Owned by: api/mcp
- * Key deps: axum, serde_json, crate::database::handlers, axiom_policy::PolicyEngine, axiom_db::pool
- * Invariants: Every tool call checks PolicyEngine RBAC; JSON-RPC errors follow the 2024-11-05 spec.
- * Last structural change: Phase 4 initial implementation of the 8-tool MCP engine.
+ * Key deps: axum, serde_json, base64, crate::database::handlers, crate::blobs, axiom_policy::PolicyEngine, axiom_db::pool, axiom_blob
+ * Invariants: Every tool call checks PolicyEngine RBAC; JSON-RPC errors follow the 2024-11-05 spec; blob read guardrails prevent context buffer exhaustion.
+ * Last structural change: Integrated Native Blob Storage tools and context resources into the MCP engine.
  */
 
 use axum::extract::Extension;
 use axum::Json;
+use base64::prelude::*;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 
@@ -208,6 +209,103 @@ fn handle_tools_list(id: Option<Value>, _auth: &AuthContext) -> JsonRpcResponse 
                 "additionalProperties": false
             }),
         },
+        McpTool {
+            name: "axiom_list_blob_namespaces".to_string(),
+            description: "Lists all blob storage namespaces that the caller is authorized to access under RBAC.".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+            }),
+        },
+        McpTool {
+            name: "axiom_list_blobs".to_string(),
+            description: "Lists objects in a blob storage namespace with optional prefix filtering and pagination. Subject to RBAC READ policy.".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "namespace": { "type": "string", "description": "Target blob namespace" },
+                    "prefix": { "type": "string", "description": "Optional key prefix to filter items (e.g. 'docs/' or 'media/2026/')" },
+                    "cursor": { "type": "string", "description": "Optional pagination cursor returned from a prior listing" },
+                    "limit": { "type": "integer", "description": "Max items to return (default: 50, max: 500)" }
+                },
+                "required": ["namespace"],
+                "additionalProperties": false
+            }),
+        },
+        McpTool {
+            name: "axiom_get_blob_metadata".to_string(),
+            description: "Retrieves metadata (size, MIME type, BLAKE3 hash, storage tier, creation timestamp) for a stored blob without downloading the body payload.".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "namespace": { "type": "string", "description": "Target blob namespace" },
+                    "key": { "type": "string", "description": "Exact object key to inspect" }
+                },
+                "required": ["namespace", "key"],
+                "additionalProperties": false
+            }),
+        },
+        McpTool {
+            name: "axiom_read_blob".to_string(),
+            description: "Reads the content of a stored blob into the agent context. Guardrail: rejects files exceeding max_bytes (default 5MB) to protect LLM context windows.".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "namespace": { "type": "string", "description": "Target blob namespace" },
+                    "key": { "type": "string", "description": "Object key to read" },
+                    "encoding": { "type": "string", "enum": ["utf8", "base64"], "description": "Payload encoding (default: 'utf8'). Binary files should use 'base64'." },
+                    "max_bytes": { "type": "integer", "description": "Safety size limit in bytes (default: 5242880 = 5MB, max: 20971520 = 20MB)" }
+                },
+                "required": ["namespace", "key"],
+                "additionalProperties": false
+            }),
+        },
+        McpTool {
+            name: "axiom_write_blob".to_string(),
+            description: "Stores or overwrites a blob object under the specified namespace and key using UTF-8 text or Base64 binary payload. Subject to RBAC WRITE policy.".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "namespace": { "type": "string", "description": "Target blob namespace" },
+                    "key": { "type": "string", "description": "Object key/path (e.g. 'reports/summary.md')" },
+                    "content": { "type": "string", "description": "File payload as UTF-8 string or Base64 string depending on encoding" },
+                    "encoding": { "type": "string", "enum": ["utf8", "base64"], "description": "Content encoding (default: 'utf8')" },
+                    "content_type": { "type": "string", "description": "MIME type (default: 'application/octet-stream' or 'text/plain; charset=utf-8')" },
+                    "ttl_seconds": { "type": "integer", "description": "Optional time-to-live in seconds for automatic expiration" }
+                },
+                "required": ["namespace", "key", "content"],
+                "additionalProperties": false
+            }),
+        },
+        McpTool {
+            name: "axiom_delete_blob".to_string(),
+            description: "Deletes an object key from the specified namespace. Subject to RBAC DELETE policy.".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "namespace": { "type": "string", "description": "Target blob namespace" },
+                    "key": { "type": "string", "description": "Object key to delete" }
+                },
+                "required": ["namespace", "key"],
+                "additionalProperties": false
+            }),
+        },
+        McpTool {
+            name: "axiom_create_download_ticket".to_string(),
+            description: "Generates a time-bounded cryptographic pre-signed capability download ticket URL for human users or external clients to download large objects directly.".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "namespace": { "type": "string", "description": "Target blob namespace" },
+                    "key": { "type": "string", "description": "Object key to generate ticket for" },
+                    "operation": { "type": "string", "enum": ["READ", "WRITE"], "description": "Authorized ticket operation (default: 'READ')" },
+                    "ttl_seconds": { "type": "integer", "description": "Ticket validity duration in seconds (default: 3600, max: 86400)" }
+                },
+                "required": ["namespace", "key"],
+                "additionalProperties": false
+            }),
+        },
     ];
 
     JsonRpcResponse::success(id, json!({ "tools": tools }))
@@ -262,6 +360,21 @@ async fn handle_tools_call(
         "axiom_update" | "update" => exec_update(auth, &arguments).await,
         "axiom_delete" | "delete" => exec_delete(auth, &arguments).await,
         "axiom_raw_sql" | "raw_sql" => exec_raw_sql(auth, &arguments).await,
+        "axiom_list_blob_namespaces" | "list_blob_namespaces" | "axiom_list_namespaces" | "list_namespaces" => {
+            exec_list_blob_namespaces(auth).await
+        }
+        "axiom_list_blobs" | "list_blobs" => exec_list_blobs(auth, &arguments).await,
+        "axiom_get_blob_metadata" | "get_blob_metadata" | "head_blob" | "axiom_head_blob" => {
+            exec_get_blob_metadata(auth, &arguments).await
+        }
+        "axiom_read_blob" | "read_blob" => exec_read_blob(auth, &arguments).await,
+        "axiom_write_blob" | "write_blob" | "put_blob" | "axiom_put_blob" => {
+            exec_write_blob(auth, &arguments).await
+        }
+        "axiom_delete_blob" | "delete_blob" => exec_delete_blob(auth, &arguments).await,
+        "axiom_create_download_ticket" | "create_download_ticket" | "generate_download_ticket" | "axiom_generate_blob_ticket" => {
+            exec_create_download_ticket(auth, &arguments).await
+        }
         _ => Err(format!("Unknown tool: '{}'", tool_name)),
     };
 
@@ -628,6 +741,267 @@ async fn exec_raw_sql(
     }))
 }
 
+// ─── Native Blob Storage MCP Tool Implementations ─────────────────────────
+
+/// Discovers all blob storage namespaces authorized for the caller under active RBAC.
+/// CONTRACT:
+///  - Precondition: Caller authenticated with valid `AuthContext`.
+///  - Postcondition: Returns JSON array of authorized namespace names.
+///  - Invariants: Namespaces filtered by `PolicyEngine::filter_blob_namespaces`.
+///  - Idempotent: Yes.
+async fn exec_list_blob_namespaces(auth: &AuthContext) -> Result<Value, String> {
+    let engine = crate::blobs::get_blob_engine().map_err(|e| e.to_string())?;
+    let all_namespaces = engine.list_namespaces().map_err(|e| e.to_string())?;
+    let authorized = PolicyEngine::filter_blob_namespaces(auth, &all_namespaces);
+
+    Ok(json!({
+        "namespaces": authorized
+    }))
+}
+
+/// Lists objects and folders in a blob namespace matching an optional prefix and cursor.
+/// CONTRACT:
+///  - Precondition: `namespace` must be provided and caller must hold `READ` permissions.
+///  - Postcondition: Returns paginated `ListResult` containing metadata items and next cursor.
+///  - Invariants: Validates `PolicyEngine::evaluate_blob` for namespace and prefix pattern.
+///  - Idempotent: Yes.
+async fn exec_list_blobs(
+    auth: &AuthContext,
+    args: &serde_json::Map<String, Value>,
+) -> Result<Value, String> {
+    let ns = args.get("namespace").and_then(|v| v.as_str())
+        .ok_or_else(|| "Missing required parameter 'namespace'".to_string())?;
+    let prefix = args.get("prefix").and_then(|v| v.as_str());
+    let cursor = args.get("cursor").and_then(|v| v.as_str());
+    let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(50).min(500) as usize;
+
+    // Check READ permissions on the namespace / prefix pattern
+    let check_key = prefix.unwrap_or("*");
+    PolicyEngine::evaluate_blob(auth, ns, check_key, "READ")
+        .map_err(|e| e.to_string())?;
+
+    let engine = crate::blobs::get_blob_engine().map_err(|e| e.to_string())?;
+    let list_res = engine.list(ns, prefix, cursor, limit).map_err(|e| e.to_string())?;
+
+    Ok(json!({
+        "namespace": ns,
+        "items": list_res.items,
+        "next_cursor": list_res.next_cursor
+    }))
+}
+
+/// Retrieves metadata and storage tier details for an object key without downloading payload.
+/// CONTRACT:
+///  - Precondition: `namespace` and `key` required; caller authorized for `READ`.
+///  - Postcondition: Returns `BlobMetadata` JSON including size, hash, and tier.
+///  - Invariants: Zero disk/LSM body I/O; reads index metadata only.
+///  - Idempotent: Yes.
+async fn exec_get_blob_metadata(
+    auth: &AuthContext,
+    args: &serde_json::Map<String, Value>,
+) -> Result<Value, String> {
+    let ns = args.get("namespace").and_then(|v| v.as_str())
+        .ok_or_else(|| "Missing required parameter 'namespace'".to_string())?;
+    let key = args.get("key").and_then(|v| v.as_str())
+        .ok_or_else(|| "Missing required parameter 'key'".to_string())?;
+
+    PolicyEngine::evaluate_blob(auth, ns, key, "READ")
+        .map_err(|e| e.to_string())?;
+
+    let engine = crate::blobs::get_blob_engine().map_err(|e| e.to_string())?;
+    let meta = engine.head(ns, key).map_err(|e| e.to_string())?;
+
+    Ok(json!({
+        "namespace": ns,
+        "key": key,
+        "size": meta.size,
+        "content_type": meta.content_type,
+        "hash": meta.hash,
+        "created_at": meta.created_at,
+        "inline": meta.inline,
+        "expires_at": meta.expires_at,
+        "storage_tier": if meta.inline { "LSM Inline" } else { "Disk Shard" }
+    }))
+}
+
+/// Reads object payload into the agent context with safety size capping and encoding fallback.
+/// CONTRACT:
+///  - Precondition: `namespace` and `key` required; caller authorized for `READ`.
+///  - Postcondition: Returns content encoded as UTF-8 string or Base64 string.
+///  - Invariants: Rejects files > `max_bytes` (default 5MB, cap 20MB) to protect LLM context windows.
+///  - Idempotent: Yes.
+async fn exec_read_blob(
+    auth: &AuthContext,
+    args: &serde_json::Map<String, Value>,
+) -> Result<Value, String> {
+    let ns = args.get("namespace").and_then(|v| v.as_str())
+        .ok_or_else(|| "Missing required parameter 'namespace'".to_string())?;
+    let key = args.get("key").and_then(|v| v.as_str())
+        .ok_or_else(|| "Missing required parameter 'key'".to_string())?;
+    let encoding = args.get("encoding").and_then(|v| v.as_str()).unwrap_or("utf8").to_lowercase();
+    let max_bytes = match args.get("max_bytes").and_then(|v| v.as_u64()) {
+        Some(mb) if mb > 20 * 1024 * 1024 => {
+            return Err("Safety guardrail: requested max_bytes exceeds 20MB limit. Use 'axiom_create_download_ticket' for larger objects.".to_string());
+        }
+        Some(mb) => mb,
+        None => 5 * 1024 * 1024,
+    };
+
+    PolicyEngine::evaluate_blob(auth, ns, key, "READ")
+        .map_err(|e| e.to_string())?;
+
+    let engine = crate::blobs::get_blob_engine().map_err(|e| e.to_string())?;
+    let meta = engine.head(ns, key).map_err(|e| e.to_string())?;
+
+    // Safety guardrail: prevent multi-GB disk files from exhausting LLM context buffers or agent RAM
+    if meta.size > max_bytes {
+        return Err(format!(
+            "Safety guardrail: Object size ({} bytes) exceeds max_bytes limit ({} bytes). Use 'axiom_create_download_ticket' to generate a download URL instead.",
+            meta.size, max_bytes
+        ));
+    }
+
+    let (_, bytes) = engine.get_bytes(ns, key).await.map_err(|e| e.to_string())?;
+
+    let (data_str, actual_encoding) = if encoding == "base64" {
+        (BASE64_STANDARD.encode(&bytes), "base64")
+    } else {
+        match String::from_utf8(bytes.clone()) {
+            Ok(s) => (s, "utf8"),
+            Err(_) => {
+                // WHY: When binary data (images, PDFs) is requested with utf8, fallback to base64
+                // rather than corrupting byte sequences or erroring out.
+                (BASE64_STANDARD.encode(&bytes), "base64")
+            }
+        }
+    };
+
+    Ok(json!({
+        "namespace": ns,
+        "key": key,
+        "size": meta.size,
+        "content_type": meta.content_type,
+        "encoding": actual_encoding,
+        "data": data_str
+    }))
+}
+
+/// Stores or overwrites a blob object using UTF-8 text or Base64 payload.
+/// CONTRACT:
+///  - Precondition: `namespace`, `key`, and `content` required; caller authorized for `WRITE`.
+///  - Postcondition: Writes payload to storage and commits BLAKE3 content-addressed metadata.
+///  - Invariants: Small files (<=64KB) inlined into LSM; larger files written to chunked shards.
+///  - Idempotent: Yes on identical content.
+async fn exec_write_blob(
+    auth: &AuthContext,
+    args: &serde_json::Map<String, Value>,
+) -> Result<Value, String> {
+    let ns = args.get("namespace").and_then(|v| v.as_str())
+        .ok_or_else(|| "Missing required parameter 'namespace'".to_string())?;
+    let key = args.get("key").and_then(|v| v.as_str())
+        .ok_or_else(|| "Missing required parameter 'key'".to_string())?;
+    let content = args.get("content").or_else(|| args.get("data")).and_then(|v| v.as_str())
+        .ok_or_else(|| "Missing required parameter 'content'".to_string())?;
+    let encoding = args.get("encoding").and_then(|v| v.as_str()).unwrap_or("utf8").to_lowercase();
+    let content_type = args.get("content_type").and_then(|v| v.as_str());
+    let ttl_seconds = args.get("ttl_seconds").and_then(|v| v.as_u64());
+
+    PolicyEngine::evaluate_blob(auth, ns, key, "WRITE")
+        .map_err(|e| e.to_string())?;
+
+    let raw_bytes = if encoding == "base64" {
+        BASE64_STANDARD.decode(content.trim())
+            .map_err(|e| format!("Invalid base64 payload: {}", e))?
+    } else {
+        content.as_bytes().to_vec()
+    };
+
+    let engine = crate::blobs::get_blob_engine().map_err(|e| e.to_string())?;
+    let meta = engine.put_with_options(ns, key, content_type, &raw_bytes, ttl_seconds)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(json!({
+        "success": true,
+        "namespace": ns,
+        "key": key,
+        "size": meta.size,
+        "hash": meta.hash,
+        "inline": meta.inline
+    }))
+}
+
+/// Deletes an object key from the specified namespace.
+/// CONTRACT:
+///  - Precondition: `namespace` and `key` required; caller authorized for `DELETE`.
+///  - Postcondition: Decrements content refcount and removes key from namespace index.
+///  - Invariants: Physical disk shard unlinked if refcount hits zero.
+///  - Idempotent: Yes (returns deleted=false if key was not present).
+async fn exec_delete_blob(
+    auth: &AuthContext,
+    args: &serde_json::Map<String, Value>,
+) -> Result<Value, String> {
+    let ns = args.get("namespace").and_then(|v| v.as_str())
+        .ok_or_else(|| "Missing required parameter 'namespace'".to_string())?;
+    let key = args.get("key").and_then(|v| v.as_str())
+        .ok_or_else(|| "Missing required parameter 'key'".to_string())?;
+
+    PolicyEngine::evaluate_blob(auth, ns, key, "DELETE")
+        .map_err(|e| e.to_string())?;
+
+    let engine = crate::blobs::get_blob_engine().map_err(|e| e.to_string())?;
+    let deleted = engine.delete(ns, key).await.map_err(|e| e.to_string())?;
+
+    Ok(json!({
+        "success": true,
+        "deleted": deleted
+    }))
+}
+
+/// Generates a time-bounded cryptographic pre-signed capability download ticket URL.
+/// CONTRACT:
+///  - Precondition: `namespace` and `key` required; caller authorized for specified operation.
+///  - Postcondition: Returns signed ticket parameters and relative gateway download URL.
+///  - Invariants: Zero server-side session state; verified via BLAKE3-keyed MAC on redemption.
+///  - Idempotent: Yes.
+async fn exec_create_download_ticket(
+    auth: &AuthContext,
+    args: &serde_json::Map<String, Value>,
+) -> Result<Value, String> {
+    let ns = args.get("namespace").and_then(|v| v.as_str())
+        .ok_or_else(|| "Missing required parameter 'namespace'".to_string())?;
+    let key = args.get("key").and_then(|v| v.as_str())
+        .ok_or_else(|| "Missing required parameter 'key'".to_string())?;
+    let operation = args.get("operation").and_then(|v| v.as_str()).unwrap_or("READ").to_uppercase();
+    let ttl_seconds = args.get("ttl_seconds").and_then(|v| v.as_u64()).unwrap_or(3600).min(86400);
+
+    PolicyEngine::evaluate_blob(auth, ns, key, &operation)
+        .map_err(|e| e.to_string())?;
+
+    let config = ConfigManager::get();
+    let secret = if !config.blob.ticket_secret.is_empty() {
+        &config.blob.ticket_secret
+    } else {
+        "axiom_default_ticket_secret_change_in_production"
+    };
+
+    let ticket = axiom_blob::generate_ticket(secret, ns, key, &operation, ttl_seconds);
+    let url = format!(
+        "/api/v1/blobs/{}/{}?ticket_sig={}&ticket_exp={}",
+        ns, key, ticket.signature, ticket.expires_at
+    );
+
+    Ok(json!({
+        "success": true,
+        "namespace": ns,
+        "key": key,
+        "operation": operation,
+        "expires_at": ticket.expires_at,
+        "signature": ticket.signature,
+        "download_url": url
+    }))
+}
+
 // ─── Resource Handlers ─────────────────────────────────────────────────────
 
 async fn handle_resources_list(id: Option<Value>, auth: &AuthContext) -> JsonRpcResponse {
@@ -662,6 +1036,28 @@ async fn handle_resources_list(id: Option<Value>, auth: &AuthContext) -> JsonRpc
             description: format!("Table definitions and schema metadata for database '{}'", name),
             mime_type: "application/json".to_string(),
         });
+    }
+
+    // Include Native Blob Storage resources if blob subsystem is online
+    if let Ok(engine) = crate::blobs::get_blob_engine() {
+        if let Ok(all_ns) = engine.list_namespaces() {
+            let authorized_ns = PolicyEngine::filter_blob_namespaces(auth, &all_ns);
+            resources.push(McpResource {
+                uri: "axiom://blobs".to_string(),
+                name: "Active Blob Storage Namespaces".to_string(),
+                description: "Catalog of active object namespaces and storage telemetry".to_string(),
+                mime_type: "application/json".to_string(),
+            });
+
+            for ns in authorized_ns {
+                resources.push(McpResource {
+                    uri: format!("axiom://blobs/{}", ns),
+                    name: format!("Blob Namespace '{}'", ns),
+                    description: format!("Listing of stored objects and virtual directories in namespace '{}'", ns),
+                    mime_type: "application/json".to_string(),
+                });
+            }
+        }
     }
 
     JsonRpcResponse::success(id, json!({ "resources": resources }))
@@ -705,6 +1101,53 @@ async fn handle_resources_read(
             }
             Err(e) => JsonRpcResponse::error(id, -32603, format!("Failed to read schema: {}", e), None),
         }
+    } else if uri == "axiom://blobs" {
+        match exec_list_blob_namespaces(auth).await {
+            Ok(val) => {
+                let content = McpResourceContent {
+                    uri,
+                    mime_type: "application/json".to_string(),
+                    text: serde_json::to_string_pretty(&val).unwrap_or_default(),
+                };
+                JsonRpcResponse::success(id, serde_json::to_value(McpResourceReadResult { contents: vec![content] }).unwrap())
+            }
+            Err(e) => JsonRpcResponse::error(id, -32603, format!("Failed to read blob namespaces: {}", e), None),
+        }
+    } else if let Some(ns) = uri.strip_prefix("axiom://blobs/") {
+        let mut map = serde_json::Map::new();
+        map.insert("namespace".to_string(), Value::String(ns.to_string()));
+        match exec_list_blobs(auth, &map).await {
+            Ok(val) => {
+                let content = McpResourceContent {
+                    uri,
+                    mime_type: "application/json".to_string(),
+                    text: serde_json::to_string_pretty(&val).unwrap_or_default(),
+                };
+                JsonRpcResponse::success(id, serde_json::to_value(McpResourceReadResult { contents: vec![content] }).unwrap())
+            }
+            Err(e) => JsonRpcResponse::error(id, -32603, format!("Failed to read blob namespace '{}': {}", ns, e), None),
+        }
+    } else if let Some(path) = uri.strip_prefix("axiom://blob/") {
+        if let Some((ns, key)) = path.split_once('/') {
+            let mut map = serde_json::Map::new();
+            map.insert("namespace".to_string(), Value::String(ns.to_string()));
+            map.insert("key".to_string(), Value::String(key.to_string()));
+            match exec_read_blob(auth, &map).await {
+                Ok(val) => {
+                    let content_type = val.get("content_type").and_then(|ct| ct.as_str()).unwrap_or("text/plain").to_string();
+                    let text = val.get("data").and_then(|d| d.as_str()).unwrap_or_default().to_string();
+                    let content = McpResourceContent {
+                        uri,
+                        mime_type: content_type,
+                        text,
+                    };
+                    JsonRpcResponse::success(id, serde_json::to_value(McpResourceReadResult { contents: vec![content] }).unwrap())
+                }
+                Err(e) => JsonRpcResponse::error(id, -32603, format!("Failed to read blob '{}': {}", path, e), None),
+            }
+        } else {
+            JsonRpcResponse::error(id, -32602, format!("Malformed blob URI: '{}'. Expected 'axiom://blob/{{namespace}}/{{key}}'", uri), None)
+        }
     } else {
         JsonRpcResponse::error(id, -32602, format!("Resource URI '{}' not found", uri), None)
     }
@@ -728,7 +1171,7 @@ mod tests {
     }
 
     #[test]
-    fn test_mcp_tools_list_contains_all_8_tools() {
+    fn test_mcp_tools_list_contains_all_15_tools() {
         let ctx = AuthContext {
             api_key_name: "test_key".to_string(),
             is_session: true,
@@ -738,7 +1181,8 @@ mod tests {
         let res = resp.result.unwrap();
         let tools = res["tools"].as_array().unwrap();
 
-        assert_eq!(tools.len(), 8);
+        // 8 relational DB tools + 7 native blob storage tools = 15 tools total
+        assert_eq!(tools.len(), 15);
         let tool_names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
         assert!(tool_names.contains(&"axiom_list_services"));
         assert!(tool_names.contains(&"axiom_list_tables"));
@@ -748,6 +1192,15 @@ mod tests {
         assert!(tool_names.contains(&"axiom_update"));
         assert!(tool_names.contains(&"axiom_delete"));
         assert!(tool_names.contains(&"axiom_raw_sql"));
+
+        // Verify all 7 Native Blob Storage tools are registered in catalog
+        assert!(tool_names.contains(&"axiom_list_blob_namespaces"));
+        assert!(tool_names.contains(&"axiom_list_blobs"));
+        assert!(tool_names.contains(&"axiom_get_blob_metadata"));
+        assert!(tool_names.contains(&"axiom_read_blob"));
+        assert!(tool_names.contains(&"axiom_write_blob"));
+        assert!(tool_names.contains(&"axiom_delete_blob"));
+        assert!(tool_names.contains(&"axiom_create_download_ticket"));
     }
 
     #[tokio::test]
@@ -813,5 +1266,57 @@ mod tests {
         let resources = res["resources"].as_array().unwrap();
         assert!(resources.iter().any(|r| r["uri"] == "axiom://services"));
     }
+
+    #[tokio::test]
+    async fn test_mcp_blob_tools_require_parameters() {
+        let ctx = AuthContext {
+            api_key_name: "test_key".to_string(),
+            is_session: true,
+            ..Default::default()
+        };
+        let empty_args = serde_json::Map::new();
+
+        // exec_list_blobs requires 'namespace'
+        let err = exec_list_blobs(&ctx, &empty_args).await.unwrap_err();
+        assert!(err.contains("Missing required parameter 'namespace'"));
+
+        // exec_get_blob_metadata requires 'namespace' and 'key'
+        let err = exec_get_blob_metadata(&ctx, &empty_args).await.unwrap_err();
+        assert!(err.contains("Missing required parameter 'namespace'"));
+
+        // exec_read_blob requires 'namespace' and 'key'
+        let err = exec_read_blob(&ctx, &empty_args).await.unwrap_err();
+        assert!(err.contains("Missing required parameter 'namespace'"));
+
+        // exec_write_blob requires 'namespace', 'key', and data
+        let err = exec_write_blob(&ctx, &empty_args).await.unwrap_err();
+        assert!(err.contains("Missing required parameter 'namespace'"));
+
+        // exec_delete_blob requires 'namespace' and 'key'
+        let err = exec_delete_blob(&ctx, &empty_args).await.unwrap_err();
+        assert!(err.contains("Missing required parameter 'namespace'"));
+
+        // exec_create_download_ticket requires 'namespace' and 'key'
+        let err = exec_create_download_ticket(&ctx, &empty_args).await.unwrap_err();
+        assert!(err.contains("Missing required parameter 'namespace'"));
+    }
+
+    #[tokio::test]
+    async fn test_mcp_blob_read_max_bytes_guardrail() {
+        let ctx = AuthContext {
+            api_key_name: "test_key".to_string(),
+            is_session: true,
+            ..Default::default()
+        };
+        let mut args = serde_json::Map::new();
+        args.insert("namespace".to_string(), json!("media"));
+        args.insert("key".to_string(), json!("photo.png"));
+        // Exceeding the 20MB limit
+        args.insert("max_bytes".to_string(), json!(25 * 1024 * 1024));
+
+        let err = exec_read_blob(&ctx, &args).await.unwrap_err();
+        assert!(err.contains("Safety guardrail: requested max_bytes exceeds 20MB limit"));
+    }
 }
+
 
