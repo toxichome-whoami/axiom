@@ -6,7 +6,7 @@
  * Last structural change: Workspace modularization (Phase 8 -> v4.0).
  */
 
-use axiom_core::AxiomError;
+use axiom_core::{parse_size, AxiomError, ConfigManager};
 use axum::{extract::Request, middleware::Next, response::Response};
 
 /// Intercepts incoming HTTP requests to block protocol-level attacks before route matching.
@@ -15,31 +15,41 @@ use axum::{extract::Request, middleware::Next, response::Response};
 ///  - Rejects: URI > 2048 chars, null bytes (%00), body > configured limit, SQL keywords in URL, traversal (`..` and `%252e%252e`).
 ///  - Returns `Ok(Response)` if request is clean; returns `Err(AxiomError)` with 400, 413, or 414 otherwise.
 pub async fn waf_middleware(req: Request, next: Next) -> Result<Response, AxiomError> {
-    // [REMOVED FOR BLOB ENGINE] - Body limit check disabled to allow large file streaming
-    // static BODY_LIMIT: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
-    // let body_limit = *BODY_LIMIT.get_or_init(|| {
-    //     let config_inner = ConfigManager::get();
-    //     parse_size(&config_inner.server.body_limit).unwrap_or(10 * 1024 * 1024)
-    // });
-    //
-    // if let Some(cl) = req.headers().get("content-length") {
-    //     if let Ok(cl_str) = cl.to_str() {
-    //         if let Ok(size) = cl_str.parse::<u64>() {
-    //             if size > body_limit {
-    //                 return Err(AxiomError::new(
-    //                     "WAF_BODY_TOO_LARGE",
-    //                     "Request body too large.",
-    //                     axum::http::StatusCode::PAYLOAD_TOO_LARGE,
-    //                 ));
-    //             }
-    //         }
-    //     }
-    // }
-
     let uri = req.uri();
     let raw_uri = uri.path_and_query().map(|pq| pq.as_str()).unwrap_or_else(|| uri.path());
     let path = uri.path();
     let query = uri.query().unwrap_or("");
+
+    // Enforce body limits based on endpoint classification:
+    // Blob uploads respect blob.max_object (streaming friendly), while all other endpoints respect server.body_limit (10MB default)
+    let is_blob_route = path.starts_with("/api/v1/blobs");
+    let body_limit = if is_blob_route {
+        static BLOB_LIMIT: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
+        *BLOB_LIMIT.get_or_init(|| {
+            let config_inner = ConfigManager::get();
+            parse_size(&config_inner.blob.max_object).unwrap_or(5 * 1024 * 1024 * 1024)
+        })
+    } else {
+        static BODY_LIMIT: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
+        *BODY_LIMIT.get_or_init(|| {
+            let config_inner = ConfigManager::get();
+            parse_size(&config_inner.server.body_limit).unwrap_or(10 * 1024 * 1024)
+        })
+    };
+
+    if let Some(cl) = req.headers().get("content-length") {
+        if let Ok(cl_str) = cl.to_str() {
+            if let Ok(size) = cl_str.parse::<u64>() {
+                if size > body_limit {
+                    return Err(AxiomError::new(
+                        "WAF_BODY_TOO_LARGE",
+                        "Request body too large.",
+                        axum::http::StatusCode::PAYLOAD_TOO_LARGE,
+                    ));
+                }
+            }
+        }
+    }
 
     if raw_uri.len() > 2048 || path.len() + query.len() > 2048 {
         return Err(AxiomError::new(
@@ -206,18 +216,18 @@ mod tests {
         assert_eq!(res.status(), StatusCode::BAD_REQUEST);
     }
 
-    // #[tokio::test]
-    // async fn test_waf_body_too_large() {
-    //     let app = build_waf_test_app();
-    //     let res = app
-    //         .oneshot(
-    //             Request::post("/test")
-    //                 .header("content-length", (20 * 1024 * 1024).to_string())
-    //                 .body(Body::empty())
-    //                 .unwrap(),
-    //         )
-    //         .await
-    //         .unwrap();
-    //     assert_eq!(res.status(), StatusCode::PAYLOAD_TOO_LARGE);
-    // }
+    #[tokio::test]
+    async fn test_waf_body_too_large() {
+        let app = build_waf_test_app();
+        let res = app
+            .oneshot(
+                Request::post("/test")
+                    .header("content-length", (20 * 1024 * 1024).to_string())
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::PAYLOAD_TOO_LARGE);
+    }
 }

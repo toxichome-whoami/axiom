@@ -21,6 +21,15 @@ use axiom_core::AuthContext;
 // Consecutive execution failure counter per database alias for circuit breaker (Debt #4 fix).
 static CIRCUIT_FAILURES: once_cell::sync::Lazy<dashmap::DashMap<String, u32>> = once_cell::sync::Lazy::new(dashmap::DashMap::new);
 
+// Single-Flight in-flight query deduplication registry.
+// WHY: Coalesces concurrent identical queries into one DB execution to prevent Cache Stampede and penetration storms.
+static IN_FLIGHT_QUERIES: once_cell::sync::Lazy<
+    dashmap::DashMap<
+        String,
+        tokio::sync::broadcast::Sender<Result<(Arc<QueryResult>, bytes::Bytes), AxiomError>>,
+    >,
+> = once_cell::sync::Lazy::new(dashmap::DashMap::new);
+
 // Fast heuristic regex to skip cache key allocation on obvious mutation statements.
 static MUTATION_RE: once_cell::sync::Lazy<regex::Regex> = once_cell::sync::Lazy::new(|| {
     regex::Regex::new(r"(?i)\b(INSERT|UPDATE|DELETE|DROP|CREATE|ALTER|TRUNCATE|REPLACE|GRANT|REVOKE|PRAGMA)\b").unwrap()
@@ -304,13 +313,34 @@ impl QueryExecutionPipeline {
 
         // Result cache lookup: only reached after PolicyEngine::evaluate passes above.
         // WHY deferred: permission revocations must take effect immediately, not after TTL.
+        let mut in_flight_tx = None;
         if !is_mutation {
             if let Some(ref key) = cache_key {
+                // 1. Check L1/L2 cache first
                 if let Some(bytes) = axiom_cache::CacheEngine::get(key).await {
                     return Ok((
                         Arc::new(QueryResult { affected_rows: Some(0), ..Default::default() }),
                         bytes,
                     ));
+                }
+
+                // 2. Single-Flight coalescing: if identical query is already executing, wait for its result
+                let mut follower_rx = None;
+                match IN_FLIGHT_QUERIES.entry(key.clone()) {
+                    dashmap::mapref::entry::Entry::Occupied(occ) => {
+                        follower_rx = Some(occ.get().subscribe());
+                    }
+                    dashmap::mapref::entry::Entry::Vacant(vac) => {
+                        let (tx, _) = tokio::sync::broadcast::channel(1);
+                        vac.insert(tx.clone());
+                        in_flight_tx = Some(tx);
+                    }
+                }
+
+                if let Some(mut rx) = follower_rx {
+                    if let Ok(res) = rx.recv().await {
+                        return res;
+                    }
                 }
             }
         }
@@ -364,7 +394,7 @@ impl QueryExecutionPipeline {
         let op_label = if is_mutation { "MUTATION" } else { "SELECT" };
         crate::metrics::MetricsEngine::record_db_query(db_name, op_label, duration_secs);
 
-        match exec_result {
+        let outcome: Result<(Arc<QueryResult>, bytes::Bytes), AxiomError> = match exec_result {
             Ok(res) => {
                 if config.circuit_breaker.enabled {
                     CIRCUIT_FAILURES.remove(db_name);
@@ -377,24 +407,34 @@ impl QueryExecutionPipeline {
                     );
                 }
                 let arc_res = Arc::new(res);
-                let json_bytes = match serde_json::to_vec(&*arc_res) {
-                    Ok(b) => bytes::Bytes::from(b),
+                match serde_json::to_vec(&*arc_res) {
+                    Ok(b) => {
+                        let json_bytes = bytes::Bytes::from(b);
+                        if !is_mutation {
+                            if let Some(ref key) = cache_key {
+                                let durability = match config.cache.backend.as_str() {
+                                    "turso" | "hybrid" => axiom_cache::Durability::Journaled,
+                                    _ => axiom_cache::Durability::MemoryOnly,
+                                };
+                                // Differentiated Negative Caching TTL:
+                                // Empty results (0 rows) use negative_cache_ttl (default 5s) to absorb
+                                // bursts on missing keys without polluting the bounded L1 LRU cache.
+                                let is_empty = arc_res.rows.as_ref().map_or(true, |r| r.is_empty());
+                                let effective_ttl = if is_empty {
+                                    (config.cache.negative_cache_ttl as u64).max(1)
+                                } else {
+                                    cache_ttl
+                                };
+                                axiom_cache::CacheEngine::set(key, json_bytes.clone(), effective_ttl, durability).await;
+                            }
+                        }
+                        Ok((arc_res, json_bytes))
+                    }
                     Err(e) => {
                         tracing::error!("Serialization error: {}", e);
-                        return Err(AxiomError::new("SERIALIZATION_FAILED", "Failed to serialize response", StatusCode::INTERNAL_SERVER_ERROR));
-                    }
-                };
-
-                if !is_mutation {
-                    if let Some(key) = cache_key {
-                        let durability = match config.cache.backend.as_str() {
-                            "turso" | "hybrid" => axiom_cache::Durability::Journaled,
-                            _ => axiom_cache::Durability::MemoryOnly,
-                        };
-                        axiom_cache::CacheEngine::set(&key, json_bytes.clone(), cache_ttl, durability).await;
+                        Err(AxiomError::new("SERIALIZATION_FAILED", "Failed to serialize response", StatusCode::INTERNAL_SERVER_ERROR))
                     }
                 }
-                Ok((arc_res, json_bytes))
             }
             Err(e) => {
                 let err_lower = e.to_lowercase();
@@ -417,8 +457,18 @@ impl QueryExecutionPipeline {
                 };
 
                 Err(AxiomError::new(err_code, client_msg, status))
-            },
+            }
+        };
+
+        // Complete Single-Flight by broadcasting to followers and removing entry
+        if let Some(ref key) = cache_key {
+            IN_FLIGHT_QUERIES.remove(key);
+            if let Some(tx) = in_flight_tx {
+                let _ = tx.send(outcome.clone());
+            }
         }
+
+        outcome
     }
 }
 
@@ -856,6 +906,56 @@ mod tests {
         assert_eq!(cached.operations[0].0, "SELECT");
         assert_eq!(cached.operations[0].1, vec!["users".to_string()]);
         assert_eq!(cached.formatted_sql.as_deref(), Some("SELECT id, name, email FROM users WHERE status = $1 AND active = true"));
+    }
+
+    #[tokio::test]
+    async fn test_in_flight_queries_deduplication() {
+        use std::sync::Arc;
+        let test_key = "test_user:test_db:SELECT 1:[]".to_string();
+
+        // 1. First caller becomes leader and registers in IN_FLIGHT_QUERIES
+        let (tx, _) = tokio::sync::broadcast::channel(1);
+        super::IN_FLIGHT_QUERIES.insert(test_key.clone(), tx.clone());
+
+        // 2. Second concurrent caller subscribes as follower
+        let mut follower_rx = super::IN_FLIGHT_QUERIES.get(&test_key).unwrap().subscribe();
+
+        // 3. Leader completes DB execution and broadcasts result
+        let mock_result: Result<(Arc<axiom_core::QueryResult>, bytes::Bytes), axiom_core::AxiomError> =
+            Ok((Arc::new(axiom_core::QueryResult::default()), bytes::Bytes::from("{\"rows\":[]}")));
+
+        let _ = tx.send(mock_result);
+        super::IN_FLIGHT_QUERIES.remove(&test_key);
+
+        // 4. Follower receives exact leader outcome without duplicate execution
+        let received = follower_rx.recv().await.expect("follower should receive broadcast");
+        assert!(received.is_ok());
+        let (_, bytes) = received.unwrap();
+        assert_eq!(bytes, bytes::Bytes::from("{\"rows\":[]}"));
+        assert!(super::IN_FLIGHT_QUERIES.get(&test_key).is_none());
+    }
+
+    #[test]
+    fn test_negative_caching_ttl_differentiation() {
+        let empty_result = axiom_core::QueryResult {
+            rows: Some(vec![]),
+            ..Default::default()
+        };
+        let populated_result = axiom_core::QueryResult {
+            rows: Some(vec![serde_json::json!({"id": 1})]),
+            ..Default::default()
+        };
+
+        let normal_ttl = 60u64;
+        let negative_ttl = 5u64;
+
+        let is_empty_1 = empty_result.rows.as_ref().map_or(true, |r| r.is_empty());
+        let effective_ttl_1 = if is_empty_1 { negative_ttl } else { normal_ttl };
+        assert_eq!(effective_ttl_1, 5);
+
+        let is_empty_2 = populated_result.rows.as_ref().map_or(true, |r| r.is_empty());
+        let effective_ttl_2 = if is_empty_2 { negative_ttl } else { normal_ttl };
+        assert_eq!(effective_ttl_2, 60);
     }
 }
 

@@ -13,6 +13,7 @@ use axum::{
 };
 use serde_json::json;
 
+#[derive(Clone)]
 pub struct AxiomError {
     pub code: String,
     pub message: String,

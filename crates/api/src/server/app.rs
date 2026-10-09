@@ -135,7 +135,10 @@ pub fn create_app() -> Router {
     let api_routes = Router::new()
         .route("/health", get(health_check))
         .nest("/db", crate::database::router::get_router())
-        .nest("/blobs", crate::blobs::get_router())
+        .nest(
+            "/blobs",
+            crate::blobs::get_router().layer(axum::extract::DefaultBodyLimit::disable()),
+        )
         .layer(middleware::from_fn(auth_middleware))
         .layer(middleware::from_fn(rate_limit_middleware));
 
@@ -190,8 +193,6 @@ pub fn create_app() -> Router {
         ))
         .layer(tower_http::request_id::PropagateRequestIdLayer::x_request_id())
         .layer(tower_http::request_id::SetRequestIdLayer::x_request_id(tower_http::request_id::MakeRequestUuid))
-        // [REMOVED FOR BLOB ENGINE] - Disable hard body limits so files > 10MB can be uploaded
-        // .layer(axum::extract::DefaultBodyLimit::max(10 * 1024 * 1024))
-        .layer(axum::extract::DefaultBodyLimit::disable())
+        .layer(axum::extract::DefaultBodyLimit::max(10 * 1024 * 1024))
         .layer(middleware::from_fn(waf_middleware))
 }

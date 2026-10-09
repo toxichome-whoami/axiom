@@ -130,6 +130,7 @@ pub struct CacheConfig {
     pub idempotency_ttl: i32,
     pub response_cache_ttl: i32,
     pub query_results_ttl: i32,
+    pub negative_cache_ttl: i32,
 }
 
 impl Default for CacheConfig {
@@ -145,6 +146,7 @@ impl Default for CacheConfig {
             idempotency_ttl: 86400,
             response_cache_ttl: 30,
             query_results_ttl: 5,
+            negative_cache_ttl: 5,
         }
     }
 }
@@ -356,6 +358,7 @@ mod tests {
         let config = CacheConfig::default();
         assert!(config.enabled);
         assert_eq!(config.default_ttl, 60);
+        assert_eq!(config.negative_cache_ttl, 5);
     }
 
     #[test]
