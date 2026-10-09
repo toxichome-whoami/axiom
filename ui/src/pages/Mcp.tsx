@@ -9,10 +9,11 @@
 import React, { useState } from 'react';
 import { SlideOver } from '../components/ui/SlideOver';
 import { Button } from '../components/ui/Button';
-import { Copy, Check, Plug, Wrench } from 'lucide-react';
+import { Copy, Check, Plug, Wrench, Database, HardDrive } from 'lucide-react';
 
 interface McpToolItem {
   name: string;
+  category: 'database' | 'blob';
   type: 'READ' | 'WRITE';
   description: string;
   permissionRequired: string;
@@ -25,12 +26,14 @@ interface McpToolItem {
 
 interface McpResourceItem {
   uri: string;
+  category: 'database' | 'blob';
   description: string;
   mimeType: string;
 }
 
 export function Mcp() {
   const [activeNav, setActiveNav] = useState<'tools' | 'connect'>('tools');
+  const [activeCategory, setActiveCategory] = useState<'database' | 'blob'>('database');
   const [selectedTool, setSelectedTool] = useState<McpToolItem | null>(null);
   const [inspectOpen, setInspectOpen] = useState(false);
   const [clientTab, setClientTab] = useState<'claude' | 'cursor' | 'curl'>('claude');
@@ -39,8 +42,10 @@ export function Mcp() {
   const [copiedPath, setCopiedPath] = useState<string | null>(null);
 
   const tools: McpToolItem[] = [
+    // ─── Relational Database Tools (8) ────────────────────────────────────────
     {
       name: 'axiom_list_services',
+      category: 'database',
       type: 'READ',
       description: 'Lists all configured database services that the caller is authorized to access',
       permissionRequired: 'pools_view',
@@ -52,6 +57,7 @@ export function Mcp() {
     },
     {
       name: 'axiom_list_tables',
+      category: 'database',
       type: 'READ',
       description: 'Lists tables in the target database, with pagination support. Filtered by RBAC policies',
       permissionRequired: 'db_select',
@@ -67,6 +73,7 @@ export function Mcp() {
     },
     {
       name: 'axiom_describe_table',
+      category: 'database',
       type: 'READ',
       description: 'Returns schema metadata for a table including columns, types, nullability, primary keys, and foreign keys',
       permissionRequired: 'db_schema_describe',
@@ -81,6 +88,7 @@ export function Mcp() {
     },
     {
       name: 'axiom_query',
+      category: 'database',
       type: 'READ',
       description: 'Executes a structured, dialect-agnostic SELECT query with JSON filters and sorting',
       permissionRequired: 'db_select',
@@ -100,6 +108,7 @@ export function Mcp() {
     },
     {
       name: 'axiom_insert',
+      category: 'database',
       type: 'WRITE',
       description: 'Inserts one or more rows into a table using parameterized queries',
       permissionRequired: 'db_insert',
@@ -116,6 +125,7 @@ export function Mcp() {
     },
     {
       name: 'axiom_update',
+      category: 'database',
       type: 'WRITE',
       description: 'Updates rows matching a required filter criteria. Guardrail: rejects unconstrained full-table updates',
       permissionRequired: 'db_update',
@@ -132,6 +142,7 @@ export function Mcp() {
     },
     {
       name: 'axiom_delete',
+      category: 'database',
       type: 'WRITE',
       description: 'Deletes rows matching a required filter criteria. Guardrail: rejects unconstrained full-table wipes',
       permissionRequired: 'db_delete',
@@ -147,6 +158,7 @@ export function Mcp() {
     },
     {
       name: 'axiom_raw_sql',
+      category: 'database',
       type: 'WRITE',
       description: 'Executes raw SQL query against a database. Subject to AST firewall validation and role permission enforcement',
       permissionRequired: 'db_execute_raw',
@@ -160,18 +172,152 @@ export function Mcp() {
         required: ['database', 'sql'],
       },
     },
+
+    // ─── Native Blob Storage Tools (7) ─────────────────────────────────────────
+    {
+      name: 'axiom_list_blob_namespaces',
+      category: 'blob',
+      type: 'READ',
+      description: 'Discovers all blob storage namespaces authorized for the caller under active RBAC policies',
+      permissionRequired: 'blob_read',
+      parameters: {
+        type: 'object',
+        properties: {},
+        required: [],
+      },
+    },
+    {
+      name: 'axiom_list_blobs',
+      category: 'blob',
+      type: 'READ',
+      description: 'Lists stored objects and virtual directories in a blob namespace matching an optional prefix and cursor',
+      permissionRequired: 'blob_read',
+      parameters: {
+        type: 'object',
+        properties: {
+          namespace: { type: 'string', description: 'Target blob namespace' },
+          prefix: { type: 'string', description: 'Optional virtual path prefix (e.g. "reports/" or "images/")' },
+          cursor: { type: 'string', description: 'Optional pagination cursor' },
+          limit: { type: 'integer', description: 'Max objects to return (default: 50, max: 500)' },
+        },
+        required: ['namespace'],
+      },
+    },
+    {
+      name: 'axiom_get_blob_metadata',
+      category: 'blob',
+      type: 'READ',
+      description: 'Retrieves object metadata (size, MIME type, BLAKE3 hash, storage tier) without fetching payload bytes',
+      permissionRequired: 'blob_read',
+      parameters: {
+        type: 'object',
+        properties: {
+          namespace: { type: 'string', description: 'Target blob namespace' },
+          key: { type: 'string', description: 'Object key / virtual file path' },
+        },
+        required: ['namespace', 'key'],
+      },
+    },
+    {
+      name: 'axiom_read_blob',
+      category: 'blob',
+      type: 'READ',
+      description: 'Reads object contents into context with safety size capping (max 20MB) and Base64 fallback for binary files',
+      permissionRequired: 'blob_read',
+      parameters: {
+        type: 'object',
+        properties: {
+          namespace: { type: 'string', description: 'Target blob namespace' },
+          key: { type: 'string', description: 'Object key / virtual file path' },
+          encoding: { type: 'string', enum: ['utf8', 'base64'], description: 'Content encoding (default: utf8)' },
+          max_bytes: { type: 'integer', description: 'Maximum bytes to ingest into context (default: 5242880, max: 20971520)' },
+        },
+        required: ['namespace', 'key'],
+      },
+    },
+    {
+      name: 'axiom_write_blob',
+      category: 'blob',
+      type: 'WRITE',
+      description: 'Stores or overwrites a blob object using UTF-8 text or Base64 payload, with optional TTL expiration',
+      permissionRequired: 'blob_write',
+      parameters: {
+        type: 'object',
+        properties: {
+          namespace: { type: 'string', description: 'Target blob namespace' },
+          key: { type: 'string', description: 'Object key / path (e.g. "reports/summary.md")' },
+          content: { type: 'string', description: 'File payload as UTF-8 text or Base64 string' },
+          encoding: { type: 'string', enum: ['utf8', 'base64'], description: 'Payload encoding (default: utf8)' },
+          content_type: { type: 'string', description: 'MIME type (e.g. "text/markdown" or "image/png")' },
+          ttl_seconds: { type: 'integer', description: 'Optional time-to-live in seconds for automatic deletion' },
+        },
+        required: ['namespace', 'key', 'content'],
+      },
+    },
+    {
+      name: 'axiom_delete_blob',
+      category: 'blob',
+      type: 'WRITE',
+      description: 'Permanently deletes an object key from the specified namespace. Enforced under RBAC DELETE policy',
+      permissionRequired: 'blob_delete',
+      parameters: {
+        type: 'object',
+        properties: {
+          namespace: { type: 'string', description: 'Target blob namespace' },
+          key: { type: 'string', description: 'Object key to delete' },
+        },
+        required: ['namespace', 'key'],
+      },
+    },
+    {
+      name: 'axiom_create_download_ticket',
+      category: 'blob',
+      type: 'READ',
+      description: 'Generates a time-bounded cryptographic pre-signed capability download ticket URL for human users or direct retrieval',
+      permissionRequired: 'blob_read',
+      parameters: {
+        type: 'object',
+        properties: {
+          namespace: { type: 'string', description: 'Target blob namespace' },
+          key: { type: 'string', description: 'Target object key' },
+          operation: { type: 'string', enum: ['READ', 'WRITE'], description: 'Authorized capability operation (default: READ)' },
+          ttl_seconds: { type: 'integer', description: 'Ticket validity in seconds (default: 3600, max: 86400)' },
+        },
+        required: ['namespace', 'key'],
+      },
+    },
   ];
 
   const resources: McpResourceItem[] = [
     {
       uri: 'axiom://services',
+      category: 'database',
       description: 'Catalog of active database services and operational health',
       mimeType: 'application/json',
     },
     {
       uri: 'axiom://schema/{database}',
+      category: 'database',
       description: 'Table definitions and schema metadata for target database',
       mimeType: 'application/json',
+    },
+    {
+      uri: 'axiom://blobs',
+      category: 'blob',
+      description: 'Catalog of active blob storage namespaces and storage telemetry',
+      mimeType: 'application/json',
+    },
+    {
+      uri: 'axiom://blobs/{namespace}',
+      category: 'blob',
+      description: 'Listing of stored objects and virtual directories in target namespace',
+      mimeType: 'application/json',
+    },
+    {
+      uri: 'axiom://blob/{namespace}/{key}',
+      category: 'blob',
+      description: 'Direct object content retrieval with MIME type and binary fallback',
+      mimeType: 'application/octet-stream',
     },
   ];
 
@@ -276,53 +422,107 @@ export function Mcp() {
 
         {/* Right Main Content */}
         <div className="flex-1 w-full min-w-0">
-          {/* TAB 1: TOOLS (The view shown in the screenshot) */}
+          {/* TAB 1: TOOLS */}
           {activeNav === 'tools' && (
             <div className="space-y-5">
               {/* Available Tools Card */}
               <div className="rounded-[10px] border border-[#1e2025] bg-[#0c0d10] p-5 space-y-4">
-                <div className="space-y-0.5">
-                  <h2 className="text-[15px] font-medium text-white tracking-tight">Available Tools</h2>
-                  <p className="text-[12px] text-[#8c8c8c]">
-                    These tools are available to AI agents connected via MCP
-                  </p>
-                </div>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="space-y-0.5">
+                    <h2 className="text-[15px] font-medium text-white tracking-tight">Available Tools</h2>
+                    <p className="text-[12px] text-[#8c8c8c]">
+                      {activeCategory === 'database'
+                        ? 'Relational SQL query and database schema inspection tools'
+                        : 'Object storage ingestion, chunked streaming, and capability ticket tools'}
+                    </p>
+                  </div>
 
-                <div className="space-y-2">
-                  {tools.map((tool) => (
-                    <div
-                      key={tool.name}
-                      onClick={() => {
-                        setSelectedTool(tool);
-                        setInspectOpen(true);
-                      }}
-                      className="group rounded-[8px] border border-[#1e2025] bg-[#08090c] hover:bg-[#0c0d12] hover:border-[#2a2c35] p-3 flex items-start gap-3 transition-all cursor-pointer"
+                  {/* Clean Two-Way Segmented Switcher */}
+                  <div className="inline-flex items-center p-0.5 rounded-[6px] bg-[#08090c] border border-[#1e2025]">
+                    <button
+                      type="button"
+                      onClick={() => setActiveCategory('database')}
+                      className={`px-3 py-1 text-[12px] rounded-[5px] transition-colors cursor-pointer flex items-center gap-1.5 ${
+                        activeCategory === 'database'
+                          ? 'bg-[#181920] text-white shadow-xs font-medium'
+                          : 'text-[#8c8c8c] hover:text-white font-normal'
+                      }`}
                     >
+                      <Database className="w-3.5 h-3.5 text-[#60a5fa]" />
+                      <span>Database</span>
                       <span
-                        className={`inline-flex items-center justify-center px-2 py-0.5 rounded-[4px] text-[11px] font-medium shrink-0 mt-0.5 ${
-                          tool.type === 'READ'
-                            ? 'bg-[#072714] text-[#34d399] border border-[#059669]/30'
-                            : 'bg-[#2b1704] text-[#fb923c] border border-[#ea580c]/30'
+                        className={`text-[10px] font-mono px-1.5 py-0.2 rounded-full ${
+                          activeCategory === 'database'
+                            ? 'bg-[#1d4ed8]/20 text-[#60a5fa]'
+                            : 'bg-[#14151a] text-[#71717a]'
                         }`}
                       >
-                        {tool.type === 'READ' ? 'Read' : 'Write'}
+                        {tools.filter((t) => t.category === 'database').length}
                       </span>
+                    </button>
 
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-[13px] font-medium text-white group-hover:text-[#60a5fa] transition-colors">
-                            {tool.name}
-                          </span>
-                          <span className="text-[11px] font-normal text-[#71717a] group-hover:text-[#8c8c8c] transition-colors">
-                            grant: {tool.permissionRequired}
-                          </span>
+                    <button
+                      type="button"
+                      onClick={() => setActiveCategory('blob')}
+                      className={`px-3 py-1 text-[12px] rounded-[5px] transition-colors cursor-pointer flex items-center gap-1.5 ${
+                        activeCategory === 'blob'
+                          ? 'bg-[#181920] text-white shadow-xs font-medium'
+                          : 'text-[#8c8c8c] hover:text-white font-normal'
+                      }`}
+                    >
+                      <HardDrive className="w-3.5 h-3.5 text-[#eab308]" />
+                      <span>Blob Storage</span>
+                      <span
+                        className={`text-[10px] font-mono px-1.5 py-0.2 rounded-full ${
+                          activeCategory === 'blob'
+                            ? 'bg-[#d97706]/20 text-[#fbbf24]'
+                            : 'bg-[#14151a] text-[#71717a]'
+                        }`}
+                      >
+                        {tools.filter((t) => t.category === 'blob').length}
+                      </span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Tools List */}
+                <div className="space-y-2">
+                  {tools
+                    .filter((tool) => tool.category === activeCategory)
+                    .map((tool) => (
+                      <div
+                        key={tool.name}
+                        onClick={() => {
+                          setSelectedTool(tool);
+                          setInspectOpen(true);
+                        }}
+                        className="group rounded-[8px] border border-[#1e2025] bg-[#08090c] hover:bg-[#0c0d12] hover:border-[#2a2c35] p-3 flex items-start gap-3 transition-all cursor-pointer"
+                      >
+                        <span
+                          className={`inline-flex items-center justify-center px-2 py-0.5 rounded-[4px] text-[11px] font-medium shrink-0 mt-0.5 ${
+                            tool.type === 'READ'
+                              ? 'bg-[#072714] text-[#34d399] border border-[#059669]/30'
+                              : 'bg-[#2b1704] text-[#fb923c] border border-[#ea580c]/30'
+                          }`}
+                        >
+                          {tool.type === 'READ' ? 'Read' : 'Write'}
+                        </span>
+
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-[13px] font-mono font-medium text-white group-hover:text-[#60a5fa] transition-colors">
+                              {tool.name}
+                            </span>
+                            <span className="text-[11px] font-mono text-[#71717a] group-hover:text-[#8c8c8c] transition-colors">
+                              grant: {tool.permissionRequired}
+                            </span>
+                          </div>
+                          <p className="text-[12px] font-normal text-[#8c8c8c] mt-0.5 leading-relaxed">
+                            {tool.description}
+                          </p>
                         </div>
-                        <p className="text-[12px] font-normal text-[#8c8c8c] mt-0.5 leading-relaxed">
-                          {tool.description}
-                        </p>
                       </div>
-                    </div>
-                  ))}
+                    ))}
                 </div>
               </div>
 
@@ -331,30 +531,34 @@ export function Mcp() {
                 <div className="space-y-0.5">
                   <h2 className="text-[15px] font-medium text-white tracking-tight">Resources</h2>
                   <p className="text-[12px] text-[#8c8c8c]">
-                    MCP resources provide contextual data to AI agents
+                    {activeCategory === 'database'
+                      ? 'Contextual schema and service metadata URIs for AI agents'
+                      : 'Contextual namespace and object payload URIs for AI agents'}
                   </p>
                 </div>
 
                 <div className="space-y-2">
-                  {resources.map((res) => (
-                    <div
-                      key={res.uri}
-                      className="rounded-[8px] border border-[#1e2025] bg-[#08090c] hover:border-[#2a2c35] p-3 flex items-start gap-3 transition-all"
-                    >
-                      <span className="inline-flex items-center justify-center px-2 py-0.5 rounded-[4px] bg-[#0c1f3d] text-[#60a5fa] border border-[#2563eb]/30 text-[11px] font-medium shrink-0 mt-0.5">
-                        Resource
-                      </span>
-
-                      <div className="flex-1 min-w-0">
-                        <span className="text-[12px] font-mono text-white">
-                          {res.uri}
+                  {resources
+                    .filter((res) => res.category === activeCategory)
+                    .map((res) => (
+                      <div
+                        key={res.uri}
+                        className="rounded-[8px] border border-[#1e2025] bg-[#08090c] hover:border-[#2a2c35] p-3 flex items-start gap-3 transition-all"
+                      >
+                        <span className="inline-flex items-center justify-center px-2 py-0.5 rounded-[4px] bg-[#0c1f3d] text-[#60a5fa] border border-[#2563eb]/30 text-[11px] font-medium shrink-0 mt-0.5">
+                          Resource
                         </span>
-                        <p className="text-[12px] font-normal text-[#8c8c8c] mt-0.5 leading-relaxed">
-                          {res.description}
-                        </p>
+
+                        <div className="flex-1 min-w-0">
+                          <span className="text-[12px] font-mono text-white">
+                            {res.uri}
+                          </span>
+                          <p className="text-[12px] font-normal text-[#8c8c8c] mt-0.5 leading-relaxed">
+                            {res.description}
+                          </p>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    ))}
                 </div>
               </div>
             </div>
@@ -482,7 +686,7 @@ export function Mcp() {
         onClose={() => setInspectOpen(false)}
         width="w-[500px] max-w-full"
         title={
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <span
               className={`px-2 py-0.5 rounded-[4px] text-[11px] font-medium ${
                 selectedTool?.type === 'READ'
@@ -491,6 +695,25 @@ export function Mcp() {
               }`}
             >
               {selectedTool?.type === 'READ' ? 'Read' : 'Write'}
+            </span>
+            <span
+              className={`text-[10px] px-1.5 py-0.5 rounded border font-normal flex items-center gap-1 ${
+                selectedTool?.category === 'blob'
+                  ? 'bg-[#181507] text-[#eab308] border-[#854d0e]/30'
+                  : 'bg-[#0c1524] text-[#60a5fa] border-[#1d4ed8]/30'
+              }`}
+            >
+              {selectedTool?.category === 'blob' ? (
+                <>
+                  <HardDrive className="w-2.5 h-2.5" />
+                  <span>Blob Storage</span>
+                </>
+              ) : (
+                <>
+                  <Database className="w-2.5 h-2.5" />
+                  <span>Database</span>
+                </>
+              )}
             </span>
             <span className="text-white text-[15px] font-medium">{selectedTool?.name}</span>
           </div>
