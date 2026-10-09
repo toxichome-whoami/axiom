@@ -65,19 +65,22 @@ export interface ApiKey {
   retiringSecret?: RetiringSecret | null;
 }
 
-export type PermissionOperation = 'SELECT' | 'INSERT' | 'UPDATE' | 'DELETE';
+export type DbOperation = 'SELECT' | 'INSERT' | 'UPDATE' | 'DELETE';
+export type BlobOperation = 'READ' | 'WRITE' | 'DELETE';
+export type PermissionOperation = DbOperation | BlobOperation | '*';
 
 export interface PermissionRule {
   database: string;
   table: string;
-  operations: PermissionOperation[];
+  operations: (PermissionOperation | string)[];
+  resourceType?: 'database' | 'blob';
 }
 
 export interface RbacRole {
   name: string;
   description: string;
   createdAt: string;
-  permissions: { database: string; table: string; operations: ('SELECT' | 'INSERT' | 'UPDATE' | 'DELETE')[] }[];
+  permissions: { database: string; table: string; operations: string[] }[];
 }
 
 export interface McpTool {

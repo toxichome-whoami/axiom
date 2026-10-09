@@ -60,7 +60,7 @@ export interface PermissionRecordApi {
   role_name?: string;
   database: string;
   table_name: string;
-  operations: ('SELECT' | 'INSERT' | 'UPDATE' | 'DELETE')[];
+  operations: string[];
 }
 
 export interface RoleRecordApi {

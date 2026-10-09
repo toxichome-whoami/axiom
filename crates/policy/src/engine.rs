@@ -139,6 +139,41 @@ impl PolicyEngine {
             .collect()
     }
 
+    /// Filters a list of blob namespaces to only those accessible to the current identity for READ.
+    /// CONTRACT:
+    ///  - Returns vector of namespace strings authorized for the caller.
+    ///  - Idempotent: Yes.
+    pub fn filter_blob_namespaces(auth: &AuthContext, namespaces: &[String]) -> Vec<String> {
+        if auth.is_session {
+            return namespaces.to_vec();
+        }
+
+        namespaces
+            .iter()
+            .filter(|ns| {
+                if !auth.permissions.is_empty() {
+                    let ns_prefix = format!("blob:{}", ns);
+                    auth.permissions.iter().any(|p| {
+                        (p.database == "*"
+                            || p.database.eq_ignore_ascii_case("blob:*")
+                            || p.database.eq_ignore_ascii_case(ns)
+                            || p.database.eq_ignore_ascii_case(&ns_prefix))
+                            && p.operations.iter().any(|op| {
+                                op == "*"
+                                    || op.eq_ignore_ascii_case("READ")
+                                    || op.eq_ignore_ascii_case("SELECT")
+                                    || op.eq_ignore_ascii_case("BLOB_READ")
+                            })
+                    })
+                } else {
+                    let in_scope = auth.db_scope.iter().any(|s| s == "*" || s.eq_ignore_ascii_case(ns));
+                    in_scope && auth.mode != ServerMode::Writeonly
+                }
+            })
+            .cloned()
+            .collect()
+    }
+
     /// Evaluates authorization for native blob storage operations.
     /// CONTRACT:
     ///  - Precondition: `operation` is "READ", "WRITE", or "DELETE" (case-insensitive).
@@ -162,10 +197,16 @@ impl PolicyEngine {
             let ns_prefix = format!("blob:{}", namespace);
 
             for perm in &auth.permissions {
+                // Namespace matching: allows "*", "blob:*", explicit namespace, or "blob:<namespace>"
                 let db_match = perm.database == "*"
+                    || perm.database.eq_ignore_ascii_case("blob:*")
                     || perm.database.eq_ignore_ascii_case(namespace)
                     || perm.database.eq_ignore_ascii_case(&ns_prefix);
-                let key_match = perm.table_name == "*" || perm.table_name.eq_ignore_ascii_case(key);
+
+                // Key pattern matching: allows "*" wildcard, exact match, or prefix matching when pattern ends with "*"
+                let key_match = perm.table_name == "*"
+                    || perm.table_name.eq_ignore_ascii_case(key)
+                    || (perm.table_name.ends_with('*') && key.starts_with(&perm.table_name[..perm.table_name.len() - 1]));
 
                 if db_match && key_match {
                     let op_allowed = perm.operations.iter().any(|op| {
@@ -375,6 +416,40 @@ mod tests {
         // Denied on another namespace "documents"
         let doc_err = PolicyEngine::evaluate_blob(&user_ctx, "documents", "contract.pdf", "READ").unwrap_err();
         assert_eq!(doc_err.code, "AUTH_FORBIDDEN");
+    }
+
+    #[test]
+    fn test_blob_wildcard_and_prefix_policy() {
+        let wildcard_ctx = AuthContext {
+            api_key_name: "global_blob_key".to_string(),
+            mode: ServerMode::Readwrite,
+            db_scope: vec![],
+            rate_limit_override: 0,
+            is_session: false,
+            role: Some("global_blob".to_string()),
+            permissions: vec![PermissionSnapshot {
+                database: "blob:*".to_string(),
+                table_name: "uploads/*".to_string(),
+                operations: vec!["READ".to_string()],
+            }],
+        };
+
+        // Matching prefix on any namespace
+        assert!(PolicyEngine::evaluate_blob(&wildcard_ctx, "photos", "uploads/profile.jpg", "READ").is_ok());
+        assert!(PolicyEngine::evaluate_blob(&wildcard_ctx, "docs", "uploads/invoice.pdf", "READ").is_ok());
+
+        // Non-matching key prefix
+        let non_prefix_err = PolicyEngine::evaluate_blob(&wildcard_ctx, "photos", "system/config.json", "READ").unwrap_err();
+        assert_eq!(non_prefix_err.code, "AUTH_FORBIDDEN");
+
+        // Write disallowed
+        let write_err = PolicyEngine::evaluate_blob(&wildcard_ctx, "photos", "uploads/profile.jpg", "WRITE").unwrap_err();
+        assert_eq!(write_err.code, "AUTH_FORBIDDEN");
+
+        // Namespace filtering
+        let all_ns = vec!["photos".to_string(), "docs".to_string(), "private".to_string()];
+        let filtered = PolicyEngine::filter_blob_namespaces(&wildcard_ctx, &all_ns);
+        assert_eq!(filtered.len(), 3);
     }
 }
 

@@ -111,7 +111,7 @@ export function ContextMenu({
       {item ? (
         <>
           {/* Header indicator */}
-          <div className="px-2.5 py-1 text-[11px] font-medium text-[#777777] truncate border-b border-[#1f1f1f] mb-1">
+          <div className="-mx-1 px-3 py-1.5 text-[11px] font-medium text-[#777777] truncate border-b border-[#222222] mb-1">
             {item.name}
           </div>
 
@@ -185,7 +185,7 @@ export function ContextMenu({
             </button>
           )}
 
-          <div className="h-px bg-[#222222] my-1" />
+          <div className="h-px bg-[#222222] my-1 -mx-1" />
 
           {onViewDetails && (
             <button
@@ -201,7 +201,7 @@ export function ContextMenu({
             </button>
           )}
 
-          <div className="h-px bg-[#222222] my-1" />
+          <div className="h-px bg-[#222222] my-1 -mx-1" />
 
           {onDelete && (
             <button
@@ -261,7 +261,7 @@ export function ContextMenu({
             </button>
           )}
 
-          <div className="h-px bg-[#222222] my-1" />
+          <div className="h-px bg-[#222222] my-1 -mx-1" />
 
           {onRefresh && (
             <button

@@ -15,8 +15,22 @@ import { Button } from '../components/ui/Button';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { CustomSelect } from '../components/shared/CustomSelect';
 import { DatePicker } from '../components/shared/DatePicker';
-import { Key, Plus, RefreshCw, Copy, Check, Clock, X, Search, Eye, EyeOff, AlertTriangle } from 'lucide-react';
-import { api, ApiKeyRecordApi } from '../api/client';
+import {
+  Key,
+  Plus,
+  RefreshCw,
+  Copy,
+  Check,
+  Clock,
+  X,
+  Search,
+  Eye,
+  EyeOff,
+  AlertTriangle,
+  Database,
+  Package,
+} from 'lucide-react';
+import { api, ApiKeyRecordApi, RoleRecordApi } from '../api/client';
 
 export interface FilterRule {
   id: string;
@@ -60,6 +74,7 @@ function formatRemainingTime(expiresTimestamp: number): string {
 
 export function Keys() {
   const [keys, setKeys] = useState<ApiKey[]>([]);
+  const [rolesMap, setRolesMap] = useState<Record<string, RoleRecordApi>>({});
   const [roleOptions, setRoleOptions] = useState<{ value: string; label: string }[]>([
     UNASSIGNED_ROLE_OPTION,
   ]);
@@ -86,6 +101,12 @@ export function Keys() {
 
       if (roleRes.status === 'fulfilled') {
         const customRoles = roleRes.value.roles || [];
+        const rMap: Record<string, RoleRecordApi> = {};
+        customRoles.forEach((r) => {
+          rMap[r.name] = r;
+        });
+        setRolesMap(rMap);
+
         if (customRoles.length > 0) {
           setRoleOptions([
             UNASSIGNED_ROLE_OPTION,
@@ -446,13 +467,42 @@ export function Keys() {
       header: 'Assigned Role',
       accessorKey: 'role',
       isResizable: true,
-      width: 160,
+      width: 200,
+      minWidth: 140,
       className: 'px-3',
-      cell: (row) => (
-        <span className="text-[13px] text-[#cccccc] font-normal truncate whitespace-nowrap block" title={row.role}>
-          {row.role}
-        </span>
-      ),
+      cell: (row) => {
+        const assignedRole = row.role ? rolesMap[row.role] : null;
+        const hasDb = assignedRole
+          ? assignedRole.permissions.some((p) => !p.database.toLowerCase().startsWith('blob:'))
+          : false;
+        const hasBlob = assignedRole
+          ? assignedRole.permissions.some(
+              (p) =>
+                p.database.toLowerCase().startsWith('blob:') ||
+                p.operations.some((op) => ['READ', 'WRITE', 'DELETE'].includes(op.toUpperCase()))
+            )
+          : false;
+
+        return (
+          <div className="flex items-center gap-1.5 flex-wrap min-w-0" title={row.role || 'Unassigned'}>
+            <span className="text-[13px] text-white font-medium truncate max-w-[100px]">
+              {row.role || <span className="text-[#737373] italic">None</span>}
+            </span>
+            {hasDb && (
+              <span className="inline-flex items-center gap-0.5 text-[10px] font-mono px-1.5 py-0.5 rounded bg-[#1e293b]/60 text-[#38bdf8] border border-[#0284c7]/30 shrink-0">
+                <Database className="w-2.5 h-2.5 shrink-0" />
+                <span>SQL</span>
+              </span>
+            )}
+            {hasBlob && (
+              <span className="inline-flex items-center gap-0.5 text-[10px] font-mono px-1.5 py-0.5 rounded bg-[#18181b] text-[#cccccc] border border-[#27272a] shrink-0">
+                <Package className="w-2.5 h-2.5 text-[#8c8c8c] shrink-0" />
+                <span>Blob</span>
+              </span>
+            )}
+          </div>
+        );
+      },
     },
     {
       id: 'rateLimit',
@@ -953,6 +1003,54 @@ export function Keys() {
                   onChange={(val) => setNewRole(val)}
                   menuWidth="w-full"
                 />
+                {newRole && rolesMap[newRole] && (
+                  <div className="mt-2.5 p-3 rounded-[6px] bg-[#0c0c0c] border border-[#222222] space-y-2 text-[12px] font-sans">
+                    <div className="flex items-center justify-between text-[#a3a3a3]">
+                      <span className="font-medium text-[#d4d4d4]">Granted Permissions Preview</span>
+                      <span className="text-[11px] font-mono text-[#737373]">
+                        {rolesMap[newRole].permissions.length} rule{rolesMap[newRole].permissions.length === 1 ? '' : 's'}
+                      </span>
+                    </div>
+                    <div className="space-y-1.5 max-h-[140px] overflow-y-auto pr-1">
+                      {rolesMap[newRole].permissions.map((p, i) => {
+                        const isBlob =
+                          p.database.toLowerCase().startsWith('blob:') ||
+                          p.operations.some((op) => ['READ', 'WRITE', 'DELETE'].includes(op.toUpperCase()));
+                        return (
+                          <div
+                            key={i}
+                            className="flex items-center justify-between gap-2 p-1.5 rounded bg-[#141414] border border-[#1f1f1f] text-[11px]"
+                          >
+                            <div className="flex items-center gap-1.5 truncate">
+                              {isBlob ? (
+                                <Package className="w-3.5 h-3.5 text-[#8c8c8c] shrink-0" />
+                              ) : (
+                                <Database className="w-3.5 h-3.5 text-[#38bdf8] shrink-0" />
+                              )}
+                              <span className="font-mono text-[#e5e5e5] truncate">
+                                {p.database} / {p.table_name}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-1 shrink-0">
+                              {p.operations.map((op) => (
+                                <span
+                                  key={op}
+                                  className={`px-1.5 py-0.5 rounded text-[10px] font-mono ${
+                                    isBlob
+                                      ? 'bg-[#27272a] text-[#cccccc] border border-[#3f3f46]'
+                                      : 'bg-[#2563eb]/15 text-[#38bdf8] border border-[#2563eb]/30'
+                                  }`}
+                                >
+                                  {op}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
                 {roleOptions.length <= 1 && (
                   <p className="text-[12px] text-[#8c8c8c] mt-1.5">
                     No custom RBAC roles have been created yet. You can create roles in the Roles tab, or leave this unassigned.
@@ -1111,6 +1209,54 @@ export function Keys() {
                 onChange={(val) => setEditRole(val)}
                 menuWidth="w-full"
               />
+              {editRole && rolesMap[editRole] && (
+                <div className="mt-2.5 p-3 rounded-[6px] bg-[#0c0c0c] border border-[#222222] space-y-2 text-[12px] font-sans">
+                  <div className="flex items-center justify-between text-[#a3a3a3]">
+                    <span className="font-medium text-[#d4d4d4]">Granted Permissions Preview</span>
+                    <span className="text-[11px] font-mono text-[#737373]">
+                      {rolesMap[editRole].permissions.length} rule{rolesMap[editRole].permissions.length === 1 ? '' : 's'}
+                    </span>
+                  </div>
+                  <div className="space-y-1.5 max-h-[140px] overflow-y-auto pr-1">
+                    {rolesMap[editRole].permissions.map((p, i) => {
+                      const isBlob =
+                        p.database.toLowerCase().startsWith('blob:') ||
+                        p.operations.some((op) => ['READ', 'WRITE', 'DELETE'].includes(op.toUpperCase()));
+                      return (
+                        <div
+                          key={i}
+                          className="flex items-center justify-between gap-2 p-1.5 rounded bg-[#141414] border border-[#1f1f1f] text-[11px]"
+                        >
+                          <div className="flex items-center gap-1.5 truncate">
+                            {isBlob ? (
+                              <Package className="w-3.5 h-3.5 text-[#8c8c8c] shrink-0" />
+                            ) : (
+                              <Database className="w-3.5 h-3.5 text-[#38bdf8] shrink-0" />
+                            )}
+                            <span className="font-mono text-[#e5e5e5] truncate">
+                              {p.database} / {p.table_name}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0">
+                            {p.operations.map((op) => (
+                              <span
+                                key={op}
+                                className={`px-1.5 py-0.5 rounded text-[10px] font-mono ${
+                                  isBlob
+                                    ? 'bg-[#27272a] text-[#cccccc] border border-[#3f3f46]'
+                                    : 'bg-[#2563eb]/15 text-[#38bdf8] border border-[#2563eb]/30'
+                                }`}
+                              >
+                                {op}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* 4. Rate Limit */}

@@ -120,6 +120,29 @@ fn setup_test_metadata() {
         },
     );
 
+    // ── blob wildcard role + key (blob:*, media/*, READ + WRITE) ────
+    roles.insert(
+        "blob_wildcard_role".to_string(),
+        RoleSnapshot {
+            name: "blob_wildcard_role".to_string(),
+            permissions: vec![PermissionSnapshot {
+                database: "blob:*".to_string(),
+                table_name: "media/*".to_string(),
+                operations: vec!["READ".to_string(), "WRITE".to_string()],
+            }],
+        },
+    );
+    keys.insert(
+        "blob_wildcard_key".to_string(),
+        ApiKeySnapshot {
+            name: "blob_wildcard_key".to_string(),
+            secret_hash: blake3::hash(b"secret_blob_wildcard").into(),
+            role_name: Some("blob_wildcard_role".to_string()),
+            rate_limit_override: 0,
+            expires_at: None,
+        },
+    );
+
     update_snapshot(MetadataSnapshot {
         keys,
         roles,
@@ -848,6 +871,47 @@ async fn blob_storage_rbac_policy_enforcement() {
         .unwrap();
     let ro_del_res = create_app().oneshot(ro_del).await.unwrap();
     assert_eq!(ro_del_res.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn blob_storage_role_wildcard_and_prefix_enforcement() {
+    setup_test_metadata();
+    ensure_blob_engine().await;
+
+    let wildcard_token = BASE64_STANDARD.encode("blob_wildcard_key:secret_blob_wildcard");
+
+    // 1. Can upload object with matching "media/*" prefix to ANY namespace (due to blob:*)
+    let put_req = Request::put("/api/v1/blobs/photos/media/profile.png")
+        .header("X-Axiom-Key", &wildcard_token)
+        .header("Content-Type", "image/png")
+        .body(Body::from(b"PNG_DATA".to_vec()))
+        .unwrap();
+    let put_res = create_app().oneshot(put_req).await.unwrap();
+    assert_eq!(put_res.status(), StatusCode::CREATED);
+
+    // 2. Can read object back
+    let get_req = Request::get("/api/v1/blobs/photos/media/profile.png")
+        .header("X-Axiom-Key", &wildcard_token)
+        .body(Body::empty())
+        .unwrap();
+    let get_res = create_app().oneshot(get_req).await.unwrap();
+    assert_eq!(get_res.status(), StatusCode::OK);
+
+    // 3. Denied when attempting to upload outside the "media/*" prefix
+    let denied_put = Request::put("/api/v1/blobs/photos/private/keys.txt")
+        .header("X-Axiom-Key", &wildcard_token)
+        .body(Body::from(b"PRIVATE".to_vec()))
+        .unwrap();
+    let denied_put_res = create_app().oneshot(denied_put).await.unwrap();
+    assert_eq!(denied_put_res.status(), StatusCode::FORBIDDEN);
+
+    // 4. Denied when attempting DELETE (role only has READ and WRITE)
+    let denied_del = Request::delete("/api/v1/blobs/photos/media/profile.png")
+        .header("X-Axiom-Key", &wildcard_token)
+        .body(Body::empty())
+        .unwrap();
+    let denied_del_res = create_app().oneshot(denied_del).await.unwrap();
+    assert_eq!(denied_del_res.status(), StatusCode::FORBIDDEN);
 }
 
 #[tokio::test]

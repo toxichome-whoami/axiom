@@ -13,7 +13,18 @@ import { SlideOver } from '../components/ui/SlideOver';
 import { Button } from '../components/ui/Button';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { CustomSelect } from '../components/shared/CustomSelect';
-import { Shield, Plus, Search, Check, AlertCircle, AlertTriangle, RefreshCw } from 'lucide-react';
+import {
+  Shield,
+  Plus,
+  Search,
+  Check,
+  AlertCircle,
+  AlertTriangle,
+  RefreshCw,
+  Database,
+  Package,
+  Sparkles,
+} from 'lucide-react';
 import { api, RoleRecordApi, PermissionRecordApi } from '../api/client';
 
 export interface FilterRule {
@@ -24,7 +35,72 @@ export interface FilterRule {
 }
 
 const READONLY_RULES: DbPermissionRule[] = [
-  { database: '', table: '', operations: ['SELECT'] },
+  { database: '', table: '', operations: ['SELECT'], resourceType: 'database' },
+];
+
+const ROLE_PRESETS: {
+  label: string;
+  name: string;
+  description: string;
+  rules: DbPermissionRule[];
+}[] = [
+  {
+    label: 'DB Read-Only',
+    name: 'db_readonly',
+    description: 'Read-only SELECT access across all relational databases',
+    rules: [{ database: '*', table: '*', operations: ['SELECT'], resourceType: 'database' }],
+  },
+  {
+    label: 'DB Read-Write',
+    name: 'db_readwrite',
+    description: 'Full CRUD mutations across all relational databases',
+    rules: [
+      {
+        database: '*',
+        table: '*',
+        operations: ['SELECT', 'INSERT', 'UPDATE', 'DELETE'],
+        resourceType: 'database',
+      },
+    ],
+  },
+  {
+    label: 'Blob Read-Only',
+    name: 'blob_viewer',
+    description: 'Download, range stream, and view objects across all blob namespaces',
+    rules: [{ database: 'blob:*', table: '*', operations: ['READ'], resourceType: 'blob' }],
+  },
+  {
+    label: 'Blob Full Access',
+    name: 'blob_manager',
+    description: 'Upload, multipart, range stream, and delete blob storage objects',
+    rules: [
+      {
+        database: 'blob:*',
+        table: '*',
+        operations: ['READ', 'WRITE', 'DELETE'],
+        resourceType: 'blob',
+      },
+    ],
+  },
+  {
+    label: 'Universal Admin',
+    name: 'universal_admin',
+    description: 'Full administrative access to both SQL databases and native blob storage',
+    rules: [
+      {
+        database: '*',
+        table: '*',
+        operations: ['SELECT', 'INSERT', 'UPDATE', 'DELETE'],
+        resourceType: 'database',
+      },
+      {
+        database: 'blob:*',
+        table: '*',
+        operations: ['READ', 'WRITE', 'DELETE'],
+        resourceType: 'blob',
+      },
+    ],
+  },
 ];
 
 export function Roles() {
@@ -326,16 +402,34 @@ export function Roles() {
     {
       id: 'rules',
       header: 'Rules',
-      width: 110,
-      minWidth: 80,
-      maxWidth: 180,
+      width: 180,
+      minWidth: 120,
+      maxWidth: 260,
       isResizable: true,
       className: 'px-3',
-      cell: (row) => (
-        <span className="text-[13px] text-[#cccccc] font-normal tabular-nums">
-          {row.permissions.length} {row.permissions.length === 1 ? 'rule' : 'rules'}
-        </span>
-      ),
+      cell: (row) => {
+        const dbCount = row.permissions.filter((p) => !p.database.toLowerCase().startsWith('blob:')).length;
+        const blobCount = row.permissions.filter((p) => p.database.toLowerCase().startsWith('blob:')).length;
+        return (
+          <div className="flex items-center gap-1.5 flex-wrap font-sans">
+            {dbCount > 0 && (
+              <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-[#1e293b]/60 text-[#38bdf8] border border-[#0284c7]/30">
+                <Database className="w-3 h-3 shrink-0" />
+                <span>{dbCount} SQL</span>
+              </span>
+            )}
+            {blobCount > 0 && (
+              <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-[#18181b] text-[#cccccc] border border-[#27272a]">
+                <Package className="w-3.5 h-3.5 text-[#8c8c8c] shrink-0" />
+                <span>{blobCount} Blob</span>
+              </span>
+            )}
+            {dbCount === 0 && blobCount === 0 && (
+              <span className="text-[12px] text-[#737373]">0 rules</span>
+            )}
+          </div>
+        );
+      },
     },
     {
       id: 'createdAt',
@@ -755,13 +849,13 @@ export function Roles() {
             <div className="space-y-3">
               <div>
                 <div className="flex items-center justify-between">
-                  <h4 className="text-[16px] font-medium text-white tracking-tight">Database Access Rules</h4>
+                  <h4 className="text-[16px] font-medium text-white tracking-tight">Access Scope & Rules</h4>
                   <span className="text-[13px] text-[#8c8c8c] bg-[#141414] border border-[#262626] px-2 py-0.5 rounded-full font-sans">
                     {editPerms.length} {editPerms.length === 1 ? 'rule' : 'rules'}
                   </span>
                 </div>
                 <p className="text-[13px] text-[#8c8c8c] mt-0.5">
-                  Granular CRUD permissions for databases and tables. Use <code className="text-[#3b82f6] font-mono">*</code> for wildcards.
+                  Granular CRUD permissions for SQL databases and native blob storage. Use <code className="text-[#3b82f6] font-mono">*</code> for wildcards or prefix matching.
                 </p>
               </div>
 
@@ -859,6 +953,30 @@ export function Roles() {
             </p>
           </div>
 
+          {/* Quick Role Templates */}
+          <div className="space-y-2">
+            <label className="flex items-center gap-1.5 text-[12px] font-medium text-[#a3a3a3]">
+              <Sparkles className="w-3.5 h-3.5 text-[#8c8c8c]" />
+              <span>Quick Role Presets</span>
+            </label>
+            <div className="flex flex-wrap gap-1.5">
+              {ROLE_PRESETS.map((preset) => (
+                <button
+                  key={preset.name}
+                  type="button"
+                  onClick={() => {
+                    if (!newRoleName.trim()) setNewRoleName(preset.name);
+                    if (!newRoleDesc.trim()) setNewRoleDesc(preset.description);
+                    setNewPerms(preset.rules.map((r) => ({ ...r, operations: [...r.operations] })));
+                  }}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-[6px] text-[12px] font-medium bg-[#141414] hover:bg-[#1a1a1a] border border-[#262626] hover:border-[#383838] text-[#cccccc] hover:text-white transition-colors cursor-pointer touch-manipulation font-sans"
+                >
+                  <span>{preset.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
           <div className="space-y-4">
             <div>
               <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">Role Name</label>
@@ -866,7 +984,7 @@ export function Roles() {
                 type="text"
                 value={newRoleName}
                 onChange={(e) => setNewRoleName(e.target.value)}
-                placeholder="e.g. analytics_reader"
+                placeholder="e.g. analytics_reader or blob_uploader"
                 className="h-9 w-full rounded-[8px] border border-[#262626] bg-[#121212] px-3 text-[14px] text-white placeholder-[#666666] focus:outline-none focus:border-[#2f80ed] hover:border-[#383838] transition-colors font-sans"
               />
               <p className="text-[12px] text-[#8c8c8c] mt-1 font-sans">
@@ -880,7 +998,7 @@ export function Roles() {
                 rows={2}
                 value={newRoleDesc}
                 onChange={(e) => setNewRoleDesc(e.target.value)}
-                placeholder="What services or teams use this role..."
+                placeholder="What services, buckets, or teams use this role..."
                 className="w-full rounded-[8px] border border-[#262626] bg-[#121212] p-3 text-[14px] text-white placeholder-[#666666] focus:outline-none focus:border-[#2f80ed] hover:border-[#383838] transition-colors resize-none font-sans"
               />
             </div>
@@ -892,13 +1010,13 @@ export function Roles() {
           <div className="space-y-3">
             <div>
               <div className="flex items-center justify-between">
-                <h4 className="text-[16px] font-medium text-white tracking-tight">Database Access Rules</h4>
+                <h4 className="text-[16px] font-medium text-white tracking-tight">Access Scope & Rules</h4>
                 <span className="text-[13px] text-[#8c8c8c] bg-[#141414] border border-[#262626] px-2 py-0.5 rounded-full font-sans">
                   {newPerms.length} {newPerms.length === 1 ? 'rule' : 'rules'}
                 </span>
               </div>
               <p className="text-[13px] text-[#8c8c8c] mt-0.5">
-                Configure database, table, and CRUD permissions. Use <code className="text-[#3b82f6] font-mono">*</code> for wildcards.
+                Configure database CRUD and native blob storage permissions. Use <code className="text-[#3b82f6] font-mono">*</code> for wildcards or prefix matching.
               </p>
             </div>
             <PermissionTable value={newPerms} onChange={setNewPerms} />
