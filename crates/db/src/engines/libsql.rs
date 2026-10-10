@@ -12,7 +12,7 @@ use libsql::{Builder, Connection, Database};
 
 use axiom_core::config::schema::DatabaseDefConfig;
 use crate::engines::base::{
-    ColumnInfo, DatabaseEngine, EngineError, ForeignKeyInfo, QueryResult, TableInfo,
+    ColumnInfo, CreateColumnRequest, DatabaseEngine, EngineError, ForeignKeyInfo, QueryResult, TableInfo,
 };
 
 pub struct LibsqlDatabaseEngine {
@@ -312,6 +312,74 @@ impl DatabaseEngine for LibsqlDatabaseEngine {
 
     fn dialect(&self) -> &str {
         "sqlite"
+    }
+
+    async fn add_column(&self, table: &str, req: &CreateColumnRequest) -> Result<(), EngineError> {
+        let conn = self.conn.as_ref().ok_or_else(|| EngineError::Connection("Not connected".into()))?;
+
+        let col_name_clean: String = req.name.chars().filter(|c| c.is_alphanumeric() || *c == '_').collect();
+        if col_name_clean.is_empty() {
+            return Err(EngineError::Schema("Invalid column name".into()));
+        }
+
+        let escaped_table = format!("\"{}\"", table.replace('"', "\"\""));
+        let escaped_col = format!("\"{}\"", col_name_clean.replace('"', "\"\""));
+
+        let type_def = &req.data_type;
+        let mut sql = format!("ALTER TABLE {} ADD COLUMN {} {}", escaped_table, escaped_col, type_def);
+
+        if req.primary_key {
+            sql.push_str(" PRIMARY KEY");
+        } else {
+            if req.unique {
+                sql.push_str(" UNIQUE");
+            }
+            if !req.nullable {
+                sql.push_str(" NOT NULL");
+            }
+        }
+
+        if let Some(ref def_val) = req.default_value {
+            let trimmed = def_val.trim();
+            if !trimmed.is_empty() && trimmed.to_uppercase() != "NULL" {
+                sql.push_str(&format!(" DEFAULT {}", trimmed));
+            }
+        }
+
+        if let Some(ref chk) = req.check_expression {
+            let trimmed = chk.trim();
+            if !trimmed.is_empty() {
+                sql.push_str(&format!(" CHECK ({})", trimmed));
+            }
+        }
+
+        if let Some(ref fk) = req.foreign_key {
+            let fk_table = fk.table.trim();
+            let fk_col = fk.column.trim();
+            if !fk_table.is_empty() && !fk_col.is_empty() {
+                let escaped_fk_table = format!("\"{}\"", fk_table.replace('"', "\"\""));
+                let escaped_fk_col = format!("\"{}\"", fk_col.replace('"', "\"\""));
+                sql.push_str(&format!(" REFERENCES {} ({})", escaped_fk_table, escaped_fk_col));
+
+                if let Some(ref u) = fk.on_update {
+                    if u.to_uppercase() != "NO ACTION" {
+                        sql.push_str(&format!(" ON UPDATE {}", u));
+                    }
+                }
+                if let Some(ref d) = fk.on_delete {
+                    if d.to_uppercase() != "NO ACTION" {
+                        sql.push_str(&format!(" ON DELETE {}", d));
+                    }
+                }
+            }
+        }
+
+        let stmt = conn.prepare(&sql).await.map_err(|e| EngineError::Execution(e.to_string()))?;
+        stmt.execute(libsql::params_from_iter(Vec::<libsql::Value>::new()))
+            .await
+            .map_err(|e| EngineError::Execution(e.to_string()))?;
+
+        Ok(())
     }
 }
 

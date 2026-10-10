@@ -64,42 +64,43 @@ where
             }
         } else if let Some(obj) = criteria.as_object() {
             for (op, val) in obj {
-                match op.as_str() {
-                    "$eq" => {
+                let norm_op = op.strip_prefix('$').unwrap_or(op.as_str());
+                match norm_op {
+                    "eq" => {
                         parts.push(format!("{} = ?", sanitize_ident(col)));
                         values.push(val.clone());
                     }
-                    "$ne" => {
+                    "ne" | "neq" => {
                         parts.push(format!("{} != ?", sanitize_ident(col)));
                         values.push(val.clone());
                     }
-                    "$gt" => {
+                    "gt" => {
                         parts.push(format!("{} > ?", sanitize_ident(col)));
                         values.push(val.clone());
                     }
-                    "$gte" => {
+                    "gte" => {
                         parts.push(format!("{} >= ?", sanitize_ident(col)));
                         values.push(val.clone());
                     }
-                    "$lt" => {
+                    "lt" => {
                         parts.push(format!("{} < ?", sanitize_ident(col)));
                         values.push(val.clone());
                     }
-                    "$lte" => {
+                    "lte" => {
                         parts.push(format!("{} <= ?", sanitize_ident(col)));
                         values.push(val.clone());
                     }
-                    "$like" => {
+                    "like" => {
                         parts.push(format!("{} LIKE ?", sanitize_ident(col)));
                         values.push(val.clone());
                     }
-                    "$ilike" => {
+                    "ilike" => {
                         parts.push(format!("LOWER({}) LIKE LOWER(?)", sanitize_ident(col)));
                         values.push(val.clone());
                     }
-                    "$in" | "$nin" => {
+                    "in" | "nin" => {
                         if let Some(arr) = val.as_array() {
-                            let sql_op = if op == "$in" { "IN" } else { "NOT IN" };
+                            let sql_op = if norm_op == "in" { "IN" } else { "NOT IN" };
                             let placeholders = vec!["?"; arr.len()].join(", ");
                             parts.push(format!(
                                 "{} {} ({})",
@@ -112,21 +113,21 @@ where
                             }
                         }
                     }
-                    "$null" => {
+                    "null" | "is_null" => {
                         if val.as_bool().unwrap_or(true) {
                             parts.push(format!("{} IS NULL", sanitize_ident(col)));
                         } else {
                             parts.push(format!("{} IS NOT NULL", sanitize_ident(col)));
                         }
                     }
-                    "$not_null" => {
+                    "not_null" | "is_not_null" => {
                         if val.as_bool().unwrap_or(true) {
                             parts.push(format!("{} IS NOT NULL", sanitize_ident(col)));
                         } else {
                             parts.push(format!("{} IS NULL", sanitize_ident(col)));
                         }
                     }
-                    "$between" => {
+                    "between" => {
                         if let Some(arr) = val.as_array() {
                             if arr.len() == 2 {
                                 parts.push(format!("{} BETWEEN ? AND ?", sanitize_ident(col)));

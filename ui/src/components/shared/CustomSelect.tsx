@@ -130,14 +130,10 @@ export const CustomSelect = <T extends string>({
             setIsOpen((prev) => !prev);
           }
         }}
-        className={`w-full ${heightClass} px-3 rounded-[8px] bg-[#141414] border flex items-center justify-between cursor-pointer transition-all outline-none font-sans select-none disabled:opacity-50 disabled:cursor-not-allowed ${
+        className={`w-full ${heightClass} px-3 rounded-[6px] bg-[#121212] border flex items-center justify-between cursor-pointer transition-all outline-none font-sans select-none disabled:opacity-50 disabled:cursor-not-allowed ${
           isOpen
-            ? variant === 'neutral'
-              ? 'border-[#383838] ring-1 ring-white/10 bg-[#161616] text-white'
-              : 'border-[#3b82f6] ring-1 ring-[#3b82f6]/20 bg-[#161616] text-white'
-            : variant === 'neutral'
-              ? 'border-[#262626] hover:border-[#383838] focus:border-[#383838] text-white'
-              : 'border-[#262626] hover:border-[#383838] focus:border-[#3b82f6] text-white'
+            ? 'border-[#383838] bg-[#141414] text-white ring-1 ring-white/10'
+            : 'border-[#262626] hover:border-[#333333] focus:border-[#383838] text-white'
         }`}
       >
         <div className="flex items-center gap-2 truncate">
@@ -177,12 +173,12 @@ export const CustomSelect = <T extends string>({
                     setIsOpen(false);
                   }}
                   onMouseEnter={() => setHighlightedIndex(idx)}
-                  className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-[6px] text-[13px] transition-colors cursor-pointer text-left font-sans ${
+                  className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-[5px] text-[13px] transition-colors cursor-pointer text-left font-sans ${
                     isSelected
-                      ? 'bg-[#1a1a1a] text-white font-medium border border-[#333333]'
+                      ? 'bg-[#181818] text-white font-medium'
                       : isHighlighted
-                      ? 'bg-[#161616] text-white border border-transparent'
-                      : 'text-[#cccccc] hover:bg-[#161616] hover:text-white border border-transparent'
+                      ? 'bg-[#141414] text-white'
+                      : 'text-[#cccccc] hover:bg-[#141414] hover:text-white'
                   }`}
                 >
                   <div className="flex items-center gap-2 truncate">
@@ -191,9 +187,7 @@ export const CustomSelect = <T extends string>({
                   </div>
                   {isSelected && (
                     <Check
-                      className={`w-3.5 h-3.5 shrink-0 ml-2 ${
-                        variant === 'neutral' ? 'text-white' : 'text-[#3b82f6]'
-                      }`}
+                      className="w-3.5 h-3.5 shrink-0 ml-2 text-white"
                     />
                   )}
                 </button>

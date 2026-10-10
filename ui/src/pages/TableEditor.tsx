@@ -42,6 +42,8 @@ import {
   Edit3,
   Maximize2,
   Calendar,
+  HelpCircle,
+  ExternalLink,
 } from 'lucide-react';
 import {
   api,
@@ -55,6 +57,7 @@ import {
 } from '../types';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { SlideOver } from '../components/ui/SlideOver';
+import { Switch } from '../components/ui/Switch';
 import { CustomSelect } from '../components/shared/CustomSelect';
 import { DayPicker } from '@daypicker/react';
 import '@daypicker/react/dist/style.css';
@@ -589,12 +592,12 @@ function InlineBooleanPopover({
   const popoverRef = useRef<HTMLDivElement>(null);
   const isNullable = editingCell.column?.nullable ?? true;
 
-  const options: Array<{ label: string; value: boolean | null; color: string; desc: string }> = [
-    { label: 'TRUE', value: true, color: 'text-[#10b981]', desc: 'Boolean true' },
-    { label: 'FALSE', value: false, color: 'text-[#ef4444]', desc: 'Boolean false' },
+  const options: Array<{ label: string; value: boolean | null; desc?: string }> = [
+    { label: 'true', value: true },
+    { label: 'false', value: false },
   ];
   if (isNullable) {
-    options.push({ label: 'NULL', value: null, color: 'text-[#8c8c8c]', desc: 'Empty / unset value' });
+    options.push({ label: 'null', value: null });
   }
 
   // Derive initial selected index from initialValue or currentValue
@@ -638,9 +641,9 @@ function InlineBooleanPopover({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [focusedIndex, options, onSave, onCancel]);
 
-  const top = Math.max(8, Math.min(window.innerHeight - 200, editingCell.rect.top));
-  const left = Math.max(8, Math.min(window.innerWidth - 220, editingCell.rect.left));
-  const width = Math.max(editingCell.rect.width, 180);
+  const top = Math.max(8, Math.min(window.innerHeight - 180, editingCell.rect.top));
+  const left = Math.max(8, Math.min(window.innerWidth - 180, editingCell.rect.left));
+  const width = Math.max(editingCell.rect.width, 140);
 
   return (
     <div
@@ -650,21 +653,19 @@ function InlineBooleanPopover({
         left: `${left}px`,
         minWidth: `${width}px`,
       }}
-      className="fixed z-50 rounded-[8px] border border-[#2a2a2a] bg-[#121212] shadow-[0_18px_40px_rgba(0,0,0,0.95)] flex flex-col font-sans p-1 animate-in fade-in zoom-in-95 duration-100 select-none"
+      className="fixed z-50 rounded-[6px] border border-[#262626] bg-[#0c0c0c] shadow-[0_12px_32px_rgba(0,0,0,0.95)] flex flex-col font-sans p-1 animate-in fade-in zoom-in-95 duration-100 select-none"
     >
-      <div className="px-2 py-1.5 border-b border-[#202020] mb-1 flex items-center justify-between text-[11px] text-[#8c8c8c]">
-        <span className="font-mono uppercase tracking-wider text-[10px] text-[#777777]">
-          {editingCell.colName} (bool)
-        </span>
-        <span className="font-mono text-[10px] text-[#555555]">↵ Select</span>
-      </div>
-
-      <div className="flex flex-col gap-0.5">
+      <div className="flex flex-col">
         {options.map((opt, idx) => {
           const isSelected =
             opt.value === null
               ? editingCell.initialValue === null || editingCell.initialValue === undefined
-              : editingCell.initialValue === opt.value;
+                ? editingCell.currentValue === '' || editingCell.currentValue === 'null'
+                : false
+              : typeof editingCell.initialValue === 'boolean'
+              ? editingCell.initialValue === opt.value
+              : editingCell.currentValue.toLowerCase() === String(opt.value);
+
           const isFocused = idx === focusedIndex;
 
           return (
@@ -673,33 +674,21 @@ function InlineBooleanPopover({
               type="button"
               onMouseEnter={() => setFocusedIndex(idx)}
               onClick={() => onSave(opt.value)}
-              className={`flex items-center justify-between px-2.5 py-1.5 rounded-[5px] text-[13px] text-left transition-colors cursor-pointer ${
-                isFocused ? 'bg-[#1f1f1f] text-white' : 'text-[#cccccc] hover:bg-[#1a1a1a]'
+              className={`flex items-center justify-between px-2.5 py-1.5 rounded-[4px] text-[13px] text-left transition-colors cursor-pointer ${
+                isFocused ? 'bg-[#181818] text-white' : 'text-[#a1a1a1] hover:text-white'
               }`}
             >
-              <div className="flex items-center gap-2">
-                <span className={`w-2 h-2 rounded-full ${
-                  opt.value === true
-                    ? 'bg-[#10b981]'
-                    : opt.value === false
-                    ? 'bg-[#ef4444]'
-                    : 'bg-[#666666]'
-                }`} />
-                <span className={`font-mono font-medium text-[12.5px] ${opt.color}`}>
-                  {opt.label}
-                </span>
-              </div>
+              <span className={`font-sans text-[13px] ${
+                opt.value === null ? 'italic text-[#666666]' : ''
+              }`}>
+                {opt.label}
+              </span>
               {isSelected && (
-                <Check className="w-3.5 h-3.5 text-[#3b82f6] shrink-0" />
+                <Check className="w-3.5 h-3.5 text-white shrink-0 ml-3" />
               )}
             </button>
           );
         })}
-      </div>
-
-      <div className="mt-1 pt-1 border-t border-[#1e1e1e] px-2 py-1 flex items-center justify-between text-[10.5px] text-[#666666]">
-        <span>↑↓ Navigate</span>
-        <span>Esc Cancel</span>
       </div>
     </div>
   );
@@ -725,17 +714,34 @@ function InlineDateTimePickerPopover({
   onCancel,
 }: InlineDateTimePickerPopoverProps) {
   const popoverRef = useRef<HTMLDivElement>(null);
+  const calendarModalRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
   const normType = editingCell.column?.type?.toLowerCase() || '';
   const isDateOnly = normType === 'date';
 
-  const strVal = editingCell.currentValue === null || editingCell.currentValue === undefined ? '' : String(editingCell.currentValue);
+  const [inputVal, setInputVal] = useState<string>(() => {
+    return editingCell.currentValue === null || editingCell.currentValue === undefined
+      ? ''
+      : String(editingCell.currentValue);
+  });
 
-  // Parse date, time, and timezone portions from string value
-  const parseVal = useCallback(() => {
-    if (!strVal.trim()) {
+  const [isCalendarOpen, setIsCalendarOpen] = useState(false);
+
+  // Focus and select input on mount
+  useEffect(() => {
+    if (inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, []);
+
+  // Parse date, time, and timezone portions from the current input string
+  const parseVal = useCallback((val: string) => {
+    if (!val.trim()) {
       return { date: undefined, hours: '12', minutes: '00', seconds: '00', tz: '' };
     }
-    const parts = strVal.trim().split(/[T ]/);
+    const parts = val.trim().split(/[T ]/);
     const dateStr = parts[0] || '';
     const timeFull = parts[1] || '';
 
@@ -766,25 +772,25 @@ function InlineDateTimePickerPopover({
     }
 
     return { date: d, hours, minutes, seconds, tz };
-  }, [strVal]);
+  }, []);
 
-  const parsed = parseVal();
-  const [selectedDate, setSelectedDate] = useState<Date | undefined>(parsed.date);
-  const [month, setMonth] = useState<Date>(() => parsed.date || new Date());
-  const [timeState, setTimeState] = useState({
-    hours: parsed.hours,
-    minutes: parsed.minutes,
-    seconds: parsed.seconds,
-    tz: parsed.tz,
+  const [selectedDate, setSelectedDate] = useState<Date | undefined>(() => parseVal(inputVal).date);
+  const [month, setMonth] = useState<Date>(() => parseVal(inputVal).date || new Date());
+  const [timeState, setTimeState] = useState(() => {
+    const p = parseVal(inputVal);
+    return {
+      hours: p.hours,
+      minutes: p.minutes,
+      seconds: p.seconds,
+      tz: p.tz,
+    };
   });
-
-  const [currentDraft, setCurrentDraft] = useState<string | null>(strVal || null);
 
   const formatOutput = useCallback((
     dateObj: Date | undefined,
     timeObj: { hours: string; minutes: string; seconds: string; tz: string }
-  ): string | null => {
-    if (!dateObj) return null;
+  ): string => {
+    if (!dateObj) return '';
     const y = dateObj.getFullYear();
     const m = String(dateObj.getMonth() + 1).padStart(2, '0');
     const d = String(dateObj.getDate()).padStart(2, '0');
@@ -803,7 +809,7 @@ function InlineDateTimePickerPopover({
   const handleSelectDate = (date: Date | undefined) => {
     setSelectedDate(date);
     const formatted = formatOutput(date, timeState);
-    setCurrentDraft(formatted);
+    setInputVal(formatted);
   };
 
   const handleSetNow = () => {
@@ -816,12 +822,12 @@ function InlineDateTimePickerPopover({
       tz: timeState.tz,
     };
     setTimeState(newTime);
-    setCurrentDraft(formatOutput(now, newTime));
+    setInputVal(formatOutput(now, newTime));
   };
 
   const handleSetNull = () => {
     setSelectedDate(undefined);
-    setCurrentDraft(null);
+    setInputVal('');
   };
 
   const localTz = useMemo(() => {
@@ -838,319 +844,407 @@ function InlineDateTimePickerPopover({
 
   const activeTz = timeState.tz || localTz;
 
+  // Handle clicking outside: save and close
   useEffect(() => {
     const handleMouseDown = (e: MouseEvent) => {
-      if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
-        onSave(currentDraft);
+      const target = e.target as Node;
+      const inPopover = popoverRef.current && popoverRef.current.contains(target);
+      const inCalendar = calendarModalRef.current && calendarModalRef.current.contains(target);
+      if (!inPopover && !inCalendar) {
+        onSave(inputVal);
       }
     };
     document.addEventListener('mousedown', handleMouseDown);
     return () => document.removeEventListener('mousedown', handleMouseDown);
-  }, [currentDraft, onSave]);
+  }, [inputVal, onSave]);
 
+  // Handle outside scroll: save unless inside the calendar
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        onCancel();
-      } else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-        e.preventDefault();
-        onSave(currentDraft);
+    const handleScroll = (e: Event) => {
+      const target = e.target as Node;
+      if (
+        (popoverRef.current && popoverRef.current.contains(target)) ||
+        (calendarModalRef.current && calendarModalRef.current.contains(target))
+      ) {
+        return;
       }
+      onSave(inputVal);
     };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [currentDraft, onSave, onCancel]);
+    window.addEventListener('scroll', handleScroll, true);
+    return () => window.removeEventListener('scroll', handleScroll, true);
+  }, [inputVal, onSave]);
 
-  // Position popover intelligently near cell
-  const popoverHeight = isDateOnly ? 360 : 450;
-  const popoverWidth = 340;
-  const top = Math.max(8, Math.min(window.innerHeight - popoverHeight - 16, editingCell.rect.top));
-  const left = Math.max(8, Math.min(window.innerWidth - popoverWidth - 16, editingCell.rect.left));
+  // Handle keyboard events on the one-line popover
+  const handleInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      onSave(inputVal);
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      if (isCalendarOpen) {
+        setIsCalendarOpen(false);
+      } else {
+        onCancel();
+      }
+    }
+  };
+
+  // Synchronize calendar state when user toggles the calendar open
+  const toggleCalendar = () => {
+    if (!isCalendarOpen) {
+      const parsed = parseVal(inputVal);
+      if (parsed.date) {
+        setSelectedDate(parsed.date);
+        setMonth(parsed.date);
+      }
+      setTimeState({
+        hours: parsed.hours,
+        minutes: parsed.minutes,
+        seconds: parsed.seconds,
+        tz: parsed.tz,
+      });
+    }
+    setIsCalendarOpen((prev) => !prev);
+  };
+
+  // Dimensions & positioning for the one-line inline container
+  const minWidth = Math.max(editingCell.rect.width, 240);
+  const left = Math.max(8, Math.min(window.innerWidth - minWidth - 16, editingCell.rect.left));
+  const top = Math.max(8, Math.min(window.innerHeight - 44, editingCell.rect.top));
+
+  // Calendar dropdown positioning: place right below the one-line container
+  const calWidth = 340;
+  const calHeight = isDateOnly ? 360 : 455;
+  const calLeft = Math.max(8, Math.min(window.innerWidth - calWidth - 16, left));
+  const showAbove = top + 42 + calHeight > window.innerHeight && top - calHeight > 8;
+  const calTop = showAbove ? top - calHeight - 6 : top + editingCell.rect.height + 4;
 
   return (
-    <div
-      ref={popoverRef}
-      style={{
-        top: `${top}px`,
-        left: `${left}px`,
-        width: `${popoverWidth}px`,
-      }}
-      className="fixed z-50 rounded-[8px] border border-[#262626] bg-[#0c0c0c] shadow-[0_16px_40px_rgba(0,0,0,0.95)] p-3.5 font-sans animate-in fade-in zoom-in-95 duration-100 select-none"
-    >
-      {/* Header Bar */}
-      <div className="pb-2.5">
-        <div className="flex items-center justify-between">
-          <span className="text-[13px] font-semibold text-white flex items-center gap-1.5">
-            <Calendar className="w-3.5 h-3.5 text-[#8c8c8c]" />
-            <span>{isDateOnly ? 'Select Date' : 'Select Date & Time'}</span>
-          </span>
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              onClick={handleSetNow}
-              className="px-2 py-0.5 rounded-[4px] text-[11.5px] font-medium bg-[#161616] hover:bg-[#222222] text-[#cccccc] hover:text-white border border-[#262626] hover:border-[#383838] transition-colors cursor-pointer"
-            >
-              Now
-            </button>
-            <button
-              type="button"
-              onClick={handleSetNull}
-              className="px-2 py-0.5 rounded-[4px] text-[11.5px] font-medium bg-[#161616] hover:bg-[#222222] text-[#8c8c8c] hover:text-white border border-[#262626] hover:border-[#383838] transition-colors cursor-pointer"
-            >
-              NULL
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Edge-to-edge separator above calendar */}
-      <div className="-mx-3.5 border-t border-[#222222] mb-2" />
-
-      {/* Calendar Grid */}
-      <div className="axiom-datepicker-wrapper w-full py-1">
-        <DayPicker
-          mode="single"
-          selected={selectedDate}
-          month={month}
-          onMonthChange={setMonth}
-          onSelect={handleSelectDate}
-          className="m-0 text-white font-sans text-[12px] w-full"
+    <>
+      {/* ─── Compact One-Line Edit Container matching cell ─── */}
+      <div
+        ref={popoverRef}
+        style={{
+          top: `${top}px`,
+          left: `${left}px`,
+          width: `${minWidth}px`,
+          height: `${Math.max(editingCell.rect.height, 36)}px`,
+        }}
+        className="fixed z-50 flex items-center rounded-[6px] border border-[#2a2a2a] bg-[#121212] shadow-[0_12px_32px_rgba(0,0,0,0.85)] font-sans overflow-hidden animate-in fade-in zoom-in-95 duration-100"
+      >
+        <input
+          ref={inputRef}
+          type="text"
+          value={inputVal}
+          onChange={(e) => setInputVal(e.target.value)}
+          onKeyDown={handleInputKeyDown}
+          spellCheck={false}
+          className="h-full flex-1 min-w-0 bg-transparent px-3 text-[13px] font-mono text-white outline-none placeholder-[#555555]"
+          placeholder={isDateOnly ? 'YYYY-MM-DD' : 'YYYY-MM-DD HH:MM:SS'}
         />
+
+        {/* Right side Calendar picker button */}
+        <button
+          type="button"
+          tabIndex={-1}
+          onClick={toggleCalendar}
+          title={isCalendarOpen ? 'Close calendar' : 'Open date & time picker'}
+          className={`h-full px-2.5 flex items-center justify-center border-l border-[#262626] transition-colors cursor-pointer shrink-0 ${
+            isCalendarOpen
+              ? 'bg-[#222222] text-[#38bdf8]'
+              : 'bg-[#161616] hover:bg-[#202020] text-[#8c8c8c] hover:text-white'
+          }`}
+        >
+          <Calendar className="w-3.5 h-3.5" />
+        </button>
       </div>
 
-      {/* Detailed Time Selector (for timestamp / time types) */}
-      {!isDateOnly && (
-        <>
-          <div className="-mx-3.5 border-t border-[#222222] my-2" />
-
-          <div className="pt-0.5">
-            <div className="flex items-center justify-between text-[12px] text-[#8c8c8c] mb-2">
-              <span className="font-medium text-[#cccccc]">Time of Day</span>
-              <div className="flex items-center gap-1.5 font-mono text-[11px]">
-                <span className="text-[#cccccc] bg-[#141414] px-1.5 py-0.5 rounded border border-[#262626] font-medium">
-                  {activeTz}
-                </span>
-                <span className="text-[#777777] bg-[#141414] px-1.5 py-0.5 rounded border border-[#222222]">
-                  24h
-                </span>
-              </div>
-            </div>
-            <div className="grid grid-cols-3 gap-2 font-mono">
-              {/* Hours */}
-              <div className="flex flex-col">
-                <div className="relative flex items-center rounded-[6px] border border-[#262626] bg-[#121212] overflow-hidden focus-within:border-[#444444] transition-colors">
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    pattern="[0-9]*"
-                    value={timeState.hours}
-                    onChange={(e) => {
-                      const val = e.target.value.replace(/\D/g, '').slice(0, 2);
-                      const num = Math.min(23, Number(val) || 0);
-                      const h = val === '' ? '' : String(num).padStart(2, '0');
-                      const newT = { ...timeState, hours: h || '00' };
-                      setTimeState(newT);
-                      setCurrentDraft(formatOutput(selectedDate || new Date(), newT));
-                    }}
-                    onBlur={() => {
-                      const h = String(Math.max(0, Math.min(23, Number(timeState.hours) || 0))).padStart(2, '0');
-                      const newT = { ...timeState, hours: h };
-                      setTimeState(newT);
-                      setCurrentDraft(formatOutput(selectedDate || new Date(), newT));
-                    }}
-                    className="h-8 w-full bg-transparent pl-2.5 pr-5 text-center text-[13px] text-white focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                  />
-                  <div className="absolute right-0.5 top-0.5 bottom-0.5 flex flex-col justify-center border-l border-[#222222] pl-0.5">
-                    <button
-                      type="button"
-                      tabIndex={-1}
-                      onClick={() => {
-                        const cur = Number(timeState.hours) || 0;
-                        const next = cur >= 23 ? 0 : cur + 1;
-                        const h = String(next).padStart(2, '0');
-                        const newT = { ...timeState, hours: h };
-                        setTimeState(newT);
-                        setCurrentDraft(formatOutput(selectedDate || new Date(), newT));
-                      }}
-                      className="h-3.5 w-4 flex items-center justify-center text-[#777777] hover:text-white hover:bg-[#202020] rounded-[2px] transition-colors"
-                    >
-                      <ChevronUp className="w-2.5 h-2.5" />
-                    </button>
-                    <button
-                      type="button"
-                      tabIndex={-1}
-                      onClick={() => {
-                        const cur = Number(timeState.hours) || 0;
-                        const next = cur <= 0 ? 23 : cur - 1;
-                        const h = String(next).padStart(2, '0');
-                        const newT = { ...timeState, hours: h };
-                        setTimeState(newT);
-                        setCurrentDraft(formatOutput(selectedDate || new Date(), newT));
-                      }}
-                      className="h-3.5 w-4 flex items-center justify-center text-[#777777] hover:text-white hover:bg-[#202020] rounded-[2px] transition-colors"
-                    >
-                      <ChevronDown className="w-2.5 h-2.5" />
-                    </button>
-                  </div>
-                </div>
-                <span className="text-[10px] text-center text-[#777777] mt-1 font-sans">Hours (0-23)</span>
-              </div>
-
-              {/* Minutes */}
-              <div className="flex flex-col">
-                <div className="relative flex items-center rounded-[6px] border border-[#262626] bg-[#121212] overflow-hidden focus-within:border-[#444444] transition-colors">
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    pattern="[0-9]*"
-                    value={timeState.minutes}
-                    onChange={(e) => {
-                      const val = e.target.value.replace(/\D/g, '').slice(0, 2);
-                      const num = Math.min(59, Number(val) || 0);
-                      const m = val === '' ? '' : String(num).padStart(2, '0');
-                      const newT = { ...timeState, minutes: m || '00' };
-                      setTimeState(newT);
-                      setCurrentDraft(formatOutput(selectedDate || new Date(), newT));
-                    }}
-                    onBlur={() => {
-                      const m = String(Math.max(0, Math.min(59, Number(timeState.minutes) || 0))).padStart(2, '0');
-                      const newT = { ...timeState, minutes: m };
-                      setTimeState(newT);
-                      setCurrentDraft(formatOutput(selectedDate || new Date(), newT));
-                    }}
-                    className="h-8 w-full bg-transparent pl-2.5 pr-5 text-center text-[13px] text-white focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                  />
-                  <div className="absolute right-0.5 top-0.5 bottom-0.5 flex flex-col justify-center border-l border-[#222222] pl-0.5">
-                    <button
-                      type="button"
-                      tabIndex={-1}
-                      onClick={() => {
-                        const cur = Number(timeState.minutes) || 0;
-                        const next = cur >= 59 ? 0 : cur + 1;
-                        const m = String(next).padStart(2, '0');
-                        const newT = { ...timeState, minutes: m };
-                        setTimeState(newT);
-                        setCurrentDraft(formatOutput(selectedDate || new Date(), newT));
-                      }}
-                      className="h-3.5 w-4 flex items-center justify-center text-[#777777] hover:text-white hover:bg-[#202020] rounded-[2px] transition-colors"
-                    >
-                      <ChevronUp className="w-2.5 h-2.5" />
-                    </button>
-                    <button
-                      type="button"
-                      tabIndex={-1}
-                      onClick={() => {
-                        const cur = Number(timeState.minutes) || 0;
-                        const next = cur <= 0 ? 59 : cur - 1;
-                        const m = String(next).padStart(2, '0');
-                        const newT = { ...timeState, minutes: m };
-                        setTimeState(newT);
-                        setCurrentDraft(formatOutput(selectedDate || new Date(), newT));
-                      }}
-                      className="h-3.5 w-4 flex items-center justify-center text-[#777777] hover:text-white hover:bg-[#202020] rounded-[2px] transition-colors"
-                    >
-                      <ChevronDown className="w-2.5 h-2.5" />
-                    </button>
-                  </div>
-                </div>
-                <span className="text-[10px] text-center text-[#777777] mt-1 font-sans">Min (0-59)</span>
-              </div>
-
-              {/* Seconds */}
-              <div className="flex flex-col">
-                <div className="relative flex items-center rounded-[6px] border border-[#262626] bg-[#121212] overflow-hidden focus-within:border-[#444444] transition-colors">
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    pattern="[0-9]*"
-                    value={timeState.seconds}
-                    onChange={(e) => {
-                      const val = e.target.value.replace(/\D/g, '').slice(0, 2);
-                      const num = Math.min(59, Number(val) || 0);
-                      const s = val === '' ? '' : String(num).padStart(2, '0');
-                      const newT = { ...timeState, seconds: s || '00' };
-                      setTimeState(newT);
-                      setCurrentDraft(formatOutput(selectedDate || new Date(), newT));
-                    }}
-                    onBlur={() => {
-                      const s = String(Math.max(0, Math.min(59, Number(timeState.seconds) || 0))).padStart(2, '0');
-                      const newT = { ...timeState, seconds: s };
-                      setTimeState(newT);
-                      setCurrentDraft(formatOutput(selectedDate || new Date(), newT));
-                    }}
-                    className="h-8 w-full bg-transparent pl-2.5 pr-5 text-center text-[13px] text-white focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                  />
-                  <div className="absolute right-0.5 top-0.5 bottom-0.5 flex flex-col justify-center border-l border-[#222222] pl-0.5">
-                    <button
-                      type="button"
-                      tabIndex={-1}
-                      onClick={() => {
-                        const cur = Number(timeState.seconds) || 0;
-                        const next = cur >= 59 ? 0 : cur + 1;
-                        const s = String(next).padStart(2, '0');
-                        const newT = { ...timeState, seconds: s };
-                        setTimeState(newT);
-                        setCurrentDraft(formatOutput(selectedDate || new Date(), newT));
-                      }}
-                      className="h-3.5 w-4 flex items-center justify-center text-[#777777] hover:text-white hover:bg-[#202020] rounded-[2px] transition-colors"
-                    >
-                      <ChevronUp className="w-2.5 h-2.5" />
-                    </button>
-                    <button
-                      type="button"
-                      tabIndex={-1}
-                      onClick={() => {
-                        const cur = Number(timeState.seconds) || 0;
-                        const next = cur <= 0 ? 59 : cur - 1;
-                        const s = String(next).padStart(2, '0');
-                        const newT = { ...timeState, seconds: s };
-                        setTimeState(newT);
-                        setCurrentDraft(formatOutput(selectedDate || new Date(), newT));
-                      }}
-                      className="h-3.5 w-4 flex items-center justify-center text-[#777777] hover:text-white hover:bg-[#202020] rounded-[2px] transition-colors"
-                    >
-                      <ChevronDown className="w-2.5 h-2.5" />
-                    </button>
-                  </div>
-                </div>
-                <span className="text-[10px] text-center text-[#777777] mt-1 font-sans">Sec (0-59)</span>
+      {/* ─── Extended Date/Time Picker Dropdown Panel ─── */}
+      {isCalendarOpen && (
+        <div
+          ref={calendarModalRef}
+          style={{
+            top: `${calTop}px`,
+            left: `${calLeft}px`,
+            width: `${calWidth}px`,
+          }}
+          className="fixed z-[55] rounded-[8px] border border-[#262626] bg-[#0c0c0c] shadow-[0_20px_45px_rgba(0,0,0,0.95)] p-3.5 font-sans animate-in fade-in zoom-in-95 duration-100 select-none"
+        >
+          {/* Header Bar */}
+          <div className="pb-2.5">
+            <div className="flex items-center justify-between">
+              <span className="text-[13px] font-semibold text-white flex items-center gap-1.5">
+                <Calendar className="w-3.5 h-3.5 text-[#8c8c8c]" />
+                <span>{isDateOnly ? 'Select Date' : 'Select Date & Time'}</span>
+              </span>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={handleSetNow}
+                  className="px-2 py-0.5 rounded-[4px] text-[11.5px] font-medium bg-[#161616] hover:bg-[#222222] text-[#cccccc] hover:text-white border border-[#262626] hover:border-[#383838] transition-colors cursor-pointer"
+                >
+                  Now
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSetNull}
+                  className="px-2 py-0.5 rounded-[4px] text-[11.5px] font-medium bg-[#161616] hover:bg-[#222222] text-[#8c8c8c] hover:text-white border border-[#262626] hover:border-[#383838] transition-colors cursor-pointer"
+                >
+                  NULL
+                </button>
               </div>
             </div>
           </div>
-        </>
-      )}
 
-      {/* Edge-to-edge separator above footer */}
-      <div className="-mx-3.5 border-t border-[#222222] my-2.5" />
+          {/* Edge-to-edge separator above calendar */}
+          <div className="-mx-3.5 border-t border-[#222222] mb-2" />
 
-      {/* Confirmation footer with formatted token preview and save/cancel */}
-      <div className="flex items-center justify-between pt-0.5">
-        <span className="text-[12px] text-[#8c8c8c] font-mono truncate max-w-[170px]" title={currentDraft || 'NULL'}>
-          {currentDraft || 'NULL'}
-        </span>
-        <div className="flex items-center gap-1.5">
-          <button
-            type="button"
-            onClick={onCancel}
-            className="px-2.5 py-1 rounded-[6px] text-[12px] font-sans text-[#8c8c8c] hover:text-white bg-[#141414] hover:bg-[#202020] border border-[#262626] transition-colors cursor-pointer"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={() => onSave(currentDraft)}
-            className="group relative flex shrink-0 items-center justify-center h-7 px-3.5 rounded-[6px] font-medium text-white shadow-xs outline-none cursor-pointer overflow-hidden ring-1 ring-[#1d4ed8] bg-[#2563eb] text-[12.5px] font-sans"
-          >
-            <span
-              aria-hidden="true"
-              className="pointer-events-none absolute inset-0 rounded-[inherit] bg-gradient-to-b from-[#3b82f6] to-[#2563eb] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.25)]"
+          {/* Calendar Grid */}
+          <div className="axiom-datepicker-wrapper w-full py-1">
+            <DayPicker
+              mode="single"
+              selected={selectedDate}
+              month={month}
+              onMonthChange={setMonth}
+              onSelect={handleSelectDate}
+              className="m-0 text-white font-sans text-[12px] w-full"
             />
-            <span className="relative">Apply</span>
-          </button>
+          </div>
+
+          {/* Detailed Time Selector (for timestamp / time types) */}
+          {!isDateOnly && (
+            <>
+              <div className="-mx-3.5 border-t border-[#222222] my-2" />
+
+              <div className="pt-0.5">
+                <div className="flex items-center justify-between text-[12px] text-[#8c8c8c] mb-2">
+                  <span className="font-medium text-[#cccccc]">Time of Day</span>
+                  <div className="flex items-center gap-1.5 font-mono text-[11px]">
+                    <span className="text-[#cccccc] bg-[#141414] px-1.5 py-0.5 rounded border border-[#262626] font-medium">
+                      {activeTz}
+                    </span>
+                    <span className="text-[#777777] bg-[#141414] px-1.5 py-0.5 rounded border border-[#222222]">
+                      24h
+                    </span>
+                  </div>
+                </div>
+                <div className="grid grid-cols-3 gap-2 font-mono">
+                  {/* Hours */}
+                  <div className="flex flex-col">
+                    <div className="relative flex items-center rounded-[6px] border border-[#262626] bg-[#121212] overflow-hidden focus-within:border-[#444444] transition-colors">
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        pattern="[0-9]*"
+                        value={timeState.hours}
+                        onChange={(e) => {
+                          const val = e.target.value.replace(/\D/g, '').slice(0, 2);
+                          const num = Math.min(23, Number(val) || 0);
+                          const h = val === '' ? '' : String(num).padStart(2, '0');
+                          const newT = { ...timeState, hours: h || '00' };
+                          setTimeState(newT);
+                          setInputVal(formatOutput(selectedDate || new Date(), newT));
+                        }}
+                        onBlur={() => {
+                          const h = String(Math.max(0, Math.min(23, Number(timeState.hours) || 0))).padStart(2, '0');
+                          const newT = { ...timeState, hours: h };
+                          setTimeState(newT);
+                          setInputVal(formatOutput(selectedDate || new Date(), newT));
+                        }}
+                        className="h-8 w-full bg-transparent pl-2.5 pr-5 text-center text-[13px] text-white focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                      />
+                      <div className="absolute right-0.5 top-0.5 bottom-0.5 flex flex-col justify-center border-l border-[#222222] pl-0.5">
+                        <button
+                          type="button"
+                          tabIndex={-1}
+                          onClick={() => {
+                            const cur = Number(timeState.hours) || 0;
+                            const next = cur >= 23 ? 0 : cur + 1;
+                            const h = String(next).padStart(2, '0');
+                            const newT = { ...timeState, hours: h };
+                            setTimeState(newT);
+                            setInputVal(formatOutput(selectedDate || new Date(), newT));
+                          }}
+                          className="h-3.5 w-4 flex items-center justify-center text-[#777777] hover:text-white hover:bg-[#202020] rounded-[2px] transition-colors"
+                        >
+                          <ChevronUp className="w-2.5 h-2.5" />
+                        </button>
+                        <button
+                          type="button"
+                          tabIndex={-1}
+                          onClick={() => {
+                            const cur = Number(timeState.hours) || 0;
+                            const next = cur <= 0 ? 23 : cur - 1;
+                            const h = String(next).padStart(2, '0');
+                            const newT = { ...timeState, hours: h };
+                            setTimeState(newT);
+                            setInputVal(formatOutput(selectedDate || new Date(), newT));
+                          }}
+                          className="h-3.5 w-4 flex items-center justify-center text-[#777777] hover:text-white hover:bg-[#202020] rounded-[2px] transition-colors"
+                        >
+                          <ChevronDown className="w-2.5 h-2.5" />
+                        </button>
+                      </div>
+                    </div>
+                    <span className="text-[10px] text-center text-[#777777] mt-1 font-sans">Hours (0-23)</span>
+                  </div>
+
+                  {/* Minutes */}
+                  <div className="flex flex-col">
+                    <div className="relative flex items-center rounded-[6px] border border-[#262626] bg-[#121212] overflow-hidden focus-within:border-[#444444] transition-colors">
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        pattern="[0-9]*"
+                        value={timeState.minutes}
+                        onChange={(e) => {
+                          const val = e.target.value.replace(/\D/g, '').slice(0, 2);
+                          const num = Math.min(59, Number(val) || 0);
+                          const m = val === '' ? '' : String(num).padStart(2, '0');
+                          const newT = { ...timeState, minutes: m || '00' };
+                          setTimeState(newT);
+                          setInputVal(formatOutput(selectedDate || new Date(), newT));
+                        }}
+                        onBlur={() => {
+                          const m = String(Math.max(0, Math.min(59, Number(timeState.minutes) || 0))).padStart(2, '0');
+                          const newT = { ...timeState, minutes: m };
+                          setTimeState(newT);
+                          setInputVal(formatOutput(selectedDate || new Date(), newT));
+                        }}
+                        className="h-8 w-full bg-transparent pl-2.5 pr-5 text-center text-[13px] text-white focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                      />
+                      <div className="absolute right-0.5 top-0.5 bottom-0.5 flex flex-col justify-center border-l border-[#222222] pl-0.5">
+                        <button
+                          type="button"
+                          tabIndex={-1}
+                          onClick={() => {
+                            const cur = Number(timeState.minutes) || 0;
+                            const next = cur >= 59 ? 0 : cur + 1;
+                            const m = String(next).padStart(2, '0');
+                            const newT = { ...timeState, minutes: m };
+                            setTimeState(newT);
+                            setInputVal(formatOutput(selectedDate || new Date(), newT));
+                          }}
+                          className="h-3.5 w-4 flex items-center justify-center text-[#777777] hover:text-white hover:bg-[#202020] rounded-[2px] transition-colors"
+                        >
+                          <ChevronUp className="w-2.5 h-2.5" />
+                        </button>
+                        <button
+                          type="button"
+                          tabIndex={-1}
+                          onClick={() => {
+                            const cur = Number(timeState.minutes) || 0;
+                            const next = cur <= 0 ? 59 : cur - 1;
+                            const m = String(next).padStart(2, '0');
+                            const newT = { ...timeState, minutes: m };
+                            setTimeState(newT);
+                            setInputVal(formatOutput(selectedDate || new Date(), newT));
+                          }}
+                          className="h-3.5 w-4 flex items-center justify-center text-[#777777] hover:text-white hover:bg-[#202020] rounded-[2px] transition-colors"
+                        >
+                          <ChevronDown className="w-2.5 h-2.5" />
+                        </button>
+                      </div>
+                    </div>
+                    <span className="text-[10px] text-center text-[#777777] mt-1 font-sans">Min (0-59)</span>
+                  </div>
+
+                  {/* Seconds */}
+                  <div className="flex flex-col">
+                    <div className="relative flex items-center rounded-[6px] border border-[#262626] bg-[#121212] overflow-hidden focus-within:border-[#444444] transition-colors">
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        pattern="[0-9]*"
+                        value={timeState.seconds}
+                        onChange={(e) => {
+                          const val = e.target.value.replace(/\D/g, '').slice(0, 2);
+                          const num = Math.min(59, Number(val) || 0);
+                          const s = val === '' ? '' : String(num).padStart(2, '0');
+                          const newT = { ...timeState, seconds: s || '00' };
+                          setTimeState(newT);
+                          setInputVal(formatOutput(selectedDate || new Date(), newT));
+                        }}
+                        onBlur={() => {
+                          const s = String(Math.max(0, Math.min(59, Number(timeState.seconds) || 0))).padStart(2, '0');
+                          const newT = { ...timeState, seconds: s };
+                          setTimeState(newT);
+                          setInputVal(formatOutput(selectedDate || new Date(), newT));
+                        }}
+                        className="h-8 w-full bg-transparent pl-2.5 pr-5 text-center text-[13px] text-white focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                      />
+                      <div className="absolute right-0.5 top-0.5 bottom-0.5 flex flex-col justify-center border-l border-[#222222] pl-0.5">
+                        <button
+                          type="button"
+                          tabIndex={-1}
+                          onClick={() => {
+                            const cur = Number(timeState.seconds) || 0;
+                            const next = cur >= 59 ? 0 : cur + 1;
+                            const s = String(next).padStart(2, '0');
+                            const newT = { ...timeState, seconds: s };
+                            setTimeState(newT);
+                            setInputVal(formatOutput(selectedDate || new Date(), newT));
+                          }}
+                          className="h-3.5 w-4 flex items-center justify-center text-[#777777] hover:text-white hover:bg-[#202020] rounded-[2px] transition-colors"
+                        >
+                          <ChevronUp className="w-2.5 h-2.5" />
+                        </button>
+                        <button
+                          type="button"
+                          tabIndex={-1}
+                          onClick={() => {
+                            const cur = Number(timeState.seconds) || 0;
+                            const next = cur <= 0 ? 59 : cur - 1;
+                            const s = String(next).padStart(2, '0');
+                            const newT = { ...timeState, seconds: s };
+                            setTimeState(newT);
+                            setInputVal(formatOutput(selectedDate || new Date(), newT));
+                          }}
+                          className="h-3.5 w-4 flex items-center justify-center text-[#777777] hover:text-white hover:bg-[#202020] rounded-[2px] transition-colors"
+                        >
+                          <ChevronDown className="w-2.5 h-2.5" />
+                        </button>
+                      </div>
+                    </div>
+                    <span className="text-[10px] text-center text-[#777777] mt-1 font-sans">Sec (0-59)</span>
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* Edge-to-edge separator above footer */}
+          <div className="-mx-3.5 border-t border-[#222222] my-2.5" />
+
+          {/* Confirmation footer with formatted token preview and save/cancel */}
+          <div className="flex items-center justify-between pt-0.5">
+            <span className="text-[12px] text-[#8c8c8c] font-mono truncate max-w-[170px]" title={inputVal || 'NULL'}>
+              {inputVal || 'NULL'}
+            </span>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setIsCalendarOpen(false)}
+                className="px-2.5 py-1 rounded-[6px] text-[12px] font-sans text-[#8c8c8c] hover:text-white bg-[#141414] hover:bg-[#202020] border border-[#262626] transition-colors cursor-pointer"
+              >
+                Close
+              </button>
+              <button
+                type="button"
+                onClick={() => onSave(inputVal)}
+                className="group relative flex shrink-0 items-center justify-center h-7 px-3.5 rounded-[6px] font-medium text-white shadow-xs outline-none cursor-pointer overflow-hidden ring-1 ring-[#1d4ed8] bg-[#2563eb] text-[12.5px] font-sans"
+              >
+                <span
+                  aria-hidden="true"
+                  className="pointer-events-none absolute inset-0 rounded-[inherit] bg-gradient-to-b from-[#3b82f6] to-[#2563eb] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.25)]"
+                />
+                <span className="relative">Apply</span>
+              </button>
+            </div>
+          </div>
         </div>
-      </div>
-    </div>
+      )}
+    </>
   );
 }
 
@@ -1794,12 +1888,8 @@ function ForeignKeyPickerModal({
                             {isNull ? (
                               <span className="text-[#555555] italic text-[12.5px]">null</span>
                             ) : isBool ? (
-                              <span
-                                className={`px-1.5 py-0.5 rounded text-[12.5px] font-medium ${
-                                  cellVal ? 'bg-emerald-500/10 text-emerald-400' : 'bg-zinc-800 text-zinc-400'
-                                }`}
-                              >
-                                {cellVal ? 'true' : 'false'}
+                              <span className="font-sans text-[13px] text-[#cccccc]">
+                                {String(cellVal)}
                               </span>
                             ) : isObj ? (
                               <span className="text-pink-400 flex items-center gap-1 text-[12.5px]">
@@ -2559,6 +2649,86 @@ export function TableEditor() {
   const [deleteRowTarget, setDeleteRowTarget] = useState<Record<string, unknown> | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
+  // ─── Add Column Drawer State (Supabase style) ──────────────────────────────
+  const [isAddColumnOpen, setIsAddColumnOpen] = useState(false);
+  const [newColName, setNewColName] = useState('');
+  const [newColDescription, setNewColDescription] = useState('');
+  const [newColType, setNewColType] = useState('text');
+  const [newColIsArray, setNewColIsArray] = useState(false);
+  const [newColDefault, setNewColDefault] = useState('NULL');
+  const [newColIsPk, setNewColIsPk] = useState(false);
+  const [newColNullable, setNewColNullable] = useState(true);
+  const [newColIsUnique, setNewColIsUnique] = useState(false);
+  const [newColCheck, setNewColCheck] = useState('');
+  const [newColIsSensitive, setNewColIsSensitive] = useState(false);
+  const [isCreatingColumn, setIsCreatingColumn] = useState(false);
+  const [createColumnError, setCreateColumnError] = useState<string | null>(null);
+
+  // Foreign Key Relationship Sub-Panel State (Committed State)
+  const [isFkModalOpen, setIsFkModalOpen] = useState(false);
+  const [isDiscardFkConfirmOpen, setIsDiscardFkConfirmOpen] = useState(false);
+  const [newColFkSchema, setNewColFkSchema] = useState('');
+  const [newColFkTable, setNewColFkTable] = useState('');
+  const [newColFkColumn, setNewColFkColumn] = useState('');
+  const [newColFkOnUpdate, setNewColFkOnUpdate] = useState<'NO ACTION' | 'CASCADE' | 'RESTRICT' | 'SET NULL' | 'SET DEFAULT'>('NO ACTION');
+  const [newColFkOnDelete, setNewColFkOnDelete] = useState<'NO ACTION' | 'CASCADE' | 'RESTRICT' | 'SET NULL' | 'SET DEFAULT'>('NO ACTION');
+
+  // Foreign Key Draft State (Isolated to SlideOver until user explicitly clicks Save)
+  const [draftFkSchema, setDraftFkSchema] = useState('');
+  const [draftFkTable, setDraftFkTable] = useState('');
+  const [draftFkColumn, setDraftFkColumn] = useState('');
+  const [draftFkPairs, setDraftFkPairs] = useState<Array<{ sourceCol: string; targetCol: string }>>([
+    { sourceCol: '', targetCol: '' },
+  ]);
+  const [draftFkOnUpdate, setDraftFkOnUpdate] = useState<'NO ACTION' | 'CASCADE' | 'RESTRICT' | 'SET NULL' | 'SET DEFAULT'>('NO ACTION');
+  const [draftFkOnDelete, setDraftFkOnDelete] = useState<'NO ACTION' | 'CASCADE' | 'RESTRICT' | 'SET NULL' | 'SET DEFAULT'>('NO ACTION');
+
+  // Handles target table selection in FK drawer, prefetching target columns if not cached
+  const handleSelectFkTargetTable = useCallback(async (tbl: string) => {
+    setDraftFkTable(tbl);
+    let targetSchema = schemaCacheRef.current[tbl];
+    if (!targetSchema && selectedDb) {
+      try {
+        const res = await api.getTableSchema(selectedDb, tbl);
+        targetSchema = { columns: res.columns || [], foreign_keys: res.foreign_keys || [] };
+        schemaCacheRef.current = { ...schemaCacheRef.current, [tbl]: targetSchema };
+        setAllDbTablesSchema((prev) => ({ ...prev, [tbl]: targetSchema }));
+      } catch {
+        // Fallback gracefully
+      }
+    }
+    const pk = targetSchema?.columns.find((c) => c.primary_key)?.name || targetSchema?.columns[0]?.name || 'id';
+    setDraftFkColumn(pk);
+    setDraftFkPairs([{ sourceCol: newColName || '', targetCol: pk }]);
+  }, [selectedDb, newColName]);
+
+  // Request close: prompts discard confirmation if unsaved changes exist and a table was selected
+  const handleRequestCloseFkModal = useCallback(() => {
+    const isDirty =
+      draftFkTable !== newColFkTable ||
+      draftFkColumn !== newColFkColumn ||
+      draftFkSchema !== newColFkSchema ||
+      draftFkOnUpdate !== newColFkOnUpdate ||
+      draftFkOnDelete !== newColFkOnDelete;
+
+    if (isDirty && draftFkTable) {
+      setIsDiscardFkConfirmOpen(true);
+    } else {
+      setIsFkModalOpen(false);
+    }
+  }, [
+    draftFkTable,
+    draftFkColumn,
+    draftFkSchema,
+    draftFkOnUpdate,
+    draftFkOnDelete,
+    newColFkTable,
+    newColFkColumn,
+    newColFkSchema,
+    newColFkOnUpdate,
+    newColFkOnDelete,
+  ]);
+
   // Copy feedback state
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
@@ -2604,6 +2774,8 @@ export function TableEditor() {
   // ER Diagram focused table state
   const [focusedErTable, setFocusedErTable] = useState<string | null>(null);
 
+  const [isInsertDropdownOpen, setIsInsertDropdownOpen] = useState(false);
+  const insertDropdownRef = useRef<HTMLDivElement>(null);
   const filterPopoverRef = useRef<HTMLDivElement>(null);
   const sortPopoverRef = useRef<HTMLDivElement>(null);
   // Target key (`db:table`) ref used to discard in-flight responses if the user navigates to another table.
@@ -2739,6 +2911,9 @@ export function TableEditor() {
     function handleClickOutside(e: MouseEvent) {
       if (dbDropdownRef.current && !dbDropdownRef.current.contains(e.target as Node)) {
         setIsDbDropdownOpen(false);
+      }
+      if (insertDropdownRef.current && !insertDropdownRef.current.contains(e.target as Node)) {
+        setIsInsertDropdownOpen(false);
       }
       if (filterPopoverRef.current && !filterPopoverRef.current.contains(e.target as Node)) {
         setShowFilterPopover(false);
@@ -3283,6 +3458,71 @@ export function TableEditor() {
     }
   }
 
+  // ─── Add Column Handler (Structured Backend DDL) ──────────────────────────
+  async function handleCreateColumn() {
+    if (!selectedDb || !selectedTable || !newColName.trim()) return;
+    const colNameClean = newColName.trim().replace(/[^a-zA-Z0-9_]/g, '');
+    if (!colNameClean) {
+      setCreateColumnError('Please enter a valid column name.');
+      return;
+    }
+
+    setIsCreatingColumn(true);
+    setCreateColumnError(null);
+
+    const payload = {
+      name: colNameClean,
+      description: newColDescription.trim() || undefined,
+      data_type: newColType,
+      is_array: newColIsArray,
+      primary_key: newColIsPk,
+      unique: newColIsUnique,
+      nullable: newColNullable,
+      default_value: newColDefault.trim() || undefined,
+      check_expression: newColCheck.trim() || undefined,
+      foreign_key:
+        newColFkTable && newColFkColumn
+          ? {
+              schema: newColFkSchema.trim() || undefined,
+              table: newColFkTable.trim(),
+              column: newColFkColumn.trim(),
+              on_update: newColFkOnUpdate !== 'NO ACTION' ? newColFkOnUpdate : undefined,
+              on_delete: newColFkOnDelete !== 'NO ACTION' ? newColFkOnDelete : undefined,
+            }
+          : undefined,
+    };
+
+    try {
+      await api.createTableColumn(selectedDb, selectedTable, payload);
+
+      setIsAddColumnOpen(false);
+      setNewColName('');
+      setNewColDescription('');
+      setNewColType('text');
+      setNewColIsArray(false);
+      setNewColDefault('NULL');
+      setNewColIsPk(false);
+      setNewColNullable(true);
+      setNewColIsUnique(false);
+      setNewColCheck('');
+      setNewColIsSensitive(false);
+      setNewColFkSchema('');
+      setNewColFkTable('');
+      setNewColFkColumn('');
+      setDraftFkPairs([{ sourceCol: '', targetCol: '' }]);
+      setNewColFkOnUpdate('NO ACTION');
+      setNewColFkOnDelete('NO ACTION');
+
+      // Invalidate cache and reload schema + rows
+      delete schemaCacheRef.current[selectedTable];
+      await loadTableData({ reloadSchema: true });
+    } catch (err) {
+      setCreateColumnError(err instanceof Error ? err.message : 'Failed to create column');
+    } finally {
+      setIsCreatingColumn(false);
+    }
+  }
+
   // ─── SQL Console Execution ─────────────────────────────────────────────────
   async function handleExecuteSql() {
     if (!selectedDb || !sqlQuery.trim()) return;
@@ -3487,20 +3727,63 @@ export function TableEditor() {
           <div className="flex items-center gap-2 shrink-0">
             {viewMode === 'grid' && (
               <>
-                {/* Insert Row Button */}
-                <button
-                  onClick={() => {
-                    setSelectedRowIndex(null);
-                    setRowEditValues({});
-                    setIsInsertModeInPanel(true);
-                    setIsDetailsOpen(true);
-                  }}
-                  disabled={!selectedTable}
-                  className="flex items-center gap-1.5 h-8 px-2.5 rounded-[6px] bg-[#141414] hover:bg-[#1a1a1a] border border-[#242424] hover:border-[#383838] disabled:opacity-40 text-[#cccccc] hover:text-white text-[13px] font-medium transition-colors cursor-pointer"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>Insert Row</span>
-                </button>
+                {/* Insert Dropdown Menu */}
+                <div className="relative" ref={insertDropdownRef}>
+                  <button
+                    type="button"
+                    onClick={() => setIsInsertDropdownOpen(!isInsertDropdownOpen)}
+                    disabled={!selectedTable}
+                    className="flex items-center gap-1.5 h-8 px-2.5 rounded-[6px] bg-[#141414] hover:bg-[#1a1a1a] border border-[#242424] hover:border-[#383838] disabled:opacity-40 text-[#cccccc] hover:text-white text-[13px] font-medium transition-colors cursor-pointer"
+                  >
+                    <span>Insert</span>
+                    <ChevronDown className="w-3.5 h-3.5 text-[#777777]" />
+                  </button>
+
+                  {isInsertDropdownOpen && (
+                    <div className="absolute left-0 top-full mt-1.5 w-44 bg-[#111111] border border-[#262626] rounded-[8px] shadow-2xl p-1 z-50 animate-in fade-in zoom-in-95 duration-100 font-sans">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsInsertDropdownOpen(false);
+                          setSelectedRowIndex(null);
+                          setRowEditValues({});
+                          setIsInsertModeInPanel(true);
+                          setIsDetailsOpen(true);
+                        }}
+                        className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-[6px] text-[13px] text-[#cccccc] hover:text-white hover:bg-[#1a1a1a] transition-colors cursor-pointer text-left"
+                      >
+                        <Plus className="w-3.5 h-3.5 text-[#888888]" />
+                        <span>Insert row</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsInsertDropdownOpen(false);
+                          setNewColName('');
+                          setNewColType('varchar(255)');
+                          setNewColNullable(true);
+                          setNewColDefault('');
+                          setNewColFkSchema('');
+                          setNewColFkTable('');
+                          setNewColFkColumn('');
+                          setDraftFkSchema('');
+                          setDraftFkTable('');
+                          setDraftFkColumn('');
+                          setDraftFkPairs([{ sourceCol: '', targetCol: '' }]);
+                          setDraftFkOnUpdate('NO ACTION');
+                          setDraftFkOnDelete('NO ACTION');
+                          setCreateColumnError(null);
+                          setIsAddColumnOpen(true);
+                        }}
+                        className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-[6px] text-[13px] text-[#cccccc] hover:text-white hover:bg-[#1a1a1a] transition-colors cursor-pointer text-left"
+                      >
+                        <Columns className="w-3.5 h-3.5 text-[#888888]" />
+                        <span>Insert column</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
 
                 {/* Filter Popover */}
                 <div className="relative" ref={filterPopoverRef}>
@@ -3894,13 +4177,41 @@ export function TableEditor() {
                           </th>
                         );
                       })}
+
+                      {/* Add Column Button Column matching screenshot */}
+                      <th
+                        className="w-12 px-2 py-2 text-center bg-[#0a0a0a] border-r border-[#1a1a1a] select-none"
+                        style={{ width: '48px', minWidth: '48px', maxWidth: '48px' }}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setNewColName('');
+                            setNewColType('varchar(255)');
+                            setNewColNullable(true);
+                            setNewColDefault('');
+                            setNewColFkSchema('');
+                            setNewColFkTable('');
+                            setNewColFkColumn('');
+                            setDraftFkPairs([{ sourceCol: '', targetCol: '' }]);
+                            setNewColFkOnUpdate('NO ACTION');
+                            setNewColFkOnDelete('NO ACTION');
+                            setCreateColumnError(null);
+                            setIsAddColumnOpen(true);
+                          }}
+                          title="Add new column"
+                          className="w-7 h-7 mx-auto rounded-[5px] bg-[#141414] hover:bg-[#202020] border border-[#262626] hover:border-[#383838] text-[#8c8c8c] hover:text-white flex items-center justify-center transition-colors cursor-pointer group"
+                        >
+                          <Plus className="w-3.5 h-3.5 group-hover:scale-110 transition-transform" />
+                        </button>
+                      </th>
                     </tr>
                   </thead>
 
                   <tbody className={`divide-y divide-[#181818] ${isRowsLoading ? 'opacity-60 transition-opacity' : ''}`}>
                     {rows.length === 0 ? (
                       <tr>
-                        <td colSpan={columns.length + 1} className="p-12 text-center text-[#666666] text-[14px]">
+                        <td colSpan={columns.length + 2} className="p-12 text-center text-[#666666] text-[14px]">
                           Table contains 0 rows
                         </td>
                       </tr>
@@ -4010,12 +4321,8 @@ export function TableEditor() {
                                         {isNull ? (
                                           <span className="text-[#555555] italic text-[12.5px]">null</span>
                                         ) : isBool ? (
-                                          <span
-                                            className={`px-1.5 py-0.5 rounded text-[12.5px] font-medium ${
-                                              val ? 'bg-emerald-500/10 text-emerald-400' : 'bg-zinc-800 text-zinc-400'
-                                            }`}
-                                          >
-                                            {val ? 'true' : 'false'}
+                                          <span className="font-sans text-[13px] text-[#cccccc]">
+                                            {String(val)}
                                           </span>
                                         ) : isObj ? (
                                           <span className="text-pink-400 flex items-center gap-1 text-[12.5px]">
@@ -4051,12 +4358,8 @@ export function TableEditor() {
                                   ) : isNull ? (
                                     <span className="text-[#555555] italic text-[12.5px]">null</span>
                                   ) : isBool ? (
-                                    <span
-                                      className={`px-1.5 py-0.5 rounded text-[12.5px] font-medium ${
-                                        val ? 'bg-emerald-500/10 text-emerald-400' : 'bg-zinc-800 text-zinc-400'
-                                      }`}
-                                    >
-                                      {val ? 'true' : 'false'}
+                                    <span className="font-sans text-[13px] text-[#cccccc]">
+                                      {String(val)}
                                     </span>
                                   ) : isObj ? (
                                     <span className="text-pink-400 flex items-center gap-1 text-[12.5px]">
@@ -4069,6 +4372,12 @@ export function TableEditor() {
                                 </td>
                               );
                             })}
+
+                            {/* Empty cell for Add Column column */}
+                            <td
+                              className="border-r border-[#151515] bg-transparent"
+                              style={{ width: '48px', minWidth: '48px', maxWidth: '48px' }}
+                            />
                           </tr>
                         );
                       })
@@ -4997,6 +5306,615 @@ export function TableEditor() {
           </div>
         </div>
       </SlideOver>
+
+      {/* ─── Add Column SlideOver (Matches Databases.tsx Panel System Design) ─── */}
+      <SlideOver
+        isOpen={isAddColumnOpen}
+        onClose={() => setIsAddColumnOpen(false)}
+        width="w-[520px] max-w-full"
+        title="Add Column"
+        subtitle={`Add a new column to ${selectedTable}`}
+      >
+        <div className="flex-1 flex flex-col min-h-0 bg-[#0e0e0e] overflow-hidden font-sans">
+          {/* Scrollable Form Body matching Databases.tsx SlideOver */}
+          <div className="flex-1 overflow-y-auto p-5 space-y-5 font-sans">
+            {createColumnError && (
+              <div className="p-3.5 rounded-[8px] bg-[#2a1113] border border-[#5c1d24] text-[#f87171] text-[13px] flex items-start gap-2.5">
+                <AlertCircle className="w-4 h-4 shrink-0 text-[#ef4444] mt-0.5" />
+                <div className="flex-1 font-mono text-[12px]">{createColumnError}</div>
+              </div>
+            )}
+
+            {/* Section 1: Column Definition */}
+            <div className="space-y-4">
+              <div>
+                <h3 className="text-[16px] font-medium text-white tracking-tight">Column Definition</h3>
+                <p className="text-[13px] text-[#8c8c8c] mt-0.5">Specify column name, description, and target data type.</p>
+              </div>
+
+              <div className="space-y-3.5">
+                <div>
+                  <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5 font-sans">
+                    Column Name <span className="text-red-400">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    autoFocus
+                    value={newColName}
+                    onChange={(e) => setNewColName(e.target.value)}
+                    placeholder="e.g. status, bio, order_total"
+                    className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] px-3 text-[14px] text-white focus:outline-none focus:border-[#3b82f6] transition-colors placeholder-[#555555]"
+                  />
+                  <p className="text-[12px] text-[#8c8c8c] mt-1 font-sans">
+                    Recommended to use lowercase with underscores.
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5 font-sans">
+                    Data Type <span className="text-red-400">*</span>
+                  </label>
+                  <CustomSelect
+                    value={newColType}
+                    onChange={setNewColType}
+                    options={[
+                      { value: 'text', label: 'text (Unlimited character string)' },
+                      { value: 'varchar(255)', label: 'varchar (Variable length string)' },
+                      { value: 'integer', label: 'int4 / integer (Signed 4-byte integer)' },
+                      { value: 'bigint', label: 'int8 / bigint (Signed 8-byte integer)' },
+                      { value: 'smallint', label: 'int2 / smallint (Signed 2-byte integer)' },
+                      { value: 'boolean', label: 'bool / boolean (Logical true/false)' },
+                      { value: 'timestamp with time zone', label: 'timestamptz (Date and time with timezone)' },
+                      { value: 'timestamp without time zone', label: 'timestamp (Date and time without timezone)' },
+                      { value: 'date', label: 'date (Calendar date)' },
+                      { value: 'time', label: 'time (Time of day)' },
+                      { value: 'numeric', label: 'numeric / decimal (Exact numeric, monetary)' },
+                      { value: 'double precision', label: 'float8 / double precision (Floating point)' },
+                      { value: 'real', label: 'float4 / real (Single precision float)' },
+                      { value: 'jsonb', label: 'jsonb (Binary formatted JSON)' },
+                      { value: 'json', label: 'json (Text JSON data)' },
+                      { value: 'uuid', label: 'uuid (Universally unique identifier)' },
+                      { value: 'bytea', label: 'bytea (Binary data)' },
+                    ]}
+                    menuWidth="w-full"
+                  />
+                </div>
+
+                <div className="flex items-center justify-between py-1">
+                  <div>
+                    <span className="text-[13px] text-[#cccccc] font-medium block">Define as array</span>
+                    <span className="text-[12px] text-[#777777] block">Stores a variable-length list (e.g. text[])</span>
+                  </div>
+                  <Switch
+                    checked={newColIsArray}
+                    onCheckedChange={setNewColIsArray}
+                  />
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block text-[13px] font-medium text-[#cccccc] font-sans">
+                      Description / Comment
+                    </label>
+                    <span className="text-[12px] text-[#777777]">Optional</span>
+                  </div>
+                  <input
+                    type="text"
+                    value={newColDescription}
+                    onChange={(e) => setNewColDescription(e.target.value)}
+                    placeholder="Describe purpose of column..."
+                    className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] px-3 text-[14px] text-white focus:outline-none focus:border-[#3b82f6] transition-colors placeholder-[#555555]"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Section 2: Default Value & Constraints */}
+            <div className="space-y-4 pt-2">
+              <div>
+                <h3 className="text-[16px] font-medium text-white tracking-tight">Constraints & Defaults</h3>
+                <p className="text-[13px] text-[#8c8c8c] mt-0.5">Configure nullability, uniqueness, default values, and foreign keys.</p>
+              </div>
+
+              <div className="space-y-3.5">
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block text-[13px] font-medium text-[#cccccc] font-sans">
+                      Default Value
+                    </label>
+                    <span className="text-[12px] text-[#777777]">Optional</span>
+                  </div>
+                  <input
+                    type="text"
+                    value={newColDefault}
+                    onChange={(e) => setNewColDefault(e.target.value)}
+                    placeholder="NULL or 'active' or 0"
+                    className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] px-3 text-[14px] text-white font-mono focus:outline-none focus:border-[#3b82f6] transition-colors placeholder-[#555555]"
+                  />
+                </div>
+
+                {/* Constraint Toggles */}
+                <div className="rounded-[8px] border border-[#222222] bg-[#121212] p-3.5 space-y-3.5">
+                  {/* Allow Nullable */}
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-[13px] font-medium text-white block">Allow Nullable (NULL)</span>
+                      <span className="text-[12px] text-[#777777] block">Allow rows without a value for this column</span>
+                    </div>
+                    <Switch
+                      checked={newColNullable}
+                      disabled={newColIsPk}
+                      onCheckedChange={setNewColNullable}
+                    />
+                  </div>
+
+                  <div className="border-t border-[#1e1e1e]" />
+
+                  {/* Is Unique */}
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-[13px] font-medium text-white block">Unique Constraint</span>
+                      <span className="text-[12px] text-[#777777] block">Enforce column values to be unique across all rows</span>
+                    </div>
+                    <Switch
+                      checked={newColIsUnique}
+                      onCheckedChange={setNewColIsUnique}
+                    />
+                  </div>
+
+                  <div className="border-t border-[#1e1e1e]" />
+
+                  {/* Is Primary Key */}
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-[13px] font-medium text-white block">Primary Key</span>
+                      <span className="text-[12px] text-[#777777] block">Mark as unique row identifier</span>
+                    </div>
+                    <Switch
+                      checked={newColIsPk}
+                      onCheckedChange={(checked) => {
+                        setNewColIsPk(checked);
+                        if (checked) setNewColNullable(false);
+                      }}
+                    />
+                  </div>
+                </div>
+
+                {/* Foreign Key Relation Selector */}
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block text-[13px] font-medium text-[#cccccc] font-sans">
+                      Foreign Key Relation
+                    </label>
+                    <span className="text-[12px] text-[#777777]">Optional</span>
+                  </div>
+
+                  {newColFkTable ? (
+                    <div className="p-3 rounded-[6px] bg-[#141414] border border-[#262626] flex items-center justify-between">
+                      <div className="flex items-center gap-2 text-[13px] text-[#cccccc]">
+                        <Link2 className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                        <span>References</span>
+                        <span className="font-mono text-white font-medium">{newColFkTable}.{newColFkColumn || 'id'}</span>
+                        {(newColFkOnDelete !== 'NO ACTION' || newColFkOnUpdate !== 'NO ACTION') && (
+                          <span className="text-[11px] px-1.5 py-0.5 rounded bg-[#1c1c1c] text-[#888888] font-mono">
+                            {newColFkOnDelete !== 'NO ACTION' ? `DEL: ${newColFkOnDelete}` : ''}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDraftFkSchema(newColFkSchema);
+                            setDraftFkTable(newColFkTable);
+                            setDraftFkColumn(newColFkColumn);
+                            setDraftFkPairs([{
+                              sourceCol: newColName || '',
+                              targetCol: newColFkColumn || 'id',
+                            }]);
+                            setDraftFkOnUpdate(newColFkOnUpdate);
+                            setDraftFkOnDelete(newColFkOnDelete);
+                            setIsFkModalOpen(true);
+                          }}
+                          className="text-[12px] text-blue-400 hover:text-blue-300 font-medium cursor-pointer"
+                        >
+                          Edit
+                        </button>
+                        <span className="text-[#333333]">·</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setNewColFkTable('');
+                            setNewColFkColumn('');
+                            setNewColFkOnUpdate('NO ACTION');
+                            setNewColFkOnDelete('NO ACTION');
+                          }}
+                          className="text-[12px] text-red-400 hover:text-red-300 cursor-pointer"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDraftFkSchema('');
+                        setDraftFkTable('');
+                        setDraftFkColumn('');
+                        setDraftFkPairs([{
+                          sourceCol: newColName || '',
+                          targetCol: '',
+                        }]);
+                        setDraftFkOnUpdate('NO ACTION');
+                        setDraftFkOnDelete('NO ACTION');
+                        setIsFkModalOpen(true);
+                      }}
+                      className="h-8 px-3 rounded-[6px] text-[13px] font-medium border border-[#262626] bg-[#141414] text-[#cccccc] hover:text-white hover:border-[#383838] transition-colors inline-flex items-center gap-1.5 cursor-pointer font-sans"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Add foreign key</span>
+                    </button>
+                  )}
+                </div>
+
+                {/* Optional Check constraint */}
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block text-[13px] font-medium text-[#cccccc] font-sans">
+                      CHECK Expression
+                    </label>
+                    <span className="text-[12px] text-[#777777]">Optional</span>
+                  </div>
+                  <input
+                    type="text"
+                    value={newColCheck}
+                    onChange={(e) => setNewColCheck(e.target.value)}
+                    placeholder="e.g. length(column_name) < 500"
+                    className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] px-3 text-[14px] text-white font-mono focus:outline-none focus:border-[#3b82f6] transition-colors placeholder-[#555555]"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Footer matching Databases page SlideOver */}
+          <div className="p-4 border-t border-[#222222] bg-[#0e0e0e] flex items-center justify-end gap-2.5 font-sans shrink-0">
+            <button
+              type="button"
+              onClick={() => setIsAddColumnOpen(false)}
+              className="inline-flex items-center justify-center h-9 px-4 rounded-[8px] text-[14px] font-medium text-[#cccccc] hover:text-white bg-transparent hover:bg-[#161616] border border-[#262626] hover:border-[#383838] transition-colors cursor-pointer font-sans"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={isCreatingColumn || !newColName.trim()}
+              onClick={handleCreateColumn}
+              className="group relative flex shrink-0 items-center justify-center h-9 px-4 rounded-[8px] font-medium text-white shadow-xs outline-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed overflow-hidden ring-1 ring-[#1d4ed8] bg-[#2563eb] font-sans"
+            >
+              <span
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-0 rounded-[inherit] bg-gradient-to-b from-[#3b82f6] to-[#2563eb] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2)]"
+              />
+              <span
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-0 rounded-[inherit] bg-black opacity-0 group-hover:opacity-15 transition-opacity duration-200"
+              />
+              <span className="relative flex items-center gap-1.5 text-[14px] font-sans">
+                {isCreatingColumn ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Adding Column...</span>
+                  </>
+                ) : (
+                  <span>Add Column</span>
+                )}
+              </span>
+            </button>
+          </div>
+        </div>
+      </SlideOver>
+
+      {/* ─── Foreign Key Relationship SlideOver Panel (Matches Image) ─── */}
+      <SlideOver
+        isOpen={isFkModalOpen}
+        onClose={handleRequestCloseFkModal}
+        width="w-[520px] max-w-full"
+        zIndex="z-[60]"
+        title={`Add foreign key relationship to ${selectedTable}`}
+      >
+        <div className="flex-1 flex flex-col min-h-0 bg-[#0e0e0e] overflow-hidden font-sans">
+          <div className="flex-1 overflow-y-auto p-5 space-y-4 font-sans">
+            {/* Select a schema */}
+            <div>
+              <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5 font-sans">
+                Select a schema
+              </label>
+              <CustomSelect
+                value={draftFkSchema}
+                onChange={setDraftFkSchema}
+                placeholder="Select a schema"
+                options={[
+                  { value: 'public', label: 'public' },
+                ]}
+                menuWidth="w-full"
+              />
+            </div>
+
+            {/* 3. Select a table to reference to */}
+            <div>
+              <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5 font-sans">
+                Select a table to reference to
+              </label>
+              <CustomSelect
+                value={draftFkTable}
+                onChange={handleSelectFkTargetTable}
+                placeholder="Select a table to reference to"
+                options={tables
+                  .filter((t) => t.name !== selectedTable)
+                  .map((t) => ({
+                    value: t.name,
+                    label: `${draftFkSchema ? `${draftFkSchema} ` : ''}${t.name}`,
+                  }))}
+                menuWidth="w-full"
+              />
+            </div>
+
+            {/* 4. Column mapping */}
+            {draftFkTable && (
+              <div>
+                <label className="block text-[13px] font-medium text-[#cccccc] mb-2 font-sans">
+                  Select columns from{' '}
+                  <span className="px-1.5 py-0.5 rounded bg-[#181818] border border-[#262626] font-mono text-white text-[12px]">
+                    {draftFkSchema ? `${draftFkSchema}.${draftFkTable}` : draftFkTable}
+                  </span>{' '}
+                  to reference to
+                </label>
+
+                {/* Column header badges */}
+                <div className="flex items-center gap-2 mb-1.5 px-0.5 text-[11.5px] text-[#888888] font-mono">
+                  <div className="flex-1 truncate">
+                    {draftFkSchema ? `${draftFkSchema}.${selectedTable}` : selectedTable}
+                  </div>
+                  <div className="w-5 shrink-0" />
+                  <div className="flex-1 truncate">
+                    {draftFkSchema ? `${draftFkSchema}.${draftFkTable}` : draftFkTable}
+                  </div>
+                  {draftFkPairs.length > 1 && <div className="w-8 shrink-0" />}
+                </div>
+
+                {/* Column pair rows */}
+                <div className="space-y-2">
+                  {draftFkPairs.map((pair, idx) => {
+                    const currentCols = schemaCacheRef.current[selectedTable]?.columns || [];
+                    const sourceOptions: Array<{ value: string; label: string }> = [];
+                    if (newColName && newColName.trim()) {
+                      sourceOptions.push({ value: newColName.trim(), label: newColName.trim() });
+                    }
+                    currentCols.forEach((c) => {
+                      if (c.name !== newColName?.trim()) {
+                        sourceOptions.push({ value: c.name, label: c.name });
+                      }
+                    });
+                    if (sourceOptions.length === 0) {
+                      sourceOptions.push({ value: pair.sourceCol || 'column', label: pair.sourceCol || 'column' });
+                    }
+
+                    const targetCols = schemaCacheRef.current[draftFkTable]?.columns || [];
+                    const targetOptions = targetCols.length > 0
+                      ? targetCols.map((c) => ({ value: c.name, label: c.name }))
+                      : [{ value: 'id', label: 'id' }];
+
+                    return (
+                      <div key={idx} className="flex items-center gap-2">
+                        <div className="flex-1">
+                          <CustomSelect
+                            value={pair.sourceCol || (newColName ? newColName.trim() : (sourceOptions[0]?.value || ''))}
+                            onChange={(val) => {
+                              setDraftFkPairs((prev) => {
+                                const next = [...prev];
+                                next[idx] = { ...next[idx], sourceCol: val };
+                                return next;
+                              });
+                            }}
+                            options={sourceOptions}
+                            menuWidth="w-full"
+                          />
+                        </div>
+
+                        <div className="text-[#666666] shrink-0">
+                          <ArrowRight className="w-4 h-4" />
+                        </div>
+
+                        <div className="flex-1">
+                          <CustomSelect
+                            value={pair.targetCol || draftFkColumn || 'id'}
+                            onChange={(val) => {
+                              if (idx === 0) setDraftFkColumn(val);
+                              setDraftFkPairs((prev) => {
+                                const next = [...prev];
+                                next[idx] = { ...next[idx], targetCol: val };
+                                return next;
+                              });
+                            }}
+                            options={targetOptions}
+                            menuWidth="w-full"
+                          />
+                        </div>
+
+                        {draftFkPairs.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setDraftFkPairs((prev) => prev.filter((_, i) => i !== idx));
+                            }}
+                            className="w-8 h-8 rounded-[6px] border border-[#262626] bg-[#141414] hover:bg-[#1f1f1f] text-[#777777] hover:text-white flex items-center justify-center transition-colors cursor-pointer shrink-0"
+                            title="Remove mapping"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Add another column button */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDraftFkPairs((prev) => [...prev, { sourceCol: '', targetCol: '' }]);
+                  }}
+                  className="mt-2.5 h-8 px-3 rounded-[6px] text-[12px] font-medium border border-[#262626] bg-[#141414] text-[#cccccc] hover:text-white hover:border-[#383838] transition-colors inline-flex items-center gap-1.5 cursor-pointer font-sans"
+                >
+                  <span>Add another column</span>
+                </button>
+              </div>
+            )}
+
+            {draftFkTable && <div className="border-t border-[#1e1e1e] my-3" />}
+
+            {/* Action on update */}
+            <div className="space-y-1.5">
+              <label className="block text-[13px] font-medium text-[#cccccc] font-sans">
+                Action if referenced row is updated
+              </label>
+              <CustomSelect
+                value={draftFkOnUpdate}
+                onChange={(v) => setDraftFkOnUpdate(v as typeof draftFkOnUpdate)}
+                options={[
+                  { value: 'NO ACTION', label: 'No action' },
+                  { value: 'CASCADE', label: 'Cascade' },
+                  { value: 'RESTRICT', label: 'Restrict' },
+                  { value: 'SET NULL', label: 'Set null' },
+                  { value: 'SET DEFAULT', label: 'Set default' },
+                ]}
+                menuWidth="w-full"
+              />
+              <p className="text-[12px] text-[#8c8c8c] leading-relaxed">
+                <span className="text-white font-medium">
+                  {draftFkOnUpdate === 'NO ACTION' ? 'No action: ' : `${draftFkOnUpdate === 'CASCADE' ? 'Cascade' : draftFkOnUpdate === 'RESTRICT' ? 'Restrict' : draftFkOnUpdate === 'SET NULL' ? 'Set null' : 'Set default'}: `}
+                </span>
+                Updating a record from{' '}
+                <span className="px-1.5 py-0.5 rounded bg-[#181818] border border-[#262626] font-mono text-white text-[11px]">
+                  {draftFkSchema && draftFkTable ? `${draftFkSchema}.${draftFkTable}` : (draftFkTable || 'referenced table')}
+                </span>{' '}
+                {draftFkOnUpdate === 'NO ACTION' && (
+                  <>will <span className="text-amber-400 font-medium">raise an error</span> if there are records existing in this table that reference it</>
+                )}
+                {draftFkOnUpdate === 'CASCADE' && (
+                  <>will <span className="text-blue-400 font-medium">cascade and update</span> matching foreign key records in this table</>
+                )}
+                {draftFkOnUpdate === 'RESTRICT' && (
+                  <>will <span className="text-amber-400 font-medium">raise an error</span> immediately preventing the update</>
+                )}
+                {draftFkOnUpdate === 'SET NULL' && (
+                  <>will <span className="text-amber-400 font-medium">set this column to NULL</span> for matching records in this table</>
+                )}
+                {draftFkOnUpdate === 'SET DEFAULT' && (
+                  <>will <span className="text-blue-400 font-medium">set this column to its default value</span> for matching records</>
+                )}
+              </p>
+            </div>
+
+            {/* 7. Action on delete */}
+            <div className="space-y-1.5">
+              <label className="block text-[13px] font-medium text-[#cccccc] font-sans">
+                Action if referenced row is removed
+              </label>
+              <CustomSelect
+                value={draftFkOnDelete}
+                onChange={(v) => setDraftFkOnDelete(v as typeof draftFkOnDelete)}
+                options={[
+                  { value: 'NO ACTION', label: 'No action' },
+                  { value: 'CASCADE', label: 'Cascade' },
+                  { value: 'RESTRICT', label: 'Restrict' },
+                  { value: 'SET NULL', label: 'Set null' },
+                  { value: 'SET DEFAULT', label: 'Set default' },
+                ]}
+                menuWidth="w-full"
+              />
+              <p className="text-[12px] text-[#8c8c8c] leading-relaxed">
+                <span className="text-white font-medium">
+                  {draftFkOnDelete === 'NO ACTION' ? 'No action: ' : `${draftFkOnDelete === 'CASCADE' ? 'Cascade' : draftFkOnDelete === 'RESTRICT' ? 'Restrict' : draftFkOnDelete === 'SET NULL' ? 'Set null' : 'Set default'}: `}
+                </span>
+                Deleting a record from{' '}
+                <span className="px-1.5 py-0.5 rounded bg-[#181818] border border-[#262626] font-mono text-white text-[11px]">
+                  {draftFkSchema && draftFkTable ? `${draftFkSchema}.${draftFkTable}` : (draftFkTable || 'referenced table')}
+                </span>{' '}
+                {draftFkOnDelete === 'NO ACTION' && (
+                  <>will <span className="text-amber-400 font-medium">raise an error</span> if there are records existing in this table that reference it</>
+                )}
+                {draftFkOnDelete === 'CASCADE' && (
+                  <>will <span className="text-amber-400 font-medium">cascade and delete</span> matching records in this table</>
+                )}
+                {draftFkOnDelete === 'RESTRICT' && (
+                  <>will <span className="text-amber-400 font-medium">raise an error</span> immediately preventing deletion of the parent</>
+                )}
+                {draftFkOnDelete === 'SET NULL' && (
+                  <>will <span className="text-amber-400 font-medium">set this column to NULL</span> for matching records in this table</>
+                )}
+                {draftFkOnDelete === 'SET DEFAULT' && (
+                  <>will <span className="text-blue-400 font-medium">set this column to its default value</span> for matching records</>
+                )}
+              </p>
+            </div>
+          </div>
+
+          {/* Footer */}
+          <div className="p-4 border-t border-[#222222] bg-[#0e0e0e] flex items-center justify-end gap-2.5 font-sans shrink-0">
+            <button
+              type="button"
+              onClick={handleRequestCloseFkModal}
+              className="inline-flex items-center justify-center h-9 px-4 rounded-[8px] text-[14px] font-medium text-[#cccccc] hover:text-white bg-transparent hover:bg-[#161616] border border-[#262626] hover:border-[#383838] transition-colors cursor-pointer font-sans"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={!draftFkTable || (!draftFkColumn && !draftFkPairs[0]?.targetCol)}
+              onClick={() => {
+                const finalTargetCol = draftFkPairs[0]?.targetCol || draftFkColumn || 'id';
+                setNewColFkSchema(draftFkSchema);
+                setNewColFkTable(draftFkTable);
+                setNewColFkColumn(finalTargetCol);
+                setNewColFkOnUpdate(draftFkOnUpdate);
+                setNewColFkOnDelete(draftFkOnDelete);
+                setIsFkModalOpen(false);
+              }}
+              className="group relative flex shrink-0 items-center justify-center h-9 px-4 rounded-[8px] font-medium text-white shadow-xs outline-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed overflow-hidden ring-1 ring-[#1d4ed8] bg-[#2563eb] font-sans"
+            >
+              <span
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-0 rounded-[inherit] bg-gradient-to-b from-[#3b82f6] to-[#2563eb] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2)]"
+              />
+              <span
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-0 rounded-[inherit] bg-black opacity-0 group-hover:opacity-15 transition-opacity duration-200"
+              />
+              <span className="relative flex items-center gap-1.5 text-[14px] font-sans">
+                Save
+              </span>
+            </button>
+          </div>
+        </div>
+      </SlideOver>
+
+      {/* ─── Discard FK Changes Confirm Dialog ─── */}
+      <ConfirmDialog
+        isOpen={isDiscardFkConfirmOpen}
+        title="Discard Foreign Key Changes?"
+        description="You have unsaved changes in this foreign key configuration. If you discard, these changes will not be saved."
+        confirmLabel="Discard"
+        cancelLabel="Keep Editing"
+        variant="warning"
+        onConfirm={() => {
+          setIsDiscardFkConfirmOpen(false);
+          setIsFkModalOpen(false);
+        }}
+        onClose={() => setIsDiscardFkConfirmOpen(false)}
+      />
 
       {/* ─── Foreign Key Reference Record Picker Modal (Image 1 & 2) ─── */}
       {fkPickerTarget && selectedDb && (

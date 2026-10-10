@@ -76,6 +76,33 @@ pub struct ColumnInfo {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ForeignKeyDef {
+    pub schema: Option<String>,
+    pub table: String,
+    pub column: String,
+    pub on_update: Option<String>,
+    pub on_delete: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateColumnRequest {
+    pub name: String,
+    pub description: Option<String>,
+    pub data_type: String,
+    #[serde(default)]
+    pub is_array: bool,
+    #[serde(default)]
+    pub primary_key: bool,
+    #[serde(default)]
+    pub unique: bool,
+    #[serde(default = "default_true")]
+    pub nullable: bool,
+    pub default_value: Option<String>,
+    pub check_expression: Option<String>,
+    pub foreign_key: Option<ForeignKeyDef>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ForeignKeyInfo {
     pub column: String,
     pub referenced_table: String,

@@ -42,6 +42,10 @@ pub fn get_router() -> Router {
                 .patch(crate::database::handlers::update_rows)
                 .delete(crate::database::handlers::delete_rows),
         )
+        .route(
+            "/:db_name/:table_name/columns",
+            post(crate::database::handlers::add_column),
+        )
 }
 
 use axiom_policy::PolicyEngine;

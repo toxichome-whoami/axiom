@@ -160,6 +160,27 @@ export interface ColumnInfoApi {
   primary_key: boolean;
 }
 
+export interface ForeignKeyDefApi {
+  schema?: string;
+  table: string;
+  column: string;
+  on_update?: string;
+  on_delete?: string;
+}
+
+export interface CreateColumnRequestApi {
+  name: string;
+  description?: string;
+  data_type: string;
+  is_array?: boolean;
+  primary_key?: boolean;
+  unique?: boolean;
+  nullable?: boolean;
+  default_value?: string;
+  check_expression?: string;
+  foreign_key?: ForeignKeyDefApi;
+}
+
 export interface ForeignKeyInfoApi {
   column: string;
   referenced_table: string;

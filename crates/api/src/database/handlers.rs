@@ -905,6 +905,40 @@ pub async fn describe_table(
     })))
 }
 
+pub async fn add_column(
+    axum::extract::Path((db_name, table_name)): axum::extract::Path<(String, String)>,
+    axum::extract::Extension(auth): axum::extract::Extension<AuthContext>,
+    axum::Json(payload): axum::Json<axiom_core::CreateColumnRequest>,
+) -> Result<axum::Json<serde_json::Value>, AxiomError> {
+    // Check DDL permissions for role
+    PolicyEngine::evaluate(&auth, &db_name, &table_name, "DDL")?;
+    let _db_cfg = get_db_config(&db_name, &auth).await?;
+
+    let engine = DatabasePoolManager::get_engine(&db_name)
+        .await
+        .ok_or_else(|| {
+            AxiomError::new("DB_NOT_FOUND", "Database not found", axum::http::StatusCode::NOT_FOUND)
+        })?;
+
+    engine
+        .add_column(&table_name, &payload)
+        .await
+        .map_err(|e| {
+            tracing::error!("Add column failed: {}", e);
+            AxiomError::new("ADD_COLUMN_FAILED", &e.to_string(), axum::http::StatusCode::INTERNAL_SERVER_ERROR)
+        })?;
+
+    Ok(axum::Json(serde_json::json!({
+        "success": true,
+        "data": {
+            "database": db_name,
+            "table": table_name,
+            "column": payload.name
+        },
+        "error": serde_json::Value::Null
+    })))
+}
+
 #[cfg(test)]
 mod tests {
 

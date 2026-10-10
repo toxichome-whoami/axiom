@@ -9,7 +9,10 @@
 use async_trait::async_trait;
 use serde_json::Value;
 
-pub use axiom_core::{ColumnInfo, EngineError, ForeignKeyInfo, QueryResult, TableInfo, DEFAULT_MAX_QUERY_ROWS, extract_next_cursor};
+pub use axiom_core::{
+    ColumnInfo, CreateColumnRequest, EngineError, ForeignKeyDef, ForeignKeyInfo, QueryResult, TableInfo,
+    DEFAULT_MAX_QUERY_ROWS, extract_next_cursor,
+};
 
 // ─── Database Engine Trait ─────────────────────────────────────────────────
 
@@ -77,6 +80,12 @@ pub trait DatabaseEngine: Send + Sync {
     ///  - Returns static dialect string slice.
     ///  - Idempotent: Yes.
     fn dialect(&self) -> &str;
+
+    /// Adds a new column to a table with dialect-safe DDL generation.
+    /// CONTRACT:
+    ///  - Precondition: Table exists and column name is valid.
+    ///  - Side effects: Modifies table schema in target database.
+    async fn add_column(&self, table: &str, req: &CreateColumnRequest) -> Result<(), EngineError>;
 }
 
 #[cfg(test)]

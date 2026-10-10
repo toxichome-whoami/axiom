@@ -129,6 +129,7 @@ import type {
   TableInfoApi,
   ColumnInfoApi,
   ForeignKeyInfoApi,
+  CreateColumnRequestApi,
   TableRowsResponse,
   QueryResultApi,
 } from '../types';
@@ -511,6 +512,15 @@ export const api = {
       method: 'DELETE',
       body: JSON.stringify({ filter }),
     }),
+
+  createTableColumn: (db: string, table: string, payload: CreateColumnRequestApi) =>
+    request<{ database: string; table: string; column: string }>(
+      `/api/v1/db/${encodeURIComponent(db)}/${encodeURIComponent(table)}/columns`,
+      {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }
+    ),
 
   executeSqlQuery: (db: string, sql: string, params: unknown[] = [], timeout = 30) =>
     request<QueryResultApi>(`/api/v1/db/${encodeURIComponent(db)}/query`, {
