@@ -115,7 +115,6 @@ impl DatabaseEngine for PostgresDatabaseEngine {
     ) -> Result<Vec<TableInfo>, EngineError> {
         let pool = self.pool.as_ref().ok_or_else(|| EngineError::Connection("Not connected".into()))?;
 
-        // Deterministic pagination using $1 placeholder when cursor is specified
         let query_str = if cursor.is_some() {
             format!(
                 "SELECT table_name::text FROM information_schema.tables \

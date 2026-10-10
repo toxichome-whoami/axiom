@@ -21,14 +21,14 @@ use axiom_core::AuthContext;
 // Consecutive execution failure counter per database alias for circuit breaker (Debt #4 fix).
 static CIRCUIT_FAILURES: once_cell::sync::Lazy<dashmap::DashMap<String, u32>> = once_cell::sync::Lazy::new(dashmap::DashMap::new);
 
+// Type alias for broadcast channel results to simplify complex nested types.
+type InFlightResult = Result<(Arc<QueryResult>, bytes::Bytes), AxiomError>;
+type InFlightQueriesMap = dashmap::DashMap<String, tokio::sync::broadcast::Sender<InFlightResult>>;
+
 // Single-Flight in-flight query deduplication registry.
 // WHY: Coalesces concurrent identical queries into one DB execution to prevent Cache Stampede and penetration storms.
-static IN_FLIGHT_QUERIES: once_cell::sync::Lazy<
-    dashmap::DashMap<
-        String,
-        tokio::sync::broadcast::Sender<Result<(Arc<QueryResult>, bytes::Bytes), AxiomError>>,
-    >,
-> = once_cell::sync::Lazy::new(dashmap::DashMap::new);
+static IN_FLIGHT_QUERIES: once_cell::sync::Lazy<InFlightQueriesMap> =
+    once_cell::sync::Lazy::new(dashmap::DashMap::new);
 
 // Fast heuristic regex to skip cache key allocation on obvious mutation statements.
 static MUTATION_RE: once_cell::sync::Lazy<regex::Regex> = once_cell::sync::Lazy::new(|| {
@@ -419,7 +419,7 @@ impl QueryExecutionPipeline {
                                 // Differentiated Negative Caching TTL:
                                 // Empty results (0 rows) use negative_cache_ttl (default 5s) to absorb
                                 // bursts on missing keys without polluting the bounded L1 LRU cache.
-                                let is_empty = arc_res.rows.as_ref().map_or(true, |r| r.is_empty());
+                                let is_empty = arc_res.rows.as_ref().is_none_or(|r| r.is_empty());
                                 let effective_ttl = if is_empty {
                                     (config.cache.negative_cache_ttl as u64).max(1)
                                 } else {
@@ -671,41 +671,60 @@ pub async fn fetch_rows(
         format!("WHERE {}", where_clauses.join(" AND "))
     };
 
-    let sort_col = params.sort.as_deref().unwrap_or("id");
-    let order_col = crate::database::filter_builder::sanitize_ident(sort_col);
-    let order_dir = if params.order.eq_ignore_ascii_case("desc") {
-        "DESC"
-    } else {
-        "ASC"
-    };
-
     let limit = params.limit.clamp(1, 500);
 
     let mut final_where = where_sql.clone();
 
-    if let Some(cursor) = &params.cursor {
-        // If WHERE already exists, append with AND, else start new WHERE
-        let cursor_op = if order_dir == "DESC" { "<" } else { ">" };
-        
-        // Parametrize the cursor to prevent SQL injection
-        let cursor_cond = format!("{} {} ?", order_col, cursor_op);
-        values.push(Value::String(cursor.clone()));
-
-        if final_where.trim().is_empty() {
-            final_where = format!("WHERE {}", cursor_cond);
+    let (order_by_sql, order_col_opt) = if let Some(ref sort_col) = params.sort {
+        let order_col = crate::database::filter_builder::sanitize_ident(sort_col);
+        let order_dir = if params.order.eq_ignore_ascii_case("desc") {
+            "DESC"
         } else {
-            final_where = format!("{} AND {}", final_where, cursor_cond);
+            "ASC"
+        };
+        (format!("ORDER BY {} {}", order_col, order_dir), Some((order_col, order_dir)))
+    } else if params.cursor.is_some() {
+        let order_col = crate::database::filter_builder::sanitize_ident("id");
+        let order_dir = if params.order.eq_ignore_ascii_case("desc") {
+            "DESC"
+        } else {
+            "ASC"
+        };
+        (format!("ORDER BY {} {}", order_col, order_dir), Some((order_col, order_dir)))
+    } else {
+        ("".to_string(), None)
+    };
+
+    if let Some(cursor) = &params.cursor {
+        if let Some((ref order_col, order_dir)) = order_col_opt {
+            let cursor_op = if order_dir == "DESC" { "<" } else { ">" };
+            let cursor_cond = format!("{} {} ?", order_col, cursor_op);
+            values.push(Value::String(cursor.clone()));
+
+            if final_where.trim().is_empty() {
+                final_where = format!("WHERE {}", cursor_cond);
+            } else {
+                final_where = format!("{} AND {}", final_where, cursor_cond);
+            }
         }
     }
 
-    let sql = format!(
-        "SELECT * FROM {} {} ORDER BY {} {} LIMIT {}",
-        crate::database::filter_builder::sanitize_ident(&table_name),
-        final_where,
-        order_col,
-        order_dir,
-        limit
-    );
+    let sql = if order_by_sql.is_empty() {
+        format!(
+            "SELECT * FROM {} {} LIMIT {}",
+            crate::database::filter_builder::sanitize_ident(&table_name),
+            final_where,
+            limit
+        )
+    } else {
+        format!(
+            "SELECT * FROM {} {} {} LIMIT {}",
+            crate::database::filter_builder::sanitize_ident(&table_name),
+            final_where,
+            order_by_sql,
+            limit
+        )
+    };
 
     let (result, _) =
         QueryExecutionPipeline::run_query(&db_name, &sql, values, &auth, &db_cfg).await?;
@@ -716,13 +735,14 @@ pub async fn fetch_rows(
     if let Some(ref rows) = result_inner.rows {
         if !rows.is_empty() && rows.len() == limit as usize {
             if let Some(last_row) = rows.last() {
-                // Determine cursor value by grabbing the column we sorted by
-                if let Some(val) = last_row.get(&*order_col) {
-                    next_cursor = match val {
-                        Value::String(s) => Some(s.clone()),
-                        Value::Number(n) => Some(n.to_string()),
-                        _ => None, // nulls or booleans not supported as cursors
-                    };
+                if let Some((ref order_col, _)) = order_col_opt {
+                    if let Some(val) = last_row.get(order_col.as_ref()) {
+                        next_cursor = match val {
+                            Value::String(s) => Some(s.clone()),
+                            Value::Number(n) => Some(n.to_string()),
+                            _ => None,
+                        };
+                    }
                 }
             }
         }
