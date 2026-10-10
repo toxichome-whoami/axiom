@@ -44,6 +44,7 @@ import {
   Calendar,
   HelpCircle,
   ExternalLink,
+  Minus,
 } from 'lucide-react';
 import {
   api,
@@ -459,6 +460,12 @@ function InlineCellEditorPopover({
 }: InlineCellEditorPopoverProps) {
   const popoverRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [localValue, setLocalValue] = useState<string>(editingCell.currentValue);
+
+  // Keep localValue in sync if editingCell.currentValue changes externally
+  useEffect(() => {
+    setLocalValue(editingCell.currentValue);
+  }, [editingCell.currentValue]);
 
   useEffect(() => {
     if (textareaRef.current) {
@@ -468,26 +475,34 @@ function InlineCellEditorPopover({
     }
   }, []);
 
+  const handleSaveCurrent = useCallback(
+    (val?: string) => {
+      const finalVal = val !== undefined ? val : (textareaRef.current ? textareaRef.current.value : localValue);
+      onSave(finalVal);
+    },
+    [localValue, onSave]
+  );
+
   useEffect(() => {
     const handleMouseDown = (e: MouseEvent) => {
       if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
-        onSave(editingCell.currentValue);
+        handleSaveCurrent();
       }
     };
     document.addEventListener('mousedown', handleMouseDown);
     return () => document.removeEventListener('mousedown', handleMouseDown);
-  }, [editingCell.currentValue, onSave]);
+  }, [handleSaveCurrent]);
 
   useEffect(() => {
     const handleScroll = (e: Event) => {
       if (popoverRef.current && popoverRef.current.contains(e.target as Node)) {
         return;
       }
-      onSave(editingCell.currentValue);
+      handleSaveCurrent();
     };
     window.addEventListener('scroll', handleScroll, true);
     return () => window.removeEventListener('scroll', handleScroll, true);
-  }, [editingCell.currentValue, onSave]);
+  }, [handleSaveCurrent]);
 
   const top = Math.max(8, Math.min(window.innerHeight - 260, editingCell.rect.top));
   const left = Math.max(8, Math.min(window.innerWidth - 340, editingCell.rect.left));
@@ -508,14 +523,21 @@ function InlineCellEditorPopover({
         <textarea
           ref={textareaRef}
           rows={5}
-          value={editingCell.currentValue}
-          onChange={(e) => onChange(e.target.value)}
+          value={localValue}
+          onChange={(e) => {
+            const v = e.target.value;
+            setLocalValue(v);
+            onChange(v);
+          }}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault();
-              onSave(editingCell.currentValue);
+              e.stopPropagation();
+              const v = textareaRef.current ? textareaRef.current.value : localValue;
+              handleSaveCurrent(v);
             } else if (e.key === 'Escape') {
               e.preventDefault();
+              e.stopPropagation();
               onCancel();
             }
           }}
@@ -531,7 +553,7 @@ function InlineCellEditorPopover({
         <div className="flex flex-col gap-1.5">
           <button
             type="button"
-            onClick={() => onSave(editingCell.currentValue)}
+            onClick={() => handleSaveCurrent()}
             className="flex items-center gap-2 text-left cursor-pointer group"
           >
             <span className="inline-flex items-center justify-center w-5 h-5 rounded-[4px] bg-[#1e1e1e] border border-[#2e2e2e] text-[#a0a0a0] text-[11px] font-mono group-hover:text-white group-hover:border-[#444444] transition-colors">
@@ -4118,19 +4140,26 @@ export function TableEditor() {
                         style={{ width: '64px', minWidth: '64px', maxWidth: '64px' }}
                       >
                         <div className="flex items-center justify-start gap-1.5">
+                          {/* shadcn Checkbox: Select All */}
                           <button
                             type="button"
                             onClick={handleToggleAllRows}
                             title={selectedRowIndices.size === rows.length && rows.length > 0 ? 'Deselect all' : 'Select all'}
-                            className={`w-4 h-4 rounded-[4px] border flex items-center justify-center transition-colors cursor-pointer ${
-                              selectedRowIndices.size > 0 && selectedRowIndices.size === rows.length
-                                ? 'bg-blue-600 border-blue-500 text-white'
+                            aria-label={selectedRowIndices.size === rows.length && rows.length > 0 ? 'Deselect all rows' : 'Select all rows'}
+                            aria-checked={selectedRowIndices.size === rows.length && rows.length > 0 ? 'true' : selectedRowIndices.size > 0 ? 'mixed' : 'false'}
+                            className={`peer h-4 w-4 shrink-0 rounded-[4px] border border-[#383838] shadow-xs transition-all focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/40 cursor-pointer flex items-center justify-center ${
+                              selectedRowIndices.size === rows.length && rows.length > 0
+                                ? 'bg-white border-white text-black'
                                 : selectedRowIndices.size > 0
-                                ? 'bg-blue-600/30 border-blue-500 text-blue-400'
-                                : 'bg-[#141414] border-[#2c2c2c] hover:border-[#444444] text-transparent'
+                                ? 'bg-white border-white text-black'
+                                : 'bg-transparent hover:border-[#666666] hover:bg-white/[0.04]'
                             }`}
                           >
-                            <Check className="w-3 h-3 stroke-[2.5]" />
+                            {selectedRowIndices.size === rows.length && rows.length > 0 ? (
+                              <Check className="h-3 w-3 stroke-[3]" />
+                            ) : selectedRowIndices.size > 0 ? (
+                              <Minus className="h-3 w-3 stroke-[3]" />
+                            ) : null}
                           </button>
                         </div>
                       </th>
@@ -4235,18 +4264,22 @@ export function TableEditor() {
                               onClick={(e) => e.stopPropagation()}
                             >
                               <div className="flex items-center justify-start gap-1.5">
-                                {/* Tickmark Checkbox */}
+                                {/* shadcn Checkbox: Single Row */}
                                 <button
                                   type="button"
                                   onClick={(e) => handleToggleRowSelect(e, idx)}
                                   title={selectedRowIndices.has(idx) ? 'Deselect row' : 'Select row'}
-                                  className={`w-4 h-4 rounded-[4px] border flex items-center justify-center transition-colors cursor-pointer ${
+                                  aria-label={selectedRowIndices.has(idx) ? `Deselect row ${idx + 1}` : `Select row ${idx + 1}`}
+                                  aria-checked={selectedRowIndices.has(idx) ? 'true' : 'false'}
+                                  className={`peer h-4 w-4 shrink-0 rounded-[4px] border border-[#383838] shadow-xs transition-all focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/40 cursor-pointer flex items-center justify-center ${
                                     selectedRowIndices.has(idx)
-                                      ? 'bg-blue-600 border-blue-500 text-white'
-                                      : 'bg-[#141414] border-[#2c2c2c] hover:border-[#444444] text-transparent hover:text-[#555555]'
+                                      ? 'bg-white border-white text-black'
+                                      : 'bg-transparent hover:border-[#666666] hover:bg-white/[0.04]'
                                   }`}
                                 >
-                                  <Check className="w-3 h-3 stroke-[2.5]" />
+                                  {selectedRowIndices.has(idx) && (
+                                    <Check className="h-3 w-3 stroke-[3]" />
+                                  )}
                                 </button>
 
                                 {/* Expand Row Button - appears on row hover */}

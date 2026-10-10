@@ -186,18 +186,37 @@ impl QueryExecutionPipeline {
             let cow = cached.formatted_sql.clone().map(std::borrow::Cow::Owned).unwrap_or_else(|| std::borrow::Cow::Borrowed(sql));
             (cached.is_mutation, cow, cached.multiple_statements.clone())
         } else {
-            let ast_result = if dialect_name == "postgres" {
-                sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::PostgreSqlDialect {}, sql)
-            } else if dialect_name == "clickhouse" {
-                sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::ClickHouseDialect {}, sql)
-            } else if dialect_name == "mssql" {
-                sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::MsSqlDialect {}, sql)
-            } else if dialect_name == "mysql" {
-                sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::MySqlDialect {}, sql)
-            } else if dialect_name == "sqlite" {
-                sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::SQLiteDialect {}, sql)
+            // For PostgreSQL dialect, replace '?' with '$1', '$2', ... placeholders before AST parsing,
+            // because PostgreSQL grammar rejects raw '?' parameter placeholders.
+            let parse_target_sql: std::borrow::Cow<'_, str> = if (dialect_name == "postgres" || dialect_name == "any") && sql.contains('?') {
+                use std::fmt::Write;
+                let mut s = String::with_capacity(sql.len() + 16);
+                let mut idx = 1;
+                for c in sql.chars() {
+                    if c == '?' {
+                        let _ = write!(s, "${}", idx);
+                        idx += 1;
+                    } else {
+                        s.push(c);
+                    }
+                }
+                std::borrow::Cow::Owned(s)
             } else {
-                sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::GenericDialect {}, sql)
+                std::borrow::Cow::Borrowed(sql)
+            };
+
+            let ast_result = if dialect_name == "postgres" {
+                sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::PostgreSqlDialect {}, &parse_target_sql)
+            } else if dialect_name == "clickhouse" {
+                sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::ClickHouseDialect {}, &parse_target_sql)
+            } else if dialect_name == "mssql" {
+                sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::MsSqlDialect {}, &parse_target_sql)
+            } else if dialect_name == "mysql" {
+                sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::MySqlDialect {}, &parse_target_sql)
+            } else if dialect_name == "sqlite" {
+                sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::SQLiteDialect {}, &parse_target_sql)
+            } else {
+                sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::GenericDialect {}, &parse_target_sql)
             };
 
             let statements = ast_result.map_err(|e| {
@@ -686,15 +705,7 @@ pub async fn fetch_rows(
     let mut final_where = where_sql.clone();
 
     let (order_by_sql, order_col_opt) = if let Some(ref sort_col) = params.sort {
-        let order_col = crate::database::filter_builder::sanitize_ident(sort_col);
-        let order_dir = if params.order.eq_ignore_ascii_case("desc") {
-            "DESC"
-        } else {
-            "ASC"
-        };
-        (format!("ORDER BY {} {}", order_col, order_dir), Some((order_col, order_dir)))
-    } else if params.cursor.is_some() {
-        let order_col = crate::database::filter_builder::sanitize_ident("id");
+        let order_col = crate::database::filter_builder::sanitize_ident(sort_col).into_owned();
         let order_dir = if params.order.eq_ignore_ascii_case("desc") {
             "DESC"
         } else {
@@ -702,7 +713,42 @@ pub async fn fetch_rows(
         };
         (format!("ORDER BY {} {}", order_col, order_dir), Some((order_col, order_dir)))
     } else {
-        ("".to_string(), None)
+        // Deterministic default ordering:
+        // In PostgreSQL and MVCC relational databases, an UPDATE rewrites the tuple on disk.
+        // Without an explicit ORDER BY, updated rows move to the bottom of the table heap.
+        // We introspect the table columns to find the primary key, or fallback to "id" if present.
+        let default_sort_col = if let Some(engine) = DatabasePoolManager::get_engine(&db_name).await {
+            if let Ok(cols) = engine.describe_table(&table_name).await {
+                cols.iter()
+                    .find(|c| c.primary_key)
+                    .map(|c| c.name.clone())
+                    .or_else(|| cols.iter().find(|c| c.name.eq_ignore_ascii_case("id")).map(|c| c.name.clone()))
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        if let Some(sort_col) = default_sort_col {
+            let order_col = crate::database::filter_builder::sanitize_ident(&sort_col).into_owned();
+            let order_dir = if params.order.eq_ignore_ascii_case("desc") {
+                "DESC"
+            } else {
+                "ASC"
+            };
+            (format!("ORDER BY {} {}", order_col, order_dir), Some((order_col, order_dir)))
+        } else if params.cursor.is_some() {
+            let order_col = "id".to_string();
+            let order_dir = if params.order.eq_ignore_ascii_case("desc") {
+                "DESC"
+            } else {
+                "ASC"
+            };
+            (format!("ORDER BY {} {}", order_col, order_dir), Some((order_col, order_dir)))
+        } else {
+            ("".to_string(), None)
+        }
     };
 
     if let Some(cursor) = &params.cursor {
@@ -746,7 +792,7 @@ pub async fn fetch_rows(
         if !rows.is_empty() && rows.len() == limit as usize {
             if let Some(last_row) = rows.last() {
                 if let Some((ref order_col, _)) = order_col_opt {
-                    if let Some(val) = last_row.get(order_col.as_ref()) {
+                    if let Some(val) = last_row.get(order_col.as_str()) {
                         next_cursor = match val {
                             Value::String(s) => Some(s.clone()),
                             Value::Number(n) => Some(n.to_string()),
@@ -1020,6 +1066,24 @@ mod tests {
         let is_empty_2 = populated_result.rows.as_ref().map_or(true, |r| r.is_empty());
         let effective_ttl_2 = if is_empty_2 { negative_ttl } else { normal_ttl };
         assert_eq!(effective_ttl_2, 60);
+    }
+
+    #[test]
+    fn test_parse_update_reproduction() {
+        let sql = "UPDATE customers SET email = ? WHERE id = ?";
+        use std::fmt::Write;
+        let mut formatted = String::new();
+        let mut idx = 1;
+        for c in sql.chars() {
+            if c == '?' {
+                let _ = write!(formatted, "${}", idx);
+                idx += 1;
+            } else {
+                formatted.push(c);
+            }
+        }
+        let res = sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::PostgreSqlDialect {}, &formatted);
+        assert!(res.is_ok(), "Failed to parse: {:?}", res.err());
     }
 }
 
