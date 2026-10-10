@@ -33,6 +33,7 @@ interface SlideOverProps {
   subtitle?: React.ReactNode;
   children: React.ReactNode;
   width?: string;
+  zIndex?: string;
 }
 
 export const SlideOver: React.FC<SlideOverProps> = ({
@@ -42,6 +43,7 @@ export const SlideOver: React.FC<SlideOverProps> = ({
   subtitle,
   children,
   width = 'w-[520px] max-w-full',
+  zIndex = 'z-50',
 }) => {
   const panelRef = useRef<HTMLDivElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
@@ -131,7 +133,7 @@ export const SlideOver: React.FC<SlideOverProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 overflow-hidden select-none font-sans"
+      className={cn("fixed inset-0 overflow-hidden select-none font-sans", zIndex)}
       role="dialog"
       aria-modal="true"
       aria-labelledby="slideover-title"

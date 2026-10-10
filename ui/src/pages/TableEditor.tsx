@@ -27,6 +27,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronDown,
+  ChevronUp,
   Copy,
   Check,
   AlertCircle,
@@ -40,6 +41,7 @@ import {
   Layers,
   Edit3,
   Maximize2,
+  Calendar,
 } from 'lucide-react';
 import {
   api,
@@ -54,6 +56,8 @@ import {
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { SlideOver } from '../components/ui/SlideOver';
 import { CustomSelect } from '../components/shared/CustomSelect';
+import { DayPicker } from '@daypicker/react';
+import '@daypicker/react/dist/style.css';
 
 // ─── Type Icon Mapping ───────────────────────────────────────────────────────
 // Maps SQL column types to compact Supabase-style visual badges.
@@ -240,6 +244,1529 @@ function getDefaultColumnWidth(typeName: string, colName?: string): number {
   return 150;
 }
 
+// ─── Reusable Field Editor with Edit/Action Menu (Set to NULL & Expand Editor) ────
+interface FieldEditorWrapperProps {
+  label: string;
+  value: unknown;
+  onChange: (val: unknown) => void;
+  disabled?: boolean;
+  isNullable?: boolean;
+  isMultiline?: boolean;
+  placeholder?: string;
+  type?: 'text' | 'number';
+  step?: string;
+}
+
+function FieldEditorWrapper({
+  label,
+  value,
+  onChange,
+  disabled = false,
+  isNullable = true,
+  isMultiline = false,
+  placeholder,
+  type = 'text',
+  step,
+}: FieldEditorWrapperProps) {
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [modalDraft, setModalDraft] = useState('');
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  const isNull = value === null || value === undefined;
+  const strVal = isNull ? '' : String(value);
+
+  useEffect(() => {
+    if (!isMenuOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setIsMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isMenuOpen]);
+
+  const handleOpenExpand = () => {
+    setIsMenuOpen(false);
+    setModalDraft(strVal);
+    setIsModalOpen(true);
+  };
+
+  const handleApplyModal = () => {
+    onChange(modalDraft === '' && isNullable ? null : modalDraft);
+    setIsModalOpen(false);
+  };
+
+  return (
+    <>
+      <div className="relative group w-full" ref={menuRef}>
+        {isMultiline ? (
+          <textarea
+            rows={3}
+            disabled={disabled}
+            value={strVal}
+            placeholder={placeholder}
+            onChange={(e) => onChange(e.target.value === '' && isNullable ? null : e.target.value)}
+            className={`w-full h-[84px] rounded-[6px] border border-[#262626] bg-[#121212] p-2.5 pr-8 text-[14px] text-white font-sans focus:outline-none focus:border-[#3b82f6] transition-colors resize-none placeholder-[#555555] ${
+              disabled ? 'opacity-60 cursor-not-allowed bg-[#0d0d0d]' : ''
+            }`}
+          />
+        ) : (
+          <input
+            type={type}
+            step={step}
+            disabled={disabled}
+            value={strVal}
+            placeholder={placeholder}
+            onChange={(e) => {
+              const v = e.target.value;
+              onChange(v === '' && isNullable ? null : v);
+            }}
+            className={`h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] pl-3 pr-8 text-[14px] text-white font-sans focus:outline-none focus:border-[#3b82f6] transition-colors placeholder-[#555555] ${
+              disabled ? 'opacity-60 cursor-not-allowed bg-[#0d0d0d]' : ''
+            }`}
+          />
+        )}
+
+        {/* Small rounded Edit icon button placed safely away from bottom-right resize handle */}
+        {!disabled && (
+          <div className={`absolute ${isMultiline ? 'right-2.5 top-2.5' : 'right-2 top-1/2 -translate-y-1/2'} z-10`}>
+            <button
+              type="button"
+              onClick={() => setIsMenuOpen((prev) => !prev)}
+              title="Field actions"
+              className={`flex items-center justify-center w-5 h-5 rounded-[4px] border border-[#2a2a2a] bg-[#161616]/90 hover:bg-[#222222] text-[#8c8c8c] hover:text-white transition-colors cursor-pointer ${
+                isMenuOpen ? 'border-[#3b82f6] text-white bg-[#1a1a1a]' : ''
+              }`}
+            >
+              <Edit3 className="w-3 h-3" />
+            </button>
+
+            {/* Dropdown Menu matching user screenshot */}
+            {isMenuOpen && (
+              <div className="absolute right-0 top-full mt-1 w-36 rounded-[6px] border border-[#282828] bg-[#141414] shadow-[0_12px_28px_rgba(0,0,0,0.9)] p-1 z-50 animate-in fade-in zoom-in-95 duration-100 font-sans">
+                <button
+                  type="button"
+                  onClick={() => {
+                    onChange(null);
+                    setIsMenuOpen(false);
+                  }}
+                  className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-[4px] text-[12px] text-[#cccccc] hover:text-white hover:bg-[#202020] transition-colors text-left cursor-pointer"
+                >
+                  <span>Set to NULL</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleOpenExpand}
+                  className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-[4px] text-[12px] text-[#cccccc] hover:text-white hover:bg-[#202020] transition-colors text-left cursor-pointer"
+                >
+                  <span>Expand editor</span>
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Expanded Field Editor Drawer Panel (Matches current edit panel design) */}
+      <SlideOver
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        width="w-[520px] max-w-full"
+        title={label}
+        subtitle="Edit field value"
+      >
+        <div className="flex-1 flex flex-col min-h-0 bg-[#0e0e0e] overflow-hidden font-sans">
+          {/* Main Content Area */}
+          <div className="flex-1 p-4 sm:p-5 flex flex-col min-h-0 space-y-2 overflow-hidden">
+            <div className="flex items-center justify-between">
+              <label className="text-[13.5px] font-medium text-white font-sans">
+                Value
+              </label>
+              <span className="text-[12px] font-mono text-[#777777]">
+                {(modalDraft || '').length} chars · {(modalDraft || '').split('\n').length} lines
+              </span>
+            </div>
+            <textarea
+              value={modalDraft}
+              onChange={(e) => setModalDraft(e.target.value)}
+              autoFocus
+              spellCheck={false}
+              className="flex-1 w-full rounded-[6px] border border-[#262626] bg-[#121212] p-3 text-[14px] leading-relaxed text-white font-sans focus:outline-none focus:border-[#3b82f6] resize-none placeholder-[#555555] transition-colors whitespace-pre"
+              placeholder="Enter value..."
+            />
+          </div>
+
+          {/* Footer (Pinned to bottom matching edit panel) */}
+          <div className="p-4 border-t border-[#222222] bg-[#0e0e0e] flex items-center justify-end gap-2.5 font-sans shrink-0">
+            <button
+              type="button"
+              onClick={() => setIsModalOpen(false)}
+              className="inline-flex items-center justify-center h-9 px-4 rounded-[8px] text-[14px] font-medium text-[#cccccc] hover:text-white bg-transparent hover:bg-[#161616] border border-[#262626] hover:border-[#383838] transition-colors cursor-pointer font-sans"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleApplyModal}
+              className="group relative flex shrink-0 items-center justify-center h-9 px-4 rounded-[8px] font-medium text-white shadow-xs outline-none cursor-pointer overflow-hidden ring-1 ring-[#1d4ed8] bg-[#2563eb] font-sans"
+            >
+              <span
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-0 rounded-[inherit] bg-gradient-to-b from-[#3b82f6] to-[#2563eb] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2)]"
+              />
+              <span
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-0 rounded-[inherit] bg-black opacity-0 group-hover:opacity-15 transition-opacity duration-200"
+              />
+              <span className="relative flex items-center text-[14px] font-sans">
+                Apply
+              </span>
+            </button>
+          </div>
+        </div>
+      </SlideOver>
+    </>
+  );
+}
+
+
+// ─── Inline Cell Popover Editor matching Supabase Studio ─────────────────────
+interface InlineCellEditorPopoverProps {
+  editingCell: {
+    rowIndex: number;
+    colName: string;
+    initialValue: unknown;
+    currentValue: string;
+    rect: { top: number; left: number; width: number; height: number };
+  };
+  onChange: (val: string) => void;
+  onSave: (val?: string) => void;
+  onCancel: () => void;
+  onExpand: () => void;
+}
+
+function InlineCellEditorPopover({
+  editingCell,
+  onChange,
+  onSave,
+  onCancel,
+  onExpand,
+}: InlineCellEditorPopoverProps) {
+  const popoverRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (textareaRef.current) {
+      const el = textareaRef.current;
+      el.focus();
+      el.setSelectionRange(el.value.length, el.value.length);
+    }
+  }, []);
+
+  useEffect(() => {
+    const handleMouseDown = (e: MouseEvent) => {
+      if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
+        onSave(editingCell.currentValue);
+      }
+    };
+    document.addEventListener('mousedown', handleMouseDown);
+    return () => document.removeEventListener('mousedown', handleMouseDown);
+  }, [editingCell.currentValue, onSave]);
+
+  useEffect(() => {
+    const handleScroll = (e: Event) => {
+      if (popoverRef.current && popoverRef.current.contains(e.target as Node)) {
+        return;
+      }
+      onSave(editingCell.currentValue);
+    };
+    window.addEventListener('scroll', handleScroll, true);
+    return () => window.removeEventListener('scroll', handleScroll, true);
+  }, [editingCell.currentValue, onSave]);
+
+  const top = Math.max(8, Math.min(window.innerHeight - 260, editingCell.rect.top));
+  const left = Math.max(8, Math.min(window.innerWidth - 340, editingCell.rect.left));
+  const width = Math.max(editingCell.rect.width, 280);
+
+  return (
+    <div
+      ref={popoverRef}
+      style={{
+        top: `${top}px`,
+        left: `${left}px`,
+        width: `${width}px`,
+      }}
+      className="fixed z-50 rounded-[8px] border border-[#2a2a2a] bg-[#121212] shadow-[0_18px_40px_rgba(0,0,0,0.95)] flex flex-col font-sans overflow-hidden animate-in fade-in zoom-in-95 duration-100"
+    >
+      {/* Top Textarea area */}
+      <div className="p-3 flex-1 flex flex-col min-h-[140px]">
+        <textarea
+          ref={textareaRef}
+          rows={5}
+          value={editingCell.currentValue}
+          onChange={(e) => onChange(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              onSave(editingCell.currentValue);
+            } else if (e.key === 'Escape') {
+              e.preventDefault();
+              onCancel();
+            }
+          }}
+          spellCheck={false}
+          className="w-full flex-1 bg-transparent text-[13.5px] font-sans text-white resize-none outline-none leading-relaxed placeholder-[#555555]"
+          placeholder="Enter value..."
+        />
+      </div>
+
+      {/* Footer bar matching reference screenshot */}
+      <div className="p-3 border-t border-[#222222] bg-[#141414] flex items-center justify-between select-none">
+        {/* Left shortcuts */}
+        <div className="flex flex-col gap-1.5">
+          <button
+            type="button"
+            onClick={() => onSave(editingCell.currentValue)}
+            className="flex items-center gap-2 text-left cursor-pointer group"
+          >
+            <span className="inline-flex items-center justify-center w-5 h-5 rounded-[4px] bg-[#1e1e1e] border border-[#2e2e2e] text-[#a0a0a0] text-[11px] font-mono group-hover:text-white group-hover:border-[#444444] transition-colors">
+              ↵
+            </span>
+            <span className="text-[12px] text-[#8c8c8c] group-hover:text-white transition-colors">
+              Save changes
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={onCancel}
+            className="flex items-center gap-2 text-left cursor-pointer group"
+          >
+            <span className="inline-flex items-center justify-center px-1.5 h-5 rounded-[4px] bg-[#1e1e1e] border border-[#2e2e2e] text-[#a0a0a0] text-[10.5px] font-mono group-hover:text-white group-hover:border-[#444444] transition-colors">
+              Esc
+            </span>
+            <span className="text-[12px] text-[#8c8c8c] group-hover:text-white transition-colors">
+              Cancel changes
+            </span>
+          </button>
+        </div>
+
+        {/* Right expand button */}
+        <button
+          type="button"
+          onClick={onExpand}
+          title="Expand editor"
+          className="w-8 h-8 rounded-[6px] bg-[#1a1a1a] border border-[#2a2a2a] hover:border-[#3a3a3a] text-[#888888] hover:text-white hover:bg-[#222222] flex items-center justify-center transition-colors cursor-pointer"
+        >
+          <Maximize2 className="w-3.5 h-3.5" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Foreign Key Record Preview Popover (Matching Reference Screenshot) ──────
+interface ForeignKeyRecordPreviewPopoverProps {
+  db: string;
+  fk: ForeignKeyInfoApi;
+  currentValue: unknown;
+  anchorRect: { top: number; left: number; width: number; height: number };
+  onClose: () => void;
+  onOpenTable: (table: string) => void;
+}
+
+function ForeignKeyRecordPreviewPopover({
+  db,
+  fk,
+  currentValue,
+  anchorRect,
+  onClose,
+  onOpenTable,
+}: ForeignKeyRecordPreviewPopoverProps) {
+  const popoverRef = useRef<HTMLDivElement>(null);
+  const [columns, setColumns] = useState<ColumnInfoApi[]>([]);
+  const [row, setRow] = useState<Record<string, unknown>>({});
+  const [hasRecord, setHasRecord] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+    async function loadData() {
+      setIsLoading(true);
+      setError(null);
+      try {
+        const schemaRes = await api.getTableSchema(db, fk.referenced_table);
+        if (!isMounted) return;
+        const cols = schemaRes.columns || [];
+        setColumns(cols);
+
+        if (currentValue === null || currentValue === undefined || currentValue === '') {
+          setHasRecord(false);
+          setRow({});
+          return;
+        }
+
+        const filter = JSON.stringify({
+          [fk.referenced_column]: { eq: currentValue },
+        });
+
+        const rowsRes = await api.getTableRows(db, fk.referenced_table, {
+          limit: 1,
+          filter,
+        });
+        if (!isMounted) return;
+
+        if (rowsRes.rows && rowsRes.rows.length > 0) {
+          setRow(rowsRes.rows[0]);
+          setHasRecord(true);
+        } else {
+          setHasRecord(false);
+          setRow({});
+        }
+      } catch (err) {
+        if (!isMounted) return;
+        setError(err instanceof Error ? err.message : 'Failed to load referenced record');
+      } finally {
+        if (isMounted) setIsLoading(false);
+      }
+    }
+    loadData();
+    return () => {
+      isMounted = false;
+    };
+  }, [db, fk.referenced_table, fk.referenced_column, currentValue]);
+
+  // Dismiss on outside click and Escape
+  useEffect(() => {
+    const handleMouseDown = (e: MouseEvent) => {
+      if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
+        onClose();
+      }
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    document.addEventListener('mousedown', handleMouseDown);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handleMouseDown);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [onClose]);
+
+  // Position popover relative to clicked arrow button
+  const popoverWidth = 440;
+  const anchorBottom = anchorRect.top + anchorRect.height;
+  const spaceBelow = window.innerHeight - anchorBottom;
+  const openUpward = spaceBelow < 220 && anchorRect.top > 220;
+  const top = openUpward ? anchorRect.top - 185 : anchorBottom + 6;
+  let left = anchorRect.left - 20;
+  if (left + popoverWidth > window.innerWidth - 16) {
+    left = window.innerWidth - popoverWidth - 16;
+  }
+  if (left < 16) left = 16;
+
+  return (
+    <div
+      ref={popoverRef}
+      style={{
+        top: `${top}px`,
+        left: `${left}px`,
+        width: `${popoverWidth}px`,
+      }}
+      className="fixed z-50 rounded-[8px] border border-[#262626] bg-[#121212] shadow-[0_20px_50px_rgba(0,0,0,0.95)] p-3.5 flex flex-col font-sans overflow-hidden animate-in fade-in zoom-in-95 duration-100 select-text"
+    >
+      {/* Header title matching reference screenshot */}
+      <div className="text-[13px] text-[#9c9c9c] font-sans flex items-center gap-1">
+        <span>Referencing record from</span>
+        <span className="font-semibold text-white">{fk.referenced_table}:</span>
+      </div>
+
+      {/* Mini Table Box */}
+      <div className="border border-[#262626] rounded-[6px] overflow-hidden bg-[#0c0c0c] mt-2.5">
+        {isLoading ? (
+          <div className="p-6 flex items-center justify-center gap-2 text-center text-[#888888] text-[12.5px]">
+            <RefreshCw className="w-3.5 h-3.5 animate-spin text-blue-400" />
+            <span>Loading reference...</span>
+          </div>
+        ) : error ? (
+          <div className="p-4 text-center text-rose-400 text-[12px]">{error}</div>
+        ) : (
+          <div className="overflow-x-auto max-w-full">
+            <table className="table-auto min-w-full border-collapse text-left font-sans text-[13px]">
+              <thead>
+                <tr className="bg-[#141414] border-b border-[#262626] text-[#8c8c8c]">
+                  {columns.map((col) => (
+                    <th
+                      key={col.name}
+                      className="px-3.5 py-2 font-medium whitespace-nowrap border-r border-[#262626] last:border-r-0"
+                    >
+                      <div className="flex items-center gap-1.5 whitespace-nowrap">
+                        {col.primary_key && <Key className="w-3.5 h-3.5 text-emerald-400 shrink-0" />}
+                        <span className="text-white font-medium text-[13px]">{col.name}</span>
+                        <span className="text-[11.5px] font-mono text-[#777777]">{col.type}</span>
+                      </div>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {hasRecord ? (
+                  <tr className="bg-[#0e0e0e]">
+                    {columns.map((col) => {
+                      const cellVal = row[col.name];
+                      const isNull = cellVal === null || cellVal === undefined;
+                      const strVal = isNull ? 'null' : String(cellVal);
+                      return (
+                        <td
+                          key={col.name}
+                          className="px-3.5 py-2 whitespace-nowrap border-r border-[#262626] last:border-r-0 text-[13px] text-white"
+                        >
+                          {isNull ? (
+                            <span className="text-[#555555] italic text-[12px]">null</span>
+                          ) : (
+                            <span>{strVal}</span>
+                          )}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ) : (
+                  <tr>
+                    <td
+                      colSpan={columns.length || 1}
+                      className="p-4 text-center text-[#777777] text-[12.5px]"
+                    >
+                      {currentValue === null || currentValue === undefined || currentValue === ''
+                        ? 'No record referenced (value is null)'
+                        : `No record found with ${fk.referenced_column} = "${String(currentValue)}"`}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Footer toolbar matching reference screenshot */}
+      <div className="mt-3 flex items-center justify-end">
+        <button
+          type="button"
+          onClick={() => onOpenTable(fk.referenced_table)}
+          className="h-7 px-3 rounded-[6px] border border-[#2e2e2e] bg-[#1a1a1a] hover:bg-[#252525] hover:border-[#3a3a3a] text-white text-[12.5px] font-medium font-sans transition-colors cursor-pointer flex items-center gap-1.5 shadow-xs"
+        >
+          <span>Open table</span>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Foreign Key Reference Record Picker Modal (Matching Image 1 & 2) ────────
+interface ForeignKeyPickerModalProps {
+  db: string;
+  fk: ForeignKeyInfoApi;
+  currentValue: unknown;
+  onSelect: (val: unknown) => void;
+  onClose: () => void;
+}
+
+function ForeignKeyPickerModal({
+  db,
+  fk,
+  currentValue,
+  onSelect,
+  onClose,
+}: ForeignKeyPickerModalProps) {
+  const [refColumns, setRefColumns] = useState<ColumnInfoApi[]>([]);
+  const [refRows, setRefRows] = useState<Record<string, unknown>[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [cursor, setCursor] = useState<string | null>(null);
+  const [cursorHistory, setCursorHistory] = useState<string[]>([]);
+  const [hasNextPage, setHasNextPage] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [sortCol, setSortCol] = useState<string | null>(null);
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+  const [pageSize, setPageSize] = useState<number>(25);
+  const [showPageSizePopover, setShowPageSizePopover] = useState(false);
+  const pageSizePopoverRef = useRef<HTMLDivElement>(null);
+  const [showSortPopover, setShowSortPopover] = useState(false);
+  const sortPopoverRef = useRef<HTMLDivElement>(null);
+  const [selectedRecordVal, setSelectedRecordVal] = useState<unknown>(currentValue);
+
+  // Close popovers on outside click
+  useEffect(() => {
+    if (!showSortPopover && !showPageSizePopover) return;
+    const handleMouseDown = (e: MouseEvent) => {
+      if (sortPopoverRef.current && !sortPopoverRef.current.contains(e.target as Node)) {
+        setShowSortPopover(false);
+      }
+      if (pageSizePopoverRef.current && !pageSizePopoverRef.current.contains(e.target as Node)) {
+        setShowPageSizePopover(false);
+      }
+    };
+    document.addEventListener('mousedown', handleMouseDown);
+    return () => document.removeEventListener('mousedown', handleMouseDown);
+  }, [showSortPopover, showPageSizePopover]);
+
+  const loadData = useCallback(async (targetCursor?: string | null, sizeOverride?: number) => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const schemaRes = await api.getTableSchema(db, fk.referenced_table);
+      setRefColumns(schemaRes.columns || []);
+
+      const effectiveLimit = sizeOverride || pageSize;
+      const rowsRes = await api.getTableRows(db, fk.referenced_table, {
+        limit: effectiveLimit,
+        cursor: targetCursor || undefined,
+        sort: sortCol || undefined,
+        order: sortOrder,
+      });
+      setRefRows(rowsRes.rows || []);
+      setHasNextPage(!!rowsRes.pagination?.has_more);
+      setCursor(rowsRes.pagination?.next_cursor || null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load referenced table');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [db, fk.referenced_table, sortCol, sortOrder, pageSize]);
+
+  useEffect(() => {
+    loadData(null);
+  }, [loadData]);
+
+  const handleNext = () => {
+    if (!cursor) return;
+    setCursorHistory((prev) => [...prev, cursor]);
+    loadData(cursor);
+  };
+
+  const handlePrev = () => {
+    if (cursorHistory.length === 0) return;
+    const newHistory = [...cursorHistory];
+    newHistory.pop();
+    const prevCursor = newHistory[newHistory.length - 1] || null;
+    setCursorHistory(newHistory);
+    loadData(prevCursor);
+  };
+
+  const filteredRows = useMemo(() => {
+    if (!searchTerm.trim()) return refRows;
+    const q = searchTerm.toLowerCase();
+    return refRows.filter((r) =>
+      Object.values(r).some((v) => String(v).toLowerCase().includes(q))
+    );
+  }, [refRows, searchTerm]);
+
+  return (
+    <SlideOver
+      isOpen={true}
+      onClose={onClose}
+      zIndex="z-[60]"
+      width="w-[840px] xl:w-[940px] max-w-full"
+      title={
+        <div className="flex items-center gap-2 truncate">
+          <span className="text-[16px] font-medium text-white font-sans">
+            Select record to reference
+          </span>
+          <code className="px-2 py-0.5 rounded-[5px] bg-[#161616] border border-[#2a2a2a] text-[13px] font-mono text-[#e0e0e0]">
+            {fk.referenced_table}
+          </code>
+        </div>
+      }
+      subtitle={
+        <span className="text-[13px] text-[#8c8c8c] font-sans">
+          Referencing <code className="text-[#cccccc] font-mono">{fk.referenced_column}</code> for column <code className="text-[#cccccc] font-mono">{fk.column}</code>
+        </span>
+      }
+    >
+      <div className="flex-1 flex flex-col min-h-0 bg-[#0e0e0e] overflow-hidden font-sans">
+        {/* Main Table Styled Toolbar */}
+        <div className="px-4 sm:px-5 py-2.5 flex items-center justify-between border-b border-[#222222] bg-[#0a0a0a] select-none shrink-0 gap-3">
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* Search Input */}
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-[#666666]" />
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Search rows..."
+                className="h-8 pl-8 pr-7 w-48 sm:w-56 rounded-[6px] bg-[#121212] border border-[#262626] focus:border-[#3b82f6] text-[13px] text-white placeholder-[#555555] outline-none transition-colors"
+              />
+              {searchTerm && (
+                <button
+                  type="button"
+                  onClick={() => setSearchTerm('')}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-[#666666] hover:text-white cursor-pointer"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              )}
+            </div>
+
+            {/* Sort Popover Button */}
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setShowSortPopover(!showSortPopover)}
+                className={`flex items-center gap-1.5 h-8 px-2.5 rounded-[6px] border text-[13px] font-medium transition-colors cursor-pointer ${
+                  sortCol
+                    ? 'bg-blue-600/10 border-blue-500/30 text-blue-400 hover:bg-blue-600/20'
+                    : 'bg-[#141414] border-[#262626] text-[#cccccc] hover:text-white hover:border-[#383838]'
+                }`}
+              >
+                <ArrowUpDown className="w-3.5 h-3.5" />
+                <span>{sortCol ? `Sort: ${sortCol}` : 'Sort'}</span>
+              </button>
+
+              {showSortPopover && (
+                <div
+                  ref={sortPopoverRef}
+                  className="absolute left-0 top-full mt-1.5 w-64 bg-[#111111] border border-[#262626] rounded-[8px] shadow-2xl p-3 z-50 font-sans"
+                >
+                  <div className="text-[13px] font-semibold text-white mb-2">Sort Records</div>
+                  <div className="space-y-2">
+                    <select
+                      value={sortCol || ''}
+                      onChange={(e) => setSortCol(e.target.value || null)}
+                      className="w-full h-8 px-2 bg-[#161616] border border-[#2c2c2c] rounded text-[13px] text-white outline-none cursor-pointer"
+                    >
+                      <option value="">Select column...</option>
+                      {refColumns.map((c) => (
+                        <option key={c.name} value={c.name}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </select>
+
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setSortOrder('asc')}
+                        className={`flex-1 h-7 rounded text-[12px] font-medium border cursor-pointer ${
+                          sortOrder === 'asc'
+                            ? 'bg-blue-600/20 border-blue-500 text-blue-400'
+                            : 'bg-[#161616] border-[#2c2c2c] text-[#8c8c8c]'
+                        }`}
+                      >
+                        ASC
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSortOrder('desc')}
+                        className={`flex-1 h-7 rounded text-[12px] font-medium border cursor-pointer ${
+                          sortOrder === 'desc'
+                            ? 'bg-blue-600/20 border-blue-500 text-blue-400'
+                            : 'bg-[#161616] border-[#2c2c2c] text-[#8c8c8c]'
+                        }`}
+                      >
+                        DESC
+                      </button>
+                    </div>
+
+                    <div className="flex items-center justify-between pt-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSortCol(null);
+                          setShowSortPopover(false);
+                        }}
+                        className="text-[12px] text-[#8c8c8c] hover:text-white cursor-pointer"
+                      >
+                        Reset
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowSortPopover(false);
+                          loadData(null);
+                        }}
+                        className="px-2.5 py-1 bg-[#222222] hover:bg-[#2a2a2a] border border-[#333333] rounded text-[12px] font-medium text-white transition-colors cursor-pointer"
+                      >
+                        Apply
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Refresh Button */}
+            <button
+              type="button"
+              onClick={() => loadData(null)}
+              disabled={isLoading}
+              title="Refresh rows"
+              className="w-8 h-8 flex items-center justify-center rounded-[6px] bg-[#141414] border border-[#262626] text-[#8c8c8c] hover:text-white hover:border-[#383838] transition-colors cursor-pointer disabled:opacity-50"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+            </button>
+          </div>
+
+          {/* Pagination Controls & Page Size */}
+          <div className="flex items-center gap-2 shrink-0">
+            {/* Custom Page Size Dropdown */}
+            <div className="relative" ref={pageSizePopoverRef}>
+              <button
+                type="button"
+                onClick={() => setShowPageSizePopover(!showPageSizePopover)}
+                className="flex items-center gap-1.5 h-8 px-2.5 rounded-[6px] bg-[#141414] border border-[#262626] text-[#cccccc] hover:text-white hover:border-[#383838] text-[13px] font-medium transition-colors cursor-pointer"
+                title="Page size"
+              >
+                <span>{pageSize}</span>
+                <ChevronDown
+                  className={`w-3.5 h-3.5 text-[#777777] transition-transform duration-150 ${
+                    showPageSizePopover ? 'rotate-180 text-white' : ''
+                  }`}
+                />
+              </button>
+
+              {showPageSizePopover && (
+                <div className="absolute right-0 top-full mt-1.5 w-24 bg-[#111111] border border-[#262626] rounded-[8px] shadow-2xl p-1 z-50 font-sans animate-in fade-in duration-100">
+                  {[25, 50, 100, 250, 500].map((sz) => (
+                    <button
+                      key={sz}
+                      type="button"
+                      onClick={() => {
+                        setPageSize(sz);
+                        setCursorHistory([]);
+                        loadData(null, sz);
+                        setShowPageSizePopover(false);
+                      }}
+                      className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-[6px] text-[13px] transition-colors cursor-pointer font-sans ${
+                        pageSize === sz
+                          ? 'bg-blue-600/15 text-blue-400 font-medium'
+                          : 'text-[#cccccc] hover:bg-[#1a1a1a] hover:text-white'
+                      }`}
+                    >
+                      <span>{sz}</span>
+                      {pageSize === sz && <Check className="w-3.5 h-3.5 text-blue-400" />}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <button
+              type="button"
+              onClick={handlePrev}
+              disabled={cursorHistory.length === 0 || isLoading}
+              className="flex items-center gap-1 h-8 px-2.5 rounded-[6px] bg-[#141414] border border-[#262626] text-[#cccccc] disabled:opacity-40 hover:text-white hover:border-[#383838] transition-colors cursor-pointer"
+              title="Previous page"
+            >
+              <ChevronLeft className="w-3.5 h-3.5" />
+              <span className="text-[13px] font-medium">Previous</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleNext}
+              disabled={!hasNextPage || isLoading}
+              className="flex items-center gap-1 h-8 px-2.5 rounded-[6px] bg-[#141414] border border-[#262626] text-[#cccccc] disabled:opacity-40 hover:text-white hover:border-[#383838] transition-colors cursor-pointer"
+              title="Next page"
+            >
+              <span className="text-[13px] font-medium">Next</span>
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+
+        {/* Main Table Styled Grid */}
+        <div className="flex-1 overflow-auto bg-[#0a0a0a]">
+          {isLoading && refRows.length === 0 ? (
+            <div className="p-4 space-y-2 animate-pulse">
+              <div className="h-9 bg-[#161616] rounded-[6px]" />
+              <div className="h-9 bg-[#141414] rounded-[6px]" />
+              <div className="h-9 bg-[#161616] rounded-[6px]" />
+              <div className="h-9 bg-[#141414] rounded-[6px]" />
+              <div className="h-9 bg-[#161616] rounded-[6px]" />
+            </div>
+          ) : error ? (
+            <div className="p-8 flex flex-col items-center justify-center text-center">
+              <AlertCircle className="w-8 h-8 text-rose-500 mb-2" />
+              <p className="text-[14px] font-medium text-white mb-1">Failed to query table</p>
+              <p className="text-[12.5px] text-[#8c8c8c] max-w-md font-mono">{error}</p>
+              <button
+                type="button"
+                onClick={() => loadData(null)}
+                className="mt-4 px-3 py-1.5 bg-[#141414] border border-[#262626] rounded-[6px] text-[12px] text-white hover:border-[#383838] cursor-pointer"
+              >
+                Retry
+              </button>
+            </div>
+          ) : filteredRows.length === 0 ? (
+            <div className="p-12 text-center text-[#777777] text-[14px]">
+              No records found in table <span className="font-sans font-medium text-white">{fk.referenced_table}</span>
+            </div>
+          ) : (
+            <table
+              className="border-collapse text-left select-text font-sans text-[14px] table-fixed"
+              style={{ width: 'max-content', minWidth: '100%' }}
+            >
+              <thead>
+                <tr className="sticky top-0 z-10 bg-[#0a0a0a] border-b border-[#222222]">
+                  {/* Sticky selection column */}
+                  <th
+                    className="w-12 px-3 py-2 text-center bg-[#0a0a0a] sticky left-0 z-20 border-r border-[#1a1a1a] select-none text-[12px] font-mono text-[#666666]"
+                    style={{ width: '48px', minWidth: '48px', maxWidth: '48px' }}
+                  >
+                    #
+                  </th>
+
+                  {/* Header Columns */}
+                  {refColumns.map((col) => {
+                    const width = getDefaultColumnWidth(col.type, col.name);
+                    return (
+                      <th
+                        key={col.name}
+                        className="relative px-3 py-2 text-[14px] font-medium text-[#cccccc] whitespace-nowrap border-r border-[#1a1a1a] select-none"
+                        style={{ width: `${width}px`, minWidth: `${Math.max(80, width)}px`, maxWidth: `${width}px` }}
+                      >
+                        <div className="flex items-center gap-1.5 min-w-0 pr-2.5 overflow-hidden whitespace-nowrap">
+                          <span className="font-sans text-white text-[14px] whitespace-nowrap shrink-0" title={col.name}>
+                            {col.name}
+                          </span>
+                          {col.primary_key && (
+                            <span title="Primary Key" className="shrink-0 p-0.5 rounded bg-emerald-500/10 text-emerald-400">
+                              <Key className="w-3 h-3" />
+                            </span>
+                          )}
+                          {col.name === fk.referenced_column && !col.primary_key && (
+                            <span title="Referenced Column" className="shrink-0 p-0.5 rounded bg-blue-500/10 text-blue-400">
+                              <Link2 className="w-3 h-3" />
+                            </span>
+                          )}
+                        </div>
+                      </th>
+                    );
+                  })}
+                </tr>
+              </thead>
+
+              <tbody className="divide-y divide-[#181818]">
+                {filteredRows.map((r, ri) => {
+                  const refVal = r[fk.referenced_column];
+                  const isSelected = selectedRecordVal !== undefined && String(refVal) === String(selectedRecordVal);
+
+                  return (
+                    <tr
+                      key={ri}
+                      onClick={() => setSelectedRecordVal(refVal)}
+                      onDoubleClick={() => onSelect(refVal)}
+                      className={`transition-colors cursor-pointer group ${
+                        isSelected
+                          ? 'bg-[#131b2e] ring-1 ring-inset ring-blue-500/40 text-white'
+                          : 'hover:bg-[#121212]'
+                      }`}
+                    >
+                      {/* Sticky Radio Indicator Column */}
+                      <td
+                        className={`px-3 py-2 text-center select-none sticky left-0 z-10 border-r border-[#1a1a1a] transition-colors ${
+                          isSelected ? 'bg-[#131b2e]' : 'bg-[#0a0a0a] group-hover:bg-[#121212]'
+                        }`}
+                        style={{ width: '48px', minWidth: '48px', maxWidth: '48px' }}
+                      >
+                        <div className="flex items-center justify-center">
+                          <div
+                            className={`w-4 h-4 rounded-full border flex items-center justify-center transition-colors ${
+                              isSelected
+                                ? 'bg-blue-600 border-blue-500 text-white shadow-xs'
+                                : 'border-[#333333] bg-[#141414] group-hover:border-[#555555]'
+                            }`}
+                          >
+                            {isSelected && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                          </div>
+                        </div>
+                      </td>
+
+                      {/* Data Cells matching main table cell styling */}
+                      {refColumns.map((col) => {
+                        const width = getDefaultColumnWidth(col.type, col.name);
+                        const cellVal = r[col.name];
+                        const isNull = cellVal === null || cellVal === undefined;
+                        const isBool = typeof cellVal === 'boolean';
+                        const isObj = typeof cellVal === 'object' && cellVal !== null;
+                        const strVal = isNull ? 'null' : isObj ? JSON.stringify(cellVal) : String(cellVal);
+
+                        return (
+                          <td
+                            key={col.name}
+                            className="px-3 py-2 text-[#cccccc] text-[14px] whitespace-nowrap overflow-hidden border-r border-[#151515] relative transition-colors select-none"
+                            style={{ width: `${width}px`, minWidth: `${width}px`, maxWidth: `${width}px` }}
+                            title={strVal}
+                          >
+                            {isNull ? (
+                              <span className="text-[#555555] italic text-[12.5px]">null</span>
+                            ) : isBool ? (
+                              <span
+                                className={`px-1.5 py-0.5 rounded text-[12.5px] font-medium ${
+                                  cellVal ? 'bg-emerald-500/10 text-emerald-400' : 'bg-zinc-800 text-zinc-400'
+                                }`}
+                              >
+                                {cellVal ? 'true' : 'false'}
+                              </span>
+                            ) : isObj ? (
+                              <span className="text-pink-400 flex items-center gap-1 text-[12.5px]">
+                                <Code2 className="w-3.5 h-3.5" />
+                                {`{ ... }`}
+                              </span>
+                            ) : (
+                              <span
+                                className={`truncate ${
+                                  col.name === fk.referenced_column && isSelected
+                                    ? 'font-medium text-blue-400'
+                                    : ''
+                                }`}
+                              >
+                                {strVal}
+                              </span>
+                            )}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        {/* Footer Toolbar with Apply Button */}
+        <div className="p-4 border-t border-[#222222] bg-[#0e0e0e] flex items-center justify-between font-sans shrink-0">
+          <div className="flex items-center gap-2 text-[13px] text-[#888888]">
+            <span>
+              Selected <span className="text-[#cccccc]">{fk.referenced_column}</span>:{' '}
+              <code className="text-white font-mono bg-[#161616] px-1.5 py-0.5 rounded border border-[#262626]">
+                {selectedRecordVal !== undefined && selectedRecordVal !== null ? String(selectedRecordVal) : 'None'}
+              </code>
+            </span>
+            <span className="text-[#444444]">·</span>
+            <span>{filteredRows.length} records</span>
+          </div>
+
+          <div className="flex items-center gap-2.5">
+            <button
+              type="button"
+              onClick={onClose}
+              className="inline-flex items-center justify-center h-9 px-4 rounded-[8px] text-[14px] font-medium text-[#cccccc] hover:text-white bg-transparent hover:bg-[#161616] border border-[#262626] hover:border-[#383838] transition-colors cursor-pointer font-sans"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={selectedRecordVal === undefined}
+              onClick={() => {
+                if (selectedRecordVal !== undefined) {
+                  onSelect(selectedRecordVal);
+                }
+              }}
+              className="group relative flex shrink-0 items-center justify-center h-9 px-4 rounded-[8px] font-medium text-white shadow-xs outline-none cursor-pointer overflow-hidden ring-1 ring-[#1d4ed8] bg-[#2563eb] disabled:opacity-40 disabled:cursor-not-allowed font-sans"
+            >
+              <span
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-0 rounded-[inherit] bg-gradient-to-b from-[#3b82f6] to-[#2563eb] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2)]"
+              />
+              <span
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-0 rounded-[inherit] bg-black opacity-0 group-hover:opacity-15 transition-opacity duration-200"
+              />
+              <span className="relative flex items-center text-[14px] font-sans">
+                Select Record
+              </span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </SlideOver>
+  );
+}
+
+// ─── Single-Line Date/Time/Timestamp Input with Calendar Picker Popover ────────
+interface DateTimePickerInputProps {
+  value: unknown;
+  onChange: (val: string | null) => void;
+  placeholder?: string;
+  disabled?: boolean;
+  isDateOnly?: boolean;
+}
+
+function DateTimePickerInput({
+  value,
+  onChange,
+  placeholder = 'YYYY-MM-DD HH:mm:ss',
+  disabled = false,
+  isDateOnly = false,
+}: DateTimePickerInputProps) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [openUpward, setOpenUpward] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const calculateDirection = () => {
+    if (containerRef.current) {
+      const rect = containerRef.current.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - rect.bottom;
+      // Calendar popover is around 420px height with time controls
+      if (spaceBelow < 440 && rect.top > spaceBelow) {
+        setOpenUpward(true);
+      } else {
+        setOpenUpward(false);
+      }
+    }
+  };
+
+  const strVal = value === null || value === undefined ? '' : String(value);
+
+  // Parse date, time, and timezone portions from string value
+  const parseVal = () => {
+    if (!strVal.trim()) {
+      return { date: undefined, hours: '12', minutes: '00', seconds: '00', tz: '' };
+    }
+    const parts = strVal.trim().split(/[T ]/);
+    const dateStr = parts[0] || '';
+    const timeFull = parts[1] || '';
+
+    let d: Date | undefined;
+    const dateParts = dateStr.split('-').map(Number);
+    if (dateParts.length === 3 && dateParts.every((n) => !isNaN(n))) {
+      const parsedDate = new Date(dateParts[0], dateParts[1] - 1, dateParts[2]);
+      if (!isNaN(parsedDate.getTime())) {
+        d = parsedDate;
+      }
+    }
+
+    let hours = '12';
+    let minutes = '00';
+    let seconds = '00';
+    let tz = '';
+
+    if (timeFull) {
+      // Check for timezone offset (+00:00, -05, Z, UTC)
+      const tzMatch = timeFull.match(/([+-]\d{2}(?::?\d{2})?|Z|[A-Z]{2,4})$/i);
+      if (tzMatch) {
+        tz = tzMatch[0];
+      }
+      const timeWithoutTz = tz ? timeFull.slice(0, -tz.length) : timeFull;
+      const tParts = timeWithoutTz.split(':');
+      if (tParts[0] !== undefined) hours = tParts[0].padStart(2, '0');
+      if (tParts[1] !== undefined) minutes = tParts[1].padStart(2, '0');
+      if (tParts[2] !== undefined) seconds = tParts[2].split('.')[0].padStart(2, '0');
+    }
+
+    return { date: d, hours, minutes, seconds, tz };
+  };
+
+  const parsed = parseVal();
+  const [selectedDate, setSelectedDate] = useState<Date | undefined>(parsed.date);
+  const [month, setMonth] = useState<Date>(() => parsed.date || new Date());
+  const [timeState, setTimeState] = useState({
+    hours: parsed.hours,
+    minutes: parsed.minutes,
+    seconds: parsed.seconds,
+    tz: parsed.tz,
+  });
+
+  useEffect(() => {
+    if (isOpen) {
+      const p = parseVal();
+      setSelectedDate(p.date);
+      setMonth(p.date || new Date());
+      setTimeState({ hours: p.hours, minutes: p.minutes, seconds: p.seconds, tz: p.tz });
+    }
+  }, [isOpen, strVal]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isOpen]);
+
+  const commitValue = (
+    dateObj: Date | undefined,
+    timeObj: { hours: string; minutes: string; seconds: string; tz: string }
+  ) => {
+    if (!dateObj) {
+      onChange(null);
+      return;
+    }
+    const y = dateObj.getFullYear();
+    const m = String(dateObj.getMonth() + 1).padStart(2, '0');
+    const d = String(dateObj.getDate()).padStart(2, '0');
+    const datePart = `${y}-${m}-${d}`;
+
+    if (isDateOnly) {
+      onChange(datePart);
+    } else {
+      const h = String(timeObj.hours).padStart(2, '0');
+      const min = String(timeObj.minutes).padStart(2, '0');
+      const s = String(timeObj.seconds).padStart(2, '0');
+      const tzSuffix = timeObj.tz ? ` ${timeObj.tz}` : '';
+      onChange(`${datePart} ${h}:${min}:${s}${tzSuffix}`);
+    }
+  };
+
+  const handleSelectDate = (date: Date | undefined) => {
+    setSelectedDate(date);
+    commitValue(date, timeState);
+  };
+
+  const handleSetNow = () => {
+    const now = new Date();
+    setSelectedDate(now);
+    const newTime = {
+      hours: String(now.getHours()).padStart(2, '0'),
+      minutes: String(now.getMinutes()).padStart(2, '0'),
+      seconds: String(now.getSeconds()).padStart(2, '0'),
+      tz: timeState.tz,
+    };
+    setTimeState(newTime);
+    commitValue(now, newTime);
+  };
+
+  // Detect timezone name (e.g. "GMT+6", "UTC", "PST")
+  const localTz = useMemo(() => {
+    try {
+      const d = new Date();
+      const match = d.toTimeString().match(/\((.+)\)$/);
+      if (match) return match[1];
+      const offset = -d.getTimezoneOffset() / 60;
+      return offset >= 0 ? `UTC+${offset}` : `UTC${offset}`;
+    } catch {
+      return 'UTC';
+    }
+  }, []);
+
+  const activeTz = timeState.tz || localTz;
+
+  return (
+    <div className="relative w-full" ref={containerRef}>
+      <div className="relative flex items-center">
+        <input
+          type="text"
+          disabled={disabled}
+          value={strVal}
+          placeholder={placeholder}
+          onChange={(e) => onChange(e.target.value === '' ? null : e.target.value)}
+          className={`h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] pl-3 pr-10 text-[14px] text-white font-sans focus:outline-none focus:border-[#3b82f6] transition-colors placeholder-[#555555] ${
+            disabled ? 'opacity-60 cursor-not-allowed bg-[#0d0d0d]' : ''
+          }`}
+        />
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={() => {
+            if (!isOpen) calculateDirection();
+            setIsOpen((prev) => !prev);
+          }}
+          title="Open calendar picker"
+          className={`absolute right-1.5 top-1/2 -translate-y-1/2 p-1.5 rounded-[5px] text-[#8c8c8c] hover:text-white hover:bg-[#1f1f1f] transition-colors cursor-pointer ${
+            isOpen ? 'text-[#3b82f6] bg-[#1a1a1a]' : ''
+          } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+        >
+          <Calendar className="w-4 h-4 shrink-0" />
+        </button>
+      </div>
+
+      {isOpen && (
+        <div
+          className={`absolute right-0 ${
+            openUpward ? 'bottom-[calc(100%+6px)]' : 'top-[calc(100%+6px)]'
+          } z-50 w-[340px] max-w-[calc(100vw-32px)] rounded-[8px] border border-[#262626] bg-[#0c0c0c] shadow-[0_16px_40px_rgba(0,0,0,0.95)] p-3.5 animate-in fade-in duration-100 font-sans`}
+        >
+          {/* Header Bar without top duplicate preview */}
+          <div className="pb-2.5">
+            <div className="flex items-center justify-between">
+              <span className="text-[13px] font-semibold text-white flex items-center gap-1.5">
+                <Calendar className="w-3.5 h-3.5 text-[#8c8c8c]" />
+                <span>{isDateOnly ? 'Select Date' : 'Select Date & Time'}</span>
+              </span>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={handleSetNow}
+                  className="px-2 py-0.5 rounded-[4px] text-[11.5px] font-medium bg-[#161616] hover:bg-[#222222] text-[#cccccc] hover:text-white border border-[#262626] hover:border-[#383838] transition-colors cursor-pointer"
+                >
+                  Now
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onChange(null);
+                    setSelectedDate(undefined);
+                    setIsOpen(false);
+                  }}
+                  className="px-2 py-0.5 rounded-[4px] text-[11.5px] font-medium bg-[#161616] hover:bg-[#222222] text-[#8c8c8c] hover:text-white border border-[#262626] hover:border-[#383838] transition-colors cursor-pointer"
+                >
+                  NULL
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Edge-to-edge separator above calendar */}
+          <div className="-mx-3 border-t border-[#222222] mb-2" />
+
+          {/* Calendar Grid */}
+          <div className="axiom-datepicker-wrapper w-full py-1">
+            <DayPicker
+              mode="single"
+              selected={selectedDate}
+              month={month}
+              onMonthChange={setMonth}
+              onSelect={handleSelectDate}
+              className="m-0 text-white font-sans text-[12px] w-full"
+            />
+          </div>
+
+          {/* Detailed Time Selector (for timestamp / time types) */}
+          {!isDateOnly && (
+            <>
+              {/* Edge-to-edge separator above time controls */}
+              <div className="-mx-3 border-t border-[#222222] my-2" />
+
+              <div className="pt-0.5">
+                <div className="flex items-center justify-between text-[12px] text-[#8c8c8c] mb-2">
+                  <span className="font-medium text-[#cccccc]">
+                    Time of Day
+                  </span>
+                  <div className="flex items-center gap-1.5 font-mono text-[11px]">
+                    <span className="text-[#cccccc] bg-[#141414] px-1.5 py-0.5 rounded border border-[#262626] font-medium">
+                      {activeTz}
+                    </span>
+                    <span className="text-[#777777] bg-[#141414] px-1.5 py-0.5 rounded border border-[#222222]">
+                      24h
+                    </span>
+                  </div>
+                </div>
+                <div className="grid grid-cols-3 gap-2 font-mono">
+                  {/* Hours */}
+                  <div className="flex flex-col">
+                    <div className="relative flex items-center rounded-[6px] border border-[#262626] bg-[#121212] overflow-hidden focus-within:border-[#444444] transition-colors">
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        pattern="[0-9]*"
+                        value={timeState.hours}
+                        onChange={(e) => {
+                          const val = e.target.value.replace(/\D/g, '').slice(0, 2);
+                          const num = Math.min(23, Number(val) || 0);
+                          const h = val === '' ? '' : String(num).padStart(2, '0');
+                          const newT = { ...timeState, hours: h || '00' };
+                          setTimeState(newT);
+                          commitValue(selectedDate || new Date(), newT);
+                        }}
+                        onBlur={() => {
+                          const h = String(Math.max(0, Math.min(23, Number(timeState.hours) || 0))).padStart(2, '0');
+                          const newT = { ...timeState, hours: h };
+                          setTimeState(newT);
+                          commitValue(selectedDate || new Date(), newT);
+                        }}
+                        className="h-8 w-full bg-transparent pl-2.5 pr-5 text-center text-[13px] text-white focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                      />
+                      <div className="absolute right-0.5 top-0.5 bottom-0.5 flex flex-col justify-center border-l border-[#222222] pl-0.5">
+                        <button
+                          type="button"
+                          tabIndex={-1}
+                          onClick={() => {
+                            const cur = Number(timeState.hours) || 0;
+                            const next = cur >= 23 ? 0 : cur + 1;
+                            const h = String(next).padStart(2, '0');
+                            const newT = { ...timeState, hours: h };
+                            setTimeState(newT);
+                            commitValue(selectedDate || new Date(), newT);
+                          }}
+                          className="h-3.5 w-4 flex items-center justify-center text-[#777777] hover:text-white hover:bg-[#202020] rounded-[2px] transition-colors"
+                        >
+                          <ChevronUp className="w-2.5 h-2.5" />
+                        </button>
+                        <button
+                          type="button"
+                          tabIndex={-1}
+                          onClick={() => {
+                            const cur = Number(timeState.hours) || 0;
+                            const next = cur <= 0 ? 23 : cur - 1;
+                            const h = String(next).padStart(2, '0');
+                            const newT = { ...timeState, hours: h };
+                            setTimeState(newT);
+                            commitValue(selectedDate || new Date(), newT);
+                          }}
+                          className="h-3.5 w-4 flex items-center justify-center text-[#777777] hover:text-white hover:bg-[#202020] rounded-[2px] transition-colors"
+                        >
+                          <ChevronDown className="w-2.5 h-2.5" />
+                        </button>
+                      </div>
+                    </div>
+                    <span className="text-[10px] text-center text-[#777777] mt-1 font-sans">Hours (0-23)</span>
+                  </div>
+
+                  {/* Minutes */}
+                  <div className="flex flex-col">
+                    <div className="relative flex items-center rounded-[6px] border border-[#262626] bg-[#121212] overflow-hidden focus-within:border-[#444444] transition-colors">
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        pattern="[0-9]*"
+                        value={timeState.minutes}
+                        onChange={(e) => {
+                          const val = e.target.value.replace(/\D/g, '').slice(0, 2);
+                          const num = Math.min(59, Number(val) || 0);
+                          const m = val === '' ? '' : String(num).padStart(2, '0');
+                          const newT = { ...timeState, minutes: m || '00' };
+                          setTimeState(newT);
+                          commitValue(selectedDate || new Date(), newT);
+                        }}
+                        onBlur={() => {
+                          const m = String(Math.max(0, Math.min(59, Number(timeState.minutes) || 0))).padStart(2, '0');
+                          const newT = { ...timeState, minutes: m };
+                          setTimeState(newT);
+                          commitValue(selectedDate || new Date(), newT);
+                        }}
+                        className="h-8 w-full bg-transparent pl-2.5 pr-5 text-center text-[13px] text-white focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                      />
+                      <div className="absolute right-0.5 top-0.5 bottom-0.5 flex flex-col justify-center border-l border-[#222222] pl-0.5">
+                        <button
+                          type="button"
+                          tabIndex={-1}
+                          onClick={() => {
+                            const cur = Number(timeState.minutes) || 0;
+                            const next = cur >= 59 ? 0 : cur + 1;
+                            const m = String(next).padStart(2, '0');
+                            const newT = { ...timeState, minutes: m };
+                            setTimeState(newT);
+                            commitValue(selectedDate || new Date(), newT);
+                          }}
+                          className="h-3.5 w-4 flex items-center justify-center text-[#777777] hover:text-white hover:bg-[#202020] rounded-[2px] transition-colors"
+                        >
+                          <ChevronUp className="w-2.5 h-2.5" />
+                        </button>
+                        <button
+                          type="button"
+                          tabIndex={-1}
+                          onClick={() => {
+                            const cur = Number(timeState.minutes) || 0;
+                            const next = cur <= 0 ? 59 : cur - 1;
+                            const m = String(next).padStart(2, '0');
+                            const newT = { ...timeState, minutes: m };
+                            setTimeState(newT);
+                            commitValue(selectedDate || new Date(), newT);
+                          }}
+                          className="h-3.5 w-4 flex items-center justify-center text-[#777777] hover:text-white hover:bg-[#202020] rounded-[2px] transition-colors"
+                        >
+                          <ChevronDown className="w-2.5 h-2.5" />
+                        </button>
+                      </div>
+                    </div>
+                    <span className="text-[10px] text-center text-[#777777] mt-1 font-sans">Min (0-59)</span>
+                  </div>
+
+                  {/* Seconds */}
+                  <div className="flex flex-col">
+                    <div className="relative flex items-center rounded-[6px] border border-[#262626] bg-[#121212] overflow-hidden focus-within:border-[#444444] transition-colors">
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        pattern="[0-9]*"
+                        value={timeState.seconds}
+                        onChange={(e) => {
+                          const val = e.target.value.replace(/\D/g, '').slice(0, 2);
+                          const num = Math.min(59, Number(val) || 0);
+                          const s = val === '' ? '' : String(num).padStart(2, '0');
+                          const newT = { ...timeState, seconds: s || '00' };
+                          setTimeState(newT);
+                          commitValue(selectedDate || new Date(), newT);
+                        }}
+                        onBlur={() => {
+                          const s = String(Math.max(0, Math.min(59, Number(timeState.seconds) || 0))).padStart(2, '0');
+                          const newT = { ...timeState, seconds: s };
+                          setTimeState(newT);
+                          commitValue(selectedDate || new Date(), newT);
+                        }}
+                        className="h-8 w-full bg-transparent pl-2.5 pr-5 text-center text-[13px] text-white focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                      />
+                      <div className="absolute right-0.5 top-0.5 bottom-0.5 flex flex-col justify-center border-l border-[#222222] pl-0.5">
+                        <button
+                          type="button"
+                          tabIndex={-1}
+                          onClick={() => {
+                            const cur = Number(timeState.seconds) || 0;
+                            const next = cur >= 59 ? 0 : cur + 1;
+                            const s = String(next).padStart(2, '0');
+                            const newT = { ...timeState, seconds: s };
+                            setTimeState(newT);
+                            commitValue(selectedDate || new Date(), newT);
+                          }}
+                          className="h-3.5 w-4 flex items-center justify-center text-[#777777] hover:text-white hover:bg-[#202020] rounded-[2px] transition-colors"
+                        >
+                          <ChevronUp className="w-2.5 h-2.5" />
+                        </button>
+                        <button
+                          type="button"
+                          tabIndex={-1}
+                          onClick={() => {
+                            const cur = Number(timeState.seconds) || 0;
+                            const next = cur <= 0 ? 59 : cur - 1;
+                            const s = String(next).padStart(2, '0');
+                            const newT = { ...timeState, seconds: s };
+                            setTimeState(newT);
+                            commitValue(selectedDate || new Date(), newT);
+                          }}
+                          className="h-3.5 w-4 flex items-center justify-center text-[#777777] hover:text-white hover:bg-[#202020] rounded-[2px] transition-colors"
+                        >
+                          <ChevronDown className="w-2.5 h-2.5" />
+                        </button>
+                      </div>
+                    </div>
+                    <span className="text-[10px] text-center text-[#777777] mt-1 font-sans">Sec (0-59)</span>
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* Edge-to-edge separator above footer */}
+          <div className="-mx-3 border-t border-[#222222] my-2.5" />
+
+          {/* Confirmation footer with formatted token preview and done button */}
+          <div className="flex items-center justify-between pt-0.5">
+            <span className="text-[12px] text-[#8c8c8c] font-mono truncate max-w-[190px]">
+              {strVal || 'NULL'}
+            </span>
+            <button
+              type="button"
+              onClick={() => setIsOpen(false)}
+              className="group relative flex shrink-0 items-center justify-center h-7 px-3.5 rounded-[6px] font-medium text-white shadow-xs outline-none cursor-pointer overflow-hidden ring-1 ring-[#1d4ed8] bg-[#2563eb] text-[12.5px] font-sans"
+            >
+              <span
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-0 rounded-[inherit] bg-gradient-to-b from-[#3b82f6] to-[#2563eb] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.25)]"
+              />
+              <span
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-0 rounded-[inherit] bg-black opacity-0 group-hover:opacity-15 transition-opacity duration-200"
+              />
+              <span className="relative">Done</span>
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Table Skeleton Loader (Supabase Studio inspired) ───────────────────────────
 // Preserves exact grid layout and column proportions during schema or row loading.
 // Eliminates cumulative layout shifts (CLS) and avoids jarring "0 rows" flickers on reload.
@@ -414,6 +1941,8 @@ export function TableEditor() {
   const [isRowsLoading, setIsRowsLoading] = useState(false);
   const [rowsError, setRowsError] = useState<string | null>(null);
   const [pageSize, setPageSize] = useState<number>(50);
+  const [showMainPageSizePopover, setShowMainPageSizePopover] = useState(false);
+  const mainPageSizePopoverRef = useRef<HTMLDivElement>(null);
   const [cursor, setCursor] = useState<string | null>(null);
   const [cursorHistory, setCursorHistory] = useState<string[]>([]);
   const [hasNextPage, setHasNextPage] = useState(false);
@@ -445,6 +1974,37 @@ export function TableEditor() {
 
   // Copy feedback state
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+
+  // ─── Inline Cell Editor & Selection State ─────────────────────────────────
+  const [selectedCell, setSelectedCell] = useState<{ rowIndex: number; colName: string } | null>(null);
+  const [editingCell, setEditingCell] = useState<{
+    rowIndex: number;
+    colName: string;
+    initialValue: unknown;
+    currentValue: string;
+    rect: { top: number; left: number; width: number; height: number };
+  } | null>(null);
+  const [expandedInlineCell, setExpandedInlineCell] = useState<{
+    rowIndex: number;
+    colName: string;
+    value: string;
+  } | null>(null);
+
+  // ─── Foreign Key Reference Record Picker State (Image 1 & 2) ────────────────
+  const [fkPickerTarget, setFkPickerTarget] = useState<{
+    rowIndex?: number;
+    column: string;
+    fk: ForeignKeyInfoApi;
+    currentValue: unknown;
+    onSelect?: (val: unknown) => void;
+  } | null>(null);
+
+  // ─── Foreign Key Record Preview Popover State (Image 3) ───────────────────
+  const [fkPreviewTarget, setFkPreviewTarget] = useState<{
+    fk: ForeignKeyInfoApi;
+    currentValue: unknown;
+    rect: { top: number; left: number; width: number; height: number };
+  } | null>(null);
 
   // ─── SQL Console State ─────────────────────────────────────────────────────
   const [sqlQuery, setSqlQuery] = useState('');
@@ -485,6 +2045,15 @@ export function TableEditor() {
       setColumnWidths({});
     }
   }, [selectedDb, selectedTable]);
+
+  // Helper to determine if a column is non-editable / read-only (Primary Key, 'id', generated/serial)
+  const isColReadOnly = useCallback((col: { name: string; primary_key?: boolean; type: string }): boolean => {
+    if (col.primary_key) return true;
+    if (col.name.toLowerCase() === 'id') return true;
+    const normType = col.type.toLowerCase();
+    if (normType.includes('serial') || normType.includes('identity') || normType.includes('generated')) return true;
+    return false;
+  }, []);
 
   // Returns effective width: user preference > type-based semantic default
   const getColWidth = useCallback(
@@ -588,6 +2157,9 @@ export function TableEditor() {
       }
       if (sortPopoverRef.current && !sortPopoverRef.current.contains(e.target as Node)) {
         setShowSortPopover(false);
+      }
+      if (mainPageSizePopoverRef.current && !mainPageSizePopoverRef.current.contains(e.target as Node)) {
+        setShowMainPageSizePopover(false);
       }
     }
     document.addEventListener('mousedown', handleClickOutside);
@@ -795,11 +2367,13 @@ export function TableEditor() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewMode, selectedDb, tables]);
 
-  // Select row handler
-  const handleSelectRow = (index: number) => {
+  // Select row handler - only opens drawer when openDrawer is explicitly true
+  const handleSelectRow = (index: number, openDrawer = false) => {
     setSelectedRowIndex(index);
     setIsInsertModeInPanel(false);
-    setIsDetailsOpen(true);
+    if (openDrawer) {
+      setIsDetailsOpen(true);
+    }
     if (rows[index]) {
       setRowEditValues({ ...rows[index] });
     }
@@ -873,6 +2447,195 @@ export function TableEditor() {
       setIsSavingRow(false);
     }
   }
+
+  // ─── Inline Cell Edit Handlers & Table Keyboard Navigation ──────────────────
+  const handleStartCellEdit = (rowIndex: number, colName: string, cellEl: HTMLElement) => {
+    const col = columns.find((c) => c.name === colName);
+    if (col && isColReadOnly(col)) return;
+    const row = rows[rowIndex];
+    if (!row) return;
+    const val = row[colName];
+    const strVal = val === null || val === undefined ? '' : typeof val === 'object' ? JSON.stringify(val) : String(val);
+    const r = cellEl.getBoundingClientRect();
+    setEditingCell({
+      rowIndex,
+      colName,
+      initialValue: val,
+      currentValue: strVal,
+      rect: {
+        top: r.top,
+        left: r.left,
+        width: r.width,
+        height: r.height,
+      },
+    });
+  };
+
+  const handleSaveCellEdit = async (rowIndex: number, colName: string, rawValue: unknown) => {
+    if (!selectedDb || !selectedTable) return;
+    const originalRow = rows[rowIndex];
+    if (!originalRow) return;
+
+    const col = columns.find((c) => c.name === colName);
+    let newValue: unknown = rawValue;
+
+    if (typeof rawValue === 'string') {
+      if (rawValue === '') {
+        newValue = col?.nullable ? null : '';
+      } else if (col) {
+        const normType = col.type.toLowerCase();
+        if (normType.includes('int')) {
+          const parsed = parseInt(rawValue, 10);
+          if (!isNaN(parsed)) newValue = parsed;
+        } else if (
+          normType.includes('float') ||
+          normType.includes('double') ||
+          normType.includes('numeric') ||
+          normType.includes('decimal') ||
+          normType.includes('real')
+        ) {
+          const parsed = parseFloat(rawValue);
+          if (!isNaN(parsed)) newValue = parsed;
+        } else if (normType.includes('bool') || normType === 'bit') {
+          if (rawValue.toLowerCase() === 'true') newValue = true;
+          else if (rawValue.toLowerCase() === 'false') newValue = false;
+        }
+      }
+    }
+
+    if (originalRow[colName] === newValue) return;
+
+    // Optimistically update local rows
+    const updatedRow = { ...originalRow, [colName]: newValue };
+    const newRows = [...rows];
+    newRows[rowIndex] = updatedRow;
+    setRows(newRows);
+    if (selectedRowIndex === rowIndex) {
+      setRowEditValues(updatedRow);
+    }
+
+    try {
+      const pkCol = columns.find((c) => c.primary_key);
+      const filter: Record<string, unknown> = {};
+
+      if (pkCol && originalRow[pkCol.name] !== undefined) {
+        filter[pkCol.name] = { eq: originalRow[pkCol.name] };
+      } else {
+        let count = 0;
+        Object.entries(originalRow).forEach(([k, v]) => {
+          if (count < 2 && v !== null && v !== undefined) {
+            filter[k] = { eq: v };
+            count++;
+          }
+        });
+      }
+
+      await api.updateTableRow(selectedDb, selectedTable, filter, { [colName]: newValue });
+    } catch (err) {
+      // Revert on failure
+      const revertedRows = [...rows];
+      revertedRows[rowIndex] = originalRow;
+      setRows(revertedRows);
+      if (selectedRowIndex === rowIndex) {
+        setRowEditValues(originalRow);
+      }
+      alert(err instanceof Error ? err.message : 'Failed to update cell');
+    }
+  };
+
+  const handleCommitCellEdit = async (val?: string) => {
+    if (!editingCell) return;
+    const { rowIndex, colName, currentValue } = editingCell;
+    const valueToSave = val !== undefined ? val : currentValue;
+    setEditingCell(null);
+    await handleSaveCellEdit(rowIndex, colName, valueToSave);
+  };
+
+  const handleSelectFkRecord = async (newVal: unknown) => {
+    if (!fkPickerTarget) return;
+    const target = fkPickerTarget;
+    setFkPickerTarget(null);
+
+    if (target.onSelect) {
+      target.onSelect(newVal);
+    } else if (target.rowIndex !== undefined) {
+      await handleSaveCellEdit(target.rowIndex, target.column, newVal);
+    }
+  };
+
+  const handleOpenReferencedTable = (targetTable: string) => {
+    setFkPreviewTarget(null);
+    setSelectedTable(targetTable);
+    setSelectedRowIndex(null);
+    setSelectedCell(null);
+    setViewMode('grid');
+  };
+
+  // Keyboard navigation for selected cells (Arrows, Tab, Enter to edit)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (editingCell || expandedInlineCell || isDetailsOpen || fkPickerTarget || fkPreviewTarget) return;
+      if (!selectedCell) return;
+
+      const { rowIndex, colName } = selectedCell;
+      const colIdx = columns.findIndex((c) => c.name === colName);
+      if (colIdx === -1) return;
+
+      if (e.key === 'ArrowRight' || (e.key === 'Tab' && !e.shiftKey)) {
+        e.preventDefault();
+        if (colIdx < columns.length - 1) {
+          setSelectedCell({ rowIndex, colName: columns[colIdx + 1].name });
+        } else if (rowIndex < rows.length - 1) {
+          setSelectedCell({ rowIndex: rowIndex + 1, colName: columns[0].name });
+          setSelectedRowIndex(rowIndex + 1);
+        }
+      } else if (e.key === 'ArrowLeft' || (e.key === 'Tab' && e.shiftKey)) {
+        e.preventDefault();
+        if (colIdx > 0) {
+          setSelectedCell({ rowIndex, colName: columns[colIdx - 1].name });
+        } else if (rowIndex > 0) {
+          setSelectedCell({ rowIndex: rowIndex - 1, colName: columns[columns.length - 1].name });
+          setSelectedRowIndex(rowIndex - 1);
+        }
+      } else if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        if (rowIndex < rows.length - 1) {
+          setSelectedCell({ rowIndex: rowIndex + 1, colName });
+          setSelectedRowIndex(rowIndex + 1);
+        }
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        if (rowIndex > 0) {
+          setSelectedCell({ rowIndex: rowIndex - 1, colName });
+          setSelectedRowIndex(rowIndex - 1);
+        }
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        const fk = foreignKeys.find((f) => f.column === colName);
+        if (fk) {
+          const val = rows[rowIndex]?.[colName];
+          setFkPickerTarget({
+            rowIndex,
+            column: colName,
+            fk,
+            currentValue: val,
+          });
+        } else {
+          const cellEl = document.querySelector(
+            `[data-cell-row="${rowIndex}"][data-cell-col="${colName}"]`
+          ) as HTMLElement;
+          if (cellEl) {
+            handleStartCellEdit(rowIndex, colName, cellEl);
+          }
+        }
+      } else if (e.key === 'Escape') {
+        setSelectedCell(null);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedCell, editingCell, expandedInlineCell, isDetailsOpen, fkPickerTarget, fkPreviewTarget, columns, rows, foreignKeys]);
 
   // ─── Insert Row from Right Panel Inspector ─────────────────────────────────
   async function handleInsertRowFromPanel() {
@@ -965,6 +2728,24 @@ export function TableEditor() {
 
   const activeRow = selectedRowIndex !== null ? rows[selectedRowIndex] : null;
 
+  // Track if user has modified anything or entered values (for disabling/enabling the Save button)
+  const hasRowChanges = useMemo(() => {
+    if (isInsertModeInPanel) {
+      // In insert mode: enabled if at least one field has non-empty/non-undefined value
+      return Object.values(rowEditValues).some((v) => v !== undefined && v !== '' && v !== null);
+    }
+    if (!activeRow) return false;
+    // In edit mode: enabled if any column value differs from the original row value
+    return columns.some((col) => {
+      const current = rowEditValues[col.name];
+      const original = activeRow[col.name];
+      // Normalize undefined and null for comparison
+      const normCur = current === undefined ? null : current;
+      const normOrig = original === undefined ? null : original;
+      return normCur !== normOrig;
+    });
+  }, [isInsertModeInPanel, activeRow, rowEditValues, columns]);
+
   // ─── Render ────────────────────────────────────────────────────────────────
 
   return (
@@ -1047,7 +2828,7 @@ export function TableEditor() {
         </div>
 
         {/* Live Search Input */}
-        <div className="p-2.5 border-b border-[#222222]">
+        <div className="p-2.5">
           <div className="relative">
             <Search className="w-3.5 h-3.5 text-[#666666] absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
             <input
@@ -1085,7 +2866,7 @@ export function TableEditor() {
                       setSqlQuery(`SELECT * FROM ${t.name} LIMIT 25;`);
                     }
                   }}
-                  className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-[6px] text-left transition-colors cursor-pointer text-[13px] ${
+                  className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-[6px] text-left transition-colors cursor-pointer text-[14px] font-sans ${
                     isSelected
                       ? 'bg-[#1a1a1a] text-white font-medium'
                       : 'text-[#a1a1aa] hover:text-white hover:bg-[#141414]'
@@ -1093,7 +2874,7 @@ export function TableEditor() {
                 >
                   <div className="flex items-center gap-2 min-w-0">
                     <TableIcon className={`w-3.5 h-3.5 shrink-0 ${isSelected ? 'text-white' : 'text-[#777777]'}`} />
-                    <span className="font-mono truncate">{t.name}</span>
+                    <span className="font-sans text-[14px] truncate">{t.name}</span>
                   </div>
                 </button>
               );
@@ -1102,9 +2883,8 @@ export function TableEditor() {
         </div>
 
         {/* Navigator Footer */}
-        <div className="h-10 shrink-0 px-3 border-t border-[#222222] flex items-center justify-between text-[11.5px] text-[#777777]">
+        <div className="h-12 shrink-0 px-3.5 border-t border-[#222222] flex items-center justify-between text-[12px] text-[#8c8c8c] select-none font-sans">
           <span>{tables.length} tables</span>
-          <span className="font-mono text-[#555555]">Axiom v4.0</span>
         </div>
       </aside>
 
@@ -1357,6 +3137,48 @@ export function TableEditor() {
           {/* Right: Next and Previous Pagination Controls */}
           {viewMode === 'grid' && (
             <div className="flex items-center gap-2 shrink-0">
+              {/* Custom Page Size Dropdown */}
+              <div className="relative" ref={mainPageSizePopoverRef}>
+                <button
+                  type="button"
+                  onClick={() => setShowMainPageSizePopover(!showMainPageSizePopover)}
+                  className="flex items-center gap-1.5 h-8 px-2.5 rounded-[6px] bg-[#141414] border border-[#262626] text-[#cccccc] hover:text-white hover:border-[#383838] text-[13px] font-medium transition-colors cursor-pointer"
+                  title="Page size"
+                >
+                  <span>{pageSize}</span>
+                  <ChevronDown
+                    className={`w-3.5 h-3.5 text-[#777777] transition-transform duration-150 ${
+                      showMainPageSizePopover ? 'rotate-180 text-white' : ''
+                    }`}
+                  />
+                </button>
+
+                {showMainPageSizePopover && (
+                  <div className="absolute right-0 top-full mt-1.5 w-24 bg-[#111111] border border-[#262626] rounded-[8px] shadow-2xl p-1 z-50 font-sans animate-in fade-in duration-100">
+                    {[25, 50, 100, 250, 500].map((sz) => (
+                      <button
+                        key={sz}
+                        type="button"
+                        onClick={() => {
+                          setPageSize(sz);
+                          setCursor(null);
+                          setCursorHistory([]);
+                          setShowMainPageSizePopover(false);
+                        }}
+                        className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-[6px] text-[13px] transition-colors cursor-pointer font-sans ${
+                          pageSize === sz
+                            ? 'bg-blue-600/15 text-blue-400 font-medium'
+                            : 'text-[#cccccc] hover:bg-[#1a1a1a] hover:text-white'
+                        }`}
+                      >
+                        <span>{sz}</span>
+                        {pageSize === sz && <Check className="w-3.5 h-3.5 text-blue-400" />}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
               <button
                 onClick={() => {
                   if (cursorHistory.length > 0) {
@@ -1503,7 +3325,7 @@ export function TableEditor() {
                         return (
                           <tr
                             key={idx}
-                            onClick={() => handleSelectRow(idx)}
+                            onClick={() => handleSelectRow(idx, false)}
                             className={`transition-colors cursor-pointer group ${
                               isSelected
                                 ? 'bg-[#121212] ring-1 ring-inset ring-[#222222] text-white'
@@ -1531,16 +3353,19 @@ export function TableEditor() {
                                   <Check className="w-3 h-3 stroke-[2.5]" />
                                 </button>
 
-                                {/* Expand Row Button */}
+                                {/* Expand Row Button - appears on row hover */}
                                 <button
                                   type="button"
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    handleSelectRow(idx);
-                                    setIsDetailsOpen(true);
+                                    handleSelectRow(idx, true);
                                   }}
                                   title="Edit row details"
-                                  className="w-4 h-4 rounded-[4px] flex items-center justify-center text-[#666666] hover:text-white hover:bg-[#1c1c1c] transition-colors cursor-pointer"
+                                  className={`w-4 h-4 rounded-[4px] flex items-center justify-center text-[#666666] hover:text-white hover:bg-[#1c1c1c] transition-all cursor-pointer ${
+                                    selectedRowIndex === idx
+                                      ? 'opacity-100'
+                                      : 'opacity-0 group-hover:opacity-100'
+                                  }`}
                                 >
                                   <Maximize2 className="w-3 h-3" />
                                 </button>
@@ -1555,15 +3380,90 @@ export function TableEditor() {
                               const isBool = typeof val === 'boolean';
                               const isObj = typeof val === 'object' && val !== null;
                               const strVal = isNull ? 'null' : isObj ? JSON.stringify(val) : String(val);
+                              const isCellSelected = selectedCell?.rowIndex === idx && selectedCell?.colName === col.name;
+                              const isReadOnly = isColReadOnly(col);
+                              const fk = foreignKeys.find((f) => f.column === col.name);
 
                               return (
                                 <td
                                   key={col.name}
-                                  className="px-3 py-2 text-[#cccccc] text-[14px] whitespace-nowrap overflow-hidden border-r border-[#151515]"
+                                  data-cell-row={idx}
+                                  data-cell-col={col.name}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSelectedCell({ rowIndex: idx, colName: col.name });
+                                    handleSelectRow(idx, false);
+                                  }}
+                                  onDoubleClick={(e) => {
+                                    e.stopPropagation();
+                                    setSelectedCell({ rowIndex: idx, colName: col.name });
+                                    handleSelectRow(idx, false);
+                                    if (fk) {
+                                      setFkPickerTarget({
+                                        rowIndex: idx,
+                                        column: col.name,
+                                        fk,
+                                        currentValue: val,
+                                      });
+                                    } else if (!isReadOnly) {
+                                      handleStartCellEdit(idx, col.name, e.currentTarget);
+                                    }
+                                  }}
+                                  className={`px-3 py-2 text-[#cccccc] text-[14px] whitespace-nowrap overflow-hidden border-r border-[#151515] relative transition-colors select-none ${
+                                    isReadOnly ? 'cursor-default' : 'cursor-cell'
+                                  } ${
+                                    isCellSelected
+                                      ? 'shadow-[inset_0_0_0_1.5px_#22d3ee] bg-cyan-950/20 text-white z-10'
+                                      : ''
+                                  }`}
                                   style={{ width: `${width}px`, minWidth: `${width}px`, maxWidth: `${width}px` }}
-                                  title={strVal}
+                                  title={isReadOnly ? `${col.name} (Read-only / cannot be edited): ${strVal}` : strVal}
                                 >
-                                  {isNull ? (
+                                  {fk ? (
+                                    <div className="flex items-center justify-between w-full h-full gap-1.5">
+                                      <div className="truncate flex-1 min-w-0">
+                                        {isNull ? (
+                                          <span className="text-[#555555] italic text-[12.5px]">null</span>
+                                        ) : isBool ? (
+                                          <span
+                                            className={`px-1.5 py-0.5 rounded text-[12.5px] font-medium ${
+                                              val ? 'bg-emerald-500/10 text-emerald-400' : 'bg-zinc-800 text-zinc-400'
+                                            }`}
+                                          >
+                                            {val ? 'true' : 'false'}
+                                          </span>
+                                        ) : isObj ? (
+                                          <span className="text-pink-400 flex items-center gap-1 text-[12.5px]">
+                                            <Code2 className="w-3.5 h-3.5" />
+                                            {`{ ... }`}
+                                          </span>
+                                        ) : (
+                                          <span>{strVal}</span>
+                                        )}
+                                      </div>
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          const btnRect = e.currentTarget.getBoundingClientRect();
+                                          setFkPreviewTarget({
+                                            fk,
+                                            currentValue: val,
+                                            rect: {
+                                              top: btnRect.top,
+                                              left: btnRect.left,
+                                              width: btnRect.width,
+                                              height: btnRect.height,
+                                            },
+                                          });
+                                        }}
+                                        title={`View referenced record from ${fk.referenced_table}`}
+                                        className="w-6 h-6 rounded-[5px] bg-[#181818] hover:bg-[#262626] border border-[#2c2c2c] hover:border-[#3e3e3e] text-[#888888] hover:text-white flex items-center justify-center transition-colors cursor-pointer shrink-0 shadow-xs"
+                                      >
+                                        <ArrowRight className="w-3.5 h-3.5" />
+                                      </button>
+                                    </div>
+                                  ) : isNull ? (
                                     <span className="text-[#555555] italic text-[12.5px]">null</span>
                                   ) : isBool ? (
                                     <span
@@ -1593,20 +3493,14 @@ export function TableEditor() {
               )}
             </div>
 
-            {/* Pagination Footer */}
-            <div className="h-10 shrink-0 px-4 bg-[#0a0a0a] border-t border-[#222222] flex items-center justify-between text-[13px] text-[#8c8c8c] select-none">
-              <div className="flex items-center gap-1.5">
-                <span>Page size:</span>
-                <select
-                  value={pageSize}
-                  onChange={(e) => setPageSize(Number(e.target.value))}
-                  className="h-6 px-1.5 bg-[#141414] border border-[#242424] rounded text-[12px] text-white"
-                >
-                  <option value={25}>25</option>
-                  <option value={50}>50</option>
-                  <option value={100}>100</option>
-                </select>
-              </div>
+            {/* Pagination Footer (h-12 matching Sidebar and Navigator footers) */}
+            <div className="h-12 shrink-0 px-4 bg-[#0a0a0a] border-t border-[#222222] flex items-center text-[13px] text-[#8c8c8c] select-none font-sans">
+              <span>
+                Showing <span className="text-white font-medium">{rows.length}</span> rows
+                {selectedTable && (
+                  <> in <span className="text-white font-mono">{selectedTable}</span></>
+                )}
+              </span>
             </div>
           </div>
         )}
@@ -2009,8 +3903,15 @@ export function TableEditor() {
                 Specify column values for the new record in <span className="font-mono text-white font-medium">{selectedTable}</span>.
               </div>
 
-              <div className="space-y-4">
-                {columns.map((col) => {
+              {(() => {
+                const isIdOrPk = (c: typeof columns[0]) => c.primary_key || c.name.toLowerCase() === 'id';
+                const requiredCols = [
+                  ...columns.filter(isIdOrPk),
+                  ...columns.filter((c) => !isIdOrPk(c) && !c.nullable),
+                ];
+                const optionalCols = columns.filter((c) => !isIdOrPk(c) && c.nullable);
+
+                const renderColField = (col: typeof columns[0]) => {
                   const val = rowEditValues[col.name];
                   const normType = col.type.toLowerCase();
                   const isAutoPk = col.primary_key && normType.includes('int');
@@ -2024,6 +3925,10 @@ export function TableEditor() {
                     normType.includes('serial') ||
                     normType.includes('money');
                   const isBool = normType.includes('bool') || normType === 'bit';
+                  const isDate = normType === 'date';
+                  const isTimestamp =
+                    normType.includes('time') ||
+                    normType.includes('date');
 
                   return (
                     <div key={col.name} className="space-y-1.5">
@@ -2032,6 +3937,29 @@ export function TableEditor() {
                         <label className="text-[13.5px] font-medium text-white flex items-center gap-1.5 font-sans">
                           <span>{col.name}</span>
                           {col.primary_key && <Key className="w-3 h-3 text-amber-400 shrink-0" />}
+                          {(() => {
+                            const fk = foreignKeys.find((f) => f.column === col.name);
+                            if (!fk) return null;
+                            return (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setFkPickerTarget({
+                                    column: col.name,
+                                    fk,
+                                    currentValue: val,
+                                    onSelect: (newVal) => {
+                                      setRowEditValues((prev) => ({ ...prev, [col.name]: newVal }));
+                                    },
+                                  });
+                                }}
+                                title={`Pick record from ${fk.referenced_table}`}
+                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-mono bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/25 transition-colors cursor-pointer"
+                              >
+                                <span>→ {fk.referenced_table}</span>
+                              </button>
+                            );
+                          })()}
                         </label>
                         <span className="text-[12px] font-mono text-[#777777]">
                           {col.type}
@@ -2057,32 +3985,72 @@ export function TableEditor() {
                             menuWidth="w-full"
                           />
                         ) : isNumber ? (
-                          <input
+                          <FieldEditorWrapper
+                            label={col.name}
                             type="number"
                             step={normType.includes('float') || normType.includes('double') || normType.includes('numeric') || normType.includes('decimal') ? 'any' : '1'}
                             placeholder={isAutoPk ? 'Auto-increment' : col.nullable ? 'Optional (NULL)' : 'Required'}
-                            value={val === null || val === undefined ? '' : String(val)}
-                            onChange={(e) =>
-                              setRowEditValues({ ...rowEditValues, [col.name]: e.target.value })
+                            value={val}
+                            isNullable={col.nullable}
+                            onChange={(v) =>
+                              setRowEditValues({ ...rowEditValues, [col.name]: v })
                             }
-                            className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] px-3 text-[14px] text-white font-sans focus:outline-none focus:border-[#3b82f6] transition-colors placeholder-[#555555]"
+                          />
+                        ) : isTimestamp ? (
+                          <DateTimePickerInput
+                            value={val}
+                            isDateOnly={isDate}
+                            placeholder={isDate ? 'YYYY-MM-DD' : 'YYYY-MM-DD HH:mm:ss'}
+                            onChange={(v) =>
+                              setRowEditValues({ ...rowEditValues, [col.name]: v })
+                            }
                           />
                         ) : (
-                          <textarea
-                            rows={3}
+                          <FieldEditorWrapper
+                            label={col.name}
+                            isMultiline={true}
                             placeholder={col.nullable ? 'Optional (NULL)' : 'Required'}
-                            value={val === null || val === undefined ? '' : String(val)}
-                            onChange={(e) =>
-                              setRowEditValues({ ...rowEditValues, [col.name]: e.target.value })
+                            value={val}
+                            isNullable={col.nullable}
+                            onChange={(v) =>
+                              setRowEditValues({ ...rowEditValues, [col.name]: v })
                             }
-                            className="w-full min-h-[72px] rounded-[6px] border border-[#262626] bg-[#121212] p-2.5 text-[14px] text-white font-sans focus:outline-none focus:border-[#3b82f6] transition-colors resize-y placeholder-[#555555]"
                           />
                         )}
                       </div>
                     </div>
                   );
-                })}
-              </div>
+                };
+
+                return (
+                  <div className="space-y-4">
+                    {/* Required / Primary Columns */}
+                    {requiredCols.length > 0 && (
+                      <div className="space-y-4">
+                        {requiredCols.map(renderColField)}
+                      </div>
+                    )}
+
+                    {/* Optional Fields Section with Edge-to-Edge Divider Line */}
+                    {optionalCols.length > 0 && (
+                      <div className="pt-2 space-y-4">
+                        <div className="-mx-4 sm:-mx-5 px-4 sm:px-5 pt-4 border-t border-[#222222]">
+                          <h4 className="text-[14px] font-semibold text-white tracking-tight font-sans">
+                            Optional Fields
+                          </h4>
+                          <p className="text-[12.5px] text-[#8c8c8c] mt-0.5 font-sans">
+                            These are columns that do not need any value
+                          </p>
+                        </div>
+
+                        <div className="space-y-4">
+                          {optionalCols.map(renderColField)}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
           ) : activeRow && inspectorTab === 'danger' ? (
             /* Danger Tab matching Databases page */
@@ -2115,85 +4083,161 @@ export function TableEditor() {
           ) : activeRow ? (
             /* Selected Row Editing Fields (Details Tab) with Input Area Under Title */
             <div className="space-y-4 font-sans">
-              {columns.map((col) => {
-                const val = rowEditValues[col.name];
-                const isNull = val === null || val === undefined;
-                const normType = col.type.toLowerCase();
-                const isNumber =
-                  normType.includes('int') ||
-                  normType.includes('float') ||
-                  normType.includes('double') ||
-                  normType.includes('decimal') ||
-                  normType.includes('numeric') ||
-                  normType.includes('real') ||
-                  normType.includes('serial') ||
-                  normType.includes('money');
-                const isBool = normType.includes('bool') || normType === 'bit';
+              {(() => {
+                const isIdOrPk = (c: typeof columns[0]) => c.primary_key || c.name.toLowerCase() === 'id';
+                const requiredCols = [
+                  ...columns.filter(isIdOrPk),
+                  ...columns.filter((c) => !isIdOrPk(c) && !c.nullable),
+                ];
+                const optionalCols = columns.filter((c) => !isIdOrPk(c) && c.nullable);
+
+                const renderColField = (col: typeof columns[0]) => {
+                  const val = rowEditValues[col.name];
+                  const isNull = val === null || val === undefined;
+                  const normType = col.type.toLowerCase();
+                  const isNumber =
+                    normType.includes('int') ||
+                    normType.includes('float') ||
+                    normType.includes('double') ||
+                    normType.includes('decimal') ||
+                    normType.includes('numeric') ||
+                    normType.includes('real') ||
+                    normType.includes('serial') ||
+                    normType.includes('money');
+                  const isBool = normType.includes('bool') || normType === 'bit';
+                  const isDate = normType === 'date';
+                  const isTimestamp =
+                    normType.includes('time') ||
+                    normType.includes('date');
+
+                  return (
+                    <div key={col.name} className="space-y-1.5">
+                      {/* Title & Type Header Above Input */}
+                      <div className="flex items-center justify-between">
+                        <label className="text-[13.5px] font-medium text-white flex items-center gap-1.5 font-sans">
+                          <span>{col.name}</span>
+                          {col.primary_key && <Key className="w-3 h-3 text-amber-400 shrink-0" />}
+                          {isColReadOnly(col) && !col.primary_key && (
+                            <span className="text-[11px] text-[#777777] font-normal">(Read-only)</span>
+                          )}
+                          {(() => {
+                            const fk = foreignKeys.find((f) => f.column === col.name);
+                            if (!fk || isColReadOnly(col)) return null;
+                            return (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setFkPickerTarget({
+                                    column: col.name,
+                                    fk,
+                                    currentValue: val,
+                                    onSelect: (newVal) => {
+                                      setRowEditValues((prev) => ({ ...prev, [col.name]: newVal }));
+                                    },
+                                  });
+                                }}
+                                title={`Pick record from ${fk.referenced_table}`}
+                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-mono bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/25 transition-colors cursor-pointer"
+                              >
+                                <span>→ {fk.referenced_table}</span>
+                              </button>
+                            );
+                          })()}
+                        </label>
+                        <span className="text-[12px] font-mono text-[#777777]">
+                          {col.type}
+                        </span>
+                      </div>
+
+                      {/* Input Area Placed Directly Under Title */}
+                      <div>
+                        {isBool ? (
+                          <CustomSelect
+                            disabled={isColReadOnly(col)}
+                            value={isNull ? '' : String(val)}
+                            options={[
+                              { value: '', label: 'NULL' },
+                              { value: 'true', label: 'TRUE' },
+                              { value: 'false', label: 'FALSE' },
+                            ]}
+                            onChange={(v) => {
+                              setRowEditValues({
+                                ...rowEditValues,
+                                [col.name]: v === '' ? null : v === 'true',
+                              });
+                            }}
+                            menuWidth="w-full"
+                          />
+                        ) : isNumber ? (
+                          <FieldEditorWrapper
+                            label={col.name}
+                            type="number"
+                            step={normType.includes('float') || normType.includes('double') || normType.includes('numeric') || normType.includes('decimal') ? 'any' : '1'}
+                            disabled={isColReadOnly(col)}
+                            value={val}
+                            isNullable={col.nullable}
+                            placeholder={col.nullable ? 'Optional (NULL)' : 'Required'}
+                            onChange={(v) =>
+                              setRowEditValues({ ...rowEditValues, [col.name]: v })
+                            }
+                          />
+                        ) : isTimestamp ? (
+                          <DateTimePickerInput
+                            value={isNull ? null : val}
+                            disabled={isColReadOnly(col)}
+                            isDateOnly={isDate}
+                            placeholder={isDate ? 'YYYY-MM-DD' : 'YYYY-MM-DD HH:mm:ss'}
+                            onChange={(v) =>
+                              setRowEditValues({ ...rowEditValues, [col.name]: v })
+                            }
+                          />
+                        ) : (
+                          <FieldEditorWrapper
+                            label={col.name}
+                            isMultiline={true}
+                            disabled={isColReadOnly(col)}
+                            value={val}
+                            isNullable={col.nullable}
+                            placeholder={col.nullable ? 'Optional (NULL)' : 'Required'}
+                            onChange={(v) =>
+                              setRowEditValues({ ...rowEditValues, [col.name]: v })
+                            }
+                          />
+                        )}
+                      </div>
+                    </div>
+                  );
+                };
 
                 return (
-                  <div key={col.name} className="space-y-1.5">
-                    {/* Title & Type Header Above Input */}
-                    <div className="flex items-center justify-between">
-                      <label className="text-[13.5px] font-medium text-white flex items-center gap-1.5 font-sans">
-                        <span>{col.name}</span>
-                        {col.primary_key && <Key className="w-3 h-3 text-amber-400 shrink-0" />}
-                      </label>
-                      <span className="text-[12px] font-mono text-[#777777]">
-                        {col.type}
-                      </span>
-                    </div>
+                  <div className="space-y-4">
+                    {/* Required / Non-nullable Columns */}
+                    {requiredCols.length > 0 && (
+                      <div className="space-y-4">
+                        {requiredCols.map(renderColField)}
+                      </div>
+                    )}
 
-                    {/* Input Area Placed Directly Under Title */}
-                    <div>
-                      {isBool ? (
-                        <CustomSelect
-                          disabled={col.primary_key}
-                          value={isNull ? '' : String(val)}
-                          options={[
-                            { value: '', label: 'NULL' },
-                            { value: 'true', label: 'TRUE' },
-                            { value: 'false', label: 'FALSE' },
-                          ]}
-                          onChange={(v) => {
-                            setRowEditValues({
-                              ...rowEditValues,
-                              [col.name]: v === '' ? null : v === 'true',
-                            });
-                          }}
-                          menuWidth="w-full"
-                        />
-                      ) : isNumber ? (
-                        <input
-                          type="number"
-                          step={normType.includes('float') || normType.includes('double') || normType.includes('numeric') || normType.includes('decimal') ? 'any' : '1'}
-                          disabled={col.primary_key}
-                          value={isNull ? '' : String(val)}
-                          placeholder={col.nullable ? 'Optional (NULL)' : 'Required'}
-                          onChange={(e) =>
-                            setRowEditValues({ ...rowEditValues, [col.name]: e.target.value })
-                          }
-                          className={`h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] px-3 text-[14px] text-white font-sans focus:outline-none focus:border-[#3b82f6] transition-colors placeholder-[#555555] ${
-                            col.primary_key ? 'opacity-60 cursor-not-allowed bg-[#0d0d0d]' : ''
-                          }`}
-                        />
-                      ) : (
-                        <textarea
-                          rows={3}
-                          disabled={col.primary_key}
-                          value={isNull ? '' : String(val)}
-                          placeholder={col.nullable ? 'Optional (NULL)' : 'Required'}
-                          onChange={(e) =>
-                            setRowEditValues({ ...rowEditValues, [col.name]: e.target.value })
-                          }
-                          className={`w-full min-h-[72px] rounded-[6px] border border-[#262626] bg-[#121212] p-2.5 text-[14px] text-white font-sans focus:outline-none focus:border-[#3b82f6] transition-colors resize-y placeholder-[#555555] ${
-                            col.primary_key ? 'opacity-60 cursor-not-allowed bg-[#0d0d0d]' : ''
-                          }`}
-                        />
-                      )}
-                    </div>
+                    {/* Optional Fields Section with Edge-to-Edge Divider Line */}
+                    {optionalCols.length > 0 && (
+                      <div className="pt-2 space-y-4">
+                        <div className="-mx-4 sm:-mx-5 px-4 sm:px-5 pt-4 border-t border-[#222222]">
+                          <h4 className="text-[14px] font-semibold text-white tracking-tight font-sans">
+                            Optional Fields
+                          </h4>
+                          <p className="text-[12.5px] text-[#8c8c8c] mt-0.5 font-sans">
+                            These are columns that do not need any value
+                          </p>
+                        </div>
+
+                        <div className="space-y-4">
+                          {optionalCols.map(renderColField)}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 );
-              })}
+              })()}
             </div>
           ) : null}
         </div>
@@ -2217,7 +4261,7 @@ export function TableEditor() {
             <button
               type="button"
               onClick={isInsertModeInPanel ? handleInsertRowFromPanel : handleSaveRowEdit}
-              disabled={isSavingRow}
+              disabled={isSavingRow || !hasRowChanges}
               className="group relative flex shrink-0 items-center justify-center h-9 px-4 rounded-[8px] font-medium text-white shadow-xs outline-none cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed overflow-hidden ring-1 ring-[#1d4ed8] bg-[#2563eb] font-sans"
             >
               <span
@@ -2253,6 +4297,116 @@ export function TableEditor() {
         onConfirm={handleDeleteRow}
         onClose={() => setDeleteRowTarget(null)}
       />
+
+      {/* ─── Inline Cell Popover Editor ─── */}
+      {editingCell && (
+        <InlineCellEditorPopover
+          editingCell={editingCell}
+          onChange={(val) =>
+            setEditingCell((prev) => (prev ? { ...prev, currentValue: val } : null))
+          }
+          onSave={handleCommitCellEdit}
+          onCancel={() => setEditingCell(null)}
+          onExpand={() => {
+            const current = editingCell;
+            setEditingCell(null);
+            setExpandedInlineCell({
+              rowIndex: current.rowIndex,
+              colName: current.colName,
+              value: current.currentValue,
+            });
+          }}
+        />
+      )}
+
+      {/* ─── Expanded Inline Cell SlideOver Panel ─── */}
+      <SlideOver
+        isOpen={!!expandedInlineCell}
+        onClose={() => setExpandedInlineCell(null)}
+        width="w-[520px] max-w-full"
+        title={expandedInlineCell?.colName || 'Field'}
+        subtitle="Edit field value"
+      >
+        <div className="flex-1 flex flex-col min-h-0 bg-[#0e0e0e] overflow-hidden font-sans">
+          <div className="flex-1 p-4 sm:p-5 flex flex-col min-h-0 space-y-2 overflow-hidden">
+            <div className="flex items-center justify-between">
+              <label className="text-[13.5px] font-medium text-white font-sans">
+                Value
+              </label>
+              <span className="text-[12px] font-mono text-[#777777]">
+                {(expandedInlineCell?.value || '').length} chars · {(expandedInlineCell?.value || '').split('\n').length} lines
+              </span>
+            </div>
+            <textarea
+              value={expandedInlineCell?.value || ''}
+              onChange={(e) =>
+                setExpandedInlineCell((prev) =>
+                  prev ? { ...prev, value: e.target.value } : null
+                )
+              }
+              autoFocus
+              spellCheck={false}
+              className="flex-1 w-full rounded-[6px] border border-[#262626] bg-[#121212] p-3 text-[14px] leading-relaxed text-white font-sans focus:outline-none focus:border-[#3b82f6] resize-none placeholder-[#555555] transition-colors whitespace-pre"
+              placeholder="Enter value..."
+            />
+          </div>
+
+          <div className="p-4 border-t border-[#222222] bg-[#0e0e0e] flex items-center justify-end gap-2.5 font-sans shrink-0">
+            <button
+              type="button"
+              onClick={() => setExpandedInlineCell(null)}
+              className="inline-flex items-center justify-center h-9 px-4 rounded-[8px] text-[14px] font-medium text-[#cccccc] hover:text-white bg-transparent hover:bg-[#161616] border border-[#262626] hover:border-[#383838] transition-colors cursor-pointer font-sans"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={async () => {
+                if (!expandedInlineCell) return;
+                const { rowIndex, colName, value } = expandedInlineCell;
+                setExpandedInlineCell(null);
+                await handleSaveCellEdit(rowIndex, colName, value);
+              }}
+              className="group relative flex shrink-0 items-center justify-center h-9 px-4 rounded-[8px] font-medium text-white shadow-xs outline-none cursor-pointer overflow-hidden ring-1 ring-[#1d4ed8] bg-[#2563eb] font-sans"
+            >
+              <span
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-0 rounded-[inherit] bg-gradient-to-b from-[#3b82f6] to-[#2563eb] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2)]"
+              />
+              <span
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-0 rounded-[inherit] bg-black opacity-0 group-hover:opacity-15 transition-opacity duration-200"
+              />
+              <span className="relative flex items-center text-[14px] font-sans">
+                Apply
+              </span>
+            </button>
+          </div>
+        </div>
+      </SlideOver>
+
+      {/* ─── Foreign Key Reference Record Picker Modal (Image 1 & 2) ─── */}
+      {fkPickerTarget && selectedDb && (
+        <ForeignKeyPickerModal
+          db={selectedDb}
+          fk={fkPickerTarget.fk}
+          currentValue={fkPickerTarget.currentValue}
+          onSelect={handleSelectFkRecord}
+          onClose={() => setFkPickerTarget(null)}
+        />
+      )}
+
+      {/* ─── Foreign Key Record Preview Popover (Image 3) ─── */}
+      {fkPreviewTarget && selectedDb && (
+        <ForeignKeyRecordPreviewPopover
+          db={selectedDb}
+          fk={fkPreviewTarget.fk}
+          currentValue={fkPreviewTarget.currentValue}
+          anchorRect={fkPreviewTarget.rect}
+          onClose={() => setFkPreviewTarget(null)}
+          onOpenTable={handleOpenReferencedTable}
+        />
+      )}
     </div>
   );
 }
