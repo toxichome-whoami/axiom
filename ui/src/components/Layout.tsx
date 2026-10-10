@@ -22,16 +22,19 @@ import {
   Menu,
   X,
   HardDrive,
+  Table,
 } from 'lucide-react';
 
 export type NavPath =
   | '/system'
   | '/system/databases'
+  | '/system/tables'
   | '/system/storage'
   | '/system/keys'
   | '/system/roles'
   | '/system/mcp'
   | '/system/settings';
+
 
 interface LayoutProps {
   currentPath: NavPath;
@@ -63,12 +66,14 @@ export function Layout({ currentPath, onNavigate, title, children, onLogout }: L
   const searchItems = [
     { label: 'Overview', path: '/system' as NavPath, icon: LayoutDashboard, category: 'Data & Access' },
     { label: 'Database Pools', path: '/system/databases' as NavPath, icon: Database, category: 'Data & Access' },
+    { label: 'Table & Schema Editor', path: '/system/tables' as NavPath, icon: Table, category: 'Data & Access' },
     { label: 'Blob Storage', path: '/system/storage' as NavPath, icon: HardDrive, category: 'Data & Access' },
     { label: 'API Keys', path: '/system/keys' as NavPath, icon: Key, category: 'Data & Access' },
     { label: 'Roles', path: '/system/roles' as NavPath, icon: Shield, category: 'Data & Access' },
     { label: 'MCP Protocol', path: '/system/mcp' as NavPath, icon: Bot, category: 'Protocols & Tools' },
     { label: 'Settings', path: '/system/settings' as NavPath, icon: Settings, category: 'Configuration' },
   ];
+
 
   const filteredSearchItems = searchItems.filter(
     (item) =>
@@ -154,10 +159,16 @@ export function Layout({ currentPath, onNavigate, title, children, onLogout }: L
           icon: Database,
         },
         {
+          path: '/system/tables' as NavPath,
+          label: 'Table Editor',
+          icon: Table,
+        },
+        {
           path: '/system/storage' as NavPath,
           label: 'Blob Storage',
           icon: HardDrive,
         },
+
         {
           path: '/system/keys' as NavPath,
           label: 'API Keys',
@@ -192,8 +203,9 @@ export function Layout({ currentPath, onNavigate, title, children, onLogout }: L
     },
   ];
 
-  // When viewing storage explorer, fit 100% viewport and prevent layout double-scroll
-  const isFullPage = currentPath === '/system/storage';
+  // When viewing full-canvas workspaces (Storage or Table Editor), fit 100% viewport and prevent layout double-scroll
+  const isFullPage = currentPath === '/system/storage' || currentPath === '/system/tables';
+
 
   return (
     <div className={cn('flex min-h-screen w-full bg-[#000000] text-[#f3f4f6] font-sans antialiased', isFullPage && 'h-screen overflow-hidden')}>

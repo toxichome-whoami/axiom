@@ -121,7 +121,18 @@ export interface UserRecordApi {
 }
 
 import { getSessionToken, clearSession } from './session';
-import type { BlobMetadata, BlobStats, ListBlobsResult, NamespaceInfo } from '../types';
+import type {
+  BlobMetadata,
+  BlobStats,
+  ListBlobsResult,
+  NamespaceInfo,
+  TableInfoApi,
+  ColumnInfoApi,
+  ForeignKeyInfoApi,
+  TableRowsResponse,
+  QueryResultApi,
+} from '../types';
+
 
 const API_BASE = import.meta.env.VITE_API_URL ?? '';
 
@@ -167,6 +178,11 @@ async function request<T>(
 
   if (!headers.has('Content-Type') && !(options.body instanceof FormData)) {
     headers.set('Content-Type', 'application/json');
+  }
+
+  // Disable aggressive browser caching for admin dashboard data
+  if (options.cache === undefined) {
+    options.cache = 'no-store';
   }
 
   if (token && token !== 'undefined' && token !== 'null' && !headers.has('Authorization')) {
@@ -446,4 +462,60 @@ export const api = {
     }
     return res.blob();
   },
+
+  // ─── Table Editor & Schema API ─────────────────────────────────────────────
+  getDatabaseTables: (db: string, cursor?: string, limit?: number) => {
+    const params = new URLSearchParams();
+    if (cursor) params.set('cursor', cursor);
+    if (limit) params.set('limit', String(limit));
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    return request<{ database: string; tables: TableInfoApi[] }>(`/api/v1/db/${encodeURIComponent(db)}/tables${qs}`);
+  },
+
+  getTableSchema: (db: string, table: string) =>
+    request<{ database: string; table: string; columns: ColumnInfoApi[]; foreign_keys: ForeignKeyInfoApi[] }>(
+      `/api/v1/db/${encodeURIComponent(db)}/${encodeURIComponent(table)}/schema`
+    ),
+
+  getTableRows: (
+    db: string,
+    table: string,
+    params?: { cursor?: string; limit?: number; sort?: string; order?: 'asc' | 'desc'; filter?: string }
+  ) => {
+    const qs = new URLSearchParams();
+    if (params?.cursor) qs.set('cursor', params.cursor);
+    if (params?.limit) qs.set('limit', String(params.limit));
+    if (params?.sort) qs.set('sort', params.sort);
+    if (params?.order) qs.set('order', params.order);
+    if (params?.filter) qs.set('filter', params.filter);
+    const qStr = qs.toString() ? `?${qs.toString()}` : '';
+    return request<TableRowsResponse>(
+      `/api/v1/db/${encodeURIComponent(db)}/${encodeURIComponent(table)}/rows${qStr}`
+    );
+  },
+
+  insertTableRow: (db: string, table: string, row: Record<string, unknown>) =>
+    request<{ affected_rows: number }>(`/api/v1/db/${encodeURIComponent(db)}/${encodeURIComponent(table)}/rows`, {
+      method: 'POST',
+      body: JSON.stringify({ row }),
+    }),
+
+  updateTableRow: (db: string, table: string, filter: Record<string, unknown>, update: Record<string, unknown>) =>
+    request<{ affected_rows: number }>(`/api/v1/db/${encodeURIComponent(db)}/${encodeURIComponent(table)}/rows`, {
+      method: 'PATCH',
+      body: JSON.stringify({ filter, update }),
+    }),
+
+  deleteTableRow: (db: string, table: string, filter: Record<string, unknown>) =>
+    request<{ affected_rows: number }>(`/api/v1/db/${encodeURIComponent(db)}/${encodeURIComponent(table)}/rows`, {
+      method: 'DELETE',
+      body: JSON.stringify({ filter }),
+    }),
+
+  executeSqlQuery: (db: string, sql: string, params: unknown[] = [], timeout = 30) =>
+    request<QueryResultApi>(`/api/v1/db/${encodeURIComponent(db)}/query`, {
+      method: 'POST',
+      body: JSON.stringify({ sql, params, timeout }),
+    }),
 };
+

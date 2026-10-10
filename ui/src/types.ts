@@ -150,3 +150,45 @@ export interface NamespaceInfo {
   total_objects: number;
   total_bytes: number;
 }
+
+// ─── Table Editor & Schema Types ─────────────────────────────────────────────
+
+export interface ColumnInfoApi {
+  name: string;
+  type: string;
+  nullable: boolean;
+  primary_key: boolean;
+}
+
+export interface ForeignKeyInfoApi {
+  column: string;
+  referenced_table: string;
+  referenced_column: string;
+}
+
+export interface TableInfoApi {
+  name: string;
+  row_count_estimate: number;
+  columns?: ColumnInfoApi[];
+  foreign_keys?: ForeignKeyInfoApi[];
+}
+
+export interface TableRowsResponse {
+  rows: Record<string, unknown>[];
+  pagination: {
+    limit: number;
+    has_more: boolean;
+    next_cursor: string | null;
+  };
+}
+
+export interface QueryResultApi {
+  success?: boolean;
+  columns?: string[];
+  rows?: Record<string, unknown>[];
+  affected_rows?: number;
+  truncated?: boolean;
+  next_cursor?: string;
+  duration_ms?: number;
+}
+

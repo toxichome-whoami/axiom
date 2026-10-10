@@ -8,6 +8,10 @@ export default defineConfig({
   base: '/system/',
   server: {
     port: 5174,
+    proxy: {
+      '/api': 'http://127.0.0.1:4500',
+      '/admin': 'http://127.0.0.1:4500'
+    }
   },
   build: {
     outDir: 'dist',
