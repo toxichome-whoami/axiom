@@ -39,6 +39,7 @@ import {
   FileCode,
   Layers,
   Edit3,
+  Maximize2,
 } from 'lucide-react';
 import {
   api,
@@ -51,6 +52,8 @@ import {
   QueryResultApi,
 } from '../types';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
+import { SlideOver } from '../components/ui/SlideOver';
+import { CustomSelect } from '../components/shared/CustomSelect';
 
 // ─── Type Icon Mapping ───────────────────────────────────────────────────────
 // Maps SQL column types to compact Supabase-style visual badges.
@@ -123,6 +126,257 @@ function getColumnTypeBadge(typeName: string, isPk: boolean, isFk: boolean) {
   };
 }
 
+// ─── Format Data Type to Simple Canonical Name (Supabase style) ──────────────
+// Translates verbose SQL information_schema types (e.g. 'character varying',
+// 'timestamp with time zone', 'integer') into crisp, familiar Supabase tokens.
+function formatColumnType(rawType: string): string {
+  if (!rawType) return 'text';
+  const norm = rawType.toLowerCase().trim();
+
+  // Exact canonical Postgres / SQL mappings
+  if (norm === 'character varying' || norm.startsWith('varchar')) return 'varchar';
+  if (norm === 'character' || norm === 'char' || norm.startsWith('char(')) return 'char';
+  if (norm === 'integer' || norm === 'int' || norm === 'int4') return 'int4';
+  if (norm === 'bigint' || norm === 'int8') return 'int8';
+  if (norm === 'smallint' || norm === 'int2') return 'int2';
+  if (norm === 'tinyint') return 'int2';
+  if (norm === 'boolean' || norm === 'bool') return 'bool';
+  if (norm === 'timestamp with time zone' || norm === 'timestamptz') return 'timestamptz';
+  if (norm === 'timestamp without time zone' || norm === 'timestamp') return 'timestamp';
+  if (norm === 'time with time zone' || norm === 'timetz') return 'timetz';
+  if (norm === 'time without time zone' || norm === 'time') return 'time';
+  if (norm === 'double precision' || norm === 'float8') return 'float8';
+  if (norm === 'real' || norm === 'float4') return 'float4';
+  if (norm === 'numeric' || norm.startsWith('decimal') || norm.startsWith('numeric(')) return 'numeric';
+  if (norm === 'text') return 'text';
+  if (norm === 'jsonb') return 'jsonb';
+  if (norm === 'json') return 'json';
+  if (norm === 'uuid') return 'uuid';
+  if (norm === 'bytea' || norm === 'blob') return 'bytea';
+  if (norm === 'date') return 'date';
+  if (norm.startsWith('serial')) return 'serial';
+  if (norm.startsWith('bigserial')) return 'bigserial';
+
+  // Strip parentheses like varchar(255) -> varchar
+  const clean = norm.replace(/\(.*\)/, '').trim();
+  if (clean === 'character varying' || clean === 'varchar') return 'varchar';
+  if (clean === 'int' || clean === 'integer') return 'int4';
+  return clean || norm;
+}
+
+// ─── Type-Specific Column Width Heuristics (Supabase Studio inspired) ──────
+// Calculates natural initial column widths according to SQL data type semantics.
+// Optimized for 14px Inter typography matching the Databases and Overview pages.
+function getDefaultColumnWidth(typeName: string, colName?: string): number {
+  const norm = (typeName || '').toLowerCase().trim();
+  const normName = (colName || '').toLowerCase().trim();
+
+  // Boolean flags: compact width (e.g., active, is_admin, verified)
+  if (norm.includes('bool') || norm === 'bit') {
+    return 95;
+  }
+
+  // Row IDs and foreign key pointers: compact
+  if (normName === 'id' || normName.endsWith('_id') || normName.endsWith('_fk')) {
+    return 120;
+  }
+
+  // Quantities & counts
+  if (
+    normName.includes('qty') ||
+    normName.includes('quantity') ||
+    normName.includes('count') ||
+    normName.includes('age') ||
+    norm.includes('int2') ||
+    norm.includes('smallint') ||
+    norm.includes('tinyint')
+  ) {
+    return 110;
+  }
+
+  // Standard integers
+  if (norm.includes('int') || norm.includes('serial') || norm.includes('year')) {
+    return 130;
+  }
+
+  // Floating point / Decimal / Monetary numbers (e.g., unit_price, subtotal)
+  if (
+    norm.includes('float') ||
+    norm.includes('double') ||
+    norm.includes('decimal') ||
+    norm.includes('numeric') ||
+    norm.includes('money') ||
+    norm.includes('real')
+  ) {
+    return 145;
+  }
+
+  // Date, Time, Timestamps
+  if (norm.includes('time') || norm.includes('date')) {
+    return 185;
+  }
+
+  // UUIDs / Hashes
+  if (norm.includes('uuid') || norm.includes('guid') || normName.includes('hash')) {
+    return 210;
+  }
+
+  // JSON, XML, binary documents
+  if (norm.includes('json') || norm.includes('xml') || norm.includes('bytea') || norm.includes('blob')) {
+    return 240;
+  }
+
+  // Email / URLs
+  if (normName.includes('email') || normName.includes('url') || normName.includes('avatar')) {
+    return 230;
+  }
+
+  // Text, Varchar, generic strings
+  if (norm.includes('text') || norm.includes('char') || norm.includes('string')) {
+    return 195;
+  }
+
+  // Fallback default
+  return 150;
+}
+
+// ─── Table Skeleton Loader (Supabase Studio inspired) ───────────────────────────
+// Preserves exact grid layout and column proportions during schema or row loading.
+// Eliminates cumulative layout shifts (CLS) and avoids jarring "0 rows" flickers on reload.
+function TableSkeleton({
+  columns,
+  foreignKeys,
+  columnWidths,
+}: {
+  columns: ColumnInfoApi[];
+  foreignKeys: ForeignKeyInfoApi[];
+  columnWidths?: Record<string, number>;
+}) {
+  const skeletonColCount = columns.length > 0 ? columns.length : 6;
+  const skeletonRowCount = 12;
+
+  return (
+    <table
+      className="border-collapse text-left select-none font-sans text-[14px] table-fixed"
+      style={{ width: 'max-content' }}
+    >
+      <thead>
+        <tr className="sticky top-0 z-10 bg-[#0a0a0a] border-b border-[#222222]">
+          {/* Row Checkbox & Action Sticky Column */}
+          <th
+            className="w-16 px-3 py-2 text-left bg-[#0a0a0a] border-r border-[#1a1a1a]"
+            style={{ width: '64px', minWidth: '64px', maxWidth: '64px' }}
+          >
+            <div className="flex items-center justify-start gap-1.5">
+              <div className="w-3.5 h-3.5 rounded border border-[#262626] bg-[#141414]" />
+              <div className="w-3.5 h-3.5 rounded border border-[#222222] bg-[#121212]" />
+            </div>
+          </th>
+
+          {/* Column Header Skeletons or Introspected Columns */}
+          {columns.length > 0 ? (
+            columns.map((col) => {
+              const isFk = foreignKeys.some((fk) => fk.column === col.name);
+              const badge = getColumnTypeBadge(col.type, col.primary_key, isFk);
+              const width = columnWidths?.[col.name] || getDefaultColumnWidth(col.type, col.name);
+
+              return (
+                <th
+                  key={col.name}
+                  className="px-3 py-2 text-[14px] font-medium text-[#cccccc] whitespace-nowrap border-r border-[#1a1a1a]"
+                  style={{ width: `${width}px`, minWidth: `${Math.max(80, width)}px`, maxWidth: `${width}px` }}
+                >
+                  <div className="flex items-center gap-1.5 min-w-0 pr-2.5 overflow-hidden whitespace-nowrap">
+                    <span className="font-sans text-white text-[14px] whitespace-nowrap shrink-0">{col.name}</span>
+                    {col.primary_key && (
+                      <span title="Primary Key" className="shrink-0 p-0.5 rounded bg-amber-500/10 text-amber-400">
+                        <Key className="w-3 h-3" />
+                      </span>
+                    )}
+                    {isFk && (
+                      <span title="Foreign Key" className="shrink-0 p-0.5 rounded bg-blue-500/10 text-blue-400">
+                        <Link2 className="w-3 h-3" />
+                      </span>
+                    )}
+                    <span className={`text-[12.5px] font-mono whitespace-nowrap shrink-0 ${badge.color}`}>
+                      {formatColumnType(col.type)}
+                    </span>
+                  </div>
+                </th>
+              );
+            })
+          ) : (
+            Array.from({ length: skeletonColCount }).map((_, i) => (
+              <th
+                key={i}
+                className="px-3 py-2 border-r border-[#1a1a1a]"
+                style={{ width: '160px', minWidth: '160px', maxWidth: '160px' }}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <div className="h-4 w-16 bg-[#1a1a1a] rounded animate-pulse" />
+                  <div className="h-3 w-10 bg-[#141414] rounded animate-pulse" />
+                </div>
+              </th>
+            ))
+          )}
+        </tr>
+      </thead>
+
+      <tbody className="divide-y divide-[#181818]">
+        {Array.from({ length: skeletonRowCount }).map((_, rIdx) => (
+          <tr key={rIdx} className="h-9 hover:bg-[#101010]/50 transition-colors">
+            <td
+              className="px-3 py-2 text-left border-r border-[#1a1a1a]"
+              style={{ width: '64px', minWidth: '64px', maxWidth: '64px' }}
+            >
+              <div className="flex items-center justify-start gap-1.5 opacity-40">
+                <div className="w-3.5 h-3.5 rounded border border-[#262626] bg-[#141414]" />
+                <div className="w-3.5 h-3.5 rounded border border-[#222222] bg-[#121212]" />
+              </div>
+            </td>
+            {columns.length > 0 ? (
+              columns.map((col, cIdx) => {
+                const width = columnWidths?.[col.name] || getDefaultColumnWidth(col.type, col.name);
+                const seed = (rIdx * 7 + cIdx * 13) % 60;
+                const barWidth = Math.min(width - 24, Math.max(40, 50 + seed * 2));
+                return (
+                  <td
+                    key={col.name}
+                    className="px-3 py-2 border-r border-[#151515]"
+                    style={{ width: `${width}px`, minWidth: `${width}px`, maxWidth: `${width}px` }}
+                  >
+                    <div
+                      className="h-3.5 bg-[#161616] rounded animate-pulse"
+                      style={{ width: `${barWidth}px` }}
+                    />
+                  </td>
+                );
+              })
+            ) : (
+              Array.from({ length: skeletonColCount }).map((_, cIdx) => {
+                const seed = (rIdx * 11 + cIdx * 17) % 70;
+                const barWidth = Math.min(130, Math.max(45, 55 + seed * 2));
+                return (
+                  <td
+                    key={cIdx}
+                    className="px-3 py-2 border-r border-[#151515]"
+                    style={{ width: '160px', minWidth: '160px', maxWidth: '160px' }}
+                  >
+                    <div
+                      className="h-3.5 bg-[#161616] rounded animate-pulse"
+                      style={{ width: `${barWidth}px` }}
+                    />
+                  </td>
+                );
+              })
+            )}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
 export function TableEditor() {
   // ─── Database Selection State ──────────────────────────────────────────────
   const [databases, setDatabases] = useState<DatabaseRecordApi[]>([]);
@@ -147,6 +401,13 @@ export function TableEditor() {
   const [allDbTablesSchema, setAllDbTablesSchema] = useState<
     Record<string, { columns: ColumnInfoApi[]; foreign_keys: ForeignKeyInfoApi[] }>
   >({});
+  // Stable ref mirror of allDbTablesSchema — read inside useCallback without it being a dep.
+  // WHY: allDbTablesSchema in useCallback deps causes loadTableData to be recreated on every schema
+  // cache write, re-triggering the table-change useEffect in an infinite loop that drops all rows.
+  const schemaCacheRef = useRef<Record<string, { columns: ColumnInfoApi[]; foreign_keys: ForeignKeyInfoApi[] }>>({});
+  useEffect(() => {
+    schemaCacheRef.current = allDbTablesSchema;
+  }, [allDbTablesSchema]);
 
   // ─── Data Grid Rows & Pagination ───────────────────────────────────────────
   const [rows, setRows] = useState<Record<string, unknown>[]>([]);
@@ -170,8 +431,10 @@ export function TableEditor() {
   const [activeSort, setActiveSort] = useState<{ col: string; order: 'asc' | 'desc' } | null>(null);
 
   // ─── Pane 3: Right Details / Edit Inspector ────────────────────────────────
-  const [isDetailsOpen, setIsDetailsOpen] = useState(true);
+  const [isDetailsOpen, setIsDetailsOpen] = useState(false);
+  const [inspectorTab, setInspectorTab] = useState<'details' | 'danger'>('details');
   const [selectedRowIndex, setSelectedRowIndex] = useState<number | null>(null);
+  const [selectedRowIndices, setSelectedRowIndices] = useState<Set<number>>(new Set());
   const [rowEditValues, setRowEditValues] = useState<Record<string, unknown>>({});
   const [isSavingRow, setIsSavingRow] = useState(false);
   const [isInsertModeInPanel, setIsInsertModeInPanel] = useState(false);
@@ -195,6 +458,100 @@ export function TableEditor() {
 
   const filterPopoverRef = useRef<HTMLDivElement>(null);
   const sortPopoverRef = useRef<HTMLDivElement>(null);
+  // Target key (`db:table`) ref used to discard in-flight responses if the user navigates to another table.
+  const activeTargetKeyRef = useRef<string>('');
+
+  // ─── Column Width & Interactive Resizing State ─────────────────────────────
+  // Tracks user-resized column pixel widths: { [colName]: widthInPx }
+  // Persisted in localStorage per database + table so user customization is retained.
+  const [columnWidths, setColumnWidths] = useState<Record<string, number>>({});
+  const resizingColRef = useRef<{
+    colName: string;
+    startX: number;
+    startWidth: number;
+  } | null>(null);
+
+  // Restore persisted custom column widths for active table
+  useEffect(() => {
+    if (!selectedDb || !selectedTable) return;
+    try {
+      const stored = localStorage.getItem(`axiom:col_widths:${selectedDb}:${selectedTable}`);
+      if (stored) {
+        setColumnWidths(JSON.parse(stored));
+      } else {
+        setColumnWidths({});
+      }
+    } catch {
+      setColumnWidths({});
+    }
+  }, [selectedDb, selectedTable]);
+
+  // Returns effective width: user preference > type-based semantic default
+  const getColWidth = useCallback(
+    (colName: string, colType: string): number => {
+      if (columnWidths[colName] && columnWidths[colName] >= 80) {
+        return columnWidths[colName];
+      }
+      return getDefaultColumnWidth(colType, colName);
+    },
+    [columnWidths]
+  );
+
+  // Drag-to-resize column width handler
+  // WHY: Provides spreadsheet/Airtable-grade interactive column resizing with mouse drag.
+  const handleResizeStart = useCallback(
+    (e: React.MouseEvent, colName: string, currentWidth: number) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      resizingColRef.current = {
+        colName,
+        startX: e.clientX,
+        startWidth: currentWidth,
+      };
+
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+
+      function onMouseMove(moveEvent: MouseEvent) {
+        if (!resizingColRef.current) return;
+        const { colName: targetCol, startX, startWidth } = resizingColRef.current;
+        const delta = moveEvent.clientX - startX;
+        // Clamp column width: collapse limit is 80px, maximum 1200px
+        const newWidth = Math.max(80, Math.min(1200, startWidth + delta));
+
+        setColumnWidths((prev) => ({
+          ...prev,
+          [targetCol]: newWidth,
+        }));
+      }
+
+      function onMouseUp() {
+        if (resizingColRef.current && selectedDb && selectedTable) {
+          setColumnWidths((latest) => {
+            try {
+              localStorage.setItem(
+                `axiom:col_widths:${selectedDb}:${selectedTable}`,
+                JSON.stringify(latest)
+              );
+            } catch {
+              // Ignore localStorage quota failures
+            }
+            return latest;
+          });
+        }
+        resizingColRef.current = null;
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+        window.removeEventListener('mousemove', onMouseMove);
+        window.removeEventListener('mouseup', onMouseUp);
+      }
+
+      window.addEventListener('mousemove', onMouseMove);
+      window.addEventListener('mouseup', onMouseUp);
+    },
+    [selectedDb, selectedTable]
+  );
 
   // ─── 1. Load Connected Database Pools ──────────────────────────────────────
   useEffect(() => {
@@ -270,74 +627,76 @@ export function TableEditor() {
     }
   }, [selectedDb, fetchTables]);
 
-  // ─── 3. Load Schema (Columns & Foreign Keys) for selected table ────────────
-  const fetchSchema = useCallback(async (db: string, table: string) => {
-    if (!db || !table) {
-      setColumns([]);
-      setForeignKeys([]);
-      return;
-    }
-    setIsSchemaLoading(true);
-    try {
-      const res = await api.getTableSchema(db, table);
-      setColumns(res.columns || []);
-      setForeignKeys(res.foreign_keys || []);
+  // ─── 3. Phased Sequential Data Pipeline: Schema -> Rows (Supabase Studio lifecycle) ───
+  // Uses client-side schema caching and semantic navigation guards to ensure rows are always fetched
+  // without race-condition aborts, multiple redundant information_schema queries, or 0-data drops.
+  const loadTableData = useCallback(
+    async (options?: { targetCursor?: string | null; reloadSchema?: boolean }) => {
+      const targetCursor = options?.targetCursor;
 
-      setAllDbTablesSchema((prev) => ({
-        ...prev,
-        [table]: {
-          columns: res.columns || [],
-          foreign_keys: res.foreign_keys || [],
-        },
-      }));
-    } catch (err) {
-      console.error(`Failed to load schema for ${db}.${table}:`, err);
-      setColumns([]);
-      setForeignKeys([]);
-    } finally {
-      setIsSchemaLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (selectedDb && selectedTable) {
-      fetchSchema(selectedDb, selectedTable);
-      setCursor(null);
-      setCursorHistory([]);
-      setSelectedRowIndex(null);
-      setIsInsertModeInPanel(false);
-    }
-  }, [selectedDb, selectedTable, fetchSchema]);
-
-  // Pre-fetch schema for all tables in background for ER diagram
-  useEffect(() => {
-    if (!selectedDb || tables.length === 0) return;
-    tables.forEach((t) => {
-      api.getTableSchema(selectedDb, t.name).then((res) => {
-        setAllDbTablesSchema((prev) => {
-          if (prev[t.name]) return prev;
-          return {
-            ...prev,
-            [t.name]: {
-              columns: res.columns || [],
-              foreign_keys: res.foreign_keys || [],
-            },
-          };
-        });
-      }).catch(() => {});
-    });
-  }, [selectedDb, tables]);
-
-  // ─── 4. Load Rows for selected table ───────────────────────────────────────
-  const fetchRows = useCallback(
-    async (targetCursor?: string | null) => {
       if (!selectedDb || !selectedTable) {
+        setColumns([]);
+        setForeignKeys([]);
         setRows([]);
+        setIsSchemaLoading(false);
+        setIsRowsLoading(false);
         return;
       }
-      setIsRowsLoading(true);
+
+      const currentKey = `${selectedDb}:${selectedTable}`;
+      activeTargetKeyRef.current = currentKey;
       setRowsError(null);
 
+      // Read from ref — NOT from allDbTablesSchema state — to avoid allDbTablesSchema being in
+      // the useCallback deps, which would recreate the fn on every schema write and re-trigger the
+      // table-change useEffect causing an infinite loop that drops all row data.
+      const cached = schemaCacheRef.current[selectedTable];
+      let cols = cached?.columns || [];
+      let fks = cached?.foreign_keys || [];
+
+      const needsSchema = options?.reloadSchema || cols.length === 0;
+
+      if (needsSchema) {
+        setIsSchemaLoading(true);
+        setIsRowsLoading(true);
+        try {
+          const schemaRes = await api.getTableSchema(selectedDb, selectedTable);
+          // If user switched to another table while waiting for schema, discard
+          if (activeTargetKeyRef.current !== currentKey) return;
+
+          cols = schemaRes.columns || [];
+          fks = schemaRes.foreign_keys || [];
+          setColumns(cols);
+          setForeignKeys(fks);
+
+          // Write to schemaCacheRef immediately (synchronous, for next loadTableData reads)
+          // then also to state so the ER diagram can re-render when it's visible
+          const entry = { columns: cols, foreign_keys: fks };
+          schemaCacheRef.current = { ...schemaCacheRef.current, [selectedTable]: entry };
+          setAllDbTablesSchema((prev) => ({ ...prev, [selectedTable]: entry }));
+        } catch (err: unknown) {
+          if (activeTargetKeyRef.current !== currentKey) return;
+          console.error(`Failed to load schema for ${selectedDb}.${selectedTable}:`, err);
+          setColumns([]);
+          setForeignKeys([]);
+          setRows([]);
+          setIsSchemaLoading(false);
+          setIsRowsLoading(false);
+          setRowsError(err instanceof Error ? err.message : 'Failed to introspect table schema');
+          return;
+        } finally {
+          if (activeTargetKeyRef.current === currentKey) {
+            setIsSchemaLoading(false);
+          }
+        }
+      } else {
+        setColumns(cols);
+        setForeignKeys(fks);
+        setIsSchemaLoading(false);
+        setIsRowsLoading(true);
+      }
+
+      // Phase 2: Fetch Table Row Data
       try {
         let filterParam: string | undefined;
         if (activeFilter) {
@@ -346,7 +705,7 @@ export function TableEditor() {
           });
         }
 
-        const res = await api.getTableRows(selectedDb, selectedTable, {
+        const rowsRes = await api.getTableRows(selectedDb, selectedTable, {
           cursor: targetCursor || undefined,
           limit: pageSize,
           sort: activeSort?.col,
@@ -354,30 +713,87 @@ export function TableEditor() {
           filter: filterParam,
         });
 
-        const rowsData = res.rows || [];
-        const pagination = res.pagination;
+        if (activeTargetKeyRef.current !== currentKey) return;
+
+        const rowsData = rowsRes.rows || [];
+        const pagination = rowsRes.pagination;
 
         setRows(rowsData);
         setHasNextPage(!!pagination?.has_more);
         setCursor(pagination?.next_cursor || null);
-
-        // Keep selected row in bounds
         setSelectedRowIndex((prev) => (prev !== null && prev < rowsData.length ? prev : null));
       } catch (err: unknown) {
+        if (activeTargetKeyRef.current !== currentKey) return;
         setRowsError(err instanceof Error ? err.message : 'Failed to query table rows');
         setRows([]);
       } finally {
-        setIsRowsLoading(false);
+        if (activeTargetKeyRef.current === currentKey) {
+          setIsRowsLoading(false);
+        }
       }
     },
+    // No allDbTablesSchema — read via schemaCacheRef instead to prevent infinite re-trigger loop
     [selectedDb, selectedTable, pageSize, activeFilter, activeSort]
   );
 
+  // Trigger full data load (schema + rows) when active table/db/view changes.
+  // loadTableData is intentionally omitted from deps: it is now stable (no state in its closure).
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (selectedDb && selectedTable && viewMode === 'grid') {
-      fetchRows();
+      setCursor(null);
+      setCursorHistory([]);
+      setSelectedRowIndex(null);
+      setIsInsertModeInPanel(false);
+      loadTableData({ reloadSchema: false });
     }
-  }, [selectedDb, selectedTable, viewMode, fetchRows]);
+  }, [selectedDb, selectedTable, viewMode]);
+
+  // Trigger row-only reload when filter/sort/pageSize changes
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (selectedDb && selectedTable && viewMode === 'grid' && columns.length > 0) {
+      setCursor(null);
+      setCursorHistory([]);
+      setSelectedRowIndex(null);
+      loadTableData({ reloadSchema: false });
+    }
+  }, [pageSize, activeFilter, activeSort]);
+
+  // Lazy fetch schema for ER diagram only when user actively switches to Schema view.
+  // WHY: Avoids flooding the DB pool with concurrent INFORMATION_SCHEMA requests on initial boot.
+  // Batches schema mutations into a single state update so this effect does not thrash in a loop.
+  useEffect(() => {
+    if (viewMode !== 'schema' || !selectedDb || tables.length === 0) return;
+    const missing = tables.filter((t) => !schemaCacheRef.current[t.name]);
+    if (missing.length === 0) return;
+
+    let cancelled = false;
+    async function loadErSchemas() {
+      const updates: Record<string, { columns: ColumnInfoApi[]; foreign_keys: ForeignKeyInfoApi[] }> = {};
+      for (const t of missing) {
+        if (cancelled) break;
+        try {
+          const res = await api.getTableSchema(selectedDb, t.name);
+          updates[t.name] = {
+            columns: res.columns || [],
+            foreign_keys: res.foreign_keys || [],
+          };
+        } catch {
+          // Schema introspect failure on background ER table is non-fatal
+        }
+      }
+      if (!cancelled && Object.keys(updates).length > 0) {
+        schemaCacheRef.current = { ...schemaCacheRef.current, ...updates };
+        setAllDbTablesSchema((prev) => ({ ...prev, ...updates }));
+      }
+    }
+    loadErSchemas();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewMode, selectedDb, tables]);
 
   // Select row handler
   const handleSelectRow = (index: number) => {
@@ -386,6 +802,30 @@ export function TableEditor() {
     setIsDetailsOpen(true);
     if (rows[index]) {
       setRowEditValues({ ...rows[index] });
+    }
+  };
+
+  // Toggle single row tickmark checkbox selection
+  const handleToggleRowSelect = (e: React.MouseEvent, index: number) => {
+    e.stopPropagation();
+    setSelectedRowIndices((prev) => {
+      const next = new Set(prev);
+      if (next.has(index)) {
+        next.delete(index);
+      } else {
+        next.add(index);
+      }
+      return next;
+    });
+  };
+
+  // Toggle select all rows tickmark checkbox
+  const handleToggleAllRows = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (selectedRowIndices.size === rows.length && rows.length > 0) {
+      setSelectedRowIndices(new Set());
+    } else {
+      setSelectedRowIndices(new Set(rows.map((_, i) => i)));
     }
   };
 
@@ -425,7 +865,7 @@ export function TableEditor() {
 
       if (Object.keys(updates).length > 0) {
         await api.updateTableRow(selectedDb, selectedTable, filter, updates);
-        await fetchRows();
+        await loadTableData({ targetCursor: cursor, reloadSchema: false });
       }
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Failed to update row');
@@ -450,7 +890,7 @@ export function TableEditor() {
 
       await api.insertTableRow(selectedDb, selectedTable, payload);
       setIsInsertModeInPanel(false);
-      await fetchRows();
+      await loadTableData({ reloadSchema: false });
       setSelectedRowIndex(0);
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Failed to insert row');
@@ -483,7 +923,7 @@ export function TableEditor() {
       await api.deleteTableRow(selectedDb, selectedTable, filter);
       setDeleteRowTarget(null);
       setSelectedRowIndex(null);
-      fetchRows();
+      loadTableData({ targetCursor: cursor, reloadSchema: false });
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Failed to delete row');
     } finally {
@@ -615,7 +1055,7 @@ export function TableEditor() {
               placeholder="Search tables..."
               value={tableSearch}
               onChange={(e) => setTableSearch(e.target.value)}
-              className="w-full h-8 pl-8 pr-2.5 bg-[#141414] border border-[#242424] focus:border-[#383838] rounded-[6px] text-[12px] text-white placeholder-[#666666] outline-none transition-colors"
+              className="w-full h-8 pl-8 pr-2.5 bg-[#141414] border border-[#242424] focus:border-[#383838] rounded-[6px] text-[13px] text-white placeholder-[#666666] outline-none transition-colors"
             />
           </div>
         </div>
@@ -687,7 +1127,7 @@ export function TableEditor() {
                     setIsDetailsOpen(true);
                   }}
                   disabled={!selectedTable}
-                  className="flex items-center gap-1.5 h-8 px-2.5 rounded-[6px] bg-[#141414] hover:bg-[#1a1a1a] border border-[#242424] hover:border-[#383838] disabled:opacity-40 text-[#cccccc] hover:text-white text-[12px] font-medium transition-colors cursor-pointer"
+                  className="flex items-center gap-1.5 h-8 px-2.5 rounded-[6px] bg-[#141414] hover:bg-[#1a1a1a] border border-[#242424] hover:border-[#383838] disabled:opacity-40 text-[#cccccc] hover:text-white text-[13px] font-medium transition-colors cursor-pointer"
                 >
                   <Plus className="w-3.5 h-3.5" />
                   <span>Insert Row</span>
@@ -697,7 +1137,7 @@ export function TableEditor() {
                 <div className="relative" ref={filterPopoverRef}>
                   <button
                     onClick={() => setShowFilterPopover(!showFilterPopover)}
-                    className={`flex items-center gap-1.5 h-8 px-2.5 rounded-[6px] border text-[12px] font-medium transition-colors cursor-pointer ${
+                    className={`flex items-center gap-1.5 h-8 px-2.5 rounded-[6px] border text-[13px] font-medium transition-colors cursor-pointer ${
                       activeFilter
                         ? 'bg-blue-950/40 border-blue-600/50 text-blue-400'
                         : 'bg-[#141414] border-[#262626] text-[#cccccc] hover:border-[#383838]'
@@ -710,12 +1150,12 @@ export function TableEditor() {
 
                   {showFilterPopover && (
                     <div className="absolute left-0 top-full mt-1.5 w-72 bg-[#111111] border border-[#262626] rounded-[8px] shadow-2xl p-3 z-50">
-                      <div className="text-[12px] font-medium text-white mb-2">Filter Records</div>
+                      <div className="text-[13px] font-semibold text-white mb-2">Filter Records</div>
                       <div className="space-y-2">
                         <select
                           value={filterCol}
                           onChange={(e) => setFilterCol(e.target.value)}
-                          className="w-full h-7 px-2 bg-[#161616] border border-[#2c2c2c] rounded text-[12px] text-white"
+                          className="w-full h-8 px-2 bg-[#161616] border border-[#2c2c2c] rounded text-[13px] text-white"
                         >
                           <option value="">Select column...</option>
                           {columns.map((c) => (
@@ -728,7 +1168,7 @@ export function TableEditor() {
                         <select
                           value={filterOp}
                           onChange={(e) => setFilterOp(e.target.value as typeof filterOp)}
-                          className="w-full h-7 px-2 bg-[#161616] border border-[#2c2c2c] rounded text-[12px] text-white"
+                          className="w-full h-8 px-2 bg-[#161616] border border-[#2c2c2c] rounded text-[13px] text-white"
                         >
                           <option value="eq">Equals (=)</option>
                           <option value="neq">Not equals (!=)</option>
@@ -744,7 +1184,7 @@ export function TableEditor() {
                             placeholder="Value..."
                             value={filterVal}
                             onChange={(e) => setFilterVal(e.target.value)}
-                            className="w-full h-7 px-2 bg-[#161616] border border-[#2c2c2c] rounded text-[12px] text-white placeholder-[#666666]"
+                            className="w-full h-8 px-2 bg-[#161616] border border-[#2c2c2c] rounded text-[13px] text-white placeholder-[#666666]"
                           />
                         )}
 
@@ -781,7 +1221,7 @@ export function TableEditor() {
                 <div className="relative" ref={sortPopoverRef}>
                   <button
                     onClick={() => setShowSortPopover(!showSortPopover)}
-                    className={`flex items-center gap-1.5 h-8 px-2.5 rounded-[6px] border text-[12px] font-medium transition-colors cursor-pointer ${
+                    className={`flex items-center gap-1.5 h-8 px-2.5 rounded-[6px] border text-[13px] font-medium transition-colors cursor-pointer ${
                       activeSort
                         ? 'bg-blue-950/40 border-blue-600/50 text-blue-400'
                         : 'bg-[#141414] border-[#262626] text-[#cccccc] hover:border-[#383838]'
@@ -793,12 +1233,12 @@ export function TableEditor() {
 
                   {showSortPopover && (
                     <div className="absolute left-0 top-full mt-1.5 w-64 bg-[#111111] border border-[#262626] rounded-[8px] shadow-2xl p-3 z-50">
-                      <div className="text-[12px] font-medium text-white mb-2">Sort Records</div>
+                      <div className="text-[13px] font-semibold text-white mb-2">Sort Records</div>
                       <div className="space-y-2">
                         <select
                           value={sortCol}
                           onChange={(e) => setSortCol(e.target.value)}
-                          className="w-full h-7 px-2 bg-[#161616] border border-[#2c2c2c] rounded text-[12px] text-white"
+                          className="w-full h-8 px-2 bg-[#161616] border border-[#2c2c2c] rounded text-[13px] text-white"
                         >
                           <option value="">Select column...</option>
                           {columns.map((c) => (
@@ -811,7 +1251,7 @@ export function TableEditor() {
                         <div className="flex gap-2">
                           <button
                             onClick={() => setSortOrder('asc')}
-                            className={`flex-1 h-7 rounded text-[11.5px] font-medium border ${
+                            className={`flex-1 h-7 rounded text-[12px] font-medium border ${
                               sortOrder === 'asc'
                                 ? 'bg-blue-600/20 border-blue-500 text-blue-400'
                                 : 'bg-[#161616] border-[#2c2c2c] text-[#8c8c8c]'
@@ -821,7 +1261,7 @@ export function TableEditor() {
                           </button>
                           <button
                             onClick={() => setSortOrder('desc')}
-                            className={`flex-1 h-7 rounded text-[11.5px] font-medium border ${
+                            className={`flex-1 h-7 rounded text-[12px] font-medium border ${
                               sortOrder === 'desc'
                                 ? 'bg-blue-600/20 border-blue-500 text-blue-400'
                                 : 'bg-[#161616] border-[#2c2c2c] text-[#8c8c8c]'
@@ -838,7 +1278,7 @@ export function TableEditor() {
                               setSortCol('');
                               setShowSortPopover(false);
                             }}
-                            className="text-[11.5px] text-[#8c8c8c] hover:text-white"
+                            className="text-[12px] text-[#8c8c8c] hover:text-white"
                           >
                             Reset
                           </button>
@@ -849,7 +1289,7 @@ export function TableEditor() {
                                 setShowSortPopover(false);
                               }
                             }}
-                            className="px-2.5 py-1 bg-[#222222] hover:bg-[#2a2a2a] border border-[#333333] rounded text-[11.5px] font-medium text-white transition-colors"
+                            className="px-2.5 py-1 bg-[#222222] hover:bg-[#2a2a2a] border border-[#333333] rounded text-[12px] font-medium text-white transition-colors"
                           >
                             Apply
                           </button>
@@ -861,12 +1301,12 @@ export function TableEditor() {
 
                 {/* Reload Data Button */}
                 <button
-                  onClick={() => fetchRows()}
-                  disabled={isRowsLoading}
+                  onClick={() => loadTableData({ reloadSchema: true })}
+                  disabled={isRowsLoading || isSchemaLoading}
                   title="Reload rows"
                   className="w-8 h-8 flex items-center justify-center rounded-[6px] bg-[#141414] border border-[#262626] text-[#8c8c8c] hover:text-white hover:border-[#383838] transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  <RefreshCw className={`w-3.5 h-3.5 ${isRowsLoading ? 'animate-spin' : ''}`} />
+                  <RefreshCw className={`w-3.5 h-3.5 ${isRowsLoading || isSchemaLoading ? 'animate-spin' : ''}`} />
                 </button>
               </>
             )}
@@ -877,7 +1317,7 @@ export function TableEditor() {
                 type="button"
                 onClick={() => setViewMode('grid')}
                 title="Table Grid"
-                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-[4px] text-[12px] font-medium transition-colors cursor-pointer ${
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-[4px] text-[13px] font-medium transition-colors cursor-pointer ${
                   viewMode === 'grid' ? 'bg-[#222222] text-white' : 'text-[#8c8c8c] hover:text-white'
                 }`}
               >
@@ -888,7 +1328,7 @@ export function TableEditor() {
                 type="button"
                 onClick={() => setViewMode('schema')}
                 title="Schema & Relations"
-                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-[4px] text-[12px] font-medium transition-colors cursor-pointer ${
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-[4px] text-[13px] font-medium transition-colors cursor-pointer ${
                   viewMode === 'schema' ? 'bg-[#222222] text-white' : 'text-[#8c8c8c] hover:text-white'
                 }`}
               >
@@ -904,7 +1344,7 @@ export function TableEditor() {
                   }
                 }}
                 title="SQL Console"
-                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-[4px] text-[12px] font-medium transition-colors cursor-pointer ${
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-[4px] text-[13px] font-medium transition-colors cursor-pointer ${
                   viewMode === 'sql' ? 'bg-[#222222] text-white' : 'text-[#8c8c8c] hover:text-white'
                 }`}
               >
@@ -912,20 +1352,6 @@ export function TableEditor() {
                 <span className="hidden md:inline">SQL</span>
               </button>
             </div>
-
-            {/* Toggle Inspector / Details Pane */}
-            <button
-              type="button"
-              onClick={() => setIsDetailsOpen(!isDetailsOpen)}
-              title={isDetailsOpen ? 'Hide inspector' : 'Show inspector'}
-              className={`w-8 h-8 flex items-center justify-center rounded-[6px] border transition-colors cursor-pointer ${
-                isDetailsOpen
-                  ? 'bg-[#222222] border-[#383838] text-white'
-                  : 'bg-[#141414] border-[#262626] text-[#8c8c8c] hover:text-white'
-              }`}
-            >
-              <Info className="w-4 h-4" />
-            </button>
           </div>
 
           {/* Right: Next and Previous Pagination Controls */}
@@ -938,7 +1364,7 @@ export function TableEditor() {
                     newHistory.pop();
                     const prevCursor = newHistory[newHistory.length - 1] || null;
                     setCursorHistory(newHistory);
-                    fetchRows(prevCursor);
+                    loadTableData({ targetCursor: prevCursor, reloadSchema: false });
                   }
                 }}
                 disabled={cursorHistory.length === 0 || isRowsLoading}
@@ -946,21 +1372,21 @@ export function TableEditor() {
                 title="Previous page"
               >
                 <ChevronLeft className="w-3.5 h-3.5" />
-                <span className="text-[12px] font-medium">Previous</span>
+                <span className="text-[13px] font-medium">Previous</span>
               </button>
 
               <button
                 onClick={() => {
                   if (hasNextPage && cursor) {
                     setCursorHistory([...cursorHistory, cursor]);
-                    fetchRows(cursor);
+                    loadTableData({ targetCursor: cursor, reloadSchema: false });
                   }
                 }}
                 disabled={!hasNextPage || isRowsLoading}
                 className="flex items-center gap-1 h-8 px-2.5 rounded-[6px] bg-[#141414] border border-[#262626] text-[#cccccc] disabled:opacity-40 hover:text-white hover:border-[#383838] transition-colors cursor-pointer"
                 title="Next page"
               >
-                <span className="text-[12px] font-medium">Next</span>
+                <span className="text-[13px] font-medium">Next</span>
                 <ChevronRight className="w-3.5 h-3.5" />
               </button>
             </div>
@@ -971,67 +1397,92 @@ export function TableEditor() {
         {viewMode === 'grid' && (
           <div className="flex-1 flex flex-col min-h-0 overflow-hidden relative">
             <div className="flex-1 overflow-auto">
-              {isRowsLoading && rows.length === 0 ? (
-                <div className="flex items-center justify-center h-64 text-[#8c8c8c] text-[13px] gap-2">
-                  <RefreshCw className="w-4 h-4 animate-spin text-blue-500" />
-                  Loading table data...
-                </div>
+              {isSchemaLoading || (isRowsLoading && rows.length === 0 && !rowsError) ? (
+                <TableSkeleton columns={columns} foreignKeys={foreignKeys} columnWidths={columnWidths} />
               ) : rowsError ? (
                 <div className="p-8 flex flex-col items-center justify-center text-center">
                   <AlertCircle className="w-8 h-8 text-rose-500 mb-2" />
                   <p className="text-[14px] font-medium text-white mb-1">Failed to query table</p>
                   <p className="text-[12.5px] text-[#8c8c8c] max-w-md font-mono">{rowsError}</p>
                   <button
-                    onClick={() => fetchRows()}
+                    onClick={() => loadTableData({ reloadSchema: true })}
                     className="mt-4 px-3 py-1.5 bg-[#141414] border border-[#262626] rounded-[6px] text-[12px] text-white hover:border-[#383838]"
                   >
                     Retry
                   </button>
                 </div>
               ) : columns.length === 0 ? (
-                <div className="p-12 text-center text-[#777777] text-[13px]">
-                  No column schema found for table <span className="font-mono text-white">{selectedTable}</span>
+                <div className="p-12 text-center text-[#777777] text-[14px]">
+                  No column schema found for table <span className="font-sans font-medium text-white">{selectedTable}</span>
                 </div>
               ) : (
-                <table className="w-full border-collapse text-left select-text font-mono text-[12.5px]">
+                <table
+                  className="border-collapse text-left select-text font-sans text-[14px] table-fixed"
+                  style={{ width: 'max-content' }}
+                >
                   <thead>
                     <tr className="sticky top-0 z-10 bg-[#0a0a0a] border-b border-[#222222]">
-                      {/* Row Index Sticky Column */}
-                      <th className="w-12 px-2.5 py-2 text-[11px] font-mono text-[#666666] text-center bg-[#0a0a0a]">
-                        #
+                      {/* Row Checkbox & Action Sticky Column */}
+                      <th
+                        className="w-16 px-3 py-2 text-left bg-[#0a0a0a] sticky left-0 z-20 border-r border-[#1a1a1a] select-none"
+                        style={{ width: '64px', minWidth: '64px', maxWidth: '64px' }}
+                      >
+                        <div className="flex items-center justify-start gap-1.5">
+                          <button
+                            type="button"
+                            onClick={handleToggleAllRows}
+                            title={selectedRowIndices.size === rows.length && rows.length > 0 ? 'Deselect all' : 'Select all'}
+                            className={`w-4 h-4 rounded-[4px] border flex items-center justify-center transition-colors cursor-pointer ${
+                              selectedRowIndices.size > 0 && selectedRowIndices.size === rows.length
+                                ? 'bg-blue-600 border-blue-500 text-white'
+                                : selectedRowIndices.size > 0
+                                ? 'bg-blue-600/30 border-blue-500 text-blue-400'
+                                : 'bg-[#141414] border-[#2c2c2c] hover:border-[#444444] text-transparent'
+                            }`}
+                          >
+                            <Check className="w-3 h-3 stroke-[2.5]" />
+                          </button>
+                        </div>
                       </th>
 
-                      {/* Dynamic Columns with Type Glyphs */}
+                      {/* Dynamic Columns with Type-Aware Widths and Interactive Resizers */}
                       {columns.map((col) => {
                         const isFk = foreignKeys.some((fk) => fk.column === col.name);
                         const badge = getColumnTypeBadge(col.type, col.primary_key, isFk);
-                        const IconComp = badge.icon;
+                        const width = getColWidth(col.name, col.type);
 
                         return (
                           <th
                             key={col.name}
-                            className="px-3 py-2 text-[12px] font-medium text-[#cccccc] whitespace-nowrap min-w-[130px]"
+                            className="relative px-3 py-2 text-[14px] font-medium text-[#cccccc] whitespace-nowrap border-r border-[#1a1a1a] select-none group/colheader"
+                            style={{ width: `${width}px`, minWidth: `${Math.max(80, width)}px`, maxWidth: `${width}px` }}
                           >
-                            <div className="flex items-center justify-between gap-2">
-                              <div className="flex items-center gap-1.5">
-                                <span className="font-mono text-white text-[12.5px]">{col.name}</span>
-                                {col.primary_key && (
-                                  <span title="Primary Key" className="p-0.5 rounded bg-amber-500/10 text-amber-400">
-                                    <Key className="w-3 h-3" />
-                                  </span>
-                                )}
-                                {isFk && (
-                                  <span title="Foreign Key" className="p-0.5 rounded bg-blue-500/10 text-blue-400">
-                                    <Link2 className="w-3 h-3" />
-                                  </span>
-                                )}
-                              </div>
-                              <span
-                                className={`inline-flex items-center gap-1 text-[11px] font-mono ${badge.color}`}
-                              >
-                                <IconComp className="w-3 h-3" />
-                                {col.type}
+                            <div className="flex items-center gap-1.5 min-w-0 pr-2.5 overflow-hidden whitespace-nowrap">
+                              <span className="font-sans text-white text-[14px] whitespace-nowrap shrink-0" title={col.name}>
+                                {col.name}
                               </span>
+                              {col.primary_key && (
+                                <span title="Primary Key" className="shrink-0 p-0.5 rounded bg-amber-500/10 text-amber-400">
+                                  <Key className="w-3 h-3" />
+                                </span>
+                              )}
+                              {isFk && (
+                                <span title="Foreign Key" className="shrink-0 p-0.5 rounded bg-blue-500/10 text-blue-400">
+                                  <Link2 className="w-3 h-3" />
+                                </span>
+                              )}
+                              <span className={`text-[12.5px] font-mono whitespace-nowrap shrink-0 ${badge.color}`}>
+                                {formatColumnType(col.type)}
+                              </span>
+                            </div>
+
+                            {/* Interactive Column Resize Handle */}
+                            <div
+                              onMouseDown={(e) => handleResizeStart(e, col.name, width)}
+                              title="Drag to resize column"
+                              className="absolute right-0 top-0 bottom-0 w-2.5 cursor-col-resize group/resizer flex items-center justify-center select-none z-10 hover:bg-blue-500/20 active:bg-blue-500/40"
+                            >
+                              <div className="w-[1.5px] h-full bg-transparent group-hover/resizer:bg-blue-500 transition-colors" />
                             </div>
                           </th>
                         );
@@ -1039,10 +1490,10 @@ export function TableEditor() {
                     </tr>
                   </thead>
 
-                  <tbody className="divide-y divide-[#181818]">
+                  <tbody className={`divide-y divide-[#181818] ${isRowsLoading ? 'opacity-60 transition-opacity' : ''}`}>
                     {rows.length === 0 ? (
                       <tr>
-                        <td colSpan={columns.length + 1} className="p-12 text-center text-[#666666]">
+                        <td colSpan={columns.length + 1} className="p-12 text-center text-[#666666] text-[14px]">
                           Table contains 0 rows
                         </td>
                       </tr>
@@ -1059,13 +1510,46 @@ export function TableEditor() {
                                 : 'hover:bg-[#121212]'
                             }`}
                           >
-                            {/* Row Index */}
-                            <td className="px-2.5 py-2 text-center text-[11px] text-[#555555] select-none">
-                              {idx + 1}
+                            {/* Row Tickmark Checkbox & Expand Button */}
+                            <td
+                              className="px-3 py-2 text-left select-none sticky left-0 bg-[#0a0a0a] group-hover:bg-[#121212] z-10 border-r border-[#1a1a1a]"
+                              style={{ width: '64px', minWidth: '64px', maxWidth: '64px' }}
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <div className="flex items-center justify-start gap-1.5">
+                                {/* Tickmark Checkbox */}
+                                <button
+                                  type="button"
+                                  onClick={(e) => handleToggleRowSelect(e, idx)}
+                                  title={selectedRowIndices.has(idx) ? 'Deselect row' : 'Select row'}
+                                  className={`w-4 h-4 rounded-[4px] border flex items-center justify-center transition-colors cursor-pointer ${
+                                    selectedRowIndices.has(idx)
+                                      ? 'bg-blue-600 border-blue-500 text-white'
+                                      : 'bg-[#141414] border-[#2c2c2c] hover:border-[#444444] text-transparent hover:text-[#555555]'
+                                  }`}
+                                >
+                                  <Check className="w-3 h-3 stroke-[2.5]" />
+                                </button>
+
+                                {/* Expand Row Button */}
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleSelectRow(idx);
+                                    setIsDetailsOpen(true);
+                                  }}
+                                  title="Edit row details"
+                                  className="w-4 h-4 rounded-[4px] flex items-center justify-center text-[#666666] hover:text-white hover:bg-[#1c1c1c] transition-colors cursor-pointer"
+                                >
+                                  <Maximize2 className="w-3 h-3" />
+                                </button>
+                              </div>
                             </td>
 
-                            {/* Cells */}
+                            {/* Cells with Matching Fixed Widths */}
                             {columns.map((col) => {
+                              const width = getColWidth(col.name, col.type);
                               const val = row[col.name];
                               const isNull = val === null || val === undefined;
                               const isBool = typeof val === 'boolean';
@@ -1075,22 +1559,23 @@ export function TableEditor() {
                               return (
                                 <td
                                   key={col.name}
-                                  className="px-3 py-2 text-[#cccccc] whitespace-nowrap max-w-[280px] truncate"
+                                  className="px-3 py-2 text-[#cccccc] text-[14px] whitespace-nowrap overflow-hidden border-r border-[#151515]"
+                                  style={{ width: `${width}px`, minWidth: `${width}px`, maxWidth: `${width}px` }}
                                   title={strVal}
                                 >
                                   {isNull ? (
-                                    <span className="text-[#555555] italic text-[11.5px]">null</span>
+                                    <span className="text-[#555555] italic text-[12.5px]">null</span>
                                   ) : isBool ? (
                                     <span
-                                      className={`px-1.5 py-0.5 rounded text-[11px] font-medium ${
+                                      className={`px-1.5 py-0.5 rounded text-[12.5px] font-medium ${
                                         val ? 'bg-emerald-500/10 text-emerald-400' : 'bg-zinc-800 text-zinc-400'
                                       }`}
                                     >
                                       {val ? 'true' : 'false'}
                                     </span>
                                   ) : isObj ? (
-                                    <span className="text-pink-400 flex items-center gap-1 text-[11.5px]">
-                                      <Code2 className="w-3 h-3" />
+                                    <span className="text-pink-400 flex items-center gap-1 text-[12.5px]">
+                                      <Code2 className="w-3.5 h-3.5" />
                                       {`{ ... }`}
                                     </span>
                                   ) : (
@@ -1109,13 +1594,13 @@ export function TableEditor() {
             </div>
 
             {/* Pagination Footer */}
-            <div className="h-10 shrink-0 px-4 bg-[#0a0a0a] border-t border-[#222222] flex items-center justify-between text-[12px] text-[#8c8c8c] select-none">
+            <div className="h-10 shrink-0 px-4 bg-[#0a0a0a] border-t border-[#222222] flex items-center justify-between text-[13px] text-[#8c8c8c] select-none">
               <div className="flex items-center gap-1.5">
                 <span>Page size:</span>
                 <select
                   value={pageSize}
                   onChange={(e) => setPageSize(Number(e.target.value))}
-                  className="h-6 px-1.5 bg-[#141414] border border-[#242424] rounded text-[11.5px] text-white"
+                  className="h-6 px-1.5 bg-[#141414] border border-[#242424] rounded text-[12px] text-white"
                 >
                   <option value={25}>25</option>
                   <option value={50}>50</option>
@@ -1131,11 +1616,11 @@ export function TableEditor() {
           <div className="flex-1 overflow-y-auto p-5 space-y-6">
             <div className="flex items-center justify-between pb-2 border-b border-[#222222]">
               <div>
-                <h3 className="text-[14px] font-semibold text-white flex items-center gap-2">
+                <h3 className="text-[16px] font-semibold text-white flex items-center gap-2">
                   <Layers className="w-4 h-4 text-blue-400" />
                   Database Schema & Entity Relationships
                 </h3>
-                <p className="text-[12px] text-[#8c8c8c] mt-0.5">
+                <p className="text-[13px] text-[#8c8c8c] mt-0.5">
                   Connected entity view mapping foreign keys across <span className="font-mono text-white">{selectedDb}</span>.
                 </p>
               </div>
@@ -1178,9 +1663,9 @@ export function TableEditor() {
                     <div className="flex items-center justify-between mb-2.5 pb-2 border-b border-[#222222]">
                       <div className="flex items-center gap-2 truncate min-w-0">
                         <TableIcon className="w-4 h-4 text-blue-400 shrink-0" />
-                        <span className="font-mono font-medium text-white text-[13px] truncate">{t.name}</span>
+                        <span className="font-mono font-medium text-white text-[14px] truncate">{t.name}</span>
                       </div>
-                      <span className="text-[11px] font-mono px-1.5 py-0.5 rounded bg-[#181818] text-[#8c8c8c]">
+                      <span className="text-[12px] font-mono px-1.5 py-0.5 rounded bg-[#181818] text-[#8c8c8c]">
                         {tableData.columns.length} cols
                       </span>
                     </div>
@@ -1318,8 +1803,8 @@ export function TableEditor() {
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
                   <Terminal className="w-4 h-4 text-emerald-400" />
-                  <span className="text-[13px] font-semibold text-white">SQL Query Runner</span>
-                  <span className="text-[11px] text-[#666666]">
+                  <span className="text-[16px] font-semibold text-white">SQL Query Runner</span>
+                  <span className="text-[12px] text-[#666666]">
                     (<kbd className="px-1 py-0.5 rounded bg-[#1c1c1c] text-[#8c8c8c] font-mono">Ctrl+Enter</kbd> to execute)
                   </span>
                 </div>
@@ -1329,7 +1814,7 @@ export function TableEditor() {
                   {selectedTable && (
                     <button
                       onClick={() => setSqlQuery(`SELECT * FROM ${selectedTable} LIMIT 25;`)}
-                      className="px-2 py-0.5 rounded bg-[#141414] border border-[#242424] text-[11px] text-[#8c8c8c] hover:text-white"
+                      className="px-2 py-0.5 rounded bg-[#141414] border border-[#242424] text-[12px] text-[#8c8c8c] hover:text-white"
                     >
                       SELECT *
                     </button>
@@ -1337,7 +1822,7 @@ export function TableEditor() {
                   {selectedTable && (
                     <button
                       onClick={() => setSqlQuery(`SELECT count(*) AS total_rows FROM ${selectedTable};`)}
-                      className="px-2 py-0.5 rounded bg-[#141414] border border-[#242424] text-[11px] text-[#8c8c8c] hover:text-white"
+                      className="px-2 py-0.5 rounded bg-[#141414] border border-[#242424] text-[12px] text-[#8c8c8c] hover:text-white"
                     >
                       COUNT(*)
                     </button>
@@ -1360,14 +1845,14 @@ export function TableEditor() {
               />
 
               <div className="flex items-center justify-between mt-2 pt-1">
-                <div className="text-[11.5px] text-[#666666]">
+                <div className="text-[12px] text-[#666666]">
                   Target database: <span className="font-mono text-[#cccccc]">{selectedDb}</span>
                 </div>
 
                 <button
                   onClick={handleExecuteSql}
                   disabled={isExecutingSql || !sqlQuery.trim()}
-                  className="flex items-center gap-2 h-8 px-4 rounded-[6px] bg-[#141414] hover:bg-[#1a1a1a] border border-[#242424] hover:border-[#383838] disabled:opacity-40 text-[#cccccc] hover:text-white text-[12.5px] font-medium transition-colors cursor-pointer"
+                  className="flex items-center gap-2 h-8 px-4 rounded-[6px] bg-[#141414] hover:bg-[#1a1a1a] border border-[#242424] hover:border-[#383838] disabled:opacity-40 text-[#cccccc] hover:text-white text-[13px] font-medium transition-colors cursor-pointer"
                 >
                   {isExecutingSql ? (
                     <RefreshCw className="w-3.5 h-3.5 animate-spin" />
@@ -1383,16 +1868,16 @@ export function TableEditor() {
             <div className="flex-1 rounded-[8px] border border-[#222222] bg-[#0f0f0f] flex flex-col min-h-0 overflow-hidden">
               <div className="h-9 px-4 bg-[#141414] border-b border-[#222222] flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <span className="text-[12.5px] font-medium text-white">Query Output</span>
+                  <span className="text-[13px] font-medium text-white">Query Output</span>
                   {sqlDuration !== null && (
-                    <span className="text-[11px] px-1.5 py-0.5 rounded bg-[#1c1c1c] text-[#8c8c8c] font-mono">
+                    <span className="text-[12px] px-1.5 py-0.5 rounded bg-[#1c1c1c] text-[#8c8c8c] font-mono">
                       {sqlDuration}ms
                     </span>
                   )}
                 </div>
 
                 {sqlResult?.rows && sqlResult.rows.length > 0 && (
-                  <div className="text-[11.5px] text-[#8c8c8c]">
+                  <div className="text-[12px] text-[#8c8c8c]">
                     {sqlResult.rows.length} rows returned
                   </div>
                 )}
@@ -1414,12 +1899,12 @@ export function TableEditor() {
                     Run a query above to view results
                   </div>
                 ) : sqlResult.affected_rows !== undefined && !sqlResult.rows ? (
-                  <div className="p-6 text-center text-emerald-400 text-[13.5px]">
+                  <div className="p-6 text-center text-emerald-400 text-[14px]">
                     <Check className="w-6 h-6 mx-auto mb-2 text-emerald-500" />
                     Query executed successfully. Affected rows: {sqlResult.affected_rows}
                   </div>
                 ) : (
-                  <table className="w-full border-collapse text-left font-mono text-[12px]">
+                  <table className="w-full border-collapse text-left font-mono text-[13px]">
                     <thead>
                       <tr className="bg-[#141414] border-b border-[#222222] text-[#8c8c8c]">
                         {(sqlResult.columns || (sqlResult.rows && sqlResult.rows[0] ? Object.keys(sqlResult.rows[0]) : [])).map(
@@ -1437,7 +1922,7 @@ export function TableEditor() {
                           {Object.values(r).map((v, ci) => (
                             <td key={ci} className="px-3 py-2 text-[#cccccc] truncate max-w-xs">
                               {v === null ? (
-                                <span className="text-[#555555] italic">null</span>
+                                <span className="text-[#555555] italic text-[12px]">null</span>
                               ) : typeof v === 'object' ? (
                                 JSON.stringify(v)
                               ) : (
@@ -1457,192 +1942,306 @@ export function TableEditor() {
       </main>
 
       {/* ══════════════════════════════════════════════════════════════════════
-          PANE 3: RIGHT DETAILS INSPECTOR & INLINE ROW EDITOR (w-80)
+          SLIDEOVER: RIGHT OVERFLOW DRAWER PANEL (matching Database page)
           ══════════════════════════════════════════════════════════════════════ */}
-      {isDetailsOpen && (
-        <aside className="w-full lg:w-80 shrink-0 border-t lg:border-t-0 lg:border-l border-[#222222] bg-[#0a0a0a] flex flex-col overflow-hidden">
-          {/* Inspector Header */}
-          <div className="h-[54px] shrink-0 px-4 border-b border-[#222222] flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Edit3 className="w-4 h-4 text-blue-400" />
-              <span className="text-[13px] font-semibold text-white">
-                {isInsertModeInPanel
-                  ? 'New Row'
-                  : activeRow
-                  ? `Row #${selectedRowIndex! + 1}`
-                  : 'Table Inspector'}
-              </span>
+      {/* ══════════════════════════════════════════════════════════════════════
+          SLIDEOVER: RIGHT OVERFLOW DRAWER PANEL (matching Database page)
+          ══════════════════════════════════════════════════════════════════════ */}
+      <SlideOver
+        isOpen={isDetailsOpen}
+        onClose={() => {
+          setIsDetailsOpen(false);
+          setIsInsertModeInPanel(false);
+          setInspectorTab('details');
+        }}
+        width="w-[520px] max-w-full"
+        title={
+          isInsertModeInPanel
+            ? 'Insert New Row'
+            : activeRow
+            ? `Row #${selectedRowIndex! + 1}`
+            : ''
+        }
+        subtitle={
+          isInsertModeInPanel
+            ? `Add record to ${selectedTable}`
+            : activeRow
+            ? `${selectedTable} · ${columns.length} columns`
+            : ''
+        }
+      >
+        {/* Tab bar (Segmented control matching Databases page) */}
+        {!isInsertModeInPanel && activeRow && (
+          <div className="px-5 py-3 border-b border-[#222222] bg-[#0e0e0e] shrink-0 font-sans">
+            <div className="inline-flex items-center p-0.5 rounded-[8px] bg-transparent border border-[#262626]">
+              <button
+                type="button"
+                onClick={() => setInspectorTab('details')}
+                className={`flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[14px] font-medium transition-colors duration-75 cursor-pointer font-sans outline-none focus:outline-none border ${
+                  inspectorTab === 'details'
+                    ? 'bg-[#161616] text-white border-[#333333]'
+                    : 'text-[#8c8c8c] hover:text-white hover:bg-[#141414] border-transparent'
+                }`}
+              >
+                <span>Record Values</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setInspectorTab('danger')}
+                className={`flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[14px] font-medium transition-colors duration-75 cursor-pointer font-sans outline-none focus:outline-none border ${
+                  inspectorTab === 'danger'
+                    ? 'bg-[#161616] text-white border-[#333333]'
+                    : 'text-[#8c8c8c] hover:text-white hover:bg-[#141414] border-transparent'
+                }`}
+              >
+                <span>Danger</span>
+              </button>
             </div>
-
-            <button
-              onClick={() => setIsDetailsOpen(false)}
-              className="w-7 h-7 flex items-center justify-center rounded-[5px] text-[#777777] hover:text-white hover:bg-[#161616]"
-            >
-              <X className="w-4 h-4" />
-            </button>
           </div>
+        )}
 
-          {/* Inspector Body Content */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-4">
-            {isInsertModeInPanel ? (
-              /* Insert New Row Form */
-              <div className="space-y-3">
-                <div className="text-[12px] text-[#8c8c8c] mb-2">
-                  Add new record to <span className="font-mono text-white">{selectedTable}</span>.
-                </div>
-
-                {columns.map((col) => {
-                  const isAutoPk = col.primary_key && col.type.toLowerCase().includes('int');
-                  return (
-                    <div key={col.name}>
-                      <label className="block text-[11.5px] font-medium text-[#cccccc] mb-1 flex items-center justify-between">
-                        <span className="font-mono">{col.name}</span>
-                        <span className="text-[10px] text-[#666666]">{col.type}</span>
-                      </label>
-                      <input
-                        type="text"
-                        placeholder={isAutoPk ? 'Auto-increment' : col.nullable ? 'Optional (NULL)' : 'Required'}
-                        value={String(rowEditValues[col.name] ?? '')}
-                        onChange={(e) =>
-                          setRowEditValues({ ...rowEditValues, [col.name]: e.target.value })
-                        }
-                        className="w-full h-8 px-2.5 bg-[#141414] border border-[#242424] focus:border-[#383838] rounded-[5px] text-[12px] text-white font-mono outline-none"
-                      />
-                    </div>
-                  );
-                })}
-
-                <div className="pt-2 flex items-center gap-2">
-                  <button
-                    onClick={handleInsertRowFromPanel}
-                    disabled={isSavingRow}
-                    className="flex-1 flex items-center justify-center gap-1.5 h-8 bg-[#141414] hover:bg-[#1a1a1a] border border-[#242424] hover:border-[#383838] rounded-[6px] text-[12px] font-medium text-[#cccccc] hover:text-white transition-colors cursor-pointer disabled:opacity-50"
-                  >
-                    {isSavingRow ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-                    <span>Save Record</span>
-                  </button>
-                  <button
-                    onClick={() => setIsInsertModeInPanel(false)}
-                    className="h-8 px-3 bg-transparent text-[#777777] hover:text-white text-[12px] transition-colors"
-                  >
-                    Cancel
-                  </button>
-                </div>
+        {/* Drawer Body Content */}
+        <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-5 font-sans">
+          {isInsertModeInPanel ? (
+            /* Insert New Row Form */
+            <div className="space-y-4 font-sans">
+              <div className="text-[13.5px] text-[#8c8c8c]">
+                Specify column values for the new record in <span className="font-mono text-white font-medium">{selectedTable}</span>.
               </div>
-            ) : activeRow ? (
-              /* Selected Row Editing Fields */
-              <div className="space-y-3">
-                <div className="flex items-center justify-between pb-1 border-b border-[#222222]">
-                  <span className="text-[11.5px] text-[#8c8c8c]">Edit column values</span>
-                  <button
-                    onClick={() => handleCopy(JSON.stringify(activeRow, null, 2), 'rowJson')}
-                    className="flex items-center gap-1 text-[11px] text-blue-400 hover:underline"
-                  >
-                    {copiedKey === 'rowJson' ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
-                    <span>Copy JSON</span>
-                  </button>
-                </div>
 
+              <div className="space-y-4">
                 {columns.map((col) => {
                   const val = rowEditValues[col.name];
-                  const isNull = val === null || val === undefined;
+                  const normType = col.type.toLowerCase();
+                  const isAutoPk = col.primary_key && normType.includes('int');
+                  const isNumber =
+                    normType.includes('int') ||
+                    normType.includes('float') ||
+                    normType.includes('double') ||
+                    normType.includes('decimal') ||
+                    normType.includes('numeric') ||
+                    normType.includes('real') ||
+                    normType.includes('serial') ||
+                    normType.includes('money');
+                  const isBool = normType.includes('bool') || normType === 'bit';
 
                   return (
-                    <div key={col.name} className="space-y-1">
-                      <div className="flex items-center justify-between text-[11.5px]">
-                        <span className="font-mono text-white flex items-center gap-1">
-                          {col.name}
-                          {col.primary_key && <Key className="w-3 h-3 text-amber-400" />}
+                    <div key={col.name} className="space-y-1.5">
+                      {/* Title & Type Header Above Input */}
+                      <div className="flex items-center justify-between">
+                        <label className="text-[13.5px] font-medium text-white flex items-center gap-1.5 font-sans">
+                          <span>{col.name}</span>
+                          {col.primary_key && <Key className="w-3 h-3 text-amber-400 shrink-0" />}
+                        </label>
+                        <span className="text-[12px] font-mono text-[#777777]">
+                          {col.type}
                         </span>
-                        <span className="text-[10px] text-[#666666]">{col.type}</span>
                       </div>
 
-                      <div className="flex items-center gap-1.5">
-                        <input
-                          type="text"
-                          disabled={col.primary_key}
-                          value={isNull ? '' : String(val)}
-                          placeholder={isNull ? 'NULL' : ''}
-                          onChange={(e) =>
-                            setRowEditValues({ ...rowEditValues, [col.name]: e.target.value })
-                          }
-                          className={`flex-1 h-8 px-2.5 bg-[#141414] border border-[#242424] focus:border-[#383838] rounded-[5px] text-[12px] text-white font-mono outline-none ${
-                            col.primary_key ? 'opacity-60 cursor-not-allowed' : ''
-                          }`}
-                        />
-                        {col.nullable && !col.primary_key && (
-                          <button
-                            type="button"
-                            onClick={() =>
+                      {/* Input placed directly under title */}
+                      <div>
+                        {isBool ? (
+                          <CustomSelect
+                            value={val === null || val === undefined ? '' : String(val)}
+                            options={[
+                              { value: '', label: 'NULL (Unset)' },
+                              { value: 'true', label: 'TRUE' },
+                              { value: 'false', label: 'FALSE' },
+                            ]}
+                            onChange={(v) => {
                               setRowEditValues({
                                 ...rowEditValues,
-                                [col.name]: isNull ? '' : null,
-                              })
+                                [col.name]: v === '' ? null : v === 'true',
+                              });
+                            }}
+                            menuWidth="w-full"
+                          />
+                        ) : isNumber ? (
+                          <input
+                            type="number"
+                            step={normType.includes('float') || normType.includes('double') || normType.includes('numeric') || normType.includes('decimal') ? 'any' : '1'}
+                            placeholder={isAutoPk ? 'Auto-increment' : col.nullable ? 'Optional (NULL)' : 'Required'}
+                            value={val === null || val === undefined ? '' : String(val)}
+                            onChange={(e) =>
+                              setRowEditValues({ ...rowEditValues, [col.name]: e.target.value })
                             }
-                            title={isNull ? 'Set value' : 'Set NULL'}
-                            className={`px-1.5 h-8 rounded text-[10px] font-mono border cursor-pointer ${
-                              isNull
-                                ? 'bg-amber-500/10 border-amber-500/30 text-amber-400 font-bold'
-                                : 'bg-[#141414] border-[#242424] text-[#777777] hover:text-white'
-                            }`}
-                          >
-                            NULL
-                          </button>
+                            className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] px-3 text-[14px] text-white font-sans focus:outline-none focus:border-[#3b82f6] transition-colors placeholder-[#555555]"
+                          />
+                        ) : (
+                          <textarea
+                            rows={3}
+                            placeholder={col.nullable ? 'Optional (NULL)' : 'Required'}
+                            value={val === null || val === undefined ? '' : String(val)}
+                            onChange={(e) =>
+                              setRowEditValues({ ...rowEditValues, [col.name]: e.target.value })
+                            }
+                            className="w-full min-h-[72px] rounded-[6px] border border-[#262626] bg-[#121212] p-2.5 text-[14px] text-white font-sans focus:outline-none focus:border-[#3b82f6] transition-colors resize-y placeholder-[#555555]"
+                          />
                         )}
                       </div>
                     </div>
                   );
                 })}
-
-                {/* Save and Delete Actions */}
-                <div className="pt-3 border-t border-[#222222] space-y-2">
-                  <button
-                    onClick={handleSaveRowEdit}
-                    disabled={isSavingRow}
-                    className="w-full flex items-center justify-center gap-1.5 h-8 bg-[#141414] hover:bg-[#1a1a1a] border border-[#242424] hover:border-[#383838] rounded-[6px] text-[12px] font-medium text-[#cccccc] hover:text-white transition-colors cursor-pointer disabled:opacity-50"
-                  >
-                    {isSavingRow ? (
-                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                    ) : (
-                      <Save className="w-3.5 h-3.5" />
-                    )}
-                    <span>Save Changes</span>
-                  </button>
-
-                  <button
-                    onClick={() => setDeleteRowTarget(activeRow)}
-                    className="w-full flex items-center justify-center gap-1.5 h-8 bg-transparent hover:bg-rose-500/10 text-rose-500 border border-transparent hover:border-rose-500/20 rounded-[6px] text-[12px] font-medium cursor-pointer transition-colors"
-                  >
+              </div>
+            </div>
+          ) : activeRow && inspectorTab === 'danger' ? (
+            /* Danger Tab matching Databases page */
+            <div className="space-y-4 font-sans">
+              <div className="rounded-[8px] border border-[#3a1515] bg-[#0e0404] p-4">
+                <h3 className="text-[16px] font-medium text-[#e5484d] mb-1 font-sans">Delete Record</h3>
+                <p className="text-[13px] text-[#8c8c8c] mb-4 font-sans">
+                  Permanently delete this row from <span className="text-white font-medium text-[13px] font-mono">{selectedTable}</span>. This action is irreversible and immediately executes against the database.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setDeleteRowTarget(activeRow)}
+                  className="group relative flex shrink-0 items-center justify-center h-8 px-3.5 rounded-[8px] font-medium text-white shadow-xs outline-none cursor-pointer overflow-hidden ring-1 ring-[#be123c] bg-[#e11d48] font-sans text-[13px]"
+                >
+                  <span
+                    aria-hidden="true"
+                    className="pointer-events-none absolute inset-0 rounded-[inherit] bg-gradient-to-b from-[#f43f5e] to-[#e11d48] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2)]"
+                  />
+                  <span
+                    aria-hidden="true"
+                    className="pointer-events-none absolute inset-0 rounded-[inherit] bg-black opacity-0 group-hover:opacity-15 transition-opacity duration-200"
+                  />
+                  <span className="relative flex items-center gap-1.5 font-sans">
                     <Trash2 className="w-3.5 h-3.5" />
                     <span>Delete Row</span>
-                  </button>
-                </div>
+                  </span>
+                </button>
               </div>
-            ) : (
-              /* No Row Selected State: Show Table Summary */
-              <div className="space-y-4">
-                <div className="p-3 rounded-[6px] bg-[#141414] border border-[#222222]">
-                  <div className="text-[12px] font-medium text-white mb-1">
-                    Table: <span className="font-mono text-blue-400">{selectedTable}</span>
-                  </div>
-                  <div className="text-[11.5px] text-[#8c8c8c] space-y-1">
-                    <div>Columns: {columns.length}</div>
-                    <div>Foreign Keys: {foreignKeys.length}</div>
+            </div>
+          ) : activeRow ? (
+            /* Selected Row Editing Fields (Details Tab) with Input Area Under Title */
+            <div className="space-y-4 font-sans">
+              {columns.map((col) => {
+                const val = rowEditValues[col.name];
+                const isNull = val === null || val === undefined;
+                const normType = col.type.toLowerCase();
+                const isNumber =
+                  normType.includes('int') ||
+                  normType.includes('float') ||
+                  normType.includes('double') ||
+                  normType.includes('decimal') ||
+                  normType.includes('numeric') ||
+                  normType.includes('real') ||
+                  normType.includes('serial') ||
+                  normType.includes('money');
+                const isBool = normType.includes('bool') || normType === 'bit';
+
+                return (
+                  <div key={col.name} className="space-y-1.5">
+                    {/* Title & Type Header Above Input */}
+                    <div className="flex items-center justify-between">
+                      <label className="text-[13.5px] font-medium text-white flex items-center gap-1.5 font-sans">
+                        <span>{col.name}</span>
+                        {col.primary_key && <Key className="w-3 h-3 text-amber-400 shrink-0" />}
+                      </label>
+                      <span className="text-[12px] font-mono text-[#777777]">
+                        {col.type}
+                      </span>
+                    </div>
+
+                    {/* Input Area Placed Directly Under Title */}
                     <div>
-                      Row estimate:{' '}
-                      {tables.find((t) => t.name === selectedTable)?.row_count_estimate ?? 'Unknown'}
+                      {isBool ? (
+                        <CustomSelect
+                          disabled={col.primary_key}
+                          value={isNull ? '' : String(val)}
+                          options={[
+                            { value: '', label: 'NULL' },
+                            { value: 'true', label: 'TRUE' },
+                            { value: 'false', label: 'FALSE' },
+                          ]}
+                          onChange={(v) => {
+                            setRowEditValues({
+                              ...rowEditValues,
+                              [col.name]: v === '' ? null : v === 'true',
+                            });
+                          }}
+                          menuWidth="w-full"
+                        />
+                      ) : isNumber ? (
+                        <input
+                          type="number"
+                          step={normType.includes('float') || normType.includes('double') || normType.includes('numeric') || normType.includes('decimal') ? 'any' : '1'}
+                          disabled={col.primary_key}
+                          value={isNull ? '' : String(val)}
+                          placeholder={col.nullable ? 'Optional (NULL)' : 'Required'}
+                          onChange={(e) =>
+                            setRowEditValues({ ...rowEditValues, [col.name]: e.target.value })
+                          }
+                          className={`h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] px-3 text-[14px] text-white font-sans focus:outline-none focus:border-[#3b82f6] transition-colors placeholder-[#555555] ${
+                            col.primary_key ? 'opacity-60 cursor-not-allowed bg-[#0d0d0d]' : ''
+                          }`}
+                        />
+                      ) : (
+                        <textarea
+                          rows={3}
+                          disabled={col.primary_key}
+                          value={isNull ? '' : String(val)}
+                          placeholder={col.nullable ? 'Optional (NULL)' : 'Required'}
+                          onChange={(e) =>
+                            setRowEditValues({ ...rowEditValues, [col.name]: e.target.value })
+                          }
+                          className={`w-full min-h-[72px] rounded-[6px] border border-[#262626] bg-[#121212] p-2.5 text-[14px] text-white font-sans focus:outline-none focus:border-[#3b82f6] transition-colors resize-y placeholder-[#555555] ${
+                            col.primary_key ? 'opacity-60 cursor-not-allowed bg-[#0d0d0d]' : ''
+                          }`}
+                        />
+                      )}
                     </div>
                   </div>
-                </div>
+                );
+              })}
+            </div>
+          ) : null}
+        </div>
 
-                <div className="text-[11.5px] text-[#666666] text-center pt-4">
-                  Select any row in the grid to view details or edit values directly.
-                </div>
-              </div>
-            )}
+        {/* Footer (Pinned to bottom matching Databases page) */}
+        {(isInsertModeInPanel || (activeRow && inspectorTab === 'details')) && (
+          <div className="p-4 border-t border-[#222222] bg-[#0e0e0e] flex items-center justify-end gap-2.5 font-sans shrink-0">
+            <button
+              type="button"
+              onClick={() => {
+                if (isInsertModeInPanel) {
+                  setIsInsertModeInPanel(false);
+                } else {
+                  setIsDetailsOpen(false);
+                }
+              }}
+              className="inline-flex items-center justify-center h-9 px-4 rounded-[8px] text-[14px] font-medium text-[#cccccc] hover:text-white bg-transparent hover:bg-[#161616] border border-[#262626] hover:border-[#383838] transition-colors cursor-pointer font-sans"
+            >
+              Close
+            </button>
+            <button
+              type="button"
+              onClick={isInsertModeInPanel ? handleInsertRowFromPanel : handleSaveRowEdit}
+              disabled={isSavingRow}
+              className="group relative flex shrink-0 items-center justify-center h-9 px-4 rounded-[8px] font-medium text-white shadow-xs outline-none cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed overflow-hidden ring-1 ring-[#1d4ed8] bg-[#2563eb] font-sans"
+            >
+              <span
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-0 rounded-[inherit] bg-gradient-to-b from-[#3b82f6] to-[#2563eb] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2)]"
+              />
+              <span
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-0 rounded-[inherit] bg-black opacity-0 group-hover:opacity-15 transition-opacity duration-200"
+              />
+              <span className="relative flex items-center gap-1.5 text-[14px] font-sans">
+                {isSavingRow ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Saving...</span>
+                  </>
+                ) : (
+                  <span>{isInsertModeInPanel ? 'Save Record' : 'Save'}</span>
+                )}
+              </span>
+            </button>
           </div>
-        </aside>
-      )}
+        )}
+      </SlideOver>
 
       {/* ─── Delete Row Confirm Dialog ─── */}
       <ConfirmDialog

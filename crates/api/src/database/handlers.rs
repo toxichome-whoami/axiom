@@ -318,10 +318,20 @@ impl QueryExecutionPipeline {
             if let Some(ref key) = cache_key {
                 // 1. Check L1/L2 cache first
                 if let Some(bytes) = axiom_cache::CacheEngine::get(key).await {
-                    return Ok((
-                        Arc::new(QueryResult { affected_rows: Some(0), ..Default::default() }),
-                        bytes,
-                    ));
+                    // WHY: Deserializing the cached QueryResult restores the actual rows, columns, and
+                    // metadata needed by callers like fetch_rows. Returning an empty dummy QueryResult
+                    // caused cached queries to return 0 rows to clients.
+                    let qr: QueryResult = match serde_json::from_slice(&bytes) {
+                        Ok(res) => res,
+                        Err(e) => {
+                            tracing::warn!("Failed to deserialize cached QueryResult from bytes: {}", e);
+                            QueryResult {
+                                affected_rows: Some(0),
+                                ..Default::default()
+                            }
+                        }
+                    };
+                    return Ok((Arc::new(qr), bytes));
                 }
 
                 // 2. Single-Flight coalescing: if identical query is already executing, wait for its result
