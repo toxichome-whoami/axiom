@@ -840,7 +840,7 @@ export function TableEditor() {
               <label className="text-[13.5px] font-medium text-white font-sans">
                 Value
               </label>
-              <span className="text-[12px] font-mono text-[#777777]">
+              <span className="text-[12px] font-sans text-[#777777]">
                 {(expandedInlineCell?.value || '').length} chars · {(expandedInlineCell?.value || '').split('\n').length} lines
               </span>
             </div>
@@ -853,7 +853,7 @@ export function TableEditor() {
               }
               autoFocus
               spellCheck={false}
-              className="flex-1 w-full rounded-[6px] border border-[#262626] bg-[#121212] p-3 text-[14px] leading-relaxed text-white font-sans focus:outline-none focus:border-[#3b82f6] resize-none placeholder-[#555555] transition-colors whitespace-pre"
+              className="flex-1 w-full rounded-[6px] border border-[#262626] bg-[#121212] p-3 text-[14px] leading-relaxed text-white font-sans focus:outline-none focus:border-[#383838] focus:ring-1 focus:ring-[#383838] resize-none placeholder-[#555555] transition-colors whitespace-pre"
               placeholder="Enter value..."
             />
           </div>
@@ -868,7 +868,7 @@ export function TableEditor() {
                   setExpandedInlineCell(null);
                 }
               }}
-              className="inline-flex items-center justify-center h-9 px-4 rounded-[8px] text-[14px] font-medium text-[#cccccc] hover:text-white bg-transparent hover:bg-[#161616] border border-[#262626] hover:border-[#383838] transition-colors cursor-pointer font-sans"
+              className="inline-flex items-center justify-center h-9 px-4 rounded-[6px] text-[13.5px] font-medium text-[#cccccc] hover:text-white bg-transparent hover:bg-[#161616] border border-[#262626] hover:border-[#383838] transition-colors cursor-pointer font-sans"
             >
               Cancel
             </button>
@@ -880,19 +880,9 @@ export function TableEditor() {
                 setExpandedInlineCell(null);
                 await handleSaveCellEdit(rowIndex, colName, value);
               }}
-              className="group relative flex shrink-0 items-center justify-center h-9 px-4 rounded-[8px] font-medium text-white shadow-xs outline-none cursor-pointer overflow-hidden ring-1 ring-[#1d4ed8] bg-[#2563eb] font-sans"
+              className="flex items-center justify-center h-9 px-4 rounded-[6px] font-medium text-white bg-[#1a1a1a] hover:bg-[#252525] border border-[#2e2e2e] hover:border-[#404040] transition-colors cursor-pointer text-[13.5px] font-sans shadow-xs"
             >
-              <span
-                aria-hidden="true"
-                className="pointer-events-none absolute inset-0 rounded-[inherit] bg-gradient-to-b from-[#3b82f6] to-[#2563eb] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2)]"
-              />
-              <span
-                aria-hidden="true"
-                className="pointer-events-none absolute inset-0 rounded-[inherit] bg-black opacity-0 group-hover:opacity-15 transition-opacity duration-200"
-              />
-              <span className="relative flex items-center text-[14px] font-sans">
-                Apply
-              </span>
+              Apply
             </button>
           </div>
         </div>
