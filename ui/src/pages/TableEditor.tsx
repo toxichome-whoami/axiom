@@ -16,6 +16,9 @@ import {
 import {
   InlineCellEditorPopover,
   InlineBooleanPopover,
+  InlineNumberPopover,
+  InlineJsonPopover,
+  InlineTextPopover,
 } from './table/InlineCellEditorPopover';
 import {
   InlineDateTimePickerPopover,
@@ -32,6 +35,7 @@ import { TableGridView } from './table/TableGridView';
 import { SchemaView } from './table/SchemaView';
 import { SqlConsoleView } from './table/SqlConsoleView';
 import { ColumnContextMenu } from './table/ColumnContextMenu';
+import { GridContextMenu, GridContextMenuState } from './table/GridContextMenu';
 
 // Domain Custom Hooks
 import { useTableData } from './table/useTableData';
@@ -235,7 +239,10 @@ export function TableEditor() {
     sqlResult,
     sqlError,
     sqlDuration,
+    chunkProgress,
+    batchSummary,
     handleExecuteSql,
+    handleCancelSql,
   } = useSqlConsole({ selectedDb });
 
   // Column header dropdown menu state
@@ -243,6 +250,9 @@ export function TableEditor() {
     col: ColumnInfoApi;
     rect: { top: number; left: number; width: number; height: number };
   } | null>(null);
+
+  // Row and Cell Right-Click Context Menu state
+  const [gridContextMenu, setGridContextMenu] = useState<GridContextMenuState | null>(null);
 
   const handleCopy = (text: string, key: string) => {
     navigator.clipboard.writeText(text);
@@ -392,6 +402,25 @@ export function TableEditor() {
             setCursor(null);
             setCursorHistory([]);
           }}
+          currentPage={cursorHistory.length + 1}
+          onJumpToPage={(targetPage) => {
+            const currentPageNum = cursorHistory.length + 1;
+            if (targetPage === currentPageNum) return;
+            if (targetPage === 1) {
+              setCursor(null);
+              setCursorHistory([]);
+              loadTableData({ targetCursor: null, reloadSchema: false });
+            } else if (targetPage < currentPageNum) {
+              const targetIndex = targetPage - 1;
+              const newHistory = cursorHistory.slice(0, targetIndex);
+              const targetCursor = newHistory[newHistory.length - 1] || null;
+              setCursorHistory(newHistory);
+              loadTableData({ targetCursor, reloadSchema: false });
+            } else if (targetPage === currentPageNum + 1 && hasNextPage && cursor) {
+              setCursorHistory([...cursorHistory, cursor]);
+              loadTableData({ targetCursor: cursor, reloadSchema: false });
+            }
+          }}
           onPrevPage={() => {
             if (cursorHistory.length > 0) {
               const newHistory = [...cursorHistory];
@@ -442,6 +471,16 @@ export function TableEditor() {
             onSelectCell={(cell) => setSelectedCell(cell)}
             onStartCellEdit={(rowIndex, colName, cellEl) => handleStartCellEdit(rowIndex, colName, cellEl)}
             isColReadOnly={(col) => isColReadOnly(col)}
+            onCellContextMenu={(e, rowIndex, colName, rawValue, isReadOnly) => {
+              setGridContextMenu({
+                x: e.clientX,
+                y: e.clientY,
+                rowIndex,
+                colName,
+                rawValue,
+                isReadOnly,
+              });
+            }}
             activeColumnMenu={activeColumnMenu}
             onOpenColumnMenu={(menu) => setActiveColumnMenu(menu)}
             onResizeStart={(e, colName, width) => handleResizeStart(e, colName, width)}
@@ -495,7 +534,10 @@ export function TableEditor() {
             sqlResult={sqlResult}
             sqlError={sqlError}
             sqlDuration={sqlDuration}
+            chunkProgress={chunkProgress}
+            batchSummary={batchSummary}
             handleExecuteSql={handleExecuteSql}
+            handleCancelSql={handleCancelSql}
           />
         )}
       </main>
@@ -545,6 +587,16 @@ export function TableEditor() {
         const isDate = normType === 'date';
         const isTimeOrTimestamp = normType.includes('time') || normType.includes('timestamp');
         const isDateTime = isDate || isTimeOrTimestamp;
+        const isJson = normType.includes('json');
+        const isNumeric =
+          normType.includes('int') ||
+          normType.includes('float') ||
+          normType.includes('double') ||
+          normType.includes('decimal') ||
+          normType.includes('numeric') ||
+          normType.includes('real') ||
+          normType.includes('serial') ||
+          typeof editingCell.initialValue === 'number';
 
         if (isBool) {
           return (
@@ -552,6 +604,41 @@ export function TableEditor() {
               editingCell={editingCell}
               onSave={handleCommitCellEdit}
               onCancel={() => setEditingCell(null)}
+            />
+          );
+        }
+
+        if (isNumeric) {
+          return (
+            <InlineNumberPopover
+              editingCell={editingCell}
+              onChange={(val) =>
+                setEditingCell((prev) => (prev ? { ...prev, currentValue: val } : null))
+              }
+              onSave={handleCommitCellEdit}
+              onCancel={() => setEditingCell(null)}
+            />
+          );
+        }
+
+        if (isJson) {
+          return (
+            <InlineJsonPopover
+              editingCell={editingCell}
+              onChange={(val) =>
+                setEditingCell((prev) => (prev ? { ...prev, currentValue: val } : null))
+              }
+              onSave={handleCommitCellEdit}
+              onCancel={() => setEditingCell(null)}
+              onExpand={() => {
+                const current = editingCell;
+                setEditingCell(null);
+                setExpandedInlineCell({
+                  rowIndex: current.rowIndex,
+                  colName: current.colName,
+                  value: current.currentValue,
+                });
+              }}
             />
           );
         }
@@ -567,7 +654,7 @@ export function TableEditor() {
         }
 
         return (
-          <InlineCellEditorPopover
+          <InlineTextPopover
             editingCell={editingCell}
             onChange={(val) =>
               setEditingCell((prev) => (prev ? { ...prev, currentValue: val } : null))
@@ -787,6 +874,35 @@ export function TableEditor() {
             });
           }}
           onRequestDeleteColumn={(col) => setDeleteColumnTarget(col)}
+        />
+      )}
+
+      {/* ─── Row & Cell Context Menu ─── */}
+      {gridContextMenu && (
+        <GridContextMenu
+          menu={gridContextMenu}
+          rowRecord={rows[gridContextMenu.rowIndex]}
+          onClose={() => setGridContextMenu(null)}
+          onEditCell={(rowIndex, colName) => {
+            const cellEl = document.querySelector(
+              `[data-cell-row="${rowIndex}"][data-cell-col="${colName}"]`
+            ) as HTMLElement;
+            if (cellEl) {
+              handleStartCellEdit(rowIndex, colName, cellEl);
+            }
+          }}
+          onOpenRowDetails={(rowIndex) => {
+            handleSelectRow(rowIndex, true);
+          }}
+          onSetCellNull={(rowIndex, colName) => {
+            handleSaveCellEdit(rowIndex, colName, null);
+          }}
+          onDeleteRow={(rowIndex) => {
+            const targetRow = rows[rowIndex];
+            if (targetRow) {
+              setDeleteRowTarget(targetRow);
+            }
+          }}
         />
       )}
 

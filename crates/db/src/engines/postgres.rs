@@ -259,7 +259,20 @@ impl DatabaseEngine for PostgresDatabaseEngine {
 
         for param in params {
             match param {
-                Value::String(s) => { query = query.bind(s); }
+                Value::String(s) => {
+                    let trimmed = s.trim();
+                    if (trimmed.starts_with('{') && trimmed.ends_with('}'))
+                        || (trimmed.starts_with('[') && trimmed.ends_with(']'))
+                    {
+                        if let Ok(json_val) = serde_json::from_str::<Value>(trimmed) {
+                            query = query.bind(sqlx::types::Json(json_val));
+                        } else {
+                            query = query.bind(s);
+                        }
+                    } else {
+                        query = query.bind(s);
+                    }
+                }
                 Value::Number(n) => {
                     if let Some(i) = n.as_i64() { query = query.bind(i); }
                     else if let Some(f) = n.as_f64() { query = query.bind(f); }
@@ -267,7 +280,9 @@ impl DatabaseEngine for PostgresDatabaseEngine {
                 }
                 Value::Bool(b) => { query = query.bind(b); }
                 Value::Null => { query = query.bind(Option::<String>::None); }
-                _ => { query = query.bind(param.to_string()); }
+                Value::Object(_) | Value::Array(_) => {
+                    query = query.bind(sqlx::types::Json(param));
+                }
             }
         }
 

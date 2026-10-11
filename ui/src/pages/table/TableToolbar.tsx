@@ -15,8 +15,6 @@ import {
   Layers,
   Terminal,
   ChevronDown,
-  ChevronLeft,
-  ChevronRight,
   Check,
 } from 'lucide-react';
 import { ColumnInfoApi } from '../../types';
@@ -53,6 +51,8 @@ export interface TableToolbarProps {
   // Pagination & reload
   pageSize: number;
   setPageSize: (size: number) => void;
+  currentPage: number;
+  onJumpToPage: (page: number) => void;
   onPrevPage: () => void;
   onNextPage: () => void;
   hasPrevPage: boolean;
@@ -88,6 +88,8 @@ export function TableToolbar({
   setSortOrder,
   pageSize,
   setPageSize,
+  currentPage,
+  onJumpToPage,
   onPrevPage,
   onNextPage,
   hasPrevPage,
@@ -101,6 +103,11 @@ export function TableToolbar({
   const [showFilterPopover, setShowFilterPopover] = React.useState(false);
   const [showSortPopover, setShowSortPopover] = React.useState(false);
   const [showPageSizePopover, setShowPageSizePopover] = React.useState(false);
+  const [pageInputVal, setPageInputVal] = React.useState(String(currentPage));
+
+  useEffect(() => {
+    setPageInputVal(String(currentPage));
+  }, [currentPage]);
 
   const insertDropdownRef = useRef<HTMLDivElement>(null);
   const filterPopoverRef = useRef<HTMLDivElement>(null);
@@ -431,21 +438,52 @@ export function TableToolbar({
           <button
             onClick={onPrevPage}
             disabled={!hasPrevPage || isRowsLoading}
-            className="flex items-center gap-1 h-8 px-2.5 rounded-[6px] bg-[#141414] border border-[#262626] text-[#cccccc] disabled:opacity-40 hover:text-white hover:border-[#383838] transition-colors cursor-pointer"
+            className="flex items-center justify-center h-8 px-3 rounded-[6px] bg-[#141414] border border-[#262626] text-[#cccccc] disabled:opacity-40 hover:text-white hover:border-[#383838] transition-colors cursor-pointer"
             title="Previous page"
           >
-            <ChevronLeft className="w-3.5 h-3.5" />
-            <span className="text-[13px] font-medium">Previous</span>
+            <span className="text-[13px] font-sans font-medium">Previous</span>
           </button>
+
+          {/* Editable Page Number */}
+          <div className="flex items-center gap-1.5 px-2 h-8 rounded-[6px] bg-[#141414] border border-[#262626] text-[13px] font-sans text-[#8c8c8c]">
+            <span className="text-[12px] font-sans text-[#666666] select-none">Page</span>
+            <input
+              type="text"
+              inputMode="numeric"
+              value={pageInputVal}
+              onChange={(e) => setPageInputVal(e.target.value.replace(/[^0-9]/g, ''))}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  const p = parseInt(pageInputVal, 10);
+                  if (!isNaN(p) && p >= 1) {
+                    onJumpToPage(p);
+                  } else {
+                    setPageInputVal(String(currentPage));
+                  }
+                } else if (e.key === 'Escape') {
+                  setPageInputVal(String(currentPage));
+                }
+              }}
+              onBlur={() => {
+                const p = parseInt(pageInputVal, 10);
+                if (!isNaN(p) && p >= 1 && p !== currentPage) {
+                  onJumpToPage(p);
+                } else {
+                  setPageInputVal(String(currentPage));
+                }
+              }}
+              title="Click or press Enter to jump to page"
+              className="w-8 h-5 text-center bg-transparent text-white font-sans text-[13px] font-medium border-b border-transparent focus:border-white focus:outline-none transition-colors"
+            />
+          </div>
 
           <button
             onClick={onNextPage}
             disabled={!hasNextPage || isRowsLoading}
-            className="flex items-center gap-1 h-8 px-2.5 rounded-[6px] bg-[#141414] border border-[#262626] text-[#cccccc] disabled:opacity-40 hover:text-white hover:border-[#383838] transition-colors cursor-pointer"
+            className="flex items-center justify-center h-8 px-3 rounded-[6px] bg-[#141414] border border-[#262626] text-[#cccccc] disabled:opacity-40 hover:text-white hover:border-[#383838] transition-colors cursor-pointer"
             title="Next page"
           >
-            <span className="text-[13px] font-medium">Next</span>
-            <ChevronRight className="w-3.5 h-3.5" />
+            <span className="text-[13px] font-sans font-medium">Next</span>
           </button>
         </div>
       )}

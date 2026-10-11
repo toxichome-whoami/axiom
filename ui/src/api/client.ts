@@ -225,13 +225,13 @@ async function request<T>(
       throw new Error(`Unexpected server response (HTTP ${res.status})`);
     }
 
-    if (!res.ok || !json.success) {
+    if (!res.ok || (json.success !== undefined && !json.success)) {
       const code = json.error?.code;
       const sanitized = (code && CODE_MAP[code]) || json.error?.message || `Request failed (HTTP ${res.status})`;
       throw new Error(sanitized);
     }
 
-    return json.data;
+    return (json.data !== undefined ? json.data : json) as T;
   } catch (err: unknown) {
     if (err instanceof Error && err.name === 'AbortError') {
       throw new Error('Request timed out. Please try again.');
@@ -522,10 +522,11 @@ export const api = {
       }
     ),
 
-  executeSqlQuery: (db: string, sql: string, params: unknown[] = [], timeout = 30) =>
+  executeSqlQuery: (db: string, sql: string, params: unknown[] = [], timeout = 60) =>
     request<QueryResultApi>(`/api/v1/db/${encodeURIComponent(db)}/query`, {
       method: 'POST',
       body: JSON.stringify({ sql, params, timeout }),
+      timeoutMs: (Math.max(timeout, 60) + 30) * 1000,
     }),
 };
 

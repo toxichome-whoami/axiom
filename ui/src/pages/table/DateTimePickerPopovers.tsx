@@ -8,7 +8,7 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Calendar, ChevronUp, ChevronDown } from 'lucide-react';
+import { Calendar, Clock, ChevronUp, ChevronDown } from 'lucide-react';
 import { DayPicker } from '@daypicker/react';
 import { ColumnInfoApi } from '../../types';
 
@@ -36,6 +36,7 @@ export function InlineDateTimePickerPopover({
 
   const normType = editingCell.column?.type?.toLowerCase() || '';
   const isDateOnly = normType === 'date';
+  const isTimeOnly = normType === 'time' || normType === 'timetz';
 
   const [inputVal, setInputVal] = useState<string>(() => {
     return editingCell.currentValue === null || editingCell.currentValue === undefined
@@ -56,16 +57,26 @@ export function InlineDateTimePickerPopover({
     if (!val.trim()) {
       return { date: undefined, hours: '12', minutes: '00', seconds: '00', tz: '' };
     }
-    const parts = val.trim().split(/[T ]/);
-    const dateStr = parts[0] || '';
-    const timeFull = parts[1] || '';
+
+    let dateStr = '';
+    let timeFull = '';
+
+    if (isTimeOnly) {
+      timeFull = val.trim();
+    } else {
+      const parts = val.trim().split(/[T ]/);
+      dateStr = parts[0] || '';
+      timeFull = parts[1] || '';
+    }
 
     let d: Date | undefined;
-    const dateParts = dateStr.split('-').map(Number);
-    if (dateParts.length === 3 && dateParts.every((n) => !isNaN(n))) {
-      const parsedDate = new Date(dateParts[0], dateParts[1] - 1, dateParts[2]);
-      if (!isNaN(parsedDate.getTime())) {
-        d = parsedDate;
+    if (dateStr) {
+      const dateParts = dateStr.split('-').map(Number);
+      if (dateParts.length === 3 && dateParts.every((n) => !isNaN(n))) {
+        const parsedDate = new Date(dateParts[0], dateParts[1] - 1, dateParts[2]);
+        if (!isNaN(parsedDate.getTime())) {
+          d = parsedDate;
+        }
       }
     }
 
@@ -87,7 +98,7 @@ export function InlineDateTimePickerPopover({
     }
 
     return { date: d, hours, minutes, seconds, tz };
-  }, []);
+  }, [isTimeOnly]);
 
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(() => parseVal(inputVal).date);
   const [month, setMonth] = useState<Date>(() => parseVal(inputVal).date || new Date());
@@ -105,6 +116,13 @@ export function InlineDateTimePickerPopover({
     dateObj: Date | undefined,
     timeObj: { hours: string; minutes: string; seconds: string; tz: string }
   ): string => {
+    if (isTimeOnly) {
+      const h = String(timeObj.hours).padStart(2, '0');
+      const min = String(timeObj.minutes).padStart(2, '0');
+      const s = String(timeObj.seconds).padStart(2, '0');
+      const tzSuffix = timeObj.tz ? ` ${timeObj.tz}` : '';
+      return `${h}:${min}:${s}${tzSuffix}`;
+    }
     if (!dateObj) return '';
     const y = dateObj.getFullYear();
     const m = String(dateObj.getMonth() + 1).padStart(2, '0');
@@ -119,7 +137,7 @@ export function InlineDateTimePickerPopover({
     const s = String(timeObj.seconds).padStart(2, '0');
     const tzSuffix = timeObj.tz ? ` ${timeObj.tz}` : '';
     return `${datePart} ${h}:${min}:${s}${tzSuffix}`;
-  }, [isDateOnly]);
+  }, [isDateOnly, isTimeOnly]);
 
   const handleSelectDate = (date: Date | undefined) => {
     setSelectedDate(date);
@@ -222,8 +240,8 @@ export function InlineDateTimePickerPopover({
   const left = Math.max(8, Math.min(window.innerWidth - minWidth - 16, editingCell.rect.left));
   const top = Math.max(8, Math.min(window.innerHeight - 44, editingCell.rect.top));
 
-  const calWidth = 340;
-  const calHeight = isDateOnly ? 360 : 455;
+  const calWidth = isTimeOnly ? 300 : 340;
+  const calHeight = isTimeOnly ? 210 : isDateOnly ? 360 : 455;
   const calLeft = Math.max(8, Math.min(window.innerWidth - calWidth - 16, left));
   const showAbove = top + 42 + calHeight > window.innerHeight && top - calHeight > 8;
   const calTop = showAbove ? top - calHeight - 6 : top + editingCell.rect.height + 4;
@@ -249,22 +267,22 @@ export function InlineDateTimePickerPopover({
           onKeyDown={handleInputKeyDown}
           spellCheck={false}
           className="h-full flex-1 min-w-0 bg-transparent px-3 text-[13px] font-mono text-white outline-none placeholder-[#555555]"
-          placeholder={isDateOnly ? 'YYYY-MM-DD' : 'YYYY-MM-DD HH:MM:SS'}
+          placeholder={isTimeOnly ? 'HH:MM:SS' : isDateOnly ? 'YYYY-MM-DD' : 'YYYY-MM-DD HH:MM:SS'}
         />
 
-        {/* Right side Calendar picker button */}
+        {/* Right side Calendar/Clock picker button */}
         <button
           type="button"
           tabIndex={-1}
           onClick={toggleCalendar}
-          title={isCalendarOpen ? 'Close calendar' : 'Open date & time picker'}
+          title={isCalendarOpen ? 'Close picker' : isTimeOnly ? 'Open time picker' : 'Open date & time picker'}
           className={`h-full px-2.5 flex items-center justify-center border-l border-[#262626] transition-colors cursor-pointer shrink-0 ${
             isCalendarOpen
               ? 'bg-[#222222] text-[#38bdf8]'
               : 'bg-[#161616] hover:bg-[#202020] text-[#8c8c8c] hover:text-white'
           }`}
         >
-          <Calendar className="w-3.5 h-3.5" />
+          {isTimeOnly ? <Clock className="w-3.5 h-3.5" /> : <Calendar className="w-3.5 h-3.5" />}
         </button>
       </div>
 
@@ -283,8 +301,12 @@ export function InlineDateTimePickerPopover({
           <div className="pb-2.5">
             <div className="flex items-center justify-between">
               <span className="text-[13px] font-semibold text-white flex items-center gap-1.5">
-                <Calendar className="w-3.5 h-3.5 text-[#8c8c8c]" />
-                <span>{isDateOnly ? 'Select Date' : 'Select Date & Time'}</span>
+                {isTimeOnly ? (
+                  <Clock className="w-3.5 h-3.5 text-[#38bdf8]" />
+                ) : (
+                  <Calendar className="w-3.5 h-3.5 text-[#8c8c8c]" />
+                )}
+                <span>{isTimeOnly ? 'Select Time' : isDateOnly ? 'Select Date' : 'Select Date & Time'}</span>
               </span>
               <div className="flex items-center gap-1">
                 <button
@@ -307,22 +329,24 @@ export function InlineDateTimePickerPopover({
 
           <div className="-mx-3.5 border-t border-[#222222] mb-2" />
 
-          {/* Calendar Grid */}
-          <div className="axiom-datepicker-wrapper w-full py-1">
-            <DayPicker
-              mode="single"
-              selected={selectedDate}
-              month={month}
-              onMonthChange={setMonth}
-              onSelect={handleSelectDate}
-              className="m-0 text-white font-sans text-[12px] w-full"
-            />
-          </div>
+          {/* Calendar Grid (omitted when isTimeOnly) */}
+          {!isTimeOnly && (
+            <div className="axiom-datepicker-wrapper w-full py-1">
+              <DayPicker
+                mode="single"
+                selected={selectedDate}
+                month={month}
+                onMonthChange={setMonth}
+                onSelect={handleSelectDate}
+                className="m-0 text-white font-sans text-[12px] w-full"
+              />
+            </div>
+          )}
 
           {/* Detailed Time Selector */}
           {!isDateOnly && (
             <>
-              <div className="-mx-3.5 border-t border-[#222222] my-2" />
+              {!isTimeOnly && <div className="-mx-3.5 border-t border-[#222222] my-2" />}
 
               <div className="pt-0.5">
                 <div className="flex items-center justify-between text-[12px] text-[#8c8c8c] mb-2">

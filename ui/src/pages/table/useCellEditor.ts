@@ -113,6 +113,12 @@ export function useCellEditor({
         } else if (normType.includes('bool') || normType === 'bit') {
           if (rawValue.toLowerCase() === 'true') newValue = true;
           else if (rawValue.toLowerCase() === 'false') newValue = false;
+        } else if (normType.includes('json')) {
+          try {
+            newValue = JSON.parse(rawValue);
+          } catch {
+            // keep as string if not valid JSON
+          }
         }
       }
     }
@@ -242,6 +248,27 @@ export function useCellEditor({
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [selectedCell, editingCell, expandedInlineCell, isDetailsOpen, fkPickerTarget, fkPreviewTarget, columns, rows, foreignKeys, setSelectedRowIndex]);
+
+  // Click outside cell listener to deselect selectedCell
+  useEffect(() => {
+    if (!selectedCell) return;
+    const handleOutsideClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (!target) return;
+      // Do not deselect if interacting with cell editor popovers, modals, slide-overs, context menu, or cells
+      if (
+        target.closest('[data-cell-row]') ||
+        target.closest('.fixed') ||
+        target.closest('[role="dialog"]')
+      ) {
+        return;
+      }
+      setSelectedCell(null);
+    };
+
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, [selectedCell]);
 
   return {
     selectedCell,

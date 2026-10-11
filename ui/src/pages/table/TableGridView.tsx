@@ -14,7 +14,6 @@ import {
   ChevronDown,
   Plus,
   Maximize2,
-  Code2,
   ArrowRight,
 } from 'lucide-react';
 import { ColumnInfoApi, ForeignKeyInfoApi } from '../../types';
@@ -45,6 +44,7 @@ export interface TableGridViewProps {
   onSelectCell: (cell: { rowIndex: number; colName: string }) => void;
   onStartCellEdit: (rowIndex: number, colName: string, cellEl: HTMLTableCellElement) => void;
   isColReadOnly: (col: ColumnInfoApi) => boolean;
+  onCellContextMenu?: (e: React.MouseEvent, rowIndex: number, colName?: string, rawValue?: unknown, isReadOnly?: boolean) => void;
 
   // Column headers & resizing
   activeColumnMenu: { col: ColumnInfoApi; rect: { top: number; left: number; width: number; height: number } } | null;
@@ -86,6 +86,7 @@ export function TableGridView({
   onSelectCell,
   onStartCellEdit,
   isColReadOnly,
+  onCellContextMenu,
   activeColumnMenu,
   onOpenColumnMenu,
   onResizeStart,
@@ -95,7 +96,7 @@ export function TableGridView({
 }: TableGridViewProps) {
   return (
     <div className="flex-1 flex flex-col min-h-0 overflow-hidden relative font-sans">
-      <div className="flex-1 overflow-auto">
+      <div className="flex-1 overflow-auto px-[6px]">
         {isSchemaLoading || (isRowsLoading && rows.length === 0 && !rowsError) ? (
           <TableSkeleton columns={columns} foreignKeys={foreignKeys} columnWidths={columnWidths} />
         ) : rowsError ? (
@@ -253,6 +254,13 @@ export function TableGridView({
                     <tr
                       key={idx}
                       onClick={() => onSelectRow(idx, false)}
+                      onContextMenu={(e) => {
+                        if (onCellContextMenu) {
+                          e.preventDefault();
+                          onSelectRow(idx, false);
+                          onCellContextMenu(e, idx);
+                        }
+                      }}
                       className={`transition-colors cursor-pointer group ${
                         isSelected
                           ? 'bg-[#121212] ring-1 ring-inset ring-[#222222] text-white'
@@ -340,6 +348,15 @@ export function TableGridView({
                                 onStartCellEdit(idx, col.name, e.currentTarget);
                               }
                             }}
+                            onContextMenu={(e) => {
+                              if (onCellContextMenu) {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                onSelectCell({ rowIndex: idx, colName: col.name });
+                                onSelectRow(idx, false);
+                                onCellContextMenu(e, idx, col.name, val, isReadOnly);
+                              }
+                            }}
                             className={`px-3 py-2 text-[#cccccc] text-[14px] whitespace-nowrap overflow-hidden border-r border-[#151515] relative transition-colors select-none ${
                               isReadOnly ? 'cursor-default' : 'cursor-cell'
                             } ${
@@ -351,18 +368,17 @@ export function TableGridView({
                             title={isReadOnly ? `${col.name} (Read-only / cannot be edited): ${strVal}` : strVal}
                           >
                             {fk ? (
-                              <div className="flex items-center justify-between w-full h-full gap-1.5">
-                                <div className="truncate flex-1 min-w-0">
+                              <div className="flex items-center justify-between w-full h-5 gap-1.5 leading-none">
+                                <div className="truncate flex-1 min-w-0 font-sans text-[13.5px]">
                                   {isNull ? (
-                                    <span className="text-[#555555] italic text-[12.5px]">null</span>
+                                    <span className="text-[#555555] italic text-[13px]">null</span>
                                   ) : isBool ? (
-                                    <span className="font-sans text-[13px] text-[#cccccc]">
+                                    <span className="text-[#cccccc]">
                                       {String(val)}
                                     </span>
                                   ) : isObj ? (
-                                    <span className="text-pink-400 flex items-center gap-1 text-[12.5px]">
-                                      <Code2 className="w-3.5 h-3.5" />
-                                      {`{ ... }`}
+                                    <span className="text-[#cccccc]">
+                                      {JSON.stringify(val)}
                                     </span>
                                   ) : (
                                     <span>{strVal}</span>
@@ -385,24 +401,23 @@ export function TableGridView({
                                     });
                                   }}
                                   title={`View referenced record from ${fk.referenced_table}`}
-                                  className="w-6 h-6 rounded-[5px] bg-[#181818] hover:bg-[#262626] border border-[#2c2c2c] hover:border-[#3e3e3e] text-[#888888] hover:text-white flex items-center justify-center transition-colors cursor-pointer shrink-0 shadow-xs"
+                                  className="w-5 h-5 rounded-[4px] bg-[#181818] hover:bg-[#262626] border border-[#2c2c2c] hover:border-[#3e3e3e] text-[#a1a1a1] hover:text-white flex items-center justify-center transition-colors cursor-pointer shrink-0 shadow-xs"
                                 >
                                   <ArrowRight className="w-3.5 h-3.5" />
                                 </button>
                               </div>
                             ) : isNull ? (
-                              <span className="text-[#555555] italic text-[12.5px]">null</span>
+                              <span className="font-sans text-[#555555] italic text-[13px]">null</span>
                             ) : isBool ? (
-                              <span className="font-sans text-[13px] text-[#cccccc]">
+                              <span className="font-sans text-[13.5px] text-[#cccccc]">
                                 {String(val)}
                               </span>
                             ) : isObj ? (
-                              <span className="text-pink-400 flex items-center gap-1 text-[12.5px]">
-                                <Code2 className="w-3.5 h-3.5" />
-                                {`{ ... }`}
+                              <span className="font-sans text-[13.5px] text-[#cccccc] truncate block w-full">
+                                {JSON.stringify(val)}
                               </span>
                             ) : (
-                              <span className="truncate block w-full">{strVal}</span>
+                              <span className="font-sans text-[13.5px] truncate block w-full">{strVal}</span>
                             )}
                           </td>
                         );

@@ -255,7 +255,9 @@ impl DatabaseEngine for MysqlDatabaseEngine {
                 }
                 Value::Bool(b) => { query = query.bind(b); }
                 Value::Null => { query = query.bind(Option::<String>::None); }
-                _ => { query = query.bind(param.to_string()); }
+                Value::Object(_) | Value::Array(_) => {
+                    query = query.bind(sqlx::types::Json(param));
+                }
             }
         }
 
