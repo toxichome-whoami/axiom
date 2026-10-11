@@ -21,6 +21,7 @@ import {
   LayoutGrid,
 } from 'lucide-react';
 import { TableInfoApi, ColumnInfoApi, ForeignKeyInfoApi } from '../../types';
+import { formatColumnType } from './format';
 
 export interface SchemaViewProps {
   selectedDb: string;
@@ -36,6 +37,9 @@ export interface SchemaViewProps {
   transform: { x: number; y: number; scale: number };
   setTransform: React.Dispatch<React.SetStateAction<{ x: number; y: number; scale: number }>>;
   autoLayoutTrigger?: number;
+  onEditTable?: (tableName: string) => void;
+  onEditColumn?: (tableName: string, col: ColumnInfoApi) => void;
+  onViewInTableEditor?: (tableName: string) => void;
 }
 
 interface TablePosition {
@@ -59,8 +63,51 @@ export function SchemaView({
   transform,
   setTransform,
   autoLayoutTrigger,
+  onEditTable,
+  onEditColumn,
+  onViewInTableEditor,
 }: SchemaViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // Table node header action menu state
+  const [activeTableMenu, setActiveTableMenu] = useState<{
+    tableName: string;
+    rect: { top: number; left: number; width: number; height: number };
+  } | null>(null);
+  const tableMenuRef = useRef<HTMLDivElement>(null);
+
+  // Column row action menu state
+  const [activeColumnMenu, setActiveColumnMenu] = useState<{
+    tableName: string;
+    column: ColumnInfoApi;
+    rect: { top: number; left: number; width: number; height: number };
+  } | null>(null);
+  const columnMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!activeTableMenu && !activeColumnMenu) return;
+    const handleOutside = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (tableMenuRef.current && !tableMenuRef.current.contains(target)) {
+        setActiveTableMenu(null);
+      }
+      if (columnMenuRef.current && !columnMenuRef.current.contains(target)) {
+        setActiveColumnMenu(null);
+      }
+    };
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setActiveTableMenu(null);
+        setActiveColumnMenu(null);
+      }
+    };
+    document.addEventListener('mousedown', handleOutside);
+    window.addEventListener('keydown', handleKey);
+    return () => {
+      document.removeEventListener('mousedown', handleOutside);
+      window.removeEventListener('keydown', handleKey);
+    };
+  }, [activeTableMenu, activeColumnMenu]);
 
   // Canvas Viewport transform: pan state
   const [isPanning, setIsPanning] = useState(false);
@@ -622,10 +669,19 @@ export function SchemaView({
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation();
-                    onSelectTable(t.name);
+                    const r = e.currentTarget.getBoundingClientRect();
+                    setActiveTableMenu((prev) =>
+                      prev?.tableName === t.name
+                        ? null
+                        : {
+                            tableName: t.name,
+                            rect: { top: r.top, left: r.left, width: r.width, height: r.height },
+                          }
+                    );
                   }}
                   onMouseDown={(e) => e.stopPropagation()}
-                  className="w-6 h-6 flex items-center justify-center text-[#71717a] hover:text-white rounded-[5px] hover:bg-[#1f1f23] transition-colors"
+                  title={`${t.name} actions`}
+                  className="w-6 h-6 flex items-center justify-center text-[#71717a] hover:text-white rounded-[5px] hover:bg-[#1f1f23] transition-colors cursor-pointer"
                 >
                   <MoreVertical className="w-3.5 h-3.5" />
                 </button>
@@ -639,7 +695,14 @@ export function SchemaView({
                   return (
                     <div
                       key={col.name}
-                      className="h-8 px-3 flex items-center justify-between gap-3 text-[12.5px] hover:bg-[#1e1e22] transition-colors group"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (onEditColumn) {
+                          onEditColumn(t.name, col);
+                        }
+                      }}
+                      className="h-8 px-3 flex items-center justify-between gap-3 text-[12.5px] hover:bg-[#1e1e22] transition-colors group cursor-pointer"
+                      title={`Edit column ${col.name}`}
                     >
                       {/* Left: Column Constraint Icon + Column Name */}
                       <div className="flex items-center gap-2.5 min-w-0 flex-1">
@@ -667,9 +730,45 @@ export function SchemaView({
                         </span>
                       </div>
 
-                      {/* Right: Data Type */}
-                      <div className="shrink-0 flex items-center gap-1 font-mono text-[11px] text-[#71717a]">
-                        <span>{(col.type || 'text').toLowerCase()}</span>
+                      {/* Right: Data Type (Default) / 3-dots menu button on hover */}
+                      <div className="shrink-0 flex items-center justify-end relative h-full">
+                        {/* Data Type - Hidden on hover or when this column's menu is active */}
+                        <div
+                          className={`font-mono text-[11px] text-[#71717a] transition-opacity duration-150 ${
+                            activeColumnMenu?.tableName === t.name && activeColumnMenu?.column.name === col.name
+                              ? 'hidden'
+                              : 'group-hover:hidden'
+                          }`}
+                        >
+                          <span>{formatColumnType(col.type)}</span>
+                        </div>
+
+                        {/* 3-dots button - Revealed on hover or when this column's menu is active */}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const r = e.currentTarget.getBoundingClientRect();
+                            setActiveColumnMenu((prev) =>
+                              prev?.tableName === t.name && prev?.column.name === col.name
+                                ? null
+                                : {
+                                    tableName: t.name,
+                                    column: col,
+                                    rect: { top: r.top, left: r.left, width: r.width, height: r.height },
+                                  }
+                            );
+                          }}
+                          onMouseDown={(e) => e.stopPropagation()}
+                          title={`Column actions`}
+                          className={`w-6 h-6 flex items-center justify-center text-[#8e8e93] hover:text-white rounded-[4px] hover:bg-[#232328] transition-colors cursor-pointer ${
+                            activeColumnMenu?.tableName === t.name && activeColumnMenu?.column.name === col.name
+                              ? 'flex bg-[#232328] text-white'
+                              : 'hidden group-hover:flex'
+                          }`}
+                        >
+                          <MoreVertical className="w-3.5 h-3.5" />
+                        </button>
                       </div>
                     </div>
                   );
@@ -764,6 +863,171 @@ export function SchemaView({
           </span>
         </div>
       </div>
+
+      {/* ─── Node Header Action Menu Popup (Matching screenshot) ─── */}
+      {activeTableMenu && (() => {
+        const menuWidth = 175;
+        const menuHeight = 170;
+        const top = Math.min(window.innerHeight - menuHeight - 12, activeTableMenu.rect.top + activeTableMenu.rect.height + 4);
+        const left = Math.max(8, Math.min(window.innerWidth - menuWidth - 12, activeTableMenu.rect.left - menuWidth + activeTableMenu.rect.width));
+        const targetTable = activeTableMenu.tableName;
+
+        return (
+          <div
+            ref={tableMenuRef}
+            style={{ top: `${top}px`, left: `${left}px`, width: `${menuWidth}px` }}
+            className="fixed z-50 rounded-[8px] border border-[#26262a] bg-[#141416] shadow-[0_16px_36px_rgba(0,0,0,0.95)] p-1 flex flex-col font-sans select-none animate-in fade-in zoom-in-95 duration-75 text-[13px]"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            {/* 1. Edit table */}
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTableMenu(null);
+                if (onEditTable) {
+                  onEditTable(targetTable);
+                } else {
+                  onSelectTable(targetTable);
+                }
+              }}
+              className="w-full flex items-center px-2.5 py-1.5 rounded-[5px] text-[#e4e4e7] hover:text-white hover:bg-[#202024] transition-colors cursor-pointer text-left font-normal"
+            >
+              <span>Edit table</span>
+            </button>
+
+            {/* 2. View in Table Editor */}
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTableMenu(null);
+                if (onViewInTableEditor) {
+                  onViewInTableEditor(targetTable);
+                } else {
+                  onSelectTable(targetTable);
+                }
+              }}
+              className="w-full flex items-center px-2.5 py-1.5 rounded-[5px] text-[#e4e4e7] hover:text-white hover:bg-[#202024] transition-colors cursor-pointer text-left font-normal"
+            >
+              <span>View in Table Editor</span>
+            </button>
+
+            {/* Separator line between View and Copy actions */}
+            <div className="-mx-1 border-t border-[#232326] my-1" />
+
+            {/* 3. Copy name */}
+            <button
+              type="button"
+              onClick={() => {
+                navigator.clipboard.writeText(targetTable);
+                handleCopy(targetTable, `table_name_${targetTable}`);
+                setActiveTableMenu(null);
+              }}
+              className="w-full flex items-center px-2.5 py-1.5 rounded-[5px] text-[#e4e4e7] hover:text-white hover:bg-[#202024] transition-colors cursor-pointer text-left font-normal"
+            >
+              <span>{copiedKey === `table_name_${targetTable}` ? 'Copied name!' : 'Copy name'}</span>
+            </button>
+
+            {/* 4. Copy as SQL */}
+            <button
+              type="button"
+              onClick={() => {
+                const tData = allDbTablesSchema[targetTable] || { columns: [], foreign_keys: [] };
+                let ddl = `CREATE TABLE ${targetTable} (\n`;
+                const colLines = (tData.columns || []).map((c) => {
+                  let line = `  ${c.name} ${c.type}`;
+                  if (c.primary_key) line += ' PRIMARY KEY';
+                  if (!c.nullable) line += ' NOT NULL';
+                  return line;
+                });
+                if (tData.foreign_keys && tData.foreign_keys.length > 0) {
+                  tData.foreign_keys.forEach((fk) => {
+                    colLines.push(`  CONSTRAINT fk_${fk.column} FOREIGN KEY (${fk.column}) REFERENCES ${fk.referenced_table} (${fk.referenced_column})`);
+                  });
+                }
+                ddl += colLines.join(',\n') + '\n);';
+                navigator.clipboard.writeText(ddl);
+                handleCopy(ddl, `table_sql_${targetTable}`);
+                setActiveTableMenu(null);
+              }}
+              className="w-full flex items-center px-2.5 py-1.5 rounded-[5px] text-[#e4e4e7] hover:text-white hover:bg-[#202024] transition-colors cursor-pointer text-left font-normal"
+            >
+              <span>{copiedKey === `table_sql_${targetTable}` ? 'Copied SQL!' : 'Copy as SQL'}</span>
+            </button>
+
+            {/* 5. Copy as Markdown */}
+            <button
+              type="button"
+              onClick={() => {
+                const tData = allDbTablesSchema[targetTable] || { columns: [], foreign_keys: [] };
+                let md = `## Table \`${targetTable}\`\n\n`;
+                md += `| Column | Type | Nullable | Primary Key | Default |\n`;
+                md += `| :--- | :--- | :--- | :--- | :--- |\n`;
+                (tData.columns || []).forEach((c) => {
+                  md += `| \`${c.name}\` | \`${c.type}\` | ${c.nullable ? 'Yes' : 'No'} | ${c.primary_key ? 'Yes' : 'No'} | ${c.default_value ?? '-'} |\n`;
+                });
+                if (tData.foreign_keys && tData.foreign_keys.length > 0) {
+                  md += `\n**Foreign Keys:**\n\n`;
+                  tData.foreign_keys.forEach((fk) => {
+                    md += `- \`${fk.column}\` -> \`${fk.referenced_table}(${fk.referenced_column})\`\n`;
+                  });
+                }
+                navigator.clipboard.writeText(md.trim());
+                handleCopy(md.trim(), `table_md_${targetTable}`);
+                setActiveTableMenu(null);
+              }}
+              className="w-full flex items-center px-2.5 py-1.5 rounded-[5px] text-[#e4e4e7] hover:text-white hover:bg-[#202024] transition-colors cursor-pointer text-left font-normal"
+            >
+              <span>{copiedKey === `table_md_${targetTable}` ? 'Copied Markdown!' : 'Copy as Markdown'}</span>
+            </button>
+          </div>
+        );
+      })()}
+
+      {/* ─── Column Row Action Menu Popup ─── */}
+      {activeColumnMenu && (() => {
+        const menuWidth = 160;
+        const menuHeight = 85;
+        const top = Math.min(window.innerHeight - menuHeight - 12, activeColumnMenu.rect.top + activeColumnMenu.rect.height + 4);
+        const left = Math.max(8, Math.min(window.innerWidth - menuWidth - 12, activeColumnMenu.rect.left - menuWidth + activeColumnMenu.rect.width));
+        const { tableName, column } = activeColumnMenu;
+        const colCopyKey = `col_name_${tableName}_${column.name}`;
+
+        return (
+          <div
+            ref={columnMenuRef}
+            style={{ top: `${top}px`, left: `${left}px`, width: `${menuWidth}px` }}
+            className="fixed z-50 rounded-[8px] border border-[#26262a] bg-[#141416] shadow-[0_16px_36px_rgba(0,0,0,0.95)] p-1 flex flex-col font-sans select-none animate-in fade-in zoom-in-95 duration-75 text-[13px]"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            {/* 1. Edit column */}
+            <button
+              type="button"
+              onClick={() => {
+                setActiveColumnMenu(null);
+                if (onEditColumn) {
+                  onEditColumn(tableName, column);
+                }
+              }}
+              className="w-full flex items-center px-2.5 py-1.5 rounded-[5px] text-[#e4e4e7] hover:text-white hover:bg-[#202024] transition-colors cursor-pointer text-left font-normal"
+            >
+              <span>Edit column</span>
+            </button>
+
+            {/* 2. Copy column name */}
+            <button
+              type="button"
+              onClick={() => {
+                navigator.clipboard.writeText(column.name);
+                handleCopy(column.name, colCopyKey);
+                setActiveColumnMenu(null);
+              }}
+              className="w-full flex items-center px-2.5 py-1.5 rounded-[5px] text-[#e4e4e7] hover:text-white hover:bg-[#202024] transition-colors cursor-pointer text-left font-normal"
+            >
+              <span>{copiedKey === colCopyKey ? 'Copied name!' : 'Copy name'}</span>
+            </button>
+          </div>
+        );
+      })()}
     </div>
   );
 }

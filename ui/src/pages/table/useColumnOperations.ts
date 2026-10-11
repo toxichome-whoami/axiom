@@ -4,9 +4,10 @@
  * Key deps: react, ../../api/client, ../../types
  */
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { api, DatabaseRecordApi } from '../../api/client';
 import { ColumnInfoApi, ForeignKeyInfoApi, TableInfoApi } from '../../types';
+import { mapSqlTypeToFormValue } from './format';
 
 export interface UseColumnOperationsProps {
   selectedDb: string;
@@ -59,11 +60,29 @@ export function useColumnOperations({
   const [draftFkOnDelete, setDraftFkOnDelete] = useState<'NO ACTION' | 'CASCADE' | 'RESTRICT' | 'SET NULL' | 'SET DEFAULT'>('NO ACTION');
   const [isDiscardFkConfirmOpen, setIsDiscardFkConfirmOpen] = useState(false);
 
+  // Snapshot of column values upon opening edit modal (for precise dirty-checking)
+  const [initialColumnState, setInitialColumnState] = useState<{
+    name: string;
+    type: string;
+    isArray: boolean;
+    description: string;
+    defaultValue: string;
+    nullable: boolean;
+    isUnique: boolean;
+    isPk: boolean;
+    check: string;
+    fkSchema: string;
+    fkTable: string;
+    fkColumn: string;
+    fkOnUpdate: string;
+    fkOnDelete: string;
+  } | null>(null);
+
   // Delete column confirmation
   const [deleteColumnTarget, setDeleteColumnTarget] = useState<ColumnInfoApi | null>(null);
   const [isDeletingColumn, setIsDeletingColumn] = useState(false);
 
-  const handleSelectFkTargetTable = useCallback(async (tbl: string) => {
+  const handleSelectFkTargetTable = useCallback(async (tbl: string, overrideTargetCol?: string) => {
     setDraftFkTable(tbl);
     if (!selectedDb || !tbl) return;
     try {
@@ -76,22 +95,24 @@ export function useColumnOperations({
       }
       const targetCols = schemaCacheRef.current[tbl]?.columns || [];
       const pk = targetCols.find((c) => c.primary_key);
-      const defaultCol = pk ? pk.name : targetCols[0]?.name || '';
-      setDraftFkColumn(defaultCol);
-      setDraftFkPairs([{ sourceCol: newColName || '', targetCol: defaultCol }]);
+      const chosenCol = overrideTargetCol || (pk ? pk.name : targetCols[0]?.name || 'id');
+      setDraftFkColumn(chosenCol);
+      setDraftFkPairs([{ sourceCol: newColName || '', targetCol: chosenCol }]);
     } catch {
       // Fallback
     }
   }, [selectedDb, newColName, schemaCacheRef]);
 
   const handleRequestCloseFkModal = useCallback(() => {
+    const finalTargetCol = draftFkPairs[0]?.targetCol || draftFkColumn;
+    const origTargetCol = newColFkColumn || (newColFkTable ? 'id' : '');
     const hasUnsavedChanges =
       draftFkTable !== newColFkTable ||
-      draftFkColumn !== newColFkColumn ||
+      (finalTargetCol !== origTargetCol && (finalTargetCol !== '' || origTargetCol !== '')) ||
       draftFkOnUpdate !== newColFkOnUpdate ||
       draftFkOnDelete !== newColFkOnDelete;
 
-    if (hasUnsavedChanges && (draftFkTable || draftFkColumn)) {
+    if (hasUnsavedChanges && (draftFkTable || finalTargetCol)) {
       setIsDiscardFkConfirmOpen(true);
     } else {
       setIsFkModalOpen(false);
@@ -99,6 +120,7 @@ export function useColumnOperations({
   }, [
     draftFkTable,
     draftFkColumn,
+    draftFkPairs,
     draftFkOnUpdate,
     draftFkOnDelete,
     newColFkTable,
@@ -109,6 +131,7 @@ export function useColumnOperations({
 
   const resetColumnForm = () => {
     setEditingColumn(null);
+    setInitialColumnState(null);
     setNewColName('');
     setNewColDescription('');
     setNewColType('text');
@@ -127,6 +150,117 @@ export function useColumnOperations({
     setNewColFkOnDelete('NO ACTION');
     setCreateColumnError(null);
   };
+
+  const openEditColumn = useCallback((col: ColumnInfoApi, fk?: ForeignKeyInfoApi) => {
+    setEditingColumn(col);
+    const formType = mapSqlTypeToFormValue(col.type);
+    const formNullable = col.nullable ?? true;
+    const formDefault = col.default_value ?? '';
+    const formPk = !!col.primary_key;
+    const formFkTable = fk?.referenced_table || '';
+    const formFkColumn = fk?.referenced_column || '';
+
+    setNewColName(col.name);
+    setNewColType(formType);
+    setNewColIsArray(false);
+    setNewColDescription('');
+    setNewColDefault(formDefault);
+    setNewColNullable(formNullable);
+    setNewColIsUnique(false);
+    setNewColIsPk(formPk);
+    setNewColCheck('');
+    setNewColIsSensitive(false);
+    setNewColFkSchema('');
+    setNewColFkTable(formFkTable);
+    setNewColFkColumn(formFkColumn);
+    setNewColFkOnUpdate('NO ACTION');
+    setNewColFkOnDelete('NO ACTION');
+
+    setDraftFkSchema('');
+    setDraftFkTable(formFkTable);
+    setDraftFkColumn(formFkColumn);
+    setDraftFkPairs([{ sourceCol: col.name, targetCol: formFkColumn || 'id' }]);
+    setDraftFkOnUpdate('NO ACTION');
+    setDraftFkOnDelete('NO ACTION');
+
+    setInitialColumnState({
+      name: col.name,
+      type: formType,
+      isArray: false,
+      description: '',
+      defaultValue: formDefault,
+      nullable: formNullable,
+      isUnique: false,
+      isPk: formPk,
+      check: '',
+      fkSchema: '',
+      fkTable: formFkTable,
+      fkColumn: formFkColumn,
+      fkOnUpdate: 'NO ACTION',
+      fkOnDelete: 'NO ACTION',
+    });
+
+    setCreateColumnError(null);
+    setIsAddColumnOpen(true);
+  }, []);
+
+  const openAddColumn = useCallback(() => {
+    resetColumnForm();
+    setInitialColumnState(null);
+    setIsAddColumnOpen(true);
+  }, []);
+
+  const hasColumnChanges = useMemo(() => {
+    if (!editingColumn || !initialColumnState) {
+      return newColName.trim().length > 0;
+    }
+
+    const nameChanged = newColName.trim() !== initialColumnState.name;
+    const typeChanged = newColType !== initialColumnState.type;
+    const isArrayChanged = newColIsArray !== initialColumnState.isArray;
+    const descChanged = newColDescription.trim() !== initialColumnState.description;
+    const defaultChanged = newColDefault.trim() !== initialColumnState.defaultValue.trim();
+    const nullableChanged = newColNullable !== initialColumnState.nullable;
+    const uniqueChanged = newColIsUnique !== initialColumnState.isUnique;
+    const pkChanged = newColIsPk !== initialColumnState.isPk;
+    const checkChanged = newColCheck.trim() !== initialColumnState.check;
+    const fkTableChanged = (newColFkTable || '') !== initialColumnState.fkTable;
+    const fkColChanged = (newColFkColumn || '') !== initialColumnState.fkColumn;
+    const fkOnUpdateChanged = newColFkOnUpdate !== initialColumnState.fkOnUpdate;
+    const fkOnDeleteChanged = newColFkOnDelete !== initialColumnState.fkOnDelete;
+
+    return (
+      nameChanged ||
+      typeChanged ||
+      isArrayChanged ||
+      descChanged ||
+      defaultChanged ||
+      nullableChanged ||
+      uniqueChanged ||
+      pkChanged ||
+      checkChanged ||
+      fkTableChanged ||
+      fkColChanged ||
+      fkOnUpdateChanged ||
+      fkOnDeleteChanged
+    );
+  }, [
+    editingColumn,
+    initialColumnState,
+    newColName,
+    newColType,
+    newColIsArray,
+    newColDescription,
+    newColDefault,
+    newColNullable,
+    newColIsUnique,
+    newColIsPk,
+    newColCheck,
+    newColFkTable,
+    newColFkColumn,
+    newColFkOnUpdate,
+    newColFkOnDelete,
+  ]);
 
   const handleSaveColumn = async () => {
     if (!selectedDb || !selectedTable || !newColName.trim()) return;
@@ -323,5 +457,8 @@ export function useColumnOperations({
     handleSaveColumn,
     handleDeleteColumn,
     resetColumnForm,
+    openEditColumn,
+    openAddColumn,
+    hasColumnChanges,
   };
 }

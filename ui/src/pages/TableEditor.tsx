@@ -10,6 +10,7 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { SlideOver } from '../components/ui/SlideOver';
 import { ColumnInfoApi } from '../types';
+import { api } from '../api/client';
 import {
   mapSqlTypeToFormValue,
   exportTableData,
@@ -30,6 +31,7 @@ import {
 } from './table/ForeignKeyModals';
 import { RowInspectorSlideOver } from './table/RowInspectorSlideOver';
 import { ColumnSlideOver } from './table/ColumnSlideOver';
+import { TableEditSlideOver } from './table/TableEditSlideOver';
 import { TableSidebar } from './table/TableSidebar';
 import { TableToolbar } from './table/TableToolbar';
 import { TableGridView } from './table/TableGridView';
@@ -312,6 +314,9 @@ export function TableEditor() {
     handleSaveColumn,
     handleDeleteColumn,
     resetColumnForm,
+    openEditColumn,
+    openAddColumn,
+    hasColumnChanges,
   } = useColumnOperations({
     selectedDb,
     selectedTable,
@@ -352,6 +357,10 @@ export function TableEditor() {
   const [schemaSearchTerm, setSchemaSearchTerm] = useState('');
   const [schemaTransform, setSchemaTransform] = useState({ x: 60, y: 60, scale: 0.95 });
   const [schemaAutoLayoutTrigger, setSchemaAutoLayoutTrigger] = useState(0);
+
+  // Table Edit SlideOver state
+  const [isTableEditOpen, setIsTableEditOpen] = useState(false);
+  const [editingTableTarget, setEditingTableTarget] = useState<string>('');
 
   // Full SQL DDL generator for Schema view Copy as SQL
   const fullSqlDdl = useMemo(() => {
@@ -520,48 +529,6 @@ export function TableEditor() {
     });
   }, [isInsertModeInPanel, activeRow, rowEditValues, columns]);
 
-  // Track if any changes have been made in Update Column panel
-  const hasColumnChanges = useMemo(() => {
-    if (!editingColumn) {
-      return newColName.trim().length > 0;
-    }
-    const nameChanged = newColName.trim() !== editingColumn.name;
-    const typeChanged = newColType !== mapSqlTypeToFormValue(editingColumn.type);
-    const nullableChanged = newColNullable !== (editingColumn.nullable ?? true);
-    const defaultChanged = newColDefault.trim().length > 0;
-    const descriptionChanged = newColDescription.trim().length > 0;
-    const arrayChanged = newColIsArray;
-    const checkChanged = newColCheck.trim().length > 0;
-
-    const existingFk = foreignKeys.find((f) => f.column === editingColumn.name);
-    const fkChanged =
-      (newColFkTable || '') !== (existingFk?.referenced_table || '') ||
-      (newColFkColumn || '') !== (existingFk?.referenced_column || '');
-
-    return (
-      nameChanged ||
-      typeChanged ||
-      nullableChanged ||
-      defaultChanged ||
-      descriptionChanged ||
-      arrayChanged ||
-      checkChanged ||
-      fkChanged
-    );
-  }, [
-    editingColumn,
-    newColName,
-    newColType,
-    newColNullable,
-    newColDefault,
-    newColDescription,
-    newColIsArray,
-    newColCheck,
-    newColFkTable,
-    newColFkColumn,
-    foreignKeys,
-  ]);
-
   // Track if user has modified anything in the Expanded Cell Editor
   const hasExpandedCellChanges = useMemo(() => {
     if (!expandedInlineCell) return false;
@@ -625,24 +592,7 @@ export function TableEditor() {
             setIsInsertModeInPanel(true);
             setIsDetailsOpen(true);
           }}
-          onOpenAddColumn={() => {
-            setEditingColumn(null);
-            setNewColName('');
-            setNewColType('varchar(255)');
-            setNewColNullable(true);
-            setNewColDefault('');
-            setNewColFkSchema('');
-            setNewColFkTable('');
-            setNewColFkColumn('');
-            setDraftFkSchema('');
-            setDraftFkTable('');
-            setDraftFkColumn('');
-            setDraftFkPairs([{ sourceCol: '', targetCol: '' }]);
-            setDraftFkOnUpdate('NO ACTION');
-            setDraftFkOnDelete('NO ACTION');
-            setCreateColumnError(null);
-            setIsAddColumnOpen(true);
-          }}
+          onOpenAddColumn={openAddColumn}
           activeFilter={activeFilter}
           setActiveFilter={setActiveFilter}
           filterCol={filterCol}
@@ -786,21 +736,7 @@ export function TableEditor() {
             activeColumnMenu={activeColumnMenu}
             onOpenColumnMenu={(menu) => setActiveColumnMenu(menu)}
             onResizeStart={(e, colName, width) => handleResizeStart(e, colName, width)}
-            onOpenAddColumn={() => {
-              setEditingColumn(null);
-              setNewColName('');
-              setNewColType('varchar(255)');
-              setNewColNullable(true);
-              setNewColDefault('');
-              setNewColFkSchema('');
-              setNewColFkTable('');
-              setNewColFkColumn('');
-              setDraftFkPairs([{ sourceCol: '', targetCol: '' }]);
-              setNewColFkOnUpdate('NO ACTION');
-              setNewColFkOnDelete('NO ACTION');
-              setCreateColumnError(null);
-              setIsAddColumnOpen(true);
-            }}
+            onOpenAddColumn={openAddColumn}
             onOpenFkPicker={(target) => setFkPickerTarget(target)}
             onOpenFkPreview={(target) => setFkPreviewTarget(target)}
             viewMode={viewMode}
@@ -837,6 +773,22 @@ export function TableEditor() {
             transform={schemaTransform}
             setTransform={setSchemaTransform}
             autoLayoutTrigger={schemaAutoLayoutTrigger}
+            onEditTable={(tableName) => {
+              setEditingTableTarget(tableName);
+              setSelectedTable(tableName);
+              setIsTableEditOpen(true);
+            }}
+            onEditColumn={(tableName, col) => {
+              setSelectedTable(tableName);
+              const tableFks = allDbTablesSchema[tableName]?.foreign_keys || foreignKeys;
+              const fk = tableFks.find((f) => f.column === col.name);
+              openEditColumn(col, fk);
+            }}
+            onViewInTableEditor={(tableName) => {
+              setSelectedTable(tableName);
+              setViewMode('grid');
+              setGridSubTab('data');
+            }}
           />
         )}
 
@@ -1151,7 +1103,7 @@ export function TableEditor() {
         editingColumn={editingColumn}
         selectedTable={selectedTable}
         tables={tables}
-        schemaCache={schemaCacheRef.current}
+        schemaCache={{ ...allDbTablesSchema, ...schemaCacheRef.current }}
         createColumnError={createColumnError}
         newColName={newColName}
         setNewColName={setNewColName}
@@ -1265,23 +1217,8 @@ export function TableEditor() {
             setTimeout(() => setCopiedKey(null), 2000);
           }}
           onOpenEditColumn={(col) => {
-            setEditingColumn(col);
-            setNewColName(col.name);
-            setNewColType(mapSqlTypeToFormValue(col.type));
-            setNewColNullable(col.nullable ?? true);
-            setNewColDefault('');
-            setNewColIsPk(!!col.primary_key);
-            setNewColIsUnique(false);
             const fk = foreignKeys.find((f) => f.column === col.name);
-            if (fk) {
-              setNewColFkTable(fk.referenced_table);
-              setNewColFkColumn(fk.referenced_column);
-            } else {
-              setNewColFkTable('');
-              setNewColFkColumn('');
-            }
-            setCreateColumnError(null);
-            setIsAddColumnOpen(true);
+            openEditColumn(col, fk);
           }}
           onResetWidth={(colName) => {
             setColumnWidths((prev) => {
@@ -1339,6 +1276,96 @@ export function TableEditor() {
         onConfirm={handleDeleteColumn}
         onClose={() => setDeleteColumnTarget(null)}
       />
+
+      {/* ─── Supabase Studio-style Update Table SlideOver ─── */}
+      {isTableEditOpen && editingTableTarget && (
+        <TableEditSlideOver
+          isOpen={isTableEditOpen}
+          onClose={() => {
+            setIsTableEditOpen(false);
+            setEditingTableTarget('');
+          }}
+          selectedDb={selectedDb}
+          tableName={editingTableTarget}
+          tables={tables}
+          columns={allDbTablesSchema[editingTableTarget]?.columns || columns}
+          foreignKeys={allDbTablesSchema[editingTableTarget]?.foreign_keys || foreignKeys}
+          onSave={async ({ newName, columns: updatedCols, foreignKeys: updatedFks }) => {
+            const oldName = editingTableTarget;
+            const currentTableData = allDbTablesSchema[oldName] || { columns: [], foreign_keys: [] };
+            const existingCols = currentTableData.columns || [];
+            const existingFks = currentTableData.foreign_keys || [];
+
+            // Build DDL statements
+            const statements: string[] = [];
+
+            // 1. Table rename if name changed
+            if (newName !== oldName) {
+              statements.push(`ALTER TABLE "${oldName}" RENAME TO "${newName}";`);
+            }
+
+            const activeTableName = newName !== oldName ? newName : oldName;
+
+            // 2. Identify dropped columns
+            const updatedColOriginalNames = new Set(
+              updatedCols.map((c) => c.originalName).filter(Boolean)
+            );
+            for (const ec of existingCols) {
+              if (!updatedColOriginalNames.has(ec.name)) {
+                statements.push(`ALTER TABLE "${activeTableName}" DROP COLUMN "${ec.name}";`);
+              }
+            }
+
+            // 3. Identify added columns
+            for (const uc of updatedCols) {
+              if (!uc.originalName) {
+                let colDef = `"${uc.name}" ${uc.type}`;
+                if (uc.primaryKey) colDef += ' PRIMARY KEY';
+                if (!uc.nullable) colDef += ' NOT NULL';
+                if (uc.defaultValue && uc.defaultValue.toUpperCase() !== 'NULL') {
+                  colDef += ` DEFAULT ${uc.defaultValue}`;
+                }
+                statements.push(`ALTER TABLE "${activeTableName}" ADD COLUMN ${colDef};`);
+              }
+            }
+
+            // 4. Identify dropped, modified, or added foreign keys
+            const existingFkMap = new Map(existingFks.map((f) => [f.column, f]));
+            const updatedFkMap = new Map(updatedFks.map((f) => [f.column, f]));
+
+            // Dropped or modified FKs: drop old constraint
+            for (const ef of existingFks) {
+              const uf = updatedFkMap.get(ef.column);
+              if (!uf || uf.referenced_table !== ef.referenced_table || uf.referenced_column !== ef.referenced_column) {
+                statements.push(
+                  `ALTER TABLE "${activeTableName}" DROP CONSTRAINT IF EXISTS "${oldName}_${ef.column}_fkey";`
+                );
+              }
+            }
+
+            // Added or modified FKs: add constraint
+            for (const uf of updatedFks) {
+              const ef = existingFkMap.get(uf.column);
+              if (!ef || ef.referenced_table !== uf.referenced_table || ef.referenced_column !== uf.referenced_column) {
+                const constraintName = `${activeTableName}_${uf.column}_fkey`;
+                statements.push(
+                  `ALTER TABLE "${activeTableName}" ADD CONSTRAINT "${constraintName}" FOREIGN KEY ("${uf.column}") REFERENCES "${uf.referenced_table}" ("${uf.referenced_column}");`
+                );
+              }
+            }
+
+            // 5. Execute DDL statements
+            if (statements.length > 0) {
+              const fullDdl = statements.join('\n');
+              await api.executeSqlQuery(selectedDb, fullDdl);
+            }
+
+            // Refresh table schema
+            await fetchTables(selectedDb);
+            await loadTableData({ reloadSchema: true });
+          }}
+        />
+      )}
     </div>
   );
 }

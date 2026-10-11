@@ -79,7 +79,7 @@ export interface ColumnSlideOverProps {
   isDiscardFkConfirmOpen: boolean;
   setIsDiscardFkConfirmOpen: (val: boolean) => void;
   handleRequestCloseFkModal: () => void;
-  handleSelectFkTargetTable: (tableName: string) => void;
+  handleSelectFkTargetTable: (tableName: string, overrideTargetCol?: string) => void;
 
   isCreatingColumn: boolean;
   hasColumnChanges: boolean;
@@ -351,6 +351,9 @@ export function ColumnSlideOver({
                             }]);
                             setDraftFkOnUpdate(newColFkOnUpdate);
                             setDraftFkOnDelete(newColFkOnDelete);
+                            if (newColFkTable) {
+                              handleSelectFkTargetTable(newColFkTable, newColFkColumn);
+                            }
                             setIsFkModalOpen(true);
                           }}
                           className="text-[12px] text-blue-400 hover:text-blue-300 font-medium cursor-pointer"
@@ -471,12 +474,16 @@ export function ColumnSlideOver({
                 value={draftFkTable}
                 onChange={handleSelectFkTargetTable}
                 placeholder="Select a table to reference to"
-                options={tables
-                  .filter((t) => t.name !== selectedTable)
-                  .map((t) => ({
+                options={(() => {
+                  const opts = tables.map((t) => ({
                     value: t.name,
                     label: t.name,
-                  }))}
+                  }));
+                  if (draftFkTable && !opts.some((o) => o.value === draftFkTable)) {
+                    opts.unshift({ value: draftFkTable, label: draftFkTable });
+                  }
+                  return opts;
+                })()}
                 menuWidth="w-full"
               />
             </div>
@@ -521,7 +528,9 @@ export function ColumnSlideOver({
                     const targetCols = schemaCache[draftFkTable]?.columns || [];
                     const targetOptions = targetCols.length > 0
                       ? targetCols.map((c) => ({ value: c.name, label: c.name }))
-                      : [{ value: 'id', label: 'id' }];
+                      : (pair.targetCol || draftFkColumn
+                          ? [{ value: pair.targetCol || draftFkColumn, label: pair.targetCol || draftFkColumn }]
+                          : [{ value: 'id', label: 'id' }]);
 
                     return (
                       <div key={idx} className="flex items-center gap-2">
@@ -687,32 +696,54 @@ export function ColumnSlideOver({
             >
               Cancel
             </button>
-            <button
-              type="button"
-              disabled={!draftFkTable || (!draftFkColumn && !draftFkPairs[0]?.targetCol)}
-              onClick={() => {
-                const finalTargetCol = draftFkPairs[0]?.targetCol || draftFkColumn || 'id';
-                setNewColFkSchema(draftFkSchema);
-                setNewColFkTable(draftFkTable);
-                setNewColFkColumn(finalTargetCol);
-                setNewColFkOnUpdate(draftFkOnUpdate);
-                setNewColFkOnDelete(draftFkOnDelete);
-                setIsFkModalOpen(false);
-              }}
-              className="group relative flex shrink-0 items-center justify-center h-9 px-4 rounded-[8px] font-medium text-white shadow-xs outline-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed overflow-hidden ring-1 ring-[#1d4ed8] bg-[#2563eb] font-sans"
-            >
-              <span
-                aria-hidden="true"
-                className="pointer-events-none absolute inset-0 rounded-[inherit] bg-gradient-to-b from-[#3b82f6] to-[#2563eb] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2)]"
-              />
-              <span
-                aria-hidden="true"
-                className="pointer-events-none absolute inset-0 rounded-[inherit] bg-black opacity-0 group-hover:opacity-15 transition-opacity duration-200"
-              />
-              <span className="relative flex items-center gap-1.5 text-[14px] font-sans">
-                {newColFkTable ? 'Update relationship' : 'Save relationship'}
-              </span>
-            </button>
+            {(() => {
+              const finalTargetCol = draftFkPairs[0]?.targetCol || draftFkColumn || 'id';
+              const isTargetEmpty = !draftFkTable || (!draftFkColumn && !draftFkPairs[0]?.targetCol);
+              const hasFkChanged =
+                draftFkSchema !== newColFkSchema ||
+                draftFkTable !== newColFkTable ||
+                finalTargetCol !== newColFkColumn ||
+                draftFkOnUpdate !== newColFkOnUpdate ||
+                draftFkOnDelete !== newColFkOnDelete;
+
+              const isSaveDisabled = isTargetEmpty || !hasFkChanged;
+
+              return (
+                <button
+                  type="button"
+                  disabled={isSaveDisabled}
+                  onClick={() => {
+                    setNewColFkSchema(draftFkSchema);
+                    setNewColFkTable(draftFkTable);
+                    setNewColFkColumn(finalTargetCol);
+                    setNewColFkOnUpdate(draftFkOnUpdate);
+                    setNewColFkOnDelete(draftFkOnDelete);
+                    setIsFkModalOpen(false);
+                  }}
+                  className={`group relative flex shrink-0 items-center justify-center h-9 px-4 rounded-[8px] font-medium text-white shadow-xs outline-none transition-all font-sans ${
+                    isSaveDisabled
+                      ? 'opacity-40 cursor-not-allowed bg-[#222222] ring-1 ring-[#333333]'
+                      : 'cursor-pointer ring-1 ring-[#1d4ed8] bg-[#2563eb] overflow-hidden'
+                  }`}
+                >
+                  {!isSaveDisabled && (
+                    <>
+                      <span
+                        aria-hidden="true"
+                        className="pointer-events-none absolute inset-0 rounded-[inherit] bg-gradient-to-b from-[#3b82f6] to-[#2563eb] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2)]"
+                      />
+                      <span
+                        aria-hidden="true"
+                        className="pointer-events-none absolute inset-0 rounded-[inherit] bg-black opacity-0 group-hover:opacity-15 transition-opacity duration-200"
+                      />
+                    </>
+                  )}
+                  <span className="relative flex items-center gap-1.5 text-[14px] font-sans">
+                    {newColFkTable ? 'Update relationship' : 'Save relationship'}
+                  </span>
+                </button>
+              );
+            })()}
           </div>
         </div>
       </SlideOver>
