@@ -4269,13 +4269,13 @@ export function TableEditor() {
                               </button>
                             </div>
 
-                            {/* Interactive Column Resize Handle */}
+                            {/* Interactive Column Resize Handle (Centered over column border) */}
                             <div
                               onMouseDown={(e) => handleResizeStart(e, col.name, width)}
                               title="Drag to resize column"
-                              className="absolute right-0 top-0 bottom-0 w-2.5 cursor-col-resize group/resizer flex items-center justify-center select-none z-10 hover:bg-blue-500/20 active:bg-blue-500/40"
+                              className="absolute -right-1.5 top-0 bottom-0 w-3 cursor-col-resize group/resizer flex items-center justify-center select-none z-20 hover:bg-blue-500/10 active:bg-blue-500/25"
                             >
-                              <div className="w-[1.5px] h-full bg-transparent group-hover/resizer:bg-blue-500 transition-colors" />
+                              <div className="w-[2px] h-full bg-transparent group-hover/resizer:bg-blue-500 group-active/resizer:bg-blue-500 transition-colors" />
                             </div>
                           </th>
                         );
