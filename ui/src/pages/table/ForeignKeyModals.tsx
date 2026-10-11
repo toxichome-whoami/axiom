@@ -136,34 +136,34 @@ export function ForeignKeyRecordPreviewPopover({
         left: `${left}px`,
         width: `${popoverWidth}px`,
       }}
-      className="fixed z-50 rounded-[8px] border border-[#262626] bg-[#121212] shadow-[0_20px_50px_rgba(0,0,0,0.95)] p-3.5 flex flex-col font-sans overflow-hidden animate-in fade-in zoom-in-95 duration-100 select-text"
+      className="fixed z-50 rounded-[10px] border border-[#222222] bg-[#111111] shadow-[0_20px_50px_rgba(0,0,0,0.95)] px-[6px] py-3.5 flex flex-col font-sans overflow-hidden animate-in fade-in zoom-in-95 duration-100 select-text"
     >
-      <div className="text-[13px] text-[#9c9c9c] font-sans flex items-center gap-1">
+      <div className="text-[13px] text-[#a1a1a1] font-sans flex items-center gap-1.5 pb-1">
         <span>Referencing record from</span>
-        <span className="font-semibold text-white">{fk.referenced_table}:</span>
+        <span className="font-semibold text-white tracking-tight">{fk.referenced_table}:</span>
       </div>
 
-      <div className="border border-[#262626] rounded-[6px] overflow-hidden bg-[#0c0c0c] mt-2.5">
+      <div className="border border-[#222222] rounded-[8px] overflow-hidden bg-[#181818] mt-2 shadow-inner">
         {isLoading ? (
-          <div className="p-6 flex items-center justify-center gap-2 text-center text-[#888888] text-[12.5px]">
-            <RefreshCw className="w-3.5 h-3.5 animate-spin text-blue-400" />
+          <div className="p-6 flex items-center justify-center gap-2 text-center text-[#888888] text-[13px] font-sans">
+            <RefreshCw className="w-3.5 h-3.5 animate-spin text-[#888888]" />
             <span>Loading reference...</span>
           </div>
         ) : error ? (
-          <div className="p-4 text-center text-rose-400 text-[12px]">{error}</div>
+          <div className="p-4 text-center text-rose-400 text-[12.5px] font-sans">{error}</div>
         ) : (
           <div className="overflow-x-auto max-w-full">
-            <table className="table-auto min-w-full border-collapse text-left font-sans text-[13px]">
+            <table className="table-auto min-w-full border-collapse text-left font-sans text-[13.5px]">
               <thead>
-                <tr className="bg-[#141414] border-b border-[#262626] text-[#8c8c8c]">
+                <tr className="bg-[#141414] border-b border-[#222222] text-[#888888]">
                   {columns.map((col) => (
                     <th
                       key={col.name}
-                      className="px-3 py-1.5 font-medium whitespace-nowrap border-r border-[#262626] last:border-r-0 text-[12px]"
+                      className="px-3.5 py-2 font-medium whitespace-nowrap border-r border-[#222222] last:border-r-0 text-[12.5px]"
                     >
-                      <div className="flex items-center gap-1">
-                        <span>{col.name}</span>
-                        {col.primary_key && <Key className="w-2.5 h-2.5 text-amber-400" />}
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[#999999]">{col.name}</span>
+                        {col.primary_key && <Key className="w-3 h-3 text-amber-400" />}
                       </div>
                     </th>
                   ))}
@@ -171,7 +171,7 @@ export function ForeignKeyRecordPreviewPopover({
               </thead>
               <tbody>
                 {hasRecord ? (
-                  <tr className="hover:bg-[#161616]/70 transition-colors">
+                  <tr className="hover:bg-[#1c1c1c] transition-colors">
                     {columns.map((col) => {
                       const val = row[col.name];
                       const isNull = val === null || val === undefined;
@@ -179,10 +179,10 @@ export function ForeignKeyRecordPreviewPopover({
                       return (
                         <td
                           key={col.name}
-                          className="px-3 py-1.5 whitespace-nowrap font-mono text-[12.5px] border-r border-[#262626] last:border-r-0 text-[#e0e0e0]"
+                          className="px-3.5 py-2 whitespace-nowrap font-sans text-[13.5px] border-r border-[#222222] last:border-r-0 text-white font-medium"
                         >
                           {isNull ? (
-                            <span className="text-[#666666] italic">null</span>
+                            <span className="text-[#555555] italic font-normal">null</span>
                           ) : (
                             str
                           )}
@@ -194,7 +194,7 @@ export function ForeignKeyRecordPreviewPopover({
                   <tr>
                     <td
                       colSpan={Math.max(1, columns.length)}
-                      className="p-4 text-center text-[#777777] text-[12.5px] font-sans"
+                      className="p-5 text-center text-[#777777] text-[13px] font-sans"
                     >
                       No referenced record found for this value.
                     </td>
@@ -206,18 +206,18 @@ export function ForeignKeyRecordPreviewPopover({
         )}
       </div>
 
-      <div className="mt-3 pt-2.5 border-t border-[#222222] flex items-center justify-between">
+      <div className="mt-3 flex items-center justify-between select-none">
         <button
           type="button"
           onClick={onClose}
-          className="text-[12.5px] text-[#8c8c8c] hover:text-white transition-colors cursor-pointer font-sans"
+          className="text-[12.5px] text-[#888888] hover:text-white transition-colors cursor-pointer font-sans px-1 py-1"
         >
           Close
         </button>
         <button
           type="button"
           onClick={() => onOpenTable(fk.referenced_table)}
-          className="h-7 px-3 rounded-[6px] border border-[#2e2e2e] bg-[#1a1a1a] hover:bg-[#252525] hover:border-[#3a3a3a] text-white text-[12.5px] font-medium font-sans transition-colors cursor-pointer flex items-center gap-1.5 shadow-xs"
+          className="h-7 px-3.5 rounded-[5px] border border-[#2e2e2e] bg-[#1e1e1e] hover:bg-[#282828] text-white text-[12px] font-medium font-sans transition-colors cursor-pointer flex items-center gap-1.5 shadow-xs"
         >
           <span>Open table</span>
         </button>

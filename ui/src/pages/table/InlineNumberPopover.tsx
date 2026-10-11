@@ -11,7 +11,7 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { ChevronUp, ChevronDown } from 'lucide-react';
+import { ChevronUp, ChevronDown, Check, Maximize2 } from 'lucide-react';
 import { ColumnInfoApi } from '../../types';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 
@@ -27,6 +27,7 @@ export interface InlineNumberPopoverProps {
   onChange: (val: string) => void;
   onSave: (val?: unknown) => void;
   onCancel: () => void;
+  onExpand?: () => void;
 }
 
 export function InlineNumberPopover({
@@ -34,6 +35,7 @@ export function InlineNumberPopover({
   onChange,
   onSave,
   onCancel,
+  onExpand,
 }: InlineNumberPopoverProps) {
   const popoverRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -66,11 +68,11 @@ export function InlineNumberPopover({
   );
 
   useEffect(() => {
-    if (inputRef.current) {
+    if (inputRef.current && !isNull) {
       inputRef.current.focus();
       inputRef.current.select();
     }
-  }, []);
+  }, [isNull]);
 
   const initialNumStr = isInitialNull ? '' : String(editingCell.initialValue);
   const isDirty = isNull ? !isInitialNull : (isInitialNull || inputVal.trim() !== initialNumStr.trim());
@@ -116,10 +118,10 @@ export function InlineNumberPopover({
   useEffect(() => {
     const handleMouseDown = (e: MouseEvent) => {
       if (showDiscardConfirm) return;
-      if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
-        const target = e.target as HTMLElement | null;
-        if (target?.closest('[role="dialog"]') || target?.closest('.fixed.z-50')) return;
+      const target = e.target as HTMLElement | null;
+      if (target?.closest('[role="dialog"]') || target?.closest('.fixed.z-50.ConfirmDialog')) return;
 
+      if (popoverRef.current && !popoverRef.current.contains(target as Node)) {
         handleAttemptClose();
       }
     };
@@ -131,7 +133,8 @@ export function InlineNumberPopover({
   useEffect(() => {
     const handleScroll = (e: Event) => {
       if (showDiscardConfirm) return;
-      if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
+      const target = e.target as Node;
+      if (popoverRef.current && !popoverRef.current.contains(target)) {
         handleAttemptClose();
       }
     };
@@ -181,9 +184,9 @@ export function InlineNumberPopover({
   };
 
   // Safe popover positioning within viewport
-  const width = Math.max(editingCell.rect.width + 24, 240);
-  const left = Math.max(8, Math.min(window.innerWidth - width - 16, editingCell.rect.left - 4));
-  const top = Math.max(8, Math.min(window.innerHeight - 56, editingCell.rect.top - 4));
+  const popoverWidth = Math.max(380, Math.min(500, editingCell.rect.width + 120));
+  const left = Math.max(8, Math.min(window.innerWidth - popoverWidth - 16, editingCell.rect.left));
+  const top = Math.max(8, Math.min(window.innerHeight - 150 - 16, editingCell.rect.top));
 
   return (
     <div
@@ -191,73 +194,84 @@ export function InlineNumberPopover({
       style={{
         top: `${top}px`,
         left: `${left}px`,
-        width: `${width}px`,
+        width: `${popoverWidth}px`,
       }}
-      className="fixed z-50 rounded-[10px] border border-[#222222] bg-[#111111] shadow-[0_12px_36px_rgba(0,0,0,0.95)] p-2 font-sans animate-in fade-in zoom-in-95 duration-100"
+      className="fixed z-50 rounded-[10px] border border-[#222222] bg-[#111111] shadow-[0_20px_50px_rgba(0,0,0,0.95)] px-[6px] py-2 flex flex-col font-sans animate-in fade-in zoom-in-95 duration-100 select-none"
     >
-      {/* Recessed Inner Input Area */}
-      <div className="flex items-center h-8 rounded-[6px] border border-[#222222] bg-[#181818] overflow-hidden focus-within:border-[#383838] transition-colors">
-        {/* Number Input Field */}
-        <input
-          ref={inputRef}
-          type="text"
-          inputMode={isFloat ? 'decimal' : 'numeric'}
-          disabled={isNull}
-          value={isNull ? 'NULL' : inputVal}
-          onChange={(e) => {
-            setIsNull(false);
-            const v = e.target.value;
-            setInputVal(v);
-            onChange(v);
-          }}
-          onKeyDown={handleKeyDown}
-          spellCheck={false}
-          placeholder={isNull ? 'NULL' : '0'}
-          className={`h-full flex-1 min-w-0 bg-transparent px-2.5 text-[13px] font-mono text-white outline-none placeholder-[#555555] ${
-            isNull ? 'italic text-[#666666] select-none cursor-default' : ''
-          }`}
-        />
+      {/* Top Header Bar */}
+      <div className="flex items-center justify-between pb-2 px-1 select-none">
+        <div className="flex items-center gap-1.5 min-w-0">
+          <span className="text-[13.5px] font-sans font-medium text-[#e0e0e0] truncate" title={editingCell.colName}>
+            {editingCell.colName}
+          </span>
+        </div>
 
-        {/* Steppers (+ / -) */}
-        {!isNull && (
-          <div className="h-full flex flex-col justify-center border-l border-[#222222] bg-transparent px-0.5 shrink-0">
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="text-[12px] text-[#666666] font-sans">
+            {inputVal.length} ch
+          </span>
+          {isNullable && (
             <button
               type="button"
-              tabIndex={-1}
-              onClick={() => stepValue(1)}
-              title="Increment (Up Arrow)"
-              className="h-3.5 w-4 flex items-center justify-center text-[#777777] hover:text-white hover:bg-[#222222] rounded-[2px] transition-colors cursor-pointer"
+              onClick={toggleNull}
+              className={`px-2 py-0.5 rounded-[4px] text-[12px] font-sans font-medium border transition-colors cursor-pointer ${
+                isNull
+                  ? 'bg-[#1e1e1e] text-white border-[#333333] hover:bg-[#262626]'
+                  : 'bg-transparent text-[#888888] border-[#222222] hover:text-white hover:bg-[#181818]'
+              }`}
             >
-              <ChevronUp className="w-2.5 h-2.5" />
+              NULL
             </button>
-            <button
-              type="button"
-              tabIndex={-1}
-              onClick={() => stepValue(-1)}
-              title="Decrement (Down Arrow)"
-              className="h-3.5 w-4 flex items-center justify-center text-[#777777] hover:text-white hover:bg-[#222222] rounded-[2px] transition-colors cursor-pointer"
-            >
-              <ChevronDown className="w-2.5 h-2.5" />
-            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Recessed Inner Single-Line Field */}
+      <div className="rounded-[8px] border border-[#222222] bg-[#181818] p-1 flex items-center shadow-inner transition-colors focus-within:border-[#383838]">
+        {isNull ? (
+          <div className="flex-1 px-2.5 py-1 text-[#666666] italic text-[13.5px] font-sans select-none">
+            Cell value is NULL. Click "NULL" to edit.
           </div>
+        ) : (
+          <input
+            ref={inputRef}
+            type="text"
+            inputMode={isFloat ? 'decimal' : 'numeric'}
+            value={inputVal}
+            onChange={(e) => {
+              setIsNull(false);
+              const v = e.target.value;
+              setInputVal(v);
+              onChange(v);
+            }}
+            onKeyDown={handleKeyDown}
+            spellCheck={false}
+            placeholder="0"
+            className="flex-1 min-w-0 bg-transparent px-2.5 py-1 text-[13.5px] font-sans text-white outline-none placeholder-[#555555]"
+          />
         )}
+      </div>
 
-        {/* Quick NULL Button */}
-        {isNullable && (
+      {/* Bottom Actions Bar */}
+      <div className="pt-2 pb-0.5 px-1 flex items-center justify-end gap-2 select-none">
+        {onExpand && (
           <button
             type="button"
-            tabIndex={-1}
-            onClick={toggleNull}
-            title={isNull ? 'Enter number' : 'Set to NULL'}
-            className={`h-full px-2 text-[11px] font-mono font-medium border-l border-[#222222] transition-colors cursor-pointer shrink-0 ${
-              isNull
-                ? 'bg-[#222222] text-white hover:bg-[#2a2a2a]'
-                : 'bg-transparent text-[#777777] hover:text-white hover:bg-[#1f1f1f]'
-            }`}
+            onClick={onExpand}
+            title="Expand editor to drawer"
+            className="w-7 h-7 rounded-[5px] border border-[#2a2a2a] bg-[#161616] hover:bg-[#202020] text-[#777777] hover:text-white flex items-center justify-center transition-colors cursor-pointer"
           >
-            NULL
+            <Maximize2 className="w-3.5 h-3.5" />
           </button>
         )}
+        <button
+          type="button"
+          onClick={() => handleCommit()}
+          className="h-7 px-3.5 rounded-[5px] text-[12px] font-sans font-medium bg-[#1e1e1e] hover:bg-[#282828] text-white border border-[#2e2e2e] flex items-center gap-1.5 transition-colors cursor-pointer"
+        >
+          <Check className="w-3.5 h-3.5 text-white stroke-[2.5]" />
+          <span>Save</span>
+        </button>
       </div>
 
       {/* Discard Warning Dialog */}

@@ -8,9 +8,10 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Calendar, Clock, ChevronUp, ChevronDown } from 'lucide-react';
+import { Calendar, Clock, ChevronUp, ChevronDown, Check, Maximize2 } from 'lucide-react';
 import { DayPicker } from '@daypicker/react';
 import { ColumnInfoApi } from '../../types';
+import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 
 export interface InlineDateTimePickerPopoverProps {
   editingCell: {
@@ -21,14 +22,18 @@ export interface InlineDateTimePickerPopoverProps {
     currentValue: string;
     rect: { top: number; left: number; width: number; height: number };
   };
+  onChange?: (val: string) => void;
   onSave: (val: unknown) => void;
   onCancel: () => void;
+  onExpand?: () => void;
 }
 
 export function InlineDateTimePickerPopover({
   editingCell,
+  onChange,
   onSave,
   onCancel,
+  onExpand,
 }: InlineDateTimePickerPopoverProps) {
   const popoverRef = useRef<HTMLDivElement>(null);
   const calendarModalRef = useRef<HTMLDivElement>(null);
@@ -37,21 +42,36 @@ export function InlineDateTimePickerPopover({
   const normType = editingCell.column?.type?.toLowerCase() || '';
   const isDateOnly = normType === 'date';
   const isTimeOnly = normType === 'time' || normType === 'timetz';
+  const isNullable = editingCell.column?.nullable ?? true;
+
+  const isInitialNull =
+    editingCell.initialValue === null ||
+    editingCell.initialValue === undefined ||
+    editingCell.currentValue === 'null';
+
+  const [isNull, setIsNull] = useState<boolean>(
+    editingCell.initialValue === null && editingCell.currentValue === ''
+  );
 
   const [inputVal, setInputVal] = useState<string>(() => {
+    if (editingCell.initialValue === null && editingCell.currentValue === '') return '';
     return editingCell.currentValue === null || editingCell.currentValue === undefined
       ? ''
       : String(editingCell.currentValue);
   });
 
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
+  const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
 
   useEffect(() => {
-    if (inputRef.current) {
+    if (inputRef.current && !isNull) {
       inputRef.current.focus();
       inputRef.current.select();
     }
-  }, []);
+  }, [isNull]);
+
+  const initialValStr = isInitialNull ? '' : String(editingCell.initialValue);
+  const isDirty = isNull ? !isInitialNull : (isInitialNull || inputVal.trim() !== initialValStr.trim());
 
   const parseVal = useCallback((val: string) => {
     if (!val.trim()) {
@@ -142,7 +162,9 @@ export function InlineDateTimePickerPopover({
   const handleSelectDate = (date: Date | undefined) => {
     setSelectedDate(date);
     const formatted = formatOutput(date, timeState);
+    setIsNull(false);
     setInputVal(formatted);
+    onChange?.(formatted);
   };
 
   const handleSetNow = () => {
@@ -155,12 +177,18 @@ export function InlineDateTimePickerPopover({
       tz: timeState.tz,
     };
     setTimeState(newTime);
-    setInputVal(formatOutput(now, newTime));
+    const formatted = formatOutput(now, newTime);
+    setIsNull(false);
+    setInputVal(formatted);
+    onChange?.(formatted);
   };
 
   const handleSetNull = () => {
     setSelectedDate(undefined);
+    setIsNull(true);
     setInputVal('');
+    onChange?.('');
+    setIsCalendarOpen(false);
   };
 
   const localTz = useMemo(() => {
@@ -177,21 +205,46 @@ export function InlineDateTimePickerPopover({
 
   const activeTz = timeState.tz || localTz;
 
+  const handleCommit = useCallback(() => {
+    if (isNull) {
+      onSave(null);
+      return;
+    }
+    const trimmed = inputVal.trim();
+    if (!trimmed && isNullable) {
+      onSave(null);
+      return;
+    }
+    onSave(trimmed);
+  }, [inputVal, isNull, isNullable, onSave]);
+
+  const handleAttemptClose = useCallback(() => {
+    if (isDirty) {
+      setShowDiscardConfirm(true);
+    } else {
+      onCancel();
+    }
+  }, [isDirty, onCancel]);
+
   useEffect(() => {
     const handleMouseDown = (e: MouseEvent) => {
-      const target = e.target as Node;
-      const inPopover = popoverRef.current && popoverRef.current.contains(target);
-      const inCalendar = calendarModalRef.current && calendarModalRef.current.contains(target);
+      if (showDiscardConfirm) return;
+      const target = e.target as HTMLElement | null;
+      if (target?.closest('[role="dialog"]') || target?.closest('.fixed.z-50.ConfirmDialog')) return;
+
+      const inPopover = popoverRef.current && popoverRef.current.contains(target as Node);
+      const inCalendar = calendarModalRef.current && calendarModalRef.current.contains(target as Node);
       if (!inPopover && !inCalendar) {
-        onSave(inputVal);
+        handleAttemptClose();
       }
     };
     document.addEventListener('mousedown', handleMouseDown);
     return () => document.removeEventListener('mousedown', handleMouseDown);
-  }, [inputVal, onSave]);
+  }, [handleAttemptClose, showDiscardConfirm]);
 
   useEffect(() => {
     const handleScroll = (e: Event) => {
+      if (showDiscardConfirm) return;
       const target = e.target as Node;
       if (
         (popoverRef.current && popoverRef.current.contains(target)) ||
@@ -199,22 +252,22 @@ export function InlineDateTimePickerPopover({
       ) {
         return;
       }
-      onSave(inputVal);
+      handleAttemptClose();
     };
     window.addEventListener('scroll', handleScroll, true);
     return () => window.removeEventListener('scroll', handleScroll, true);
-  }, [inputVal, onSave]);
+  }, [handleAttemptClose, showDiscardConfirm]);
 
   const handleInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
       e.preventDefault();
-      onSave(inputVal);
+      handleCommit();
     } else if (e.key === 'Escape') {
       e.preventDefault();
       if (isCalendarOpen) {
         setIsCalendarOpen(false);
       } else {
-        onCancel();
+        handleAttemptClose();
       }
     }
   };
@@ -236,54 +289,148 @@ export function InlineDateTimePickerPopover({
     setIsCalendarOpen((prev) => !prev);
   };
 
-  const minWidth = Math.max(editingCell.rect.width, 240);
-  const left = Math.max(8, Math.min(window.innerWidth - minWidth - 16, editingCell.rect.left));
-  const top = Math.max(8, Math.min(window.innerHeight - 44, editingCell.rect.top));
+  const toggleNull = () => {
+    if (!isNullable) return;
+    if (!isNull) {
+      setIsNull(true);
+      setInputVal('');
+      onChange?.('');
+      setIsCalendarOpen(false);
+    } else {
+      setIsNull(false);
+      const now = new Date();
+      const formatted = formatOutput(now, timeState);
+      setInputVal(formatted);
+      onChange?.(formatted);
+    }
+  };
+
+  // Safe popover positioning within viewport
+  const popoverWidth = Math.max(380, Math.min(500, editingCell.rect.width + 120));
+  const left = Math.max(8, Math.min(window.innerWidth - popoverWidth - 16, editingCell.rect.left));
+  const top = Math.max(8, Math.min(window.innerHeight - 150 - 16, editingCell.rect.top));
 
   const calWidth = isTimeOnly ? 300 : 340;
   const calHeight = isTimeOnly ? 210 : isDateOnly ? 360 : 455;
   const calLeft = Math.max(8, Math.min(window.innerWidth - calWidth - 16, left));
-  const showAbove = top + 42 + calHeight > window.innerHeight && top - calHeight > 8;
-  const calTop = showAbove ? top - calHeight - 6 : top + editingCell.rect.height + 4;
+  const showAbove = top + 140 + calHeight > window.innerHeight && top - calHeight > 8;
+  const calTop = showAbove ? top - calHeight - 6 : top + 130;
 
   return (
     <>
-      {/* Compact One-Line Edit Container */}
+      {/* Inline Popover Card matching Text Editor styling */}
       <div
         ref={popoverRef}
         style={{
           top: `${top}px`,
           left: `${left}px`,
-          width: `${minWidth}px`,
-          height: `${Math.max(editingCell.rect.height, 36)}px`,
+          width: `${popoverWidth}px`,
         }}
-        className="fixed z-50 flex items-center rounded-[6px] border border-[#2a2a2a] bg-[#121212] shadow-[0_12px_32px_rgba(0,0,0,0.85)] font-sans overflow-hidden animate-in fade-in zoom-in-95 duration-100"
+        className="fixed z-50 rounded-[10px] border border-[#222222] bg-[#111111] shadow-[0_20px_50px_rgba(0,0,0,0.95)] px-[6px] py-2 flex flex-col font-sans animate-in fade-in zoom-in-95 duration-100 select-none"
       >
-        <input
-          ref={inputRef}
-          type="text"
-          value={inputVal}
-          onChange={(e) => setInputVal(e.target.value)}
-          onKeyDown={handleInputKeyDown}
-          spellCheck={false}
-          className="h-full flex-1 min-w-0 bg-transparent px-3 text-[13px] font-mono text-white outline-none placeholder-[#555555]"
-          placeholder={isTimeOnly ? 'HH:MM:SS' : isDateOnly ? 'YYYY-MM-DD' : 'YYYY-MM-DD HH:MM:SS'}
-        />
+        {/* Top Header Bar */}
+        <div className="flex items-center justify-between pb-2 px-1 select-none">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span className="text-[13.5px] font-sans font-medium text-[#e0e0e0] truncate" title={editingCell.colName}>
+              {editingCell.colName}
+            </span>
+          </div>
 
-        {/* Right side Calendar/Clock picker button */}
-        <button
-          type="button"
-          tabIndex={-1}
-          onClick={toggleCalendar}
-          title={isCalendarOpen ? 'Close picker' : isTimeOnly ? 'Open time picker' : 'Open date & time picker'}
-          className={`h-full px-2.5 flex items-center justify-center border-l border-[#262626] transition-colors cursor-pointer shrink-0 ${
-            isCalendarOpen
-              ? 'bg-[#222222] text-[#38bdf8]'
-              : 'bg-[#161616] hover:bg-[#202020] text-[#8c8c8c] hover:text-white'
-          }`}
-        >
-          {isTimeOnly ? <Clock className="w-3.5 h-3.5" /> : <Calendar className="w-3.5 h-3.5" />}
-        </button>
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="text-[12px] text-[#666666] font-sans">
+              {inputVal.length} ch
+            </span>
+            {isNullable && (
+              <button
+                type="button"
+                onClick={toggleNull}
+                className={`px-2 py-0.5 rounded-[4px] text-[12px] font-sans font-medium border transition-colors cursor-pointer ${
+                  isNull
+                    ? 'bg-[#1e1e1e] text-white border-[#333333] hover:bg-[#262626]'
+                    : 'bg-transparent text-[#888888] border-[#222222] hover:text-white hover:bg-[#181818]'
+                }`}
+              >
+                NULL
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Recessed Inner Single-Line Field */}
+        <div className="rounded-[8px] border border-[#222222] bg-[#181818] p-1 flex items-center shadow-inner transition-colors focus-within:border-[#383838]">
+          {isNull ? (
+            <div className="flex-1 px-2.5 py-1 text-[#666666] italic text-[13.5px] font-sans select-none">
+              Cell value is NULL. Click "NULL" to edit.
+            </div>
+          ) : (
+            <input
+              ref={inputRef}
+              type="text"
+              value={inputVal}
+              onChange={(e) => {
+                const v = e.target.value;
+                setInputVal(v);
+                onChange?.(v);
+              }}
+              onKeyDown={handleInputKeyDown}
+              spellCheck={false}
+              placeholder={isTimeOnly ? 'HH:MM:SS' : isDateOnly ? 'YYYY-MM-DD' : 'YYYY-MM-DD HH:MM:SS'}
+              className="flex-1 min-w-0 bg-transparent px-2.5 py-1 text-[13.5px] font-sans text-white outline-none placeholder-[#555555]"
+            />
+          )}
+
+          {/* Right side Date/Time Picker Trigger Button */}
+          <button
+            type="button"
+            tabIndex={-1}
+            onClick={toggleCalendar}
+            title={isCalendarOpen ? 'Close picker' : isTimeOnly ? 'Open time picker' : 'Open date & time picker'}
+            className={`h-7 px-2.5 rounded-[5px] flex items-center justify-center border transition-colors cursor-pointer shrink-0 ${
+              isCalendarOpen
+                ? 'bg-[#262626] border-[#383838] text-white'
+                : 'bg-[#141414] hover:bg-[#202020] border-[#282828] text-[#8c8c8c] hover:text-white'
+            }`}
+          >
+            {isTimeOnly ? <Clock className="w-3.5 h-3.5" /> : <Calendar className="w-3.5 h-3.5" />}
+          </button>
+        </div>
+
+        {/* Bottom Actions Bar */}
+        <div className="pt-2 pb-0.5 px-1 flex items-center justify-end gap-2 select-none">
+          {onExpand && (
+            <button
+              type="button"
+              onClick={onExpand}
+              title="Expand editor to drawer"
+              className="w-7 h-7 rounded-[5px] border border-[#2a2a2a] bg-[#161616] hover:bg-[#202020] text-[#777777] hover:text-white flex items-center justify-center transition-colors cursor-pointer"
+            >
+              <Maximize2 className="w-3.5 h-3.5" />
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={handleCommit}
+            className="h-7 px-3.5 rounded-[5px] text-[12px] font-sans font-medium bg-[#1e1e1e] hover:bg-[#282828] text-white border border-[#2e2e2e] flex items-center gap-1.5 transition-colors cursor-pointer"
+          >
+            <Check className="w-3.5 h-3.5 text-white stroke-[2.5]" />
+            <span>Save</span>
+          </button>
+        </div>
+
+        {/* Discard Warning Dialog */}
+        <ConfirmDialog
+          isOpen={showDiscardConfirm}
+          title="Discard Unsaved Changes?"
+          description="You have unsaved changes in this date/time field. Are you sure you want to discard them?"
+          confirmLabel="Discard"
+          cancelLabel="Keep Editing"
+          variant="warning"
+          onConfirm={() => {
+            setShowDiscardConfirm(false);
+            onCancel();
+          }}
+          onClose={() => setShowDiscardConfirm(false)}
+        />
       </div>
 
       {/* Extended Date/Time Picker Dropdown Panel */}

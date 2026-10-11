@@ -617,6 +617,15 @@ export function TableEditor() {
               }
               onSave={handleCommitCellEdit}
               onCancel={() => setEditingCell(null)}
+              onExpand={() => {
+                const current = editingCell;
+                setEditingCell(null);
+                setExpandedInlineCell({
+                  rowIndex: current.rowIndex,
+                  colName: current.colName,
+                  value: current.currentValue,
+                });
+              }}
             />
           );
         }
@@ -647,8 +656,20 @@ export function TableEditor() {
           return (
             <InlineDateTimePickerPopover
               editingCell={editingCell}
+              onChange={(val) =>
+                setEditingCell((prev) => (prev ? { ...prev, currentValue: val } : null))
+              }
               onSave={handleCommitCellEdit}
               onCancel={() => setEditingCell(null)}
+              onExpand={() => {
+                const current = editingCell;
+                setEditingCell(null);
+                setExpandedInlineCell({
+                  rowIndex: current.rowIndex,
+                  colName: current.colName,
+                  value: current.currentValue,
+                });
+              }}
             />
           );
         }
