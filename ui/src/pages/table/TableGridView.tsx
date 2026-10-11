@@ -1,0 +1,436 @@
+/*
+ * Table Spreadsheet Grid & Rows View subcomponent.
+ * Owned by: ui/pages/table
+ * Key deps: react, lucide-react, ../../types, ./format, ./TableSkeleton
+ */
+
+import React from 'react';
+import {
+  AlertCircle,
+  Check,
+  Minus,
+  Key,
+  Link2,
+  ChevronDown,
+  Plus,
+  Maximize2,
+  Code2,
+  ArrowRight,
+} from 'lucide-react';
+import { ColumnInfoApi, ForeignKeyInfoApi } from '../../types';
+import { getColumnTypeBadge, formatColumnType } from './format';
+import { TableSkeleton } from './TableSkeleton';
+
+export interface TableGridViewProps {
+  selectedTable: string;
+  columns: ColumnInfoApi[];
+  foreignKeys: ForeignKeyInfoApi[];
+  columnWidths?: Record<string, number>;
+  getColWidth: (colName: string, type: string) => number;
+  rows: Record<string, unknown>[];
+  isSchemaLoading: boolean;
+  isRowsLoading: boolean;
+  rowsError: string | null;
+  onRetry: () => void;
+
+  // Row selection
+  selectedRowIndex: number | null;
+  selectedRowIndices: Set<number>;
+  onSelectRow: (idx: number, openPanel: boolean) => void;
+  onToggleRowSelect: (e: React.MouseEvent, idx: number) => void;
+  onToggleAllRows: (e?: any) => void;
+
+  // Cell selection & inline edit
+  selectedCell: { rowIndex: number; colName: string } | null;
+  onSelectCell: (cell: { rowIndex: number; colName: string }) => void;
+  onStartCellEdit: (rowIndex: number, colName: string, cellEl: HTMLTableCellElement) => void;
+  isColReadOnly: (col: ColumnInfoApi) => boolean;
+
+  // Column headers & resizing
+  activeColumnMenu: { col: ColumnInfoApi; rect: { top: number; left: number; width: number; height: number } } | null;
+  onOpenColumnMenu: (menu: { col: ColumnInfoApi; rect: { top: number; left: number; width: number; height: number } } | null) => void;
+  onResizeStart: (e: React.MouseEvent, colName: string, startWidth: number) => void;
+  onOpenAddColumn: () => void;
+
+  // Foreign key triggers
+  onOpenFkPicker: (target: {
+    rowIndex: number;
+    column: string;
+    fk: ForeignKeyInfoApi;
+    currentValue: unknown;
+  }) => void;
+  onOpenFkPreview: (target: {
+    fk: ForeignKeyInfoApi;
+    currentValue: unknown;
+    rect: { top: number; left: number; width: number; height: number };
+  }) => void;
+}
+
+export function TableGridView({
+  selectedTable,
+  columns,
+  foreignKeys,
+  columnWidths,
+  getColWidth,
+  rows,
+  isSchemaLoading,
+  isRowsLoading,
+  rowsError,
+  onRetry,
+  selectedRowIndex,
+  selectedRowIndices,
+  onSelectRow,
+  onToggleRowSelect,
+  onToggleAllRows,
+  selectedCell,
+  onSelectCell,
+  onStartCellEdit,
+  isColReadOnly,
+  activeColumnMenu,
+  onOpenColumnMenu,
+  onResizeStart,
+  onOpenAddColumn,
+  onOpenFkPicker,
+  onOpenFkPreview,
+}: TableGridViewProps) {
+  return (
+    <div className="flex-1 flex flex-col min-h-0 overflow-hidden relative font-sans">
+      <div className="flex-1 overflow-auto">
+        {isSchemaLoading || (isRowsLoading && rows.length === 0 && !rowsError) ? (
+          <TableSkeleton columns={columns} foreignKeys={foreignKeys} columnWidths={columnWidths} />
+        ) : rowsError ? (
+          <div className="p-8 flex flex-col items-center justify-center text-center">
+            <AlertCircle className="w-8 h-8 text-rose-500 mb-2" />
+            <p className="text-[14px] font-medium text-white mb-1">Failed to query table</p>
+            <p className="text-[12.5px] text-[#8c8c8c] max-w-md font-mono">{rowsError}</p>
+            <button
+              onClick={onRetry}
+              className="mt-4 px-3 py-1.5 bg-[#141414] border border-[#262626] rounded-[6px] text-[12px] text-white hover:border-[#383838]"
+            >
+              Retry
+            </button>
+          </div>
+        ) : columns.length === 0 ? (
+          <div className="p-12 text-center text-[#777777] text-[14px]">
+            No column schema found for table <span className="font-sans font-medium text-white">{selectedTable}</span>
+          </div>
+        ) : (
+          <table
+            className="border-collapse text-left select-text font-sans text-[14px] table-fixed"
+            style={{ width: 'max-content' }}
+          >
+            <thead>
+              <tr className="sticky top-0 z-10 bg-[#0a0a0a] border-b border-[#222222]">
+                {/* Row Checkbox & Action Sticky Column */}
+                <th
+                  className="w-16 px-3 py-2 text-left bg-[#0a0a0a] sticky left-0 z-20 border-r border-[#1a1a1a] select-none"
+                  style={{ width: '64px', minWidth: '64px', maxWidth: '64px' }}
+                >
+                  <div className="flex items-center justify-start gap-1.5">
+                    {/* Checkbox: Select All */}
+                    <button
+                      type="button"
+                      onClick={onToggleAllRows}
+                      title={selectedRowIndices.size === rows.length && rows.length > 0 ? 'Deselect all' : 'Select all'}
+                      aria-label={selectedRowIndices.size === rows.length && rows.length > 0 ? 'Deselect all rows' : 'Select all rows'}
+                      aria-checked={selectedRowIndices.size === rows.length && rows.length > 0 ? 'true' : selectedRowIndices.size > 0 ? 'mixed' : 'false'}
+                      className={`peer h-4 w-4 shrink-0 rounded-[4px] border border-[#383838] shadow-xs transition-all focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/40 cursor-pointer flex items-center justify-center ${
+                        selectedRowIndices.size === rows.length && rows.length > 0
+                          ? 'bg-white border-white text-black'
+                          : selectedRowIndices.size > 0
+                          ? 'bg-white border-white text-black'
+                          : 'bg-transparent hover:border-[#666666] hover:bg-white/[0.04]'
+                      }`}
+                    >
+                      {selectedRowIndices.size === rows.length && rows.length > 0 ? (
+                        <Check className="h-3 w-3 stroke-[3]" />
+                      ) : selectedRowIndices.size > 0 ? (
+                        <Minus className="h-3 w-3 stroke-[3]" />
+                      ) : null}
+                    </button>
+                  </div>
+                </th>
+
+                {/* Dynamic Columns with Type-Aware Widths, Interactive Resizers, and Action Menu */}
+                {columns.map((col) => {
+                  const isFk = foreignKeys.some((fk) => fk.column === col.name);
+                  const badge = getColumnTypeBadge(col.type, col.primary_key, isFk);
+                  const width = getColWidth(col.name, col.type);
+                  const isMenuOpen = activeColumnMenu?.col.name === col.name;
+
+                  return (
+                    <th
+                      key={col.name}
+                      className="relative px-3 py-2 text-[14px] font-medium text-[#cccccc] whitespace-nowrap border-r border-[#1a1a1a] select-none group/colheader"
+                      style={{ width: `${width}px`, minWidth: `${Math.max(80, width)}px`, maxWidth: `${width}px` }}
+                    >
+                      <div className="flex items-center justify-between w-full h-full min-w-0 pr-1 overflow-hidden whitespace-nowrap">
+                        <div className="flex items-center gap-1.5 min-w-0 overflow-hidden whitespace-nowrap truncate">
+                          <span className="font-sans text-white text-[14px] font-semibold whitespace-nowrap shrink-0" title={col.name}>
+                            {col.name}
+                          </span>
+                          {col.primary_key && (
+                            <span title="Primary Key" className="shrink-0 p-0.5 rounded bg-amber-500/10 text-amber-400">
+                              <Key className="w-3 h-3" />
+                            </span>
+                          )}
+                          {isFk && (
+                            <span title="Foreign Key" className="shrink-0 p-0.5 rounded bg-blue-500/10 text-blue-400">
+                              <Link2 className="w-3 h-3" />
+                            </span>
+                          )}
+                          <span className={`text-[12.5px] font-mono whitespace-nowrap shrink-0 ${badge.color}`}>
+                            {formatColumnType(col.type)}
+                          </span>
+                        </div>
+
+                        {/* Column Action Dropdown Trigger */}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (isMenuOpen) {
+                              onOpenColumnMenu(null);
+                            } else {
+                              const r = e.currentTarget.getBoundingClientRect();
+                              onOpenColumnMenu({
+                                col,
+                                rect: { top: r.top, left: r.left, width: r.width, height: r.height } as DOMRect,
+                              });
+                            }
+                          }}
+                          title={`${col.name} options`}
+                          className={`w-5 h-5 ml-1 rounded-[4px] flex items-center justify-center transition-colors cursor-pointer shrink-0 ${
+                            isMenuOpen
+                              ? 'bg-[#222222] text-white opacity-100'
+                              : 'text-[#666666] hover:text-white hover:bg-[#1a1a1a] opacity-0 group-hover/colheader:opacity-100 focus:opacity-100'
+                          }`}
+                        >
+                          <ChevronDown className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+
+                      {/* Interactive Column Resize Handle (Centered over column border) */}
+                      <div
+                        onMouseDown={(e) => onResizeStart(e, col.name, width)}
+                        title="Drag to resize column"
+                        className="absolute -right-1.5 top-0 bottom-0 w-3 cursor-col-resize group/resizer flex items-center justify-center select-none z-20 hover:bg-blue-500/10 active:bg-blue-500/25"
+                      >
+                        <div className="w-[2px] h-full bg-transparent group-hover/resizer:bg-blue-500 group-active/resizer:bg-blue-500 transition-colors" />
+                      </div>
+                    </th>
+                  );
+                })}
+
+                {/* Add Column Button Column */}
+                <th
+                  className="w-12 px-2 py-2 text-center bg-[#0a0a0a] border-r border-[#1a1a1a] select-none"
+                  style={{ width: '48px', minWidth: '48px', maxWidth: '48px' }}
+                >
+                  <button
+                    type="button"
+                    onClick={onOpenAddColumn}
+                    title="Add new column"
+                    className="w-7 h-7 mx-auto rounded-[5px] bg-[#141414] hover:bg-[#202020] border border-[#262626] hover:border-[#383838] text-[#8c8c8c] hover:text-white flex items-center justify-center transition-colors cursor-pointer group"
+                  >
+                    <Plus className="w-3.5 h-3.5 group-hover:scale-110 transition-transform" />
+                  </button>
+                </th>
+              </tr>
+            </thead>
+
+            <tbody className={`divide-y divide-[#181818] ${isRowsLoading ? 'opacity-60 transition-opacity' : ''}`}>
+              {rows.length === 0 ? (
+                <tr>
+                  <td colSpan={columns.length + 2} className="p-12 text-center text-[#666666] text-[14px]">
+                    Table contains 0 rows
+                  </td>
+                </tr>
+              ) : (
+                rows.map((row, idx) => {
+                  const isSelected = selectedRowIndex === idx;
+                  return (
+                    <tr
+                      key={idx}
+                      onClick={() => onSelectRow(idx, false)}
+                      className={`transition-colors cursor-pointer group ${
+                        isSelected
+                          ? 'bg-[#121212] ring-1 ring-inset ring-[#222222] text-white'
+                          : 'hover:bg-[#121212]'
+                      }`}
+                    >
+                      {/* Row Checkbox & Expand Button */}
+                      <td
+                        className="px-3 py-2 text-left select-none sticky left-0 bg-[#0a0a0a] group-hover:bg-[#121212] z-10 border-r border-[#1a1a1a]"
+                        style={{ width: '64px', minWidth: '64px', maxWidth: '64px' }}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <div className="flex items-center justify-start gap-1.5">
+                          {/* Checkbox: Single Row */}
+                          <button
+                            type="button"
+                            onClick={(e) => onToggleRowSelect(e, idx)}
+                            title={selectedRowIndices.has(idx) ? 'Deselect row' : 'Select row'}
+                            aria-label={selectedRowIndices.has(idx) ? `Deselect row ${idx + 1}` : `Select row ${idx + 1}`}
+                            aria-checked={selectedRowIndices.has(idx) ? 'true' : 'false'}
+                            className={`peer h-4 w-4 shrink-0 rounded-[4px] border border-[#383838] shadow-xs transition-all focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/40 cursor-pointer flex items-center justify-center ${
+                              selectedRowIndices.has(idx)
+                                ? 'bg-white border-white text-black'
+                                : 'bg-transparent hover:border-[#666666] hover:bg-white/[0.04]'
+                            }`}
+                          >
+                            {selectedRowIndices.has(idx) && (
+                              <Check className="h-3 w-3 stroke-[3]" />
+                            )}
+                          </button>
+
+                          {/* Expand Row Button */}
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onSelectRow(idx, true);
+                            }}
+                            title="Edit row details"
+                            className={`w-4 h-4 rounded-[4px] flex items-center justify-center text-[#666666] hover:text-white hover:bg-[#1c1c1c] transition-all cursor-pointer ${
+                              selectedRowIndex === idx
+                                ? 'opacity-100'
+                                : 'opacity-0 group-hover:opacity-100'
+                            }`}
+                          >
+                            <Maximize2 className="w-3 h-3" />
+                          </button>
+                        </div>
+                      </td>
+
+                      {/* Cells with Matching Fixed Widths */}
+                      {columns.map((col) => {
+                        const width = getColWidth(col.name, col.type);
+                        const val = row[col.name];
+                        const isNull = val === null || val === undefined;
+                        const isBool = typeof val === 'boolean';
+                        const isObj = typeof val === 'object' && val !== null;
+                        const strVal = isNull ? 'null' : isObj ? JSON.stringify(val) : String(val);
+                        const isCellSelected = selectedCell?.rowIndex === idx && selectedCell?.colName === col.name;
+                        const isReadOnly = isColReadOnly(col);
+                        const fk = foreignKeys.find((f) => f.column === col.name);
+
+                        return (
+                          <td
+                            key={col.name}
+                            data-cell-row={idx}
+                            data-cell-col={col.name}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onSelectCell({ rowIndex: idx, colName: col.name });
+                              onSelectRow(idx, false);
+                            }}
+                            onDoubleClick={(e) => {
+                              e.stopPropagation();
+                              onSelectCell({ rowIndex: idx, colName: col.name });
+                              onSelectRow(idx, false);
+                              if (fk) {
+                                onOpenFkPicker({
+                                  rowIndex: idx,
+                                  column: col.name,
+                                  fk,
+                                  currentValue: val,
+                                });
+                              } else if (!isReadOnly) {
+                                onStartCellEdit(idx, col.name, e.currentTarget);
+                              }
+                            }}
+                            className={`px-3 py-2 text-[#cccccc] text-[14px] whitespace-nowrap overflow-hidden border-r border-[#151515] relative transition-colors select-none ${
+                              isReadOnly ? 'cursor-default' : 'cursor-cell'
+                            } ${
+                              isCellSelected
+                                ? 'shadow-[inset_0_0_0_1.5px_#22d3ee] bg-cyan-950/20 text-white z-10'
+                                : ''
+                            }`}
+                            style={{ width: `${width}px`, minWidth: `${width}px`, maxWidth: `${width}px` }}
+                            title={isReadOnly ? `${col.name} (Read-only / cannot be edited): ${strVal}` : strVal}
+                          >
+                            {fk ? (
+                              <div className="flex items-center justify-between w-full h-full gap-1.5">
+                                <div className="truncate flex-1 min-w-0">
+                                  {isNull ? (
+                                    <span className="text-[#555555] italic text-[12.5px]">null</span>
+                                  ) : isBool ? (
+                                    <span className="font-sans text-[13px] text-[#cccccc]">
+                                      {String(val)}
+                                    </span>
+                                  ) : isObj ? (
+                                    <span className="text-pink-400 flex items-center gap-1 text-[12.5px]">
+                                      <Code2 className="w-3.5 h-3.5" />
+                                      {`{ ... }`}
+                                    </span>
+                                  ) : (
+                                    <span>{strVal}</span>
+                                  )}
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    const btnRect = e.currentTarget.getBoundingClientRect();
+                                    onOpenFkPreview({
+                                      fk,
+                                      currentValue: val,
+                                      rect: {
+                                        top: btnRect.top,
+                                        left: btnRect.left,
+                                        width: btnRect.width,
+                                        height: btnRect.height,
+                                      },
+                                    });
+                                  }}
+                                  title={`View referenced record from ${fk.referenced_table}`}
+                                  className="w-6 h-6 rounded-[5px] bg-[#181818] hover:bg-[#262626] border border-[#2c2c2c] hover:border-[#3e3e3e] text-[#888888] hover:text-white flex items-center justify-center transition-colors cursor-pointer shrink-0 shadow-xs"
+                                >
+                                  <ArrowRight className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            ) : isNull ? (
+                              <span className="text-[#555555] italic text-[12.5px]">null</span>
+                            ) : isBool ? (
+                              <span className="font-sans text-[13px] text-[#cccccc]">
+                                {String(val)}
+                              </span>
+                            ) : isObj ? (
+                              <span className="text-pink-400 flex items-center gap-1 text-[12.5px]">
+                                <Code2 className="w-3.5 h-3.5" />
+                                {`{ ... }`}
+                              </span>
+                            ) : (
+                              <span className="truncate block w-full">{strVal}</span>
+                            )}
+                          </td>
+                        );
+                      })}
+
+                      {/* Empty cell for Add Column column */}
+                      <td
+                        className="border-r border-[#151515] bg-transparent"
+                        style={{ width: '48px', minWidth: '48px', maxWidth: '48px' }}
+                      />
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {/* Pagination Footer */}
+      <div className="h-12 shrink-0 px-4 bg-[#0a0a0a] border-t border-[#222222] flex items-center text-[13px] text-[#8c8c8c] select-none font-sans">
+        <span>
+          Showing <span className="text-white font-medium">{rows.length}</span> rows
+          {selectedTable && (
+            <> in <span className="text-white font-mono">{selectedTable}</span></>
+          )}
+        </span>
+      </div>
+    </div>
+  );
+}
