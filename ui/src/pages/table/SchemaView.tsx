@@ -66,8 +66,9 @@ export function SchemaView({
   const [isPanning, setIsPanning] = useState(false);
   const panStartRef = useRef<{ x: number; y: number; startTx: number; startTy: number } | null>(null);
 
-  // Active highlighted table node on canvas (starts empty so reload has clean, neutral view)
-  const [selectedNode, setSelectedNode] = useState<string>('');
+  // Click-and-hold inspection state: animates dashed lines flowing along path only while mouse is pressed
+  const [holdingTable, setHoldingTable] = useState<string | null>(null);
+  const [holdingLineId, setHoldingLineId] = useState<string | null>(null);
 
   // Dragging individual table nodes
   const [nodePositions, setNodePositions] = useState<Record<string, TablePosition>>({});
@@ -278,9 +279,11 @@ export function SchemaView({
     };
 
     const onWindowMouseUp = () => {
-      // If user simply clicked on the canvas background without panning, unselect the table
+      // Clear click-and-hold line animation and table focus
+      setHoldingTable(null);
+      setHoldingLineId(null);
+
       if (isPanningRef.current && !panMovedRef.current) {
-        setSelectedNode('');
         onSelectTableRef.current('');
       }
 
@@ -360,7 +363,6 @@ export function SchemaView({
       endX: number;
       endY: number;
       isSelf: boolean;
-      isHighlighted: boolean;
     }> = [];
 
     tables.forEach((t) => {
@@ -402,10 +404,6 @@ export function SchemaView({
           endX = sourceIsLeftOfTarget ? targetPos.x : targetPos.x + CARD_WIDTH;
         }
 
-        const isHighlighted = selectedNode
-          ? selectedNode === t.name || selectedNode === fk.referenced_table
-          : false;
-
         list.push({
           id: `${t.name}.${fk.column}->${fk.referenced_table}.${fk.referenced_column}_${idx}`,
           sourceTable: t.name,
@@ -417,24 +415,23 @@ export function SchemaView({
           endX,
           endY,
           isSelf,
-          isHighlighted,
         });
       });
     });
 
     return list;
-  }, [tables, allDbTablesSchema, nodePositions, selectedNode]);
+  }, [tables, allDbTablesSchema, nodePositions]);
 
-  // Set of tables directly connected to the selected table for smart focus highlighting
+  // Set of tables directly connected to the active table for smart focus highlighting during hold
   const isDirectlyConnected = useMemo(() => {
-    if (!selectedNode) return new Set<string>();
-    const connected = new Set<string>([selectedNode]);
+    if (!holdingTable) return new Set<string>();
+    const connected = new Set<string>([holdingTable]);
     relations.forEach((r) => {
-      if (r.sourceTable === selectedNode) connected.add(r.targetTable);
-      if (r.targetTable === selectedNode) connected.add(r.sourceTable);
+      if (r.sourceTable === holdingTable) connected.add(r.targetTable);
+      if (r.targetTable === holdingTable) connected.add(r.sourceTable);
     });
     return connected;
-  }, [selectedNode, relations]);
+  }, [holdingTable, relations]);
 
   return (
     <div className="flex-1 flex flex-col min-h-0 overflow-hidden select-none bg-[#09090b] font-sans">
@@ -478,6 +475,35 @@ export function SchemaView({
           className="absolute inset-0 overflow-visible pointer-events-none"
           style={{ width: 1, height: 1 }}
         >
+          <defs>
+            <style>{`
+              @keyframes axiomFlowAhead {
+                from {
+                  stroke-dashoffset: 22;
+                }
+                to {
+                  stroke-dashoffset: 0;
+                }
+              }
+              @keyframes axiomFlowBack {
+                from {
+                  stroke-dashoffset: 0;
+                }
+                to {
+                  stroke-dashoffset: 22;
+                }
+              }
+              .animate-flowing-ahead {
+                stroke-dasharray: 6 5;
+                animation: axiomFlowAhead 0.6s linear infinite;
+              }
+              .animate-flowing-back {
+                stroke-dasharray: 6 5;
+                animation: axiomFlowBack 0.6s linear infinite;
+              }
+            `}</style>
+          </defs>
+
           {relations.map((rel) => {
             let pathData: string;
             if (rel.isSelf) {
@@ -495,24 +521,42 @@ export function SchemaView({
               } ${rel.endY}, ${rel.endX} ${rel.endY}`;
             }
 
+            const isSourceHold = holdingTable === rel.sourceTable;
+            const isTargetHold = holdingTable === rel.targetTable;
+            const isHoldActive = isSourceHold || isTargetHold || holdingLineId === rel.id;
+
+            // ONLY animate if holding is active! In unselected state, all lines (including in-table loops) remain completely stationary!
+            const flowClass = isHoldActive
+              ? isSourceHold || rel.isSelf
+                ? 'animate-flowing-ahead'
+                : 'animate-flowing-back'
+              : undefined;
+
+            const activeStroke = isHoldActive
+              ? isSourceHold
+                ? '#38bdf8'
+                : '#818cf8'
+              : '#52525b';
+
             return (
-              <g key={rel.id}>
+              <g key={rel.id} className="pointer-events-none">
                 {/* Background outline for contrast */}
                 <path
                   d={pathData}
                   fill="none"
                   stroke="#09090b"
-                  strokeWidth={rel.isHighlighted ? 4.5 : 3.5}
+                  strokeWidth={isHoldActive ? 5 : 3.5}
                   strokeLinecap="round"
                 />
                 {/* Visible relationship connector */}
                 <path
                   d={pathData}
                   fill="none"
-                  stroke={rel.isHighlighted ? '#60a5fa' : selectedNode ? '#27272a' : '#52525b'}
-                  strokeWidth={rel.isHighlighted ? 1.75 : 1.2}
-                  strokeOpacity={rel.isHighlighted ? 1 : selectedNode ? 0.35 : 0.75}
+                  stroke={activeStroke}
+                  strokeWidth={isHoldActive ? 2 : 1.2}
+                  strokeOpacity={isHoldActive ? 1 : holdingTable ? 0.35 : 0.75}
                   strokeLinecap="round"
+                  className={flowClass}
                 />
               </g>
             );
@@ -521,7 +565,7 @@ export function SchemaView({
 
         {/* Table Entity Cards */}
         {tables.map((t) => {
-          const isSelected = selectedNode === t.name;
+          const isHeld = holdingTable === t.name;
           const pos = nodePositions[t.name] || { x: 80, y: 80 };
           const tableData = allDbTablesSchema[t.name] || { columns: [], foreign_keys: [] };
           const cols = tableData.columns || [];
@@ -534,31 +578,29 @@ export function SchemaView({
                 transform: `translate(${pos.x}px, ${pos.y}px)`,
                 width: `${CARD_WIDTH}px`,
               }}
-              onClick={(e) => {
-                e.stopPropagation();
-                const next = selectedNode === t.name ? '' : t.name;
-                setSelectedNode(next);
-                onSelectTable(next);
+              onMouseDown={(e) => {
+                if (e.button === 0) {
+                  setHoldingTable(t.name);
+                }
               }}
-              className={`absolute rounded-[14px] bg-[#101012] border shadow-2xl pointer-events-auto transition-all duration-150 p-2.5 ${
+              className={`absolute rounded-[14px] bg-[#101012] border shadow-2xl pointer-events-auto transition-[opacity,border-color] duration-150 p-2.5 ${
                 !isMatchingSearch
                   ? 'opacity-25'
-                  : selectedNode && !isDirectlyConnected.has(t.name)
+                  : holdingTable && !isDirectlyConnected.has(t.name)
                   ? 'opacity-35 hover:opacity-85'
                   : 'opacity-100'
               } ${
-                isSelected
+                isHeld
                   ? 'border-blue-500/80 ring-1 ring-blue-500/30'
                   : 'border-[#222226] hover:border-[#333338]'
               }`}
             >
-              {/* Card Header (Drag handle) */}
+              {/* Card Header (Drag handle & Click-and-Hold trigger) */}
               <div
                 onMouseDown={(e) => {
                   if (e.button !== 0) return;
                   e.stopPropagation();
-                  setSelectedNode(t.name);
-                  onSelectTable(t.name);
+                  setHoldingTable(t.name);
                   const dragPayload = {
                     tableName: t.name,
                     startX: e.clientX,
@@ -642,28 +684,35 @@ export function SchemaView({
           className="absolute inset-0 overflow-visible pointer-events-none"
           style={{ width: 1, height: 1 }}
         >
-          {relations.map((rel) => (
-            <g key={`port-circles-${rel.id}`}>
-              {/* Source connection circle on FK column edge */}
-              <circle
-                cx={rel.startX}
-                cy={rel.startY}
-                r={rel.isHighlighted ? 4 : 3.2}
-                fill={rel.isHighlighted ? '#60a5fa' : selectedNode ? '#3f3f46' : '#8e8e93'}
-                stroke="#101012"
-                strokeWidth={2}
-              />
-              {/* Target connection circle on referenced PK column edge */}
-              <circle
-                cx={rel.endX}
-                cy={rel.endY}
-                r={rel.isHighlighted ? 5 : 4.2}
-                fill={rel.isHighlighted ? '#60a5fa' : selectedNode ? '#52525b' : '#e4e4e7'}
-                stroke="#101012"
-                strokeWidth={2}
-              />
-            </g>
-          ))}
+          {relations.map((rel) => {
+            const isSourceHold = holdingTable === rel.sourceTable;
+            const isTargetHold = holdingTable === rel.targetTable;
+            const isHoldActive = isSourceHold || isTargetHold || holdingLineId === rel.id;
+            const activeColor = isSourceHold ? '#38bdf8' : '#818cf8';
+
+            return (
+              <g key={`port-circles-${rel.id}`}>
+                {/* Source connection circle on FK column edge */}
+                <circle
+                  cx={rel.startX}
+                  cy={rel.startY}
+                  r={isHoldActive ? 4.5 : 3.2}
+                  fill={isHoldActive ? activeColor : holdingTable ? '#3f3f46' : '#8e8e93'}
+                  stroke="#101012"
+                  strokeWidth={2}
+                />
+                {/* Target connection circle on referenced PK column edge */}
+                <circle
+                  cx={rel.endX}
+                  cy={rel.endY}
+                  r={isHoldActive ? 5.5 : 4.2}
+                  fill={isHoldActive ? activeColor : holdingTable ? '#52525b' : '#e4e4e7'}
+                  stroke="#101012"
+                  strokeWidth={2}
+                />
+              </g>
+            );
+          })}
         </svg>
         </div>
       </div>
