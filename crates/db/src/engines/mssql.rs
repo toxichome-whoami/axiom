@@ -28,6 +28,7 @@ enum MsSqlColKind {
     Int64,
     Float32,
     Float64,
+    Numeric,
     String,
     Fallback,
 }
@@ -43,6 +44,7 @@ impl MsSqlColKind {
             ColumnType::Int8 => MsSqlColKind::Int64,
             ColumnType::Float4 => MsSqlColKind::Float32,
             ColumnType::Float8 => MsSqlColKind::Float64,
+            ColumnType::Decimaln | ColumnType::Numericn | ColumnType::Money | ColumnType::Money4 => MsSqlColKind::Numeric,
             ColumnType::NVarchar
             | ColumnType::BigVarChar
             | ColumnType::NChar
@@ -395,6 +397,19 @@ impl DatabaseEngine for MssqlDatabaseEngine {
                             Value::Null
                         }
                     }
+                    MsSqlColKind::Numeric => {
+                        if let Ok(Some(dec)) = row.try_get::<rust_decimal::Decimal, _>(idx) {
+                            if let Ok(num) = dec.to_string().parse::<serde_json::Number>() {
+                                Value::Number(num)
+                            } else {
+                                Value::String(dec.to_string())
+                            }
+                        } else if let Ok(Some(f)) = row.try_get::<f64, _>(idx) {
+                            serde_json::Number::from_f64(f).map(Value::Number).unwrap_or(Value::Null)
+                        } else {
+                            Value::Null
+                        }
+                    }
                     MsSqlColKind::Bool => {
                         if let Ok(Some(b)) = row.try_get::<bool, _>(idx) {
                             Value::Bool(b)
@@ -403,7 +418,13 @@ impl DatabaseEngine for MssqlDatabaseEngine {
                         }
                     }
                     MsSqlColKind::Fallback => {
-                        if let Ok(Some(s)) = row.try_get::<&str, _>(idx) {
+                        if let Ok(Some(dec)) = row.try_get::<rust_decimal::Decimal, _>(idx) {
+                            if let Ok(num) = dec.to_string().parse::<serde_json::Number>() {
+                                Value::Number(num)
+                            } else {
+                                Value::String(dec.to_string())
+                            }
+                        } else if let Ok(Some(s)) = row.try_get::<&str, _>(idx) {
                             Value::String(s.to_string())
                         } else if let Ok(Some(i)) = row.try_get::<i64, _>(idx) {
                             Value::Number(i.into())

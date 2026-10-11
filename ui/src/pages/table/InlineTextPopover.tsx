@@ -11,6 +11,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Maximize2, Check } from 'lucide-react';
 import { ColumnInfoApi } from '../../types';
+import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 
 export interface InlineTextPopoverProps {
   editingCell: {
@@ -57,6 +58,14 @@ export function InlineTextPopover({
     }
   }, [isNull]);
 
+  const isInitialNull = editingCell.initialValue === null || editingCell.initialValue === undefined;
+  const initialText = isInitialNull ? '' : String(editingCell.initialValue);
+
+  // Check if user has modified the value
+  const isDirty = isNull ? !isInitialNull : (isInitialNull || localValue !== initialText);
+
+  const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
+
   const handleCommit = useCallback(
     (customVal?: string, forcedNull?: boolean) => {
       if (forcedNull ?? isNull) {
@@ -69,27 +78,41 @@ export function InlineTextPopover({
     [isNull, localValue, onSave]
   );
 
-  // Outside click commits changes
+  const handleAttemptClose = useCallback(() => {
+    if (isDirty) {
+      setShowDiscardConfirm(true);
+    } else {
+      onCancel();
+    }
+  }, [isDirty, onCancel]);
+
+  // Outside click prompts for discard if dirty, cancels if clean
   useEffect(() => {
     const handleMouseDown = (e: MouseEvent) => {
+      if (showDiscardConfirm) return;
       if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
-        handleCommit();
+        // If clicking inside a confirmation dialog, ignore
+        const target = e.target as HTMLElement | null;
+        if (target?.closest('[role="dialog"]') || target?.closest('.fixed.z-50')) return;
+
+        handleAttemptClose();
       }
     };
     document.addEventListener('mousedown', handleMouseDown);
     return () => document.removeEventListener('mousedown', handleMouseDown);
-  }, [handleCommit]);
+  }, [handleAttemptClose, showDiscardConfirm]);
 
-  // Scroll outside commits changes
+  // Scroll outside prompts for discard if dirty
   useEffect(() => {
     const handleScroll = (e: Event) => {
+      if (showDiscardConfirm) return;
       if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
-        handleCommit();
+        handleAttemptClose();
       }
     };
     window.addEventListener('scroll', handleScroll, true);
     return () => window.removeEventListener('scroll', handleScroll, true);
-  }, [handleCommit]);
+  }, [handleAttemptClose, showDiscardConfirm]);
 
   const toggleNull = () => {
     if (!isNullable) return;
@@ -179,7 +202,7 @@ export function InlineTextPopover({
               } else if (e.key === 'Escape') {
                 e.preventDefault();
                 e.stopPropagation();
-                onCancel();
+                handleAttemptClose();
               }
             }}
             spellCheck={false}
@@ -208,6 +231,21 @@ export function InlineTextPopover({
           <span>Save</span>
         </button>
       </div>
+
+      {/* Discard Warning Dialog */}
+      <ConfirmDialog
+        isOpen={showDiscardConfirm}
+        title="Discard Unsaved Changes?"
+        description="You have unsaved changes in this cell. Are you sure you want to discard them?"
+        confirmLabel="Discard"
+        cancelLabel="Keep Editing"
+        variant="warning"
+        onConfirm={() => {
+          setShowDiscardConfirm(false);
+          onCancel();
+        }}
+        onClose={() => setShowDiscardConfirm(false)}
+      />
     </div>
   );
 }

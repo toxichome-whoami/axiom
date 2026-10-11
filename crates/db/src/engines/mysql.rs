@@ -353,7 +353,13 @@ impl DatabaseEngine for MysqlDatabaseEngine {
                         }
                     }
                     MySqlColKind::Numeric => {
-                        if let Ok(Some(s)) = row.try_get::<Option<String>, _>(idx) {
+                        if let Ok(Some(dec)) = row.try_get::<Option<rust_decimal::Decimal>, _>(idx) {
+                            if let Ok(num) = dec.to_string().parse::<serde_json::Number>() {
+                                Value::Number(num)
+                            } else {
+                                Value::String(dec.to_string())
+                            }
+                        } else if let Ok(Some(s)) = row.try_get::<Option<String>, _>(idx) {
                             if let Ok(num) = s.parse::<serde_json::Number>() {
                                 Value::Number(num)
                             } else {
@@ -389,7 +395,13 @@ impl DatabaseEngine for MysqlDatabaseEngine {
                         }
                     }
                     MySqlColKind::Fallback => {
-                        if let Ok(Some(s)) = row.try_get::<Option<String>, _>(idx) {
+                        if let Ok(Some(dec)) = row.try_get::<Option<rust_decimal::Decimal>, _>(idx) {
+                            if let Ok(num) = dec.to_string().parse::<serde_json::Number>() {
+                                Value::Number(num)
+                            } else {
+                                Value::String(dec.to_string())
+                            }
+                        } else if let Ok(Some(s)) = row.try_get::<Option<String>, _>(idx) {
                             if (s.starts_with('{') && s.ends_with('}')) || (s.starts_with('[') && s.ends_with(']')) {
                                 serde_json::from_str::<Value>(&s).unwrap_or(Value::String(s))
                             } else {

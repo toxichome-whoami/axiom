@@ -33,7 +33,7 @@ export function TableSkeleton({
         <tr className="sticky top-0 z-10 bg-[#0a0a0a] border-b border-[#222222]">
           {/* Row Checkbox & Action Sticky Column */}
           <th
-            className="w-16 px-3 py-2 text-left bg-[#0a0a0a] border-r border-[#1a1a1a]"
+            className="w-16 px-3 py-2 text-left bg-[#0a0a0a] sticky left-0 z-20 border-r border-[#1a1a1a]"
             style={{ width: '64px', minWidth: '64px', maxWidth: '64px' }}
           >
             <div className="flex items-center justify-start gap-1.5">
@@ -95,7 +95,7 @@ export function TableSkeleton({
         {Array.from({ length: skeletonRowCount }).map((_, rIdx) => (
           <tr key={rIdx} className="h-9 hover:bg-[#101010]/50 transition-colors">
             <td
-              className="px-3 py-2 text-left border-r border-[#1a1a1a]"
+              className="px-3 py-2 text-left border-r border-[#1a1a1a] sticky left-0 bg-[#0a0a0a] z-10"
               style={{ width: '64px', minWidth: '64px', maxWidth: '64px' }}
             >
               <div className="flex items-center justify-start gap-1.5 opacity-40">

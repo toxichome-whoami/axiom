@@ -96,17 +96,17 @@ export function TableGridView({
 }: TableGridViewProps) {
   return (
     <div className="flex-1 flex flex-col min-h-0 overflow-hidden relative font-sans">
-      <div className="flex-1 overflow-auto px-[6px]">
+      <div className="flex-1 overflow-auto">
         {isSchemaLoading || (isRowsLoading && rows.length === 0 && !rowsError) ? (
           <TableSkeleton columns={columns} foreignKeys={foreignKeys} columnWidths={columnWidths} />
         ) : rowsError ? (
-          <div className="p-8 flex flex-col items-center justify-center text-center">
+          <div className="p-8 flex flex-col items-center justify-center text-center font-sans">
             <AlertCircle className="w-8 h-8 text-rose-500 mb-2" />
             <p className="text-[14px] font-medium text-white mb-1">Failed to query table</p>
-            <p className="text-[12.5px] text-[#8c8c8c] max-w-md font-mono">{rowsError}</p>
+            <p className="text-[12.5px] text-[#8c8c8c] max-w-md font-sans">{rowsError}</p>
             <button
               onClick={onRetry}
-              className="mt-4 px-3 py-1.5 bg-[#141414] border border-[#262626] rounded-[6px] text-[12px] text-white hover:border-[#383838]"
+              className="mt-4 px-3 py-1.5 bg-[#141414] border border-[#262626] rounded-[6px] text-[12px] text-white hover:border-[#383838] transition-colors font-sans cursor-pointer"
             >
               Retry
             </button>
@@ -269,7 +269,9 @@ export function TableGridView({
                     >
                       {/* Row Checkbox & Expand Button */}
                       <td
-                        className="px-3 py-2 text-left select-none sticky left-0 bg-[#0a0a0a] group-hover:bg-[#121212] z-10 border-r border-[#1a1a1a]"
+                        className={`px-3 py-2 text-left select-none sticky left-0 z-10 border-r border-[#1a1a1a] ${
+                          isSelected ? 'bg-[#121212]' : 'bg-[#0a0a0a] group-hover:bg-[#121212]'
+                        }`}
                         style={{ width: '64px', minWidth: '64px', maxWidth: '64px' }}
                         onClick={(e) => e.stopPropagation()}
                       >
