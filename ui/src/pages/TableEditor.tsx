@@ -12,6 +12,7 @@ import { SlideOver } from '../components/ui/SlideOver';
 import { ColumnInfoApi } from '../types';
 import {
   mapSqlTypeToFormValue,
+  exportTableData,
 } from './table/format';
 import {
   InlineCellEditorPopover,
@@ -46,8 +47,16 @@ import { useRowOperations } from './table/useRowOperations';
 import { useSqlConsole } from './table/useSqlConsole';
 
 export function TableEditor() {
-  const [selectedDb, setSelectedDb] = useState<string>('');
+  const [selectedDb, setSelectedDb] = useState<string>(() => {
+    try {
+      const urlParams = new URLSearchParams(window.location.search);
+      return urlParams.get('db') || localStorage.getItem('axiom_selected_db') || '';
+    } catch {
+      return '';
+    }
+  });
   const [viewMode, setViewMode] = useState<'grid' | 'schema' | 'sql'>('grid');
+  const [gridSubTab, setGridSubTab] = useState<'data' | 'definition'>('data');
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
   // 1. Core Table & Schema Data Pipeline Hook
@@ -118,12 +127,16 @@ export function TableEditor() {
     setIsInsertModeInPanel,
     deleteRowTarget,
     setDeleteRowTarget,
+    isDeleteBatchConfirmOpen,
+    setIsDeleteBatchConfirmOpen,
+    isBatchDeleting,
     handleSelectRow,
     handleToggleRowSelect,
     handleToggleAllRows,
     handleSaveRowEdit,
     handleInsertRowFromPanel,
     handleDeleteRow,
+    handleDeleteSelectedRows,
   } = useRowOperations({
     selectedDb,
     selectedTable,
@@ -223,6 +236,7 @@ export function TableEditor() {
     isDeletingColumn,
     handleSaveColumn,
     handleDeleteColumn,
+    resetColumnForm,
   } = useColumnOperations({
     selectedDb,
     selectedTable,
@@ -251,6 +265,11 @@ export function TableEditor() {
     rect: { top: number; left: number; width: number; height: number };
   } | null>(null);
 
+  // Discard changes confirmation dialog states for Row Inspector, Column Editor, and Expand Cell Editor
+  const [isDiscardRowConfirmOpen, setIsDiscardRowConfirmOpen] = useState(false);
+  const [isDiscardColumnConfirmOpen, setIsDiscardColumnConfirmOpen] = useState(false);
+  const [isDiscardExpandedCellConfirmOpen, setIsDiscardExpandedCellConfirmOpen] = useState(false);
+
   // Row and Cell Right-Click Context Menu state
   const [gridContextMenu, setGridContextMenu] = useState<GridContextMenuState | null>(null);
 
@@ -260,12 +279,25 @@ export function TableEditor() {
     setTimeout(() => setCopiedKey(null), 2000);
   };
 
-  const handleOpenReferencedTable = (targetTable: string) => {
+  const handleOpenReferencedTable = (targetTable: string, column?: string, value?: unknown) => {
     setFkPreviewTarget(null);
     setSelectedTable(targetTable);
-    setSelectedRowIndex(null);
+    setSelectedRowIndex(0);
     setSelectedCell(null);
     setViewMode('grid');
+
+    if (column && value !== undefined && value !== null && value !== '') {
+      const parsedNum = typeof value === 'number' ? value : (!isNaN(Number(value)) && String(value).trim() !== '' ? Number(value) : null);
+      const valToUse = parsedNum !== null ? parsedNum : value;
+      setFilterCol(column);
+      setFilterOp('eq');
+      setFilterVal(String(value));
+      setActiveFilter({ col: column, op: 'eq', val: valToUse });
+    } else {
+      setActiveFilter(null);
+      setFilterCol('');
+      setFilterVal('');
+    }
   };
 
   const activeRow = selectedRowIndex !== null ? rows[selectedRowIndex] : null;
@@ -327,6 +359,21 @@ export function TableEditor() {
     foreignKeys,
   ]);
 
+  // Track if user has modified anything in the Expanded Cell Editor
+  const hasExpandedCellChanges = useMemo(() => {
+    if (!expandedInlineCell) return false;
+    const originalRow = rows[expandedInlineCell.rowIndex];
+    if (!originalRow) return false;
+    const originalVal = originalRow[expandedInlineCell.colName];
+    const originalStr =
+      originalVal === null || originalVal === undefined
+        ? ''
+        : typeof originalVal === 'object'
+        ? JSON.stringify(originalVal)
+        : String(originalVal);
+    return expandedInlineCell.value !== originalStr;
+  }, [expandedInlineCell, rows]);
+
   return (
     <div className="flex flex-col lg:flex-row w-full h-full min-h-0 select-none font-sans overflow-hidden bg-[#0c0c0c]">
       {/* ─── PANE 1: LEFT NAVIGATOR ─── */}
@@ -356,8 +403,19 @@ export function TableEditor() {
         <TableToolbar
           viewMode={viewMode}
           setViewMode={setViewMode}
+          gridSubTab={gridSubTab}
+          setGridSubTab={setGridSubTab}
           selectedTable={selectedTable}
           columns={columns}
+          selectedCount={selectedRowIndices.size}
+          onDeleteSelected={() => setIsDeleteBatchConfirmOpen(true)}
+          onExportSelected={(format) => {
+            const rowsToExport =
+              selectedRowIndices.size > 0
+                ? Array.from(selectedRowIndices).map((idx) => rows[idx]).filter(Boolean)
+                : rows;
+            exportTableData(format, selectedTable, rowsToExport, columns);
+          }}
           onOpenInsertRow={() => {
             setSelectedRowIndex(null);
             setRowEditValues({});
@@ -405,21 +463,39 @@ export function TableEditor() {
           currentPage={cursorHistory.length + 1}
           onJumpToPage={(targetPage) => {
             const currentPageNum = cursorHistory.length + 1;
-            if (targetPage === currentPageNum) return;
             if (targetPage === 1) {
-              setCursor(null);
-              setCursorHistory([]);
-              loadTableData({ targetCursor: null, reloadSchema: false });
-            } else if (targetPage < currentPageNum) {
+              if (currentPageNum !== 1) {
+                setCursor(null);
+                setCursorHistory([]);
+                loadTableData({ targetCursor: null, reloadSchema: false });
+              }
+              return true;
+            }
+            if (targetPage === currentPageNum) {
+              return true;
+            }
+            if (targetPage < currentPageNum && targetPage >= 1) {
               const targetIndex = targetPage - 1;
               const newHistory = cursorHistory.slice(0, targetIndex);
               const targetCursor = newHistory[newHistory.length - 1] || null;
               setCursorHistory(newHistory);
               loadTableData({ targetCursor, reloadSchema: false });
-            } else if (targetPage === currentPageNum + 1 && hasNextPage && cursor) {
+              return true;
+            }
+            if (targetPage === currentPageNum + 1 && hasNextPage && cursor) {
               setCursorHistory([...cursorHistory, cursor]);
               loadTableData({ targetCursor: cursor, reloadSchema: false });
+              return true;
             }
+
+            // Target page does not exist (e.g. user typed 100 and table does not have this page)
+            // Reset back to page 1
+            if (currentPageNum !== 1) {
+              setCursor(null);
+              setCursorHistory([]);
+              loadTableData({ targetCursor: null, reloadSchema: false });
+            }
+            return false;
           }}
           onPrevPage={() => {
             if (cursorHistory.length > 0) {
@@ -501,6 +577,14 @@ export function TableEditor() {
             }}
             onOpenFkPicker={(target) => setFkPickerTarget(target)}
             onOpenFkPreview={(target) => setFkPreviewTarget(target)}
+            viewMode={viewMode}
+            setViewMode={setViewMode}
+            gridSubTab={gridSubTab}
+            setGridSubTab={setGridSubTab}
+            onOpenInSqlEditor={(ddl) => {
+              setSqlQuery(ddl);
+              setViewMode('sql');
+            }}
           />
         )}
 
@@ -546,9 +630,13 @@ export function TableEditor() {
       <RowInspectorSlideOver
         isOpen={isDetailsOpen}
         onClose={() => {
-          setIsDetailsOpen(false);
-          setIsInsertModeInPanel(false);
-          setInspectorTab('details');
+          if (hasRowChanges) {
+            setIsDiscardRowConfirmOpen(true);
+          } else {
+            setIsDetailsOpen(false);
+            setIsInsertModeInPanel(false);
+            setInspectorTab('details');
+          }
         }}
         isInsertMode={isInsertModeInPanel}
         activeRow={activeRow}
@@ -569,6 +657,32 @@ export function TableEditor() {
         isColReadOnly={(col) => isColReadOnly(col)}
       />
 
+      {/* ─── Discard Row Changes Confirm Dialog ─── */}
+      <ConfirmDialog
+        isOpen={isDiscardRowConfirmOpen}
+        title={isInsertModeInPanel ? "Discard New Row?" : "Discard Changes?"}
+        description={
+          isInsertModeInPanel
+            ? "You have unsaved values for this new record. If you leave now, the row will not be created."
+            : "You have unsaved edits in this row. Are you sure you want to discard your changes?"
+        }
+        confirmLabel="Discard"
+        cancelLabel="Keep Editing"
+        variant="warning"
+        onConfirm={() => {
+          setIsDiscardRowConfirmOpen(false);
+          setIsDetailsOpen(false);
+          setIsInsertModeInPanel(false);
+          setInspectorTab('details');
+          if (activeRow) {
+            setRowEditValues({ ...activeRow });
+          } else {
+            setRowEditValues({});
+          }
+        }}
+        onClose={() => setIsDiscardRowConfirmOpen(false)}
+      />
+
       {/* ─── Delete Row Confirm Dialog ─── */}
       <ConfirmDialog
         isOpen={!!deleteRowTarget}
@@ -578,6 +692,17 @@ export function TableEditor() {
         variant="danger"
         onConfirm={handleDeleteRow}
         onClose={() => setDeleteRowTarget(null)}
+      />
+
+      {/* ─── Delete Selected Rows (Batch Delete) Confirm Dialog ─── */}
+      <ConfirmDialog
+        isOpen={isDeleteBatchConfirmOpen}
+        title={`Delete ${selectedRowIndices.size} Selected Row${selectedRowIndices.size > 1 ? 's' : ''}`}
+        description={`Are you sure you want to permanently delete ${selectedRowIndices.size} selected row${selectedRowIndices.size > 1 ? 's' : ''}? This action cannot be reversed.`}
+        confirmLabel={isBatchDeleting ? "Deleting..." : "Delete Selected"}
+        variant="danger"
+        onConfirm={handleDeleteSelectedRows}
+        onClose={() => setIsDeleteBatchConfirmOpen(false)}
       />
 
       {/* ─── Inline Cell Popover Editor ─── */}
@@ -698,7 +823,13 @@ export function TableEditor() {
       {/* ─── Expanded Inline Cell SlideOver Panel ─── */}
       <SlideOver
         isOpen={!!expandedInlineCell}
-        onClose={() => setExpandedInlineCell(null)}
+        onClose={() => {
+          if (hasExpandedCellChanges) {
+            setIsDiscardExpandedCellConfirmOpen(true);
+          } else {
+            setExpandedInlineCell(null);
+          }
+        }}
         width="w-[520px] max-w-full"
         title={expandedInlineCell?.colName || 'Field'}
         subtitle="Edit field value"
@@ -730,7 +861,13 @@ export function TableEditor() {
           <div className="p-4 border-t border-[#222222] bg-[#0e0e0e] flex items-center justify-end gap-2.5 font-sans shrink-0">
             <button
               type="button"
-              onClick={() => setExpandedInlineCell(null)}
+              onClick={() => {
+                if (hasExpandedCellChanges) {
+                  setIsDiscardExpandedCellConfirmOpen(true);
+                } else {
+                  setExpandedInlineCell(null);
+                }
+              }}
               className="inline-flex items-center justify-center h-9 px-4 rounded-[8px] text-[14px] font-medium text-[#cccccc] hover:text-white bg-transparent hover:bg-[#161616] border border-[#262626] hover:border-[#383838] transition-colors cursor-pointer font-sans"
             >
               Cancel
@@ -761,12 +898,32 @@ export function TableEditor() {
         </div>
       </SlideOver>
 
+      {/* ─── Discard Expanded Cell Confirm Dialog ─── */}
+      <ConfirmDialog
+        isOpen={isDiscardExpandedCellConfirmOpen}
+        title="Discard Cell Edits?"
+        description={`You have unsaved changes in "${expandedInlineCell?.colName || 'field'}". Are you sure you want to discard your edits?`}
+        confirmLabel="Discard"
+        cancelLabel="Keep Editing"
+        variant="warning"
+        onConfirm={() => {
+          setIsDiscardExpandedCellConfirmOpen(false);
+          setExpandedInlineCell(null);
+        }}
+        onClose={() => setIsDiscardExpandedCellConfirmOpen(false)}
+      />
+
       {/* ─── Add / Update Column SlideOver ─── */}
       <ColumnSlideOver
         isOpen={isAddColumnOpen}
         onClose={() => {
-          setIsAddColumnOpen(false);
-          setEditingColumn(null);
+          if (hasColumnChanges) {
+            setIsDiscardColumnConfirmOpen(true);
+          } else {
+            setIsAddColumnOpen(false);
+            setEditingColumn(null);
+            resetColumnForm();
+          }
         }}
         editingColumn={editingColumn}
         selectedTable={selectedTable}
@@ -822,6 +979,27 @@ export function TableEditor() {
         isCreatingColumn={isCreatingColumn}
         hasColumnChanges={hasColumnChanges}
         handleSaveColumn={handleSaveColumn}
+      />
+
+      {/* ─── Discard Column Changes Confirm Dialog ─── */}
+      <ConfirmDialog
+        isOpen={isDiscardColumnConfirmOpen}
+        title={editingColumn ? "Discard Column Changes?" : "Discard New Column?"}
+        description={
+          editingColumn
+            ? `You have unsaved changes for column "${editingColumn.name}". If you discard, these changes will not be applied.`
+            : "You have entered values for a new column. If you discard, the column will not be created."
+        }
+        confirmLabel="Discard"
+        cancelLabel="Keep Editing"
+        variant="warning"
+        onConfirm={() => {
+          setIsDiscardColumnConfirmOpen(false);
+          setIsAddColumnOpen(false);
+          setEditingColumn(null);
+          resetColumnForm();
+        }}
+        onClose={() => setIsDiscardColumnConfirmOpen(false)}
       />
 
       {/* ─── Foreign Key Reference Record Picker Modal ─── */}

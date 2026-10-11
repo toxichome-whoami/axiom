@@ -64,6 +64,13 @@ export interface TableGridViewProps {
     currentValue: unknown;
     rect: { top: number; left: number; width: number; height: number };
   }) => void;
+
+  // View mode switcher
+  viewMode?: 'grid' | 'schema' | 'sql';
+  setViewMode?: (mode: 'grid' | 'schema' | 'sql') => void;
+  onSelectSqlMode?: () => void;
+  gridSubTab?: 'data' | 'definition';
+  setGridSubTab?: (tab: 'data' | 'definition') => void;
 }
 
 export function TableGridView({
@@ -93,33 +100,127 @@ export function TableGridView({
   onOpenAddColumn,
   onOpenFkPicker,
   onOpenFkPreview,
+  onOpenInSqlEditor,
+  gridSubTab: externalTab,
+  setGridSubTab: setExternalTab,
 }: TableGridViewProps) {
+  const [internalTab, setInternalTab] = React.useState<'data' | 'definition'>('data');
+  const activeTab = externalTab ?? internalTab;
+  const setActiveTab = setExternalTab ?? setInternalTab;
+
+  // Generate realistic formatted SQL DDL for Definition tab
+  const { ddl, lines } = React.useMemo(() => {
+    const tableName = selectedTable || 'table_name';
+    const linesList: { tokens: { text: string; color: string }[] }[] = [];
+
+    // Line 1: create table public.<tableName> (
+    linesList.push({
+      tokens: [
+        { text: 'create table ', color: 'text-blue-400' },
+        { text: `public.${tableName}`, color: 'text-white' },
+        { text: ' (', color: 'text-[#888888]' },
+      ],
+    });
+
+    const primaryKeys = columns.filter((c) => c.primary_key);
+
+    columns.forEach((col, idx) => {
+      const isLastCol = idx === columns.length - 1 && primaryKeys.length === 0 && foreignKeys.length === 0;
+      const tokens: { text: string; color: string }[] = [
+        { text: '  ' + col.name + ' ', color: 'text-white' },
+      ];
+
+      const lowerType = (col.type || 'text').toLowerCase();
+      tokens.push({ text: lowerType, color: 'text-[#a371f7]' });
+
+      if (col.default_value) {
+        tokens.push({ text: ' default ', color: 'text-blue-400' });
+        tokens.push({ text: col.default_value, color: 'text-amber-300' });
+      }
+
+      if (!col.nullable) {
+        tokens.push({ text: ' not null', color: 'text-blue-400' });
+      } else {
+        tokens.push({ text: ' null', color: 'text-[#888888]' });
+      }
+
+      tokens.push({ text: isLastCol ? '' : ',', color: 'text-[#888888]' });
+      linesList.push({ tokens });
+    });
+
+    if (primaryKeys.length > 0) {
+      const pkNames = primaryKeys.map((p) => p.name).join(', ');
+      const hasMoreConstraints = foreignKeys.length > 0;
+      linesList.push({
+        tokens: [
+          { text: '  constraint ', color: 'text-blue-400' },
+          { text: `${tableName}_pkey `, color: 'text-white' },
+          { text: 'primary key ', color: 'text-blue-400' },
+          { text: `(${pkNames})`, color: 'text-[#888888]' },
+          { text: hasMoreConstraints ? ',' : '', color: 'text-[#888888]' },
+        ],
+      });
+    }
+
+    foreignKeys.forEach((fk, idx) => {
+      const isLast = idx === foreignKeys.length - 1;
+      linesList.push({
+        tokens: [
+          { text: '  constraint ', color: 'text-blue-400' },
+          { text: `${tableName}_${fk.column}_fkey `, color: 'text-white' },
+          { text: 'foreign key ', color: 'text-blue-400' },
+          { text: `(${fk.column}) `, color: 'text-[#888888]' },
+          { text: 'references ', color: 'text-blue-400' },
+          { text: `${fk.referenced_table} (${fk.referenced_column})`, color: 'text-white' },
+          { text: ' on delete set null', color: 'text-[#888888]' },
+          { text: isLast ? '' : ',', color: 'text-[#888888]' },
+        ],
+      });
+    });
+
+    linesList.push({
+      tokens: [
+        { text: ') ', color: 'text-[#888888]' },
+        { text: 'TABLESPACE ', color: 'text-blue-400' },
+        { text: 'pg_default;', color: 'text-[#888888]' },
+      ],
+    });
+
+    const rawDdl = linesList
+      .map((line) => line.tokens.map((t) => t.text).join(''))
+      .join('\n');
+
+    return { ddl: rawDdl, lines: linesList };
+  }, [selectedTable, columns, foreignKeys]);
+
   return (
     <div className="flex-1 flex flex-col min-h-0 overflow-hidden relative font-sans">
-      <div className="flex-1 overflow-auto">
-        {isSchemaLoading || (isRowsLoading && rows.length === 0 && !rowsError) ? (
-          <TableSkeleton columns={columns} foreignKeys={foreignKeys} columnWidths={columnWidths} />
-        ) : rowsError ? (
-          <div className="p-8 flex flex-col items-center justify-center text-center font-sans">
-            <AlertCircle className="w-8 h-8 text-rose-500 mb-2" />
-            <p className="text-[14px] font-medium text-white mb-1">Failed to query table</p>
-            <p className="text-[12.5px] text-[#8c8c8c] max-w-md font-sans">{rowsError}</p>
-            <button
-              onClick={onRetry}
-              className="mt-4 px-3 py-1.5 bg-[#141414] border border-[#262626] rounded-[6px] text-[12px] text-white hover:border-[#383838] transition-colors font-sans cursor-pointer"
+      {/* Tab 1: Data View (Spreadsheet Grid) */}
+      {activeTab === 'data' && (
+        <div className="flex-1 overflow-auto">
+          {isSchemaLoading || (isRowsLoading && rows.length === 0 && !rowsError) ? (
+            <TableSkeleton columns={columns} foreignKeys={foreignKeys} columnWidths={columnWidths} />
+          ) : rowsError ? (
+            <div className="p-8 flex flex-col items-center justify-center text-center font-sans">
+              <AlertCircle className="w-8 h-8 text-rose-500 mb-2" />
+              <p className="text-[14px] font-medium text-white mb-1">Failed to query table</p>
+              <p className="text-[12.5px] text-[#8c8c8c] max-w-md font-sans">{rowsError}</p>
+              <button
+                onClick={onRetry}
+                className="mt-4 px-3 py-1.5 bg-[#141414] border border-[#262626] rounded-[6px] text-[12px] text-white hover:border-[#383838] transition-colors font-sans cursor-pointer"
+              >
+                Retry
+              </button>
+            </div>
+          ) : columns.length === 0 ? (
+            <div className="p-12 text-center text-[#777777] text-[14px]">
+              No column schema found for table <span className="font-sans font-medium text-white">{selectedTable}</span>
+            </div>
+          ) : (
+            <table
+              className="border-collapse text-left select-text font-sans text-[14px] table-fixed"
+              style={{ width: 'max-content' }}
             >
-              Retry
-            </button>
-          </div>
-        ) : columns.length === 0 ? (
-          <div className="p-12 text-center text-[#777777] text-[14px]">
-            No column schema found for table <span className="font-sans font-medium text-white">{selectedTable}</span>
-          </div>
-        ) : (
-          <table
-            className="border-collapse text-left select-text font-sans text-[14px] table-fixed"
-            style={{ width: 'max-content' }}
-          >
             <thead>
               <tr className="sticky top-0 z-10 bg-[#0a0a0a] border-b border-[#222222]">
                 {/* Row Checkbox & Action Sticky Column */}
@@ -438,15 +539,89 @@ export function TableGridView({
           </table>
         )}
       </div>
+    )}
 
-      {/* Pagination Footer */}
-      <div className="h-12 shrink-0 px-4 bg-[#0a0a0a] border-t border-[#222222] flex items-center text-[13px] text-[#8c8c8c] select-none font-sans">
-        <span>
-          Showing <span className="text-white font-medium">{rows.length}</span> rows
-          {selectedTable && (
-            <> in <span className="text-white font-mono">{selectedTable}</span></>
-          )}
-        </span>
+      {/* Tab 2: Definition View (SQL DDL Editor) */}
+      {activeTab === 'definition' && (
+        <div className="flex-1 flex flex-col min-h-0 overflow-hidden bg-[#0a0a0a]">
+          {/* Header bar */}
+          <div className="h-[46px] shrink-0 px-5 border-b border-[#222222] bg-[#0c0c0c] flex items-center justify-between gap-3 select-none">
+            <h3 className="text-[14px] font-sans text-[#eaeaea]">
+              SQL Definition of <span className="font-semibold text-white">{selectedTable}</span>{' '}
+              <span className="text-[#666666] font-normal text-[13px]">(Read only)</span>
+            </h3>
+
+            {onOpenInSqlEditor && (
+              <button
+                type="button"
+                onClick={() => onOpenInSqlEditor(ddl)}
+                className="px-3.5 py-1.5 rounded-[6px] bg-[#1a1a1a] hover:bg-[#252525] border border-[#2d2d2d] hover:border-[#3d3d3d] text-[13px] font-medium text-white transition-colors cursor-pointer"
+              >
+                Open in SQL Editor
+              </button>
+            )}
+          </div>
+
+          {/* Line numbered SQL viewer */}
+          <div className="flex-1 overflow-auto p-4 font-mono text-[13px] leading-[22px] bg-[#0c0c0c]">
+            <table className="border-collapse w-full select-text">
+              <tbody>
+                {lines.map((line, idx) => (
+                  <tr key={idx} className="hover:bg-[#141414]/50">
+                    <td className="w-10 pr-6 text-right text-[#555555] select-none align-top font-mono text-[12.5px]">
+                      {idx + 1}
+                    </td>
+                    <td className="align-top whitespace-pre font-mono">
+                      {line.tokens.map((token, tIdx) => (
+                        <span key={tIdx} className={token.color}>
+                          {token.text}
+                        </span>
+                      ))}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Pagination & Status Footer */}
+      <div className={`h-12 shrink-0 px-4 bg-[#0a0a0a] border-t border-[#222222] flex items-center gap-3 text-[13px] text-[#8c8c8c] select-none font-sans ${
+        activeTab === 'data' ? 'justify-between' : 'justify-end'
+      }`}>
+        {activeTab === 'data' && (
+          <span>
+            Showing <span className="text-white font-medium">{rows.length}</span> rows
+            {selectedTable && (
+              <> in <span className="text-white font-mono">{selectedTable}</span></>
+            )}
+          </span>
+        )}
+
+        {/* Bottom Right Mode Switcher Tabs */}
+        <div className="flex items-center p-0.5 rounded-[6px] bg-[#141414] border border-[#262626]">
+          <button
+            type="button"
+            onClick={() => setActiveTab('data')}
+            title="Table Data Grid"
+            className={`flex items-center px-3 py-1 rounded-[4px] text-[13px] font-medium transition-colors cursor-pointer ${
+              activeTab === 'data' ? 'bg-[#222222] text-white shadow-xs' : 'text-[#8c8c8c] hover:text-white'
+            }`}
+          >
+            <span>Data</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('definition')}
+            title="SQL Definition & DDL"
+            className={`flex items-center px-3 py-1 rounded-[4px] text-[13px] font-medium transition-colors cursor-pointer ${
+              activeTab === 'definition' ? 'bg-[#222222] text-white shadow-xs' : 'text-[#8c8c8c] hover:text-white'
+            }`}
+          >
+            <span>Definition</span>
+          </button>
+        </div>
       </div>
     </div>
   );

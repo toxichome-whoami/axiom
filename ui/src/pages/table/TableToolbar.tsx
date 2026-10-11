@@ -16,6 +16,7 @@ import {
   Terminal,
   ChevronDown,
   Check,
+  Trash2,
 } from 'lucide-react';
 import { ColumnInfoApi } from '../../types';
 import { CustomSelect } from '../../components/shared/CustomSelect';
@@ -23,16 +24,23 @@ import { CustomSelect } from '../../components/shared/CustomSelect';
 export interface TableToolbarProps {
   viewMode: 'grid' | 'schema' | 'sql';
   setViewMode: (mode: 'grid' | 'schema' | 'sql') => void;
+  gridSubTab?: 'data' | 'definition';
+  setGridSubTab?: (tab: 'data' | 'definition') => void;
   selectedTable: string;
   columns: ColumnInfoApi[];
+
+  // Selection batch actions
+  selectedCount?: number;
+  onDeleteSelected?: () => void;
+  onExportSelected?: (format: 'csv' | 'json' | 'sql') => void;
 
   // Insert actions
   onOpenInsertRow: () => void;
   onOpenAddColumn: () => void;
 
   // Filter state
-  activeFilter: { col: string; op: string; val: string } | null;
-  setActiveFilter: (filter: { col: string; op: string; val: string } | null) => void;
+  activeFilter: { col: string; op: string; val: unknown } | null;
+  setActiveFilter: (filter: { col: string; op: string; val: unknown } | null) => void;
   filterCol: string;
   setFilterCol: (col: string) => void;
   filterOp: 'eq' | 'neq' | 'gt' | 'lt' | 'like' | 'is_null';
@@ -52,7 +60,7 @@ export interface TableToolbarProps {
   pageSize: number;
   setPageSize: (size: number) => void;
   currentPage: number;
-  onJumpToPage: (page: number) => void;
+  onJumpToPage: (page: number) => boolean | void;
   onPrevPage: () => void;
   onNextPage: () => void;
   hasPrevPage: boolean;
@@ -68,6 +76,8 @@ export interface TableToolbarProps {
 export function TableToolbar({
   viewMode,
   setViewMode,
+  gridSubTab = 'data',
+  setGridSubTab,
   selectedTable,
   columns,
   onOpenInsertRow,
@@ -98,8 +108,12 @@ export function TableToolbar({
   isRowsLoading,
   isSchemaLoading,
   onSelectSqlMode,
+  selectedCount = 0,
+  onDeleteSelected,
+  onExportSelected,
 }: TableToolbarProps) {
   const [isInsertDropdownOpen, setIsInsertDropdownOpen] = React.useState(false);
+  const [isExportDropdownOpen, setIsExportDropdownOpen] = React.useState(false);
   const [showFilterPopover, setShowFilterPopover] = React.useState(false);
   const [showSortPopover, setShowSortPopover] = React.useState(false);
   const [showPageSizePopover, setShowPageSizePopover] = React.useState(false);
@@ -110,6 +124,7 @@ export function TableToolbar({
   }, [currentPage]);
 
   const insertDropdownRef = useRef<HTMLDivElement>(null);
+  const exportDropdownRef = useRef<HTMLDivElement>(null);
   const filterPopoverRef = useRef<HTMLDivElement>(null);
   const sortPopoverRef = useRef<HTMLDivElement>(null);
   const pageSizePopoverRef = useRef<HTMLDivElement>(null);
@@ -119,6 +134,9 @@ export function TableToolbar({
       const target = e.target as Node;
       if (insertDropdownRef.current && !insertDropdownRef.current.contains(target)) {
         setIsInsertDropdownOpen(false);
+      }
+      if (exportDropdownRef.current && !exportDropdownRef.current.contains(target)) {
+        setIsExportDropdownOpen(false);
       }
       if (filterPopoverRef.current && !filterPopoverRef.current.contains(target)) {
         setShowFilterPopover(false);
@@ -351,6 +369,73 @@ export function TableToolbar({
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isRowsLoading || isSchemaLoading ? 'animate-spin' : ''}`} />
             </button>
+
+            {/* Selection Batch Action Buttons (Visible when 1 or more rows selected) */}
+            {selectedCount > 0 && (
+              <div className="flex items-center gap-1.5 pl-1 animate-in fade-in zoom-in-95 duration-100">
+                {/* Delete Selected Rows Button */}
+                {onDeleteSelected && (
+                  <button
+                    type="button"
+                    onClick={onDeleteSelected}
+                    title={`Delete ${selectedCount} selected row${selectedCount > 1 ? 's' : ''}`}
+                    className="flex items-center gap-1.5 h-8 px-2.5 rounded-[6px] bg-red-950/30 hover:bg-red-950/50 border border-red-800/40 hover:border-red-600/60 text-red-400 hover:text-red-300 text-[13px] font-medium transition-colors cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Delete</span>
+                  </button>
+                )}
+
+                {/* Export Dropdown Menu */}
+                {onExportSelected && (
+                  <div className="relative" ref={exportDropdownRef}>
+                    <button
+                      type="button"
+                      onClick={() => setIsExportDropdownOpen(!isExportDropdownOpen)}
+                      className="flex items-center gap-1.5 h-8 px-2.5 rounded-[6px] bg-[#141414] hover:bg-[#1a1a1a] border border-[#242424] hover:border-[#383838] text-[#cccccc] hover:text-white text-[13px] font-medium transition-colors cursor-pointer"
+                    >
+                      <span>Export</span>
+                      <ChevronDown className="w-3.5 h-3.5 text-[#777777]" />
+                    </button>
+
+                    {isExportDropdownOpen && (
+                      <div className="absolute left-0 top-full mt-1.5 w-36 bg-[#111111] border border-[#262626] rounded-[8px] shadow-2xl p-1 z-50 animate-in fade-in zoom-in-95 duration-100 font-sans">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsExportDropdownOpen(false);
+                            onExportSelected('csv');
+                          }}
+                          className="w-full flex items-center px-2.5 py-1.5 rounded-[6px] text-[13px] text-[#cccccc] hover:text-white hover:bg-[#1a1a1a] transition-colors cursor-pointer text-left"
+                        >
+                          CSV
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsExportDropdownOpen(false);
+                            onExportSelected('json');
+                          }}
+                          className="w-full flex items-center px-2.5 py-1.5 rounded-[6px] text-[13px] text-[#cccccc] hover:text-white hover:bg-[#1a1a1a] transition-colors cursor-pointer text-left"
+                        >
+                          JSON
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsExportDropdownOpen(false);
+                            onExportSelected('sql');
+                          }}
+                          className="w-full flex items-center px-2.5 py-1.5 rounded-[6px] text-[13px] text-[#cccccc] hover:text-white hover:bg-[#1a1a1a] transition-colors cursor-pointer text-left"
+                        >
+                          SQL
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </>
         )}
 
@@ -392,8 +477,8 @@ export function TableToolbar({
         </div>
       </div>
 
-      {/* Right: Next and Previous Pagination Controls */}
-      {viewMode === 'grid' && (
+      {/* Right: Next and Previous Pagination Controls (Only visible in Data grid mode, hidden in Definition view) */}
+      {viewMode === 'grid' && gridSubTab === 'data' && (
         <div className="flex items-center gap-2 shrink-0">
           {/* Custom Page Size Dropdown */}
           <div className="relative" ref={pageSizePopoverRef}>
@@ -445,8 +530,7 @@ export function TableToolbar({
           </button>
 
           {/* Editable Page Number */}
-          <div className="flex items-center gap-1.5 px-2 h-8 rounded-[6px] bg-[#141414] border border-[#262626] text-[13px] font-sans text-[#8c8c8c]">
-            <span className="text-[12px] font-sans text-[#666666] select-none">Page</span>
+          <div className="flex items-center justify-center px-1.5 h-8 rounded-[6px] bg-[#141414] border border-[#262626] text-[13px] font-sans text-[#8c8c8c] focus-within:border-[#383838]">
             <input
               type="text"
               inputMode="numeric"
@@ -456,9 +540,13 @@ export function TableToolbar({
                 if (e.key === 'Enter') {
                   const p = parseInt(pageInputVal, 10);
                   if (!isNaN(p) && p >= 1) {
-                    onJumpToPage(p);
+                    const valid = onJumpToPage(p);
+                    if (!valid) {
+                      setPageInputVal('1');
+                    }
                   } else {
-                    setPageInputVal(String(currentPage));
+                    onJumpToPage(1);
+                    setPageInputVal('1');
                   }
                 } else if (e.key === 'Escape') {
                   setPageInputVal(String(currentPage));
@@ -466,14 +554,20 @@ export function TableToolbar({
               }}
               onBlur={() => {
                 const p = parseInt(pageInputVal, 10);
-                if (!isNaN(p) && p >= 1 && p !== currentPage) {
-                  onJumpToPage(p);
+                if (!isNaN(p) && p >= 1) {
+                  if (p !== currentPage) {
+                    const valid = onJumpToPage(p);
+                    if (!valid) {
+                      setPageInputVal('1');
+                    }
+                  }
                 } else {
-                  setPageInputVal(String(currentPage));
+                  onJumpToPage(1);
+                  setPageInputVal('1');
                 }
               }}
               title="Click or press Enter to jump to page"
-              className="w-8 h-5 text-center bg-transparent text-white font-sans text-[13px] font-medium border-b border-transparent focus:border-white focus:outline-none transition-colors"
+              className="w-7 h-5 text-center bg-transparent text-white font-sans text-[13px] font-medium outline-none focus:outline-none select-all"
             />
           </div>
 

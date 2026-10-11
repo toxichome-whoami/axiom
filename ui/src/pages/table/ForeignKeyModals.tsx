@@ -33,7 +33,7 @@ export interface ForeignKeyRecordPreviewPopoverProps {
   currentValue: unknown;
   anchorRect: { top: number; left: number; width: number; height: number };
   onClose: () => void;
-  onOpenTable: (table: string) => void;
+  onOpenTable: (table: string, column?: string, value?: unknown) => void;
 }
 
 export function ForeignKeyRecordPreviewPopover({
@@ -216,7 +216,7 @@ export function ForeignKeyRecordPreviewPopover({
         </button>
         <button
           type="button"
-          onClick={() => onOpenTable(fk.referenced_table)}
+          onClick={() => onOpenTable(fk.referenced_table, fk.referenced_column, currentValue)}
           className="h-7 px-3.5 rounded-[5px] border border-[#2e2e2e] bg-[#1e1e1e] hover:bg-[#282828] text-white text-[12px] font-medium font-sans transition-colors cursor-pointer flex items-center gap-1.5 shadow-xs"
         >
           <span>Open table</span>

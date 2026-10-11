@@ -678,13 +678,23 @@ pub async fn fetch_rows(
     PolicyEngine::evaluate(&auth, &db_name, &table_name, "SELECT")?;
     let db_cfg = get_db_config(&db_name, &auth).await?;
 
+    let engine = DatabasePoolManager::get_engine(&db_name).await;
+    let table_cols = if let Some(ref eng) = engine {
+        eng.describe_table(&table_name).await.ok()
+    } else {
+        None
+    };
+
     let mut values = Vec::new();
     let mut where_clauses = Vec::new();
 
     if let Some(filter_str) = &params.filter {
-        if let Ok(filter_json) =
+        if let Ok(mut filter_json) =
             serde_json::from_str::<std::collections::HashMap<String, Value>>(filter_str)
         {
+            if let Some(ref cols) = table_cols {
+                crate::database::filter_builder::coerce_filter_values(&mut filter_json, cols);
+            }
             let (clause, mut vals) =
                 crate::database::filter_builder::build_where_clause(&filter_json);
             if !clause.is_empty() {
@@ -717,15 +727,11 @@ pub async fn fetch_rows(
         // In PostgreSQL and MVCC relational databases, an UPDATE rewrites the tuple on disk.
         // Without an explicit ORDER BY, updated rows move to the bottom of the table heap.
         // We introspect the table columns to find the primary key, or fallback to "id" if present.
-        let default_sort_col = if let Some(engine) = DatabasePoolManager::get_engine(&db_name).await {
-            if let Ok(cols) = engine.describe_table(&table_name).await {
-                cols.iter()
-                    .find(|c| c.primary_key)
-                    .map(|c| c.name.clone())
-                    .or_else(|| cols.iter().find(|c| c.name.eq_ignore_ascii_case("id")).map(|c| c.name.clone()))
-            } else {
-                None
-            }
+        let default_sort_col = if let Some(ref cols) = table_cols {
+            cols.iter()
+                .find(|c| c.primary_key)
+                .map(|c| c.name.clone())
+                .or_else(|| cols.iter().find(|c| c.name.eq_ignore_ascii_case("id")).map(|c| c.name.clone()))
         } else {
             None
         };
@@ -755,7 +761,33 @@ pub async fn fetch_rows(
         if let Some((ref order_col, order_dir)) = order_col_opt {
             let cursor_op = if order_dir == "DESC" { "<" } else { ">" };
             let cursor_cond = format!("{} {} ?", order_col, cursor_op);
-            values.push(Value::String(cursor.clone()));
+
+            let is_numeric = table_cols.as_ref().map(|cols| {
+                cols.iter().any(|c| c.name.eq_ignore_ascii_case(order_col) && (
+                    c.r#type.to_lowercase().contains("int") ||
+                    c.r#type.to_lowercase().contains("serial") ||
+                    c.r#type.to_lowercase().contains("num") ||
+                    c.r#type.to_lowercase().contains("dec") ||
+                    c.r#type.to_lowercase().contains("float") ||
+                    c.r#type.to_lowercase().contains("double")
+                ))
+            }).unwrap_or(false);
+
+            if is_numeric {
+                if let Ok(i) = cursor.trim().parse::<i64>() {
+                    values.push(Value::Number(i.into()));
+                } else if let Ok(f) = cursor.trim().parse::<f64>() {
+                    if let Some(num) = serde_json::Number::from_f64(f) {
+                        values.push(Value::Number(num));
+                    } else {
+                        values.push(Value::String(cursor.clone()));
+                    }
+                } else {
+                    values.push(Value::String(cursor.clone()));
+                }
+            } else {
+                values.push(Value::String(cursor.clone()));
+            }
 
             if final_where.trim().is_empty() {
                 final_where = format!("WHERE {}", cursor_cond);
@@ -849,10 +881,22 @@ pub async fn update_rows(
         ));
     }
 
+    let engine = DatabasePoolManager::get_engine(&db_name).await;
+    let table_cols = if let Some(ref eng) = engine {
+        eng.describe_table(&table_name).await.ok()
+    } else {
+        None
+    };
+
+    let mut filter = payload.filter;
+    if let Some(ref cols) = table_cols {
+        crate::database::filter_builder::coerce_filter_values(&mut filter, cols);
+    }
+
     let (sql, values) = crate::database::filter_builder::construct_update(
         &table_name,
         &payload.update,
-        &payload.filter,
+        &filter,
     );
 
     if sql.ends_with("WHERE ") || sql.contains("SET  WHERE") {
@@ -892,8 +936,20 @@ pub async fn delete_rows(
         ));
     }
 
+    let engine = DatabasePoolManager::get_engine(&db_name).await;
+    let table_cols = if let Some(ref eng) = engine {
+        eng.describe_table(&table_name).await.ok()
+    } else {
+        None
+    };
+
+    let mut filter = payload.filter;
+    if let Some(ref cols) = table_cols {
+        crate::database::filter_builder::coerce_filter_values(&mut filter, cols);
+    }
+
     let (sql, values) =
-        crate::database::filter_builder::construct_delete(&table_name, &payload.filter);
+        crate::database::filter_builder::construct_delete(&table_name, &filter);
 
     if sql.ends_with("WHERE ") {
         return Err(AxiomError::new(

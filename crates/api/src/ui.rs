@@ -70,12 +70,18 @@ async fn static_handler(uri: Uri) -> impl IntoResponse {
         return serve_asset("index.html");
     }
 
-    // 1. Try exact asset path (e.g. _astro/style.css, favicon.ico)
+    // 1. Try exact asset path (e.g. assets/style.css, favicon.ico)
     if let Some(content) = Assets::get(path) {
         let mime = get_mime(path);
+        let cache_control = if path.starts_with("assets/") {
+            "public, max-age=31536000, immutable"
+        } else {
+            "no-cache"
+        };
         return Response::builder()
             .header(header::CONTENT_TYPE, HeaderValue::from_static(mime))
             .header(header::CONTENT_SECURITY_POLICY, HeaderValue::from_static(UI_CSP))
+            .header(header::CACHE_CONTROL, HeaderValue::from_static(cache_control))
             .body(Body::from(content.data))
             .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response());
     }
@@ -87,6 +93,7 @@ async fn static_handler(uri: Uri) -> impl IntoResponse {
         return Response::builder()
             .header(header::CONTENT_TYPE, HeaderValue::from_static("text/html; charset=utf-8"))
             .header(header::CONTENT_SECURITY_POLICY, HeaderValue::from_static(UI_CSP))
+            .header(header::CACHE_CONTROL, HeaderValue::from_static("no-cache"))
             .body(Body::from(content.data))
             .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response());
     }
@@ -97,6 +104,7 @@ async fn static_handler(uri: Uri) -> impl IntoResponse {
         return Response::builder()
             .header(header::CONTENT_TYPE, HeaderValue::from_static("text/html; charset=utf-8"))
             .header(header::CONTENT_SECURITY_POLICY, HeaderValue::from_static(UI_CSP))
+            .header(header::CACHE_CONTROL, HeaderValue::from_static("no-cache"))
             .body(Body::from(content.data))
             .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response());
     }
@@ -109,9 +117,15 @@ fn serve_asset(path: &str) -> Response {
     match Assets::get(path) {
         Some(content) => {
             let mime = get_mime(path);
+            let cache_control = if path.starts_with("assets/") {
+                "public, max-age=31536000, immutable"
+            } else {
+                "no-cache"
+            };
             Response::builder()
                 .header(header::CONTENT_TYPE, HeaderValue::from_static(mime))
                 .header(header::CONTENT_SECURITY_POLICY, HeaderValue::from_static(UI_CSP))
+                .header(header::CACHE_CONTROL, HeaderValue::from_static(cache_control))
                 .body(Body::from(content.data))
                 .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
         }
@@ -119,6 +133,7 @@ fn serve_asset(path: &str) -> Response {
             .status(StatusCode::NOT_FOUND)
             .header(header::CONTENT_TYPE, HeaderValue::from_static("text/plain; charset=utf-8"))
             .header(header::CONTENT_SECURITY_POLICY, HeaderValue::from_static(UI_CSP))
+            .header(header::CACHE_CONTROL, HeaderValue::from_static("no-cache"))
             .body(Body::from("Axiom Web UI asset not found."))
             .unwrap_or_else(|_| StatusCode::NOT_FOUND.into_response()),
     }

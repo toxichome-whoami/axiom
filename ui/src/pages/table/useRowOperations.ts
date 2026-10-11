@@ -166,6 +166,58 @@ export function useRowOperations({
     }
   };
 
+  // Delete Selected Rows (Batch delete)
+  const [isDeleteBatchConfirmOpen, setIsDeleteBatchConfirmOpen] = useState(false);
+  const [isBatchDeleting, setIsBatchDeleting] = useState(false);
+
+  const handleDeleteSelectedRows = async () => {
+    if (!selectedDb || !selectedTable || selectedRowIndices.size === 0) return;
+
+    setIsBatchDeleting(true);
+    try {
+      const pkCol = columns.find((c) => c.primary_key);
+      const selectedRows = Array.from(selectedRowIndices)
+        .map((idx) => rows[idx])
+        .filter(Boolean);
+
+      if (pkCol) {
+        const pkValues = selectedRows
+          .map((r) => r[pkCol.name])
+          .filter((v) => v !== undefined && v !== null);
+
+        if (pkValues.length > 0) {
+          await api.deleteTableRow(selectedDb, selectedTable, {
+            [pkCol.name]: { in: pkValues },
+          });
+        }
+      } else {
+        // Fallback: delete rows sequentially when no primary key is defined
+        for (const row of selectedRows) {
+          const filter: Record<string, unknown> = {};
+          let count = 0;
+          Object.entries(row).forEach(([k, v]) => {
+            if (count < 2 && v !== null && v !== undefined) {
+              filter[k] = { eq: v };
+              count++;
+            }
+          });
+          if (Object.keys(filter).length > 0) {
+            await api.deleteTableRow(selectedDb, selectedTable, filter);
+          }
+        }
+      }
+
+      setIsDeleteBatchConfirmOpen(false);
+      setSelectedRowIndices(new Set());
+      setSelectedRowIndex(null);
+      await loadTableData({ targetCursor: cursor, reloadSchema: false });
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to delete selected rows');
+    } finally {
+      setIsBatchDeleting(false);
+    }
+  };
+
   return {
     isDetailsOpen,
     setIsDetailsOpen,
@@ -183,11 +235,15 @@ export function useRowOperations({
     deleteRowTarget,
     setDeleteRowTarget,
     isDeleting,
+    isDeleteBatchConfirmOpen,
+    setIsDeleteBatchConfirmOpen,
+    isBatchDeleting,
     handleSelectRow,
     handleToggleRowSelect,
     handleToggleAllRows,
     handleSaveRowEdit,
     handleInsertRowFromPanel,
     handleDeleteRow,
+    handleDeleteSelectedRows,
   };
 }

@@ -54,22 +54,19 @@ export function InlineBooleanPopover({
   onCancel,
 }: InlineBooleanPopoverProps) {
   const popoverRef = useRef<HTMLDivElement>(null);
-  const isNullable = editingCell.column?.nullable ?? true;
 
-  const options: Array<{ label: string; value: boolean | null; desc?: string }> = [
+  const options: Array<{ label: string; value: boolean | null; isNull?: boolean }> = [
     { label: 'true', value: true },
     { label: 'false', value: false },
+    { label: 'null', value: null, isNull: true },
   ];
-  if (isNullable) {
-    options.push({ label: 'null', value: null });
-  }
 
   const initialIndex = useMemo(() => {
     const raw = editingCell.initialValue;
     if (raw === true || editingCell.currentValue.toLowerCase() === 'true') return 0;
     if (raw === false || editingCell.currentValue.toLowerCase() === 'false') return 1;
-    return isNullable ? 2 : 0;
-  }, [editingCell.initialValue, editingCell.currentValue, isNullable]);
+    return 2;
+  }, [editingCell.initialValue, editingCell.currentValue]);
 
   const [focusedIndex, setFocusedIndex] = useState(initialIndex);
 
@@ -106,7 +103,7 @@ export function InlineBooleanPopover({
 
   const top = Math.max(8, Math.min(window.innerHeight - 180, editingCell.rect.top));
   const left = Math.max(8, Math.min(window.innerWidth - 180, editingCell.rect.left));
-  const width = Math.max(editingCell.rect.width, 150);
+  const width = Math.max(editingCell.rect.width, 140);
 
   return (
     <div
@@ -116,7 +113,7 @@ export function InlineBooleanPopover({
         left: `${left}px`,
         minWidth: `${width}px`,
       }}
-      className="fixed z-50 rounded-[6px] border border-[#262626] bg-[#0c0c0c] shadow-[0_12px_32px_rgba(0,0,0,0.95)] flex flex-col font-sans p-1 animate-in fade-in zoom-in-95 duration-100 select-none"
+      className="fixed z-50 rounded-[8px] border border-[#262626] bg-[#111111] shadow-[0_12px_32px_rgba(0,0,0,0.95)] flex flex-col font-sans p-1 animate-in fade-in zoom-in-95 duration-100 select-none"
     >
       <div className="flex flex-col gap-0.5">
         {options.map((opt, idx) => {
@@ -137,12 +134,12 @@ export function InlineBooleanPopover({
               type="button"
               onMouseEnter={() => setFocusedIndex(idx)}
               onClick={() => onSave(opt.value)}
-              className={`flex items-center justify-between px-2.5 py-1.5 rounded-[4px] text-[13px] text-left transition-colors cursor-pointer ${
-                isFocused ? 'bg-[#181818] text-white' : 'text-[#a1a1a1] hover:text-white'
+              className={`flex items-center justify-between px-2.5 py-1.5 rounded-[5px] text-[13px] font-sans text-left transition-colors cursor-pointer ${
+                isFocused ? 'bg-[#1e1e1e] text-white' : 'text-[#a1a1a1] hover:text-white'
               }`}
             >
-              <span className={`font-mono text-[12.5px] ${
-                opt.value === null ? 'italic text-[#666666]' : 'text-[#e5e5e5]'
+              <span className={`font-sans text-[13px] ${
+                opt.isNull ? 'italic text-[#777777]' : 'text-[#e5e5e5]'
               }`}>
                 {opt.label}
               </span>

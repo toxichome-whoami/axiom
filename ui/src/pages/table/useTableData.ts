@@ -20,7 +20,17 @@ export function useTableData({ selectedDb, setSelectedDb, viewMode }: UseTableDa
 
   // Table Catalog State
   const [tables, setTables] = useState<TableInfoApi[]>([]);
-  const [selectedTable, setSelectedTable] = useState<string>('');
+  const [selectedTable, setSelectedTable] = useState<string>(() => {
+    try {
+      const urlParams = new URLSearchParams(window.location.search);
+      const queryTable = urlParams.get('table');
+      if (queryTable) return queryTable;
+      const db = urlParams.get('db') || localStorage.getItem('axiom_selected_db') || '';
+      return (db ? localStorage.getItem(`axiom_selected_table_${db}`) : null) || localStorage.getItem('axiom_selected_table') || '';
+    } catch {
+      return '';
+    }
+  });
   const [isTablesLoading, setIsTablesLoading] = useState(false);
   const [tableSearch, setTableSearch] = useState('');
 
@@ -49,7 +59,7 @@ export function useTableData({ selectedDb, setSelectedDb, viewMode }: UseTableDa
   const [filterCol, setFilterCol] = useState('');
   const [filterOp, setFilterOp] = useState<'eq' | 'neq' | 'gt' | 'lt' | 'like' | 'is_null'>('eq');
   const [filterVal, setFilterVal] = useState('');
-  const [activeFilter, setActiveFilter] = useState<{ col: string; op: string; val: string } | null>(null);
+  const [activeFilter, setActiveFilter] = useState<{ col: string; op: string; val: unknown } | null>(null);
 
   const [sortCol, setSortCol] = useState('');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
@@ -65,7 +75,8 @@ export function useTableData({ selectedDb, setSelectedDb, viewMode }: UseTableDa
         setDatabases(dbs);
 
         const urlParams = new URLSearchParams(window.location.search);
-        const queryDb = urlParams.get('db');
+        const savedDb = localStorage.getItem('axiom_selected_db');
+        const queryDb = urlParams.get('db') || savedDb;
         const defaultDb = queryDb && dbs.some((d) => d.alias === queryDb) ? queryDb : dbs[0]?.alias || '';
 
         setSelectedDb(defaultDb);
@@ -87,8 +98,18 @@ export function useTableData({ selectedDb, setSelectedDb, viewMode }: UseTableDa
       const tableList = res.tables || [];
       setTables(tableList);
 
+      const urlParams = new URLSearchParams(window.location.search);
+      const queryTable = urlParams.get('table');
+      const savedTable = localStorage.getItem(`axiom_selected_table_${db}`) || localStorage.getItem('axiom_selected_table');
+
       setSelectedTable((prev) => {
+        // 1. If currently selected table exists in the new list, keep it
         if (prev && tableList.some((t: TableInfoApi) => t.name === prev)) return prev;
+        // 2. If table from URL query exists in the list, select it
+        if (queryTable && tableList.some((t: TableInfoApi) => t.name === queryTable)) return queryTable;
+        // 3. If table from localStorage exists in the list, select it
+        if (savedTable && tableList.some((t: TableInfoApi) => t.name === savedTable)) return savedTable;
+        // 4. Default to first table
         return tableList[0]?.name || '';
       });
     } catch (err) {
@@ -109,6 +130,58 @@ export function useTableData({ selectedDb, setSelectedDb, viewMode }: UseTableDa
       setActiveSort(null);
     }
   }, [selectedDb, fetchTables]);
+
+  // Sync selectedDb and selectedTable to URL search params and localStorage
+  useEffect(() => {
+    if (!selectedDb) return;
+    try {
+      localStorage.setItem('axiom_selected_db', selectedDb);
+      if (selectedTable) {
+        localStorage.setItem(`axiom_selected_table_${selectedDb}`, selectedTable);
+        localStorage.setItem('axiom_selected_table', selectedTable);
+      }
+
+      const url = new URL(window.location.href);
+      let changed = false;
+      if (url.searchParams.get('db') !== selectedDb) {
+        url.searchParams.set('db', selectedDb);
+        changed = true;
+      }
+      if (selectedTable && url.searchParams.get('table') !== selectedTable) {
+        url.searchParams.set('table', selectedTable);
+        changed = true;
+      } else if (!selectedTable && url.searchParams.has('table')) {
+        url.searchParams.delete('table');
+        changed = true;
+      }
+      if (changed) {
+        window.history.replaceState(null, '', url.pathname + url.search);
+      }
+    } catch {
+      // Ignore in restricted environments
+    }
+  }, [selectedDb, selectedTable]);
+
+  // Handle browser back / forward navigation
+  useEffect(() => {
+    const handlePopState = () => {
+      try {
+        const urlParams = new URLSearchParams(window.location.search);
+        const queryDb = urlParams.get('db');
+        const queryTable = urlParams.get('table');
+        if (queryDb && queryDb !== selectedDb) {
+          setSelectedDb(queryDb);
+        }
+        if (queryTable && queryTable !== selectedTable) {
+          setSelectedTable(queryTable);
+        }
+      } catch {
+        // Ignore
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [selectedDb, selectedTable, setSelectedDb]);
 
   // 3. Phased Sequential Data Pipeline: Schema -> Rows
   const loadTableData = useCallback(
@@ -175,8 +248,23 @@ export function useTableData({ selectedDb, setSelectedDb, viewMode }: UseTableDa
       try {
         let filterParam: string | undefined;
         if (activeFilter) {
+          const targetCol = cols.find((c) => c.name.toLowerCase() === activeFilter.col.toLowerCase());
+          let finalVal: unknown = activeFilter.val;
+          if (targetCol) {
+            const isNumeric = /int|serial|bigint|smallint|float|double|decimal|numeric|number/i.test(targetCol.type);
+            const isBoolean = /bool/i.test(targetCol.type);
+            if (isNumeric && typeof finalVal === 'string' && finalVal.trim() !== '' && !isNaN(Number(finalVal))) {
+              finalVal = Number(finalVal);
+            } else if (isBoolean && typeof finalVal === 'string') {
+              if (finalVal.trim().toLowerCase() === 'true') finalVal = true;
+              else if (finalVal.trim().toLowerCase() === 'false') finalVal = false;
+            }
+          } else if (typeof finalVal === 'string' && finalVal.trim() !== '' && !isNaN(Number(finalVal))) {
+            finalVal = Number(finalVal);
+          }
+
           filterParam = JSON.stringify({
-            [activeFilter.col]: { [activeFilter.op]: activeFilter.val },
+            [activeFilter.col]: { [activeFilter.op]: finalVal },
           });
         }
 

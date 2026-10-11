@@ -214,3 +214,81 @@ export function getDefaultColumnWidth(typeName: string, colName?: string): numbe
   }
   return 160;
 }
+
+/**
+ * Exports records to a downloaded file formatted as CSV, JSON, or SQL INSERT statements.
+ */
+export function exportTableData(
+  format: 'csv' | 'json' | 'sql',
+  tableName: string,
+  rows: Record<string, unknown>[],
+  columns: { name: string; type: string }[]
+) {
+  if (rows.length === 0) return;
+
+  const colNames = columns.length > 0 ? columns.map((c) => c.name) : Object.keys(rows[0]);
+  let content = '';
+  let mimeType = 'text/plain';
+  let fileExt = format;
+
+  if (format === 'json') {
+    content = JSON.stringify(rows, null, 2);
+    mimeType = 'application/json';
+    fileExt = 'json';
+  } else if (format === 'csv') {
+    mimeType = 'text/csv;charset=utf-8;';
+    fileExt = 'csv';
+    // CSV Header
+    const header = colNames.map((c) => `"${c.replace(/"/g, '""')}"`).join(',');
+    // CSV Rows
+    const dataLines = rows.map((r) => {
+      return colNames
+        .map((col) => {
+          const val = r[col];
+          if (val === null || val === undefined) return '';
+          if (typeof val === 'object') {
+            return `"${JSON.stringify(val).replace(/"/g, '""')}"`;
+          }
+          const str = String(val);
+          return `"${str.replace(/"/g, '""')}"`;
+        })
+        .join(',');
+    });
+    content = [header, ...dataLines].join('\r\n');
+  } else if (format === 'sql') {
+    mimeType = 'application/sql';
+    fileExt = 'sql';
+    const escapedTable = `"${tableName.replace(/"/g, '""')}"`;
+    const escapedCols = colNames.map((c) => `"${c.replace(/"/g, '""')}"`).join(', ');
+
+    const insertStatements = rows.map((r) => {
+      const values = colNames
+        .map((col) => {
+          const val = r[col];
+          if (val === null || val === undefined) return 'NULL';
+          if (typeof val === 'number') return isNaN(val) ? 'NULL' : String(val);
+          if (typeof val === 'boolean') return val ? 'TRUE' : 'FALSE';
+          if (typeof val === 'object') {
+            return `'${JSON.stringify(val).replace(/'/g, "''")}'`;
+          }
+          return `'${String(val).replace(/'/g, "''")}'`;
+        })
+        .join(', ');
+
+      return `INSERT INTO ${escapedTable} (${escapedCols}) VALUES (${values});`;
+    });
+
+    content = insertStatements.join('\n');
+  }
+
+  // Trigger browser download
+  const blob = new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${tableName || 'export'}_${new Date().toISOString().slice(0, 10)}.${fileExt}`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}

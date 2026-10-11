@@ -7,8 +7,76 @@
  * Last structural change: Workspace modularization (Phase 8 -> v4.0).
  */
 
+use axiom_core::ColumnInfo;
 use serde_json::Value;
 use std::collections::HashMap;
+
+/// Coerces string filter criteria values into strongly typed numbers or booleans
+/// if the target column schema type is numeric or boolean.
+/// This prevents type mismatch errors in strictly typed databases (like PostgreSQL).
+pub fn coerce_filter_values(filter: &mut HashMap<String, Value>, columns: &[ColumnInfo]) {
+    for (key, criteria) in filter.iter_mut() {
+        if key == "$or" || key == "$and" {
+            if let Some(arr) = criteria.as_array_mut() {
+                for item in arr {
+                    if let Some(obj) = item.as_object_mut() {
+                        let mut sub_map: HashMap<String, Value> = obj.clone().into_iter().collect();
+                        coerce_filter_values(&mut sub_map, columns);
+                        *item = serde_json::to_value(sub_map).unwrap_or_default();
+                    }
+                }
+            }
+        } else {
+            if let Some(col_info) = columns.iter().find(|c| c.name.eq_ignore_ascii_case(key)) {
+                let ty = col_info.r#type.to_lowercase();
+                let is_int = ty.contains("int") || ty.contains("serial");
+                let is_float = ty.contains("float")
+                    || ty.contains("double")
+                    || ty.contains("real")
+                    || ty.contains("num")
+                    || ty.contains("dec");
+                let is_bool = ty.contains("bool");
+
+                let coerce_single = |val: &mut Value| {
+                    if let Value::String(s) = val {
+                        let trimmed = s.trim();
+                        if is_int {
+                            if let Ok(i) = trimmed.parse::<i64>() {
+                                *val = Value::Number(i.into());
+                            }
+                        } else if is_float {
+                            if let Ok(f) = trimmed.parse::<f64>() {
+                                if let Some(n) = serde_json::Number::from_f64(f) {
+                                    *val = Value::Number(n);
+                                }
+                            }
+                        } else if is_bool {
+                            if trimmed.eq_ignore_ascii_case("true") {
+                                *val = Value::Bool(true);
+                            } else if trimmed.eq_ignore_ascii_case("false") {
+                                *val = Value::Bool(false);
+                            }
+                        }
+                    }
+                };
+
+                if let Some(obj) = criteria.as_object_mut() {
+                    for (_op, op_val) in obj.iter_mut() {
+                        if let Some(arr) = op_val.as_array_mut() {
+                            for item in arr {
+                                coerce_single(item);
+                            }
+                        } else {
+                            coerce_single(op_val);
+                        }
+                    }
+                } else {
+                    coerce_single(criteria);
+                }
+            }
+        }
+    }
+}
 
 /// Strips all characters from an identifier except alphanumeric characters and underscores.
 /// CONTRACT:
@@ -333,5 +401,48 @@ mod tests {
     #[test]
     fn test_sanitize_ident() {
         assert_eq!(sanitize_ident("val!d_123;--"), "vald_123");
+    }
+
+    #[test]
+    fn test_coerce_filter_values() {
+        let cols = vec![
+            ColumnInfo {
+                name: "id".to_string(),
+                r#type: "integer".to_string(),
+                nullable: false,
+                primary_key: true,
+            },
+            ColumnInfo {
+                name: "price".to_string(),
+                r#type: "numeric".to_string(),
+                nullable: true,
+                primary_key: false,
+            },
+            ColumnInfo {
+                name: "is_active".to_string(),
+                r#type: "boolean".to_string(),
+                nullable: false,
+                primary_key: false,
+            },
+            ColumnInfo {
+                name: "title".to_string(),
+                r#type: "varchar".to_string(),
+                nullable: false,
+                primary_key: false,
+            },
+        ];
+
+        let mut filter = HashMap::new();
+        filter.insert("id".to_string(), json!({ "eq": "42" }));
+        filter.insert("price".to_string(), json!({ "gte": "19.99" }));
+        filter.insert("is_active".to_string(), json!({ "eq": "true" }));
+        filter.insert("title".to_string(), json!({ "eq": "123" }));
+
+        coerce_filter_values(&mut filter, &cols);
+
+        assert_eq!(filter.get("id").unwrap().get("eq").unwrap(), &json!(42));
+        assert_eq!(filter.get("price").unwrap().get("gte").unwrap(), &json!(19.99));
+        assert_eq!(filter.get("is_active").unwrap().get("eq").unwrap(), &json!(true));
+        assert_eq!(filter.get("title").unwrap().get("eq").unwrap(), &json!("123"));
     }
 }

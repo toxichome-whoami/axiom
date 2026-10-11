@@ -170,8 +170,35 @@ function resolveEndpoint(endpoint: string): string {
  * @param endpoint Relative URL starting with /admin/v1 or /api/v1
  * @param options Standard RequestInit options
  */
+// Track in-flight GET requests to deduplicate concurrent calls during page loads
+const inFlightRequests = new Map<string, Promise<unknown>>();
+
 async function request<T>(
   endpoint: string,
+  options: RequestInit & { timeoutMs?: number } = {}
+): Promise<T> {
+  const isGet = !options.method || options.method.toUpperCase() === 'GET';
+  const targetUrl = resolveEndpoint(endpoint);
+  const cacheKey = isGet && !options.body ? targetUrl : null;
+
+  if (cacheKey && inFlightRequests.has(cacheKey)) {
+    return inFlightRequests.get(cacheKey) as Promise<T>;
+  }
+
+  const promise = executeRequest<T>(targetUrl, options);
+
+  if (cacheKey) {
+    inFlightRequests.set(cacheKey, promise);
+    promise.finally(() => {
+      inFlightRequests.delete(cacheKey);
+    });
+  }
+
+  return promise;
+}
+
+async function executeRequest<T>(
+  targetUrl: string,
   options: RequestInit & { timeoutMs?: number } = {}
 ): Promise<T> {
   const token = getSessionToken();
@@ -204,7 +231,6 @@ async function request<T>(
   }
 
   try {
-    const targetUrl = resolveEndpoint(endpoint);
     const res = await fetch(targetUrl, {
       ...options,
       headers,
@@ -212,9 +238,11 @@ async function request<T>(
       credentials: 'include',
     });
 
-    if (res.status === 401 || res.status === 403) {
+    if (res.status === 401) {
       clearSession();
       window.dispatchEvent(new CustomEvent('axiom:unauthorized', { detail: { status: res.status } }));
+    } else if (res.status === 429) {
+      window.dispatchEvent(new CustomEvent('axiom:rate_limited', { detail: { status: 429 } }));
     }
 
     const text = await res.text();
