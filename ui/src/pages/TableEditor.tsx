@@ -45,6 +45,8 @@ import {
   HelpCircle,
   ExternalLink,
   Minus,
+  ArrowUp,
+  ArrowDown,
 } from 'lucide-react';
 import {
   api,
@@ -172,24 +174,24 @@ function formatColumnType(rawType: string): string {
   return clean || norm;
 }
 
-// ─── Type-Specific Column Width Heuristics (Supabase Studio inspired) ──────
-// Calculates natural initial column widths according to SQL data type semantics.
-// Optimized for 14px Inter typography matching the Databases and Overview pages.
+// ─── Type-Specific Column Width Heuristics (Clean, Supabase Studio inspired) ─
+// Provides calibrated, shrink-fitted widths based on exact SQL semantic data types
+// to keep table dense, professional, and completely free from truncation overlap.
 function getDefaultColumnWidth(typeName: string, colName?: string): number {
   const norm = (typeName || '').toLowerCase().trim();
   const normName = (colName || '').toLowerCase().trim();
 
-  // Boolean flags: compact width (e.g., active, is_admin, verified)
+  // Boolean flags (e.g. is_active, verified): compact shrink width
   if (norm.includes('bool') || norm === 'bit') {
-    return 95;
+    return 110;
   }
 
-  // Row IDs and foreign key pointers: compact
+  // Row IDs and foreign key integers (e.g. id, user_id, org_fk)
   if (normName === 'id' || normName.endsWith('_id') || normName.endsWith('_fk')) {
-    return 120;
+    return 130;
   }
 
-  // Quantities & counts
+  // Short integers / tinyint / smallint / quantities / status codes
   if (
     normName.includes('qty') ||
     normName.includes('quantity') ||
@@ -199,15 +201,15 @@ function getDefaultColumnWidth(typeName: string, colName?: string): number {
     norm.includes('smallint') ||
     norm.includes('tinyint')
   ) {
-    return 110;
+    return 120;
   }
 
-  // Standard integers
+  // Standard integers / Big integers (int4, int8, bigint, serial)
   if (norm.includes('int') || norm.includes('serial') || norm.includes('year')) {
-    return 130;
+    return 140;
   }
 
-  // Floating point / Decimal / Monetary numbers (e.g., unit_price, subtotal)
+  // Floating point / Decimal / Monetary / Financial (numeric, decimal, float, double)
   if (
     norm.includes('float') ||
     norm.includes('double') ||
@@ -216,36 +218,48 @@ function getDefaultColumnWidth(typeName: string, colName?: string): number {
     norm.includes('money') ||
     norm.includes('real')
   ) {
+    return 155;
+  }
+
+  // Date only (YYYY-MM-DD)
+  if (norm === 'date') {
     return 145;
   }
 
-  // Date, Time, Timestamps
-  if (norm.includes('time') || norm.includes('date')) {
-    return 185;
+  // Time only (HH:MM:SS)
+  if (norm === 'time' || norm.startsWith('time without')) {
+    return 135;
   }
 
-  // UUIDs / Hashes
-  if (norm.includes('uuid') || norm.includes('guid') || normName.includes('hash')) {
+  // Full timestamps with or without timezone
+  if (norm.includes('time') || norm.includes('timestamp')) {
     return 210;
   }
 
-  // JSON, XML, binary documents
-  if (norm.includes('json') || norm.includes('xml') || norm.includes('bytea') || norm.includes('blob')) {
+  // UUIDs / Hashes / Tokens (e.g. 550e8400-e29b-41d4-a716-446655440000)
+  if (norm.includes('uuid') || norm.includes('guid') || normName.includes('hash') || normName.includes('token')) {
+    return 235;
+  }
+
+  // Email / URLs / Web links / Avatars
+  if (normName.includes('email') || normName.includes('url') || normName.includes('avatar') || normName.includes('link')) {
     return 240;
   }
 
-  // Email / URLs
-  if (normName.includes('email') || normName.includes('url') || normName.includes('avatar')) {
-    return 230;
+  // JSON, JSONB, XML, BLOB, Bytea documents
+  if (norm.includes('json') || norm.includes('xml') || norm.includes('bytea') || norm.includes('blob')) {
+    return 210;
   }
 
-  // Text, Varchar, generic strings
+  // Text, Varchar, generic strings (names, titles, statuses)
   if (norm.includes('text') || norm.includes('char') || norm.includes('string')) {
-    return 195;
+    if (normName.includes('name') || normName.includes('title')) return 190;
+    if (normName.includes('description') || normName.includes('bio') || normName.includes('comment')) return 260;
+    return 180;
   }
 
-  // Fallback default
-  return 150;
+  // Fallback calibrated default
+  return 160;
 }
 
 // ─── Reusable Field Editor with Edit/Action Menu (Set to NULL & Expand Editor) ────
@@ -2800,6 +2814,14 @@ export function TableEditor() {
   const insertDropdownRef = useRef<HTMLDivElement>(null);
   const filterPopoverRef = useRef<HTMLDivElement>(null);
   const sortPopoverRef = useRef<HTMLDivElement>(null);
+  // Column header dropdown menu state: tracks which column menu is open and its button anchor rect
+  const [activeColumnMenu, setActiveColumnMenu] = useState<{
+    col: ColumnInfoApi;
+    rect: { top: number; left: number; width: number; height: number };
+  } | null>(null);
+  const columnMenuRef = useRef<HTMLDivElement>(null);
+  const [deleteColumnTarget, setDeleteColumnTarget] = useState<ColumnInfoApi | null>(null);
+  const [isDeletingColumn, setIsDeletingColumn] = useState(false);
   // Target key (`db:table`) ref used to discard in-flight responses if the user navigates to another table.
   const activeTargetKeyRef = useRef<string>('');
 
@@ -2945,6 +2967,9 @@ export function TableEditor() {
       }
       if (mainPageSizePopoverRef.current && !mainPageSizePopoverRef.current.contains(e.target as Node)) {
         setShowMainPageSizePopover(false);
+      }
+      if (columnMenuRef.current && !columnMenuRef.current.contains(e.target as Node)) {
+        setActiveColumnMenu(null);
       }
     }
     document.addEventListener('mousedown', handleClickOutside);
@@ -3542,6 +3567,27 @@ export function TableEditor() {
       setCreateColumnError(err instanceof Error ? err.message : 'Failed to create column');
     } finally {
       setIsCreatingColumn(false);
+    }
+  }
+
+  // ─── Delete Column Handler (Structured Backend DDL) ───────────────────────
+  async function handleDeleteColumn() {
+    if (!selectedDb || !selectedTable || !deleteColumnTarget) return;
+    const colName = deleteColumnTarget.name;
+    setIsDeletingColumn(true);
+    try {
+      // Execute ALTER TABLE DROP COLUMN DDL query
+      const sql = `ALTER TABLE "${selectedTable.replace(/"/g, '""')}" DROP COLUMN "${colName.replace(/"/g, '""')}"`;
+      await api.executeSqlQuery(selectedDb, sql);
+
+      setDeleteColumnTarget(null);
+      // Invalidate cache and reload schema + rows
+      delete schemaCacheRef.current[selectedTable];
+      await loadTableData({ reloadSchema: true });
+    } catch (err) {
+      alert(err instanceof Error ? err.message : `Failed to drop column ${colName}`);
+    } finally {
+      setIsDeletingColumn(false);
     }
   }
 
@@ -4164,11 +4210,12 @@ export function TableEditor() {
                         </div>
                       </th>
 
-                      {/* Dynamic Columns with Type-Aware Widths and Interactive Resizers */}
+                      {/* Dynamic Columns with Type-Aware Widths, Interactive Resizers, and Action Menu */}
                       {columns.map((col) => {
                         const isFk = foreignKeys.some((fk) => fk.column === col.name);
                         const badge = getColumnTypeBadge(col.type, col.primary_key, isFk);
                         const width = getColWidth(col.name, col.type);
+                        const isMenuOpen = activeColumnMenu?.col.name === col.name;
 
                         return (
                           <th
@@ -4176,23 +4223,50 @@ export function TableEditor() {
                             className="relative px-3 py-2 text-[14px] font-medium text-[#cccccc] whitespace-nowrap border-r border-[#1a1a1a] select-none group/colheader"
                             style={{ width: `${width}px`, minWidth: `${Math.max(80, width)}px`, maxWidth: `${width}px` }}
                           >
-                            <div className="flex items-center gap-1.5 min-w-0 pr-2.5 overflow-hidden whitespace-nowrap">
-                              <span className="font-sans text-white text-[14px] whitespace-nowrap shrink-0" title={col.name}>
-                                {col.name}
-                              </span>
-                              {col.primary_key && (
-                                <span title="Primary Key" className="shrink-0 p-0.5 rounded bg-amber-500/10 text-amber-400">
-                                  <Key className="w-3 h-3" />
+                            <div className="flex items-center justify-between w-full h-full min-w-0 pr-1 overflow-hidden whitespace-nowrap">
+                              <div className="flex items-center gap-1.5 min-w-0 overflow-hidden whitespace-nowrap truncate">
+                                <span className="font-sans text-white text-[14px] font-semibold whitespace-nowrap shrink-0" title={col.name}>
+                                  {col.name}
                                 </span>
-                              )}
-                              {isFk && (
-                                <span title="Foreign Key" className="shrink-0 p-0.5 rounded bg-blue-500/10 text-blue-400">
-                                  <Link2 className="w-3 h-3" />
+                                {col.primary_key && (
+                                  <span title="Primary Key" className="shrink-0 p-0.5 rounded bg-amber-500/10 text-amber-400">
+                                    <Key className="w-3 h-3" />
+                                  </span>
+                                )}
+                                {isFk && (
+                                  <span title="Foreign Key" className="shrink-0 p-0.5 rounded bg-blue-500/10 text-blue-400">
+                                    <Link2 className="w-3 h-3" />
+                                  </span>
+                                )}
+                                <span className={`text-[12.5px] font-mono whitespace-nowrap shrink-0 ${badge.color}`}>
+                                  {formatColumnType(col.type)}
                                 </span>
-                              )}
-                              <span className={`text-[12.5px] font-mono whitespace-nowrap shrink-0 ${badge.color}`}>
-                                {formatColumnType(col.type)}
-                              </span>
+                              </div>
+
+                              {/* Column Action Dropdown Trigger matching screenshot */}
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (isMenuOpen) {
+                                    setActiveColumnMenu(null);
+                                  } else {
+                                    const r = e.currentTarget.getBoundingClientRect();
+                                    setActiveColumnMenu({
+                                      col,
+                                      rect: { top: r.top, left: r.left, width: r.width, height: r.height },
+                                    });
+                                  }
+                                }}
+                                title={`${col.name} options`}
+                                className={`w-5 h-5 ml-1 rounded-[4px] flex items-center justify-center transition-colors cursor-pointer shrink-0 ${
+                                  isMenuOpen
+                                    ? 'bg-[#222222] text-white opacity-100'
+                                    : 'text-[#666666] hover:text-white hover:bg-[#1a1a1a] opacity-0 group-hover/colheader:opacity-100 focus:opacity-100'
+                                }`}
+                              >
+                                <ChevronDown className="w-3.5 h-3.5" />
+                              </button>
                             </div>
 
                             {/* Interactive Column Resize Handle */}
@@ -4400,7 +4474,7 @@ export function TableEditor() {
                                       {`{ ... }`}
                                     </span>
                                   ) : (
-                                    <span>{strVal}</span>
+                                    <span className="truncate block w-full">{strVal}</span>
                                   )}
                                 </td>
                               );
@@ -5971,6 +6045,164 @@ export function TableEditor() {
           onOpenTable={handleOpenReferencedTable}
         />
       )}
+      {/* ─── Column Header Action Dropdown Menu (Matches User Screenshot) ─── */}
+      {activeColumnMenu && (() => {
+        const { col, rect } = activeColumnMenu;
+        // Position menu directly below the column header trigger button
+        const menuWidth = 190;
+        const top = Math.min(window.innerHeight - 280, rect.top + rect.height + 4);
+        const left = Math.max(8, Math.min(window.innerWidth - menuWidth - 8, rect.left - menuWidth + rect.width));
+
+        const isAsc = activeSort?.col === col.name && activeSort?.order === 'asc';
+        const isDesc = activeSort?.col === col.name && activeSort?.order === 'desc';
+
+        return (
+          <div
+            ref={columnMenuRef}
+            style={{
+              top: `${top}px`,
+              left: `${left}px`,
+              width: `${menuWidth}px`,
+            }}
+            className="fixed z-50 rounded-[8px] border border-[#262626] bg-[#141414] shadow-[0_16px_36px_rgba(0,0,0,0.95)] p-1.5 flex flex-col font-sans select-none animate-in fade-in zoom-in-95 duration-100"
+          >
+            {/* 1. Sort Ascending */}
+            <button
+              type="button"
+              onClick={() => {
+                setActiveSort({ col: col.name, order: 'asc' });
+                setActiveColumnMenu(null);
+              }}
+              className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-[5px] text-[13px] font-sans transition-colors cursor-pointer text-left ${
+                isAsc
+                  ? 'bg-blue-600/15 text-blue-400 font-medium'
+                  : 'text-[#cccccc] hover:text-white hover:bg-[#202020]'
+              }`}
+            >
+              <ArrowUp className="w-3.5 h-3.5 shrink-0 opacity-80" />
+              <span>Sort Ascending</span>
+              {isAsc && <Check className="w-3 h-3 ml-auto text-blue-400" />}
+            </button>
+
+            {/* 2. Sort Descending */}
+            <button
+              type="button"
+              onClick={() => {
+                setActiveSort({ col: col.name, order: 'desc' });
+                setActiveColumnMenu(null);
+              }}
+              className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-[5px] text-[13px] font-sans transition-colors cursor-pointer text-left ${
+                isDesc
+                  ? 'bg-blue-600/15 text-blue-400 font-medium'
+                  : 'text-[#cccccc] hover:text-white hover:bg-[#202020]'
+              }`}
+            >
+              <ArrowDown className="w-3.5 h-3.5 shrink-0 opacity-80" />
+              <span>Sort Descending</span>
+              {isDesc && <Check className="w-3 h-3 ml-auto text-blue-400" />}
+            </button>
+
+            {/* Separator */}
+            <div className="-mx-1.5 border-t border-[#222222] my-1" />
+
+            {/* 3. Copy name */}
+            <button
+              type="button"
+              onClick={() => {
+                navigator.clipboard.writeText(col.name);
+                setCopiedKey(col.name);
+                setTimeout(() => setCopiedKey(null), 2000);
+                setActiveColumnMenu(null);
+              }}
+              className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-[5px] text-[13px] font-sans text-[#cccccc] hover:text-white hover:bg-[#202020] transition-colors cursor-pointer text-left"
+            >
+              <Copy className="w-3.5 h-3.5 shrink-0 opacity-80" />
+              <span>{copiedKey === col.name ? 'Copied!' : 'Copy name'}</span>
+            </button>
+
+            {/* 4. Edit column */}
+            <button
+              type="button"
+              onClick={() => {
+                // Populate Add Column slideover with current column definition for reference
+                setNewColName(col.name);
+                setNewColType(col.type);
+                setNewColNullable(col.nullable ?? true);
+                setNewColDefault('');
+                setNewColIsPk(!!col.primary_key);
+                setNewColIsUnique(false);
+                const fk = foreignKeys.find((f) => f.column === col.name);
+                if (fk) {
+                  setNewColFkTable(fk.referenced_table);
+                  setNewColFkColumn(fk.referenced_column);
+                } else {
+                  setNewColFkTable('');
+                  setNewColFkColumn('');
+                }
+                setCreateColumnError(null);
+                setActiveColumnMenu(null);
+                setIsAddColumnOpen(true);
+              }}
+              className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-[5px] text-[13px] font-sans text-[#cccccc] hover:text-white hover:bg-[#202020] transition-colors cursor-pointer text-left"
+            >
+              <Edit3 className="w-3.5 h-3.5 shrink-0 opacity-80" />
+              <span>Edit column</span>
+            </button>
+
+            {/* 5. Freeze / Reset Width */}
+            <button
+              type="button"
+              onClick={() => {
+                // Reset custom width back to natural type default
+                setColumnWidths((prev) => {
+                  const next = { ...prev };
+                  delete next[col.name];
+                  if (selectedDb && selectedTable) {
+                    try {
+                      localStorage.setItem(`axiom:col_widths:${selectedDb}:${selectedTable}`, JSON.stringify(next));
+                    } catch {}
+                  }
+                  return next;
+                });
+                setActiveColumnMenu(null);
+              }}
+              className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-[5px] text-[13px] font-sans text-[#cccccc] hover:text-white hover:bg-[#202020] transition-colors cursor-pointer text-left"
+            >
+              <ArrowUpDown className="w-3.5 h-3.5 shrink-0 opacity-80" />
+              <span>Reset width</span>
+            </button>
+
+            {/* Separator */}
+            <div className="-mx-1.5 border-t border-[#222222] my-1" />
+
+            {/* 6. Delete column (Destructive) */}
+            <button
+              type="button"
+              onClick={() => {
+                const targetCol = col;
+                setActiveColumnMenu(null);
+                setDeleteColumnTarget(targetCol);
+              }}
+              className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-[5px] text-[13px] font-sans text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 transition-colors cursor-pointer text-left"
+            >
+              <Trash2 className="w-3.5 h-3.5 shrink-0 text-rose-400" />
+              <span>Delete column</span>
+            </button>
+          </div>
+        );
+      })()}
+
+      {/* ─── Delete Column Confirm Dialog ─── */}
+      <ConfirmDialog
+        isOpen={!!deleteColumnTarget}
+        title={`Delete column "${deleteColumnTarget?.name}"?`}
+        description={`Are you sure you want to delete the column "${deleteColumnTarget?.name}" from table "${selectedTable}"? All data in this column will be permanently deleted. This action cannot be undone.`}
+        confirmLabel={isDeletingColumn ? 'Deleting...' : 'Delete column'}
+        cancelLabel="Cancel"
+        variant="danger"
+        onConfirm={handleDeleteColumn}
+        onClose={() => setDeleteColumnTarget(null)}
+      />
     </div>
   );
 }
