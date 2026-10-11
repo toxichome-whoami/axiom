@@ -2685,8 +2685,9 @@ export function TableEditor() {
   const [deleteRowTarget, setDeleteRowTarget] = useState<Record<string, unknown> | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  // ─── Add Column Drawer State (Supabase style) ──────────────────────────────
+  // ─── Add / Update Column Drawer State (Supabase style) ──────────────────────
   const [isAddColumnOpen, setIsAddColumnOpen] = useState(false);
+  const [editingColumn, setEditingColumn] = useState<ColumnInfoApi | null>(null);
   const [newColName, setNewColName] = useState('');
   const [newColDescription, setNewColDescription] = useState('');
   const [newColType, setNewColType] = useState('text');
@@ -3505,8 +3506,8 @@ export function TableEditor() {
     }
   }
 
-  // ─── Add Column Handler (Structured Backend DDL) ──────────────────────────
-  async function handleCreateColumn() {
+  // ─── Add / Update Column Handler (Structured Backend DDL & ALTER TABLE) ───
+  async function handleSaveColumn() {
     if (!selectedDb || !selectedTable || !newColName.trim()) return;
     const colNameClean = newColName.trim().replace(/[^a-zA-Z0-9_]/g, '');
     if (!colNameClean) {
@@ -3517,32 +3518,100 @@ export function TableEditor() {
     setIsCreatingColumn(true);
     setCreateColumnError(null);
 
-    const payload = {
-      name: colNameClean,
-      description: newColDescription.trim() || undefined,
-      data_type: newColType,
-      is_array: newColIsArray,
-      primary_key: newColIsPk,
-      unique: newColIsUnique,
-      nullable: newColNullable,
-      default_value: newColDefault.trim() || undefined,
-      check_expression: newColCheck.trim() || undefined,
-      foreign_key:
-        newColFkTable && newColFkColumn
-          ? {
-              schema: newColFkSchema.trim() || undefined,
-              table: newColFkTable.trim(),
-              column: newColFkColumn.trim(),
-              on_update: newColFkOnUpdate !== 'NO ACTION' ? newColFkOnUpdate : undefined,
-              on_delete: newColFkOnDelete !== 'NO ACTION' ? newColFkOnDelete : undefined,
-            }
-          : undefined,
-    };
+    const isEditMode = !!editingColumn;
 
     try {
-      await api.createTableColumn(selectedDb, selectedTable, payload);
+      if (isEditMode) {
+        const oldCol = editingColumn;
+        const currentDb = databases.find((d) => d.alias === selectedDb);
+        const engineType = currentDb?.engine?.toLowerCase() || '';
+
+        // 1. Rename column if name has changed
+        if (oldCol.name !== colNameClean) {
+          let renameSql = '';
+          if (engineType.includes('mysql') || engineType.includes('mariadb')) {
+            renameSql = `ALTER TABLE \`${selectedTable.replace(/`/g, '``')}\` RENAME COLUMN \`${oldCol.name.replace(/`/g, '``')}\` TO \`${colNameClean.replace(/`/g, '``')}\``;
+          } else if (engineType.includes('mssql') || engineType.includes('sqlserver')) {
+            renameSql = `EXEC sp_rename '${selectedTable.replace(/'/g, "''")}.${oldCol.name.replace(/'/g, "''")}', '${colNameClean.replace(/'/g, "''")}', 'COLUMN'`;
+          } else {
+            // PostgreSQL, SQLite, LibSQL
+            renameSql = `ALTER TABLE "${selectedTable.replace(/"/g, '""')}" RENAME COLUMN "${oldCol.name.replace(/"/g, '""')}" TO "${colNameClean.replace(/"/g, '""')}"`;
+          }
+          await api.executeSqlQuery(selectedDb, renameSql);
+        }
+
+        // 2. Change column data type if altered
+        if (oldCol.type !== newColType) {
+          let typeSql = '';
+          if (engineType.includes('mysql') || engineType.includes('mariadb')) {
+            const nullClause = newColNullable ? 'NULL' : 'NOT NULL';
+            typeSql = `ALTER TABLE \`${selectedTable.replace(/`/g, '``')}\` MODIFY COLUMN \`${colNameClean.replace(/`/g, '``')}\` ${newColType} ${nullClause}`;
+          } else if (engineType.includes('mssql') || engineType.includes('sqlserver')) {
+            const nullClause = newColNullable ? 'NULL' : 'NOT NULL';
+            typeSql = `ALTER TABLE [${selectedTable.replace(/]/g, ']]')}] ALTER COLUMN [${colNameClean.replace(/]/g, ']]')}] ${newColType} ${nullClause}`;
+          } else if (engineType.includes('postgres') || engineType.includes('postgresql')) {
+            typeSql = `ALTER TABLE "${selectedTable.replace(/"/g, '""')}" ALTER COLUMN "${colNameClean.replace(/"/g, '""')}" TYPE ${newColType} USING "${colNameClean.replace(/"/g, '""')}"::${newColType}`;
+          }
+          if (typeSql) {
+            await api.executeSqlQuery(selectedDb, typeSql);
+          }
+        }
+
+        // 3. Update NULL / NOT NULL constraint if changed
+        if (oldCol.nullable !== newColNullable && !(engineType.includes('mysql') || engineType.includes('mssql'))) {
+          // PostgreSQL syntax for nullability toggle
+          if (engineType.includes('postgres') || engineType.includes('postgresql')) {
+            const nullSql = newColNullable
+              ? `ALTER TABLE "${selectedTable.replace(/"/g, '""')}" ALTER COLUMN "${colNameClean.replace(/"/g, '""')}" DROP NOT NULL`
+              : `ALTER TABLE "${selectedTable.replace(/"/g, '""')}" ALTER COLUMN "${colNameClean.replace(/"/g, '""')}" SET NOT NULL`;
+            await api.executeSqlQuery(selectedDb, nullSql);
+          }
+        }
+
+        // 4. Update Default Value if changed
+        if (newColDefault.trim()) {
+          const defTrimmed = newColDefault.trim();
+          if (engineType.includes('postgres') || engineType.includes('postgresql')) {
+            const defaultSql = defTrimmed.toUpperCase() === 'NULL'
+              ? `ALTER TABLE "${selectedTable.replace(/"/g, '""')}" ALTER COLUMN "${colNameClean.replace(/"/g, '""')}" DROP DEFAULT`
+              : `ALTER TABLE "${selectedTable.replace(/"/g, '""')}" ALTER COLUMN "${colNameClean.replace(/"/g, '""')}" SET DEFAULT ${defTrimmed}`;
+            await api.executeSqlQuery(selectedDb, defaultSql);
+          } else if (engineType.includes('mysql') || engineType.includes('mariadb')) {
+            const defaultSql = defTrimmed.toUpperCase() === 'NULL'
+              ? `ALTER TABLE \`${selectedTable.replace(/`/g, '``')}\` ALTER COLUMN \`${colNameClean.replace(/`/g, '``')}\` DROP DEFAULT`
+              : `ALTER TABLE \`${selectedTable.replace(/`/g, '``')}\` ALTER COLUMN \`${colNameClean.replace(/`/g, '``')}\` SET DEFAULT ${defTrimmed}`;
+            await api.executeSqlQuery(selectedDb, defaultSql);
+          }
+        }
+      } else {
+        // Create new column via standard API endpoint
+        const payload = {
+          name: colNameClean,
+          description: newColDescription.trim() || undefined,
+          data_type: newColType,
+          is_array: newColIsArray,
+          primary_key: newColIsPk,
+          unique: newColIsUnique,
+          nullable: newColNullable,
+          default_value: newColDefault.trim() || undefined,
+          check_expression: newColCheck.trim() || undefined,
+          foreign_key:
+            newColFkTable && newColFkColumn
+              ? {
+                  schema: newColFkSchema.trim() || undefined,
+                  table: newColFkTable.trim(),
+                  column: newColFkColumn.trim(),
+                  on_update: newColFkOnUpdate !== 'NO ACTION' ? newColFkOnUpdate : undefined,
+                  on_delete: newColFkOnDelete !== 'NO ACTION' ? newColFkOnDelete : undefined,
+                }
+              : undefined,
+        };
+
+        await api.createTableColumn(selectedDb, selectedTable, payload);
+      }
 
       setIsAddColumnOpen(false);
+      setEditingColumn(null);
       setNewColName('');
       setNewColDescription('');
       setNewColType('text');
@@ -3564,7 +3633,7 @@ export function TableEditor() {
       delete schemaCacheRef.current[selectedTable];
       await loadTableData({ reloadSchema: true });
     } catch (err) {
-      setCreateColumnError(err instanceof Error ? err.message : 'Failed to create column');
+      setCreateColumnError(err instanceof Error ? err.message : isEditMode ? 'Failed to update column' : 'Failed to create column');
     } finally {
       setIsCreatingColumn(false);
     }
@@ -4289,6 +4358,7 @@ export function TableEditor() {
                         <button
                           type="button"
                           onClick={() => {
+                            setEditingColumn(null);
                             setNewColName('');
                             setNewColType('varchar(255)');
                             setNewColNullable(true);
@@ -5414,13 +5484,16 @@ export function TableEditor() {
         </div>
       </SlideOver>
 
-      {/* ─── Add Column SlideOver (Matches Databases.tsx Panel System Design) ─── */}
+      {/* ─── Add / Update Column SlideOver (Matches Databases.tsx Panel System Design) ─── */}
       <SlideOver
         isOpen={isAddColumnOpen}
-        onClose={() => setIsAddColumnOpen(false)}
+        onClose={() => {
+          setIsAddColumnOpen(false);
+          setEditingColumn(null);
+        }}
         width="w-[520px] max-w-full"
-        title="Add Column"
-        subtitle={`Add a new column to ${selectedTable}`}
+        title={editingColumn ? `Update Column "${editingColumn.name}"` : 'Add Column'}
+        subtitle={editingColumn ? `Modify schema for column ${editingColumn.name} in ${selectedTable}` : `Add a new column to ${selectedTable}`}
       >
         <div className="flex-1 flex flex-col min-h-0 bg-[#0e0e0e] overflow-hidden font-sans">
           {/* Scrollable Form Body matching Databases.tsx SlideOver */}
@@ -5689,7 +5762,10 @@ export function TableEditor() {
           <div className="p-4 border-t border-[#222222] bg-[#0e0e0e] flex items-center justify-end gap-2.5 font-sans shrink-0">
             <button
               type="button"
-              onClick={() => setIsAddColumnOpen(false)}
+              onClick={() => {
+                setIsAddColumnOpen(false);
+                setEditingColumn(null);
+              }}
               className="inline-flex items-center justify-center h-9 px-4 rounded-[8px] text-[14px] font-medium text-[#cccccc] hover:text-white bg-transparent hover:bg-[#161616] border border-[#262626] hover:border-[#383838] transition-colors cursor-pointer font-sans"
             >
               Cancel
@@ -5697,7 +5773,7 @@ export function TableEditor() {
             <button
               type="button"
               disabled={isCreatingColumn || !newColName.trim()}
-              onClick={handleCreateColumn}
+              onClick={handleSaveColumn}
               className="group relative flex shrink-0 items-center justify-center h-9 px-4 rounded-[8px] font-medium text-white shadow-xs outline-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed overflow-hidden ring-1 ring-[#1d4ed8] bg-[#2563eb] font-sans"
             >
               <span
@@ -5712,10 +5788,10 @@ export function TableEditor() {
                 {isCreatingColumn ? (
                   <>
                     <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                    <span>Adding Column...</span>
+                    <span>{editingColumn ? 'Updating Column...' : 'Adding Column...'}</span>
                   </>
                 ) : (
-                  <span>Add Column</span>
+                  <span>{editingColumn ? 'Update Column' : 'Add Column'}</span>
                 )}
               </span>
             </button>
@@ -6124,7 +6200,8 @@ export function TableEditor() {
             <button
               type="button"
               onClick={() => {
-                // Populate Add Column slideover with current column definition for reference
+                // Populate slideover with current column definition for editing
+                setEditingColumn(col);
                 setNewColName(col.name);
                 setNewColType(col.type);
                 setNewColNullable(col.nullable ?? true);
