@@ -3712,6 +3712,50 @@ export function TableEditor() {
     });
   }, [isInsertModeInPanel, activeRow, rowEditValues, columns]);
 
+  // Track if any changes have been made in Update Column panel (disables Update button if untouched)
+  const hasColumnChanges = useMemo(() => {
+    if (!editingColumn) {
+      // In Add Column mode: require a valid column name
+      return newColName.trim().length > 0;
+    }
+    // In Update Column mode: verify if at least one field differs from existing column definition
+    const nameChanged = newColName.trim() !== editingColumn.name;
+    const typeChanged = newColType !== editingColumn.type;
+    const nullableChanged = newColNullable !== (editingColumn.nullable ?? true);
+    const defaultChanged = newColDefault.trim().length > 0;
+    const descriptionChanged = newColDescription.trim().length > 0;
+    const arrayChanged = newColIsArray;
+    const checkChanged = newColCheck.trim().length > 0;
+
+    const existingFk = foreignKeys.find((f) => f.column === editingColumn.name);
+    const fkChanged =
+      (newColFkTable || '') !== (existingFk?.referenced_table || '') ||
+      (newColFkColumn || '') !== (existingFk?.referenced_column || '');
+
+    return (
+      nameChanged ||
+      typeChanged ||
+      nullableChanged ||
+      defaultChanged ||
+      descriptionChanged ||
+      arrayChanged ||
+      checkChanged ||
+      fkChanged
+    );
+  }, [
+    editingColumn,
+    newColName,
+    newColType,
+    newColNullable,
+    newColDefault,
+    newColDescription,
+    newColIsArray,
+    newColCheck,
+    newColFkTable,
+    newColFkColumn,
+    foreignKeys,
+  ]);
+
   // ─── Render ────────────────────────────────────────────────────────────────
 
   return (
@@ -5772,7 +5816,7 @@ export function TableEditor() {
             </button>
             <button
               type="button"
-              disabled={isCreatingColumn || !newColName.trim()}
+              disabled={isCreatingColumn || !newColName.trim() || !hasColumnChanges}
               onClick={handleSaveColumn}
               className="group relative flex shrink-0 items-center justify-center h-9 px-4 rounded-[8px] font-medium text-white shadow-xs outline-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed overflow-hidden ring-1 ring-[#1d4ed8] bg-[#2563eb] font-sans"
             >
