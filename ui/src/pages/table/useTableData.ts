@@ -23,6 +23,11 @@ export function useTableData({ selectedDb, setSelectedDb, viewMode }: UseTableDa
   const [selectedTable, setSelectedTable] = useState<string>(() => {
     try {
       const urlParams = new URLSearchParams(window.location.search);
+      const v = urlParams.get('view') || localStorage.getItem('axiom_view_mode');
+      if (v === 'schema') {
+        // Schema ER visualizer starts with clean view (no table selected/dimmed)
+        return '';
+      }
       const queryTable = urlParams.get('table');
       if (queryTable) return queryTable;
       const db = urlParams.get('db') || localStorage.getItem('axiom_selected_db') || '';
@@ -147,12 +152,19 @@ export function useTableData({ selectedDb, setSelectedDb, viewMode }: UseTableDa
         url.searchParams.set('db', selectedDb);
         changed = true;
       }
-      if (selectedTable && url.searchParams.get('table') !== selectedTable) {
-        url.searchParams.set('table', selectedTable);
-        changed = true;
-      } else if (!selectedTable && url.searchParams.has('table')) {
-        url.searchParams.delete('table');
-        changed = true;
+      if (viewMode === 'schema') {
+        if (url.searchParams.has('table')) {
+          url.searchParams.delete('table');
+          changed = true;
+        }
+      } else {
+        if (selectedTable && url.searchParams.get('table') !== selectedTable) {
+          url.searchParams.set('table', selectedTable);
+          changed = true;
+        } else if (!selectedTable && url.searchParams.has('table')) {
+          url.searchParams.delete('table');
+          changed = true;
+        }
       }
       if (changed) {
         window.history.replaceState(null, '', url.pathname + url.search);
@@ -160,7 +172,7 @@ export function useTableData({ selectedDb, setSelectedDb, viewMode }: UseTableDa
     } catch {
       // Ignore in restricted environments
     }
-  }, [selectedDb, selectedTable]);
+  }, [selectedDb, selectedTable, viewMode]);
 
   // Handle browser back / forward navigation
   useEffect(() => {
@@ -325,20 +337,40 @@ export function useTableData({ selectedDb, setSelectedDb, viewMode }: UseTableDa
 
     let cancelled = false;
     async function loadErSchemas() {
-      const updates: Record<string, { columns: ColumnInfoApi[]; foreign_keys: ForeignKeyInfoApi[] }> = {};
-      for (const t of missing) {
-        if (cancelled) break;
-        try {
-          const res = await api.getTableSchema(selectedDb, t.name);
-          updates[t.name] = {
-            columns: res.columns || [],
-            foreign_keys: res.foreign_keys || [],
+      try {
+        const results = await Promise.all(
+          missing.map(async (t) => {
+            try {
+              const res = await api.getTableSchema(selectedDb, t.name);
+              return {
+                tableName: t.name,
+                columns: res.columns || [],
+                foreign_keys: res.foreign_keys || [],
+              };
+            } catch {
+              return {
+                tableName: t.name,
+                columns: [],
+                foreign_keys: [],
+              };
+            }
+          })
+        );
+
+        if (cancelled) return;
+
+        const updates: Record<string, { columns: ColumnInfoApi[]; foreign_keys: ForeignKeyInfoApi[] }> = {};
+        for (const item of results) {
+          updates[item.tableName] = {
+            columns: item.columns,
+            foreign_keys: item.foreign_keys,
           };
-        } catch {}
-      }
-      if (!cancelled && Object.keys(updates).length > 0) {
+        }
+
         schemaCacheRef.current = { ...schemaCacheRef.current, ...updates };
         setAllDbTablesSchema((prev) => ({ ...prev, ...updates }));
+      } catch {
+        // Ignore
       }
     }
     loadErSchemas();

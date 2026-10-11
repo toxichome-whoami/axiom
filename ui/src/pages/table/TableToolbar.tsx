@@ -17,6 +17,14 @@ import {
   ChevronDown,
   Check,
   Trash2,
+  Search,
+  Sparkles,
+  Copy,
+  ZoomIn,
+  ZoomOut,
+  Maximize,
+  FileText,
+  Download,
 } from 'lucide-react';
 import { ColumnInfoApi } from '../../types';
 import { CustomSelect } from '../../components/shared/CustomSelect';
@@ -71,6 +79,21 @@ export interface TableToolbarProps {
 
   // SQL preset helper
   onSelectSqlMode: () => void;
+
+  // Schema view controls
+  schemaSearchTerm?: string;
+  setSchemaSearchTerm?: (term: string) => void;
+  activeSchema?: string;
+  onCopySql?: (format: 'postgres' | 'generic') => void;
+  onCopyMarkdown?: () => void;
+  onDownloadPng?: () => void;
+  onDownloadSvg?: () => void;
+  copiedKey?: string | null;
+  onAutoLayout?: () => void;
+  zoomScale?: number;
+  onZoomIn?: () => void;
+  onZoomOut?: () => void;
+  onResetZoom?: () => void;
 }
 
 export function TableToolbar({
@@ -111,9 +134,23 @@ export function TableToolbar({
   selectedCount = 0,
   onDeleteSelected,
   onExportSelected,
+  schemaSearchTerm = '',
+  setSchemaSearchTerm,
+  activeSchema = 'public',
+  onCopySql,
+  onCopyMarkdown,
+  onDownloadPng,
+  onDownloadSvg,
+  copiedKey,
+  onAutoLayout,
+  zoomScale = 0.95,
+  onZoomIn,
+  onZoomOut,
+  onResetZoom,
 }: TableToolbarProps) {
   const [isInsertDropdownOpen, setIsInsertDropdownOpen] = React.useState(false);
   const [isExportDropdownOpen, setIsExportDropdownOpen] = React.useState(false);
+  const [isCopySqlOpen, setIsCopySqlOpen] = React.useState(false);
   const [showFilterPopover, setShowFilterPopover] = React.useState(false);
   const [showSortPopover, setShowSortPopover] = React.useState(false);
   const [showPageSizePopover, setShowPageSizePopover] = React.useState(false);
@@ -125,6 +162,7 @@ export function TableToolbar({
 
   const insertDropdownRef = useRef<HTMLDivElement>(null);
   const exportDropdownRef = useRef<HTMLDivElement>(null);
+  const copySqlRef = useRef<HTMLDivElement>(null);
   const filterPopoverRef = useRef<HTMLDivElement>(null);
   const sortPopoverRef = useRef<HTMLDivElement>(null);
   const pageSizePopoverRef = useRef<HTMLDivElement>(null);
@@ -137,6 +175,9 @@ export function TableToolbar({
       }
       if (exportDropdownRef.current && !exportDropdownRef.current.contains(target)) {
         setIsExportDropdownOpen(false);
+      }
+      if (copySqlRef.current && !copySqlRef.current.contains(target)) {
+        setIsCopySqlOpen(false);
       }
       if (filterPopoverRef.current && !filterPopoverRef.current.contains(target)) {
         setShowFilterPopover(false);
@@ -440,13 +481,13 @@ export function TableToolbar({
         )}
 
         {/* View Mode Switcher Pills */}
-        <div className="flex items-center p-0.5 rounded-[6px] bg-[#141414] border border-[#262626]">
+        <div className="flex items-center p-1 rounded-[7px] bg-[#141414] border border-[#262626] h-9">
           <button
             type="button"
             onClick={() => setViewMode('grid')}
             title="Table Grid"
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-[4px] text-[13px] font-medium transition-colors cursor-pointer ${
-              viewMode === 'grid' ? 'bg-[#222222] text-white' : 'text-[#8c8c8c] hover:text-white'
+            className={`flex items-center gap-1.5 px-3 py-1 rounded-[5px] text-[13px] font-medium transition-colors cursor-pointer ${
+              viewMode === 'grid' ? 'bg-[#222222] text-white shadow-sm' : 'text-[#8c8c8c] hover:text-white'
             }`}
           >
             <TableIcon className="w-3.5 h-3.5" />
@@ -456,8 +497,8 @@ export function TableToolbar({
             type="button"
             onClick={() => setViewMode('schema')}
             title="Schema & Relations"
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-[4px] text-[13px] font-medium transition-colors cursor-pointer ${
-              viewMode === 'schema' ? 'bg-[#222222] text-white' : 'text-[#8c8c8c] hover:text-white'
+            className={`flex items-center gap-1.5 px-3 py-1 rounded-[5px] text-[13px] font-medium transition-colors cursor-pointer ${
+              viewMode === 'schema' ? 'bg-[#222222] text-white shadow-sm' : 'text-[#8c8c8c] hover:text-white'
             }`}
           >
             <Layers className="w-3.5 h-3.5" />
@@ -467,15 +508,144 @@ export function TableToolbar({
             type="button"
             onClick={onSelectSqlMode}
             title="SQL Console"
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-[4px] text-[13px] font-medium transition-colors cursor-pointer ${
-              viewMode === 'sql' ? 'bg-[#222222] text-white' : 'text-[#8c8c8c] hover:text-white'
+            className={`flex items-center gap-1.5 px-3 py-1 rounded-[5px] text-[13px] font-medium transition-colors cursor-pointer ${
+              viewMode === 'sql' ? 'bg-[#222222] text-white shadow-sm' : 'text-[#8c8c8c] hover:text-white'
             }`}
           >
             <Terminal className="w-3.5 h-3.5" />
             <span className="hidden md:inline">SQL</span>
           </button>
         </div>
+
+        {/* Schema Mode Controls: Find table... search */}
+        {viewMode === 'schema' && (
+          <div className="flex items-center pl-1 animate-in fade-in duration-100">
+            {/* Find table... Search Input */}
+            <div className="relative">
+              <Search className="w-4 h-4 text-[#71717a] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <input
+                type="text"
+                placeholder="Find table..."
+                value={schemaSearchTerm}
+                onChange={(e) => setSchemaSearchTerm?.(e.target.value)}
+                className="h-9 pl-9 pr-3 w-48 rounded-[7px] bg-[#141414] border border-[#262626] text-[13px] text-white placeholder-[#71717a] focus:outline-none focus:border-[#3a3a3a] transition-colors font-sans"
+              />
+            </div>
+          </div>
+        )}
       </div>
+
+      {/* Right: Schema Controls (Copy as SQL, Auto layout, Zoom) */}
+      {viewMode === 'schema' && (
+        <div className="flex items-center gap-2 shrink-0 animate-in fade-in duration-100">
+          {/* Copy as SQL dropdown */}
+          <div className="relative" ref={copySqlRef}>
+            <button
+              type="button"
+              onClick={() => setIsCopySqlOpen(!isCopySqlOpen)}
+              className="flex items-center gap-2 h-9 px-3 rounded-[7px] bg-[#141414] hover:bg-[#1a1a1a] border border-[#262626] hover:border-[#3a3a3a] text-[13px] font-medium text-white transition-colors cursor-pointer"
+            >
+              {copiedKey === 'schema_sql' ? (
+                <Check className="w-3.5 h-3.5 text-emerald-400" />
+              ) : (
+                <Copy className="w-3.5 h-3.5 text-[#a1a1aa]" />
+              )}
+              <span>Copy as SQL</span>
+              <ChevronDown className="w-3.5 h-3.5 text-[#71717a]" />
+            </button>
+
+            {isCopySqlOpen && (
+              <div className="absolute right-0 top-full mt-1.5 w-48 bg-[#18181b] border border-[#27272a] rounded-[8px] shadow-2xl p-1 z-50 animate-in fade-in duration-100 font-sans">
+                <button
+                  type="button"
+                  onClick={() => {
+                    onCopySql?.('postgres');
+                    setIsCopySqlOpen(false);
+                  }}
+                  className="w-full flex items-center justify-between px-3 py-2 rounded-[5px] text-[13px] text-[#d4d4d8] hover:text-white hover:bg-[#27272a] transition-colors cursor-pointer text-left"
+                >
+                  <span>Copy as SQL</span>
+                  {copiedKey === 'schema_sql' && <Check className="w-3.5 h-3.5 text-emerald-400" />}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onCopyMarkdown?.();
+                    setIsCopySqlOpen(false);
+                  }}
+                  className="w-full flex items-center justify-between px-3 py-2 rounded-[5px] text-[13px] text-[#d4d4d8] hover:text-white hover:bg-[#27272a] transition-colors cursor-pointer text-left"
+                >
+                  <span>Copy as Markdown</span>
+                  {copiedKey === 'schema_markdown' && <Check className="w-3.5 h-3.5 text-emerald-400" />}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onDownloadPng?.();
+                    setIsCopySqlOpen(false);
+                  }}
+                  className="w-full flex items-center justify-between px-3 py-2 rounded-[5px] text-[13px] text-[#d4d4d8] hover:text-white hover:bg-[#27272a] transition-colors cursor-pointer text-left"
+                >
+                  <span>Download as PNG</span>
+                  {copiedKey === 'schema_png' && <Check className="w-3.5 h-3.5 text-emerald-400" />}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onDownloadSvg?.();
+                    setIsCopySqlOpen(false);
+                  }}
+                  className="w-full flex items-center justify-between px-3 py-2 rounded-[5px] text-[13px] text-[#d4d4d8] hover:text-white hover:bg-[#27272a] transition-colors cursor-pointer text-left"
+                >
+                  <span>Download as SVG</span>
+                  {copiedKey === 'schema_svg' && <Check className="w-3.5 h-3.5 text-emerald-400" />}
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Auto layout button */}
+          <button
+            type="button"
+            onClick={onAutoLayout}
+            title="Auto layout entity nodes"
+            className="flex items-center h-9 px-3 rounded-[7px] bg-[#141414] hover:bg-[#1a1a1a] border border-[#262626] hover:border-[#3a3a3a] text-[13px] font-medium text-white transition-colors cursor-pointer"
+          >
+            <span>Auto layout</span>
+          </button>
+
+          {/* Zoom controls pill */}
+          <div className="flex items-center p-1 rounded-[7px] bg-[#141414] border border-[#262626] h-9">
+            <button
+              type="button"
+              onClick={onZoomOut}
+              title="Zoom Out"
+              className="p-1 rounded-[4px] text-[#a1a1aa] hover:text-white hover:bg-[#1a1a1a] transition-colors cursor-pointer"
+            >
+              <ZoomOut className="w-3.5 h-3.5" />
+            </button>
+            <span className="text-[11.5px] font-mono text-[#8a8a92] px-2 min-w-[38px] text-center">
+              {Math.round(zoomScale * 100)}%
+            </span>
+            <button
+              type="button"
+              onClick={onZoomIn}
+              title="Zoom In"
+              className="p-1 rounded-[4px] text-[#a1a1aa] hover:text-white hover:bg-[#1a1a1a] transition-colors cursor-pointer"
+            >
+              <ZoomIn className="w-3.5 h-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={onResetZoom}
+              title="Reset View"
+              className="p-1 rounded-[4px] text-[#a1a1aa] hover:text-white hover:bg-[#1a1a1a] transition-colors cursor-pointer ml-0.5"
+            >
+              <Maximize className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Right: Next and Previous Pagination Controls (Only visible in Data grid mode, hidden in Definition view) */}
       {viewMode === 'grid' && gridSubTab === 'data' && (

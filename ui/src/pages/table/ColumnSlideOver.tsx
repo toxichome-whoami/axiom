@@ -465,21 +465,6 @@ export function ColumnSlideOver({
           <div className="flex-1 overflow-y-auto p-5 space-y-4 font-sans">
             <div>
               <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5 font-sans">
-                Select a schema
-              </label>
-              <CustomSelect
-                value={draftFkSchema}
-                onChange={setDraftFkSchema}
-                placeholder="Select a schema"
-                options={[
-                  { value: 'public', label: 'public' },
-                ]}
-                menuWidth="w-full"
-              />
-            </div>
-
-            <div>
-              <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5 font-sans">
                 Select a table to reference to
               </label>
               <CustomSelect
@@ -490,7 +475,7 @@ export function ColumnSlideOver({
                   .filter((t) => t.name !== selectedTable)
                   .map((t) => ({
                     value: t.name,
-                    label: `${draftFkSchema ? `${draftFkSchema} ` : ''}${t.name}`,
+                    label: t.name,
                   }))}
                 menuWidth="w-full"
               />
@@ -501,18 +486,18 @@ export function ColumnSlideOver({
                 <label className="block text-[13px] font-medium text-[#cccccc] mb-2 font-sans">
                   Select columns from{' '}
                   <span className="px-1.5 py-0.5 rounded bg-[#181818] border border-[#262626] font-mono text-white text-[12px]">
-                    {draftFkSchema ? `${draftFkSchema}.${draftFkTable}` : draftFkTable}
+                    {draftFkTable}
                   </span>{' '}
                   to reference to
                 </label>
 
                 <div className="flex items-center gap-2 mb-1.5 px-0.5 text-[11.5px] text-[#888888] font-mono">
                   <div className="flex-1 truncate">
-                    {draftFkSchema ? `${draftFkSchema}.${selectedTable}` : selectedTable}
+                    {selectedTable}
                   </div>
                   <div className="w-5 shrink-0" />
                   <div className="flex-1 truncate">
-                    {draftFkSchema ? `${draftFkSchema}.${draftFkTable}` : draftFkTable}
+                    {draftFkTable}
                   </div>
                   {draftFkPairs.length > 1 && <div className="w-8 shrink-0" />}
                 </div>
@@ -629,7 +614,7 @@ export function ColumnSlideOver({
                 </span>
                 Updating a record from{' '}
                 <span className="px-1.5 py-0.5 rounded bg-[#181818] border border-[#262626] font-mono text-white text-[11px]">
-                  {draftFkSchema && draftFkTable ? `${draftFkSchema}.${draftFkTable}` : (draftFkTable || 'referenced table')}
+                  {draftFkTable || 'referenced table'}
                 </span>{' '}
                 {draftFkOnUpdate === 'NO ACTION' && (
                   <>will <span className="text-amber-400 font-medium">raise an error</span> if there are records existing in this table that reference it</>
@@ -672,7 +657,7 @@ export function ColumnSlideOver({
                 </span>
                 Deleting a record from{' '}
                 <span className="px-1.5 py-0.5 rounded bg-[#181818] border border-[#262626] font-mono text-white text-[11px]">
-                  {draftFkSchema && draftFkTable ? `${draftFkSchema}.${draftFkTable}` : (draftFkTable || 'referenced table')}
+                  {draftFkTable || 'referenced table'}
                 </span>{' '}
                 {draftFkOnDelete === 'NO ACTION' && (
                   <>will <span className="text-amber-400 font-medium">raise an error</span> if there are records existing in this table that reference it</>

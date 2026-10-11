@@ -71,6 +71,7 @@ export interface TableGridViewProps {
   onSelectSqlMode?: () => void;
   gridSubTab?: 'data' | 'definition';
   setGridSubTab?: (tab: 'data' | 'definition') => void;
+  onOpenInSqlEditor?: (ddl: string) => void;
 }
 
 export function TableGridView({

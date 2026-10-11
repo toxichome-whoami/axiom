@@ -6,7 +6,7 @@
  * Architecture: Decomposed into modular domain hooks and view components matching ui/pages/storage pattern.
  */
 
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { SlideOver } from '../components/ui/SlideOver';
 import { ColumnInfoApi } from '../types';
@@ -55,9 +55,84 @@ export function TableEditor() {
       return '';
     }
   });
-  const [viewMode, setViewMode] = useState<'grid' | 'schema' | 'sql'>('grid');
-  const [gridSubTab, setGridSubTab] = useState<'data' | 'definition'>('data');
+  const [viewMode, setViewMode] = useState<'grid' | 'schema' | 'sql'>(() => {
+    try {
+      const urlParams = new URLSearchParams(window.location.search);
+      const v = urlParams.get('view');
+      if (v === 'grid' || v === 'schema' || v === 'sql') return v;
+      const saved = localStorage.getItem('axiom_view_mode');
+      if (saved === 'grid' || saved === 'schema' || saved === 'sql') return saved;
+    } catch {
+      // Ignore
+    }
+    return 'grid';
+  });
+  const [gridSubTab, setGridSubTab] = useState<'data' | 'definition'>(() => {
+    try {
+      const urlParams = new URLSearchParams(window.location.search);
+      const tab = urlParams.get('subtab');
+      if (tab === 'data' || tab === 'definition') return tab;
+      const saved = localStorage.getItem('axiom_grid_subtab');
+      if (saved === 'data' || saved === 'definition') return saved;
+    } catch {
+      // Ignore
+    }
+    return 'data';
+  });
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+
+  // Sync viewMode and gridSubTab to URL search params and localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem('axiom_view_mode', viewMode);
+      localStorage.setItem('axiom_grid_subtab', gridSubTab);
+
+      const url = new URL(window.location.href);
+      let changed = false;
+      if (url.searchParams.get('view') !== viewMode) {
+        url.searchParams.set('view', viewMode);
+        changed = true;
+      }
+      if (viewMode === 'grid') {
+        if (url.searchParams.get('subtab') !== gridSubTab) {
+          url.searchParams.set('subtab', gridSubTab);
+          changed = true;
+        }
+      } else {
+        if (url.searchParams.has('subtab')) {
+          url.searchParams.delete('subtab');
+          changed = true;
+        }
+      }
+
+      if (changed) {
+        window.history.replaceState(null, '', url.pathname + url.search);
+      }
+    } catch {
+      // Ignore
+    }
+  }, [viewMode, gridSubTab]);
+
+  // Handle popstate for viewMode and gridSubTab
+  useEffect(() => {
+    const handlePopState = () => {
+      try {
+        const urlParams = new URLSearchParams(window.location.search);
+        const v = urlParams.get('view');
+        if (v === 'grid' || v === 'schema' || v === 'sql') {
+          setViewMode(v);
+        }
+        const tab = urlParams.get('subtab');
+        if (tab === 'data' || tab === 'definition') {
+          setGridSubTab(tab);
+        }
+      } catch {
+        // Ignore
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
 
   // 1. Core Table & Schema Data Pipeline Hook
   const {
@@ -272,6 +347,134 @@ export function TableEditor() {
 
   // Row and Cell Right-Click Context Menu state
   const [gridContextMenu, setGridContextMenu] = useState<GridContextMenuState | null>(null);
+
+  // Schema view states & controls
+  const [schemaSearchTerm, setSchemaSearchTerm] = useState('');
+  const [schemaTransform, setSchemaTransform] = useState({ x: 60, y: 60, scale: 0.95 });
+  const [schemaAutoLayoutTrigger, setSchemaAutoLayoutTrigger] = useState(0);
+
+  // Full SQL DDL generator for Schema view Copy as SQL
+  const fullSqlDdl = useMemo(() => {
+    let ddl = '';
+    tables.forEach((t) => {
+      const tData = allDbTablesSchema[t.name] || { columns: [], foreign_keys: [] };
+      ddl += `CREATE TABLE ${t.name} (\n`;
+      const colLines = tData.columns.map((c) => {
+        let line = `  ${c.name} ${c.type}`;
+        if (c.primary_key) line += ' PRIMARY KEY';
+        if (!c.nullable) line += ' NOT NULL';
+        return line;
+      });
+      if (tData.foreign_keys && tData.foreign_keys.length > 0) {
+        tData.foreign_keys.forEach((fk) => {
+          colLines.push(`  CONSTRAINT fk_${fk.column} FOREIGN KEY (${fk.column}) REFERENCES ${fk.referenced_table} (${fk.referenced_column})`);
+        });
+      }
+      ddl += colLines.join(',\n') + '\n);\n\n';
+    });
+    return ddl.trim();
+  }, [tables, allDbTablesSchema]);
+
+  // Full Markdown Schema generator for Schema view Copy as Markdown
+  const fullMarkdownSchema = useMemo(() => {
+    let md = `# Database Schema: ${selectedDb || 'public'}\n\n`;
+    tables.forEach((t) => {
+      const tData = allDbTablesSchema[t.name] || { columns: [], foreign_keys: [] };
+      md += `## Table \`${t.name}\`\n\n`;
+      md += `| Column | Type | Nullable | Primary Key | Default |\n`;
+      md += `| :--- | :--- | :--- | :--- | :--- |\n`;
+      tData.columns.forEach((c) => {
+        md += `| \`${c.name}\` | \`${c.type}\` | ${c.nullable ? 'Yes' : 'No'} | ${c.primary_key ? 'Yes' : 'No'} | ${c.default_value ?? '-'} |\n`;
+      });
+      if (tData.foreign_keys && tData.foreign_keys.length > 0) {
+        md += `\n**Foreign Keys:**\n\n`;
+        tData.foreign_keys.forEach((fk) => {
+          md += `- \`${fk.column}\` -> \`${fk.referenced_table}(${fk.referenced_column})\`\n`;
+        });
+      }
+      md += `\n---\n\n`;
+    });
+    return md.trim();
+  }, [selectedDb, tables, allDbTablesSchema]);
+
+  const handleDownloadSvg = () => {
+    try {
+      const svgEl = document.querySelector('#axiom-schema-canvas svg') || document.querySelector('svg');
+      // Create a clean standalone SVG of the schema diagrams
+      const schemaPlane = document.querySelector('.origin-top-left') as HTMLElement | null;
+      if (!schemaPlane) return;
+
+      const serializer = new XMLSerializer();
+      const svgElements = schemaPlane.querySelectorAll('svg');
+      let combinedSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" style="background:#09090b;font-family:Inter,sans-serif;">`;
+      combinedSvg += `<style>text { font-family: Inter, sans-serif; fill: #ffffff; }</style>`;
+      svgElements.forEach((s) => {
+        combinedSvg += serializer.serializeToString(s);
+      });
+      combinedSvg += `</svg>`;
+
+      const blob = new Blob([combinedSvg], { type: 'image/svg+xml;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${selectedDb || 'schema'}-diagram.svg`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setCopiedKey('schema_svg');
+      setTimeout(() => setCopiedKey(null), 2000);
+    } catch (err) {
+      console.error('Failed to export SVG:', err);
+    }
+  };
+
+  const handleDownloadPng = () => {
+    try {
+      const schemaPlane = document.querySelector('.origin-top-left') as HTMLElement | null;
+      if (!schemaPlane) return;
+
+      const canvas = document.createElement('canvas');
+      canvas.width = 1920;
+      canvas.height = 1080;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+
+      // Dark background
+      ctx.fillStyle = '#09090b';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // Serialize SVG
+      const serializer = new XMLSerializer();
+      const svgElements = schemaPlane.querySelectorAll('svg');
+      let combinedSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" style="background:#09090b;font-family:Inter,sans-serif;">`;
+      combinedSvg += `<style>text { font-family: Inter, sans-serif; fill: #ffffff; }</style>`;
+      svgElements.forEach((s) => {
+        combinedSvg += serializer.serializeToString(s);
+      });
+      combinedSvg += `</svg>`;
+
+      const img = new Image();
+      const svgBlob = new Blob([combinedSvg], { type: 'image/svg+xml;charset=utf-8' });
+      const url = URL.createObjectURL(svgBlob);
+      img.onload = () => {
+        ctx.drawImage(img, 0, 0);
+        URL.revokeObjectURL(url);
+        canvas.toBlob((pngBlob) => {
+          if (!pngBlob) return;
+          const pngUrl = URL.createObjectURL(pngBlob);
+          const a = document.createElement('a');
+          a.href = pngUrl;
+          a.download = `${selectedDb || 'schema'}-diagram.png`;
+          a.click();
+          URL.revokeObjectURL(pngUrl);
+          setCopiedKey('schema_png');
+          setTimeout(() => setCopiedKey(null), 2000);
+        });
+      };
+      img.src = url;
+    } catch (err) {
+      console.error('Failed to export PNG:', err);
+    }
+  };
 
   const handleCopy = (text: string, key: string) => {
     navigator.clipboard.writeText(text);
@@ -523,6 +726,29 @@ export function TableEditor() {
               setSqlQuery(`SELECT * FROM ${selectedTable} LIMIT 25;`);
             }
           }}
+          schemaSearchTerm={schemaSearchTerm}
+          setSchemaSearchTerm={setSchemaSearchTerm}
+          activeSchema="public"
+          onCopySql={(_format) => handleCopy(fullSqlDdl, 'schema_sql')}
+          onCopyMarkdown={() => handleCopy(fullMarkdownSchema, 'schema_markdown')}
+          onDownloadPng={handleDownloadPng}
+          onDownloadSvg={handleDownloadSvg}
+          copiedKey={copiedKey}
+          onAutoLayout={() => setSchemaAutoLayoutTrigger((prev) => prev + 1)}
+          zoomScale={schemaTransform.scale}
+          onZoomIn={() =>
+            setSchemaTransform((prev) => ({
+              ...prev,
+              scale: Math.min(Number((prev.scale + 0.15).toFixed(3)), 2.2),
+            }))
+          }
+          onZoomOut={() =>
+            setSchemaTransform((prev) => ({
+              ...prev,
+              scale: Math.max(Number((prev.scale - 0.15).toFixed(3)), 0.3),
+            }))
+          }
+          onResetZoom={() => setSchemaTransform({ x: 60, y: 60, scale: 0.95 })}
         />
 
         {/* Mode 1: Table Grid (Spreadsheet Editor) */}
@@ -581,7 +807,7 @@ export function TableEditor() {
             setViewMode={setViewMode}
             gridSubTab={gridSubTab}
             setGridSubTab={setGridSubTab}
-            onOpenInSqlEditor={(ddl) => {
+            onOpenInSqlEditor={(ddl: string) => {
               setSqlQuery(ddl);
               setViewMode('sql');
             }}
@@ -600,10 +826,17 @@ export function TableEditor() {
             copiedKey={copiedKey}
             handleCopy={handleCopy}
             onSelectTable={(tableName) => {
-              setSelectedTable(tableName);
+              if (selectedTable === tableName) {
+                setSelectedTable('');
+              } else {
+                setSelectedTable(tableName);
+              }
               setSelectedRowIndex(null);
-              setIsDetailsOpen(true);
             }}
+            searchTerm={schemaSearchTerm}
+            transform={schemaTransform}
+            setTransform={setSchemaTransform}
+            autoLayoutTrigger={schemaAutoLayoutTrigger}
           />
         )}
 
@@ -628,7 +861,7 @@ export function TableEditor() {
 
       {/* ─── PANE 3: RIGHT OVERFLOW DRAWER PANEL (Row Inspector) ─── */}
       <RowInspectorSlideOver
-        isOpen={isDetailsOpen}
+        isOpen={isDetailsOpen && viewMode === 'grid'}
         onClose={() => {
           if (hasRowChanges) {
             setIsDiscardRowConfirmOpen(true);
