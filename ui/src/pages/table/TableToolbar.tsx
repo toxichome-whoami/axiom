@@ -290,16 +290,36 @@ export function TableToolbar({
 
             {/* Continue on Error Toggle */}
             <label
-              className="flex items-center gap-2 h-9 px-2.5 rounded-[7px] bg-[#141414] hover:bg-[#1a1a1a] border border-[#262626] hover:border-[#333333] text-[12px] text-[#a1a1a1] hover:text-white cursor-pointer select-none transition-colors"
               title="When running multiple statements, continue execution if individual statements (e.g. duplicate indexes or already existing tables) encounter non-fatal errors"
+              className={`flex items-center gap-2.5 h-9 px-3 rounded-[7px] border transition-all cursor-pointer select-none text-[12.5px] font-medium ${
+                continueOnError
+                  ? 'bg-[#141414] hover:bg-[#1a1a1a] border-[#2e2e2e] hover:border-[#3e3e3e] text-white shadow-xs'
+                  : 'bg-[#121212] hover:bg-[#181818] border-[#242424] text-[#808080] hover:text-[#cccccc]'
+              }`}
             >
               <input
                 type="checkbox"
                 checked={continueOnError}
                 onChange={(e) => onToggleContinueOnError?.(e.target.checked)}
-                className="w-3.5 h-3.5 rounded border-[#333333] bg-[#0c0c0c] text-blue-500 focus:ring-0 focus:ring-offset-0 cursor-pointer accent-blue-600"
+                className="sr-only"
               />
               <span className="hidden sm:inline">Continue on error</span>
+              {/* Custom Smooth Switch Pill */}
+              <div
+                className={`relative inline-flex h-[18px] w-[32px] shrink-0 items-center rounded-full transition-colors duration-200 ease-in-out px-[2px] ${
+                  continueOnError
+                    ? 'bg-blue-600 shadow-[0_0_8px_rgba(37,99,235,0.35)]'
+                    : 'bg-[#27272a]'
+                }`}
+              >
+                <div
+                  className={`pointer-events-none block h-[14px] w-[14px] rounded-full shadow-md transition-transform duration-200 ease-in-out ${
+                    continueOnError
+                      ? 'translate-x-[14px] bg-white'
+                      : 'translate-x-0 bg-[#a1a1aa]'
+                  }`}
+                />
+              </div>
             </label>
           </div>
         )}
