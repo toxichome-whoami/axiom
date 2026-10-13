@@ -35,6 +35,23 @@ static MUTATION_RE: once_cell::sync::Lazy<regex::Regex> = once_cell::sync::Lazy:
     regex::Regex::new(r"(?i)\b(INSERT|UPDATE|DELETE|DROP|CREATE|ALTER|TRUNCATE|REPLACE|GRANT|REVOKE|PRAGMA)\b").unwrap()
 });
 
+static PRAGMA_ON_RE: once_cell::sync::Lazy<regex::Regex> = once_cell::sync::Lazy::new(|| {
+    regex::Regex::new(r"(?i)\bPRAGMA\s+([a-zA-Z0-9_]+)\s*=\s*(ON|YES)\b").unwrap()
+});
+
+static PRAGMA_OFF_RE: once_cell::sync::Lazy<regex::Regex> = once_cell::sync::Lazy::new(|| {
+    regex::Regex::new(r"(?i)\bPRAGMA\s+([a-zA-Z0-9_]+)\s*=\s*(OFF|NO)\b").unwrap()
+});
+
+/// Normalizes SQLite PRAGMA statements with keyword values (e.g. `PRAGMA foreign_keys = OFF` / `ON`)
+/// into standard numeric pragma assignments (`PRAGMA foreign_keys = 0` / `1`).
+/// In SQLite grammar, ON/YES == 1 and OFF/NO == 0.
+/// This prevents sqlparser-rs from rejecting ON/OFF keywords as "Expected: a concrete value".
+pub fn normalize_sqlite_pragmas(sql: &str) -> String {
+    let replaced_off = PRAGMA_OFF_RE.replace_all(sql, "PRAGMA $1 = 0");
+    PRAGMA_ON_RE.replace_all(&replaced_off, "PRAGMA $1 = 1").into_owned()
+}
+
 /// Precomputed AST analysis and formatted query statement for fast-path execution.
 #[derive(Clone, Debug)]
 pub struct CachedAstInfo {
@@ -379,6 +396,8 @@ impl QueryExecutionPipeline {
             // because PostgreSQL grammar rejects raw '?' parameter placeholders.
             let parse_target_sql: std::borrow::Cow<'_, str> = if (dialect_name == "postgres" || dialect_name == "any") && sql.contains('?') {
                 std::borrow::Cow::Owned(format_postgres_placeholders(sql))
+            } else if dialect_name == "sqlite" && sql.to_ascii_uppercase().contains("PRAGMA") {
+                std::borrow::Cow::Owned(normalize_sqlite_pragmas(sql))
             } else {
                 std::borrow::Cow::Borrowed(sql)
             };
@@ -454,7 +473,9 @@ impl QueryExecutionPipeline {
                     | sqlparser::ast::Statement::AlterTable { .. }
                     | sqlparser::ast::Statement::AlterIndex { .. }
                     | sqlparser::ast::Statement::AlterView { .. }
-                    | sqlparser::ast::Statement::Truncate { .. } => {
+                    | sqlparser::ast::Statement::Truncate { .. }
+                    | sqlparser::ast::Statement::Set(..)
+                    | sqlparser::ast::Statement::Pragma { .. } => {
                         is_mutation = true;
                         ("DDL", Vec::new())
                     }
@@ -477,6 +498,8 @@ impl QueryExecutionPipeline {
             // Format placeholders based on engine dialect
             let opt_formatted_sql = if (dialect_name == "postgres" || dialect_name == "any") && sql.contains('?') {
                 Some(format_postgres_placeholders(sql))
+            } else if dialect_name == "sqlite" && sql.to_ascii_uppercase().contains("PRAGMA") {
+                Some(normalize_sqlite_pragmas(sql))
             } else {
                 None
             };
@@ -1279,6 +1302,13 @@ mod tests {
         let res2 = sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::MySqlDialect {}, sql2);
         assert!(res2.is_ok());
         assert_eq!(res2.unwrap().len(), 2);
+
+        let sql3 = "PRAGMA foreign_keys = OFF;\nDROP TABLE IF EXISTS payments;\nPRAGMA foreign_keys = ON;";
+        let normalized3 = super::normalize_sqlite_pragmas(sql3);
+        assert_eq!(normalized3, "PRAGMA foreign_keys = 0;\nDROP TABLE IF EXISTS payments;\nPRAGMA foreign_keys = 1;");
+        let res3 = sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::SQLiteDialect {}, &normalized3);
+        assert!(res3.is_ok(), "PRAGMA normalization should parse successfully: {:?}", res3.err());
+        assert_eq!(res3.unwrap().len(), 3);
     }
 
     #[test]
