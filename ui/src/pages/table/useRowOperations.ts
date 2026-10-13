@@ -70,6 +70,35 @@ export function useRowOperations({
     }
   };
 
+  function coerceColumnValue(val: unknown, colType: string): unknown {
+    if (val === null || val === undefined) return null;
+    const ty = colType.toLowerCase();
+    const isInt = ty.includes('int') || ty.includes('serial');
+    const isFloat =
+      ty.includes('float') ||
+      ty.includes('double') ||
+      ty.includes('real') ||
+      ty.includes('numeric') ||
+      ty.includes('decimal');
+    const isBool = ty.includes('bool');
+
+    if (typeof val === 'string') {
+      const trimmed = val.trim();
+      if (trimmed === '') return null;
+      if (isInt) {
+        const num = Number(trimmed);
+        if (!isNaN(num) && Number.isInteger(num)) return num;
+      } else if (isFloat) {
+        const num = Number(trimmed);
+        if (!isNaN(num)) return num;
+      } else if (isBool) {
+        if (trimmed.toLowerCase() === 'true') return true;
+        if (trimmed.toLowerCase() === 'false') return false;
+      }
+    }
+    return val;
+  }
+
   const handleSaveRowEdit = async () => {
     if (!selectedDb || !selectedTable || selectedRowIndex === null) return;
     const originalRow = rows[selectedRowIndex];
@@ -81,12 +110,13 @@ export function useRowOperations({
       const filter: Record<string, unknown> = {};
 
       if (pkCol && originalRow[pkCol.name] !== undefined) {
-        filter[pkCol.name] = { eq: originalRow[pkCol.name] };
+        filter[pkCol.name] = { eq: coerceColumnValue(originalRow[pkCol.name], pkCol.type) };
       } else {
         let count = 0;
         Object.entries(originalRow).forEach(([k, v]) => {
           if (count < 2 && v !== null && v !== undefined) {
-            filter[k] = { eq: v };
+            const colDef = columns.find((c) => c.name === k);
+            filter[k] = { eq: colDef ? coerceColumnValue(v, colDef.type) : v };
             count++;
           }
         });
@@ -96,13 +126,22 @@ export function useRowOperations({
       columns.forEach((col) => {
         const val = rowEditValues[col.name];
         if (val !== originalRow[col.name]) {
-          updates[col.name] = val;
+          updates[col.name] = coerceColumnValue(val, col.type);
         }
       });
 
       if (Object.keys(updates).length > 0) {
         await api.updateTableRow(selectedDb, selectedTable, filter, updates);
+        setIsDetailsOpen(false);
+        setIsInsertModeInPanel(false);
+        setSelectedRowIndex(null);
+        setRowEditValues({});
         await loadTableData({ targetCursor: cursor, reloadSchema: false });
+      } else {
+        setIsDetailsOpen(false);
+        setIsInsertModeInPanel(false);
+        setSelectedRowIndex(null);
+        setRowEditValues({});
       }
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Failed to update row');
@@ -119,15 +158,17 @@ export function useRowOperations({
       const payload: Record<string, unknown> = {};
       columns.forEach((col) => {
         const val = rowEditValues[col.name];
-        if (val !== undefined && val !== '') {
-          payload[col.name] = val;
+        if (val !== undefined && val !== '' && val !== null) {
+          payload[col.name] = coerceColumnValue(val, col.type);
         }
       });
 
       await api.insertTableRow(selectedDb, selectedTable, payload);
       setIsInsertModeInPanel(false);
+      setIsDetailsOpen(false);
+      setSelectedRowIndex(null);
+      setRowEditValues({});
       await loadTableData({ reloadSchema: false });
-      setSelectedRowIndex(0);
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Failed to insert row');
     } finally {
@@ -144,12 +185,13 @@ export function useRowOperations({
       const filter: Record<string, unknown> = {};
 
       if (pkCol && deleteRowTarget[pkCol.name] !== undefined) {
-        filter[pkCol.name] = { eq: deleteRowTarget[pkCol.name] };
+        filter[pkCol.name] = { eq: coerceColumnValue(deleteRowTarget[pkCol.name], pkCol.type) };
       } else {
         let count = 0;
         Object.entries(deleteRowTarget).forEach(([k, v]) => {
           if (count < 2 && v !== null && v !== undefined) {
-            filter[k] = { eq: v };
+            const colDef = columns.find((c) => c.name === k);
+            filter[k] = { eq: colDef ? coerceColumnValue(v, colDef.type) : v };
             count++;
           }
         });
@@ -158,7 +200,10 @@ export function useRowOperations({
       await api.deleteTableRow(selectedDb, selectedTable, filter);
       setDeleteRowTarget(null);
       setSelectedRowIndex(null);
-      loadTableData({ targetCursor: cursor, reloadSchema: false });
+      setIsDetailsOpen(false);
+      setRowEditValues({});
+      setInspectorTab('details');
+      await loadTableData({ targetCursor: cursor, reloadSchema: false });
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Failed to delete row');
     } finally {

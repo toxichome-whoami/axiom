@@ -5,7 +5,7 @@
  * Invariants: Strict dirty-checking on submit buttons; edge-to-edge section dividers; confirmation dialogs on unsaved FK changes.
  */
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   AlertCircle,
   Plus,
@@ -13,6 +13,7 @@ import {
   RefreshCw,
   ArrowRight,
   X,
+  Trash2,
 } from 'lucide-react';
 import { ColumnInfoApi, TableInfoApi } from '../../types';
 import { SlideOver } from '../../components/ui/SlideOver';
@@ -84,6 +85,7 @@ export interface ColumnSlideOverProps {
   isCreatingColumn: boolean;
   hasColumnChanges: boolean;
   handleSaveColumn: () => void;
+  onRequestDeleteColumn?: (col: ColumnInfoApi) => void;
 }
 
 export function ColumnSlideOver({
@@ -143,7 +145,14 @@ export function ColumnSlideOver({
   isCreatingColumn,
   hasColumnChanges,
   handleSaveColumn,
+  onRequestDeleteColumn,
 }: ColumnSlideOverProps) {
+  const [columnTab, setColumnTab] = useState<'details' | 'danger'>('details');
+
+  useEffect(() => {
+    setColumnTab('details');
+  }, [isOpen, editingColumn]);
+
   return (
     <>
       <SlideOver
@@ -153,19 +162,78 @@ export function ColumnSlideOver({
         title={editingColumn ? `Update Column "${editingColumn.name}"` : 'Add Column'}
         subtitle={editingColumn ? `Modify schema for column ${editingColumn.name} in ${selectedTable}` : `Add a new column to ${selectedTable}`}
       >
+        {/* Tab bar for Edit mode */}
+        {editingColumn && (
+          <div className="px-5 py-3 border-b border-[#222222] bg-[#0e0e0e] shrink-0 font-sans">
+            <div className="inline-flex items-center p-0.5 rounded-[8px] bg-transparent border border-[#262626]">
+              <button
+                type="button"
+                onClick={() => setColumnTab('details')}
+                className={`flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[14px] font-medium transition-colors duration-75 cursor-pointer font-sans outline-none focus:outline-none border ${
+                  columnTab === 'details'
+                    ? 'bg-[#161616] text-white border-[#333333]'
+                    : 'text-[#8c8c8c] hover:text-white hover:bg-[#141414] border-transparent'
+                }`}
+              >
+                <span>Column Details</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setColumnTab('danger')}
+                className={`flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[14px] font-medium transition-colors duration-75 cursor-pointer font-sans outline-none focus:outline-none border ${
+                  columnTab === 'danger'
+                    ? 'bg-[#161616] text-white border-[#333333]'
+                    : 'text-[#8c8c8c] hover:text-white hover:bg-[#141414] border-transparent'
+                }`}
+              >
+                <span>Danger</span>
+              </button>
+            </div>
+          </div>
+        )}
+
         <div className="flex-1 flex flex-col min-h-0 bg-[#0e0e0e] overflow-hidden font-sans">
           <div className="flex-1 overflow-y-auto p-5 space-y-5 font-sans">
-            {createColumnError && (
-              <div className="p-3.5 rounded-[8px] bg-[#2a1113] border border-[#5c1d24] text-[#f87171] text-[13px] flex items-start gap-2.5">
-                <AlertCircle className="w-4 h-4 shrink-0 text-[#ef4444] mt-0.5" />
-                <div className="flex-1 font-mono text-[12px]">{createColumnError}</div>
+            {editingColumn && columnTab === 'danger' ? (
+              <div className="space-y-4 font-sans">
+                <div className="rounded-[8px] border border-[#3a1515] bg-[#0e0404] p-4">
+                  <h3 className="text-[16px] font-medium text-[#e5484d] mb-1 font-sans">Delete Column</h3>
+                  <p className="text-[13px] text-[#8c8c8c] mb-4 font-sans">
+                    Permanently delete column <span className="text-white font-medium text-[13px] font-mono">{editingColumn.name}</span> from table <span className="text-white font-medium text-[13px] font-mono">{selectedTable}</span>. This action is irreversible and all data stored in this column will be permanently deleted.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => onRequestDeleteColumn?.(editingColumn)}
+                    className="group relative flex shrink-0 items-center justify-center h-8 px-3.5 rounded-[8px] font-medium text-white shadow-xs outline-none cursor-pointer overflow-hidden ring-1 ring-[#be123c] bg-[#e11d48] font-sans text-[13px]"
+                  >
+                    <span
+                      aria-hidden="true"
+                      className="pointer-events-none absolute inset-0 rounded-[inherit] bg-gradient-to-b from-[#f43f5e] to-[#e11d48] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2)]"
+                    />
+                    <span
+                      aria-hidden="true"
+                      className="pointer-events-none absolute inset-0 rounded-[inherit] bg-black opacity-0 group-hover:opacity-15 transition-opacity duration-200"
+                    />
+                    <span className="relative flex items-center gap-1.5 font-sans">
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Delete Column</span>
+                    </span>
+                  </button>
+                </div>
               </div>
-            )}
+            ) : (
+              <>
+                {createColumnError && (
+                  <div className="p-3.5 rounded-[8px] bg-[#2a1113] border border-[#5c1d24] text-[#f87171] text-[13px] flex items-start gap-2.5">
+                    <AlertCircle className="w-4 h-4 shrink-0 text-[#ef4444] mt-0.5" />
+                    <div className="flex-1 font-mono text-[12px]">{createColumnError}</div>
+                  </div>
+                )}
 
-            {/* Section 1: Column Definition */}
-            <div className="space-y-4">
-              <div>
-                <h3 className="text-[16px] font-medium text-white tracking-tight">Column Definition</h3>
+                {/* Section 1: Column Definition */}
+                <div className="space-y-4">
+                  <div>
+                    <h3 className="text-[16px] font-medium text-white tracking-tight">Column Definition</h3>
                 <p className="text-[13px] text-[#8c8c8c] mt-0.5">Specify column name, description, and target data type.</p>
               </div>
 
@@ -416,10 +484,22 @@ export function ColumnSlideOver({
                 </div>
               </div>
             </div>
-          </div>
+          </>
+        )}
+      </div>
 
-          {/* Footer */}
-          <div className="p-4 border-t border-[#222222] bg-[#0e0e0e] flex items-center justify-end gap-2.5 font-sans shrink-0">
+      {/* Footer */}
+      <div className="p-4 border-t border-[#222222] bg-[#0e0e0e] flex items-center justify-end gap-2.5 font-sans shrink-0">
+        {editingColumn && columnTab === 'danger' ? (
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex items-center justify-center h-9 px-4 rounded-[8px] text-[14px] font-medium text-[#cccccc] hover:text-white bg-transparent hover:bg-[#161616] border border-[#262626] hover:border-[#383838] transition-colors cursor-pointer font-sans"
+          >
+            Close
+          </button>
+        ) : (
+          <>
             <button
               type="button"
               onClick={onClose}
@@ -452,8 +532,10 @@ export function ColumnSlideOver({
                 )}
               </span>
             </button>
-          </div>
-        </div>
+          </>
+        )}
+      </div>
+    </div>
       </SlideOver>
 
       {/* ─── Foreign Key Relationship SlideOver Panel ─── */}

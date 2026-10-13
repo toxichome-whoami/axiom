@@ -78,6 +78,44 @@ pub fn coerce_filter_values(filter: &mut HashMap<String, Value>, columns: &[Colu
     }
 }
 
+/// Coerces string record values in insert/update data into strongly typed numbers or booleans
+/// if the target column schema type is numeric or boolean.
+pub fn coerce_record_values(record: &mut HashMap<String, Value>, columns: &[ColumnInfo]) {
+    for (key, val) in record.iter_mut() {
+        if let Some(col_info) = columns.iter().find(|c| c.name.eq_ignore_ascii_case(key)) {
+            let ty = col_info.r#type.to_lowercase();
+            let is_int = ty.contains("int") || ty.contains("serial");
+            let is_float = ty.contains("float")
+                || ty.contains("double")
+                || ty.contains("real")
+                || ty.contains("num")
+                || ty.contains("dec");
+            let is_bool = ty.contains("bool");
+
+            if let Value::String(s) = val {
+                let trimmed = s.trim();
+                if is_int {
+                    if let Ok(i) = trimmed.parse::<i64>() {
+                        *val = Value::Number(i.into());
+                    }
+                } else if is_float {
+                    if let Ok(f) = trimmed.parse::<f64>() {
+                        if let Some(n) = serde_json::Number::from_f64(f) {
+                            *val = Value::Number(n);
+                        }
+                    }
+                } else if is_bool {
+                    if trimmed.eq_ignore_ascii_case("true") {
+                        *val = Value::Bool(true);
+                    } else if trimmed.eq_ignore_ascii_case("false") {
+                        *val = Value::Bool(false);
+                    }
+                }
+            }
+        }
+    }
+}
+
 /// Strips all characters from an identifier except alphanumeric characters and underscores.
 /// CONTRACT:
 ///  - Precondition: `ident` string reference.
@@ -93,6 +131,20 @@ pub fn sanitize_ident(ident: &str) -> std::borrow::Cow<'_, str> {
                 .filter(|c| c.is_alphanumeric() || *c == '_')
                 .collect(),
         )
+    }
+}
+
+/// Wraps an identifier with dialect-specific quotes to safely handle SQL reserved keywords and case sensitivity.
+pub fn quote_ident_dialect(ident: &str, dialect: &str) -> String {
+    let clean = sanitize_ident(ident);
+    let d = dialect.to_lowercase();
+    if d.contains("mysql") || d.contains("mariadb") {
+        format!("`{}`", clean.replace('`', "``"))
+    } else if d.contains("mssql") || d.contains("sqlserver") {
+        format!("[{}]", clean.replace(']', "]]"))
+    } else {
+        // PostgreSQL, SQLite, LibSQL, ClickHouse, Generic
+        format!("\"{}\"", clean.replace('"', "\"\""))
     }
 }
 
@@ -444,5 +496,48 @@ mod tests {
         assert_eq!(filter.get("price").unwrap().get("gte").unwrap(), &json!(19.99));
         assert_eq!(filter.get("is_active").unwrap().get("eq").unwrap(), &json!(true));
         assert_eq!(filter.get("title").unwrap().get("eq").unwrap(), &json!("123"));
+    }
+
+    #[test]
+    fn test_coerce_record_values() {
+        let cols = vec![
+            ColumnInfo {
+                name: "id".to_string(),
+                r#type: "bigint".to_string(),
+                nullable: false,
+                primary_key: true,
+            },
+            ColumnInfo {
+                name: "amount".to_string(),
+                r#type: "float8".to_string(),
+                nullable: true,
+                primary_key: false,
+            },
+            ColumnInfo {
+                name: "verified".to_string(),
+                r#type: "bool".to_string(),
+                nullable: false,
+                primary_key: false,
+            },
+            ColumnInfo {
+                name: "notes".to_string(),
+                r#type: "text".to_string(),
+                nullable: true,
+                primary_key: false,
+            },
+        ];
+
+        let mut record = HashMap::new();
+        record.insert("id".to_string(), json!("1001"));
+        record.insert("amount".to_string(), json!("99.5"));
+        record.insert("verified".to_string(), json!("true"));
+        record.insert("notes".to_string(), json!("12345"));
+
+        coerce_record_values(&mut record, &cols);
+
+        assert_eq!(record.get("id").unwrap(), &json!(1001));
+        assert_eq!(record.get("amount").unwrap(), &json!(99.5));
+        assert_eq!(record.get("verified").unwrap(), &json!(true));
+        assert_eq!(record.get("notes").unwrap(), &json!("12345"));
     }
 }

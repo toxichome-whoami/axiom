@@ -268,8 +268,14 @@ impl QueryExecutionPipeline {
                         };
                         ("DELETE", tbls)
                     }
-                    sqlparser::ast::Statement::Drop { .. }
+                    sqlparser::ast::Statement::CreateTable { .. }
+                    | sqlparser::ast::Statement::CreateIndex { .. }
+                    | sqlparser::ast::Statement::CreateView { .. }
+                    | sqlparser::ast::Statement::CreateDatabase { .. }
+                    | sqlparser::ast::Statement::Drop { .. }
                     | sqlparser::ast::Statement::AlterTable { .. }
+                    | sqlparser::ast::Statement::AlterIndex { .. }
+                    | sqlparser::ast::Statement::AlterView { .. }
                     | sqlparser::ast::Statement::Truncate { .. } => {
                         is_mutation = true;
                         ("DDL", Vec::new())
@@ -603,7 +609,7 @@ pub async fn insert_rows(
     PolicyEngine::evaluate(&auth, &db_name, &table_name, "INSERT")?;
     let db_cfg = get_db_config(&db_name, &auth).await?;
 
-    let rows_to_insert = if let Some(r) = payload.rows {
+    let mut rows_to_insert = if let Some(r) = payload.rows {
         r
     } else if let Some(single) = payload.row {
         vec![single]
@@ -623,15 +629,30 @@ pub async fn insert_rows(
         ));
     }
 
+    let engine = DatabasePoolManager::get_engine(&db_name).await;
+    let table_cols = if let Some(ref eng) = engine {
+        eng.describe_table(&table_name).await.ok()
+    } else {
+        None
+    };
+
+    if let Some(ref cols) = table_cols {
+        for row in &mut rows_to_insert {
+            crate::database::filter_builder::coerce_record_values(row, cols);
+        }
+    }
+
+    let dialect = engine.as_ref().map(|e| e.dialect()).unwrap_or("postgres");
+
     // Dynamically build a parameterized multi-insert query from the provided rows.
     let first_row = &rows_to_insert[0];
-    let column_pairs: Vec<(&String, std::borrow::Cow<'_, str>)> = first_row
+    let column_pairs: Vec<(&String, String)> = first_row
         .keys()
-        .map(|k| (k, crate::database::filter_builder::sanitize_ident(k)))
+        .map(|k| (k, crate::database::filter_builder::quote_ident_dialect(k, dialect)))
         .collect();
     let cols_str = column_pairs
         .iter()
-        .map(|(_, col)| col.as_ref())
+        .map(|(_, col)| col.as_str())
         .collect::<Vec<_>>()
         .join(", ");
 
@@ -648,9 +669,10 @@ pub async fn insert_rows(
         values_strings.push(format!("({})", row_placeholders.join(", ")));
     }
 
+    let quoted_table = crate::database::filter_builder::quote_ident_dialect(&table_name, dialect);
     let sql = format!(
         "INSERT INTO {} ({}) VALUES {}",
-        crate::database::filter_builder::sanitize_ident(&table_name),
+        quoted_table,
         cols_str,
         values_strings.join(", ")
     );
@@ -714,14 +736,17 @@ pub async fn fetch_rows(
 
     let mut final_where = where_sql.clone();
 
+    let dialect = engine.as_ref().map(|e| e.dialect()).unwrap_or("postgres");
+
     let (order_by_sql, order_col_opt) = if let Some(ref sort_col) = params.sort {
-        let order_col = crate::database::filter_builder::sanitize_ident(sort_col).into_owned();
+        let quoted_col = crate::database::filter_builder::quote_ident_dialect(sort_col, dialect);
+        let raw_col = crate::database::filter_builder::sanitize_ident(sort_col).into_owned();
         let order_dir = if params.order.eq_ignore_ascii_case("desc") {
             "DESC"
         } else {
             "ASC"
         };
-        (format!("ORDER BY {} {}", order_col, order_dir), Some((order_col, order_dir)))
+        (format!("ORDER BY {} {}", quoted_col, order_dir), Some((raw_col, order_dir)))
     } else {
         // Deterministic default ordering:
         // In PostgreSQL and MVCC relational databases, an UPDATE rewrites the tuple on disk.
@@ -737,33 +762,36 @@ pub async fn fetch_rows(
         };
 
         if let Some(sort_col) = default_sort_col {
-            let order_col = crate::database::filter_builder::sanitize_ident(&sort_col).into_owned();
+            let quoted_col = crate::database::filter_builder::quote_ident_dialect(&sort_col, dialect);
+            let raw_col = crate::database::filter_builder::sanitize_ident(&sort_col).into_owned();
             let order_dir = if params.order.eq_ignore_ascii_case("desc") {
                 "DESC"
             } else {
                 "ASC"
             };
-            (format!("ORDER BY {} {}", order_col, order_dir), Some((order_col, order_dir)))
+            (format!("ORDER BY {} {}", quoted_col, order_dir), Some((raw_col, order_dir)))
         } else if params.cursor.is_some() {
-            let order_col = "id".to_string();
+            let quoted_col = crate::database::filter_builder::quote_ident_dialect("id", dialect);
+            let raw_col = "id".to_string();
             let order_dir = if params.order.eq_ignore_ascii_case("desc") {
                 "DESC"
             } else {
                 "ASC"
             };
-            (format!("ORDER BY {} {}", order_col, order_dir), Some((order_col, order_dir)))
+            (format!("ORDER BY {} {}", quoted_col, order_dir), Some((raw_col, order_dir)))
         } else {
             ("".to_string(), None)
         }
     };
 
     if let Some(cursor) = &params.cursor {
-        if let Some((ref order_col, order_dir)) = order_col_opt {
+        if let Some((ref raw_col, order_dir)) = order_col_opt {
+            let quoted_col = crate::database::filter_builder::quote_ident_dialect(raw_col, dialect);
             let cursor_op = if order_dir == "DESC" { "<" } else { ">" };
-            let cursor_cond = format!("{} {} ?", order_col, cursor_op);
+            let cursor_cond = format!("{} {} ?", quoted_col, cursor_op);
 
             let is_numeric = table_cols.as_ref().map(|cols| {
-                cols.iter().any(|c| c.name.eq_ignore_ascii_case(order_col) && (
+                cols.iter().any(|c| c.name.eq_ignore_ascii_case(raw_col) && (
                     c.r#type.to_lowercase().contains("int") ||
                     c.r#type.to_lowercase().contains("serial") ||
                     c.r#type.to_lowercase().contains("num") ||
@@ -797,17 +825,18 @@ pub async fn fetch_rows(
         }
     }
 
+    let quoted_table = crate::database::filter_builder::quote_ident_dialect(&table_name, dialect);
     let sql = if order_by_sql.is_empty() {
         format!(
             "SELECT * FROM {} {} LIMIT {}",
-            crate::database::filter_builder::sanitize_ident(&table_name),
+            quoted_table,
             final_where,
             limit
         )
     } else {
         format!(
             "SELECT * FROM {} {} {} LIMIT {}",
-            crate::database::filter_builder::sanitize_ident(&table_name),
+            quoted_table,
             final_where,
             order_by_sql,
             limit
@@ -889,13 +918,15 @@ pub async fn update_rows(
     };
 
     let mut filter = payload.filter;
+    let mut update_data = payload.update;
     if let Some(ref cols) = table_cols {
         crate::database::filter_builder::coerce_filter_values(&mut filter, cols);
+        crate::database::filter_builder::coerce_record_values(&mut update_data, cols);
     }
 
     let (sql, values) = crate::database::filter_builder::construct_update(
         &table_name,
-        &payload.update,
+        &update_data,
         &filter,
     );
 

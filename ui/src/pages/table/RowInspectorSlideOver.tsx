@@ -330,40 +330,56 @@ export function RowInspectorSlideOver({
       </div>
 
       {/* Footer */}
-      {(isInsertMode || (activeRow && inspectorTab === 'details')) && (
-        <div className="p-4 border-t border-[#222222] bg-[#0e0e0e] flex items-center justify-end gap-2.5 font-sans shrink-0">
-          <button
-            type="button"
-            onClick={onClose}
-            className="inline-flex items-center justify-center h-9 px-4 rounded-[8px] text-[14px] font-medium text-[#cccccc] hover:text-white bg-transparent hover:bg-[#161616] border border-[#262626] hover:border-[#383838] transition-colors cursor-pointer font-sans"
-          >
-            Close
-          </button>
-          <button
-            type="button"
-            onClick={isInsertMode ? handleInsertRowFromPanel : handleSaveRowEdit}
-            disabled={isSavingRow || !hasRowChanges}
-            className="group relative flex shrink-0 items-center justify-center h-9 px-4 rounded-[8px] font-medium text-white shadow-xs outline-none cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed overflow-hidden ring-1 ring-[#1d4ed8] bg-[#2563eb] font-sans"
-          >
-            <span
-              aria-hidden="true"
-              className="pointer-events-none absolute inset-0 rounded-[inherit] bg-gradient-to-b from-[#3b82f6] to-[#2563eb] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2)]"
-            />
-            <span
-              aria-hidden="true"
-              className="pointer-events-none absolute inset-0 rounded-[inherit] bg-black opacity-0 group-hover:opacity-15 transition-opacity duration-200"
-            />
-            <span className="relative flex items-center gap-1.5 text-[14px] font-sans">
-              {isSavingRow ? (
-                <>
-                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                  <span>Saving...</span>
-                </>
-              ) : (
-                <span>{isInsertMode ? 'Save Record' : 'Save'}</span>
-              )}
-            </span>
-          </button>
+      {(isInsertMode || activeRow) && (
+        <div className="p-4 border-t border-[#222222] bg-[#0e0e0e] flex items-center justify-between gap-2.5 font-sans shrink-0">
+          <div>
+            {!isInsertMode && activeRow && inspectorTab === 'details' && (
+              <button
+                type="button"
+                onClick={() => onRequestDeleteRow(activeRow)}
+                className="inline-flex items-center gap-1.5 h-9 px-3 rounded-[8px] text-[13px] font-medium text-[#e5484d] hover:text-white bg-transparent hover:bg-[#3a1515] border border-[#3a1515] hover:border-[#e5484d] transition-colors cursor-pointer font-sans"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Delete Row</span>
+              </button>
+            )}
+          </div>
+          <div className="flex items-center gap-2.5">
+            <button
+              type="button"
+              onClick={onClose}
+              className="inline-flex items-center justify-center h-9 px-4 rounded-[8px] text-[14px] font-medium text-[#cccccc] hover:text-white bg-transparent hover:bg-[#161616] border border-[#262626] hover:border-[#383838] transition-colors cursor-pointer font-sans"
+            >
+              Close
+            </button>
+            {inspectorTab === 'details' && (
+              <button
+                type="button"
+                onClick={isInsertMode ? handleInsertRowFromPanel : handleSaveRowEdit}
+                disabled={isSavingRow || !hasRowChanges}
+                className="group relative flex shrink-0 items-center justify-center h-9 px-4 rounded-[8px] font-medium text-white shadow-xs outline-none cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed overflow-hidden ring-1 ring-[#1d4ed8] bg-[#2563eb] font-sans"
+              >
+                <span
+                  aria-hidden="true"
+                  className="pointer-events-none absolute inset-0 rounded-[inherit] bg-gradient-to-b from-[#3b82f6] to-[#2563eb] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2)]"
+                />
+                <span
+                  aria-hidden="true"
+                  className="pointer-events-none absolute inset-0 rounded-[inherit] bg-black opacity-0 group-hover:opacity-15 transition-opacity duration-200"
+                />
+                <span className="relative flex items-center gap-1.5 text-[14px] font-sans">
+                  {isSavingRow ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>Saving...</span>
+                    </>
+                  ) : (
+                    <span>{isInsertMode ? 'Save Record' : 'Save'}</span>
+                  )}
+                </span>
+              </button>
+            )}
+          </div>
         </div>
       )}
     </SlideOver>

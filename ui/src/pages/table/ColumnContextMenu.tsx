@@ -5,7 +5,7 @@
  */
 
 import React, { useEffect, useRef } from 'react';
-import { ArrowUp, ArrowDown, Check, Copy, Edit3, ArrowUpDown, Trash2 } from 'lucide-react';
+import { ArrowUp, ArrowDown, Check, Copy, Edit3, ArrowUpDown } from 'lucide-react';
 import { ColumnInfoApi, ForeignKeyInfoApi } from '../../types';
 import { mapSqlTypeToFormValue } from './format';
 
@@ -21,7 +21,7 @@ export interface ColumnContextMenuProps {
   onCopyName: (name: string) => void;
   onOpenEditColumn: (col: ColumnInfoApi) => void;
   onResetWidth: (colName: string) => void;
-  onRequestDeleteColumn: (col: ColumnInfoApi) => void;
+  onRequestDeleteColumn?: (col: ColumnInfoApi) => void;
 }
 
 export function ColumnContextMenu({
@@ -144,22 +144,6 @@ export function ColumnContextMenu({
       >
         <ArrowUpDown className="w-3.5 h-3.5 shrink-0 opacity-80" />
         <span>Reset width</span>
-      </button>
-
-      {/* Separator */}
-      <div className="-mx-1.5 border-t border-[#222222] my-1" />
-
-      {/* 6. Delete column (Destructive) */}
-      <button
-        type="button"
-        onClick={() => {
-          onRequestDeleteColumn(col);
-          onClose();
-        }}
-        className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-[5px] text-[13px] font-sans text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 transition-colors cursor-pointer text-left"
-      >
-        <Trash2 className="w-3.5 h-3.5 shrink-0 text-rose-400" />
-        <span>Delete column</span>
       </button>
     </div>
   );

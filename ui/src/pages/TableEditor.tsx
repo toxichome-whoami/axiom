@@ -362,6 +362,50 @@ export function TableEditor() {
   // Table Edit SlideOver state
   const [isTableEditOpen, setIsTableEditOpen] = useState(false);
   const [editingTableTarget, setEditingTableTarget] = useState<string>('');
+  const [deleteTableTarget, setDeleteTableTarget] = useState<string | null>(null);
+  const [isDeletingTable, setIsDeletingTable] = useState(false);
+
+  const handleDeleteTable = async () => {
+    if (!selectedDb || !deleteTableTarget) return;
+    setIsDeletingTable(true);
+    try {
+      const currentDb = databases.find((d) => d.alias === selectedDb);
+      const engineType = currentDb?.engine?.toLowerCase() || '';
+
+      let dropSql = '';
+      if (engineType.includes('mysql') || engineType.includes('mariadb')) {
+        dropSql = `DROP TABLE \`${deleteTableTarget.replace(/`/g, '``')}\`;`;
+      } else if (engineType.includes('mssql') || engineType.includes('sqlserver')) {
+        dropSql = `DROP TABLE [${deleteTableTarget.replace(/]/g, ']]')}];`;
+      } else {
+        dropSql = `DROP TABLE "${deleteTableTarget.replace(/"/g, '""')}";`;
+      }
+
+      await api.executeSqlQuery(selectedDb, dropSql);
+
+      delete schemaCacheRef.current[deleteTableTarget];
+      const target = deleteTableTarget;
+      setDeleteTableTarget(null);
+      setIsTableEditOpen(false);
+      setEditingTableTarget('');
+
+      await fetchTables(selectedDb);
+
+      if (selectedTable === target) {
+        const remaining = tables.filter((t) => t.name !== target);
+        if (remaining.length > 0) {
+          setSelectedTable(remaining[0].name);
+        } else {
+          setSelectedTable('');
+          setRows([]);
+        }
+      }
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to delete table');
+    } finally {
+      setIsDeletingTable(false);
+    }
+  };
 
   // Full SQL DDL generator for Schema view Copy as SQL
   const fullSqlDdl = useMemo(() => {
@@ -569,6 +613,27 @@ export function TableEditor() {
         onCreateTable={() => {
           setEditingTableTarget('');
           setIsTableEditOpen(true);
+        }}
+        onEditTable={async (tableName) => {
+          if (tableName !== selectedTable) {
+            setSelectedTable(tableName);
+            if (!schemaCacheRef.current[tableName] && !allDbTablesSchema[tableName]) {
+              try {
+                const schema = await api.getTableSchema(selectedDb, tableName);
+                schemaCacheRef.current[tableName] = {
+                  columns: schema.columns,
+                  foreign_keys: schema.foreign_keys,
+                };
+              } catch (e) {
+                console.error(e);
+              }
+            }
+          }
+          setEditingTableTarget(tableName);
+          setIsTableEditOpen(true);
+        }}
+        onDeleteTable={(tableName) => {
+          setDeleteTableTarget(tableName);
         }}
       />
 
@@ -1179,6 +1244,7 @@ export function TableEditor() {
         isCreatingColumn={isCreatingColumn}
         hasColumnChanges={hasColumnChanges}
         handleSaveColumn={handleSaveColumn}
+        onRequestDeleteColumn={(col) => setDeleteColumnTarget(col)}
       />
 
       {/* ─── Discard Column Changes Confirm Dialog ─── */}
@@ -1302,6 +1368,18 @@ export function TableEditor() {
         onClose={() => setDeleteColumnTarget(null)}
       />
 
+      {/* ─── Delete Table Confirm Dialog ─── */}
+      <ConfirmDialog
+        isOpen={!!deleteTableTarget}
+        title={`Delete table "${deleteTableTarget}"?`}
+        description={`Are you sure you want to delete table "${deleteTableTarget}" from database "${selectedDb}"? All records, constraints, and schemas in this table will be permanently deleted. This action cannot be undone.`}
+        confirmLabel={isDeletingTable ? 'Deleting...' : 'Delete table'}
+        cancelLabel="Cancel"
+        variant="danger"
+        onConfirm={handleDeleteTable}
+        onClose={() => setDeleteTableTarget(null)}
+      />
+
       {/* ─── Supabase Studio-style Create / Update Table SlideOver ─── */}
       {isTableEditOpen && (
         <TableEditSlideOver
@@ -1313,8 +1391,9 @@ export function TableEditor() {
           selectedDb={selectedDb}
           tableName={editingTableTarget}
           tables={tables}
-          columns={editingTableTarget ? (allDbTablesSchema[editingTableTarget]?.columns || columns) : []}
-          foreignKeys={editingTableTarget ? (allDbTablesSchema[editingTableTarget]?.foreign_keys || foreignKeys) : []}
+          columns={editingTableTarget ? (allDbTablesSchema[editingTableTarget]?.columns || schemaCacheRef.current[editingTableTarget]?.columns || columns) : []}
+          foreignKeys={editingTableTarget ? (allDbTablesSchema[editingTableTarget]?.foreign_keys || schemaCacheRef.current[editingTableTarget]?.foreign_keys || foreignKeys) : []}
+          onRequestDeleteTable={(tbl) => setDeleteTableTarget(tbl)}
           onSave={async ({ newName, columns: updatedCols, foreignKeys: updatedFks }) => {
             const oldName = editingTableTarget;
             const currentDb = databases.find((d) => d.alias === selectedDb);
@@ -1323,20 +1402,53 @@ export function TableEditor() {
             // Handle CREATE TABLE mode
             if (!oldName) {
               const colDefs = updatedCols.map((c) => {
+                const normType = c.type.toLowerCase();
+                const isIntPk = c.primaryKey && (normType.includes('int') || normType.includes('serial'));
+                const hasExplicitDefault = c.defaultValue && c.defaultValue.trim() !== '' && c.defaultValue.toUpperCase() !== 'NULL';
+
                 let def = '';
                 if (engineType.includes('mysql') || engineType.includes('mariadb')) {
-                  def = `\`${c.name.replace(/`/g, '``')}\` ${c.type}`;
+                  if (isIntPk && !hasExplicitDefault) {
+                    def = `\`${c.name.replace(/`/g, '``')}\` ${c.type} AUTO_INCREMENT PRIMARY KEY`;
+                  } else {
+                    def = `\`${c.name.replace(/`/g, '``')}\` ${c.type}`;
+                    if (c.primaryKey) def += ' PRIMARY KEY';
+                    if (!c.nullable) def += ' NOT NULL';
+                    if (c.unique && !c.primaryKey) def += ' UNIQUE';
+                    if (hasExplicitDefault) def += ` DEFAULT ${c.defaultValue}`;
+                  }
                 } else if (engineType.includes('mssql') || engineType.includes('sqlserver')) {
-                  def = `[${c.name.replace(/]/g, ']]')}] ${c.type}`;
+                  if (isIntPk && !hasExplicitDefault) {
+                    def = `[${c.name.replace(/]/g, ']]')}] ${c.type} IDENTITY(1,1) PRIMARY KEY`;
+                  } else {
+                    def = `[${c.name.replace(/]/g, ']]')}] ${c.type}`;
+                    if (c.primaryKey) def += ' PRIMARY KEY';
+                    if (!c.nullable) def += ' NOT NULL';
+                    if (c.unique && !c.primaryKey) def += ' UNIQUE';
+                    if (hasExplicitDefault) def += ` DEFAULT ${c.defaultValue}`;
+                  }
+                } else if (engineType.includes('sqlite') || engineType.includes('libsql')) {
+                  if (isIntPk && !hasExplicitDefault) {
+                    def = `"${c.name.replace(/"/g, '""')}" INTEGER PRIMARY KEY AUTOINCREMENT`;
+                  } else {
+                    def = `"${c.name.replace(/"/g, '""')}" ${c.type}`;
+                    if (c.primaryKey) def += ' PRIMARY KEY';
+                    if (!c.nullable) def += ' NOT NULL';
+                    if (c.unique && !c.primaryKey) def += ' UNIQUE';
+                    if (hasExplicitDefault) def += ` DEFAULT ${c.defaultValue}`;
+                  }
                 } else {
-                  def = `"${c.name.replace(/"/g, '""')}" ${c.type}`;
-                }
-
-                if (c.primaryKey) def += ' PRIMARY KEY';
-                if (!c.nullable) def += ' NOT NULL';
-                if (c.unique && !c.primaryKey) def += ' UNIQUE';
-                if (c.defaultValue && c.defaultValue.toUpperCase() !== 'NULL') {
-                  def += ` DEFAULT ${c.defaultValue}`;
+                  // PostgreSQL & Default
+                  if (isIntPk && !hasExplicitDefault) {
+                    const pgType = normType.includes('8') ? 'bigint' : normType.includes('2') ? 'smallint' : 'integer';
+                    def = `"${c.name.replace(/"/g, '""')}" ${pgType} GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY`;
+                  } else {
+                    def = `"${c.name.replace(/"/g, '""')}" ${c.type}`;
+                    if (c.primaryKey) def += ' PRIMARY KEY';
+                    if (!c.nullable) def += ' NOT NULL';
+                    if (c.unique && !c.primaryKey) def += ' UNIQUE';
+                    if (hasExplicitDefault) def += ` DEFAULT ${c.defaultValue}`;
+                  }
                 }
                 return def;
               });
@@ -1365,6 +1477,8 @@ export function TableEditor() {
               await fetchTables(selectedDb);
               setSelectedTable(newName);
               await loadTableData({ reloadSchema: true });
+              setIsTableEditOpen(false);
+              setEditingTableTarget('');
               return;
             }
 
@@ -1489,6 +1603,8 @@ export function TableEditor() {
               setSelectedTable(newName);
             }
             await loadTableData({ reloadSchema: true });
+            setIsTableEditOpen(false);
+            setEditingTableTarget('');
           }}
         />
       )}

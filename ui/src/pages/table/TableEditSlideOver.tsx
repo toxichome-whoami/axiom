@@ -58,6 +58,7 @@ export interface TableEditSlideOverProps {
     foreignKeys: ForeignKeyInfoApi[];
   }) => Promise<void>;
   onOpenFkModal?: (fk?: ForeignKeyInfoApi) => void;
+  onRequestDeleteTable?: (tableName: string) => void;
 }
 
 const COMMON_SQL_TYPES = [
@@ -87,7 +88,11 @@ export function TableEditSlideOver({
   foreignKeys: initialForeignKeys,
   onSave,
   onOpenFkModal,
+  onRequestDeleteTable,
 }: TableEditSlideOverProps) {
+  // Tabs: details vs danger
+  const [tableTab, setTableTab] = useState<'details' | 'danger'>('details');
+
   // Table info state
   const [name, setName] = useState(tableName);
   const [description, setDescription] = useState('');
@@ -136,6 +141,7 @@ export function TableEditSlideOver({
     if (!isOpen) return;
     setName(tableName);
     setDescription('');
+    setTableTab('details');
     setSaveError(null);
     setActiveSettingsColId(null);
     setActiveTypeDropdownColId(null);
@@ -528,8 +534,66 @@ export function TableEditSlideOver({
       }
     >
       <div className="flex-1 flex flex-col min-h-0 bg-[#0e0e0e] overflow-hidden font-sans select-none text-[13px]">
-        {/* Scrollable form body */}
-        <div className="flex-1 overflow-y-auto p-5 space-y-5 font-sans">
+        {/* Tab bar when editing existing table */}
+        {tableName && (
+          <div className="px-5 py-3 border-b border-[#222222] bg-[#0e0e0e] shrink-0 font-sans">
+            <div className="inline-flex items-center p-0.5 rounded-[8px] bg-transparent border border-[#262626]">
+              <button
+                type="button"
+                onClick={() => setTableTab('details')}
+                className={`flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[14px] font-medium transition-colors duration-75 cursor-pointer font-sans outline-none border ${
+                  tableTab === 'details'
+                    ? 'bg-[#161616] text-white border-[#333333]'
+                    : 'text-[#8c8c8c] hover:text-white hover:bg-[#141414] border-transparent'
+                }`}
+              >
+                <span>Table Details</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setTableTab('danger')}
+                className={`flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[14px] font-medium transition-colors duration-75 cursor-pointer font-sans outline-none border ${
+                  tableTab === 'danger'
+                    ? 'bg-[#161616] text-white border-[#333333]'
+                    : 'text-[#8c8c8c] hover:text-white hover:bg-[#141414] border-transparent'
+                }`}
+              >
+                <span>Danger</span>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {tableName && tableTab === 'danger' ? (
+          <div className="flex-1 overflow-y-auto p-5 space-y-4 font-sans">
+            <div className="rounded-[8px] border border-[#3a1515] bg-[#0e0404] p-4">
+              <h3 className="text-[16px] font-medium text-[#e5484d] mb-1 font-sans">Delete Table</h3>
+              <p className="text-[13px] text-[#8c8c8c] mb-4 font-sans">
+                Permanently delete table <span className="text-white font-medium text-[13px] font-mono">{tableName}</span> from <span className="text-white font-medium font-mono">{selectedDb}</span>. All data, columns, and foreign keys will be permanently dropped. This action cannot be undone.
+              </p>
+              <button
+                type="button"
+                onClick={() => onRequestDeleteTable?.(tableName)}
+                className="group relative flex shrink-0 items-center justify-center h-8 px-3.5 rounded-[8px] font-medium text-white shadow-xs outline-none cursor-pointer overflow-hidden ring-1 ring-[#be123c] bg-[#e11d48] font-sans text-[13px]"
+              >
+                <span
+                  aria-hidden="true"
+                  className="pointer-events-none absolute inset-0 rounded-[inherit] bg-gradient-to-b from-[#f43f5e] to-[#e11d48] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2)]"
+                />
+                <span
+                  aria-hidden="true"
+                  className="pointer-events-none absolute inset-0 rounded-[inherit] bg-black opacity-0 group-hover:opacity-15 transition-opacity duration-200"
+                />
+                <span className="relative flex items-center gap-1.5 font-sans">
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Delete Table</span>
+                </span>
+              </button>
+            </div>
+          </div>
+        ) : (
+          /* Scrollable form body */
+          <div className="flex-1 overflow-y-auto p-5 space-y-5 font-sans">
           {saveError && (
             <div className="p-3.5 rounded-[6px] bg-[#2a1113] border border-[#5c1d24] text-[#f87171] text-[12.5px] flex items-center gap-2">
               <span>{saveError}</span>
@@ -896,6 +960,7 @@ export function TableEditSlideOver({
             </button>
           </div>
         </div>
+        )}
 
         {/* ─── Sticky Footer matching Axiom Design System ─── */}
         <div className="p-4 border-t border-[#222222] bg-[#0e0e0e] flex items-center justify-end gap-2.5 font-sans shrink-0">
@@ -904,35 +969,37 @@ export function TableEditSlideOver({
             onClick={handleRequestClose}
             className="inline-flex items-center justify-center h-9 px-4 rounded-[8px] text-[14px] font-medium text-[#cccccc] hover:text-white bg-transparent hover:bg-[#161616] border border-[#262626] hover:border-[#383838] transition-colors cursor-pointer font-sans"
           >
-            Cancel
+            {tableTab === 'danger' ? 'Close' : 'Cancel'}
           </button>
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={!hasChanges || isSaving}
-            className={`group relative flex shrink-0 items-center justify-center h-9 px-4 rounded-[8px] font-medium text-white shadow-xs outline-none transition-all font-sans ${
-              !hasChanges || isSaving
-                ? 'opacity-40 cursor-not-allowed bg-[#222222] ring-1 ring-[#333333]'
-                : 'cursor-pointer ring-1 ring-[#1d4ed8] bg-[#2563eb] overflow-hidden'
-            }`}
-          >
-            {hasChanges && (
-              <>
-                <span
-                  aria-hidden="true"
-                  className="pointer-events-none absolute inset-0 rounded-[inherit] bg-gradient-to-b from-[#3b82f6] to-[#2563eb] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2)]"
-                />
-                <span
-                  aria-hidden="true"
-                  className="pointer-events-none absolute inset-0 rounded-[inherit] bg-black opacity-0 group-hover:opacity-15 transition-opacity duration-200"
-                />
-              </>
-            )}
-            <span className="relative flex items-center gap-2 text-[14px] font-sans">
-              <span>{isSaving ? 'Saving...' : 'Save'}</span>
-              <span className="text-[11px] opacity-75 font-normal tracking-wide">Ctrl ↵</span>
-            </span>
-          </button>
+          {tableTab === 'details' && (
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={!hasChanges || isSaving}
+              className={`group relative flex shrink-0 items-center justify-center h-9 px-4 rounded-[8px] font-medium text-white shadow-xs outline-none transition-all font-sans ${
+                !hasChanges || isSaving
+                  ? 'opacity-40 cursor-not-allowed bg-[#222222] ring-1 ring-[#333333]'
+                  : 'cursor-pointer ring-1 ring-[#1d4ed8] bg-[#2563eb] overflow-hidden'
+              }`}
+            >
+              {hasChanges && (
+                <>
+                  <span
+                    aria-hidden="true"
+                    className="pointer-events-none absolute inset-0 rounded-[inherit] bg-gradient-to-b from-[#3b82f6] to-[#2563eb] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2)]"
+                  />
+                  <span
+                    aria-hidden="true"
+                    className="pointer-events-none absolute inset-0 rounded-[inherit] bg-black opacity-0 group-hover:opacity-15 transition-opacity duration-200"
+                  />
+                </>
+              )}
+              <span className="relative flex items-center gap-2 text-[14px] font-sans">
+                <span>{isSaving ? 'Saving...' : 'Save'}</span>
+                <span className="text-[11px] opacity-75 font-normal tracking-wide">Ctrl ↵</span>
+              </span>
+            </button>
+          )}
         </div>
       </div>
     </SlideOver>

@@ -197,6 +197,43 @@ export function TableToolbar({
     <div className="h-[54px] shrink-0 px-4 border-b border-[#222222] bg-[#0c0c0c] flex items-center justify-between gap-3 select-none font-sans">
       {/* Action Tools & View Mode Switcher (placed on the left) */}
       <div className="flex items-center gap-2 shrink-0">
+        {/* View Mode Switcher Pills */}
+        <div className="flex items-center p-1 rounded-[7px] bg-[#141414] border border-[#262626] h-9">
+          <button
+            type="button"
+            onClick={() => setViewMode('grid')}
+            title="Table Grid"
+            className={`flex items-center gap-1.5 px-3 py-1 rounded-[5px] text-[13px] font-medium transition-colors cursor-pointer ${
+              viewMode === 'grid' ? 'bg-[#222222] text-white shadow-sm' : 'text-[#8c8c8c] hover:text-white'
+            }`}
+          >
+            <TableIcon className="w-3.5 h-3.5" />
+            <span className="hidden md:inline">Grid</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode('schema')}
+            title="Schema & Relations"
+            className={`flex items-center gap-1.5 px-3 py-1 rounded-[5px] text-[13px] font-medium transition-colors cursor-pointer ${
+              viewMode === 'schema' ? 'bg-[#222222] text-white shadow-sm' : 'text-[#8c8c8c] hover:text-white'
+            }`}
+          >
+            <Layers className="w-3.5 h-3.5" />
+            <span className="hidden md:inline">Schema</span>
+          </button>
+          <button
+            type="button"
+            onClick={onSelectSqlMode}
+            title="SQL Console"
+            className={`flex items-center gap-1.5 px-3 py-1 rounded-[5px] text-[13px] font-medium transition-colors cursor-pointer ${
+              viewMode === 'sql' ? 'bg-[#222222] text-white shadow-sm' : 'text-[#8c8c8c] hover:text-white'
+            }`}
+          >
+            <Terminal className="w-3.5 h-3.5" />
+            <span className="hidden md:inline">SQL</span>
+          </button>
+        </div>
+
         {viewMode === 'grid' && (
           <>
             {/* Insert Dropdown Menu */}
@@ -479,43 +516,6 @@ export function TableToolbar({
             )}
           </>
         )}
-
-        {/* View Mode Switcher Pills */}
-        <div className="flex items-center p-1 rounded-[7px] bg-[#141414] border border-[#262626] h-9">
-          <button
-            type="button"
-            onClick={() => setViewMode('grid')}
-            title="Table Grid"
-            className={`flex items-center gap-1.5 px-3 py-1 rounded-[5px] text-[13px] font-medium transition-colors cursor-pointer ${
-              viewMode === 'grid' ? 'bg-[#222222] text-white shadow-sm' : 'text-[#8c8c8c] hover:text-white'
-            }`}
-          >
-            <TableIcon className="w-3.5 h-3.5" />
-            <span className="hidden md:inline">Grid</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setViewMode('schema')}
-            title="Schema & Relations"
-            className={`flex items-center gap-1.5 px-3 py-1 rounded-[5px] text-[13px] font-medium transition-colors cursor-pointer ${
-              viewMode === 'schema' ? 'bg-[#222222] text-white shadow-sm' : 'text-[#8c8c8c] hover:text-white'
-            }`}
-          >
-            <Layers className="w-3.5 h-3.5" />
-            <span className="hidden md:inline">Schema</span>
-          </button>
-          <button
-            type="button"
-            onClick={onSelectSqlMode}
-            title="SQL Console"
-            className={`flex items-center gap-1.5 px-3 py-1 rounded-[5px] text-[13px] font-medium transition-colors cursor-pointer ${
-              viewMode === 'sql' ? 'bg-[#222222] text-white shadow-sm' : 'text-[#8c8c8c] hover:text-white'
-            }`}
-          >
-            <Terminal className="w-3.5 h-3.5" />
-            <span className="hidden md:inline">SQL</span>
-          </button>
-        </div>
 
         {/* Schema Mode Controls: Find table... search */}
         {viewMode === 'schema' && (

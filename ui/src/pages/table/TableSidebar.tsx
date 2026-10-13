@@ -4,8 +4,8 @@
  * Key deps: react, lucide-react, ../../types, ../../api/client
  */
 
-import React, { useRef, useEffect } from 'react';
-import { Database, ChevronDown, Check, RefreshCw, Search, Table as TableIcon, Plus } from 'lucide-react';
+import React, { useRef, useEffect, useState } from 'react';
+import { Database, ChevronDown, Check, RefreshCw, Search, Table as TableIcon, Plus, MoreVertical, Pencil, Trash2 } from 'lucide-react';
 import { DatabaseRecordApi } from '../../api/client';
 import { TableInfoApi } from '../../types';
 
@@ -21,6 +21,8 @@ export interface TableSidebarProps {
   isTablesLoading: boolean;
   onRefreshTables: () => void;
   onCreateTable?: () => void;
+  onEditTable?: (tableName: string) => void;
+  onDeleteTable?: (tableName: string) => void;
 }
 
 export function TableSidebar({
@@ -35,9 +37,17 @@ export function TableSidebar({
   isTablesLoading,
   onRefreshTables,
   onCreateTable,
+  onEditTable,
+  onDeleteTable,
 }: TableSidebarProps) {
   const [isDbDropdownOpen, setIsDbDropdownOpen] = React.useState(false);
   const dbDropdownRef = useRef<HTMLDivElement>(null);
+
+  const [tableMenuState, setTableMenuState] = useState<{
+    tableName: string;
+    rect: DOMRect;
+  } | null>(null);
+  const tableMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const handleOutside = (e: MouseEvent) => {
@@ -48,6 +58,24 @@ export function TableSidebar({
     document.addEventListener('mousedown', handleOutside);
     return () => document.removeEventListener('mousedown', handleOutside);
   }, []);
+
+  useEffect(() => {
+    if (!tableMenuState) return;
+    const handleOutside = (e: MouseEvent) => {
+      if (tableMenuRef.current && !tableMenuRef.current.contains(e.target as Node)) {
+        setTableMenuState(null);
+      }
+    };
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setTableMenuState(null);
+    };
+    document.addEventListener('mousedown', handleOutside);
+    window.addEventListener('keydown', handleKey);
+    return () => {
+      document.removeEventListener('mousedown', handleOutside);
+      window.removeEventListener('keydown', handleKey);
+    };
+  }, [tableMenuState]);
 
   const filteredTables = tables.filter((t) =>
     t.name.toLowerCase().includes(tableSearch.toLowerCase())
@@ -167,21 +195,40 @@ export function TableSidebar({
         ) : (
           filteredTables.map((t) => {
             const isSelected = selectedTable === t.name;
+            const isMenuOpen = tableMenuState?.tableName === t.name;
             return (
-              <button
+              <div
                 key={t.name}
                 onClick={() => onSelectTable(t.name)}
-                className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-[6px] text-left transition-colors cursor-pointer text-[14px] font-sans ${
+                className={`group relative w-full flex items-center justify-between px-2.5 py-1.5 rounded-[6px] text-left transition-colors cursor-pointer text-[14px] font-sans ${
                   isSelected
                     ? 'bg-[#1a1a1a] text-white font-medium'
                     : 'text-[#a1a1aa] hover:text-white hover:bg-[#141414]'
                 }`}
               >
-                <div className="flex items-center gap-2 min-w-0">
-                  <TableIcon className={`w-3.5 h-3.5 shrink-0 ${isSelected ? 'text-white' : 'text-[#777777]'}`} />
+                <div className="flex items-center gap-2 min-w-0 flex-1 pr-1">
+                  <TableIcon className={`w-3.5 h-3.5 shrink-0 ${isSelected ? 'text-white' : 'text-[#777777] group-hover:text-[#a1a1aa]'}`} />
                   <span className="font-sans text-[14px] truncate">{t.name}</span>
                 </div>
-              </button>
+
+                <button
+                  type="button"
+                  data-table-menu-trigger={t.name}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                    setTableMenuState(isMenuOpen ? null : { tableName: t.name, rect });
+                  }}
+                  title="Table options"
+                  className={`w-6 h-6 flex items-center justify-center rounded-[4px] text-[#888888] hover:text-white hover:bg-[#262626] transition-opacity transition-colors cursor-pointer shrink-0 ${
+                    isMenuOpen || isSelected
+                      ? 'opacity-100'
+                      : 'opacity-0 group-hover:opacity-100'
+                  }`}
+                >
+                  <MoreVertical className="w-3.5 h-3.5" />
+                </button>
+              </div>
             );
           })
         )}
@@ -191,6 +238,48 @@ export function TableSidebar({
       <div className="h-12 shrink-0 px-3.5 border-t border-[#222222] flex items-center justify-between text-[12px] text-[#8c8c8c] select-none font-sans">
         <span>{tables.length} tables</span>
       </div>
+
+      {/* 3-dot Table Context Menu */}
+      {tableMenuState && (
+        <div
+          ref={tableMenuRef}
+          style={{
+            top: `${Math.min(window.innerHeight - 100, tableMenuState.rect.bottom + 4)}px`,
+            left: `${Math.min(window.innerWidth - 170, Math.max(8, tableMenuState.rect.right - 160))}px`,
+            width: '160px',
+          }}
+          className="fixed z-50 bg-[#141414] border border-[#262626] rounded-[6px] shadow-2xl p-1 text-[13px] text-[#cccccc] animate-in fade-in zoom-in-95 duration-100 select-none font-sans"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            type="button"
+            onClick={() => {
+              const target = tableMenuState.tableName;
+              setTableMenuState(null);
+              onEditTable?.(target);
+            }}
+            className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-[4px] hover:bg-[#1f1f1f] hover:text-white transition-colors cursor-pointer text-left"
+          >
+            <Pencil className="w-3.5 h-3.5 text-[#888888]" />
+            <span>Edit Table</span>
+          </button>
+
+          <div className="my-1 -mx-1 border-t border-[#222222]" />
+
+          <button
+            type="button"
+            onClick={() => {
+              const target = tableMenuState.tableName;
+              setTableMenuState(null);
+              onDeleteTable?.(target);
+            }}
+            className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-[4px] text-rose-400 hover:bg-rose-950/30 hover:text-rose-300 transition-colors cursor-pointer text-left"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            <span>Delete Table</span>
+          </button>
+        </div>
+      )}
     </aside>
   );
 }

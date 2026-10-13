@@ -365,6 +365,7 @@ export function useColumnOperations({
       }
 
       setIsAddColumnOpen(false);
+      setEditingColumn(null);
       resetColumnForm();
 
       // Invalidate cache and reload schema + rows
@@ -382,10 +383,21 @@ export function useColumnOperations({
     const colName = deleteColumnTarget.name;
     setIsDeletingColumn(true);
     try {
-      const sql = `ALTER TABLE "${selectedTable.replace(/"/g, '""')}" DROP COLUMN "${colName.replace(/"/g, '""')}"`;
+      const currentDb = databases.find((d) => d.alias === selectedDb);
+      const engineType = currentDb?.engine?.toLowerCase() || '';
+      let sql = '';
+      if (engineType.includes('mysql') || engineType.includes('mariadb')) {
+        sql = `ALTER TABLE \`${selectedTable.replace(/`/g, '``')}\` DROP COLUMN \`${colName.replace(/`/g, '``')}\``;
+      } else if (engineType.includes('mssql') || engineType.includes('sqlserver')) {
+        sql = `ALTER TABLE [${selectedTable.replace(/]/g, ']]')}] DROP COLUMN [${colName.replace(/]/g, ']]')}]`;
+      } else {
+        sql = `ALTER TABLE "${selectedTable.replace(/"/g, '""')}" DROP COLUMN "${colName.replace(/"/g, '""')}"`;
+      }
       await api.executeSqlQuery(selectedDb, sql);
 
       setDeleteColumnTarget(null);
+      setIsAddColumnOpen(false);
+      setEditingColumn(null);
       delete schemaCacheRef.current[selectedTable];
       await loadTableData({ reloadSchema: true });
     } catch (err) {
