@@ -27,6 +27,13 @@ use crate::snapshot::{
 // ─── Connection Registry ───────────────────────────────────────────────────
 static METADATA_CONN: OnceCell<Arc<Mutex<Connection>>> = OnceCell::const_new();
 static STORE_LOCK: Lazy<tokio::sync::Mutex<()>> = Lazy::new(|| tokio::sync::Mutex::new(()));
+static DUMMY_HASH: Lazy<String> = Lazy::new(|| {
+    let salt = SaltString::generate(&mut OsRng);
+    Argon2::default()
+        .hash_password(b"dummy_timing_mitigation_password", &salt)
+        .expect("dummy argon2 hash generation failed")
+        .to_string()
+});
 
 pub struct MetadataStore;
 
@@ -1028,6 +1035,7 @@ impl MetadataStore {
     }
 
     /// Verifies an admin user's credentials using constant-time Argon2 verification.
+    /// Resists username enumeration timing side-channels by performing dummy Argon2 computation if user is absent.
     pub async fn verify_user(username: &str, password: &str) -> Result<bool, String> {
         let conn = Self::get_conn().await?;
         let mut rows = conn
@@ -1038,16 +1046,19 @@ impl MetadataStore {
             .await
             .map_err(|e| e.to_string())?;
 
-        if let Ok(Some(row)) = rows.next().await {
-            let stored_hash: String = row.get(0).map_err(|e| e.to_string())?;
-            let parsed_hash = PasswordHash::new(&stored_hash)
-                .map_err(|e| format!("Invalid stored password hash: {}", e))?;
-            Ok(Argon2::default()
-                .verify_password(password.as_bytes(), &parsed_hash)
-                .is_ok())
-        } else {
-            Ok(false)
-        }
+        let user_row = rows.next().await.ok().flatten();
+        let hash_to_verify = match &user_row {
+            Some(row) => row.get::<String>(0).map_err(|e| e.to_string())?,
+            None => DUMMY_HASH.clone(),
+        };
+
+        let parsed_hash = PasswordHash::new(&hash_to_verify)
+            .map_err(|e| format!("Invalid stored password hash: {}", e))?;
+        let matches = Argon2::default()
+            .verify_password(password.as_bytes(), &parsed_hash)
+            .is_ok();
+
+        Ok(user_row.is_some() && matches)
     }
 
     /// Checks if any admin users exist in the system (used by setup wizard).

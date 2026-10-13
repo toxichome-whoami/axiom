@@ -750,11 +750,7 @@ pub async fn create_ticket_handler(
     PolicyEngine::evaluate_blob(&auth, &namespace, &payload.key, &op)?;
 
     let config = ConfigManager::get();
-    let secret = if !config.blob.ticket_secret.is_empty() {
-        &config.blob.ticket_secret
-    } else {
-        "axiom_default_ticket_secret_change_in_production"
-    };
+    let secret = axiom_blob::tickets::resolve_ticket_secret(&config.blob.ticket_secret);
 
     let ttl = payload.ttl_seconds.unwrap_or(3600);
     let ticket = axiom_blob::generate_ticket(secret, &namespace, &payload.key, &op, ttl);

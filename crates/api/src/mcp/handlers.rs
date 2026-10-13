@@ -979,11 +979,7 @@ async fn exec_create_download_ticket(
         .map_err(|e| e.to_string())?;
 
     let config = ConfigManager::get();
-    let secret = if !config.blob.ticket_secret.is_empty() {
-        &config.blob.ticket_secret
-    } else {
-        "axiom_default_ticket_secret_change_in_production"
-    };
+    let secret = axiom_blob::tickets::resolve_ticket_secret(&config.blob.ticket_secret);
 
     let ticket = axiom_blob::generate_ticket(secret, ns, key, &operation, ttl_seconds);
     let url = format!(

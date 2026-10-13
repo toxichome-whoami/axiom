@@ -13,6 +13,22 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 const CONTEXT_STRING: &str = "axiom_blob_presigned_ticket_v1";
 
+static EPHEMERAL_TICKET_SECRET: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
+/// Resolves an effective ticket secret. If the configured secret is empty or equal to the default
+/// insecure placeholder, an ephemeral random secret is generated for this session to eliminate
+/// forgery vulnerabilities (CWE-798).
+pub fn resolve_ticket_secret(configured_secret: &str) -> &str {
+    if !configured_secret.is_empty() && configured_secret != "axiom_default_ticket_secret_change_in_production" {
+        configured_secret
+    } else {
+        EPHEMERAL_TICKET_SECRET.get_or_init(|| {
+            tracing::warn!("SECURITY WARNING: 'blob.ticket_secret' is unconfigured or using default placeholder! Generated ephemeral random secret for this session to prevent capability ticket forgery.");
+            format!("{}_{}", uuid::Uuid::new_v4(), uuid::Uuid::new_v4())
+        })
+    }
+}
+
 /// Structured representation of a signed capability ticket.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SignedTicket {

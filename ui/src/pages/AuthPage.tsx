@@ -189,8 +189,8 @@ export function AuthPage({ onLoginSuccess, initialMode = 'login' }: AuthPageProp
       setErrorMessage('Username and password are required.');
       return;
     }
-    if (adminPassword.length < 6) {
-      setErrorMessage('Password must be at least 6 characters long.');
+    if (adminPassword.length < 8) {
+      setErrorMessage('Password must be at least 8 characters long.');
       return;
     }
     if (adminPassword !== adminConfirmPassword) {

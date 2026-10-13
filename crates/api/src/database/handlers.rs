@@ -141,6 +141,125 @@ fn sanitize_db_error(raw_err: &str) -> String {
     }
 }
 
+/// Replaces unquoted '?' parameter placeholders with '$1', '$2', ... for PostgreSQL grammar.
+/// Invariant: Respects single-quoted strings ('...'), double-quoted identifiers ("..."),
+/// line comments (-- ...), and block comments (/* ... */) to prevent corrupting literal text.
+pub fn format_postgres_placeholders(sql: &str) -> String {
+    use std::fmt::Write;
+    let mut out = String::with_capacity(sql.len() + 16);
+    let mut param_idx = 1;
+
+    let mut in_single_quote = false;
+    let mut in_double_quote = false;
+    let mut in_line_comment = false;
+    let mut in_block_comment = false;
+
+    let chars: Vec<char> = sql.chars().collect();
+    let len = chars.len();
+    let mut i = 0;
+
+    while i < len {
+        let c = chars[i];
+        let next_c = if i + 1 < len { Some(chars[i + 1]) } else { None };
+
+        if in_line_comment {
+            out.push(c);
+            if c == '\n' {
+                in_line_comment = false;
+            }
+            i += 1;
+            continue;
+        }
+
+        if in_block_comment {
+            out.push(c);
+            if c == '*' && next_c == Some('/') {
+                out.push('/');
+                in_block_comment = false;
+                i += 2;
+                continue;
+            }
+            i += 1;
+            continue;
+        }
+
+        if in_single_quote {
+            out.push(c);
+            if c == '\'' {
+                if next_c == Some('\'') {
+                    // Escaped single quote ('') inside SQL literal
+                    out.push('\'');
+                    i += 2;
+                    continue;
+                } else {
+                    in_single_quote = false;
+                }
+            }
+            i += 1;
+            continue;
+        }
+
+        if in_double_quote {
+            out.push(c);
+            if c == '"' {
+                if next_c == Some('"') {
+                    // Escaped double quote ("") inside SQL identifier
+                    out.push('"');
+                    i += 2;
+                    continue;
+                } else {
+                    in_double_quote = false;
+                }
+            }
+            i += 1;
+            continue;
+        }
+
+        // Outside quotes and comments:
+        if c == '-' && next_c == Some('-') {
+            in_line_comment = true;
+            out.push('-');
+            out.push('-');
+            i += 2;
+            continue;
+        }
+
+        if c == '/' && next_c == Some('*') {
+            in_block_comment = true;
+            out.push('/');
+            out.push('*');
+            i += 2;
+            continue;
+        }
+
+        if c == '\'' {
+            in_single_quote = true;
+            out.push(c);
+            i += 1;
+            continue;
+        }
+
+        if c == '"' {
+            in_double_quote = true;
+            out.push(c);
+            i += 1;
+            continue;
+        }
+
+        if c == '?' {
+            let _ = write!(out, "${}", param_idx);
+            param_idx += 1;
+            i += 1;
+            continue;
+        }
+
+        out.push(c);
+        i += 1;
+    }
+
+    out
+}
+
 impl QueryExecutionPipeline {
     /// Executes a database query through the complete pipeline: circuit breaker, cache, blacklist, AST, and engine.
     /// CONTRACT:
@@ -205,18 +324,7 @@ impl QueryExecutionPipeline {
             // For PostgreSQL dialect, replace '?' with '$1', '$2', ... placeholders before AST parsing,
             // because PostgreSQL grammar rejects raw '?' parameter placeholders.
             let parse_target_sql: std::borrow::Cow<'_, str> = if (dialect_name == "postgres" || dialect_name == "any") && sql.contains('?') {
-                use std::fmt::Write;
-                let mut s = String::with_capacity(sql.len() + 16);
-                let mut idx = 1;
-                for c in sql.chars() {
-                    if c == '?' {
-                        let _ = write!(s, "${}", idx);
-                        idx += 1;
-                    } else {
-                        s.push(c);
-                    }
-                }
-                std::borrow::Cow::Owned(s)
+                std::borrow::Cow::Owned(format_postgres_placeholders(sql))
             } else {
                 std::borrow::Cow::Borrowed(sql)
             };
@@ -314,18 +422,7 @@ impl QueryExecutionPipeline {
 
             // Format placeholders based on engine dialect
             let opt_formatted_sql = if (dialect_name == "postgres" || dialect_name == "any") && sql.contains('?') {
-                use std::fmt::Write;
-                let mut final_sql = String::with_capacity(sql.len() + 16);
-                let mut param_index = 1;
-                for c in sql.chars() {
-                    if c == '?' {
-                        let _ = write!(final_sql, "${}", param_index);
-                        param_index += 1;
-                    } else {
-                        final_sql.push(c);
-                    }
-                }
-                Some(final_sql)
+                Some(format_postgres_placeholders(sql))
             } else {
                 None
             };

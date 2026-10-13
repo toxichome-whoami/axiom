@@ -182,87 +182,93 @@ where
                     parts.push(format!("({})", sub_clauses.join(connector)));
                 }
             }
-        } else if let Some(obj) = criteria.as_object() {
-            for (op, val) in obj {
-                let norm_op = op.strip_prefix('$').unwrap_or(op.as_str());
-                match norm_op {
-                    "eq" => {
-                        parts.push(format!("{} = ?", sanitize_ident(col)));
-                        values.push(val.clone());
-                    }
-                    "ne" | "neq" => {
-                        parts.push(format!("{} != ?", sanitize_ident(col)));
-                        values.push(val.clone());
-                    }
-                    "gt" => {
-                        parts.push(format!("{} > ?", sanitize_ident(col)));
-                        values.push(val.clone());
-                    }
-                    "gte" => {
-                        parts.push(format!("{} >= ?", sanitize_ident(col)));
-                        values.push(val.clone());
-                    }
-                    "lt" => {
-                        parts.push(format!("{} < ?", sanitize_ident(col)));
-                        values.push(val.clone());
-                    }
-                    "lte" => {
-                        parts.push(format!("{} <= ?", sanitize_ident(col)));
-                        values.push(val.clone());
-                    }
-                    "like" => {
-                        parts.push(format!("{} LIKE ?", sanitize_ident(col)));
-                        values.push(val.clone());
-                    }
-                    "ilike" => {
-                        parts.push(format!("LOWER({}) LIKE LOWER(?)", sanitize_ident(col)));
-                        values.push(val.clone());
-                    }
-                    "in" | "nin" => {
-                        if let Some(arr) = val.as_array() {
-                            let sql_op = if norm_op == "in" { "IN" } else { "NOT IN" };
-                            let placeholders = vec!["?"; arr.len()].join(", ");
-                            parts.push(format!(
-                                "{} {} ({})",
-                                sanitize_ident(col),
-                                sql_op,
-                                placeholders
-                            ));
-                            for item in arr {
-                                values.push(item.clone());
-                            }
-                        }
-                    }
-                    "null" | "is_null" => {
-                        if val.as_bool().unwrap_or(true) {
-                            parts.push(format!("{} IS NULL", sanitize_ident(col)));
-                        } else {
-                            parts.push(format!("{} IS NOT NULL", sanitize_ident(col)));
-                        }
-                    }
-                    "not_null" | "is_not_null" => {
-                        if val.as_bool().unwrap_or(true) {
-                            parts.push(format!("{} IS NOT NULL", sanitize_ident(col)));
-                        } else {
-                            parts.push(format!("{} IS NULL", sanitize_ident(col)));
-                        }
-                    }
-                    "between" => {
-                        if let Some(arr) = val.as_array() {
-                            if arr.len() == 2 {
-                                parts.push(format!("{} BETWEEN ? AND ?", sanitize_ident(col)));
-                                values.push(arr[0].clone());
-                                values.push(arr[1].clone());
-                            }
-                        }
-                    }
-                    _ => {} // Ignore unsupported operators
-                }
-            }
         } else {
-            // Exact equality
-            parts.push(format!("{} = ?", sanitize_ident(col)));
-            values.push(criteria.clone());
+            let clean_col = sanitize_ident(col);
+            if clean_col.is_empty() {
+                continue;
+            }
+            if let Some(obj) = criteria.as_object() {
+                for (op, val) in obj {
+                    let norm_op = op.strip_prefix('$').unwrap_or(op.as_str());
+                    match norm_op {
+                        "eq" => {
+                            parts.push(format!("{} = ?", clean_col));
+                            values.push(val.clone());
+                        }
+                        "ne" | "neq" => {
+                            parts.push(format!("{} != ?", clean_col));
+                            values.push(val.clone());
+                        }
+                        "gt" => {
+                            parts.push(format!("{} > ?", clean_col));
+                            values.push(val.clone());
+                        }
+                        "gte" => {
+                            parts.push(format!("{} >= ?", clean_col));
+                            values.push(val.clone());
+                        }
+                        "lt" => {
+                            parts.push(format!("{} < ?", clean_col));
+                            values.push(val.clone());
+                        }
+                        "lte" => {
+                            parts.push(format!("{} <= ?", clean_col));
+                            values.push(val.clone());
+                        }
+                        "like" => {
+                            parts.push(format!("{} LIKE ?", clean_col));
+                            values.push(val.clone());
+                        }
+                        "ilike" => {
+                            parts.push(format!("LOWER({}) LIKE LOWER(?)", clean_col));
+                            values.push(val.clone());
+                        }
+                        "in" | "nin" => {
+                            if let Some(arr) = val.as_array() {
+                                let sql_op = if norm_op == "in" { "IN" } else { "NOT IN" };
+                                let placeholders = vec!["?"; arr.len()].join(", ");
+                                parts.push(format!(
+                                    "{} {} ({})",
+                                    clean_col,
+                                    sql_op,
+                                    placeholders
+                                ));
+                                for item in arr {
+                                    values.push(item.clone());
+                                }
+                            }
+                        }
+                        "null" | "is_null" => {
+                            if val.as_bool().unwrap_or(true) {
+                                parts.push(format!("{} IS NULL", clean_col));
+                            } else {
+                                parts.push(format!("{} IS NOT NULL", clean_col));
+                            }
+                        }
+                        "not_null" | "is_not_null" => {
+                            if val.as_bool().unwrap_or(true) {
+                                parts.push(format!("{} IS NOT NULL", clean_col));
+                            } else {
+                                parts.push(format!("{} IS NULL", clean_col));
+                            }
+                        }
+                        "between" => {
+                            if let Some(arr) = val.as_array() {
+                                if arr.len() == 2 {
+                                    parts.push(format!("{} BETWEEN ? AND ?", clean_col));
+                                    values.push(arr[0].clone());
+                                    values.push(arr[1].clone());
+                                }
+                            }
+                        }
+                        _ => {} // Ignore unsupported operators
+                    }
+                }
+            } else {
+                // Exact equality
+                parts.push(format!("{} = ?", clean_col));
+                values.push(criteria.clone());
+            }
         }
     }
 
@@ -283,7 +289,11 @@ pub fn construct_insert(table: &str, data: &HashMap<String, Value>) -> (String, 
     let mut values = Vec::new();
 
     for (k, v) in data {
-        cols.push(sanitize_ident(k));
+        let clean_k = sanitize_ident(k);
+        if clean_k.is_empty() {
+            continue;
+        }
+        cols.push(clean_k);
         placeholders.push("?");
         values.push(v.clone());
     }
@@ -311,7 +321,11 @@ pub fn construct_update(
     let mut values = Vec::new();
 
     for (k, v) in update_data {
-        set_parts.push(format!("{} = ?", sanitize_ident(k)));
+        let clean_k = sanitize_ident(k);
+        if clean_k.is_empty() {
+            continue;
+        }
+        set_parts.push(format!("{} = ?", clean_k));
         values.push(v.clone());
     }
 

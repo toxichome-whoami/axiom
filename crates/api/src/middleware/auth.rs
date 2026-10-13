@@ -155,11 +155,7 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, A
                             _ => "UNKNOWN",
                         };
 
-                        let secret = if !config.blob.ticket_secret.is_empty() {
-                            &config.blob.ticket_secret
-                        } else {
-                            "axiom_default_ticket_secret_change_in_production"
-                        };
+                        let secret = axiom_blob::tickets::resolve_ticket_secret(&config.blob.ticket_secret);
 
                         if axiom_blob::tickets::verify_ticket(secret, ns, key, op, exp, sig).is_ok() {
                             let ctx = AuthContext {
