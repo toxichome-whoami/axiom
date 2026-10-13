@@ -561,39 +561,41 @@ SET FOREIGN_KEY_CHECKS = 1;`}
 
                   {/* Batch Summary Report Card */}
                   {batchSummary && (
-                    <div className="relative overflow-hidden rounded-xl border border-white/[0.08] bg-[#0f0f12] p-6 space-y-5 shadow-2xl">
+                    <div className="relative overflow-hidden rounded-xl border border-white/[0.08] bg-[#0f0f12] shadow-2xl">
                       {/* Top subtle sheen */}
                       <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/[0.12] to-transparent pointer-events-none" />
 
                       {/* Execution Overview Row */}
-                      <div className="flex items-start justify-between gap-4">
-                        <div className="space-y-1.5">
-                          <div className="flex items-center gap-2.5">
-                            <span className={`w-2 h-2 rounded-full ${
-                              batchSummary.errors && batchSummary.errors.length > 0
-                                ? 'bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.5)]'
-                                : 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.5)]'
-                            }`} />
-                            <span className="text-[15px] font-medium text-zinc-100">
-                              Batch execution completed
-                            </span>
+                      <div className="p-6">
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="space-y-1.5">
+                            <div className="flex items-center gap-2.5">
+                              <span className={`w-2 h-2 rounded-full ${
+                                batchSummary.errors && batchSummary.errors.length > 0
+                                  ? 'bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.5)]'
+                                  : 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.5)]'
+                              }`} />
+                              <span className="text-[15px] font-medium text-zinc-100">
+                                Batch execution completed
+                              </span>
+                            </div>
+                            <p className="text-[13px] text-zinc-400 leading-relaxed">
+                              <span className="text-zinc-200 font-medium">{batchSummary.successful}</span> of {batchSummary.totalStatements} statements completed
+                              {batchSummary.errors && batchSummary.errors.length > 0 && (
+                                <span className="text-amber-400/90"> • {batchSummary.errors.length} skipped</span>
+                              )}
+                              {' '}• {batchSummary.totalAffectedRows} affected rows
+                            </p>
                           </div>
-                          <p className="text-[13px] text-zinc-400 leading-relaxed">
-                            <span className="text-zinc-200 font-medium">{batchSummary.successful}</span> of {batchSummary.totalStatements} statements completed
-                            {batchSummary.errors && batchSummary.errors.length > 0 && (
-                              <span className="text-amber-400/90"> • {batchSummary.errors.length} skipped</span>
-                            )}
-                            {' '}• {batchSummary.totalAffectedRows} affected rows
-                          </p>
+                          <span className="px-3 py-1 rounded-md bg-white/[0.04] border border-white/[0.08] text-zinc-300 font-mono text-[12px] shrink-0">
+                            {batchSummary.durationMs}ms
+                          </span>
                         </div>
-                        <span className="px-3 py-1 rounded-md bg-white/[0.04] border border-white/[0.08] text-zinc-300 font-mono text-[12px] shrink-0">
-                          {batchSummary.durationMs}ms
-                        </span>
                       </div>
 
-                      {/* Skipped Statements List */}
+                      {/* Skipped Statements List (Edge to Edge divider) */}
                       {batchSummary.errors && batchSummary.errors.length > 0 && (
-                        <div className="pt-4 border-t border-white/[0.06] space-y-3.5">
+                        <div className="border-t border-white/[0.08] p-6 space-y-4">
                           <div className="flex items-center justify-between text-[13px] text-zinc-300">
                             <div className="flex items-center gap-2.5">
                               <span className="font-medium text-zinc-200">Skipped statements</span>
