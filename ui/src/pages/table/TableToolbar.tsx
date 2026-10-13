@@ -25,6 +25,10 @@ import {
   Maximize,
   FileText,
   Download,
+  Columns2,
+  Rows2,
+  Maximize2,
+  Play,
 } from 'lucide-react';
 import { ColumnInfoApi } from '../../types';
 import { CustomSelect } from '../../components/shared/CustomSelect';
@@ -94,6 +98,16 @@ export interface TableToolbarProps {
   onZoomIn?: () => void;
   onZoomOut?: () => void;
   onResetZoom?: () => void;
+
+  // SQL layout switcher controls
+  sqlLayoutMode?: 'side-by-side' | 'stacked' | 'editor-only' | 'results-only';
+  onSetSqlLayoutMode?: (mode: 'side-by-side' | 'stacked' | 'editor-only' | 'results-only') => void;
+
+  // SQL query actions
+  onExecuteSql?: () => void;
+  onFormatSql?: () => void;
+  isExecutingSql?: boolean;
+  canExecuteSql?: boolean;
 }
 
 export function TableToolbar({
@@ -147,6 +161,12 @@ export function TableToolbar({
   onZoomIn,
   onZoomOut,
   onResetZoom,
+  sqlLayoutMode = 'side-by-side',
+  onSetSqlLayoutMode,
+  onExecuteSql,
+  onFormatSql,
+  isExecutingSql = false,
+  canExecuteSql = true,
 }: TableToolbarProps) {
   const [isInsertDropdownOpen, setIsInsertDropdownOpen] = React.useState(false);
   const [isExportDropdownOpen, setIsExportDropdownOpen] = React.useState(false);
@@ -233,6 +253,38 @@ export function TableToolbar({
             <span className="hidden md:inline">SQL</span>
           </button>
         </div>
+
+        {/* SQL Mode Actions: Format & Run Buttons */}
+        {viewMode === 'sql' && (
+          <div className="flex items-center gap-1.5 animate-in fade-in duration-100">
+            {/* Format Button (no icon) */}
+            <button
+              type="button"
+              onClick={onFormatSql}
+              disabled={!canExecuteSql}
+              title="Format SQL keywords"
+              className="flex items-center justify-center h-9 px-3.5 rounded-[7px] text-[13px] font-medium text-[#cccccc] hover:text-white bg-[#141414] hover:bg-[#1c1c1c] border border-[#262626] hover:border-[#383838] disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer select-none"
+            >
+              <span>Format</span>
+            </button>
+
+            {/* Run Button (with gradient shade) */}
+            <button
+              type="button"
+              onClick={onExecuteSql}
+              disabled={isExecutingSql || !canExecuteSql}
+              title="Execute query (Ctrl+Enter)"
+              className="flex items-center gap-1.5 h-9 px-3.5 rounded-[7px] font-medium text-white shadow-xs outline-none cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed overflow-hidden bg-gradient-to-b from-[#3b82f6] to-[#1d4ed8] hover:from-[#60a5fa] hover:to-[#2563eb] border border-blue-400/30 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2)] text-[13px] transition-all select-none active:scale-[0.98]"
+            >
+              {isExecutingSql ? (
+                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Play className="w-3.5 h-3.5 fill-current" />
+              )}
+              <span>Run</span>
+            </button>
+          </div>
+        )}
 
         {viewMode === 'grid' && (
           <>
@@ -648,6 +700,50 @@ export function TableToolbar({
               className="w-7 h-7 flex items-center justify-center rounded-[5px] text-[#a1a1aa] hover:text-white hover:bg-[#1f1f23] transition-colors cursor-pointer"
             >
               <Maximize className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Right: SQL Layout Switcher (Split 50/50, Stacked, Maximize) */}
+      {viewMode === 'sql' && (
+        <div className="flex items-center gap-2 shrink-0 animate-in fade-in duration-100">
+          <div className="inline-flex items-center p-0.5 rounded-[6px] bg-[#141414] border border-[#262626]">
+            <button
+              type="button"
+              onClick={() => onSetSqlLayoutMode?.('side-by-side')}
+              title="Side-by-side grid (50% Editor / 50% Output)"
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-[4px] text-[12.5px] font-medium transition-colors cursor-pointer ${
+                sqlLayoutMode === 'side-by-side'
+                  ? 'bg-[#222222] text-white shadow-xs'
+                  : 'text-[#888888] hover:text-white'
+              }`}
+            >
+              <Columns2 className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Split</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => onSetSqlLayoutMode?.('stacked')}
+              title="Stacked grid (Top Editor / Bottom Output)"
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-[4px] text-[12.5px] font-medium transition-colors cursor-pointer ${
+                sqlLayoutMode === 'stacked'
+                  ? 'bg-[#222222] text-white shadow-xs'
+                  : 'text-[#888888] hover:text-white'
+              }`}
+            >
+              <Rows2 className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Stacked</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => onSetSqlLayoutMode?.(sqlLayoutMode === 'editor-only' ? 'side-by-side' : 'editor-only')}
+              title="Maximize Editor"
+              className={`p-1.5 px-2 rounded-[4px] transition-colors cursor-pointer ${
+                sqlLayoutMode === 'editor-only' ? 'bg-[#222222] text-white' : 'text-[#888888] hover:text-white'
+              }`}
+            >
+              <Maximize2 className="w-3.5 h-3.5" />
             </button>
           </div>
         </div>

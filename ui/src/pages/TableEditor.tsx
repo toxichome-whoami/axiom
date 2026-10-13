@@ -39,6 +39,7 @@ import { SchemaView } from './table/SchemaView';
 import { SqlConsoleView } from './table/SqlConsoleView';
 import { ColumnContextMenu } from './table/ColumnContextMenu';
 import { GridContextMenu, GridContextMenuState } from './table/GridContextMenu';
+import { SQL_KEYWORDS } from './table/SqlCodeEditor';
 
 // Domain Custom Hooks
 import { useTableData } from './table/useTableData';
@@ -338,6 +339,20 @@ export function TableEditor() {
     handleExecuteSql,
     handleCancelSql,
   } = useSqlConsole({ selectedDb });
+
+  // SQL Workspace Layout mode ('side-by-side' | 'stacked' | 'editor-only' | 'results-only')
+  const [sqlLayoutMode, setSqlLayoutMode] = useState<'side-by-side' | 'stacked' | 'editor-only' | 'results-only'>('side-by-side');
+
+  // Format SQL keywords
+  const handleFormatSql = () => {
+    if (!sqlQuery.trim()) return;
+    let formatted = sqlQuery;
+    SQL_KEYWORDS.forEach((kw) => {
+      const rx = new RegExp(`\\b${kw}\\b`, 'gi');
+      formatted = formatted.replace(rx, kw);
+    });
+    setSqlQuery(formatted);
+  };
 
   // Column header dropdown menu state
   const [activeColumnMenu, setActiveColumnMenu] = useState<{
@@ -788,6 +803,12 @@ export function TableEditor() {
             })
           }
           onResetZoom={() => setSchemaResetViewTrigger((prev) => prev + 1)}
+          sqlLayoutMode={sqlLayoutMode}
+          onSetSqlLayoutMode={setSqlLayoutMode}
+          onExecuteSql={handleExecuteSql}
+          onFormatSql={handleFormatSql}
+          isExecutingSql={isExecutingSql}
+          canExecuteSql={Boolean(sqlQuery.trim())}
         />
 
         {/* Mode 1: Table Grid (Spreadsheet Editor) */}
@@ -897,6 +918,10 @@ export function TableEditor() {
             batchSummary={batchSummary}
             handleExecuteSql={handleExecuteSql}
             handleCancelSql={handleCancelSql}
+            tables={tables}
+            allDbTablesSchema={allDbTablesSchema}
+            layoutMode={sqlLayoutMode}
+            setLayoutMode={setSqlLayoutMode}
           />
         )}
       </main>
