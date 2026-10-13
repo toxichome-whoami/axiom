@@ -337,6 +337,8 @@ export function TableEditor() {
     sqlDuration,
     chunkProgress,
     batchSummary,
+    continueOnError,
+    setContinueOnError,
     handleExecuteSql,
     handleCancelSql,
   } = useSqlConsole({
@@ -834,6 +836,8 @@ export function TableEditor() {
           onFormatSql={handleFormatSql}
           isExecutingSql={isExecutingSql}
           canExecuteSql={Boolean(sqlQuery.trim())}
+          continueOnError={continueOnError}
+          onToggleContinueOnError={setContinueOnError}
         />
 
         {/* Mode 1: Table Grid (Spreadsheet Editor) */}

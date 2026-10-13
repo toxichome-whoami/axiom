@@ -1,6 +1,7 @@
 -- =====================================================
 -- AXIOM DEMO DATABASE: RELATIONAL E-COMMERCE DATASET
--- PostgreSQL
+-- Dialect: PostgreSQL / SQLite
+-- (For MySQL / MariaDB, use demo_mysql.sql)
 -- =====================================================
 
 BEGIN;

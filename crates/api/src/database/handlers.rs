@@ -1269,6 +1269,19 @@ mod tests {
     }
 
     #[test]
+    fn test_drop_and_set_parse() {
+        let sql1 = "SET FOREIGN_KEY_CHECKS = 0;\nDROP TABLE foo;";
+        let res1 = sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::MySqlDialect {}, sql1);
+        assert!(res1.is_ok());
+        assert_eq!(res1.unwrap().len(), 2);
+
+        let sql2 = "DROP TABLE IF EXISTS a, b;\nDROP TABLE c;";
+        let res2 = sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::MySqlDialect {}, sql2);
+        assert!(res2.is_ok());
+        assert_eq!(res2.unwrap().len(), 2);
+    }
+
+    #[test]
     fn test_ast_cache_hit_and_consistency() {
         let sql = "SELECT id, name, email FROM users WHERE status = ? AND active = true";
         let cache_key = format!("postgres:{}", sql);

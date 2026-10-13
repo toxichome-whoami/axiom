@@ -108,6 +108,8 @@ export interface TableToolbarProps {
   onFormatSql?: () => void;
   isExecutingSql?: boolean;
   canExecuteSql?: boolean;
+  continueOnError?: boolean;
+  onToggleContinueOnError?: (val: boolean) => void;
 }
 
 export function TableToolbar({
@@ -167,6 +169,8 @@ export function TableToolbar({
   onFormatSql,
   isExecutingSql = false,
   canExecuteSql = true,
+  continueOnError = true,
+  onToggleContinueOnError,
 }: TableToolbarProps) {
   const [isInsertDropdownOpen, setIsInsertDropdownOpen] = React.useState(false);
   const [isExportDropdownOpen, setIsExportDropdownOpen] = React.useState(false);
@@ -283,6 +287,20 @@ export function TableToolbar({
               )}
               <span>Run</span>
             </button>
+
+            {/* Continue on Error Toggle */}
+            <label
+              className="flex items-center gap-2 h-9 px-2.5 rounded-[7px] bg-[#141414] hover:bg-[#1a1a1a] border border-[#262626] hover:border-[#333333] text-[12px] text-[#a1a1a1] hover:text-white cursor-pointer select-none transition-colors"
+              title="When running multiple statements, continue execution if individual statements (e.g. duplicate indexes or already existing tables) encounter non-fatal errors"
+            >
+              <input
+                type="checkbox"
+                checked={continueOnError}
+                onChange={(e) => onToggleContinueOnError?.(e.target.checked)}
+                className="w-3.5 h-3.5 rounded border-[#333333] bg-[#0c0c0c] text-blue-500 focus:ring-0 focus:ring-offset-0 cursor-pointer accent-blue-600"
+              />
+              <span className="hidden sm:inline">Continue on error</span>
+            </label>
           </div>
         )}
 

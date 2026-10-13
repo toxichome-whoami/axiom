@@ -23,11 +23,20 @@ export interface ChunkProgress {
   percent: number;
 }
 
+export interface StatementBatchError {
+  index: number;
+  statement: string;
+  error: string;
+  isDuplicate?: boolean;
+}
+
 export interface BatchSummary {
   totalStatements: number;
   successful: number;
+  failed: number;
   totalAffectedRows: number;
   durationMs: number;
+  errors: StatementBatchError[];
 }
 
 export interface UseSqlConsoleProps {
@@ -219,6 +228,7 @@ export function useSqlConsole({ selectedDb, onExecutionComplete }: UseSqlConsole
   const [sqlDuration, setSqlDuration] = useState<number | null>(null);
   const [chunkProgress, setChunkProgress] = useState<ChunkProgress | null>(null);
   const [batchSummary, setBatchSummary] = useState<BatchSummary | null>(null);
+  const [continueOnError, setContinueOnError] = useState<boolean>(true);
 
   const abortControllerRef = useRef<boolean>(false);
 
@@ -265,6 +275,7 @@ export function useSqlConsole({ selectedDb, onExecutionComplete }: UseSqlConsole
     let totalAffected = 0;
     let lastResult: QueryResultApi | null = null;
     let executedCount = 0;
+    const batchErrors: StatementBatchError[] = [];
 
     for (let idx = 0; idx < statements.length; idx++) {
       if (abortControllerRef.current) {
@@ -293,40 +304,65 @@ export function useSqlConsole({ selectedDb, onExecutionComplete }: UseSqlConsole
         lastResult = res;
       } catch (err) {
         const errMsg = err instanceof Error ? err.message : 'Unknown error';
-        setSqlError(
-          `Failed at statement ${idx + 1} of ${statements.length}:\n${errMsg}\n\nStatement:\n${stmt.slice(0, 300)}`
-        );
-        break;
+        const isDuplicate = /duplicate (key|column|name)|already exists|1061|1050|1060/i.test(errMsg);
+
+        batchErrors.push({
+          index: idx + 1,
+          statement: stmt,
+          error: errMsg,
+          isDuplicate,
+        });
+
+        if (!continueOnError) {
+          setSqlError(
+            `Failed at statement ${idx + 1} of ${statements.length}:\n${errMsg}\n\nStatement:\n${stmt.slice(0, 300)}`
+          );
+          break;
+        }
       }
     }
 
     const duration = Math.round(performance.now() - startTime);
     setSqlDuration(duration);
 
-    if (executedCount === statements.length) {
-      setBatchSummary({
-        totalStatements: statements.length,
-        successful: executedCount,
-        totalAffectedRows: totalAffected,
-        durationMs: duration,
-      });
+    const summary: BatchSummary = {
+      totalStatements: statements.length,
+      successful: executedCount,
+      failed: batchErrors.length,
+      totalAffectedRows: totalAffected,
+      durationMs: duration,
+      errors: batchErrors,
+    };
+    setBatchSummary(summary);
 
-      // If the last statement returned rows (e.g. a SELECT), present it
-      if (lastResult?.rows && lastResult.rows.length > 0) {
-        setSqlResult(lastResult);
+    if (lastResult?.rows && lastResult.rows.length > 0) {
+      setSqlResult(lastResult);
+    } else {
+      setSqlResult({
+        affected_rows: totalAffected,
+        duration_ms: duration,
+      });
+    }
+
+    if (batchErrors.length > 0) {
+      if (!continueOnError) {
+        // sqlError already set inside loop
+      } else if (executedCount === 0) {
+        // All statements failed
+        setSqlError(
+          `All ${statements.length} statements failed.\n\nFirst error (statement ${batchErrors[0]?.index}):\n${batchErrors[0]?.error}\n\nStatement:\n${batchErrors[0]?.statement.slice(0, 300)}`
+        );
       } else {
-        setSqlResult({
-          affected_rows: totalAffected,
-          duration_ms: duration,
-        });
+        // Some statements succeeded! Clear fatal sqlError so user inspects results & batch summary
+        setSqlError(null);
       }
     }
 
     if (executedCount > 0) {
       try {
         await onExecutionComplete?.(
-          statements.slice(0, executedCount),
-          executedCount === statements.length
+          statements.slice(0, executedCount + batchErrors.length),
+          batchErrors.length === 0
         );
       } catch (cbErr) {
         console.error('onExecutionComplete error:', cbErr);
@@ -346,6 +382,8 @@ export function useSqlConsole({ selectedDb, onExecutionComplete }: UseSqlConsole
     sqlDuration,
     chunkProgress,
     batchSummary,
+    continueOnError,
+    setContinueOnError,
     handleExecuteSql,
     handleCancelSql,
   };
