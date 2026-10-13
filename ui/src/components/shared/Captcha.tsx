@@ -141,39 +141,45 @@ export const Captcha = forwardRef<CaptchaRef, CaptchaProps>(function Captcha(
     generateCaptchaSvg()
   );
   const [captchaInput, setCaptchaInput] = useState<string>('');
-  const [captchaValid, setCaptchaValid] = useState<boolean | null>(null);
+  const [hasAttempted, setHasAttempted] = useState<boolean>(false);
   const captchaRefs = useRef<(HTMLInputElement | null)[]>([]);
+
+  const isFull = captchaInput.trim().length === 5;
+  const isVerified =
+    isFull && captchaInput.trim().toUpperCase() === captchaData.text.toUpperCase();
+  const isEvaluated = hasAttempted || isFull;
 
   // ─── Re-verification on input changes ───────────────────────────────────────
 
   useEffect(() => {
-    if (captchaInput.length === 5) {
-      const isValid = captchaInput.toUpperCase() === captchaData.text.toUpperCase();
-      setCaptchaValid(isValid);
-      onVerifyChange?.(isValid);
-    } else {
-      setCaptchaValid(null);
-      onVerifyChange?.(false);
-    }
-  }, [captchaInput, captchaData, onVerifyChange]);
+    onVerifyChange?.(isVerified);
+  }, [isVerified, onVerifyChange]);
 
   const reloadCaptcha = useCallback(() => {
     const next = generateCaptchaSvg();
     setCaptchaData(next);
     setCaptchaInput('');
-    setCaptchaValid(null);
+    setHasAttempted(false);
     onVerifyChange?.(false);
     captchaRefs.current[0]?.focus();
   }, [onVerifyChange]);
 
   const validate = useCallback((): boolean => {
-    const isValid = captchaInput.trim().toUpperCase() === captchaData.text.toUpperCase();
-    setCaptchaValid(isValid);
-    onVerifyChange?.(isValid);
-    if (!isValid) {
-      captchaRefs.current[0]?.focus();
+    setHasAttempted(true);
+    const valid =
+      captchaInput.trim().length === 5 &&
+      captchaInput.trim().toUpperCase() === captchaData.text.toUpperCase();
+    onVerifyChange?.(valid);
+    if (!valid) {
+      // Focus the first incorrect or empty cell
+      const targetIdx = [0, 1, 2, 3, 4].find(
+        (i) => (captchaInput[i] || '').toUpperCase() !== captchaData.text[i]?.toUpperCase()
+      );
+      if (targetIdx !== undefined) {
+        captchaRefs.current[targetIdx]?.focus();
+      }
     }
-    return isValid;
+    return valid;
   }, [captchaInput, captchaData, onVerifyChange]);
 
   useImperativeHandle(ref, () => ({
@@ -181,17 +187,38 @@ export const Captcha = forwardRef<CaptchaRef, CaptchaProps>(function Captcha(
     validate,
     reset: reloadCaptcha,
     shake: () => {
-      setCaptchaValid(false);
-      captchaRefs.current[0]?.focus();
+      setHasAttempted(true);
+      const targetIdx = [0, 1, 2, 3, 4].find(
+        (i) => (captchaInput[i] || '').toUpperCase() !== captchaData.text[i]?.toUpperCase()
+      );
+      if (targetIdx !== undefined) {
+        captchaRefs.current[targetIdx]?.focus();
+      }
     },
-    isVerified: captchaValid === true,
+    isVerified,
   }));
 
   return (
     <div className={`mt-1 flex flex-col gap-2 select-none ${className}`}>
-      <label className="text-[13px] font-medium text-[#cccccc] tracking-tight">
-        Security Check
-      </label>
+      <div className="flex items-center justify-between">
+        <label className="text-[13px] font-medium text-[#cccccc] tracking-tight">
+          Security Check
+        </label>
+        {isVerified ? (
+          <span className="text-[11px] font-medium text-emerald-400 animate-fadeIn">
+            Code verified
+          </span>
+        ) : isEvaluated && !isVerified ? (
+          <span className="text-[11px] font-medium text-red-400 animate-fadeIn">
+            Incorrect characters highlighted
+          </span>
+        ) : (
+          <span className="text-[11px] text-[#777777]">
+            Click code to reload
+          </span>
+        )}
+      </div>
+
       <div className="flex items-center gap-3 relative">
         {/* Clickable CAPTCHA Image with 1.6x hover zoom from binary_alive */}
         <div
@@ -206,19 +233,32 @@ export const Captcha = forwardRef<CaptchaRef, CaptchaProps>(function Captcha(
           />
         </div>
 
-        {/* 5 Distinct Input Containers from binary_alive */}
+        {/* 5 Distinct Input Containers with per-character validation */}
         <div className="inline-flex items-center gap-1.5 flex-1">
           {[0, 1, 2, 3, 4].map((index) => {
             const char = captchaInput[index] || '';
+            const enteredChar = char.toUpperCase();
+            const expectedChar = captchaData.text[index]?.toUpperCase();
 
+            // Default neutral styling
             let stateClasses =
               'border border-[#262626] bg-[#0B0B0C] text-white focus:border-[#2f80ed] focus:ring-[1.5px] focus:ring-[#2f80ed]/50';
-            if (captchaValid === true) {
-              stateClasses =
-                'border border-emerald-500 bg-[#0B0B0C] text-emerald-400 shadow-[0_0_10px_rgba(16,185,129,0.15)] focus:border-emerald-500 focus:ring-emerald-500/50';
-            } else if (captchaValid === false) {
-              stateClasses =
-                'border border-red-500 bg-[#0B0B0C] text-red-400 shadow-[0_0_10px_rgba(239,68,68,0.15)] focus:border-red-500 focus:ring-red-500/50';
+
+            // Per-character validation: ONLY mark the specific cell red if it is wrong!
+            if (isEvaluated) {
+              if (enteredChar && enteredChar === expectedChar) {
+                // Correct character -> emerald
+                stateClasses =
+                  'border border-emerald-500 bg-[#0B0B0C] text-emerald-400 shadow-[0_0_10px_rgba(16,185,129,0.15)] focus:border-emerald-500 focus:ring-emerald-500/50';
+              } else if (!enteredChar && hasAttempted) {
+                // Empty after submit attempt -> red border
+                stateClasses =
+                  'border border-red-500/60 bg-[#0B0B0C] text-red-400 focus:border-red-500 focus:ring-red-500/50';
+              } else if (enteredChar && enteredChar !== expectedChar) {
+                // Specifically incorrect character -> ONLY this box turns RED
+                stateClasses =
+                  'border border-red-500 bg-[#0B0B0C] text-red-400 shadow-[0_0_10px_rgba(239,68,68,0.2)] focus:border-red-500 focus:ring-red-500/50 animate-shake';
+              }
             }
 
             return (
