@@ -5,7 +5,7 @@
  */
 
 import React, { useRef, useEffect } from 'react';
-import { Database, ChevronDown, Check, RefreshCw, Search, Table as TableIcon } from 'lucide-react';
+import { Database, ChevronDown, Check, RefreshCw, Search, Table as TableIcon, Plus } from 'lucide-react';
 import { DatabaseRecordApi } from '../../api/client';
 import { TableInfoApi } from '../../types';
 
@@ -20,6 +20,7 @@ export interface TableSidebarProps {
   setTableSearch: (search: string) => void;
   isTablesLoading: boolean;
   onRefreshTables: () => void;
+  onCreateTable?: () => void;
 }
 
 export function TableSidebar({
@@ -33,6 +34,7 @@ export function TableSidebar({
   setTableSearch,
   isTablesLoading,
   onRefreshTables,
+  onCreateTable,
 }: TableSidebarProps) {
   const [isDbDropdownOpen, setIsDbDropdownOpen] = React.useState(false);
   const dbDropdownRef = useRef<HTMLDivElement>(null);
@@ -126,9 +128,9 @@ export function TableSidebar({
         </button>
       </div>
 
-      {/* Live Search Input */}
-      <div className="p-2.5">
-        <div className="relative">
+      {/* Live Search Input & Create Table button */}
+      <div className="p-2.5 flex items-center gap-1.5">
+        <div className="relative flex-1 min-w-0">
           <Search className="w-3.5 h-3.5 text-[#666666] absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
           <input
             type="text"
@@ -138,6 +140,17 @@ export function TableSidebar({
             className="w-full h-8 pl-8 pr-2.5 bg-[#141414] border border-[#242424] focus:border-[#383838] rounded-[6px] text-[13px] text-white placeholder-[#666666] outline-none transition-colors"
           />
         </div>
+        {onCreateTable && (
+          <button
+            type="button"
+            onClick={onCreateTable}
+            disabled={!selectedDb}
+            title={selectedDb ? "Create table" : "Select a database first to create table"}
+            className="w-8 h-8 flex items-center justify-center rounded-[6px] bg-[#141414] hover:bg-[#1a1a1a] border border-[#242424] hover:border-[#383838] text-[#8c8c8c] hover:text-white transition-colors cursor-pointer shrink-0 disabled:opacity-40 disabled:cursor-not-allowed group"
+          >
+            <Plus className="w-4 h-4 text-[#8c8c8c] group-hover:text-white transition-colors" />
+          </button>
+        )}
       </div>
 
       {/* Table Tree Items */}

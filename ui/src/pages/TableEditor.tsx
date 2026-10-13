@@ -566,6 +566,10 @@ export function TableEditor() {
         setTableSearch={setTableSearch}
         isTablesLoading={isTablesLoading}
         onRefreshTables={() => fetchTables(selectedDb)}
+        onCreateTable={() => {
+          setEditingTableTarget('');
+          setIsTableEditOpen(true);
+        }}
       />
 
       {/* ─── PANE 2: MAIN WORKSPACE CANVAS ─── */}
@@ -1298,8 +1302,8 @@ export function TableEditor() {
         onClose={() => setDeleteColumnTarget(null)}
       />
 
-      {/* ─── Supabase Studio-style Update Table SlideOver ─── */}
-      {isTableEditOpen && editingTableTarget && (
+      {/* ─── Supabase Studio-style Create / Update Table SlideOver ─── */}
+      {isTableEditOpen && (
         <TableEditSlideOver
           isOpen={isTableEditOpen}
           onClose={() => {
@@ -1309,10 +1313,62 @@ export function TableEditor() {
           selectedDb={selectedDb}
           tableName={editingTableTarget}
           tables={tables}
-          columns={allDbTablesSchema[editingTableTarget]?.columns || columns}
-          foreignKeys={allDbTablesSchema[editingTableTarget]?.foreign_keys || foreignKeys}
+          columns={editingTableTarget ? (allDbTablesSchema[editingTableTarget]?.columns || columns) : []}
+          foreignKeys={editingTableTarget ? (allDbTablesSchema[editingTableTarget]?.foreign_keys || foreignKeys) : []}
           onSave={async ({ newName, columns: updatedCols, foreignKeys: updatedFks }) => {
             const oldName = editingTableTarget;
+            const currentDb = databases.find((d) => d.alias === selectedDb);
+            const engineType = currentDb?.engine?.toLowerCase() || '';
+
+            // Handle CREATE TABLE mode
+            if (!oldName) {
+              const colDefs = updatedCols.map((c) => {
+                let def = '';
+                if (engineType.includes('mysql') || engineType.includes('mariadb')) {
+                  def = `\`${c.name.replace(/`/g, '``')}\` ${c.type}`;
+                } else if (engineType.includes('mssql') || engineType.includes('sqlserver')) {
+                  def = `[${c.name.replace(/]/g, ']]')}] ${c.type}`;
+                } else {
+                  def = `"${c.name.replace(/"/g, '""')}" ${c.type}`;
+                }
+
+                if (c.primaryKey) def += ' PRIMARY KEY';
+                if (!c.nullable) def += ' NOT NULL';
+                if (c.unique && !c.primaryKey) def += ' UNIQUE';
+                if (c.defaultValue && c.defaultValue.toUpperCase() !== 'NULL') {
+                  def += ` DEFAULT ${c.defaultValue}`;
+                }
+                return def;
+              });
+
+              const fkDefs = updatedFks.map((fk) => {
+                if (engineType.includes('mysql') || engineType.includes('mariadb')) {
+                  return `CONSTRAINT \`fk_${newName}_${fk.column}\` FOREIGN KEY (\`${fk.column}\`) REFERENCES \`${fk.referenced_table}\` (\`${fk.referenced_column}\`)`;
+                } else if (engineType.includes('mssql') || engineType.includes('sqlserver')) {
+                  return `CONSTRAINT [fk_${newName}_${fk.column}] FOREIGN KEY ([${fk.column}]) REFERENCES [${fk.referenced_table}] ([${fk.referenced_column}])`;
+                } else {
+                  return `CONSTRAINT "fk_${newName}_${fk.column}" FOREIGN KEY ("${fk.column}") REFERENCES "${fk.referenced_table}" ("${fk.referenced_column}")`;
+                }
+              });
+
+              const allDefs = [...colDefs, ...fkDefs].join(',\n  ');
+              let createSql = '';
+              if (engineType.includes('mysql') || engineType.includes('mariadb')) {
+                createSql = `CREATE TABLE \`${newName.replace(/`/g, '``')}\` (\n  ${allDefs}\n);`;
+              } else if (engineType.includes('mssql') || engineType.includes('sqlserver')) {
+                createSql = `CREATE TABLE [${newName.replace(/]/g, ']]')}] (\n  ${allDefs}\n);`;
+              } else {
+                createSql = `CREATE TABLE "${newName.replace(/"/g, '""')}" (\n  ${allDefs}\n);`;
+              }
+
+              await api.executeSqlQuery(selectedDb, createSql);
+              await fetchTables(selectedDb);
+              setSelectedTable(newName);
+              await loadTableData({ reloadSchema: true });
+              return;
+            }
+
+            // Handle ALTER TABLE mode
             const currentTableData = allDbTablesSchema[oldName] || { columns: [], foreign_keys: [] };
             const existingCols = currentTableData.columns || [];
             const existingFks = currentTableData.foreign_keys || [];
@@ -1322,7 +1378,13 @@ export function TableEditor() {
 
             // 1. Table rename if name changed
             if (newName !== oldName) {
-              statements.push(`ALTER TABLE "${oldName}" RENAME TO "${newName}";`);
+              if (engineType.includes('mysql') || engineType.includes('mariadb')) {
+                statements.push(`ALTER TABLE \`${oldName.replace(/`/g, '``')}\` RENAME TO \`${newName.replace(/`/g, '``')}\`;`);
+              } else if (engineType.includes('mssql') || engineType.includes('sqlserver')) {
+                statements.push(`EXEC sp_rename '${oldName.replace(/'/g, "''")}', '${newName.replace(/'/g, "''")}';`);
+              } else {
+                statements.push(`ALTER TABLE "${oldName.replace(/"/g, '""')}" RENAME TO "${newName.replace(/"/g, '""')}";`);
+              }
             }
 
             const activeTableName = newName !== oldName ? newName : oldName;
@@ -1333,20 +1395,40 @@ export function TableEditor() {
             );
             for (const ec of existingCols) {
               if (!updatedColOriginalNames.has(ec.name)) {
-                statements.push(`ALTER TABLE "${activeTableName}" DROP COLUMN "${ec.name}";`);
+                if (engineType.includes('mysql') || engineType.includes('mariadb')) {
+                  statements.push(`ALTER TABLE \`${activeTableName.replace(/`/g, '``')}\` DROP COLUMN \`${ec.name.replace(/`/g, '``')}\`;`);
+                } else if (engineType.includes('mssql') || engineType.includes('sqlserver')) {
+                  statements.push(`ALTER TABLE [${activeTableName.replace(/]/g, ']]')}] DROP COLUMN [${ec.name.replace(/]/g, ']]')}];`);
+                } else {
+                  statements.push(`ALTER TABLE "${activeTableName.replace(/"/g, '""')}" DROP COLUMN "${ec.name.replace(/"/g, '""')}";`);
+                }
               }
             }
 
             // 3. Identify added columns
             for (const uc of updatedCols) {
               if (!uc.originalName) {
-                let colDef = `"${uc.name}" ${uc.type}`;
+                let colDef = '';
+                if (engineType.includes('mysql') || engineType.includes('mariadb')) {
+                  colDef = `\`${uc.name.replace(/`/g, '``')}\` ${uc.type}`;
+                } else if (engineType.includes('mssql') || engineType.includes('sqlserver')) {
+                  colDef = `[${uc.name.replace(/]/g, ']]')}] ${uc.type}`;
+                } else {
+                  colDef = `"${uc.name.replace(/"/g, '""')}" ${uc.type}`;
+                }
                 if (uc.primaryKey) colDef += ' PRIMARY KEY';
                 if (!uc.nullable) colDef += ' NOT NULL';
                 if (uc.defaultValue && uc.defaultValue.toUpperCase() !== 'NULL') {
                   colDef += ` DEFAULT ${uc.defaultValue}`;
                 }
-                statements.push(`ALTER TABLE "${activeTableName}" ADD COLUMN ${colDef};`);
+
+                if (engineType.includes('mysql') || engineType.includes('mariadb')) {
+                  statements.push(`ALTER TABLE \`${activeTableName.replace(/`/g, '``')}\` ADD COLUMN ${colDef};`);
+                } else if (engineType.includes('mssql') || engineType.includes('sqlserver')) {
+                  statements.push(`ALTER TABLE [${activeTableName.replace(/]/g, ']]')}] ADD ${colDef};`);
+                } else {
+                  statements.push(`ALTER TABLE "${activeTableName.replace(/"/g, '""')}" ADD COLUMN ${colDef};`);
+                }
               }
             }
 
@@ -1358,9 +1440,19 @@ export function TableEditor() {
             for (const ef of existingFks) {
               const uf = updatedFkMap.get(ef.column);
               if (!uf || uf.referenced_table !== ef.referenced_table || uf.referenced_column !== ef.referenced_column) {
-                statements.push(
-                  `ALTER TABLE "${activeTableName}" DROP CONSTRAINT IF EXISTS "${oldName}_${ef.column}_fkey";`
-                );
+                if (engineType.includes('mysql') || engineType.includes('mariadb')) {
+                  statements.push(
+                    `ALTER TABLE \`${activeTableName.replace(/`/g, '``')}\` DROP FOREIGN KEY \`${oldName}_${ef.column}_fkey\`;`
+                  );
+                } else if (engineType.includes('mssql') || engineType.includes('sqlserver')) {
+                  statements.push(
+                    `ALTER TABLE [${activeTableName.replace(/]/g, ']]')}] DROP CONSTRAINT [${oldName}_${ef.column}_fkey];`
+                  );
+                } else {
+                  statements.push(
+                    `ALTER TABLE "${activeTableName.replace(/"/g, '""')}" DROP CONSTRAINT IF EXISTS "${oldName}_${ef.column}_fkey";`
+                  );
+                }
               }
             }
 
@@ -1369,9 +1461,19 @@ export function TableEditor() {
               const ef = existingFkMap.get(uf.column);
               if (!ef || ef.referenced_table !== uf.referenced_table || ef.referenced_column !== uf.referenced_column) {
                 const constraintName = `${activeTableName}_${uf.column}_fkey`;
-                statements.push(
-                  `ALTER TABLE "${activeTableName}" ADD CONSTRAINT "${constraintName}" FOREIGN KEY ("${uf.column}") REFERENCES "${uf.referenced_table}" ("${uf.referenced_column}");`
-                );
+                if (engineType.includes('mysql') || engineType.includes('mariadb')) {
+                  statements.push(
+                    `ALTER TABLE \`${activeTableName.replace(/`/g, '``')}\` ADD CONSTRAINT \`${constraintName}\` FOREIGN KEY (\`${uf.column}\`) REFERENCES \`${uf.referenced_table}\` (\`${uf.referenced_column}\`);`
+                  );
+                } else if (engineType.includes('mssql') || engineType.includes('sqlserver')) {
+                  statements.push(
+                    `ALTER TABLE [${activeTableName.replace(/]/g, ']]')}] ADD CONSTRAINT [${constraintName}] FOREIGN KEY ([${uf.column}]) REFERENCES [${uf.referenced_table}] ([${uf.referenced_column}]);`
+                  );
+                } else {
+                  statements.push(
+                    `ALTER TABLE "${activeTableName.replace(/"/g, '""')}" ADD CONSTRAINT "${constraintName}" FOREIGN KEY ("${uf.column}") REFERENCES "${uf.referenced_table}" ("${uf.referenced_column}");`
+                  );
+                }
               }
             }
 
@@ -1383,6 +1485,9 @@ export function TableEditor() {
 
             // Refresh table schema
             await fetchTables(selectedDb);
+            if (newName !== oldName) {
+              setSelectedTable(newName);
+            }
             await loadTableData({ reloadSchema: true });
           }}
         />

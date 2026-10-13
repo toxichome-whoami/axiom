@@ -149,28 +149,60 @@ export function TableEditSlideOver({
     const fks = initialForeignKeys || [];
     setFkDrafts(fks);
 
-    const mappedCols: EditableColumnDraft[] = initialColumns.map((c) => {
-      const isFk = fks.some((f) => f.column === c.name);
-      return {
-        id: `col-${c.name}-${Math.random().toString(36).slice(2, 7)}`,
-        originalName: c.name,
-        name: c.name,
-        type: formatColumnType(c.type),
-        defaultValue: c.default_value ?? 'NULL',
-        primaryKey: !!c.primary_key,
-        nullable: c.nullable ?? true,
-        unique: !!c.unique,
-        check: '',
-        isArray: false,
-        isForeignKey: isFk,
-      };
-    });
+    if (!tableName && (!initialColumns || initialColumns.length === 0)) {
+      setColDrafts([
+        {
+          id: `col-id-${Math.random().toString(36).slice(2, 7)}`,
+          name: 'id',
+          type: 'int8',
+          defaultValue: '',
+          primaryKey: true,
+          nullable: false,
+          unique: true,
+          check: '',
+          isArray: false,
+          isForeignKey: false,
+        },
+        {
+          id: `col-created_at-${Math.random().toString(36).slice(2, 7)}`,
+          name: 'created_at',
+          type: 'timestamptz',
+          defaultValue: 'now()',
+          primaryKey: false,
+          nullable: false,
+          unique: false,
+          check: '',
+          isArray: false,
+          isForeignKey: false,
+        },
+      ]);
+    } else {
+      const mappedCols: EditableColumnDraft[] = (initialColumns || []).map((c) => {
+        const isFk = fks.some((f) => f.column === c.name);
+        return {
+          id: `col-${c.name}-${Math.random().toString(36).slice(2, 7)}`,
+          originalName: c.name,
+          name: c.name,
+          type: formatColumnType(c.type),
+          defaultValue: c.default_value ?? 'NULL',
+          primaryKey: !!c.primary_key,
+          nullable: c.nullable ?? true,
+          unique: !!c.unique,
+          check: '',
+          isArray: false,
+          isForeignKey: isFk,
+        };
+      });
 
-    setColDrafts(mappedCols);
+      setColDrafts(mappedCols);
+    }
   }, [isOpen, tableName, initialColumns, initialForeignKeys]);
 
   // Compute if any actual changes have been made
   const hasChanges = useMemo(() => {
+    if (!tableName) {
+      return name.trim().length > 0;
+    }
     if (name.trim() !== tableName) return true;
     if (description.trim() !== '') return true;
 
@@ -450,6 +482,10 @@ export function TableEditSlideOver({
       setSaveError('Table name is required');
       return;
     }
+    if (colDrafts.length === 0) {
+      setSaveError('Table must contain at least one column');
+      return;
+    }
     if (colDrafts.some((c) => !c.name.trim())) {
       setSaveError('All columns must have a non-empty name');
       return;
@@ -466,7 +502,7 @@ export function TableEditSlideOver({
       });
       onClose();
     } catch (err: any) {
-      setSaveError(err?.message || 'Failed to update table');
+      setSaveError(err?.message || (tableName ? 'Failed to update table' : 'Failed to create table'));
     } finally {
       setIsSaving(false);
     }
@@ -480,10 +516,14 @@ export function TableEditSlideOver({
         width="w-[660px] max-w-full"
       title={
         <div className="flex items-center gap-2">
-          <span className="text-[16px] font-medium text-white tracking-[-0.015em] font-sans">Update table</span>
-          <span className="px-2 py-0.5 rounded-[4px] bg-[#1a1a1a] border border-[#2a2a2a] text-zinc-300 text-[12.5px] font-mono font-normal">
-            {tableName}
+          <span className="text-[16px] font-medium text-white tracking-[-0.015em] font-sans">
+            {tableName ? 'Update table' : 'Create a new table'}
           </span>
+          {tableName && (
+            <span className="px-2 py-0.5 rounded-[4px] bg-[#1a1a1a] border border-[#2a2a2a] text-zinc-300 text-[12.5px] font-mono font-normal">
+              {tableName}
+            </span>
+          )}
         </div>
       }
     >
@@ -501,9 +541,10 @@ export function TableEditSlideOver({
             <label className="block text-[13px] font-medium text-[#cccccc] font-sans">Name</label>
             <input
               type="text"
+              placeholder="e.g. users, orders..."
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] px-3 text-[13.5px] text-white focus:outline-none focus:border-[#3b82f6] transition-colors font-sans"
+              className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] px-3 text-[13.5px] text-white placeholder-[#555555] focus:outline-none focus:border-[#3b82f6] transition-colors font-sans"
             />
           </div>
 
@@ -804,7 +845,7 @@ export function TableEditSlideOver({
                     <div className="flex items-center justify-between">
                       <div className="space-y-1">
                         <div className="font-mono text-[#e4e4e7] text-[12.5px]">
-                          {`${tableName}_${fk.column}_fkey`}
+                          {`${tableName || name || 'table'}_${fk.column}_fkey`}
                         </div>
                         <div className="flex items-center gap-1.5 text-[12.5px] text-[#8c8c8c] font-sans">
                           <span>Foreign key relation to:</span>
@@ -915,7 +956,11 @@ export function TableEditSlideOver({
     <ConfirmDialog
       isOpen={!!deleteColTarget}
       title={`Delete column "${deleteColTarget?.name || 'column'}"?`}
-      description={`Are you sure you want to remove column "${deleteColTarget?.name || 'this column'}" from table "${tableName}"? This column will be dropped from the database when you save.`}
+      description={
+        tableName
+          ? `Are you sure you want to remove column "${deleteColTarget?.name || 'this column'}" from table "${tableName}"? This column will be dropped from the database when you save.`
+          : `Are you sure you want to remove column "${deleteColTarget?.name || 'this column'}"?`
+      }
       confirmLabel="Delete Column"
       cancelLabel="Cancel"
       variant="danger"
@@ -941,7 +986,7 @@ export function TableEditSlideOver({
       onClose={handleRequestCloseFkModal}
       width="w-[520px] max-w-full"
       zIndex="z-[60]"
-      title={editingFkIndex !== null ? `Edit foreign key relationship in ${tableName}` : `Add foreign key relationship to ${tableName}`}
+      title={editingFkIndex !== null ? `Edit foreign key relationship in ${tableName || name || 'table'}` : `Add foreign key relationship to ${tableName || name || 'table'}`}
     >
       <div className="flex-1 flex flex-col min-h-0 bg-[#0e0e0e] overflow-hidden font-sans">
         <div className="flex-1 overflow-y-auto p-5 space-y-4 font-sans">
@@ -969,7 +1014,7 @@ export function TableEditSlideOver({
               </label>
 
               <div className="flex items-center gap-2 mb-1.5 px-0.5 text-[11.5px] text-[#888888] font-mono">
-                <div className="flex-1 truncate">{tableName}</div>
+                <div className="flex-1 truncate">{tableName || name || 'Current table'}</div>
                 <div className="w-5 shrink-0" />
                 <div className="flex-1 truncate">{draftFkTable}</div>
                 {draftFkPairs.length > 1 && <div className="w-8 shrink-0" />}
