@@ -1432,46 +1432,32 @@ export function StoragePage() {
               </button>
             </div>
 
-            <div className="flex items-center gap-6 -mx-5 px-5 border-b border-[#222222] text-[13px]">
-              <button
-                type="button"
-                onClick={() => setManageNsTab('settings')}
-                className={`relative pb-2.5 pt-0.5 flex items-center gap-2 font-medium transition-colors cursor-pointer outline-none ${
-                  manageNsTab === 'settings'
-                    ? 'text-white'
-                    : 'text-[#888888] hover:text-[#cccccc]'
-                }`}
-              >
-                <Settings
-                  className={`w-3.5 h-3.5 transition-colors ${
-                    manageNsTab === 'settings' ? 'text-white' : 'text-[#777777]'
+            {/* Tab bar (Segmented control matching dashboard) */}
+            <div className="-mx-5 px-5 py-2.5 border-b border-[#222222] bg-[#0e0e0e]">
+              <div className="inline-flex items-center p-0.5 rounded-[8px] bg-transparent border border-[#262626]">
+                <button
+                  type="button"
+                  onClick={() => setManageNsTab('settings')}
+                  className={`flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[13px] font-medium transition-colors duration-75 cursor-pointer font-sans outline-none focus:outline-none border ${
+                    manageNsTab === 'settings'
+                      ? 'bg-[#161616] text-white border-[#333333]'
+                      : 'text-[#8c8c8c] hover:text-white hover:bg-[#141414] border-transparent'
                   }`}
-                />
-                <span>General Settings</span>
-                {manageNsTab === 'settings' && (
-                  <span className="absolute -bottom-[1px] left-0 right-0 h-[2px] bg-white rounded-full shadow-[0_0_8px_rgba(255,255,255,0.4)]" />
-                )}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setManageNsTab('danger')}
-                className={`relative pb-2.5 pt-0.5 flex items-center gap-2 font-medium transition-colors cursor-pointer outline-none ${
-                  manageNsTab === 'danger'
-                    ? 'text-rose-400'
-                    : 'text-[#888888] hover:text-rose-400/90'
-                }`}
-              >
-                <AlertTriangle
-                  className={`w-3.5 h-3.5 transition-colors ${
-                    manageNsTab === 'danger' ? 'text-rose-400' : 'text-[#777777]'
+                >
+                  <span>Settings</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setManageNsTab('danger')}
+                  className={`flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[13px] font-medium transition-colors duration-75 cursor-pointer font-sans outline-none focus:outline-none border ${
+                    manageNsTab === 'danger'
+                      ? 'bg-[#161616] text-white border-[#333333]'
+                      : 'text-[#8c8c8c] hover:text-white hover:bg-[#141414] border-transparent'
                   }`}
-                />
-                <span>Danger Zone</span>
-                {manageNsTab === 'danger' && (
-                  <span className="absolute -bottom-[1px] left-0 right-0 h-[2px] bg-rose-500 rounded-full shadow-[0_0_8px_rgba(244,63,94,0.4)]" />
-                )}
-              </button>
+                >
+                  <span>Danger</span>
+                </button>
+              </div>
             </div>
 
             {manageNsTab === 'settings' ? (
