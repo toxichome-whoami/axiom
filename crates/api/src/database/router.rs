@@ -90,8 +90,18 @@ async fn list_databases(
 
             let mut status = "down";
             let mut tables_count_str = "0".to_string();
-            if let Some(engine) = axiom_db::DatabasePoolManager::get_engine(&name).await {
-                if engine.health_check().await {
+            let probe_res = tokio::time::timeout(
+                std::time::Duration::from_millis(500),
+                axiom_db::DatabasePoolManager::get_engine(&name),
+            )
+            .await;
+            if let Ok(Some(engine)) = probe_res {
+                let hc_res = tokio::time::timeout(
+                    std::time::Duration::from_millis(500),
+                    engine.health_check(),
+                )
+                .await;
+                if let Ok(true) = hc_res {
                     status = "connected";
                     if let Ok(count) = engine.count_tables().await {
                         tables_count_str = count.to_string();

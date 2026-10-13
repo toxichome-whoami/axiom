@@ -21,7 +21,8 @@ use tower::ServiceExt;
 use axiom_api::database::filter_builder::build_where_clause;
 use axiom_cache::{CacheEngine, Durability};
 use axiom_metadata::snapshot::{
-    update_snapshot, ApiKeySnapshot, MetadataSnapshot, PermissionSnapshot, RoleSnapshot,
+    update_snapshot, ApiKeySnapshot, DatabaseSnapshot, MetadataSnapshot, PermissionSnapshot,
+    RoleSnapshot,
 };
 use axiom_policy::PolicyEngine;
 use axiom_api::security::ban_list::BanList;
@@ -37,7 +38,7 @@ use axiom_core::AuthContext;
 fn setup_test_metadata() {
     let mut keys = HashMap::new();
     let mut roles = HashMap::new();
-    let databases = HashMap::new();
+    let mut databases = HashMap::new();
 
     // ── admin role + key ────────────────────────────────────────────────
     roles.insert(
@@ -143,12 +144,235 @@ fn setup_test_metadata() {
         },
     );
 
+    // ── test sqlite database (testdb) ───────────────────────────────────
+    databases.insert(
+        "testdb".to_string(),
+        DatabaseSnapshot {
+            alias: "testdb".to_string(),
+            url: "sqlite://target/test_integration_sqlite.db".to_string(),
+            engine: "sqlite".to_string(),
+            pool_min: 1,
+            pool_max: 5,
+        },
+    );
+
+    // ── dead database for circuit breaker testing (dead_db) ─────────────
+    databases.insert(
+        "dead_db".to_string(),
+        DatabaseSnapshot {
+            alias: "dead_db".to_string(),
+            url: "postgres://127.0.0.1:54321/dead".to_string(),
+            engine: "postgres".to_string(),
+            pool_min: 1,
+            pool_max: 5,
+        },
+    );
+
+    // ── items reader role + key (testdb, items table only, SELECT only) ────
+    roles.insert(
+        "items_reader_role".to_string(),
+        RoleSnapshot {
+            name: "items_reader_role".to_string(),
+            permissions: vec![PermissionSnapshot {
+                database: "testdb".to_string(),
+                table_name: "items".to_string(),
+                operations: vec!["SELECT".to_string()],
+            }],
+        },
+    );
+    keys.insert(
+        "items_reader_key".to_string(),
+        ApiKeySnapshot {
+            name: "items_reader_key".to_string(),
+            secret_hash: blake3::hash(b"secret_items_ro").into(),
+            role_name: Some("items_reader_role".to_string()),
+            rate_limit_override: 0,
+            expires_at: None,
+        },
+    );
+
     update_snapshot(MetadataSnapshot {
         keys,
         roles,
         databases,
         loaded_at_unix: 0,
     });
+}
+
+/// Lazily initializes a persistent test metadata store in SQLite with deterministic test identities.
+/// Invariant: Idempotent across all worker threads; ensures sync_snapshot never drops base test identities.
+async fn ensure_metadata_store() {
+    static STORE_INIT: tokio::sync::OnceCell<()> = tokio::sync::OnceCell::const_new();
+    STORE_INIT
+        .get_or_init(|| async {
+            let _ = tokio::fs::create_dir_all("target").await;
+            let _ = tokio::fs::remove_file("target/test_unified_metadata.db").await;
+            let _ = tokio::fs::remove_file("target/test_unified_metadata.db-wal").await;
+            let _ = tokio::fs::remove_file("target/test_unified_metadata.db-shm").await;
+            axiom_metadata::MetadataStore::init("sqlite://target/test_unified_metadata.db", "")
+                .await
+                .expect("Failed to init metadata store in test fixture");
+
+            // Roles
+            let _ = axiom_metadata::MetadataStore::create_role(
+                "admin",
+                Some("Administrator"),
+                &[axiom_metadata::PermissionRecord {
+                    id: 0,
+                    role_name: "admin".to_string(),
+                    database: "*".to_string(),
+                    table_name: "*".to_string(),
+                    operations: vec!["*".to_string()],
+                }],
+            ).await;
+
+            let _ = axiom_metadata::MetadataStore::create_role(
+                "readonly_role",
+                Some("Readonly"),
+                &[axiom_metadata::PermissionRecord {
+                    id: 0,
+                    role_name: "readonly_role".to_string(),
+                    database: "db_alpha".to_string(),
+                    table_name: "*".to_string(),
+                    operations: vec!["SELECT".to_string()],
+                }],
+            ).await;
+
+            let _ = axiom_metadata::MetadataStore::create_role(
+                "blob_reader_role",
+                Some("Blob reader"),
+                &[axiom_metadata::PermissionRecord {
+                    id: 0,
+                    role_name: "blob_reader_role".to_string(),
+                    database: "blob:reports".to_string(),
+                    table_name: "*".to_string(),
+                    operations: vec!["READ".to_string()],
+                }],
+            ).await;
+
+            let _ = axiom_metadata::MetadataStore::create_role(
+                "blob_wildcard_role",
+                Some("Blob wildcard"),
+                &[axiom_metadata::PermissionRecord {
+                    id: 0,
+                    role_name: "blob_wildcard_role".to_string(),
+                    database: "blob:*".to_string(),
+                    table_name: "media/*".to_string(),
+                    operations: vec!["READ".to_string(), "WRITE".to_string()],
+                }],
+            ).await;
+
+            let _ = axiom_metadata::MetadataStore::create_role(
+                "items_reader_role",
+                Some("Items reader"),
+                &[axiom_metadata::PermissionRecord {
+                    id: 0,
+                    role_name: "items_reader_role".to_string(),
+                    database: "testdb".to_string(),
+                    table_name: "items".to_string(),
+                    operations: vec!["SELECT".to_string()],
+                }],
+            ).await;
+
+            // Keys
+            let _ = axiom_metadata::MetadataStore::create_key(
+                "admin_key",
+                Some("admin"),
+                Some("secret_admin"),
+                0,
+                None,
+            ).await;
+
+            let _ = axiom_metadata::MetadataStore::create_key(
+                "ro_key",
+                Some("readonly_role"),
+                Some("secret_ro"),
+                0,
+                None,
+            ).await;
+
+            let _ = axiom_metadata::MetadataStore::create_key(
+                "expired_key",
+                Some("readonly_role"),
+                Some("secret_exp"),
+                0,
+                Some(1000),
+            ).await;
+
+            let _ = axiom_metadata::MetadataStore::create_key(
+                "blob_reader_key",
+                Some("blob_reader_role"),
+                Some("secret_blob_ro"),
+                0,
+                None,
+            ).await;
+
+            let _ = axiom_metadata::MetadataStore::create_key(
+                "blob_wildcard_key",
+                Some("blob_wildcard_role"),
+                Some("secret_blob_wildcard"),
+                0,
+                None,
+            ).await;
+
+            let _ = axiom_metadata::MetadataStore::create_key(
+                "items_reader_key",
+                Some("items_reader_role"),
+                Some("secret_items_ro"),
+                0,
+                None,
+            ).await;
+
+            // Databases
+            let _ = axiom_metadata::MetadataStore::add_database(
+                "testdb",
+                "sqlite://target/test_integration_sqlite.db",
+                Some("sqlite"),
+                Some(1),
+                Some(5),
+                None,
+            ).await;
+
+            let _ = axiom_metadata::MetadataStore::add_database(
+                "dead_db",
+                "postgres://127.0.0.1:54321/dead",
+                Some("postgres"),
+                Some(1),
+                Some(5),
+                None,
+            ).await;
+
+            axiom_metadata::MetadataStore::sync_snapshot()
+                .await
+                .expect("Failed to sync initial metadata snapshot");
+        })
+        .await;
+}
+
+/// Ensures the items table exists in testdb for CRUD & RBAC testing.
+async fn ensure_test_items_table() {
+    static TABLE_INIT: tokio::sync::OnceCell<()> = tokio::sync::OnceCell::const_new();
+    TABLE_INIT
+        .get_or_init(|| async {
+            ensure_metadata_store().await;
+            let admin_token = BASE64_STANDARD.encode("admin_key:secret_admin");
+            let create_sql = "CREATE TABLE IF NOT EXISTS items (\
+                id INTEGER PRIMARY KEY AUTOINCREMENT, \
+                name TEXT NOT NULL, \
+                price REAL NOT NULL, \
+                stock INTEGER NOT NULL\
+            );";
+            let create_req = Request::post("/api/v1/db/testdb/query")
+                .header("X-Axiom-Key", &admin_token)
+                .header("Content-Type", "application/json")
+                .body(Body::from(serde_json::to_vec(&serde_json::json!({
+                    "sql": create_sql
+                })).unwrap()))
+                .unwrap();
+            let res = create_app().oneshot(create_req).await.unwrap();
+            assert_eq!(res.status(), StatusCode::OK);
+        })
+        .await;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1258,6 +1482,429 @@ async fn mcp_tools_list_and_blob_tools_execution() {
     let ticket_data_text = ticket_json["result"]["content"][0]["text"].as_str().unwrap();
     assert!(ticket_data_text.contains("download_url"));
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  18. Database Data API End-to-End HTTP Lifecycle & Schema Alteration
+// ═══════════════════════════════════════════════════════════════════════════
+
+#[tokio::test]
+async fn db_data_api_full_crud_pagination_and_column_lifecycle() {
+    ensure_metadata_store().await;
+    let admin_token = BASE64_STANDARD.encode("admin_key:secret_admin");
+
+    // 1. Drop existing table if any and create fresh `items_crud`
+    let drop_req = Request::post("/api/v1/db/testdb/query")
+        .header("X-Axiom-Key", &admin_token)
+        .header("Content-Type", "application/json")
+        .body(Body::from(serde_json::to_vec(&serde_json::json!({
+            "sql": "DROP TABLE IF EXISTS items_crud;"
+        })).unwrap()))
+        .unwrap();
+    let _ = create_app().oneshot(drop_req).await;
+
+    let create_sql = "CREATE TABLE items_crud (\
+        id INTEGER PRIMARY KEY AUTOINCREMENT, \
+        name TEXT NOT NULL, \
+        price REAL NOT NULL, \
+        stock INTEGER NOT NULL\
+    );";
+    let create_req = Request::post("/api/v1/db/testdb/query")
+        .header("X-Axiom-Key", &admin_token)
+        .header("Content-Type", "application/json")
+        .body(Body::from(serde_json::to_vec(&serde_json::json!({
+            "sql": create_sql
+        })).unwrap()))
+        .unwrap();
+    let create_res = create_app().oneshot(create_req).await.unwrap();
+    assert_eq!(create_res.status(), StatusCode::OK);
+
+    // 2. Insert batch rows
+    let insert_req = Request::post("/api/v1/db/testdb/items_crud/rows")
+        .header("X-Axiom-Key", &admin_token)
+        .header("Content-Type", "application/json")
+        .body(Body::from(serde_json::to_vec(&serde_json::json!({
+            "rows": [
+                {"name": "Item Alpha", "price": 10.0, "stock": 100},
+                {"name": "Item Beta", "price": 25.5, "stock": 50},
+                {"name": "Item Gamma", "price": 80.0, "stock": 10},
+                {"name": "Item Delta", "price": 150.0, "stock": 2}
+            ]
+        })).unwrap()))
+        .unwrap();
+    let insert_res = create_app().oneshot(insert_req).await.unwrap();
+    assert_eq!(insert_res.status(), StatusCode::OK);
+    let insert_body: Value = serde_json::from_slice(&axum::body::to_bytes(insert_res.into_body(), 65536).await.unwrap()).unwrap();
+    assert_eq!(insert_body["success"], true);
+
+    // 3. Query with limit and sorting (pagination)
+    let fetch_page1_req = Request::get("/api/v1/db/testdb/items_crud/rows?limit=2&sort=id&order=asc")
+        .header("X-Axiom-Key", &admin_token)
+        .body(Body::empty())
+        .unwrap();
+    let fetch_page1_res = create_app().oneshot(fetch_page1_req).await.unwrap();
+    assert_eq!(fetch_page1_res.status(), StatusCode::OK);
+    let page1_json: Value = serde_json::from_slice(&axum::body::to_bytes(fetch_page1_res.into_body(), 65536).await.unwrap()).unwrap();
+    assert_eq!(page1_json["success"], true);
+    let rows1 = page1_json["data"]["rows"].as_array().unwrap();
+    assert_eq!(rows1.len(), 2);
+    let next_cursor = page1_json["pagination"]["next_cursor"]
+        .as_str()
+        .or_else(|| page1_json["data"]["pagination"]["next_cursor"].as_str());
+    assert!(next_cursor.is_some());
+    let cursor_str = next_cursor.unwrap().to_string();
+
+    // Fetch page 2 using cursor
+    let fetch_page2_req = Request::get(format!("/api/v1/db/testdb/items_crud/rows?limit=2&cursor={}&sort=id&order=asc", cursor_str))
+        .header("X-Axiom-Key", &admin_token)
+        .body(Body::empty())
+        .unwrap();
+    let fetch_page2_res = create_app().oneshot(fetch_page2_req).await.unwrap();
+    assert_eq!(fetch_page2_res.status(), StatusCode::OK);
+
+    // 4. Query with filter (gte on price)
+    let filter_req = Request::get("/api/v1/db/testdb/items_crud/rows?filter=%7B%22price%22%3A%7B%22gte%22%3A50.0%7D%7D")
+        .header("X-Axiom-Key", &admin_token)
+        .body(Body::empty())
+        .unwrap();
+    let filter_res = create_app().oneshot(filter_req).await.unwrap();
+    assert_eq!(filter_res.status(), StatusCode::OK);
+    let filter_json: Value = serde_json::from_slice(&axum::body::to_bytes(filter_res.into_body(), 65536).await.unwrap()).unwrap();
+    let filtered_rows = filter_json["data"]["rows"].as_array().unwrap();
+    assert!(filtered_rows.iter().all(|r| r["price"].as_f64().unwrap() >= 50.0));
+
+    // 5. Update rows
+    let update_req = Request::patch("/api/v1/db/testdb/items_crud/rows")
+        .header("X-Axiom-Key", &admin_token)
+        .header("Content-Type", "application/json")
+        .body(Body::from(serde_json::to_vec(&serde_json::json!({
+            "filter": {"name": {"eq": "Item Alpha"}},
+            "update": {"stock": 199}
+        })).unwrap()))
+        .unwrap();
+    let update_res = create_app().oneshot(update_req).await.unwrap();
+    assert_eq!(update_res.status(), StatusCode::OK);
+
+    // 6. Delete rows
+    let delete_req = Request::delete("/api/v1/db/testdb/items_crud/rows")
+        .header("X-Axiom-Key", &admin_token)
+        .header("Content-Type", "application/json")
+        .body(Body::from(serde_json::to_vec(&serde_json::json!({
+            "filter": {"name": {"eq": "Item Delta"}}
+        })).unwrap()))
+        .unwrap();
+    let delete_res = create_app().oneshot(delete_req).await.unwrap();
+    assert_eq!(delete_res.status(), StatusCode::OK);
+
+    // 7. Dynamic Column Addition
+    let add_col_req = Request::post("/api/v1/db/testdb/items_crud/columns")
+        .header("X-Axiom-Key", &admin_token)
+        .header("Content-Type", "application/json")
+        .body(Body::from(serde_json::to_vec(&serde_json::json!({
+            "name": "barcode",
+            "data_type": "TEXT",
+            "nullable": true
+        })).unwrap()))
+        .unwrap();
+    let add_col_res = create_app().oneshot(add_col_req).await.unwrap();
+    assert_eq!(add_col_res.status(), StatusCode::OK);
+
+    // 8. Describe Table Schema
+    let schema_req = Request::get("/api/v1/db/testdb/items_crud/schema")
+        .header("X-Axiom-Key", &admin_token)
+        .body(Body::empty())
+        .unwrap();
+    let schema_res = create_app().oneshot(schema_req).await.unwrap();
+    assert_eq!(schema_res.status(), StatusCode::OK);
+    let schema_json: Value = serde_json::from_slice(&axum::body::to_bytes(schema_res.into_body(), 65536).await.unwrap()).unwrap();
+    let cols = schema_json["data"]["columns"].as_array().unwrap();
+    assert!(cols.iter().any(|c| c["name"] == "barcode"));
+
+    // 9. List databases
+    let list_dbs_req = Request::get("/api/v1/db/databases")
+        .header("X-Axiom-Key", &admin_token)
+        .body(Body::empty())
+        .unwrap();
+    let list_dbs_res = create_app().oneshot(list_dbs_req).await.unwrap();
+    assert_eq!(list_dbs_res.status(), StatusCode::OK);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  19. AST Mutation Defense & Unbounded Mutation Guardrails
+// ═══════════════════════════════════════════════════════════════════════════
+
+#[tokio::test]
+async fn db_ast_firewall_blocks_destructive_ddl_and_unbounded_mutation() {
+    ensure_metadata_store().await;
+    let admin_token = BASE64_STANDARD.encode("admin_key:secret_admin");
+
+    // Unbounded update (empty filter) must be rejected with 400 Bad Request
+    let unbounded_update_req = Request::patch("/api/v1/db/testdb/items/rows")
+        .header("X-Axiom-Key", &admin_token)
+        .header("Content-Type", "application/json")
+        .body(Body::from(serde_json::to_vec(&serde_json::json!({
+            "filter": {},
+            "update": {"stock": 0}
+        })).unwrap()))
+        .unwrap();
+    let update_res = create_app().oneshot(unbounded_update_req).await.unwrap();
+    assert_eq!(update_res.status(), StatusCode::BAD_REQUEST);
+
+    // Unbounded delete (empty filter) must be rejected with 400 Bad Request
+    let unbounded_delete_req = Request::delete("/api/v1/db/testdb/items/rows")
+        .header("X-Axiom-Key", &admin_token)
+        .header("Content-Type", "application/json")
+        .body(Body::from(serde_json::to_vec(&serde_json::json!({
+            "filter": {}
+        })).unwrap()))
+        .unwrap();
+    let delete_res = create_app().oneshot(unbounded_delete_req).await.unwrap();
+    assert_eq!(delete_res.status(), StatusCode::BAD_REQUEST);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  20. Granular Table-Level RBAC Enforcement over HTTP
+// ═══════════════════════════════════════════════════════════════════════════
+
+#[tokio::test]
+async fn db_rbac_fine_grained_table_level_authorization() {
+    ensure_test_items_table().await;
+    let reader_token = BASE64_STANDARD.encode("items_reader_key:secret_items_ro");
+
+    // Allowed: SELECT on items table
+    let allowed_req = Request::get("/api/v1/db/testdb/items/rows")
+        .header("X-Axiom-Key", &reader_token)
+        .body(Body::empty())
+        .unwrap();
+    let allowed_res = create_app().oneshot(allowed_req).await.unwrap();
+    assert_eq!(allowed_res.status(), StatusCode::OK);
+
+    // Forbidden: INSERT on items table with SELECT-only permission
+    let forbidden_insert_req = Request::post("/api/v1/db/testdb/items/rows")
+        .header("X-Axiom-Key", &reader_token)
+        .header("Content-Type", "application/json")
+        .body(Body::from(serde_json::to_vec(&serde_json::json!({
+            "rows": [{"name": "Malicious", "price": 0.0, "stock": 0}]
+        })).unwrap()))
+        .unwrap();
+    let forbidden_insert_res = create_app().oneshot(forbidden_insert_req).await.unwrap();
+    assert_eq!(forbidden_insert_res.status(), StatusCode::FORBIDDEN);
+
+    // Forbidden: Access to an ungranted table
+    let forbidden_table_req = Request::get("/api/v1/db/testdb/secret_orders/rows")
+        .header("X-Axiom-Key", &reader_token)
+        .body(Body::empty())
+        .unwrap();
+    let forbidden_table_res = create_app().oneshot(forbidden_table_req).await.unwrap();
+    assert_eq!(forbidden_table_res.status(), StatusCode::FORBIDDEN);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  21. Idempotency Engine Anti-Replay Verification
+// ═══════════════════════════════════════════════════════════════════════════
+
+#[tokio::test]
+async fn db_idempotency_key_replay_protection() {
+    ensure_metadata_store().await;
+    let admin_token = BASE64_STANDARD.encode("admin_key:secret_admin");
+    let idemp_key = "idemp-test-query-uuid-99999";
+
+    let query_payload = serde_json::json!({
+        "sql": "SELECT 1 as test_val;"
+    });
+
+    // 1st request with Idempotency-Key
+    let req1 = Request::post("/api/v1/db/testdb/query")
+        .header("X-Axiom-Key", &admin_token)
+        .header("Content-Type", "application/json")
+        .header("Idempotency-Key", idemp_key)
+        .body(Body::from(serde_json::to_vec(&query_payload).unwrap()))
+        .unwrap();
+    let res1 = create_app().oneshot(req1).await.unwrap();
+    assert_eq!(res1.status(), StatusCode::OK);
+    let bytes1 = axum::body::to_bytes(res1.into_body(), 65536).await.unwrap();
+
+    // 2nd request with same Idempotency-Key
+    let req2 = Request::post("/api/v1/db/testdb/query")
+        .header("X-Axiom-Key", &admin_token)
+        .header("Content-Type", "application/json")
+        .header("Idempotency-Key", idemp_key)
+        .body(Body::from(serde_json::to_vec(&query_payload).unwrap()))
+        .unwrap();
+    let res2 = create_app().oneshot(req2).await.unwrap();
+    assert_eq!(res2.status(), StatusCode::OK);
+    assert_eq!(res2.headers().get("x-idempotency-hit").and_then(|h| h.to_str().ok()), Some("true"));
+    let bytes2 = axum::body::to_bytes(res2.into_body(), 65536).await.unwrap();
+    assert_eq!(bytes1, bytes2);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  22. Admin API Control Plane End-to-End HTTP Lifecycle
+// ═══════════════════════════════════════════════════════════════════════════
+
+#[tokio::test]
+async fn admin_api_full_control_plane_lifecycle() {
+    ensure_metadata_store().await;
+    let _ = axiom_metadata::MetadataStore::create_user("super_admin_ops", "SecretP@ss12345!").await;
+
+    // 1. Admin Login
+    let login_req = Request::post("/admin/v1/auth/login")
+        .header("Content-Type", "application/json")
+        .body(Body::from(serde_json::to_vec(&serde_json::json!({
+            "username": "super_admin_ops",
+            "password": "SecretP@ss12345!"
+        })).unwrap()))
+        .unwrap();
+    let login_res = create_app().oneshot(login_req).await.unwrap();
+    assert_eq!(login_res.status(), StatusCode::OK);
+    let cookie_val = login_res.headers().get(axum::http::header::SET_COOKIE).unwrap().to_str().unwrap().to_string();
+    let login_json: Value = serde_json::from_slice(&axum::body::to_bytes(login_res.into_body(), 65536).await.unwrap()).unwrap();
+    let token = login_json["data"]["token"].as_str().unwrap().to_string();
+
+    // 2. Status Check
+    let status_req = Request::get("/admin/v1/status")
+        .header(axum::http::header::COOKIE, &cookie_val)
+        .body(Body::empty())
+        .unwrap();
+    let status_res = create_app().oneshot(status_req).await.unwrap();
+    assert_eq!(status_res.status(), StatusCode::OK);
+
+    // 3. Create Custom Role
+    let role_req = Request::post("/admin/v1/roles")
+        .header(axum::http::header::COOKIE, &cookie_val)
+        .header("Content-Type", "application/json")
+        .body(Body::from(serde_json::to_vec(&serde_json::json!({
+            "name": "auditor_role",
+            "description": "Compliance auditor",
+            "permissions": [
+                {"database": "testdb", "table_name": "*", "operations": ["SELECT"]}
+            ]
+        })).unwrap()))
+        .unwrap();
+    let role_res = create_app().oneshot(role_req).await.unwrap();
+    assert!(role_res.status() == StatusCode::OK || role_res.status() == StatusCode::CREATED);
+
+    // 4. List Roles
+    let list_roles_req = Request::get("/admin/v1/roles")
+        .header(axum::http::header::COOKIE, &cookie_val)
+        .body(Body::empty())
+        .unwrap();
+    let list_roles_res = create_app().oneshot(list_roles_req).await.unwrap();
+    assert_eq!(list_roles_res.status(), StatusCode::OK);
+    let roles_json: Value = serde_json::from_slice(&axum::body::to_bytes(list_roles_res.into_body(), 65536).await.unwrap()).unwrap();
+    let roles_list = roles_json["data"]["roles"]
+        .as_array()
+        .or_else(|| roles_json["data"].as_array())
+        .expect("roles array in response");
+    assert!(roles_list.iter().any(|r| r["name"] == "auditor_role"));
+
+    // 5. Create API Key
+    let key_req = Request::post("/admin/v1/keys")
+        .header(axum::http::header::COOKIE, &cookie_val)
+        .header("Content-Type", "application/json")
+        .body(Body::from(serde_json::to_vec(&serde_json::json!({
+            "name": "auditor_app_key",
+            "role": "auditor_role",
+            "rate_limit": 500
+        })).unwrap()))
+        .unwrap();
+    let key_res = create_app().oneshot(key_req).await.unwrap();
+    assert!(key_res.status() == StatusCode::OK || key_res.status() == StatusCode::CREATED);
+
+    // 6. Rotate API Key
+    let rotate_req = Request::post("/admin/v1/keys/auditor_app_key/rotate")
+        .header(axum::http::header::COOKIE, &cookie_val)
+        .body(Body::empty())
+        .unwrap();
+    let rotate_res = create_app().oneshot(rotate_req).await.unwrap();
+    assert_eq!(rotate_res.status(), StatusCode::OK);
+
+    // 7. Audit Log Check
+    let audit_req = Request::get("/admin/v1/audit")
+        .header(axum::http::header::COOKIE, &cookie_val)
+        .body(Body::empty())
+        .unwrap();
+    let audit_res = create_app().oneshot(audit_req).await.unwrap();
+    assert_eq!(audit_res.status(), StatusCode::OK);
+
+    // 8. Cache Flush and Stats
+    let flush_req = Request::post("/admin/v1/cache/flush")
+        .header(axum::http::header::COOKIE, &cookie_val)
+        .body(Body::empty())
+        .unwrap();
+    let flush_res = create_app().oneshot(flush_req).await.unwrap();
+    assert_eq!(flush_res.status(), StatusCode::OK);
+
+    let stats_req = Request::get("/admin/v1/cache/stats")
+        .header(axum::http::header::COOKIE, &cookie_val)
+        .body(Body::empty())
+        .unwrap();
+    let stats_res = create_app().oneshot(stats_req).await.unwrap();
+    assert_eq!(stats_res.status(), StatusCode::OK);
+
+    // 9. Delete Key and Role
+    let del_key_req = Request::delete("/admin/v1/keys/auditor_app_key")
+        .header(axum::http::header::COOKIE, &cookie_val)
+        .body(Body::empty())
+        .unwrap();
+    assert_eq!(create_app().oneshot(del_key_req).await.unwrap().status(), StatusCode::OK);
+
+    let del_role_req = Request::delete("/admin/v1/roles/auditor_role")
+        .header(axum::http::header::COOKIE, &cookie_val)
+        .body(Body::empty())
+        .unwrap();
+    assert_eq!(create_app().oneshot(del_role_req).await.unwrap().status(), StatusCode::OK);
+
+    // 10. Admin Logout
+    let logout_req = Request::post("/admin/v1/auth/logout")
+        .header(axum::http::header::COOKIE, &cookie_val)
+        .body(Body::empty())
+        .unwrap();
+    assert_eq!(create_app().oneshot(logout_req).await.unwrap().status(), StatusCode::OK);
+
+    // 11. Revoked Session Verification: Status call must now be rejected
+    let rejected_req = Request::get("/admin/v1/status")
+        .header(axum::http::header::COOKIE, format!("axiom_session={}", token))
+        .body(Body::empty())
+        .unwrap();
+    let rejected_res = create_app().oneshot(rejected_req).await.unwrap();
+    assert_eq!(rejected_res.status(), StatusCode::UNAUTHORIZED);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  23. Circuit Breaker Fail-Fast & Consecutive Failure Tripping
+// ═══════════════════════════════════════════════════════════════════════════
+
+#[tokio::test]
+async fn circuit_breaker_repeated_failure_tripping() {
+    ensure_metadata_store().await;
+    let admin_token = BASE64_STANDARD.encode("admin_key:secret_admin");
+
+    // Repeated failures on unreachable dead_db
+    for _ in 0..6 {
+        let req = Request::post("/api/v1/db/dead_db/query")
+            .header("X-Axiom-Key", &admin_token)
+            .header("Content-Type", "application/json")
+            .body(Body::from(serde_json::to_vec(&serde_json::json!({
+                "sql": "SELECT 1;"
+            })).unwrap()))
+            .unwrap();
+        let _ = create_app().oneshot(req).await;
+    }
+
+    // Now circuit breaker should be OPEN and return 503 SERVICE_UNAVAILABLE immediately
+    let fast_fail_req = Request::post("/api/v1/db/dead_db/query")
+        .header("X-Axiom-Key", &admin_token)
+        .header("Content-Type", "application/json")
+        .body(Body::from(serde_json::to_vec(&serde_json::json!({
+            "sql": "SELECT 1;"
+        })).unwrap()))
+        .unwrap();
+    let fast_fail_res = create_app().oneshot(fast_fail_req).await.unwrap();
+    assert_eq!(fast_fail_res.status(), StatusCode::SERVICE_UNAVAILABLE);
+    let body_json: Value = serde_json::from_slice(&axum::body::to_bytes(fast_fail_res.into_body(), 65536).await.unwrap()).unwrap();
+    assert_eq!(body_json["error"]["code"], "CIRCUIT_BREAKER_OPEN");
+}
+
 
 
 

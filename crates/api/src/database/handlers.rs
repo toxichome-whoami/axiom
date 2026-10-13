@@ -321,11 +321,28 @@ impl QueryExecutionPipeline {
             }
         }
 
-        let engine = DatabasePoolManager::get_engine(db_name)
-            .await
-            .ok_or_else(|| {
-                AxiomError::new("DB_NOT_FOUND", "Database not found", StatusCode::NOT_FOUND)
-            })?;
+        let engine = match DatabasePoolManager::get_engine(db_name).await {
+            Some(eng) => eng,
+            None => {
+                if DatabasePoolManager::is_db_configured(db_name) {
+                    if config.circuit_breaker.enabled {
+                        let mut count = CIRCUIT_FAILURES.entry(db_name.to_string()).or_insert(0);
+                        *count += 1;
+                    }
+                    return Err(AxiomError::new(
+                        "DATABASE_CONNECTION_FAILED",
+                        &format!("Failed to connect to database '{}'", db_name),
+                        StatusCode::SERVICE_UNAVAILABLE,
+                    ));
+                } else {
+                    return Err(AxiomError::new(
+                        "DB_NOT_FOUND",
+                        "Database not found",
+                        StatusCode::NOT_FOUND,
+                    ));
+                }
+            }
+        };
 
         let is_mutation_regex = MUTATION_RE.is_match(sql);
 
