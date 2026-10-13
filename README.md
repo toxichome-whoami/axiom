@@ -28,9 +28,10 @@ Download the binary. Write one config file. Run. No daemons, no sidecars, no run
 | **Single binary** | One statically-linked executable with an embedded Web UI and a local SQLite metadata store. Build dependencies only — nothing else to install, ever. |
 | **Any SQL engine** | PostgreSQL, MySQL/MariaDB, SQL Server, SQLite/Turso, ClickHouse — one API surface, one auth model, one response envelope. |
 | **Defense in depth** | WAF, rate limiting, BLAKE3 auth, RBAC, and an AST-level SQL firewall sit in front of every single request. |
+| **Native Blob Storage** | High-performance content-addressed object store with BLAKE3 deduplication, chunked multipart uploads, and time-bounded capability tickets. |
 | **Idempotent by design** | Retry any mutation safely with `Idempotency-Key`. Responses are cached for 24 h — no more double-writes on flaky networks. |
 | **Hot-reloadable metadata** | Keys, roles, and database connections change at runtime through the Admin API or Web UI. No restarts, no downtime. |
-| **MCP-native** | A first-class Model Context Protocol endpoint lets LLM agents query your databases under the same RBAC policy as everyone else. |
+| **MCP-native** | 15 Model Context Protocol tools let LLM agents query databases and manage blobs under the same RBAC policies as REST clients. |
 
 ## Quick Start
 
@@ -132,6 +133,36 @@ GET /api/v1/db/:alias/tables
 GET /api/v1/db/:alias/:table/schema
 ```
 
+### Blob Storage
+
+Native high-performance content-addressed object store under `/api/v1/blobs/:namespace`:
+
+```bash
+# Upload an object
+curl -X PUT "http://localhost:4500/api/v1/blobs/media/avatars/user_1.png" \
+  -H "X-Axiom-Key: $KEY" -H "Content-Type: image/png" \
+  --data-binary "@avatar.png"
+
+# Download an object (supports Range: bytes=0-1023)
+curl "http://localhost:4500/api/v1/blobs/media/avatars/user_1.png" \
+  -H "X-Axiom-Key: $KEY" -o downloaded.png
+
+# List objects with prefix and pagination
+curl "http://localhost:4500/api/v1/blobs/media?prefix=avatars/&limit=50" \
+  -H "X-Axiom-Key: $KEY"
+
+# Generate a pre-signed capability download ticket (zero auth needed by recipient)
+curl -X POST "http://localhost:4500/api/v1/blobs/media/ticket" \
+  -H "X-Axiom-Key: $KEY" -H "Content-Type: application/json" \
+  -d '{"key": "avatars/user_1.png", "operation": "READ", "ttl_seconds": 3600}'
+
+# Chunked / multipart uploads for large files
+POST   /api/v1/blobs/:namespace/uploads                 # Initialize upload
+PUT    /api/v1/blobs/:namespace/uploads/:id/parts/:num  # Upload part
+POST   /api/v1/blobs/:namespace/uploads/:id/complete    # Complete upload
+DELETE /api/v1/blobs/:namespace/uploads/:id             # Abort upload
+```
+
 ### Response envelope
 
 Identical shape on every endpoint:
@@ -166,6 +197,10 @@ All endpoints under `/admin/v1`, behind an active admin session. Everything here
 | `GET` | `/audit` | Structured query audit log |
 | `GET` / `POST` | `/cache/stats` · `/cache/flush` | Cache inspection and invalidation |
 | `GET` | `/health` | Full infrastructure health (uptime, DB status) |
+| `GET` / `POST` | `/blobs/namespaces` | List / manage blob namespaces |
+| `GET` / `POST` | `/blobs/stats` · `/blobs/scrub` | Blob storage telemetry & background integrity scrub |
+| `POST` | `/blobs/copy` · `/blobs/move` | Server-side blob copy or move operations |
+| `POST` | `/blobs/delete-prefix` | Bulk deletion of all blobs under a prefix |
 
 Setup wizard (first boot only): `GET/POST /admin/v1/setup/begin` → `/setup/account` → `/setup/database` → `/setup/complete`.
 
@@ -173,7 +208,9 @@ Setup wizard (first boot only): `GET/POST /admin/v1/setup/begin` → `/setup/acc
 
 `POST /mcp/v1` speaks JSON-RPC 2.0 (`initialize`, `tools/list`, `tools/call`, `resources/list`, `resources/read`) and reuses the same API-key auth and RBAC as the REST API — agents get exactly the permissions you grant them, nothing more.
 
-Tools: `axiom_list_services`, `axiom_list_tables`, `axiom_describe_table`, `axiom_query`, `axiom_insert`, `axiom_update`, `axiom_delete`, `axiom_raw_sql`.
+**15 built-in tools (accessible with or without `axiom_` prefix):**
+- **Database Tools (8):** `axiom_list_services`, `axiom_list_tables`, `axiom_describe_table`, `axiom_query`, `axiom_insert`, `axiom_update`, `axiom_delete`, `axiom_raw_sql`.
+- **Blob Storage Tools (7):** `axiom_list_blob_namespaces`, `axiom_list_blobs`, `axiom_get_blob_metadata`, `axiom_read_blob`, `axiom_write_blob`, `axiom_delete_blob`, `axiom_create_download_ticket`.
 
 ## Configuration
 
@@ -251,6 +288,19 @@ Config loads once at startup from `config.toml`. API keys and databases are mana
 Override log level without restarting: `RUST_LOG=axiom=debug ./axiom server run`
 
 </details>
+<details>
+<summary><b>[blob]</b></summary>
+
+| Key | Default | Notes |
+|-----|---------|-------|
+| `enabled` | `true` | Enable embedded high-performance content-addressed blob engine |
+| `path` | `"data/blobs"` | Base storage path for LSM metadata index and blob data |
+| `inline_max` | `"64kb"` | Payloads <= this threshold are stored inline in Fjall LSM index |
+| `max_object` | `"5gb"` | Hard ceiling on single blob upload size |
+| `verify_reads` | `false` | Re-verify BLAKE3 cryptographic checksums on every read |
+| `ticket_secret` | `"..."` | Secret seed used to sign time-bounded capability download tickets |
+
+</details>
 
 ## Supported Databases
 
@@ -313,14 +363,14 @@ Every request passes through the same fixed pipeline — the WAF fires first, an
 │             └─> RBAC (ArcSwap snapshot, zero DB calls on hot path)  │
 │                  └─> AST Firewall (sqlparser)                       │
 │                       └─> Circuit Breaker                           │
-│                            └─> Database Engine                      │
+│                            └─> Database Engine / Blob Storage       │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
 - **WAF** — blocks URIs over 2048 chars, null bytes (`%00`), path traversal (3× URL-decoded), SQL keywords in URL path/query, more than 50 query parameters, and bodies over `body_limit`.
-- **Auth** — secrets are BLAKE3-hashed and compared via an XOR accumulator with no early exit. Five failed attempts from one IP → automatic ban.
-- **RBAC** — `roles` + `permissions` are evaluated from an `ArcSwap<Metadata>` snapshot: zero database calls on the hot path, instant revocation.
-- **AST Firewall** — every statement is parsed by `sqlparser` before execution. DDL is blocked unless `dangerous_operations: true`; multi-statement injections and DENY-classified statements never reach a database.
+- **Auth** — secrets are BLAKE3-hashed and compared via an XOR accumulator with no early exit. Five failed attempts from one IP → automatic ban. Capability tickets for blobs verify cryptographic HMAC signatures.
+- **RBAC** — `roles` + `permissions` are evaluated from an `ArcSwap<Metadata>` snapshot: zero database calls on the hot path, instant revocation across both SQL databases and blob namespaces.
+- **AST Firewall** — every statement is parsed by `sqlparser` before execution. DDL is blocked unless `dangerous_operations: true`; multi-statement injections and DENY-classified statements never reach a database. Positional parameter tokenization safely preserves Postgres JSONB operators (`?|`, `?&`) and dollar-quoted strings (`$$...$$`).
 - **Headers** — every response carries `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Strict-Transport-Security: max-age=63072000; includeSubDomains; preload`, a locked-down `Content-Security-Policy`, and a per-request `X-Request-ID` UUID.
 
 ## Architecture
@@ -333,11 +383,12 @@ axiom/
 │   ├── policy/     # PolicyEngine::evaluate — the single RBAC checkpoint
 │   ├── cache/      # Unified L1 (DashMap) + L2 (SQLite AOF) cache engine
 │   ├── db/         # DatabasePoolManager, five SQL engine implementations
+│   ├── blob/       # Content-addressed Blob Storage Engine (LSM index, chunked uploads)
 │   ├── api/        # Axum routes, all middleware, Web UI embedding, MCP handler
 │   ├── cli/        # axiom CLI binary (clap)
 │   └── server/     # Entry point: Tokio runtime, socket tuning, server_runner
 ├── ui/             # Web UI source (Vite + TypeScript + Tailwind)
-├── tests/          # Integration and security test suite (37 tests)
+├── tests/          # Integration and security test suite (46 tests)
 ├── benches/        # Criterion benchmark suite
 ├── config.example.toml
 └── Cargo.toml      # Workspace root
@@ -349,7 +400,7 @@ axiom/
 cargo build              # debug build
 cargo run                # run the debug binary
 cargo build --release    # optimized: LTO, codegen-units=1, stripped
-cargo test --workspace   # all 153 tests
+cargo test --workspace   # all 177+ tests across 9 crates
 cargo clippy             # lint
 ```
 

@@ -44,16 +44,18 @@ Session tokens (Web UI) are 32-character random strings validated via `MetadataS
 
 ## RBAC
 
-`PolicyEngine::evaluate(auth, database, table, operation)` is the single authorization checkpoint.
+`PolicyEngine::evaluate(auth, database, table, operation)` is the single authorization checkpoint for SQL database operations, and `PolicyEngine::evaluate_blob(auth, namespace, key, operation)` guards all blob storage endpoints.
 
 **Priority order:**
 1. `is_session = true` (Admin UI) → bypass all checks
 2. `auth.permissions` non-empty → evaluate granular RBAC rules
 3. Fallback → evaluate legacy `db_scope` and `mode` (readonly / writeonly / readwrite)
 
-Granular RBAC rule: a permission grants `operations` (any of `SELECT`, `INSERT`, `UPDATE`, `DELETE`, `*`) on a `(database, table)` pair. Both fields support `"*"` as wildcard.
+**Granular RBAC rules:**
+- **Database Rules:** A permission grants operations (`SELECT`, `INSERT`, `UPDATE`, `DELETE`, `*`) on a `(database, table)` pair. Both fields support `"*"` as wildcard.
+- **Blob Storage Rules:** A permission grants operations (`READ`, `WRITE`, `DELETE`, `*`) on a `(namespace, prefix)` pair. E.g., `namespace = "media"`, `prefix = "avatars/*"`.
 
-Permissions are loaded from `ArcSwap<MetadataSnapshot>` — no database calls per request. Snapshot refreshes every `reload_interval` seconds. **Permission revocations take effect on the next snapshot refresh** (max 30 seconds delay by default), but **cache hits do not bypass RBAC** — the result cache lookup runs after `PolicyEngine::evaluate`.
+Permissions are loaded from `ArcSwap<MetadataSnapshot>` — zero database calls per request. The snapshot refreshes every `reload_interval` seconds. **Permission revocations take effect on the next snapshot refresh** (max 30 seconds delay by default), but **cache hits do not bypass RBAC** — the result cache lookup runs after `PolicyEngine::evaluate`.
 
 ---
 
@@ -129,12 +131,24 @@ HSTS is sent even over plain HTTP. A reverse proxy handling HTTPS termination wi
 
 ---
 
-## SQL Injection Prevention
+## SQL Injection Prevention & Query Safety
 
-- Parameterized queries throughout: all DB engines bind parameters using driver-native binding (never string interpolation)
-- Table and column names from API requests are passed through `sanitize_ident()` — only alphanumeric, `_`, and `.` characters are permitted; everything else is rejected
-- Cursor values are parameterized (`WHERE col > ?`), not interpolated
-- Filter builder generates parameterized WHERE clauses — operator allow-listing prevents unknown operators from reaching SQL
+- **Parameterized Execution:** All database engines bind parameters using driver-native positional bindings (`$1`, `?`, `@P1`) — never string interpolation.
+- **Dialect Placeholder Tokenizer:** `format_postgres_placeholders` uses a stateful character parser that preserves PostgreSQL JSONB operators (`?|`, `?&`), literal question marks inside single/double quotes, comments, and dollar-quoted strings (`$$...$$`, `$tag$...$tag$`).
+- **Identifier Sanitization:** Table and column names from API requests are passed through `sanitize_ident()`. Only alphanumeric and underscore characters are permitted.
+- **Empty / Non-Alphanumeric Column Guardrails:** `construct_insert`, `construct_update`, `insert_rows`, and `update_rows` validate that column sets are non-empty after identifier sanitization, rejecting malformed requests with `400 Bad Request` instead of generating invalid SQL syntax.
+- **Cursor Parameterization:** Keyset pagination cursor values are parameterized (`WHERE col > ?`), never concatenated.
+- **Filter Builder:** Strict operator allow-listing (`$eq`, `$ne`, `$gt`, `$gte`, `$lt`, `$lte`, `$in`, `$nin`, `$like`, `$and`, `$or`, `$not`, `$null`) prevents arbitrary syntax injection.
+
+---
+
+## Blob Storage Security
+
+- **Cryptographic Capability Tickets:** Pre-signed download tickets use time-bounded HMAC-SHA256 signatures with expiration timestamps. Public downloads via `?ticket=<token>` grant scoped access without exposing the API key.
+- **BLAKE3 Content Addressing:** Every object payload is indexed by its BLAKE3 cryptographic hash. Background scrubbing periodically re-verifies on-disk files against the database to detect bit rot or unauthorized tampering.
+- **Compare-And-Swap (CAS):** PUT requests support conditional `If-Match` headers with ETags to prevent concurrent write clobbering.
+- **Path Traversal & Prefix Protection:** Object keys are sanitized against directory traversal sequences (`../`). Prefix copy/move operations strictly prevent self-nesting infinite recursion loops.
+- **Payload Size Caps:** Hard limits on maximum object size (`max_object`, default 5GB) and chunk sizes protect against resource exhaustion. MCP read tools cap payloads at 5MB to prevent LLM context overflows.
 
 ---
 

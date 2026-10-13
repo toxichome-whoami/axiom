@@ -42,24 +42,32 @@ Auth Middleware (auth.rs)
   ▼
 Axum Route Handler
   │
-  ├─ PolicyEngine::evaluate(auth, database, table, operation)
-  │    Denies by default. Checks admin session → RBAC permissions → legacy db_scope/mode.
-  │
-  ├─ QueryExecutionPipeline::run_query (database/query endpoints)
-  │    1. Circuit breaker check (CIRCUIT_FAILURES DashMap per alias)
-  │    2. Engine acquire from DatabasePoolManager
-  │    3. Mutation heuristic regex (MUTATION_RE)
-  │    4. Cache key compute (SHA-256 over alias+sql+params)
-  │    5. AST cache lookup → if hit: PolicyEngine::evaluate, skip parse
+  ├─ SQL Data API (/api/v1/db/*)
+  │    1. PolicyEngine::evaluate(auth, database, table, operation)
+  │    2. Circuit breaker check (CIRCUIT_FAILURES DashMap per alias)
+  │    3. Engine acquire from DatabasePoolManager
+  │    4. Mutation heuristic regex (MUTATION_RE)
+  │    5. Cache key compute (SHA-256 over alias+sql+params)
+  │    6. AST cache lookup → if hit: PolicyEngine::evaluate, skip parse
   │       AST cache miss → sqlparser parse, PolicyEngine::evaluate, cache AST
-  │    6. Blacklist check (query_blacklist from db config)
-  │    7. Result cache lookup (DashMap) — AFTER RBAC
-  │    8. DB engine execute (parameterized)
-  │    9. Circuit breaker reset on success / increment on failure
-  │    10. Result cache store
+  │    7. Blacklist check (query_blacklist from db config)
+  │    8. Result cache lookup (DashMap) — AFTER RBAC
+  │    9. DB engine execute (parameterized positional bindings, JSONB & dollar quotes preserved)
+  │    10. Circuit breaker reset on success / increment on failure
+  │    11. Result cache store (with differentiated negative_cache_ttl for empty results)
+  │
+  ├─ Blob Storage API (/api/v1/blobs/*)
+  │    1. Auth validation (X-Axiom-Key or ?ticket= HMAC token)
+  │    2. PolicyEngine::evaluate_blob(auth, namespace, key, operation)
+  │    3. Key sanitization (path traversal & prefix recursion prevention)
+  │    4. BlobEngine operations:
+  │       - Inline payloads (<= 64KB) read/write directly to LSM index (Fjall)
+  │       - External payloads stream to disk with BLAKE3 checksum verification
+  │       - Multipart uploads assembled and sealed on completion
+  │       - HTTP Range requests (206 Partial Content) & CAS (If-Match)
   │
   └─ Response
-       JSON envelope + security headers
+       JSON envelope or binary stream + security headers
 ```
 
 ---
@@ -85,9 +93,10 @@ axiom (server binary)
   ├── axiom-api
   │     ├── axiom-core      (AxiomError, ConfigManager, AuthContext, size_parser)
   │     ├── axiom-metadata  (MetadataStore, ArcSwap snapshot, audit log)
-  │     ├── axiom-policy    (PolicyEngine::evaluate)
-  │     ├── axiom-cache     (CacheEngine L1+L2)
-  │     └── axiom-db        (DatabasePoolManager, 5 engines)
+  │     ├── axiom-policy    (PolicyEngine::evaluate, PolicyEngine::evaluate_blob)
+  │     ├── axiom-cache     (CacheEngine L1+L2, LRU eviction, TTL sweep)
+  │     ├── axiom-db        (DatabasePoolManager, 5 SQL engines)
+  │     └── axiom-blob      (BlobEngine, LSM index, BLAKE3 addressing, chunk assembly)
   └── axiom-cli
         └── axiom-core
 ```
@@ -135,6 +144,7 @@ Three use-cases share a single `CacheEngine`:
 | Use-case | Key prefix | TTL source |
 |----------|-----------|------------|
 | SQL result cache | `q:` | `cache.query_results_ttl` |
+| Negative caching (empty SQL results) | `q:` | `cache.negative_cache_ttl` |
 | Idempotency responses | `idemp:` | `cache.idempotency_ttl` |
 | Rate limit counters | `rl:ip:`, `rl:key:` | `rate_limit.window` |
 

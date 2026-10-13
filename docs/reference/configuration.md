@@ -86,6 +86,7 @@ Rate limits also apply per API key using `rate_limit_override` from the key reco
 | `default_ttl` | int | `60` | Default cache TTL (seconds). |
 | `query_cache` | bool | `true` | Cache parsed SQL ASTs. |
 | `query_results_ttl` | int | `5` | SQL row result cache TTL (seconds). |
+| `negative_cache_ttl` | int | `5` | TTL for empty / zero-row SQL results (seconds) to prevent cache pollution and absorb bursts on nonexistent entities. |
 | `idempotency_ttl` | int | `86400` | Idempotency key retention (seconds). Default = 24 h. |
 | `response_cache_ttl` | int | `30` | Response cache TTL for cacheable requests (seconds). |
 
@@ -101,6 +102,21 @@ Rate limits also apply per API key using `rate_limit_override` from the key reco
 | `timeout` | int | `30` | Seconds to wait in OPEN state before attempting HALF-OPEN. |
 
 Circuit state is tracked per database alias in memory. Resets on server restart.
+
+---
+
+## `[blob]`
+
+Axiom includes an embedded content-addressed object store with an LSM metadata index, BLAKE3 checksums, inline micro-object optimization, and chunked multipart uploads.
+
+| Key | Type | Default | Notes |
+|-----|------|---------|-------|
+| `enabled` | bool | `true` | Master toggle for blob storage endpoints (`/api/v1/blobs`). |
+| `path` | string | `"data/blobs"` | Base storage directory for the Fjall LSM index and blob files. |
+| `inline_max` | string | `"64kb"` | Payloads `<=` this size are stored inline inside the LSM database. Accepts size strings (`"64kb"`, `"128kb"`). |
+| `max_object` | string | `"5gb"` | Hard cap on maximum single blob upload size. Accepts size strings (`"1gb"`, `"5gb"`). |
+| `verify_reads` | bool | `false` | When true, re-computes BLAKE3 hash on every read operation to detect bit rot. |
+| `ticket_secret` | string | `"..."` | Secret key used to HMAC-sign pre-signed capability download tickets. Change in production. |
 
 ---
 

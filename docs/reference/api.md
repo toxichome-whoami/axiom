@@ -163,6 +163,165 @@ Returns column definitions (name, type, nullable, primary key) and foreign key r
 
 ---
 
+## Blob Storage API — `/api/v1/blobs`
+
+Native high-performance content-addressed object store under `/api/v1/blobs/:namespace`. All endpoints require `X-Axiom-Key` or a valid download ticket token.
+
+### Put / Upload Blob
+
+```
+PUT /api/v1/blobs/:namespace/*key
+```
+
+Stores or replaces a blob under `:namespace` with the object path `*key`.
+
+**Request Headers:**
+- `Content-Type`: MIME type (default `application/octet-stream`)
+- `X-Axiom-TTL`: Optional TTL in seconds for automatic expiration
+- `If-Match`: Optional ETag / BLAKE3 hash for atomic CAS (Compare-And-Swap) updates
+
+**Request Body:** Raw binary payload. Payloads `<= 64 KB` (configurable via `inline_max`) are stored inline within the LSM index for near-instant access; larger payloads stream directly to disk.
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "namespace": "media",
+    "key": "avatars/alice.png",
+    "size": 42100,
+    "hash": "0123456789abcdef...",
+    "content_type": "image/png",
+    "etag": "\"0123456789abcdef...\""
+  },
+  "error": null
+}
+```
+
+### Get / Download Blob
+
+```
+GET /api/v1/blobs/:namespace/*key
+```
+
+Retrieves the blob content.
+
+**Request Headers:**
+- `Range`: Standard HTTP byte ranges, e.g. `bytes=0-1023` or `bytes=1000-` (returns `206 Partial Content`)
+- `If-None-Match`: Returns `304 Not Modified` if hash matches
+
+**Query Parameters:**
+- `ticket`: Optional pre-signed capability token. When a valid ticket is supplied in the query string, download is authorized without requiring any `X-Axiom-Key` header.
+
+**Response Headers:**
+- `Content-Type`: Saved MIME type
+- `Content-Length`: Size or range slice length
+- `ETag`: `"<blake3-hex>"`
+- `Accept-Ranges`: `bytes`
+- `Content-Range`: `bytes 0-1023/42100` (on range requests)
+
+### Head / Inspect Blob
+
+```
+HEAD /api/v1/blobs/:namespace/*key
+```
+
+Returns metadata headers without streaming the body. Useful for checking existence, size, and caching state.
+
+### Delete Blob
+
+```
+DELETE /api/v1/blobs/:namespace/*key
+```
+
+Removes the object metadata from the LSM index and queues the backing payload file for cleanup.
+
+### List Blobs
+
+```
+GET /api/v1/blobs/:namespace?prefix=<prefix>&limit=50&cursor=<token>
+```
+
+Lists stored objects in a namespace with keyset pagination.
+
+**Query Parameters:**
+- `prefix`: Filter keys beginning with prefix (e.g. `docs/` or `logs/2026/`)
+- `limit`: Number of items (default 50, max 500)
+- `cursor`: Next page pagination cursor
+
+**Response `data`:**
+```json
+{
+  "items": [
+    {
+      "key": "docs/architecture.pdf",
+      "size": 1048576,
+      "content_type": "application/pdf",
+      "hash": "...",
+      "created_at": 1728000000
+    }
+  ],
+  "next_cursor": "docs/architecture.pdf"
+}
+```
+
+### Create Download Ticket
+
+```
+POST /api/v1/blobs/:namespace/ticket
+```
+
+Generates a time-bounded HMAC capability download ticket. The generated ticket URL allows browser downloads, external clients, or temporary users to fetch the object without possessing an API key.
+
+**Body:**
+```json
+{
+  "key": "reports/q3_summary.pdf",
+  "operation": "READ",
+  "ttl_seconds": 3600
+}
+```
+
+**Response `data`:**
+```json
+{
+  "ticket": "eyJhbGciOi...",
+  "url": "http://localhost:4500/api/v1/blobs/media/reports/q3_summary.pdf?ticket=eyJhbGciOi...",
+  "expires_at": 1728003600
+}
+```
+
+### Chunked / Multipart Uploads
+
+For large files, streaming transfers, or unreliable connections:
+
+1. **Initiate Upload:**
+   ```
+   POST /api/v1/blobs/:namespace/uploads
+   ```
+   Body: `{"key": "videos/raw.mp4", "content_type": "video/mp4"}`  
+   Response: `{"upload_id": "<uuid>"}`
+
+2. **Upload Part:**
+   ```
+   PUT /api/v1/blobs/:namespace/uploads/:upload_id/parts/:part_number
+   ```
+   Body: Binary chunk payload (`part_number` is 1-indexed).
+
+3. **Complete Upload:**
+   ```
+   POST /api/v1/blobs/:namespace/uploads/:upload_id/complete
+   ```
+   Stitches chunks together, computes BLAKE3 checksum, indexes object, and finalizes storage.
+
+4. **Abort Upload:**
+   ```
+   DELETE /api/v1/blobs/:namespace/uploads/:upload_id
+   ```
+   Cancels transfer and purges temporary uploaded chunks.
+
+---
+
 ## Core Endpoints
 
 ```
@@ -227,6 +386,22 @@ DELETE /admin/v1/databases/:alias
 POST   /admin/v1/databases/test-url    {"url":"postgres://..."}
 ```
 
+### Blob Storage Admin
+
+```
+GET    /admin/v1/blobs/stats                          # Storage telemetry (blob count, bytes, inline/disk)
+POST   /admin/v1/blobs/scrub                          # Background integrity scrub (verifies BLAKE3 hashes)
+POST   /admin/v1/blobs/sweep                          # Force immediate cleanup of TTL-expired objects
+GET    /admin/v1/blobs/namespaces                     # List all registered namespaces
+POST   /admin/v1/blobs/namespaces                     # Create namespace {"name":"...","quota_bytes":...}
+PATCH  /admin/v1/blobs/namespaces/:namespace          # Update namespace quota or limits
+DELETE /admin/v1/blobs/namespaces/:namespace          # Delete namespace
+POST   /admin/v1/blobs/copy                           # Copy {"src_ns":"...","src_key":"...","dest_ns":"...","dest_key":"..."}
+POST   /admin/v1/blobs/move                           # Move {"src_ns":"...","src_key":"...","dest_ns":"...","dest_key":"..."}
+POST   /admin/v1/blobs/delete-prefix                  # Bulk delete {"namespace":"...","prefix":"..."}
+POST   /admin/v1/blobs/verify/:namespace/*key         # Verify checksum of a single stored blob
+```
+
 ### Operations
 
 ```
@@ -248,20 +423,46 @@ GET  /admin/v1/users
 POST /mcp/v1
 ```
 
-JSON-RPC 2.0. Requires API key auth.
+JSON-RPC 2.0 endpoint for LLM agents. Reuses the identical API-key authentication (`X-Axiom-Key`) and granular RBAC policies as the REST API.
 
-Supported methods:
+Supported JSON-RPC methods:
 
 | Method | Description |
 |--------|-------------|
-| `initialize` | Handshake, returns protocol version `2024-11-05` |
-| `tools/list` | Lists available tools |
-| `tools/call` | Execute a named tool |
-| `resources/list` | List databases as resources |
-| `resources/read` | Read tables from a database resource |
+| `initialize` | Handshake, returns protocol version `2024-11-05` and server capabilities |
+| `notifications/initialized` | Client confirmation notification |
+| `ping` | Health ping, returns `{}` |
+| `tools/list` | Returns the catalog of 15 available tools filtered by caller's RBAC scope |
+| `tools/call` | Executes a named tool with provided parameters |
+| `resources/list` | Lists databases and namespaces as inspectable resources |
+| `resources/read` | Reads schemas or metadata from a resource URI |
 
-Available tools (also accessible without `axiom_` prefix):
-`axiom_list_services`, `axiom_list_tables`, `axiom_describe_table`, `axiom_query`, `axiom_insert`, `axiom_update`, `axiom_delete`, `axiom_raw_sql`.
+### Available MCP Tools (15)
+
+All tools are accessible with or without the `axiom_` prefix:
+
+#### Database Tools (8)
+| Tool | Description | Key Parameters |
+|------|-------------|----------------|
+| `axiom_list_services` | Lists all database services accessible to the caller | — |
+| `axiom_list_tables` | Lists tables in a database with pagination support | `database` (req), `cursor`, `limit` |
+| `axiom_describe_table` | Returns table schema: columns, types, nullability, PKs, FKs | `database` (req), `table` (req) |
+| `axiom_query` | Structured SELECT query with JSON filters and sorting | `database`, `table`, `filter`, `sort`, `order`, `limit`, `cursor` |
+| `axiom_insert` | Parameterized single or batch row insertion | `database`, `table`, `row` or `rows` |
+| `axiom_update` | Updates rows matching required filter (guardrail: empty filter rejected) | `database`, `table`, `filter` (req), `data` (req) |
+| `axiom_delete` | Deletes rows matching required filter (guardrail: empty filter rejected) | `database`, `table`, `filter` (req) |
+| `axiom_raw_sql` | Executes raw SQL (AST firewall inspected, parameter bound) | `database`, `sql` (req), `params` |
+
+#### Blob Storage Tools (7)
+| Tool | Description | Key Parameters |
+|------|-------------|----------------|
+| `axiom_list_blob_namespaces` | Lists blob storage namespaces authorized under RBAC | — |
+| `axiom_list_blobs` | Lists objects in a namespace with prefix filtering and pagination | `namespace` (req), `prefix`, `cursor`, `limit` |
+| `axiom_get_blob_metadata` | Retrieves blob metadata (size, MIME, BLAKE3 hash, tier) without payload | `namespace` (req), `key` (req) |
+| `axiom_read_blob` | Reads blob contents into agent context (guardrail: max 5MB cap) | `namespace` (req), `key` (req), `encoding` (`utf8`/`base64`), `max_bytes` |
+| `axiom_write_blob` | Stores or overwrites a blob with text or base64 payload | `namespace`, `key`, `content`, `encoding`, `content_type`, `ttl_seconds` |
+| `axiom_delete_blob` | Deletes an object key from a namespace | `namespace` (req), `key` (req) |
+| `axiom_create_download_ticket` | Generates a time-bounded pre-signed capability download ticket URL | `namespace` (req), `key` (req), `operation` (`READ`/`WRITE`), `ttl_seconds` |
 
 ---
 
@@ -271,16 +472,22 @@ Available tools (also accessible without `axiom_` prefix):
 |------|------|-------|
 | `AUTH_INVALID` | 401 | Missing, malformed, or expired API key |
 | `AUTH_FORBIDDEN` | 403 | Key exists but lacks permission |
-| `AUTH_SCOPE_DENIED` | 403 | Key lacks access to the requested database |
+| `AUTH_SCOPE_DENIED` | 403 | Key lacks access to the requested database or namespace |
 | `RATE_LIMIT_EXCEEDED` | 429 | IP or key throttle hit |
-| `BANNED` | 403 | IP auto-banned after repeated failures |
-| `DB_NOT_FOUND` | 404 | Alias not registered |
-| `QUERY_TIMEOUT` | 504 | Query exceeded timeout |
-| `CIRCUIT_OPEN` | 503 | DB circuit breaker tripped |
+| `BANNED` | 403 | IP or key auto-banned after repeated failures |
+| `DB_NOT_FOUND` | 404 | Database alias not registered |
+| `QUERY_TIMEOUT` | 504 | Query exceeded execution timeout |
+| `CIRCUIT_OPEN` | 503 | Database circuit breaker tripped (backend unresponsive) |
 | `WAF_URI_TOO_LONG` | 414 | URI > 2048 chars |
-| `WAF_BODY_TOO_LARGE` | 413 | Body > `body_limit` |
-| `WAF_PATH_TRAVERSAL` | 400 | `..` detected after URL decode |
-| `WAF_SQL_INJECTION` | 400 | SQL keyword in URL path/query |
-| `AST_PARSE_FAILED` | 400 | SQL failed AST validation |
-| `BAD_REQUEST` | 400 | Malformed request body |
+| `WAF_BODY_TOO_LARGE` | 413 | Body exceeds `server.body_limit` |
+| `WAF_PATH_TRAVERSAL` | 400 | `..` detected after URL decode (up to 3x) |
+| `WAF_SQL_INJECTION` | 400 | SQL keyword detected in URL path or query string |
+| `AST_PARSE_FAILED` | 400 | SQL failed AST validation or parser inspection |
+| `BAD_REQUEST` | 400 | Malformed request body or missing mandatory fields |
 | `NOT_FOUND` | 404 | Route does not exist |
+| `BLOB_NOT_FOUND` | 404 | Requested object key does not exist in namespace |
+| `BLOB_INVALID_KEY` | 400 | Key contains invalid characters, control codes, or illegal prefix nesting |
+| `BLOB_QUOTA_EXCEEDED` | 413 | Namespace storage quota exceeded |
+| `BLOB_TICKET_EXPIRED` | 403 | Pre-signed download capability ticket is expired or invalid |
+| `BLOB_CORRUPTED` | 500 | Checksum mismatch detected during blob integrity verification |
+| `INVALID_RANGE` | 416 | Requested HTTP byte range is unsatisfiable |
