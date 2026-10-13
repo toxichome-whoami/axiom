@@ -321,11 +321,15 @@ Usage: axiom [OPTIONS] [COMMAND]
 
 Commands:
   server    Start the gateway daemon
+  login     Log in to an admin account and save session token
+  logout    Log out and clear saved session token
+  setup     Run the first-time setup wizard (interactive or step-by-step)
   user      Manage human admin accounts (direct DB access)
   key       Manage API keys (via Admin API)
   role      Manage RBAC roles (via Admin API)
-  db        Manage database connections (via Admin API)
-  cache     Inspect cache (via Admin API)
+  db        Manage databases, execute SQL, inspect schemas, and query/mutate data
+  blob      Manage blob storage namespaces, objects, transfers, and tickets
+  cache     Inspect and flush cache (via Admin API)
   audit     Query audit logs
   reload    Hot-reload metadata
   health    Check server health
@@ -336,19 +340,26 @@ Commands:
 
 Options:
   -u, --url <URL>  Server base URL [default: http://127.0.0.1:4500]
-  -k, --key <KEY>  Admin API key
+  -k, --key <KEY>  Admin API key or token (falls back to saved session)
       --json       JSON output
       --jsonl      JSONL output
 ```
 
 ```bash
-axiom config init                        # create config.toml
-axiom config to-env -i config.toml       # export to .env
-axiom key create -n app -r readonly      # create API key
-axiom db add -a mydb -u postgres://...   # register database
-axiom db test-url postgres://...         # probe before registering
-axiom benchmark -r 1000 -c 20            # HTTP pipeline benchmark
-axiom user add ops_admin                 # create admin user (prompts for password)
+axiom login -u admin                           # authenticate & store session token
+axiom setup                                    # interactive first-time setup wizard
+axiom config init                              # create config.toml
+axiom config to-env -i config.toml             # export to .env
+axiom key create -n app -r readonly            # create API key
+axiom db add -a mydb -u postgres://...         # register database
+axiom db query mydb "SELECT * FROM users"      # execute SQL query
+axiom db rows mydb users --limit 20            # query and filter rows
+axiom blob ns create media --quota 10gb        # create blob namespace
+axiom blob put media avatar.png -f ./pic.png   # upload blob object
+axiom blob get media avatar.png -o ./out.png   # download blob object
+axiom blob ticket media avatar.png             # generate presigned capability ticket
+axiom benchmark -r 1000 -c 20                  # HTTP pipeline benchmark
+axiom user add ops_admin                       # create admin user (prompts for password)
 ```
 
 ## Security
