@@ -276,8 +276,8 @@ pub enum DbCommands {
     Add {
         #[arg(short, long, help = "Database alias")]
         alias: String,
-        #[arg(short, long, help = "Database connection URL")]
-        url: String,
+        #[arg(long = "conn", alias = "connection-url", help = "Database connection URL (e.g. postgres://..., sqlite://...)")]
+        connection_url: String,
         #[arg(
             short,
             long,
@@ -358,9 +358,11 @@ pub enum DbCommands {
         alias: String,
         #[arg(help = "Table name")]
         table: String,
-        #[arg(short, long, help = r#"JSON object for row to insert, e.g. '{"name":"Alice","age":30}'"#)]
+        #[arg(help = r#"JSON object or array to insert, e.g. '{"name":"Alice"}'"#)]
+        data: Option<String>,
+        #[arg(short, long, help = r#"JSON object for row to insert"#)]
         row: Option<String>,
-        #[arg(long, help = r#"JSON array of rows to insert, e.g. '[{"name":"Alice"},{"name":"Bob"}]'"#)]
+        #[arg(long, help = r#"JSON array of rows to insert"#)]
         rows: Option<String>,
     },
     /// Update row(s) matching filter in a database table
@@ -369,9 +371,9 @@ pub enum DbCommands {
         alias: String,
         #[arg(help = "Table name")]
         table: String,
-        #[arg(short, long, help = r#"JSON filter condition, e.g. '{"id":{"eq":1}}'"#)]
+        #[arg(help = r#"JSON filter condition, e.g. '{"id":{"eq":1}}'"#)]
         filter: String,
-        #[arg(short, long, help = r#"JSON update values, e.g. '{"status":"inactive"}'"#)]
+        #[arg(help = r#"JSON update values, e.g. '{"status":"inactive"}'"#)]
         update: String,
     },
     /// Delete row(s) matching filter in a database table
@@ -380,7 +382,7 @@ pub enum DbCommands {
         alias: String,
         #[arg(help = "Table name")]
         table: String,
-        #[arg(short, long, help = r#"JSON filter condition, e.g. '{"id":{"eq":1}}'"#)]
+        #[arg(help = r#"JSON filter condition, e.g. '{"id":{"eq":1}}'"#)]
         filter: String,
     },
     /// Add a new column to a database table
@@ -389,9 +391,9 @@ pub enum DbCommands {
         alias: String,
         #[arg(help = "Table name")]
         table: String,
-        #[arg(short, long, help = "Column name")]
+        #[arg(help = "Column name")]
         column: String,
-        #[arg(short, long, help = "Column data type (e.g. TEXT, INTEGER, VARCHAR(255))")]
+        #[arg(help = "Column data type (e.g. TEXT, INTEGER, VARCHAR(255))")]
         data_type: String,
         #[arg(long, help = "Allow null values")]
         nullable: bool,
@@ -428,8 +430,8 @@ pub enum BlobCommands {
     Put {
         #[arg(help = "Storage namespace")]
         namespace: String,
-        #[arg(help = "Object key (path)")]
-        key: String,
+        #[arg(value_name = "KEY", help = "Object key (path)")]
+        object_key: String,
         #[arg(help = "Path to local file to upload (or '-' for stdin)")]
         file: String,
         #[arg(short = 't', long, help = "MIME Content-Type (e.g. application/json, image/png)")]
@@ -441,8 +443,8 @@ pub enum BlobCommands {
     Get {
         #[arg(help = "Storage namespace")]
         namespace: String,
-        #[arg(help = "Object key (path)")]
-        key: String,
+        #[arg(value_name = "KEY", help = "Object key (path)")]
+        object_key: String,
         #[arg(short, long, help = "Output file path (or '-' for stdout). Defaults to key filename")]
         output: Option<String>,
         #[arg(long, help = "Capability ticket signature for pre-signed download")]
@@ -452,15 +454,15 @@ pub enum BlobCommands {
     Head {
         #[arg(help = "Storage namespace")]
         namespace: String,
-        #[arg(help = "Object key (path)")]
-        key: String,
+        #[arg(value_name = "KEY", help = "Object key (path)")]
+        object_key: String,
     },
     /// Delete an object from a namespace
     Delete {
         #[arg(help = "Storage namespace")]
         namespace: String,
-        #[arg(help = "Object key (path)")]
-        key: String,
+        #[arg(value_name = "KEY", help = "Object key (path)")]
+        object_key: String,
     },
     /// Copy an object or directory prefix
     Copy {
@@ -499,15 +501,15 @@ pub enum BlobCommands {
     Verify {
         #[arg(help = "Storage namespace")]
         namespace: String,
-        #[arg(help = "Object key (path)")]
-        key: String,
+        #[arg(value_name = "KEY", help = "Object key (path)")]
+        object_key: String,
     },
     /// Generate a pre-signed capability download ticket URL
     Ticket {
         #[arg(help = "Storage namespace")]
         namespace: String,
-        #[arg(help = "Object key (path)")]
-        key: String,
+        #[arg(value_name = "KEY", help = "Object key (path)")]
+        object_key: String,
         #[arg(short, long, help = "Permitted operation (READ, WRITE)", default_value = "READ")]
         operation: Option<String>,
         #[arg(long, help = "Ticket time-to-live in seconds", default_value = "3600")]
@@ -585,12 +587,12 @@ mod tests {
 
     #[test]
     fn test_cli_parse_db_add() {
-        let args = ["axiom", "db", "add", "-a", "analytics", "-u", "postgres://localhost:5432/db", "--pool-max", "20"];
+        let args = ["axiom", "db", "add", "-a", "analytics", "--conn", "postgres://localhost:5432/db", "--pool-max", "20"];
         let cli = Cli::try_parse_from(args).expect("Failed to parse db add");
         match cli.command {
-            Some(Commands::Db { command: DbCommands::Add { alias, url, pool_max, .. } }) => {
+            Some(Commands::Db { command: DbCommands::Add { alias, connection_url, pool_max, .. } }) => {
                 assert_eq!(alias, "analytics");
-                assert_eq!(url, "postgres://localhost:5432/db");
+                assert_eq!(connection_url, "postgres://localhost:5432/db");
                 assert_eq!(pool_max, Some(20));
             }
             _ => panic!("Expected Db Add command"),
@@ -819,9 +821,9 @@ mod tests {
         let args = ["axiom", "blob", "put", "avatars", "user1.png", "./me.png", "-t", "image/png", "--ttl", "86400"];
         let cli = Cli::try_parse_from(args).expect("Failed to parse blob put");
         match cli.command {
-            Some(Commands::Blob { command: BlobCommands::Put { namespace, key, file, content_type, ttl } }) => {
+            Some(Commands::Blob { command: BlobCommands::Put { namespace, object_key, file, content_type, ttl } }) => {
                 assert_eq!(namespace, "avatars");
-                assert_eq!(key, "user1.png");
+                assert_eq!(object_key, "user1.png");
                 assert_eq!(file, "./me.png");
                 assert_eq!(content_type, Some("image/png".to_string()));
                 assert_eq!(ttl, Some(86400));
@@ -832,9 +834,9 @@ mod tests {
         let get_args = ["axiom", "blob", "get", "avatars", "user1.png", "-o", "./download.png", "--ticket", "sig123"];
         let get_cli = Cli::try_parse_from(get_args).expect("Failed to parse blob get");
         match get_cli.command {
-            Some(Commands::Blob { command: BlobCommands::Get { namespace, key, output, ticket } }) => {
+            Some(Commands::Blob { command: BlobCommands::Get { namespace, object_key, output, ticket } }) => {
                 assert_eq!(namespace, "avatars");
-                assert_eq!(key, "user1.png");
+                assert_eq!(object_key, "user1.png");
                 assert_eq!(output, Some("./download.png".to_string()));
                 assert_eq!(ticket, Some("sig123".to_string()));
             }

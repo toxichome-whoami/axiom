@@ -456,7 +456,7 @@ impl AdminClient {
         let endpoint = format!("/api/v1/db/{}/{}/columns", alias, table);
         let body = json!({
             "name": name,
-            "type": data_type,
+            "data_type": data_type,
             "nullable": nullable,
             "default_value": default_val,
         });

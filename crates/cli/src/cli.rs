@@ -457,13 +457,13 @@ async fn handle_db_command(
     match command {
         DbCommands::Add {
             alias,
-            url,
+            connection_url,
             engine,
             pool_min,
             pool_max,
         } => {
             let resp = client
-                .add_database(&alias, &url, engine.as_deref(), pool_min, pool_max)
+                .add_database(&alias, &connection_url, engine.as_deref(), pool_min, pool_max)
                 .await?;
 
             if format == OutputFormat::Json {
@@ -662,14 +662,24 @@ async fn handle_db_command(
             }
         }
 
-        DbCommands::Insert { alias, table, row, rows } => {
-            let row_val: Option<Value> = match row {
-                Some(r_str) => Some(serde_json::from_str(&r_str).map_err(|e| format!("Invalid JSON row object: {}", e))?),
-                None => None,
-            };
-            let rows_val: Option<Value> = match rows {
-                Some(rs_str) => Some(serde_json::from_str(&rs_str).map_err(|e| format!("Invalid JSON rows array: {}", e))?),
-                None => None,
+        DbCommands::Insert { alias, table, data, row, rows } => {
+            let (row_val, rows_val) = if let Some(d_str) = data {
+                let parsed: Value = serde_json::from_str(&d_str).map_err(|e| format!("Invalid JSON data: {}", e))?;
+                if parsed.is_array() {
+                    (None, Some(parsed))
+                } else {
+                    (Some(parsed), None)
+                }
+            } else {
+                let r: Option<Value> = match row {
+                    Some(r_str) => Some(serde_json::from_str(&r_str).map_err(|e| format!("Invalid JSON row object: {}", e))?),
+                    None => None,
+                };
+                let rs: Option<Value> = match rows {
+                    Some(rs_str) => Some(serde_json::from_str(&rs_str).map_err(|e| format!("Invalid JSON rows array: {}", e))?),
+                    None => None,
+                };
+                (r, rs)
             };
 
             let resp = client.insert_table_row(&alias, &table, row_val, rows_val).await?;
@@ -1724,7 +1734,7 @@ async fn handle_blob_command(
             }
         }
 
-        BlobCommands::Put { namespace, key, file, content_type, ttl } => {
+        BlobCommands::Put { namespace, object_key, file, content_type, ttl } => {
             let data = if file == "-" {
                 use std::io::Read;
                 let mut buf = Vec::new();
@@ -1734,7 +1744,7 @@ async fn handle_blob_command(
                 tokio::fs::read(&file).await.map_err(|e| format!("Failed to read file '{}': {}", file, e))?
             };
 
-            let resp = client.put_blob(&namespace, &key, data, content_type.as_deref(), ttl).await?;
+            let resp = client.put_blob(&namespace, &object_key, data, content_type.as_deref(), ttl).await?;
             if format == OutputFormat::Json {
                 println!("{}", serde_json::to_string_pretty(&resp)?);
             } else if format == OutputFormat::Jsonl {
@@ -1742,14 +1752,14 @@ async fn handle_blob_command(
             } else {
                 let hash = resp.get("data").and_then(|d| d.get("hash")).and_then(|h| h.as_str()).unwrap_or("-");
                 let size = resp.get("data").and_then(|d| d.get("size")).and_then(|s| s.as_u64()).unwrap_or(0);
-                println!("Blob '{}/{}' uploaded successfully!", namespace, key);
+                println!("Blob '{}/{}' uploaded successfully!", namespace, object_key);
                 println!("Size:     {}", format_bytes(size));
                 println!("BLAKE3:   {}", hash);
             }
         }
 
-        BlobCommands::Get { namespace, key, output, ticket } => {
-            let (bytes, content_type) = client.get_blob(&namespace, &key, ticket.as_deref()).await?;
+        BlobCommands::Get { namespace, object_key, output, ticket } => {
+            let (bytes, content_type) = client.get_blob(&namespace, &object_key, ticket.as_deref()).await?;
             if output.as_deref() == Some("-") {
                 use std::io::Write;
                 std::io::stdout().write_all(&bytes)?;
@@ -1757,17 +1767,17 @@ async fn handle_blob_command(
                 let dest = match output {
                     Some(out) => out,
                     None => {
-                        let default_name = key.rsplit(['/', '\\']).next().unwrap_or("blob.bin");
+                        let default_name = object_key.rsplit(['/', '\\']).next().unwrap_or("blob.bin");
                         default_name.to_string()
                     }
                 };
                 tokio::fs::write(&dest, &bytes).await.map_err(|e| format!("Failed to write to destination '{}': {}", dest, e))?;
                 if format == OutputFormat::Json {
-                    println!("{}", json!({ "success": true, "namespace": namespace, "key": key, "destination": dest, "bytes": bytes.len(), "content_type": content_type }));
+                    println!("{}", json!({ "success": true, "namespace": namespace, "key": object_key, "destination": dest, "bytes": bytes.len(), "content_type": content_type }));
                 } else if format == OutputFormat::Jsonl {
-                    println!("{}", json!({ "success": true, "namespace": namespace, "key": key, "destination": dest, "bytes": bytes.len(), "content_type": content_type }));
+                    println!("{}", json!({ "success": true, "namespace": namespace, "key": object_key, "destination": dest, "bytes": bytes.len(), "content_type": content_type }));
                 } else {
-                    println!("Blob '{}/{}' downloaded successfully.", namespace, key);
+                    println!("Blob '{}/{}' downloaded successfully.", namespace, object_key);
                     println!("Saved to:     {}", dest);
                     println!("Size:         {}", format_bytes(bytes.len() as u64));
                     if let Some(ct) = content_type {
@@ -1777,14 +1787,14 @@ async fn handle_blob_command(
             }
         }
 
-        BlobCommands::Head { namespace, key } => {
-            let resp = client.head_blob(&namespace, &key).await?;
+        BlobCommands::Head { namespace, object_key } => {
+            let resp = client.head_blob(&namespace, &object_key).await?;
             if format == OutputFormat::Json {
                 println!("{}", serde_json::to_string_pretty(&resp)?);
             } else if format == OutputFormat::Jsonl {
                 println!("{}", serde_json::to_string(&resp)?);
             } else {
-                println!("Object Metadata: '{}/{}'", namespace, key);
+                println!("Object Metadata: '{}/{}'", namespace, object_key);
                 println!("{:-<45}", "");
                 if let Some(headers) = resp.get("headers").and_then(|h| h.as_object()) {
                     for (k, v) in headers {
@@ -1795,14 +1805,14 @@ async fn handle_blob_command(
             }
         }
 
-        BlobCommands::Delete { namespace, key } => {
-            let resp = client.delete_blob(&namespace, &key).await?;
+        BlobCommands::Delete { namespace, object_key } => {
+            let resp = client.delete_blob(&namespace, &object_key).await?;
             if format == OutputFormat::Json {
                 println!("{}", serde_json::to_string_pretty(&resp)?);
             } else if format == OutputFormat::Jsonl {
                 println!("{}", serde_json::to_string(&resp)?);
             } else {
-                println!("Blob '{}/{}' deleted successfully.", namespace, key);
+                println!("Blob '{}/{}' deleted successfully.", namespace, object_key);
             }
         }
 
@@ -1842,8 +1852,8 @@ async fn handle_blob_command(
             }
         }
 
-        BlobCommands::Verify { namespace, key } => {
-            let resp = client.verify_blob(&namespace, &key).await?;
+        BlobCommands::Verify { namespace, object_key } => {
+            let resp = client.verify_blob(&namespace, &object_key).await?;
             if format == OutputFormat::Json {
                 println!("{}", serde_json::to_string_pretty(&resp)?);
             } else if format == OutputFormat::Jsonl {
@@ -1858,8 +1868,8 @@ async fn handle_blob_command(
             }
         }
 
-        BlobCommands::Ticket { namespace, key, operation, ttl } => {
-            let resp = client.create_blob_ticket(&namespace, &key, operation.as_deref(), ttl).await?;
+        BlobCommands::Ticket { namespace, object_key, operation, ttl } => {
+            let resp = client.create_blob_ticket(&namespace, &object_key, operation.as_deref(), ttl).await?;
             if format == OutputFormat::Json {
                 println!("{}", serde_json::to_string_pretty(&resp)?);
             } else if format == OutputFormat::Jsonl {
