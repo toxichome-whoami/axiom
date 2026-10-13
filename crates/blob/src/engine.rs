@@ -463,13 +463,23 @@ impl BlobEngine {
     ) -> Result<u64, BlobError> {
         validate_namespace(src_ns)?;
         validate_namespace(dest_ns)?;
-        let (items, _) = self.index.list(src_ns, Some(src_prefix), None, 100_000)?;
         let mut count = 0u64;
-        for entry in items {
-            let rel = &entry.key[src_prefix.len()..];
-            let new_key = format!("{}{}", dest_prefix, rel);
-            self.copy_blob(src_ns, &entry.key, dest_ns, &new_key).await?;
-            count += 1;
+        let mut cursor = None;
+        loop {
+            let (items, next_cursor) = self.index.list(src_ns, Some(src_prefix), cursor.as_deref(), 1000)?;
+            if items.is_empty() {
+                break;
+            }
+            for entry in items {
+                let rel = &entry.key[src_prefix.len()..];
+                let new_key = format!("{}{}", dest_prefix, rel);
+                self.copy_blob(src_ns, &entry.key, dest_ns, &new_key).await?;
+                count += 1;
+            }
+            if next_cursor.is_none() {
+                break;
+            }
+            cursor = next_cursor;
         }
         Ok(count)
     }
@@ -484,13 +494,23 @@ impl BlobEngine {
     ) -> Result<u64, BlobError> {
         validate_namespace(src_ns)?;
         validate_namespace(dest_ns)?;
-        let (items, _) = self.index.list(src_ns, Some(src_prefix), None, 100_000)?;
         let mut count = 0u64;
-        for entry in items {
-            let rel = &entry.key[src_prefix.len()..];
-            let new_key = format!("{}{}", dest_prefix, rel);
-            self.move_blob(src_ns, &entry.key, dest_ns, &new_key).await?;
-            count += 1;
+        loop {
+            let (items, _) = self.index.list(src_ns, Some(src_prefix), None, 1000)?;
+            if items.is_empty() {
+                break;
+            }
+            let mut moved_any = false;
+            for entry in items {
+                let rel = &entry.key[src_prefix.len()..];
+                let new_key = format!("{}{}", dest_prefix, rel);
+                self.move_blob(src_ns, &entry.key, dest_ns, &new_key).await?;
+                count += 1;
+                moved_any = true;
+            }
+            if !moved_any {
+                break;
+            }
         }
         Ok(count)
     }
@@ -498,11 +518,21 @@ impl BlobEngine {
     /// Recursively deletes all objects matching a prefix.
     pub async fn delete_prefix(&self, ns: &str, prefix: &str) -> Result<u64, BlobError> {
         validate_namespace(ns)?;
-        let (items, _) = self.index.list(ns, Some(prefix), None, 100_000)?;
         let mut count = 0u64;
-        for entry in items {
-            if self.delete(ns, &entry.key).await? {
-                count += 1;
+        loop {
+            let (items, _) = self.index.list(ns, Some(prefix), None, 1000)?;
+            if items.is_empty() {
+                break;
+            }
+            let mut deleted_any = false;
+            for entry in items {
+                if self.delete(ns, &entry.key).await? {
+                    count += 1;
+                    deleted_any = true;
+                }
+            }
+            if !deleted_any {
+                break;
             }
         }
         Ok(count)
@@ -511,11 +541,21 @@ impl BlobEngine {
     /// Deletes a namespace and purges all objects inside it.
     pub async fn delete_namespace(&self, namespace: &str) -> Result<u64, BlobError> {
         validate_namespace(namespace)?;
-        let (items, _) = self.index.list(namespace, None, None, 100_000)?;
         let mut deleted_count = 0u64;
-        for entry in items {
-            if self.delete(namespace, &entry.key).await? {
-                deleted_count += 1;
+        loop {
+            let (items, _) = self.index.list(namespace, None, None, 1000)?;
+            if items.is_empty() {
+                break;
+            }
+            let mut deleted_any = false;
+            for entry in items {
+                if self.delete(namespace, &entry.key).await? {
+                    deleted_count += 1;
+                    deleted_any = true;
+                }
+            }
+            if !deleted_any {
+                break;
             }
         }
         self.index.remove_namespace_record(namespace)?;

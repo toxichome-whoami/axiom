@@ -1,0 +1,257 @@
+/*
+ * Grid card view subcomponent for Storage objects and virtual folders.
+ * Owned by: ui/pages/storage
+ * Design reference: Vercel / Linear card aesthetic (minimal borders, quiet hover, typography contrast)
+ */
+
+import React, { useState } from 'react';
+import {
+  Folder,
+  ArrowRight,
+  Download,
+  Trash2,
+  MoreVertical,
+  Layers,
+  HardDrive,
+} from 'lucide-react';
+import { StorageItem } from './types';
+import { getFileIcon } from './fileIcon';
+import { formatBytes } from './format';
+
+export interface StorageGridViewProps {
+  folderItems: StorageItem[];
+  fileItems: StorageItem[];
+  selectedItem: StorageItem | null;
+  onSelectItem: (item: StorageItem) => void;
+  onNavigateToPrefix: (prefix: string) => void;
+  onContextMenu: (e: React.MouseEvent, item: StorageItem) => void;
+  onOpenMove: (item: StorageItem) => void;
+  onDownload: (key: string) => void;
+  onDelete: (item: StorageItem) => void;
+
+  // Drag and drop
+  draggedItem: StorageItem | null;
+  draggedItemRef: React.MutableRefObject<StorageItem | null>;
+  onItemDragStart: (e: React.DragEvent, item: StorageItem) => void;
+  onItemDragEnd: () => void;
+  onDropOnFolder: (targetFolderKey: string, droppedItem?: StorageItem) => void;
+  onUploadFiles: (files: FileList | File[], destinationPrefix?: string) => void;
+  canDropOnFolder: (dragged: StorageItem | null, targetFolderKey: string) => boolean;
+}
+
+export function StorageGridView({
+  folderItems,
+  fileItems,
+  selectedItem,
+  onSelectItem,
+  onNavigateToPrefix,
+  onContextMenu,
+  onOpenMove,
+  onDownload,
+  onDelete,
+  draggedItem,
+  draggedItemRef,
+  onItemDragStart,
+  onItemDragEnd,
+  onDropOnFolder,
+  onUploadFiles,
+  canDropOnFolder,
+}: StorageGridViewProps) {
+  const [dragOverTargetKey, setDragOverTargetKey] = useState<string | null>(null);
+
+  return (
+    <div className="space-y-6 font-sans select-none">
+      {/* ─── Folders Section ─────────────── */}
+      {folderItems.length > 0 && (
+        <div className="space-y-2.5">
+          <div className="flex items-center justify-between px-0.5">
+            <span className="text-[13px] font-medium text-[#888888]">
+              Folders
+            </span>
+            <span className="text-[12px] font-mono tabular-nums text-[#666666]">
+              {folderItems.length}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2.5">
+            {folderItems.map((f) => {
+              const isSelected = selectedItem?.id === f.id;
+              const isDropTarget = dragOverTargetKey === f.fullKey;
+              const isSelfDragged = draggedItem?.id === f.id;
+
+              return (
+                <div
+                  key={f.id}
+                  draggable={true}
+                  onDragStart={(e) => onItemDragStart(e, f)}
+                  onDragEnd={onItemDragEnd}
+                  onDragOver={(e) => {
+                    if (draggedItemRef.current) {
+                      if (canDropOnFolder(draggedItemRef.current, f.fullKey)) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        e.dataTransfer.dropEffect = 'move';
+                        if (dragOverTargetKey !== f.fullKey) {
+                          setDragOverTargetKey(f.fullKey);
+                        }
+                      }
+                    } else if (e.dataTransfer.types.includes('Files')) {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      e.dataTransfer.dropEffect = 'copy';
+                      if (dragOverTargetKey !== f.fullKey) {
+                        setDragOverTargetKey(f.fullKey);
+                      }
+                    }
+                  }}
+                  onDragLeave={(e) => {
+                    e.stopPropagation();
+                    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                      if (dragOverTargetKey === f.fullKey) {
+                        setDragOverTargetKey(null);
+                      }
+                    }
+                  }}
+                  onDrop={async (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setDragOverTargetKey(null);
+                    if (draggedItemRef.current) {
+                      await onDropOnFolder(f.fullKey, draggedItemRef.current);
+                    } else if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                      await onUploadFiles(e.dataTransfer.files, f.fullKey);
+                    }
+                  }}
+                  onClick={() => onSelectItem(f)}
+                  onDoubleClick={() => onNavigateToPrefix(f.fullKey)}
+                  onContextMenu={(e) => onContextMenu(e, f)}
+                  className={`group p-2.5 rounded-[6px] border transition-colors cursor-pointer flex items-center justify-between gap-2.5 ${
+                    isSelfDragged ? 'opacity-40 border-dashed border-[#555555]' : ''
+                  } ${
+                    isDropTarget
+                      ? 'bg-blue-950/40 border-blue-500/80 ring-1 ring-blue-500/50'
+                      : isSelected
+                      ? 'bg-[#1c1c1c] border-[#383838]'
+                      : 'bg-[#141414] hover:bg-[#1a1a1a] border-[#222222] hover:border-[#2e2e2e]'
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                    <div className="w-8 h-8 rounded-[5px] bg-[#1a1a1a] border border-[#262626] flex items-center justify-center shrink-0">
+                      <Folder className={`w-4 h-4 ${isDropTarget ? 'text-blue-400 animate-pulse' : 'text-[#eab308]'}`} />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-[13px] font-medium text-white truncate" title={f.name}>
+                        {f.name}
+                      </div>
+                      <div className="text-[11px] text-[#777777] font-mono tabular-nums truncate">
+                        {isDropTarget ? (
+                          <span className="text-blue-400">Drop here</span>
+                        ) : (
+                          `${f.itemCount || 0} ${f.itemCount === 1 ? 'item' : 'items'}`
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onOpenMove(f);
+                    }}
+                    title="Move folder"
+                    className="opacity-0 group-hover:opacity-100 text-[#777777] hover:text-white p-1 rounded hover:bg-[#222222] transition-opacity cursor-pointer shrink-0"
+                  >
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* ─── Files Section ─────────────── */}
+      {fileItems.length > 0 && (
+        <div className="space-y-2.5">
+          <div className="flex items-center justify-between px-0.5">
+            <span className="text-[13px] font-medium text-[#888888]">
+              Files
+            </span>
+            <span className="text-[12px] font-mono tabular-nums text-[#666666]">
+              {fileItems.length}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2.5">
+            {fileItems.map((item) => {
+              const isSelected = selectedItem?.id === item.id;
+              const isSelfDragged = draggedItem?.id === item.id;
+
+              return (
+                <div
+                  key={item.id}
+                  draggable={true}
+                  onDragStart={(e) => onItemDragStart(e, item)}
+                  onDragEnd={onItemDragEnd}
+                  onClick={() => onSelectItem(item)}
+                  onContextMenu={(e) => onContextMenu(e, item)}
+                  className={`group p-3 rounded-[6px] border transition-colors cursor-pointer flex flex-col justify-between h-28 relative ${
+                    isSelfDragged ? 'opacity-40 border-dashed border-[#555555]' : ''
+                  } ${
+                    isSelected
+                      ? 'bg-[#1c1c1c] border-[#383838]'
+                      : 'bg-[#141414] hover:bg-[#1a1a1a] border-[#222222] hover:border-[#2e2e2e]'
+                  }`}
+                >
+                  {/* Top row: Icon, Name, and Actions */}
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="w-8 h-8 rounded-[5px] bg-[#1a1a1a] border border-[#262626] flex items-center justify-center shrink-0">
+                      {getFileIcon(item.name, 'w-4 h-4')}
+                    </div>
+
+                    <div className="min-w-0 flex-1 pt-0.5">
+                      <div className="text-[13px] font-medium text-white truncate" title={item.name}>
+                        {item.name}
+                      </div>
+                      <div className="text-[11px] text-[#777777] truncate" title={item.content_type || 'application/octet-stream'}>
+                        {item.content_type?.split('/')[1] || 'binary'}
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onContextMenu(e, item);
+                      }}
+                      title="File actions"
+                      className="opacity-0 group-hover:opacity-100 text-[#777777] hover:text-white p-1 rounded hover:bg-[#222222] transition-opacity cursor-pointer shrink-0"
+                    >
+                      <MoreVertical className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+
+                  {/* Bottom row: Size & Storage Tier pill */}
+                  <div className="flex items-center justify-between text-[11px] text-[#777777] font-mono tabular-nums pt-2 border-t border-[#1c1c1c]">
+                    <span>{formatBytes(item.size || 0)}</span>
+
+                    <span
+                      className={`inline-flex items-center px-1.5 py-0.5 rounded-[4px] text-[11px] font-mono font-medium ${
+                        item.inline
+                          ? 'bg-amber-950/30 text-amber-400 border border-amber-900/40'
+                          : 'bg-zinc-900 text-zinc-400 border border-zinc-800'
+                      }`}
+                    >
+                      {item.inline ? 'LSM' : 'Disk'}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

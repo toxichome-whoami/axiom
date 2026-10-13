@@ -3,53 +3,33 @@
  * Owned by: ui/pages/storage
  * Key deps: ../../api/client, ../../types, ./types, ./paths, ./format, ./fileIcon, ./MoveDialog
  * Invariants: Content-addressed blobs; virtual directory paths end in '/'; single source of truth for namespace.
- * Last structural change: Complete redesign into Drive-style multi-pane file manager.
+ * Last structural change: Complete redesign into modular Vercel/Linear dark dashboard architecture.
  */
 
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import {
-  HardDrive,
-  Plus,
-  RefreshCw,
-  Search,
-  Trash2,
-  Download,
-  CheckCircle2,
-  AlertTriangle,
-  Folder,
-  FolderPlus,
-  SlidersHorizontal,
-  X,
-  Settings,
-  Scissors,
-  Edit3,
-  Clipboard,
-  ChevronRight,
-  ChevronDown,
-  ArrowRight,
-  Info,
-  LayoutGrid,
-  List as ListIcon,
   Upload,
-  Check,
-  ShieldCheck,
-  MoreVertical,
-  Layers,
+  X,
+  HardDrive,
+  FolderPlus,
+  Plus,
 } from 'lucide-react';
 import { api } from '../../api/client';
 import { BlobEntry, BlobStats, NamespaceInfo } from '../../types';
 import { StorageItem, StorageViewMode, ClipboardState, StorageTierFilter } from './types';
 import { formatBytes, QUOTA_OPTIONS } from './format';
-import { sanitizeFolder, parentOf, joinKey, isSelfOrDescendant, validateName } from './paths';
-import { getFileIcon, getFileExtension } from './fileIcon';
+import { sanitizeFolder, parentOf, joinKey, validateName } from './paths';
 import { MoveDialog } from './MoveDialog';
 import { ContextMenu, ContextMenuPosition } from './ContextMenu';
-import { FileTree } from './FileTree';
-import { Button } from '../../components/ui/Button';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
-import { Skeleton } from '../../components/ui/Skeleton';
 import { CustomSelect } from '../../components/shared/CustomSelect';
 import { UploadProgressDrawer, UploadTask } from './UploadProgressDrawer';
+import { StorageSidebar } from './StorageSidebar';
+import { StorageToolbar } from './StorageToolbar';
+import { StorageGridView } from './StorageGridView';
+import { StorageListView } from './StorageListView';
+import { StorageDetailsPanel } from './StorageDetailsPanel';
+import { StorageEmptyState } from './StorageEmptyState';
 
 /**
  * Recovers persisted storage navigation parameters from URL or localStorage.
@@ -101,12 +81,11 @@ export function StoragePage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [tierFilter, setTierFilter] = useState<StorageTierFilter>('all');
   const [selectedItem, setSelectedItem] = useState<StorageItem | null>(null);
-  const [isChecksumExpanded, setIsChecksumExpanded] = useState(false);
 
   // Context Menu (Right Click) State
   const [contextMenu, setContextMenu] = useState<{ position: ContextMenuPosition; item: StorageItem | null } | null>(null);
 
-  // Drag and Drop & Google Drive-style Upload Progress State
+  // Drag and Drop & Upload Progress State
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const [uploadTasks, setUploadTasks] = useState<UploadTask[]>([]);
   const [isUploadDrawerVisible, setIsUploadDrawerVisible] = useState(false);
@@ -114,7 +93,6 @@ export function StoragePage() {
   // Internal Object Drag & Drop Moving State
   const [draggedItem, setDraggedItem] = useState<StorageItem | null>(null);
   const draggedItemRef = useRef<StorageItem | null>(null);
-  const [dragOverTargetKey, setDragOverTargetKey] = useState<string | null>(null);
 
   // Clipboard Buffer
   const [clipboard, setClipboard] = useState<ClipboardState | null>(null);
@@ -249,58 +227,35 @@ export function StoragePage() {
     setViewMode(mode);
     try {
       localStorage.setItem('axiom_storage_view_mode', mode);
-      const params = new URLSearchParams(window.location.search);
-      if (mode !== 'grid') {
-        params.set('view', mode);
-      } else {
-        params.delete('view');
-      }
-      const queryStr = params.toString();
-      const newUrl = queryStr ? `${window.location.pathname}?${queryStr}` : window.location.pathname;
-      window.history.replaceState(null, '', newUrl);
+      const url = new URL(window.location.href);
+      url.searchParams.set('view', mode);
+      window.history.replaceState(null, '', url.toString());
     } catch {
-      // Ignore storage errors
+      // Ignore
     }
   };
 
-  // Details inspector drawer toggle with persistence
-  const toggleDetailsOpen = () => {
+  // Toggle details inspector panel with persistence
+  const handleToggleDetails = () => {
     setIsDetailsOpen((prev) => {
       const next = !prev;
       try {
         localStorage.setItem('axiom_storage_details_open', String(next));
       } catch {
-        // Ignore storage errors
+        // Ignore
       }
       return next;
     });
   };
 
-  // Namespace Top Dropdown State & Click-outside listener
-  const [isNsDropdownOpen, setIsNsDropdownOpen] = useState(false);
-  const nsDropdownRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (nsDropdownRef.current && !nsDropdownRef.current.contains(event.target as Node)) {
-        setIsNsDropdownOpen(false);
-      }
-    }
-    if (isNsDropdownOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
-    }
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, [isNsDropdownOpen]);
-
-  // Load telemetry and namespace catalog
+  // Master telemetry and namespace catalog loader
   const loadData = useCallback(async (targetNs?: string) => {
     const curGen = ++fetchGenRef.current;
     setLoadError(null);
     setIsRefreshing(true);
+
     try {
-      const [statsRes, nsRes] = await Promise.allSettled([
+      const [statsRes, nsListRes] = await Promise.allSettled([
         api.getBlobStats(),
         api.listBlobNamespaces(),
       ]);
@@ -311,43 +266,44 @@ export function StoragePage() {
         setStats(statsRes.value);
       }
 
-      let currentNs = targetNs || activeNsRef.current;
-      if (nsRes.status === 'fulfilled' && Array.isArray(nsRes.value)) {
-        const list = nsRes.value;
-        setNamespaces(list);
-        if (list.length > 0) {
-          const savedNs = localStorage.getItem('axiom_storage_namespace') || '';
-          if (currentNs && list.some((n) => n.name === currentNs)) {
-            // Keep currentNs as is
-          } else if (savedNs && list.some((n) => n.name === savedNs)) {
-            currentNs = savedNs;
-            setActiveNamespace(currentNs);
+      let activeNs = targetNs !== undefined ? targetNs : activeNsRef.current;
+
+      if (nsListRes.status === 'fulfilled') {
+        const nsList: NamespaceInfo[] = Array.isArray(nsListRes.value) ? nsListRes.value : [];
+        setNamespaces(nsList);
+
+        if (!activeNs && nsList.length > 0) {
+          activeNs = nsList[0].name;
+          setActiveNamespace(activeNs);
+          syncLocation(activeNs, currentPrefixRef.current, false);
+        } else if (activeNs && !nsList.some((n: NamespaceInfo) => n.name === activeNs)) {
+          if (nsList.length > 0) {
+            activeNs = nsList[0].name;
+            setActiveNamespace(activeNs);
+            syncLocation(activeNs, '', false);
           } else {
-            currentNs = list[0].name;
-            setActiveNamespace(currentNs);
+            activeNs = '';
+            setActiveNamespace('');
+            syncLocation('', '', false);
           }
-          syncLocation(currentNs, currentPrefixRef.current, false);
-        } else {
-          currentNs = '';
-          setActiveNamespace('');
-          setCurrentPrefix('');
-          setBlobs([]);
-          syncLocation('', '', false);
         }
-      } else {
-        setNamespaces([]);
-        currentNs = '';
-        setActiveNamespace('');
-        setCurrentPrefix('');
-        setBlobs([]);
-        syncLocation('', '', false);
       }
 
-      if (currentNs) {
+      if (activeNs) {
         try {
-          const listRes = await api.listBlobs(currentNs);
+          const listRes = await api.listBlobs(activeNs);
           if (curGen === fetchGenRef.current) {
-            setBlobs(listRes.items || []);
+            const items = listRes.items || [];
+            setBlobs(items);
+            if (
+              currentPrefixRef.current &&
+              items.length > 0 &&
+              !items.some((b) => b.key.startsWith(currentPrefixRef.current))
+            ) {
+              const parent = parentOf(currentPrefixRef.current);
+              setCurrentPrefix(parent);
+              syncLocation(activeNs, parent, false);
+            }
           }
         } catch {
           if (curGen === fetchGenRef.current) {
@@ -449,43 +405,45 @@ export function StoragePage() {
       const slashIndex = rel.indexOf('/');
       if (slashIndex !== -1) {
         const folderName = rel.slice(0, slashIndex);
-        const existing = folderMap.get(folderName) || { itemCount: 0, totalBytes: 0 };
-        if (!rel.endsWith('/.axiom_dir')) {
-          existing.itemCount += 1;
-          existing.totalBytes += b.size;
+        const entry = folderMap.get(folderName) || { itemCount: 0, totalBytes: 0 };
+        if (!b.key.endsWith('/.axiom_dir')) {
+          entry.itemCount += 1;
+          entry.totalBytes += b.size;
         }
-        folderMap.set(folderName, existing);
+        folderMap.set(folderName, entry);
       } else {
-        const matchesTier =
-          tierFilter === 'all' ||
-          (tierFilter === 'inline' && b.inline) ||
-          (tierFilter === 'disk' && !b.inline);
+        if (!b.key.endsWith('/.axiom_dir')) {
+          const matchesTier =
+            tierFilter === 'all' ||
+            (tierFilter === 'inline' && b.inline) ||
+            (tierFilter === 'disk' && !b.inline);
 
-        if (matchesTier) {
-          files.push({
-            id: `file-${b.key}`,
-            type: 'file',
-            name: rel,
-            fullKey: b.key,
-            size: b.size,
-            inline: b.inline,
-            content_type: b.content_type,
-            hash: b.hash,
-            created_at: b.created_at,
-            rawBlob: b,
-          });
+          if (matchesTier) {
+            files.push({
+              id: `file-${b.key}`,
+              type: 'file',
+              name: rel,
+              fullKey: b.key,
+              size: b.size,
+              inline: b.inline,
+              content_type: b.content_type,
+              hash: b.hash,
+              created_at: b.created_at,
+              rawBlob: b,
+            });
+          }
         }
       }
     }
 
     const folders: StorageItem[] = Array.from(folderMap.entries())
-      .map(([name, s]) => ({
+      .map(([name, data]) => ({
         id: `folder-${currentPrefix}${name}/`,
         type: 'folder' as const,
         name,
         fullKey: `${currentPrefix}${name}/`,
-        itemCount: s.itemCount,
-        totalBytes: s.totalBytes,
+        itemCount: data.itemCount,
+        totalBytes: data.totalBytes,
       }))
       .sort((a, b) => a.name.localeCompare(b.name));
 
@@ -494,28 +452,26 @@ export function StoragePage() {
     return { folderItems: folders, fileItems: files };
   }, [blobs, currentPrefix, searchQuery, tierFilter]);
 
-  // Available directories for Move picker
-  const availableDirectories = useMemo(() => {
+  // Live object count excluding internal directory markers
+  const realObjectsCount = useMemo(() => {
+    return blobs.filter((b) => !b.key.endsWith('/.axiom_dir') && b.key !== '.axiom_dir').length;
+  }, [blobs]);
+
+  // Available directories for MoveDialog destination picker
+  const availableFolders = useMemo(() => {
     const dirs = new Set<string>();
-    dirs.add('');
     for (const b of blobs) {
-      const parts = b.key.split('/').filter(Boolean);
-      parts.pop(); // drop file
-      let acc = '';
-      for (const p of parts) {
-        acc += `${p}/`;
-        dirs.add(acc);
+      const parts = b.key.split('/');
+      let prefix = '';
+      for (let i = 0; i < parts.length - 1; i++) {
+        prefix += `${parts[i]}/`;
+        dirs.add(prefix);
       }
     }
     return Array.from(dirs).sort();
   }, [blobs]);
 
-  // Live object count excluding internal zero-byte directory markers
-  const realObjectsCount = useMemo(() => {
-    return blobs.filter((b) => !b.key.endsWith('/.axiom_dir') && b.key !== '.axiom_dir').length;
-  }, [blobs]);
-
-  // Cancel all pending or active upload tasks
+  // Cancel all upload tasks
   const handleCancelAllUploads = useCallback(() => {
     setUploadTasks((prev) => {
       prev.forEach((t) => {
@@ -544,12 +500,7 @@ export function StoragePage() {
     );
   }, []);
 
-  // Dismiss / close upload progress drawer
-  const handleDismissUploadDrawer = useCallback(() => {
-    setIsUploadDrawerVisible(false);
-  }, []);
-
-  // Direct upload handler using background queue with optional destination prefix override
+  // Direct upload handler
   const handleUploadFiles = async (files: FileList | File[], destinationPrefix?: string) => {
     if (!files || files.length === 0 || !activeNamespace) return;
 
@@ -568,12 +519,10 @@ export function StoragePage() {
     setUploadTasks((prev) => [...prev, ...newTasks]);
     setIsUploadDrawerVisible(true);
 
-    // Process uploads sequentially in the background
     for (let i = 0; i < newTasks.length; i++) {
       const task = newTasks[i];
       const file = fileList[i];
 
-      // Check if task was cancelled before starting
       if (task.abortController?.signal.aborted) {
         continue;
       }
@@ -595,7 +544,6 @@ export function StoragePage() {
           prev.map((t) => (t.id === task.id ? { ...t, status: 'completed' as const } : t))
         );
 
-        // Immediate background refresh so new blob appears in current view
         await loadData();
       } catch (err: unknown) {
         const isAborted = task.abortController?.signal.aborted;
@@ -621,17 +569,14 @@ export function StoragePage() {
     const normTarget = targetFolderKey ? sanitizeFolder(targetFolderKey) : '';
     const normSrc = dragged.type === 'folder' ? sanitizeFolder(dragged.fullKey) : dragged.fullKey;
 
-    // 1. Cannot drop into self
     if (dragged.fullKey === targetFolderKey || (dragged.type === 'folder' && normSrc === normTarget)) {
       return false;
     }
 
-    // 2. Cannot drop a folder into its own descendant
     if (dragged.type === 'folder' && normTarget.startsWith(normSrc)) {
       return false;
     }
 
-    // 3. Cannot drop into the folder it already resides in
     const parentOfSrc = parentOf(dragged.fullKey);
     if (parentOfSrc === normTarget || parentOfSrc === targetFolderKey) {
       return false;
@@ -650,7 +595,8 @@ export function StoragePage() {
     }
 
     const isFolder = item.type === 'folder';
-    const destKey = joinKey(targetFolderKey, item.name, isFolder);
+    const normTarget = targetFolderKey ? sanitizeFolder(targetFolderKey) : '';
+    const destKey = joinKey(normTarget, item.name, isFolder);
 
     try {
       await api.moveBlob(activeNamespace, item.fullKey, destKey, activeNamespace, isFolder);
@@ -659,41 +605,15 @@ export function StoragePage() {
       }
       await loadData();
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : 'Failed to move item');
-    } finally {
-      setDraggedItem(null);
-      draggedItemRef.current = null;
-      setDragOverTargetKey(null);
+      alert(err instanceof Error ? err.message : 'Failed to move item into folder');
     }
   };
 
-  // Item drag start/end listeners
-  const handleItemDragStart = (e: React.DragEvent, item: StorageItem) => {
-    setDraggedItem(item);
-    draggedItemRef.current = item;
-    e.dataTransfer.effectAllowed = 'move';
-    try {
-      e.dataTransfer.setData('application/x-axiom-item', JSON.stringify(item));
-      e.dataTransfer.setData('text/plain', item.fullKey);
-    } catch {
-      // Fallback for restricted browsers
-    }
-  };
-
-  const handleItemDragEnd = () => {
-    setDraggedItem(null);
-    draggedItemRef.current = null;
-    setDragOverTargetKey(null);
-  };
-
-  // Drag and drop event listeners for external file area with flicker prevention
+  // Drag over desktop upload triggers
   const handleDragEnter = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    // Do not show external file upload overlay if dragging an internal item
-    if (draggedItemRef.current || e.dataTransfer.types.includes('application/x-axiom-item')) {
-      return;
-    }
+    if (draggedItemRef.current) return;
     dragCounterRef.current += 1;
     if (e.dataTransfer.items && e.dataTransfer.items.length > 0) {
       setIsDraggingOver(true);
@@ -703,49 +623,53 @@ export function StoragePage() {
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (draggedItemRef.current || e.dataTransfer.types.includes('application/x-axiom-item')) {
-      e.dataTransfer.dropEffect = 'none';
-      return;
-    }
+    if (draggedItemRef.current) return;
     e.dataTransfer.dropEffect = 'copy';
-    if (!isDraggingOver) {
-      setIsDraggingOver(true);
-    }
   };
 
   const handleDragLeave = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (draggedItemRef.current || e.dataTransfer.types.includes('application/x-axiom-item')) {
-      return;
-    }
+    if (draggedItemRef.current) return;
     dragCounterRef.current -= 1;
     if (dragCounterRef.current <= 0) {
-      dragCounterRef.current = 0;
       setIsDraggingOver(false);
+      dragCounterRef.current = 0;
     }
   };
 
   const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (draggedItemRef.current || e.dataTransfer.types.includes('application/x-axiom-item')) {
+    setIsDraggingOver(false);
+    dragCounterRef.current = 0;
+
+    if (draggedItemRef.current) {
       return;
     }
-    dragCounterRef.current = 0;
-    setIsDraggingOver(false);
+
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       await handleUploadFiles(e.dataTransfer.files);
     }
   };
 
-  // Open context menu (right-click) on item or canvas
+  // Internal item drag handlers
+  const handleItemDragStart = (e: React.DragEvent, item: StorageItem) => {
+    setDraggedItem(item);
+    draggedItemRef.current = item;
+    e.dataTransfer.setData('text/plain', item.fullKey);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleItemDragEnd = () => {
+    setDraggedItem(null);
+    draggedItemRef.current = null;
+  };
+
+  // Context menu open handler
   const handleContextMenu = (e: React.MouseEvent, item: StorageItem | null) => {
     e.preventDefault();
     e.stopPropagation();
-    if (item) {
-      setSelectedItem(item);
-    }
     setContextMenu({
       position: { x: e.clientX, y: e.clientY },
       item,
@@ -824,16 +748,38 @@ export function StoragePage() {
   // Delete item handler
   const handleDeleteItem = async () => {
     if (!itemToDelete) return;
+    const deleted = itemToDelete;
     setIsDeleting(true);
     try {
-      if (itemToDelete.type === 'folder') {
-        await api.deleteBlobPrefix(activeNamespace, itemToDelete.fullKey);
+      if (deleted.type === 'folder') {
+        await api.deleteBlobPrefix(activeNamespace, deleted.fullKey);
       } else {
-        await api.deleteBlob(activeNamespace, itemToDelete.fullKey);
+        await api.deleteBlob(activeNamespace, deleted.fullKey);
       }
-      if (selectedItem?.fullKey === itemToDelete.fullKey) {
+
+      // Optimistically remove deleted items from local state
+      setBlobs((prev) =>
+        deleted.type === 'folder'
+          ? prev.filter((b) => !b.key.startsWith(deleted.fullKey))
+          : prev.filter((b) => b.key !== deleted.fullKey)
+      );
+
+      // Deselect if currently selected item was deleted or was inside deleted folder
+      if (
+        selectedItem &&
+        (selectedItem.fullKey === deleted.fullKey ||
+          (deleted.type === 'folder' && selectedItem.fullKey.startsWith(deleted.fullKey)))
+      ) {
         setSelectedItem(null);
       }
+
+      // If deleted item is a folder and currentPrefix is inside or equal to the deleted folder,
+      // navigate back to the parent of the deleted folder so newly created folders don't nest under it
+      if (deleted.type === 'folder' && currentPrefix.startsWith(deleted.fullKey)) {
+        const parent = parentOf(deleted.fullKey);
+        navigateToPrefix(parent, true);
+      }
+
       setItemToDelete(null);
       await loadData();
     } catch (err: unknown) {
@@ -872,8 +818,8 @@ export function StoragePage() {
     }
   };
 
-  // Copy hash utility
-  const handleCopyHash = (text: string, id: string) => {
+  // Copy text utility
+  const handleCopyText = (text: string, id: string) => {
     navigator.clipboard.writeText(text);
     setCopiedKey(id);
     setTimeout(() => setCopiedKey(null), 2000);
@@ -983,183 +929,79 @@ export function StoragePage() {
 
   return (
     <div className="flex flex-col lg:flex-row w-full h-full min-h-0 select-none font-sans overflow-hidden bg-[#0c0c0c]">
-      {/* ─── Pane 1: Drive Sidebar (Namespaces & Storage Quota) ─────────────── */}
-      <aside className="w-full lg:w-64 shrink-0 flex flex-col bg-[#0a0a0a] border-b lg:border-b-0 lg:border-r border-[#222222] overflow-hidden">
-        {/* Namespace Dropdown Selector Header */}
-        <div className="h-[54px] shrink-0 px-3 border-b border-[#222222] flex items-center justify-between gap-2 relative">
-          {/* Namespace Dropdown Menu */}
-          <div className="relative flex-1 min-w-0" ref={nsDropdownRef}>
-            <button
-              type="button"
-              onClick={() => setIsNsDropdownOpen(!isNsDropdownOpen)}
-              className="w-full h-8 px-2.5 rounded-[6px] bg-[#141414] hover:bg-[#1a1a1a] border border-[#242424] hover:border-[#383838] flex items-center justify-between gap-2 text-left transition-colors cursor-pointer"
-            >
-              <div className="flex items-center gap-2 truncate min-w-0">
-                <HardDrive className="w-3.5 h-3.5 text-white shrink-0" />
-                {isLoading && !activeNamespace ? (
-                  <Skeleton className="w-24 h-3.5" />
-                ) : (
-                  <span className="text-[13px] font-medium text-white truncate">
-                    {activeNamespace || 'Select Namespace'}
-                  </span>
-                )}
-              </div>
-              <ChevronDown className="w-3.5 h-3.5 text-[#777777] shrink-0" />
-            </button>
+      {/* Hidden File Input for Native Upload Trigger */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        multiple
+        className="hidden"
+        onChange={(e) => {
+          if (e.target.files) {
+            handleUploadFiles(e.target.files);
+            e.target.value = '';
+          }
+        }}
+      />
 
-            {/* Dropdown Menu Popup */}
-            {isNsDropdownOpen && (
-              <div className="absolute left-0 top-full mt-1.5 w-60 bg-[#111111] border border-[#262626] rounded-[8px] shadow-2xl p-1 z-50 animate-in fade-in zoom-in-95 duration-100 font-sans">
-                <div className="px-2.5 py-1.5 text-[11px] font-medium text-[#777777] uppercase tracking-wider">
-                  Storage Namespaces
-                </div>
+      {/* ─── Pane 1: Drive Sidebar (Namespaces & FileTree) ─────────────── */}
+      <StorageSidebar
+        namespaces={namespaces}
+        activeNamespace={activeNamespace}
+        onSelectNamespace={handleNamespaceChange}
+        onOpenNewNamespace={() => {
+          setNewNsName('');
+          setNewNsQuotaPreset('unlimited');
+          setNewNsCustomBytes('');
+          setIsNewNsOpen(true);
+        }}
+        onOpenManageNamespace={() => {
+          const ns = namespaces.find((n) => n.name === activeNamespace);
+          if (ns) {
+            setEditNsName(ns.name);
+            if (!ns.max_bytes) {
+              setEditNsQuotaPreset('unlimited');
+              setEditNsCustomBytes('');
+            } else {
+              const match = QUOTA_OPTIONS.find((opt) => opt.value === ns.max_bytes?.toString());
+              if (match) {
+                setEditNsQuotaPreset(match.value);
+                setEditNsCustomBytes('');
+              } else {
+                setEditNsQuotaPreset('custom');
+                setEditNsCustomBytes(ns.max_bytes.toString());
+              }
+            }
+            setManageNsTab('settings');
+            setIsManageNsOpen(true);
+          }
+        }}
+        onRefresh={() => loadData()}
+        isLoading={isLoading}
+        currentNsInfo={currentNsInfo}
+        quotaUsedPercent={quotaUsedPercent}
+        realObjectsCount={realObjectsCount}
+        blobs={blobs}
+        currentPrefix={currentPrefix}
+        selectedItem={selectedItem}
+        onSelectFolder={(path) => navigateToPrefix(path, true)}
+        onSelectFile={(fileItem) => {
+          setSelectedItem(fileItem);
+          setIsDetailsOpen(true);
+        }}
+        onContextMenu={handleContextMenu}
+        onNewFolder={() => {
+          setNewFolderName('');
+          setIsNewFolderOpen(true);
+        }}
+        onUpload={() => fileInputRef.current?.click()}
+        draggedItem={draggedItem}
+        onItemDragStart={handleItemDragStart}
+        onItemDragEnd={handleItemDragEnd}
+        onDropOnFolder={handleDropOnFolder}
+        canDropOnFolder={canDropOnFolder}
+      />
 
-                <div className="max-h-52 overflow-y-auto space-y-0.5 py-0.5">
-                  {namespaces.length === 0 ? (
-                    <div className="px-2.5 py-2 text-[12px] text-[#777777]">
-                      No namespaces created yet.
-                    </div>
-                  ) : (
-                    namespaces.map((ns) => {
-                      const isActive = ns.name === activeNamespace;
-                      return (
-                        <button
-                          key={ns.name}
-                          type="button"
-                          onClick={() => {
-                            handleNamespaceChange(ns.name);
-                            setIsNsDropdownOpen(false);
-                          }}
-                          className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-[6px] text-[13px] transition-colors cursor-pointer text-left ${
-                            isActive
-                              ? 'bg-[#1c1c1c] text-white font-medium'
-                              : 'text-[#d4d4d4] hover:text-white hover:bg-[#161616]'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2 truncate min-w-0">
-                            <HardDrive className={`w-3.5 h-3.5 shrink-0 ${isActive ? 'text-white' : 'text-[#777777]'}`} />
-                            <span className="truncate">{ns.name}</span>
-                          </div>
-                          <div className="flex items-center gap-1.5 shrink-0 text-[11px] text-[#777777]">
-                            <span>{isActive && blobs.length > 0 ? realObjectsCount : ns.total_objects}</span>
-                            {isActive && <Check className="w-3.5 h-3.5 text-white shrink-0" />}
-                          </div>
-                        </button>
-                      );
-                    })
-                  )}
-                </div>
-
-                <div className="h-px bg-[#222222] my-1 -mx-1" />
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsNsDropdownOpen(false);
-                    setNewNsName('');
-                    setNewNsQuotaPreset('unlimited');
-                    setNewNsCustomBytes('');
-                    setIsNewNsOpen(true);
-                  }}
-                  className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-[6px] text-[13px] text-white hover:bg-[#1a1a1a] transition-colors cursor-pointer text-left font-medium"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>New Namespace</span>
-                </button>
-              </div>
-            )}
-          </div>
-
-          {/* Quick Settings & Plus Icon */}
-          <div className="flex items-center gap-1 shrink-0">
-            {activeNamespace && (
-              <button
-                type="button"
-                onClick={() => {
-                  const ns = namespaces.find((n) => n.name === activeNamespace);
-                  if (ns) {
-                    setEditNsName(ns.name);
-                    if (!ns.max_bytes) {
-                      setEditNsQuotaPreset('unlimited');
-                      setEditNsCustomBytes('');
-                    } else {
-                      const match = QUOTA_OPTIONS.find((opt) => opt.value === ns.max_bytes?.toString());
-                      if (match) {
-                        setEditNsQuotaPreset(match.value);
-                        setEditNsCustomBytes('');
-                      } else {
-                        setEditNsQuotaPreset('custom');
-                        setEditNsCustomBytes(ns.max_bytes.toString());
-                      }
-                    }
-                    setManageNsTab('settings');
-                    setIsManageNsOpen(true);
-                  }
-                }}
-                title="Manage Namespace Settings"
-                className="w-8 h-8 flex items-center justify-center rounded-[6px] text-[#8c8c8c] hover:text-white hover:bg-[#161616] transition-colors cursor-pointer"
-              >
-                <Settings className="w-4 h-4" />
-              </button>
-            )}
-
-            <button
-              type="button"
-              onClick={() => {
-                setNewNsName('');
-                setNewNsQuotaPreset('unlimited');
-                setNewNsCustomBytes('');
-                setIsNewNsOpen(true);
-              }}
-              title="New Namespace"
-              className="w-8 h-8 flex items-center justify-center rounded-[6px] text-[#8c8c8c] hover:text-white hover:bg-[#161616] transition-colors cursor-pointer"
-            >
-              <Plus className="w-4 h-4" />
-            </button>
-          </div>
-
-          <input
-            type="file"
-            multiple
-            ref={fileInputRef}
-            onChange={(e) => {
-              if (e.target.files) handleUploadFiles(e.target.files);
-              e.target.value = '';
-            }}
-            className="hidden"
-          />
-        </div>
-
-        {/* In-place Folder & File Tree System */}
-        <div className="flex-1 overflow-hidden min-h-0 flex flex-col">
-          <FileTree
-            blobs={blobs}
-            currentPrefix={currentPrefix}
-            selectedItem={selectedItem}
-            activeNamespace={activeNamespace}
-            onSelectFolder={(path) => navigateToPrefix(path, true)}
-            onSelectFile={(fileItem) => {
-              setSelectedItem(fileItem);
-              setIsDetailsOpen(true);
-            }}
-            onContextMenu={handleContextMenu}
-            onNewFolder={() => {
-              setNewFolderName('');
-              setIsNewFolderOpen(true);
-            }}
-            onUpload={() => fileInputRef.current?.click()}
-            onRefresh={loadData}
-            draggedItem={draggedItem}
-            onItemDragStart={handleItemDragStart}
-            onItemDragEnd={handleItemDragEnd}
-            onDropOnFolder={handleDropOnFolder}
-            canDropOnFolder={canDropOnFolder}
-            isLoading={isLoading}
-          />
-        </div>
-      </aside>
-
-      {/* ─── Pane 2: Drive File Explorer Area ─────────────────────────────── */}
+      {/* ─── Pane 2: File Explorer Main Center Canvas ─────────────── */}
       <section
         onDragEnter={handleDragEnter}
         onDragOver={handleDragOver}
@@ -1169,1048 +1011,178 @@ export function StoragePage() {
       >
         {/* Drag and Drop Active Overlay */}
         {isDraggingOver && (
-          <div className="absolute inset-0 z-30 pointer-events-none select-none bg-black/85 backdrop-blur-xs border-2 border-dashed border-[#555555] rounded-[10px] flex flex-col items-center justify-center p-6 text-center animate-in fade-in duration-100">
-            <Upload className="w-10 h-10 text-white mb-2 animate-bounce" />
-            <h3 className="text-[16px] font-semibold text-white">Drop files to upload</h3>
-            <p className="text-[13px] text-[#8c8c8c] mt-1">
+          <div className="absolute inset-0 z-30 pointer-events-none select-none bg-black/85 backdrop-blur-xs border-2 border-dashed border-[#555555] rounded-[10px] flex flex-col items-center justify-center p-6 text-center animate-in fade-in duration-100 font-sans">
+            <Upload className="w-8 h-8 text-white mb-2 animate-bounce" />
+            <h3 className="text-[15px] font-medium text-white">Drop files to upload</h3>
+            <p className="text-[12px] text-[#777777] mt-1">
               Uploading directly into {activeNamespace} / {currentPrefix || 'root'}
             </p>
           </div>
         )}
 
         {/* Top Drive Explorer Toolbar */}
-        <div className="h-[54px] shrink-0 px-4 border-b border-[#222222] flex items-center justify-between gap-3 bg-[#0a0a0a]">
-          {/* Breadcrumb Path Navigator */}
-          <div className="flex items-center gap-1.5 text-[13px] overflow-x-auto scrollbar-none min-w-0 py-0.5">
-            <button
-              type="button"
-              onClick={() => navigateToPrefix('', true)}
-              onDragOver={(e) => {
-                if (draggedItemRef.current && canDropOnFolder(draggedItemRef.current, '')) {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  e.dataTransfer.dropEffect = 'move';
-                  if (dragOverTargetKey !== '') {
-                    setDragOverTargetKey('');
-                  }
-                }
-              }}
-              onDragLeave={(e) => {
-                e.stopPropagation();
-                if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-                  if (dragOverTargetKey === '') {
-                    setDragOverTargetKey(null);
-                  }
-                }
-              }}
-              onDrop={async (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                setDragOverTargetKey(null);
-                if (draggedItemRef.current) {
-                  await handleDropOnFolder('', draggedItemRef.current);
-                }
-              }}
-              className={`hover:text-white transition-all cursor-pointer font-medium shrink-0 ${
-                dragOverTargetKey === ''
-                  ? 'bg-blue-600/30 text-blue-300 ring-1 ring-blue-500/60 px-1.5 py-0.5 rounded'
-                  : currentPrefix === ''
-                  ? 'text-white'
-                  : 'text-[#8c8c8c]'
-              }`}
-            >
-              {activeNamespace || 'Select Namespace'}
-            </button>
+        <StorageToolbar
+          activeNamespace={activeNamespace}
+          currentPrefix={currentPrefix}
+          breadcrumbSegments={breadcrumbSegments}
+          onNavigateToPrefix={(p) => navigateToPrefix(p, true)}
+          viewMode={viewMode}
+          onViewModeChange={handleViewModeChange}
+          tierFilter={tierFilter}
+          onTierFilterChange={setTierFilter}
+          searchQuery={searchQuery}
+          onSearchChange={setSearchQuery}
+          onUploadClick={() => fileInputRef.current?.click()}
+          isDetailsOpen={isDetailsOpen}
+          onToggleDetails={handleToggleDetails}
+          canDropOnFolder={canDropOnFolder}
+          draggedItemRef={draggedItemRef}
+          onDropOnFolder={handleDropOnFolder}
+        />
 
-            {breadcrumbSegments.map((seg, idx) => {
-              const isLast = idx === breadcrumbSegments.length - 1;
-              const isDropTarget = dragOverTargetKey === seg.prefix;
-              return (
-                <React.Fragment key={seg.prefix}>
-                  <ChevronRight className="w-3.5 h-3.5 text-[#555555] shrink-0" />
-                  <button
-                    type="button"
-                    onClick={() => navigateToPrefix(seg.prefix, true)}
-                    onDragOver={(e) => {
-                      if (draggedItemRef.current && canDropOnFolder(draggedItemRef.current, seg.prefix)) {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        e.dataTransfer.dropEffect = 'move';
-                        if (dragOverTargetKey !== seg.prefix) {
-                          setDragOverTargetKey(seg.prefix);
-                        }
-                      }
-                    }}
-                    onDragLeave={(e) => {
-                      e.stopPropagation();
-                      if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-                        if (dragOverTargetKey === seg.prefix) {
-                          setDragOverTargetKey(null);
-                        }
-                      }
-                    }}
-                    onDrop={async (e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      setDragOverTargetKey(null);
-                      if (draggedItemRef.current) {
-                        await handleDropOnFolder(seg.prefix, draggedItemRef.current);
-                      }
-                    }}
-                    className={`hover:text-white transition-all cursor-pointer font-medium truncate max-w-[140px] shrink-0 ${
-                      isDropTarget
-                        ? 'bg-blue-600/30 text-blue-300 ring-1 ring-blue-500/60 px-1.5 py-0.5 rounded'
-                        : isLast
-                        ? 'text-white'
-                        : 'text-[#8c8c8c]'
-                    }`}
-                  >
-                    {seg.name}
-                  </button>
-                </React.Fragment>
-              );
-            })}
-          </div>
-
-          {/* Right Toolbar Controls: Upload, Search, View Mode, Filter, Details Toggle */}
-          <div className="flex items-center gap-2 shrink-0">
-            {/* Direct Upload Button */}
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => fileInputRef.current?.click()}
-              className="h-8 text-[12px] px-3 font-medium cursor-pointer shrink-0"
-            >
-              <Upload className="w-3.5 h-3.5 mr-1.5 text-[#8c8c8c]" />
-              <span>Upload</span>
-            </Button>
-
-            {/* Live Search */}
-            <div className="relative w-44 sm:w-56">
-              <Search className="w-3.5 h-3.5 text-[#666666] absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search files..."
-                className="w-full h-8 pl-8 pr-3 rounded-[6px] bg-[#141414] border border-[#262626] focus:border-[#383838] text-[12px] text-white outline-none transition-colors"
-              />
-              {searchQuery && (
-                <button
-                  type="button"
-                  onClick={() => setSearchQuery('')}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-[#777777] hover:text-white"
-                >
-                  <X className="w-3 h-3" />
-                </button>
-              )}
-            </div>
-
-            {/* View Mode Toggle: Grid vs List */}
-            <div className="flex items-center p-0.5 rounded-[6px] bg-[#141414] border border-[#262626]">
-              <button
-                type="button"
-                onClick={() => handleViewModeChange('grid')}
-                title="Grid view"
-                className={`p-1 rounded-[4px] transition-colors cursor-pointer ${
-                  viewMode === 'grid' ? 'bg-[#222222] text-white' : 'text-[#777777] hover:text-white'
-                }`}
-              >
-                <LayoutGrid className="w-3.5 h-3.5" />
-              </button>
-              <button
-                type="button"
-                onClick={() => handleViewModeChange('list')}
-                title="List view"
-                className={`p-1 rounded-[4px] transition-colors cursor-pointer ${
-                  viewMode === 'list' ? 'bg-[#222222] text-white' : 'text-[#777777] hover:text-white'
-                }`}
-              >
-                <ListIcon className="w-3.5 h-3.5" />
-              </button>
-            </div>
-
-            {/* Storage Tier Filter */}
-            <div className="hidden sm:block">
-              <CustomSelect
-                value={tierFilter}
-                options={[
-                  { value: 'all', label: 'All Tiers' },
-                  { value: 'disk', label: 'Disk Shards' },
-                  { value: 'inline', label: 'LSM Inline' },
-                ]}
-                onChange={(val) => setTierFilter(val as StorageTierFilter)}
-                size="sm"
-              />
-            </div>
-
-            {/* Inspector Toggle */}
-            <button
-              type="button"
-              onClick={toggleDetailsOpen}
-              title={isDetailsOpen ? 'Hide Details' : 'Show Details'}
-              className={`p-1.5 rounded-[6px] border transition-colors cursor-pointer ${
-                isDetailsOpen
-                  ? 'bg-[#1a1a1a] text-white border-[#333333]'
-                  : 'bg-[#141414] text-[#8c8c8c] hover:text-white border-[#262626]'
-              }`}
-            >
-              <Info className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-
-        {/* Edge-to-Edge List View Column Headers */}
-        {viewMode === 'list' && (isLoading || folderItems.length > 0 || fileItems.length > 0) && (
-          <div className="h-[38px] shrink-0 px-4 border-b border-[#222222] bg-[#0c0c0c] flex items-center text-[12px] font-medium text-[#777777] select-none z-10 w-full font-sans">
-            <div className="flex-1 min-w-0 pr-4 truncate">Name</div>
-            <div className="w-28 shrink-0 text-left whitespace-nowrap">Storage Tier</div>
-            <div className="w-24 shrink-0 text-right pr-4 whitespace-nowrap">Size</div>
-            <div className="w-28 shrink-0 text-right pr-4 hidden sm:block whitespace-nowrap">Modified</div>
-            <div className="w-20 shrink-0 text-right whitespace-nowrap">Actions</div>
-          </div>
-        )}
-
-        {/* Edge-to-Edge Clipboard Banner if active */}
-        {clipboard && (
-          <div className="h-10 shrink-0 px-4 bg-[#141414] border-b border-[#222222] flex items-center justify-between text-[12px] w-full z-10 font-sans select-none">
-            <div className="flex items-center gap-2">
-              <Scissors className="w-3.5 h-3.5 text-[#eab308]" />
-              <span className="text-[#8c8c8c]">Clipboard:</span>
-              <span className="text-white font-medium">{clipboard.name}</span>
-              <span className="text-[11px] px-1.5 py-0.5 rounded bg-[#222222] text-[#cccccc] font-mono">
-                {clipboard.mode}
-              </span>
-            </div>
-            <div className="flex items-center gap-3">
-              <button
-                type="button"
-                onClick={handlePaste}
-                disabled={isPasting}
-                className="text-white hover:underline font-medium cursor-pointer"
-              >
-                {isPasting ? 'Pasting...' : 'Paste here'}
-              </button>
-              <button
-                type="button"
-                onClick={() => setClipboard(null)}
-                className="text-[#777777] hover:text-white cursor-pointer"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Drive Explorer Body Canvas */}
+        {/* Main Files/Folders View Area */}
         <div
-          className={`flex-1 overflow-y-auto ${viewMode === 'list' ? 'p-0' : 'p-4 space-y-6'}`}
-          onContextMenu={(e) => handleContextMenu(e, null)}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setSelectedItem(null);
+            }
+          }}
+          onContextMenu={(e) => {
+            if (e.target === e.currentTarget) {
+              handleContextMenu(e, null);
+            }
+          }}
+          className={`flex-1 min-h-0 flex flex-col ${
+            !isLoading && activeNamespace && (folderItems.length > 0 || fileItems.length > 0) && viewMode === 'list'
+              ? 'p-0 overflow-hidden'
+              : 'p-4 overflow-y-auto'
+          }`}
         >
-          {/* Skeleton Canvas Loading State */}
-          {isLoading && viewMode === 'grid' && (
-            <div className="space-y-6">
-              {/* Skeleton Folders */}
-              <div className="space-y-2.5">
-                <div className="flex items-center justify-between px-1">
-                  <div className="h-3.5 w-16 rounded-[4px] bg-[#16171d]/80 border border-[#1e2025]/40 animate-pulse" />
-                  <div className="h-3 w-6 rounded-[4px] bg-[#16171d]/60 border border-[#1e2025]/30 animate-pulse" />
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3">
-                  {Array.from({ length: 4 }).map((_, i) => (
-                    <div
-                      key={`skel-folder-${i}`}
-                      className="flex items-center gap-2.5 p-3 rounded-[6px] bg-[#121316]/70 border border-[#1e2025]/50 animate-pulse"
-                    >
-                      <div className="w-4 h-4 rounded-[3px] bg-[#1a1b22] border border-[#232530]" />
-                      <div className="h-3.5 w-3/4 rounded-[3px] bg-[#1a1b22]" />
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Skeleton Files */}
-              <div className="space-y-2.5">
-                <div className="flex items-center justify-between px-1">
-                  <div className="h-3.5 w-12 rounded-[4px] bg-[#16171d]/80 border border-[#1e2025]/40 animate-pulse" />
-                  <div className="h-3 w-6 rounded-[4px] bg-[#16171d]/60 border border-[#1e2025]/30 animate-pulse" />
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3">
-                  {Array.from({ length: 8 }).map((_, i) => (
-                    <div
-                      key={`skel-file-${i}`}
-                      className="flex flex-col justify-between p-3.5 rounded-[6px] bg-[#121316]/70 border border-[#1e2025]/50 h-36 animate-pulse"
-                    >
-                      <div className="flex items-start justify-between">
-                        <div className="w-8 h-8 rounded-[4px] bg-[#1a1b22] border border-[#232530]" />
-                        <div className="w-3.5 h-3.5 rounded-[3px] bg-[#1a1b22]" />
-                      </div>
-                      <div className="space-y-1.5 pt-2">
-                        <div className="h-3.5 w-4/5 rounded-[3px] bg-[#1a1b22]" />
-                        <div className="h-3 w-1/2 rounded-[3px] bg-[#1a1b22]/70" />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {isLoading && viewMode === 'list' && (
-            <div className="flex flex-col w-full divide-y divide-[#1c1c1c]">
-              {Array.from({ length: 8 }).map((_, i) => (
-                <div
-                  key={`skel-row-${i}`}
-                  className="flex items-center px-4 py-3 text-[13px] animate-pulse"
-                >
-                  <div className="flex-1 min-w-0 flex items-center gap-2.5 pr-4">
-                    <div className="w-4 h-4 rounded-[3px] bg-[#16171d]/80 border border-[#1e2025]/40" />
-                    <div className="h-3.5 w-48 rounded-[4px] bg-[#16171d]/80 border border-[#1e2025]/40" />
-                  </div>
-                  <div className="w-28 shrink-0">
-                    <div className="h-4 w-16 rounded-[4px] bg-[#16171d]/60 border border-[#1e2025]/30" />
-                  </div>
-                  <div className="w-24 shrink-0 text-right pr-4 flex justify-end">
-                    <div className="h-3.5 w-12 rounded-[4px] bg-[#16171d]/60 border border-[#1e2025]/30" />
-                  </div>
-                  <div className="w-28 shrink-0 text-right pr-4 hidden sm:flex justify-end">
-                    <div className="h-3.5 w-16 rounded-[4px] bg-[#16171d]/50 border border-[#1e2025]/20" />
-                  </div>
-                  <div className="w-20 shrink-0 text-right flex justify-end">
-                    <div className="h-3.5 w-8 rounded-[4px] bg-[#16171d]/40 border border-[#1e2025]/20" />
-                  </div>
-                </div>
+          {/* Loading Skeleton */}
+          {isLoading && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2.5">
+              {Array.from({ length: 10 }).map((_, i) => (
+                <div key={i} className="h-28 rounded-[6px] bg-[#141414] border border-[#222222] animate-pulse" />
               ))}
             </div>
           )}
 
-          {/* Empty State when no namespaces exist */}
+          {/* Empty State: No namespaces */}
           {!isLoading && namespaces.length === 0 && (
-            <div className="flex flex-col items-center justify-center py-24 px-4 text-center">
-              <HardDrive className="w-12 h-12 text-[#444444] mb-3" />
-              <h4 className="text-[16px] font-medium text-white">No Namespaces Initialized</h4>
-              <p className="text-[13px] text-[#8c8c8c] max-w-sm mt-1.5 mb-5">
-                Namespaces are container boundaries with dedicated quotas. Create your first namespace to start storing objects.
-              </p>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => {
-                  setNewNsName('');
-                  setNewNsQuotaPreset('unlimited');
-                  setNewNsCustomBytes('');
-                  setIsNewNsOpen(true);
-                }}
-              >
-                <Plus className="w-3.5 h-3.5 mr-1" />
-                Create Namespace
-              </Button>
-            </div>
+            <StorageEmptyState
+              type="no-namespaces"
+              onCreateNamespace={() => {
+                setNewNsName('');
+                setNewNsQuotaPreset('unlimited');
+                setNewNsCustomBytes('');
+                setIsNewNsOpen(true);
+              }}
+            />
           )}
 
-          {/* Empty State when namespaces exist but none selected */}
+          {/* Empty State: Namespaces exist but none selected */}
           {!isLoading && namespaces.length > 0 && !activeNamespace && (
-            <div className="flex flex-col items-center justify-center py-24 px-4 text-center">
-              <HardDrive className="w-12 h-12 text-[#444444] mb-3" />
-              <h4 className="text-[16px] font-medium text-white">Select a Namespace</h4>
-              <p className="text-[13px] text-[#8c8c8c] max-w-sm mt-1.5">
-                Choose a storage namespace from the left sidebar to explore and manage files.
-              </p>
-            </div>
+            <StorageEmptyState type="no-namespace-selected" />
           )}
 
-          {/* Empty State when active namespace/folder has no items */}
-          {!isLoading && activeNamespace && folderItems.length === 0 && fileItems.length === 0 && (
-            <div className="flex flex-col items-center justify-center py-24 px-4 text-center">
-              <HardDrive className="w-12 h-12 text-[#444444] mb-3" />
-              <h4 className="text-[16px] font-medium text-white">This folder is empty</h4>
-              <p className="text-[13px] text-[#8c8c8c] max-w-sm mt-1.5 mb-5">
-                Drag and drop files here, or use the Upload button in the sidebar to add files.
-              </p>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => fileInputRef.current?.click()}
-              >
-                <Upload className="w-3.5 h-3.5 mr-1" />
-                Upload File
-              </Button>
-            </div>
+          {/* Empty State: Active namespace/folder has no search matches */}
+          {!isLoading && activeNamespace && searchQuery.trim() !== '' && fileItems.length === 0 && (
+            <StorageEmptyState
+              type="no-search-results"
+              searchQuery={searchQuery}
+              onClearSearch={() => setSearchQuery('')}
+            />
           )}
 
-          {/* Section 1: Folders */}
-          {folderItems.length > 0 && (
-            <div className={viewMode === 'list' ? '' : 'space-y-2.5'}>
-              {viewMode === 'grid' && (
-                <div className="flex items-center justify-between px-1">
-                  <h4 className="text-[12px] font-medium text-[#8c8c8c]">Folders</h4>
-                  <span className="text-[11px] font-medium tabular-nums text-[#666666]">{folderItems.length}</span>
-                </div>
-              )}
-              <div
-                className={
-                  viewMode === 'grid'
-                    ? 'grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3'
-                    : 'flex flex-col'
-                }
-              >
-                {folderItems.map((f) => {
-                  const isSelected = selectedItem?.id === f.id;
-                  const isDropTarget = dragOverTargetKey === f.fullKey;
-                  const isSelfDragged = draggedItem?.id === f.id;
+          {/* Empty State: Active folder is empty */}
+          {!isLoading &&
+            activeNamespace &&
+            searchQuery.trim() === '' &&
+            folderItems.length === 0 &&
+            fileItems.length === 0 && (
+              <StorageEmptyState
+                type="empty-folder"
+                onUpload={() => fileInputRef.current?.click()}
+              />
+            )}
 
-                  if (viewMode === 'grid') {
-                    return (
-                      <div
-                        key={f.id}
-                        draggable={true}
-                        onDragStart={(e) => handleItemDragStart(e, f)}
-                        onDragEnd={handleItemDragEnd}
-                        onDragOver={(e) => {
-                          if (draggedItemRef.current) {
-                            if (canDropOnFolder(draggedItemRef.current, f.fullKey)) {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              e.dataTransfer.dropEffect = 'move';
-                              if (dragOverTargetKey !== f.fullKey) {
-                                setDragOverTargetKey(f.fullKey);
-                              }
-                            }
-                          } else if (e.dataTransfer.types.includes('Files')) {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            e.dataTransfer.dropEffect = 'copy';
-                            if (dragOverTargetKey !== f.fullKey) {
-                              setDragOverTargetKey(f.fullKey);
-                            }
-                          }
-                        }}
-                        onDragLeave={(e) => {
-                          e.stopPropagation();
-                          if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-                            if (dragOverTargetKey === f.fullKey) {
-                              setDragOverTargetKey(null);
-                            }
-                          }
-                        }}
-                        onDrop={async (e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          setDragOverTargetKey(null);
-                          if (draggedItemRef.current) {
-                            await handleDropOnFolder(f.fullKey, draggedItemRef.current);
-                          } else if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-                            await handleUploadFiles(e.dataTransfer.files, f.fullKey);
-                          }
-                        }}
-                        onClick={() => setSelectedItem(f)}
-                        onDoubleClick={() => navigateToPrefix(f.fullKey, true)}
-                        onContextMenu={(e) => handleContextMenu(e, f)}
-                        className={`group p-3 rounded-[8px] border transition-all cursor-default select-none flex items-center justify-between gap-3 shadow-xs ${
-                          isSelfDragged ? 'opacity-40 border-dashed border-[#555555]' : ''
-                        } ${
-                          isDropTarget
-                            ? 'bg-blue-600/20 border-blue-500 ring-2 ring-blue-500/60 shadow-lg scale-[1.02]'
-                            : isSelected
-                            ? 'bg-[#1a1a1a] border-[#383838] shadow-sm ring-1 ring-[#383838]'
-                            : 'bg-[#111111] hover:bg-[#151515] border-[#202020] hover:border-[#303030]'
-                        }`}
-                      >
-                        <div className="flex items-center gap-3 truncate min-w-0">
-                          <div className="w-9 h-9 rounded-[7px] bg-[#1a1a1a] border border-[#262626] flex items-center justify-center shrink-0">
-                            <Folder className={`w-4.5 h-4.5 ${isDropTarget ? 'text-blue-400 animate-pulse' : 'text-[#eab308]'}`} />
-                          </div>
-                          <div className="truncate min-w-0">
-                            <div className="text-[13px] font-medium text-white truncate" title={f.name}>
-                              {f.name}
-                            </div>
-                            <div className="text-[11px] text-[#777777] tabular-nums truncate mt-0.5">
-                              {isDropTarget ? (
-                                <span className="text-blue-400 font-medium">Drop to move</span>
-                              ) : (
-                                `${f.itemCount} ${f.itemCount === 1 ? 'item' : 'items'}${f.totalBytes ? ` · ${formatBytes(f.totalBytes)}` : ''}`
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setItemToMove(f);
-                            setIsMoveOpen(true);
-                          }}
-                          title="Move folder"
-                          className="opacity-0 group-hover:opacity-100 text-[#777777] hover:text-white p-1.5 rounded-[5px] hover:bg-[#222222] transition-all shrink-0 cursor-pointer"
-                        >
-                          <ArrowRight className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    );
-                  }
-
-                  // List Row
-                  return (
-                    <div
-                      key={f.id}
-                      draggable={true}
-                      onDragStart={(e) => handleItemDragStart(e, f)}
-                      onDragEnd={handleItemDragEnd}
-                      onDragOver={(e) => {
-                        if (draggedItemRef.current) {
-                          if (canDropOnFolder(draggedItemRef.current, f.fullKey)) {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            e.dataTransfer.dropEffect = 'move';
-                            if (dragOverTargetKey !== f.fullKey) {
-                              setDragOverTargetKey(f.fullKey);
-                            }
-                          }
-                        } else if (e.dataTransfer.types.includes('Files')) {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          e.dataTransfer.dropEffect = 'copy';
-                          if (dragOverTargetKey !== f.fullKey) {
-                            setDragOverTargetKey(f.fullKey);
-                          }
-                        }
-                      }}
-                      onDragLeave={(e) => {
-                        e.stopPropagation();
-                        if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-                          if (dragOverTargetKey === f.fullKey) {
-                            setDragOverTargetKey(null);
-                          }
-                        }
-                      }}
-                      onDrop={async (e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        setDragOverTargetKey(null);
-                        if (draggedItemRef.current) {
-                          await handleDropOnFolder(f.fullKey, draggedItemRef.current);
-                        } else if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-                          await handleUploadFiles(e.dataTransfer.files, f.fullKey);
-                        }
-                      }}
-                      onClick={() => setSelectedItem(f)}
-                      onDoubleClick={() => navigateToPrefix(f.fullKey, true)}
-                      onContextMenu={(e) => handleContextMenu(e, f)}
-                      className={`group flex items-center px-4 py-2.5 border-b border-[#1c1c1c] text-[13px] transition-colors cursor-default select-none ${
-                        isSelfDragged ? 'opacity-40 border-dashed border-[#555555]' : ''
-                      } ${
-                        isDropTarget
-                          ? 'bg-blue-600/20 ring-1 ring-inset ring-blue-500/60'
-                          : isSelected
-                          ? 'bg-[#1a1a1a]'
-                          : 'bg-transparent hover:bg-[#141414]'
-                      }`}
-                    >
-                      <div className="flex-1 min-w-0 flex items-center gap-2.5 pr-4 truncate">
-                        <Folder className={`w-4 h-4 shrink-0 ${isDropTarget ? 'text-blue-400' : 'text-[#eab308]'}`} />
-                        <span className="font-medium text-white truncate">{f.name}</span>
-                      </div>
-                      <div className="w-28 shrink-0 text-left">
-                        <span className="text-[11px] font-medium px-2 py-0.5 rounded-[4px] bg-[#1a1a1a] text-[#8c8c8c] border border-[#262626]">
-                          Folder
-                        </span>
-                      </div>
-                      <div className="w-24 shrink-0 text-right pr-4 text-[#8c8c8c] tabular-nums text-[12px]">
-                        {formatBytes(f.totalBytes || 0)}
-                      </div>
-                      <div className="w-28 shrink-0 text-right pr-4 text-[#666666] tabular-nums text-[12px] hidden sm:block whitespace-nowrap">
-                        {f.itemCount} {f.itemCount === 1 ? 'item' : 'items'}
-                      </div>
-                      <div className="w-20 shrink-0 flex items-center justify-end gap-1">
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setItemToMove(f);
-                            setIsMoveOpen(true);
-                          }}
-                          className="opacity-0 group-hover:opacity-100 p-1 text-[#777777] hover:text-white rounded hover:bg-[#202020] transition-opacity cursor-pointer"
-                          title="Move folder"
-                        >
-                          <ArrowRight className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* Section 2: Files */}
-          {fileItems.length > 0 && (
-            <div className={viewMode === 'list' ? '' : 'space-y-2.5'}>
-              {viewMode === 'grid' && (
-                <div className="flex items-center justify-between px-1">
-                  <h4 className="text-[12px] font-medium text-[#8c8c8c]">Files</h4>
-                  <span className="text-[11px] font-medium tabular-nums text-[#666666]">{fileItems.length}</span>
-                </div>
-              )}
-              <div
-                className={
-                  viewMode === 'grid'
-                    ? 'grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 gap-3'
-                    : 'flex flex-col'
-                }
-              >
-                {fileItems.map((file) => {
-                  const isSelected = selectedItem?.id === file.id;
-                  const isSelfDragged = draggedItem?.id === file.id;
-                  const ext = getFileExtension(file.name);
-
-                  if (viewMode === 'grid') {
-                    return (
-                      <div
-                        key={file.id}
-                        draggable={true}
-                        onDragStart={(e) => handleItemDragStart(e, file)}
-                        onDragEnd={handleItemDragEnd}
-                        onClick={() => setSelectedItem(file)}
-                        onContextMenu={(e) => handleContextMenu(e, file)}
-                        className={`group p-3 rounded-[8px] border transition-all cursor-default select-none flex flex-col justify-between h-42 shadow-xs ${
-                          isSelfDragged ? 'opacity-40 border-dashed border-[#555555]' : ''
-                        } ${
-                          isSelected
-                            ? 'bg-[#1a1a1a] border-[#383838] shadow-sm ring-1 ring-[#383838]'
-                            : 'bg-[#111111] hover:bg-[#151515] border-[#202020] hover:border-[#303030]'
-                        }`}
-                      >
-                        {/* Top row: Extension tag badge and Storage Tier badge */}
-                        <div className="flex items-center justify-between gap-1">
-                          <span className="text-[10px] font-medium tracking-wider px-1.5 py-0.5 rounded-[4px] bg-[#1a1a1a] text-[#a3a3a3] border border-[#262626] uppercase">
-                            {ext}
-                          </span>
-                          <span
-                            className={`text-[10px] font-medium tracking-wide px-1.5 py-0.5 rounded-[4px] ${
-                              file.inline
-                                ? 'bg-[#10b981]/10 text-[#30a46c] border border-[#10b981]/20'
-                                : 'bg-[#1a1a1a] text-[#8c8c8c] border border-[#262626]'
-                            }`}
-                          >
-                            {file.inline ? 'LSM' : 'Shard'}
-                          </span>
-                        </div>
-
-                        {/* Center Preview Frame */}
-                        <div className="flex-1 flex items-center justify-center py-2">
-                          <div className="w-12 h-12 rounded-[8px] bg-[#161616] border border-[#222222] flex items-center justify-center transition-transform group-hover:scale-105">
-                            {getFileIcon(file.name, 'w-6 h-6')}
-                          </div>
-                        </div>
-
-                        {/* Bottom Information */}
-                        <div className="truncate -mx-3 -mb-3 px-3 py-2 border-t border-[#1e1e1e] bg-[#0c0c0c]/60 rounded-b-[7px] mt-auto">
-                          <div className="text-[13px] font-medium text-white truncate" title={file.name}>
-                            {file.name}
-                          </div>
-                          <div className="flex items-center justify-between text-[11px] text-[#777777] tabular-nums mt-0.5">
-                            <span>{formatBytes(file.size || 0)}</span>
-                            {file.created_at && (
-                              <span>{new Date(file.created_at * 1000).toLocaleDateString()}</span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  }
-
-                  // List View Row
-                  return (
-                    <div
-                      key={file.id}
-                      draggable={true}
-                      onDragStart={(e) => handleItemDragStart(e, file)}
-                      onDragEnd={handleItemDragEnd}
-                      onClick={() => setSelectedItem(file)}
-                      onContextMenu={(e) => handleContextMenu(e, file)}
-                      className={`group flex items-center px-4 py-2.5 border-b border-[#1c1c1c] text-[13px] transition-colors cursor-default select-none ${
-                        isSelfDragged ? 'opacity-40 border-dashed border-[#555555]' : ''
-                      } ${
-                        isSelected
-                          ? 'bg-[#1a1a1a]'
-                          : 'bg-transparent hover:bg-[#141414]'
-                      }`}
-                    >
-                      <div className="flex-1 min-w-0 flex items-center gap-2.5 pr-4 truncate">
-                        {getFileIcon(file.name, 'w-4 h-4 shrink-0')}
-                        <span className="font-medium text-white truncate">{file.name}</span>
-                      </div>
-                      <div className="w-28 shrink-0 text-left">
-                        <span
-                          className={`text-[11px] font-medium px-2 py-0.5 rounded-[4px] ${
-                            file.inline
-                              ? 'bg-[#10b981]/10 text-[#30a46c] border border-[#10b981]/20'
-                              : 'bg-[#1a1a1a] text-[#8c8c8c] border border-[#262626]'
-                          }`}
-                        >
-                          {file.inline ? 'LSM Inline' : 'Disk Shard'}
-                        </span>
-                      </div>
-                      <div className="w-24 shrink-0 text-right pr-4 text-[#8c8c8c] tabular-nums text-[12px]">
-                        {formatBytes(file.size || 0)}
-                      </div>
-                      <div className="w-28 shrink-0 text-right pr-4 text-[#666666] tabular-nums text-[12px] hidden sm:block whitespace-nowrap">
-                        {file.created_at ? new Date(file.created_at * 1000).toLocaleDateString() : '—'}
-                      </div>
-                      <div className="w-20 shrink-0 flex items-center justify-end gap-1">
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDownload(file.fullKey);
-                          }}
-                          className="opacity-0 group-hover:opacity-100 p-1 text-[#777777] hover:text-white rounded hover:bg-[#202020] transition-opacity cursor-pointer"
-                          title="Download"
-                        >
-                          <Download className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setItemToMove(file);
-                            setIsMoveOpen(true);
-                          }}
-                          className="opacity-0 group-hover:opacity-100 p-1 text-[#777777] hover:text-white rounded hover:bg-[#202020] transition-opacity cursor-pointer"
-                          title="Move"
-                        >
-                          <ArrowRight className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
+          {/* Real Content View */}
+          {!isLoading && activeNamespace && (folderItems.length > 0 || fileItems.length > 0) && (
+            viewMode === 'grid' ? (
+              <StorageGridView
+                folderItems={folderItems}
+                fileItems={fileItems}
+                selectedItem={selectedItem}
+                onSelectItem={(item) => setSelectedItem(item)}
+                onNavigateToPrefix={(p) => navigateToPrefix(p, true)}
+                onContextMenu={handleContextMenu}
+                onOpenMove={(item) => {
+                  setItemToMove(item);
+                  setIsMoveOpen(true);
+                }}
+                onDownload={handleDownload}
+                onDelete={(item) => setItemToDelete(item)}
+                draggedItem={draggedItem}
+                draggedItemRef={draggedItemRef}
+                onItemDragStart={handleItemDragStart}
+                onItemDragEnd={handleItemDragEnd}
+                onDropOnFolder={handleDropOnFolder}
+                onUploadFiles={handleUploadFiles}
+                canDropOnFolder={canDropOnFolder}
+              />
+            ) : (
+              <StorageListView
+                folderItems={folderItems}
+                fileItems={fileItems}
+                selectedItem={selectedItem}
+                onSelectItem={(item) => setSelectedItem(item)}
+                onNavigateToPrefix={(p) => navigateToPrefix(p, true)}
+                onContextMenu={handleContextMenu}
+                onDownload={handleDownload}
+                onOpenMove={(item) => {
+                  setItemToMove(item);
+                  setIsMoveOpen(true);
+                }}
+                onDelete={(item) => setItemToDelete(item)}
+                draggedItem={draggedItem}
+                draggedItemRef={draggedItemRef}
+                onItemDragStart={handleItemDragStart}
+                onItemDragEnd={handleItemDragEnd}
+                onDropOnFolder={handleDropOnFolder}
+                canDropOnFolder={canDropOnFolder}
+              />
+            )
           )}
         </div>
       </section>
 
-      {/* ─── Pane 3: Drive Inspector / Details Panel ────────────────────────── */}
-      {isDetailsOpen && (
-        <aside className="w-full lg:w-80 shrink-0 flex flex-col bg-[#0a0a0a] border-t lg:border-t-0 lg:border-l border-[#222222] overflow-hidden">
-          <div className="h-[54px] shrink-0 px-4 border-b border-[#222222] flex items-center justify-between">
-            <h3 className="text-[13px] font-medium text-white flex items-center gap-2">
-              <Info className="w-4 h-4 text-[#8c8c8c]" />
-              <span>{selectedItem ? 'Details' : 'Namespace Overview'}</span>
-            </h3>
-            <button
-              type="button"
-              onClick={() => setIsDetailsOpen(false)}
-              className="text-[#777777] hover:text-white p-1 rounded hover:bg-[#1a1a1a] transition-colors cursor-pointer"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-
-          <div className="flex-1 overflow-y-auto p-4 space-y-5">
-            {selectedItem ? (
-              <>
-                {/* Hero Preview Card */}
-                <div className="p-4 rounded-[8px] bg-[#111111] border border-[#202020] flex flex-col items-center text-center">
-                  <div className="w-16 h-16 rounded-[10px] bg-[#161616] border border-[#262626] flex items-center justify-center mb-3 shadow-inner">
-                    {selectedItem.type === 'folder' ? (
-                      <Folder className="w-8 h-8 text-[#eab308]" />
-                    ) : (
-                      getFileIcon(selectedItem.name, 'w-8 h-8')
-                    )}
-                  </div>
-                  <h4 className="text-[14px] font-semibold text-white break-all max-w-full" title={selectedItem.name}>
-                    {selectedItem.name}
-                  </h4>
-                  <p className="text-[12px] text-[#777777] mt-1">
-                    {selectedItem.type === 'folder'
-                      ? 'Virtual Directory'
-                      : selectedItem.content_type || 'application/octet-stream'}
-                  </p>
-
-                  {/* Action Buttons Row */}
-                  <div className="flex items-center justify-center gap-2 mt-4 -mx-4 -mb-4 px-4 py-3 border-t border-[#1e1e1e] bg-[#0c0c0c]/60 rounded-b-[7px] w-[calc(100%+2rem)]">
-                    {selectedItem.type === 'file' && (
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => handleDownload(selectedItem.fullKey)}
-                        className="h-7 text-[12px] px-2.5 flex items-center gap-1.5 cursor-pointer"
-                      >
-                        <Download className="w-3.5 h-3.5 text-[#8c8c8c]" />
-                        <span>Download</span>
-                      </Button>
-                    )}
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => {
-                        setItemToMove(selectedItem);
-                        setIsMoveOpen(true);
-                      }}
-                      className="h-7 text-[12px] px-2.5 flex items-center gap-1.5 cursor-pointer"
-                    >
-                      <ArrowRight className="w-3.5 h-3.5 text-[#8c8c8c]" />
-                      <span>Move</span>
-                    </Button>
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => setItemToDelete(selectedItem)}
-                      className="h-7 text-[12px] px-2.5 flex items-center gap-1.5 hover:text-[#ef4444] hover:border-[#ef4444]/40 cursor-pointer"
-                    >
-                      <Trash2 className="w-3.5 h-3.5 text-[#8c8c8c]" />
-                      <span>Delete</span>
-                    </Button>
-                  </div>
-                </div>
-
-                {/* Metadata Properties */}
-                <div className="space-y-2 text-[12px]">
-                  <span className="text-[#8c8c8c] font-medium block">Properties</span>
-                  <div className="rounded-[8px] bg-[#111111] border border-[#202020] divide-y divide-[#1a1a1a]">
-                    <div className="flex items-center justify-between p-2.5">
-                      <span className="text-[#777777]">Namespace</span>
-                      <span className="text-white font-medium">{activeNamespace}</span>
-                    </div>
-                    <div className="flex items-center justify-between p-2.5">
-                      <span className="text-[#777777]">Canonical Key</span>
-                      <span className="text-white text-[12px] truncate max-w-[180px]" title={selectedItem.fullKey}>
-                        {selectedItem.fullKey}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between p-2.5">
-                      <span className="text-[#777777]">
-                        {selectedItem.type === 'folder' ? 'Contents' : 'Payload Size'}
-                      </span>
-                      <span className="text-white tabular-nums font-medium">
-                        {selectedItem.type === 'folder'
-                          ? `${selectedItem.itemCount || 0} objects (${formatBytes(selectedItem.totalBytes || 0)})`
-                          : formatBytes(selectedItem.size || 0)}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between p-2.5">
-                      <span className="text-[#777777]">Storage Tier</span>
-                      <span className="text-white font-medium">
-                        {selectedItem.type === 'folder'
-                          ? 'Virtual Hierarchy'
-                          : selectedItem.inline
-                          ? 'Fjall LSM Inline (<64KB)'
-                          : 'Disk Shard'}
-                      </span>
-                    </div>
-                    {selectedItem.type === 'file' && selectedItem.created_at && (
-                      <div className="flex items-center justify-between p-2.5">
-                        <span className="text-[#777777]">Uploaded</span>
-                        <span className="text-white tabular-nums text-[12px]">
-                          {new Date(selectedItem.created_at * 1000).toLocaleString()}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Collapsible Cryptographic Integrity & Checksum Accordion (Files Only) */}
-                {selectedItem.type === 'file' && selectedItem.hash && (
-                  <div className="rounded-[8px] border border-[#202020] bg-[#111111] overflow-hidden text-[12px]">
-                    <button
-                      type="button"
-                      onClick={() => setIsChecksumExpanded(!isChecksumExpanded)}
-                      className="w-full flex items-center justify-between p-2.5 text-left text-[#8c8c8c] hover:text-white hover:bg-[#151515] transition-colors cursor-pointer"
-                    >
-                      <div className="flex items-center gap-2">
-                        <ShieldCheck className="w-3.5 h-3.5 text-[#777777]" />
-                        <span className="font-medium">Checksum & Integrity</span>
-                      </div>
-                      {isChecksumExpanded ? (
-                        <ChevronDown className="w-3.5 h-3.5 text-[#777777]" />
-                      ) : (
-                        <ChevronRight className="w-3.5 h-3.5 text-[#777777]" />
-                      )}
-                    </button>
-
-                    {isChecksumExpanded && (
-                      <div className="p-3 border-t border-[#1a1a1a] bg-[#0c0c0c] space-y-2.5 animate-in fade-in duration-100">
-                        <div className="flex items-center justify-between">
-                          <span className="text-[11px] text-[#777777] font-medium uppercase tracking-wider">
-                            BLAKE3 Digest
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => handleCopyHash(selectedItem.hash!, 'inspector-hash')}
-                            className="text-[11px] text-[#8c8c8c] hover:text-white cursor-pointer"
-                          >
-                            {copiedKey === 'inspector-hash' ? 'Copied!' : 'Copy Hash'}
-                          </button>
-                        </div>
-
-                        <div className="p-2 rounded-[4px] bg-[#080808] border border-[#1f1f1f] font-sans text-[11px] text-[#a3a3a3] break-all select-all tabular-nums">
-                          {selectedItem.hash}
-                        </div>
-
-                        <button
-                          type="button"
-                          onClick={() => handleVerifyBlob(selectedItem.fullKey)}
-                          disabled={verifyMap[`${activeNamespace}/${selectedItem.fullKey}`] === 'verifying'}
-                          className={`w-full py-1.5 px-2.5 rounded-[5px] border text-[11.5px] font-medium flex items-center justify-center gap-1.5 transition-colors cursor-pointer ${
-                            verifyMap[`${activeNamespace}/${selectedItem.fullKey}`] === 'valid'
-                              ? 'border-[#10b981]/40 bg-[#10b981]/10 text-[#30a46c]'
-                              : verifyMap[`${activeNamespace}/${selectedItem.fullKey}`] === 'invalid'
-                              ? 'border-[#ef4444]/40 bg-[#ef4444]/10 text-[#f87171]'
-                              : 'border-[#262626] bg-[#141414] text-[#cccccc] hover:text-white hover:border-[#383838]'
-                          }`}
-                        >
-                          {verifyMap[`${activeNamespace}/${selectedItem.fullKey}`] === 'verifying' ? (
-                            <>
-                              <RefreshCw className="w-3 h-3 animate-spin text-[#8c8c8c]" />
-                              <span>Verifying checksum...</span>
-                            </>
-                          ) : verifyMap[`${activeNamespace}/${selectedItem.fullKey}`] === 'valid' ? (
-                            <>
-                              <CheckCircle2 className="w-3.5 h-3.5 text-[#10b981]" />
-                              <span>Digest Verified Valid</span>
-                            </>
-                          ) : (
-                            <>
-                              <ShieldCheck className="w-3.5 h-3.5 text-[#8c8c8c]" />
-                              <span>Verify BLAKE3 Integrity</span>
-                            </>
-                          )}
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </>
-            ) : isLoading && !currentNsInfo ? (
-              <div className="space-y-4 text-[12px] animate-pulse">
-                <div className="p-3.5 rounded-[8px] bg-[#111111] border border-[#202020] space-y-2">
-                  <div className="h-4 w-32 rounded-[4px] bg-[#16171d]/80 border border-[#1e2025]/40" />
-                  <div className="h-3 w-44 rounded-[4px] bg-[#16171d]/60 border border-[#1e2025]/30" />
-                </div>
-                <div className="p-3.5 rounded-[8px] bg-[#111111] border border-[#202020] space-y-3">
-                  <div className="flex justify-between">
-                    <div className="h-3 w-20 rounded-[4px] bg-[#16171d]/60" />
-                    <div className="h-3 w-16 rounded-[4px] bg-[#16171d]/60" />
-                  </div>
-                  <div className="w-full h-1.5 rounded-full bg-[#1e1e1e]" />
-                  <div className="flex justify-between">
-                    <div className="h-3 w-14 rounded-[4px] bg-[#16171d]/50" />
-                    <div className="h-3 w-14 rounded-[4px] bg-[#16171d]/50" />
-                  </div>
-                </div>
-              </div>
-            ) : (
-              /* Namespace General Overview when no single item is selected */
-              <div className="space-y-4 text-[12px]">
-                <div className="p-3.5 rounded-[8px] bg-[#111111] border border-[#202020] space-y-1">
-                  <div className="text-[14px] font-medium text-white flex items-center gap-2">
-                    <HardDrive className="w-4 h-4 text-[#8c8c8c]" />
-                    <span>{activeNamespace || 'No namespace'}</span>
-                  </div>
-                  <div className="text-[#777777] text-[12px]">
-                    Logical partition containing {blobs.length > 0 ? realObjectsCount : currentNsInfo?.total_objects || 0} {realObjectsCount === 1 ? 'object' : 'objects'}
-                  </div>
-                </div>
-
-                {/* Storage Capacity Gauge (matches Skycrate reference image) */}
-                <div className="p-3.5 rounded-[8px] bg-[#111111] border border-[#202020] space-y-2.5">
-                  <div className="flex items-center justify-between text-[12px]">
-                    <span className="text-[#8c8c8c] font-medium">Storage Quota</span>
-                    <span className="text-white tabular-nums font-medium">
-                      {quotaUsedPercent !== null ? `${quotaUsedPercent}% used` : 'Unlimited'}
-                    </span>
-                  </div>
-                  <div className="w-full h-1.5 rounded-full bg-[#1e1e1e] overflow-hidden">
-                    <div
-                      className="h-full rounded-full transition-all duration-300"
-                      style={{
-                        width: `${quotaUsedPercent !== null ? Math.min(100, Math.max(3, quotaUsedPercent)) : 100}%`,
-                        backgroundColor:
-                          quotaUsedPercent === null
-                            ? '#2f80ed'
-                            : quotaUsedPercent > 90
-                            ? '#ef4444'
-                            : quotaUsedPercent > 75
-                            ? '#f59e0b'
-                            : '#30a46c',
-                      }}
-                    />
-                  </div>
-                  <div className="flex items-center justify-between text-[11px] text-[#777777] tabular-nums">
-                    <span>{formatBytes(currentNsInfo?.total_bytes || 0)} used</span>
-                    <span>{currentNsInfo?.max_bytes ? formatBytes(currentNsInfo.max_bytes) : 'Unlimited'}</span>
-                  </div>
-                </div>
-
-                {/* Namespace Telemetry */}
-                <div className="space-y-2">
-                  <span className="text-[#8c8c8c] font-medium block">Namespace Telemetry</span>
-                  <div className="rounded-[8px] bg-[#111111] border border-[#202020] divide-y divide-[#1a1a1a]">
-                    <div className="flex items-center justify-between p-2.5">
-                      <span className="text-[#777777]">Total Objects</span>
-                      <span className="text-white tabular-nums font-medium">
-                        {blobs.length > 0 ? realObjectsCount : currentNsInfo?.total_objects || 0}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between p-2.5">
-                      <span className="text-[#777777]">Physical Stored Size</span>
-                      <span className="text-white tabular-nums font-medium">
-                        {formatBytes(currentNsInfo?.total_bytes || 0)}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between p-2.5">
-                      <span className="text-[#777777]">Quota Limit</span>
-                      <span className="text-white tabular-nums font-medium">
-                        {currentNsInfo?.max_bytes
-                          ? `${formatBytes(currentNsInfo.max_bytes)} (${quotaUsedPercent}% used)`
-                          : 'Unlimited'}
-                      </span>
-                    </div>
-                    {stats && stats.dedup_saved_bytes > 0 && (
-                      <div className="flex items-center justify-between p-2.5 text-[#30a46c]">
-                        <span className="text-[#30a46c]">Deduplication Saved</span>
-                        <span className="tabular-nums font-medium">
-                          {formatBytes(stats.dedup_saved_bytes)}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <p className="text-[11px] text-[#666666] leading-relaxed">
-                  Select any file or directory in the explorer to view individual properties, cryptographic hashes, and management actions.
-                </p>
-              </div>
-            )}
-          </div>
-        </aside>
-      )}
-
-      {/* ─── Modals: Move to, New Folder, Rename, Delete, Namespace ────────── */}
-      <MoveDialog
-        isOpen={isMoveOpen}
-        item={itemToMove}
-        currentNamespace={activeNamespace}
-        namespaces={namespaces}
-        availableFolders={availableDirectories}
-        onClose={() => {
-          setIsMoveOpen(false);
-          setItemToMove(null);
+      {/* ─── Pane 3: Right Inspector / Details Panel ─────────────── */}
+      <StorageDetailsPanel
+        isOpen={isDetailsOpen}
+        onClose={() => setIsDetailsOpen(false)}
+        selectedItem={selectedItem}
+        activeNamespace={activeNamespace}
+        currentNsInfo={currentNsInfo}
+        onDownload={handleDownload}
+        onOpenMove={(item) => {
+          setItemToMove(item);
+          setIsMoveOpen(true);
         }}
-        onMove={handleMove}
+        onDelete={(item) => setItemToDelete(item)}
+        onVerifyBlob={handleVerifyBlob}
+        verifyStatus={selectedItem ? verifyMap[`${activeNamespace}/${selectedItem.fullKey}`] : undefined}
+        onCopyText={handleCopyText}
+        copiedKey={copiedKey}
       />
+
+      {/* ─── Dialogs & Modals ─────────────── */}
 
       {/* New Folder Modal */}
       {isNewFolderOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs font-sans">
-          <div className="w-full max-w-sm rounded-[10px] bg-[#0e0e0e] border border-[#262626] p-5 shadow-2xl space-y-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs font-sans">
+          <div className="w-full max-w-sm rounded-[8px] bg-[#0e0e0e] border border-[#262626] p-5 shadow-2xl space-y-4">
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <FolderPlus className="w-4 h-4 text-[#eab308]" />
-                <h3 className="text-[14px] font-medium text-white">New Folder</h3>
-              </div>
+              <h3 className="text-[14px] font-medium text-white">New Folder</h3>
               <button
                 type="button"
                 onClick={() => setIsNewFolderOpen(false)}
@@ -2219,6 +1191,7 @@ export function StoragePage() {
                 <X className="w-4 h-4" />
               </button>
             </div>
+
             <form onSubmit={handleCreateFolder} className="space-y-4">
               <div>
                 <label className="block text-[12px] text-[#8c8c8c] font-medium mb-1.5">
@@ -2228,29 +1201,28 @@ export function StoragePage() {
                   type="text"
                   autoFocus
                   required
+                  placeholder="e.g. assets"
                   value={newFolderName}
                   onChange={(e) => setNewFolderName(e.target.value)}
-                  placeholder="e.g. documents, archive"
                   className="w-full h-8 px-3 rounded-[6px] bg-[#141414] border border-[#262626] focus:border-[#383838] text-white text-[13px] outline-none"
                 />
               </div>
+
               <div className="flex items-center justify-end gap-2 pt-1">
-                <Button
+                <button
                   type="button"
-                  variant="secondary"
-                  size="sm"
                   onClick={() => setIsNewFolderOpen(false)}
+                  className="h-8 px-3 rounded-[6px] text-[13px] font-medium text-[#cccccc] hover:text-white bg-transparent hover:bg-[#161616] border border-[#262626] transition-colors cursor-pointer"
                 >
                   Cancel
-                </Button>
-                <Button
+                </button>
+                <button
                   type="submit"
-                  variant="primary"
-                  size="sm"
                   disabled={isCreatingFolder || !newFolderName.trim()}
+                  className="h-8 px-3.5 rounded-[6px] text-[13px] font-medium text-white bg-blue-600 hover:bg-blue-500 border border-blue-500/80 transition-colors cursor-pointer disabled:opacity-40"
                 >
-                  {isCreatingFolder ? 'Creating...' : 'Create'}
-                </Button>
+                  {isCreatingFolder ? 'Creating...' : 'Create Folder'}
+                </button>
               </div>
             </form>
           </div>
@@ -2259,13 +1231,10 @@ export function StoragePage() {
 
       {/* Rename Modal */}
       {isRenameOpen && itemToRename && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs font-sans">
-          <div className="w-full max-w-sm rounded-[10px] bg-[#0e0e0e] border border-[#262626] p-5 shadow-2xl space-y-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs font-sans">
+          <div className="w-full max-w-sm rounded-[8px] bg-[#0e0e0e] border border-[#262626] p-5 shadow-2xl space-y-4">
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Edit3 className="w-4 h-4 text-[#8c8c8c]" />
-                <h3 className="text-[14px] font-medium text-white">Rename</h3>
-              </div>
+              <h3 className="text-[14px] font-medium text-white">Rename Item</h3>
               <button
                 type="button"
                 onClick={() => setIsRenameOpen(false)}
@@ -2275,46 +1244,39 @@ export function StoragePage() {
               </button>
             </div>
 
-            {renameError && (
-              <div className="p-2 rounded bg-[#ef4444]/10 border border-[#ef4444]/30 text-[12px] text-[#ef4444]">
-                {renameError}
-              </div>
-            )}
-
             <form onSubmit={handleRename} className="space-y-4">
               <div>
                 <label className="block text-[12px] text-[#8c8c8c] font-medium mb-1.5">
-                  Name
+                  New Name
                 </label>
                 <input
                   type="text"
                   autoFocus
                   required
                   value={renameInput}
-                  onChange={(e) => {
-                    setRenameInput(e.target.value);
-                    setRenameError(null);
-                  }}
+                  onChange={(e) => setRenameInput(e.target.value)}
                   className="w-full h-8 px-3 rounded-[6px] bg-[#141414] border border-[#262626] focus:border-[#383838] text-white text-[13px] outline-none"
                 />
+                {renameError && (
+                  <p className="text-[11px] text-rose-400 mt-1">{renameError}</p>
+                )}
               </div>
+
               <div className="flex items-center justify-end gap-2 pt-1">
-                <Button
+                <button
                   type="button"
-                  variant="secondary"
-                  size="sm"
                   onClick={() => setIsRenameOpen(false)}
+                  className="h-8 px-3 rounded-[6px] text-[13px] font-medium text-[#cccccc] hover:text-white bg-transparent hover:bg-[#161616] border border-[#262626] transition-colors cursor-pointer"
                 >
                   Cancel
-                </Button>
-                <Button
+                </button>
+                <button
                   type="submit"
-                  variant="primary"
-                  size="sm"
                   disabled={isRenaming || !renameInput.trim()}
+                  className="h-8 px-3.5 rounded-[6px] text-[13px] font-medium text-white bg-blue-600 hover:bg-blue-500 border border-blue-500/80 transition-colors cursor-pointer disabled:opacity-40"
                 >
-                  {isRenaming ? 'Renaming...' : 'Save'}
-                </Button>
+                  {isRenaming ? 'Renaming...' : 'Rename'}
+                </button>
               </div>
             </form>
           </div>
@@ -2326,30 +1288,40 @@ export function StoragePage() {
         isOpen={itemToDelete !== null}
         onClose={() => setItemToDelete(null)}
         onConfirm={handleDeleteItem}
-        title={itemToDelete?.type === 'folder' ? 'Delete Folder' : 'Delete Object'}
+        title={`Delete ${itemToDelete?.type === 'folder' ? 'Folder' : 'File'}`}
         description={
-          itemToDelete?.type === 'folder' ? (
-            <span>
-              Are you sure you want to permanently delete directory{' '}
-              <strong className="text-white">{itemToDelete.fullKey}</strong> and all contained objects in namespace{' '}
-              <strong className="text-white">{activeNamespace}</strong>? This action cannot be reversed.
-            </span>
-          ) : (
+          itemToDelete ? (
             <span>
               Are you sure you want to permanently delete{' '}
-              <strong className="text-white">{itemToDelete?.name}</strong> from namespace{' '}
-              <strong className="text-white">{activeNamespace}</strong>? Unreferenced disk shards will be removed.
+              <strong className="text-white">{itemToDelete.name}</strong>
+              {itemToDelete.type === 'folder' ? ' and all objects inside it?' : '?'}
             </span>
+          ) : (
+            'Are you sure you want to delete this item?'
           )
         }
         confirmLabel={isDeleting ? 'Deleting...' : 'Delete'}
         variant="danger"
       />
 
-      {/* Create Namespace Modal */}
+      {/* Move Dialog Modal */}
+      <MoveDialog
+        isOpen={isMoveOpen}
+        onClose={() => {
+          setIsMoveOpen(false);
+          setItemToMove(null);
+        }}
+        item={itemToMove}
+        namespaces={namespaces}
+        currentNamespace={activeNamespace}
+        availableFolders={availableFolders}
+        onMove={handleMove}
+      />
+
+      {/* New Namespace Modal */}
       {isNewNsOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs font-sans">
-          <div className="w-full max-w-sm rounded-[10px] bg-[#0e0e0e] border border-[#262626] p-5 shadow-2xl space-y-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs font-sans">
+          <div className="w-full max-w-sm rounded-[8px] bg-[#0e0e0e] border border-[#262626] p-5 shadow-2xl space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="text-[14px] font-medium text-white">Create Namespace</h3>
               <button
@@ -2360,6 +1332,7 @@ export function StoragePage() {
                 <X className="w-4 h-4" />
               </button>
             </div>
+
             <form onSubmit={handleCreateNamespace} className="space-y-4">
               <div>
                 <label className="block text-[12px] text-[#8c8c8c] font-medium mb-1.5">
@@ -2369,9 +1342,9 @@ export function StoragePage() {
                   type="text"
                   autoFocus
                   required
+                  placeholder="e.g. avatars, invoices"
                   value={newNsName}
                   onChange={(e) => setNewNsName(e.target.value)}
-                  placeholder="e.g. media, backups"
                   className="w-full h-8 px-3 rounded-[6px] bg-[#141414] border border-[#262626] focus:border-[#383838] text-white text-[13px] outline-none"
                 />
               </div>
@@ -2405,22 +1378,20 @@ export function StoragePage() {
               )}
 
               <div className="flex items-center justify-end gap-2 pt-1">
-                <Button
+                <button
                   type="button"
-                  variant="secondary"
-                  size="sm"
                   onClick={() => setIsNewNsOpen(false)}
+                  className="h-8 px-3 rounded-[6px] text-[13px] font-medium text-[#cccccc] hover:text-white bg-transparent hover:bg-[#161616] border border-[#262626] transition-colors cursor-pointer"
                 >
                   Cancel
-                </Button>
-                <Button
+                </button>
+                <button
                   type="submit"
-                  variant="primary"
-                  size="sm"
                   disabled={isCreatingNs || !newNsName.trim()}
+                  className="h-8 px-3.5 rounded-[6px] text-[13px] font-medium text-white bg-blue-600 hover:bg-blue-500 border border-blue-500/80 transition-colors cursor-pointer disabled:opacity-40"
                 >
-                  {isCreatingNs ? 'Creating...' : 'Create'}
-                </Button>
+                  {isCreatingNs ? 'Creating...' : 'Create Namespace'}
+                </button>
               </div>
             </form>
           </div>
@@ -2429,8 +1400,8 @@ export function StoragePage() {
 
       {/* Manage Namespace Modal */}
       {isManageNsOpen && currentNsInfo && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs font-sans">
-          <div className="w-full max-w-md rounded-[10px] bg-[#0e0e0e] border border-[#262626] p-5 shadow-2xl space-y-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs font-sans">
+          <div className="w-full max-w-md rounded-[8px] bg-[#0e0e0e] border border-[#262626] p-5 shadow-2xl space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="text-[14px] font-medium text-white">Manage Namespace</h3>
               <button
@@ -2446,7 +1417,7 @@ export function StoragePage() {
               <button
                 type="button"
                 onClick={() => setManageNsTab('settings')}
-                className={`px-2.5 py-1 rounded-[5px] font-medium transition-colors ${
+                className={`px-2.5 py-1 rounded-[5px] font-medium transition-colors cursor-pointer ${
                   manageNsTab === 'settings'
                     ? 'bg-[#1e1e1e] text-white'
                     : 'text-[#8c8c8c] hover:text-white'
@@ -2457,9 +1428,9 @@ export function StoragePage() {
               <button
                 type="button"
                 onClick={() => setManageNsTab('danger')}
-                className={`px-2.5 py-1 rounded-[5px] font-medium transition-colors ${
+                className={`px-2.5 py-1 rounded-[5px] font-medium transition-colors cursor-pointer ${
                   manageNsTab === 'danger'
-                    ? 'bg-[#ef4444]/15 text-[#f87171]'
+                    ? 'bg-rose-950/40 text-rose-400'
                     : 'text-[#8c8c8c] hover:text-white'
                 }`}
               >
@@ -2510,47 +1481,43 @@ export function StoragePage() {
                 )}
 
                 <div className="flex items-center justify-end gap-2 pt-2">
-                  <Button
+                  <button
                     type="button"
-                    variant="secondary"
-                    size="sm"
                     onClick={() => setIsManageNsOpen(false)}
+                    className="h-8 px-3 rounded-[6px] text-[13px] font-medium text-[#cccccc] hover:text-white bg-transparent hover:bg-[#161616] border border-[#262626] transition-colors cursor-pointer"
                   >
                     Cancel
-                  </Button>
-                  <Button
+                  </button>
+                  <button
                     type="submit"
-                    variant="primary"
-                    size="sm"
                     disabled={isSavingNs || !editNsName.trim()}
+                    className="h-8 px-3.5 rounded-[6px] text-[13px] font-medium text-white bg-blue-600 hover:bg-blue-500 border border-blue-500/80 transition-colors cursor-pointer disabled:opacity-40"
                   >
                     {isSavingNs ? 'Saving...' : 'Save Changes'}
-                  </Button>
+                  </button>
                 </div>
               </form>
             ) : (
               <div className="space-y-4">
-                <div className="p-3 rounded-[6px] bg-[#2a1010] border border-[#ef4444]/30 text-[12px] text-[#f87171] leading-relaxed">
+                <div className="p-3 rounded-[6px] bg-rose-950/20 border border-rose-900/40 text-[12px] text-rose-300 leading-relaxed">
                   Permanently delete namespace <strong className="text-white">{currentNsInfo.name}</strong> and all{' '}
                   <strong className="text-white">{currentNsInfo.total_objects} stored objects</strong> inside it. This action cannot be undone.
                 </div>
                 <div className="flex items-center justify-end gap-2">
-                  <Button
+                  <button
                     type="button"
-                    variant="secondary"
-                    size="sm"
                     onClick={() => setIsManageNsOpen(false)}
+                    className="h-8 px-3 rounded-[6px] text-[13px] font-medium text-[#cccccc] hover:text-white bg-transparent hover:bg-[#161616] border border-[#262626] transition-colors cursor-pointer"
                   >
                     Cancel
-                  </Button>
-                  <Button
+                  </button>
+                  <button
                     type="button"
-                    variant="danger"
-                    size="sm"
                     onClick={() => setNsToDelete(currentNsInfo)}
+                    className="h-8 px-3.5 rounded-[6px] text-[13px] font-medium text-rose-400 hover:text-rose-300 bg-rose-950/30 hover:bg-rose-950/50 border border-rose-900/50 transition-colors cursor-pointer"
                   >
                     Delete Namespace
-                  </Button>
+                  </button>
                 </div>
               </div>
             )}
@@ -2622,13 +1589,13 @@ export function StoragePage() {
         onRefresh={loadData}
       />
 
-      {/* Google Drive-style Floating Asynchronous Upload Progress Drawer */}
+      {/* Floating Asynchronous Upload Progress Drawer */}
       {isUploadDrawerVisible && uploadTasks.length > 0 && (
         <UploadProgressDrawer
           tasks={uploadTasks}
           onCancelAll={handleCancelAllUploads}
           onCancelTask={handleCancelUploadTask}
-          onDismiss={handleDismissUploadDrawer}
+          onDismiss={() => setIsUploadDrawerVisible(false)}
         />
       )}
     </div>
