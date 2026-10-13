@@ -8,6 +8,7 @@
 
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
+import { AlertDialog, showAlertDialog } from '../components/ui/AlertDialog';
 import { SlideOver } from '../components/ui/SlideOver';
 import { ColumnInfoApi } from '../types';
 import { api } from '../api/client';
@@ -440,7 +441,7 @@ export function TableEditor() {
         }
       }
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to delete table');
+      showAlertDialog(err instanceof Error ? err.message : 'Failed to delete table', 'Failed to Delete Table');
     } finally {
       setIsDeletingTable(false);
     }

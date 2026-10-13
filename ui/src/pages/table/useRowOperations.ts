@@ -7,6 +7,7 @@
 import { useState } from 'react';
 import { api } from '../../api/client';
 import { ColumnInfoApi } from '../../types';
+import { showAlertDialog } from '../../components/ui/AlertDialog';
 
 export interface UseRowOperationsProps {
   selectedDb: string;
@@ -144,7 +145,7 @@ export function useRowOperations({
         setRowEditValues({});
       }
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to update row');
+      showAlertDialog(err instanceof Error ? err.message : 'Failed to update row', 'Failed to Update Row');
     } finally {
       setIsSavingRow(false);
     }
@@ -170,7 +171,7 @@ export function useRowOperations({
       setRowEditValues({});
       await loadTableData({ reloadSchema: false });
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to insert row');
+      showAlertDialog(err instanceof Error ? err.message : 'Failed to insert row', 'Failed to Insert Row');
     } finally {
       setIsSavingRow(false);
     }
@@ -205,7 +206,7 @@ export function useRowOperations({
       setInspectorTab('details');
       await loadTableData({ targetCursor: cursor, reloadSchema: false });
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to delete row');
+      showAlertDialog(err instanceof Error ? err.message : 'Failed to delete row', 'Failed to Delete Row');
     } finally {
       setIsDeleting(false);
     }
@@ -257,7 +258,10 @@ export function useRowOperations({
       setSelectedRowIndex(null);
       await loadTableData({ targetCursor: cursor, reloadSchema: false });
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to delete selected rows');
+      showAlertDialog(
+        err instanceof Error ? err.message : 'Failed to delete selected rows',
+        'Failed to Delete Selected Rows'
+      );
     } finally {
       setIsBatchDeleting(false);
     }

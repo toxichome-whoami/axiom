@@ -7,6 +7,7 @@
 import { useState, useEffect } from 'react';
 import { api } from '../../api/client';
 import { ColumnInfoApi, ForeignKeyInfoApi } from '../../types';
+import { showAlertDialog } from '../../components/ui/AlertDialog';
 
 export interface UseCellEditorProps {
   selectedDb: string;
@@ -159,7 +160,7 @@ export function useCellEditor({
       if (selectedRowIndex === rowIndex) {
         setRowEditValues(originalRow);
       }
-      alert(err instanceof Error ? err.message : 'Failed to update cell');
+      showAlertDialog(err instanceof Error ? err.message : 'Failed to update cell', 'Failed to Update Cell');
     }
   };
 

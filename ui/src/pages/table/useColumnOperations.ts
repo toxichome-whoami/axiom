@@ -8,6 +8,7 @@ import { useState, useCallback, useMemo } from 'react';
 import { api, DatabaseRecordApi } from '../../api/client';
 import { ColumnInfoApi, ForeignKeyInfoApi, TableInfoApi } from '../../types';
 import { mapSqlTypeToFormValue } from './format';
+import { showAlertDialog } from '../../components/ui/AlertDialog';
 
 export interface UseColumnOperationsProps {
   selectedDb: string;
@@ -401,7 +402,10 @@ export function useColumnOperations({
       delete schemaCacheRef.current[selectedTable];
       await loadTableData({ reloadSchema: true });
     } catch (err) {
-      alert(err instanceof Error ? err.message : `Failed to drop column ${colName}`);
+      showAlertDialog(
+        err instanceof Error ? err.message : `Failed to drop column ${colName}`,
+        'Failed to Drop Column'
+      );
     } finally {
       setIsDeletingColumn(false);
     }

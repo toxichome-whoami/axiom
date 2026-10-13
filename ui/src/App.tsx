@@ -2,6 +2,7 @@ import React, { useState, useEffect, Suspense, lazy } from 'react';
 import { Layout, NavPath } from './components/Layout';
 import { setSession, clearSession, hasActiveSession } from './api/session';
 import { api } from './api/client';
+import { GlobalAlertDialog } from './components/ui/AlertDialog';
 
 const Overview = lazy(() => import('./pages/Overview').then((m) => ({ default: m.Overview })));
 const Databases = lazy(() => import('./pages/Databases').then((m) => ({ default: m.Databases })));
@@ -108,12 +109,15 @@ export function App() {
   if (!isAuthenticated || window.location.pathname.includes('/login') || window.location.pathname.includes('/setup')) {
     const isSetup = window.location.pathname.includes('/setup');
     return (
-      <Suspense fallback={<PageFallback />}>
-        <AuthPage
-          onLoginSuccess={handleLoginSuccess}
-          initialMode={isSetup ? 'setup' : 'login'}
-        />
-      </Suspense>
+      <>
+        <Suspense fallback={<PageFallback />}>
+          <AuthPage
+            onLoginSuccess={handleLoginSuccess}
+            initialMode={isSetup ? 'setup' : 'login'}
+          />
+        </Suspense>
+        <GlobalAlertDialog />
+      </>
     );
   }
 
@@ -153,11 +157,14 @@ export function App() {
   const { title, component } = getPageDetails();
 
   return (
-    <Layout currentPath={currentPath} onNavigate={handleNavigate} title={title} onLogout={handleLogout}>
-      <Suspense fallback={<PageFallback />}>
-        {component}
-      </Suspense>
-    </Layout>
+    <>
+      <Layout currentPath={currentPath} onNavigate={handleNavigate} title={title} onLogout={handleLogout}>
+        <Suspense fallback={<PageFallback />}>
+          {component}
+        </Suspense>
+      </Layout>
+      <GlobalAlertDialog />
+    </>
   );
 }
 
