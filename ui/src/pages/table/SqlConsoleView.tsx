@@ -271,24 +271,24 @@ export function SqlConsoleView({
           <div className="flex-1 flex flex-col min-h-0 bg-[#0c0c0c] overflow-hidden">
             {/* Output Header */}
             <div className="h-[54px] w-full px-4 bg-[#0c0c0c] border-b border-[#222222] flex items-center justify-between gap-3 shrink-0 select-none font-sans">
-              {/* Output Sub-tabs (Matching Website Design System Segmented Control) */}
-              <div className="inline-flex items-center p-0.5 rounded-[8px] bg-transparent border border-[#262626]">
+              {/* Output Sub-tabs (Matching TableToolbar design system tab switcher) */}
+              <div className="flex items-center p-1 rounded-[7px] bg-[#141414] border border-[#262626] h-9">
                 <button
                   type="button"
                   onClick={() => setOutputTab('grid')}
-                  className={`flex items-center gap-1.5 h-7.5 px-3 rounded-[6px] text-[13px] font-medium transition-colors duration-75 cursor-pointer font-sans outline-none border ${
+                  className={`flex items-center justify-center gap-1.5 px-3.5 py-1 min-w-[96px] rounded-[5px] text-[13px] font-medium transition-colors cursor-pointer select-none font-sans outline-none ${
                     outputTab === 'grid'
-                      ? 'bg-[#161616] text-white border-[#333333]'
-                      : 'text-[#8c8c8c] hover:text-white hover:bg-[#141414] border-transparent'
+                      ? 'bg-[#222222] text-white shadow-sm'
+                      : 'text-[#8c8c8c] hover:text-white hover:bg-[#1a1a1a]'
                   }`}
                 >
-                  <TableIcon className={`w-3.5 h-3.5 transition-colors ${outputTab === 'grid' ? 'text-white' : 'text-[#8c8c8c]'}`} />
+                  <TableIcon className="w-3.5 h-3.5 shrink-0" />
                   <span>Results</span>
                   {sqlResult?.rows && (
                     <span className={`text-[11px] px-1.5 py-0.2 rounded-full font-mono transition-colors ${
                       outputTab === 'grid'
-                        ? 'bg-[#222222] text-[#cccccc] border border-[#333333]'
-                        : 'bg-[#1a1a1a] text-[#8c8c8c]'
+                        ? 'bg-[#181818] text-[#cccccc] border border-[#2e2e2e]'
+                        : 'bg-[#1e1e1e] text-[#8c8c8c]'
                     }`}>
                       {sqlResult.rows.length}
                     </span>
@@ -298,19 +298,19 @@ export function SqlConsoleView({
                 <button
                   type="button"
                   onClick={() => setOutputTab('stats')}
-                  className={`flex items-center gap-1.5 h-7.5 px-3 rounded-[6px] text-[13px] font-medium transition-colors duration-75 cursor-pointer font-sans outline-none border ${
+                  className={`flex items-center justify-center gap-1.5 px-3.5 py-1 min-w-[96px] rounded-[5px] text-[13px] font-medium transition-colors cursor-pointer select-none font-sans outline-none ${
                     outputTab === 'stats'
-                      ? 'bg-[#161616] text-white border-[#333333]'
-                      : 'text-[#8c8c8c] hover:text-white hover:bg-[#141414] border-transparent'
+                      ? 'bg-[#222222] text-white shadow-sm'
+                      : 'text-[#8c8c8c] hover:text-white hover:bg-[#1a1a1a]'
                   }`}
                 >
-                  <Clock className={`w-3.5 h-3.5 transition-colors ${outputTab === 'stats' ? 'text-white' : 'text-[#8c8c8c]'}`} />
+                  <Clock className="w-3.5 h-3.5 shrink-0" />
                   <span>Stats</span>
                   {sqlDuration !== null && (
                     <span className={`text-[11px] px-1.5 py-0.2 rounded-full font-mono transition-colors ${
                       outputTab === 'stats'
-                        ? 'bg-[#222222] text-[#cccccc] border border-[#333333]'
-                        : 'bg-[#1a1a1a] text-[#8c8c8c]'
+                        ? 'bg-[#181818] text-[#cccccc] border border-[#2e2e2e]'
+                        : 'bg-[#1e1e1e] text-[#8c8c8c]'
                     }`}>
                       {sqlDuration}ms
                     </span>
