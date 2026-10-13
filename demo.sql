@@ -257,16 +257,16 @@ VALUES
 -- 9. INDEXES FOR TABLE BROWSING AND QUERIES
 -- =====================================================
 
-CREATE INDEX idx_customers_country ON customers(country);
-CREATE INDEX idx_products_category ON products(category_id);
-CREATE INDEX idx_products_supplier ON products(supplier_id);
-CREATE INDEX idx_orders_customer ON orders(customer_id);
-CREATE INDEX idx_orders_status ON orders(status);
-CREATE INDEX idx_orders_ordered_at ON orders(ordered_at);
-CREATE INDEX idx_order_items_order ON order_items(order_id);
-CREATE INDEX idx_order_items_product ON order_items(product_id);
-CREATE INDEX idx_payments_order ON payments(order_id);
-CREATE INDEX idx_payments_status ON payments(status);
+CREATE INDEX IF NOT EXISTS idx_customers_country ON customers(country);
+CREATE INDEX IF NOT EXISTS idx_products_category ON products(category_id);
+CREATE INDEX IF NOT EXISTS idx_products_supplier ON products(supplier_id);
+CREATE INDEX IF NOT EXISTS idx_orders_customer ON orders(customer_id);
+CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
+CREATE INDEX IF NOT EXISTS idx_orders_ordered_at ON orders(ordered_at);
+CREATE INDEX IF NOT EXISTS idx_order_items_order ON order_items(order_id);
+CREATE INDEX IF NOT EXISTS idx_order_items_product ON order_items(product_id);
+CREATE INDEX IF NOT EXISTS idx_payments_order ON payments(order_id);
+CREATE INDEX IF NOT EXISTS idx_payments_status ON payments(status);
 
 -- =====================================================
 -- 10. OVERVIEW: TABLES AND ROW COUNTS
