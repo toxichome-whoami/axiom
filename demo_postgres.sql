@@ -1,7 +1,7 @@
 -- =====================================================
 -- AXIOM DEMO DATABASE: RELATIONAL E-COMMERCE DATASET
--- Dialect: PostgreSQL / SQLite
--- (For MySQL / MariaDB, use demo_mysql.sql)
+-- Dialect: PostgreSQL
+-- (For MySQL use demo_mysql.sql, for Turso/LibSQL use demo_turso.sql)
 -- =====================================================
 
 BEGIN;
