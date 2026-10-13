@@ -365,9 +365,9 @@ export function SqlConsoleView({
 
             {/* Live Execution Progress Strip (Linear / Developer Grade) */}
             {chunkProgress && (
-              <div className="relative h-9 px-4 bg-[#0e0e0e] border-b border-[#1f1f1f] flex items-center justify-between gap-3 text-[12px] font-sans select-none shrink-0 overflow-hidden animate-in fade-in duration-100">
+              <div className="relative h-11 px-5 bg-[#0e0e11] border-b border-white/[0.08] flex items-center justify-between gap-4 text-[13px] font-sans select-none shrink-0 overflow-hidden animate-in fade-in duration-100">
                 {/* Hairline Progress Bar */}
-                <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-[#1a1a1a]">
+                <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-white/[0.06]">
                   <div
                     className="h-full bg-blue-500 transition-all duration-200"
                     style={{ width: `${Math.max(2, chunkProgress.percent)}%` }}
@@ -375,19 +375,19 @@ export function SqlConsoleView({
                 </div>
 
                 {/* Left: Indicator, Counter & Live Statement */}
-                <div className="flex items-center gap-2.5 min-w-0 flex-1 overflow-hidden">
-                  <RefreshCw className="w-3.5 h-3.5 animate-spin text-blue-400 shrink-0" />
-                  <div className="flex items-center gap-1.5 shrink-0 text-white font-medium text-[12.5px]">
+                <div className="flex items-center gap-3 min-w-0 flex-1 overflow-hidden">
+                  <RefreshCw className="w-4 h-4 animate-spin text-blue-400 shrink-0" />
+                  <div className="flex items-center gap-2 shrink-0 text-zinc-100 font-medium text-[13px]">
                     <span>Executing</span>
-                    <span className="font-mono text-[#cccccc] font-normal">
+                    <span className="font-mono text-zinc-300 font-normal">
                       {chunkProgress.current}/{chunkProgress.total}
                     </span>
-                    <span className="text-[#666666] font-mono text-[11.5px]">
+                    <span className="text-zinc-500 font-mono text-[12px]">
                       ({chunkProgress.percent}%)
                     </span>
                   </div>
-                  <span className="text-[#333333] shrink-0 font-mono">•</span>
-                  <div className="truncate min-w-0 font-mono text-[11.5px] text-[#888888]" title={chunkProgress.snippet}>
+                  <span className="text-zinc-600 shrink-0 font-mono">•</span>
+                  <div className="truncate min-w-0 font-mono text-[12px] text-zinc-400" title={chunkProgress.snippet}>
                     {chunkProgress.snippet}
                   </div>
                 </div>
@@ -397,9 +397,9 @@ export function SqlConsoleView({
                   <button
                     type="button"
                     onClick={handleCancelSql}
-                    className="flex items-center gap-1.5 h-6 px-2.5 rounded-[5px] bg-[#1a1a1a] hover:bg-[#281818] border border-[#2a2a2a] hover:border-rose-900/60 text-[#aaaaaa] hover:text-rose-300 text-[11.5px] font-medium transition-colors cursor-pointer shrink-0"
+                    className="flex items-center gap-1.5 h-7 px-3 rounded-md bg-white/[0.04] hover:bg-rose-500/10 border border-white/[0.08] hover:border-rose-500/30 text-zinc-300 hover:text-rose-300 text-[12px] font-medium transition-colors cursor-pointer shrink-0"
                   >
-                    <StopCircle className="w-3 h-3 text-[#777777]" />
+                    <StopCircle className="w-3.5 h-3.5 text-zinc-400 group-hover:text-rose-400" />
                     <span>Cancel</span>
                   </button>
                 )}
@@ -408,9 +408,9 @@ export function SqlConsoleView({
 
             {/* Batch execution warning banner when errors were skipped */}
             {batchSummary?.errors && batchSummary.errors.length > 0 && outputTab === 'grid' && (
-              <div className="h-8.5 px-4 bg-[#0e0e11] border-b border-white/[0.06] flex items-center justify-between text-[12px] text-zinc-300 shrink-0 select-none">
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400/90 shadow-[0_0_6px_rgba(251,191,36,0.6)] shrink-0" />
+              <div className="h-11 px-5 bg-[#0e0e11] border-b border-white/[0.08] flex items-center justify-between text-[13px] text-zinc-300 shrink-0 select-none">
+                <div className="flex items-center gap-3 min-w-0">
+                  <span className="w-2 h-2 rounded-full bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.6)] shrink-0" />
                   <span className="truncate text-zinc-300 font-normal">
                     Batch completed: <span className="text-zinc-100 font-medium">{batchSummary.successful} statements succeeded</span>
                     <span className="text-zinc-400"> ({batchSummary.errors.length} skipped with warnings)</span>
@@ -419,10 +419,10 @@ export function SqlConsoleView({
                 <button
                   type="button"
                   onClick={() => setOutputTab('stats')}
-                  className="text-zinc-400 hover:text-white text-[11.5px] font-medium transition-colors shrink-0 ml-3 cursor-pointer flex items-center gap-1"
+                  className="text-zinc-400 hover:text-zinc-100 text-[12.5px] font-medium transition-colors shrink-0 ml-4 cursor-pointer flex items-center gap-1.5 px-2.5 py-1 rounded-md hover:bg-white/[0.05]"
                 >
                   <span>View in stats</span>
-                  <span className="font-mono text-[10.5px] text-zinc-500">→</span>
+                  <span className="font-mono text-[11px] text-zinc-500">→</span>
                 </button>
               </div>
             )}
@@ -523,36 +523,36 @@ SET FOREIGN_KEY_CHECKS = 1;`}
                 </div>
               ) : outputTab === 'stats' ? (
                 /* Stats / Execution Summary View */
-                <div className="p-5 space-y-4 font-sans max-w-xl">
+                <div className="p-6 sm:p-8 space-y-6 font-sans max-w-4xl mx-auto">
                   {/* Execution Telemetry Card */}
-                  <div className="relative overflow-hidden rounded-xl border border-white/[0.08] bg-[#0f0f12] p-4.5 space-y-3.5 shadow-2xl">
+                  <div className="relative overflow-hidden rounded-xl border border-white/[0.08] bg-[#0f0f12] p-6 space-y-5 shadow-2xl">
                     <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className="w-1.5 h-1.5 rounded-full bg-zinc-400" />
-                        <span className="text-[13px] font-medium text-zinc-200 tracking-tight">Execution telemetry</span>
+                      <div className="flex items-center gap-2.5">
+                        <span className="w-2 h-2 rounded-full bg-zinc-400" />
+                        <span className="text-[14px] font-medium text-zinc-200">Execution telemetry</span>
                       </div>
                       {selectedDb && (
-                        <span className="text-[11px] font-mono text-zinc-400 px-2 py-0.5 rounded-md bg-white/[0.03] border border-white/[0.06]">
+                        <span className="text-[12px] font-mono text-zinc-400 px-2.5 py-1 rounded-md bg-white/[0.03] border border-white/[0.06]">
                           {selectedDb}
                         </span>
                       )}
                     </div>
-                    <div className="grid grid-cols-3 gap-2.5 text-[12px]">
-                      <div className="p-3 rounded-lg bg-white/[0.02] border border-white/[0.05] hover:border-white/[0.08] transition-colors">
-                        <span className="text-[10.5px] font-medium uppercase tracking-wider text-zinc-500 block">Duration</span>
-                        <span className="text-[15px] font-mono font-medium text-zinc-100 tracking-tight mt-1 block">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-[13px]">
+                      <div className="p-4 sm:p-5 rounded-xl bg-white/[0.02] border border-white/[0.06] hover:border-white/[0.1] transition-colors">
+                        <span className="text-[13px] font-normal text-zinc-400 block">Duration</span>
+                        <span className="text-[22px] sm:text-[24px] font-medium text-zinc-100 mt-2 block">
                           {sqlDuration !== null ? `${sqlDuration} ms` : '—'}
                         </span>
                       </div>
-                      <div className="p-3 rounded-lg bg-white/[0.02] border border-white/[0.05] hover:border-white/[0.08] transition-colors">
-                        <span className="text-[10.5px] font-medium uppercase tracking-wider text-zinc-500 block">Rows returned</span>
-                        <span className="text-[15px] font-mono font-medium text-zinc-100 tracking-tight mt-1 block">
+                      <div className="p-4 sm:p-5 rounded-xl bg-white/[0.02] border border-white/[0.06] hover:border-white/[0.1] transition-colors">
+                        <span className="text-[13px] font-normal text-zinc-400 block">Rows returned</span>
+                        <span className="text-[22px] sm:text-[24px] font-medium text-zinc-100 mt-2 block">
                           {sqlResult.rows ? sqlResult.rows.length.toLocaleString() : 0}
                         </span>
                       </div>
-                      <div className="p-3 rounded-lg bg-white/[0.02] border border-white/[0.05] hover:border-white/[0.08] transition-colors">
-                        <span className="text-[10.5px] font-medium uppercase tracking-wider text-zinc-500 block">Affected rows</span>
-                        <span className="text-[15px] font-mono font-medium text-zinc-100 tracking-tight mt-1 block">
+                      <div className="p-4 sm:p-5 rounded-xl bg-white/[0.02] border border-white/[0.06] hover:border-white/[0.1] transition-colors">
+                        <span className="text-[13px] font-normal text-zinc-400 block">Affected rows</span>
+                        <span className="text-[22px] sm:text-[24px] font-medium text-zinc-100 mt-2 block">
                           {sqlResult.affected_rows !== undefined ? sqlResult.affected_rows.toLocaleString() : '0'}
                         </span>
                       </div>
@@ -561,90 +561,90 @@ SET FOREIGN_KEY_CHECKS = 1;`}
 
                   {/* Batch Summary Report Card */}
                   {batchSummary && (
-                    <div className="relative overflow-hidden rounded-xl border border-white/[0.08] bg-[#0f0f12] p-4.5 space-y-4 shadow-2xl">
+                    <div className="relative overflow-hidden rounded-xl border border-white/[0.08] bg-[#0f0f12] p-6 space-y-5 shadow-2xl">
                       {/* Top subtle sheen */}
                       <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/[0.12] to-transparent pointer-events-none" />
 
                       {/* Execution Overview Row */}
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="space-y-1">
-                          <div className="flex items-center gap-2">
-                            <span className={`w-1.5 h-1.5 rounded-full ${
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="space-y-1.5">
+                          <div className="flex items-center gap-2.5">
+                            <span className={`w-2 h-2 rounded-full ${
                               batchSummary.errors && batchSummary.errors.length > 0
                                 ? 'bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.5)]'
                                 : 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.5)]'
                             }`} />
-                            <span className="text-[13.5px] font-medium text-zinc-100 tracking-tight">
+                            <span className="text-[15px] font-medium text-zinc-100">
                               Batch execution completed
                             </span>
                           </div>
-                          <p className="text-[12px] text-zinc-400 font-mono leading-relaxed">
-                            <span className="text-zinc-200">{batchSummary.successful}</span> of {batchSummary.totalStatements} statements completed
+                          <p className="text-[13px] text-zinc-400 leading-relaxed">
+                            <span className="text-zinc-200 font-medium">{batchSummary.successful}</span> of {batchSummary.totalStatements} statements completed
                             {batchSummary.errors && batchSummary.errors.length > 0 && (
-                              <span className="text-zinc-400"> • {batchSummary.errors.length} skipped</span>
+                              <span className="text-amber-400/90"> • {batchSummary.errors.length} skipped</span>
                             )}
                             {' '}• {batchSummary.totalAffectedRows} affected rows
                           </p>
                         </div>
-                        <span className="px-2 py-0.5 rounded-md bg-white/[0.04] border border-white/[0.08] text-zinc-400 font-mono text-[11px] shrink-0">
+                        <span className="px-3 py-1 rounded-md bg-white/[0.04] border border-white/[0.08] text-zinc-300 font-mono text-[12px] shrink-0">
                           {batchSummary.durationMs}ms
                         </span>
                       </div>
 
                       {/* Skipped Statements List */}
                       {batchSummary.errors && batchSummary.errors.length > 0 && (
-                        <div className="pt-3 border-t border-white/[0.06] space-y-2.5">
-                          <div className="flex items-center justify-between text-[11px] font-medium tracking-wider uppercase text-zinc-400">
-                            <div className="flex items-center gap-2">
-                              <span>Skipped statements</span>
-                              <span className="px-1.5 py-0.2 rounded-full bg-white/[0.05] border border-white/[0.08] text-zinc-300 font-mono text-[10px]">
+                        <div className="pt-4 border-t border-white/[0.06] space-y-3.5">
+                          <div className="flex items-center justify-between text-[13px] text-zinc-300">
+                            <div className="flex items-center gap-2.5">
+                              <span className="font-medium text-zinc-200">Skipped statements</span>
+                              <span className="px-2 py-0.5 rounded-full bg-white/[0.06] border border-white/[0.08] text-zinc-300 font-mono text-[11px]">
                                 {batchSummary.errors.length}
                               </span>
                             </div>
-                            <span className="text-[10.5px] lowercase tracking-normal text-zinc-500 font-sans">
-                              tolerated via continue-on-error
+                            <span className="text-[12px] text-zinc-500 font-normal">
+                              Tolerated via continue on error
                             </span>
                           </div>
 
-                          <div className="max-h-72 overflow-y-auto space-y-2.5 pr-1">
+                          <div className="max-h-96 overflow-y-auto space-y-3 pr-1">
                             {batchSummary.errors.map((err) => (
                               <div
                                 key={err.index}
-                                className="group relative rounded-lg border border-white/[0.06] bg-[#09090c] hover:border-white/[0.12] p-3 space-y-2 transition-all"
+                                className="group relative rounded-xl border border-white/[0.06] bg-[#09090c] hover:border-white/[0.12] p-4 space-y-2.5 transition-all"
                               >
                                 <div className="flex items-center justify-between">
-                                  <div className="flex items-center gap-2">
-                                    <span className="px-1.5 py-0.5 rounded bg-white/[0.04] border border-white/[0.08] font-mono text-[11px] text-zinc-300">
+                                  <div className="flex items-center gap-2.5">
+                                    <span className="px-2 py-0.5 rounded-md bg-white/[0.04] border border-white/[0.08] font-mono text-[11.5px] text-zinc-300">
                                       Statement #{err.index}
                                     </span>
-                                    <span className="text-[12px] font-medium text-zinc-200">
+                                    <span className="text-[13px] font-medium text-zinc-200">
                                       {err.isDuplicate ? 'Index or key already exists' : 'Execution notice'}
                                     </span>
                                   </div>
                                   {err.isDuplicate && (
-                                    <span className="px-2 py-0.5 rounded-full bg-white/[0.03] border border-white/[0.07] text-zinc-400 text-[10.5px] font-mono">
+                                    <span className="px-2.5 py-0.5 rounded-full bg-white/[0.03] border border-white/[0.07] text-zinc-400 text-[11px] font-mono">
                                       Idempotent
                                     </span>
                                   )}
                                 </div>
 
-                                <div className="text-[12px] font-mono text-zinc-300 break-words leading-relaxed pl-0.5">
+                                <div className="text-[13px] font-mono text-zinc-300 break-words leading-relaxed pl-0.5">
                                   {err.error}
                                 </div>
 
                                 {/* Sleek Terminal Snippet */}
-                                <div className="relative group/snippet rounded-md bg-[#050507] border border-white/[0.05] p-2.5 font-mono text-[11.5px] text-zinc-300 select-all overflow-x-auto flex items-center justify-between gap-3">
+                                <div className="relative group/snippet rounded-lg bg-[#050507] border border-white/[0.06] p-3 font-mono text-[12px] text-zinc-300 select-all overflow-x-auto flex items-center justify-between gap-3">
                                   <code className="truncate text-zinc-300">{err.statement}</code>
                                   <button
                                     type="button"
                                     onClick={() => handleCopySnippet(err.statement, err.index)}
                                     title="Copy statement SQL"
-                                    className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-white/[0.08] text-zinc-400 hover:text-white cursor-pointer shrink-0"
+                                    className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded-md hover:bg-white/[0.08] text-zinc-400 hover:text-white cursor-pointer shrink-0"
                                   >
                                     {copiedSnippetIndex === err.index ? (
-                                      <Check className="w-3.5 h-3.5 text-emerald-400" />
+                                      <Check className="w-4 h-4 text-emerald-400" />
                                     ) : (
-                                      <Copy className="w-3.5 h-3.5" />
+                                      <Copy className="w-4 h-4" />
                                     )}
                                   </button>
                                 </div>
@@ -658,19 +658,19 @@ SET FOREIGN_KEY_CHECKS = 1;`}
                 </div>
               ) : batchSummary && (!sqlResult.rows || sqlResult.rows.length === 0) ? (
                 /* Batch Summary Completed (Empty rows output) */
-                <div className="p-8 text-center flex flex-col items-center justify-center gap-4 h-full max-w-md mx-auto font-sans select-none">
-                  <div className="relative flex items-center justify-center w-12 h-12 rounded-xl bg-white/[0.03] border border-white/[0.08] shadow-[0_0_24px_rgba(255,255,255,0.02)]">
+                <div className="p-8 text-center flex flex-col items-center justify-center gap-4 h-full max-w-lg mx-auto font-sans select-none">
+                  <div className="relative flex items-center justify-center w-14 h-14 rounded-2xl bg-white/[0.03] border border-white/[0.08] shadow-[0_0_24px_rgba(255,255,255,0.02)]">
                     {batchSummary.errors && batchSummary.errors.length > 0 ? (
-                      <span className="w-2.5 h-2.5 rounded-full bg-amber-400 shadow-[0_0_10px_rgba(251,191,36,0.6)]" />
+                      <span className="w-3 h-3 rounded-full bg-amber-400 shadow-[0_0_10px_rgba(251,191,36,0.6)]" />
                     ) : (
-                      <Check className="w-5 h-5 text-zinc-200" />
+                      <Check className="w-6 h-6 text-zinc-200" />
                     )}
                   </div>
-                  <div className="space-y-1">
-                    <div className="font-medium text-zinc-100 text-[15px] tracking-tight">
+                  <div className="space-y-1.5">
+                    <div className="font-medium text-zinc-100 text-[16px]">
                       Batch execution finished
                     </div>
-                    <div className="text-[12px] text-zinc-400 font-mono">
+                    <div className="text-[13px] text-zinc-400 font-mono leading-relaxed">
                       {batchSummary.successful} succeeded • {batchSummary.errors ? batchSummary.errors.length : 0} skipped • {batchSummary.totalAffectedRows} affected rows • {batchSummary.durationMs}ms
                     </div>
                   </div>
@@ -678,10 +678,10 @@ SET FOREIGN_KEY_CHECKS = 1;`}
                     <button
                       type="button"
                       onClick={() => setOutputTab('stats')}
-                      className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] hover:border-white/[0.15] text-zinc-300 hover:text-white text-[12px] font-medium transition-all cursor-pointer shadow-sm"
+                      className="flex items-center gap-2 px-4 py-2 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] hover:border-white/[0.15] text-zinc-300 hover:text-white text-[13px] font-medium transition-all cursor-pointer shadow-sm"
                     >
                       <span>Inspect skipped statements</span>
-                      <span className="px-1.5 py-0.2 rounded-full bg-white/[0.06] text-[10.5px] font-mono text-zinc-400">
+                      <span className="px-2 py-0.5 rounded-full bg-white/[0.06] text-[11px] font-mono text-zinc-400">
                         {batchSummary.errors.length}
                       </span>
                     </button>
