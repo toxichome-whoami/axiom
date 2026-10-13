@@ -159,7 +159,7 @@ export function TableEditSlideOver({
         defaultValue: c.default_value ?? 'NULL',
         primaryKey: !!c.primary_key,
         nullable: c.nullable ?? true,
-        unique: false,
+        unique: !!c.unique,
         check: '',
         isArray: false,
         isForeignKey: isFk,
@@ -832,7 +832,7 @@ export function TableEditSlideOver({
                       </div>
                     </div>
 
-                    <div className="font-mono text-[12px] text-[#cccccc] flex items-center gap-2 pt-1 border-t border-[#1c1c1c]">
+                    <div className="font-mono text-[12px] text-[#cccccc] flex items-center gap-2 pt-2.5 mt-2.5 -mx-3.5 px-3.5 border-t border-[#1c1c1c]">
                       <span>{fk.column}</span>
                       <span className="text-[#666666]">→</span>
                       <span className="text-white">

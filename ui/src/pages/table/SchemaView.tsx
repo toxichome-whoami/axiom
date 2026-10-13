@@ -37,6 +37,7 @@ export interface SchemaViewProps {
   transform: { x: number; y: number; scale: number };
   setTransform: React.Dispatch<React.SetStateAction<{ x: number; y: number; scale: number }>>;
   autoLayoutTrigger?: number;
+  resetViewTrigger?: number;
   onEditTable?: (tableName: string) => void;
   onEditColumn?: (tableName: string, col: ColumnInfoApi) => void;
   onViewInTableEditor?: (tableName: string) => void;
@@ -63,6 +64,7 @@ export function SchemaView({
   transform,
   setTransform,
   autoLayoutTrigger,
+  resetViewTrigger,
   onEditTable,
   onEditColumn,
   onViewInTableEditor,
@@ -119,162 +121,298 @@ export function SchemaView({
 
   // Dragging individual table nodes
   const [nodePositions, setNodePositions] = useState<Record<string, TablePosition>>({});
-  const [draggingNode, setDraggingNode] = useState<{
-    tableName: string;
-    startX: number;
-    startY: number;
-    initialPos: TablePosition;
-  } | null>(null);
+  const [isDraggingNode, setIsDraggingNode] = useState(false);
 
-  // Compute table heights
+  // Compute exact table card pixel height
   const getTableHeight = useCallback(
     (tableName: string) => {
-      const cols = allDbTablesSchema[tableName]?.columns || [];
-      return HEADER_OFFSET + Math.max(cols.length, 1) * ROW_HEIGHT + 14;
+      const tableData = allDbTablesSchema[tableName];
+      const cols = tableData?.columns;
+      // Default to 4 columns if schema is still loading to preserve ample vertical spacing
+      const colCount = cols && cols.length > 0 ? cols.length : 4;
+      // 20px (p-2.5) + 2px border + 40px (h-10) + 8px (mb-2) + 2px list border + N * 32px + (N-1) dividers
+      return 72 + colCount * 33;
     },
     [allDbTablesSchema]
   );
 
-  // Auto-layout computation (topological layer layout)
+  // Center and fit nodes in viewport
+  const centerNodesInViewport = useCallback((positions: Record<string, TablePosition>) => {
+    const tableKeys = Object.keys(positions);
+    if (tableKeys.length === 0) return;
+
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+
+    tableKeys.forEach((name) => {
+      const pos = positions[name];
+      if (!pos) return;
+      const h = getTableHeight(name);
+      if (pos.x < minX) minX = pos.x;
+      if (pos.y < minY) minY = pos.y;
+      if (pos.x + CARD_WIDTH > maxX) maxX = pos.x + CARD_WIDTH;
+      if (pos.y + h > maxY) maxY = pos.y + h;
+    });
+
+    const contentWidth = Math.max(maxX - minX, 100);
+    const contentHeight = Math.max(maxY - minY, 100);
+
+    const vpWidth = containerRef.current?.clientWidth || window.innerWidth || 1200;
+    const vpHeight = containerRef.current?.clientHeight || window.innerHeight || 800;
+
+    const padding = 72;
+    const scaleX = (vpWidth - padding * 2) / contentWidth;
+    const scaleY = (vpHeight - padding * 2) / contentHeight;
+
+    // Pick clean scale clamped between 0.45 and 1.0 (never upscale past 1.0)
+    let newScale = Math.min(scaleX, scaleY, 1.0);
+    newScale = Math.max(0.45, Math.min(1.0, Number(newScale.toFixed(2))));
+
+    const contentCenterX = minX + contentWidth / 2;
+    const contentCenterY = minY + contentHeight / 2;
+
+    const newX = Math.round(vpWidth / 2 - contentCenterX * newScale);
+    const newY = Math.round(vpHeight / 2 - contentCenterY * newScale);
+
+    setTransform({
+      x: newX,
+      y: newY,
+      scale: newScale,
+    });
+  }, [getTableHeight, setTransform]);
+
+  // Auto-layout computation: topological layering + grid fallback + auto-centering
   const computeAutoLayout = useCallback(() => {
     const tableNames = tables.map((t) => t.name);
     if (tableNames.length === 0) return;
 
-    // Build adjacency list for dependency levels
+    const GAP_X = 420; // 290px card width + 130px connector margin
+    const GAP_Y = 56;  // Clean 56px vertical gap between stacked table nodes
+
+    // Build directed graph of foreign key relationships:
+    // If Table B has FK referencing Table A:
+    // Table A is the parent (reference/dimension table on left).
+    // Table B is the child (transaction/fact table on right).
     const inDegree: Record<string, number> = {};
+    const outDegree: Record<string, number> = {};
     const adj: Record<string, string[]> = {};
-    tableNames.forEach((name) => {
-      inDegree[name] = 0;
-      adj[name] = [];
-    });
+    const reverseAdj: Record<string, string[]> = {};
 
     tableNames.forEach((name) => {
-      const fks = allDbTablesSchema[name]?.foreign_keys || [];
+      inDegree[name] = 0;
+      outDegree[name] = 0;
+      adj[name] = [];
+      reverseAdj[name] = [];
+    });
+
+    let totalRelationships = 0;
+    tableNames.forEach((childName) => {
+      const fks = allDbTablesSchema[childName]?.foreign_keys || [];
       fks.forEach((fk) => {
-        if (tableNames.includes(fk.referenced_table) && fk.referenced_table !== name) {
-          adj[fk.referenced_table].push(name);
-          inDegree[name] = (inDegree[name] || 0) + 1;
+        const parentName = fk.referenced_table;
+        if (tableNames.includes(parentName) && parentName !== childName) {
+          if (!adj[parentName].includes(childName)) {
+            adj[parentName].push(childName);
+            reverseAdj[childName].push(parentName);
+            inDegree[childName] = (inDegree[childName] || 0) + 1;
+            outDegree[parentName] = (outDegree[parentName] || 0) + 1;
+            totalRelationships++;
+          }
         }
       });
     });
 
-    // Assign columns/layers
-    const layers: string[][] = [];
-    const assigned = new Set<string>();
+    const newPositions: Record<string, TablePosition> = {};
 
-    const totalFkCount = Object.values(allDbTablesSchema).reduce(
-      (sum, s) => sum + (s?.foreign_keys?.length || 0),
-      0
-    );
+    // ─── CASE 1: No Foreign Key Relationships (Masonry Column Balance) ───
+    if (totalRelationships === 0) {
+      const count = tableNames.length;
+      const numCols = count <= 2 ? 1 : count <= 4 ? 2 : count <= 8 ? 3 : 4;
+      const colCurrentY: number[] = new Array(numCols).fill(40);
 
-    // If there are no foreign key relationships yet (or schemas are standalone),
-    // lay out in a clean 3-4 column grid rather than stacking all tables in 1 giant vertical column!
-    if (totalFkCount === 0) {
-      const COLS = Math.min(4, Math.max(2, Math.ceil(Math.sqrt(tableNames.length))));
-      const newPositions: Record<string, TablePosition> = {};
-      const layerSpacingX = 380;
-      const colCurrentY: number[] = new Array(COLS).fill(60);
-
-      tableNames.forEach((tableName) => {
-        // Pick the column with minimum current height
+      // Sort tables by height descending to balance masonry columns evenly
+      const sorted = [...tableNames].sort((a, b) => getTableHeight(b) - getTableHeight(a));
+      sorted.forEach((tableName) => {
         let shortestCol = 0;
-        for (let c = 1; c < COLS; c++) {
+        for (let c = 1; c < numCols; c++) {
           if (colCurrentY[c] < colCurrentY[shortestCol]) {
             shortestCol = c;
           }
         }
-
         newPositions[tableName] = {
-          x: 60 + shortestCol * layerSpacingX,
+          x: 40 + shortestCol * GAP_X,
           y: colCurrentY[shortestCol],
         };
-        colCurrentY[shortestCol] += getTableHeight(tableName) + 36;
+        colCurrentY[shortestCol] += getTableHeight(tableName) + GAP_Y;
       });
 
       setNodePositions(newPositions);
-      setTransform({ x: 40, y: 40, scale: 0.9 });
+      centerNodesInViewport(newPositions);
       return;
     }
 
-    let currentLayer = tableNames.filter((name) => inDegree[name] === 0);
-    if (currentLayer.length === 0) {
-      currentLayer = [tableNames[0]];
+    // ─── CASE 2: Connected ER Diagram (Topological Multi-layer DAG) ───
+    // Layer assignment:
+    // Root reference tables (inDegree === 0) start at Layer 0.
+    // Each child table is placed at layer = Math.max(parent_layers) + 1.
+    const assignedLayer: Record<string, number> = {};
+
+    let roots = tableNames.filter((name) => inDegree[name] === 0);
+    if (roots.length === 0) {
+      // Fallback for circular dependencies: choose table with highest outgoing relations
+      roots = [[...tableNames].sort((a, b) => (outDegree[b] || 0) - (outDegree[a] || 0))[0]];
     }
 
-    while (currentLayer.length > 0 && assigned.size < tableNames.length) {
-      layers.push(currentLayer);
-      currentLayer.forEach((n) => assigned.add(n));
-
-      const nextLayerSet = new Set<string>();
-      currentLayer.forEach((parent) => {
-        adj[parent]?.forEach((child) => {
-          if (!assigned.has(child)) {
-            nextLayerSet.add(child);
-          }
-        });
-      });
-
-      // Catch unconnected leftovers if any
-      if (nextLayerSet.size === 0 && assigned.size < tableNames.length) {
-        const remaining = tableNames.filter((n) => !assigned.has(n));
-        if (remaining.length > 0) {
-          nextLayerSet.add(remaining[0]);
-        }
-      }
-
-      currentLayer = Array.from(nextLayerSet);
-    }
-
-    // Place each layer
-    const newPositions: Record<string, TablePosition> = {};
-    const layerSpacingX = 390;
-    const itemSpacingY = 32;
-
-    layers.forEach((layerTables, layerIdx) => {
-      let currentY = 60;
-      layerTables.forEach((tableName) => {
-        newPositions[tableName] = {
-          x: 60 + layerIdx * layerSpacingX,
-          y: currentY,
-        };
-        currentY += getTableHeight(tableName) + itemSpacingY;
-      });
+    roots.forEach((name) => {
+      assignedLayer[name] = 0;
     });
 
-    // Fill in any missed tables
-    tableNames.forEach((name, i) => {
-      if (!newPositions[name]) {
-        newPositions[name] = {
-          x: 60 + (i % 3) * layerSpacingX,
-          y: 60 + Math.floor(i / 3) * 320,
-        };
+    const queue = [...roots];
+    let maxLayer = 0;
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      const currentLayer = assignedLayer[current] || 0;
+
+      adj[current]?.forEach((child) => {
+        const nextLayer = currentLayer + 1;
+        if (assignedLayer[child] === undefined || assignedLayer[child] < nextLayer) {
+          assignedLayer[child] = nextLayer;
+          if (nextLayer > maxLayer) maxLayer = nextLayer;
+          if (!queue.includes(child)) {
+            queue.push(child);
+          }
+        }
+      });
+    }
+
+    // Catch any disconnected tables and place them in Layer 0
+    tableNames.forEach((name) => {
+      if (assignedLayer[name] === undefined) {
+        assignedLayer[name] = 0;
       }
+    });
+
+    // Group tables by layer
+    const rawLayers: string[][] = [];
+    for (let l = 0; l <= maxLayer; l++) {
+      rawLayers.push([]);
+    }
+    tableNames.forEach((name) => {
+      const l = assignedLayer[name] || 0;
+      rawLayers[l].push(name);
+    });
+
+    // Sub-divide any layer that has more than 3 tables into 2 balanced columns
+    const columns: string[][] = [];
+    rawLayers.forEach((layerTables) => {
+      if (layerTables.length === 0) return;
+      if (layerTables.length > 3) {
+        const colA: string[] = [];
+        const colB: string[] = [];
+        let hA = 0;
+        let hB = 0;
+        layerTables.forEach((t) => {
+          const h = getTableHeight(t);
+          if (hA <= hB) {
+            colA.push(t);
+            hA += h + GAP_Y;
+          } else {
+            colB.push(t);
+            hB += h + GAP_Y;
+          }
+        });
+        columns.push(colA);
+        columns.push(colB);
+      } else {
+        columns.push(layerTables);
+      }
+    });
+
+    // Calculate column heights for vertical centering
+    const columnHeights = columns.map((colTables) => {
+      return colTables.reduce((sum, name) => sum + getTableHeight(name) + GAP_Y, 0) - GAP_Y;
+    });
+    const maxColumnHeight = Math.max(...columnHeights, 400);
+
+    // Position tables in each column with harmonious vertical alignment
+    columns.forEach((colTables, colIdx) => {
+      const colHeight = columnHeights[colIdx] || 0;
+      const startY = Math.max(40, Math.round(40 + (maxColumnHeight - colHeight) / 2));
+      let currentY = startY;
+
+      colTables.forEach((tableName) => {
+        newPositions[tableName] = {
+          x: 40 + colIdx * GAP_X,
+          y: currentY,
+        };
+        currentY += getTableHeight(tableName) + GAP_Y;
+      });
     });
 
     setNodePositions(newPositions);
-    setTransform({ x: 40, y: 40, scale: 0.9 });
-  }, [tables, allDbTablesSchema, getTableHeight, setTransform]);
+    centerNodesInViewport(newPositions);
+  }, [tables, allDbTablesSchema, getTableHeight, centerNodesInViewport]);
 
-  // Initial layout run and re-layout whenever schema relationships arrive
-  const prevSchemaCountRef = useRef(0);
+  // Keep latest nodePositions ref synchronized without triggering effect loops
+  const nodePositionsRef = useRef(nodePositions);
+  nodePositionsRef.current = nodePositions;
+
+  // Track if user has manually moved/dragged any node so we don't clobber manual work
+  const userHasMovedNodesRef = useRef(false);
+  const layoutCalculatedWithFullSchemaRef = useRef(false);
+
+  // Reset layout flags when switching databases
+  const prevDbRef = useRef(selectedDb);
   useEffect(() => {
-    const loadedCount = Object.keys(allDbTablesSchema).length;
-    const hasPositions = Object.keys(nodePositions).length > 0;
-
-    if (tables.length > 0) {
-      if (!hasPositions || (prevSchemaCountRef.current < tables.length && loadedCount >= tables.length)) {
-        computeAutoLayout();
-      }
+    if (prevDbRef.current !== selectedDb) {
+      prevDbRef.current = selectedDb;
+      userHasMovedNodesRef.current = false;
+      layoutCalculatedWithFullSchemaRef.current = false;
     }
-    prevSchemaCountRef.current = loadedCount;
-  }, [tables, allDbTablesSchema, nodePositions, computeAutoLayout]);
+  }, [selectedDb]);
 
-  // Auto layout trigger from parent toolbar
+  // Initial layout run and auto-rebalance when full schemas finish loading
   useEffect(() => {
-    if (autoLayoutTrigger && autoLayoutTrigger > 0) {
+    if (tables.length === 0) return;
+    const loadedCount = Object.keys(allDbTablesSchema).length;
+    const hasPositions = Object.keys(nodePositionsRef.current).length > 0;
+
+    // First mount: run initial layout
+    if (!hasPositions) {
+      computeAutoLayout();
+      if (loadedCount >= tables.length) {
+        layoutCalculatedWithFullSchemaRef.current = true;
+      }
+      return;
+    }
+
+    // Once all table schemas have arrived from the server, recalculate layout with real columns and FKs
+    if (!layoutCalculatedWithFullSchemaRef.current && loadedCount >= tables.length && !userHasMovedNodesRef.current) {
+      computeAutoLayout();
+      layoutCalculatedWithFullSchemaRef.current = true;
+    }
+  }, [tables, allDbTablesSchema, computeAutoLayout]);
+
+  // Auto layout trigger from parent toolbar (fires ONLY when trigger value changes)
+  const lastAutoLayoutTriggerRef = useRef(autoLayoutTrigger);
+  useEffect(() => {
+    if (autoLayoutTrigger && autoLayoutTrigger !== lastAutoLayoutTriggerRef.current) {
+      lastAutoLayoutTriggerRef.current = autoLayoutTrigger;
+      userHasMovedNodesRef.current = false;
       computeAutoLayout();
     }
   }, [autoLayoutTrigger, computeAutoLayout]);
+
+  // Reset view / Fit to screen trigger from parent toolbar (fires ONLY when trigger value changes)
+  const lastResetViewTriggerRef = useRef(resetViewTrigger);
+  useEffect(() => {
+    if (resetViewTrigger && resetViewTrigger !== lastResetViewTriggerRef.current) {
+      lastResetViewTriggerRef.current = resetViewTrigger;
+      centerNodesInViewport(nodePositionsRef.current);
+    }
+  }, [resetViewTrigger, centerNodesInViewport]);
 
   // Ref tracking for active drag & pan to avoid stale closures in window event listeners
   const draggingNodeRef = useRef<{
@@ -284,6 +422,7 @@ export function SchemaView({
     initialPos: TablePosition;
   } | null>(null);
 
+  const hasDraggedNodeRef = useRef(false);
   const isPanningRef = useRef(false);
   const panMovedRef = useRef(false);
   const transformRef = useRef(transform);
@@ -291,29 +430,44 @@ export function SchemaView({
   const onSelectTableRef = useRef(onSelectTable);
   onSelectTableRef.current = onSelectTable;
 
-  // Global window mousemove & mouseup listeners so dragging or panning never gets stuck
+  // Global window mousemove & mouseup listeners throttled with requestAnimationFrame for 60/120fps efficiency
   useEffect(() => {
-    const onWindowMouseMove = (e: MouseEvent) => {
+    let rafId: number | null = null;
+    let pendingMousePos: { clientX: number; clientY: number } | null = null;
+
+    const flushMove = () => {
+      rafId = null;
+      if (!pendingMousePos) return;
+      const { clientX, clientY } = pendingMousePos;
+      pendingMousePos = null;
+
       if (draggingNodeRef.current) {
+        const dx = clientX - draggingNodeRef.current.startX;
+        const dy = clientY - draggingNodeRef.current.startY;
+        if (Math.hypot(dx, dy) > 3) {
+          hasDraggedNodeRef.current = true;
+          userHasMovedNodesRef.current = true;
+        }
+
         const currentScale = transformRef.current.scale || 1;
-        const dx = (e.clientX - draggingNodeRef.current.startX) / currentScale;
-        const dy = (e.clientY - draggingNodeRef.current.startY) / currentScale;
+        const scaledDx = dx / currentScale;
+        const scaledDy = dy / currentScale;
         const targetTableName = draggingNodeRef.current.tableName;
         const initPos = draggingNodeRef.current.initialPos;
 
         setNodePositions((prev) => ({
           ...prev,
           [targetTableName]: {
-            x: Math.round(initPos.x + dx),
-            y: Math.round(initPos.y + dy),
+            x: Math.round(initPos.x + scaledDx),
+            y: Math.round(initPos.y + scaledDy),
           },
         }));
         return;
       }
 
       if (isPanningRef.current && panStartRef.current) {
-        const dx = e.clientX - panStartRef.current.x;
-        const dy = e.clientY - panStartRef.current.y;
+        const dx = clientX - panStartRef.current.x;
+        const dy = clientY - panStartRef.current.y;
         if (Math.hypot(dx, dy) > 4) {
           panMovedRef.current = true;
         }
@@ -325,37 +479,77 @@ export function SchemaView({
       }
     };
 
+    const onWindowMouseMove = (e: MouseEvent) => {
+      // If no mouse button is pressed, immediately cancel any active drag or pan
+      if (e.buttons === 0) {
+        if (draggingNodeRef.current || isPanningRef.current) {
+          onWindowMouseUp();
+        }
+        return;
+      }
+
+      // Early exit if user is not actively dragging or panning
+      if (!draggingNodeRef.current && !isPanningRef.current) return;
+      pendingMousePos = { clientX: e.clientX, clientY: e.clientY };
+      if (!rafId) {
+        rafId = requestAnimationFrame(flushMove);
+      }
+    };
+
     const onWindowMouseUp = () => {
-      // Clear click-and-hold line animation and table focus
+      if (rafId) {
+        cancelAnimationFrame(rafId);
+        rafId = null;
+      }
+      if (pendingMousePos) {
+        flushMove();
+      }
+      pendingMousePos = null;
+
+      // Clear click-and-hold line animation
       setHoldingTable(null);
       setHoldingLineId(null);
 
-      if (isPanningRef.current && !panMovedRef.current) {
-        onSelectTableRef.current('');
+      if (draggingNodeRef.current) {
+        if (!hasDraggedNodeRef.current) {
+          // Clean click without dragging toggles table selection
+          onSelectTableRef.current(draggingNodeRef.current.tableName);
+        }
+        draggingNodeRef.current = null;
+        hasDraggedNodeRef.current = false;
+        setIsDraggingNode(false);
       }
 
-      if (draggingNodeRef.current || isPanningRef.current) {
-        draggingNodeRef.current = null;
+      if (isPanningRef.current) {
+        if (!panMovedRef.current) {
+          // Clean click on background deselects table
+          onSelectTableRef.current('');
+        }
         isPanningRef.current = false;
         panStartRef.current = null;
-        setDraggingNode(null);
         setIsPanning(false);
       }
     };
 
     window.addEventListener('mousemove', onWindowMouseMove, { passive: true });
     window.addEventListener('mouseup', onWindowMouseUp);
+    window.addEventListener('blur', onWindowMouseUp);
 
     return () => {
+      if (rafId) {
+        cancelAnimationFrame(rafId);
+      }
       window.removeEventListener('mousemove', onWindowMouseMove);
       window.removeEventListener('mouseup', onWindowMouseUp);
+      window.removeEventListener('blur', onWindowMouseUp);
     };
-  }, []);
+  }, [setTransform]);
 
   // Canvas Panning Handlers
   const handleCanvasMouseDown = (e: React.MouseEvent) => {
     // Only pan if left click on canvas background (not on a card or button)
     if (e.button !== 0) return;
+    e.preventDefault();
     setIsPanning(true);
     isPanningRef.current = true;
     panMovedRef.current = false;
@@ -397,6 +591,20 @@ export function SchemaView({
       .map((t) => t.name);
   }, [tables, searchTerm]);
 
+  // Pre-indexed column index map for O(1) row positioning instead of repeated array findIndex scans
+  const colIndexMap = useMemo(() => {
+    const map: Record<string, Record<string, number>> = {};
+    Object.keys(allDbTablesSchema).forEach((tName) => {
+      const cols = allDbTablesSchema[tName]?.columns || [];
+      const subMap: Record<string, number> = {};
+      cols.forEach((c, idx) => {
+        subMap[c.name] = idx;
+      });
+      map[tName] = subMap;
+    });
+    return map;
+  }, [allDbTablesSchema]);
+
   // Compute all relationships / connection lines
   const relations = useMemo(() => {
     const list: Array<{
@@ -423,9 +631,8 @@ export function SchemaView({
         const targetPos = nodePositions[fk.referenced_table];
         if (!targetPos) return;
 
-        const sourceColIdx = tData.columns.findIndex((c) => c.name === fk.column);
-        const targetCols = allDbTablesSchema[fk.referenced_table]?.columns || [];
-        const targetColIdx = targetCols.findIndex((c) => c.name === fk.referenced_column);
+        const sourceColIdx = colIndexMap[t.name]?.[fk.column] ?? 0;
+        const targetColIdx = colIndexMap[fk.referenced_table]?.[fk.referenced_column] ?? 0;
 
         // Calculate exact vertical center of the row:
         // HEADER_OFFSET (59px) + colIdx * ROW_HEIGHT (33px) + row center (16px)
@@ -469,16 +676,17 @@ export function SchemaView({
     return list;
   }, [tables, allDbTablesSchema, nodePositions]);
 
-  // Set of tables directly connected to the active table for smart focus highlighting during hold
+  // Set of tables directly connected to the active table for smart focus highlighting
   const isDirectlyConnected = useMemo(() => {
-    if (!holdingTable) return new Set<string>();
-    const connected = new Set<string>([holdingTable]);
+    const active = holdingTable || selectedTable;
+    if (!active) return new Set<string>();
+    const connected = new Set<string>([active]);
     relations.forEach((r) => {
-      if (r.sourceTable === holdingTable) connected.add(r.targetTable);
-      if (r.targetTable === holdingTable) connected.add(r.sourceTable);
+      if (r.sourceTable === active) connected.add(r.targetTable);
+      if (r.targetTable === active) connected.add(r.sourceTable);
     });
     return connected;
-  }, [holdingTable, relations]);
+  }, [holdingTable, selectedTable, relations]);
 
   return (
     <div className="flex-1 flex flex-col min-h-0 overflow-hidden select-none bg-[#09090b] font-sans">
@@ -488,7 +696,7 @@ export function SchemaView({
         onMouseDown={handleCanvasMouseDown}
         onWheel={handleWheel}
         className={`flex-1 relative min-h-0 overflow-hidden ${
-          isPanning ? 'cursor-grabbing' : 'cursor-default'
+          isDraggingNode || isPanning ? 'cursor-grabbing select-none' : 'cursor-default'
         }`}
       >
         {/* ─── Dot Grid Background Pattern ─── */}
@@ -514,7 +722,8 @@ export function SchemaView({
       <div
         className="absolute inset-0 origin-top-left pointer-events-none"
         style={{
-          transform: `translate(${transform.x}px, ${transform.y}px) scale(${transform.scale})`,
+          transform: `translate3d(${transform.x}px, ${transform.y}px, 0) scale(${transform.scale})`,
+          willChange: isPanning ? 'transform' : 'auto',
         }}
       >
         {/* SVG Orthogonal Relationship Connector Lines (Behind Cards) */}
@@ -568,8 +777,8 @@ export function SchemaView({
               } ${rel.endY}, ${rel.endX} ${rel.endY}`;
             }
 
-            const isSourceHold = holdingTable === rel.sourceTable;
-            const isTargetHold = holdingTable === rel.targetTable;
+            const isSourceHold = holdingTable === rel.sourceTable || selectedTable === rel.sourceTable;
+            const isTargetHold = holdingTable === rel.targetTable || selectedTable === rel.targetTable;
             const isHoldActive = isSourceHold || isTargetHold || holdingLineId === rel.id;
 
             // ONLY animate if holding is active! In unselected state, all lines (including in-table loops) remain completely stationary!
@@ -622,22 +831,24 @@ export function SchemaView({
             <div
               key={t.name}
               style={{
-                transform: `translate(${pos.x}px, ${pos.y}px)`,
+                transform: `translate3d(${pos.x}px, ${pos.y}px, 0)`,
                 width: `${CARD_WIDTH}px`,
+                willChange: isDraggingNode ? 'transform' : 'auto',
               }}
               onMouseDown={(e) => {
+                e.stopPropagation();
                 if (e.button === 0) {
                   setHoldingTable(t.name);
                 }
               }}
-              className={`absolute rounded-[14px] bg-[#101012] border shadow-2xl pointer-events-auto transition-[opacity,border-color] duration-150 p-2.5 ${
+              className={`absolute rounded-[14px] bg-[#101012] border shadow-lg pointer-events-auto transition-[opacity,border-color] duration-150 p-2.5 ${
                 !isMatchingSearch
                   ? 'opacity-25'
-                  : holdingTable && !isDirectlyConnected.has(t.name)
+                  : (holdingTable || selectedTable) && !isDirectlyConnected.has(t.name)
                   ? 'opacity-35 hover:opacity-85'
                   : 'opacity-100'
               } ${
-                isHeld
+                isHeld || selectedTable === t.name
                   ? 'border-blue-500/80 ring-1 ring-blue-500/30'
                   : 'border-[#222226] hover:border-[#333338]'
               }`}
@@ -647,17 +858,24 @@ export function SchemaView({
                 onMouseDown={(e) => {
                   if (e.button !== 0) return;
                   e.stopPropagation();
+                  e.preventDefault();
+
+                  hasDraggedNodeRef.current = false;
+                  setIsDraggingNode(true);
                   setHoldingTable(t.name);
+
+                  const currentPos = nodePositionsRef.current[t.name] || pos || { x: 80, y: 80 };
                   const dragPayload = {
                     tableName: t.name,
                     startX: e.clientX,
                     startY: e.clientY,
-                    initialPos: pos,
+                    initialPos: currentPos,
                   };
                   draggingNodeRef.current = dragPayload;
-                  setDraggingNode(dragPayload);
                 }}
-                className="h-10 px-2.5 flex items-center justify-between gap-2.5 select-none cursor-grab active:cursor-grabbing mb-2"
+                className={`h-10 px-2.5 flex items-center justify-between gap-2.5 select-none mb-2 ${
+                  isDraggingNode ? 'cursor-grabbing' : 'cursor-grab active:cursor-grabbing'
+                }`}
               >
                 <div className="flex items-center gap-2.5 min-w-0 pointer-events-none">
                   <LayoutGrid className="w-4 h-4 text-zinc-400 shrink-0" />
@@ -690,34 +908,54 @@ export function SchemaView({
               {/* Column Rows Container (Clean inset card with crisp dividers and comfortable padding) */}
               <div className="rounded-[10px] bg-[#161619] border border-[#26262a] divide-y divide-[#232327] overflow-hidden">
                 {cols.map((col) => {
-                  const isPk = col.primary_key;
+                  const isPk = !!col.primary_key;
+                  const normName = col.name.toLowerCase();
+                  const normType = (col.type || '').toLowerCase();
+                  const normDefault = (col.default_value || '').toLowerCase();
+
+                  // Identity: explicit identity field, or serial/identity type, or sequence default, or column named 'id' / ending in '_id' if integer/pk
+                  const isIdentity =
+                    !!col.identity ||
+                    normType.includes('serial') ||
+                    normType.includes('identity') ||
+                    normDefault.includes('nextval') ||
+                    normDefault.includes('identity') ||
+                    normName === 'id';
+
+                  // Unique: explicit unique field, or if type/name is explicitly marked unique
+                  const isUnique = !!col.unique;
 
                   return (
                     <div
                       key={col.name}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (onEditColumn) {
-                          onEditColumn(t.name, col);
-                        }
-                      }}
-                      className="h-8 px-3 flex items-center justify-between gap-3 text-[12.5px] hover:bg-[#1e1e22] transition-colors group cursor-pointer"
-                      title={`Edit column ${col.name}`}
+                      className="h-8 px-3 flex items-center justify-between gap-3 text-[12.5px] hover:bg-[#1e1e22] transition-colors group"
                     >
                       {/* Left: Column Constraint Icon + Column Name */}
                       <div className="flex items-center gap-2.5 min-w-0 flex-1">
                         {isPk ? (
-                          <Key className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                        ) : col.name.toLowerCase() === 'id' ? (
-                          <Hash className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                          <span title="Primary key" className="shrink-0 flex items-center">
+                            <Key className="w-3.5 h-3.5 text-amber-400" />
+                          </span>
+                        ) : isIdentity ? (
+                          <span title="Identity" className="shrink-0 flex items-center">
+                            <Hash className="w-3.5 h-3.5 text-zinc-400" />
+                          </span>
+                        ) : isUnique ? (
+                          <span title="Unique" className="shrink-0 flex items-center">
+                            <Sparkles className="w-3.5 h-3.5 text-zinc-400" />
+                          </span>
                         ) : col.nullable ? (
-                          <svg className="w-3.5 h-3.5 text-zinc-500 shrink-0" viewBox="0 0 12 12" fill="none">
-                            <path d="M6 1.5L10.5 6L6 10.5L1.5 6Z" stroke="currentColor" strokeWidth="1.2" />
-                          </svg>
+                          <span title="Nullable" className="shrink-0 flex items-center">
+                            <svg className="w-3.5 h-3.5 text-zinc-500" viewBox="0 0 12 12" fill="none">
+                              <path d="M6 1.5L10.5 6L6 10.5L1.5 6Z" stroke="currentColor" strokeWidth="1.2" />
+                            </svg>
+                          </span>
                         ) : (
-                          <svg className="w-3.5 h-3.5 text-zinc-300 shrink-0" viewBox="0 0 12 12" fill="currentColor">
-                            <path d="M6 1.5L10.5 6L6 10.5L1.5 6Z" />
-                          </svg>
+                          <span title="Non-Nullable" className="shrink-0 flex items-center">
+                            <svg className="w-3.5 h-3.5 text-zinc-300" viewBox="0 0 12 12" fill="currentColor">
+                              <path d="M6 1.5L10.5 6L6 10.5L1.5 6Z" />
+                            </svg>
+                          </span>
                         )}
 
                         <span
@@ -784,8 +1022,8 @@ export function SchemaView({
           style={{ width: 1, height: 1 }}
         >
           {relations.map((rel) => {
-            const isSourceHold = holdingTable === rel.sourceTable;
-            const isTargetHold = holdingTable === rel.targetTable;
+            const isSourceHold = holdingTable === rel.sourceTable || selectedTable === rel.sourceTable;
+            const isTargetHold = holdingTable === rel.targetTable || selectedTable === rel.targetTable;
             const isHoldActive = isSourceHold || isTargetHold || holdingLineId === rel.id;
             const activeColor = isSourceHold ? '#38bdf8' : '#818cf8';
 

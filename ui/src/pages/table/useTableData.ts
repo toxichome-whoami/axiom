@@ -94,6 +94,9 @@ export function useTableData({ selectedDb, setSelectedDb, viewMode }: UseTableDa
     initDatabases();
   }, [setSelectedDb]);
 
+  const viewModeRef = useRef(viewMode);
+  viewModeRef.current = viewMode;
+
   // 2. Load Tables when Database changes
   const fetchTables = useCallback(async (db: string) => {
     if (!db) return;
@@ -108,6 +111,10 @@ export function useTableData({ selectedDb, setSelectedDb, viewMode }: UseTableDa
       const savedTable = localStorage.getItem(`axiom_selected_table_${db}`) || localStorage.getItem('axiom_selected_table');
 
       setSelectedTable((prev) => {
+        // In schema view, start clean with all nodes unselected after load or reload
+        if (viewModeRef.current === 'schema') {
+          return '';
+        }
         // 1. If currently selected table exists in the new list, keep it
         if (prev && tableList.some((t: TableInfoApi) => t.name === prev)) return prev;
         // 2. If table from URL query exists in the list, select it
@@ -141,7 +148,7 @@ export function useTableData({ selectedDb, setSelectedDb, viewMode }: UseTableDa
     if (!selectedDb) return;
     try {
       localStorage.setItem('axiom_selected_db', selectedDb);
-      if (selectedTable) {
+      if (viewMode !== 'schema' && selectedTable) {
         localStorage.setItem(`axiom_selected_table_${selectedDb}`, selectedTable);
         localStorage.setItem('axiom_selected_table', selectedTable);
       }

@@ -159,6 +159,8 @@ export interface ColumnInfoApi {
   nullable: boolean;
   primary_key: boolean;
   default_value?: string;
+  unique?: boolean;
+  identity?: boolean;
 }
 
 export interface ForeignKeyDefApi {

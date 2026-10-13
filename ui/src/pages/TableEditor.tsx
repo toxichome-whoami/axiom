@@ -357,6 +357,7 @@ export function TableEditor() {
   const [schemaSearchTerm, setSchemaSearchTerm] = useState('');
   const [schemaTransform, setSchemaTransform] = useState({ x: 60, y: 60, scale: 0.95 });
   const [schemaAutoLayoutTrigger, setSchemaAutoLayoutTrigger] = useState(0);
+  const [schemaResetViewTrigger, setSchemaResetViewTrigger] = useState(0);
 
   // Table Edit SlideOver state
   const [isTableEditOpen, setIsTableEditOpen] = useState(false);
@@ -572,7 +573,12 @@ export function TableEditor() {
         {/* Workspace Top Toolbar */}
         <TableToolbar
           viewMode={viewMode}
-          setViewMode={setViewMode}
+          setViewMode={(mode) => {
+            setViewMode(mode);
+            if (mode === 'schema') {
+              setSelectedTable('');
+            }
+          }}
           gridSubTab={gridSubTab}
           setGridSubTab={setGridSubTab}
           selectedTable={selectedTable}
@@ -687,18 +693,32 @@ export function TableEditor() {
           onAutoLayout={() => setSchemaAutoLayoutTrigger((prev) => prev + 1)}
           zoomScale={schemaTransform.scale}
           onZoomIn={() =>
-            setSchemaTransform((prev) => ({
-              ...prev,
-              scale: Math.min(Number((prev.scale + 0.15).toFixed(3)), 2.2),
-            }))
+            setSchemaTransform((prev) => {
+              const newScale = Math.min(Number((prev.scale + 0.15).toFixed(3)), 2.2);
+              const ratio = newScale / prev.scale;
+              const cx = (window.innerWidth - 260) / 2;
+              const cy = (window.innerHeight - 140) / 2;
+              return {
+                scale: newScale,
+                x: Math.round(cx - (cx - prev.x) * ratio),
+                y: Math.round(cy - (cy - prev.y) * ratio),
+              };
+            })
           }
           onZoomOut={() =>
-            setSchemaTransform((prev) => ({
-              ...prev,
-              scale: Math.max(Number((prev.scale - 0.15).toFixed(3)), 0.3),
-            }))
+            setSchemaTransform((prev) => {
+              const newScale = Math.max(Number((prev.scale - 0.15).toFixed(3)), 0.3);
+              const ratio = newScale / prev.scale;
+              const cx = (window.innerWidth - 260) / 2;
+              const cy = (window.innerHeight - 140) / 2;
+              return {
+                scale: newScale,
+                x: Math.round(cx - (cx - prev.x) * ratio),
+                y: Math.round(cy - (cy - prev.y) * ratio),
+              };
+            })
           }
-          onResetZoom={() => setSchemaTransform({ x: 60, y: 60, scale: 0.95 })}
+          onResetZoom={() => setSchemaResetViewTrigger((prev) => prev + 1)}
         />
 
         {/* Mode 1: Table Grid (Spreadsheet Editor) */}
@@ -773,6 +793,7 @@ export function TableEditor() {
             transform={schemaTransform}
             setTransform={setSchemaTransform}
             autoLayoutTrigger={schemaAutoLayoutTrigger}
+            resetViewTrigger={schemaResetViewTrigger}
             onEditTable={(tableName) => {
               setEditingTableTarget(tableName);
               setSelectedTable(tableName);

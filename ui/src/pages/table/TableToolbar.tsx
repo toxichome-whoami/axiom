@@ -614,32 +614,38 @@ export function TableToolbar({
             <span>Auto layout</span>
           </button>
 
-          {/* Zoom controls pill */}
-          <div className="flex items-center p-1 rounded-[7px] bg-[#141414] border border-[#262626] h-9">
+          {/* Zoom controls & Fit-to-screen reset pill */}
+          <div className="flex items-center p-0.5 rounded-[7px] bg-[#141414] border border-[#262626] h-9 shadow-xs">
             <button
               type="button"
               onClick={onZoomOut}
-              title="Zoom Out"
-              className="p-1 rounded-[4px] text-[#a1a1aa] hover:text-white hover:bg-[#1a1a1a] transition-colors cursor-pointer"
+              disabled={zoomScale <= 0.3}
+              title="Zoom Out (-15%)"
+              className="w-7 h-7 flex items-center justify-center rounded-[5px] text-[#a1a1aa] hover:text-white hover:bg-[#1f1f23] disabled:opacity-35 disabled:hover:bg-transparent disabled:hover:text-[#a1a1aa] transition-colors cursor-pointer"
             >
               <ZoomOut className="w-3.5 h-3.5" />
             </button>
-            <span className="text-[11.5px] font-mono text-[#8a8a92] px-2 min-w-[38px] text-center">
+            <span
+              className="text-[12px] font-mono text-[#8a8a92] px-1.5 min-w-[44px] text-center select-none"
+              title="Current Zoom"
+            >
               {Math.round(zoomScale * 100)}%
             </span>
             <button
               type="button"
               onClick={onZoomIn}
-              title="Zoom In"
-              className="p-1 rounded-[4px] text-[#a1a1aa] hover:text-white hover:bg-[#1a1a1a] transition-colors cursor-pointer"
+              disabled={zoomScale >= 2.2}
+              title="Zoom In (+15%)"
+              className="w-7 h-7 flex items-center justify-center rounded-[5px] text-[#a1a1aa] hover:text-white hover:bg-[#1f1f23] disabled:opacity-35 disabled:hover:bg-transparent disabled:hover:text-[#a1a1aa] transition-colors cursor-pointer"
             >
               <ZoomIn className="w-3.5 h-3.5" />
             </button>
+            <div className="h-4 w-px bg-[#262626] mx-0.5" />
             <button
               type="button"
               onClick={onResetZoom}
-              title="Reset View"
-              className="p-1 rounded-[4px] text-[#a1a1aa] hover:text-white hover:bg-[#1a1a1a] transition-colors cursor-pointer ml-0.5"
+              title="Fit to Screen / Center"
+              className="w-7 h-7 flex items-center justify-center rounded-[5px] text-[#a1a1aa] hover:text-white hover:bg-[#1f1f23] transition-colors cursor-pointer"
             >
               <Maximize className="w-3.5 h-3.5" />
             </button>
