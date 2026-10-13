@@ -98,17 +98,58 @@ export function useTableData({ selectedDb, setSelectedDb, viewMode }: UseTableDa
   viewModeRef.current = viewMode;
 
   // 2. Load Tables when Database changes
-  const fetchTables = useCallback(async (db: string) => {
-    if (!db) return;
+  const fetchTables = useCallback(async (db: string): Promise<TableInfoApi[]> => {
+    if (!db) return [];
     setIsTablesLoading(true);
     try {
       const res = await api.getDatabaseTables(db, undefined, 500);
       const tableList = res.tables || [];
       setTables(tableList);
 
+      const currentTableNames = new Set(tableList.map((t) => t.name));
+
+      // Clean up deleted/dropped tables from schema cache and allDbTablesSchema
+      const prunedCache: Record<string, { columns: ColumnInfoApi[]; foreign_keys?: ForeignKeyInfoApi[] }> = {};
+      for (const name of Object.keys(schemaCacheRef.current)) {
+        if (currentTableNames.has(name)) {
+          prunedCache[name] = schemaCacheRef.current[name];
+        }
+      }
+      schemaCacheRef.current = prunedCache;
+
+      setAllDbTablesSchema((prev) => {
+        const next: typeof prev = {};
+        for (const name of Object.keys(prev)) {
+          if (currentTableNames.has(name)) {
+            next[name] = prev[name];
+          }
+        }
+        return next;
+      });
+
       const urlParams = new URLSearchParams(window.location.search);
       const queryTable = urlParams.get('table');
       const savedTable = localStorage.getItem(`axiom_selected_table_${db}`) || localStorage.getItem('axiom_selected_table');
+
+      // If database has NO tables at all (e.g. user dropped all tables):
+      if (tableList.length === 0) {
+        setSelectedTable('');
+        setColumns([]);
+        setForeignKeys([]);
+        setRows([]);
+        try {
+          localStorage.removeItem(`axiom_selected_table_${db}`);
+          localStorage.removeItem('axiom_selected_table');
+          const url = new URL(window.location.href);
+          if (url.searchParams.has('table')) {
+            url.searchParams.delete('table');
+            window.history.replaceState(null, '', url.pathname + url.search);
+          }
+        } catch {
+          // Ignore
+        }
+        return [];
+      }
 
       setSelectedTable((prev) => {
         // In schema view, start clean with all nodes unselected after load or reload
@@ -124,10 +165,16 @@ export function useTableData({ selectedDb, setSelectedDb, viewMode }: UseTableDa
         // 4. Default to first table
         return tableList[0]?.name || '';
       });
+
+      return tableList;
     } catch (err) {
       console.error(`Failed to load tables for ${db}:`, err);
       setTables([]);
       setSelectedTable('');
+      setColumns([]);
+      setForeignKeys([]);
+      setRows([]);
+      return [];
     } finally {
       setIsTablesLoading(false);
     }
@@ -148,9 +195,14 @@ export function useTableData({ selectedDb, setSelectedDb, viewMode }: UseTableDa
     if (!selectedDb) return;
     try {
       localStorage.setItem('axiom_selected_db', selectedDb);
-      if (viewMode !== 'schema' && selectedTable) {
-        localStorage.setItem(`axiom_selected_table_${selectedDb}`, selectedTable);
-        localStorage.setItem('axiom_selected_table', selectedTable);
+      if (viewMode !== 'schema') {
+        if (selectedTable) {
+          localStorage.setItem(`axiom_selected_table_${selectedDb}`, selectedTable);
+          localStorage.setItem('axiom_selected_table', selectedTable);
+        } else {
+          localStorage.removeItem(`axiom_selected_table_${selectedDb}`);
+          localStorage.removeItem('axiom_selected_table');
+        }
       }
 
       const url = new URL(window.location.href);

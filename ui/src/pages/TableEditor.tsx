@@ -338,7 +338,32 @@ export function TableEditor() {
     batchSummary,
     handleExecuteSql,
     handleCancelSql,
-  } = useSqlConsole({ selectedDb });
+  } = useSqlConsole({
+    selectedDb,
+    onExecutionComplete: async (executedStatements) => {
+      if (!selectedDb) return;
+
+      // Check if executed statements contain DDL keywords (CREATE, DROP, ALTER, TRUNCATE, RENAME)
+      const DDL_REGEX = /\b(CREATE|DROP|ALTER|TRUNCATE|RENAME)\b/i;
+      const hasDdl = executedStatements.some((s) => DDL_REGEX.test(s));
+
+      if (hasDdl) {
+        const freshTables = await fetchTables(selectedDb);
+        // If current selectedTable still exists in the refreshed catalog, reload its schema & data
+        const currentStillExists = selectedTable && freshTables.some((t) => t.name === selectedTable);
+        if (currentStillExists) {
+          loadTableData({ reloadSchema: true });
+        }
+      } else {
+        // Data mutations (INSERT, UPDATE, DELETE): refresh rows for active table
+        const MUTATION_REGEX = /\b(INSERT|UPDATE|DELETE)\b/i;
+        const hasMutation = executedStatements.some((s) => MUTATION_REGEX.test(s));
+        if (hasMutation && selectedTable) {
+          loadTableData({ reloadSchema: false });
+        }
+      }
+    },
+  });
 
   // SQL Workspace Layout mode ('side-by-side' | 'stacked' | 'editor-only' | 'results-only')
   const [sqlLayoutMode, setSqlLayoutMode] = useState<'side-by-side' | 'stacked' | 'editor-only' | 'results-only'>('side-by-side');
@@ -404,12 +429,11 @@ export function TableEditor() {
       setIsTableEditOpen(false);
       setEditingTableTarget('');
 
-      await fetchTables(selectedDb);
+      const freshTables = await fetchTables(selectedDb);
 
       if (selectedTable === target) {
-        const remaining = tables.filter((t) => t.name !== target);
-        if (remaining.length > 0) {
-          setSelectedTable(remaining[0].name);
+        if (freshTables.length > 0) {
+          setSelectedTable(freshTables[0].name);
         } else {
           setSelectedTable('');
           setRows([]);

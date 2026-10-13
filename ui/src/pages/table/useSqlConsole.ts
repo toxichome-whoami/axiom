@@ -32,6 +32,7 @@ export interface BatchSummary {
 
 export interface UseSqlConsoleProps {
   selectedDb: string;
+  onExecutionComplete?: (executedStatements: string[], isSuccess: boolean) => Promise<void> | void;
 }
 
 /**
@@ -210,7 +211,7 @@ export function stripComments(sql: string): string {
     .trim();
 }
 
-export function useSqlConsole({ selectedDb }: UseSqlConsoleProps) {
+export function useSqlConsole({ selectedDb, onExecutionComplete }: UseSqlConsoleProps) {
   const [sqlQuery, setSqlQuery] = useState('');
   const [isExecutingSql, setIsExecutingSql] = useState(false);
   const [sqlResult, setSqlResult] = useState<QueryResultApi | null>(null);
@@ -241,12 +242,17 @@ export function useSqlConsole({ selectedDb }: UseSqlConsoleProps) {
 
     // Case 1: Single statement - execute directly
     if (statements.length <= 1) {
+      const queryToRun = statements[0] || rawSql;
       try {
-        const queryToRun = statements[0] || rawSql;
         const res = await api.executeSqlQuery(selectedDb, queryToRun);
         const duration = Math.round(performance.now() - startTime);
         setSqlDuration(duration);
         setSqlResult(res);
+        try {
+          await onExecutionComplete?.([queryToRun], true);
+        } catch (cbErr) {
+          console.error('onExecutionComplete error:', cbErr);
+        }
       } catch (err) {
         setSqlError(err instanceof Error ? err.message : 'SQL Execution failed');
       } finally {
@@ -313,6 +319,17 @@ export function useSqlConsole({ selectedDb }: UseSqlConsoleProps) {
           affected_rows: totalAffected,
           duration_ms: duration,
         });
+      }
+    }
+
+    if (executedCount > 0) {
+      try {
+        await onExecutionComplete?.(
+          statements.slice(0, executedCount),
+          executedCount === statements.length
+        );
+      } catch (cbErr) {
+        console.error('onExecutionComplete error:', cbErr);
       }
     }
 

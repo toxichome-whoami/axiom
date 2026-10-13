@@ -15,6 +15,7 @@ import {
   Plus,
   Maximize2,
   ArrowRight,
+  Table as TableIcon,
 } from 'lucide-react';
 import { ColumnInfoApi, ForeignKeyInfoApi } from '../../types';
 import { getColumnTypeBadge, formatColumnType } from './format';
@@ -212,6 +213,14 @@ export function TableGridView({
               >
                 Retry
               </button>
+            </div>
+          ) : !selectedTable ? (
+            <div className="p-16 flex flex-col items-center justify-center text-center font-sans gap-2.5">
+              <TableIcon className="w-8 h-8 text-[#444444]" />
+              <p className="text-[14px] font-medium text-white">No table selected</p>
+              <p className="text-[12.5px] text-[#888888] max-w-sm">
+                Select a table from the sidebar or run a query in the SQL editor to begin inspecting data.
+              </p>
             </div>
           ) : columns.length === 0 ? (
             <div className="p-12 text-center text-[#777777] text-[14px]">
@@ -545,25 +554,35 @@ export function TableGridView({
       {/* Tab 2: Definition View (SQL DDL Editor) */}
       {activeTab === 'definition' && (
         <div className="flex-1 flex flex-col min-h-0 overflow-hidden bg-[#0a0a0a]">
-          {/* Header bar */}
-          <div className="h-[46px] shrink-0 px-5 border-b border-[#222222] bg-[#0c0c0c] flex items-center justify-between gap-3 select-none">
-            <h3 className="text-[14px] font-sans text-[#eaeaea]">
-              SQL Definition of <span className="font-semibold text-white">{selectedTable}</span>{' '}
-              <span className="text-[#666666] font-normal text-[13px]">(Read only)</span>
-            </h3>
+          {!selectedTable ? (
+            <div className="flex-1 flex flex-col items-center justify-center p-16 text-[#777777] text-[14px] gap-2.5">
+              <TableIcon className="w-8 h-8 text-[#444444]" />
+              <p className="text-[14px] font-medium text-white">No table selected</p>
+              <p className="text-[12.5px] text-[#888888] max-w-sm text-center">
+                Select a table from the sidebar to inspect its SQL DDL definition schema.
+              </p>
+            </div>
+          ) : (
+            <>
+              {/* Header bar */}
+              <div className="h-[46px] shrink-0 px-5 border-b border-[#222222] bg-[#0c0c0c] flex items-center justify-between gap-3 select-none">
+                <h3 className="text-[14px] font-sans text-[#eaeaea]">
+                  SQL Definition of <span className="font-semibold text-white">{selectedTable}</span>{' '}
+                  <span className="text-[#666666] font-normal text-[13px]">(Read only)</span>
+                </h3>
 
-            {onOpenInSqlEditor && (
-              <button
-                type="button"
-                onClick={() => onOpenInSqlEditor(ddl)}
-                className="px-3.5 py-1.5 rounded-[6px] bg-[#1a1a1a] hover:bg-[#252525] border border-[#2d2d2d] hover:border-[#3d3d3d] text-[13px] font-medium text-white transition-colors cursor-pointer"
-              >
-                Open in SQL Editor
-              </button>
-            )}
-          </div>
+                {onOpenInSqlEditor && (
+                  <button
+                    type="button"
+                    onClick={() => onOpenInSqlEditor(ddl)}
+                    className="px-3.5 py-1.5 rounded-[6px] bg-[#1a1a1a] hover:bg-[#252525] border border-[#2d2d2d] hover:border-[#3d3d3d] text-[13px] font-medium text-white transition-colors cursor-pointer"
+                  >
+                    Open in SQL Editor
+                  </button>
+                )}
+              </div>
 
-          {/* Line numbered SQL viewer */}
+              {/* Line numbered SQL viewer */}
           <div className="flex-1 overflow-auto p-4 font-mono text-[13px] leading-[22px] bg-[#0c0c0c]">
             <table className="border-collapse w-full select-text">
               <tbody>
@@ -584,8 +603,10 @@ export function TableGridView({
               </tbody>
             </table>
           </div>
-        </div>
+        </>
       )}
+    </div>
+  )}
 
       {/* Pagination & Status Footer */}
       <div className={`h-12 shrink-0 px-4 bg-[#0a0a0a] border-t border-[#222222] flex items-center gap-3 text-[13px] text-[#8c8c8c] select-none font-sans ${

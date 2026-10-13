@@ -333,7 +333,8 @@ export function TableToolbar({
             <div className="relative" ref={filterPopoverRef}>
               <button
                 onClick={() => setShowFilterPopover(!showFilterPopover)}
-                className={`flex items-center gap-1.5 h-8 px-2.5 rounded-[6px] border text-[13px] font-medium transition-colors cursor-pointer ${
+                disabled={!selectedTable}
+                className={`flex items-center gap-1.5 h-8 px-2.5 rounded-[6px] border text-[13px] font-medium transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
                   activeFilter
                     ? 'bg-blue-950/40 border-blue-600/50 text-blue-400'
                     : 'bg-[#141414] border-[#262626] text-[#cccccc] hover:border-[#383838]'
@@ -415,7 +416,8 @@ export function TableToolbar({
             <div className="relative" ref={sortPopoverRef}>
               <button
                 onClick={() => setShowSortPopover(!showSortPopover)}
-                className={`flex items-center gap-1.5 h-8 px-2.5 rounded-[6px] border text-[13px] font-medium transition-colors cursor-pointer ${
+                disabled={!selectedTable}
+                className={`flex items-center gap-1.5 h-8 px-2.5 rounded-[6px] border text-[13px] font-medium transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
                   activeSort
                     ? 'bg-blue-950/40 border-blue-600/50 text-blue-400'
                     : 'bg-[#141414] border-[#262626] text-[#cccccc] hover:border-[#383838]'
@@ -493,9 +495,9 @@ export function TableToolbar({
             {/* Reload Data Button */}
             <button
               onClick={onReload}
-              disabled={isRowsLoading || isSchemaLoading}
-              title="Reload rows"
-              className="w-8 h-8 flex items-center justify-center rounded-[6px] bg-[#141414] border border-[#262626] text-[#8c8c8c] hover:text-white hover:border-[#383838] transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={isRowsLoading || isSchemaLoading || !selectedTable}
+              title={selectedTable ? "Reload rows" : "Select a table to reload rows"}
+              className="w-8 h-8 flex items-center justify-center rounded-[6px] bg-[#141414] border border-[#262626] text-[#8c8c8c] hover:text-white hover:border-[#383838] transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isRowsLoading || isSchemaLoading ? 'animate-spin' : ''}`} />
             </button>
