@@ -76,6 +76,13 @@ export function SqlConsoleView({
   // Results live search filter
   const [searchFilter, setSearchFilter] = useState('');
   const [copiedOutput, setCopiedOutput] = useState(false);
+  const [copiedSnippetIndex, setCopiedSnippetIndex] = useState<number | null>(null);
+
+  const handleCopySnippet = useCallback((snippet: string, index: number) => {
+    navigator.clipboard.writeText(snippet);
+    setCopiedSnippetIndex(index);
+    setTimeout(() => setCopiedSnippetIndex(null), 1500);
+  }, []);
 
   // Filtered rows for Query Output
   const resultRows = useMemo(() => {
@@ -275,12 +282,12 @@ export function SqlConsoleView({
                       : 'text-[#8c8c8c] hover:text-white'
                   }`}
                 >
-                  <TableIcon className={`w-3.5 h-3.5 transition-colors ${outputTab === 'grid' ? 'text-blue-400' : 'text-[#777777]'}`} />
+                  <TableIcon className={`w-3.5 h-3.5 transition-colors ${outputTab === 'grid' ? 'text-zinc-200' : 'text-[#777777]'}`} />
                   <span>Results</span>
                   {sqlResult?.rows && (
                     <span className={`text-[11px] px-1.5 py-0.2 rounded-full font-mono transition-colors ${
                       outputTab === 'grid'
-                        ? 'bg-blue-500/15 text-blue-300 border border-blue-500/25'
+                        ? 'bg-white/[0.08] text-zinc-200 border border-white/[0.1]'
                         : 'bg-[#202020] text-[#888888]'
                     }`}>
                       {sqlResult.rows.length}
@@ -297,12 +304,12 @@ export function SqlConsoleView({
                       : 'text-[#8c8c8c] hover:text-white'
                   }`}
                 >
-                  <Clock className={`w-3.5 h-3.5 transition-colors ${outputTab === 'stats' ? 'text-amber-400' : 'text-[#777777]'}`} />
+                  <Clock className={`w-3.5 h-3.5 transition-colors ${outputTab === 'stats' ? 'text-zinc-200' : 'text-[#777777]'}`} />
                   <span>Stats</span>
                   {sqlDuration !== null && (
                     <span className={`text-[11px] px-1.5 py-0.2 rounded-full font-mono transition-colors ${
                       outputTab === 'stats'
-                        ? 'bg-amber-500/15 text-amber-300 border border-amber-500/25'
+                        ? 'bg-white/[0.08] text-zinc-200 border border-white/[0.1]'
                         : 'bg-[#202020] text-[#888888]'
                     }`}>
                       {sqlDuration}ms
@@ -401,19 +408,21 @@ export function SqlConsoleView({
 
             {/* Batch execution warning banner when errors were skipped */}
             {batchSummary?.errors && batchSummary.errors.length > 0 && outputTab === 'grid' && (
-              <div className="h-8 px-4 bg-amber-950/20 border-b border-amber-800/30 flex items-center justify-between text-[12px] text-amber-300 shrink-0">
-                <div className="flex items-center gap-2 min-w-0">
-                  <AlertCircle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                  <span className="truncate">
-                    Batch completed: {batchSummary.successful} statements succeeded, {batchSummary.errors.length} skipped with warnings.
+              <div className="h-8.5 px-4 bg-[#0e0e11] border-b border-white/[0.06] flex items-center justify-between text-[12px] text-zinc-300 shrink-0 select-none">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400/90 shadow-[0_0_6px_rgba(251,191,36,0.6)] shrink-0" />
+                  <span className="truncate text-zinc-300 font-normal">
+                    Batch completed: <span className="text-zinc-100 font-medium">{batchSummary.successful} statements succeeded</span>
+                    <span className="text-zinc-400"> ({batchSummary.errors.length} skipped with warnings)</span>
                   </span>
                 </div>
                 <button
                   type="button"
                   onClick={() => setOutputTab('stats')}
-                  className="text-amber-400 hover:text-amber-200 underline font-medium text-[11.5px] shrink-0 ml-3 cursor-pointer"
+                  className="text-zinc-400 hover:text-white text-[11.5px] font-medium transition-colors shrink-0 ml-3 cursor-pointer flex items-center gap-1"
                 >
-                  View in Stats
+                  <span>View in stats</span>
+                  <span className="font-mono text-[10.5px] text-zinc-500">→</span>
                 </button>
               </div>
             )}
@@ -427,36 +436,36 @@ export function SqlConsoleView({
                 </div>
               ) : sqlError ? (
                 <div className="p-6 max-w-2xl mx-auto h-full flex flex-col justify-center select-text font-sans">
-                  <div className="p-4 bg-[#111111] border border-[#222222] rounded-[8px] text-left space-y-3 shadow-lg">
+                  <div className="relative overflow-hidden p-5 bg-[#0e0e11] border border-white/[0.08] rounded-xl text-left space-y-3.5 shadow-2xl">
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-2">
-                        <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
-                        <span className="text-white font-medium text-[13.5px]">Query execution error</span>
+                        <span className="w-1.5 h-1.5 rounded-full bg-rose-400/90 shadow-[0_0_6px_rgba(244,63,94,0.6)] shrink-0" />
+                        <span className="text-zinc-100 font-medium text-[13.5px] tracking-tight">Query execution error</span>
                       </div>
                       {selectedDb && (
-                        <span className="text-[11.5px] font-mono text-[#888888] px-2 py-0.5 rounded bg-[#181818] border border-[#262626]">
+                        <span className="text-[11px] font-mono text-zinc-400 px-2 py-0.5 rounded-md bg-white/[0.03] border border-white/[0.06]">
                           {selectedDb}
                         </span>
                       )}
                     </div>
 
                     {/* Clean formatted error message */}
-                    <div className="text-[12.5px] font-mono text-[#e5e5e5] leading-relaxed break-words whitespace-pre-wrap bg-[#0a0a0a] p-3 rounded-[6px] border border-[#1f1f1f] select-text">
+                    <div className="text-[12px] font-mono text-zinc-300 leading-relaxed break-words whitespace-pre-wrap bg-[#050507] p-3 rounded-lg border border-white/[0.05] select-text">
                       {sqlError}
                     </div>
 
                     {/* Contextual Actionable Guidance */}
                     {/depend on it|foreign key|constraint fails|violates foreign key|1451/i.test(sqlError) && (
-                      <div className="flex flex-col gap-2 p-3 rounded-[6px] bg-[#161616] border border-[#262626] text-[#a1a1a1] text-[12px] leading-relaxed">
-                        <div className="flex items-center gap-1.5 text-amber-400 font-medium">
-                          <AlertCircle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                      <div className="flex flex-col gap-2 p-3.5 rounded-lg bg-white/[0.02] border border-white/[0.06] text-zinc-400 text-[12px] leading-relaxed">
+                        <div className="flex items-center gap-1.5 text-zinc-200 font-medium text-[12.5px]">
+                          <AlertCircle className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
                           <span>Foreign Key Constraint Guidance (Error 1451)</span>
                         </div>
                         <p>
-                          In MySQL/MariaDB, tables with foreign keys cannot be dropped or truncated while referenced by child tables, and <code className="px-1 py-0.5 rounded bg-[#0c0c0c] border border-[#242424] text-amber-300 font-mono text-[11px]">CASCADE</code> on <code className="px-1 py-0.5 rounded bg-[#0c0c0c] border border-[#242424] text-amber-300 font-mono text-[11px]">DROP TABLE</code> is ignored.
+                          In MySQL/MariaDB, tables with foreign keys cannot be dropped or truncated while referenced by child tables, and <code className="px-1.5 py-0.5 rounded bg-black/50 border border-white/[0.08] text-zinc-200 font-mono text-[11px]">CASCADE</code> on <code className="px-1.5 py-0.5 rounded bg-black/50 border border-white/[0.08] text-zinc-200 font-mono text-[11px]">DROP TABLE</code> is ignored.
                         </p>
-                        <p className="text-[#888888]">To safely recreate relational tables in MySQL, disable foreign key checks during drops:</p>
-                        <pre className="p-2 rounded bg-[#0c0c0c] border border-[#222222] text-[#cccccc] font-mono text-[11.5px] select-all overflow-x-auto">
+                        <p className="text-zinc-500">To safely recreate relational tables in MySQL, disable foreign key checks during drops:</p>
+                        <pre className="p-2.5 rounded-md bg-black/60 border border-white/[0.06] text-zinc-300 font-mono text-[11.5px] select-all overflow-x-auto">
 {`SET FOREIGN_KEY_CHECKS = 0;
 DROP TABLE IF EXISTS payments, order_items, orders, products, categories, employees, customers, suppliers;
 SET FOREIGN_KEY_CHECKS = 1;`}
@@ -465,36 +474,36 @@ SET FOREIGN_KEY_CHECKS = 1;`}
                     )}
 
                     {/duplicate key name|duplicate key|1061/i.test(sqlError) && (
-                      <div className="flex flex-col gap-2 p-3 rounded-[6px] bg-[#161616] border border-[#262626] text-[#a1a1a1] text-[12px] leading-relaxed">
-                        <div className="flex items-center gap-1.5 text-amber-400 font-medium">
-                          <AlertCircle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                      <div className="flex flex-col gap-2 p-3.5 rounded-lg bg-white/[0.02] border border-white/[0.06] text-zinc-400 text-[12px] leading-relaxed">
+                        <div className="flex items-center gap-1.5 text-zinc-200 font-medium text-[12.5px]">
+                          <AlertCircle className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
                           <span>Duplicate Index Guidance (Error 1061)</span>
                         </div>
                         <p>
-                          MySQL does not support <code className="px-1 py-0.5 rounded bg-[#0c0c0c] border border-[#242424] text-amber-300 font-mono text-[11px]">CREATE INDEX IF NOT EXISTS</code>. When an index already exists on a table, MySQL returns error 1061.
+                          MySQL does not support <code className="px-1.5 py-0.5 rounded bg-black/50 border border-white/[0.08] text-zinc-200 font-mono text-[11px]">CREATE INDEX IF NOT EXISTS</code>. When an index already exists on a table, MySQL returns error 1061.
                         </p>
                         <p>
-                          Enable the <strong className="text-white">Continue on error</strong> toggle in the toolbar to allow multi-statement scripts to run past existing indexes, or drop the index first with <code className="px-1 py-0.5 rounded bg-[#0c0c0c] border border-[#242424] text-amber-300 font-mono text-[11px]">DROP INDEX &lt;name&gt; ON &lt;table&gt;;</code>.
+                          Enable the <strong className="text-zinc-200 font-medium">Continue on error</strong> toggle in the toolbar to allow multi-statement scripts to run past existing indexes, or drop the index first with <code className="px-1.5 py-0.5 rounded bg-black/50 border border-white/[0.08] text-zinc-200 font-mono text-[11px]">DROP INDEX &lt;name&gt; ON &lt;table&gt;;</code>.
                         </p>
                       </div>
                     )}
 
                     {/expected: end of statement|sql parser error|sql_parse_error/i.test(sqlError) && (
-                      <div className="flex flex-col gap-2 p-3 rounded-[6px] bg-[#161616] border border-[#262626] text-[#a1a1a1] text-[12px] leading-relaxed">
-                        <div className="flex items-center gap-1.5 text-amber-400 font-medium">
-                          <AlertCircle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                      <div className="flex flex-col gap-2 p-3.5 rounded-lg bg-white/[0.02] border border-white/[0.06] text-zinc-400 text-[12px] leading-relaxed">
+                        <div className="flex items-center gap-1.5 text-zinc-200 font-medium text-[12.5px]">
+                          <AlertCircle className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
                           <span>SQL Syntax / Statement Boundary Tip</span>
                         </div>
                         <p>
-                          A statement delimiter is likely missing. Ensure every SQL statement ends with a semicolon (<code className="px-1 py-0.5 rounded bg-[#0c0c0c] border border-[#242424] text-amber-300 font-mono text-[11px]">;</code>) before subsequent statements like <code className="px-1 py-0.5 rounded bg-[#0c0c0c] border border-[#242424] text-amber-300 font-mono text-[11px]">DROP</code> or <code className="px-1 py-0.5 rounded bg-[#0c0c0c] border border-[#242424] text-amber-300 font-mono text-[11px]">CREATE</code>.
+                          A statement delimiter is likely missing. Ensure every SQL statement ends with a semicolon (<code className="px-1.5 py-0.5 rounded bg-black/50 border border-white/[0.08] text-zinc-200 font-mono text-[11px]">;</code>) before subsequent statements like <code className="px-1.5 py-0.5 rounded bg-black/50 border border-white/[0.08] text-zinc-200 font-mono text-[11px]">DROP</code> or <code className="px-1.5 py-0.5 rounded bg-black/50 border border-white/[0.08] text-zinc-200 font-mono text-[11px]">CREATE</code>.
                         </p>
                       </div>
                     )}
 
                     {/lock wait timeout|metadata lock|slow statement/i.test(sqlError) && (
-                      <div className="flex flex-col gap-2 p-3 rounded-[6px] bg-[#161616] border border-[#262626] text-[#a1a1a1] text-[12px] leading-relaxed">
-                        <div className="flex items-center gap-1.5 text-amber-400 font-medium">
-                          <AlertCircle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                      <div className="flex flex-col gap-2 p-3.5 rounded-lg bg-white/[0.02] border border-white/[0.06] text-zinc-400 text-[12px] leading-relaxed">
+                        <div className="flex items-center gap-1.5 text-zinc-200 font-medium text-[12.5px]">
+                          <AlertCircle className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
                           <span>Lock Wait Timeout</span>
                         </div>
                         <p>
@@ -514,79 +523,130 @@ SET FOREIGN_KEY_CHECKS = 1;`}
                 </div>
               ) : outputTab === 'stats' ? (
                 /* Stats / Execution Summary View */
-                <div className="p-5 space-y-4 font-sans max-w-lg">
-                  <div className="rounded-[8px] border border-[#242424] bg-[#141414] p-4 space-y-3">
-                    <div className="text-[14px] font-semibold text-white">Execution Metrics</div>
-                    <div className="grid grid-cols-2 gap-3 text-[12.5px]">
-                      <div className="p-2.5 rounded bg-[#1a1a1a] border border-[#262626]">
-                        <span className="text-[#888888] block text-[11px]">Duration</span>
-                        <span className="text-white font-mono font-medium text-[14px]">
+                <div className="p-5 space-y-4 font-sans max-w-xl">
+                  {/* Execution Telemetry Card */}
+                  <div className="relative overflow-hidden rounded-xl border border-white/[0.08] bg-[#0f0f12] p-4.5 space-y-3.5 shadow-2xl">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="w-1.5 h-1.5 rounded-full bg-zinc-400" />
+                        <span className="text-[13px] font-medium text-zinc-200 tracking-tight">Execution telemetry</span>
+                      </div>
+                      {selectedDb && (
+                        <span className="text-[11px] font-mono text-zinc-400 px-2 py-0.5 rounded-md bg-white/[0.03] border border-white/[0.06]">
+                          {selectedDb}
+                        </span>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-3 gap-2.5 text-[12px]">
+                      <div className="p-3 rounded-lg bg-white/[0.02] border border-white/[0.05] hover:border-white/[0.08] transition-colors">
+                        <span className="text-[10.5px] font-medium uppercase tracking-wider text-zinc-500 block">Duration</span>
+                        <span className="text-[15px] font-mono font-medium text-zinc-100 tracking-tight mt-1 block">
                           {sqlDuration !== null ? `${sqlDuration} ms` : '—'}
                         </span>
                       </div>
-                      <div className="p-2.5 rounded bg-[#1a1a1a] border border-[#262626]">
-                        <span className="text-[#888888] block text-[11px]">Rows Returned</span>
-                        <span className="text-white font-mono font-medium text-[14px]">
-                          {sqlResult.rows ? sqlResult.rows.length : 0}
+                      <div className="p-3 rounded-lg bg-white/[0.02] border border-white/[0.05] hover:border-white/[0.08] transition-colors">
+                        <span className="text-[10.5px] font-medium uppercase tracking-wider text-zinc-500 block">Rows returned</span>
+                        <span className="text-[15px] font-mono font-medium text-zinc-100 tracking-tight mt-1 block">
+                          {sqlResult.rows ? sqlResult.rows.length.toLocaleString() : 0}
                         </span>
                       </div>
-                      <div className="p-2.5 rounded bg-[#1a1a1a] border border-[#262626]">
-                        <span className="text-[#888888] block text-[11px]">Affected Rows</span>
-                        <span className="text-white font-mono font-medium text-[14px]">
-                          {sqlResult.affected_rows !== undefined ? sqlResult.affected_rows : '0'}
-                        </span>
-                      </div>
-                      <div className="p-2.5 rounded bg-[#1a1a1a] border border-[#262626]">
-                        <span className="text-[#888888] block text-[11px]">Database</span>
-                        <span className="text-white font-mono font-medium text-[14px] truncate block">
-                          {selectedDb}
+                      <div className="p-3 rounded-lg bg-white/[0.02] border border-white/[0.05] hover:border-white/[0.08] transition-colors">
+                        <span className="text-[10.5px] font-medium uppercase tracking-wider text-zinc-500 block">Affected rows</span>
+                        <span className="text-[15px] font-mono font-medium text-zinc-100 tracking-tight mt-1 block">
+                          {sqlResult.affected_rows !== undefined ? sqlResult.affected_rows.toLocaleString() : '0'}
                         </span>
                       </div>
                     </div>
                   </div>
 
+                  {/* Batch Summary Report Card */}
                   {batchSummary && (
-                    <div className="p-4 rounded-[8px] border border-[#262626] bg-[#141414] space-y-3">
-                      <div className="flex items-center gap-3">
-                        <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
-                          batchSummary.errors && batchSummary.errors.length > 0
-                            ? 'bg-amber-500/10 border border-amber-500/25'
-                            : 'bg-blue-500/10 border border-blue-500/25'
-                        }`}>
-                          {batchSummary.errors && batchSummary.errors.length > 0 ? (
-                            <AlertCircle className="w-4 h-4 text-amber-400" />
-                          ) : (
-                            <Check className="w-4 h-4 text-blue-400" />
-                          )}
+                    <div className="relative overflow-hidden rounded-xl border border-white/[0.08] bg-[#0f0f12] p-4.5 space-y-4 shadow-2xl">
+                      {/* Top subtle sheen */}
+                      <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/[0.12] to-transparent pointer-events-none" />
+
+                      {/* Execution Overview Row */}
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <span className={`w-1.5 h-1.5 rounded-full ${
+                              batchSummary.errors && batchSummary.errors.length > 0
+                                ? 'bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.5)]'
+                                : 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.5)]'
+                            }`} />
+                            <span className="text-[13.5px] font-medium text-zinc-100 tracking-tight">
+                              Batch execution completed
+                            </span>
+                          </div>
+                          <p className="text-[12px] text-zinc-400 font-mono leading-relaxed">
+                            <span className="text-zinc-200">{batchSummary.successful}</span> of {batchSummary.totalStatements} statements completed
+                            {batchSummary.errors && batchSummary.errors.length > 0 && (
+                              <span className="text-zinc-400"> • {batchSummary.errors.length} skipped</span>
+                            )}
+                            {' '}• {batchSummary.totalAffectedRows} affected rows
+                          </p>
                         </div>
-                        <div className="text-[12.5px] text-white">
-                          <span className="font-semibold">{batchSummary.successful} of {batchSummary.totalStatements} batch statements</span> executed successfully
-                          {batchSummary.errors && batchSummary.errors.length > 0 && (
-                            <span className="text-amber-300 font-medium"> ({batchSummary.errors.length} skipped with warnings)</span>
-                          )}
-                          {' '}with {batchSummary.totalAffectedRows} total affected rows.
-                        </div>
+                        <span className="px-2 py-0.5 rounded-md bg-white/[0.04] border border-white/[0.08] text-zinc-400 font-mono text-[11px] shrink-0">
+                          {batchSummary.durationMs}ms
+                        </span>
                       </div>
 
+                      {/* Skipped Statements List */}
                       {batchSummary.errors && batchSummary.errors.length > 0 && (
-                        <div className="pt-2 border-t border-[#222222] space-y-2">
-                          <div className="text-[11.5px] font-medium text-amber-400 uppercase tracking-wider">
-                            Skipped Statements ({batchSummary.errors.length})
+                        <div className="pt-3 border-t border-white/[0.06] space-y-2.5">
+                          <div className="flex items-center justify-between text-[11px] font-medium tracking-wider uppercase text-zinc-400">
+                            <div className="flex items-center gap-2">
+                              <span>Skipped statements</span>
+                              <span className="px-1.5 py-0.2 rounded-full bg-white/[0.05] border border-white/[0.08] text-zinc-300 font-mono text-[10px]">
+                                {batchSummary.errors.length}
+                              </span>
+                            </div>
+                            <span className="text-[10.5px] lowercase tracking-normal text-zinc-500 font-sans">
+                              tolerated via continue-on-error
+                            </span>
                           </div>
-                          <div className="max-h-60 overflow-y-auto space-y-2 pr-1">
+
+                          <div className="max-h-72 overflow-y-auto space-y-2.5 pr-1">
                             {batchSummary.errors.map((err) => (
-                              <div key={err.index} className="p-2.5 rounded bg-[#181818] border border-[#282828] text-[11.5px] space-y-1 font-mono">
-                                <div className="flex items-center justify-between text-[#888888] font-sans text-[11px]">
-                                  <span>Statement #{err.index}</span>
+                              <div
+                                key={err.index}
+                                className="group relative rounded-lg border border-white/[0.06] bg-[#09090c] hover:border-white/[0.12] p-3 space-y-2 transition-all"
+                              >
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-2">
+                                    <span className="px-1.5 py-0.5 rounded bg-white/[0.04] border border-white/[0.08] font-mono text-[11px] text-zinc-300">
+                                      Statement #{err.index}
+                                    </span>
+                                    <span className="text-[12px] font-medium text-zinc-200">
+                                      {err.isDuplicate ? 'Index or key already exists' : 'Execution notice'}
+                                    </span>
+                                  </div>
                                   {err.isDuplicate && (
-                                    <span className="px-1.5 py-0.2 rounded bg-amber-500/15 text-amber-300 border border-amber-500/20 text-[10.5px]">
-                                      Already Exists
+                                    <span className="px-2 py-0.5 rounded-full bg-white/[0.03] border border-white/[0.07] text-zinc-400 text-[10.5px] font-mono">
+                                      Idempotent
                                     </span>
                                   )}
                                 </div>
-                                <div className="text-rose-300 break-words">{err.error}</div>
-                                <div className="text-[#666666] text-[10.5px] truncate bg-[#0e0e0e] p-1 rounded border border-[#1f1f1f]" title={err.statement}>
-                                  {err.statement}
+
+                                <div className="text-[12px] font-mono text-zinc-300 break-words leading-relaxed pl-0.5">
+                                  {err.error}
+                                </div>
+
+                                {/* Sleek Terminal Snippet */}
+                                <div className="relative group/snippet rounded-md bg-[#050507] border border-white/[0.05] p-2.5 font-mono text-[11.5px] text-zinc-300 select-all overflow-x-auto flex items-center justify-between gap-3">
+                                  <code className="truncate text-zinc-300">{err.statement}</code>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleCopySnippet(err.statement, err.index)}
+                                    title="Copy statement SQL"
+                                    className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-white/[0.08] text-zinc-400 hover:text-white cursor-pointer shrink-0"
+                                  >
+                                    {copiedSnippetIndex === err.index ? (
+                                      <Check className="w-3.5 h-3.5 text-emerald-400" />
+                                    ) : (
+                                      <Copy className="w-3.5 h-3.5" />
+                                    )}
+                                  </button>
                                 </div>
                               </div>
                             ))}
@@ -597,44 +657,47 @@ SET FOREIGN_KEY_CHECKS = 1;`}
                   )}
                 </div>
               ) : batchSummary && (!sqlResult.rows || sqlResult.rows.length === 0) ? (
-                /* Batch Summary Completed */
-                <div className="p-8 text-center text-[14px] flex flex-col items-center justify-center gap-3 h-full max-w-lg mx-auto">
-                  <div className={`w-12 h-12 rounded-full flex items-center justify-center ${
-                    batchSummary.errors && batchSummary.errors.length > 0
-                      ? 'bg-amber-500/10 border border-amber-500/25'
-                      : 'bg-blue-500/10 border border-blue-500/25'
-                  }`}>
+                /* Batch Summary Completed (Empty rows output) */
+                <div className="p-8 text-center flex flex-col items-center justify-center gap-4 h-full max-w-md mx-auto font-sans select-none">
+                  <div className="relative flex items-center justify-center w-12 h-12 rounded-xl bg-white/[0.03] border border-white/[0.08] shadow-[0_0_24px_rgba(255,255,255,0.02)]">
                     {batchSummary.errors && batchSummary.errors.length > 0 ? (
-                      <AlertCircle className="w-6 h-6 text-amber-400" />
+                      <span className="w-2.5 h-2.5 rounded-full bg-amber-400 shadow-[0_0_10px_rgba(251,191,36,0.6)]" />
                     ) : (
-                      <Check className="w-6 h-6 text-blue-400" />
+                      <Check className="w-5 h-5 text-zinc-200" />
                     )}
                   </div>
-                  <div className="font-semibold text-white text-[15px]">
-                    Batch Script Completed
-                  </div>
-                  <div className="text-[12.5px] text-[#888888] font-mono">
-                    {batchSummary.successful} succeeded • {batchSummary.errors ? batchSummary.errors.length : 0} skipped • {batchSummary.totalAffectedRows} affected rows • {batchSummary.durationMs}ms
+                  <div className="space-y-1">
+                    <div className="font-medium text-zinc-100 text-[15px] tracking-tight">
+                      Batch execution finished
+                    </div>
+                    <div className="text-[12px] text-zinc-400 font-mono">
+                      {batchSummary.successful} succeeded • {batchSummary.errors ? batchSummary.errors.length : 0} skipped • {batchSummary.totalAffectedRows} affected rows • {batchSummary.durationMs}ms
+                    </div>
                   </div>
                   {batchSummary.errors && batchSummary.errors.length > 0 && (
                     <button
                       type="button"
                       onClick={() => setOutputTab('stats')}
-                      className="px-3 py-1 rounded-[6px] bg-[#1a1a1a] hover:bg-[#222222] border border-[#282828] text-amber-300 hover:text-white text-[12px] font-medium transition-colors cursor-pointer"
+                      className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] hover:border-white/[0.15] text-zinc-300 hover:text-white text-[12px] font-medium transition-all cursor-pointer shadow-sm"
                     >
-                      View {batchSummary.errors.length} Skipped Warnings in Stats
+                      <span>Inspect skipped statements</span>
+                      <span className="px-1.5 py-0.2 rounded-full bg-white/[0.06] text-[10.5px] font-mono text-zinc-400">
+                        {batchSummary.errors.length}
+                      </span>
                     </button>
                   )}
                 </div>
               ) : sqlResult.affected_rows !== undefined && !sqlResult.rows ? (
                 /* Non-query execution success (e.g. INSERT / UPDATE / CREATE) */
-                <div className="p-8 text-center text-[14px] flex flex-col items-center justify-center gap-3 h-full">
-                  <div className="w-12 h-12 rounded-full bg-blue-500/10 border border-blue-500/25 flex items-center justify-center">
-                    <Check className="w-6 h-6 text-blue-400" />
+                <div className="p-8 text-center flex flex-col items-center justify-center gap-3.5 h-full font-sans select-none">
+                  <div className="w-11 h-11 rounded-xl bg-white/[0.03] border border-white/[0.08] flex items-center justify-center shadow-[0_0_20px_rgba(255,255,255,0.02)]">
+                    <Check className="w-5 h-5 text-zinc-200" />
                   </div>
-                  <div className="font-semibold text-white text-[15px]">Statement Executed Successfully</div>
-                  <div className="text-[12.5px] text-[#888888] font-mono">
-                    Affected rows: {sqlResult.affected_rows} {sqlDuration !== null && `• ${sqlDuration}ms`}
+                  <div className="space-y-1">
+                    <div className="font-medium text-zinc-100 text-[15px] tracking-tight">Statement executed</div>
+                    <div className="text-[12px] text-zinc-400 font-mono">
+                      {sqlResult.affected_rows} rows affected {sqlDuration !== null && `• ${sqlDuration}ms`}
+                    </div>
                   </div>
                 </div>
               ) : resultRows.length === 0 ? (
