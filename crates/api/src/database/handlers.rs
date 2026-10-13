@@ -143,7 +143,8 @@ fn sanitize_db_error(raw_err: &str) -> String {
 
 /// Replaces unquoted '?' parameter placeholders with '$1', '$2', ... for PostgreSQL grammar.
 /// Invariant: Respects single-quoted strings ('...'), double-quoted identifiers ("..."),
-/// line comments (-- ...), and block comments (/* ... */) to prevent corrupting literal text.
+/// dollar-quoted strings ($$...$$, $tag$...$tag$), line comments (-- ...), block comments (/* ... */),
+/// and PostgreSQL JSONB operators (?|, ?&) to prevent corrupting literal text and operators.
 pub fn format_postgres_placeholders(sql: &str) -> String {
     use std::fmt::Write;
     let mut out = String::with_capacity(sql.len() + 16);
@@ -153,6 +154,7 @@ pub fn format_postgres_placeholders(sql: &str) -> String {
     let mut in_double_quote = false;
     let mut in_line_comment = false;
     let mut in_block_comment = false;
+    let mut dollar_quote_tag: Option<String> = None;
 
     let chars: Vec<char> = sql.chars().collect();
     let len = chars.len();
@@ -180,6 +182,20 @@ pub fn format_postgres_placeholders(sql: &str) -> String {
                 continue;
             }
             i += 1;
+            continue;
+        }
+
+        if let Some(ref tag) = dollar_quote_tag {
+            let tag_chars: Vec<char> = tag.chars().collect();
+            let tag_len = tag_chars.len();
+            if i + tag_len <= len && chars[i..i + tag_len] == tag_chars[..] {
+                out.push_str(tag);
+                dollar_quote_tag = None;
+                i += tag_len;
+            } else {
+                out.push(c);
+                i += 1;
+            }
             continue;
         }
 
@@ -232,6 +248,21 @@ pub fn format_postgres_placeholders(sql: &str) -> String {
             continue;
         }
 
+        // Check for start of dollar quote ($tag$ or $$)
+        if c == '$' {
+            let mut j = i + 1;
+            while j < len && (chars[j].is_alphanumeric() || chars[j] == '_') {
+                j += 1;
+            }
+            if j < len && chars[j] == '$' {
+                let tag: String = chars[i..=j].iter().collect();
+                out.push_str(&tag);
+                dollar_quote_tag = Some(tag);
+                i = j + 1;
+                continue;
+            }
+        }
+
         if c == '\'' {
             in_single_quote = true;
             out.push(c);
@@ -247,6 +278,12 @@ pub fn format_postgres_placeholders(sql: &str) -> String {
         }
 
         if c == '?' {
+            // Respect PostgreSQL JSONB operators (?| and ?&)
+            if next_c == Some('|') || next_c == Some('&') {
+                out.push(c);
+                i += 1;
+                continue;
+            }
             let _ = write!(out, "${}", param_idx);
             param_idx += 1;
             i += 1;
@@ -777,6 +814,14 @@ pub async fn insert_rows(
         .collect::<Vec<_>>()
         .join(", ");
 
+    if column_pairs.is_empty() || cols_str.is_empty() {
+        return Err(AxiomError::new(
+            "BAD_REQUEST",
+            "No valid column fields provided for insert",
+            StatusCode::BAD_REQUEST,
+        ));
+    }
+
     let mut all_params = Vec::new();
     let mut values_strings = Vec::new();
 
@@ -1051,7 +1096,7 @@ pub async fn update_rows(
         &filter,
     );
 
-    if sql.ends_with("WHERE ") || sql.contains("SET  WHERE") {
+    if sql.is_empty() || sql.ends_with("WHERE ") || sql.contains("SET  WHERE") {
         return Err(AxiomError::new(
             "BAD_REQUEST",
             "Invalid update or filter criteria",
@@ -1292,6 +1337,31 @@ mod tests {
         }
         let res = sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::PostgreSqlDialect {}, &formatted);
         assert!(res.is_ok(), "Failed to parse: {:?}", res.err());
+    }
+
+    #[test]
+    fn test_format_postgres_placeholders_advanced() {
+        use super::format_postgres_placeholders;
+
+        // 1. Basic replacement
+        let basic = "SELECT * FROM users WHERE id = ? AND email = ?";
+        assert_eq!(format_postgres_placeholders(basic), "SELECT * FROM users WHERE id = $1 AND email = $2");
+
+        // 2. Preserves single quotes and double quotes with question marks
+        let quotes = "SELECT 'Is this a question?' AS \"col?\" WHERE val = ?";
+        assert_eq!(format_postgres_placeholders(quotes), "SELECT 'Is this a question?' AS \"col?\" WHERE val = $1");
+
+        // 3. Preserves line and block comments with question marks
+        let comments = "SELECT 1 -- Comment with ?\n/* Block with ? */ WHERE id = ?";
+        assert_eq!(format_postgres_placeholders(comments), "SELECT 1 -- Comment with ?\n/* Block with ? */ WHERE id = $1");
+
+        // 4. Preserves dollar-quoted strings ($$ and $tag$)
+        let dollar = "SELECT $$Why? Because!$$, $fn$function body with ? mark$fn$ WHERE x = ?";
+        assert_eq!(format_postgres_placeholders(dollar), "SELECT $$Why? Because!$$, $fn$function body with ? mark$fn$ WHERE x = $1");
+
+        // 5. Preserves PostgreSQL JSONB operators (?| and ?&)
+        let jsonb = "SELECT * FROM logs WHERE data ?| array['a', 'b'] AND data ?& array['c'] AND status = ?";
+        assert_eq!(format_postgres_placeholders(jsonb), "SELECT * FROM logs WHERE data ?| array['a', 'b'] AND data ?& array['c'] AND status = $1");
     }
 }
 

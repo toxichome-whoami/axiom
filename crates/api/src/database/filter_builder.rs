@@ -298,6 +298,10 @@ pub fn construct_insert(table: &str, data: &HashMap<String, Value>) -> (String, 
         values.push(v.clone());
     }
 
+    if cols.is_empty() {
+        return (String::new(), Vec::new());
+    }
+
     let sql = format!(
         "INSERT INTO {} ({}) VALUES ({})",
         sanitize_ident(table),
@@ -327,6 +331,10 @@ pub fn construct_update(
         }
         set_parts.push(format!("{} = ?", clean_k));
         values.push(v.clone());
+    }
+
+    if set_parts.is_empty() {
+        return (String::new(), Vec::new());
     }
 
     let (where_clause, mut filter_vals) = build_where_clause(filter);
@@ -373,7 +381,8 @@ mod tests {
 
     #[test]
     fn test_construct_insert_sanitize_table() {
-        let data = HashMap::new();
+        let mut data = HashMap::new();
+        data.insert("id".to_string(), json!(1));
         let (sql, _) = construct_insert("users; DROP TABLE x", &data);
         assert!(sql.contains("usersDROPTABLEx"));
         assert!(!sql.contains(";"));
@@ -553,5 +562,38 @@ mod tests {
         assert_eq!(record.get("amount").unwrap(), &json!(99.5));
         assert_eq!(record.get("verified").unwrap(), &json!(true));
         assert_eq!(record.get("notes").unwrap(), &json!("12345"));
+    }
+
+    #[test]
+    fn test_construct_insert_and_update_empty_columns() {
+        // 1. Completely empty map
+        let empty_map = HashMap::new();
+        let (insert_sql_1, insert_vals_1) = construct_insert("users", &empty_map);
+        assert!(insert_sql_1.is_empty());
+        assert!(insert_vals_1.is_empty());
+
+        let (update_sql_1, update_vals_1) = construct_update("users", &empty_map, &empty_map);
+        assert!(update_sql_1.is_empty());
+        assert!(update_vals_1.is_empty());
+
+        // 2. Map containing only non-alphanumeric/invalid keys that sanitize to empty strings
+        let mut invalid_map = HashMap::new();
+        invalid_map.insert("$$$".to_string(), json!("val"));
+        invalid_map.insert("   ".to_string(), json!("val2"));
+
+        let (insert_sql_2, insert_vals_2) = construct_insert("users", &invalid_map);
+        assert!(insert_sql_2.is_empty());
+        assert!(insert_vals_2.is_empty());
+
+        let (update_sql_2, update_vals_2) = construct_update("users", &invalid_map, &empty_map);
+        assert!(update_sql_2.is_empty());
+        assert!(update_vals_2.is_empty());
+
+        // 3. Valid map works normally
+        let mut valid_map = HashMap::new();
+        valid_map.insert("name".to_string(), json!("Alice"));
+        let (insert_sql_3, insert_vals_3) = construct_insert("users", &valid_map);
+        assert_eq!(insert_sql_3, "INSERT INTO users (name) VALUES (?)");
+        assert_eq!(insert_vals_3, vec![json!("Alice")]);
     }
 }

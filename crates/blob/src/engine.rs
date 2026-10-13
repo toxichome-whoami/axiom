@@ -463,6 +463,20 @@ impl BlobEngine {
     ) -> Result<u64, BlobError> {
         validate_namespace(src_ns)?;
         validate_namespace(dest_ns)?;
+
+        if src_ns == dest_ns {
+            if src_prefix == dest_prefix {
+                return Err(BlobError::InvalidKey(
+                    "Source and destination prefixes cannot be identical".to_string(),
+                ));
+            }
+            if dest_prefix.starts_with(src_prefix) {
+                return Err(BlobError::InvalidKey(
+                    "Cannot copy a prefix into itself or a sub-prefix of itself".to_string(),
+                ));
+            }
+        }
+
         let mut count = 0u64;
         let mut cursor = None;
         loop {
@@ -494,6 +508,20 @@ impl BlobEngine {
     ) -> Result<u64, BlobError> {
         validate_namespace(src_ns)?;
         validate_namespace(dest_ns)?;
+
+        if src_ns == dest_ns {
+            if src_prefix == dest_prefix {
+                return Err(BlobError::InvalidKey(
+                    "Source and destination prefixes cannot be identical".to_string(),
+                ));
+            }
+            if dest_prefix.starts_with(src_prefix) {
+                return Err(BlobError::InvalidKey(
+                    "Cannot move a prefix into itself or a sub-prefix of itself".to_string(),
+                ));
+            }
+        }
+
         let mut count = 0u64;
         loop {
             let (items, _) = self.index.list(src_ns, Some(src_prefix), None, 1000)?;
@@ -943,5 +971,37 @@ mod tests {
         let swept_count = engine.sweep_expired().await.unwrap();
         assert_eq!(swept_count, 1);
         assert!(engine.get(ns, "temp.bin").await.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_blob_engine_prefix_self_nesting_prevention() {
+        let tmp = tempfile::tempdir().unwrap();
+        let engine = BlobEngine::new(tmp.path(), 8, 1024 * 1024, false)
+            .await
+            .unwrap();
+
+        let ns = "nest-test";
+        engine.put(ns, "folder/file.txt", None, b"hello").await.unwrap();
+
+        // 1. Same prefix should fail
+        let copy_same = engine.copy_prefix(ns, "folder/", ns, "folder/").await;
+        assert!(copy_same.is_err());
+
+        let move_same = engine.move_prefix(ns, "folder/", ns, "folder/").await;
+        assert!(move_same.is_err());
+
+        // 2. Sub-prefix should fail (prevents infinite loop)
+        let copy_sub = engine.copy_prefix(ns, "folder/", ns, "folder/sub/").await;
+        assert!(copy_sub.is_err());
+
+        let move_sub = engine.move_prefix(ns, "folder/", ns, "folder/sub/").await;
+        assert!(move_sub.is_err());
+
+        // 3. Different destination prefix should succeed
+        let move_valid = engine.move_prefix(ns, "folder/", ns, "other/").await;
+        assert!(move_valid.is_ok());
+        assert_eq!(move_valid.unwrap(), 1);
+        assert!(engine.get(ns, "other/file.txt").await.is_ok());
+        assert!(engine.get(ns, "folder/file.txt").await.is_err());
     }
 }
