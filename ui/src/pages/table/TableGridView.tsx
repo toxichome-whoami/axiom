@@ -202,6 +202,14 @@ export function TableGridView({
         <div className="flex-1 overflow-auto">
           {isSchemaLoading || (isRowsLoading && rows.length === 0 && !rowsError) ? (
             <TableSkeleton columns={columns} foreignKeys={foreignKeys} columnWidths={columnWidths} />
+          ) : !selectedTable ? (
+            <div className="p-16 flex flex-col items-center justify-center text-center font-sans gap-2.5">
+              <TableIcon className="w-8 h-8 text-[#444444]" />
+              <p className="text-[14px] font-medium text-white">No table selected</p>
+              <p className="text-[12.5px] text-[#888888] max-w-sm">
+                Select a table from the sidebar or run a query in the SQL editor to begin inspecting data.
+              </p>
+            </div>
           ) : rowsError ? (
             <div className="p-8 flex flex-col items-center justify-center text-center font-sans">
               <AlertCircle className="w-8 h-8 text-rose-500 mb-2" />
@@ -213,14 +221,6 @@ export function TableGridView({
               >
                 Retry
               </button>
-            </div>
-          ) : !selectedTable ? (
-            <div className="p-16 flex flex-col items-center justify-center text-center font-sans gap-2.5">
-              <TableIcon className="w-8 h-8 text-[#444444]" />
-              <p className="text-[14px] font-medium text-white">No table selected</p>
-              <p className="text-[12.5px] text-[#888888] max-w-sm">
-                Select a table from the sidebar or run a query in the SQL editor to begin inspecting data.
-              </p>
             </div>
           ) : columns.length === 0 ? (
             <div className="p-12 text-center text-[#777777] text-[14px]">

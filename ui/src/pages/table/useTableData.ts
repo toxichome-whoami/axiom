@@ -20,6 +20,7 @@ export function useTableData({ selectedDb, setSelectedDb, viewMode }: UseTableDa
 
   // Table Catalog State
   const [tables, setTables] = useState<TableInfoApi[]>([]);
+  const [loadedDb, setLoadedDb] = useState<string>('');
   const [selectedTable, setSelectedTable] = useState<string>(() => {
     try {
       const urlParams = new URLSearchParams(window.location.search);
@@ -105,6 +106,7 @@ export function useTableData({ selectedDb, setSelectedDb, viewMode }: UseTableDa
       const res = await api.getDatabaseTables(db, undefined, 500);
       const tableList = res.tables || [];
       setTables(tableList);
+      setLoadedDb(db);
 
       const currentTableNames = new Set(tableList.map((t) => t.name));
 
@@ -131,12 +133,13 @@ export function useTableData({ selectedDb, setSelectedDb, viewMode }: UseTableDa
       const queryTable = urlParams.get('table');
       const savedTable = localStorage.getItem(`axiom_selected_table_${db}`) || localStorage.getItem('axiom_selected_table');
 
-      // If database has NO tables at all (e.g. user dropped all tables):
+      // If database has NO tables at all (e.g. user dropped all tables or new database):
       if (tableList.length === 0) {
         setSelectedTable('');
         setColumns([]);
         setForeignKeys([]);
         setRows([]);
+        setRowsError(null);
         try {
           localStorage.removeItem(`axiom_selected_table_${db}`);
           localStorage.removeItem('axiom_selected_table');
@@ -156,24 +159,37 @@ export function useTableData({ selectedDb, setSelectedDb, viewMode }: UseTableDa
         if (viewModeRef.current === 'schema') {
           return '';
         }
+        let targetTable = '';
         // 1. If currently selected table exists in the new list, keep it
-        if (prev && tableList.some((t: TableInfoApi) => t.name === prev)) return prev;
-        // 2. If table from URL query exists in the list, select it
-        if (queryTable && tableList.some((t: TableInfoApi) => t.name === queryTable)) return queryTable;
-        // 3. If table from localStorage exists in the list, select it
-        if (savedTable && tableList.some((t: TableInfoApi) => t.name === savedTable)) return savedTable;
-        // 4. Default to first table
-        return tableList[0]?.name || '';
+        if (prev && tableList.some((t: TableInfoApi) => t.name === prev)) {
+          targetTable = prev;
+        } else if (queryTable && tableList.some((t: TableInfoApi) => t.name === queryTable)) {
+          // 2. If table from URL query exists in the list, select it
+          targetTable = queryTable;
+        } else if (savedTable && tableList.some((t: TableInfoApi) => t.name === savedTable)) {
+          // 3. If table from localStorage exists in the list, select it
+          targetTable = savedTable;
+        } else {
+          // 4. Default to first table
+          targetTable = tableList[0]?.name || '';
+        }
+
+        if (targetTable !== prev) {
+          setRowsError(null);
+        }
+        return targetTable;
       });
 
       return tableList;
     } catch (err) {
       console.error(`Failed to load tables for ${db}:`, err);
       setTables([]);
+      setLoadedDb(db);
       setSelectedTable('');
       setColumns([]);
       setForeignKeys([]);
       setRows([]);
+      setRowsError(null);
       return [];
     } finally {
       setIsTablesLoading(false);
@@ -182,6 +198,7 @@ export function useTableData({ selectedDb, setSelectedDb, viewMode }: UseTableDa
 
   useEffect(() => {
     if (selectedDb) {
+      setLoadedDb('');
       fetchTables(selectedDb);
       setCursor(null);
       setCursorHistory([]);
@@ -263,6 +280,7 @@ export function useTableData({ selectedDb, setSelectedDb, viewMode }: UseTableDa
         setColumns([]);
         setForeignKeys([]);
         setRows([]);
+        setRowsError(null);
         setIsSchemaLoading(false);
         setIsRowsLoading(false);
         return;
@@ -357,7 +375,22 @@ export function useTableData({ selectedDb, setSelectedDb, viewMode }: UseTableDa
         setCursor(pagination?.next_cursor || null);
       } catch (err: unknown) {
         if (activeTargetKeyRef.current !== currentKey) return;
-        setRowsError(err instanceof Error ? err.message : 'Failed to query table rows');
+        const msg = err instanceof Error ? err.message : 'Failed to query table rows';
+        if (msg.toLowerCase().includes('no such table') || msg.toLowerCase().includes('does not exist')) {
+          try {
+            localStorage.removeItem(`axiom_selected_table_${selectedDb}`);
+            localStorage.removeItem('axiom_selected_table');
+            const url = new URL(window.location.href);
+            if (url.searchParams.has('table')) {
+              url.searchParams.delete('table');
+              window.history.replaceState(null, '', url.pathname + url.search);
+            }
+          } catch {
+            // Ignore
+          }
+          fetchTables(selectedDb);
+        }
+        setRowsError(msg);
         setRows([]);
       } finally {
         if (activeTargetKeyRef.current === currentKey) {
@@ -365,18 +398,26 @@ export function useTableData({ selectedDb, setSelectedDb, viewMode }: UseTableDa
         }
       }
     },
-    [selectedDb, selectedTable, pageSize, activeFilter, activeSort]
+    [selectedDb, selectedTable, pageSize, activeFilter, activeSort, fetchTables]
   );
 
   // Full reload when active table/db/view changes
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (selectedDb && selectedTable && viewMode === 'grid') {
+      if (loadedDb !== selectedDb) {
+        // Still loading table catalog for this database; wait for fetchTables
+        return;
+      }
+      if (tables.length > 0 && !tables.some((t) => t.name === selectedTable)) {
+        // Table not in this database; skip executing invalid query
+        return;
+      }
       setCursor(null);
       setCursorHistory([]);
       loadTableData({ reloadSchema: false });
     }
-  }, [selectedDb, selectedTable, viewMode]);
+  }, [selectedDb, selectedTable, viewMode, loadedDb, tables]);
 
   // Row-only reload when filter/sort/pageSize changes
   // eslint-disable-next-line react-hooks/exhaustive-deps
