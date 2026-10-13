@@ -125,6 +125,22 @@ fn collect_tables_from_query(query: &sqlparser::ast::Query, tables: &mut Vec<Str
     collect_tables_from_set_expr(&query.body, tables);
 }
 
+fn sanitize_db_error(raw_err: &str) -> String {
+    let mut msg = raw_err.trim();
+    while let Some(rest) = msg
+        .strip_prefix("Execution error: ")
+        .or_else(|| msg.strip_prefix("error returned from database: "))
+        .or_else(|| msg.strip_prefix("Database error: "))
+    {
+        msg = rest.trim();
+    }
+    if msg.is_empty() {
+        "Database query execution failed".to_string()
+    } else {
+        msg.to_string()
+    }
+}
+
 impl QueryExecutionPipeline {
     /// Executes a database query through the complete pipeline: circuit breaker, cache, blacklist, AST, and engine.
     /// CONTRACT:
@@ -447,8 +463,8 @@ impl QueryExecutionPipeline {
                         let json_bytes = bytes::Bytes::from(b);
                         if !is_mutation {
                             if let Some(ref key) = cache_key {
-                                let durability = match config.cache.backend.as_str() {
-                                    "turso" | "hybrid" => axiom_cache::Durability::Journaled,
+                                let durability = match config.cache.backend.to_ascii_lowercase().as_str() {
+                                    "hybrid" | "hybird" => axiom_cache::Durability::Journaled,
                                     _ => axiom_cache::Durability::MemoryOnly,
                                 };
                                 // Differentiated Negative Caching TTL:
@@ -486,12 +502,20 @@ impl QueryExecutionPipeline {
                 tracing::error!("Database query failed on '{}': {}", db_name, e);
 
                 let (status, err_code, client_msg) = if is_connection_failure {
-                    (StatusCode::SERVICE_UNAVAILABLE, "DB_CONNECTION_FAILED", "Upstream database unavailable")
+                    (
+                        StatusCode::SERVICE_UNAVAILABLE,
+                        "DB_CONNECTION_FAILED",
+                        format!("Upstream database unavailable: {}", sanitize_db_error(&e)),
+                    )
                 } else {
-                    (StatusCode::BAD_REQUEST, "DB_QUERY_FAILED", "Database query execution failed")
+                    (
+                        StatusCode::BAD_REQUEST,
+                        "DB_QUERY_FAILED",
+                        sanitize_db_error(&e),
+                    )
                 };
 
-                Err(AxiomError::new(err_code, client_msg, status))
+                Err(AxiomError::new(err_code, &client_msg, status))
             }
         };
 

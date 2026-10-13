@@ -79,8 +79,8 @@ Rate limits also apply per API key using `rate_limit_override` from the key reco
 | Key | Type | Default | Notes |
 |-----|------|---------|-------|
 | `enabled` | bool | `true` | |
-| `backend` | string | `"memory"` | `"memory"`, `"turso"`, or `"hybrid"` (L1 RAM + L2 SQLite). |
-| `turso_url` | string | `"file:data/cache.db"` | Used when `backend = "turso"` or `"hybrid"`. |
+| `backend` | string | `"memory"` | `"memory"` (L1 DashMap in RAM) or `"hybrid"` (L1 RAM + L2 SQLite on disk). |
+| `turso_url` | string | `"file:data/cache.db"` | Used when `backend = "hybrid"`. |
 | `turso_token` | string | `""` | |
 | `max_memory` | string | `"100 MB"` | Approximate L1 memory budget. |
 | `default_ttl` | int | `60` | Default cache TTL (seconds). |

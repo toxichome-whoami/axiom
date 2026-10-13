@@ -255,7 +255,10 @@ async function executeRequest<T>(
 
     if (!res.ok || (json.success !== undefined && !json.success)) {
       const code = json.error?.code;
-      const sanitized = (code && CODE_MAP[code]) || json.error?.message || `Request failed (HTTP ${res.status})`;
+      const serverMsg = json.error?.message;
+      const sanitized = (serverMsg && serverMsg.trim())
+        ? serverMsg.trim()
+        : ((code && CODE_MAP[code]) || `Request failed (HTTP ${res.status})`);
       throw new Error(sanitized);
     }
 

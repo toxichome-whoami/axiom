@@ -59,8 +59,15 @@ impl DatabaseEngine for LibsqlDatabaseEngine {
                 .map_err(|e| EngineError::Connection(e.to_string()))?
         } else {
             // Local SQLite file
-            let path = url.replace("sqlite://", "").replace("file://", "");
-            Builder::new_local(path)
+            let path = url.replace("sqlite://", "").replace("file://", "").replace("file:", "");
+            if !is_memory {
+                if let Some(parent) = std::path::Path::new(&path).parent() {
+                    if !parent.as_os_str().is_empty() {
+                        let _ = tokio::fs::create_dir_all(parent).await;
+                    }
+                }
+            }
+            Builder::new_local(&path)
                 .build()
                 .await
                 .map_err(|e| EngineError::Connection(e.to_string()))?

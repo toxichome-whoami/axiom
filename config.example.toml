@@ -41,7 +41,7 @@ stdout = true                    # Stream logs to console
 # Hardened locks preventing DOS and brute-force attacks.
 [rate_limit]
 enabled = true                   # Master toggle for rate limiting
-backend = "memory"               # memory | turso
+backend = "turso"               # memory | turso
 turso_url = "file:data/cache.db" # Required if backend = "turso"
 turso_token = ""
 window = 60                      # Time window in seconds
@@ -54,8 +54,8 @@ penalty_cooldown = 300           # IP ban duration in seconds
 # Mitigation for backend latency via internal response caching.
 [cache]
 enabled = true
-backend = "memory"               # memory | turso | hybrid (L1 RAM + L2 persistent)
-turso_url = "file:data/cache.db" # Required if backend = "turso" or "hybrid"
+backend = "memory"               # memory (L1 RAM only) | hybrid (L1 RAM + L2 persistent disk)
+turso_url = "file:data/cache.db" # Required if backend = "hybrid"
 turso_token = ""
 max_memory = "100mb"             # Memory limit for internal cache (approximate)
 default_ttl = 60                 # Default expiration for generic items (seconds)
@@ -88,11 +88,11 @@ url = "file:data/axiom.db"       # Default: local SQLite file
 token = ""                       # Turso auth token (if remote)
 reload_interval = 30             # Seconds between hot-snapshot refreshes
 
-# ─── Native Blob Storage Engine (Optional) ────────────
+# ─── Native Blob Storage Engine ──────────────────────────
 # Embedded high-performance content-addressed object storage.
-# Keeps zero CPU/RAM footprint when disabled (default: false).
+# Enabled by default; set enabled = false if you do not need blob storage.
 [blob]
-enabled = false                  # Enable embedded blob engine
+enabled = true                   # Enable embedded blob engine (default: true)
 path = "data/blobs"              # Base directory for LSM index and blob files
 inline_max = "64kb"              # Payloads <= this threshold are stored inline in Fjall LSM
 max_object = "5gb"               # Hard ceiling on single blob upload size
@@ -102,7 +102,7 @@ verify_reads = false             # Re-verify BLAKE3 checksums on reads (integrit
 # v4.0 Transition Note for API Keys and Databases
 # ─────────────────────────────────────────────────────────────────────────────
 # In v4.0, API keys and Database connections are managed LIVE via the Web UI 
-# (http://localhost:4500/ui) and stored securely in the `metadata.url` database.
+# (http://localhost:4500/system) and stored securely in the `metadata.url` database.
 # 
 # You DO NOT need to define them in this file anymore.
 #

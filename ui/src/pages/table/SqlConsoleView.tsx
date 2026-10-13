@@ -407,15 +407,34 @@ export function SqlConsoleView({
                   <span>Executing query against {selectedDb}...</span>
                 </div>
               ) : sqlError ? (
-                <div className="p-6 text-center text-rose-400 text-[13px] font-mono whitespace-pre-wrap max-w-xl mx-auto h-full flex flex-col justify-center">
-                  <div className="p-4 bg-[#1c0a0a] border border-rose-900/50 rounded-[8px] text-left space-y-2">
-                    <div className="flex items-center gap-2 text-rose-400 font-semibold text-[14px]">
-                      <AlertCircle className="w-4 h-4 shrink-0 text-rose-500" />
-                      <span>Execution Error</span>
+                <div className="p-6 max-w-2xl mx-auto h-full flex flex-col justify-center select-text font-sans">
+                  <div className="p-4 bg-[#111111] border border-[#222222] rounded-[8px] text-left space-y-3 shadow-lg">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
+                        <span className="text-white font-medium text-[13.5px]">Query execution error</span>
+                      </div>
+                      {selectedDb && (
+                        <span className="text-[11.5px] font-mono text-[#888888] px-2 py-0.5 rounded bg-[#181818] border border-[#262626]">
+                          {selectedDb}
+                        </span>
+                      )}
                     </div>
-                    <div className="text-[12.5px] text-[#e0a0a0] leading-relaxed break-words">
+
+                    {/* Clean formatted error message */}
+                    <div className="text-[12.5px] font-mono text-[#e5e5e5] leading-relaxed break-words whitespace-pre-wrap bg-[#0a0a0a] p-3 rounded-[6px] border border-[#1f1f1f] select-text">
                       {sqlError}
                     </div>
+
+                    {/* Contextual Actionable Guidance */}
+                    {/depend on it|foreign key|constraint fails|violates foreign key/i.test(sqlError) && (
+                      <div className="flex items-start gap-2 p-2.5 rounded-[6px] bg-[#161616] border border-[#262626] text-[#a1a1a1] text-[12px] leading-relaxed">
+                        <span className="text-amber-400 font-medium shrink-0">Tip:</span>
+                        <span>
+                          This table cannot be dropped directly because other tables or foreign keys reference it. Drop referencing tables first, or use <code className="px-1.5 py-0.5 rounded bg-[#0c0c0c] border border-[#242424] text-amber-300 font-mono text-[11px]">CASCADE</code> (e.g. <code className="px-1.5 py-0.5 rounded bg-[#0c0c0c] border border-[#242424] text-amber-300 font-mono text-[11px]">DROP TABLE &lt;name&gt; CASCADE;</code>) to remove dependent objects.
+                        </span>
+                      </div>
+                    )}
                   </div>
                 </div>
               ) : !sqlResult ? (
