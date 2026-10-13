@@ -271,24 +271,24 @@ export function SqlConsoleView({
           <div className="flex-1 flex flex-col min-h-0 bg-[#0c0c0c] overflow-hidden">
             {/* Output Header */}
             <div className="h-[54px] w-full px-4 bg-[#0c0c0c] border-b border-[#222222] flex items-center justify-between gap-3 shrink-0 select-none font-sans">
-              {/* Output Sub-tabs (Matching TableToolbar Pill Container) */}
-              <div className="flex items-center p-1 rounded-[7px] bg-[#141414] border border-[#262626] h-9">
+              {/* Output Sub-tabs (Matching Website Design System Segmented Control) */}
+              <div className="inline-flex items-center p-0.5 rounded-[8px] bg-transparent border border-[#262626]">
                 <button
                   type="button"
                   onClick={() => setOutputTab('grid')}
-                  className={`flex items-center gap-1.5 px-3 py-1 rounded-[5px] text-[13px] font-medium transition-all cursor-pointer ${
+                  className={`flex items-center gap-1.5 h-7.5 px-3 rounded-[6px] text-[13px] font-medium transition-colors duration-75 cursor-pointer font-sans outline-none border ${
                     outputTab === 'grid'
-                      ? 'bg-[#222222] text-white shadow-sm'
-                      : 'text-[#8c8c8c] hover:text-white'
+                      ? 'bg-[#161616] text-white border-[#333333]'
+                      : 'text-[#8c8c8c] hover:text-white hover:bg-[#141414] border-transparent'
                   }`}
                 >
-                  <TableIcon className={`w-3.5 h-3.5 transition-colors ${outputTab === 'grid' ? 'text-zinc-200' : 'text-[#777777]'}`} />
+                  <TableIcon className={`w-3.5 h-3.5 transition-colors ${outputTab === 'grid' ? 'text-white' : 'text-[#8c8c8c]'}`} />
                   <span>Results</span>
                   {sqlResult?.rows && (
                     <span className={`text-[11px] px-1.5 py-0.2 rounded-full font-mono transition-colors ${
                       outputTab === 'grid'
-                        ? 'bg-white/[0.08] text-zinc-200 border border-white/[0.1]'
-                        : 'bg-[#202020] text-[#888888]'
+                        ? 'bg-[#222222] text-[#cccccc] border border-[#333333]'
+                        : 'bg-[#1a1a1a] text-[#8c8c8c]'
                     }`}>
                       {sqlResult.rows.length}
                     </span>
@@ -298,19 +298,19 @@ export function SqlConsoleView({
                 <button
                   type="button"
                   onClick={() => setOutputTab('stats')}
-                  className={`flex items-center gap-1.5 px-3 py-1 rounded-[5px] text-[13px] font-medium transition-all cursor-pointer ${
+                  className={`flex items-center gap-1.5 h-7.5 px-3 rounded-[6px] text-[13px] font-medium transition-colors duration-75 cursor-pointer font-sans outline-none border ${
                     outputTab === 'stats'
-                      ? 'bg-[#222222] text-white shadow-sm'
-                      : 'text-[#8c8c8c] hover:text-white'
+                      ? 'bg-[#161616] text-white border-[#333333]'
+                      : 'text-[#8c8c8c] hover:text-white hover:bg-[#141414] border-transparent'
                   }`}
                 >
-                  <Clock className={`w-3.5 h-3.5 transition-colors ${outputTab === 'stats' ? 'text-zinc-200' : 'text-[#777777]'}`} />
+                  <Clock className={`w-3.5 h-3.5 transition-colors ${outputTab === 'stats' ? 'text-white' : 'text-[#8c8c8c]'}`} />
                   <span>Stats</span>
                   {sqlDuration !== null && (
                     <span className={`text-[11px] px-1.5 py-0.2 rounded-full font-mono transition-colors ${
                       outputTab === 'stats'
-                        ? 'bg-white/[0.08] text-zinc-200 border border-white/[0.1]'
-                        : 'bg-[#202020] text-[#888888]'
+                        ? 'bg-[#222222] text-[#cccccc] border border-[#333333]'
+                        : 'bg-[#1a1a1a] text-[#8c8c8c]'
                     }`}>
                       {sqlDuration}ms
                     </span>
@@ -365,29 +365,29 @@ export function SqlConsoleView({
 
             {/* Live Execution Progress Strip (Linear / Developer Grade) */}
             {chunkProgress && (
-              <div className="relative h-11 px-5 bg-[#0e0e11] border-b border-white/[0.08] flex items-center justify-between gap-4 text-[13px] font-sans select-none shrink-0 overflow-hidden animate-in fade-in duration-100">
+              <div className="relative h-10 px-4 bg-[#0e0e0e] border-b border-[#222222] flex items-center justify-between gap-3 text-[13px] font-sans select-none shrink-0 overflow-hidden animate-in fade-in duration-100">
                 {/* Hairline Progress Bar */}
-                <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-white/[0.06]">
+                <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-[#1a1a1a]">
                   <div
-                    className="h-full bg-blue-500 transition-all duration-200"
+                    className="h-full bg-[#2f80ed] transition-all duration-200"
                     style={{ width: `${Math.max(2, chunkProgress.percent)}%` }}
                   />
                 </div>
 
                 {/* Left: Indicator, Counter & Live Statement */}
-                <div className="flex items-center gap-3 min-w-0 flex-1 overflow-hidden">
-                  <RefreshCw className="w-4 h-4 animate-spin text-blue-400 shrink-0" />
-                  <div className="flex items-center gap-2 shrink-0 text-zinc-100 font-medium text-[13px]">
+                <div className="flex items-center gap-2.5 min-w-0 flex-1 overflow-hidden">
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin text-[#2f80ed] shrink-0" />
+                  <div className="flex items-center gap-1.5 shrink-0 text-white font-medium text-[13px]">
                     <span>Executing</span>
-                    <span className="font-mono text-zinc-300 font-normal">
+                    <span className="font-mono text-[#cccccc] font-normal">
                       {chunkProgress.current}/{chunkProgress.total}
                     </span>
-                    <span className="text-zinc-500 font-mono text-[12px]">
+                    <span className="text-[#8c8c8c] font-mono text-[12px]">
                       ({chunkProgress.percent}%)
                     </span>
                   </div>
-                  <span className="text-zinc-600 shrink-0 font-mono">•</span>
-                  <div className="truncate min-w-0 font-mono text-[12px] text-zinc-400" title={chunkProgress.snippet}>
+                  <span className="text-[#444444] shrink-0 font-mono">•</span>
+                  <div className="truncate min-w-0 font-mono text-[12px] text-[#8c8c8c]" title={chunkProgress.snippet}>
                     {chunkProgress.snippet}
                   </div>
                 </div>
@@ -397,9 +397,9 @@ export function SqlConsoleView({
                   <button
                     type="button"
                     onClick={handleCancelSql}
-                    className="flex items-center gap-1.5 h-7 px-3 rounded-md bg-white/[0.04] hover:bg-rose-500/10 border border-white/[0.08] hover:border-rose-500/30 text-zinc-300 hover:text-rose-300 text-[12px] font-medium transition-colors cursor-pointer shrink-0"
+                    className="flex items-center gap-1.5 h-7 px-2.5 rounded-[6px] bg-[#141414] hover:bg-[#1a1a1a] border border-[#262626] hover:border-rose-900/50 text-[#8c8c8c] hover:text-rose-400 text-[12px] font-medium transition-colors cursor-pointer shrink-0"
                   >
-                    <StopCircle className="w-3.5 h-3.5 text-zinc-400 group-hover:text-rose-400" />
+                    <StopCircle className="w-3.5 h-3.5 text-[#8c8c8c]" />
                     <span>Cancel</span>
                   </button>
                 )}
@@ -408,21 +408,21 @@ export function SqlConsoleView({
 
             {/* Batch execution warning banner when errors were skipped */}
             {batchSummary?.errors && batchSummary.errors.length > 0 && outputTab === 'grid' && (
-              <div className="h-11 px-5 bg-[#0e0e11] border-b border-white/[0.08] flex items-center justify-between text-[13px] text-zinc-300 shrink-0 select-none">
-                <div className="flex items-center gap-3 min-w-0">
-                  <span className="w-2 h-2 rounded-full bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.6)] shrink-0" />
-                  <span className="truncate text-zinc-300 font-normal">
-                    Batch completed: <span className="text-zinc-100 font-medium">{batchSummary.successful} statements succeeded</span>
-                    <span className="text-zinc-400"> ({batchSummary.errors.length} skipped with warnings)</span>
+              <div className="h-10 px-4 bg-[#0e0e0e] border-b border-[#222222] flex items-center justify-between text-[13px] text-[#cccccc] shrink-0 select-none font-sans">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <span className="w-2 h-2 rounded-full bg-[#f59e0b] shrink-0" />
+                  <span className="truncate text-[#cccccc] font-normal">
+                    Batch completed: <span className="text-white font-medium">{batchSummary.successful} statements succeeded</span>
+                    <span className="text-[#8c8c8c]"> ({batchSummary.errors.length} skipped with warnings)</span>
                   </span>
                 </div>
                 <button
                   type="button"
                   onClick={() => setOutputTab('stats')}
-                  className="text-zinc-400 hover:text-zinc-100 text-[12.5px] font-medium transition-colors shrink-0 ml-4 cursor-pointer flex items-center gap-1.5 px-2.5 py-1 rounded-md hover:bg-white/[0.05]"
+                  className="text-[#8c8c8c] hover:text-white text-[12px] font-medium transition-colors shrink-0 ml-4 cursor-pointer flex items-center gap-1.5 px-2 py-1 rounded-[6px] hover:bg-[#141414]"
                 >
                   <span>View in stats</span>
-                  <span className="font-mono text-[11px] text-zinc-500">→</span>
+                  <span className="font-mono text-[11px] text-[#666666]">→</span>
                 </button>
               </div>
             )}
@@ -436,36 +436,36 @@ export function SqlConsoleView({
                 </div>
               ) : sqlError ? (
                 <div className="p-6 max-w-2xl mx-auto h-full flex flex-col justify-center select-text font-sans">
-                  <div className="relative overflow-hidden p-5 bg-[#0e0e11] border border-white/[0.08] rounded-xl text-left space-y-3.5 shadow-2xl">
+                  <div className="relative overflow-hidden p-5 bg-[#0e0e0e] border border-[#222222] rounded-[8px] text-left space-y-3.5 shadow-2xl">
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-2">
-                        <span className="w-1.5 h-1.5 rounded-full bg-rose-400/90 shadow-[0_0_6px_rgba(244,63,94,0.6)] shrink-0" />
-                        <span className="text-zinc-100 font-medium text-[13.5px] tracking-tight">Query execution error</span>
+                        <span className="w-2 h-2 rounded-full bg-[#ef4444] shrink-0" />
+                        <span className="text-white font-medium text-[14px]">Query execution error</span>
                       </div>
                       {selectedDb && (
-                        <span className="text-[11px] font-mono text-zinc-400 px-2 py-0.5 rounded-md bg-white/[0.03] border border-white/[0.06]">
+                        <span className="text-[11px] font-mono text-[#8c8c8c] px-2 py-0.5 rounded-[4px] bg-[#141414] border border-[#262626]">
                           {selectedDb}
                         </span>
                       )}
                     </div>
 
                     {/* Clean formatted error message */}
-                    <div className="text-[12px] font-mono text-zinc-300 leading-relaxed break-words whitespace-pre-wrap bg-[#050507] p-3 rounded-lg border border-white/[0.05] select-text">
+                    <div className="text-[12.5px] font-mono text-[#f87171] leading-relaxed break-words whitespace-pre-wrap bg-[#050505] p-3 rounded-[6px] border border-[#1f1f1f] select-text">
                       {sqlError}
                     </div>
 
                     {/* Contextual Actionable Guidance */}
                     {/depend on it|foreign key|constraint fails|violates foreign key|1451/i.test(sqlError) && (
-                      <div className="flex flex-col gap-2 p-3.5 rounded-lg bg-white/[0.02] border border-white/[0.06] text-zinc-400 text-[12px] leading-relaxed">
-                        <div className="flex items-center gap-1.5 text-zinc-200 font-medium text-[12.5px]">
-                          <AlertCircle className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                      <div className="flex flex-col gap-2 p-3.5 rounded-[6px] bg-[#141414] border border-[#222222] text-[#8c8c8c] text-[12.5px] leading-relaxed">
+                        <div className="flex items-center gap-1.5 text-white font-medium text-[13px]">
+                          <AlertCircle className="w-3.5 h-3.5 text-[#8c8c8c] shrink-0" />
                           <span>Foreign Key Constraint Guidance (Error 1451)</span>
                         </div>
                         <p>
-                          In MySQL/MariaDB, tables with foreign keys cannot be dropped or truncated while referenced by child tables, and <code className="px-1.5 py-0.5 rounded bg-black/50 border border-white/[0.08] text-zinc-200 font-mono text-[11px]">CASCADE</code> on <code className="px-1.5 py-0.5 rounded bg-black/50 border border-white/[0.08] text-zinc-200 font-mono text-[11px]">DROP TABLE</code> is ignored.
+                          In MySQL/MariaDB, tables with foreign keys cannot be dropped or truncated while referenced by child tables, and <code className="px-1.5 py-0.5 rounded-[4px] bg-[#0c0c0c] border border-[#262626] text-[#cccccc] font-mono text-[11.5px]">CASCADE</code> on <code className="px-1.5 py-0.5 rounded-[4px] bg-[#0c0c0c] border border-[#262626] text-[#cccccc] font-mono text-[11.5px]">DROP TABLE</code> is ignored.
                         </p>
-                        <p className="text-zinc-500">To safely recreate relational tables in MySQL, disable foreign key checks during drops:</p>
-                        <pre className="p-2.5 rounded-md bg-black/60 border border-white/[0.06] text-zinc-300 font-mono text-[11.5px] select-all overflow-x-auto">
+                        <p className="text-[#666666]">To safely recreate relational tables in MySQL, disable foreign key checks during drops:</p>
+                        <pre className="p-2.5 rounded-[6px] bg-[#050505] border border-[#1f1f1f] text-[#cccccc] font-mono text-[12px] select-all overflow-x-auto">
 {`SET FOREIGN_KEY_CHECKS = 0;
 DROP TABLE IF EXISTS payments, order_items, orders, products, categories, employees, customers, suppliers;
 SET FOREIGN_KEY_CHECKS = 1;`}
@@ -474,36 +474,36 @@ SET FOREIGN_KEY_CHECKS = 1;`}
                     )}
 
                     {/duplicate key name|duplicate key|1061/i.test(sqlError) && (
-                      <div className="flex flex-col gap-2 p-3.5 rounded-lg bg-white/[0.02] border border-white/[0.06] text-zinc-400 text-[12px] leading-relaxed">
-                        <div className="flex items-center gap-1.5 text-zinc-200 font-medium text-[12.5px]">
-                          <AlertCircle className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                      <div className="flex flex-col gap-2 p-3.5 rounded-[6px] bg-[#141414] border border-[#222222] text-[#8c8c8c] text-[12.5px] leading-relaxed">
+                        <div className="flex items-center gap-1.5 text-white font-medium text-[13px]">
+                          <AlertCircle className="w-3.5 h-3.5 text-[#8c8c8c] shrink-0" />
                           <span>Duplicate Index Guidance (Error 1061)</span>
                         </div>
                         <p>
-                          MySQL does not support <code className="px-1.5 py-0.5 rounded bg-black/50 border border-white/[0.08] text-zinc-200 font-mono text-[11px]">CREATE INDEX IF NOT EXISTS</code>. When an index already exists on a table, MySQL returns error 1061.
+                          MySQL does not support <code className="px-1.5 py-0.5 rounded-[4px] bg-[#0c0c0c] border border-[#262626] text-[#cccccc] font-mono text-[11.5px]">CREATE INDEX IF NOT EXISTS</code>. When an index already exists on a table, MySQL returns error 1061.
                         </p>
                         <p>
-                          Enable the <strong className="text-zinc-200 font-medium">Continue on error</strong> toggle in the toolbar to allow multi-statement scripts to run past existing indexes, or drop the index first with <code className="px-1.5 py-0.5 rounded bg-black/50 border border-white/[0.08] text-zinc-200 font-mono text-[11px]">DROP INDEX &lt;name&gt; ON &lt;table&gt;;</code>.
+                          Enable the <strong className="text-white font-medium">Continue on error</strong> toggle in the toolbar to allow multi-statement scripts to run past existing indexes, or drop the index first with <code className="px-1.5 py-0.5 rounded-[4px] bg-[#0c0c0c] border border-[#262626] text-[#cccccc] font-mono text-[11.5px]">DROP INDEX &lt;name&gt; ON &lt;table&gt;;</code>.
                         </p>
                       </div>
                     )}
 
                     {/expected: end of statement|sql parser error|sql_parse_error/i.test(sqlError) && (
-                      <div className="flex flex-col gap-2 p-3.5 rounded-lg bg-white/[0.02] border border-white/[0.06] text-zinc-400 text-[12px] leading-relaxed">
-                        <div className="flex items-center gap-1.5 text-zinc-200 font-medium text-[12.5px]">
-                          <AlertCircle className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                      <div className="flex flex-col gap-2 p-3.5 rounded-[6px] bg-[#141414] border border-[#222222] text-[#8c8c8c] text-[12.5px] leading-relaxed">
+                        <div className="flex items-center gap-1.5 text-white font-medium text-[13px]">
+                          <AlertCircle className="w-3.5 h-3.5 text-[#8c8c8c] shrink-0" />
                           <span>SQL Syntax / Statement Boundary Tip</span>
                         </div>
                         <p>
-                          A statement delimiter is likely missing. Ensure every SQL statement ends with a semicolon (<code className="px-1.5 py-0.5 rounded bg-black/50 border border-white/[0.08] text-zinc-200 font-mono text-[11px]">;</code>) before subsequent statements like <code className="px-1.5 py-0.5 rounded bg-black/50 border border-white/[0.08] text-zinc-200 font-mono text-[11px]">DROP</code> or <code className="px-1.5 py-0.5 rounded bg-black/50 border border-white/[0.08] text-zinc-200 font-mono text-[11px]">CREATE</code>.
+                          A statement delimiter is likely missing. Ensure every SQL statement ends with a semicolon (<code className="px-1.5 py-0.5 rounded-[4px] bg-[#0c0c0c] border border-[#262626] text-[#cccccc] font-mono text-[11.5px]">;</code>) before subsequent statements like <code className="px-1.5 py-0.5 rounded-[4px] bg-[#0c0c0c] border border-[#262626] text-[#cccccc] font-mono text-[11.5px]">DROP</code> or <code className="px-1.5 py-0.5 rounded-[4px] bg-[#0c0c0c] border border-[#262626] text-[#cccccc] font-mono text-[11.5px]">CREATE</code>.
                         </p>
                       </div>
                     )}
 
                     {/lock wait timeout|metadata lock|slow statement/i.test(sqlError) && (
-                      <div className="flex flex-col gap-2 p-3.5 rounded-lg bg-white/[0.02] border border-white/[0.06] text-zinc-400 text-[12px] leading-relaxed">
-                        <div className="flex items-center gap-1.5 text-zinc-200 font-medium text-[12.5px]">
-                          <AlertCircle className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                      <div className="flex flex-col gap-2 p-3.5 rounded-[6px] bg-[#141414] border border-[#222222] text-[#8c8c8c] text-[12.5px] leading-relaxed">
+                        <div className="flex items-center gap-1.5 text-white font-medium text-[13px]">
+                          <AlertCircle className="w-3.5 h-3.5 text-[#8c8c8c] shrink-0" />
                           <span>Lock Wait Timeout</span>
                         </div>
                         <p>
@@ -523,36 +523,36 @@ SET FOREIGN_KEY_CHECKS = 1;`}
                 </div>
               ) : outputTab === 'stats' ? (
                 /* Stats / Execution Summary View */
-                <div className="p-6 sm:p-8 space-y-6 font-sans max-w-4xl mx-auto">
+                <div className="p-6 space-y-6 font-sans max-w-4xl mx-auto">
                   {/* Execution Telemetry Card */}
-                  <div className="relative overflow-hidden rounded-xl border border-white/[0.08] bg-[#0f0f12] p-6 space-y-5 shadow-2xl">
+                  <div className="relative overflow-hidden rounded-[8px] border border-[#222222] bg-[#0e0e0e] p-5 space-y-4">
                     <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2.5">
-                        <span className="w-2 h-2 rounded-full bg-zinc-400" />
-                        <span className="text-[14px] font-medium text-zinc-200">Execution telemetry</span>
+                      <div className="flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-[#8c8c8c]" />
+                        <span className="text-[13px] font-medium text-white">Execution telemetry</span>
                       </div>
                       {selectedDb && (
-                        <span className="text-[12px] font-mono text-zinc-400 px-2.5 py-1 rounded-md bg-white/[0.03] border border-white/[0.06]">
+                        <span className="text-[11.5px] font-mono text-[#8c8c8c] px-2.5 py-0.5 rounded-[4px] bg-[#141414] border border-[#262626]">
                           {selectedDb}
                         </span>
                       )}
                     </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-[13px]">
-                      <div className="p-4 sm:p-5 rounded-xl bg-white/[0.02] border border-white/[0.06] hover:border-white/[0.1] transition-colors">
-                        <span className="text-[13px] font-normal text-zinc-400 block">Duration</span>
-                        <span className="text-[22px] sm:text-[24px] font-medium text-zinc-100 mt-2 block">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 font-sans">
+                      <div className="p-4 rounded-[6px] bg-[#141414] border border-[#222222] hover:border-[#383838] transition-colors">
+                        <span className="text-[12px] font-normal text-[#8c8c8c] block font-sans">Duration</span>
+                        <span className="text-[26px] font-semibold text-white tracking-[-0.02em] font-sans tabular-nums mt-1 block">
                           {sqlDuration !== null ? `${sqlDuration} ms` : '—'}
                         </span>
                       </div>
-                      <div className="p-4 sm:p-5 rounded-xl bg-white/[0.02] border border-white/[0.06] hover:border-white/[0.1] transition-colors">
-                        <span className="text-[13px] font-normal text-zinc-400 block">Rows returned</span>
-                        <span className="text-[22px] sm:text-[24px] font-medium text-zinc-100 mt-2 block">
+                      <div className="p-4 rounded-[6px] bg-[#141414] border border-[#222222] hover:border-[#383838] transition-colors">
+                        <span className="text-[12px] font-normal text-[#8c8c8c] block font-sans">Rows returned</span>
+                        <span className="text-[26px] font-semibold text-white tracking-[-0.02em] font-sans tabular-nums mt-1 block">
                           {sqlResult.rows ? sqlResult.rows.length.toLocaleString() : 0}
                         </span>
                       </div>
-                      <div className="p-4 sm:p-5 rounded-xl bg-white/[0.02] border border-white/[0.06] hover:border-white/[0.1] transition-colors">
-                        <span className="text-[13px] font-normal text-zinc-400 block">Affected rows</span>
-                        <span className="text-[22px] sm:text-[24px] font-medium text-zinc-100 mt-2 block">
+                      <div className="p-4 rounded-[6px] bg-[#141414] border border-[#222222] hover:border-[#383838] transition-colors">
+                        <span className="text-[12px] font-normal text-[#8c8c8c] block font-sans">Affected rows</span>
+                        <span className="text-[26px] font-semibold text-white tracking-[-0.02em] font-sans tabular-nums mt-1 block">
                           {sqlResult.affected_rows !== undefined ? sqlResult.affected_rows.toLocaleString() : '0'}
                         </span>
                       </div>
@@ -561,33 +561,30 @@ SET FOREIGN_KEY_CHECKS = 1;`}
 
                   {/* Batch Summary Report Card */}
                   {batchSummary && (
-                    <div className="relative overflow-hidden rounded-xl border border-white/[0.08] bg-[#0f0f12] shadow-2xl">
-                      {/* Top subtle sheen */}
-                      <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/[0.12] to-transparent pointer-events-none" />
-
+                    <div className="relative overflow-hidden rounded-[8px] border border-[#222222] bg-[#0e0e0e]">
                       {/* Execution Overview Row */}
-                      <div className="p-6">
+                      <div className="p-5">
                         <div className="flex items-start justify-between gap-4">
-                          <div className="space-y-1.5">
-                            <div className="flex items-center gap-2.5">
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-2">
                               <span className={`w-2 h-2 rounded-full ${
                                 batchSummary.errors && batchSummary.errors.length > 0
-                                  ? 'bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.5)]'
-                                  : 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.5)]'
+                                  ? 'bg-[#f59e0b]'
+                                  : 'bg-[#30a46c]'
                               }`} />
-                              <span className="text-[15px] font-medium text-zinc-100">
+                              <span className="text-[14px] font-medium text-white">
                                 Batch execution completed
                               </span>
                             </div>
-                            <p className="text-[13px] text-zinc-400 leading-relaxed">
-                              <span className="text-zinc-200 font-medium">{batchSummary.successful}</span> of {batchSummary.totalStatements} statements completed
+                            <p className="text-[12.5px] text-[#8c8c8c] leading-relaxed font-sans">
+                              <span className="text-white font-medium">{batchSummary.successful}</span> of {batchSummary.totalStatements} statements completed
                               {batchSummary.errors && batchSummary.errors.length > 0 && (
-                                <span className="text-amber-400/90"> • {batchSummary.errors.length} skipped</span>
+                                <span className="text-[#f59e0b]"> • {batchSummary.errors.length} skipped</span>
                               )}
                               {' '}• {batchSummary.totalAffectedRows} affected rows
                             </p>
                           </div>
-                          <span className="px-3 py-1 rounded-md bg-white/[0.04] border border-white/[0.08] text-zinc-300 font-mono text-[12px] shrink-0">
+                          <span className="px-2.5 py-0.5 rounded-[4px] bg-[#141414] border border-[#262626] text-[#8c8c8c] font-mono text-[12px] shrink-0">
                             {batchSummary.durationMs}ms
                           </span>
                         </div>
@@ -595,56 +592,56 @@ SET FOREIGN_KEY_CHECKS = 1;`}
 
                       {/* Skipped Statements List (Edge to Edge divider) */}
                       {batchSummary.errors && batchSummary.errors.length > 0 && (
-                        <div className="border-t border-white/[0.08] p-6 space-y-4">
-                          <div className="flex items-center justify-between text-[13px] text-zinc-300">
-                            <div className="flex items-center gap-2.5">
-                              <span className="font-medium text-zinc-200">Skipped statements</span>
-                              <span className="px-2 py-0.5 rounded-full bg-white/[0.06] border border-white/[0.08] text-zinc-300 font-mono text-[11px]">
+                        <div className="border-t border-[#222222] p-5 space-y-3">
+                          <div className="flex items-center justify-between text-[13px] text-[#cccccc]">
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium text-white">Skipped statements</span>
+                              <span className="px-2 py-0.5 rounded-full bg-[#141414] border border-[#262626] text-[#8c8c8c] font-mono text-[11px]">
                                 {batchSummary.errors.length}
                               </span>
                             </div>
-                            <span className="text-[12px] text-zinc-500 font-normal">
+                            <span className="text-[12px] text-[#666666] font-normal">
                               Tolerated via continue on error
                             </span>
                           </div>
 
-                          <div className="max-h-96 overflow-y-auto space-y-3 pr-1">
+                          <div className="max-h-96 overflow-y-auto space-y-2.5 pr-1">
                             {batchSummary.errors.map((err) => (
                               <div
                                 key={err.index}
-                                className="group relative rounded-xl border border-white/[0.06] bg-[#09090c] hover:border-white/[0.12] p-4 space-y-2.5 transition-all"
+                                className="group relative rounded-[6px] border border-[#222222] bg-[#141414] hover:border-[#333333] p-3.5 space-y-2.5 transition-colors"
                               >
                                 <div className="flex items-center justify-between">
-                                  <div className="flex items-center gap-2.5">
-                                    <span className="px-2 py-0.5 rounded-md bg-white/[0.04] border border-white/[0.08] font-mono text-[11.5px] text-zinc-300">
+                                  <div className="flex items-center gap-2">
+                                    <span className="px-2 py-0.5 rounded-[4px] bg-[#1a1a1a] border border-[#262626] font-mono text-[11.5px] text-[#cccccc]">
                                       Statement #{err.index}
                                     </span>
-                                    <span className="text-[13px] font-medium text-zinc-200">
+                                    <span className="text-[13px] font-medium text-white">
                                       {err.isDuplicate ? 'Index or key already exists' : 'Execution notice'}
                                     </span>
                                   </div>
                                   {err.isDuplicate && (
-                                    <span className="px-2.5 py-0.5 rounded-full bg-white/[0.03] border border-white/[0.07] text-zinc-400 text-[11px] font-mono">
+                                    <span className="px-2 py-0.5 rounded-full bg-[#1a1a1a] border border-[#262626] text-[#8c8c8c] text-[11px] font-mono">
                                       Idempotent
                                     </span>
                                   )}
                                 </div>
 
-                                <div className="text-[13px] font-mono text-zinc-300 break-words leading-relaxed pl-0.5">
+                                <div className="text-[12.5px] font-mono text-[#f87171] break-words leading-relaxed pl-0.5">
                                   {err.error}
                                 </div>
 
                                 {/* Sleek Terminal Snippet */}
-                                <div className="relative group/snippet rounded-lg bg-[#050507] border border-white/[0.06] p-3 font-mono text-[12px] text-zinc-300 select-all overflow-x-auto flex items-center justify-between gap-3">
-                                  <code className="truncate text-zinc-300">{err.statement}</code>
+                                <div className="relative group/snippet rounded-[6px] bg-[#0a0a0a] border border-[#1f1f1f] p-2.5 font-mono text-[12px] text-[#cccccc] select-all overflow-x-auto flex items-center justify-between gap-3">
+                                  <code className="truncate text-[#cccccc]">{err.statement}</code>
                                   <button
                                     type="button"
                                     onClick={() => handleCopySnippet(err.statement, err.index)}
                                     title="Copy statement SQL"
-                                    className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded-md hover:bg-white/[0.08] text-zinc-400 hover:text-white cursor-pointer shrink-0"
+                                    className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded-[4px] hover:bg-[#1f1f1f] text-[#8c8c8c] hover:text-white cursor-pointer shrink-0"
                                   >
                                     {copiedSnippetIndex === err.index ? (
-                                      <Check className="w-4 h-4 text-emerald-400" />
+                                      <Check className="w-4 h-4 text-[#30a46c]" />
                                     ) : (
                                       <Copy className="w-4 h-4" />
                                     )}
@@ -661,18 +658,18 @@ SET FOREIGN_KEY_CHECKS = 1;`}
               ) : batchSummary && (!sqlResult.rows || sqlResult.rows.length === 0) ? (
                 /* Batch Summary Completed (Empty rows output) */
                 <div className="p-8 text-center flex flex-col items-center justify-center gap-4 h-full max-w-lg mx-auto font-sans select-none">
-                  <div className="relative flex items-center justify-center w-14 h-14 rounded-2xl bg-white/[0.03] border border-white/[0.08] shadow-[0_0_24px_rgba(255,255,255,0.02)]">
+                  <div className="relative flex items-center justify-center w-12 h-12 rounded-[8px] bg-[#141414] border border-[#222222]">
                     {batchSummary.errors && batchSummary.errors.length > 0 ? (
-                      <span className="w-3 h-3 rounded-full bg-amber-400 shadow-[0_0_10px_rgba(251,191,36,0.6)]" />
+                      <span className="w-2.5 h-2.5 rounded-full bg-[#f59e0b]" />
                     ) : (
-                      <Check className="w-6 h-6 text-zinc-200" />
+                      <Check className="w-5 h-5 text-white" />
                     )}
                   </div>
-                  <div className="space-y-1.5">
-                    <div className="font-medium text-zinc-100 text-[16px]">
+                  <div className="space-y-1">
+                    <div className="font-medium text-white text-[15px]">
                       Batch execution finished
                     </div>
-                    <div className="text-[13px] text-zinc-400 font-mono leading-relaxed">
+                    <div className="text-[12.5px] text-[#8c8c8c] font-mono leading-relaxed">
                       {batchSummary.successful} succeeded • {batchSummary.errors ? batchSummary.errors.length : 0} skipped • {batchSummary.totalAffectedRows} affected rows • {batchSummary.durationMs}ms
                     </div>
                   </div>
@@ -680,10 +677,10 @@ SET FOREIGN_KEY_CHECKS = 1;`}
                     <button
                       type="button"
                       onClick={() => setOutputTab('stats')}
-                      className="flex items-center gap-2 px-4 py-2 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] hover:border-white/[0.15] text-zinc-300 hover:text-white text-[13px] font-medium transition-all cursor-pointer shadow-sm"
+                      className="flex items-center gap-2 px-3.5 py-1.5 rounded-[6px] bg-[#141414] hover:bg-[#1a1a1a] border border-[#262626] hover:border-[#383838] text-[#cccccc] hover:text-white text-[12.5px] font-medium transition-colors cursor-pointer"
                     >
                       <span>Inspect skipped statements</span>
-                      <span className="px-2 py-0.5 rounded-full bg-white/[0.06] text-[11px] font-mono text-zinc-400">
+                      <span className="px-2 py-0.5 rounded-full bg-[#1a1a1a] text-[11px] font-mono text-[#8c8c8c]">
                         {batchSummary.errors.length}
                       </span>
                     </button>
@@ -692,12 +689,12 @@ SET FOREIGN_KEY_CHECKS = 1;`}
               ) : sqlResult.affected_rows !== undefined && !sqlResult.rows ? (
                 /* Non-query execution success (e.g. INSERT / UPDATE / CREATE) */
                 <div className="p-8 text-center flex flex-col items-center justify-center gap-3.5 h-full font-sans select-none">
-                  <div className="w-11 h-11 rounded-xl bg-white/[0.03] border border-white/[0.08] flex items-center justify-center shadow-[0_0_20px_rgba(255,255,255,0.02)]">
-                    <Check className="w-5 h-5 text-zinc-200" />
+                  <div className="w-11 h-11 rounded-[8px] bg-[#141414] border border-[#222222] flex items-center justify-center">
+                    <Check className="w-5 h-5 text-white" />
                   </div>
                   <div className="space-y-1">
-                    <div className="font-medium text-zinc-100 text-[15px] tracking-tight">Statement executed</div>
-                    <div className="text-[12px] text-zinc-400 font-mono">
+                    <div className="font-medium text-white text-[15px] tracking-tight">Statement executed</div>
+                    <div className="text-[12px] text-[#8c8c8c] font-mono">
                       {sqlResult.affected_rows} rows affected {sqlDuration !== null && `• ${sqlDuration}ms`}
                     </div>
                   </div>
