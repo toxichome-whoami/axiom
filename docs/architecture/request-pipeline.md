@@ -88,20 +88,101 @@ Applied via `SetResponseHeaderLayer` (overriding or if-not-present):
 
 ## Crate Dependency Graph
 
-```
-axiom (server binary)
-  ├── axiom-api
-  │     ├── axiom-core      (AxiomError, ConfigManager, AuthContext, size_parser)
-  │     ├── axiom-metadata  (MetadataStore, ArcSwap snapshot, audit log)
-  │     ├── axiom-policy    (PolicyEngine::evaluate, PolicyEngine::evaluate_blob)
-  │     ├── axiom-cache     (CacheEngine L1+L2, LRU eviction, TTL sweep)
-  │     ├── axiom-db        (DatabasePoolManager, 5 SQL engines)
-  │     └── axiom-blob      (BlobEngine, LSM index, BLAKE3 addressing, chunk assembly)
-  └── axiom-cli
-        └── axiom-core
+Axiom is architected as a clean, strictly layered Directed Acyclic Graph (DAG) across 9 Cargo workspace crates. Foundational crates never depend on higher-level layers, preventing circular dependencies and ensuring fast parallel compilation.
+
+```mermaid
+graph TD
+    classDef bin fill:#f97316,stroke:#ea580c,stroke-width:2px,color:#fff;
+    classDef iface fill:#3b82f6,stroke:#2563eb,stroke-width:2px,color:#fff;
+    classDef domain fill:#8b5cf6,stroke:#7c3aed,stroke-width:2px,color:#fff;
+    classDef state fill:#06b6d4,stroke:#0891b2,stroke-width:2px,color:#fff;
+    classDef core fill:#10b981,stroke:#059669,stroke-width:2px,color:#fff;
+
+    subgraph Binary["Top-Level Executable (crates/server)"]
+        axiom["axiom (server daemon & CLI runner)"]:::bin
+    end
+
+    subgraph Interface["Interface Libraries"]
+        axiom_api["axiom-api (Axum HTTP routing, WAF, auth, MCP, UI)"]:::iface
+        axiom_cli["axiom-cli (Clap CLI commands & admin client)"]:::iface
+    end
+
+    subgraph Domain["Domain & Engine Layer"]
+        axiom_policy["axiom-policy (RBAC policy evaluation)"]:::domain
+        axiom_db["axiom-db (Pool manager & 5 SQL engines)"]:::domain
+    end
+
+    subgraph State["State & Storage Engines"]
+        axiom_metadata["axiom-metadata (axiom.db & ArcSwap snapshots)"]:::state
+        axiom_cache["axiom-cache (L1 DashMap / L2 LibSQL)"]:::state
+        axiom_blob["axiom-blob (Fjall LSM & BLAKE3 blob store)"]:::state
+    end
+
+    subgraph Foundation["Foundational Base"]
+        axiom_core["axiom-core (Config, Error, Models, Utils)"]:::core
+    end
+
+    axiom --> axiom_api
+    axiom --> axiom_cli
+    axiom --> axiom_db
+    axiom --> axiom_cache
+    axiom --> axiom_metadata
+    axiom --> axiom_core
+
+    axiom_cli --> axiom_core
+    axiom_cli --> axiom_metadata
+
+    axiom_api --> axiom_core
+    axiom_api --> axiom_metadata
+    axiom_api --> axiom_policy
+    axiom_api --> axiom_cache
+    axiom_api --> axiom_db
+    axiom_api --> axiom_blob
+
+    axiom_policy --> axiom_core
+    axiom_policy --> axiom_metadata
+
+    axiom_db --> axiom_core
+    axiom_db --> axiom_metadata
+
+    axiom_blob --> axiom_core
+    axiom_cache --> axiom_core
+    axiom_metadata --> axiom_core
 ```
 
-No circular dependencies. `axiom-db` does not depend on `axiom-api` or `axiom-cache`.
+### Layered Hierarchy & Responsibilities
+
+```
+Layer 4: Server Executable (crates/server)
+  └── axiom (main entrypoint — initializes Tokio runtime, socket tuning, launches server/CLI)
+        └── Links: axiom-api, axiom-cli, axiom-db, axiom-cache, axiom-metadata, axiom-core
+
+Layer 3: Interface Libraries
+  ├── axiom-api (crates/api) — Axum routing, middleware pipeline (WAF, rate-limiting, auth), MCP, UI
+  │     └── Depends on: axiom-core, axiom-metadata, axiom-policy, axiom-cache, axiom-db, axiom-blob
+  └── axiom-cli (crates/cli) — CLI commands, argument parsing, Admin HTTP client
+        └── Depends on: axiom-core, axiom-metadata
+
+Layer 2: Domain & Access Engines
+  ├── axiom-policy (crates/policy) — RBAC policy evaluation for SQL tables & Blob namespaces
+  │     └── Depends on: axiom-core, axiom-metadata
+  └── axiom-db (crates/db) — Connection pooling & SQL engine implementations (PG, MySQL, MSSQL, LibSQL, ClickHouse)
+        └── Depends on: axiom-core, axiom-metadata
+
+Layer 1: State & Storage Engines
+  ├── axiom-metadata (crates/metadata) — SQLite/libsql metadata store, ArcSwap snapshot publisher, audit log
+  │     └── Depends on: axiom-core
+  ├── axiom-cache (crates/cache) — Unified L1 DashMap LRU + L2 SQLite persistent cache
+  │     └── Depends on: axiom-core
+  └── axiom-blob (crates/blob) — Embedded Fjall LSM index, chunked uploads, BLAKE3 content-addressed storage
+        └── Depends on: axiom-core
+
+Layer 0: Foundational Base
+  └── axiom-core (crates/core) — Core models (QueryResult, ColumnInfo), ConfigManager, AxiomError, utils
+        └── Zero internal workspace dependencies (leaf crate)
+```
+
+No circular dependencies exist. Domain engines (`axiom-db`, `axiom-blob`, `axiom-cache`) do not depend on interface layers (`axiom-api`, `axiom-cli`), and `axiom-core` remains completely decoupled from external storage drivers.
 
 ---
 
