@@ -116,14 +116,14 @@ export const MoveDialog: React.FC<MoveDialogProps> = ({
 
           <div>
             <div className="flex items-center justify-between mb-1.5">
-              <label className="text-[12px] text-[#cccccc] font-medium">
+              <label className="text-[13px] text-[#999999] font-medium">
                 Destination Folder Path
               </label>
               <div className="flex items-center gap-1">
                 <button
                   type="button"
                   onClick={() => setTargetFolder('')}
-                  className="text-[11px] text-[#8c8c8c] hover:text-white px-1.5 py-0.5 rounded bg-[#1c1c1c] border border-[#2a2a2a] cursor-pointer"
+                  className="text-[11.5px] text-[#8c8c8c] hover:text-white px-2 py-0.5 rounded bg-[#1c1c1c] border border-[#2a2a2a] cursor-pointer"
                 >
                   Root (/)
                 </button>
@@ -138,19 +138,19 @@ export const MoveDialog: React.FC<MoveDialogProps> = ({
                 setError(null);
               }}
               placeholder="e.g. documents/archive/ (blank for root)"
-              className="w-full h-8 px-3 rounded-[6px] bg-[#141414] border border-[#262626] focus:border-[#383838] text-white text-[13px] outline-none"
+              className="w-full h-9 px-3 rounded-[6px] bg-[#141414] border border-[#262626] focus:border-[#383838] text-white text-[13.5px] sm:text-[14px] outline-none"
             />
 
             {availableFolders.length > 0 && (
-              <div className="mt-2 space-y-1">
-                <span className="text-[11px] text-[#777777] block">Quick folder picker:</span>
-                <div className="flex flex-wrap gap-1 max-h-24 overflow-y-auto">
+              <div className="mt-2.5 space-y-1.5">
+                <span className="text-[12px] text-[#777777] block">Quick folder picker:</span>
+                <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
                   {availableFolders.map((f) => (
                     <button
                       key={f}
                       type="button"
                       onClick={() => setTargetFolder(f)}
-                      className="text-[11px] text-[#cccccc] hover:text-white px-2 py-0.5 rounded bg-[#181818] border border-[#262626] hover:border-[#383838] cursor-pointer"
+                      className="text-[12px] text-[#cccccc] hover:text-white px-2.5 py-1 rounded bg-[#181818] border border-[#262626] hover:border-[#383838] cursor-pointer"
                     >
                       {f}
                     </button>
@@ -161,8 +161,8 @@ export const MoveDialog: React.FC<MoveDialogProps> = ({
           </div>
 
           {/* Destination Preview */}
-          <div className="p-2.5 rounded-[6px] bg-[#080808] border border-[#222222] text-[12px] space-y-1">
-            <span className="text-[#666666] block text-[11px]">Resulting Location:</span>
+          <div className="p-3 rounded-[6px] bg-[#080808] border border-[#222222] text-[13px] space-y-1">
+            <span className="text-[#666666] block text-[11.5px]">Resulting Location:</span>
             <div className="text-white flex items-center gap-1.5 truncate">
               <span className="text-[#cccccc]">{targetNs}</span>
               <span className="text-[#555555]">/</span>
@@ -174,7 +174,7 @@ export const MoveDialog: React.FC<MoveDialogProps> = ({
             <Button
               type="button"
               variant="secondary"
-              size="sm"
+              size="md"
               onClick={onClose}
             >
               Cancel
@@ -182,7 +182,7 @@ export const MoveDialog: React.FC<MoveDialogProps> = ({
             <Button
               type="submit"
               variant="primary"
-              size="sm"
+              size="md"
               isLoading={isSubmitting}
             >
               <ArrowRight className="w-3.5 h-3.5 mr-1" />

@@ -10,10 +10,7 @@ import {
   ChevronDown,
   Check,
   Plus,
-  RefreshCw,
   Settings,
-  FolderPlus,
-  Upload,
 } from 'lucide-react';
 import { NamespaceInfo, BlobEntry } from '../../types';
 import { StorageItem } from './types';
@@ -25,7 +22,7 @@ export interface StorageSidebarProps {
   namespaces: NamespaceInfo[];
   activeNamespace: string;
   onSelectNamespace: (ns: string) => void;
-  onOpenNewNamespace: () => void;
+  onOpenNewNamespace?: () => void;
   onOpenManageNamespace: () => void;
   onRefresh: () => void;
   isLoading: boolean;
@@ -37,7 +34,7 @@ export interface StorageSidebarProps {
   blobs: BlobEntry[];
   currentPrefix: string;
   selectedItem: StorageItem | null;
-  onSelectFolder: (path: string) => void;
+  onSelectFolder: (path: string, item?: StorageItem | null) => void;
   onSelectFile: (fileItem: StorageItem) => void;
   onContextMenu: (e: React.MouseEvent, item: StorageItem | null) => void;
   onNewFolder: () => void;
@@ -143,8 +140,8 @@ export function StorageSidebar({
                           <HardDrive className={`w-3.5 h-3.5 shrink-0 ${isActive ? 'text-blue-400' : 'text-[#777777]'}`} />
                           <span className="truncate">{ns.name}</span>
                         </div>
-                        <div className="flex items-center gap-1.5 shrink-0 text-[11px] text-[#777777]">
-                          <span className="tabular-nums font-mono">{isActive && blobs.length > 0 ? realObjectsCount : ns.total_objects}</span>
+                        <div className="flex items-center gap-1.5 shrink-0 text-[11.5px] text-[#777777]">
+                          <span className="tabular-nums">{isActive && blobs.length > 0 ? realObjectsCount : ns.total_objects}</span>
                           {isActive && <Check className="w-3.5 h-3.5 text-white shrink-0" />}
                         </div>
                       </button>
@@ -152,25 +149,11 @@ export function StorageSidebar({
                   })
                 )}
               </div>
-
-              <div className="h-px bg-[#222222] my-1 -mx-1" />
-
-              <button
-                type="button"
-                onClick={() => {
-                  setIsNsDropdownOpen(false);
-                  onOpenNewNamespace();
-                }}
-                className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-[6px] text-[13px] text-white hover:bg-[#1a1a1a] transition-colors cursor-pointer text-left font-medium"
-              >
-                <Plus className="w-3.5 h-3.5 text-blue-400" />
-                <span>New Namespace</span>
-              </button>
             </div>
           )}
         </div>
 
-        {/* Action icons: Settings & Refresh */}
+        {/* Action icons: Settings & Create Namespace */}
         <div className="flex items-center gap-1 shrink-0">
           {activeNamespace && (
             <button
@@ -185,39 +168,13 @@ export function StorageSidebar({
 
           <button
             type="button"
-            onClick={onRefresh}
-            disabled={isLoading}
-            title="Refresh namespace & files"
-            className="w-8 h-8 flex items-center justify-center rounded-[6px] text-[#8c8c8c] hover:text-white hover:bg-[#161616] transition-colors cursor-pointer shrink-0 disabled:opacity-50"
+            onClick={onOpenNewNamespace}
+            title="Create new namespace"
+            className="w-8 h-8 flex items-center justify-center rounded-[6px] text-[#8c8c8c] hover:text-white hover:bg-[#161616] transition-colors cursor-pointer shrink-0"
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+            <Plus className="w-3.5 h-3.5" />
           </button>
         </div>
-      </div>
-
-      {/* ─── Actions Bar: New Folder & Upload Triggers ─────────────── */}
-      <div className="p-2.5 flex items-center gap-1.5 border-b border-[#1c1c1c]">
-        <button
-          type="button"
-          onClick={onNewFolder}
-          disabled={!activeNamespace}
-          title="Create virtual directory"
-          className="flex-1 h-8 px-2.5 rounded-[6px] bg-[#141414] hover:bg-[#1a1a1a] border border-[#242424] hover:border-[#383838] flex items-center justify-center gap-1.5 text-[12px] font-medium text-[#cccccc] hover:text-white transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          <FolderPlus className="w-3.5 h-3.5 text-[#8c8c8c]" />
-          <span>New Folder</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={onUpload}
-          disabled={!activeNamespace}
-          title="Upload file into current folder"
-          className="h-8 px-3 rounded-[6px] bg-[#141414] hover:bg-[#1a1a1a] border border-[#242424] hover:border-[#383838] flex items-center justify-center gap-1.5 text-[12px] font-medium text-[#cccccc] hover:text-white transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          <Upload className="w-3.5 h-3.5 text-[#8c8c8c]" />
-          <span>Upload</span>
-        </button>
       </div>
 
       {/* ─── Directory & File Tree ─────────────── */}
@@ -243,21 +200,21 @@ export function StorageSidebar({
       </div>
 
       {/* ─── Footer: Storage Statistics & Quota ─────────────── */}
-      <div className="h-12 shrink-0 px-3.5 border-t border-[#222222] flex items-center justify-between text-[12px] text-[#8c8c8c] select-none font-sans">
-        <span className="tabular-nums font-mono">
+      <div className="h-12 shrink-0 px-3.5 border-t border-[#222222] flex items-center justify-between text-[13px] text-[#cccccc] select-none font-sans">
+        <span className="tabular-nums text-[13px]">
           {realObjectsCount} {realObjectsCount === 1 ? 'object' : 'objects'}
         </span>
 
         {currentNsInfo && (
           <div className="flex items-center gap-2">
-            <span className="tabular-nums font-mono text-[11px] text-[#777777]">
+            <span className="tabular-nums text-[12px] text-[#888888]">
               {formatBytes(currentNsInfo.total_bytes)}
               {currentNsInfo.max_bytes ? ` / ${formatBytes(currentNsInfo.max_bytes)}` : ''}
             </span>
             {quotaUsedPercent !== null && (
               <span
-                className={`text-[11px] tabular-nums font-medium ${
-                  quotaUsedPercent > 90 ? 'text-rose-400' : 'text-[#8c8c8c]'
+                className={`text-[12px] tabular-nums font-medium ${
+                  quotaUsedPercent > 90 ? 'text-rose-400' : 'text-[#888888]'
                 }`}
               >
                 ({quotaUsedPercent}%)

@@ -89,7 +89,7 @@ export function StorageToolbar({
               await onDropOnFolder('', draggedItemRef.current);
             }
           }}
-          className={`hover:text-white transition-colors cursor-pointer font-medium shrink-0 px-1.5 py-0.5 rounded-[4px] ${
+          className={`hover:text-white transition-colors cursor-pointer font-medium shrink-0 h-7 px-2 flex items-center rounded-[5px] ${
             dragOverTargetKey === ''
               ? 'bg-blue-600/30 text-blue-300 ring-1 ring-blue-500/60'
               : currentPrefix === ''
@@ -135,7 +135,7 @@ export function StorageToolbar({
                     await onDropOnFolder(seg.prefix, draggedItemRef.current);
                   }
                 }}
-                className={`hover:text-white transition-colors cursor-pointer font-medium truncate max-w-[140px] shrink-0 px-1.5 py-0.5 rounded-[4px] ${
+                className={`hover:text-white transition-colors cursor-pointer font-medium truncate max-w-[160px] shrink-0 h-7 px-2 flex items-center rounded-[5px] ${
                   isDropTarget
                     ? 'bg-blue-600/30 text-blue-300 ring-1 ring-blue-500/60'
                     : isLast
@@ -152,7 +152,7 @@ export function StorageToolbar({
 
       {/* ─── Right: Search, Filter, View Mode, Details Toggle, Upload ─────────────── */}
       <div className="flex items-center gap-2 shrink-0">
-        {/* Live Search Input */}
+        {/* Live Search Input (32px / h-8 matching Table page) */}
         <div className="relative w-40 sm:w-52">
           <Search className="w-3.5 h-3.5 text-[#666666] absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
           <input
@@ -160,7 +160,7 @@ export function StorageToolbar({
             value={searchQuery}
             onChange={(e) => onSearchChange(e.target.value)}
             placeholder="Search files..."
-            className="w-full h-8 pl-8 pr-7 rounded-[6px] bg-[#141414] border border-[#242424] focus:border-[#383838] text-[13px] text-white placeholder-[#666666] outline-none transition-colors"
+            className="w-full h-8 pl-8 pr-6 rounded-[6px] bg-[#141414] border border-[#242424] focus:border-[#383838] text-[13px] text-white placeholder-[#666666] outline-none transition-colors"
           />
           {searchQuery && (
             <button
@@ -173,12 +173,12 @@ export function StorageToolbar({
           )}
         </div>
 
-        {/* Storage Tier Filter Pill */}
-        <div className="flex items-center p-0.5 rounded-[7px] bg-[#141414] border border-[#262626] h-8">
+        {/* Storage Tier Filter Pill (32px / h-8) */}
+        <div className="flex items-center p-0.5 rounded-[6px] bg-[#141414] border border-[#262626] h-8">
           <button
             type="button"
             onClick={() => onTierFilterChange('all')}
-            className={`px-2.5 py-0.5 rounded-[5px] text-[12px] font-medium transition-colors cursor-pointer ${
+            className={`px-2.5 py-0.5 rounded-[4px] text-[12px] font-medium transition-colors cursor-pointer ${
               tierFilter === 'all'
                 ? 'bg-[#222222] text-white shadow-xs'
                 : 'text-[#8c8c8c] hover:text-white'
@@ -189,7 +189,7 @@ export function StorageToolbar({
           <button
             type="button"
             onClick={() => onTierFilterChange('inline')}
-            className={`px-2.5 py-0.5 rounded-[5px] text-[12px] font-medium transition-colors cursor-pointer ${
+            className={`px-2.5 py-0.5 rounded-[4px] text-[12px] font-medium transition-colors cursor-pointer ${
               tierFilter === 'inline'
                 ? 'bg-[#222222] text-white shadow-xs'
                 : 'text-[#8c8c8c] hover:text-white'
@@ -200,7 +200,7 @@ export function StorageToolbar({
           <button
             type="button"
             onClick={() => onTierFilterChange('disk')}
-            className={`px-2.5 py-0.5 rounded-[5px] text-[12px] font-medium transition-colors cursor-pointer ${
+            className={`px-2.5 py-0.5 rounded-[4px] text-[12px] font-medium transition-colors cursor-pointer ${
               tierFilter === 'disk'
                 ? 'bg-[#222222] text-white shadow-xs'
                 : 'text-[#8c8c8c] hover:text-white'
@@ -210,13 +210,13 @@ export function StorageToolbar({
           </button>
         </div>
 
-        {/* View Mode Switcher Pills */}
-        <div className="flex items-center p-0.5 rounded-[7px] bg-[#141414] border border-[#262626] h-8">
+        {/* View Mode Switcher Pills (32px / h-8) */}
+        <div className="flex items-center p-0.5 rounded-[6px] bg-[#141414] border border-[#262626] h-8">
           <button
             type="button"
             onClick={() => onViewModeChange('grid')}
             title="Grid View"
-            className={`flex items-center justify-center w-7 h-7 rounded-[5px] transition-colors cursor-pointer ${
+            className={`flex items-center justify-center w-7 h-7 rounded-[4px] transition-colors cursor-pointer ${
               viewMode === 'grid'
                 ? 'bg-[#222222] text-white shadow-xs'
                 : 'text-[#8c8c8c] hover:text-white'
@@ -228,7 +228,7 @@ export function StorageToolbar({
             type="button"
             onClick={() => onViewModeChange('list')}
             title="Table View"
-            className={`flex items-center justify-center w-7 h-7 rounded-[5px] transition-colors cursor-pointer ${
+            className={`flex items-center justify-center w-7 h-7 rounded-[4px] transition-colors cursor-pointer ${
               viewMode === 'list'
                 ? 'bg-[#222222] text-white shadow-xs'
                 : 'text-[#8c8c8c] hover:text-white'
@@ -238,7 +238,7 @@ export function StorageToolbar({
           </button>
         </div>
 
-        {/* Inspector Panel Toggle Button */}
+        {/* Inspector Panel Toggle Button (32px / w-8 h-8 matching Table page) */}
         <button
           type="button"
           onClick={onToggleDetails}
@@ -252,13 +252,13 @@ export function StorageToolbar({
           <PanelRight className="w-3.5 h-3.5" />
         </button>
 
-        {/* Direct Upload CTA Button */}
+        {/* Direct Upload CTA Button (32px / h-8 matching Table page Insert/Run buttons) */}
         <button
           type="button"
           onClick={onUploadClick}
           disabled={!activeNamespace}
           title="Upload file into current directory"
-          className="flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[13px] font-medium text-white bg-blue-600 hover:bg-blue-500 border border-blue-500/80 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+          className="flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[13px] font-medium text-white bg-blue-600 hover:bg-blue-500 border border-blue-500/80 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shrink-0 shadow-xs"
         >
           <Upload className="w-3.5 h-3.5" />
           <span className="hidden sm:inline">Upload</span>

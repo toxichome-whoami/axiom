@@ -38,7 +38,6 @@ function getInitialStorageState(): {
   ns: string;
   prefix: string;
   view: StorageViewMode;
-  detailsOpen: boolean;
 } {
   try {
     const params = new URLSearchParams(window.location.search);
@@ -49,16 +48,14 @@ function getInitialStorageState(): {
     const savedNs = localStorage.getItem('axiom_storage_namespace') || '';
     const savedPrefix = localStorage.getItem('axiom_storage_prefix') || '';
     const savedView = (localStorage.getItem('axiom_storage_view_mode') as StorageViewMode) || 'grid';
-    const savedDetails = localStorage.getItem('axiom_storage_details_open');
 
     return {
       ns: urlNs !== null ? urlNs : savedNs,
       prefix: urlPrefix !== null ? urlPrefix : savedPrefix,
       view: urlView === 'grid' || urlView === 'list' ? urlView : savedView,
-      detailsOpen: savedDetails !== null ? savedDetails === 'true' : true,
     };
   } catch {
-    return { ns: '', prefix: '', view: 'grid', detailsOpen: true };
+    return { ns: '', prefix: '', view: 'grid' };
   }
 }
 
@@ -77,7 +74,7 @@ export function StoragePage() {
   // Drive Navigation & Layout State
   const [currentPrefix, setCurrentPrefix] = useState<string>(initialStorage.prefix);
   const [viewMode, setViewMode] = useState<StorageViewMode>(initialStorage.view);
-  const [isDetailsOpen, setIsDetailsOpen] = useState(initialStorage.detailsOpen);
+  const [isDetailsOpen, setIsDetailsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [tierFilter, setTierFilter] = useState<StorageTierFilter>('all');
   const [selectedItem, setSelectedItem] = useState<StorageItem | null>(null);
@@ -188,9 +185,13 @@ export function StoragePage() {
 
   // Navigate directly into a directory prefix with browser history push support
   const navigateToPrefix = useCallback(
-    (newPrefix: string, pushHistory = true) => {
+    (newPrefix: string, pushHistory = true, keepItem?: StorageItem | null) => {
       setCurrentPrefix(newPrefix);
-      setSelectedItem(null);
+      if (keepItem !== undefined) {
+        setSelectedItem(keepItem);
+      } else {
+        setSelectedItem(null);
+      }
       syncLocation(activeNsRef.current, newPrefix, pushHistory);
     },
     [syncLocation]
@@ -235,17 +236,9 @@ export function StoragePage() {
     }
   };
 
-  // Toggle details inspector panel with persistence
+  // Toggle details inspector panel (always collapses on reload)
   const handleToggleDetails = () => {
-    setIsDetailsOpen((prev) => {
-      const next = !prev;
-      try {
-        localStorage.setItem('axiom_storage_details_open', String(next));
-      } catch {
-        // Ignore
-      }
-      return next;
-    });
+    setIsDetailsOpen((prev) => !prev);
   };
 
   // Master telemetry and namespace catalog loader
@@ -451,6 +444,23 @@ export function StoragePage() {
 
     return { folderItems: folders, fileItems: files };
   }, [blobs, currentPrefix, searchQuery, tierFilter]);
+
+  // Inspector item: use selectedItem if explicitly selected; otherwise, if user is inside a folder, derive folder item
+  const inspectorItem = useMemo<StorageItem | null>(() => {
+    if (selectedItem) return selectedItem;
+    if (currentPrefix) {
+      const folderName = currentPrefix.replace(/\/$/, '').split('/').pop() || currentPrefix;
+      return {
+        id: `folder-${currentPrefix}`,
+        type: 'folder',
+        name: folderName,
+        fullKey: currentPrefix,
+        itemCount: folderItems.length + fileItems.length,
+        totalBytes: fileItems.reduce((acc, f) => acc + (f.size || 0), 0),
+      };
+    }
+    return null;
+  }, [selectedItem, currentPrefix, folderItems.length, fileItems]);
 
   // Live object count excluding internal directory markers
   const realObjectsCount = useMemo(() => {
@@ -983,10 +993,11 @@ export function StoragePage() {
         blobs={blobs}
         currentPrefix={currentPrefix}
         selectedItem={selectedItem}
-        onSelectFolder={(path) => navigateToPrefix(path, true)}
+        onSelectFolder={(path, item) => {
+          navigateToPrefix(path, true, item);
+        }}
         onSelectFile={(fileItem) => {
           setSelectedItem(fileItem);
-          setIsDetailsOpen(true);
         }}
         onContextMenu={handleContextMenu}
         onNewFolder={() => {
@@ -1160,7 +1171,7 @@ export function StoragePage() {
       <StorageDetailsPanel
         isOpen={isDetailsOpen}
         onClose={() => setIsDetailsOpen(false)}
-        selectedItem={selectedItem}
+        selectedItem={inspectorItem}
         activeNamespace={activeNamespace}
         currentNsInfo={currentNsInfo}
         onDownload={handleDownload}
@@ -1170,7 +1181,7 @@ export function StoragePage() {
         }}
         onDelete={(item) => setItemToDelete(item)}
         onVerifyBlob={handleVerifyBlob}
-        verifyStatus={selectedItem ? verifyMap[`${activeNamespace}/${selectedItem.fullKey}`] : undefined}
+        verifyStatus={inspectorItem ? verifyMap[`${activeNamespace}/${inspectorItem.fullKey}`] : undefined}
         onCopyText={handleCopyText}
         copiedKey={copiedKey}
       />
@@ -1194,7 +1205,7 @@ export function StoragePage() {
 
             <form onSubmit={handleCreateFolder} className="space-y-4">
               <div>
-                <label className="block text-[12px] text-[#8c8c8c] font-medium mb-1.5">
+                <label className="block text-[13px] text-[#999999] font-medium mb-1.5">
                   Folder Name
                 </label>
                 <input
@@ -1204,7 +1215,7 @@ export function StoragePage() {
                   placeholder="e.g. assets"
                   value={newFolderName}
                   onChange={(e) => setNewFolderName(e.target.value)}
-                  className="w-full h-8 px-3 rounded-[6px] bg-[#141414] border border-[#262626] focus:border-[#383838] text-white text-[13px] outline-none"
+                  className="w-full h-9 px-3 rounded-[6px] bg-[#141414] border border-[#262626] focus:border-[#383838] text-white text-[13.5px] sm:text-[14px] outline-none"
                 />
               </div>
 
@@ -1212,14 +1223,14 @@ export function StoragePage() {
                 <button
                   type="button"
                   onClick={() => setIsNewFolderOpen(false)}
-                  className="h-8 px-3 rounded-[6px] text-[13px] font-medium text-[#cccccc] hover:text-white bg-transparent hover:bg-[#161616] border border-[#262626] transition-colors cursor-pointer"
+                  className="h-9 px-3.5 rounded-[6px] text-[13.5px] sm:text-[14px] font-medium text-[#cccccc] hover:text-white bg-transparent hover:bg-[#161616] border border-[#262626] transition-colors cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={isCreatingFolder || !newFolderName.trim()}
-                  className="h-8 px-3.5 rounded-[6px] text-[13px] font-medium text-white bg-blue-600 hover:bg-blue-500 border border-blue-500/80 transition-colors cursor-pointer disabled:opacity-40"
+                  className="h-9 px-4 rounded-[6px] text-[13.5px] sm:text-[14px] font-medium text-white bg-blue-600 hover:bg-blue-500 border border-blue-500/80 transition-colors cursor-pointer disabled:opacity-40"
                 >
                   {isCreatingFolder ? 'Creating...' : 'Create Folder'}
                 </button>
@@ -1234,7 +1245,7 @@ export function StoragePage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs font-sans">
           <div className="w-full max-w-sm rounded-[8px] bg-[#0e0e0e] border border-[#262626] p-5 shadow-2xl space-y-4">
             <div className="flex items-center justify-between">
-              <h3 className="text-[14px] font-medium text-white">Rename Item</h3>
+              <h3 className="text-[14.5px] sm:text-[15px] font-semibold text-white">Rename Item</h3>
               <button
                 type="button"
                 onClick={() => setIsRenameOpen(false)}
@@ -1246,7 +1257,7 @@ export function StoragePage() {
 
             <form onSubmit={handleRename} className="space-y-4">
               <div>
-                <label className="block text-[12px] text-[#8c8c8c] font-medium mb-1.5">
+                <label className="block text-[13px] text-[#999999] font-medium mb-1.5">
                   New Name
                 </label>
                 <input
@@ -1255,10 +1266,10 @@ export function StoragePage() {
                   required
                   value={renameInput}
                   onChange={(e) => setRenameInput(e.target.value)}
-                  className="w-full h-8 px-3 rounded-[6px] bg-[#141414] border border-[#262626] focus:border-[#383838] text-white text-[13px] outline-none"
+                  className="w-full h-9 px-3 rounded-[6px] bg-[#141414] border border-[#262626] focus:border-[#383838] text-white text-[13.5px] sm:text-[14px] outline-none"
                 />
                 {renameError && (
-                  <p className="text-[11px] text-rose-400 mt-1">{renameError}</p>
+                  <p className="text-[12px] text-rose-400 mt-1">{renameError}</p>
                 )}
               </div>
 
@@ -1266,14 +1277,14 @@ export function StoragePage() {
                 <button
                   type="button"
                   onClick={() => setIsRenameOpen(false)}
-                  className="h-8 px-3 rounded-[6px] text-[13px] font-medium text-[#cccccc] hover:text-white bg-transparent hover:bg-[#161616] border border-[#262626] transition-colors cursor-pointer"
+                  className="h-9 px-3.5 rounded-[6px] text-[13.5px] sm:text-[14px] font-medium text-[#cccccc] hover:text-white bg-transparent hover:bg-[#161616] border border-[#262626] transition-colors cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={isRenaming || !renameInput.trim()}
-                  className="h-8 px-3.5 rounded-[6px] text-[13px] font-medium text-white bg-blue-600 hover:bg-blue-500 border border-blue-500/80 transition-colors cursor-pointer disabled:opacity-40"
+                  className="h-9 px-4 rounded-[6px] text-[13.5px] sm:text-[14px] font-medium text-white bg-blue-600 hover:bg-blue-500 border border-blue-500/80 transition-colors cursor-pointer disabled:opacity-40"
                 >
                   {isRenaming ? 'Renaming...' : 'Rename'}
                 </button>
@@ -1323,7 +1334,7 @@ export function StoragePage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs font-sans">
           <div className="w-full max-w-sm rounded-[8px] bg-[#0e0e0e] border border-[#262626] p-5 shadow-2xl space-y-4">
             <div className="flex items-center justify-between">
-              <h3 className="text-[14px] font-medium text-white">Create Namespace</h3>
+              <h3 className="text-[14.5px] sm:text-[15px] font-semibold text-white">Create Namespace</h3>
               <button
                 type="button"
                 onClick={() => setIsNewNsOpen(false)}
@@ -1335,7 +1346,7 @@ export function StoragePage() {
 
             <form onSubmit={handleCreateNamespace} className="space-y-4">
               <div>
-                <label className="block text-[12px] text-[#8c8c8c] font-medium mb-1.5">
+                <label className="block text-[13px] text-[#999999] font-medium mb-1.5">
                   Namespace Name
                 </label>
                 <input
@@ -1345,12 +1356,12 @@ export function StoragePage() {
                   placeholder="e.g. avatars, invoices"
                   value={newNsName}
                   onChange={(e) => setNewNsName(e.target.value)}
-                  className="w-full h-8 px-3 rounded-[6px] bg-[#141414] border border-[#262626] focus:border-[#383838] text-white text-[13px] outline-none"
+                  className="w-full h-9 px-3 rounded-[6px] bg-[#141414] border border-[#262626] focus:border-[#383838] text-white text-[13.5px] sm:text-[14px] outline-none"
                 />
               </div>
 
               <div>
-                <label className="block text-[12px] text-[#8c8c8c] font-medium mb-1.5">
+                <label className="block text-[13px] text-[#999999] font-medium mb-1.5">
                   Storage Quota Limit
                 </label>
                 <CustomSelect
@@ -1363,7 +1374,7 @@ export function StoragePage() {
 
               {newNsQuotaPreset === 'custom' && (
                 <div>
-                  <label className="block text-[12px] text-[#8c8c8c] font-medium mb-1.5">
+                  <label className="block text-[13px] text-[#999999] font-medium mb-1.5">
                     Limit in Bytes
                   </label>
                   <input
@@ -1372,7 +1383,7 @@ export function StoragePage() {
                     value={newNsCustomBytes}
                     onChange={(e) => setNewNsCustomBytes(e.target.value)}
                     placeholder="e.g. 104857600"
-                    className="w-full h-8 px-3 rounded-[6px] bg-[#141414] border border-[#262626] focus:border-[#383838] text-white text-[13px] outline-none"
+                    className="w-full h-9 px-3 rounded-[6px] bg-[#141414] border border-[#262626] focus:border-[#383838] text-white text-[13.5px] sm:text-[14px] outline-none"
                   />
                 </div>
               )}
@@ -1381,14 +1392,14 @@ export function StoragePage() {
                 <button
                   type="button"
                   onClick={() => setIsNewNsOpen(false)}
-                  className="h-8 px-3 rounded-[6px] text-[13px] font-medium text-[#cccccc] hover:text-white bg-transparent hover:bg-[#161616] border border-[#262626] transition-colors cursor-pointer"
+                  className="h-9 px-3.5 rounded-[6px] text-[13.5px] sm:text-[14px] font-medium text-[#cccccc] hover:text-white bg-transparent hover:bg-[#161616] border border-[#262626] transition-colors cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={isCreatingNs || !newNsName.trim()}
-                  className="h-8 px-3.5 rounded-[6px] text-[13px] font-medium text-white bg-blue-600 hover:bg-blue-500 border border-blue-500/80 transition-colors cursor-pointer disabled:opacity-40"
+                  className="h-9 px-4 rounded-[6px] text-[13.5px] sm:text-[14px] font-medium text-white bg-blue-600 hover:bg-blue-500 border border-blue-500/80 transition-colors cursor-pointer disabled:opacity-40"
                 >
                   {isCreatingNs ? 'Creating...' : 'Create Namespace'}
                 </button>
@@ -1441,7 +1452,7 @@ export function StoragePage() {
             {manageNsTab === 'settings' ? (
               <form onSubmit={handleUpdateNamespace} className="space-y-4">
                 <div>
-                  <label className="block text-[12px] text-[#8c8c8c] font-medium mb-1.5">
+                  <label className="block text-[13px] text-[#999999] font-medium mb-1.5">
                     Identifier
                   </label>
                   <input
@@ -1449,12 +1460,12 @@ export function StoragePage() {
                     required
                     value={editNsName}
                     onChange={(e) => setEditNsName(e.target.value)}
-                    className="w-full h-8 px-3 rounded-[6px] bg-[#141414] border border-[#262626] focus:border-[#383838] text-white text-[13px] outline-none"
+                    className="w-full h-9 px-3 rounded-[6px] bg-[#141414] border border-[#262626] focus:border-[#383838] text-white text-[13.5px] sm:text-[14px] outline-none"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-[12px] text-[#8c8c8c] font-medium mb-1.5">
+                  <label className="block text-[13px] text-[#999999] font-medium mb-1.5">
                     Quota Limit
                   </label>
                   <CustomSelect
@@ -1467,7 +1478,7 @@ export function StoragePage() {
 
                 {editNsQuotaPreset === 'custom' && (
                   <div>
-                    <label className="block text-[12px] text-[#8c8c8c] font-medium mb-1.5">
+                    <label className="block text-[13px] text-[#999999] font-medium mb-1.5">
                       Limit in Bytes
                     </label>
                     <input
@@ -1475,7 +1486,7 @@ export function StoragePage() {
                       min="1"
                       value={editNsCustomBytes}
                       onChange={(e) => setEditNsCustomBytes(e.target.value)}
-                      className="w-full h-8 px-3 rounded-[6px] bg-[#141414] border border-[#262626] focus:border-[#383838] text-white text-[13px] outline-none"
+                      className="w-full h-9 px-3 rounded-[6px] bg-[#141414] border border-[#262626] focus:border-[#383838] text-white text-[13.5px] sm:text-[14px] outline-none"
                     />
                   </div>
                 )}
@@ -1484,14 +1495,14 @@ export function StoragePage() {
                   <button
                     type="button"
                     onClick={() => setIsManageNsOpen(false)}
-                    className="h-8 px-3 rounded-[6px] text-[13px] font-medium text-[#cccccc] hover:text-white bg-transparent hover:bg-[#161616] border border-[#262626] transition-colors cursor-pointer"
+                    className="h-9 px-3.5 rounded-[6px] text-[13.5px] sm:text-[14px] font-medium text-[#cccccc] hover:text-white bg-transparent hover:bg-[#161616] border border-[#262626] transition-colors cursor-pointer"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
                     disabled={isSavingNs || !editNsName.trim()}
-                    className="h-8 px-3.5 rounded-[6px] text-[13px] font-medium text-white bg-blue-600 hover:bg-blue-500 border border-blue-500/80 transition-colors cursor-pointer disabled:opacity-40"
+                    className="h-9 px-4 rounded-[6px] text-[13.5px] sm:text-[14px] font-medium text-white bg-blue-600 hover:bg-blue-500 border border-blue-500/80 transition-colors cursor-pointer disabled:opacity-40"
                   >
                     {isSavingNs ? 'Saving...' : 'Save Changes'}
                   </button>
@@ -1499,7 +1510,7 @@ export function StoragePage() {
               </form>
             ) : (
               <div className="space-y-4">
-                <div className="p-3 rounded-[6px] bg-rose-950/20 border border-rose-900/40 text-[12px] text-rose-300 leading-relaxed">
+                <div className="p-3.5 rounded-[6px] bg-rose-950/20 border border-rose-900/40 text-[13px] text-rose-300 leading-relaxed">
                   Permanently delete namespace <strong className="text-white">{currentNsInfo.name}</strong> and all{' '}
                   <strong className="text-white">{currentNsInfo.total_objects} stored objects</strong> inside it. This action cannot be undone.
                 </div>
@@ -1507,14 +1518,14 @@ export function StoragePage() {
                   <button
                     type="button"
                     onClick={() => setIsManageNsOpen(false)}
-                    className="h-8 px-3 rounded-[6px] text-[13px] font-medium text-[#cccccc] hover:text-white bg-transparent hover:bg-[#161616] border border-[#262626] transition-colors cursor-pointer"
+                    className="h-9 px-3.5 rounded-[6px] text-[13.5px] sm:text-[14px] font-medium text-[#cccccc] hover:text-white bg-transparent hover:bg-[#161616] border border-[#262626] transition-colors cursor-pointer"
                   >
                     Cancel
                   </button>
                   <button
                     type="button"
                     onClick={() => setNsToDelete(currentNsInfo)}
-                    className="h-8 px-3.5 rounded-[6px] text-[13px] font-medium text-rose-400 hover:text-rose-300 bg-rose-950/30 hover:bg-rose-950/50 border border-rose-900/50 transition-colors cursor-pointer"
+                    className="h-9 px-4 rounded-[6px] text-[13.5px] sm:text-[14px] font-medium text-rose-400 hover:text-rose-300 bg-rose-950/30 hover:bg-rose-950/50 border border-rose-900/50 transition-colors cursor-pointer"
                   >
                     Delete Namespace
                   </button>

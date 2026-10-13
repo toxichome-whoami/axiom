@@ -61,11 +61,11 @@ export function StorageListView({
     <div className="flex-1 w-full overflow-auto select-none font-sans bg-[#0a0a0a]">
       <table className="w-full text-left border-collapse">
         <thead>
-          <tr className="sticky top-0 z-10 h-10 bg-[#0a0a0a] border-b border-[#222222] text-[13px] font-medium text-[#888888]">
+          <tr className="sticky top-0 z-10 h-9 bg-[#0a0a0a] border-b border-[#222222] text-[12.5px] font-medium text-[#888888]">
             <th className="px-4 font-medium">Name</th>
             <th className="px-3 font-medium w-36">Storage Tier</th>
             <th className="px-3 font-medium w-32 text-right">Size</th>
-            <th className="px-4 font-medium w-48 text-right hidden sm:table-cell">Uploaded</th>
+            <th className="px-4 font-medium w-44 text-right hidden sm:table-cell">Uploaded</th>
             <th className="px-3 w-16 text-right"><span className="sr-only">Actions</span></th>
           </tr>
         </thead>
@@ -119,7 +119,7 @@ export function StorageListView({
                   }
                 }}
                 onContextMenu={(e) => onContextMenu(e, item)}
-                className={`group h-10 transition-colors cursor-pointer text-[13px] sm:text-[14px] ${
+                className={`group h-[36px] transition-colors cursor-pointer text-[13px] ${
                   isSelfDragged ? 'opacity-40' : ''
                 } ${
                   isDropTarget
@@ -131,15 +131,15 @@ export function StorageListView({
               >
                 {/* Column 1: Icon and Name */}
                 <td className="px-4 min-w-0 max-w-[280px] sm:max-w-md">
-                  <div className="flex items-center gap-2.5 truncate">
-                    <div className="w-5 h-5 flex items-center justify-center shrink-0">
+                  <div className="flex items-center gap-2 truncate">
+                    <div className="w-4 h-4 flex items-center justify-center shrink-0">
                       {isFolder ? (
-                        <Folder className="w-4 h-4 text-[#eab308]" />
+                        <Folder className="w-3.5 h-3.5 text-[#eab308]" />
                       ) : (
-                        getFileIcon(item.name, 'w-4 h-4')
+                        getFileIcon(item.name, 'w-3.5 h-3.5')
                       )}
                     </div>
-                    <span className="truncate font-medium text-[13px] sm:text-[14px] text-white">{item.name}</span>
+                    <span className="truncate font-medium text-[13px] text-white">{item.name}</span>
                   </div>
                 </td>
 
@@ -149,7 +149,7 @@ export function StorageListView({
                     <span className="text-[12px] text-[#777777]">Directory</span>
                   ) : (
                     <span
-                      className={`inline-flex items-center px-1.5 py-0.5 rounded-[4px] text-[11px] font-mono font-medium ${
+                      className={`inline-flex items-center px-2 py-0.5 rounded-[4px] text-[11px] font-medium ${
                         item.inline
                           ? 'bg-amber-950/30 text-amber-400 border border-amber-900/40'
                           : 'bg-zinc-900 text-zinc-400 border border-zinc-800'
@@ -161,14 +161,14 @@ export function StorageListView({
                 </td>
 
                 {/* Column 3: Payload Size */}
-                <td className="px-3 text-right font-mono tabular-nums text-[13px] text-[#8c8c8c]">
+                <td className="px-3 text-right tabular-nums text-[12.5px] text-[#999999]">
                   {isFolder
                     ? `${item.itemCount || 0} items`
                     : formatBytes(item.size || 0)}
                 </td>
 
                 {/* Column 4: Uploaded / Created Date */}
-                <td className="px-4 text-right font-mono tabular-nums text-[13px] text-[#777777] hidden sm:table-cell">
+                <td className="px-4 text-right tabular-nums text-[12px] text-[#777777] hidden sm:table-cell">
                   {item.created_at
                     ? new Date(item.created_at * 1000).toLocaleDateString()
                     : '—'}

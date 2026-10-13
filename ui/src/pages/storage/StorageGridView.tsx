@@ -63,17 +63,17 @@ export function StorageGridView({
     <div className="space-y-6 font-sans select-none">
       {/* ─── Folders Section ─────────────── */}
       {folderItems.length > 0 && (
-        <div className="space-y-2.5">
+        <div className="space-y-3">
           <div className="flex items-center justify-between px-0.5">
-            <span className="text-[13px] font-medium text-[#888888]">
+            <span className="text-[14px] font-medium text-[#999999]">
               Folders
             </span>
-            <span className="text-[12px] font-mono tabular-nums text-[#666666]">
+            <span className="text-[12.5px] tabular-nums text-[#666666]">
               {folderItems.length}
             </span>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2.5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3.5">
             {folderItems.map((f) => {
               const isSelected = selectedItem?.id === f.id;
               const isDropTarget = dragOverTargetKey === f.fullKey;
@@ -125,27 +125,27 @@ export function StorageGridView({
                   onClick={() => onSelectItem(f)}
                   onDoubleClick={() => onNavigateToPrefix(f.fullKey)}
                   onContextMenu={(e) => onContextMenu(e, f)}
-                  className={`group p-2.5 rounded-[6px] border transition-colors cursor-pointer flex items-center justify-between gap-2.5 ${
+                  className={`group p-3.5 rounded-[8px] border transition-colors cursor-pointer flex items-center justify-between gap-3 min-h-[58px] ${
                     isSelfDragged ? 'opacity-40 border-dashed border-[#555555]' : ''
                   } ${
                     isDropTarget
                       ? 'bg-blue-950/40 border-blue-500/80 ring-1 ring-blue-500/50'
                       : isSelected
-                      ? 'bg-[#1c1c1c] border-[#383838]'
+                      ? 'bg-[#1c1c1c] border-[#3e3e3e]'
                       : 'bg-[#141414] hover:bg-[#1a1a1a] border-[#222222] hover:border-[#2e2e2e]'
                   }`}
                 >
                   <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                    <div className="w-8 h-8 rounded-[5px] bg-[#1a1a1a] border border-[#262626] flex items-center justify-center shrink-0">
+                    <div className="w-8 h-8 rounded-[5px] bg-[#1a1a1a] border border-[#2a2a2a] flex items-center justify-center shrink-0">
                       <Folder className={`w-4 h-4 ${isDropTarget ? 'text-blue-400 animate-pulse' : 'text-[#eab308]'}`} />
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="text-[13px] font-medium text-white truncate" title={f.name}>
                         {f.name}
                       </div>
-                      <div className="text-[11px] text-[#777777] font-mono tabular-nums truncate">
+                      <div className="text-[11.5px] text-[#888888] tabular-nums truncate">
                         {isDropTarget ? (
-                          <span className="text-blue-400">Drop here</span>
+                          <span className="text-blue-400 font-medium">Drop here</span>
                         ) : (
                           `${f.itemCount || 0} ${f.itemCount === 1 ? 'item' : 'items'}`
                         )}
@@ -160,7 +160,7 @@ export function StorageGridView({
                       onOpenMove(f);
                     }}
                     title="Move folder"
-                    className="opacity-0 group-hover:opacity-100 text-[#777777] hover:text-white p-1 rounded hover:bg-[#222222] transition-opacity cursor-pointer shrink-0"
+                    className="opacity-0 group-hover:opacity-100 text-[#888888] hover:text-white w-7 h-7 flex items-center justify-center rounded-[5px] hover:bg-[#242424] transition-all cursor-pointer shrink-0"
                   >
                     <ArrowRight className="w-3.5 h-3.5" />
                   </button>
@@ -171,19 +171,24 @@ export function StorageGridView({
         </div>
       )}
 
+      {/* ─── Edge-to-Edge Section Divider Between Folders & Files ─────────────── */}
+      {folderItems.length > 0 && fileItems.length > 0 && (
+        <div className="-mx-4 sm:-mx-5 border-t border-[#1c1c1c]" />
+      )}
+
       {/* ─── Files Section ─────────────── */}
       {fileItems.length > 0 && (
-        <div className="space-y-2.5">
+        <div className="space-y-3">
           <div className="flex items-center justify-between px-0.5">
-            <span className="text-[13px] font-medium text-[#888888]">
+            <span className="text-[13px] font-medium text-[#999999]">
               Files
             </span>
-            <span className="text-[12px] font-mono tabular-nums text-[#666666]">
+            <span className="text-[12px] tabular-nums text-[#666666]">
               {fileItems.length}
             </span>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2.5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3.5">
             {fileItems.map((item) => {
               const isSelected = selectedItem?.id === item.id;
               const isSelfDragged = draggedItem?.id === item.id;
@@ -196,25 +201,25 @@ export function StorageGridView({
                   onDragEnd={onItemDragEnd}
                   onClick={() => onSelectItem(item)}
                   onContextMenu={(e) => onContextMenu(e, item)}
-                  className={`group p-3 rounded-[6px] border transition-colors cursor-pointer flex flex-col justify-between h-28 relative ${
+                  className={`group p-3 rounded-[7px] border transition-colors cursor-pointer flex flex-col justify-between h-32 relative ${
                     isSelfDragged ? 'opacity-40 border-dashed border-[#555555]' : ''
                   } ${
                     isSelected
-                      ? 'bg-[#1c1c1c] border-[#383838]'
+                      ? 'bg-[#1c1c1c] border-[#3e3e3e]'
                       : 'bg-[#141414] hover:bg-[#1a1a1a] border-[#222222] hover:border-[#2e2e2e]'
                   }`}
                 >
                   {/* Top row: Icon, Name, and Actions */}
                   <div className="flex items-start justify-between gap-2">
-                    <div className="w-8 h-8 rounded-[5px] bg-[#1a1a1a] border border-[#262626] flex items-center justify-center shrink-0">
+                    <div className="w-8 h-8 rounded-[5px] bg-[#181818] border border-[#262626] flex items-center justify-center shrink-0">
                       {getFileIcon(item.name, 'w-4 h-4')}
                     </div>
 
                     <div className="min-w-0 flex-1 pt-0.5">
-                      <div className="text-[13px] font-medium text-white truncate" title={item.name}>
+                      <div className="text-[13px] font-medium text-white truncate leading-snug" title={item.name}>
                         {item.name}
                       </div>
-                      <div className="text-[11px] text-[#777777] truncate" title={item.content_type || 'application/octet-stream'}>
+                      <div className="text-[11.5px] text-[#888888] truncate" title={item.content_type || 'application/octet-stream'}>
                         {item.content_type?.split('/')[1] || 'binary'}
                       </div>
                     </div>
@@ -226,18 +231,18 @@ export function StorageGridView({
                         onContextMenu(e, item);
                       }}
                       title="File actions"
-                      className="opacity-0 group-hover:opacity-100 text-[#777777] hover:text-white p-1 rounded hover:bg-[#222222] transition-opacity cursor-pointer shrink-0"
+                      className="opacity-0 group-hover:opacity-100 text-[#888888] hover:text-white w-7 h-7 flex items-center justify-center rounded-[5px] hover:bg-[#242424] transition-all cursor-pointer shrink-0"
                     >
                       <MoreVertical className="w-3.5 h-3.5" />
                     </button>
                   </div>
 
-                  {/* Bottom row: Size & Storage Tier pill */}
-                  <div className="flex items-center justify-between text-[11px] text-[#777777] font-mono tabular-nums pt-2 border-t border-[#1c1c1c]">
+                  {/* Bottom row: Size & Storage Tier pill (edge-to-edge card line) */}
+                  <div className="-mx-3 px-3 pt-2 border-t border-[#1e1e1e] flex items-center justify-between text-[12px] text-[#999999] tabular-nums">
                     <span>{formatBytes(item.size || 0)}</span>
 
                     <span
-                      className={`inline-flex items-center px-1.5 py-0.5 rounded-[4px] text-[11px] font-mono font-medium ${
+                      className={`inline-flex items-center px-1.5 py-0.5 rounded-[4px] text-[10.5px] font-medium ${
                         item.inline
                           ? 'bg-amber-950/30 text-amber-400 border border-amber-900/40'
                           : 'bg-zinc-900 text-zinc-400 border border-zinc-800'
