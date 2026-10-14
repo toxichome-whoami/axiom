@@ -1,6 +1,6 @@
 # Installed Skills Registry & Update Guide
 
-> **Last Updated:** 2026-10-14 09:59:17 UTC  
+> **Last Updated:** 2026-10-14 10:09:39 UTC  
 > **Total Skills Installed:** 2,687  
 > **Global Storage Location:** `~/.agent/skills`  
 > **Workspace Symlink/Junction:** `.agent/skills`  
