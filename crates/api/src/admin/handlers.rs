@@ -17,7 +17,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use axiom_core::{AxiomError, AuthContext, ConfigManager};
+use axiom_core::{AxiomError, AuthContext};
 use axiom_db::DatabasePoolManager;
 use axiom_metadata::models::PermissionRecord;
 use axiom_metadata::store::MetadataStore;
@@ -375,8 +375,7 @@ pub async fn add_database(
 
     let url_trimmed = payload.url.trim();
     let lookup_alias = payload.old_alias.as_deref().unwrap_or(&payload.alias);
-    let is_existing = axiom_metadata::snapshot::get_snapshot().databases.contains_key(lookup_alias)
-        || ConfigManager::get().database.contains_key(lookup_alias);
+    let is_existing = axiom_metadata::snapshot::get_snapshot().databases.contains_key(lookup_alias);
     if url_trimmed.is_empty() && !is_existing {
         return Err(AxiomError::new(
             "INVALID_URL",
@@ -390,8 +389,6 @@ pub async fn add_database(
         url_trimmed.to_string()
     } else if let Some(existing) = axiom_metadata::snapshot::get_snapshot().databases.get(lookup_alias) {
         existing.url.clone()
-    } else if let Some(cfg) = ConfigManager::get().database.get(lookup_alias) {
-        cfg.url.clone()
     } else {
         return Err(AxiomError::new(
             "INVALID_URL",
@@ -411,23 +408,6 @@ pub async fn add_database(
                 "DATABASE_URL_ALREADY_EXISTS",
                 &format!(
                     "This database connection URL is already registered under alias '{}'",
-                    existing_alias
-                ),
-                StatusCode::CONFLICT,
-            ));
-        }
-    }
-
-    let config = ConfigManager::get();
-    for (existing_alias, existing_cfg) in config.database.iter() {
-        if existing_alias != &payload.alias
-            && existing_alias != lookup_alias
-            && MetadataStore::urls_match(&existing_cfg.url, &effective_url)
-        {
-            return Err(AxiomError::new(
-                "DATABASE_URL_ALREADY_EXISTS",
-                &format!(
-                    "This database connection URL is already registered in configuration under alias '{}'",
                     existing_alias
                 ),
                 StatusCode::CONFLICT,
@@ -541,8 +521,7 @@ pub async fn test_database(
         ));
     }
 
-    let exists = axiom_metadata::snapshot::get_snapshot().databases.contains_key(&alias)
-        || ConfigManager::get().database.contains_key(&alias);
+    let exists = axiom_metadata::snapshot::get_snapshot().databases.contains_key(&alias);
 
     if !exists {
         return Err(AxiomError::new(
@@ -935,12 +914,11 @@ pub async fn get_admin_health(
     }
 
     let snapshot = axiom_metadata::snapshot::get_snapshot();
-    let config = ConfigManager::get();
 
     let mut db_status = serde_json::Map::new();
     let mut all_dbs_up = true;
 
-    for alias in snapshot.databases.keys().chain(config.database.keys()) {
+    for alias in snapshot.databases.keys() {
         if db_status.contains_key(alias) {
             continue;
         }
@@ -1096,19 +1074,7 @@ pub async fn test_database_url(
         }
     }
 
-    let config = ConfigManager::get();
-    for (existing_alias, existing_cfg) in config.database.iter() {
-        if Some(existing_alias) != payload.alias.as_ref() && MetadataStore::urls_match(&existing_cfg.url, &payload.url) {
-            return Err(AxiomError::new(
-                "DATABASE_URL_ALREADY_EXISTS",
-                &format!(
-                    "This database connection URL is already registered in configuration under alias '{}'",
-                    existing_alias
-                ),
-                StatusCode::CONFLICT,
-            ));
-        }
-    }
+
 
     Ok(Json(json!({
         "success": true,

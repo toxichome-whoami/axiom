@@ -7,7 +7,6 @@
  */
 
 use crate::types::*;
-use std::collections::HashMap;
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 #[serde(default)]
@@ -192,33 +191,6 @@ impl Default for DatabaseDefConfig {
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 #[serde(default)]
-pub struct ApiKeyDefConfig {
-    pub mode: ServerMode,
-    pub secret: String,
-    pub db_scope: Vec<String>,
-    pub rate_limit_override: i32,
-    /// Deprecated in v4.0: Preserved for backward-compatibility with v3.0 config.toml.
-    /// CONTRACT: Automatically seeded as an admin role permission in axiom.db on first boot.
-    /// Will be deprecated and superseded by fine-grained RBAC in Phase 2.
-    
-    pub expires_at: Option<i64>,
-}
-
-impl Default for ApiKeyDefConfig {
-    fn default() -> Self {
-        Self {
-            mode: ServerMode::default(),
-            secret: "".to_string(),
-            db_scope: vec!["*".to_string()],
-            rate_limit_override: 0,
-            
-            expires_at: None,
-        }
-    }
-}
-
-#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
-#[serde(default)]
 pub struct CircuitBreakerConfig {
     pub enabled: bool,
     pub failure_threshold: i32,
@@ -288,8 +260,6 @@ pub struct AxiomConfig {
     pub rate_limit: RateLimitConfig,
     pub cache: CacheConfig,
     pub performance: PerformanceConfig,
-    pub database: HashMap<String, DatabaseDefConfig>,
-    pub api_key: HashMap<String, ApiKeyDefConfig>,
     pub circuit_breaker: CircuitBreakerConfig,
     pub metadata: MetadataConfig,
     pub blob: BlobConfig,
@@ -299,13 +269,11 @@ impl Default for AxiomConfig {
     fn default() -> Self {
         Self {
             server: ServerConfig::default(),
-            version: "3.0.1".to_string(),
+            version: "4.0.0".to_string(),
             logging: LoggingConfig::default(),
             rate_limit: RateLimitConfig::default(),
             cache: CacheConfig::default(),
             performance: PerformanceConfig::default(),
-            database: HashMap::new(),
-            api_key: HashMap::new(),
             circuit_breaker: CircuitBreakerConfig::default(),
             metadata: MetadataConfig::default(),
             blob: BlobConfig::default(),

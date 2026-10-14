@@ -12,7 +12,6 @@ use serde_json::{json, Value};
 use std::sync::Mutex;
 use sysinfo::System;
 
-use axiom_core::ConfigManager;
 use axiom_db::DatabasePoolManager;
 
 static START_TIME: Lazy<std::time::Instant> = Lazy::new(std::time::Instant::now);
@@ -90,11 +89,9 @@ async fn ready() -> Json<Value> {
 async fn health(
     axum::extract::Extension(ctx): axum::extract::Extension<axiom_core::AuthContext>,
 ) -> Result<Json<Value>, axiom_core::AxiomError> {
-    let config = ConfigManager::get();
-
+    let snapshot = axiom_metadata::snapshot::get_snapshot();
     let mut all_dbs_up = true;
-
-    for alias in config.database.keys() {
+    for alias in snapshot.databases.keys() {
         if let Some(engine) = DatabasePoolManager::get_engine(alias).await {
             if !engine.health_check().await {
                 all_dbs_up = false;

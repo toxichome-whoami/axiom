@@ -91,21 +91,10 @@ max_object = "5gb"                 # Hard ceiling on single blob upload size
 verify_reads = false               # Re-verify BLAKE3 checksums on reads
 ticket_secret = "change_me_to_a_secure_random_secret_in_production"
 
-# Optional: Seed database connections on first initialization
-[database.primary]
-engine = "postgres"
-url = "postgres://postgres:postgres@localhost:5432/app_db"
-pool_min = 5
-pool_max = 20
-connection_timeout = 30
-idle_timeout = 600
-max_lifetime = 3600
-
-# Optional: Seed API keys on first initialization
-[api_key.admin]
-secret = "secret-token"
-db_scope = ["*"]
 ```
+
+> **Dynamic State Management:**
+> Database connections, API keys, and access roles are stored in `data/axiom.db` (or remote Turso) and cannot be defined in `config.toml`. Manage them via the Web Console (`http://localhost:4500/system`) or the Axiom CLI (`axiom db add`, `axiom key create`).
 
 ---
 

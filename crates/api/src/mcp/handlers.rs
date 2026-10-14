@@ -396,30 +396,16 @@ async fn handle_tools_call(
 // ─── Concrete Tool Implementations ─────────────────────────────────────────
 
 async fn exec_list_services(auth: &AuthContext) -> Result<Value, String> {
-    let config = ConfigManager::get();
     let snapshot = axiom_metadata::snapshot::get_snapshot();
 
-    let mut all_aliases = std::collections::HashSet::new();
-    for name in config.database.keys() {
-        all_aliases.insert(name.clone());
-    }
-    for name in snapshot.databases.keys() {
-        all_aliases.insert(name.clone());
-    }
-
-    let mut sorted_aliases: Vec<String> = all_aliases.into_iter().collect();
+    let mut sorted_aliases: Vec<String> = snapshot.databases.keys().cloned().collect();
     sorted_aliases.sort();
 
     let authorized_dbs = PolicyEngine::filter_databases(auth, &sorted_aliases);
     let mut services = Vec::new();
 
     for name in &authorized_dbs {
-        let (engine_str, mode_str) = if let Some(db_cfg) = config.database.get(name) {
-            (
-                format!("{:?}", db_cfg.engine).to_lowercase(),
-                format!("{:?}", db_cfg.mode).to_lowercase(),
-            )
-        } else if let Some(snap_db) = snapshot.databases.get(name) {
+        let (engine_str, mode_str) = if let Some(snap_db) = snapshot.databases.get(name) {
             (snap_db.engine.clone(), "readwrite".to_string())
         } else {
             continue;
@@ -1001,18 +987,9 @@ async fn exec_create_download_ticket(
 // ─── Resource Handlers ─────────────────────────────────────────────────────
 
 async fn handle_resources_list(id: Option<Value>, auth: &AuthContext) -> JsonRpcResponse {
-    let config = ConfigManager::get();
     let snapshot = axiom_metadata::snapshot::get_snapshot();
 
-    let mut all_aliases = std::collections::HashSet::new();
-    for name in config.database.keys() {
-        all_aliases.insert(name.clone());
-    }
-    for name in snapshot.databases.keys() {
-        all_aliases.insert(name.clone());
-    }
-
-    let mut sorted_aliases: Vec<String> = all_aliases.into_iter().collect();
+    let mut sorted_aliases: Vec<String> = snapshot.databases.keys().cloned().collect();
     sorted_aliases.sort();
 
     let authorized_dbs = PolicyEngine::filter_databases(auth, &sorted_aliases);

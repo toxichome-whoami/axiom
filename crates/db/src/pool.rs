@@ -10,7 +10,6 @@ use dashmap::DashMap;
 use once_cell::sync::Lazy;
 use std::sync::Arc;
 
-use axiom_core::ConfigManager;
 use crate::engines::base::DatabaseEngine;
 use crate::engines::clickhouse::ClickHouseDatabaseEngine;
 use crate::engines::libsql::LibsqlDatabaseEngine;
@@ -41,19 +40,14 @@ impl DatabasePoolManager {
             return Some(engine.clone());
         }
 
-        let config = ConfigManager::get();
-        let db_config = if let Some(cfg) = config.database.get(alias) {
-            cfg.clone()
-        } else {
-            let snapshot = axiom_metadata::get_snapshot();
-            let snap_db = snapshot.databases.get(alias)?;
-            axiom_core::config::schema::DatabaseDefConfig {
-                url: snap_db.url.clone(),
-                pool_min: snap_db.pool_min as i32,
-                pool_max: snap_db.pool_max as i32,
-                connection_timeout: 1, // 1 second timeout for dynamic metadata databases
-                ..Default::default()
-            }
+        let snapshot = axiom_metadata::get_snapshot();
+        let snap_db = snapshot.databases.get(alias)?;
+        let db_config = axiom_core::config::schema::DatabaseDefConfig {
+            url: snap_db.url.clone(),
+            pool_min: snap_db.pool_min as i32,
+            pool_max: snap_db.pool_max as i32,
+            connection_timeout: 5,
+            ..Default::default()
         };
 
         // Do not attempt to connect if the URL is empty
@@ -158,10 +152,6 @@ impl DatabasePoolManager {
     /// Checks whether a database alias is defined in static config or dynamic metadata.
     pub fn is_db_configured(alias: &str) -> bool {
         if ENGINES.contains_key(alias) {
-            return true;
-        }
-        let config = ConfigManager::get();
-        if config.database.contains_key(alias) {
             return true;
         }
         let snapshot = axiom_metadata::get_snapshot();

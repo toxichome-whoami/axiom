@@ -95,14 +95,14 @@ verify_reads = false             # Re-verify BLAKE3 checksums on reads (integrit
 ticket_secret = "change_me_to_a_secure_random_secret_in_production" # HMAC signing secret for capability tickets
 
 # ─────────────────────────────────────────────────────────────────────────────
-# v4.0 Transition Note for API Keys and Databases
+# Dynamic Resources (Databases, API Keys, Roles)
 # ─────────────────────────────────────────────────────────────────────────────
-# In v4.0, API keys and Database connections are managed LIVE via the Web UI 
-# (http://localhost:4500/system) and stored securely in the `metadata.url` database.
-# 
-# You DO NOT need to define them in this file anymore.
+# All database connections, API keys, and access roles are managed exclusively
+# via the Web UI (http://localhost:4500/system) or the Axiom CLI:
 #
-# BACKWARD COMPATIBILITY: If you DO define `[api_key.name]` or `[database.name]`
-# blocks here, Axiom will read them on first boot and automatically seed them 
-# into the live database. After that, changes made here are ignored.
+#   axiom db add --alias primary --url "postgres://..."
+#   axiom key create --name admin --role admin
+#
+# They are stored in `data/axiom.db` and cannot be defined in this file.
 # ─────────────────────────────────────────────────────────────────────────────
+

@@ -276,42 +276,8 @@ pub fn validate_api_key(
                         role: key_snap.role_name.clone(),
                         permissions,
                     });
-                }
-            }
-
-            // 2. Fallback check for static config.toml entries (backward compatibility)
-            if let Some(key_cfg) = config.api_key.get(key_name) {
-                // Check key expiration if configured
-                if let Some(exp) = key_cfg.expires_at {
-                    let now = std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .as_secs() as i64;
-                    if now > exp {
-                        return Err(Some("API key has expired".to_string()));
-                    }
-                }
-
-                // Constant-time BLAKE3 comparison eliminating length leak and timing attack oracle
-                let expected_hash = blake3::hash(key_cfg.secret.as_bytes());
-                let actual_hash = blake3::hash(key_secret.as_bytes());
-                let mut match_result = 0;
-                for (a, b) in expected_hash.as_bytes().iter().zip(actual_hash.as_bytes().iter()) {
-                    match_result |= a ^ b;
-                }
-
-                if !key_cfg.secret.is_empty() && match_result == 0 {
-                    return Ok(AuthContext {
-                        api_key_name: key_name.to_string(),
-                        mode: key_cfg.mode.clone(),
-                        db_scope: key_cfg.db_scope.clone(),
-                        rate_limit_override: key_cfg.rate_limit_override as u32,
-                        is_session: false,
-                        role: None,
-                        permissions: Vec::new(),
-                    });
                 } else {
-                    // S3: Track distributed auth failures against recognized key name
+                    // Key exists in metadata snapshot but secret hash check failed
                     let penalty_threshold = if config.rate_limit.penalty_threshold > 0 {
                         config.rate_limit.penalty_threshold as u32
                     } else {
@@ -329,24 +295,6 @@ pub fn validate_api_key(
                     };
                     BanList::record_failed_auth(key_name, penalty_threshold, window_secs, cooldown_secs);
                 }
-            } else if snapshot.keys.contains_key(key_name) {
-                // Key exists in metadata snapshot but secret hash check failed
-                let penalty_threshold = if config.rate_limit.penalty_threshold > 0 {
-                    config.rate_limit.penalty_threshold as u32
-                } else {
-                    5
-                };
-                let window_secs = if config.rate_limit.window > 0 {
-                    config.rate_limit.window as u64
-                } else {
-                    60
-                };
-                let cooldown_secs = if config.rate_limit.penalty_cooldown > 0 {
-                    config.rate_limit.penalty_cooldown as u64
-                } else {
-                    0
-                };
-                BanList::record_failed_auth(key_name, penalty_threshold, window_secs, cooldown_secs);
             }
         }
     }

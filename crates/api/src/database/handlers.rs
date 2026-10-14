@@ -858,10 +858,7 @@ pub async fn get_db_config(
         ));
     }
 
-    let config = axiom_core::ConfigManager::get();
-    if let Some(db_cfg) = config.database.get(db_name) {
-        Ok(db_cfg.clone())
-    } else if let Some(snap_db) = axiom_metadata::snapshot::get_snapshot().databases.get(db_name) {
+    if let Some(snap_db) = axiom_metadata::snapshot::get_snapshot().databases.get(db_name) {
         Ok(DatabaseDefConfig {
             url: snap_db.url.clone(),
             pool_min: snap_db.pool_min as i32,

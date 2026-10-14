@@ -60,7 +60,7 @@ cargo build --release
 
 ### 2. Configure
 
-Create `config.toml` in your working directory (or rely on defaults):
+Axiom runs out of the box with compiled defaults. Create `config.toml` only if you need to customize server, cache, or storage bindings:
 
 ```toml
 [server]
@@ -75,30 +75,29 @@ url = "file:data/axiom.db"
 enabled = true
 path = "data/blobs"
 ticket_secret = "replace-with-a-random-secret-for-signing-tickets"
-
-# Optional: seed initial database on first boot (or configure via Web UI)
-[database.primary]
-engine = "postgres"
-url = "postgres://postgres:postgres@localhost:5432/app_db"
-pool_min = 5
-pool_max = 20
-
-# Optional: seed initial admin API key on first boot (or configure via Web UI)
-[api_key.admin]
-secret = "secret-token"
-db_scope = ["*"]
 ```
+
+> **Note:** Databases, API keys, and roles are dynamic resources stored in `data/axiom.db`. They are managed exclusively through the embedded Web UI or the Axiom CLI, not static configuration files.
 
 ### 3. Run and Access Dashboard
 
 ```bash
+# Start server
 ./target/release/axiom server run
 ```
 
-Axiom starts on `http://localhost:4500`.
-- Web management console: `http://localhost:4500/system`
-- Health probe: `GET http://localhost:4500/health`
-- MCP endpoint: `POST http://localhost:4500/mcp/v1`
+Axiom starts on `http://localhost:4500`:
+- **Web UI & Setup Wizard**: Navigate to `http://localhost:4500/system` to complete first-time admin setup and register databases.
+- **CLI Management**:
+  ```bash
+  # Add database connection
+  ./target/release/axiom db add --alias primary --url "postgres://postgres:postgres@localhost:5432/app_db"
+
+  # Create API key
+  ./target/release/axiom key create --name admin --role admin
+  ```
+- **Health probe**: `GET http://localhost:4500/health`
+- **MCP endpoint**: `POST http://localhost:4500/mcp/v1`
 
 ---
 

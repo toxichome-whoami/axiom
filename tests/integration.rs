@@ -946,6 +946,7 @@ async fn ensure_blob_engine() {
     static ENGINE_INIT: tokio::sync::OnceCell<tempfile::TempDir> = tokio::sync::OnceCell::const_new();
     let _ = ENGINE_INIT
         .get_or_init(|| async {
+            ensure_metadata_store().await;
             let tmp = tempfile::tempdir().expect("Failed to create tempdir for blob engine test");
             axiom_api::blobs::init_blob_engine(
                 tmp.path().to_str().unwrap(),
@@ -1218,8 +1219,8 @@ async fn blob_storage_range_requests_partial_content() {
 
 #[tokio::test]
 async fn blob_storage_presigned_capability_ticket_download() {
-    setup_test_metadata();
     ensure_blob_engine().await;
+    setup_test_metadata();
 
     let admin_token = BASE64_STANDARD.encode("admin_key:secret_admin");
 
