@@ -85,19 +85,12 @@ export function InlineJsonPopover({
     }
   }, [isNull]);
 
-  const isInitialNull = editingCell.initialValue === null || editingCell.initialValue === undefined;
-  const initialText = useMemo(() => {
-    if (isInitialNull) return '';
-    try {
-      const parsed = typeof editingCell.initialValue === 'object' ? editingCell.initialValue : JSON.parse(editingCell.currentValue);
-      return JSON.stringify(parsed, null, 2);
-    } catch {
-      return editingCell.currentValue;
-    }
-  }, [editingCell.initialValue, editingCell.currentValue, isInitialNull]);
+  // Baseline snapshot at mount to prevent false-positive dirty warnings
+  const baselineValueRef = useRef<string>(localValue);
+  const baselineNullRef = useRef<boolean>(isNull);
 
-  // Check if modified
-  const isDirty = isNull ? !isInitialNull : (isInitialNull || localValue.trim() !== initialText.trim());
+  // Check if modified compared to initial mount value
+  const isDirty = isNull !== baselineNullRef.current || (!isNull && localValue !== baselineValueRef.current);
 
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
 

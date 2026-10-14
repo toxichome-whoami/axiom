@@ -49,6 +49,7 @@ export function useCellEditor({
     rowIndex: number;
     colName: string;
     value: string;
+    initialValue?: string;
   } | null>(null);
   const [fkPickerTarget, setFkPickerTarget] = useState<{
     rowIndex?: number;

@@ -619,6 +619,9 @@ export function TableEditor() {
   // Track if user has modified anything in the Expanded Cell Editor
   const hasExpandedCellChanges = useMemo(() => {
     if (!expandedInlineCell) return false;
+    if (expandedInlineCell.initialValue !== undefined) {
+      return expandedInlineCell.value !== expandedInlineCell.initialValue;
+    }
     const originalRow = rows[expandedInlineCell.rowIndex];
     if (!originalRow) return false;
     const originalVal = originalRow[expandedInlineCell.colName];
@@ -1041,7 +1044,9 @@ export function TableEditor() {
         const isDate = normType === 'date';
         const isTimeOrTimestamp = normType.includes('time') || normType.includes('timestamp');
         const isDateTime = isDate || isTimeOrTimestamp;
-        const isJson = normType.includes('json');
+        const isJson =
+          normType.includes('json') ||
+          (typeof editingCell.initialValue === 'object' && editingCell.initialValue !== null);
         const isNumeric =
           normType.includes('int') ||
           normType.includes('float') ||
@@ -1078,6 +1083,7 @@ export function TableEditor() {
                   rowIndex: current.rowIndex,
                   colName: current.colName,
                   value: current.currentValue,
+                  initialValue: current.currentValue,
                 });
               }}
             />
@@ -1100,6 +1106,7 @@ export function TableEditor() {
                   rowIndex: current.rowIndex,
                   colName: current.colName,
                   value: current.currentValue,
+                  initialValue: current.currentValue,
                 });
               }}
             />
@@ -1122,6 +1129,7 @@ export function TableEditor() {
                   rowIndex: current.rowIndex,
                   colName: current.colName,
                   value: current.currentValue,
+                  initialValue: current.currentValue,
                 });
               }}
             />
@@ -1143,6 +1151,7 @@ export function TableEditor() {
                 rowIndex: current.rowIndex,
                 colName: current.colName,
                 value: current.currentValue,
+                initialValue: current.currentValue,
               });
             }}
           />

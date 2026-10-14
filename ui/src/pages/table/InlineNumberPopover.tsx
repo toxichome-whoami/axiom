@@ -74,8 +74,10 @@ export function InlineNumberPopover({
     }
   }, [isNull]);
 
-  const initialNumStr = isInitialNull ? '' : String(editingCell.initialValue);
-  const isDirty = isNull ? !isInitialNull : (isInitialNull || inputVal.trim() !== initialNumStr.trim());
+  // Baseline snapshot at mount to prevent false-positive dirty warnings
+  const baselineValRef = useRef<string>(inputVal);
+  const baselineNullRef = useRef<boolean>(isNull);
+  const isDirty = isNull !== baselineNullRef.current || (!isNull && inputVal.trim() !== baselineValRef.current.trim());
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
 
   const handleCommit = useCallback(

@@ -58,11 +58,12 @@ export function InlineTextPopover({
     }
   }, [isNull]);
 
-  const isInitialNull = editingCell.initialValue === null || editingCell.initialValue === undefined;
-  const initialText = isInitialNull ? '' : String(editingCell.initialValue);
+  // Baseline snapshot at mount to prevent false-positive dirty warnings
+  const baselineValueRef = useRef<string>(localValue);
+  const baselineNullRef = useRef<boolean>(isNull);
 
   // Check if user has modified the value
-  const isDirty = isNull ? !isInitialNull : (isInitialNull || localValue !== initialText);
+  const isDirty = isNull !== baselineNullRef.current || (!isNull && localValue !== baselineValueRef.current);
 
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
 

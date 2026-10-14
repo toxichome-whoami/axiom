@@ -70,8 +70,10 @@ export function InlineDateTimePickerPopover({
     }
   }, [isNull]);
 
-  const initialValStr = isInitialNull ? '' : String(editingCell.initialValue);
-  const isDirty = isNull ? !isInitialNull : (isInitialNull || inputVal.trim() !== initialValStr.trim());
+  // Baseline snapshot at mount to prevent false-positive dirty warnings
+  const baselineValRef = useRef<string>(inputVal);
+  const baselineNullRef = useRef<boolean>(isNull);
+  const isDirty = isNull !== baselineNullRef.current || (!isNull && inputVal.trim() !== baselineValRef.current.trim());
 
   const parseVal = useCallback((val: string) => {
     if (!val.trim()) {
