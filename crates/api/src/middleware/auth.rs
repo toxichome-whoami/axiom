@@ -129,7 +129,9 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, A
         }
     }
 
-    // Check for pre-signed capability tickets on native blob endpoints
+    // ─── Capability Ticket Authentication ───────────────────────────────────
+    // Validates pre-signed URLs on native blob endpoints (/api/v1/blobs/*)
+    // using keyed BLAKE3 HMAC signatures and sub-microsecond cache revocation.
     let path = req.uri().path();
     let stripped_blob_path = path.strip_prefix("/api/v1/blobs/").or_else(|| path.strip_prefix("/blobs/"));
     if let Some(stripped) = stripped_blob_path {
@@ -158,6 +160,7 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, A
                         let secret = axiom_blob::tickets::resolve_ticket_secret(&config.blob.ticket_secret);
 
                         if axiom_blob::tickets::verify_ticket(secret, ns, key, op, exp, sig).is_ok() {
+                            // Instant revocation check: fast in-memory L1 cache check, falling back to SQLite metadata
                             let cache_key = format!("ticket:revoked:{}", sig);
                             let is_revoked = axiom_cache::CacheEngine::get(&cache_key).await.is_some()
                                 || axiom_metadata::MetadataStore::is_blob_ticket_revoked(sig).await.unwrap_or(false);
@@ -170,6 +173,8 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, A
                                 ));
                             }
 
+                            // Inject ticket identity context; role is set to "ticket" which PolicyEngine
+                            // strictly restricts from executing DELETE mutations.
                             let ctx = AuthContext {
                                 api_key_name: format!("ticket:{}:{}", ns, key),
                                 role: Some("ticket".to_string()),
@@ -195,6 +200,8 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, A
     ))
 }
 
+// ─── API Key Validation (Snapshot & Config Fallback) ────────────────────────
+
 /// Parses base64 encoded `name:secret` token and verifies secret in constant time.
 /// CONTRACT:
 ///  - Precondition: `raw_token` must be a base64 encoded string.
@@ -202,7 +209,7 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, A
 ///  - Returns `Err(Some(reason))` if the key exists but is currently suspended.
 ///  - Returns `Err(None)` if key format is invalid, unknown, or secret mismatch.
 ///  - Side effects: Increments failure counter for recognized key names when secret fails.
-///  - Idempotent: No (modifies BanList failure tracking state).
+///  - Concurrency: Zero database locks on hot path via ArcSwap metadata snapshot.
 pub fn validate_api_key(
     raw_token: &str,
     config: &axiom_core::AxiomConfig,
@@ -214,7 +221,7 @@ pub fn validate_api_key(
 
     if let Some(decoded) = decoded_str {
         if let Some((key_name, key_secret)) = decoded.split_once(':') {
-            // Check if key identifier is currently suspended
+            // Check if key identifier is currently suspended in BanList
             let (is_banned, reason) = BanList::is_key_banned(key_name);
             if is_banned {
                 return Err(Some(reason));
