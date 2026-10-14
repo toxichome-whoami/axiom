@@ -1,285 +1,186 @@
 <div align="center">
 
-# AXIOM
+# Axiom
 
-**Ship a secure data API in minutes, not sprints.**
+### High-performance REST API, Content-Addressed Blob Storage, and MCP Server for SQL Databases.
+**One Rust binary. Zero external daemons. Under 10 MB idle RAM.**
 
-One binary that turns any SQL database into a production-ready REST API — with auth, rate limiting, and guardrails built in.
+[![Version](https://img.shields.io/badge/version-4.0.0-111827.svg?style=flat-square)](https://github.com/toxichome/axiom/releases)
+[![Rust](https://img.shields.io/badge/rust-1.88%2B-b7410e.svg?style=flat-square&logo=rust&logoColor=white)](https://www.rust-lang.org)
+[![License: MIT](https://img.shields.io/badge/license-MIT-111827.svg?style=flat-square)](./LICENSE)
+[![Platforms](https://img.shields.io/badge/platform-linux%20%C2%B7%20macos%20%C2%B7%20windows-111827.svg?style=flat-square)](https://github.com/toxichome/axiom/releases)
+[![Binary Size](https://img.shields.io/badge/binary-%3C15MB-111827.svg?style=flat-square)](https://github.com/toxichome/axiom)
+[![MCP](https://img.shields.io/badge/MCP-2024--11--05-111827.svg?style=flat-square)](https://modelcontextprotocol.io)
 
-![Version](https://img.shields.io/badge/version-4.0.0-111827)
-![Rust](https://img.shields.io/badge/rust-1.88%2B-b7410e?logo=rust&logoColor=white)
-![License](https://img.shields.io/badge/license-MIT-111827)
-![Platforms](https://img.shields.io/badge/platform-linux%20%C2%B7%20macos%20%C2%B7%20windows-111827)
+[Documentation](./docs/AXIOM_MASTER_PLAN.md) &middot;
+[API Reference](./docs/reference/api.md) &middot;
+[Quickstart](#60-second-quickstart) &middot;
+[MCP for AI Agents](#mcp-server-for-ai-agents) &middot;
+[Blob Storage](#content-addressed-blob-storage) &middot;
+[Comparison](#axiom-vs-faucet-vs-postgrest-vs-hasura-vs-supabase) &middot;
+[CLI Reference](#cli-reference)
 
 </div>
 
-<div align="center">
+---
 
-![Axiom Gateway dashboard — pool health, cache metrics, and database overview](./docs/images/dashboard.png)
+## What is Axiom?
 
-</div>
+Axiom is an ultra-fast, single-binary database gateway and object store written in pure Rust. It connects to your existing SQL databases and local storage volumes, introspects schemas, and instantly exposes:
 
-## Why Axiom
+1. **A production-ready CRUD REST API** with keyset cursor pagination, structured query operators, and an AST-based SQL injection firewall.
+2. **A content-addressed blob storage engine** backed by BLAKE3 deduplication, a two-tier LSM storage architecture (Fjall + direct disk shards), byte-range streaming, and pre-signed capability tickets.
+3. **A Model Context Protocol (MCP) server** at `/mcp/v1` that gives AI agents (Claude Code, Cursor, Windsurf, VS Code Copilot) governed, audited, read/write access to your databases and blobs.
+4. **An embedded administrative Web UI** at `/system` with a first-boot setup wizard, connection test diagnostics, role builders, API key management, live audit logs, and Prometheus metrics.
 
-Backend teams spend weeks building database access layers that are secure by default. Axiom delivers the complete layer in a single executable:
-
-- **Deploy in seconds** — download one binary, configure connection strings, and run. No separate runtimes, sidecars, or orchestrators.
-- **Unified database interface** — PostgreSQL, MySQL, SQL Server, SQLite/Turso, and ClickHouse exposed through one authentication model and JSON response format.
-- **Deterministic security** — WAF, per-IP and per-key rate limiting, constant-time credential hashing, RBAC, and an AST-based SQL injection firewall on every request.
-- **AI-native integration** — native Model Context Protocol (MCP) endpoint allows LLM agents (Claude Code, Cursor, LangChain) to query data under the same policy controls as web applications.
-- **Content-addressed storage** — integrated BLAKE3 blob store with two-tier persistence, range queries, and pre-signed capability tickets.
+All configuration and dynamic metadata (databases, users, roles, permissions, API keys) live in an embedded `axiom.db` file powered by LibSQL. The hot data path reads immutable snapshots via `ArcSwap`, adding zero database locks to incoming requests.
 
 ---
 
-## Everything Included
+## How It Works
 
-| Capability | Detail |
-|---|---|
-| Data API | Parameterized SQL, filterable rows, cursor pagination, schema introspection |
-| File storage | Content-addressed blobs, presigned URLs, byte-range streaming, multipart uploads |
-| Access control | BLAKE3 hashed API keys, custom roles, per-table and per-namespace permissions |
-| Reliability | Idempotency keys, multi-tier cache, circuit breakers, hot-reloadable metadata |
-| Observability | Structured JSON logging, audit trail, Prometheus metrics, per-request UUIDs |
-| Interfaces | Admin CLI, embedded Web UI (`/system`), Model Context Protocol (`/mcp/v1`) |
+```
++-----------------------------------------------------------------------------------------+
+|                                     INCOMING TRAFFIC                                    |
+|         Web Applications          Mobile / Edge Clients              AI Agents          |
+|        [ X-Axiom-Key Header ]     [ Pre-signed Tickets ]      [ Claude / Cursor MCP ]   |
++-----------------------------------------------------------------------------------------+
+                                             |
+                                             v
++-----------------------------------------------------------------------------------------+
+|                                   AXIOM DATA PLANE                                      |
+|                                                                                         |
+|  [ Web Application Firewall ]                                                           |
+|    - 2048-byte URI length guard   - 3x recursive URL decode   - Null-byte filter        |
+|                                                                                         |
+|  [ Rate Limiting & Defense ]                                                            |
+|    - Per-IP fixed-window counter  - Per-key rate limiter      - Brute-force ban list    |
+|                                                                                         |
+|  [ Authentication & RBAC ]                                                              |
+|    - BLAKE3 constant-time hash    - ArcSwap snapshot cache    - Zero-lock hot path      |
+|                                                                                         |
+|  [ Execution Engines ]                                                                  |
+|    +--------------------------------------+  +---------------------------------------+  |
+|    | SQL AST Engine (sqlparser)           |  | Native Blob Engine                    |  |
+|    | - Single-statement enforcement       |  | - BLAKE3 content-addressed dedup      |  |
+|    | - Mutation & destructive DDL guard   |  | - Two-tier storage (Fjall LSM + Disk) |  |
+|    | - Keyset pagination & filter builder |  | - Pre-signed capability tickets       |  |
+|    | - Per-alias connection pooling       |  | - HTTP 206 byte-range streaming       |  |
+|    +--------------------------------------+  +---------------------------------------+  |
++-----------------------------------------------------------------------------------------+
+         |                       |                       |                      |
+         v                       v                       v                      v
++-----------------+     +-----------------+     +------------------+     +----------------+
+|   PostgreSQL    |     |  MySQL/MariaDB  |     |   MS SQL Server  |     | SQLite / Turso |
+|  12, 13, 14-17  |     |  8.0+ / 10.4+   |     |   2017 - 2022    |     |   & ClickHouse |
++-----------------+     +-----------------+     +------------------+     +----------------+
+```
 
 ---
 
-## Quick Start
+## 60-Second Quickstart
 
-### 1. Download or Build
+### 1. Installation
 
+#### Pre-built Binary
+Download the single binary for Linux, macOS, or Windows from [GitHub Releases](https://github.com/toxichome/axiom/releases):
 ```bash
-# Clone and build optimized release binary
+# Example for Linux x86_64
+curl -sSL https://github.com/toxichome/axiom/releases/latest/download/axiom-linux-amd64 -o axiom
+chmod +x axiom
+./axiom --version
+```
+
+#### From Source (Cargo)
+```bash
 git clone https://github.com/toxichome/axiom.git
 cd axiom
 cargo build --release
-
-# Binary is placed in target/release/axiom
-./target/release/axiom --help
+# Executable is placed in ./target/release/axiom
 ```
 
-### 2. Configure
-
-Axiom runs out of the box with compiled defaults. Create `config.toml` only if you need to customize server, cache, or storage bindings:
-
-```toml
-[server]
-host = "0.0.0.0"
-port = 4500
-workers = 4
-
-[metadata]
-url = "file:data/axiom.db"
-
-[blob]
-path = "data/blobs"
-```
-
-> **Note:** Databases, API keys, and roles are dynamic resources stored in `data/axiom.db`. They are managed exclusively through the embedded Web UI or the Axiom CLI, not static configuration files.
-
-### 3. Run and Access Dashboard
-
+#### Docker
 ```bash
-# Start server
-./target/release/axiom server run
-```
-
-Axiom starts on `http://localhost:4500`:
-- **Web UI & Setup Wizard**: Navigate to `http://localhost:4500/system` to complete first-time admin setup and register databases.
-- **CLI Management**:
-  ```bash
-  # Add database connection
-  ./target/release/axiom db add --alias primary --url "postgres://postgres:postgres@localhost:5432/app_db"
-
-  # Create API key
-  ./target/release/axiom key create --name admin --role admin
-  ```
-- **Health probe**: `GET http://localhost:4500/health`
-- **MCP endpoint**: `POST http://localhost:4500/mcp/v1`
-
----
-
-## Usage Examples
-
-All requests require authentication via the `X-Axiom-Key` header, formatted as `base64(name:secret)`.
-
-```bash
-KEY=$(echo -n "admin:secret-token" | base64)
-```
-
-### 1. Parameterized SQL Queries
-
-Execute arbitrary SQL statements safely. Queries run through an AST firewall that enforces single-statement execution and validates syntax before sending to the driver.
-
-```bash
-curl -X POST "http://localhost:4500/api/v1/db/primary/query" \
-  -H "X-Axiom-Key: $KEY" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "query": "SELECT id, name, email, balance FROM users WHERE balance >= $1 AND status = $2 ORDER BY balance DESC LIMIT 10",
-    "params": [500.00, "active"]
-  }'
-```
-
-Response envelope:
-
-```json
-{
-  "success": true,
-  "data": {
-    "rows": [
-      { "id": 104, "name": "Alice Smith", "email": "alice@example.com", "balance": 1420.50 },
-      { "id": 88, "name": "Bob Vance", "email": "bob@example.com", "balance": 850.00 }
-    ],
-    "rows_affected": 0,
-    "columns": ["id", "name", "email", "balance"]
-  },
-  "error": null,
-  "meta": {
-    "request_id": "8fa921be-4972-4d2c-8cb4-3010b91e9f1a",
-    "duration_ms": 1.42,
-    "cached": false
-  }
-}
-```
-
-### 2. Auto-Generated REST CRUD
-
-Axiom exposes database tables directly with query operators, sorting, and keyset cursor pagination without writing SQL.
-
-#### Fetch Filtered Rows
-
-Filter syntax supports `eq`, `neq`, `gt`, `gte`, `lt`, `lte`, `like`, `in`, and `is_null`.
-
-```bash
-curl "http://localhost:4500/api/v1/db/primary/orders/rows?filter=%7B%22status%22:%7B%22eq%22:%22paid%22%7D,%22total%22:%7B%22gte%22:100%7D%7D&sort=created_at&order=desc&limit=25" \
-  -H "X-Axiom-Key: $KEY"
-```
-
-#### Safe Mutation with Idempotency Key
-
-Retry safely across network failures using the `Idempotency-Key` header:
-
-```bash
-curl -X POST "http://localhost:4500/api/v1/db/primary/orders/rows" \
-  -H "X-Axiom-Key: $KEY" \
-  -H "Idempotency-Key: ord_checkout_991823" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "rows": [
-      { "customer_id": 42, "item": "Compute Cluster", "amount": 2400.00 }
-    ]
-  }'
-```
-
-#### Scoped Updates and Deletions
-
-Mutations require an explicit filter object. Unbounded mass-updates are rejected at the gateway layer:
-
-```bash
-curl -X PATCH "http://localhost:4500/api/v1/db/primary/users/rows" \
-  -H "X-Axiom-Key: $KEY" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "data": { "tier": "gold" },
-    "filter": { "loyalty_points": { "gte": 10000 } }
-  }'
+docker run -d \
+  -p 4500:4500 \
+  -v axiom-data:/app/data \
+  --name axiom \
+  toxichome/axiom:latest
 ```
 
 ---
 
-### 3. Content-Addressed Blob Storage
+### 2. Start Axiom
 
-Axiom includes a built-in content-addressed object store backed by BLAKE3 hashes and a two-tier storage engine (Fjall LSM for metadata and objects `<64 KB`, direct disk shards for large payloads).
-
-#### Store an Object
+Run the server daemon with compiled-in defaults:
 
 ```bash
-curl -X PUT "http://localhost:4500/api/v1/blobs/assets/documents/specs.pdf" \
+axiom server run
+```
+
+Axiom starts immediately on `http://localhost:4500` with an empty state and under 10 MB RAM footprint.
+
+---
+
+### 3. Setup Flow: Two Paths
+
+#### Path A: Interactive Web UI Setup Wizard
+1. Open **`http://localhost:4500/system`** in your browser.
+2. **Step 1: Create Admin Account** — Set username and secure password (hashed via Argon2id).
+3. **Step 2: Connect Database** — Select engine (PostgreSQL, MySQL, SQL Server, SQLite, ClickHouse), provide connection URL, and click **Test Connection**.
+4. **Step 3: Issue API Key** — Assign a role with table and operation scopes; the wizard displays a ready-to-use `curl` command.
+5. Setup permanently locks. All future management is protected behind authenticated admin sessions.
+
+#### Path B: Headless 100% CLI Flow
+Manage your entire infrastructure directly through the terminal:
+
+```bash
+# 1. Create the primary administrative human user
+axiom user add admin --password "s3cur3_pass!"
+
+# 2. Register an upstream database connection (tests connectivity prior to saving)
+axiom db add --alias main_db --conn "postgres://postgres:postgres@localhost:5432/app_db"
+
+# 3. Create a restricted RBAC role (e.g. read and insert on the 'orders' table)
+axiom role create --name service_role \
+  --permissions '[{"database":"main_db","table_name":"orders","operations":["SELECT","INSERT"]}]'
+
+# 4. Generate an API machine key bound to that role
+axiom key create --name app_service --role service_role
+
+# Output:
+# API Key 'app_service' created.
+# Base64 Token: YXBwX3NlcnZpY2U6YmVuY2hfc2VjcmV0X3Rva2VuXzEyMzQ1
+
+# 5. Query your database through the REST API
+export KEY="YXBwX3NlcnZpY2U6YmVuY2hfc2VjcmV0X3Rva2VuXzEyMzQ1"
+
+curl -H "X-Axiom-Key: $KEY" \
+  "http://localhost:4500/api/v1/db/main_db/orders/rows?limit=10&sort=created_at&order=desc"
+
+# 6. Store an object in the native content-addressed blob engine
+curl -X PUT "http://localhost:4500/api/v1/blobs/assets/documents/report.pdf" \
   -H "X-Axiom-Key: $KEY" \
   -H "Content-Type: application/pdf" \
-  --data-binary "@specs.pdf"
-```
-
-Response:
-
-```json
-{
-  "success": true,
-  "data": {
-    "key": "documents/specs.pdf",
-    "hash": "b268f7b53e8006b006859d57a2b0d01d4a0475b7a13c9e99335f2ae3e26b8404",
-    "size": 1420582,
-    "content_type": "application/pdf"
-  },
-  "error": null
-}
-```
-
-#### Stream Byte Ranges (HTTP 206)
-
-Clients can request arbitrary single slices up to 256 MB for video playback or parallel chunk downloading:
-
-```bash
-curl -i "http://localhost:4500/api/v1/blobs/assets/documents/specs.pdf" \
-  -H "X-Axiom-Key: $KEY" \
-  -H "Range: bytes=0-1048575"
-```
-
-Headers returned:
-```http
-HTTP/1.1 206 Partial Content
-Content-Range: bytes 0-1048575/1420582
-Content-Length: 1048576
-Content-Type: application/pdf
-ETag: "b268f7b53e8006b006859d57a2b0d01d4a0475b7a13c9e99335f2ae3e26b8404"
+  --data-binary "@report.pdf"
 ```
 
 ---
 
-### 4. Revocable Capability Tickets
+## MCP Server for AI Agents
 
-Generate cryptographically signed URLs for client-side uploads and downloads without exposing master API keys.
+Axiom exposes a first-class [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server directly at `POST /mcp/v1` over standard HTTP and JSON-RPC 2.0. AI coding assistants and autonomous agents can inspect schemas, execute parameterized queries, and read/write binary objects while adhering to the exact same RBAC rules, audit logs, and rate limits as standard API consumers.
 
-#### Issue a Ticket
-
-```bash
-curl -X POST "http://localhost:4500/api/v1/blobs/assets/ticket" \
-  -H "X-Axiom-Key: $KEY" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "key": "documents/specs.pdf",
-    "operation": "READ",
-    "ttl_seconds": 3600
-  }'
-```
-
-Response returns a signed capability token:
-
-```json
-{
-  "success": true,
-  "data": {
-    "ticket": "v1.assets.documents_specs_pdf.READ.1760492800.7f1a3b8c...",
-    "url": "http://localhost:4500/api/v1/blobs/assets/documents/specs.pdf?ticket=v1.assets..."
-  },
-  "error": null
-}
-```
-
-The consumer uses the raw URL without authentication headers:
+### Claude Code
 
 ```bash
-curl -O "http://localhost:4500/api/v1/blobs/assets/documents/specs.pdf?ticket=v1.assets..."
+claude mcp add --transport http axiom http://localhost:4500/mcp/v1 \
+  --header "X-Axiom-Key: YOUR_BASE64_KEY"
 ```
 
----
+### Cursor
 
-### 5. Model Context Protocol (MCP) for AI Agents
-
-Axiom implements the JSON-RPC 2.0 Model Context Protocol at `POST /mcp/v1`. External AI coding assistants and automation pipelines can inspect schemas and query databases with standard tooling.
-
-#### Add to Claude Code or Cursor Configuration
+Add to `~/.cursor/mcp.json` or `.cursor/mcp.json`:
 
 ```json
 {
@@ -287,115 +188,267 @@ Axiom implements the JSON-RPC 2.0 Model Context Protocol at `POST /mcp/v1`. Exte
     "axiom": {
       "url": "http://localhost:4500/mcp/v1",
       "headers": {
-        "X-Axiom-Key": "YWRtaW46c2VjcmV0LXRva2Vu"
+        "X-Axiom-Key": "YOUR_BASE64_KEY"
       }
     }
   }
 }
 ```
 
-#### Protocol Invocation
+### VS Code (Copilot Agent Mode)
+
+Add to `.vscode/mcp.json`:
+
+```json
+{
+  "servers": {
+    "axiom": {
+      "type": "http",
+      "url": "http://localhost:4500/mcp/v1",
+      "headers": {
+        "X-Axiom-Key": "YOUR_BASE64_KEY"
+      }
+    }
+  }
+}
+```
+
+### Windsurf
+
+Add to `~/.codeium/windsurf/mcp_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "axiom": {
+      "serverUrl": "http://localhost:4500/mcp/v1",
+      "headers": {
+        "X-Axiom-Key": "YOUR_BASE64_KEY"
+      }
+    }
+  }
+}
+```
+
+### Available MCP Tools
+
+| Tool | Category | Description | RBAC Enforced |
+|---|---|---|---|
+| `db_list_databases` | Database | Enumerate all connected database aliases available to caller | Yes |
+| `db_list_tables` | Database | List table names and estimated row counts within a database | Yes |
+| `db_describe_table` | Database | Inspect column datatypes, primary keys, and foreign key relations | Yes |
+| `db_query` | Database | Execute parameterized SQL statements via AST firewall | Yes |
+| `blob_put` | Storage | Store binary or text content with BLAKE3 content addressing | Yes |
+| `blob_get` | Storage | Retrieve stored object payload and metadata | Yes |
+| `blob_list` | Storage | Enumerate stored objects within an authorized namespace | Yes |
+| `blob_issue_ticket` | Storage | Generate pre-signed capability tickets for secure client downloads | Yes |
+
+---
+
+## Content-Addressed Blob Storage
+
+Axiom includes an integrated object storage subsystem designed for sub-millisecond retrieval and cryptographic data integrity.
+
+### Architecture
+- **Content-Addressed Deduplication**: Objects are indexed by their raw BLAKE3 cryptographic digest. Storing identical content under different keys consumes zero additional storage.
+- **Two-Tier Engine**: Payloads under 64 KB are written directly into an embedded Fjall LSM tree for microsecond retrieval. Payloads over 64 KB stream to sharded filesystem chunks.
+- **Byte-Range Streaming**: Full support for HTTP 206 Partial Content (`Range: bytes=0-1048575`). Stream video or download large files in parallel without holding payloads in RAM.
+- **Chunked Multipart Uploads**: Upload multi-gigabyte archives in discrete chunks with atomic assembly and sha256/blake3 verification.
+
+### Pre-Signed Capability Tickets
+Issue cryptographically signed capability tokens that permit clients or browsers to perform direct uploads or downloads without distributing API keys:
 
 ```bash
-curl -X POST "http://localhost:4500/mcp/v1" \
+# 1. Issue a capability ticket valid for 1 hour
+curl -X POST "http://localhost:4500/api/v1/blobs/assets/ticket" \
   -H "X-Axiom-Key: $KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "jsonrpc": "2.0",
-    "id": 1,
-    "method": "tools/call",
-    "params": {
-      "name": "db_query",
-      "arguments": {
-        "database": "primary",
-        "sql": "SELECT COUNT(*) AS total_users FROM users WHERE status = $1",
-        "params": ["active"]
-      }
-    }
+    "key": "documents/report.pdf",
+    "operation": "READ",
+    "ttl_seconds": 3600
   }'
-```
 
-Every MCP call enforces the exact same RBAC rules, audit logging, and circuit breakers as normal REST API traffic.
+# Response:
+# {
+#   "success": true,
+#   "data": {
+#     "ticket": "v1.assets.documents_report_pdf.READ.1760492800.7f1a3b...",
+#     "url": "http://localhost:4500/api/v1/blobs/assets/documents/report.pdf?ticket=v1.assets..."
+#   }
+# }
 
----
-
-### 6. Administration CLI
-
-The `axiom` command-line utility manages keys, databases, cache state, and performance tests:
-
-```bash
-# Verify database connection
-axiom db test primary
-
-# Generate a new scoped API key
-axiom key create --name "service-worker" --role "worker-role"
-
-# Run database migration check
-axiom db schema primary users
-
-# Benchmark local latency and throughput
-axiom benchmark --target "http://localhost:4500" --concurrency 50 --requests 10000
+# 2. Download directly via signed URL (zero auth headers required)
+curl -O "http://localhost:4500/api/v1/blobs/assets/documents/report.pdf?ticket=v1.assets..."
 ```
 
 ---
 
-## Architecture & Request Pipeline
+## CLI Reference
 
-Every incoming request passes through a deterministic security and routing pipeline before touching the database drivers:
+The single binary functions both as the server daemon and the full administrative toolchain:
 
-```mermaid
-flowchart TD
-    A["Inbound HTTP Request"] --> B["WAF Middleware\nMax URI 2048 bytes · 3x URL decode · 10 MB payload limit"]
-    B --> C["Rate Limiter\nPer-IP counter · Per-key counter · Ban list"]
-    C --> D["Auth Middleware\nConstant-time key check · ArcSwap metadata snapshot"]
-    D --> E["Policy Engine\nRBAC validation (database · table · operation)"]
-    E --> F["Route Matcher\nData API · Blob API · MCP · Admin"]
-    F --> G["Execution Pipeline\nAST firewall · Query blacklist · Circuit breaker · Cache check"]
-    G --> H["Connection Pool Manager\nLazy initialization · Per-alias mutex · Deadlock prevention"]
-    H --> I["Database / Storage Engine\nPostgreSQL · MySQL · MSSQL · SQLite · ClickHouse · Fjall LSM"]
-    I --> J["Response Pipeline\nUUID tracking · Security headers · NaN-safe JSON serialization"]
+```text
+axiom [OPTIONS] [COMMAND]
+
+COMMANDS:
+  server run                   Start the Axiom gateway daemon (default action)
+  user add <USER>              Create administrative user (interactive password prompt)
+  user list                    Enumerate administrative users
+  user delete <USER>           Remove an administrative user
+  db add                       Register an upstream database connection
+  db list                      List registered database connections
+  db test <ALIAS>              Probe database connection and measure ping latency
+  db test-url <URL>            Test connectivity to raw URL before saving
+  db remove <ALIAS>            Deregister database connection
+  db query <ALIAS> <SQL>       Run parameterized SQL query via terminal
+  db tables <ALIAS>            List tables in an upstream database
+  db schema <ALIAS> <TABLE>    Describe table columns, indices, and foreign keys
+  db rows <ALIAS> <TABLE>      Fetch rows with limit, offset, and sorting
+  blob put <NS> <KEY>          Upload file into blob namespace
+  blob get <NS> <KEY>          Download object from blob namespace
+  blob delete <NS> <KEY>       Delete object from blob namespace
+  blob list <NS>               List objects stored in namespace
+  blob stats                   Display blob engine storage metrics and deduplication ratio
+  blob ticket <NS> <KEY>       Generate capability ticket for key
+  key create                   Generate scoped API machine key
+  key list                     List active API keys and attached roles
+  key rotate <NAME>            Atomically roll secret for an API key
+  key delete <NAME>            Revoke and delete API key
+  role create                  Create an RBAC role with permissions JSON
+  role list                    List roles and permission matrices
+  role update <NAME>           Update permission matrix for a role
+  role delete <NAME>           Remove an RBAC role
+  cache stats                  Inspect L1 RAM and L2 disk cache utilization
+  cache flush                  Flush all transient caches
+  health                       Check gateway status and reachability
+  ready                        Execute readiness probe
+  metrics                      Dump Prometheus exposition metrics
+  audit                        Query immutable control plane audit history
+  reload                       Force instant synchronization of metadata snapshots
+  doctor                       Comprehensive environmental diagnostics
+  benchmark                    Run high-concurrency local load benchmark
 ```
+
+All commands support `--json` and `--jsonl` flags for clean script and CI/CD piping.
 
 ---
 
-## Supported Databases
+## API Route Map
 
-| Engine | Driver | Dialects | Max Connections | Keyset Pagination | AST Firewall |
+### Data API
+| Method | Endpoint | Description |
+|---|---|---|
+| `POST` | `/api/v1/db/:alias/query` | Execute parameterized SQL via AST firewall |
+| `GET` | `/api/v1/db/:alias/tables` | Keyset-paginated list of tables |
+| `GET` | `/api/v1/db/:alias/:table/rows` | Keyset-paginated row queries with structured filters |
+| `POST` | `/api/v1/db/:alias/:table/rows` | Insert rows with optional `Idempotency-Key` |
+| `PATCH` | `/api/v1/db/:alias/:table/rows` | Update rows matching mandatory filter object |
+| `DELETE` | `/api/v1/db/:alias/:table/rows` | Delete rows matching mandatory filter object |
+| `GET` | `/api/v1/db/:alias/:table/schema` | Inspect column metadata and foreign relations |
+| `GET` | `/api/v1/db/databases` | Enumerate authorized database connections |
+
+### Blob Storage API
+| Method | Endpoint | Description |
+|---|---|---|
+| `PUT` | `/api/v1/blobs/:namespace/*key` | Upload object (supports capability ticket) |
+| `GET` | `/api/v1/blobs/:namespace/*key` | Stream object (supports `Range: bytes=X-Y` & tickets) |
+| `HEAD` | `/api/v1/blobs/:namespace/*key` | Retrieve object metadata, size, and BLAKE3 hash |
+| `DELETE` | `/api/v1/blobs/:namespace/*key` | Delete object from namespace |
+| `POST` | `/api/v1/blobs/:namespace/ticket` | Generate pre-signed capability ticket |
+| `GET` | `/api/v1/blobs/:namespace/list` | List objects matching key prefix |
+| `GET` | `/api/v1/blobs/stats` | View storage utilization and dedup savings |
+
+### System & Control Plane
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/health` | Public liveness probe (`{"status":"ok"}`) |
+| `GET` | `/ready` | Upstream database readiness probe |
+| `GET` | `/metrics` | Prometheus metrics scrape target (admin session) |
+| `POST` | `/mcp/v1` | JSON-RPC 2.0 Model Context Protocol endpoint |
+| `GET` | `/system/*` | Embedded Web UI single-page application |
+
+---
+
+## Filter Syntax
+
+Filter expressions for `GET /api/v1/db/:alias/:table/rows` are passed as URL-encoded JSON objects:
+
+```json
+{
+  "status": { "eq": "active" },
+  "balance": { "gte": 500.00 },
+  "country": { "in": ["US", "CA", "GB"] },
+  "email": { "like": "%@corp.com" },
+  "deleted_at": { "is_null": true }
+}
+```
+
+| Operator | SQL Equivalent | Example Payload |
+|---|---|---|
+| `eq` | `= ?` | `{"tier": {"eq": "gold"}}` |
+| `neq` | `!= ?` | `{"status": {"neq": "banned"}}` |
+| `gt` | `> ?` | `{"age": {"gt": 21}}` |
+| `gte` | `>= ?` | `{"rating": {"gte": 4.5}}` |
+| `lt` | `< ?` | `{"stock": {"lt": 10}}` |
+| `lte` | `<= ?` | `{"price": {"lte": 99.99}}` |
+| `like` | `LIKE ?` | `{"name": {"like": "John%"}}` |
+| `in` | `IN (?, ?, ...)` | `{"role": {"in": ["admin", "editor"]}}` |
+| `is_null` | `IS NULL` / `IS NOT NULL` | `{"verified_at": {"is_null": false}}` |
+
+---
+
+## Axiom vs Faucet vs PostgREST vs Hasura vs Supabase
+
+| Dimension | Axiom | Faucet | PostgREST | Hasura | Supabase |
 |---|---|---|---|---|---|
-| PostgreSQL | `sqlx` (native) | PostgreSQL 12–16 | Per-pool configurable | Supported | Supported |
-| MySQL | `sqlx` (native) | MySQL 8+, MariaDB 10+ | Per-pool configurable | Supported | Supported |
-| SQL Server | `tiberius` (pure Rust) | MSSQL 2017–2022 | Per-pool configurable | Supported | Supported |
-| SQLite / Turso | `libsql` | SQLite 3, Turso | Per-pool configurable | Supported | Supported |
-| ClickHouse | HTTP Interface | ClickHouse SQL | Connection pooling | Supported | Supported |
+| **Core Architecture** | Pure Rust (native) | Go | Haskell | Haskell / Go (v3) | Multi-container stack |
+| **Idle Memory (RSS)** | **< 10 MB** | ~ 35 MB | ~ 30 MB | > 150 MB | > 1.2 GB |
+| **Supported Databases** | PostgreSQL, MySQL, MariaDB, SQL Server, LibSQL/Turso, ClickHouse | PostgreSQL, MySQL, MariaDB, SQL Server, Oracle, Snowflake, SQLite | PostgreSQL only | PostgreSQL + Enterprise connectors | PostgreSQL only |
+| **Native Blob Storage** | **Built-in** (BLAKE3 dedup + 2-tier Fjall LSM) | None | None | None | S3 / MinIO container |
+| **Capability Tickets** | **Built-in** (Stateless HMAC-BLAKE3) | None | None | None | S3 Presigned URLs |
+| **AI Agent MCP Server** | **Built-in** (`/mcp/v1` HTTP) | Built-in (`/mcp`) | None | None | None |
+| **AST SQL Firewall** | **Built-in** (sqlparser AST validation) | Basic regex checks | Schema reflection | GraphQL compiler | RLS policies in DB |
+| **Admin Web UI** | **Embedded** (Vite + TS + Tailwind) | Embedded (Preact) | None | Web Console | Supabase Studio |
+| **Deployment Model** | **Single static binary** | Single binary | Single binary | Multi-service | 12+ Docker containers |
+| **License** | **MIT** | MIT | MIT | Apache 2.0 / BSL | Apache 2.0 |
 
 ---
 
 ## Performance Targets
 
-Engineering metrics measured on standard commodity servers (AMD Ryzen 5 3600, Linux, release build):
+Every performance metric is governed by automated micro-benchmarks (`benches/benches/pipeline.rs` and Go suites):
 
-| Metric | Target | Verification Method |
+| Pipeline Stage | Target Latency | Verification Benchmark |
 |---|---|---|
-| Cache GET (L1 hot path) | < 1 µs p50 | `benches/bench_cache.go` (1,000,000 iterations) |
-| Auth resolution (warm snapshot) | < 5 µs | `benches/bench_auth.go` |
-| End-to-end pipeline (cache hit) | < 500 µs p50 | `benches/bench_http.go` |
-| End-to-end local DB query | < 2 ms p50 | `benches/bench_db.go` (PostgreSQL localhost) |
-| Stripped binary size | < 15 MB | `cargo build --release && strip target/release/axiom` |
-| Cold boot to TCP listener | < 200 ms | Process execution timing |
-| Idle memory footprint (minimal) | < 10 MB RSS | `ps -o rss` after 60 seconds idle |
-| Idle memory footprint (standard) | < 30 MB RSS | `ps -o rss` with connection pools warm |
+| L1 RAM Cache GET | `< 1 µs` p50 | `benches/benches/pipeline.rs` (`l1_get_hot_hit`) |
+| Capability Ticket Generation | `< 2 µs` | `benches/benches/pipeline.rs` (`ticket_generation`) |
+| ArcSwap Auth Validation | `< 5 µs` | `benches/benches/pipeline.rs` (`auth_snapshot_valid_hit`) |
+| BLAKE3 64 KB Chunk Hash | `< 15 µs` | `benches/benches/pipeline.rs` (`blake3_chunk_hash_64kb`) |
+| Full Pipeline Cache Hit | `< 500 µs` p50 | Hoisted Axum mock round-trip |
+| End-to-End Local DB Query | `< 2 ms` p50 | PostgreSQL local loopback |
+| Cold Boot to TCP Accept | `< 200 ms` | Startup process timing |
+| Stripped Binary Size | `< 15 MB` | Release profile with LTO and strip enabled |
 
 ---
 
-## Documentation
+## Frequently Asked Questions
 
-| Document | Description |
-|---|---|
-| [API Reference](./docs/api.md) | SQL queries, table CRUD, blob storage, capability tickets, and MCP tools |
-| [Configuration & Deployment](./docs/configuration.md) | Configuration settings, security model, reverse proxy setups, and backups |
+#### How does Axiom authenticate requests?
+Clients supply the `X-Axiom-Key` header containing a base64-encoded `name:secret` pair. Axiom derives the secret's BLAKE3 digest and verifies it in constant time against an immutable `ArcSwap` snapshot in memory. Hot data requests never touch disk or metadata tables during authentication.
+
+#### Can I use Axiom without a configuration file?
+Yes. Axiom compiles with sensible defaults. If no `config.toml` is present, it binds to `0.0.0.0:4500` and creates `data/axiom.db` for metadata. Upstream databases, roles, and keys are added dynamically through the CLI or Web UI.
+
+#### How does the AST query firewall protect against SQL injection?
+Rather than relying on brittle regular expressions, Axiom parses incoming SQL statements using `sqlparser-rs` according to the target database dialect. It rejects multi-statement payloads (stacked queries), unauthorized mutations, destructive DDL statements, and comments designed to bypass sanitization.
+
+#### Is blob storage required to use the database gateway?
+The blob engine runs natively inside the single binary with zero external services required. If you do not issue blob requests, the subsystem remains completely idle, incurring zero background CPU overhead.
 
 ---
 
 ## License
 
-MIT — Copyright 2026 [Toxichome](https://toxichome.cc)
+Axiom is open-source software licensed under the **[MIT License](./LICENSE)**.  
+Maintained by [Toxichome](https://github.com/toxichome).

@@ -1,10 +1,11 @@
 /*
  * Axiom Comprehensive System & Pipeline Benchmark Suite
  * Owned by: benches
- * Key deps: criterion, tokio, axiom-core, axiom-policy, axiom-cache, axiom-db, axiom-api, axiom-metadata
+ * Key deps: criterion, tokio, axiom-core, axiom-policy, axiom-cache, axiom-db, axiom-blob, axiom-api, axiom-metadata
  * Invariants: Hoists Axum router & runtime out of iteration loops to measure true request latency;
  *             covers Core (Group A), Policy (Group B), Cache (Group C), Middleware (Group D),
- *             Database/Filter (Group E), Metadata (Group F), and HTTP Pipeline (Group G).
+ *             Database/Filter (Group E), Metadata (Group F), HTTP Pipeline (Group G), and
+ *             Blob Storage & Capability Tickets (Group H).
  */
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
@@ -20,6 +21,9 @@ use axiom_core::{
 };
 use axiom_policy::PolicyEngine;
 use axiom_cache::{CacheEngine, Durability};
+use axiom_blob::{
+    generate_ticket, verify_ticket, validate_key, validate_namespace,
+};
 use axiom_metadata::snapshot::{
     update_snapshot, ApiKeySnapshot, MetadataSnapshot, RoleSnapshot,
 };
@@ -507,6 +511,71 @@ fn bench_http_pipeline(c: &mut Criterion) {
         });
     });
 
+    group.bench_function("unauthorized_blob_rejection", |b| {
+        let app = Arc::clone(&app);
+        b.to_async(&rt).iter(|| {
+            let app = Arc::clone(&app);
+            async move {
+                let req = Request::get("/api/v1/blobs/assets/documents/specs.pdf").body(Body::empty()).unwrap();
+                let res = (*app).clone().oneshot(req).await.unwrap();
+                black_box(res);
+            }
+        });
+    });
+
+    group.finish();
+}
+
+// ─── Group H: Blob Storage & Capability Tickets Micro-Benchmarks ──────────
+
+fn bench_blob_operations(c: &mut Criterion) {
+    let mut group = c.benchmark_group("blob");
+    let secret = "bench_ticket_signing_secret_at_least_32_bytes";
+
+    group.bench_function("ticket_generation", |b| {
+        b.iter(|| {
+            let ticket = generate_ticket(
+                black_box(secret),
+                black_box("assets"),
+                black_box("documents/report.pdf"),
+                black_box("READ"),
+                black_box(3600),
+            );
+            black_box(ticket);
+        });
+    });
+
+    let signed_ticket = generate_ticket(secret, "assets", "documents/report.pdf", "READ", 3600);
+    group.bench_function("ticket_verification_valid", |b| {
+        b.iter(|| {
+            let res = verify_ticket(
+                black_box(secret),
+                black_box("assets"),
+                black_box("documents/report.pdf"),
+                black_box("READ"),
+                black_box(signed_ticket.expires_at),
+                black_box(&signed_ticket.signature),
+            );
+            black_box(res).unwrap();
+        });
+    });
+
+    let chunk_64kb = vec![0x42u8; 64 * 1024];
+    group.bench_function("blake3_chunk_hash_64kb", |b| {
+        b.iter(|| {
+            let hash = blake3::hash(black_box(&chunk_64kb));
+            black_box(hash);
+        });
+    });
+
+    group.bench_function("key_and_namespace_validation", |b| {
+        b.iter(|| {
+            let v1 = validate_namespace(black_box("assets_v1"));
+            let v2 = validate_key(black_box("documents/2026/q3/report.pdf"));
+            black_box((v1.is_ok(), v2.is_ok()));
+        });
+    });
+
     group.finish();
 }
 
@@ -518,6 +587,7 @@ criterion_group!(
     bench_auth_verification,
     bench_filter_builder,
     bench_metadata_snapshot,
-    bench_http_pipeline
+    bench_http_pipeline,
+    bench_blob_operations
 );
 criterion_main!(benches);
