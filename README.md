@@ -12,6 +12,7 @@
 [![Binary Size](https://img.shields.io/badge/binary-%3C15MB-111827.svg?style=flat-square)](https://github.com/toxichome/axiom)
 [![MCP](https://img.shields.io/badge/MCP-2024--11--05-111827.svg?style=flat-square)](https://modelcontextprotocol.io)
 
+[Website](https://toxichome.cc) &middot;
 [Documentation](./docs/AXIOM_MASTER_PLAN.md) &middot;
 [API Reference](./docs/reference/api.md) &middot;
 [Quickstart](#60-second-quickstart) &middot;
@@ -451,4 +452,4 @@ The blob engine runs natively inside the single binary with zero external servic
 ## License
 
 Axiom is open-source software licensed under the **[MIT License](./LICENSE)**.  
-Maintained by [Toxichome](https://github.com/toxichome).
+Maintained by [Toxichome](https://toxichome.cc).
