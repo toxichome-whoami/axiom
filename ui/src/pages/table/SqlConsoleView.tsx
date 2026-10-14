@@ -528,7 +528,6 @@ SET FOREIGN_KEY_CHECKS = 1;`}
                   <div className="relative overflow-hidden rounded-[8px] border border-[#222222] bg-[#0e0e0e] p-5 space-y-4">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full bg-[#8c8c8c]" />
                         <span className="text-[13px] font-medium text-white">Execution telemetry</span>
                       </div>
                       {selectedDb && (
@@ -567,11 +566,6 @@ SET FOREIGN_KEY_CHECKS = 1;`}
                         <div className="flex items-start justify-between gap-4">
                           <div className="space-y-1">
                             <div className="flex items-center gap-2">
-                              <span className={`w-2 h-2 rounded-full ${
-                                batchSummary.errors && batchSummary.errors.length > 0
-                                  ? 'bg-[#f59e0b]'
-                                  : 'bg-[#30a46c]'
-                              }`} />
                               <span className="text-[14px] font-medium text-white">
                                 Batch execution completed
                               </span>

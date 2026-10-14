@@ -103,7 +103,7 @@ export function TableSidebar({
           {/* Dropdown Popup */}
           {isDbDropdownOpen && (
             <div className="absolute left-0 top-full mt-1.5 w-60 bg-[#111111] border border-[#262626] rounded-[8px] shadow-2xl p-1 z-50 animate-in fade-in zoom-in-95 duration-100 font-sans">
-              <div className="px-2.5 py-1.5 text-[11px] font-medium text-[#777777] uppercase tracking-wider">
+              <div className="px-2.5 py-1.5 text-[12px] font-medium text-[#888888] select-none">
                 Database Connections
               </div>
 
