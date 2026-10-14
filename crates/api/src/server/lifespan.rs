@@ -93,20 +93,18 @@ pub async fn start_daemons() {
         tasks.push(metadata_sync_handle);
     }
 
-    // Initialize Native Blob Storage Engine if enabled in config
-    if config.blob.enabled {
-        let inline_max = axiom_core::parse_size(&config.blob.inline_max).unwrap_or(64 * 1024);
-        let max_object = axiom_core::parse_size(&config.blob.max_object).unwrap_or(5 * 1024 * 1024 * 1024);
-        if let Err(e) = crate::blobs::init_blob_engine(
-            &config.blob.path,
-            inline_max as u64,
-            max_object as u64,
-            config.blob.verify_reads,
-        ).await {
-            tracing::error!("Failed to initialize Native Blob Engine: {}", e);
-        } else {
-            tracing::info!("Native Blob Storage Engine initialized at '{}'", config.blob.path);
-        }
+    // Initialize Native Blob Storage Engine (always enabled as native gateway feature)
+    let inline_max = axiom_core::parse_size(&config.blob.inline_max).unwrap_or(64 * 1024);
+    let max_object = axiom_core::parse_size(&config.blob.max_object).unwrap_or(5 * 1024 * 1024 * 1024);
+    if let Err(e) = crate::blobs::init_blob_engine(
+        &config.blob.path,
+        inline_max as u64,
+        max_object as u64,
+        config.blob.verify_reads,
+    ).await {
+        tracing::error!("Failed to initialize Native Blob Engine: {}", e);
+    } else {
+        tracing::info!("Native Blob Storage Engine initialized at '{}'", config.blob.path);
     }
 }
 

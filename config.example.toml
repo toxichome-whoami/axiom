@@ -85,9 +85,7 @@ reload_interval = 30             # Seconds between hot-snapshot refreshes
 
 # ─── Native Blob Storage Engine ──────────────────────────
 # Embedded high-performance content-addressed object storage.
-# Enabled by default; set enabled = false if you do not need blob storage.
 [blob]
-enabled = true                   # Enable embedded blob engine (default: true)
 path = "data/blobs"              # Base directory for LSM index and blob files
 inline_max = "64kb"              # Payloads <= this threshold are stored inline in Fjall LSM
 max_object = "5gb"               # Hard ceiling on single blob upload size

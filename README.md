@@ -72,7 +72,6 @@ workers = 4
 url = "file:data/axiom.db"
 
 [blob]
-enabled = true
 path = "data/blobs"
 ```
 

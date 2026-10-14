@@ -84,7 +84,6 @@ success_threshold = 3              # Successes required in half-open to recover
 timeout = 30                       # Seconds to wait before testing recovery
 
 [blob]
-enabled = true                     # Enable embedded blob storage engine
 path = "data/blobs"                # Base directory for LSM index and blob files
 inline_max = "64kb"                # Payloads <= this threshold stored inline
 max_object = "5gb"                 # Hard ceiling on single blob upload size
