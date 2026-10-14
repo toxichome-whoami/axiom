@@ -3,7 +3,7 @@
 # Axiom
 
 ### High-performance REST API, Content-Addressed Blob Storage, and MCP Server for SQL Databases.
-**One Rust binary. Zero external daemons. Under 10 MB idle RAM.**
+One Rust binary. Zero external daemons. Under 10 MB idle RAM.
 
 [![Version](https://img.shields.io/badge/version-0.1.11-111827.svg?style=flat-square)](https://github.com/toxichome/axiom/releases)
 [![Rust](https://img.shields.io/badge/rust-1.88%2B-b7410e.svg?style=flat-square&logo=rust&logoColor=white)](https://www.rust-lang.org)
@@ -13,13 +13,13 @@
 [![MCP](https://img.shields.io/badge/MCP-2024--11--05-111827.svg?style=flat-square)](https://modelcontextprotocol.io)
 </div>
 
+---
+
 <p align="center">
   <img src="docs/images/dashboard.png" alt="Axiom Gateway Admin Web UI and Observability Dashboard" width="900">
   <br>
   <em>Embedded Admin Web UI: real-time pool telemetry, L1 cache hit ratio, database introspection, and API key management.</em>
 </p>
-
----
 
 ## What is Axiom?
 
@@ -283,17 +283,238 @@ In addition to callable tools, Axiom implements the MCP Resources specification 
 
 
 
+## Database Gateway & SQL Engine
+
+Axiom transforms raw SQL databases into secure, high-throughput REST APIs protected by dialect-aware AST parsing, connection pooling, and sub-microsecond caching.
+
+```mermaid
+flowchart LR
+    A["SQL / CRUD Request"] --> B["AST Query Firewall<br/>(sqlparser-rs)"]
+    B --> C{"Query Type?"}
+    C -->|SELECT| D{"L1 Cache Hit?"}
+    D -->|Yes: < 1 µs| E["Return Cached Envelope"]
+    D -->|No: Miss| F["Acquire Pool Connection"]
+    C -->|INSERT / UPDATE / DELETE| F
+    F --> G["Execute Parameterized SQL<br/>(PG / MySQL / MSSQL / SQLite / ClickHouse)"]
+    G --> H["L1 Invalidation & Idempotency Write"]
+    H --> I["Uniform Response Envelope"]
+```
+
+### Key Architectural Invariants
+- **Dialect-Aware AST Firewall**: Incoming queries are parsed into Abstract Syntax Trees using `sqlparser-rs` according to target engine dialect. Axiom strictly blocks stacked queries (semicolon injection), unauthorized DDL, and hostile expressions before touching upstream pools.
+- **Unified Parameterized Execution**: Literal values are extracted and bound as native positional parameters (`$1`, `?`, `@P1`), guaranteeing absolute protection against SQL injection.
+- **Sub-Microsecond L1 Query Cache**: Repeated `SELECT` queries hit an in-memory DashMap LRU cache (`< 1 µs` latency). Write mutations atomically invalidate corresponding table cache entries.
+- **Idempotency Replay Protection**: Supply `Idempotency-Key` headers on mutations to cache responses for 24 hours in L2 storage, preventing double-inserts during network retries.
+
+### Core Database Operations
+
+#### 1. Execute Parameterized SQL
+```bash
+curl -X POST "http://localhost:4500/api/v1/db/main_pg/query" \
+  -H "X-Axiom-Key: $KEY" \
+  -H "Idempotency-Key: 7f83b165-7eae-4f49-9cf9-e93237590827" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "SELECT id, email, created_at FROM users WHERE status = $1 ORDER BY id DESC LIMIT 20",
+    "params": ["active"],
+    "timeout": 15
+  }'
+```
+```json
+{
+  "success": true,
+  "data": {
+    "rows": [
+      { "id": 102, "email": "carol@example.com", "created_at": "2026-10-14T18:22:00Z" },
+      { "id": 101, "email": "alice@example.com", "created_at": "2026-10-14T17:15:30Z" }
+    ],
+    "rows_affected": 0,
+    "columns": ["id", "email", "created_at"]
+  },
+  "error": null,
+  "meta": { "request_id": "8fa921be-4972-4d2c-8cb4-3010b91e9f1a", "duration_ms": 1.15, "cached": false }
+}
+```
+
+#### 2. Query Table Rows with Keyset Pagination
+```bash
+curl -G "http://localhost:4500/api/v1/db/main_pg/users/rows" \
+  -H "X-Axiom-Key: $KEY" \
+  --data-urlencode 'filter={"status":{"eq":"active"},"score":{"gte":80}}' \
+  --data-urlencode 'sort=id' \
+  --data-urlencode 'order=desc' \
+  --data-urlencode 'limit=25'
+```
+
+#### 3. Insert Rows with Replay Protection
+```bash
+curl -X POST "http://localhost:4500/api/v1/db/main_pg/users/rows" \
+  -H "X-Axiom-Key: $KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "rows": [
+      { "email": "dev1@example.com", "status": "active" },
+      { "email": "dev2@example.com", "status": "pending" }
+    ]
+  }'
+```
+```json
+{
+  "success": true,
+  "data": {
+    "rows_affected": 2,
+    "inserted_ids": [103, 104]
+  }
+}
+```
+
+#### 4. Scoped Row Updates (Mandatory Filter)
+```bash
+curl -X PATCH "http://localhost:4500/api/v1/db/main_pg/users/rows" \
+  -H "X-Axiom-Key: $KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "data": { "status": "suspended" },
+    "filter": { "failed_attempts": { "gte": 5 } }
+  }'
+```
+
+#### 5. Scoped Row Deletions (Mandatory Filter)
+```bash
+curl -X DELETE "http://localhost:4500/api/v1/db/main_pg/users/rows" \
+  -H "X-Axiom-Key: $KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "filter": { "status": { "eq": "expired" } }
+  }'
+```
+
+#### 6. Inspect Table Schema & Foreign Keys
+```bash
+curl -s -H "X-Axiom-Key: $KEY" \
+  "http://localhost:4500/api/v1/db/main_pg/users/schema"
+```
+```json
+{
+  "success": true,
+  "data": {
+    "table": "users",
+    "columns": [
+      { "name": "id", "data_type": "BIGINT", "nullable": false, "primary_key": true },
+      { "name": "email", "data_type": "VARCHAR(255)", "nullable": false, "primary_key": false }
+    ],
+    "foreign_keys": [
+      { "column": "org_id", "foreign_table": "organizations", "foreign_column": "id" }
+    ]
+  }
+}
+```
+
 ## Content-Addressed Blob Storage
 
-Axiom includes an integrated object storage subsystem designed for sub-millisecond retrieval and cryptographic data integrity.
+Axiom includes a native object storage engine designed for sub-millisecond retrieval, automatic deduplication, and cryptographic integrity.
 
-### Architecture
+```mermaid
+flowchart LR
+    A["Inbound Upload"] --> B["Compute BLAKE3 Hash"]
+    B --> C{"Hash Exists in Shards?"}
+    C -->|Yes: Duplicate| D["Increment Refcount<br/>Zero Extra Disk Used"]
+    C -->|No: New Data| E{"Payload Size?"}
+    E -->|<= 64 KB| F["Embedded Fjall LSM Tree<br/>Microsecond Retrieval"]
+    E -->|> 64 KB| G["Disk Storage Shards<br/>Streaming Zero-Copy I/O"]
+```
+
+### Key Architectural Invariants
 - **Content-Addressed Deduplication**: Objects are indexed by their raw BLAKE3 cryptographic digest. Storing identical content under different keys consumes zero additional storage.
 - **Two-Tier Engine**: Payloads under 64 KB are written directly into an embedded Fjall LSM tree for microsecond retrieval. Payloads over 64 KB stream to sharded filesystem chunks.
-- **Byte-Range Streaming**: Full support for HTTP 206 Partial Content (`Range: bytes=0-1048575`). Stream video or download large files in parallel without holding payloads in RAM.
-- **Chunked Multipart Uploads**: Upload multi-gigabyte archives in discrete chunks with atomic assembly and sha256/blake3 verification.
+- **Byte-Range Streaming**: Full support for HTTP 206 Partial Content (`Range: bytes=0-1048575`). Stream audio/video or download large files in parallel without holding payloads in RAM.
+- **Chunked Multipart Uploads**: Upload multi-gigabyte archives in discrete chunks with atomic assembly and BLAKE3 verification.
+
+### Basic Blob Operations
+
+#### 1. Upload Object
+```bash
+curl -X PUT "http://localhost:4500/api/v1/blobs/media/avatars/user_101.png" \
+  -H "X-Axiom-Key: $KEY" \
+  -H "Content-Type: image/png" \
+  --data-binary "@avatar.png"
+```
+```json
+{
+  "success": true,
+  "data": {
+    "key": "avatars/user_101.png",
+    "hash": "8f434346648f6b96df89dda901c5176b10a6d83961dd3c1ac88b59b2dc327aa4",
+    "size": 48201,
+    "content_type": "image/png"
+  }
+}
+```
+
+#### 2. Stream Object & Byte-Range Seeking
+```bash
+# Full download
+curl -H "X-Axiom-Key: $KEY" \
+  "http://localhost:4500/api/v1/blobs/media/videos/demo.mp4" -o demo.mp4
+
+# Resumable partial chunk download (first 1 MB slice)
+curl -i -H "X-Axiom-Key: $KEY" \
+  -H "Range: bytes=0-1048575" \
+  "http://localhost:4500/api/v1/blobs/media/videos/demo.mp4" -o part.bin
+```
+
+#### 3. Inspect Object Metadata
+```bash
+curl -I -H "X-Axiom-Key: $KEY" \
+  "http://localhost:4500/api/v1/blobs/media/avatars/user_101.png"
+```
+Returns headers (`Content-Type`, `Content-Length`, `ETag`, `X-Axiom-Hash`) without downloading the body payload.
+
+#### 4. List Objects by Prefix
+```bash
+curl -s -H "X-Axiom-Key: $KEY" \
+  "http://localhost:4500/api/v1/blobs/media?prefix=avatars/&limit=50"
+```
+
+#### 5. Delete Object
+```bash
+curl -X DELETE -H "X-Axiom-Key: $KEY" \
+  "http://localhost:4500/api/v1/blobs/media/avatars/user_101.png"
+```
+
+
+
+### Large File Multipart Upload Workflow
+
+For multi-gigabyte files (up to 5 GB), Axiom provides a 4-step multipart session workflow:
+
+```bash
+# Step 1: Initialize multipart session
+UPLOAD_ID=$(curl -s -X POST "http://localhost:4500/api/v1/blobs/backups/uploads" \
+  -H "X-Axiom-Key: $KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"key": "db_dump.tar.gz", "content_type": "application/gzip"}' | jq -r '.data.upload_id')
+
+# Step 2: Upload discrete parts
+curl -X PUT "http://localhost:4500/api/v1/blobs/backups/uploads/$UPLOAD_ID/parts/1" \
+  -H "X-Axiom-Key: $KEY" --data-binary "@chunk_1.part"
+curl -X PUT "http://localhost:4500/api/v1/blobs/backups/uploads/$UPLOAD_ID/parts/2" \
+  -H "X-Axiom-Key: $KEY" --data-binary "@chunk_2.part"
+
+# Step 3: Complete and atomically assemble upload
+curl -X POST "http://localhost:4500/api/v1/blobs/backups/uploads/$UPLOAD_ID/complete" \
+  -H "X-Axiom-Key: $KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"parts": [1, 2]}'
+
+# (Optional) Abort upload and clean up temporary storage
+# curl -X DELETE -H "X-Axiom-Key: $KEY" "http://localhost:4500/api/v1/blobs/backups/uploads/$UPLOAD_ID"
+```
+
+
 
 ### Pre-Signed Capability Tickets
+
 Issue cryptographically signed capability tokens that permit clients or browsers to perform direct uploads or downloads without distributing API keys:
 
 ```bash
@@ -455,29 +676,68 @@ All commands support `--json` and `--jsonl` flags for clean script and CI/CD pip
 
 ## Filter Syntax
 
-Filter expressions for `GET /api/v1/db/:alias/:table/rows` are passed as URL-encoded JSON objects:
+Filter expressions for `GET /api/v1/db/:alias/:table/rows`, `PATCH`, and `DELETE` endpoints are passed as JSON objects. All field identifiers are strictly sanitized against SQL injection, and literal values are parameterized with positional bindings.
+
+### Basic & Operator Filtering
 
 ```json
 {
   "status": { "eq": "active" },
   "balance": { "gte": 500.00 },
+  "age": { "between": [18, 65] },
   "country": { "in": ["US", "CA", "GB"] },
-  "email": { "like": "%@corp.com" },
+  "email": { "ilike": "%@corp.com" },
   "deleted_at": { "is_null": true }
 }
 ```
 
-| Operator | SQL Equivalent | Example Payload |
-|---|---|---|
-| `eq` | `= ?` | `{"tier": {"eq": "gold"}}` |
-| `neq` | `!= ?` | `{"status": {"neq": "banned"}}` |
-| `gt` | `> ?` | `{"age": {"gt": 21}}` |
-| `gte` | `>= ?` | `{"rating": {"gte": 4.5}}` |
-| `lt` | `< ?` | `{"stock": {"lt": 10}}` |
-| `lte` | `<= ?` | `{"price": {"lte": 99.99}}` |
-| `like` | `LIKE ?` | `{"name": {"like": "John%"}}` |
-| `in` | `IN (?, ?, ...)` | `{"role": {"in": ["admin", "editor"]}}` |
-| `is_null` | `IS NULL` / `IS NOT NULL` | `{"verified_at": {"is_null": false}}` |
+```bash
+# Pass as URL-encoded query parameter via curl:
+curl -G "http://localhost:4500/api/v1/db/main_pg/users/rows" \
+  -H "X-Axiom-Key: $KEY" \
+  --data-urlencode 'filter={"status":{"eq":"active"},"age":{"between":[21,65]}}' \
+  --data-urlencode 'sort=id' \
+  --data-urlencode 'order=desc' \
+  --data-urlencode 'limit=25'
+```
+
+### Complete Operators Reference
+
+Operators accept either bare names (`eq`) or MongoDB-style dollar prefixes (`$eq`):
+
+| Operator | SQL Equivalent | Example JSON Filter | Description |
+|---|---|---|---|
+| `eq` / `$eq` | `= ?` | `{"tier": {"eq": "enterprise"}}` | Exact equality |
+| `ne` / `neq` / `$ne` | `!= ?` | `{"status": {"neq": "banned"}}` | Inequality |
+| `gt` / `$gt` | `> ?` | `{"score": {"gt": 85}}` | Strictly greater than |
+| `gte` / `$gte` | `>= ?` | `{"age": {"gte": 21}}` | Greater than or equal |
+| `lt` / `$lt` | `< ?` | `{"latency_ms": {"lt": 50.0}}` | Strictly less than |
+| `lte` / `$lte` | `<= ?` | `{"stock": {"lte": 10}}` | Less than or equal |
+| `like` / `$like` | `LIKE ?` | `{"company": {"like": "%Tech%"}}` | Case-sensitive pattern match |
+| `ilike` / `$ilike` | `LOWER(col) LIKE LOWER(?)` | `{"email": {"ilike": "%@acme.com"}}` | Case-insensitive pattern match |
+| `in` / `$in` | `IN (?, ?, ...)` | `{"role": {"in": ["admin", "editor"]}}` | Match any value in list |
+| `nin` / `$nin` | `NOT IN (?, ?, ...)` | `{"category": {"nin": ["archived", "draft"]}}` | Exclude all values in list |
+| `between` / `$between` | `BETWEEN ? AND ?` | `{"created_at": {"between": ["2026-01-01", "2026-12-31"]}}` | Range inclusion (2 elements) |
+| `is_null` / `null` | `IS NULL` / `IS NOT NULL` | `{"verified_at": {"is_null": false}}` | Nullability constraint (`true` / `false`) |
+| `is_not_null` | `IS NOT NULL` | `{"completed_at": {"is_not_null": true}}` | Non-null constraint |
+
+### Compound Logical Grouping (`$or` / `$and`)
+
+Filters support nested boolean branching via `$or` and `$and` arrays:
+
+```json
+{
+  "$or": [
+    { "role": { "eq": "admin" } },
+    {
+      "$and": [
+        { "tier": { "eq": "enterprise" } },
+        { "balance": { "gte": 10000.00 } }
+      ]
+    }
+  ]
+}
+```
 
 
 
