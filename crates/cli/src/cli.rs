@@ -1772,10 +1772,13 @@ async fn handle_blob_command(
                     }
                 };
                 tokio::fs::write(&dest, &bytes).await.map_err(|e| format!("Failed to write to destination '{}': {}", dest, e))?;
-                if format == OutputFormat::Json {
-                    println!("{}", json!({ "success": true, "namespace": namespace, "key": object_key, "destination": dest, "bytes": bytes.len(), "content_type": content_type }));
-                } else if format == OutputFormat::Jsonl {
-                    println!("{}", json!({ "success": true, "namespace": namespace, "key": object_key, "destination": dest, "bytes": bytes.len(), "content_type": content_type }));
+                if format == OutputFormat::Json || format == OutputFormat::Jsonl {
+                    let out = json!({ "success": true, "namespace": namespace, "key": object_key, "destination": dest, "bytes": bytes.len(), "content_type": content_type });
+                    if format == OutputFormat::Json {
+                        println!("{}", serde_json::to_string_pretty(&out)?);
+                    } else {
+                        println!("{}", out);
+                    }
                 } else {
                     println!("Blob '{}/{}' downloaded successfully.", namespace, object_key);
                     println!("Saved to:     {}", dest);

@@ -361,6 +361,7 @@ impl AdminClient {
     }
 
     /// Fetches paginated and filtered rows from a database table.
+    #[allow(clippy::too_many_arguments)]
     pub async fn fetch_table_rows(
         &self,
         alias: &str,

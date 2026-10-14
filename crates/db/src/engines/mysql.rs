@@ -499,7 +499,7 @@ impl DatabaseEngine for MysqlDatabaseEngine {
                     .filter(|s| !s.trim().is_empty())
                     .map(|s| format!("`{}`.", s.trim().replace('`', "``")))
                     .unwrap_or_default();
-                let escaped_fk_table = format!("{}{}", schema_prefix, format!("`{}`", fk_table.replace('`', "``")));
+                let escaped_fk_table = format!("{}`{}`", schema_prefix, fk_table.replace('`', "``"));
                 let escaped_fk_col = format!("`{}`", fk_col.replace('`', "``"));
                 
                 let mut fk_clause = format!(", ADD FOREIGN KEY ({}) REFERENCES {} ({})", escaped_col, escaped_fk_table, escaped_fk_col);
