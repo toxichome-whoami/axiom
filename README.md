@@ -11,18 +11,15 @@
 [![Platforms](https://img.shields.io/badge/platform-linux%20%C2%B7%20macos%20%C2%B7%20windows-111827.svg?style=flat-square)](https://github.com/toxichome/axiom/releases)
 [![Binary Size](https://img.shields.io/badge/binary-%3C15MB-111827.svg?style=flat-square)](https://github.com/toxichome/axiom)
 [![MCP](https://img.shields.io/badge/MCP-2024--11--05-111827.svg?style=flat-square)](https://modelcontextprotocol.io)
-
-[Website](https://toxichome.cc) &middot;
-[Documentation](./docs/AXIOM_MASTER_PLAN.md) &middot;
-[API Reference](./docs/reference/api.md) &middot;
-[Quickstart](#60-second-quickstart) &middot;
-[MCP for AI Agents](#mcp-server-for-ai-agents) &middot;
-[Blob Storage](#content-addressed-blob-storage) &middot;
-[Comparison](#axiom-vs-faucet-vs-postgrest-vs-hasura-vs-supabase) &middot;
-[CLI Reference](#cli-reference)
-
 </div>
 
+<p align="center">
+  <img src="docs/images/dashboard.png" alt="Axiom Gateway Admin Web UI and Observability Dashboard" width="900">
+  <br>
+  <em>Embedded Admin Web UI: real-time pool telemetry, L1 cache hit ratio, database introspection, and API key management.</em>
+</p>
+
+---
 
 ## What is Axiom?
 
@@ -245,16 +242,44 @@ Add to `~/.codeium/windsurf/mcp_config.json`:
 
 ### Available MCP Tools
 
-| Tool | Category | Description | RBAC Enforced |
+Axiom provides 15 native MCP tools spanning database querying, mutation guardrails, and content-addressed blob management. Every tool call validates the caller's role via `PolicyEngine` before execution.
+
+#### Database Tools
+
+| Tool Name | Parameters | Description | RBAC Enforced |
 |---|---|---|---|
-| `db_list_databases` | Database | Enumerate all connected database aliases available to caller | Yes |
-| `db_list_tables` | Database | List table names and estimated row counts within a database | Yes |
-| `db_describe_table` | Database | Inspect column datatypes, primary keys, and foreign key relations | Yes |
-| `db_query` | Database | Execute parameterized SQL statements via AST firewall | Yes |
-| `blob_put` | Storage | Store binary or text content with BLAKE3 content addressing | Yes |
-| `blob_get` | Storage | Retrieve stored object payload and metadata | Yes |
-| `blob_list` | Storage | Enumerate stored objects within an authorized namespace | Yes |
-| `blob_issue_ticket` | Storage | Generate pre-signed capability tickets for secure client downloads | Yes |
+| `axiom_list_services` | _none_ | Lists all configured database connections authorized for the caller. | Yes |
+| `axiom_list_tables` | `database`, `cursor`, `limit` | Lists tables with pagination support, filtered by caller permissions. | Yes |
+| `axiom_describe_table` | `database`, `table` | Returns column definitions, datatypes, nullability, primary and foreign keys. | Yes |
+| `axiom_query` | `database`, `table`, `filter`, `sort`, `order`, `limit`, `cursor` | Dialect-agnostic SELECT query with JSON filter operators (`$eq`, `$gt`, `$in`, etc.). | Yes |
+| `axiom_insert` | `database`, `table`, `rows` / `row` | Inserts one or more rows into a table using parameterized drivers. | Yes |
+| `axiom_update` | `database`, `table`, `filter`, `data` | Updates rows matching required filter. Rejects unconstrained full-table updates. | Yes |
+| `axiom_delete` | `database`, `table`, `filter` | Deletes rows matching required filter. Rejects unconstrained full-table wipes. | Yes |
+| `axiom_raw_sql` | `database`, `sql`, `params` | Executes raw SQL query via AST firewall. Validates syntax, prevents stacked queries. | Yes |
+
+#### Blob Storage Tools
+
+| Tool Name | Parameters | Description | RBAC Enforced |
+|---|---|---|---|
+| `axiom_list_blob_namespaces` | _none_ | Enumerates all blob namespaces authorized for caller access. | Yes |
+| `axiom_list_blobs` | `namespace`, `prefix`, `cursor`, `limit` | Lists objects with key prefix filtering and pagination. | Yes |
+| `axiom_get_blob_metadata` | `namespace`, `key` | Inspects size, MIME type, BLAKE3 hash, and storage tier without body download. | Yes |
+| `axiom_read_blob` | `namespace`, `key`, `encoding`, `max_bytes` | Reads content into agent context. Context-window safety guardrail defaults to 5 MB. | Yes |
+| `axiom_write_blob` | `namespace`, `key`, `content`, `encoding`, `content_type`, `ttl_seconds` | Stores or updates blob objects with optional TTL using UTF-8 or Base64 payloads. | Yes |
+| `axiom_delete_blob` | `namespace`, `key` | Deletes stored object and decrements content refcounts. | Yes |
+| `axiom_create_download_ticket` | `namespace`, `key`, `operation`, `ttl_seconds` | Generates a time-bounded pre-signed capability ticket URL for external downloads. | Yes |
+
+#### MCP Context Resources
+
+In addition to callable tools, Axiom implements the MCP Resources specification (`resources/list` and `resources/read`), allowing agents to inspect system state as context documents:
+
+| Resource URI | Description |
+|---|---|
+| `axiom://services` | Live catalog of active database connections and operational health. |
+| `axiom://schema/{database}` | Complete schema definitions and table metadata for a database. |
+| `axiom://blobs` | Catalog of active object storage namespaces and storage telemetry. |
+| `axiom://blobs/{namespace}` | Directory tree and listing of stored objects within a namespace. |
+| `axiom://blobs/{namespace}/{key}` | Direct payload streaming of an object into context. |
 
 
 
@@ -347,39 +372,43 @@ All commands support `--json` and `--jsonl` flags for clean script and CI/CD pip
 
 
 
-## API Route Map
+## Complete API Route Map
 
-### Data API
-| Method | Endpoint | Description |
-|---|---|---|
-| `POST` | `/api/v1/db/:alias/query` | Execute parameterized SQL via AST firewall |
-| `GET` | `/api/v1/db/:alias/tables` | Keyset-paginated list of tables |
-| `GET` | `/api/v1/db/:alias/:table/rows` | Keyset-paginated row queries with structured filters |
-| `POST` | `/api/v1/db/:alias/:table/rows` | Insert rows with optional `Idempotency-Key` |
-| `PATCH` | `/api/v1/db/:alias/:table/rows` | Update rows matching mandatory filter object |
-| `DELETE` | `/api/v1/db/:alias/:table/rows` | Delete rows matching mandatory filter object |
-| `GET` | `/api/v1/db/:alias/:table/schema` | Inspect column metadata and foreign relations |
-| `GET` | `/api/v1/db/databases` | Enumerate authorized database connections |
+### Core & System Endpoints
+| Method | Endpoint | Description | Auth Required |
+|---|---|---|---|
+| `GET` | `/health` | Liveness health check (`{"status":"ok"}`) | Public |
+| `GET` | `/ready` | Upstream database connectivity readiness probe | Public |
+| `GET` | `/metrics` | Prometheus metrics exposition (`?format=json` or Prometheus 0.0.4) | Admin Session |
+| `POST` | `/mcp/v1` | Model Context Protocol JSON-RPC 2.0 endpoint for AI agents | API Key / Session |
+| `GET` | `/system/*` | Embedded administrative Web UI SPA | Public / Session |
 
-### Blob Storage API
-| Method | Endpoint | Description |
-|---|---|---|
-| `PUT` | `/api/v1/blobs/:namespace/*key` | Upload object (supports capability ticket) |
-| `GET` | `/api/v1/blobs/:namespace/*key` | Stream object (supports `Range: bytes=X-Y` & tickets) |
-| `HEAD` | `/api/v1/blobs/:namespace/*key` | Retrieve object metadata, size, and BLAKE3 hash |
-| `DELETE` | `/api/v1/blobs/:namespace/*key` | Delete object from namespace |
-| `POST` | `/api/v1/blobs/:namespace/ticket` | Generate pre-signed capability ticket |
-| `GET` | `/api/v1/blobs/:namespace/list` | List objects matching key prefix |
-| `GET` | `/api/v1/blobs/stats` | View storage utilization and dedup savings |
+### Database Data API (`/api/v1/db`)
+| Method | Endpoint | Description | Auth Required |
+|---|---|---|---|
+| `GET` | `/api/v1/db/databases` | Enumerate all connected databases authorized for the caller's role | API Key |
+| `POST` | `/api/v1/db/:alias/query` | Execute parameterized SQL with AST firewall & `Idempotency-Key` support | API Key |
+| `GET` | `/api/v1/db/:alias/tables` | Keyset cursor-paginated table listing | API Key |
+| `GET` | `/api/v1/db/:alias/:table/schema` | Inspect column definitions, datatypes, nullability, and foreign keys | API Key |
+| `GET` | `/api/v1/db/:alias/:table/rows` | Keyset-paginated row queries with JSON filters and sort ordering | API Key |
+| `POST` | `/api/v1/db/:alias/:table/rows` | Insert one or more rows with `Idempotency-Key` replay protection | API Key |
+| `PATCH` | `/api/v1/db/:alias/:table/rows` | Update rows matching mandatory filter object (unbounded rejected) | API Key |
+| `DELETE` | `/api/v1/db/:alias/:table/rows` | Delete rows matching mandatory filter object (unbounded rejected) | API Key |
+| `POST` | `/api/v1/db/:alias/:table/columns` | Dynamic DDL: Add a column to an existing table schema | API Key |
 
-### System & Control Plane
-| Method | Endpoint | Description |
-|---|---|---|
-| `GET` | `/health` | Public liveness probe (`{"status":"ok"}`) |
-| `GET` | `/ready` | Upstream database readiness probe |
-| `GET` | `/metrics` | Prometheus metrics scrape target (admin session) |
-| `POST` | `/mcp/v1` | JSON-RPC 2.0 Model Context Protocol endpoint |
-| `GET` | `/system/*` | Embedded Web UI single-page application |
+### Blob Storage Data API (`/api/v1/blobs`)
+| Method | Endpoint | Description | Auth Required |
+|---|---|---|---|
+| `GET` | `/api/v1/blobs/:namespace` | List stored objects with optional `prefix`, `cursor`, and `limit` | API Key |
+| `PUT` | `/api/v1/blobs/:namespace/*key` | Upload an object with BLAKE3 content-addressed deduplication | API Key / Ticket |
+| `GET` | `/api/v1/blobs/:namespace/*key` | Stream an object (supports `Range: bytes=X-Y` and `?ticket=...`) | API Key / Ticket |
+| `HEAD` | `/api/v1/blobs/:namespace/*key` | Retrieve object metadata, size, MIME type, ETag, and BLAKE3 hash | API Key / Ticket |
+| `DELETE` | `/api/v1/blobs/:namespace/*key` | Delete an object from the namespace and decrement content refcount | API Key |
+| `POST` | `/api/v1/blobs/:namespace/ticket` | Generate a pre-signed capability ticket URL for direct access | API Key |
+| `POST` | `/api/v1/blobs/:namespace/uploads` | Initialize a multipart chunked upload session | API Key |
+| `PUT` | `/api/v1/blobs/:namespace/uploads/:id/parts/:part` | Upload a discrete chunk part for an active upload session | API Key |
+| `POST` | `/api/v1/blobs/:namespace/uploads/:id/complete` | Atomically verify and assemble uploaded chunk parts | API Key |
+| `DELETE` | `/api/v1/blobs/:namespace/uploads/:id` | Abort a multipart upload session and clean up temporary parts | API Key |
 
 
 ## Filter Syntax
