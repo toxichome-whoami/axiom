@@ -14,6 +14,7 @@ import {
   PanelRight,
   SlidersHorizontal,
   X,
+  Share2,
 } from 'lucide-react';
 import { StorageViewMode, StorageTierFilter, StorageItem } from './types';
 
@@ -34,6 +35,8 @@ export interface StorageToolbarProps {
   canDropOnFolder: (dragged: StorageItem | null, targetFolderKey: string) => boolean;
   draggedItemRef: React.MutableRefObject<StorageItem | null>;
   onDropOnFolder: (targetFolderKey: string, item?: StorageItem) => void;
+  selectedFileItem?: StorageItem | null;
+  onShareClick?: (item: StorageItem) => void;
 }
 
 export function StorageToolbar({
@@ -53,6 +56,8 @@ export function StorageToolbar({
   canDropOnFolder,
   draggedItemRef,
   onDropOnFolder,
+  selectedFileItem,
+  onShareClick,
 }: StorageToolbarProps) {
   const [dragOverTargetKey, setDragOverTargetKey] = useState<string | null>(null);
 
@@ -251,6 +256,19 @@ export function StorageToolbar({
         >
           <PanelRight className="w-3.5 h-3.5" />
         </button>
+
+        {/* Quick Share Link CTA Button (active when single file is selected) */}
+        {selectedFileItem && selectedFileItem.type === 'file' && onShareClick && (
+          <button
+            type="button"
+            onClick={() => onShareClick(selectedFileItem)}
+            title={`Share link for ${selectedFileItem.name}`}
+            className="flex items-center gap-1.5 h-8 px-2.5 rounded-[6px] text-[13px] font-medium text-white bg-[#F6821F] hover:bg-[#e0751b] border border-[#F6821F]/80 transition-colors cursor-pointer shrink-0 shadow-xs"
+          >
+            <Share2 className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Share</span>
+          </button>
+        )}
 
         {/* Direct Upload CTA Button (32px / h-8 matching Table page Insert/Run buttons) */}
         <button

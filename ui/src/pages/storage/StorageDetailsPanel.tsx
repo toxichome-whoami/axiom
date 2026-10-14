@@ -18,6 +18,7 @@ import {
   Check,
   Layers,
   HardDrive,
+  Share2,
 } from 'lucide-react';
 import { StorageItem } from './types';
 import { NamespaceInfo } from '../../types';
@@ -31,6 +32,7 @@ export interface StorageDetailsPanelProps {
   activeNamespace: string;
   currentNsInfo: NamespaceInfo | null;
   onDownload: (key: string) => void;
+  onShare?: (item: StorageItem) => void;
   onOpenMove: (item: StorageItem) => void;
   onDelete: (item: StorageItem) => void;
   onVerifyBlob: (key: string) => Promise<void>;
@@ -46,6 +48,7 @@ export function StorageDetailsPanel({
   activeNamespace,
   currentNsInfo,
   onDownload,
+  onShare,
   onOpenMove,
   onDelete,
   onVerifyBlob,
@@ -97,23 +100,34 @@ export function StorageDetailsPanel({
                   : selectedItem.content_type || 'application/octet-stream'}
               </p>
 
-              {/* Quick Action Buttons (edge-to-edge line) */}
-              <div className="-mx-3.5 px-3.5 mt-3 pt-3 border-t border-[#1c1c1c] flex items-center justify-center gap-1.5 w-[calc(100%+1.75rem)]">
+              {/* Quick Action Buttons (2-column balanced grid with edge-to-edge divider) */}
+              <div className="-mx-3.5 px-3.5 w-[calc(100%+1.75rem)] mt-3 pt-3 border-t border-[#1e1e1e] grid grid-cols-2 gap-1.5">
                 {selectedItem.type === 'file' && (
                   <button
                     type="button"
                     onClick={() => onDownload(selectedItem.fullKey)}
-                    className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-[5px] text-[12px] font-medium text-[#cccccc] hover:text-white bg-[#161616] hover:bg-[#202020] border border-[#262626] transition-colors cursor-pointer"
+                    className="inline-flex items-center justify-center gap-1.5 h-7 px-2 rounded-[5px] text-[12px] font-medium text-[#cccccc] hover:text-white bg-[#161616] hover:bg-[#202020] border border-[#262626] transition-colors cursor-pointer"
                   >
                     <Download className="w-3.5 h-3.5 text-[#8c8c8c]" />
                     <span>Download</span>
                   </button>
                 )}
 
+                {selectedItem.type === 'file' && onShare && (
+                  <button
+                    type="button"
+                    onClick={() => onShare(selectedItem)}
+                    className="inline-flex items-center justify-center gap-1.5 h-7 px-2 rounded-[5px] text-[12px] font-medium text-[#cccccc] hover:text-white bg-[#161616] hover:bg-[#202020] border border-[#262626] transition-colors cursor-pointer"
+                  >
+                    <Share2 className="w-3.5 h-3.5 text-[#8c8c8c]" />
+                    <span>Share</span>
+                  </button>
+                )}
+
                 <button
                   type="button"
                   onClick={() => onOpenMove(selectedItem)}
-                  className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-[5px] text-[12px] font-medium text-[#cccccc] hover:text-white bg-[#161616] hover:bg-[#202020] border border-[#262626] transition-colors cursor-pointer"
+                  className="inline-flex items-center justify-center gap-1.5 h-7 px-2 rounded-[5px] text-[12px] font-medium text-[#cccccc] hover:text-white bg-[#161616] hover:bg-[#202020] border border-[#262626] transition-colors cursor-pointer"
                 >
                   <ArrowRight className="w-3.5 h-3.5 text-[#8c8c8c]" />
                   <span>Move</span>
@@ -122,7 +136,7 @@ export function StorageDetailsPanel({
                 <button
                   type="button"
                   onClick={() => onDelete(selectedItem)}
-                  className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-[5px] text-[12px] font-medium text-rose-400 hover:text-rose-300 bg-rose-950/20 hover:bg-rose-950/40 border border-rose-900/30 transition-colors cursor-pointer"
+                  className="inline-flex items-center justify-center gap-1.5 h-7 px-2 rounded-[5px] text-[12px] font-medium text-rose-400 hover:text-rose-300 bg-rose-950/20 hover:bg-rose-950/40 border border-rose-900/30 transition-colors cursor-pointer"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                   <span>Delete</span>

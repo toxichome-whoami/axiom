@@ -34,6 +34,7 @@ export interface StorageListViewProps {
   onItemDragEnd: () => void;
   onDropOnFolder: (targetFolderKey: string, droppedItem?: StorageItem) => void;
   canDropOnFolder: (dragged: StorageItem | null, targetFolderKey: string) => boolean;
+  onClearSelection?: () => void;
 }
 
 export function StorageListView({
@@ -52,13 +53,21 @@ export function StorageListView({
   onItemDragEnd,
   onDropOnFolder,
   canDropOnFolder,
+  onClearSelection,
 }: StorageListViewProps) {
   const [dragOverTargetKey, setDragOverTargetKey] = useState<string | null>(null);
 
   const allItems = [...folderItems, ...fileItems];
 
   return (
-    <div className="flex-1 w-full overflow-auto select-none font-sans bg-[#0a0a0a]">
+    <div
+      onClick={(e) => {
+        if (!(e.target as HTMLElement).closest('[data-storage-item="true"]')) {
+          onClearSelection?.();
+        }
+      }}
+      className="flex-1 w-full overflow-auto select-none font-sans bg-[#0a0a0a]"
+    >
       <table className="w-full text-left border-collapse">
         <thead>
           <tr className="sticky top-0 z-10 h-9 bg-[#0a0a0a] border-b border-[#222222] text-[12.5px] font-medium text-[#888888]">
@@ -72,13 +81,14 @@ export function StorageListView({
         <tbody className="divide-y divide-[#1a1a1a]">
           {allItems.map((item) => {
             const isFolder = item.type === 'folder';
-            const isSelected = selectedItem?.id === item.id;
+            const isSelected = Boolean(selectedItem && (selectedItem.fullKey === item.fullKey || selectedItem.id === item.id));
             const isDropTarget = dragOverTargetKey === item.fullKey;
             const isSelfDragged = draggedItem?.id === item.id;
 
             return (
               <tr
                 key={item.id}
+                data-storage-item="true"
                 draggable={true}
                 onDragStart={(e) => onItemDragStart(e, item)}
                 onDragEnd={onItemDragEnd}
@@ -112,7 +122,10 @@ export function StorageListView({
                     }
                   }
                 }}
-                onClick={() => onSelectItem(item)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onSelectItem(item);
+                }}
                 onDoubleClick={() => {
                   if (isFolder) {
                     onNavigateToPrefix(item.fullKey);

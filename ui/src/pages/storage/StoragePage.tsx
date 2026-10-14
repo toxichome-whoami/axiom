@@ -32,6 +32,7 @@ import { StorageGridView } from './StorageGridView';
 import { StorageListView } from './StorageListView';
 import { StorageDetailsPanel } from './StorageDetailsPanel';
 import { StorageEmptyState } from './StorageEmptyState';
+import { ShareTicketModal } from './ShareTicketModal';
 
 /**
  * Recovers persisted storage navigation parameters from URL or localStorage.
@@ -114,6 +115,9 @@ export function StoragePage() {
   const [itemToDelete, setItemToDelete] = useState<StorageItem | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
+  const [isShareOpen, setIsShareOpen] = useState(false);
+  const [itemToShare, setItemToShare] = useState<StorageItem | null>(null);
+
   // Namespace Management Modals
   const [isNewNsOpen, setIsNewNsOpen] = useState(false);
   const [newNsName, setNewNsName] = useState('');
@@ -149,6 +153,37 @@ export function StoragePage() {
   useEffect(() => {
     activeNsRef.current = activeNamespace;
   }, [activeNamespace]);
+
+  // Global Escape key listener to dismiss dialogs, context menus, or deselect items
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (isNewFolderOpen) setIsNewFolderOpen(false);
+        else if (isRenameOpen) setIsRenameOpen(false);
+        else if (isNewNsOpen) setIsNewNsOpen(false);
+        else if (isManageNsOpen) setIsManageNsOpen(false);
+        else if (isMoveOpen) setIsMoveOpen(false);
+        else if (isShareOpen) setIsShareOpen(false);
+        else if (itemToDelete) setItemToDelete(null);
+        else if (nsToDelete) setNsToDelete(null);
+        else if (contextMenu) setContextMenu(null);
+        else if (selectedItem) setSelectedItem(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [
+    isNewFolderOpen,
+    isRenameOpen,
+    isNewNsOpen,
+    isManageNsOpen,
+    isMoveOpen,
+    isShareOpen,
+    itemToDelete,
+    nsToDelete,
+    contextMenu,
+    selectedItem,
+  ]);
 
   // Keep URL search parameters and localStorage synchronized with active navigation state
   const syncLocation = useCallback((ns: string, prefix: string, pushHistory = false) => {
@@ -818,6 +853,12 @@ export function StoragePage() {
     }
   };
 
+  // Open Capability Link Share modal
+  const handleOpenShare = useCallback((item: StorageItem) => {
+    setItemToShare(item);
+    setIsShareOpen(true);
+  }, []);
+
   // Verify blob cryptographic hash integrity
   const handleVerifyBlob = async (key: string) => {
     const id = `${activeNamespace}/${key}`;
@@ -996,10 +1037,18 @@ export function StoragePage() {
         currentPrefix={currentPrefix}
         selectedItem={selectedItem}
         onSelectFolder={(path, item) => {
+          if (searchQuery) setSearchQuery('');
           navigateToPrefix(path, true, item);
         }}
         onSelectFile={(fileItem) => {
-          setSelectedItem(fileItem);
+          if (searchQuery) setSearchQuery('');
+          const slashIndex = fileItem.fullKey.lastIndexOf('/');
+          const parentFolder = slashIndex !== -1 ? fileItem.fullKey.slice(0, slashIndex + 1) : '';
+          if (parentFolder !== currentPrefix) {
+            navigateToPrefix(parentFolder, true, fileItem);
+          } else {
+            setSelectedItem(fileItem);
+          }
         }}
         onContextMenu={handleContextMenu}
         onNewFolder={() => {
@@ -1012,6 +1061,7 @@ export function StoragePage() {
         onItemDragEnd={handleItemDragEnd}
         onDropOnFolder={handleDropOnFolder}
         canDropOnFolder={canDropOnFolder}
+        onClearSelection={() => setSelectedItem(null)}
       />
 
       {/* ─── Pane 2: File Explorer Main Center Canvas ─────────────── */}
@@ -1051,12 +1101,15 @@ export function StoragePage() {
           canDropOnFolder={canDropOnFolder}
           draggedItemRef={draggedItemRef}
           onDropOnFolder={handleDropOnFolder}
+          selectedFileItem={selectedItem && selectedItem.type === 'file' ? selectedItem : null}
+          onShareClick={handleOpenShare}
         />
 
         {/* Main Files/Folders View Area */}
         <div
           onClick={(e) => {
-            if (e.target === e.currentTarget) {
+            const target = e.target as HTMLElement;
+            if (!target.closest('[data-storage-item="true"]') && !target.closest('button') && !target.closest('input')) {
               setSelectedItem(null);
             }
           }}
@@ -1142,6 +1195,7 @@ export function StoragePage() {
                 onDropOnFolder={handleDropOnFolder}
                 onUploadFiles={handleUploadFiles}
                 canDropOnFolder={canDropOnFolder}
+                onClearSelection={() => setSelectedItem(null)}
               />
             ) : (
               <StorageListView
@@ -1163,6 +1217,7 @@ export function StoragePage() {
                 onItemDragEnd={handleItemDragEnd}
                 onDropOnFolder={handleDropOnFolder}
                 canDropOnFolder={canDropOnFolder}
+                onClearSelection={() => setSelectedItem(null)}
               />
             )
           )}
@@ -1177,6 +1232,7 @@ export function StoragePage() {
         activeNamespace={activeNamespace}
         currentNsInfo={currentNsInfo}
         onDownload={handleDownload}
+        onShare={handleOpenShare}
         onOpenMove={(item) => {
           setItemToMove(item);
           setIsMoveOpen(true);
@@ -1192,8 +1248,18 @@ export function StoragePage() {
 
       {/* New Folder Modal */}
       {isNewFolderOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs font-sans">
-          <div className="w-full max-w-sm rounded-[8px] bg-[#0e0e0e] border border-[#262626] p-5 shadow-2xl space-y-4">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs font-sans"
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !isCreatingFolder) {
+              setIsNewFolderOpen(false);
+            }
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-sm rounded-[8px] bg-[#0e0e0e] border border-[#262626] p-5 shadow-2xl space-y-4"
+          >
             <div className="flex items-center justify-between">
               <h3 className="text-[14px] font-medium text-white">New Folder</h3>
               <button
@@ -1244,8 +1310,18 @@ export function StoragePage() {
 
       {/* Rename Modal */}
       {isRenameOpen && itemToRename && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs font-sans">
-          <div className="w-full max-w-sm rounded-[8px] bg-[#0e0e0e] border border-[#262626] p-5 shadow-2xl space-y-4">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs font-sans"
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !isRenaming) {
+              setIsRenameOpen(false);
+            }
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-sm rounded-[8px] bg-[#0e0e0e] border border-[#262626] p-5 shadow-2xl space-y-4"
+          >
             <div className="flex items-center justify-between">
               <h3 className="text-[14.5px] sm:text-[15px] font-semibold text-white">Rename Item</h3>
               <button
@@ -1333,8 +1409,18 @@ export function StoragePage() {
 
       {/* New Namespace Modal */}
       {isNewNsOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs font-sans">
-          <div className="w-full max-w-sm rounded-[8px] bg-[#0e0e0e] border border-[#262626] p-5 shadow-2xl space-y-4">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs font-sans"
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !isCreatingNs) {
+              setIsNewNsOpen(false);
+            }
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-sm rounded-[8px] bg-[#0e0e0e] border border-[#262626] p-5 shadow-2xl space-y-4"
+          >
             <div className="flex items-center justify-between">
               <h3 className="text-[14.5px] sm:text-[15px] font-semibold text-white">Create Namespace</h3>
               <button
@@ -1413,8 +1499,18 @@ export function StoragePage() {
 
       {/* Manage Namespace Modal */}
       {isManageNsOpen && currentNsInfo && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs font-sans">
-          <div className="w-full max-w-md rounded-[8px] bg-[#0e0e0e] border border-[#262626] p-5 shadow-2xl space-y-4">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs font-sans"
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !isSavingNs) {
+              setIsManageNsOpen(false);
+            }
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-md rounded-[8px] bg-[#0e0e0e] border border-[#262626] p-5 shadow-2xl space-y-4"
+          >
             <div className="flex items-center justify-between pb-0.5">
               <div className="flex items-center gap-2">
                 <h3 className="text-[14px] font-semibold text-white tracking-tight">Manage Namespace</h3>
@@ -1581,6 +1677,7 @@ export function StoragePage() {
           navigateToPrefix(item.fullKey, true);
         }}
         onDownload={(item) => handleDownload(item.fullKey)}
+        onShare={handleOpenShare}
         onMove={(item) => {
           setItemToMove(item);
           setIsMoveOpen(true);
@@ -1612,6 +1709,17 @@ export function StoragePage() {
         onUpload={() => fileInputRef.current?.click()}
         onPaste={handlePaste}
         onRefresh={loadData}
+      />
+
+      {/* Capability Ticket / Share Link Modal */}
+      <ShareTicketModal
+        isOpen={isShareOpen}
+        onClose={() => {
+          setIsShareOpen(false);
+          setItemToShare(null);
+        }}
+        item={itemToShare}
+        namespace={activeNamespace}
       />
 
       {/* Floating Asynchronous Upload Progress Drawer */}

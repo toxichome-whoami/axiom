@@ -149,6 +149,19 @@ impl MetadataStore {
                 banned_at INTEGER NOT NULL,
                 expires_at INTEGER NOT NULL
             );",
+            "CREATE TABLE IF NOT EXISTS blob_tickets (
+                id TEXT PRIMARY KEY,
+                namespace TEXT NOT NULL,
+                key TEXT NOT NULL,
+                operation TEXT NOT NULL,
+                expires_at INTEGER NOT NULL,
+                signature TEXT UNIQUE NOT NULL,
+                created_by TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                revoked INTEGER DEFAULT 0
+            );",
+            "CREATE INDEX IF NOT EXISTS idx_blob_tickets_lookup ON blob_tickets(namespace, key, revoked);",
+            "CREATE INDEX IF NOT EXISTS idx_blob_tickets_sig ON blob_tickets(signature);",
         ];
 
         for stmt in statements {
@@ -1374,6 +1387,232 @@ impl MetadataStore {
         Ok(())
     }
 
+    // ─── Blob Capability Ticket Management ─────────────────────────────────
+    // Persistent tracking and revocation registry for pre-signed blob access capability tickets.
+
+    /// Ensures the blob capability tickets table exists in the metadata database.
+    pub async fn ensure_blob_tickets_table(conn: &Connection) -> Result<(), String> {
+        let statements = [
+            "CREATE TABLE IF NOT EXISTS blob_tickets (
+                id TEXT PRIMARY KEY,
+                namespace TEXT NOT NULL,
+                key TEXT NOT NULL,
+                operation TEXT NOT NULL,
+                expires_at INTEGER NOT NULL,
+                signature TEXT UNIQUE NOT NULL,
+                created_by TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                revoked INTEGER DEFAULT 0
+            );",
+            "CREATE INDEX IF NOT EXISTS idx_blob_tickets_lookup ON blob_tickets(namespace, key, revoked);",
+            "CREATE INDEX IF NOT EXISTS idx_blob_tickets_sig ON blob_tickets(signature);",
+        ];
+        for stmt in statements {
+            let _ = conn.execute(stmt, ()).await;
+        }
+        Ok(())
+    }
+
+    /// Records an issued blob capability ticket in SQLite.
+    pub async fn record_blob_ticket(
+        id: &str,
+        namespace: &str,
+        key: &str,
+        operation: &str,
+        expires_at: i64,
+        signature: &str,
+        created_by: &str,
+    ) -> Result<(), String> {
+        let _guard = STORE_LOCK.lock().await;
+        let conn = Self::get_conn().await?;
+        let _ = Self::ensure_blob_tickets_table(&conn).await;
+
+        let now_unix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+
+        conn.execute(
+            "INSERT INTO blob_tickets (id, namespace, key, operation, expires_at, signature, created_by, created_at, revoked) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 0)",
+            libsql::params![id, namespace, key, operation, expires_at, signature, created_by, now_unix],
+        )
+        .await
+        .map_err(|e| format!("Failed to record blob ticket: {}", e))?;
+
+        Ok(())
+    }
+
+    /// Queries blob capability tickets matching an optional namespace and optional key filter.
+    pub async fn list_blob_tickets(
+        namespace: &str,
+        key: Option<&str>,
+        include_expired: bool,
+    ) -> Result<Vec<BlobTicketRecord>, String> {
+        let conn = Self::get_conn().await?;
+        let _ = Self::ensure_blob_tickets_table(&conn).await;
+
+        let now_unix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+
+        let clean_key = key.map(|k| k.trim_start_matches('/'));
+        let mut rows = match (key, clean_key, include_expired) {
+            (Some(raw_k), Some(clean_k), false) => {
+                conn.query(
+                    "SELECT id, namespace, key, operation, expires_at, signature, created_by, created_at, revoked \
+                     FROM blob_tickets \
+                     WHERE (?1 = '*' OR ?1 = '' OR namespace = ?1) \
+                       AND (key = ?2 OR key = ?3 OR key = '/' || ?3) \
+                       AND expires_at > ?4 \
+                     ORDER BY created_at DESC",
+                    libsql::params![namespace, raw_k, clean_k, now_unix],
+                )
+                .await
+            }
+            (Some(raw_k), Some(clean_k), true) => {
+                conn.query(
+                    "SELECT id, namespace, key, operation, expires_at, signature, created_by, created_at, revoked \
+                     FROM blob_tickets \
+                     WHERE (?1 = '*' OR ?1 = '' OR namespace = ?1) \
+                       AND (key = ?2 OR key = ?3 OR key = '/' || ?3) \
+                     ORDER BY created_at DESC",
+                    libsql::params![namespace, raw_k, clean_k],
+                )
+                .await
+            }
+            _ if !include_expired => {
+                conn.query(
+                    "SELECT id, namespace, key, operation, expires_at, signature, created_by, created_at, revoked \
+                     FROM blob_tickets \
+                     WHERE (?1 = '*' OR ?1 = '' OR namespace = ?1) \
+                       AND expires_at > ?2 \
+                     ORDER BY created_at DESC",
+                    libsql::params![namespace, now_unix],
+                )
+                .await
+            }
+            _ => {
+                conn.query(
+                    "SELECT id, namespace, key, operation, expires_at, signature, created_by, created_at, revoked \
+                     FROM blob_tickets \
+                     WHERE (?1 = '*' OR ?1 = '' OR namespace = ?1) \
+                     ORDER BY created_at DESC",
+                    libsql::params![namespace],
+                )
+                .await
+            }
+        }
+        .map_err(|e| format!("Failed to list blob tickets: {}", e))?;
+
+        let mut tickets = Vec::new();
+        while let Ok(Some(row)) = rows.next().await {
+            let id: String = row.get(0).map_err(|e| e.to_string())?;
+            let ns: String = row.get(1).map_err(|e| e.to_string())?;
+            let k: String = row.get(2).map_err(|e| e.to_string())?;
+            let op: String = row.get(3).map_err(|e| e.to_string())?;
+            let expires_at: i64 = row.get(4).map_err(|e| e.to_string())?;
+            let sig: String = row.get(5).map_err(|e| e.to_string())?;
+            let created_by: String = row.get(6).map_err(|e| e.to_string())?;
+            let created_at: i64 = row.get(7).map_err(|e| e.to_string())?;
+            let revoked_int: i64 = row.get(8).unwrap_or(0);
+
+            tickets.push(BlobTicketRecord {
+                id,
+                namespace: ns,
+                key: k,
+                operation: op,
+                expires_at,
+                signature: sig,
+                created_by,
+                created_at,
+                revoked: revoked_int != 0,
+            });
+        }
+
+        Ok(tickets)
+    }
+
+    /// Revokes a blob capability ticket by signature or id, immediately invalidating it.
+    pub async fn revoke_blob_ticket(signature_or_id: &str) -> Result<bool, String> {
+        let _guard = STORE_LOCK.lock().await;
+        let conn = Self::get_conn().await?;
+        let _ = Self::ensure_blob_tickets_table(&conn).await;
+
+        let affected = conn
+            .execute(
+                "UPDATE blob_tickets SET revoked = 1 WHERE (signature = ?1 OR id = ?1) AND revoked = 0",
+                libsql::params![signature_or_id],
+            )
+            .await
+            .map_err(|e| format!("Failed to revoke blob ticket: {}", e))?;
+
+        Ok(affected > 0)
+    }
+
+    /// Permanently deletes a blob capability ticket from SQLite.
+    pub async fn delete_blob_ticket(signature_or_id: &str) -> Result<bool, String> {
+        let _guard = STORE_LOCK.lock().await;
+        let conn = Self::get_conn().await?;
+        let _ = Self::ensure_blob_tickets_table(&conn).await;
+
+        let affected = conn
+            .execute(
+                "DELETE FROM blob_tickets WHERE signature = ?1 OR id = ?1",
+                libsql::params![signature_or_id],
+            )
+            .await
+            .map_err(|e| format!("Failed to delete blob ticket: {}", e))?;
+
+        Ok(affected > 0)
+    }
+
+    /// Checks if a ticket signature has been explicitly revoked.
+    pub async fn is_blob_ticket_revoked(signature: &str) -> Result<bool, String> {
+        let conn = Self::get_conn().await?;
+
+        let mut rows = match conn
+            .query(
+                "SELECT revoked FROM blob_tickets WHERE signature = ?1",
+                libsql::params![signature],
+            )
+            .await
+        {
+            Ok(r) => r,
+            Err(_) => return Ok(false),
+        };
+
+        if let Ok(Some(row)) = rows.next().await {
+            let revoked_int: i64 = row.get(0).unwrap_or(0);
+            Ok(revoked_int != 0)
+        } else {
+            // Not in registry (or generated prior to persistence); not revoked
+            Ok(false)
+        }
+    }
+
+    /// Purges expired blob tickets older than 7 days from SQLite.
+    pub async fn cleanup_expired_tickets() -> Result<u64, String> {
+        let _guard = STORE_LOCK.lock().await;
+        let conn = Self::get_conn().await?;
+        let now_unix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+        let retention_threshold = now_unix - (7 * 86_400);
+
+        let affected = conn
+            .execute(
+                "DELETE FROM blob_tickets WHERE expires_at < ?1",
+                [retention_threshold],
+            )
+            .await
+            .map_err(|e| format!("Failed to cleanup expired tickets: {}", e))?;
+
+        Ok(affected)
+    }
+
     // ─── Audit Trail Management ────────────────────────────────────────────
     // Exposes immutable historical records of system modifications for compliance and forensic auditing.
 
@@ -1694,6 +1933,53 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(affected, 1);
+
+        let _ = std::fs::remove_file(&db_path.replace("file:", ""));
+    }
+
+    #[tokio::test]
+    async fn test_blob_ticket_store_lifecycle() {
+        let db_path = format!("file:test_tickets_{}.db", uuid::Uuid::new_v4().to_string().replace('-', ""));
+        let db = Builder::new_local(db_path.replace("file:", "")).build().await.unwrap();
+        let conn = db.connect().unwrap();
+        MetadataStore::create_tables(&conn).await.unwrap();
+
+        let now_unix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+
+        // 1. Insert ticket
+        conn.execute(
+            "INSERT INTO blob_tickets (id, namespace, key, operation, expires_at, signature, created_by, created_at, revoked) \
+             VALUES ('t1', 'media', 'photos/1.jpg', 'READ', ?1, 'sig_abc_123', 'admin', ?2, 0)",
+            libsql::params![now_unix + 3600, now_unix],
+        ).await.unwrap();
+
+        // 2. Query active tickets
+        let mut rows = conn
+            .query("SELECT id, revoked FROM blob_tickets WHERE namespace = 'media' AND key = 'photos/1.jpg' AND expires_at > ?1", [now_unix])
+            .await
+            .unwrap();
+        let row = rows.next().await.unwrap().unwrap();
+        let tid: String = row.get(0).unwrap();
+        let revoked: i64 = row.get(1).unwrap();
+        assert_eq!(tid, "t1");
+        assert_eq!(revoked, 0);
+
+        // 3. Revoke ticket
+        conn.execute(
+            "UPDATE blob_tickets SET revoked = 1 WHERE signature = 'sig_abc_123'",
+            (),
+        ).await.unwrap();
+
+        let mut check_rows = conn
+            .query("SELECT revoked FROM blob_tickets WHERE signature = 'sig_abc_123'", ())
+            .await
+            .unwrap();
+        let check_row = check_rows.next().await.unwrap().unwrap();
+        let check_revoked: i64 = check_row.get(0).unwrap();
+        assert_eq!(check_revoked, 1);
 
         let _ = std::fs::remove_file(&db_path.replace("file:", ""));
     }

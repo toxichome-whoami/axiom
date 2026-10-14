@@ -37,6 +37,7 @@ export interface StorageGridViewProps {
   onDropOnFolder: (targetFolderKey: string, droppedItem?: StorageItem) => void;
   onUploadFiles: (files: FileList | File[], destinationPrefix?: string) => void;
   canDropOnFolder: (dragged: StorageItem | null, targetFolderKey: string) => boolean;
+  onClearSelection?: () => void;
 }
 
 export function StorageGridView({
@@ -56,11 +57,19 @@ export function StorageGridView({
   onDropOnFolder,
   onUploadFiles,
   canDropOnFolder,
+  onClearSelection,
 }: StorageGridViewProps) {
   const [dragOverTargetKey, setDragOverTargetKey] = useState<string | null>(null);
 
   return (
-    <div className="space-y-6 font-sans select-none">
+    <div
+      onClick={(e) => {
+        if (!(e.target as HTMLElement).closest('[data-storage-item="true"]')) {
+          onClearSelection?.();
+        }
+      }}
+      className="space-y-6 font-sans select-none min-h-full"
+    >
       {/* ─── Folders Section ─────────────── */}
       {folderItems.length > 0 && (
         <div className="space-y-3">
@@ -75,13 +84,14 @@ export function StorageGridView({
 
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3.5">
             {folderItems.map((f) => {
-              const isSelected = selectedItem?.id === f.id;
+              const isSelected = Boolean(selectedItem && (selectedItem.fullKey === f.fullKey || selectedItem.id === f.id));
               const isDropTarget = dragOverTargetKey === f.fullKey;
               const isSelfDragged = draggedItem?.id === f.id;
 
               return (
                 <div
                   key={f.id}
+                  data-storage-item="true"
                   draggable={true}
                   onDragStart={(e) => onItemDragStart(e, f)}
                   onDragEnd={onItemDragEnd}
@@ -122,7 +132,10 @@ export function StorageGridView({
                       await onUploadFiles(e.dataTransfer.files, f.fullKey);
                     }
                   }}
-                  onClick={() => onSelectItem(f)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onSelectItem(f);
+                  }}
                   onDoubleClick={() => onNavigateToPrefix(f.fullKey)}
                   onContextMenu={(e) => onContextMenu(e, f)}
                   className={`group p-3.5 rounded-[8px] border transition-colors cursor-pointer flex items-center justify-between gap-3 min-h-[58px] ${
@@ -190,16 +203,20 @@ export function StorageGridView({
 
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3.5">
             {fileItems.map((item) => {
-              const isSelected = selectedItem?.id === item.id;
+              const isSelected = Boolean(selectedItem && (selectedItem.fullKey === item.fullKey || selectedItem.id === item.id));
               const isSelfDragged = draggedItem?.id === item.id;
 
               return (
                 <div
                   key={item.id}
+                  data-storage-item="true"
                   draggable={true}
                   onDragStart={(e) => onItemDragStart(e, item)}
                   onDragEnd={onItemDragEnd}
-                  onClick={() => onSelectItem(item)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onSelectItem(item);
+                  }}
                   onContextMenu={(e) => onContextMenu(e, item)}
                   className={`group p-3 rounded-[7px] border transition-colors cursor-pointer flex flex-col justify-between h-32 relative ${
                     isSelfDragged ? 'opacity-40 border-dashed border-[#555555]' : ''

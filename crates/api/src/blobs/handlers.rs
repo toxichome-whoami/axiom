@@ -804,6 +804,31 @@ pub async fn create_ticket_handler(
         );
     let ticket = axiom_blob::generate_ticket(secret, &namespace, &payload.key, &op, ttl);
 
+    let ticket_id = axiom_core::uuid7();
+    let creator = if auth.is_session {
+        "admin"
+    } else {
+        &auth.api_key_name
+    };
+    if let Err(e) = MetadataStore::record_blob_ticket(
+        &ticket_id,
+        &namespace,
+        &payload.key,
+        &op,
+        ticket.expires_at,
+        &ticket.signature,
+        creator,
+    )
+    .await
+    {
+        tracing::error!("Failed to record blob ticket in database: {}", e);
+        return Err(AxiomError::new(
+            "TICKET_RECORD_FAILED",
+            &format!("Failed to record capability ticket: {}", e),
+            StatusCode::INTERNAL_SERVER_ERROR,
+        ));
+    }
+
     let url = format!(
         "/api/v1/blobs/{}/{}?ticket_sig={}&ticket_exp={}",
         urlencoding::encode(&namespace),
@@ -812,17 +837,187 @@ pub async fn create_ticket_handler(
         ticket.expires_at
     );
 
+    let sig = ticket.signature.clone();
+    let op_str = ticket.operation.clone();
+    let exp = ticket.expires_at;
+
     Ok((
         StatusCode::CREATED,
         Json(json!({
             "success": true,
             "data": {
                 "ticket": ticket,
+                "signature": sig,
+                "operation": op_str,
+                "expires_at": exp,
                 "url": url,
             },
             "error": serde_json::Value::Null
         })),
     ))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ListTicketsQuery {
+    pub namespace: Option<String>,
+    pub key: Option<String>,
+    pub all: Option<bool>,
+}
+
+/// Administrative handler listing active or all capability tickets.
+pub async fn list_tickets_handler(
+    Extension(auth): Extension<AuthContext>,
+    Query(query): Query<ListTicketsQuery>,
+) -> Result<impl IntoResponse, AxiomError> {
+    if !auth.is_session && auth.role.as_deref() != Some("admin") {
+        return Err(AxiomError::new(
+            "AUTH_FORBIDDEN",
+            "Listing capability tickets requires administrative access",
+            StatusCode::FORBIDDEN,
+        ));
+    }
+
+    let ns = query.namespace.as_deref().unwrap_or("*");
+    let key = query.key.as_deref();
+    // Default to true so active, revoked, and recently expired tickets are all returned to the dashboard
+    let include_expired = query.all.unwrap_or(true);
+
+    let tickets = MetadataStore::list_blob_tickets(ns, key, include_expired)
+        .await
+        .map_err(|e| AxiomError::new("TICKET_LIST_FAILED", &e, StatusCode::INTERNAL_SERVER_ERROR))?;
+
+    let formatted: Vec<_> = tickets
+        .into_iter()
+        .map(|t| {
+            let url = format!(
+                "/api/v1/blobs/{}/{}?ticket_sig={}&ticket_exp={}",
+                urlencoding::encode(&t.namespace),
+                urlencoding::encode(&t.key),
+                t.signature,
+                t.expires_at
+            );
+            json!({
+                "id": t.id,
+                "namespace": t.namespace,
+                "key": t.key,
+                "operation": t.operation,
+                "expires_at": t.expires_at,
+                "signature": t.signature,
+                "created_by": t.created_by,
+                "created_at": t.created_at,
+                "revoked": t.revoked,
+                "url": url,
+            })
+        })
+        .collect();
+
+    Ok(Json(json!({
+        "success": true,
+        "data": formatted,
+        "error": serde_json::Value::Null
+    })))
+}
+
+/// Administrative handler revoking a capability ticket immediately.
+pub async fn revoke_ticket_handler(
+    Path(signature_or_id): Path<String>,
+    Extension(auth): Extension<AuthContext>,
+) -> Result<impl IntoResponse, AxiomError> {
+    if !auth.is_session && auth.role.as_deref() != Some("admin") {
+        return Err(AxiomError::new(
+            "AUTH_FORBIDDEN",
+            "Revoking capability tickets requires administrative access",
+            StatusCode::FORBIDDEN,
+        ));
+    }
+
+    let found = MetadataStore::revoke_blob_ticket(&signature_or_id)
+        .await
+        .map_err(|e| AxiomError::new("TICKET_REVOCATION_FAILED", &e, StatusCode::INTERNAL_SERVER_ERROR))?;
+
+    if !found {
+        return Err(AxiomError::new(
+            "NOT_FOUND",
+            "Capability ticket not found or already revoked",
+            StatusCode::NOT_FOUND,
+        ));
+    }
+
+    // Write instant revocation key to CacheEngine L1 RAM
+    let cache_key = format!("ticket:revoked:{}", signature_or_id);
+    axiom_cache::CacheEngine::set(
+        &cache_key,
+        bytes::Bytes::from_static(b"1"),
+        86_400,
+        axiom_cache::Durability::MemoryOnly,
+    )
+    .await;
+
+    let actor = if auth.is_session { "admin" } else { &auth.api_key_name };
+    let _ = MetadataStore::record_audit(
+        actor,
+        "blob.ticket_revoked",
+        &signature_or_id,
+        Some("Capability ticket revoked"),
+    )
+    .await;
+
+    Ok(Json(json!({
+        "success": true,
+        "data": { "revoked": true },
+        "error": serde_json::Value::Null
+    })))
+}
+
+/// Administrative handler permanently deleting a capability ticket.
+pub async fn delete_ticket_handler(
+    Path(signature_or_id): Path<String>,
+    Extension(auth): Extension<AuthContext>,
+) -> Result<impl IntoResponse, AxiomError> {
+    if !auth.is_session && auth.role.as_deref() != Some("admin") {
+        return Err(AxiomError::new(
+            "AUTH_FORBIDDEN",
+            "Deleting capability tickets requires administrative access",
+            StatusCode::FORBIDDEN,
+        ));
+    }
+
+    // Always invalidate in CacheEngine L1 RAM before deleting from SQLite
+    let cache_key = format!("ticket:revoked:{}", signature_or_id);
+    axiom_cache::CacheEngine::set(
+        &cache_key,
+        bytes::Bytes::from_static(b"1"),
+        86_400,
+        axiom_cache::Durability::MemoryOnly,
+    )
+    .await;
+
+    let found = MetadataStore::delete_blob_ticket(&signature_or_id)
+        .await
+        .map_err(|e| AxiomError::new("TICKET_DELETE_FAILED", &e, StatusCode::INTERNAL_SERVER_ERROR))?;
+
+    if !found {
+        return Err(AxiomError::new(
+            "NOT_FOUND",
+            "Capability ticket not found",
+            StatusCode::NOT_FOUND,
+        ));
+    }
+
+    let actor = if auth.is_session { "admin" } else { &auth.api_key_name };
+    let _ = MetadataStore::record_audit(
+        actor,
+        "blob.ticket_deleted",
+        &signature_or_id,
+        Some("Capability ticket deleted and revoked"),
+    )
+    .await;
+
+    Ok(Json(json!({
+        "success": true,
+        "data": { "deleted": true },
+        "error": serde_json::Value::Null
+    })))
 }
 
 #[derive(Debug, Deserialize)]

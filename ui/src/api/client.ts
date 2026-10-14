@@ -124,6 +124,8 @@ import { getSessionToken, clearSession } from './session';
 import type {
   BlobMetadata,
   BlobStats,
+  BlobTicket,
+  CreateBlobTicketResponse,
   ListBlobsResult,
   NamespaceInfo,
   TableInfoApi,
@@ -478,6 +480,41 @@ export const api = {
       method: 'POST',
     });
   },
+  createBlobTicket: (
+    namespace: string,
+    key: string,
+    operation: 'READ' | 'WRITE' = 'READ',
+    ttl_seconds?: number
+  ) =>
+    request<CreateBlobTicketResponse>(`/api/v1/blobs/${encodeURIComponent(namespace)}/ticket`, {
+      method: 'POST',
+      body: JSON.stringify({
+        key,
+        operation,
+        ttl_seconds: ttl_seconds ?? 3600,
+      }),
+    }),
+  listBlobTickets: (namespace: string, key?: string, all = true) => {
+    const params = new URLSearchParams();
+    if (namespace && namespace !== '*') params.set('namespace', namespace);
+    if (key) params.set('key', key);
+    if (all) params.set('all', 'true');
+    return request<BlobTicket[]>(`/admin/v1/blobs/tickets?${params.toString()}`);
+  },
+  revokeBlobTicket: (signature: string) =>
+    request<{ revoked: boolean; signature: string }>(
+      `/admin/v1/blobs/tickets/${encodeURIComponent(signature)}/revoke`,
+      {
+        method: 'POST',
+      }
+    ),
+  deleteBlobTicket: (signature: string) =>
+    request<{ deleted: boolean }>(
+      `/admin/v1/blobs/tickets/${encodeURIComponent(signature)}`,
+      {
+        method: 'DELETE',
+      }
+    ),
   getBlobDownloadUrl: (namespace: string, key: string) => {
     const sanitizedKey = key.split('/').map(encodeURIComponent).join('/');
     return `/api/v1/blobs/${encodeURIComponent(namespace)}/${sanitizedKey}`;

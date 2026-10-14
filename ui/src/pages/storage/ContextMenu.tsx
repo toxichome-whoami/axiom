@@ -18,6 +18,7 @@ import {
   Upload,
   RefreshCw,
   Copy,
+  Share2,
 } from 'lucide-react';
 import { StorageItem, ClipboardState } from './types';
 
@@ -33,6 +34,7 @@ export interface ContextMenuProps {
   onClose: () => void;
   onOpenFolder?: (item: StorageItem) => void;
   onDownload?: (item: StorageItem) => void;
+  onShare?: (item: StorageItem) => void;
   onMove?: (item: StorageItem) => void;
   onRename?: (item: StorageItem) => void;
   onCopy?: (item: StorageItem) => void;
@@ -51,6 +53,7 @@ export function ContextMenu({
   onClose,
   onOpenFolder,
   onDownload,
+  onShare,
   onMove,
   onRename,
   onCopy,
@@ -140,6 +143,20 @@ export function ContextMenu({
             >
               <Download className="w-4 h-4 text-[#8c8c8c] shrink-0" />
               <span>Download</span>
+            </button>
+          )}
+
+          {item.type === 'file' && onShare && (
+            <button
+              type="button"
+              onClick={() => {
+                onShare(item);
+                onClose();
+              }}
+              className="w-full flex items-center gap-2.5 px-2.5 py-1.5 text-[13px] text-[#d4d4d4] hover:text-white hover:bg-[#1a1a1a] rounded-[6px] transition-colors cursor-pointer text-left"
+            >
+              <Share2 className="w-4 h-4 text-[#F6821F] shrink-0" />
+              <span>Share Link...</span>
             </button>
           )}
 

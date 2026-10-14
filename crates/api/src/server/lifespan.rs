@@ -56,6 +56,7 @@ pub async fn start_daemons() {
             interval.tick().await;
             axiom_cache::CacheEngine::sweep_expired().await;
             let _ = axiom_metadata::store::MetadataStore::cleanup_expired_bans().await;
+            let _ = axiom_metadata::store::MetadataStore::cleanup_expired_tickets().await;
         }
     });
 

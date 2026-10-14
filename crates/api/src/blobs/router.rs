@@ -57,4 +57,10 @@ pub fn get_admin_router() -> Router {
         .route("/move", post(move_blob_handler))
         .route("/delete-prefix", post(delete_prefix_handler))
         .route("/verify/:namespace/*key", post(verify_blob_handler))
+        .route("/tickets", get(list_tickets_handler))
+        .route("/tickets/:signature/revoke", post(revoke_ticket_handler))
+        .route(
+            "/tickets/:signature",
+            axum::routing::delete(delete_ticket_handler),
+        )
 }

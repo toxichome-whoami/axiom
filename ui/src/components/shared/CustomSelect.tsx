@@ -54,11 +54,31 @@ export const CustomSelect = <T extends string>({
       setOpenUpward(false);
     } else if (dropdownRef.current) {
       const rect = dropdownRef.current.getBoundingClientRect();
-      const spaceBelow = window.innerHeight - rect.bottom;
-      if (spaceBelow < 250 && rect.top > spaceBelow) {
+      let containerBottom = window.innerHeight;
+      let parent = dropdownRef.current.parentElement;
+      while (parent && parent !== document.body) {
+        const style = window.getComputedStyle(parent);
+        if (
+          style.overflowY === 'auto' ||
+          style.overflowY === 'scroll' ||
+          style.overflow === 'hidden' ||
+          parent.getAttribute('role') === 'dialog'
+        ) {
+          containerBottom = Math.min(containerBottom, parent.getBoundingClientRect().bottom);
+          break;
+        }
+        parent = parent.parentElement;
+      }
+      const spaceBelow = containerBottom - rect.bottom;
+      if (spaceBelow < 220 && (rect.top - 60) > spaceBelow) {
         setOpenUpward(true);
       } else {
-        setOpenUpward(false);
+        const winSpaceBelow = window.innerHeight - rect.bottom;
+        if (winSpaceBelow < 220 && rect.top > winSpaceBelow) {
+          setOpenUpward(true);
+        } else {
+          setOpenUpward(false);
+        }
       }
     }
   };

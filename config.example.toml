@@ -97,6 +97,7 @@ path = "data/blobs"              # Base directory for LSM index and blob files
 inline_max = "64kb"              # Payloads <= this threshold are stored inline in Fjall LSM
 max_object = "5gb"               # Hard ceiling on single blob upload size
 verify_reads = false             # Re-verify BLAKE3 checksums on reads (integrity guard)
+ticket_secret = "change_me_to_a_secure_random_secret_in_production" # HMAC signing secret for capability tickets
 
 # ─────────────────────────────────────────────────────────────────────────────
 # v4.0 Transition Note for API Keys and Databases

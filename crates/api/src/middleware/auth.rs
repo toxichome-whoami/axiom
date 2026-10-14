@@ -158,6 +158,18 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, A
                         let secret = axiom_blob::tickets::resolve_ticket_secret(&config.blob.ticket_secret);
 
                         if axiom_blob::tickets::verify_ticket(secret, ns, key, op, exp, sig).is_ok() {
+                            let cache_key = format!("ticket:revoked:{}", sig);
+                            let is_revoked = axiom_cache::CacheEngine::get(&cache_key).await.is_some()
+                                || axiom_metadata::MetadataStore::is_blob_ticket_revoked(sig).await.unwrap_or(false);
+
+                            if is_revoked {
+                                return Err(AxiomError::new(
+                                    "AUTH_TICKET_REVOKED",
+                                    "Capability ticket has been revoked by an administrator",
+                                    axum::http::StatusCode::FORBIDDEN,
+                                ));
+                            }
+
                             let ctx = AuthContext {
                                 api_key_name: format!("ticket:{}:{}", ns, key),
                                 role: Some("ticket".to_string()),

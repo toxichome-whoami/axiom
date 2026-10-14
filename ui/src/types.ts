@@ -143,6 +143,35 @@ export interface ListBlobsResult {
   next_cursor: string | null;
 }
 
+export interface BlobTicket {
+  id: string;
+  namespace: string;
+  key: string;
+  operation: 'READ' | 'WRITE';
+  expires_at: number;
+  signature: string;
+  created_by: string;
+  created_at: number;
+  revoked: boolean;
+  url?: string;
+}
+
+export interface CreateBlobTicketResponse {
+  ticket?:
+    | {
+        namespace: string;
+        key: string;
+        operation: string;
+        expires_at: number;
+        signature: string;
+      }
+    | string;
+  signature?: string;
+  operation?: 'READ' | 'WRITE' | string;
+  expires_at?: number;
+  url: string;
+}
+
 export interface NamespaceInfo {
   name: string;
   created_at: number;

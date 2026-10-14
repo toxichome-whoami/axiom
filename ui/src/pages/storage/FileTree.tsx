@@ -206,6 +206,7 @@ export interface FileTreeProps {
   onDropOnFolder?: (targetFolderPath: string, droppedItem?: StorageItem) => void;
   canDropOnFolder?: (dragged: StorageItem | null, targetFolderKey: string) => boolean;
   isLoading?: boolean;
+  onClearSelection?: () => void;
 }
 
 export function FileTree({
@@ -225,6 +226,7 @@ export function FileTree({
   onDropOnFolder,
   canDropOnFolder,
   isLoading = false,
+  onClearSelection,
 }: FileTreeProps) {
   const treeNodes = useMemo(() => buildFileTree(blobs), [blobs]);
 
@@ -290,7 +292,7 @@ export function FileTree({
   const toStorageItem = (node: FileTreeNode): StorageItem => {
     if (node.type === 'folder') {
       return {
-        id: node.id,
+        id: `folder-${node.path}`,
         type: 'folder',
         name: node.name,
         fullKey: node.path,
@@ -298,7 +300,7 @@ export function FileTree({
       };
     }
     return {
-      id: node.id,
+      id: `file-${node.path}`,
       type: 'file',
       name: node.name,
       fullKey: node.path,
@@ -315,7 +317,13 @@ export function FileTree({
     const isFolder = node.type === 'folder';
     const isExpanded = expandedPaths.has(node.path);
     const isCurrentFolder = isFolder && currentPrefix === node.path;
-    const isSelected = selectedItem?.fullKey === node.path;
+    const isSelected = Boolean(
+      selectedItem &&
+        (selectedItem.fullKey === node.path ||
+          selectedItem.id === node.id ||
+          selectedItem.id === `file-${node.path}` ||
+          selectedItem.id === `folder-${node.path}`)
+    );
 
     const isTreeDropTarget = isFolder && treeDragTarget === node.path;
     const isSelfDragged = draggedItem?.id === node.id;
@@ -323,6 +331,7 @@ export function FileTree({
     return (
       <div key={node.id} className="select-none">
         <div
+          data-storage-item="true"
           draggable={true}
           onDragStart={(e) => onItemDragStart?.(e, toStorageItem(node))}
           onDragEnd={(e) => {
@@ -355,7 +364,8 @@ export function FileTree({
               onDropOnFolder?.(node.path, draggedItem || undefined);
             }
           }}
-          onClick={() => {
+          onClick={(e) => {
+            e.stopPropagation();
             if (isFolder) {
               const item = toStorageItem(node);
               onSelectFolder(node.path, item);
@@ -497,7 +507,14 @@ export function FileTree({
       </div>
 
       {/* Tree View Scrolling List */}
-      <div className="flex-1 overflow-y-auto px-1 py-1.5 space-y-0.5 scrollbar-thin scrollbar-thumb-[#222222]">
+      <div
+        onClick={(e) => {
+          if (!(e.target as HTMLElement).closest('[data-storage-item="true"]')) {
+            onClearSelection?.();
+          }
+        }}
+        className="flex-1 overflow-y-auto px-1 py-1.5 space-y-0.5 scrollbar-thin scrollbar-thumb-[#222222]"
+      >
         {isLoading ? (
           <div className="p-2 space-y-2 animate-pulse">
             <div className="flex items-center gap-2 py-1">

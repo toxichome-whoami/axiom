@@ -44,6 +44,7 @@ export interface StorageSidebarProps {
   onItemDragEnd: () => void;
   onDropOnFolder: (targetFolderKey: string) => void;
   canDropOnFolder: (dragged: StorageItem | null, targetFolderKey: string) => boolean;
+  onClearSelection?: () => void;
 }
 
 export function StorageSidebar({
@@ -70,6 +71,7 @@ export function StorageSidebar({
   onItemDragEnd,
   onDropOnFolder,
   canDropOnFolder,
+  onClearSelection,
 }: StorageSidebarProps) {
   const [isNsDropdownOpen, setIsNsDropdownOpen] = useState(false);
   const nsDropdownRef = useRef<HTMLDivElement>(null);
@@ -196,6 +198,7 @@ export function StorageSidebar({
           onDropOnFolder={onDropOnFolder}
           canDropOnFolder={canDropOnFolder}
           isLoading={isLoading}
+          onClearSelection={onClearSelection}
         />
       </div>
 

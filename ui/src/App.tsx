@@ -3,6 +3,7 @@ import { Layout, NavPath } from './components/Layout';
 import { setSession, clearSession, hasActiveSession } from './api/session';
 import { api } from './api/client';
 import { GlobalAlertDialog } from './components/ui/AlertDialog';
+import { ErrorBoundary } from './components/ui/ErrorBoundary';
 
 const Overview = lazy(() => import('./pages/Overview').then((m) => ({ default: m.Overview })));
 const Databases = lazy(() => import('./pages/Databases').then((m) => ({ default: m.Databases })));
@@ -159,9 +160,11 @@ export function App() {
   return (
     <>
       <Layout currentPath={currentPath} onNavigate={handleNavigate} title={title} onLogout={handleLogout}>
-        <Suspense fallback={<PageFallback />}>
-          {component}
-        </Suspense>
+        <ErrorBoundary>
+          <Suspense fallback={<PageFallback />}>
+            {component}
+          </Suspense>
+        </ErrorBoundary>
       </Layout>
       <GlobalAlertDialog />
     </>
