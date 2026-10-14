@@ -44,6 +44,8 @@ impl Default for Blake3StreamHasher {
     }
 }
 
+// ─── Direct Digest Computation ─────────────────────────────────────────────
+
 /// Computes the BLAKE3 digest of an in-memory byte slice.
 /// CONTRACT:
 ///  - Returns 64-character lowercase hex string.
@@ -52,18 +54,25 @@ pub fn hash_bytes(data: &[u8]) -> String {
     blake3::hash(data).to_hex().to_string()
 }
 
+// ─── Constant-Time Verification ────────────────────────────────────────────
+
 /// Constant-time comparison between two cryptographic digest hex strings.
 /// CONTRACT:
 ///  - Precondition: Both strings are hex digests.
-///  - Timing attack resistant: avoids early return on mismatch.
+///  - Timing attack resistant: avoids early return on mismatch to eliminate
+///    timing side-channels (CWE-208) on capability ticket signatures and hashes.
+///  - Algorithmic complexity: Strictly O(N) over input slice length.
+///  - Concurrency: Thread-safe, pure function, zero allocations.
 pub fn constant_time_eq(a: &str, b: &str) -> bool {
     let a_bytes = a.as_bytes();
     let b_bytes = b.as_bytes();
 
+    // Early return on length mismatch does not leak content timing when digest lengths are fixed (64 hex chars).
     if a_bytes.len() != b_bytes.len() {
         return false;
     }
 
+    // Accumulate byte-wise XOR differences; accumulator remains 0 if and only if all bytes match.
     let mut result = 0u8;
     for (x, y) in a_bytes.iter().zip(b_bytes.iter()) {
         result |= x ^ y;

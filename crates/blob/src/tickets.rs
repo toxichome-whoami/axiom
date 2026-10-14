@@ -93,11 +93,13 @@ pub fn generate_ticket(
     }
 }
 
+// ─── Verification & Key Derivation ─────────────────────────────────────────
+
 /// Verifies whether an incoming ticket signature and expiration are valid.
 /// CONTRACT:
-///  - Constant-time signature comparison to eliminate timing channels.
-///  - Fails if `current_time > expires_at`.
-///  - Fails if signature does not match recomputed keyed hash.
+///  - Timing attack resistant: uses constant-time comparison to eliminate side-channels.
+///  - Fails with `BlobError::InvalidTicket` if `current_time > expires_at`.
+///  - Fails with `BlobError::InvalidTicket` if signature does not match recomputed keyed hash.
 pub fn verify_ticket(
     secret: &str,
     namespace: &str,
@@ -125,6 +127,8 @@ pub fn verify_ticket(
 }
 
 /// Derives a 32-byte subkey and computes keyed BLAKE3 hash across ticket fields.
+/// INVARIANT: `blake3::derive_key` applies cryptographic domain separation using `CONTEXT_STRING`,
+/// preventing subkey reuse across different cryptographic protocols in the codebase.
 fn compute_signature(
     secret: &str,
     namespace: &str,
@@ -134,6 +138,7 @@ fn compute_signature(
 ) -> String {
     let derived_key = blake3::derive_key(CONTEXT_STRING, secret.as_bytes());
     let op_upper = operation.to_uppercase();
+    // Colon delimiter is safe because namespace and operation are strictly validated character sets.
     let message = format!("{}:{}:{}:{}", namespace, key, op_upper, expires_at);
     blake3::keyed_hash(&derived_key, message.as_bytes())
         .to_hex()
