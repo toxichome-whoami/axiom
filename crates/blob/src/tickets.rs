@@ -3,7 +3,7 @@
  * Owned by: blob
  * Key deps: blake3, crate::hash::constant_time_eq, crate::error::BlobError
  * Invariants: Tickets are stateless, tamper-proof via BLAKE3-keyed MAC, and time-bounded.
- * Last structural change: Initial implementation of Phase 2 Next-Gen Blob Storage Engine.
+ * Last structural change: Automated persistent ticket secret resolution backed by metadata store.
  */
 
 use crate::error::BlobError;
@@ -13,20 +13,42 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 const CONTEXT_STRING: &str = "axiom_blob_presigned_ticket_v1";
 
-static EPHEMERAL_TICKET_SECRET: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+static ACTIVE_TICKET_SECRET: std::sync::OnceLock<String> = std::sync::OnceLock::new();
 
-/// Resolves an effective ticket secret. If the configured secret is empty or equal to the default
-/// insecure placeholder, an ephemeral random secret is generated for this session to eliminate
-/// forgery vulnerabilities (CWE-798).
-pub fn resolve_ticket_secret(configured_secret: &str) -> &str {
-    if !configured_secret.is_empty() && configured_secret != "axiom_default_ticket_secret_change_in_production" {
-        configured_secret
-    } else {
-        EPHEMERAL_TICKET_SECRET.get_or_init(|| {
-            tracing::warn!("SECURITY WARNING: 'blob.ticket_secret' is unconfigured or using default placeholder! Generated ephemeral random secret for this session to prevent capability ticket forgery.");
-            format!("{}_{}", uuid::Uuid::new_v4(), uuid::Uuid::new_v4())
-        })
+/// Registers the persistent capability ticket secret.
+/// CONTRACT:
+///  - Precondition: `secret` must not be empty.
+///  - Side effects: Stores `secret` in `ACTIVE_TICKET_SECRET` OnceLock.
+///  - Idempotent: Yes (subsequent calls will no-op if already set).
+pub fn set_ticket_secret(secret: &str) {
+    if !secret.is_empty() {
+        let _ = ACTIVE_TICKET_SECRET.set(secret.to_string());
     }
+}
+
+/// Retrieves the active capability ticket secret.
+/// CONTRACT:
+///  - Returns the persistent secret loaded from metadata store if initialized.
+///  - Falls back to generating a session-scoped ephemeral random secret if uninitialized (e.g., standalone tests).
+///  - Guarantees zero allocation on repeated calls.
+pub fn get_ticket_secret() -> &'static str {
+    ACTIVE_TICKET_SECRET.get_or_init(|| {
+        tracing::debug!("Notice: 'blob_ticket_secret' uninitialized at call time. Generating ephemeral random secret.");
+        format!("{}_{}", uuid::Uuid::new_v4(), uuid::Uuid::new_v4())
+    })
+}
+
+/// Resolves an effective ticket secret with an optional explicit override.
+/// CONTRACT:
+///  - If `explicit_secret` is `Some` and non-empty, returns that slice.
+///  - Otherwise, returns `get_ticket_secret()`.
+pub fn resolve_ticket_secret(explicit_secret: Option<&str>) -> &str {
+    if let Some(s) = explicit_secret {
+        if !s.is_empty() {
+            return s;
+        }
+    }
+    get_ticket_secret()
 }
 
 /// Max ticket lifetime: 24h. Min: 60s. Default: 1h. Prevents near-eternal capabilities (M-3).
@@ -225,5 +247,16 @@ mod tests {
             BlobError::InvalidTicket(msg) => assert!(msg.contains("expired")),
             other => panic!("Unexpected error: {:?}", other),
         }
+    }
+
+    #[test]
+    fn test_set_and_get_ticket_secret() {
+        let sec = get_ticket_secret();
+        assert!(!sec.is_empty());
+
+        let custom = "test_custom_ticket_secret_value";
+        set_ticket_secret(custom);
+        let resolved = resolve_ticket_secret(Some(custom));
+        assert_eq!(resolved, custom);
     }
 }

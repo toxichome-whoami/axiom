@@ -20,7 +20,6 @@ use crate::mcp::schema::{
     McpResource, McpResourceContent, McpResourceReadResult, McpResourcesCapability, McpServerInfo,
     McpTool, McpToolCallResult, McpToolsCapability,
 };
-use axiom_core::ConfigManager;
 use axiom_db::DatabasePoolManager;
 use axiom_policy::PolicyEngine;
 use axiom_core::AuthContext;
@@ -964,8 +963,7 @@ async fn exec_create_download_ticket(
     PolicyEngine::evaluate_blob(auth, ns, key, &operation)
         .map_err(|e| e.to_string())?;
 
-    let config = ConfigManager::get();
-    let secret = axiom_blob::tickets::resolve_ticket_secret(&config.blob.ticket_secret);
+    let secret = axiom_blob::tickets::get_ticket_secret();
 
     let ticket = axiom_blob::generate_ticket(secret, ns, key, &operation, ttl_seconds);
     let url = format!(

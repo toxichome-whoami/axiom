@@ -345,6 +345,10 @@ async fn ensure_metadata_store() {
             axiom_metadata::MetadataStore::sync_snapshot()
                 .await
                 .expect("Failed to sync initial metadata snapshot");
+
+            if let Ok(secret) = axiom_metadata::MetadataStore::get_or_create_system_secret("blob_ticket_secret").await {
+                axiom_blob::tickets::set_ticket_secret(&secret);
+            }
         })
         .await;
 }

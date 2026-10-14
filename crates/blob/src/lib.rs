@@ -19,5 +19,5 @@ pub use engine::{BlobData, BlobEngine};
 pub use error::BlobError;
 pub use hash::{constant_time_eq, hash_bytes, Blake3StreamHasher};
 pub use models::{BlobEntry, BlobMetadata, BlobStats, ByteRange, ContentRef, ListResult, UploadSession};
-pub use tickets::{generate_ticket, verify_ticket, SignedTicket};
+pub use tickets::{generate_ticket, get_ticket_secret, resolve_ticket_secret, set_ticket_secret, verify_ticket, SignedTicket};
 pub use validation::{validate_key, validate_namespace};

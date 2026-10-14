@@ -161,6 +161,11 @@ impl MetadataStore {
             );",
             "CREATE INDEX IF NOT EXISTS idx_blob_tickets_lookup ON blob_tickets(namespace, key, revoked);",
             "CREATE INDEX IF NOT EXISTS idx_blob_tickets_sig ON blob_tickets(signature);",
+            "CREATE TABLE IF NOT EXISTS system_secrets (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL,
+                created_at INTEGER NOT NULL
+            );",
         ];
 
         for stmt in statements {
@@ -1475,6 +1480,65 @@ impl MetadataStore {
         Ok(affected)
     }
 
+    // ─── System Secrets Management ─────────────────────────────────────────
+    // Persistent cryptographic secrets (e.g. blob capability ticket signing secret) generated once on first boot.
+
+    /// Ensures the system_secrets table exists.
+    pub async fn ensure_system_secrets_table(conn: &Connection) -> Result<(), String> {
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS system_secrets (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL,
+                created_at INTEGER NOT NULL
+            );",
+            (),
+        )
+        .await
+        .map_err(|e| format!("Failed to ensure system_secrets table: {}", e))?;
+        Ok(())
+    }
+
+    /// Retrieves an existing system secret or generates and persists a new cryptographically secure secret.
+    /// CONTRACT:
+    ///  - Precondition: `key` must not be empty.
+    ///  - Postcondition: Returns the persistent secret string from `system_secrets` table.
+    ///  - Side effects: Inserts a new 64-character hex-encoded cryptographic secret if none exists.
+    ///  - Idempotency: Yes (subsequent calls with the same key return the identical stored secret).
+    pub async fn get_or_create_system_secret(key: &str) -> Result<String, String> {
+        let _guard = STORE_LOCK.lock().await;
+        let conn = Self::get_conn().await?;
+        let _ = Self::ensure_system_secrets_table(&conn).await;
+
+        let mut rows = conn
+            .query("SELECT value FROM system_secrets WHERE key = ?1", [key])
+            .await
+            .map_err(|e| format!("Failed to query system_secrets for key '{}': {}", key, e))?;
+
+        if let Ok(Some(row)) = rows.next().await {
+            let val: String = row.get(0).map_err(|e| format!("Failed to read system secret: {}", e))?;
+            return Ok(val);
+        }
+
+        // Generate 32 bytes (256 bits) of cryptographically secure entropy
+        let now_unix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+
+        let entropy = format!("{}_{}_{}", uuid::Uuid::new_v4(), now_unix, uuid::Uuid::new_v4());
+        let new_secret = blake3::hash(entropy.as_bytes()).to_hex().to_string();
+
+        conn.execute(
+            "INSERT INTO system_secrets (key, value, created_at) VALUES (?1, ?2, ?3)",
+            libsql::params![key, new_secret.clone(), now_unix],
+        )
+        .await
+        .map_err(|e| format!("Failed to persist system secret for key '{}': {}", key, e))?;
+
+        tracing::info!("Initialized and persisted system secret for '{}'", key);
+        Ok(new_secret)
+    }
+
     // ─── Audit Trail Management ────────────────────────────────────────────
     // Exposes immutable historical records of system modifications for compliance and forensic auditing.
 
@@ -1842,6 +1906,34 @@ mod tests {
         let check_row = check_rows.next().await.unwrap().unwrap();
         let check_revoked: i64 = check_row.get(0).unwrap();
         assert_eq!(check_revoked, 1);
+
+        let _ = std::fs::remove_file(&db_path.replace("file:", ""));
+    }
+
+    #[tokio::test]
+    async fn test_system_secrets_lifecycle() {
+        let db_path = format!("file:test_secrets_{}.db", uuid::Uuid::new_v4().to_string().replace('-', ""));
+        let db = Builder::new_local(db_path.replace("file:", "")).build().await.unwrap();
+        let conn = db.connect().unwrap();
+        MetadataStore::create_tables(&conn).await.unwrap();
+
+        MetadataStore::ensure_system_secrets_table(&conn).await.unwrap();
+        let s1 = {
+            let entropy = format!("{}_{}", uuid::Uuid::new_v4(), uuid::Uuid::new_v4());
+            blake3::hash(entropy.as_bytes()).to_hex().to_string()
+        };
+        conn.execute(
+            "INSERT INTO system_secrets (key, value, created_at) VALUES ('test_key', ?1, 100)",
+            [s1.clone()],
+        ).await.unwrap();
+
+        let mut rows = conn
+            .query("SELECT value FROM system_secrets WHERE key = 'test_key'", ())
+            .await
+            .unwrap();
+        let row = rows.next().await.unwrap().unwrap();
+        let s2: String = row.get(0).unwrap();
+        assert_eq!(s1, s2);
 
         let _ = std::fs::remove_file(&db_path.replace("file:", ""));
     }

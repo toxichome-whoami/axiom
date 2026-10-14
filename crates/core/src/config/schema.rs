@@ -235,7 +235,6 @@ pub struct BlobConfig {
     pub inline_max: String,
     pub max_object: String,
     pub verify_reads: bool,
-    pub ticket_secret: String,
 }
 
 impl Default for BlobConfig {
@@ -246,7 +245,6 @@ impl Default for BlobConfig {
             inline_max: "64kb".to_string(),
             max_object: "5gb".to_string(),
             verify_reads: false,
-            ticket_secret: "".to_string(),
         }
     }
 }

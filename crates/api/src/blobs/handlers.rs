@@ -8,7 +8,7 @@
 
 use crate::blobs::get_blob_engine;
 use axiom_blob::{BlobData, BlobError};
-use axiom_core::{AxiomError, AuthContext, ConfigManager};
+use axiom_core::{AxiomError, AuthContext};
 use axiom_metadata::MetadataStore;
 use axiom_policy::PolicyEngine;
 use axum::{
@@ -792,8 +792,7 @@ pub async fn create_ticket_handler(
     })?;
     PolicyEngine::evaluate_blob(&auth, &namespace, &payload.key, &op)?;
 
-    let config = ConfigManager::get();
-    let secret = axiom_blob::tickets::resolve_ticket_secret(&config.blob.ticket_secret);
+    let secret = axiom_blob::tickets::get_ticket_secret();
 
     let ttl = payload
         .ttl_seconds

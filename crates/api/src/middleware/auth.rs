@@ -157,7 +157,7 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, A
                             _ => "UNKNOWN",
                         };
 
-                        let secret = axiom_blob::tickets::resolve_ticket_secret(&config.blob.ticket_secret);
+                        let secret = axiom_blob::tickets::get_ticket_secret();
 
                         if axiom_blob::tickets::verify_ticket(secret, ns, key, op, exp, sig).is_ok() {
                             // Instant revocation check: fast in-memory L1 cache check, falling back to SQLite metadata

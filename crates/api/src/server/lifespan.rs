@@ -49,6 +49,17 @@ pub async fn start_daemons() {
     // Initialize Persistent IP and API Key Ban Registry (M-7)
     crate::security::ban_list::BanList::init_persistent().await;
 
+    // Initialize Persistent Capability Ticket Secret from metadata store
+    match axiom_metadata::store::MetadataStore::get_or_create_system_secret("blob_ticket_secret").await {
+        Ok(secret) => {
+            axiom_blob::tickets::set_ticket_secret(&secret);
+            tracing::info!("Capability ticket cryptographic secret synchronized from metadata store");
+        }
+        Err(e) => {
+            tracing::error!("Failed to initialize capability ticket secret from metadata store: {}", e);
+        }
+    }
+
     // Cache sweep daemon: purges expired entries and expired bans every 60 seconds
     let cache_sweep_handle = tokio::spawn(async move {
         let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));

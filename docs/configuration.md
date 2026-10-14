@@ -89,8 +89,6 @@ path = "data/blobs"                # Base directory for LSM index and blob files
 inline_max = "64kb"                # Payloads <= this threshold stored inline
 max_object = "5gb"                 # Hard ceiling on single blob upload size
 verify_reads = false               # Re-verify BLAKE3 checksums on reads
-ticket_secret = "change_me_to_a_secure_random_secret_in_production"
-
 ```
 
 > **Dynamic State Management:**

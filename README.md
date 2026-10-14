@@ -74,7 +74,6 @@ url = "file:data/axiom.db"
 [blob]
 enabled = true
 path = "data/blobs"
-ticket_secret = "replace-with-a-random-secret-for-signing-tickets"
 ```
 
 > **Note:** Databases, API keys, and roles are dynamic resources stored in `data/axiom.db`. They are managed exclusively through the embedded Web UI or the Axiom CLI, not static configuration files.
