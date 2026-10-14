@@ -1,14 +1,58 @@
 <div align="center">
 
-# REQUEST PIPELINE ARCHITECTURE
+# Request pipeline architecture
 
-**Internal request lifecycle, engine routing, metadata refreshing, and cache architecture.**
+**One picture of every request's lifecycle — then the details, layer by layer.**
 
 </div>
 
 ---
 
-## v4.0 Pipeline
+## Contents
+
+- [Flowchart](#flowchart)
+- [Sequence](#sequence)
+- [Security headers](#security-headers-every-response)
+- [Crate graph](#crate-dependency-graph)
+- [Engine routing / snapshots / cache](#database-engine-routing)
+
+---
+
+## Flowchart
+
+```mermaid
+flowchart TD
+    TCP["TCP accept (NODELAY + REUSEADDR)"] --> Limit["DefaultBodyLimit: 10 MB (blobs: streaming, max_object)"]
+    Limit --> ReqID["X-Request-ID"]
+    ReqID --> WAF["WAF: URI/null/traversal/SQL-URL/body fail-fast"]
+    WAF --> RL["Rate limiter + ban list (IP + per-key)"]
+    RL --> Auth["Auth: BLAKE3 compare / session / ticket MAC"]
+    Auth --> Route{"Route?"}
+    Route -->|"db"| RBAC["PolicyEngine::evaluate"] --> AST["AST firewall: single statement, allowlisted DDL"] --> CB["Circuit breaker"] --> Exec["Engine execute (bound params)"]
+    Route -->|"blobs"| RBACB["evaluate_blob (READ/WRITE; never ticket-DELETE)"] --> Store["BlobEngine: inline ≤64kb / streamed + BLAKE3"]
+    Exec --> Resp["Envelope + headers"]
+    Store --> Resp
+```
+
+## Sequence
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant W as WAF
+    participant R as Rate limiter
+    participant A as Auth
+    participant P as PolicyEngine
+    participant F as AST firewall
+    participant E as Engine / blob store
+    C->>W: HTTP request
+    W->>R: clean (414/400/413 on violation)
+    R->>A: under limits (429/403 on violation)
+    A->>P: AuthContext (401/403 on failure)
+    P->>F: authorized (403 on denial)
+    F->>E: single parsed statement
+    E-->>C: {success, data, error} + X-Request-ID
+```
 
 Every inbound HTTP request passes through the following stack. Axum applies middleware in reverse registration order — `waf_middleware` is registered last in `create_app()` and therefore executes first.
 
@@ -23,7 +67,7 @@ SetRequestIdLayer (X-Request-ID UUID v4 injected)
   │
   ▼
 WAF (waf.rs)
-  Checks: URI length, null bytes, query flood, body size, path traversal (3× decode), SQL keywords in URL
+  Checks: 2048-char URI, null bytes (case-insensitive, 5× decode), query flood (>50), Content-Length fail-fast (chunked → 10 MB axum cap on non-blob), traversal (`..`), expanded SQL keywords in URL (defense-in-depth)
   │
   ▼
 Rate Limiter + Ban List (rate_limit.rs)
@@ -57,8 +101,8 @@ Axum Route Handler
   │    11. Result cache store (with differentiated negative_cache_ttl for empty results)
   │
   ├─ Blob Storage API (/api/v1/blobs/*)
-  │    1. Auth validation (X-Axiom-Key or ?ticket= HMAC token)
-  │    2. PolicyEngine::evaluate_blob(auth, namespace, key, operation)
+   │    1. Auth validation (X-Axiom-Key, session Bearer, or `?ticket_sig=&ticket_exp=` BLAKE3 MAC)
+   │    2. PolicyEngine::evaluate_blob(auth, namespace, key, operation) — READ/WRITE only for tickets; DELETE never ticket-scoped
   │    3. Key sanitization (path traversal & prefix recursion prevention)
   │    4. BlobEngine operations:
   │       - Inline payloads (<= 64KB) read/write directly to LSM index (Fjall)
@@ -72,7 +116,7 @@ Axum Route Handler
 
 ---
 
-## Security Headers (every response)
+## Security headers (every response)
 
 Applied via `SetResponseHeaderLayer` (overriding or if-not-present):
 
@@ -81,8 +125,10 @@ Applied via `SetResponseHeaderLayer` (overriding or if-not-present):
 | `X-Request-ID` | UUID v4, unique per request |
 | `X-Content-Type-Options` | `nosniff` |
 | `X-Frame-Options` | `DENY` |
-| `Strict-Transport-Security` | `max-age=63072000; includeSubDomains; preload` |
+| `Strict-Transport-Security` | `max-age=63072000; includeSubDomains; preload` (effective only over HTTPS) |
 | `Content-Security-Policy` | `default-src 'none'; frame-ancestors 'none';` (if-not-present — Web UI handler overrides) |
+| `Referrer-Policy` | `no-referrer` |
+| `Permissions-Policy` | `camera=(), microphone=(), geolocation=()` |
 
 ---
 

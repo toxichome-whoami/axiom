@@ -1,10 +1,21 @@
 <div align="center">
 
-# API REFERENCE
+# API reference
 
-**Complete REST API documentation for the Axiom data and administration endpoints.**
+**One envelope, three surfaces: SQL · rows · blobs.** Task-first: each section shows the call, then the options.
 
 </div>
+
+---
+
+> **Breaking rules (enforced):** single SQL statement per request (`400 MULTI_STATEMENT_DENIED`) · `filter` mandatory on update/delete · `add_column` allowlisted · release error messages are generic (detail in server logs via `X-Request-ID`).
+
+## Contents
+
+- [Auth & envelope](#authentication-header)
+- [Data API](#data-api--apiv1db)
+- [Blob API](./blob-storage.md)
+- [Errors & troubleshooting](../operations/troubleshooting.md)
 
 ---
 
@@ -71,6 +82,7 @@ POST /api/v1/db/:alias/query
 
 - `params`: JSON array (`[val1, val2]`) or object with numeric string keys (`{"1": val1}`).
 - `timeout`: 1–300 seconds, default 30.
+- **Single statement only** — `;`-joined SQL returns `400 MULTI_STATEMENT_DENIED`.
 - Add `Idempotency-Key: <any-string>` header to cache the response for 24 hours. Safe retries return the same response body.
 
 **Response `data`:**

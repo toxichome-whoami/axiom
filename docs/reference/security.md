@@ -66,7 +66,8 @@ Every SQL query is parsed by `sqlparser` before execution. Parser is chosen by d
 Blocked by default:
 - DDL statements (`CREATE`, `DROP`, `ALTER`, `TRUNCATE`) unless `dangerous_operations: true` in the database config
 - `GRANT`, `REVOKE`, `SET`, `REPLACE` classified as mutations and blocked on read-only keys
-- Multiple statements in a single `sql` field (multi-statement injection detection)
+- Multiple statements in a single `sql` field → `400 MULTI_STATEMENT_DENIED` (single-statement only; params bind to exactly one statement)
+- `add_column` free-text fragments outside a strict allowlist (`data_type` base types, literal `default_value`, `; -- /*` rejected, FK actions `CASCADE | SET NULL | SET DEFAULT | RESTRICT | NO ACTION`)
 - Queries matching `query_blacklist` patterns in the database config
 
 The AST cache stores parsed AST metadata keyed on `(alias, sql, params_hash)`. Cache key computation uses SHA-256 over the normalized SQL. The AST result is cached but RBAC evaluation runs on every request — cache hits do not shortcut policy.
@@ -80,15 +81,14 @@ The AST cache stores parsed AST metadata keyed on `(alias, sql, params_hash)`. C
 | Check | Limit | Error |
 |-------|-------|-------|
 | URI length | 2048 chars | 414 `WAF_URI_TOO_LONG` |
-| Null byte in URI | `%00` or `\0` | 400 `WAF_NULL_BYTE` |
+| Null byte in URI | `%00` (case-insensitive), `%u0000`, or `\0` | 400 `WAF_NULL_BYTE` |
 | Query parameter count | > 50 `&` separators | 400 `WAF_TOO_MANY_PARAMS` |
-| Content-Length | > `server.body_limit` | 413 `WAF_BODY_TOO_LARGE` |
-| Path traversal | `..` after up to 3× URL decode | 400 `WAF_PATH_TRAVERSAL` |
-| SQL keywords in URL | `select `, `drop `, `union `, `delete `, `insert ` | 400 `WAF_SQL_INJECTION` |
+| Content-Length | > `server.body_limit` (fail-fast) | 413 `WAF_BODY_TOO_LARGE` |
+| Chunked w/o length (non-blob) | deferred to 10 MB axum cap + debug log | — |
+| Path traversal | `..` after up to 5× URL decode (length-capped) | 400 `WAF_PATH_TRAVERSAL` |
+| SQL keywords in URL | `select /select*/select(`, `drop`, `union`, `delete`, `insert`, `update`, `or`, `and`, `--`, `;`, `information_schema`, `sleep(`, … (comment-stripped, whitespace-normalized) | 400 `WAF_SQL_INJECTION` |
 
-Path traversal detection decodes the URL up to three times to defeat double and triple encoding (`%252e%252e`, `%25252e%25252e`).
-
-Fast path: clean requests that contain none of `%`, `.`, or `..` skip the decode loop entirely.
+Path traversal detection decodes the URL up to five times to defeat multi-encoding (`%252e%252e`, `%25252e%25252e`), with a length cap to avoid decode-DoS. The URL keyword check is defense-in-depth only — real SQL payloads live in POST bodies and are enforced by the AST firewall below.
 
 ---
 
@@ -114,11 +114,13 @@ Applied to every response via `SetResponseHeaderLayer`:
 |--------|-------|
 | `X-Content-Type-Options` | `nosniff` |
 | `X-Frame-Options` | `DENY` |
-| `Strict-Transport-Security` | `max-age=63072000; includeSubDomains; preload` |
+| `Strict-Transport-Security` | `max-age=63072000; includeSubDomains; preload` (meaningful only over HTTPS) |
 | `Content-Security-Policy` | `default-src 'none'; frame-ancestors 'none';` (overridable by inner handlers) |
+| `Referrer-Policy` | `no-referrer` |
+| `Permissions-Policy` | `camera=(), microphone=(), geolocation=()` |
 | `X-Request-ID` | UUID v4 per request |
 
-HSTS is sent even over plain HTTP. A reverse proxy handling HTTPS termination will pass it through correctly.
+> HSTS is emitted unconditionally today; it only takes effect over HTTPS, so terminate TLS at your reverse proxy (see [Deployment](../operations/deployment.md)).
 
 ---
 
@@ -144,11 +146,12 @@ HSTS is sent even over plain HTTP. A reverse proxy handling HTTPS termination wi
 
 ## Blob Storage Security
 
-- **Cryptographic Capability Tickets:** Pre-signed download tickets use time-bounded HMAC-SHA256 signatures with expiration timestamps. Public downloads via `?ticket=<token>` grant scoped access without exposing the API key.
-- **BLAKE3 Content Addressing:** Every object payload is indexed by its BLAKE3 cryptographic hash. Background scrubbing periodically re-verifies on-disk files against the database to detect bit rot or unauthorized tampering.
+- **Cryptographic capability tickets:** Pre-signed tickets use time-bounded BLAKE3 keyed-MAC signatures (`READ`/`WRITE` only, TTL clamped to 60–86400 s; `DELETE` is never ticket-scoped). Public downloads via `?ticket_sig=&ticket_exp=` grant scoped access without exposing the API key. An empty `ticket_secret` generates an ephemeral per-boot secret (warning logged) — set a strong value in production.
+- **BLAKE3 content addressing:** Every object payload is indexed by its BLAKE3 cryptographic hash. Background scrubbing periodically re-verifies on-disk files against the database to detect bit rot or unauthorized tampering.
+- **Range caps:** Single ranges capped at 256 MB; suffix ranges capped at 256 MB; malformed/multi-range headers return `416` instead of full `200`.
 - **Compare-And-Swap (CAS):** PUT requests support conditional `If-Match` headers with ETags to prevent concurrent write clobbering.
-- **Path Traversal & Prefix Protection:** Object keys are sanitized against directory traversal sequences (`../`). Prefix copy/move operations strictly prevent self-nesting infinite recursion loops.
-- **Payload Size Caps:** Hard limits on maximum object size (`max_object`, default 5GB) and chunk sizes protect against resource exhaustion. MCP read tools cap payloads at 5MB to prevent LLM context overflows.
+- **Path traversal & prefix protection:** Object keys are sanitized against directory traversal sequences (`../`). Prefix copy/move operations strictly prevent self-nesting infinite recursion loops.
+- **Payload size caps:** Hard limits on maximum object size (`max_object`, default 5GB) and chunk sizes protect against resource exhaustion. MCP read tools cap payloads at 5MB to prevent LLM context overflows.
 
 ---
 

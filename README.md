@@ -2,9 +2,11 @@
 
 # AXIOM
 
-**A single-binary Rust gateway that exposes SQL databases over one unified REST API.**
+**One binary. Any SQL engine. One secure REST API.**
 
-Download the binary. Write one config file. Run. No daemons, no sidecars, no runtime dependencies.
+PostgreSQL · MySQL · SQL Server · SQLite/Turso · ClickHouse — behind a WAF, BLAKE3 auth, RBAC, and an AST-level SQL firewall.
+
+Download the binary · write one config file · run. No daemons, no sidecars, no runtime dependencies.
 
 <br/>
 
@@ -15,9 +17,35 @@ Download the binary. Write one config file. Run. No daemons, no sidecars, no run
 
 <br/>
 
-[Quick Start](#quick-start) &middot; [Authentication](#authentication) &middot; [Data API](#data-api) &middot; [Admin API](#admin-api) &middot; [Configuration](#configuration) &middot; [CLI](#cli) &middot; [Security](#security) &middot; [Troubleshooting](#troubleshooting)
+[Quick start](#quick-start-5-minutes) &middot; [Authentication](#authentication) &middot; [Data API](#data-api) &middot; [Blobs](#blob-storage) &middot; [MCP](#mcp-for-ai-agents) &middot; [Configuration](#configuration) &middot; [Security](#security) &middot; [Docs](./docs/index.md)
 
 </div>
+
+---
+
+> **New to Axiom?** Read this page top-to-bottom once — each layer reveals more detail (progressive disclosure).
+> **In a hurry?** [Quick start](#quick-start-5-minutes) → [Authentication](#authentication) → [Raw SQL](#raw-sql) — 3 steps, under 5 minutes.
+> **LLM agent?** Start at [`docs/llms.txt`](./docs/llms.txt) (or [`docs/index.md`](./docs/index.md)) for the machine-readable map.
+
+## Contents
+
+- [Why Axiom](#why-axiom)
+- [Quick start](#quick-start-5-minutes)
+- [How it works](#how-it-works)
+- [Authentication](#authentication)
+- [Data API](#data-api)
+- [Blob storage](#blob-storage)
+- [Admin API](#admin-api)
+- [MCP for AI agents](#mcp-for-ai-agents)
+- [Configuration](#configuration)
+- [Supported databases](#supported-databases)
+- [CLI](#cli)
+- [Security](#security)
+- [Architecture](#architecture)
+- [Development](#development)
+- [Troubleshooting](#troubleshooting)
+- [Contributing](#contributing)
+- [License](#license)
 
 ---
 
@@ -25,25 +53,28 @@ Download the binary. Write one config file. Run. No daemons, no sidecars, no run
 
 | | |
 |---|---|
-| **Single binary** | One statically-linked executable with an embedded Web UI and a local SQLite metadata store. Build dependencies only — nothing else to install, ever. |
+| **Single binary** | One statically-linked executable with embedded Web UI + local SQLite metadata store. Build-time deps only — nothing to install at runtime. |
 | **Any SQL engine** | PostgreSQL, MySQL/MariaDB, SQL Server, SQLite/Turso, ClickHouse — one API surface, one auth model, one response envelope. |
-| **Defense in depth** | WAF, rate limiting, BLAKE3 auth, RBAC, and an AST-level SQL firewall sit in front of every single request. |
-| **Native Blob Storage** | High-performance content-addressed object store with BLAKE3 deduplication, chunked multipart uploads, and time-bounded capability tickets. |
-| **Idempotent by design** | Retry any mutation safely with `Idempotency-Key`. Responses are cached for 24 h — no more double-writes on flaky networks. |
-| **Hot-reloadable metadata** | Keys, roles, and database connections change at runtime through the Admin API or Web UI. No restarts, no downtime. |
-| **MCP-native** | 15 Model Context Protocol tools let LLM agents query databases and manage blobs under the same RBAC policies as REST clients. |
+| **Defense in depth** | WAF → rate limiting → BLAKE3 auth → RBAC snapshot → AST SQL firewall → circuit breaker, on **every** request. See [Security](#security). |
+| **Native blob storage** | Content-addressed object store with BLAKE3 dedup, chunked multipart uploads, range reads (256 MB cap), and time-bounded capability tickets (60 s – 24 h). |
+| **Idempotent by design** | Retry mutations safely with `Idempotency-Key`. Responses cached 24 h — no double-writes on flaky networks. |
+| **Hot-reloadable metadata** | Keys, roles, DB connections change at runtime via Admin API / Web UI. No restarts. |
+| **MCP-native** | 15 Model Context Protocol tools under the same RBAC as REST — agents get exactly what you grant. |
 
-## Quick Start
+---
 
-**Requirements:** Rust 1.88+ &middot; one reachable SQL database
+## Quick start (5 minutes)
+
+**Requirements:** Rust 1.88+ · one reachable SQL database.
+
+<details open>
+<summary><b>1 · Clone & configure</b></summary>
 
 ```bash
 git clone https://github.com/toxichome-whoami/axiom.git
 cd axiom
 cp config.example.toml config.toml
 ```
-
-Add your database URL and API key under `[metadata]`, or seed them from legacy blocks directly:
 
 ```toml
 # Backward-compat: seeded into axiom.db on first boot, then managed live
@@ -54,7 +85,10 @@ secret = "my-secret"
 url = "postgres://user:pass@localhost:5432/mydb"
 ```
 
-Build and run:
+</details>
+
+<details open>
+<summary><b>2 · Build & run</b></summary>
 
 ```bash
 cargo build --release
@@ -62,18 +96,46 @@ cargo build --release
 .\target\release\axiom.exe server run # Windows
 ```
 
-Verify:
+</details>
+
+<details open>
+<summary><b>3 · Verify</b></summary>
 
 ```bash
 curl http://localhost:4500/ready
 # {"ready":true}
 ```
 
-First boot creates `data/axiom.db` automatically and walks you through the setup wizard. The Web UI lives at `http://localhost:4500/system/`.
+First boot creates `data/axiom.db` and walks you through the setup wizard.
+Web UI: `http://localhost:4500/system/`. Full guide: [`docs/index.md`](./docs/index.md).
+
+</details>
+
+> **Production warning:** bind `127.0.0.1` behind a TLS reverse proxy, pin `cors_origins` to your domains (default is same-origin only), and set a strong `blob.ticket_secret`. See [Deployment](./docs/operations/deployment.md).
+
+---
+
+## How it works
+
+```mermaid
+flowchart LR
+    Client --> WAF
+    WAF --> RateLimit["Rate limiter + ban list"]
+    RateLimit --> Auth["Auth (BLAKE3)"]
+    Auth --> RBAC["RBAC snapshot"]
+    RBAC --> AST["AST firewall (sqlparser)"]
+    AST --> CB["Circuit breaker"]
+    CB --> DB[("Postgres / MySQL / MSSQL / SQLite / ClickHouse")]
+    CB --> Blobs[("Blob store (LSM + BLAKE3)")]
+```
+
+Every request carries `X-Request-ID`, `X-RateLimit-*` headers, and returns the same [envelope](#response-envelope). Auth is re-evaluated against the live metadata snapshot **before** any cache lookup — revocations take effect immediately. Deep dive: [`docs/architecture/request-pipeline.md`](./docs/architecture/request-pipeline.md).
+
+---
 
 ## Authentication
 
-Every data API request carries an API key in the `X-Axiom-Key` header, base64-encoded as `name:secret`:
+Authenticate data-plane requests with an API key, base64-encoded as `name:secret`:
 
 ```bash
 KEY=$(echo -n "mykey:my-secret" | base64)   # bXlrZXk6bXktc2VjcmV0
@@ -81,15 +143,23 @@ KEY=$(echo -n "mykey:my-secret" | base64)   # bXlrZXk6bXktc2VjcmV0
 curl -H "X-Axiom-Key: $KEY" http://localhost:4500/api/v1/db/databases
 ```
 
-The Admin API (`/admin/v1`) and Web UI authenticate with session tokens from `POST /admin/v1/auth/login`. Five failed attempts from one IP trigger an automatic ban.
+| Header | Format | Notes |
+|---|---|---|
+| `X-Axiom-Key` | `base64(name:secret)` | Primary. Also accepted as `X-Api-Key`. |
+| `Authorization: Bearer` | `base64(name:secret)` **or** 32-char session token | API keys and admin sessions share the header; sessions are 32-char tokens from `POST /admin/v1/auth/login`. |
+| Blob ticket | `?ticket_sig=&ticket_exp=` | Time-bounded `READ`/`WRITE` capability, 60 s – 24 h. `DELETE` is never ticket-scoped. |
+
+> The Admin API (`/admin/v1`) and Web UI use session tokens. **Five failed attempts from one IP → automatic ban.**
+
+---
 
 ## Data API
 
-All endpoints live under `/api/v1/db/:alias`. The API surface is stable at `/api/v1`.
+All endpoints live under `/api/v1/db/:alias`. Stable surface: `/api/v1`. Full reference: [`docs/reference/api.md`](./docs/reference/api.md).
 
 ### Raw SQL
 
-Parameterized queries, optional timeout (1–300 s, default 30), array or positional-object params:
+Parameterized queries, optional timeout (1–300 s, default 30). Array or positional-object params. **Single statement per request** — stacked statements (`; …`) return `400 MULTI_STATEMENT_DENIED`.
 
 ```bash
 curl -X POST http://localhost:4500/api/v1/db/main_db/query \
@@ -98,28 +168,28 @@ curl -X POST http://localhost:4500/api/v1/db/main_db/query \
   -d '{"sql": "SELECT id, name FROM users WHERE active = ?", "params": [true]}'
 ```
 
-Add `Idempotency-Key: <uuid>` to safely retry mutations — responses are cached for 24 h.
+Add `Idempotency-Key: <uuid>` to retry mutations safely — responses cached 24 h.
 
 ### CRUD rows
 
-Cursor-paginated reads; filter operators `$eq $ne $gt $gte $lt $lte $in $nin $like $and $or $not`:
+Cursor-paginated reads. Filter operators: `$eq $ne $gt $gte $lt $lte $in $nin $like $and $or $not`. `filter` is **mandatory** for update/delete (no full-table wipes).
 
 ```bash
 # Fetch (paginated)
 curl "http://localhost:4500/api/v1/db/main_db/users/rows?limit=50&sort=id&order=desc&cursor=100" \
   -H "X-Axiom-Key: $KEY"
 
-# Insert
+# Insert (single or batch)
 curl -X POST http://localhost:4500/api/v1/db/main_db/users/rows \
   -H "X-Axiom-Key: $KEY" -H "Content-Type: application/json" \
   -d '{"row": {"name": "Alice", "active": true}}'
 
-# Update — a filter is mandatory
+# Update — filter mandatory
 curl -X PATCH http://localhost:4500/api/v1/db/main_db/users/rows \
   -H "X-Axiom-Key: $KEY" -H "Content-Type: application/json" \
   -d '{"filter": {"id": {"$eq": 5}}, "update": {"active": false}}'
 
-# Delete — a filter is mandatory
+# Delete — filter mandatory
 curl -X DELETE http://localhost:4500/api/v1/db/main_db/users/rows \
   -H "X-Axiom-Key: $KEY" -H "Content-Type: application/json" \
   -d '{"filter": {"id": {"$eq": 5}}}'
@@ -133,53 +203,59 @@ GET /api/v1/db/:alias/tables
 GET /api/v1/db/:alias/:table/schema
 ```
 
-### Blob Storage
-
-Native high-performance content-addressed object store under `/api/v1/blobs/:namespace`:
-
-```bash
-# Upload an object
-curl -X PUT "http://localhost:4500/api/v1/blobs/media/avatars/user_1.png" \
-  -H "X-Axiom-Key: $KEY" -H "Content-Type: image/png" \
-  --data-binary "@avatar.png"
-
-# Download an object (supports Range: bytes=0-1023)
-curl "http://localhost:4500/api/v1/blobs/media/avatars/user_1.png" \
-  -H "X-Axiom-Key: $KEY" -o downloaded.png
-
-# List objects with prefix and pagination
-curl "http://localhost:4500/api/v1/blobs/media?prefix=avatars/&limit=50" \
-  -H "X-Axiom-Key: $KEY"
-
-# Generate a pre-signed capability download ticket (zero auth needed by recipient)
-curl -X POST "http://localhost:4500/api/v1/blobs/media/ticket" \
-  -H "X-Axiom-Key: $KEY" -H "Content-Type: application/json" \
-  -d '{"key": "avatars/user_1.png", "operation": "READ", "ttl_seconds": 3600}'
-
-# Chunked / multipart uploads for large files
-POST   /api/v1/blobs/:namespace/uploads                 # Initialize upload
-PUT    /api/v1/blobs/:namespace/uploads/:id/parts/:num  # Upload part
-POST   /api/v1/blobs/:namespace/uploads/:id/complete    # Complete upload
-DELETE /api/v1/blobs/:namespace/uploads/:id             # Abort upload
-```
+Adding a column validates `data_type` against a strict allowlist and rejects `; -- /*` in defaults/checks. Details: [`docs/reference/api.md`](./docs/reference/api.md).
 
 ### Response envelope
 
-Identical shape on every endpoint:
+Identical shape on every endpoint (plus `X-Request-ID`, `X-RateLimit-*` headers):
 
 ```json
 { "success": true, "data": { "rows": [], "columns": [] }, "error": null }
 ```
 
-Errors carry a stable machine-readable code:
-
 ```json
 { "success": false, "data": null, "error": { "code": "AUTH_FORBIDDEN", "message": "..." } }
 ```
 
+Common codes: `WAF_*` · `RATE_LIMIT_EXCEEDED` · `BANNED` · `AUTH_*` · `MULTI_STATEMENT_DENIED` · `DB_*`. Full table: [`docs/operations/troubleshooting.md`](./docs/operations/troubleshooting.md).
+
+---
+
+## Blob storage
+
+Content-addressed object store under `/api/v1/blobs/:namespace`. Guide: [`docs/reference/blob-storage.md`](./docs/reference/blob-storage.md).
+
+```bash
+# Upload
+curl -X PUT "http://localhost:4500/api/v1/blobs/media/avatars/user_1.png" \
+  -H "X-Axiom-Key: $KEY" -H "Content-Type: image/png" \
+  --data-binary "@avatar.png"
+
+# Download (Range capped at 256 MB per request; malformed ranges → 416)
+curl "http://localhost:4500/api/v1/blobs/media/avatars/user_1.png" \
+  -H "X-Axiom-Key: $KEY" -o downloaded.png
+
+# List with prefix + pagination
+curl "http://localhost:4500/api/v1/blobs/media?prefix=avatars/&limit=50" \
+  -H "X-Axiom-Key: $KEY"
+
+# Capability ticket (READ or WRITE, 60–86400 s; recipient needs no API key)
+curl -X POST "http://localhost:4500/api/v1/blobs/media/ticket" \
+  -H "X-Axiom-Key: $KEY" -H "Content-Type: application/json" \
+  -d '{"key": "avatars/user_1.png", "operation": "READ", "ttl_seconds": 3600}'
+
+# Chunked uploads for large files
+POST   /api/v1/blobs/:namespace/uploads                 # initialize
+PUT    /api/v1/blobs/:namespace/uploads/:id/parts/:num  # upload part
+POST   /api/v1/blobs/:namespace/uploads/:id/complete    # complete
+DELETE /api/v1/blobs/:namespace/uploads/:id             # abort
+```
+
+---
+
 ## Admin API
 
-All endpoints under `/admin/v1`, behind an active admin session. Everything here hot-reloads into the running server.
+All endpoints under `/admin/v1`, behind an active admin session. Everything hot-reloads.
 
 | Method | Path | Purpose |
 |--------|------|---------|
@@ -198,111 +274,67 @@ All endpoints under `/admin/v1`, behind an active admin session. Everything here
 | `GET` / `POST` | `/cache/stats` · `/cache/flush` | Cache inspection and invalidation |
 | `GET` | `/health` | Full infrastructure health (uptime, DB status) |
 | `GET` / `POST` | `/blobs/namespaces` | List / manage blob namespaces |
-| `GET` / `POST` | `/blobs/stats` · `/blobs/scrub` | Blob storage telemetry & background integrity scrub |
-| `POST` | `/blobs/copy` · `/blobs/move` | Server-side blob copy or move operations |
-| `POST` | `/blobs/delete-prefix` | Bulk deletion of all blobs under a prefix |
+| `GET` / `POST` | `/blobs/stats` · `/blobs/scrub` | Blob telemetry & integrity scrub |
+| `POST` | `/blobs/copy` · `/blobs/move` | Server-side copy or move |
+| `POST` | `/blobs/delete-prefix` | Bulk delete under a prefix |
 
 Setup wizard (first boot only): `GET/POST /admin/v1/setup/begin` → `/setup/account` → `/setup/database` → `/setup/complete`.
 
-## MCP
+---
 
-`POST /mcp/v1` speaks JSON-RPC 2.0 (`initialize`, `tools/list`, `tools/call`, `resources/list`, `resources/read`) and reuses the same API-key auth and RBAC as the REST API — agents get exactly the permissions you grant them, nothing more.
+## MCP for AI agents
 
-**15 built-in tools (accessible with or without `axiom_` prefix):**
-- **Database Tools (8):** `axiom_list_services`, `axiom_list_tables`, `axiom_describe_table`, `axiom_query`, `axiom_insert`, `axiom_update`, `axiom_delete`, `axiom_raw_sql`.
-- **Blob Storage Tools (7):** `axiom_list_blob_namespaces`, `axiom_list_blobs`, `axiom_get_blob_metadata`, `axiom_read_blob`, `axiom_write_blob`, `axiom_delete_blob`, `axiom_create_download_ticket`.
+`POST /mcp/v1` speaks JSON-RPC 2.0 (`initialize`, `tools/list`, `tools/call`, `resources/list`, `resources/read`) with the **same API-key auth and RBAC as REST** — agents get exactly the permissions you grant, nothing more.
+
+**15 built-in tools** (with or without `axiom_` prefix):
+
+| Group | Tools |
+|---|---|
+| Database (8) | `axiom_list_services` · `axiom_list_tables` · `axiom_describe_table` · `axiom_query` · `axiom_insert` · `axiom_update` · `axiom_delete` · `axiom_raw_sql` |
+| Blobs (7) | `axiom_list_blob_namespaces` · `axiom_list_blobs` · `axiom_get_blob_metadata` · `axiom_read_blob` · `axiom_write_blob` · `axiom_delete_blob` · `axiom_create_download_ticket` |
+
+Full tool I/O + RBAC mapping: [`docs/reference/mcp.md`](./docs/reference/mcp.md).
+
+---
 
 ## Configuration
 
-Config loads once at startup from `config.toml`. API keys and databases are managed live via the Web UI / Admin API and stored in `data/axiom.db`.
+Config loads once at startup from `config.toml` (restart to apply). Keys/databases live in `data/axiom.db` and hot-reload. Full reference: [`docs/reference/configuration.md`](./docs/reference/configuration.md).
 
 <details>
-<summary><b>[server]</b></summary>
+<summary><b>[server] — safe defaults</b></summary>
 
 | Key | Default | Notes |
 |-----|---------|-------|
-| `host` | `"127.0.0.1"` | Bind address |
+| `host` | `"127.0.0.1"` | Bind address (use a reverse proxy for public traffic) |
 | `port` | `4500` | HTTP port |
 | `workers` | `0` | Tokio threads (0 = CPU count) |
 | `max_connections` | `10000` | Max concurrent TCP connections |
-| `body_limit` | `"10 MB"` | Max request body |
-| `trusted_proxies` | `["127.0.0.1"]` | IPs allowed to set `X-Forwarded-For` |
-| `cors_origins` | `["*"]` | Allowed CORS origins |
-| `allowed_ips` | `[]` | IPs exempt from rate limiting |
-| `shutdown_timeout` | `30` | Graceful shutdown wait (seconds) |
+| `body_limit` | `"10 MB"` | Max non-blob request body |
+| `trusted_proxies` | `["127.0.0.1"]` | Only these peers may set `X-Forwarded-For` (`"*"` logs a warning) |
+| `cors_origins` | `[]` | Same-origin only by default — pin your domains in prod |
+| `allowed_ips` | `[]` | Exact IPs exempt from rate limiting (`host:port` entries are rejected) |
+| `shutdown_timeout` | `30` | Graceful shutdown wait (s) |
 
 </details>
+
 <details>
-<summary><b>[metadata]</b></summary>
+<summary><b>[metadata] · [rate_limit] · [cache] · [circuit_breaker] · [logging] · [blob]</b></summary>
 
-| Key | Default | Notes |
-|-----|---------|-------|
-| `url` | `"file:data/axiom.db"` | Local SQLite or remote Turso URL |
-| `token` | `""` | Turso auth token |
-| `reload_interval` | `30` | Seconds between hot-snapshot refreshes |
-
-</details>
-<details>
-<summary><b>[rate_limit]</b></summary>
-
-| Key | Default | Notes |
-|-----|---------|-------|
-| `enabled` | `true` | |
-| `window` | `60` | Seconds |
-| `max_requests` | `100` | Per IP per window |
-| `burst` | `20` | Allowed burst |
-| `penalty_threshold` | `10` | Violations before IP ban |
-| `penalty_cooldown` | `300` | Ban duration (seconds) |
-
-</details>
-<details>
-<summary><b>[cache]</b></summary>
-
-| Key | Default | Notes |
-|-----|---------|-------|
-| `enabled` | `true` | |
-| `backend` | `"memory"` | `memory`, `turso`, or `hybrid` |
-| `query_results_ttl` | `5` | SQL result cache TTL (seconds) |
-| `idempotency_ttl` | `86400` | Idempotency key retention (seconds) |
-
-</details>
-<details>
-<summary><b>[circuit_breaker]</b></summary>
-
-| Key | Default | Notes |
-|-----|---------|-------|
-| `enabled` | `true` | |
-| `failure_threshold` | `5` | Failures before OPEN |
-
-</details>
-<details>
-<summary><b>[logging]</b></summary>
-
-| Key | Default | Notes |
-|-----|---------|-------|
-| `level` | `"INFO"` | `TRACE`, `DEBUG`, `INFO`, `WARN`, `ERROR` |
-| `format` | `"json"` | `json` (prod) or `pretty` (dev) |
-| `directory` | `"./logs"` | Log file directory |
-| `stdout` | `true` | Mirror to stdout |
-
-Override log level without restarting: `RUST_LOG=axiom=debug ./axiom server run`
-
-</details>
-<details>
-<summary><b>[blob]</b></summary>
-
-| Key | Default | Notes |
-|-----|---------|-------|
-| `enabled` | `true` | Enable embedded high-performance content-addressed blob engine |
-| `path` | `"data/blobs"` | Base storage path for LSM metadata index and blob data |
-| `inline_max` | `"64kb"` | Payloads <= this threshold are stored inline in Fjall LSM index |
-| `max_object` | `"5gb"` | Hard ceiling on single blob upload size |
-| `verify_reads` | `false` | Re-verify BLAKE3 cryptographic checksums on every read |
-| `ticket_secret` | `"..."` | Secret seed used to sign time-bounded capability download tickets |
+| Section | Key defaults |
+|---|---|
+| `[metadata]` | `url = "file:data/axiom.db"`, `reload_interval = 30` |
+| `[rate_limit]` | `enabled`, `window = 60`, `max_requests = 100`, `burst = 20`, `penalty_threshold = 10`, `penalty_cooldown = 300` |
+| `[cache]` | `backend = "memory"`, `query_results_ttl = 5`, `idempotency_ttl = 86400` |
+| `[circuit_breaker]` | `enabled`, `failure_threshold = 5` |
+| `[logging]` | `level = "INFO"`, `format = "json"`, `directory = "./logs"` — override via `RUST_LOG=axiom=debug` |
+| `[blob]` | `enabled`, `path = "data/blobs"`, `inline_max = "64kb"`, `max_object = "5gb"`, `verify_reads = false`, `ticket_secret = ""` (empty → ephemeral per-boot secret + warning; set a strong value in prod) |
 
 </details>
 
-## Supported Databases
+---
+
+## Supported databases
 
 | Engine | URL schemes |
 |--------|-------------|
@@ -312,7 +344,9 @@ Override log level without restarting: `RUST_LOG=axiom=debug ./axiom server run`
 | SQLite / Turso | `sqlite://` · `libsql://` |
 | ClickHouse | `clickhouse://` · `clickhouse+https://` |
 
-SQL Server URLs are translated internally to the JDBC format the `tiberius` driver requires. Pass `mssql://host:1433;database=MyDb` — never prefix `jdbc:` yourself.
+> SQL Server URLs are translated internally to the JDBC format `tiberius` requires. Pass `mssql://host:1433;database=MyDb` — never prefix `jdbc:` yourself.
+
+---
 
 ## CLI
 
@@ -337,12 +371,6 @@ Commands:
   benchmark Run HTTP pipeline benchmark
   doctor    Diagnose environment
   config    Init, convert, and validate config.toml
-
-Options:
-  -u, --url <URL>  Server base URL [default: http://127.0.0.1:4500]
-  -k, --key <KEY>  Admin API key or token (falls back to saved session)
-      --json       JSON output
-      --jsonl      JSONL output
 ```
 
 ```bash
@@ -357,32 +385,37 @@ axiom db rows mydb users --limit 20            # query and filter rows
 axiom blob ns create media --quota 10gb        # create blob namespace
 axiom blob put media avatar.png -f ./pic.png   # upload blob object
 axiom blob get media avatar.png -o ./out.png   # download blob object
-axiom blob ticket media avatar.png             # generate presigned capability ticket
+axiom blob ticket media avatar.png             # presigned capability ticket
 axiom benchmark -r 1000 -c 20                  # HTTP pipeline benchmark
 axiom user add ops_admin                       # create admin user (prompts for password)
 ```
 
+---
+
 ## Security
 
-Every request passes through the same fixed pipeline — the WAF fires first, and authorization is re-evaluated against the live metadata snapshot *before* any cache lookup, so revoked permissions take effect immediately:
+Every request passes the same fixed pipeline — WAF first, auth re-evaluated against the live snapshot **before** cache, so revocations bite immediately:
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│  WAF                                                                │
-│   └─> Rate Limiter + Ban List                                       │
-│        └─> Auth (BLAKE3, constant-time compare)                     │
-│             └─> RBAC (ArcSwap snapshot, zero DB calls on hot path)  │
-│                  └─> AST Firewall (sqlparser)                       │
-│                       └─> Circuit Breaker                           │
-│                            └─> Database Engine / Blob Storage       │
-└─────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TD
+    WAF["WAF"] --> RL["Rate limiter + ban list"]
+    RL --> Auth["Auth (BLAKE3, constant-time)"]
+    Auth --> RBAC["RBAC (ArcSwap snapshot)"]
+    RBAC --> AST["AST firewall (sqlparser)"]
+    AST --> CB["Circuit breaker"]
+    CB --> Engines["DB engines / blob store"]
 ```
 
-- **WAF** — blocks URIs over 2048 chars, null bytes (`%00`), path traversal (3× URL-decoded), SQL keywords in URL path/query, more than 50 query parameters, and bodies over `body_limit`.
-- **Auth** — secrets are BLAKE3-hashed and compared via an XOR accumulator with no early exit. Five failed attempts from one IP → automatic ban. Capability tickets for blobs verify cryptographic HMAC signatures.
-- **RBAC** — `roles` + `permissions` are evaluated from an `ArcSwap<Metadata>` snapshot: zero database calls on the hot path, instant revocation across both SQL databases and blob namespaces.
-- **AST Firewall** — every statement is parsed by `sqlparser` before execution. DDL is blocked unless `dangerous_operations: true`; multi-statement injections and DENY-classified statements never reach a database. Positional parameter tokenization safely preserves Postgres JSONB operators (`?|`, `?&`) and dollar-quoted strings (`$$...$$`).
-- **Headers** — every response carries `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Strict-Transport-Security: max-age=63072000; includeSubDomains; preload`, a locked-down `Content-Security-Policy`, and a per-request `X-Request-ID` UUID.
+- **WAF** — 2048-char URI cap · null bytes (`%00`, case-insensitive, `5×` decode) · `..` traversal · expanded SQL-keyword set in URL (defense-in-depth; real SQL is AST-checked) · 50-param cap · `Content-Length` fail-fast (chunked bodies fall through to the 10 MB axum cap on non-blob routes).
+- **Auth** — BLAKE3-hashed secrets, XOR-accumulator compare, 5 failures → ban. Blob tickets are BLAKE3-MAC capabilities (`READ`/`WRITE` only, 60 s–24 h, `DELETE` never ticket-scoped).
+- **RBAC** — `PolicyEngine::evaluate` / `evaluate_blob` from an `ArcSwap` snapshot: zero hot-path DB calls, instant revocation.
+- **AST firewall** — `sqlparser` per dialect. DDL blocked unless `dangerous_operations: true`; **single statement per request**; `DENY` never reaches a DB. Postgres `?|`/`?&` and `$$…$$` preserved.
+- **Headers** — `nosniff` · `DENY` · HSTS · strict CSP · `Referrer-Policy: no-referrer` · `Permissions-Policy` · `X-Request-ID`.
+- **Errors** — generic messages to clients in release builds (full detail in server logs only).
+
+Hardening checklist: [`docs/reference/security.md`](./docs/reference/security.md) · [`docs/operations/deployment.md`](./docs/operations/deployment.md).
+
+---
 
 ## Architecture
 
@@ -394,16 +427,21 @@ axiom/
 │   ├── policy/     # PolicyEngine::evaluate — the single RBAC checkpoint
 │   ├── cache/      # Unified L1 (DashMap) + L2 (SQLite AOF) cache engine
 │   ├── db/         # DatabasePoolManager, five SQL engine implementations
-│   ├── blob/       # Content-addressed Blob Storage Engine (LSM index, chunked uploads)
-│   ├── api/        # Axum routes, all middleware, Web UI embedding, MCP handler
-│   ├── cli/        # axiom CLI binary (clap)
+│   ├── blob/       # Content-addressed blob engine (LSM index, chunked uploads)
+│   ├── api/        # Axum routes, middleware, Web UI embedding, MCP handler
+│   ├── cli/        # axiom CLI (clap)
 │   └── server/     # Entry point: Tokio runtime, socket tuning, server_runner
-├── ui/             # Web UI source (Vite + TypeScript + Tailwind)
-├── tests/          # Integration and security test suite (46 tests)
-├── benches/        # Criterion benchmark suite
+├── ui/             # Web UI (Vite + TypeScript + Tailwind)
+├── docs/           # indices, references, architecture, operations
+├── tests/          # Integration + security suite
+├── benches/        # Criterion benchmarks
 ├── config.example.toml
 └── Cargo.toml      # Workspace root
 ```
+
+Request lifecycle with sequence diagram: [`docs/architecture/request-pipeline.md`](./docs/architecture/request-pipeline.md).
+
+---
 
 ## Development
 
@@ -411,22 +449,30 @@ axiom/
 cargo build              # debug build
 cargo run                # run the debug binary
 cargo build --release    # optimized: LTO, codegen-units=1, stripped
-cargo test --workspace   # all 177+ tests across 9 crates
-cargo clippy             # lint
+cargo test --workspace   # full suite across all crates
+cargo clippy             # lint (keep clean)
 ```
 
-Release profile: `opt-level=3`, `lto=true`, `codegen-units=1`, `panic=abort`, `strip=true`. Global allocator: `mimalloc` (secure feature — heap zeroed on free).
+Release profile: `opt-level=3`, `lto=true`, `codegen-units=1`, `panic=abort`, `strip=true`. Allocator: `mimalloc` (secure — heap zeroed on free).
+
+---
 
 ## Troubleshooting
 
-| Symptom / Error | Cause & Solution |
-| :--- | :--- |
-| **`FATAL: Failed to load configuration`** | **Cause:** Malformed TOML syntax.<br/>**Fix:** Run `axiom config show` to validate syntax. Look for missing quotes around strings. |
-| **`AUTH_INVALID` on every request** | **Cause:** Sending plaintext secrets instead of the required format.<br/>**Fix:** Credentials must be base64-encoded as `name:secret`. Verify with: `echo -n "keyname:secret" \| base64`. |
-| **`DB_NOT_FOUND` (despite config entry)** | **Cause:** Legacy `[database.*]` blocks are only seeded into `axiom.db` on first boot.<br/>**Fix:** Confirm import with `axiom db list`. If missing, force a reload with `axiom reload`. |
-| **SQL Server connection fails** | **Cause:** Manually adding the `jdbc:` prefix.<br/>**Fix:** Pass `mssql://host:1433;database=X` directly. Verify reachability with `axiom db test-url`. |
-| **Rate limit triggered on localhost** | **Cause:** Localhost is not exempt from rate limits by default.<br/>**Fix:** Add `"127.0.0.1"` to the `allowed_ips` array under `[server]` in your config. |
-| **WAF blocks legitimate requests** | **Cause:** Tripping the 2048 char URI limit or URL SQL injection rules.<br/>**Fix:** Send long JSON filter strings in the HTTP `POST` body instead of as query params. |
+| Symptom | Fix |
+|---|---|
+| `FATAL: Failed to load configuration` | `axiom config show` — check TOML quotes. |
+| `AUTH_INVALID` everywhere | Send `base64(name:secret)`, not plaintext: `echo -n "key:secret" \| base64`. |
+| `DB_NOT_FOUND` despite config | Legacy blocks seed only on first boot — `axiom db list`, then `axiom reload`. |
+| MSSQL connect fails | Use `mssql://host:1433;database=X` (no `jdbc:` prefix); `axiom db test-url`. |
+| Rate-limited on localhost | Add `"127.0.0.1"` to `[server] allowed_ips`. |
+| WAF blocks legit requests | Move long filters into POST bodies; check 2048-char URI cap. |
+| `MULTI_STATEMENT_DENIED` | Split `;`-joined SQL into separate requests. |
+| `416` on blob Range | Single range ≤ 256 MB, `bytes=start-end`, no commas. |
+
+Full error-code table: [`docs/operations/troubleshooting.md`](./docs/operations/troubleshooting.md).
+
+---
 
 ## Contributing
 
@@ -441,3 +487,10 @@ Conventional commits: `type(scope): message` — e.g. `fix(cache): prevent cache
 
 MIT — Copyright 2026 [Toxichome](https://toxichome.cc)
 
+---
+
+<div align="center">
+
+**Continue:** [Docs hub](./docs/index.md) · [API](./docs/reference/api.md) · [MCP](./docs/reference/mcp.md) · [Blobs](./docs/reference/blob-storage.md) · [Security](./docs/reference/security.md) · [Deployment](./docs/operations/deployment.md)
+
+</div>
