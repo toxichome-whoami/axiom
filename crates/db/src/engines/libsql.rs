@@ -165,10 +165,16 @@ impl DatabaseEngine for LibsqlDatabaseEngine {
         
         let mut columns = Vec::new();
         while let Ok(Some(row)) = rows.next().await {
-            let name: String = row.get(1).map_err(|e| EngineError::Execution(e.to_string()))?;
-            let data_type: String = row.get(2).map_err(|e| EngineError::Execution(e.to_string()))?;
-            let notnull: i32 = row.get(3).map_err(|e| EngineError::Execution(e.to_string()))?;
-            let pk: i32 = row.get(5).map_err(|e| EngineError::Execution(e.to_string()))?;
+            let name: String = row.get::<String>(1).unwrap_or_else(|_| row.get_str(1).unwrap_or_default().to_string());
+            let data_type: String = row.get::<String>(2).unwrap_or_else(|_| row.get_str(2).unwrap_or_default().to_string());
+            let notnull = match row.get_value(3) {
+                Ok(libsql::Value::Integer(v)) => v,
+                _ => 0,
+            };
+            let pk = match row.get_value(5) {
+                Ok(libsql::Value::Integer(v)) => v,
+                _ => 0,
+            };
             columns.push(ColumnInfo {
                 name,
                 r#type: data_type,
@@ -187,9 +193,9 @@ impl DatabaseEngine for LibsqlDatabaseEngine {
         
         let mut fks = Vec::new();
         while let Ok(Some(row)) = rows.next().await {
-            let referenced_table_name: String = row.get(2).map_err(|e| EngineError::Execution(e.to_string()))?;
-            let column_name: String = row.get(3).map_err(|e| EngineError::Execution(e.to_string()))?;
-            let referenced_column_name: String = row.get(4).map_err(|e| EngineError::Execution(e.to_string()))?;
+            let referenced_table_name: String = row.get::<String>(2).unwrap_or_else(|_| row.get_str(2).unwrap_or_default().to_string());
+            let column_name: String = row.get::<String>(3).unwrap_or_else(|_| row.get_str(3).unwrap_or_default().to_string());
+            let referenced_column_name: String = row.get::<String>(4).unwrap_or_else(|_| row.get_str(4).unwrap_or_default().to_string());
             fks.push(ForeignKeyInfo {
                 column: column_name,
                 referenced_table: referenced_table_name,

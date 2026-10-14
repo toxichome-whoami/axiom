@@ -87,14 +87,15 @@ export function useColumnOperations({
     setDraftFkTable(tbl);
     if (!selectedDb || !tbl) return;
     try {
-      if (!schemaCacheRef.current[tbl]) {
+      const cacheKey = `${selectedDb}:${tbl}`;
+      if (!schemaCacheRef.current[cacheKey]) {
         const res = await api.getTableSchema(selectedDb, tbl);
-        schemaCacheRef.current[tbl] = {
+        schemaCacheRef.current[cacheKey] = {
           columns: res.columns || [],
           foreign_keys: res.foreign_keys || [],
         };
       }
-      const targetCols = schemaCacheRef.current[tbl]?.columns || [];
+      const targetCols = schemaCacheRef.current[cacheKey]?.columns || [];
       const pk = targetCols.find((c) => c.primary_key);
       const chosenCol = overrideTargetCol || (pk ? pk.name : targetCols[0]?.name || 'id');
       setDraftFkColumn(chosenCol);
@@ -370,7 +371,7 @@ export function useColumnOperations({
       resetColumnForm();
 
       // Invalidate cache and reload schema + rows
-      delete schemaCacheRef.current[selectedTable];
+      delete schemaCacheRef.current[`${selectedDb}:${selectedTable}`];
       await loadTableData({ reloadSchema: true });
     } catch (err) {
       setCreateColumnError(err instanceof Error ? err.message : isEditMode ? 'Failed to update column' : 'Failed to create column');
@@ -399,7 +400,7 @@ export function useColumnOperations({
       setDeleteColumnTarget(null);
       setIsAddColumnOpen(false);
       setEditingColumn(null);
-      delete schemaCacheRef.current[selectedTable];
+      delete schemaCacheRef.current[`${selectedDb}:${selectedTable}`];
       await loadTableData({ reloadSchema: true });
     } catch (err) {
       showAlertDialog(

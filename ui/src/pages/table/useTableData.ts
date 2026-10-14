@@ -110,20 +110,29 @@ export function useTableData({ selectedDb, setSelectedDb, viewMode }: UseTableDa
 
       const currentTableNames = new Set(tableList.map((t) => t.name));
 
-      // Clean up deleted/dropped tables from schema cache and allDbTablesSchema
+      // Clean up deleted/dropped tables from schema cache for this db
       const prunedCache: Record<string, { columns: ColumnInfoApi[]; foreign_keys?: ForeignKeyInfoApi[] }> = {};
-      for (const name of Object.keys(schemaCacheRef.current)) {
-        if (currentTableNames.has(name)) {
-          prunedCache[name] = schemaCacheRef.current[name];
+      const prefix = `${db}:`;
+      for (const [key, entry] of Object.entries(schemaCacheRef.current)) {
+        if (key.startsWith(prefix)) {
+          const tName = key.slice(prefix.length);
+          if (currentTableNames.has(tName)) {
+            prunedCache[key] = entry;
+          }
+        } else {
+          // Keep cache for other databases
+          prunedCache[key] = entry;
         }
       }
       schemaCacheRef.current = prunedCache;
 
-      setAllDbTablesSchema((prev) => {
-        const next: typeof prev = {};
-        for (const name of Object.keys(prev)) {
-          if (currentTableNames.has(name)) {
-            next[name] = prev[name];
+      // Reset allDbTablesSchema to only contain tables from the currently loaded db
+      setAllDbTablesSchema(() => {
+        const next: Record<string, { columns: ColumnInfoApi[]; foreign_keys?: ForeignKeyInfoApi[] }> = {};
+        for (const tName of currentTableNames) {
+          const cached = prunedCache[`${db}:${tName}`];
+          if (cached) {
+            next[tName] = cached;
           }
         }
         return next;
@@ -199,6 +208,11 @@ export function useTableData({ selectedDb, setSelectedDb, viewMode }: UseTableDa
   useEffect(() => {
     if (selectedDb) {
       setLoadedDb('');
+      setColumns([]);
+      setForeignKeys([]);
+      setRows([]);
+      setRowsError(null);
+      setAllDbTablesSchema({});
       fetchTables(selectedDb);
       setCursor(null);
       setCursorHistory([]);
@@ -290,7 +304,7 @@ export function useTableData({ selectedDb, setSelectedDb, viewMode }: UseTableDa
       activeTargetKeyRef.current = currentKey;
       setRowsError(null);
 
-      const cached = schemaCacheRef.current[selectedTable];
+      const cached = schemaCacheRef.current[currentKey];
       let cols = cached?.columns || [];
       let fks = cached?.foreign_keys || [];
 
@@ -309,7 +323,7 @@ export function useTableData({ selectedDb, setSelectedDb, viewMode }: UseTableDa
           setForeignKeys(fks);
 
           const entry = { columns: cols, foreign_keys: fks };
-          schemaCacheRef.current = { ...schemaCacheRef.current, [selectedTable]: entry };
+          schemaCacheRef.current = { ...schemaCacheRef.current, [currentKey]: entry };
           setAllDbTablesSchema((prev) => ({ ...prev, [selectedTable]: entry }));
         } catch (err: unknown) {
           if (activeTargetKeyRef.current !== currentKey) return;
@@ -432,7 +446,7 @@ export function useTableData({ selectedDb, setSelectedDb, viewMode }: UseTableDa
   // Lazy schema fetch for ER diagram
   useEffect(() => {
     if (viewMode !== 'schema' || !selectedDb || tables.length === 0) return;
-    const missing = tables.filter((t) => !schemaCacheRef.current[t.name]);
+    const missing = tables.filter((t) => !schemaCacheRef.current[`${selectedDb}:${t.name}`]);
     if (missing.length === 0) return;
 
     let cancelled = false;
@@ -459,16 +473,19 @@ export function useTableData({ selectedDb, setSelectedDb, viewMode }: UseTableDa
 
         if (cancelled) return;
 
-        const updates: Record<string, { columns: ColumnInfoApi[]; foreign_keys: ForeignKeyInfoApi[] }> = {};
+        const cacheUpdates: Record<string, { columns: ColumnInfoApi[]; foreign_keys: ForeignKeyInfoApi[] }> = {};
+        const localUpdates: Record<string, { columns: ColumnInfoApi[]; foreign_keys: ForeignKeyInfoApi[] }> = {};
         for (const item of results) {
-          updates[item.tableName] = {
+          const entry = {
             columns: item.columns,
             foreign_keys: item.foreign_keys,
           };
+          cacheUpdates[`${selectedDb}:${item.tableName}`] = entry;
+          localUpdates[item.tableName] = entry;
         }
 
-        schemaCacheRef.current = { ...schemaCacheRef.current, ...updates };
-        setAllDbTablesSchema((prev) => ({ ...prev, ...updates }));
+        schemaCacheRef.current = { ...schemaCacheRef.current, ...cacheUpdates };
+        setAllDbTablesSchema((prev) => ({ ...prev, ...localUpdates }));
       } catch {
         // Ignore
       }
@@ -494,6 +511,7 @@ export function useTableData({ selectedDb, setSelectedDb, viewMode }: UseTableDa
     foreignKeys,
     isSchemaLoading,
     allDbTablesSchema,
+    setAllDbTablesSchema,
     schemaCacheRef,
     rows,
     setRows,

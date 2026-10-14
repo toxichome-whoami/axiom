@@ -1,16 +1,14 @@
 -- =====================================================
 -- AXIOM DEMO DATABASE: RELATIONAL E-COMMERCE DATASET
--- Dialect: MySQL / MariaDB (native)
+-- Dialect: MySQL / MariaDB
+-- Exact total replica of demo_postgres.sql
 -- =====================================================
 
-SET @OLD_FOREIGN_KEY_CHECKS = @@FOREIGN_KEY_CHECKS;
 SET FOREIGN_KEY_CHECKS = 0;
 
--- -----------------------------------------------------
--- Clean up previous tables safely without constraint violations
--- -----------------------------------------------------
-DROP TABLE IF EXISTS payments;
+-- Remove previous demo tables in dependency order
 DROP TABLE IF EXISTS order_items;
+DROP TABLE IF EXISTS payments;
 DROP TABLE IF EXISTS orders;
 DROP TABLE IF EXISTS products;
 DROP TABLE IF EXISTS categories;
@@ -18,7 +16,6 @@ DROP TABLE IF EXISTS employees;
 DROP TABLE IF EXISTS customers;
 DROP TABLE IF EXISTS suppliers;
 
--- Restore foreign key checks for table creation
 SET FOREIGN_KEY_CHECKS = 1;
 
 -- =====================================================
@@ -33,9 +30,9 @@ CREATE TABLE customers (
     phone VARCHAR(30),
     city VARCHAR(100),
     country VARCHAR(100),
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     is_active BOOLEAN NOT NULL DEFAULT TRUE
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 INSERT INTO customers
 (first_name, last_name, email, phone, city, country, created_at, is_active)
@@ -68,7 +65,7 @@ CREATE TABLE employees (
     hired_at DATE NOT NULL,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     FOREIGN KEY (manager_id) REFERENCES employees(id) ON DELETE SET NULL
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 INSERT INTO employees
 (full_name, email, department, job_title, salary, manager_id, hired_at, is_active)
@@ -89,8 +86,8 @@ CREATE TABLE suppliers (
     contact_name VARCHAR(150),
     email VARCHAR(180) UNIQUE,
     country VARCHAR(100),
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 INSERT INTO suppliers
 (company_name, contact_name, email, country)
@@ -106,18 +103,21 @@ VALUES
 
 CREATE TABLE categories (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    slug VARCHAR(80) UNIQUE NOT NULL,
-    name VARCHAR(100) NOT NULL,
-    description TEXT
-);
+    name VARCHAR(100) NOT NULL UNIQUE,
+    description TEXT,
+    parent_id BIGINT,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (parent_id) REFERENCES categories(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-INSERT INTO categories
-(slug, name, description)
+INSERT INTO categories (name, description, parent_id)
 VALUES
-('electronics', 'Electronics', 'Consumer tech, computers, accessories and audio gear'),
-('home-appliances', 'Home Appliances', 'Kitchen tools, living room equipment and utilities'),
-('fashion', 'Fashion & Apparel', 'Clothing, footwear and everyday style accessories'),
-('stationery', 'Stationery & Office', 'Desk items, notebooks and workplace productivity');
+('Electronics', 'Electronic devices and accessories', NULL),
+('Computers', 'Laptops and computer hardware', 1),
+('Accessories', 'Computer and mobile accessories', 1),
+('Home & Office', 'Furniture and office equipment', NULL),
+('Audio', 'Headphones, speakers, and audio equipment', 1),
+('Storage', 'Portable and internal storage devices', 2);
 
 -- =====================================================
 -- 5. PRODUCTS
@@ -126,30 +126,33 @@ VALUES
 CREATE TABLE products (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     sku VARCHAR(50) UNIQUE NOT NULL,
-    name VARCHAR(200) NOT NULL,
-    category_id BIGINT NOT NULL,
+    name VARCHAR(180) NOT NULL,
+    description TEXT,
+    category_id BIGINT,
     supplier_id BIGINT,
-    unit_price DECIMAL(10,2) NOT NULL,
-    cost_price DECIMAL(10,2) NOT NULL,
+    price DECIMAL(12,2) NOT NULL,
     stock_quantity INT NOT NULL DEFAULT 0,
-    is_available BOOLEAN NOT NULL DEFAULT TRUE,
-    FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE RESTRICT,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE SET NULL,
     FOREIGN KEY (supplier_id) REFERENCES suppliers(id) ON DELETE SET NULL
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 INSERT INTO products
-(sku, name, category_id, supplier_id, unit_price, cost_price, stock_quantity, is_available)
+(sku, name, description, category_id, supplier_id, price, stock_quantity, is_active)
 VALUES
-('PROD-KB-001', 'Wireless Mechanical Keyboard', 1, 1, 89.99, 45.00, 120, TRUE),
-('PROD-MS-002', 'Ergonomic Precision Mouse', 1, 1, 49.50, 22.00, 250, TRUE),
-('PROD-MN-003', '27-inch 4K IPS Monitor', 1, 2, 349.00, 210.00, 45, TRUE),
-('PROD-HP-004', 'Noise-Cancelling Headphones', 1, 2, 199.99, 95.00, 80, TRUE),
-('PROD-BL-005', 'High-Speed Kitchen Blender', 2, 3, 79.95, 38.00, 60, TRUE),
-('PROD-CM-006', 'Programmable Coffee Maker', 2, 3, 119.00, 60.00, 35, TRUE),
-('PROD-JK-007', 'Waterproof Trekking Jacket', 3, NULL, 129.99, 58.00, 90, TRUE),
-('PROD-BP-008', 'City Commuter Backpack', 3, NULL, 59.99, 24.00, 140, TRUE),
-('PROD-NB-009', 'Hardcover Dot Grid Notebook', 4, 4, 18.50, 6.00, 400, TRUE),
-('PROD-PN-010', 'Refillable Rollerball Pen Set', 4, 4, 24.00, 8.50, 300, TRUE);
+('LAP-001', 'ProBook Laptop 15', '15-inch productivity laptop with 16GB RAM', 2, 1, 899.99, 25, TRUE),
+('MOU-001', 'Wireless Mouse', 'Ergonomic wireless mouse with adjustable DPI', 3, 1, 24.99, 150, TRUE),
+('KEY-001', 'Mechanical Keyboard', 'Mechanical keyboard with RGB lighting', 3, 2, 79.99, 80, TRUE),
+('MON-001', '4K Monitor 27', '27-inch UHD IPS monitor', 2, 2, 329.99, 35, TRUE),
+('HUB-001', 'USB-C Hub 7-in-1', 'USB-C hub with HDMI and card reader', 3, 1, 39.99, 100, TRUE),
+('CHR-001', 'Ergonomic Office Chair', 'Adjustable office chair with lumbar support', 4, 3, 219.99, 18, TRUE),
+('DSK-001', 'Standing Desk', 'Height-adjustable office desk', 4, 3, 449.99, 12, TRUE),
+('AUD-001', 'Studio Headphones', 'Over-ear headphones for work and music', 5, 2, 129.99, 45, TRUE),
+('SSD-001', 'External SSD 1TB', 'Portable USB-C solid-state drive', 6, 4, 99.99, 65, TRUE),
+('WEB-001', 'Full HD Webcam', '1080p webcam with integrated microphone', 3, 2, 59.99, 50, TRUE),
+('LAP-002', 'UltraBook Laptop 14', 'Lightweight laptop for everyday productivity', 2, 4, 1099.99, 15, TRUE),
+('SPK-001', 'Bluetooth Speaker', 'Compact portable wireless speaker', 5, 2, 49.99, 90, FALSE);
 
 -- =====================================================
 -- 6. ORDERS
@@ -157,29 +160,35 @@ VALUES
 
 CREATE TABLE orders (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    order_number VARCHAR(50) UNIQUE NOT NULL,
+    order_number VARCHAR(40) UNIQUE NOT NULL,
     customer_id BIGINT NOT NULL,
-    status VARCHAR(30) NOT NULL DEFAULT 'pending',
-    total_amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
-    shipping_city VARCHAR(100),
-    shipping_country VARCHAR(100),
-    ordered_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE
-);
+    handled_by BIGINT,
+    status VARCHAR(30) NOT NULL,
+    subtotal DECIMAL(12,2) NOT NULL,
+    tax_amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+    shipping_amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+    total_amount DECIMAL(12,2) NOT NULL,
+    ordered_at DATETIME NOT NULL,
+    notes TEXT,
+    FOREIGN KEY (customer_id) REFERENCES customers(id),
+    FOREIGN KEY (handled_by) REFERENCES employees(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 INSERT INTO orders
-(order_number, customer_id, status, total_amount, shipping_city, shipping_country, ordered_at)
+(order_number, customer_id, handled_by, status, subtotal, tax_amount, shipping_amount, total_amount, ordered_at, notes)
 VALUES
-('ORD-2026-001', 1, 'delivered', 981.23, 'Dhaka', 'Bangladesh', '2026-03-01 10:14:00'),
-('ORD-2026-002', 2, 'processing', 130.98, 'Chittagong', 'Bangladesh', '2026-03-03 14:30:00'),
-('ORD-2026-003', 4, 'shipped', 356.49, 'New York', 'USA', '2026-03-05 09:20:00'),
-('ORD-2026-004', 5, 'delivered', 375.48, 'London', 'UK', '2026-03-10 16:22:00'),
-('ORD-2026-005', 6, 'cancelled', 238.99, 'Dhaka', 'Bangladesh', '2026-03-12 11:10:00'),
-('ORD-2026-006', 7, 'delivered', 141.48, 'Rajshahi', 'Bangladesh', '2026-03-15 13:00:00'),
-('ORD-2026-007', 8, 'pending', 1169.99, 'Toronto', 'Canada', '2026-03-18 18:40:00'),
-('ORD-2026-008', 9, 'processing', 592.48, 'Khulna', 'Bangladesh', '2026-03-20 17:42:00'),
-('ORD-2026-009', 11, 'delivered', 109.99, 'Chicago', 'USA', '2026-03-22 12:28:00'),
-('ORD-2026-010', 12, 'shipped', 151.97, 'Sylhet', 'Bangladesh', '2026-03-25 15:05:00');
+('ORD-2026-0001', 1, 2, 'delivered', 924.98, 46.25, 10.00, 981.23, '2026-03-01 10:15:00', 'Delivered successfully'),
+('ORD-2026-0002', 2, 2, 'shipped', 119.98, 6.00, 5.00, 130.98, '2026-03-03 14:30:00', 'Express delivery'),
+('ORD-2026-0003', 3, 3, 'processing', 329.99, 16.50, 10.00, 356.49, '2026-03-07 09:45:00', NULL),
+('ORD-2026-0004', 4, 2, 'delivered', 349.98, 17.50, 8.00, 375.48, '2026-03-10 16:20:00', 'Customer confirmed receipt'),
+('ORD-2026-0005', 5, 4, 'cancelled', 219.99, 11.00, 8.00, 238.99, '2026-03-12 11:10:00', 'Cancelled by customer'),
+('ORD-2026-0006', 6, 2, 'delivered', 129.98, 6.50, 5.00, 141.48, '2026-03-15 13:00:00', NULL),
+('ORD-2026-0007', 7, 3, 'pending', 1099.99, 55.00, 15.00, 1169.99, '2026-03-18 08:30:00', 'Awaiting payment'),
+('ORD-2026-0008', 8, 4, 'shipped', 549.98, 27.50, 15.00, 592.48, '2026-03-20 17:40:00', 'Tracking number pending'),
+('ORD-2026-0009', 9, 2, 'delivered', 99.99, 5.00, 5.00, 109.99, '2026-03-22 12:25:00', NULL),
+('ORD-2026-0010', 10, 3, 'processing', 139.97, 7.00, 5.00, 151.97, '2026-03-25 15:50:00', 'Gift packaging requested'),
+('ORD-2026-0011', 1, 2, 'delivered', 449.99, 22.50, 10.00, 482.49, '2026-04-01 10:00:00', 'Repeat customer'),
+('ORD-2026-0012', 12, 4, 'pending', 59.99, 3.00, 5.00, 67.99, '2026-04-05 18:10:00', NULL);
 
 -- =====================================================
 -- 7. ORDER ITEMS
@@ -190,37 +199,32 @@ CREATE TABLE order_items (
     order_id BIGINT NOT NULL,
     product_id BIGINT NOT NULL,
     quantity INT NOT NULL,
-    unit_price DECIMAL(10,2) NOT NULL,
-    line_total DECIMAL(12,2) NOT NULL,
+    unit_price DECIMAL(12,2) NOT NULL,
+    line_total DECIMAL(14,2) GENERATED ALWAYS AS (quantity * unit_price) STORED,
     FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE,
-    FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE RESTRICT
-);
+    FOREIGN KEY (product_id) REFERENCES products(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-INSERT INTO order_items
-(order_id, product_id, quantity, unit_price, line_total)
+INSERT INTO order_items (order_id, product_id, quantity, unit_price)
 VALUES
-(1, 3, 2, 349.00, 698.00),
-(1, 1, 1, 89.99, 89.99),
-(1, 4, 1, 199.99, 199.99),
-(2, 2, 2, 49.50, 99.00),
-(2, 9, 1, 18.50, 18.50),
-(3, 4, 1, 199.99, 199.99),
-(3, 2, 1, 49.50, 49.50),
-(3, 8, 1, 59.99, 59.99),
-(4, 3, 1, 349.00, 349.00),
-(4, 10, 1, 24.00, 24.00),
-(5, 4, 1, 199.99, 199.99),
-(5, 10, 1, 24.00, 24.00),
-(6, 5, 1, 79.95, 79.95),
-(6, 8, 1, 59.99, 59.99),
-(7, 3, 3, 349.00, 1047.00),
-(7, 7, 1, 129.99, 129.99),
-(8, 6, 2, 119.00, 238.00),
-(8, 3, 1, 349.00, 349.00),
-(9, 1, 1, 89.99, 89.99),
-(9, 10, 1, 24.00, 24.00),
-(10, 8, 1, 59.99, 59.99),
-(10, 1, 1, 89.99, 89.99);
+(1, 1, 1, 899.99),
+(1, 2, 1, 24.99),
+(2, 3, 1, 79.99),
+(2, 5, 1, 39.99),
+(3, 4, 1, 329.99),
+(4, 2, 2, 24.99),
+(4, 8, 2, 129.99),
+(5, 6, 1, 219.99),
+(6, 8, 1, 129.99),
+(7, 11, 1, 1099.99),
+(8, 7, 1, 449.99),
+(8, 5, 1, 39.99),
+(9, 9, 1, 99.99),
+(10, 2, 1, 24.99),
+(10, 3, 1, 79.99),
+(10, 5, 1, 34.99),
+(11, 7, 1, 449.99),
+(12, 10, 1, 59.99);
 
 -- =====================================================
 -- 8. PAYMENTS
@@ -230,13 +234,13 @@ CREATE TABLE payments (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     order_id BIGINT NOT NULL,
     transaction_reference VARCHAR(100) UNIQUE NOT NULL,
-    payment_method VARCHAR(50) NOT NULL,
-    status VARCHAR(30) NOT NULL DEFAULT 'pending',
+    payment_method VARCHAR(30) NOT NULL,
+    status VARCHAR(30) NOT NULL,
     amount DECIMAL(12,2) NOT NULL,
-    paid_at TIMESTAMP NULL DEFAULT NULL,
+    paid_at DATETIME,
     metadata JSON,
     FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 INSERT INTO payments
 (order_id, transaction_reference, payment_method, status, amount, paid_at, metadata)
@@ -253,7 +257,7 @@ VALUES
 (10, 'TXN-10010', 'card', 'failed', 151.97, NULL, '{"error":"payment_declined"}');
 
 -- =====================================================
--- 9. INDEXES FOR PERFORMANCE
+-- 9. INDEXES
 -- =====================================================
 
 CREATE INDEX idx_customers_country ON customers(country);
@@ -266,43 +270,3 @@ CREATE INDEX idx_order_items_order ON order_items(order_id);
 CREATE INDEX idx_order_items_product ON order_items(product_id);
 CREATE INDEX idx_payments_order ON payments(order_id);
 CREATE INDEX idx_payments_status ON payments(status);
-
--- =====================================================
--- 10. OVERVIEW: TABLES AND ROW COUNTS
--- =====================================================
-
-SELECT 'customers' AS table_name, COUNT(*) AS row_count FROM customers
-UNION ALL
-SELECT 'employees', COUNT(*) FROM employees
-UNION ALL
-SELECT 'suppliers', COUNT(*) FROM suppliers
-UNION ALL
-SELECT 'categories', COUNT(*) FROM categories
-UNION ALL
-SELECT 'products', COUNT(*) FROM products
-UNION ALL
-SELECT 'orders', COUNT(*) FROM orders
-UNION ALL
-SELECT 'order_items', COUNT(*) FROM order_items
-UNION ALL
-SELECT 'payments', COUNT(*) FROM payments
-ORDER BY table_name;
-
--- =====================================================
--- 11. RELATIONAL DEMO QUERY
--- =====================================================
-
-SELECT
-    o.order_number,
-    CONCAT(c.first_name, ' ', c.last_name) AS customer,
-    c.email,
-    o.status AS order_status,
-    o.total_amount,
-    p.payment_method,
-    p.status AS payment_status,
-    o.ordered_at
-FROM orders o
-JOIN customers c ON o.customer_id = c.id
-LEFT JOIN payments p ON p.order_id = o.id
-ORDER BY o.ordered_at DESC
-LIMIT 10;

@@ -1,16 +1,14 @@
 -- =====================================================
 -- AXIOM DEMO DATABASE: RELATIONAL E-COMMERCE DATASET
--- Dialect: Turso / LibSQL / SQLite
--- (For PostgreSQL use demo_postgres.sql, for MySQL use demo_mysql.sql)
+-- Dialect: LibSQL / SQLite / Turso
+-- Exact total replica of demo_postgres.sql
 -- =====================================================
 
 PRAGMA foreign_keys = OFF;
 
--- -----------------------------------------------------
--- Clean up previous demo tables
--- -----------------------------------------------------
-DROP TABLE IF EXISTS payments;
+-- Remove previous demo tables in dependency order
 DROP TABLE IF EXISTS order_items;
+DROP TABLE IF EXISTS payments;
 DROP TABLE IF EXISTS orders;
 DROP TABLE IF EXISTS products;
 DROP TABLE IF EXISTS categories;
@@ -71,11 +69,11 @@ CREATE TABLE employees (
 INSERT INTO employees
 (full_name, email, department, job_title, salary, manager_id, hired_at, is_active)
 VALUES
-('James Wilson', 'james.wilson@example.com', 'Management', 'Operations Manager', 85000.0, NULL, '2022-01-10', 1),
-('Sophia Taylor', 'sophia.taylor@example.com', 'Sales', 'Sales Manager', 68000.0, 1, '2022-05-15', 1),
-('William Clark', 'william.clark@example.com', 'Engineering', 'Software Engineer', 75000.0, 1, '2023-02-20', 1),
-('Olivia Martin', 'olivia.martin@example.com', 'Support', 'Support Specialist', 42000.0, 1, '2024-01-08', 1),
-('Benjamin Lee', 'benjamin.lee@example.com', 'Warehouse', 'Inventory Coordinator', 39000.0, 1, '2024-06-12', 1);
+('James Wilson', 'james.wilson@example.com', 'Management', 'Operations Manager', 85000.00, NULL, '2022-01-10', 1),
+('Sophia Taylor', 'sophia.taylor@example.com', 'Sales', 'Sales Manager', 68000.00, 1, '2022-05-15', 1),
+('William Clark', 'william.clark@example.com', 'Engineering', 'Software Engineer', 75000.00, 1, '2023-02-20', 1),
+('Olivia Martin', 'olivia.martin@example.com', 'Support', 'Support Specialist', 42000.00, 1, '2024-01-08', 1),
+('Benjamin Lee', 'benjamin.lee@example.com', 'Warehouse', 'Inventory Coordinator', 39000.00, 1, '2024-06-12', 1);
 
 -- =====================================================
 -- 3. SUPPLIERS
@@ -104,18 +102,20 @@ VALUES
 
 CREATE TABLE categories (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    slug TEXT UNIQUE NOT NULL,
-    name TEXT NOT NULL,
-    description TEXT
+    name TEXT NOT NULL UNIQUE,
+    description TEXT,
+    parent_id INTEGER REFERENCES categories(id) ON DELETE SET NULL,
+    created_at TEXT NOT NULL DEFAULT (DATETIME('now'))
 );
 
-INSERT INTO categories
-(slug, name, description)
+INSERT INTO categories (name, description, parent_id)
 VALUES
-('electronics', 'Electronics', 'Consumer tech, computers, accessories and audio gear'),
-('home-appliances', 'Home Appliances', 'Kitchen tools, living room equipment and utilities'),
-('fashion', 'Fashion & Apparel', 'Clothing, footwear and everyday style accessories'),
-('stationery', 'Stationery & Office', 'Desk items, notebooks and workplace productivity');
+('Electronics', 'Electronic devices and accessories', NULL),
+('Computers', 'Laptops and computer hardware', 1),
+('Accessories', 'Computer and mobile accessories', 1),
+('Home & Office', 'Furniture and office equipment', NULL),
+('Audio', 'Headphones, speakers, and audio equipment', 1),
+('Storage', 'Portable and internal storage devices', 2);
 
 -- =====================================================
 -- 5. PRODUCTS
@@ -125,27 +125,30 @@ CREATE TABLE products (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     sku TEXT UNIQUE NOT NULL,
     name TEXT NOT NULL,
-    category_id INTEGER NOT NULL REFERENCES categories(id) ON DELETE RESTRICT,
+    description TEXT,
+    category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL,
     supplier_id INTEGER REFERENCES suppliers(id) ON DELETE SET NULL,
-    unit_price REAL NOT NULL,
-    cost_price REAL NOT NULL,
-    stock_quantity INTEGER NOT NULL DEFAULT 0,
-    is_available INTEGER NOT NULL DEFAULT 1
+    price REAL NOT NULL CHECK (price >= 0),
+    stock_quantity INTEGER NOT NULL DEFAULT 0 CHECK (stock_quantity >= 0),
+    created_at TEXT NOT NULL DEFAULT (DATETIME('now')),
+    is_active INTEGER NOT NULL DEFAULT 1
 );
 
 INSERT INTO products
-(sku, name, category_id, supplier_id, unit_price, cost_price, stock_quantity, is_available)
+(sku, name, description, category_id, supplier_id, price, stock_quantity, is_active)
 VALUES
-('PROD-KB-001', 'Wireless Mechanical Keyboard', 1, 1, 89.99, 45.00, 120, 1),
-('PROD-MS-002', 'Ergonomic Precision Mouse', 1, 1, 49.50, 22.00, 250, 1),
-('PROD-MN-003', '27-inch 4K IPS Monitor', 1, 2, 349.00, 210.00, 45, 1),
-('PROD-HP-004', 'Noise-Cancelling Headphones', 1, 2, 199.99, 95.00, 80, 1),
-('PROD-BL-005', 'High-Speed Kitchen Blender', 2, 3, 79.95, 38.00, 60, 1),
-('PROD-CM-006', 'Programmable Coffee Maker', 2, 3, 119.00, 60.00, 35, 1),
-('PROD-JK-007', 'Waterproof Trekking Jacket', 3, NULL, 129.99, 58.00, 90, 1),
-('PROD-BP-008', 'City Commuter Backpack', 3, NULL, 59.99, 24.00, 140, 1),
-('PROD-NB-009', 'Hardcover Dot Grid Notebook', 4, 4, 18.50, 6.00, 400, 1),
-('PROD-PN-010', 'Refillable Rollerball Pen Set', 4, 4, 24.00, 8.50, 300, 1);
+('LAP-001', 'ProBook Laptop 15', '15-inch productivity laptop with 16GB RAM', 2, 1, 899.99, 25, 1),
+('MOU-001', 'Wireless Mouse', 'Ergonomic wireless mouse with adjustable DPI', 3, 1, 24.99, 150, 1),
+('KEY-001', 'Mechanical Keyboard', 'Mechanical keyboard with RGB lighting', 3, 2, 79.99, 80, 1),
+('MON-001', '4K Monitor 27', '27-inch UHD IPS monitor', 2, 2, 329.99, 35, 1),
+('HUB-001', 'USB-C Hub 7-in-1', 'USB-C hub with HDMI and card reader', 3, 1, 39.99, 100, 1),
+('CHR-001', 'Ergonomic Office Chair', 'Adjustable office chair with lumbar support', 4, 3, 219.99, 18, 1),
+('DSK-001', 'Standing Desk', 'Height-adjustable office desk', 4, 3, 449.99, 12, 1),
+('AUD-001', 'Studio Headphones', 'Over-ear headphones for work and music', 5, 2, 129.99, 45, 1),
+('SSD-001', 'External SSD 1TB', 'Portable USB-C solid-state drive', 6, 4, 99.99, 65, 1),
+('WEB-001', 'Full HD Webcam', '1080p webcam with integrated microphone', 3, 2, 59.99, 50, 1),
+('LAP-002', 'UltraBook Laptop 14', 'Lightweight laptop for everyday productivity', 2, 4, 1099.99, 15, 1),
+('SPK-001', 'Bluetooth Speaker', 'Compact portable wireless speaker', 5, 2, 49.99, 90, 0);
 
 -- =====================================================
 -- 6. ORDERS
@@ -154,27 +157,32 @@ VALUES
 CREATE TABLE orders (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     order_number TEXT UNIQUE NOT NULL,
-    customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
-    status TEXT NOT NULL DEFAULT 'pending',
-    total_amount REAL NOT NULL DEFAULT 0.00,
-    shipping_city TEXT,
-    shipping_country TEXT,
-    ordered_at TEXT NOT NULL DEFAULT (DATETIME('now'))
+    customer_id INTEGER NOT NULL REFERENCES customers(id),
+    handled_by INTEGER REFERENCES employees(id) ON DELETE SET NULL,
+    status TEXT NOT NULL CHECK (status IN ('pending', 'processing', 'shipped', 'delivered', 'cancelled')),
+    subtotal REAL NOT NULL CHECK (subtotal >= 0),
+    tax_amount REAL NOT NULL DEFAULT 0 CHECK (tax_amount >= 0),
+    shipping_amount REAL NOT NULL DEFAULT 0 CHECK (shipping_amount >= 0),
+    total_amount REAL NOT NULL CHECK (total_amount >= 0),
+    ordered_at TEXT NOT NULL,
+    notes TEXT
 );
 
 INSERT INTO orders
-(order_number, customer_id, status, total_amount, shipping_city, shipping_country, ordered_at)
+(order_number, customer_id, handled_by, status, subtotal, tax_amount, shipping_amount, total_amount, ordered_at, notes)
 VALUES
-('ORD-2026-001', 1, 'delivered', 981.23, 'Dhaka', 'Bangladesh', '2026-03-01 10:14:00'),
-('ORD-2026-002', 2, 'processing', 130.98, 'Chittagong', 'Bangladesh', '2026-03-03 14:30:00'),
-('ORD-2026-003', 4, 'shipped', 356.49, 'New York', 'USA', '2026-03-05 09:20:00'),
-('ORD-2026-004', 5, 'delivered', 375.48, 'London', 'UK', '2026-03-10 16:22:00'),
-('ORD-2026-005', 6, 'cancelled', 238.99, 'Dhaka', 'Bangladesh', '2026-03-12 11:10:00'),
-('ORD-2026-006', 7, 'delivered', 141.48, 'Rajshahi', 'Bangladesh', '2026-03-15 13:00:00'),
-('ORD-2026-007', 8, 'pending', 1169.99, 'Toronto', 'Canada', '2026-03-18 18:40:00'),
-('ORD-2026-008', 9, 'processing', 592.48, 'Khulna', 'Bangladesh', '2026-03-20 17:42:00'),
-('ORD-2026-009', 11, 'delivered', 109.99, 'Chicago', 'USA', '2026-03-22 12:28:00'),
-('ORD-2026-010', 12, 'shipped', 151.97, 'Sylhet', 'Bangladesh', '2026-03-25 15:05:00');
+('ORD-2026-0001', 1, 2, 'delivered', 924.98, 46.25, 10.00, 981.23, '2026-03-01 10:15:00', 'Delivered successfully'),
+('ORD-2026-0002', 2, 2, 'shipped', 119.98, 6.00, 5.00, 130.98, '2026-03-03 14:30:00', 'Express delivery'),
+('ORD-2026-0003', 3, 3, 'processing', 329.99, 16.50, 10.00, 356.49, '2026-03-07 09:45:00', NULL),
+('ORD-2026-0004', 4, 2, 'delivered', 349.98, 17.50, 8.00, 375.48, '2026-03-10 16:20:00', 'Customer confirmed receipt'),
+('ORD-2026-0005', 5, 4, 'cancelled', 219.99, 11.00, 8.00, 238.99, '2026-03-12 11:10:00', 'Cancelled by customer'),
+('ORD-2026-0006', 6, 2, 'delivered', 129.98, 6.50, 5.00, 141.48, '2026-03-15 13:00:00', NULL),
+('ORD-2026-0007', 7, 3, 'pending', 1099.99, 55.00, 15.00, 1169.99, '2026-03-18 08:30:00', 'Awaiting payment'),
+('ORD-2026-0008', 8, 4, 'shipped', 549.98, 27.50, 15.00, 592.48, '2026-03-20 17:40:00', 'Tracking number pending'),
+('ORD-2026-0009', 9, 2, 'delivered', 99.99, 5.00, 5.00, 109.99, '2026-03-22 12:25:00', NULL),
+('ORD-2026-0010', 10, 3, 'processing', 139.97, 7.00, 5.00, 151.97, '2026-03-25 15:50:00', 'Gift packaging requested'),
+('ORD-2026-0011', 1, 2, 'delivered', 449.99, 22.50, 10.00, 482.49, '2026-04-01 10:00:00', 'Repeat customer'),
+('ORD-2026-0012', 12, 4, 'pending', 59.99, 3.00, 5.00, 67.99, '2026-04-05 18:10:00', NULL);
 
 -- =====================================================
 -- 7. ORDER ITEMS
@@ -183,37 +191,32 @@ VALUES
 CREATE TABLE order_items (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
-    product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE RESTRICT,
-    quantity INTEGER NOT NULL,
-    unit_price REAL NOT NULL,
-    line_total REAL NOT NULL
+    product_id INTEGER NOT NULL REFERENCES products(id),
+    quantity INTEGER NOT NULL CHECK (quantity > 0),
+    unit_price REAL NOT NULL CHECK (unit_price >= 0),
+    line_total REAL GENERATED ALWAYS AS (quantity * unit_price) STORED
 );
 
-INSERT INTO order_items
-(order_id, product_id, quantity, unit_price, line_total)
+INSERT INTO order_items (order_id, product_id, quantity, unit_price)
 VALUES
-(1, 3, 2, 349.00, 698.00),
-(1, 1, 1, 89.99, 89.99),
-(1, 4, 1, 199.99, 199.99),
-(2, 2, 2, 49.50, 99.00),
-(2, 9, 1, 18.50, 18.50),
-(3, 4, 1, 199.99, 199.99),
-(3, 2, 1, 49.50, 49.50),
-(3, 8, 1, 59.99, 59.99),
-(4, 3, 1, 349.00, 349.00),
-(4, 10, 1, 24.00, 24.00),
-(5, 4, 1, 199.99, 199.99),
-(5, 10, 1, 24.00, 24.00),
-(6, 5, 1, 79.95, 79.95),
-(6, 8, 1, 59.99, 59.99),
-(7, 3, 3, 349.00, 1047.00),
-(7, 7, 1, 129.99, 129.99),
-(8, 6, 2, 119.00, 238.00),
-(8, 3, 1, 349.00, 349.00),
-(9, 1, 1, 89.99, 89.99),
-(9, 10, 1, 24.00, 24.00),
-(10, 8, 1, 59.99, 59.99),
-(10, 1, 1, 89.99, 89.99);
+(1, 1, 1, 899.99),
+(1, 2, 1, 24.99),
+(2, 3, 1, 79.99),
+(2, 5, 1, 39.99),
+(3, 4, 1, 329.99),
+(4, 2, 2, 24.99),
+(4, 8, 2, 129.99),
+(5, 6, 1, 219.99),
+(6, 8, 1, 129.99),
+(7, 11, 1, 1099.99),
+(8, 7, 1, 449.99),
+(8, 5, 1, 39.99),
+(9, 9, 1, 99.99),
+(10, 2, 1, 24.99),
+(10, 3, 1, 79.99),
+(10, 5, 1, 34.99),
+(11, 7, 1, 449.99),
+(12, 10, 1, 59.99);
 
 -- =====================================================
 -- 8. PAYMENTS
@@ -223,11 +226,11 @@ CREATE TABLE payments (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
     transaction_reference TEXT UNIQUE NOT NULL,
-    payment_method TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'pending',
-    amount REAL NOT NULL,
+    payment_method TEXT NOT NULL CHECK (payment_method IN ('card', 'bank_transfer', 'mobile_banking', 'cash')),
+    status TEXT NOT NULL CHECK (status IN ('pending', 'completed', 'failed', 'refunded')),
+    amount REAL NOT NULL CHECK (amount >= 0),
     paid_at TEXT,
-    metadata TEXT
+    metadata TEXT DEFAULT '{}'
 );
 
 INSERT INTO payments
@@ -245,7 +248,7 @@ VALUES
 (10, 'TXN-10010', 'card', 'failed', 151.97, NULL, '{"error":"payment_declined"}');
 
 -- =====================================================
--- 9. INDEXES FOR PERFORMANCE
+-- 9. INDEXES
 -- =====================================================
 
 CREATE INDEX IF NOT EXISTS idx_customers_country ON customers(country);
@@ -258,43 +261,3 @@ CREATE INDEX IF NOT EXISTS idx_order_items_order ON order_items(order_id);
 CREATE INDEX IF NOT EXISTS idx_order_items_product ON order_items(product_id);
 CREATE INDEX IF NOT EXISTS idx_payments_order ON payments(order_id);
 CREATE INDEX IF NOT EXISTS idx_payments_status ON payments(status);
-
--- =====================================================
--- 10. OVERVIEW: TABLES AND ROW COUNTS
--- =====================================================
-
-SELECT 'customers' AS table_name, COUNT(*) AS row_count FROM customers
-UNION ALL
-SELECT 'employees', COUNT(*) FROM employees
-UNION ALL
-SELECT 'suppliers', COUNT(*) FROM suppliers
-UNION ALL
-SELECT 'categories', COUNT(*) FROM categories
-UNION ALL
-SELECT 'products', COUNT(*) FROM products
-UNION ALL
-SELECT 'orders', COUNT(*) FROM orders
-UNION ALL
-SELECT 'order_items', COUNT(*) FROM order_items
-UNION ALL
-SELECT 'payments', COUNT(*) FROM payments
-ORDER BY table_name;
-
--- =====================================================
--- 11. RELATIONAL DEMO QUERY
--- =====================================================
-
-SELECT
-    o.order_number,
-    c.first_name || ' ' || c.last_name AS customer,
-    c.email,
-    o.status AS order_status,
-    o.total_amount,
-    p.payment_method,
-    p.status AS payment_status,
-    o.ordered_at
-FROM orders o
-JOIN customers c ON o.customer_id = c.id
-LEFT JOIN payments p ON p.order_id = o.id
-ORDER BY o.ordered_at DESC
-LIMIT 10;

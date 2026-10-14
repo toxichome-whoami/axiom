@@ -152,6 +152,7 @@ export function TableEditor() {
     foreignKeys,
     isSchemaLoading,
     allDbTablesSchema,
+    setAllDbTablesSchema,
     schemaCacheRef,
     rows,
     setRows,
@@ -426,7 +427,8 @@ export function TableEditor() {
 
       await api.executeSqlQuery(selectedDb, dropSql);
 
-      delete schemaCacheRef.current[deleteTableTarget];
+      delete schemaCacheRef.current[`${selectedDb}:${deleteTableTarget}`];
+      delete allDbTablesSchema[deleteTableTarget];
       const target = deleteTableTarget;
       setDeleteTableTarget(null);
       setIsTableEditOpen(false);
@@ -662,13 +664,16 @@ export function TableEditor() {
         onEditTable={async (tableName) => {
           if (tableName !== selectedTable) {
             setSelectedTable(tableName);
-            if (!schemaCacheRef.current[tableName] && !allDbTablesSchema[tableName]) {
+            const dbTableKey = `${selectedDb}:${tableName}`;
+            if (!schemaCacheRef.current[dbTableKey] && !allDbTablesSchema[tableName]) {
               try {
                 const schema = await api.getTableSchema(selectedDb, tableName);
-                schemaCacheRef.current[tableName] = {
+                const entry = {
                   columns: schema.columns,
                   foreign_keys: schema.foreign_keys,
                 };
+                schemaCacheRef.current[dbTableKey] = entry;
+                setAllDbTablesSchema((prev) => ({ ...prev, [tableName]: entry }));
               } catch (e) {
                 console.error(e);
               }
