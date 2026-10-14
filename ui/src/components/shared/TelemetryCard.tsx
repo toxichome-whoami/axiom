@@ -41,6 +41,7 @@ export interface TelemetryCardProps {
   onHoverCompute?: (pct: number, svgX: number, exactYPct?: number) => TelemetryHoverData | null;
   noData?: boolean;
   noDataId?: string;
+  isLoading?: boolean;
 }
 
 export function formatTimeFromPct(pct: number): string {
@@ -106,6 +107,7 @@ export const TelemetryCard: React.FC<TelemetryCardProps> = ({
   onHoverCompute,
   noData = false,
   noDataId = 'nodata',
+  isLoading = false,
 }) => {
   const [hoverData, setHoverData] = useState<TelemetryHoverData | null>(null);
   const pathRef = useRef<SVGPathElement>(null);
@@ -123,6 +125,28 @@ export const TelemetryCard: React.FC<TelemetryCardProps> = ({
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
     };
   }, []);
+
+  if (isLoading) {
+    return (
+      <div
+        className={`analytics-card relative flex flex-col justify-between rounded-[8px] bg-[#0e0e0e] border border-[#222222] h-[241px] overflow-hidden select-none p-4 ${className}`}
+      >
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="h-3.5 w-24 rounded-[4px] bg-[#16171d]/80 border border-[#1e2025]/40 animate-pulse" />
+            <div className="h-3 w-8 rounded-[4px] bg-[#16171d]/60 border border-[#1e2025]/30 animate-pulse" />
+          </div>
+          <div className="flex items-baseline gap-2 pt-1">
+            <div className="h-7 w-28 rounded-[4px] bg-[#16171d]/80 border border-[#1e2025]/40 animate-pulse" />
+            <div className="h-3.5 w-20 rounded-[4px] bg-[#16171d]/60 border border-[#1e2025]/30 animate-pulse" />
+          </div>
+        </div>
+        <div className="w-full h-[120px] rounded-[6px] bg-[#14151a]/40 border border-[#1e2025]/30 animate-pulse flex items-center justify-center">
+          <div className="w-full h-px bg-gradient-to-r from-transparent via-[#2a2d38]/50 to-transparent" />
+        </div>
+      </div>
+    );
+  }
 
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!onHoverCompute) return;

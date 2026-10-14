@@ -19,7 +19,8 @@ static DAEMONS: Lazy<Mutex<Vec<JoinHandle<()>>>> = Lazy::new(|| Mutex::new(Vec::
 ///  - Idempotent: No (spawns tasks each time called).
 pub async fn start_daemons() {
     let config = axiom_core::ConfigManager::get();
-    let cache_needs_turso = config.cache.backend == "turso" || config.cache.backend == "hybrid";
+    let cache_backend = config.cache.backend.to_ascii_lowercase();
+    let cache_needs_turso = cache_backend == "hybrid" || cache_backend == "hybird";
     let rl_needs_turso = config.rate_limit.backend == "turso";
 
     // Initialize Unified CacheEngine (L1 RAM + L2 Persistent Storage)
@@ -37,7 +38,7 @@ pub async fn start_daemons() {
         let token = if cache_needs_turso { &config.cache.turso_token } else { &config.rate_limit.turso_token };
         if let Err(e) = crate::middleware::cache::TursoCache::init(url, token).await {
             tracing::error!("Failed to initialize Turso cache: {}", e);
-        } else if config.cache.backend == "hybrid" && config.cache.enabled && config.cache.query_cache {
+        } else if cache_needs_turso && config.cache.enabled && config.cache.query_cache {
             let entries = crate::middleware::cache::TursoCache::get_all_active_query_cache().await;
             let count = entries.len();
             crate::database::handlers::warm_cache_from_turso(entries).await;
@@ -45,21 +46,33 @@ pub async fn start_daemons() {
         }
     }
 
-    let mut tasks = DAEMONS.lock().unwrap();
+    // Initialize Persistent IP and API Key Ban Registry (M-7)
+    crate::security::ban_list::BanList::init_persistent().await;
 
-    // Cache sweep daemon: purges expired entries every 60 seconds
+    // Initialize Persistent Capability Ticket Secret from metadata store
+    match axiom_metadata::store::MetadataStore::get_or_create_system_secret("blob_ticket_secret").await {
+        Ok(secret) => {
+            axiom_blob::tickets::set_ticket_secret(&secret);
+            tracing::info!("Capability ticket cryptographic secret synchronized from metadata store");
+        }
+        Err(e) => {
+            tracing::error!("Failed to initialize capability ticket secret from metadata store: {}", e);
+        }
+    }
+
+    // Cache sweep daemon: purges expired entries and expired bans every 60 seconds
     let cache_sweep_handle = tokio::spawn(async move {
         let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
         loop {
             interval.tick().await;
             axiom_cache::CacheEngine::sweep_expired().await;
+            let _ = axiom_metadata::store::MetadataStore::cleanup_expired_bans().await;
+            let _ = axiom_metadata::store::MetadataStore::cleanup_expired_tickets().await;
         }
     });
-    tasks.push(cache_sweep_handle);
 
     // Log rotation daemon
     let rotator_handle = LogRotator::start();
-    tasks.push(rotator_handle);
 
     // Periodic metadata snapshot refresh daemon (reloads axiom.db every reload_interval seconds)
     let reload_interval = config.metadata.reload_interval.max(5);
@@ -72,7 +85,27 @@ pub async fn start_daemons() {
             }
         }
     });
-    tasks.push(metadata_sync_handle);
+
+    {
+        let mut tasks = DAEMONS.lock().unwrap();
+        tasks.push(cache_sweep_handle);
+        tasks.push(rotator_handle);
+        tasks.push(metadata_sync_handle);
+    }
+
+    // Initialize Native Blob Storage Engine (always enabled as native gateway feature)
+    let inline_max = axiom_core::parse_size(&config.blob.inline_max).unwrap_or(64 * 1024);
+    let max_object = axiom_core::parse_size(&config.blob.max_object).unwrap_or(5 * 1024 * 1024 * 1024);
+    if let Err(e) = crate::blobs::init_blob_engine(
+        &config.blob.path,
+        inline_max as u64,
+        max_object as u64,
+        config.blob.verify_reads,
+    ).await {
+        tracing::error!("Failed to initialize Native Blob Engine: {}", e);
+    } else {
+        tracing::info!("Native Blob Storage Engine initialized at '{}'", config.blob.path);
+    }
 }
 
 /// Registers an externally spawned daemon handle with the lifecycle supervisor.

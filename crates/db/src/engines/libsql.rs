@@ -12,7 +12,7 @@ use libsql::{Builder, Connection, Database};
 
 use axiom_core::config::schema::DatabaseDefConfig;
 use crate::engines::base::{
-    ColumnInfo, DatabaseEngine, EngineError, ForeignKeyInfo, QueryResult, TableInfo,
+    ColumnInfo, CreateColumnRequest, DatabaseEngine, EngineError, ForeignKeyInfo, QueryResult, TableInfo,
 };
 
 pub struct LibsqlDatabaseEngine {
@@ -59,8 +59,15 @@ impl DatabaseEngine for LibsqlDatabaseEngine {
                 .map_err(|e| EngineError::Connection(e.to_string()))?
         } else {
             // Local SQLite file
-            let path = url.replace("sqlite://", "").replace("file://", "");
-            Builder::new_local(path)
+            let path = url.replace("sqlite://", "").replace("file://", "").replace("file:", "");
+            if !is_memory {
+                if let Some(parent) = std::path::Path::new(&path).parent() {
+                    if !parent.as_os_str().is_empty() {
+                        let _ = tokio::fs::create_dir_all(parent).await;
+                    }
+                }
+            }
+            Builder::new_local(&path)
                 .build()
                 .await
                 .map_err(|e| EngineError::Connection(e.to_string()))?
@@ -158,10 +165,16 @@ impl DatabaseEngine for LibsqlDatabaseEngine {
         
         let mut columns = Vec::new();
         while let Ok(Some(row)) = rows.next().await {
-            let name: String = row.get(1).map_err(|e| EngineError::Execution(e.to_string()))?;
-            let data_type: String = row.get(2).map_err(|e| EngineError::Execution(e.to_string()))?;
-            let notnull: i32 = row.get(3).map_err(|e| EngineError::Execution(e.to_string()))?;
-            let pk: i32 = row.get(5).map_err(|e| EngineError::Execution(e.to_string()))?;
+            let name: String = row.get::<String>(1).unwrap_or_else(|_| row.get_str(1).unwrap_or_default().to_string());
+            let data_type: String = row.get::<String>(2).unwrap_or_else(|_| row.get_str(2).unwrap_or_default().to_string());
+            let notnull = match row.get_value(3) {
+                Ok(libsql::Value::Integer(v)) => v,
+                _ => 0,
+            };
+            let pk = match row.get_value(5) {
+                Ok(libsql::Value::Integer(v)) => v,
+                _ => 0,
+            };
             columns.push(ColumnInfo {
                 name,
                 r#type: data_type,
@@ -180,9 +193,9 @@ impl DatabaseEngine for LibsqlDatabaseEngine {
         
         let mut fks = Vec::new();
         while let Ok(Some(row)) = rows.next().await {
-            let referenced_table_name: String = row.get(2).map_err(|e| EngineError::Execution(e.to_string()))?;
-            let column_name: String = row.get(3).map_err(|e| EngineError::Execution(e.to_string()))?;
-            let referenced_column_name: String = row.get(4).map_err(|e| EngineError::Execution(e.to_string()))?;
+            let referenced_table_name: String = row.get::<String>(2).unwrap_or_else(|_| row.get_str(2).unwrap_or_default().to_string());
+            let column_name: String = row.get::<String>(3).unwrap_or_else(|_| row.get_str(3).unwrap_or_default().to_string());
+            let referenced_column_name: String = row.get::<String>(4).unwrap_or_else(|_| row.get_str(4).unwrap_or_default().to_string());
             fks.push(ForeignKeyInfo {
                 column: column_name,
                 referenced_table: referenced_table_name,
@@ -312,6 +325,74 @@ impl DatabaseEngine for LibsqlDatabaseEngine {
 
     fn dialect(&self) -> &str {
         "sqlite"
+    }
+
+    async fn add_column(&self, table: &str, req: &CreateColumnRequest) -> Result<(), EngineError> {
+        let conn = self.conn.as_ref().ok_or_else(|| EngineError::Connection("Not connected".into()))?;
+
+        let col_name_clean: String = req.name.chars().filter(|c| c.is_alphanumeric() || *c == '_').collect();
+        if col_name_clean.is_empty() {
+            return Err(EngineError::Schema("Invalid column name".into()));
+        }
+
+        let escaped_table = format!("\"{}\"", table.replace('"', "\"\""));
+        let escaped_col = format!("\"{}\"", col_name_clean.replace('"', "\"\""));
+
+        let type_def = &req.data_type;
+        let mut sql = format!("ALTER TABLE {} ADD COLUMN {} {}", escaped_table, escaped_col, type_def);
+
+        if req.primary_key {
+            sql.push_str(" PRIMARY KEY");
+        } else {
+            if req.unique {
+                sql.push_str(" UNIQUE");
+            }
+            if !req.nullable {
+                sql.push_str(" NOT NULL");
+            }
+        }
+
+        if let Some(ref def_val) = req.default_value {
+            let trimmed = def_val.trim();
+            if !trimmed.is_empty() && trimmed.to_uppercase() != "NULL" {
+                sql.push_str(&format!(" DEFAULT {}", trimmed));
+            }
+        }
+
+        if let Some(ref chk) = req.check_expression {
+            let trimmed = chk.trim();
+            if !trimmed.is_empty() {
+                sql.push_str(&format!(" CHECK ({})", trimmed));
+            }
+        }
+
+        if let Some(ref fk) = req.foreign_key {
+            let fk_table = fk.table.trim();
+            let fk_col = fk.column.trim();
+            if !fk_table.is_empty() && !fk_col.is_empty() {
+                let escaped_fk_table = format!("\"{}\"", fk_table.replace('"', "\"\""));
+                let escaped_fk_col = format!("\"{}\"", fk_col.replace('"', "\"\""));
+                sql.push_str(&format!(" REFERENCES {} ({})", escaped_fk_table, escaped_fk_col));
+
+                if let Some(ref u) = fk.on_update {
+                    if u.to_uppercase() != "NO ACTION" {
+                        sql.push_str(&format!(" ON UPDATE {}", u));
+                    }
+                }
+                if let Some(ref d) = fk.on_delete {
+                    if d.to_uppercase() != "NO ACTION" {
+                        sql.push_str(&format!(" ON DELETE {}", d));
+                    }
+                }
+            }
+        }
+
+        let stmt = conn.prepare(&sql).await.map_err(|e| EngineError::Execution(e.to_string()))?;
+        stmt.execute(libsql::params_from_iter(Vec::<libsql::Value>::new()))
+            .await
+            .map_err(|e| EngineError::Execution(e.to_string()))?;
+
+        Ok(())
     }
 }
 

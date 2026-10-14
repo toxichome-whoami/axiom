@@ -36,11 +36,6 @@ pub async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
     let metadata_token = &config.metadata.token;
     if let Err(e) = axiom_metadata::MetadataStore::init(metadata_url, metadata_token).await {
         tracing::error!("Failed to initialize metadata store ({}): {}", metadata_url, e);
-    } else {
-        // Auto-seed legacy api_key and database entries on first boot if store is empty
-        if let Err(e) = axiom_metadata::MetadataStore::seed_from_config(&config).await {
-            tracing::error!("Failed to auto-seed metadata: {}", e);
-        }
     }
 
     // 3. Start Background Daemons (TTL sweeper, metrics flusher, etc.)

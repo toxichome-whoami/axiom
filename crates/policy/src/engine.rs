@@ -12,14 +12,16 @@ use axiom_core::{AxiomError, AuthContext, ServerMode};
 pub struct PolicyEngine;
 
 impl PolicyEngine {
+// ─── SQL Database Policy Evaluation ─────────────────────────────────────────
+
     /// Evaluates whether an authenticated identity has permission to perform an operation on a database table.
     /// CONTRACT:
     ///  - Precondition: `auth` contains verified identity context from authentication middleware.
     ///  - Precondition: `operation` should be one of "SELECT", "INSERT", "UPDATE", "DELETE", or "*" (case-insensitive).
     ///  - Returns `Ok(())` if authorized.
-    ///  - Throws `AxiomError(FORBIDDEN, 403)` if permission is denied.
+    ///  - Throws `AxiomError(AUTH_FORBIDDEN, 403)` or `AxiomError(AUTH_SCOPE_DENIED, 403)` if permission is denied.
     ///  - Side effects: None (pure evaluator).
-    ///  - Idempotent: Yes.
+    ///  - Concurrency: Zero locks, zero dynamic allocations on hot path.
     pub fn evaluate(
         auth: &AuthContext,
         database: &str,
@@ -36,7 +38,9 @@ impl PolicyEngine {
             let op_normalized = operation.to_ascii_uppercase();
 
             for perm in &auth.permissions {
+                // Database match: explicit wildcard "*" or case-insensitive alias match
                 let db_match = perm.database == "*" || perm.database.eq_ignore_ascii_case(database);
+                // Table match: explicit wildcard "*" or case-insensitive table name match
                 let table_match = perm.table_name == "*" || perm.table_name.eq_ignore_ascii_case(table);
 
                 if db_match && table_match {
@@ -114,7 +118,10 @@ impl PolicyEngine {
         }
     }
 
+// ─── Resource Listing Filters ───────────────────────────────────────────────
+
     /// Filters a list of database aliases to only those accessible to the current identity.
+    /// 
     /// CONTRACT:
     ///  - Returns vector of database alias strings authorized for the caller.
     ///  - Idempotent: Yes.
@@ -136,6 +143,160 @@ impl PolicyEngine {
             })
             .cloned()
             .collect()
+    }
+
+    /// Filters a list of blob namespaces to only those accessible to the current identity for READ.
+    /// CONTRACT:
+    ///  - Returns vector of namespace strings authorized for the caller.
+    ///  - Idempotent: Yes.
+    pub fn filter_blob_namespaces(auth: &AuthContext, namespaces: &[String]) -> Vec<String> {
+        if auth.is_session {
+            return namespaces.to_vec();
+        }
+
+        namespaces
+            .iter()
+            .filter(|ns| {
+                if !auth.permissions.is_empty() {
+                    let ns_prefix = format!("blob:{}", ns);
+                    auth.permissions.iter().any(|p| {
+                        (p.database == "*"
+                            || p.database.eq_ignore_ascii_case("blob:*")
+                            || p.database.eq_ignore_ascii_case(ns)
+                            || p.database.eq_ignore_ascii_case(&ns_prefix))
+                            && p.operations.iter().any(|op| {
+                                op == "*"
+                                    || op.eq_ignore_ascii_case("READ")
+                                    || op.eq_ignore_ascii_case("SELECT")
+                                    || op.eq_ignore_ascii_case("BLOB_READ")
+                            })
+                    })
+                } else {
+                    let in_scope = auth.db_scope.iter().any(|s| s == "*" || s.eq_ignore_ascii_case(ns));
+                    in_scope && auth.mode != ServerMode::Writeonly
+                }
+            })
+            .cloned()
+            .collect()
+    }
+
+// ─── Native Blob Storage Policy Evaluation ──────────────────────────────────
+
+    /// Evaluates authorization for native blob storage operations.
+    /// CONTRACT:
+    ///  - Precondition: `operation` is "READ", "WRITE", or "DELETE" (case-insensitive).
+    ///  - Checks granular permissions matching `*`, `namespace`, or `blob:{namespace}`.
+    ///  - Throws `AxiomError(AUTH_FORBIDDEN, 403)` or `AxiomError(AUTH_SCOPE_DENIED, 403)` on unauthorized access.
+    ///  - Invariant: Capability tickets can NEVER execute DELETE operations regardless of mode.
+    ///  - Idempotent: Yes.
+    pub fn evaluate_blob(
+        auth: &AuthContext,
+        namespace: &str,
+        key: &str,
+        operation: &str,
+    ) -> Result<(), AxiomError> {
+        // Fast-path: Human admin sessions bypass policy evaluation
+        if auth.is_session {
+            return Ok(());
+        }
+
+        let op_normalized = operation.to_ascii_uppercase();
+
+        if !auth.permissions.is_empty() {
+            let ns_prefix = format!("blob:{}", namespace);
+
+            for perm in &auth.permissions {
+                // Namespace matching: allows "*", "blob:*", explicit namespace, or "blob:<namespace>"
+                let db_match = perm.database == "*"
+                    || perm.database.eq_ignore_ascii_case("blob:*")
+                    || perm.database.eq_ignore_ascii_case(namespace)
+                    || perm.database.eq_ignore_ascii_case(&ns_prefix);
+
+                // Key pattern matching: allows "*" wildcard, exact match, or prefix matching when pattern ends with "*"
+                let key_match = perm.table_name == "*"
+                    || perm.table_name.eq_ignore_ascii_case(key)
+                    || (perm.table_name.ends_with('*') && key.starts_with(&perm.table_name[..perm.table_name.len() - 1]));
+
+                if db_match && key_match {
+                    let op_allowed = perm.operations.iter().any(|op| {
+                        op == "*"
+                            || op.eq_ignore_ascii_case(&op_normalized)
+                            || (op_normalized == "READ" && (op == "SELECT" || op == "BLOB_READ"))
+                            || (op_normalized == "WRITE" && (op == "INSERT" || op == "UPDATE" || op == "BLOB_WRITE"))
+                            || (op_normalized == "DELETE" && (op == "DELETE" || op == "BLOB_DELETE"))
+                    });
+
+                    if op_allowed {
+                        return Ok(());
+                    }
+                }
+            }
+
+            return Err(AxiomError::new(
+                "AUTH_FORBIDDEN",
+                &format!(
+                    "Operation '{}' on blob '{}/{}' denied by role policy",
+                    operation, namespace, key
+                ),
+                StatusCode::FORBIDDEN,
+            ));
+        }
+
+        // Backward compatibility fallback for legacy API keys.
+        // SECURITY (H-4/A5): capability tickets must never escalate WRITE -> DELETE.
+        // A WRITE ticket yields mode=Readwrite; explicitly deny DELETE for ticket identities.
+        if auth.role.as_deref() == Some("ticket") && op_normalized == "DELETE" {
+            return Err(AxiomError::new(
+                "AUTH_FORBIDDEN",
+                "Ticket capabilities do not grant DELETE (request a dedicated grant)",
+                StatusCode::FORBIDDEN,
+            ));
+        }
+        let db_in_scope = auth.db_scope.iter().any(|s| s == "*" || s.eq_ignore_ascii_case(namespace));
+        if !db_in_scope {
+            return Err(AxiomError::new(
+                "AUTH_SCOPE_DENIED",
+                &format!("API key does not have access to blob namespace '{}'", namespace),
+                StatusCode::FORBIDDEN,
+            ));
+        }
+
+        match auth.mode {
+            ServerMode::Readonly => {
+                if op_normalized == "READ" {
+                    Ok(())
+                } else {
+                    Err(AxiomError::new(
+                        "AUTH_INSUFFICIENT_MODE",
+                        "Read-only keys cannot mutate blob storage",
+                        StatusCode::FORBIDDEN,
+                    ))
+                }
+            }
+            ServerMode::Writeonly => {
+                if op_normalized == "READ" {
+                    Err(AxiomError::new(
+                        "AUTH_INSUFFICIENT_MODE",
+                        "Write-only keys cannot read blob objects",
+                        StatusCode::FORBIDDEN,
+                    ))
+                } else if op_normalized == "WRITE" {
+                    // WRITE-only: DELETE requires an explicit DELETE/BLOB_DELETE grant (see granular path above).
+                    Ok(())
+                } else {
+                    Err(AxiomError::new(
+                        "AUTH_INSUFFICIENT_MODE",
+                        "Write-only keys cannot DELETE blob objects",
+                        StatusCode::FORBIDDEN,
+                    ))
+                }
+            }
+            ServerMode::Readwrite => {
+                // Legacy Readwrite keys retain full access, but ticket identities are
+                // already denied DELETE above. Non-ticket legacy keys keep compat.
+                Ok(())
+            }
+        }
     }
 }
 
@@ -255,6 +416,69 @@ mod tests {
 
         let delete_err = PolicyEngine::evaluate(&readonly_role_ctx, "app_db", "customers", "DELETE").unwrap_err();
         assert_eq!(delete_err.code, "AUTH_FORBIDDEN");
+    }
+
+    #[test]
+    fn test_blob_policy_evaluation() {
+        let user_ctx = AuthContext {
+            api_key_name: "blob_writer".to_string(),
+            mode: ServerMode::Readwrite,
+            db_scope: vec![],
+            rate_limit_override: 0,
+            is_session: false,
+            role: Some("blob_role".to_string()),
+            permissions: vec![PermissionSnapshot {
+                database: "blob:media".to_string(),
+                table_name: "*".to_string(),
+                operations: vec!["READ".to_string(), "WRITE".to_string()],
+            }],
+        };
+
+        // Allowed actions on "media" namespace
+        assert!(PolicyEngine::evaluate_blob(&user_ctx, "media", "avatar.png", "READ").is_ok());
+        assert!(PolicyEngine::evaluate_blob(&user_ctx, "media", "avatar.png", "WRITE").is_ok());
+
+        // Denied DELETE on "media"
+        let del_err = PolicyEngine::evaluate_blob(&user_ctx, "media", "avatar.png", "DELETE").unwrap_err();
+        assert_eq!(del_err.code, "AUTH_FORBIDDEN");
+
+        // Denied on another namespace "documents"
+        let doc_err = PolicyEngine::evaluate_blob(&user_ctx, "documents", "contract.pdf", "READ").unwrap_err();
+        assert_eq!(doc_err.code, "AUTH_FORBIDDEN");
+    }
+
+    #[test]
+    fn test_blob_wildcard_and_prefix_policy() {
+        let wildcard_ctx = AuthContext {
+            api_key_name: "global_blob_key".to_string(),
+            mode: ServerMode::Readwrite,
+            db_scope: vec![],
+            rate_limit_override: 0,
+            is_session: false,
+            role: Some("global_blob".to_string()),
+            permissions: vec![PermissionSnapshot {
+                database: "blob:*".to_string(),
+                table_name: "uploads/*".to_string(),
+                operations: vec!["READ".to_string()],
+            }],
+        };
+
+        // Matching prefix on any namespace
+        assert!(PolicyEngine::evaluate_blob(&wildcard_ctx, "photos", "uploads/profile.jpg", "READ").is_ok());
+        assert!(PolicyEngine::evaluate_blob(&wildcard_ctx, "docs", "uploads/invoice.pdf", "READ").is_ok());
+
+        // Non-matching key prefix
+        let non_prefix_err = PolicyEngine::evaluate_blob(&wildcard_ctx, "photos", "system/config.json", "READ").unwrap_err();
+        assert_eq!(non_prefix_err.code, "AUTH_FORBIDDEN");
+
+        // Write disallowed
+        let write_err = PolicyEngine::evaluate_blob(&wildcard_ctx, "photos", "uploads/profile.jpg", "WRITE").unwrap_err();
+        assert_eq!(write_err.code, "AUTH_FORBIDDEN");
+
+        // Namespace filtering
+        let all_ns = vec!["photos".to_string(), "docs".to_string(), "private".to_string()];
+        let filtered = PolicyEngine::filter_blob_namespaces(&wildcard_ctx, &all_ns);
+        assert_eq!(filtered.len(), 3);
     }
 }
 

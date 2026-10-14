@@ -1,0 +1,21 @@
+[package]
+name = "axiom-blob"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Embedded high-performance native blob storage engine for Axiom"
+
+[dependencies]
+axiom-core = { workspace = true }
+fjall = { workspace = true }
+blake3 = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+bytes = { workspace = true }
+uuid = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

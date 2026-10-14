@@ -17,10 +17,13 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use axiom_core::{AxiomError, AuthContext, ConfigManager};
+use axiom_core::{AxiomError, AuthContext};
 use axiom_db::DatabasePoolManager;
 use axiom_metadata::models::PermissionRecord;
 use axiom_metadata::store::MetadataStore;
+
+pub const SETUP_SESSION_TTL_SECS: i64 = 30 * 24 * 60 * 60; // 30 days initial admin setup session
+pub const LOGIN_SESSION_TTL_SECS: i64 = 7 * 24 * 60 * 60;  // 7 days standard admin login session
 
 // ─── Request Schemas ───────────────────────────────────────────────────────
 
@@ -372,8 +375,7 @@ pub async fn add_database(
 
     let url_trimmed = payload.url.trim();
     let lookup_alias = payload.old_alias.as_deref().unwrap_or(&payload.alias);
-    let is_existing = axiom_metadata::snapshot::get_snapshot().databases.contains_key(lookup_alias)
-        || ConfigManager::get().database.contains_key(lookup_alias);
+    let is_existing = axiom_metadata::snapshot::get_snapshot().databases.contains_key(lookup_alias);
     if url_trimmed.is_empty() && !is_existing {
         return Err(AxiomError::new(
             "INVALID_URL",
@@ -387,8 +389,6 @@ pub async fn add_database(
         url_trimmed.to_string()
     } else if let Some(existing) = axiom_metadata::snapshot::get_snapshot().databases.get(lookup_alias) {
         existing.url.clone()
-    } else if let Some(cfg) = ConfigManager::get().database.get(lookup_alias) {
-        cfg.url.clone()
     } else {
         return Err(AxiomError::new(
             "INVALID_URL",
@@ -408,23 +408,6 @@ pub async fn add_database(
                 "DATABASE_URL_ALREADY_EXISTS",
                 &format!(
                     "This database connection URL is already registered under alias '{}'",
-                    existing_alias
-                ),
-                StatusCode::CONFLICT,
-            ));
-        }
-    }
-
-    let config = ConfigManager::get();
-    for (existing_alias, existing_cfg) in config.database.iter() {
-        if existing_alias != &payload.alias
-            && existing_alias != lookup_alias
-            && MetadataStore::urls_match(&existing_cfg.url, &effective_url)
-        {
-            return Err(AxiomError::new(
-                "DATABASE_URL_ALREADY_EXISTS",
-                &format!(
-                    "This database connection URL is already registered in configuration under alias '{}'",
                     existing_alias
                 ),
                 StatusCode::CONFLICT,
@@ -538,8 +521,7 @@ pub async fn test_database(
         ));
     }
 
-    let exists = axiom_metadata::snapshot::get_snapshot().databases.contains_key(&alias)
-        || ConfigManager::get().database.contains_key(&alias);
+    let exists = axiom_metadata::snapshot::get_snapshot().databases.contains_key(&alias);
 
     if !exists {
         return Err(AxiomError::new(
@@ -932,12 +914,11 @@ pub async fn get_admin_health(
     }
 
     let snapshot = axiom_metadata::snapshot::get_snapshot();
-    let config = ConfigManager::get();
 
     let mut db_status = serde_json::Map::new();
     let mut all_dbs_up = true;
 
-    for alias in snapshot.databases.keys().chain(config.database.keys()) {
+    for alias in snapshot.databases.keys() {
         if db_status.contains_key(alias) {
             continue;
         }
@@ -997,6 +978,7 @@ pub async fn setup_begin() -> Result<impl IntoResponse, AxiomError> {
 ///  - Throws: 403 FORBIDDEN if setup has already been completed.
 ///  - Side effects: Inserts user and session, logs audit event.
 pub async fn setup_account(
+    headers: axum::http::HeaderMap,
     Json(payload): Json<SetupAccountRequest>,
 ) -> Result<impl IntoResponse, AxiomError> {
     let has_users = MetadataStore::has_users().await.unwrap_or(false);
@@ -1020,14 +1002,24 @@ pub async fn setup_account(
         .await
         .map_err(|e| AxiomError::new("USER_CREATION_FAILED", &e, StatusCode::INTERNAL_SERVER_ERROR))?;
 
-    let session_id = MetadataStore::create_session(&payload.username, 86400 * 30)
+    let session_id = MetadataStore::create_session(&payload.username, SETUP_SESSION_TTL_SECS)
         .await
         .map_err(|e| AxiomError::new("SESSION_CREATION_FAILED", &e, StatusCode::INTERNAL_SERVER_ERROR))?;
 
+    let config = axiom_core::ConfigManager::get();
+    let is_https = headers
+        .get("x-forwarded-proto")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.eq_ignore_ascii_case("https"))
+        .unwrap_or(false)
+        || !config.server.tls_cert.is_empty();
+    let secure_flag = if is_https { "; Secure" } else { "" };
+
     let cookie_header = format!(
-        "axiom_session={}; HttpOnly; SameSite=Strict; Path=/; Max-Age={}",
+        "axiom_session={}; HttpOnly; SameSite=Strict; Path=/; Max-Age={}{}",
         session_id,
-        86400 * 30
+        SETUP_SESSION_TTL_SECS,
+        secure_flag
     );
 
     Ok((
@@ -1082,19 +1074,7 @@ pub async fn test_database_url(
         }
     }
 
-    let config = ConfigManager::get();
-    for (existing_alias, existing_cfg) in config.database.iter() {
-        if Some(existing_alias) != payload.alias.as_ref() && MetadataStore::urls_match(&existing_cfg.url, &payload.url) {
-            return Err(AxiomError::new(
-                "DATABASE_URL_ALREADY_EXISTS",
-                &format!(
-                    "This database connection URL is already registered in configuration under alias '{}'",
-                    existing_alias
-                ),
-                StatusCode::CONFLICT,
-            ));
-        }
-    }
+
 
     Ok(Json(json!({
         "success": true,
@@ -1195,6 +1175,7 @@ pub async fn setup_complete(
 ///  - Returns: Session token and Set-Cookie header.
 ///  - Side effects: Inserts session row.
 pub async fn login_handler(
+    headers: axum::http::HeaderMap,
     Json(payload): Json<LoginRequest>,
 ) -> Result<impl IntoResponse, AxiomError> {
     let valid = MetadataStore::verify_user(&payload.username, &payload.password)
@@ -1210,14 +1191,24 @@ pub async fn login_handler(
         ));
     }
 
-    let session_id = MetadataStore::create_session(&payload.username, 86400 * 7)
+    let session_id = MetadataStore::create_session(&payload.username, LOGIN_SESSION_TTL_SECS)
         .await
         .map_err(|e| AxiomError::new("SESSION_CREATION_FAILED", &e, StatusCode::INTERNAL_SERVER_ERROR))?;
 
+    let config = axiom_core::ConfigManager::get();
+    let is_https = headers
+        .get("x-forwarded-proto")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.eq_ignore_ascii_case("https"))
+        .unwrap_or(false)
+        || !config.server.tls_cert.is_empty();
+    let secure_flag = if is_https { "; Secure" } else { "" };
+
     let cookie_header = format!(
-        "axiom_session={}; HttpOnly; SameSite=Strict; Path=/; Max-Age={}",
+        "axiom_session={}; HttpOnly; SameSite=Strict; Path=/; Max-Age={}{}",
         session_id,
-        86400 * 7
+        LOGIN_SESSION_TTL_SECS,
+        secure_flag
     );
 
     Ok((

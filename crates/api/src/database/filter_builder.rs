@@ -7,8 +7,114 @@
  * Last structural change: Workspace modularization (Phase 8 -> v4.0).
  */
 
+use axiom_core::ColumnInfo;
 use serde_json::Value;
 use std::collections::HashMap;
+
+/// Coerces string filter criteria values into strongly typed numbers or booleans
+/// if the target column schema type is numeric or boolean.
+/// This prevents type mismatch errors in strictly typed databases (like PostgreSQL).
+pub fn coerce_filter_values(filter: &mut HashMap<String, Value>, columns: &[ColumnInfo]) {
+    for (key, criteria) in filter.iter_mut() {
+        if key == "$or" || key == "$and" {
+            if let Some(arr) = criteria.as_array_mut() {
+                for item in arr {
+                    if let Some(obj) = item.as_object_mut() {
+                        let mut sub_map: HashMap<String, Value> = obj.clone().into_iter().collect();
+                        coerce_filter_values(&mut sub_map, columns);
+                        *item = serde_json::to_value(sub_map).unwrap_or_default();
+                    }
+                }
+            }
+        } else {
+            if let Some(col_info) = columns.iter().find(|c| c.name.eq_ignore_ascii_case(key)) {
+                let ty = col_info.r#type.to_lowercase();
+                let is_int = ty.contains("int") || ty.contains("serial");
+                let is_float = ty.contains("float")
+                    || ty.contains("double")
+                    || ty.contains("real")
+                    || ty.contains("num")
+                    || ty.contains("dec");
+                let is_bool = ty.contains("bool");
+
+                let coerce_single = |val: &mut Value| {
+                    if let Value::String(s) = val {
+                        let trimmed = s.trim();
+                        if is_int {
+                            if let Ok(i) = trimmed.parse::<i64>() {
+                                *val = Value::Number(i.into());
+                            }
+                        } else if is_float {
+                            if let Ok(f) = trimmed.parse::<f64>() {
+                                if let Some(n) = serde_json::Number::from_f64(f) {
+                                    *val = Value::Number(n);
+                                }
+                            }
+                        } else if is_bool {
+                            if trimmed.eq_ignore_ascii_case("true") {
+                                *val = Value::Bool(true);
+                            } else if trimmed.eq_ignore_ascii_case("false") {
+                                *val = Value::Bool(false);
+                            }
+                        }
+                    }
+                };
+
+                if let Some(obj) = criteria.as_object_mut() {
+                    for (_op, op_val) in obj.iter_mut() {
+                        if let Some(arr) = op_val.as_array_mut() {
+                            for item in arr {
+                                coerce_single(item);
+                            }
+                        } else {
+                            coerce_single(op_val);
+                        }
+                    }
+                } else {
+                    coerce_single(criteria);
+                }
+            }
+        }
+    }
+}
+
+/// Coerces string record values in insert/update data into strongly typed numbers or booleans
+/// if the target column schema type is numeric or boolean.
+pub fn coerce_record_values(record: &mut HashMap<String, Value>, columns: &[ColumnInfo]) {
+    for (key, val) in record.iter_mut() {
+        if let Some(col_info) = columns.iter().find(|c| c.name.eq_ignore_ascii_case(key)) {
+            let ty = col_info.r#type.to_lowercase();
+            let is_int = ty.contains("int") || ty.contains("serial");
+            let is_float = ty.contains("float")
+                || ty.contains("double")
+                || ty.contains("real")
+                || ty.contains("num")
+                || ty.contains("dec");
+            let is_bool = ty.contains("bool");
+
+            if let Value::String(s) = val {
+                let trimmed = s.trim();
+                if is_int {
+                    if let Ok(i) = trimmed.parse::<i64>() {
+                        *val = Value::Number(i.into());
+                    }
+                } else if is_float {
+                    if let Ok(f) = trimmed.parse::<f64>() {
+                        if let Some(n) = serde_json::Number::from_f64(f) {
+                            *val = Value::Number(n);
+                        }
+                    }
+                } else if is_bool {
+                    if trimmed.eq_ignore_ascii_case("true") {
+                        *val = Value::Bool(true);
+                    } else if trimmed.eq_ignore_ascii_case("false") {
+                        *val = Value::Bool(false);
+                    }
+                }
+            }
+        }
+    }
+}
 
 /// Strips all characters from an identifier except alphanumeric characters and underscores.
 /// CONTRACT:
@@ -25,6 +131,20 @@ pub fn sanitize_ident(ident: &str) -> std::borrow::Cow<'_, str> {
                 .filter(|c| c.is_alphanumeric() || *c == '_')
                 .collect(),
         )
+    }
+}
+
+/// Wraps an identifier with dialect-specific quotes to safely handle SQL reserved keywords and case sensitivity.
+pub fn quote_ident_dialect(ident: &str, dialect: &str) -> String {
+    let clean = sanitize_ident(ident);
+    let d = dialect.to_lowercase();
+    if d.contains("mysql") || d.contains("mariadb") {
+        format!("`{}`", clean.replace('`', "``"))
+    } else if d.contains("mssql") || d.contains("sqlserver") {
+        format!("[{}]", clean.replace(']', "]]"))
+    } else {
+        // PostgreSQL, SQLite, LibSQL, ClickHouse, Generic
+        format!("\"{}\"", clean.replace('"', "\"\""))
     }
 }
 
@@ -62,86 +182,93 @@ where
                     parts.push(format!("({})", sub_clauses.join(connector)));
                 }
             }
-        } else if let Some(obj) = criteria.as_object() {
-            for (op, val) in obj {
-                match op.as_str() {
-                    "$eq" => {
-                        parts.push(format!("{} = ?", sanitize_ident(col)));
-                        values.push(val.clone());
-                    }
-                    "$ne" => {
-                        parts.push(format!("{} != ?", sanitize_ident(col)));
-                        values.push(val.clone());
-                    }
-                    "$gt" => {
-                        parts.push(format!("{} > ?", sanitize_ident(col)));
-                        values.push(val.clone());
-                    }
-                    "$gte" => {
-                        parts.push(format!("{} >= ?", sanitize_ident(col)));
-                        values.push(val.clone());
-                    }
-                    "$lt" => {
-                        parts.push(format!("{} < ?", sanitize_ident(col)));
-                        values.push(val.clone());
-                    }
-                    "$lte" => {
-                        parts.push(format!("{} <= ?", sanitize_ident(col)));
-                        values.push(val.clone());
-                    }
-                    "$like" => {
-                        parts.push(format!("{} LIKE ?", sanitize_ident(col)));
-                        values.push(val.clone());
-                    }
-                    "$ilike" => {
-                        parts.push(format!("LOWER({}) LIKE LOWER(?)", sanitize_ident(col)));
-                        values.push(val.clone());
-                    }
-                    "$in" | "$nin" => {
-                        if let Some(arr) = val.as_array() {
-                            let sql_op = if op == "$in" { "IN" } else { "NOT IN" };
-                            let placeholders = vec!["?"; arr.len()].join(", ");
-                            parts.push(format!(
-                                "{} {} ({})",
-                                sanitize_ident(col),
-                                sql_op,
-                                placeholders
-                            ));
-                            for item in arr {
-                                values.push(item.clone());
-                            }
-                        }
-                    }
-                    "$null" => {
-                        if val.as_bool().unwrap_or(true) {
-                            parts.push(format!("{} IS NULL", sanitize_ident(col)));
-                        } else {
-                            parts.push(format!("{} IS NOT NULL", sanitize_ident(col)));
-                        }
-                    }
-                    "$not_null" => {
-                        if val.as_bool().unwrap_or(true) {
-                            parts.push(format!("{} IS NOT NULL", sanitize_ident(col)));
-                        } else {
-                            parts.push(format!("{} IS NULL", sanitize_ident(col)));
-                        }
-                    }
-                    "$between" => {
-                        if let Some(arr) = val.as_array() {
-                            if arr.len() == 2 {
-                                parts.push(format!("{} BETWEEN ? AND ?", sanitize_ident(col)));
-                                values.push(arr[0].clone());
-                                values.push(arr[1].clone());
-                            }
-                        }
-                    }
-                    _ => {} // Ignore unsupported operators
-                }
-            }
         } else {
-            // Exact equality
-            parts.push(format!("{} = ?", sanitize_ident(col)));
-            values.push(criteria.clone());
+            let clean_col = sanitize_ident(col);
+            if clean_col.is_empty() {
+                continue;
+            }
+            if let Some(obj) = criteria.as_object() {
+                for (op, val) in obj {
+                    let norm_op = op.strip_prefix('$').unwrap_or(op.as_str());
+                    match norm_op {
+                        "eq" => {
+                            parts.push(format!("{} = ?", clean_col));
+                            values.push(val.clone());
+                        }
+                        "ne" | "neq" => {
+                            parts.push(format!("{} != ?", clean_col));
+                            values.push(val.clone());
+                        }
+                        "gt" => {
+                            parts.push(format!("{} > ?", clean_col));
+                            values.push(val.clone());
+                        }
+                        "gte" => {
+                            parts.push(format!("{} >= ?", clean_col));
+                            values.push(val.clone());
+                        }
+                        "lt" => {
+                            parts.push(format!("{} < ?", clean_col));
+                            values.push(val.clone());
+                        }
+                        "lte" => {
+                            parts.push(format!("{} <= ?", clean_col));
+                            values.push(val.clone());
+                        }
+                        "like" => {
+                            parts.push(format!("{} LIKE ?", clean_col));
+                            values.push(val.clone());
+                        }
+                        "ilike" => {
+                            parts.push(format!("LOWER({}) LIKE LOWER(?)", clean_col));
+                            values.push(val.clone());
+                        }
+                        "in" | "nin" => {
+                            if let Some(arr) = val.as_array() {
+                                let sql_op = if norm_op == "in" { "IN" } else { "NOT IN" };
+                                let placeholders = vec!["?"; arr.len()].join(", ");
+                                parts.push(format!(
+                                    "{} {} ({})",
+                                    clean_col,
+                                    sql_op,
+                                    placeholders
+                                ));
+                                for item in arr {
+                                    values.push(item.clone());
+                                }
+                            }
+                        }
+                        "null" | "is_null" => {
+                            if val.as_bool().unwrap_or(true) {
+                                parts.push(format!("{} IS NULL", clean_col));
+                            } else {
+                                parts.push(format!("{} IS NOT NULL", clean_col));
+                            }
+                        }
+                        "not_null" | "is_not_null" => {
+                            if val.as_bool().unwrap_or(true) {
+                                parts.push(format!("{} IS NOT NULL", clean_col));
+                            } else {
+                                parts.push(format!("{} IS NULL", clean_col));
+                            }
+                        }
+                        "between" => {
+                            if let Some(arr) = val.as_array() {
+                                if arr.len() == 2 {
+                                    parts.push(format!("{} BETWEEN ? AND ?", clean_col));
+                                    values.push(arr[0].clone());
+                                    values.push(arr[1].clone());
+                                }
+                            }
+                        }
+                        _ => {} // Ignore unsupported operators
+                    }
+                }
+            } else {
+                // Exact equality
+                parts.push(format!("{} = ?", clean_col));
+                values.push(criteria.clone());
+            }
         }
     }
 
@@ -162,9 +289,17 @@ pub fn construct_insert(table: &str, data: &HashMap<String, Value>) -> (String, 
     let mut values = Vec::new();
 
     for (k, v) in data {
-        cols.push(sanitize_ident(k));
+        let clean_k = sanitize_ident(k);
+        if clean_k.is_empty() {
+            continue;
+        }
+        cols.push(clean_k);
         placeholders.push("?");
         values.push(v.clone());
+    }
+
+    if cols.is_empty() {
+        return (String::new(), Vec::new());
     }
 
     let sql = format!(
@@ -190,8 +325,16 @@ pub fn construct_update(
     let mut values = Vec::new();
 
     for (k, v) in update_data {
-        set_parts.push(format!("{} = ?", sanitize_ident(k)));
+        let clean_k = sanitize_ident(k);
+        if clean_k.is_empty() {
+            continue;
+        }
+        set_parts.push(format!("{} = ?", clean_k));
         values.push(v.clone());
+    }
+
+    if set_parts.is_empty() {
+        return (String::new(), Vec::new());
     }
 
     let (where_clause, mut filter_vals) = build_where_clause(filter);
@@ -238,7 +381,8 @@ mod tests {
 
     #[test]
     fn test_construct_insert_sanitize_table() {
-        let data = HashMap::new();
+        let mut data = HashMap::new();
+        data.insert("id".to_string(), json!(1));
         let (sql, _) = construct_insert("users; DROP TABLE x", &data);
         assert!(sql.contains("usersDROPTABLEx"));
         assert!(!sql.contains(";"));
@@ -332,5 +476,124 @@ mod tests {
     #[test]
     fn test_sanitize_ident() {
         assert_eq!(sanitize_ident("val!d_123;--"), "vald_123");
+    }
+
+    #[test]
+    fn test_coerce_filter_values() {
+        let cols = vec![
+            ColumnInfo {
+                name: "id".to_string(),
+                r#type: "integer".to_string(),
+                nullable: false,
+                primary_key: true,
+            },
+            ColumnInfo {
+                name: "price".to_string(),
+                r#type: "numeric".to_string(),
+                nullable: true,
+                primary_key: false,
+            },
+            ColumnInfo {
+                name: "is_active".to_string(),
+                r#type: "boolean".to_string(),
+                nullable: false,
+                primary_key: false,
+            },
+            ColumnInfo {
+                name: "title".to_string(),
+                r#type: "varchar".to_string(),
+                nullable: false,
+                primary_key: false,
+            },
+        ];
+
+        let mut filter = HashMap::new();
+        filter.insert("id".to_string(), json!({ "eq": "42" }));
+        filter.insert("price".to_string(), json!({ "gte": "19.99" }));
+        filter.insert("is_active".to_string(), json!({ "eq": "true" }));
+        filter.insert("title".to_string(), json!({ "eq": "123" }));
+
+        coerce_filter_values(&mut filter, &cols);
+
+        assert_eq!(filter.get("id").unwrap().get("eq").unwrap(), &json!(42));
+        assert_eq!(filter.get("price").unwrap().get("gte").unwrap(), &json!(19.99));
+        assert_eq!(filter.get("is_active").unwrap().get("eq").unwrap(), &json!(true));
+        assert_eq!(filter.get("title").unwrap().get("eq").unwrap(), &json!("123"));
+    }
+
+    #[test]
+    fn test_coerce_record_values() {
+        let cols = vec![
+            ColumnInfo {
+                name: "id".to_string(),
+                r#type: "bigint".to_string(),
+                nullable: false,
+                primary_key: true,
+            },
+            ColumnInfo {
+                name: "amount".to_string(),
+                r#type: "float8".to_string(),
+                nullable: true,
+                primary_key: false,
+            },
+            ColumnInfo {
+                name: "verified".to_string(),
+                r#type: "bool".to_string(),
+                nullable: false,
+                primary_key: false,
+            },
+            ColumnInfo {
+                name: "notes".to_string(),
+                r#type: "text".to_string(),
+                nullable: true,
+                primary_key: false,
+            },
+        ];
+
+        let mut record = HashMap::new();
+        record.insert("id".to_string(), json!("1001"));
+        record.insert("amount".to_string(), json!("99.5"));
+        record.insert("verified".to_string(), json!("true"));
+        record.insert("notes".to_string(), json!("12345"));
+
+        coerce_record_values(&mut record, &cols);
+
+        assert_eq!(record.get("id").unwrap(), &json!(1001));
+        assert_eq!(record.get("amount").unwrap(), &json!(99.5));
+        assert_eq!(record.get("verified").unwrap(), &json!(true));
+        assert_eq!(record.get("notes").unwrap(), &json!("12345"));
+    }
+
+    #[test]
+    fn test_construct_insert_and_update_empty_columns() {
+        // 1. Completely empty map
+        let empty_map = HashMap::new();
+        let (insert_sql_1, insert_vals_1) = construct_insert("users", &empty_map);
+        assert!(insert_sql_1.is_empty());
+        assert!(insert_vals_1.is_empty());
+
+        let (update_sql_1, update_vals_1) = construct_update("users", &empty_map, &empty_map);
+        assert!(update_sql_1.is_empty());
+        assert!(update_vals_1.is_empty());
+
+        // 2. Map containing only non-alphanumeric/invalid keys that sanitize to empty strings
+        let mut invalid_map = HashMap::new();
+        invalid_map.insert("$$$".to_string(), json!("val"));
+        invalid_map.insert("   ".to_string(), json!("val2"));
+
+        let (insert_sql_2, insert_vals_2) = construct_insert("users", &invalid_map);
+        assert!(insert_sql_2.is_empty());
+        assert!(insert_vals_2.is_empty());
+
+        let (update_sql_2, update_vals_2) = construct_update("users", &invalid_map, &empty_map);
+        assert!(update_sql_2.is_empty());
+        assert!(update_vals_2.is_empty());
+
+        // 3. Valid map works normally
+        let mut valid_map = HashMap::new();
+        valid_map.insert("name".to_string(), json!("Alice"));
+        let (insert_sql_3, insert_vals_3) = construct_insert("users", &valid_map);
+        assert_eq!(insert_sql_3, "INSERT INTO users (name) VALUES (?)");
+        assert_eq!(insert_vals_3, vec![json!("Alice")]);
     }
 }

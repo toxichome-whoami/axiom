@@ -7,7 +7,6 @@
  */
 
 use crate::types::*;
-use std::collections::HashMap;
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 #[serde(default)]
@@ -39,22 +38,8 @@ impl Default for ServerConfig {
             tls_key: "".to_string(),
             allowed_ips: Vec::new(),
             trusted_proxies: vec!["127.0.0.1".to_string()],
-            cors_origins: vec!["*".to_string()],
+            cors_origins: Vec::new(),
             shutdown_timeout: 30,
-        }
-    }
-}
-
-#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
-#[serde(default)]
-pub struct FeaturesConfig {
-    pub database: bool,
-}
-
-impl Default for FeaturesConfig {
-    fn default() -> Self {
-        Self {
-            database: true,
         }
     }
 }
@@ -130,6 +115,7 @@ pub struct CacheConfig {
     pub idempotency_ttl: i32,
     pub response_cache_ttl: i32,
     pub query_results_ttl: i32,
+    pub negative_cache_ttl: i32,
 }
 
 impl Default for CacheConfig {
@@ -145,6 +131,7 @@ impl Default for CacheConfig {
             idempotency_ttl: 86400,
             response_cache_ttl: 30,
             query_results_ttl: 5,
+            negative_cache_ttl: 5,
         }
     }
 }
@@ -204,33 +191,6 @@ impl Default for DatabaseDefConfig {
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 #[serde(default)]
-pub struct ApiKeyDefConfig {
-    pub mode: ServerMode,
-    pub secret: String,
-    pub db_scope: Vec<String>,
-    pub rate_limit_override: i32,
-    /// Deprecated in v4.0: Preserved for backward-compatibility with v3.0 config.toml.
-    /// CONTRACT: Automatically seeded as an admin role permission in axiom.db on first boot.
-    /// Will be deprecated and superseded by fine-grained RBAC in Phase 2.
-    
-    pub expires_at: Option<i64>,
-}
-
-impl Default for ApiKeyDefConfig {
-    fn default() -> Self {
-        Self {
-            mode: ServerMode::default(),
-            secret: "".to_string(),
-            db_scope: vec!["*".to_string()],
-            rate_limit_override: 0,
-            
-            expires_at: None,
-        }
-    }
-}
-
-#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
-#[serde(default)]
 pub struct CircuitBreakerConfig {
     pub enabled: bool,
     pub failure_threshold: i32,
@@ -269,34 +229,50 @@ impl Default for MetadataConfig {
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 #[serde(default)]
+pub struct BlobConfig {
+    pub path: String,
+    pub inline_max: String,
+    pub max_object: String,
+    pub verify_reads: bool,
+}
+
+impl Default for BlobConfig {
+    fn default() -> Self {
+        Self {
+            path: "data/blobs".to_string(),
+            inline_max: "64kb".to_string(),
+            max_object: "5gb".to_string(),
+            verify_reads: false,
+        }
+    }
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
+#[serde(default)]
 pub struct AxiomConfig {
     pub server: ServerConfig,
     pub version: String,
-    pub features: FeaturesConfig,
     pub logging: LoggingConfig,
     pub rate_limit: RateLimitConfig,
     pub cache: CacheConfig,
     pub performance: PerformanceConfig,
-    pub database: HashMap<String, DatabaseDefConfig>,
-    pub api_key: HashMap<String, ApiKeyDefConfig>,
     pub circuit_breaker: CircuitBreakerConfig,
     pub metadata: MetadataConfig,
+    pub blob: BlobConfig,
 }
 
 impl Default for AxiomConfig {
     fn default() -> Self {
         Self {
             server: ServerConfig::default(),
-            version: "3.0.1".to_string(),
-            features: FeaturesConfig::default(),
+            version: "0.1.11".to_string(),
             logging: LoggingConfig::default(),
             rate_limit: RateLimitConfig::default(),
             cache: CacheConfig::default(),
             performance: PerformanceConfig::default(),
-            database: HashMap::new(),
-            api_key: HashMap::new(),
             circuit_breaker: CircuitBreakerConfig::default(),
             metadata: MetadataConfig::default(),
+            blob: BlobConfig::default(),
         }
     }
 }
@@ -332,6 +308,16 @@ mod tests {
         let config = CacheConfig::default();
         assert!(config.enabled);
         assert_eq!(config.default_ttl, 60);
+        assert_eq!(config.negative_cache_ttl, 5);
+    }
+
+    #[test]
+    fn test_blob_config_default() {
+        let config = BlobConfig::default();
+        assert_eq!(config.path, "data/blobs");
+        assert_eq!(config.inline_max, "64kb");
+        assert_eq!(config.max_object, "5gb");
+        assert!(!config.verify_reads);
     }
 
     #[test]

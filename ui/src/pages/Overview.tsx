@@ -561,6 +561,7 @@ export function Overview({ onNavigate }: OverviewProps) {
       {/* 4 Telemetry Analytics Cards Grid (Clean technical minimal style) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 w-full font-sans">
         <TelemetryCard
+          isLoading={isLoading}
           title="Total Requests"
           value={
             hasRequestData
@@ -589,6 +590,7 @@ export function Overview({ onNavigate }: OverviewProps) {
         />
 
         <TelemetryCard
+          isLoading={isLoading}
           title="L1 Cache Hit Ratio"
           value={hasCacheData ? `${cacheHitRate.toFixed(1)}%` : '0.0%'}
           subLabel={`${cacheEntries} cached object${cacheEntries === 1 ? '' : 's'}`}
@@ -608,6 +610,7 @@ export function Overview({ onNavigate }: OverviewProps) {
         />
 
         <TelemetryCard
+          isLoading={isLoading}
           title="Gateway Health"
           value={health?.status === 'healthy' ? 'Healthy' : health?.status === 'degraded' ? 'Degraded' : 'Operational'}
           subLabel={
@@ -635,6 +638,7 @@ export function Overview({ onNavigate }: OverviewProps) {
         />
 
         <TelemetryCard
+          isLoading={isLoading}
           title="Active Database Pools"
           value={`${totalPoolCount} ${totalPoolCount === 1 ? 'pool' : 'pools'}`}
           subLabel={

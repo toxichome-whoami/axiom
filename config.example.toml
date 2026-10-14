@@ -10,7 +10,7 @@
 # Tuning the underlying network and execution bindings.
 [server]
 host = "0.0.0.0"                 # Bind to all interfaces
-port = 4500                      # Public HTTP/REST port (gRPC automatically binds to port + 1)
+port = 4500                      # Public HTTP/REST port
 max_connections = 10000          # Maximum concurrent TCP connections
 request_timeout = 30             # Timeout per request in seconds
 body_limit = "10mb"              # Maximum request body size (e.g., "10mb", "1gb")
@@ -20,11 +20,6 @@ allowed_ips = ["127.0.0.1"]      # IPs exempt from rate limiting
 trusted_proxies = ["127.0.0.1"]  # Proxies to trust for X-Forwarded-For headers
 cors_origins = ["*"]             # Allowed CORS origins
 shutdown_timeout = 30            # Seconds to wait for active requests during shutdown
-
-# ─── Modular Features ─────────────────────────────────
-# Toggle major subsystems to minimize RAM and CPU footprint.
-[features]
-database = true                  # Enable SQL Database Gateway
 
 # ─── Logging ──────────────────────────────────────────
 [logging]
@@ -41,7 +36,7 @@ stdout = true                    # Stream logs to console
 # Hardened locks preventing DOS and brute-force attacks.
 [rate_limit]
 enabled = true                   # Master toggle for rate limiting
-backend = "memory"               # memory | turso
+backend = "turso"               # memory | turso
 turso_url = "file:data/cache.db" # Required if backend = "turso"
 turso_token = ""
 window = 60                      # Time window in seconds
@@ -54,8 +49,8 @@ penalty_cooldown = 300           # IP ban duration in seconds
 # Mitigation for backend latency via internal response caching.
 [cache]
 enabled = true
-backend = "memory"               # memory | turso | hybrid (L1 RAM + L2 persistent)
-turso_url = "file:data/cache.db" # Required if backend = "turso" or "hybrid"
+backend = "memory"               # memory (L1 RAM only) | hybrid (L1 RAM + L2 persistent disk)
+turso_url = "file:data/cache.db" # Required if backend = "hybrid"
 turso_token = ""
 max_memory = "100mb"             # Memory limit for internal cache (approximate)
 default_ttl = 60                 # Default expiration for generic items (seconds)
@@ -88,15 +83,23 @@ url = "file:data/axiom.db"       # Default: local SQLite file
 token = ""                       # Turso auth token (if remote)
 reload_interval = 30             # Seconds between hot-snapshot refreshes
 
+# ─── Native Blob Storage Engine ──────────────────────────
+# Embedded high-performance content-addressed object storage.
+[blob]
+path = "data/blobs"              # Base directory for LSM index and blob files
+inline_max = "64kb"              # Payloads <= this threshold are stored inline in Fjall LSM
+max_object = "5gb"               # Hard ceiling on single blob upload size
+verify_reads = false             # Re-verify BLAKE3 checksums on reads (integrity guard)
+
 # ─────────────────────────────────────────────────────────────────────────────
-# v4.0 Transition Note for API Keys and Databases
+# Dynamic Resources (Databases, API Keys, Roles)
 # ─────────────────────────────────────────────────────────────────────────────
-# In v4.0, API keys and Database connections are managed LIVE via the Web UI 
-# (http://localhost:4500/ui) and stored securely in the `metadata.url` database.
-# 
-# You DO NOT need to define them in this file anymore.
+# All database connections, API keys, and access roles are managed exclusively
+# via the Web UI (http://localhost:4500/system) or the Axiom CLI:
 #
-# BACKWARD COMPATIBILITY: If you DO define `[api_key.name]` or `[database.name]`
-# blocks here, Axiom will read them on first boot and automatically seed them 
-# into the live database. After that, changes made here are ignored.
+#   axiom db add --alias primary --url "postgres://..."
+#   axiom key create --name admin --role admin
+#
+# They are stored in `data/axiom.db` and cannot be defined in this file.
 # ─────────────────────────────────────────────────────────────────────────────
+

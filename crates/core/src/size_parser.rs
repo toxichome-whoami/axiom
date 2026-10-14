@@ -27,6 +27,15 @@ fn get_multiplier(unit: &str) -> Option<f64> {
     }
 }
 
+// ─── Parsing & Formatting Logic ────────────────────────────────────────────
+
+/// Parses human-readable byte size strings into raw byte counts.
+/// CONTRACT:
+///  - Accepts raw integer byte strings ("1048576") or metric suffix strings ("10MB", "2.5 GB", "500kb").
+///  - Case-insensitive; whitespace-tolerant.
+///  - Units evaluated based on binary multiples ($1024^n$): B, KB, MB, GB, TB, PB.
+///  - Returns `Ok(u64)` on success, or `Err(String)` if syntax is unparseable.
+///  - Side effects: Initializes regex on first call via `OnceLock`.
 pub fn parse_size(size_str: &str) -> Result<u64, String> {
     let normalized = size_str.to_lowercase().replace(" ", "");
 
@@ -50,6 +59,11 @@ pub fn parse_size(size_str: &str) -> Result<u64, String> {
     Err(format!("Invalid size format: {}", size_str))
 }
 
+/// Formats raw byte counts into human-readable binary size strings.
+/// CONTRACT:
+///  - Formats using binary units ($1024^n$) up to PB.
+///  - Preserves exact integer bytes for "B", two decimal places for higher units.
+///  - Pure function with zero heap allocations outside the returned String.
 pub fn format_size(size_in_bytes: u64) -> String {
     let mut current_value = size_in_bytes as f64;
 
@@ -66,6 +80,9 @@ pub fn format_size(size_in_bytes: u64) -> String {
     format!("{:.2} PB", current_value)
 }
 
+/// Normalizes a human-readable size string to canonical format, falling back to input on parse failure.
+/// CONTRACT:
+///  - Idempotent: `normalize_size(normalize_size(x)) == normalize_size(x)`.
 pub fn normalize_size(size_str: &str) -> String {
     match parse_size(size_str) {
         Ok(bytes) => format_size(bytes),

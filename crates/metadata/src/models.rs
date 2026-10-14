@@ -82,6 +82,22 @@ pub struct AuditRecord {
     pub details: Option<String>,
 }
 
+// ─── Capability Ticket Model ───────────────────────────────────────────────
+// Stored in `blob_tickets` table; tracks issued tickets and their revocation status.
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BlobTicketRecord {
+    pub id: String,
+    pub namespace: String,
+    pub key: String,
+    pub operation: String,
+    pub expires_at: i64,
+    pub signature: String,
+    pub created_by: String,
+    pub created_at: i64,
+    pub revoked: bool,
+}
+
 // ─── Tests ─────────────────────────────────────────────────────────────────
 // Tests for security invariants around serialization of models.
 

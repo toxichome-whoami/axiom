@@ -11,6 +11,7 @@ axiom-metadata = { workspace = true }
 axiom-policy = { workspace = true }
 axiom-cache = { workspace = true }
 axiom-db = { workspace = true }
+axiom-blob = { workspace = true }
 axiom-api = { workspace = true }
 tokio = { workspace = true }
 bytes = { workspace = true }

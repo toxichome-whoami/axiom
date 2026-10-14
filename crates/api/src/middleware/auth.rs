@@ -129,6 +129,68 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, A
         }
     }
 
+    // ─── Capability Ticket Authentication ───────────────────────────────────
+    // Validates pre-signed URLs on native blob endpoints (/api/v1/blobs/*)
+    // using keyed BLAKE3 HMAC signatures and sub-microsecond cache revocation.
+    let path = req.uri().path();
+    let stripped_blob_path = path.strip_prefix("/api/v1/blobs/").or_else(|| path.strip_prefix("/blobs/"));
+    if let Some(stripped) = stripped_blob_path {
+        if let Some(query) = req.uri().query() {
+            let mut ticket_sig = None;
+            let mut ticket_exp_str = None;
+            for pair in query.split('&') {
+                if let Some((k, v)) = pair.split_once('=') {
+                    if k == "ticket_sig" {
+                        ticket_sig = Some(v);
+                    } else if k == "ticket_exp" {
+                        ticket_exp_str = Some(v);
+                    }
+                }
+            }
+
+            if let (Some(sig), Some(exp_str)) = (ticket_sig, ticket_exp_str) {
+                if let Ok(exp) = exp_str.parse::<i64>() {
+                    if let Some((ns, key)) = stripped.split_once('/') {
+                        let op = match *req.method() {
+                            axum::http::Method::GET | axum::http::Method::HEAD => "READ",
+                            axum::http::Method::PUT => "WRITE",
+                            _ => "UNKNOWN",
+                        };
+
+                        let secret = axiom_blob::tickets::get_ticket_secret();
+
+                        if axiom_blob::tickets::verify_ticket(secret, ns, key, op, exp, sig).is_ok() {
+                            // Instant revocation check: fast in-memory L1 cache check, falling back to SQLite metadata
+                            let cache_key = format!("ticket:revoked:{}", sig);
+                            let is_revoked = axiom_cache::CacheEngine::get(&cache_key).await.is_some()
+                                || axiom_metadata::MetadataStore::is_blob_ticket_revoked(sig).await.unwrap_or(false);
+
+                            if is_revoked {
+                                return Err(AxiomError::new(
+                                    "AUTH_TICKET_REVOKED",
+                                    "Capability ticket has been revoked by an administrator",
+                                    axum::http::StatusCode::FORBIDDEN,
+                                ));
+                            }
+
+                            // Inject ticket identity context; role is set to "ticket" which PolicyEngine
+                            // strictly restricts from executing DELETE mutations.
+                            let ctx = AuthContext {
+                                api_key_name: format!("ticket:{}:{}", ns, key),
+                                role: Some("ticket".to_string()),
+                                mode: if op == "READ" { axiom_core::ServerMode::Readonly } else { axiom_core::ServerMode::Readwrite },
+                                db_scope: vec![ns.to_string()],
+                                ..Default::default()
+                            };
+                            req.extensions_mut().insert(ctx);
+                            return Ok(next.run(req).await);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     crate::metrics::MetricsEngine::record_auth_failure("invalid_credentials");
 
     Err(AxiomError::new(
@@ -138,6 +200,8 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, A
     ))
 }
 
+// ─── API Key Validation (Snapshot & Config Fallback) ────────────────────────
+
 /// Parses base64 encoded `name:secret` token and verifies secret in constant time.
 /// CONTRACT:
 ///  - Precondition: `raw_token` must be a base64 encoded string.
@@ -145,7 +209,7 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, A
 ///  - Returns `Err(Some(reason))` if the key exists but is currently suspended.
 ///  - Returns `Err(None)` if key format is invalid, unknown, or secret mismatch.
 ///  - Side effects: Increments failure counter for recognized key names when secret fails.
-///  - Idempotent: No (modifies BanList failure tracking state).
+///  - Concurrency: Zero database locks on hot path via ArcSwap metadata snapshot.
 pub fn validate_api_key(
     raw_token: &str,
     config: &axiom_core::AxiomConfig,
@@ -157,7 +221,7 @@ pub fn validate_api_key(
 
     if let Some(decoded) = decoded_str {
         if let Some((key_name, key_secret)) = decoded.split_once(':') {
-            // Check if key identifier is currently suspended
+            // Check if key identifier is currently suspended in BanList
             let (is_banned, reason) = BanList::is_key_banned(key_name);
             if is_banned {
                 return Err(Some(reason));
@@ -212,57 +276,25 @@ pub fn validate_api_key(
                         role: key_snap.role_name.clone(),
                         permissions,
                     });
-                }
-            }
-
-            // 2. Fallback check for static config.toml entries (backward compatibility)
-            if let Some(key_cfg) = config.api_key.get(key_name) {
-                // Check key expiration if configured
-                if let Some(exp) = key_cfg.expires_at {
-                    let now = std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .as_secs() as i64;
-                    if now > exp {
-                        return Err(Some("API key has expired".to_string()));
-                    }
-                }
-
-                // Constant-time BLAKE3 comparison eliminating length leak and timing attack oracle
-                let expected_hash = blake3::hash(key_cfg.secret.as_bytes());
-                let actual_hash = blake3::hash(key_secret.as_bytes());
-                let mut match_result = 0;
-                for (a, b) in expected_hash.as_bytes().iter().zip(actual_hash.as_bytes().iter()) {
-                    match_result |= a ^ b;
-                }
-
-                if !key_cfg.secret.is_empty() && match_result == 0 {
-                    return Ok(AuthContext {
-                        api_key_name: key_name.to_string(),
-                        mode: key_cfg.mode.clone(),
-                        db_scope: key_cfg.db_scope.clone(),
-                        rate_limit_override: key_cfg.rate_limit_override as u32,
-                        is_session: false,
-                        role: None,
-                        permissions: Vec::new(),
-                    });
                 } else {
-                    // S3: Track distributed auth failures against recognized key name
+                    // Key exists in metadata snapshot but secret hash check failed
                     let penalty_threshold = if config.rate_limit.penalty_threshold > 0 {
                         config.rate_limit.penalty_threshold as u32
                     } else {
                         5
                     };
-                    BanList::record_failed_auth(key_name, penalty_threshold, 60);
+                    let window_secs = if config.rate_limit.window > 0 {
+                        config.rate_limit.window as u64
+                    } else {
+                        60
+                    };
+                    let cooldown_secs = if config.rate_limit.penalty_cooldown > 0 {
+                        config.rate_limit.penalty_cooldown as u64
+                    } else {
+                        0
+                    };
+                    BanList::record_failed_auth(key_name, penalty_threshold, window_secs, cooldown_secs);
                 }
-            } else if snapshot.keys.contains_key(key_name) {
-                // Key exists in metadata snapshot but secret hash check failed
-                let penalty_threshold = if config.rate_limit.penalty_threshold > 0 {
-                    config.rate_limit.penalty_threshold as u32
-                } else {
-                    5
-                };
-                BanList::record_failed_auth(key_name, penalty_threshold, 60);
             }
         }
     }

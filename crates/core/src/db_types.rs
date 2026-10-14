@@ -76,6 +76,33 @@ pub struct ColumnInfo {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ForeignKeyDef {
+    pub schema: Option<String>,
+    pub table: String,
+    pub column: String,
+    pub on_update: Option<String>,
+    pub on_delete: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateColumnRequest {
+    pub name: String,
+    pub description: Option<String>,
+    pub data_type: String,
+    #[serde(default)]
+    pub is_array: bool,
+    #[serde(default)]
+    pub primary_key: bool,
+    #[serde(default)]
+    pub unique: bool,
+    #[serde(default = "default_true")]
+    pub nullable: bool,
+    pub default_value: Option<String>,
+    pub check_expression: Option<String>,
+    pub foreign_key: Option<ForeignKeyDef>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ForeignKeyInfo {
     pub column: String,
     pub referenced_table: String,
@@ -92,11 +119,21 @@ pub struct TableInfo {
     pub foreign_keys: Option<Vec<ForeignKeyInfo>>,
 }
 
+// ─── Query Execution Bounds & Cursor Pagination ────────────────────────────
+
 /// Maximum rows returned by an unpaginated raw SQL query to protect server memory from exhaustion.
+/// INVARIANT: When a query produces rows exceeding this limit, `QueryResult.truncated` is set to true.
 pub const DEFAULT_MAX_QUERY_ROWS: usize = 10_000;
 
 /// Extracts a pagination cursor value from the last row of a query result.
-/// Prioritizes canonical "id" column, falling back to the first projected column name.
+/// CONTRACT:
+///  - Precondition: `rows` must contain valid JSON Object rows.
+///  - Resolution: First checks for canonical "id" column (string or number),
+///    falling back to first projected column in `column_names`.
+///  - Returns: `Some(String)` representation of the cursor value, or `None` if `rows` is empty
+///    or the row lacks both "id" and a valid first column.
+///  - Side effects: None (pure extraction).
+///  - Idempotency: Yes.
 pub fn extract_next_cursor(rows: &[Value], column_names: &[String]) -> Option<String> {
     let last_row = rows.last()?.as_object()?;
 
@@ -122,6 +159,8 @@ pub fn extract_next_cursor(rows: &[Value], column_names: &[String]) -> Option<St
 
     None
 }
+
+// ─── Query Results Envelope ────────────────────────────────────────────────
 
 fn default_true() -> bool {
     true

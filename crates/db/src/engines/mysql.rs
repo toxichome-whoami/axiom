@@ -8,7 +8,7 @@
 
 use axiom_core::config::schema::DatabaseDefConfig;
 use crate::engines::base::{
-    ColumnInfo, DatabaseEngine, EngineError, ForeignKeyInfo, QueryResult, TableInfo,
+    ColumnInfo, CreateColumnRequest, DatabaseEngine, EngineError, ForeignKeyInfo, QueryResult, TableInfo,
 };
 use async_trait::async_trait;
 use serde_json::Value;
@@ -255,7 +255,9 @@ impl DatabaseEngine for MysqlDatabaseEngine {
                 }
                 Value::Bool(b) => { query = query.bind(b); }
                 Value::Null => { query = query.bind(Option::<String>::None); }
-                _ => { query = query.bind(param.to_string()); }
+                Value::Object(_) | Value::Array(_) => {
+                    query = query.bind(sqlx::types::Json(param));
+                }
             }
         }
 
@@ -351,7 +353,13 @@ impl DatabaseEngine for MysqlDatabaseEngine {
                         }
                     }
                     MySqlColKind::Numeric => {
-                        if let Ok(Some(s)) = row.try_get::<Option<String>, _>(idx) {
+                        if let Ok(Some(dec)) = row.try_get::<Option<rust_decimal::Decimal>, _>(idx) {
+                            if let Ok(num) = dec.to_string().parse::<serde_json::Number>() {
+                                Value::Number(num)
+                            } else {
+                                Value::String(dec.to_string())
+                            }
+                        } else if let Ok(Some(s)) = row.try_get::<Option<String>, _>(idx) {
                             if let Ok(num) = s.parse::<serde_json::Number>() {
                                 Value::Number(num)
                             } else {
@@ -387,7 +395,13 @@ impl DatabaseEngine for MysqlDatabaseEngine {
                         }
                     }
                     MySqlColKind::Fallback => {
-                        if let Ok(Some(s)) = row.try_get::<Option<String>, _>(idx) {
+                        if let Ok(Some(dec)) = row.try_get::<Option<rust_decimal::Decimal>, _>(idx) {
+                            if let Ok(num) = dec.to_string().parse::<serde_json::Number>() {
+                                Value::Number(num)
+                            } else {
+                                Value::String(dec.to_string())
+                            }
+                        } else if let Ok(Some(s)) = row.try_get::<Option<String>, _>(idx) {
                             if (s.starts_with('{') && s.ends_with('}')) || (s.starts_with('[') && s.ends_with(']')) {
                                 serde_json::from_str::<Value>(&s).unwrap_or(Value::String(s))
                             } else {
@@ -429,5 +443,85 @@ impl DatabaseEngine for MysqlDatabaseEngine {
 
     fn dialect(&self) -> &str {
         "mysql"
+    }
+
+    async fn add_column(&self, table: &str, req: &CreateColumnRequest) -> Result<(), EngineError> {
+        let pool = self.pool.as_ref().ok_or_else(|| EngineError::Connection("Not connected".into()))?;
+
+        let col_name_clean: String = req.name.chars().filter(|c| c.is_alphanumeric() || *c == '_').collect();
+        if col_name_clean.is_empty() {
+            return Err(EngineError::Schema("Invalid column name".into()));
+        }
+
+        let escaped_table = format!("`{}`", table.replace('`', "``"));
+        let escaped_col = format!("`{}`", col_name_clean.replace('`', "``"));
+
+        let type_def = &req.data_type;
+        let mut sql = format!("ALTER TABLE {} ADD COLUMN {} {}", escaped_table, escaped_col, type_def);
+
+        if req.primary_key {
+            sql.push_str(" PRIMARY KEY");
+        } else {
+            if req.unique {
+                sql.push_str(" UNIQUE");
+            }
+            if !req.nullable {
+                sql.push_str(" NOT NULL");
+            }
+        }
+
+        if let Some(ref def_val) = req.default_value {
+            let trimmed = def_val.trim();
+            if !trimmed.is_empty() && trimmed.to_uppercase() != "NULL" {
+                sql.push_str(&format!(" DEFAULT {}", trimmed));
+            }
+        }
+
+        if let Some(ref desc) = req.description {
+            let trimmed = desc.trim();
+            if !trimmed.is_empty() {
+                sql.push_str(&format!(" COMMENT '{}'", trimmed.replace('\'', "''")));
+            }
+        }
+
+        if let Some(ref chk) = req.check_expression {
+            let trimmed = chk.trim();
+            if !trimmed.is_empty() {
+                sql.push_str(&format!(" CHECK ({})", trimmed));
+            }
+        }
+
+        if let Some(ref fk) = req.foreign_key {
+            let fk_table = fk.table.trim();
+            let fk_col = fk.column.trim();
+            if !fk_table.is_empty() && !fk_col.is_empty() {
+                let schema_prefix = fk.schema.as_ref()
+                    .filter(|s| !s.trim().is_empty())
+                    .map(|s| format!("`{}`.", s.trim().replace('`', "``")))
+                    .unwrap_or_default();
+                let escaped_fk_table = format!("{}`{}`", schema_prefix, fk_table.replace('`', "``"));
+                let escaped_fk_col = format!("`{}`", fk_col.replace('`', "``"));
+                
+                let mut fk_clause = format!(", ADD FOREIGN KEY ({}) REFERENCES {} ({})", escaped_col, escaped_fk_table, escaped_fk_col);
+                if let Some(ref u) = fk.on_update {
+                    if u.to_uppercase() != "NO ACTION" {
+                        fk_clause.push_str(&format!(" ON UPDATE {}", u));
+                    }
+                }
+                if let Some(ref d) = fk.on_delete {
+                    if d.to_uppercase() != "NO ACTION" {
+                        fk_clause.push_str(&format!(" ON DELETE {}", d));
+                    }
+                }
+                sql.push_str(&fk_clause);
+            }
+        }
+
+        sqlx::query(&sql)
+            .execute(pool)
+            .await
+            .map_err(|e| EngineError::Execution(e.to_string()))?;
+
+        Ok(())
     }
 }

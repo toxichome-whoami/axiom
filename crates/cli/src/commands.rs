@@ -66,10 +66,33 @@ pub enum Commands {
         command: RoleCommands,
     },
 
-    /// Upstream database connection management (via Admin API)
+    /// Upstream database connection management and data operations (via Admin and Data API)
     Db {
         #[command(subcommand)]
         command: DbCommands,
+    },
+
+    /// Native blob storage management and object transfers (via Admin and Data API)
+    Blob {
+        #[command(subcommand)]
+        command: BlobCommands,
+    },
+
+    /// Authenticate administrative credentials and issue a session token
+    Login {
+        #[arg(help = "Admin username")]
+        username: String,
+        #[arg(short, long, help = "Admin password (if omitted, interactive prompt is used)")]
+        password: Option<String>,
+    },
+
+    /// Invalidate administrative session
+    Logout,
+
+    /// First-time setup wizard operations
+    Setup {
+        #[command(subcommand)]
+        command: Option<SetupCommands>,
     },
 
     /// Cache engine inspection and management (via Admin API)
@@ -253,8 +276,8 @@ pub enum DbCommands {
     Add {
         #[arg(short, long, help = "Database alias")]
         alias: String,
-        #[arg(short, long, help = "Database connection URL")]
-        url: String,
+        #[arg(long = "conn", alias = "connection-url", help = "Database connection URL (e.g. postgres://..., sqlite://...)")]
+        connection_url: String,
         #[arg(
             short,
             long,
@@ -285,6 +308,264 @@ pub enum DbCommands {
         #[arg(help = "Database alias")]
         alias: String,
     },
+    /// Execute a SQL query against an upstream database
+    Query {
+        #[arg(help = "Database alias")]
+        alias: String,
+        #[arg(help = "SQL query string")]
+        sql: String,
+        #[arg(short, long, help = r#"JSON parameters array or object, e.g. '[1, "active"]'"#)]
+        params: Option<String>,
+        #[arg(short, long, help = "Query timeout in seconds", default_value = "30")]
+        timeout: Option<u64>,
+    },
+    /// List tables in an upstream database
+    Tables {
+        #[arg(help = "Database alias")]
+        alias: String,
+        #[arg(short, long, help = "Offset cursor for pagination", default_value = "0")]
+        cursor: Option<i64>,
+        #[arg(short, long, help = "Maximum tables to return", default_value = "100")]
+        limit: Option<usize>,
+    },
+    /// Describe schema and foreign keys for a database table
+    Schema {
+        #[arg(help = "Database alias")]
+        alias: String,
+        #[arg(help = "Table name")]
+        table: String,
+    },
+    /// Fetch and filter rows from a database table
+    Rows {
+        #[arg(help = "Database alias")]
+        alias: String,
+        #[arg(help = "Table name")]
+        table: String,
+        #[arg(short, long, help = "Pagination cursor (primary key value)")]
+        cursor: Option<String>,
+        #[arg(short, long, help = "Maximum rows to return", default_value = "100")]
+        limit: Option<usize>,
+        #[arg(short, long, help = "Sort column")]
+        sort: Option<String>,
+        #[arg(short, long, help = "Sort order (asc or desc)", default_value = "asc")]
+        order: Option<String>,
+        #[arg(short, long, help = r#"JSON filter condition, e.g. '{"status":{"eq":"active"}}'"#)]
+        filter: Option<String>,
+    },
+    /// Insert row(s) into a database table
+    Insert {
+        #[arg(help = "Database alias")]
+        alias: String,
+        #[arg(help = "Table name")]
+        table: String,
+        #[arg(help = r#"JSON object or array to insert, e.g. '{"name":"Alice"}'"#)]
+        data: Option<String>,
+        #[arg(short, long, help = r#"JSON object for row to insert"#)]
+        row: Option<String>,
+        #[arg(long, help = r#"JSON array of rows to insert"#)]
+        rows: Option<String>,
+    },
+    /// Update row(s) matching filter in a database table
+    Update {
+        #[arg(help = "Database alias")]
+        alias: String,
+        #[arg(help = "Table name")]
+        table: String,
+        #[arg(help = r#"JSON filter condition, e.g. '{"id":{"eq":1}}'"#)]
+        filter: String,
+        #[arg(help = r#"JSON update values, e.g. '{"status":"inactive"}'"#)]
+        update: String,
+    },
+    /// Delete row(s) matching filter in a database table
+    DeleteRows {
+        #[arg(help = "Database alias")]
+        alias: String,
+        #[arg(help = "Table name")]
+        table: String,
+        #[arg(help = r#"JSON filter condition, e.g. '{"id":{"eq":1}}'"#)]
+        filter: String,
+    },
+    /// Add a new column to a database table
+    AddColumn {
+        #[arg(help = "Database alias")]
+        alias: String,
+        #[arg(help = "Table name")]
+        table: String,
+        #[arg(help = "Column name")]
+        column: String,
+        #[arg(help = "Column data type (e.g. TEXT, INTEGER, VARCHAR(255))")]
+        data_type: String,
+        #[arg(long, help = "Allow null values")]
+        nullable: bool,
+        #[arg(long, help = "Default value expression")]
+        default_val: Option<String>,
+    },
+}
+
+#[derive(Subcommand, Debug, Clone)]
+pub enum BlobCommands {
+    /// Storage cluster telemetry and usage statistics
+    Stats,
+    /// Storage-wide cryptographic integrity audit (verifies BLAKE3 hashes)
+    Scrub,
+    /// Manually trigger expired object cleanup (TTL sweep)
+    Sweep,
+    /// Manage blob storage namespaces and quotas
+    Ns {
+        #[command(subcommand)]
+        command: BlobNsCommands,
+    },
+    /// List objects in a namespace
+    List {
+        #[arg(help = "Storage namespace")]
+        namespace: String,
+        #[arg(short, long, help = "Filter by key prefix")]
+        prefix: Option<String>,
+        #[arg(short, long, help = "Pagination cursor")]
+        cursor: Option<String>,
+        #[arg(short, long, help = "Maximum items to return", default_value = "100")]
+        limit: Option<usize>,
+    },
+    /// Upload a file or binary payload to a namespace
+    Put {
+        #[arg(help = "Storage namespace")]
+        namespace: String,
+        #[arg(value_name = "KEY", help = "Object key (path)")]
+        object_key: String,
+        #[arg(help = "Path to local file to upload (or '-' for stdin)")]
+        file: String,
+        #[arg(short = 't', long, help = "MIME Content-Type (e.g. application/json, image/png)")]
+        content_type: Option<String>,
+        #[arg(long, help = "Time-to-live expiration in seconds")]
+        ttl: Option<u64>,
+    },
+    /// Download an object from a namespace
+    Get {
+        #[arg(help = "Storage namespace")]
+        namespace: String,
+        #[arg(value_name = "KEY", help = "Object key (path)")]
+        object_key: String,
+        #[arg(short, long, help = "Output file path (or '-' for stdout). Defaults to key filename")]
+        output: Option<String>,
+        #[arg(long, help = "Capability ticket signature for pre-signed download")]
+        ticket: Option<String>,
+    },
+    /// Inspect object metadata (headers, size, BLAKE3 hash, TTL)
+    Head {
+        #[arg(help = "Storage namespace")]
+        namespace: String,
+        #[arg(value_name = "KEY", help = "Object key (path)")]
+        object_key: String,
+    },
+    /// Delete an object from a namespace
+    Delete {
+        #[arg(help = "Storage namespace")]
+        namespace: String,
+        #[arg(value_name = "KEY", help = "Object key (path)")]
+        object_key: String,
+    },
+    /// Copy an object or directory prefix
+    Copy {
+        #[arg(help = "Source namespace")]
+        src_namespace: String,
+        #[arg(help = "Source key (or prefix)")]
+        src_key: String,
+        #[arg(help = "Destination key (or prefix)")]
+        dest_key: String,
+        #[arg(long, help = "Destination namespace (defaults to source namespace)")]
+        dest_namespace: Option<String>,
+        #[arg(long, help = "Copy all objects with matching prefix")]
+        prefix: bool,
+    },
+    /// Move or rename an object or directory prefix
+    Move {
+        #[arg(help = "Source namespace")]
+        src_namespace: String,
+        #[arg(help = "Source key (or prefix)")]
+        src_key: String,
+        #[arg(help = "Destination key (or prefix)")]
+        dest_key: String,
+        #[arg(long, help = "Destination namespace (defaults to source namespace)")]
+        dest_namespace: Option<String>,
+        #[arg(long, help = "Move all objects with matching prefix")]
+        prefix: bool,
+    },
+    /// Delete all objects matching a prefix
+    DeletePrefix {
+        #[arg(help = "Storage namespace")]
+        namespace: String,
+        #[arg(help = "Key prefix to delete")]
+        prefix: String,
+    },
+    /// Cryptographically verify blob integrity on disk
+    Verify {
+        #[arg(help = "Storage namespace")]
+        namespace: String,
+        #[arg(value_name = "KEY", help = "Object key (path)")]
+        object_key: String,
+    },
+    /// Generate a pre-signed capability download ticket URL
+    Ticket {
+        #[arg(help = "Storage namespace")]
+        namespace: String,
+        #[arg(value_name = "KEY", help = "Object key (path)")]
+        object_key: String,
+        #[arg(short, long, help = "Permitted operation (READ, WRITE)", default_value = "READ")]
+        operation: Option<String>,
+        #[arg(long, help = "Ticket time-to-live in seconds", default_value = "3600")]
+        ttl: Option<u64>,
+    },
+}
+
+#[derive(Subcommand, Debug, Clone)]
+pub enum BlobNsCommands {
+    /// List all storage namespaces and quotas
+    List,
+    /// Create a new storage namespace
+    Create {
+        #[arg(help = "Namespace name")]
+        name: String,
+        #[arg(long, help = "Maximum storage quota in bytes (e.g. 1073741824 for 1GB)")]
+        max_bytes: Option<u64>,
+    },
+    /// Update an existing namespace quota or rename it
+    Update {
+        #[arg(help = "Current namespace name")]
+        name: String,
+        #[arg(long, help = "New namespace name")]
+        new_name: Option<String>,
+        #[arg(long, help = "New maximum storage quota in bytes (0 = unlimited)")]
+        max_bytes: Option<u64>,
+    },
+    /// Delete a namespace and all contained objects
+    Delete {
+        #[arg(help = "Namespace name")]
+        name: String,
+    },
+}
+
+#[derive(Subcommand, Debug, Clone)]
+pub enum SetupCommands {
+    /// Check whether initial setup is required
+    Begin,
+    /// Create the primary admin account
+    Account {
+        #[arg(help = "Admin username")]
+        username: String,
+        #[arg(short, long, help = "Admin password (if omitted, interactive prompt is used)")]
+        password: Option<String>,
+    },
+    /// Register the first upstream database during setup
+    Database {
+        #[arg(short, long, help = "Database alias")]
+        alias: String,
+        #[arg(short, long, help = "Database connection URL")]
+        url: String,
+        #[arg(short, long, help = "Engine dialect")]
+        engine: Option<String>,
+    },
+    /// Finalize and permanently seal the setup wizard
+    Complete,
 }
 
 #[cfg(test)]
@@ -306,12 +587,12 @@ mod tests {
 
     #[test]
     fn test_cli_parse_db_add() {
-        let args = ["axiom", "db", "add", "-a", "analytics", "-u", "postgres://localhost:5432/db", "--pool-max", "20"];
+        let args = ["axiom", "db", "add", "-a", "analytics", "--conn", "postgres://localhost:5432/db", "--pool-max", "20"];
         let cli = Cli::try_parse_from(args).expect("Failed to parse db add");
         match cli.command {
-            Some(Commands::Db { command: DbCommands::Add { alias, url, pool_max, .. } }) => {
+            Some(Commands::Db { command: DbCommands::Add { alias, connection_url, pool_max, .. } }) => {
                 assert_eq!(alias, "analytics");
-                assert_eq!(url, "postgres://localhost:5432/db");
+                assert_eq!(connection_url, "postgres://localhost:5432/db");
                 assert_eq!(pool_max, Some(20));
             }
             _ => panic!("Expected Db Add command"),
@@ -478,6 +759,124 @@ mod tests {
                 assert!(force);
             }
             _ => panic!("Expected Config ToEnv command"),
+        }
+    }
+
+    #[test]
+    fn test_cli_parse_db_query() {
+        let args = ["axiom", "db", "query", "main_db", "SELECT * FROM users", "-p", r#"["active"]"#, "--timeout", "45"];
+        let cli = Cli::try_parse_from(args).expect("Failed to parse db query");
+        match cli.command {
+            Some(Commands::Db { command: DbCommands::Query { alias, sql, params, timeout } }) => {
+                assert_eq!(alias, "main_db");
+                assert_eq!(sql, "SELECT * FROM users");
+                assert_eq!(params, Some(r#"["active"]"#.to_string()));
+                assert_eq!(timeout, Some(45));
+            }
+            _ => panic!("Expected Db Query command"),
+        }
+    }
+
+    #[test]
+    fn test_cli_parse_db_tables_and_schema() {
+        let args = ["axiom", "db", "tables", "analytics_db", "--limit", "50"];
+        let cli = Cli::try_parse_from(args).expect("Failed to parse db tables");
+        match cli.command {
+            Some(Commands::Db { command: DbCommands::Tables { alias, limit, .. } }) => {
+                assert_eq!(alias, "analytics_db");
+                assert_eq!(limit, Some(50));
+            }
+            _ => panic!("Expected Db Tables command"),
+        }
+
+        let schema_args = ["axiom", "db", "schema", "analytics_db", "events"];
+        let schema_cli = Cli::try_parse_from(schema_args).expect("Failed to parse db schema");
+        match schema_cli.command {
+            Some(Commands::Db { command: DbCommands::Schema { alias, table } }) => {
+                assert_eq!(alias, "analytics_db");
+                assert_eq!(table, "events");
+            }
+            _ => panic!("Expected Db Schema command"),
+        }
+    }
+
+    #[test]
+    fn test_cli_parse_db_rows() {
+        let args = ["axiom", "db", "rows", "main_db", "users", "--sort", "id", "--order", "desc", "--filter", r#"{"status":{"eq":"active"}}"#];
+        let cli = Cli::try_parse_from(args).expect("Failed to parse db rows");
+        match cli.command {
+            Some(Commands::Db { command: DbCommands::Rows { alias, table, sort, order, filter, .. } }) => {
+                assert_eq!(alias, "main_db");
+                assert_eq!(table, "users");
+                assert_eq!(sort, Some("id".to_string()));
+                assert_eq!(order, Some("desc".to_string()));
+                assert_eq!(filter, Some(r#"{"status":{"eq":"active"}}"#.to_string()));
+            }
+            _ => panic!("Expected Db Rows command"),
+        }
+    }
+
+    #[test]
+    fn test_cli_parse_blob_commands() {
+        let args = ["axiom", "blob", "put", "avatars", "user1.png", "./me.png", "-t", "image/png", "--ttl", "86400"];
+        let cli = Cli::try_parse_from(args).expect("Failed to parse blob put");
+        match cli.command {
+            Some(Commands::Blob { command: BlobCommands::Put { namespace, object_key, file, content_type, ttl } }) => {
+                assert_eq!(namespace, "avatars");
+                assert_eq!(object_key, "user1.png");
+                assert_eq!(file, "./me.png");
+                assert_eq!(content_type, Some("image/png".to_string()));
+                assert_eq!(ttl, Some(86400));
+            }
+            _ => panic!("Expected Blob Put command"),
+        }
+
+        let get_args = ["axiom", "blob", "get", "avatars", "user1.png", "-o", "./download.png", "--ticket", "sig123"];
+        let get_cli = Cli::try_parse_from(get_args).expect("Failed to parse blob get");
+        match get_cli.command {
+            Some(Commands::Blob { command: BlobCommands::Get { namespace, object_key, output, ticket } }) => {
+                assert_eq!(namespace, "avatars");
+                assert_eq!(object_key, "user1.png");
+                assert_eq!(output, Some("./download.png".to_string()));
+                assert_eq!(ticket, Some("sig123".to_string()));
+            }
+            _ => panic!("Expected Blob Get command"),
+        }
+
+        let copy_args = ["axiom", "blob", "copy", "raw", "data/", "backup/", "--dest-namespace", "archive", "--prefix"];
+        let copy_cli = Cli::try_parse_from(copy_args).expect("Failed to parse blob copy");
+        match copy_cli.command {
+            Some(Commands::Blob { command: BlobCommands::Copy { src_namespace, src_key, dest_key, dest_namespace, prefix } }) => {
+                assert_eq!(src_namespace, "raw");
+                assert_eq!(src_key, "data/");
+                assert_eq!(dest_key, "backup/");
+                assert_eq!(dest_namespace, Some("archive".to_string()));
+                assert!(prefix);
+            }
+            _ => panic!("Expected Blob Copy command"),
+        }
+    }
+
+    #[test]
+    fn test_cli_parse_login_and_setup() {
+        let login_args = ["axiom", "login", "admin", "-p", "mypassword123"];
+        let login_cli = Cli::try_parse_from(login_args).expect("Failed to parse login");
+        match login_cli.command {
+            Some(Commands::Login { username, password }) => {
+                assert_eq!(username, "admin");
+                assert_eq!(password, Some("mypassword123".to_string()));
+            }
+            _ => panic!("Expected Login command"),
+        }
+
+        let setup_args = ["axiom", "setup", "account", "superadmin", "-p", "longsecretpass"];
+        let setup_cli = Cli::try_parse_from(setup_args).expect("Failed to parse setup account");
+        match setup_cli.command {
+            Some(Commands::Setup { command: Some(SetupCommands::Account { username, password }) }) => {
+                assert_eq!(username, "superadmin");
+                assert_eq!(password, Some("longsecretpass".to_string()));
+            }
+            _ => panic!("Expected Setup Account command"),
         }
     }
 }

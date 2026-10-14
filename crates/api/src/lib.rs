@@ -7,6 +7,7 @@
  */
 
 pub mod admin;
+pub mod blobs;
 pub mod core;
 pub mod database;
 pub mod mcp;

@@ -13,7 +13,7 @@ use url::Url;
 
 use axiom_core::config::schema::DatabaseDefConfig;
 use crate::engines::base::{
-    ColumnInfo, DatabaseEngine, EngineError, ForeignKeyInfo, QueryResult, TableInfo,
+    ColumnInfo, CreateColumnRequest, DatabaseEngine, EngineError, ForeignKeyInfo, QueryResult, TableInfo,
 };
 
 pub struct ClickHouseDatabaseEngine {
@@ -303,5 +303,42 @@ impl DatabaseEngine for ClickHouseDatabaseEngine {
 
     fn dialect(&self) -> &str {
         "clickhouse"
+    }
+
+    async fn add_column(&self, table: &str, req: &CreateColumnRequest) -> Result<(), EngineError> {
+        let col_name_clean: String = req.name.chars().filter(|c| c.is_alphanumeric() || *c == '_').collect();
+        if col_name_clean.is_empty() {
+            return Err(EngineError::Schema("Invalid column name".into()));
+        }
+
+        let escaped_table = format!("`{}`", table.replace('`', "``"));
+        let escaped_col = format!("`{}`", col_name_clean.replace('`', "``"));
+
+        // ClickHouse column type with Nullable if requested
+        let mut type_def = req.data_type.clone();
+        if req.is_array {
+            type_def = format!("Array({})", type_def);
+        } else if req.nullable && !type_def.to_lowercase().starts_with("nullable") {
+            type_def = format!("Nullable({})", type_def);
+        }
+
+        let mut sql = format!("ALTER TABLE {} ADD COLUMN {} {}", escaped_table, escaped_col, type_def);
+
+        if let Some(ref def_val) = req.default_value {
+            let trimmed = def_val.trim();
+            if !trimmed.is_empty() && trimmed.to_uppercase() != "NULL" {
+                sql.push_str(&format!(" DEFAULT {}", trimmed));
+            }
+        }
+
+        if let Some(ref desc) = req.description {
+            let trimmed = desc.trim();
+            if !trimmed.is_empty() {
+                sql.push_str(&format!(" COMMENT '{}'", trimmed.replace('\'', "''")));
+            }
+        }
+
+        self.execute(&sql, &[]).await?;
+        Ok(())
     }
 }

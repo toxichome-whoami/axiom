@@ -6,9 +6,10 @@
  * Last structural change: Refined UI layout and typography to match binary_alive minimalist technical design.
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Stepper, StepItem } from '../components/shared/Stepper';
 import { CustomSelect } from '../components/shared/CustomSelect';
+import { Captcha, CaptchaRef } from '../components/shared/Captcha';
 import { api } from '../api/client';
 import { getSessionToken } from '../api/session';
 import {
@@ -72,6 +73,11 @@ export function AuthPage({ onLoginSuccess, initialMode = 'login' }: AuthPageProp
   const [loginLoading, setLoginLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  // Anti-Bot & Security Verification State
+  const captchaRef = useRef<CaptchaRef | null>(null);
+  const [isCaptchaVerified, setIsCaptchaVerified] = useState(false);
+  const [botHoneypot, setBotHoneypot] = useState('');
+
   // Setup Wizard Step 2: Admin Account
   const [adminUsername, setAdminUsername] = useState('admin');
   const [adminPassword, setAdminPassword] = useState('');
@@ -126,8 +132,24 @@ export function AuthPage({ onLoginSuccess, initialMode = 'login' }: AuthPageProp
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
+
+    // 1. Silent honeypot check to trip automated form scrapers/bots
+    if (botHoneypot) {
+      setErrorMessage('Automated script activity detected. Request blocked.');
+      return;
+    }
+
+    // 2. Validate input fields
     if (!loginUsername.trim() || !loginPassword) {
       setErrorMessage('Please enter both username and password.');
+      return;
+    }
+
+    // 3. Validate CAPTCHA challenge
+    const passedCaptcha = captchaRef.current?.validate() ?? isCaptchaVerified;
+    if (!passedCaptcha) {
+      setErrorMessage('Please solve the security verification challenge to proceed.');
+      captchaRef.current?.shake();
       return;
     }
 
@@ -152,6 +174,9 @@ export function AuthPage({ onLoginSuccess, initialMode = 'login' }: AuthPageProp
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Invalid credentials or connection error.';
       setErrorMessage(msg);
+      // Immediately regenerate challenge on any failed attempt to prevent replay attacks
+      captchaRef.current?.refresh();
+      setIsCaptchaVerified(false);
     } finally {
       setLoginLoading(false);
     }
@@ -164,8 +189,8 @@ export function AuthPage({ onLoginSuccess, initialMode = 'login' }: AuthPageProp
       setErrorMessage('Username and password are required.');
       return;
     }
-    if (adminPassword.length < 6) {
-      setErrorMessage('Password must be at least 6 characters long.');
+    if (adminPassword.length < 8) {
+      setErrorMessage('Password must be at least 8 characters long.');
       return;
     }
     if (adminPassword !== adminConfirmPassword) {
@@ -413,6 +438,25 @@ export function AuthPage({ onLoginSuccess, initialMode = 'login' }: AuthPageProp
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
+            </div>
+
+            {/* Anti-Bot Security CAPTCHA Challenge */}
+            <Captcha
+              ref={captchaRef}
+              disabled={loginLoading}
+              onVerifyChange={(verified) => setIsCaptchaVerified(verified)}
+            />
+
+            {/* Invisible honeypot field for trapping automated headless bots */}
+            <div className="opacity-0 absolute -left-[9999px] pointer-events-none" aria-hidden="true">
+              <input
+                type="text"
+                name="auth_system_verification_token"
+                tabIndex={-1}
+                value={botHoneypot}
+                onChange={(e) => setBotHoneypot(e.target.value)}
+                autoComplete="off"
+              />
             </div>
 
             {/* Remember Device Checkbox */}

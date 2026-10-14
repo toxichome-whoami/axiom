@@ -50,7 +50,16 @@ pub async fn rate_limit_middleware(req: Request, next: Next) -> Result<Response,
     if config.server.trusted_proxies.contains(&client_ip) || has_wildcard_proxy {
         if let Some(forwarded) = req.headers().get("x-forwarded-for").or_else(|| req.headers().get("x-real-ip")) {
             if let Ok(fwd_str) = forwarded.to_str() {
-                client_ip = fwd_str.split(',').next().unwrap_or(&client_ip).trim().to_string();
+                // Take leftmost hop but validate it parses as an IP; ignore spoofed garbage.
+                // Full rightmost-untrusted-chain validation is proxy-specific; at minimum
+                // never accept `host:port` or non-IP tokens as client_ip.
+                if let Some(first) = fwd_str.split(',').next().map(str::trim) {
+                    if first.parse::<std::net::IpAddr>().is_ok() {
+                        client_ip = first.to_string();
+                    } else {
+                        tracing::debug!("Ignoring invalid X-Forwarded-For value");
+                    }
+                }
             }
         }
     }
@@ -61,11 +70,25 @@ pub async fn rate_limit_middleware(req: Request, next: Next) -> Result<Response,
         return Err(AxiomError::new("BANNED", &format!("Your IP is banned: {}", reason), axum::http::StatusCode::FORBIDDEN));
     }
 
-    // Check IP allowlist bypass (e.g., internal monitoring or metrics scrapers)
+    // Check IP allowlist bypass (e.g., internal monitoring or metrics scrapers).
+    // SECURITY (H-3): entries must be exact IPs or CIDR; `host:port` entries
+    // (e.g. "localhost:4500") never match and are logged; trailing-`*`
+    // wildcards are only honored as full-octet prefixes (e.g. "10.0.0.") and
+    // operators should prefer explicit CIDR allowlisting.
     let mut is_allowed = false;
     for allowed in &config.server.allowed_ips {
+        if allowed.contains(':') && !allowed.ends_with("::") && allowed.matches(':').count() < 2 {
+            // Likely `host:port` confusion (never a valid client IP) — fail closed.
+            tracing::warn!("Ignoring invalid allowed_ips entry '{}' (host:port never matches client IP)", allowed);
+            continue;
+        }
         if allowed.ends_with('*') {
             let prefix = &allowed[..allowed.len() - 1];
+            // Require prefix to end on an octet boundary to avoid "10.0.0.1*" style over-match.
+            if !prefix.ends_with('.') {
+                tracing::warn!("Ignoring over-broad allowed_ips wildcard '{}' (must end at octet boundary, e.g. '10.0.0.*')", allowed);
+                continue;
+            }
             if client_ip.starts_with(prefix) {
                 is_allowed = true;
                 break;
@@ -110,6 +133,13 @@ pub async fn rate_limit_middleware(req: Request, next: Next) -> Result<Response,
 
     if ip_violated {
         crate::metrics::MetricsEngine::record_rate_limit_rejection();
+        if config.rate_limit.penalty_cooldown > 0 && ip_current_count == 0 {
+            crate::security::ban_list::BanList::ban_ip_with_ttl(
+                &client_ip,
+                "Rate limit penalty threshold breached",
+                config.rate_limit.penalty_cooldown as u64,
+            );
+        }
         return Err(AxiomError::new(
             "RATE_LIMIT_EXCEEDED",
             "Rate limit exceeded or IP temporarily blocked.",
@@ -151,12 +181,6 @@ pub async fn rate_limit_middleware(req: Request, next: Next) -> Result<Response,
             .keys
             .get(&key_name)
             .and_then(|k| if k.rate_limit_override > 0 { Some(k.rate_limit_override as i32) } else { None })
-            .or_else(|| {
-                config
-                    .api_key
-                    .get(&key_name)
-                    .map(|k| if k.rate_limit_override > 0 { k.rate_limit_override } else { ip_limit })
-            })
             .unwrap_or(ip_limit);
 
         let key_rl_key = format!("rl:key:{}", key_name);
@@ -173,6 +197,13 @@ pub async fn rate_limit_middleware(req: Request, next: Next) -> Result<Response,
 
         if key_violated {
             crate::metrics::MetricsEngine::record_rate_limit_rejection();
+            if config.rate_limit.penalty_cooldown > 0 && key_count == 0 {
+                crate::security::ban_list::BanList::ban_key_with_ttl(
+                    &key_name,
+                    "API key rate limit penalty threshold breached",
+                    config.rate_limit.penalty_cooldown as u64,
+                );
+            }
             return Err(AxiomError::new(
                 "RATE_LIMIT_EXCEEDED",
                 "API key rate limit exceeded.",

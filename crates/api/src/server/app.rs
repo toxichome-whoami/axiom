@@ -119,6 +119,7 @@ pub fn create_app() -> Router {
         .expose_headers(exposed_headers);
         
     if config.server.cors_origins.iter().any(|o| o == "*") {
+        tracing::warn!("SECURITY WARNING: cors_origins contains '*' — any website can read API responses. Pin explicit origins in production.");
         cors = cors.allow_origin(Any);
     } else {
         let origins: Vec<axum::http::HeaderValue> = config.server.cors_origins
@@ -135,6 +136,10 @@ pub fn create_app() -> Router {
     let api_routes = Router::new()
         .route("/health", get(health_check))
         .nest("/db", crate::database::router::get_router())
+        .nest(
+            "/blobs",
+            crate::blobs::get_router().layer(axum::extract::DefaultBodyLimit::disable()),
+        )
         .layer(middleware::from_fn(auth_middleware))
         .layer(middleware::from_fn(rate_limit_middleware));
 
@@ -167,7 +172,11 @@ pub fn create_app() -> Router {
         .layer(middleware::from_fn(crate::middleware::metrics::metrics_middleware))
         .layer(cors)
         .layer(tower_http::timeout::TimeoutLayer::new(
-            std::time::Duration::from_secs(30),
+            std::time::Duration::from_secs(if config.server.request_timeout > 0 {
+                config.server.request_timeout as u64
+            } else {
+                30
+            }),
         ))
         .layer(SetResponseHeaderLayer::overriding(
             header::X_CONTENT_TYPE_OPTIONS,
@@ -181,6 +190,14 @@ pub fn create_app() -> Router {
             header::STRICT_TRANSPORT_SECURITY,
             header::HeaderValue::from_static("max-age=63072000; includeSubDomains; preload"),
         ))
+        .layer(SetResponseHeaderLayer::overriding(
+            header::REFERRER_POLICY,
+            header::HeaderValue::from_static("no-referrer"),
+        ))
+        .layer(SetResponseHeaderLayer::overriding(
+            header::HeaderName::from_static("permissions-policy"),
+            header::HeaderValue::from_static("camera=(), microphone=(), geolocation=()"),
+        ))
         // If an inner handler (such as the embedded Web UI) already specified its own
         // tailored Content-Security-Policy, preserve it; otherwise apply strict default-src 'none'.
         .layer(SetResponseHeaderLayer::if_not_present(
@@ -189,6 +206,8 @@ pub fn create_app() -> Router {
         ))
         .layer(tower_http::request_id::PropagateRequestIdLayer::x_request_id())
         .layer(tower_http::request_id::SetRequestIdLayer::x_request_id(tower_http::request_id::MakeRequestUuid))
-        .layer(axum::extract::DefaultBodyLimit::max(10 * 1024 * 1024))
+        .layer(axum::extract::DefaultBodyLimit::max(
+            axiom_core::parse_size(&config.server.body_limit).unwrap_or(10 * 1024 * 1024) as usize,
+        ))
         .layer(middleware::from_fn(waf_middleware))
 }

@@ -21,10 +21,36 @@ use axiom_core::AuthContext;
 // Consecutive execution failure counter per database alias for circuit breaker (Debt #4 fix).
 static CIRCUIT_FAILURES: once_cell::sync::Lazy<dashmap::DashMap<String, u32>> = once_cell::sync::Lazy::new(dashmap::DashMap::new);
 
+// Type alias for broadcast channel results to simplify complex nested types.
+type InFlightResult = Result<(Arc<QueryResult>, bytes::Bytes), AxiomError>;
+type InFlightQueriesMap = dashmap::DashMap<String, tokio::sync::broadcast::Sender<InFlightResult>>;
+
+// Single-Flight in-flight query deduplication registry.
+// WHY: Coalesces concurrent identical queries into one DB execution to prevent Cache Stampede and penetration storms.
+static IN_FLIGHT_QUERIES: once_cell::sync::Lazy<InFlightQueriesMap> =
+    once_cell::sync::Lazy::new(dashmap::DashMap::new);
+
 // Fast heuristic regex to skip cache key allocation on obvious mutation statements.
 static MUTATION_RE: once_cell::sync::Lazy<regex::Regex> = once_cell::sync::Lazy::new(|| {
     regex::Regex::new(r"(?i)\b(INSERT|UPDATE|DELETE|DROP|CREATE|ALTER|TRUNCATE|REPLACE|GRANT|REVOKE|PRAGMA)\b").unwrap()
 });
+
+static PRAGMA_ON_RE: once_cell::sync::Lazy<regex::Regex> = once_cell::sync::Lazy::new(|| {
+    regex::Regex::new(r"(?i)\bPRAGMA\s+([a-zA-Z0-9_]+)\s*=\s*(ON|YES)\b").unwrap()
+});
+
+static PRAGMA_OFF_RE: once_cell::sync::Lazy<regex::Regex> = once_cell::sync::Lazy::new(|| {
+    regex::Regex::new(r"(?i)\bPRAGMA\s+([a-zA-Z0-9_]+)\s*=\s*(OFF|NO)\b").unwrap()
+});
+
+/// Normalizes SQLite PRAGMA statements with keyword values (e.g. `PRAGMA foreign_keys = OFF` / `ON`)
+/// into standard numeric pragma assignments (`PRAGMA foreign_keys = 0` / `1`).
+/// In SQLite grammar, ON/YES == 1 and OFF/NO == 0.
+/// This prevents sqlparser-rs from rejecting ON/OFF keywords as "Expected: a concrete value".
+pub fn normalize_sqlite_pragmas(sql: &str) -> String {
+    let replaced_off = PRAGMA_OFF_RE.replace_all(sql, "PRAGMA $1 = 0");
+    PRAGMA_ON_RE.replace_all(&replaced_off, "PRAGMA $1 = 1").into_owned()
+}
 
 /// Precomputed AST analysis and formatted query statement for fast-path execution.
 #[derive(Clone, Debug)]
@@ -89,11 +115,75 @@ fn collect_tables_from_table_with_joins(twj: &sqlparser::ast::TableWithJoins, ta
     }
 }
 
+fn collect_tables_from_expr(expr: &sqlparser::ast::Expr, tables: &mut Vec<String>) {
+    match expr {
+        sqlparser::ast::Expr::Subquery(query) => {
+            collect_tables_from_query(query, tables);
+        }
+        sqlparser::ast::Expr::InSubquery { subquery, expr, .. } => {
+            collect_tables_from_expr(expr, tables);
+            collect_tables_from_query(subquery, tables);
+        }
+        sqlparser::ast::Expr::Exists { subquery, .. } => {
+            collect_tables_from_query(subquery, tables);
+        }
+        sqlparser::ast::Expr::BinaryOp { left, right, .. } => {
+            collect_tables_from_expr(left, tables);
+            collect_tables_from_expr(right, tables);
+        }
+        sqlparser::ast::Expr::UnaryOp { expr, .. } => {
+            collect_tables_from_expr(expr, tables);
+        }
+        sqlparser::ast::Expr::Nested(inner) => {
+            collect_tables_from_expr(inner, tables);
+        }
+        sqlparser::ast::Expr::InList { expr, list, .. } => {
+            collect_tables_from_expr(expr, tables);
+            for item in list {
+                collect_tables_from_expr(item, tables);
+            }
+        }
+        sqlparser::ast::Expr::Between { expr, low, high, .. } => {
+            collect_tables_from_expr(expr, tables);
+            collect_tables_from_expr(low, tables);
+            collect_tables_from_expr(high, tables);
+        }
+        sqlparser::ast::Expr::Case { operand, conditions, else_result, .. } => {
+            if let Some(op) = operand {
+                collect_tables_from_expr(op, tables);
+            }
+            for cw in conditions {
+                collect_tables_from_expr(&cw.condition, tables);
+                collect_tables_from_expr(&cw.result, tables);
+            }
+            if let Some(el) = else_result {
+                collect_tables_from_expr(el, tables);
+            }
+        }
+        _ => {}
+    }
+}
+
 fn collect_tables_from_set_expr(expr: &sqlparser::ast::SetExpr, tables: &mut Vec<String>) {
     match expr {
         sqlparser::ast::SetExpr::Select(select) => {
             for twj in &select.from {
                 collect_tables_from_table_with_joins(twj, tables);
+            }
+            for item in &select.projection {
+                match item {
+                    sqlparser::ast::SelectItem::UnnamedExpr(e)
+                    | sqlparser::ast::SelectItem::ExprWithAlias { expr: e, .. } => {
+                        collect_tables_from_expr(e, tables);
+                    }
+                    _ => {}
+                }
+            }
+            if let Some(selection) = &select.selection {
+                collect_tables_from_expr(selection, tables);
+            }
+            if let Some(having) = &select.having {
+                collect_tables_from_expr(having, tables);
             }
         }
         sqlparser::ast::SetExpr::Query(q) => {
@@ -114,6 +204,189 @@ fn collect_tables_from_query(query: &sqlparser::ast::Query, tables: &mut Vec<Str
         }
     }
     collect_tables_from_set_expr(&query.body, tables);
+}
+
+fn sanitize_db_error(raw_err: &str) -> String {
+    // SECURITY (M-5): never reflect driver internals (table/column/constraint,
+    // dialect version) to clients/LLMs. Full error goes to tracing only.
+    // In debug builds keep detail for developers; in prod return generic.
+    #[cfg(debug_assertions)]
+    {
+        let mut msg = raw_err.trim();
+        while let Some(rest) = msg
+            .strip_prefix("Execution error: ")
+            .or_else(|| msg.strip_prefix("error returned from database: "))
+            .or_else(|| msg.strip_prefix("Database error: "))
+        {
+            msg = rest.trim();
+        }
+        if msg.is_empty() {
+            "Database query execution failed".to_string()
+        } else {
+            msg.chars().take(300).collect()
+        }
+    }
+    #[cfg(not(debug_assertions))]
+    {
+        let _ = raw_err;
+        "Database query execution failed".to_string()
+    }
+}
+
+/// Replaces unquoted '?' parameter placeholders with '$1', '$2', ... for PostgreSQL grammar.
+/// Invariant: Respects single-quoted strings ('...'), double-quoted identifiers ("..."),
+/// dollar-quoted strings ($$...$$, $tag$...$tag$), line comments (-- ...), block comments (/* ... */),
+/// and PostgreSQL JSONB operators (?|, ?&) to prevent corrupting literal text and operators.
+pub fn format_postgres_placeholders(sql: &str) -> String {
+    use std::fmt::Write;
+    let mut out = String::with_capacity(sql.len() + 16);
+    let mut param_idx = 1;
+
+    let mut in_single_quote = false;
+    let mut in_double_quote = false;
+    let mut in_line_comment = false;
+    let mut in_block_comment = false;
+    let mut dollar_quote_tag: Option<String> = None;
+
+    let chars: Vec<char> = sql.chars().collect();
+    let len = chars.len();
+    let mut i = 0;
+
+    while i < len {
+        let c = chars[i];
+        let next_c = if i + 1 < len { Some(chars[i + 1]) } else { None };
+
+        if in_line_comment {
+            out.push(c);
+            if c == '\n' {
+                in_line_comment = false;
+            }
+            i += 1;
+            continue;
+        }
+
+        if in_block_comment {
+            out.push(c);
+            if c == '*' && next_c == Some('/') {
+                out.push('/');
+                in_block_comment = false;
+                i += 2;
+                continue;
+            }
+            i += 1;
+            continue;
+        }
+
+        if let Some(ref tag) = dollar_quote_tag {
+            let tag_chars: Vec<char> = tag.chars().collect();
+            let tag_len = tag_chars.len();
+            if i + tag_len <= len && chars[i..i + tag_len] == tag_chars[..] {
+                out.push_str(tag);
+                dollar_quote_tag = None;
+                i += tag_len;
+            } else {
+                out.push(c);
+                i += 1;
+            }
+            continue;
+        }
+
+        if in_single_quote {
+            out.push(c);
+            if c == '\'' {
+                if next_c == Some('\'') {
+                    // Escaped single quote ('') inside SQL literal
+                    out.push('\'');
+                    i += 2;
+                    continue;
+                } else {
+                    in_single_quote = false;
+                }
+            }
+            i += 1;
+            continue;
+        }
+
+        if in_double_quote {
+            out.push(c);
+            if c == '"' {
+                if next_c == Some('"') {
+                    // Escaped double quote ("") inside SQL identifier
+                    out.push('"');
+                    i += 2;
+                    continue;
+                } else {
+                    in_double_quote = false;
+                }
+            }
+            i += 1;
+            continue;
+        }
+
+        // Outside quotes and comments:
+        if c == '-' && next_c == Some('-') {
+            in_line_comment = true;
+            out.push('-');
+            out.push('-');
+            i += 2;
+            continue;
+        }
+
+        if c == '/' && next_c == Some('*') {
+            in_block_comment = true;
+            out.push('/');
+            out.push('*');
+            i += 2;
+            continue;
+        }
+
+        // Check for start of dollar quote ($tag$ or $$)
+        if c == '$' {
+            let mut j = i + 1;
+            while j < len && (chars[j].is_alphanumeric() || chars[j] == '_') {
+                j += 1;
+            }
+            if j < len && chars[j] == '$' {
+                let tag: String = chars[i..=j].iter().collect();
+                out.push_str(&tag);
+                dollar_quote_tag = Some(tag);
+                i = j + 1;
+                continue;
+            }
+        }
+
+        if c == '\'' {
+            in_single_quote = true;
+            out.push(c);
+            i += 1;
+            continue;
+        }
+
+        if c == '"' {
+            in_double_quote = true;
+            out.push(c);
+            i += 1;
+            continue;
+        }
+
+        if c == '?' {
+            // Respect PostgreSQL JSONB operators (?| and ?&)
+            if next_c == Some('|') || next_c == Some('&') {
+                out.push(c);
+                i += 1;
+                continue;
+            }
+            let _ = write!(out, "${}", param_idx);
+            param_idx += 1;
+            i += 1;
+            continue;
+        }
+
+        out.push(c);
+        i += 1;
+    }
+
+    out
 }
 
 impl QueryExecutionPipeline {
@@ -140,11 +413,28 @@ impl QueryExecutionPipeline {
             }
         }
 
-        let engine = DatabasePoolManager::get_engine(db_name)
-            .await
-            .ok_or_else(|| {
-                AxiomError::new("DB_NOT_FOUND", "Database not found", StatusCode::NOT_FOUND)
-            })?;
+        let engine = match DatabasePoolManager::get_engine(db_name).await {
+            Some(eng) => eng,
+            None => {
+                if DatabasePoolManager::is_db_configured(db_name) {
+                    if config.circuit_breaker.enabled {
+                        let mut count = CIRCUIT_FAILURES.entry(db_name.to_string()).or_insert(0);
+                        *count += 1;
+                    }
+                    return Err(AxiomError::new(
+                        "DATABASE_CONNECTION_FAILED",
+                        &format!("Failed to connect to database '{}'", db_name),
+                        StatusCode::SERVICE_UNAVAILABLE,
+                    ));
+                } else {
+                    return Err(AxiomError::new(
+                        "DB_NOT_FOUND",
+                        "Database not found",
+                        StatusCode::NOT_FOUND,
+                    ));
+                }
+            }
+        };
 
         let is_mutation_regex = MUTATION_RE.is_match(sql);
 
@@ -177,18 +467,28 @@ impl QueryExecutionPipeline {
             let cow = cached.formatted_sql.clone().map(std::borrow::Cow::Owned).unwrap_or_else(|| std::borrow::Cow::Borrowed(sql));
             (cached.is_mutation, cow, cached.multiple_statements.clone())
         } else {
-            let ast_result = if dialect_name == "postgres" {
-                sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::PostgreSqlDialect {}, sql)
-            } else if dialect_name == "clickhouse" {
-                sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::ClickHouseDialect {}, sql)
-            } else if dialect_name == "mssql" {
-                sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::MsSqlDialect {}, sql)
-            } else if dialect_name == "mysql" {
-                sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::MySqlDialect {}, sql)
-            } else if dialect_name == "sqlite" {
-                sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::SQLiteDialect {}, sql)
+            // For PostgreSQL dialect, replace '?' with '$1', '$2', ... placeholders before AST parsing,
+            // because PostgreSQL grammar rejects raw '?' parameter placeholders.
+            let parse_target_sql: std::borrow::Cow<'_, str> = if (dialect_name == "postgres" || dialect_name == "any") && sql.contains('?') {
+                std::borrow::Cow::Owned(format_postgres_placeholders(sql))
+            } else if dialect_name == "sqlite" && sql.to_ascii_uppercase().contains("PRAGMA") {
+                std::borrow::Cow::Owned(normalize_sqlite_pragmas(sql))
             } else {
-                sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::GenericDialect {}, sql)
+                std::borrow::Cow::Borrowed(sql)
+            };
+
+            let ast_result = if dialect_name == "postgres" {
+                sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::PostgreSqlDialect {}, &parse_target_sql)
+            } else if dialect_name == "clickhouse" {
+                sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::ClickHouseDialect {}, &parse_target_sql)
+            } else if dialect_name == "mssql" {
+                sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::MsSqlDialect {}, &parse_target_sql)
+            } else if dialect_name == "mysql" {
+                sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::MySqlDialect {}, &parse_target_sql)
+            } else if dialect_name == "sqlite" {
+                sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::SQLiteDialect {}, &parse_target_sql)
+            } else {
+                sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::GenericDialect {}, &parse_target_sql)
             };
 
             let statements = ast_result.map_err(|e| {
@@ -199,6 +499,16 @@ impl QueryExecutionPipeline {
                     StatusCode::BAD_REQUEST,
                 )
             })?;
+
+            // SECURITY (H-4a): single-statement only via /query. Stacked statements
+            // (`SELECT …; DROP …`) bypass per-statement param binding and widen blast radius.
+            if statements.len() > 1 {
+                return Err(AxiomError::new(
+                    "MULTI_STATEMENT_DENIED",
+                    "Multiple SQL statements in one request are not allowed",
+                    StatusCode::BAD_REQUEST,
+                ));
+            }
 
             let mut is_mutation = false;
             let mut operations = Vec::with_capacity(statements.len());
@@ -215,7 +525,18 @@ impl QueryExecutionPipeline {
                     | sqlparser::ast::Statement::ShowColumns { .. } => ("SELECT", Vec::new()),
                     sqlparser::ast::Statement::Insert(insert) => {
                         is_mutation = true;
-                        ("INSERT", vec![extract_table_name(&insert.table.to_string())])
+                        let mut tbls = vec![extract_table_name(&insert.table.to_string())];
+                        if let Some(source) = &insert.source {
+                            let mut source_tbls = Vec::new();
+                            collect_tables_from_query(source, &mut source_tbls);
+                            source_tbls.sort();
+                            source_tbls.dedup();
+                            for s_tbl in &source_tbls {
+                                PolicyEngine::evaluate(auth, db_name, s_tbl, "SELECT")?;
+                            }
+                            tbls.extend(source_tbls);
+                        }
+                        ("INSERT", tbls)
                     }
                     sqlparser::ast::Statement::Update(update) => {
                         is_mutation = true;
@@ -223,6 +544,16 @@ impl QueryExecutionPipeline {
                         collect_tables_from_table_with_joins(&update.table, &mut tbls);
                         if tbls.is_empty() {
                             tbls.push(extract_table_name(&update.table.to_string()));
+                        }
+                        if let Some(selection) = &update.selection {
+                            let mut subquery_tbls = Vec::new();
+                            collect_tables_from_expr(selection, &mut subquery_tbls);
+                            subquery_tbls.sort();
+                            subquery_tbls.dedup();
+                            for s_tbl in &subquery_tbls {
+                                PolicyEngine::evaluate(auth, db_name, s_tbl, "SELECT")?;
+                            }
+                            tbls.extend(subquery_tbls);
                         }
                         ("UPDATE", tbls)
                     }
@@ -238,11 +569,29 @@ impl QueryExecutionPipeline {
                                 tbls.push(extract_table_name(&name.to_string()));
                             }
                         };
+                        if let Some(selection) = &delete.selection {
+                            let mut subquery_tbls = Vec::new();
+                            collect_tables_from_expr(selection, &mut subquery_tbls);
+                            subquery_tbls.sort();
+                            subquery_tbls.dedup();
+                            for s_tbl in &subquery_tbls {
+                                PolicyEngine::evaluate(auth, db_name, s_tbl, "SELECT")?;
+                            }
+                            tbls.extend(subquery_tbls);
+                        }
                         ("DELETE", tbls)
                     }
-                    sqlparser::ast::Statement::Drop { .. }
+                    sqlparser::ast::Statement::CreateTable { .. }
+                    | sqlparser::ast::Statement::CreateIndex { .. }
+                    | sqlparser::ast::Statement::CreateView { .. }
+                    | sqlparser::ast::Statement::CreateDatabase { .. }
+                    | sqlparser::ast::Statement::Drop { .. }
                     | sqlparser::ast::Statement::AlterTable { .. }
-                    | sqlparser::ast::Statement::Truncate { .. } => {
+                    | sqlparser::ast::Statement::AlterIndex { .. }
+                    | sqlparser::ast::Statement::AlterView { .. }
+                    | sqlparser::ast::Statement::Truncate { .. }
+                    | sqlparser::ast::Statement::Set(..)
+                    | sqlparser::ast::Statement::Pragma { .. } => {
                         is_mutation = true;
                         ("DDL", Vec::new())
                     }
@@ -251,6 +600,10 @@ impl QueryExecutionPipeline {
                         ("DENY", Vec::new())
                     }
                 };
+
+                let mut tables = tables;
+                tables.sort();
+                tables.dedup();
 
                 if tables.is_empty() {
                     PolicyEngine::evaluate(auth, db_name, "*", op)?;
@@ -264,18 +617,9 @@ impl QueryExecutionPipeline {
 
             // Format placeholders based on engine dialect
             let opt_formatted_sql = if (dialect_name == "postgres" || dialect_name == "any") && sql.contains('?') {
-                use std::fmt::Write;
-                let mut final_sql = String::with_capacity(sql.len() + 16);
-                let mut param_index = 1;
-                for c in sql.chars() {
-                    if c == '?' {
-                        let _ = write!(final_sql, "${}", param_index);
-                        param_index += 1;
-                    } else {
-                        final_sql.push(c);
-                    }
-                }
-                Some(final_sql)
+                Some(format_postgres_placeholders(sql))
+            } else if dialect_name == "sqlite" && sql.to_ascii_uppercase().contains("PRAGMA") {
+                Some(normalize_sqlite_pragmas(sql))
             } else {
                 None
             };
@@ -286,7 +630,16 @@ impl QueryExecutionPipeline {
                 None
             };
 
-            if AST_CACHE.len() < MAX_AST_CACHE_ENTRIES {
+            let max_ast_entries = {
+                let cfg = axiom_core::ConfigManager::get();
+                if cfg.performance.transpiler_cache_size > 0 {
+                    cfg.performance.transpiler_cache_size as usize
+                } else {
+                    MAX_AST_CACHE_ENTRIES
+                }
+            };
+
+            if AST_CACHE.len() < max_ast_entries {
                 AST_CACHE.insert(
                     ast_cache_key,
                     Arc::new(CachedAstInfo {
@@ -304,13 +657,44 @@ impl QueryExecutionPipeline {
 
         // Result cache lookup: only reached after PolicyEngine::evaluate passes above.
         // WHY deferred: permission revocations must take effect immediately, not after TTL.
+        let mut in_flight_tx = None;
         if !is_mutation {
             if let Some(ref key) = cache_key {
+                // 1. Check L1/L2 cache first
                 if let Some(bytes) = axiom_cache::CacheEngine::get(key).await {
-                    return Ok((
-                        Arc::new(QueryResult { affected_rows: Some(0), ..Default::default() }),
-                        bytes,
-                    ));
+                    // WHY: Deserializing the cached QueryResult restores the actual rows, columns, and
+                    // metadata needed by callers like fetch_rows. Returning an empty dummy QueryResult
+                    // caused cached queries to return 0 rows to clients.
+                    let qr: QueryResult = match serde_json::from_slice(&bytes) {
+                        Ok(res) => res,
+                        Err(e) => {
+                            tracing::warn!("Failed to deserialize cached QueryResult from bytes: {}", e);
+                            QueryResult {
+                                affected_rows: Some(0),
+                                ..Default::default()
+                            }
+                        }
+                    };
+                    return Ok((Arc::new(qr), bytes));
+                }
+
+                // 2. Single-Flight coalescing: if identical query is already executing, wait for its result
+                let mut follower_rx = None;
+                match IN_FLIGHT_QUERIES.entry(key.clone()) {
+                    dashmap::mapref::entry::Entry::Occupied(occ) => {
+                        follower_rx = Some(occ.get().subscribe());
+                    }
+                    dashmap::mapref::entry::Entry::Vacant(vac) => {
+                        let (tx, _) = tokio::sync::broadcast::channel(1);
+                        vac.insert(tx.clone());
+                        in_flight_tx = Some(tx);
+                    }
+                }
+
+                if let Some(mut rx) = follower_rx {
+                    if let Ok(res) = rx.recv().await {
+                        return res;
+                    }
                 }
             }
         }
@@ -364,7 +748,7 @@ impl QueryExecutionPipeline {
         let op_label = if is_mutation { "MUTATION" } else { "SELECT" };
         crate::metrics::MetricsEngine::record_db_query(db_name, op_label, duration_secs);
 
-        match exec_result {
+        let outcome: Result<(Arc<QueryResult>, bytes::Bytes), AxiomError> = match exec_result {
             Ok(res) => {
                 if config.circuit_breaker.enabled {
                     CIRCUIT_FAILURES.remove(db_name);
@@ -377,24 +761,34 @@ impl QueryExecutionPipeline {
                     );
                 }
                 let arc_res = Arc::new(res);
-                let json_bytes = match serde_json::to_vec(&*arc_res) {
-                    Ok(b) => bytes::Bytes::from(b),
+                match serde_json::to_vec(&*arc_res) {
+                    Ok(b) => {
+                        let json_bytes = bytes::Bytes::from(b);
+                        if !is_mutation {
+                            if let Some(ref key) = cache_key {
+                                let durability = match config.cache.backend.to_ascii_lowercase().as_str() {
+                                    "hybrid" | "hybird" => axiom_cache::Durability::Journaled,
+                                    _ => axiom_cache::Durability::MemoryOnly,
+                                };
+                                // Differentiated Negative Caching TTL:
+                                // Empty results (0 rows) use negative_cache_ttl (default 5s) to absorb
+                                // bursts on missing keys without polluting the bounded L1 LRU cache.
+                                let is_empty = arc_res.rows.as_ref().is_none_or(|r| r.is_empty());
+                                let effective_ttl = if is_empty {
+                                    (config.cache.negative_cache_ttl as u64).max(1)
+                                } else {
+                                    cache_ttl
+                                };
+                                axiom_cache::CacheEngine::set(key, json_bytes.clone(), effective_ttl, durability).await;
+                            }
+                        }
+                        Ok((arc_res, json_bytes))
+                    }
                     Err(e) => {
                         tracing::error!("Serialization error: {}", e);
-                        return Err(AxiomError::new("SERIALIZATION_FAILED", "Failed to serialize response", StatusCode::INTERNAL_SERVER_ERROR));
-                    }
-                };
-
-                if !is_mutation {
-                    if let Some(key) = cache_key {
-                        let durability = match config.cache.backend.as_str() {
-                            "turso" | "hybrid" => axiom_cache::Durability::Journaled,
-                            _ => axiom_cache::Durability::MemoryOnly,
-                        };
-                        axiom_cache::CacheEngine::set(&key, json_bytes.clone(), cache_ttl, durability).await;
+                        Err(AxiomError::new("SERIALIZATION_FAILED", "Failed to serialize response", StatusCode::INTERNAL_SERVER_ERROR))
                     }
                 }
-                Ok((arc_res, json_bytes))
             }
             Err(e) => {
                 let err_lower = e.to_lowercase();
@@ -411,14 +805,32 @@ impl QueryExecutionPipeline {
                 tracing::error!("Database query failed on '{}': {}", db_name, e);
 
                 let (status, err_code, client_msg) = if is_connection_failure {
-                    (StatusCode::SERVICE_UNAVAILABLE, "DB_CONNECTION_FAILED", "Upstream database unavailable")
+                    (
+                        StatusCode::SERVICE_UNAVAILABLE,
+                        "DB_CONNECTION_FAILED",
+                        format!("Upstream database unavailable: {}", sanitize_db_error(&e)),
+                    )
                 } else {
-                    (StatusCode::BAD_REQUEST, "DB_QUERY_FAILED", "Database query execution failed")
+                    (
+                        StatusCode::BAD_REQUEST,
+                        "DB_QUERY_FAILED",
+                        sanitize_db_error(&e),
+                    )
                 };
 
-                Err(AxiomError::new(err_code, client_msg, status))
-            },
+                Err(AxiomError::new(err_code, &client_msg, status))
+            }
+        };
+
+        // Complete Single-Flight by broadcasting to followers and removing entry
+        if let Some(ref key) = cache_key {
+            IN_FLIGHT_QUERIES.remove(key);
+            if let Some(tx) = in_flight_tx {
+                let _ = tx.send(outcome.clone());
+            }
         }
+
+        outcome
     }
 }
 
@@ -446,10 +858,7 @@ pub async fn get_db_config(
         ));
     }
 
-    let config = axiom_core::ConfigManager::get();
-    if let Some(db_cfg) = config.database.get(db_name) {
-        Ok(db_cfg.clone())
-    } else if let Some(snap_db) = axiom_metadata::snapshot::get_snapshot().databases.get(db_name) {
+    if let Some(snap_db) = axiom_metadata::snapshot::get_snapshot().databases.get(db_name) {
         Ok(DatabaseDefConfig {
             url: snap_db.url.clone(),
             pool_min: snap_db.pool_min as i32,
@@ -524,7 +933,7 @@ pub async fn insert_rows(
     PolicyEngine::evaluate(&auth, &db_name, &table_name, "INSERT")?;
     let db_cfg = get_db_config(&db_name, &auth).await?;
 
-    let rows_to_insert = if let Some(r) = payload.rows {
+    let mut rows_to_insert = if let Some(r) = payload.rows {
         r
     } else if let Some(single) = payload.row {
         vec![single]
@@ -544,17 +953,40 @@ pub async fn insert_rows(
         ));
     }
 
+    let engine = DatabasePoolManager::get_engine(&db_name).await;
+    let table_cols = if let Some(ref eng) = engine {
+        eng.describe_table(&table_name).await.ok()
+    } else {
+        None
+    };
+
+    if let Some(ref cols) = table_cols {
+        for row in &mut rows_to_insert {
+            crate::database::filter_builder::coerce_record_values(row, cols);
+        }
+    }
+
+    let dialect = engine.as_ref().map(|e| e.dialect()).unwrap_or("postgres");
+
     // Dynamically build a parameterized multi-insert query from the provided rows.
     let first_row = &rows_to_insert[0];
-    let column_pairs: Vec<(&String, std::borrow::Cow<'_, str>)> = first_row
+    let column_pairs: Vec<(&String, String)> = first_row
         .keys()
-        .map(|k| (k, crate::database::filter_builder::sanitize_ident(k)))
+        .map(|k| (k, crate::database::filter_builder::quote_ident_dialect(k, dialect)))
         .collect();
     let cols_str = column_pairs
         .iter()
-        .map(|(_, col)| col.as_ref())
+        .map(|(_, col)| col.as_str())
         .collect::<Vec<_>>()
         .join(", ");
+
+    if column_pairs.is_empty() || cols_str.is_empty() {
+        return Err(AxiomError::new(
+            "BAD_REQUEST",
+            "No valid column fields provided for insert",
+            StatusCode::BAD_REQUEST,
+        ));
+    }
 
     let mut all_params = Vec::new();
     let mut values_strings = Vec::new();
@@ -569,9 +1001,10 @@ pub async fn insert_rows(
         values_strings.push(format!("({})", row_placeholders.join(", ")));
     }
 
+    let quoted_table = crate::database::filter_builder::quote_ident_dialect(&table_name, dialect);
     let sql = format!(
         "INSERT INTO {} ({}) VALUES {}",
-        crate::database::filter_builder::sanitize_ident(&table_name),
+        quoted_table,
         cols_str,
         values_strings.join(", ")
     );
@@ -599,13 +1032,23 @@ pub async fn fetch_rows(
     PolicyEngine::evaluate(&auth, &db_name, &table_name, "SELECT")?;
     let db_cfg = get_db_config(&db_name, &auth).await?;
 
+    let engine = DatabasePoolManager::get_engine(&db_name).await;
+    let table_cols = if let Some(ref eng) = engine {
+        eng.describe_table(&table_name).await.ok()
+    } else {
+        None
+    };
+
     let mut values = Vec::new();
     let mut where_clauses = Vec::new();
 
     if let Some(filter_str) = &params.filter {
-        if let Ok(filter_json) =
+        if let Ok(mut filter_json) =
             serde_json::from_str::<std::collections::HashMap<String, Value>>(filter_str)
         {
+            if let Some(ref cols) = table_cols {
+                crate::database::filter_builder::coerce_filter_values(&mut filter_json, cols);
+            }
             let (clause, mut vals) =
                 crate::database::filter_builder::build_where_clause(&filter_json);
             if !clause.is_empty() {
@@ -621,41 +1064,116 @@ pub async fn fetch_rows(
         format!("WHERE {}", where_clauses.join(" AND "))
     };
 
-    let sort_col = params.sort.as_deref().unwrap_or("id");
-    let order_col = crate::database::filter_builder::sanitize_ident(sort_col);
-    let order_dir = if params.order.eq_ignore_ascii_case("desc") {
-        "DESC"
-    } else {
-        "ASC"
-    };
-
     let limit = params.limit.clamp(1, 500);
 
     let mut final_where = where_sql.clone();
 
-    if let Some(cursor) = &params.cursor {
-        // If WHERE already exists, append with AND, else start new WHERE
-        let cursor_op = if order_dir == "DESC" { "<" } else { ">" };
-        
-        // Parametrize the cursor to prevent SQL injection
-        let cursor_cond = format!("{} {} ?", order_col, cursor_op);
-        values.push(Value::String(cursor.clone()));
+    let dialect = engine.as_ref().map(|e| e.dialect()).unwrap_or("postgres");
 
-        if final_where.trim().is_empty() {
-            final_where = format!("WHERE {}", cursor_cond);
+    let (order_by_sql, order_col_opt) = if let Some(ref sort_col) = params.sort {
+        let quoted_col = crate::database::filter_builder::quote_ident_dialect(sort_col, dialect);
+        let raw_col = crate::database::filter_builder::sanitize_ident(sort_col).into_owned();
+        let order_dir = if params.order.eq_ignore_ascii_case("desc") {
+            "DESC"
         } else {
-            final_where = format!("{} AND {}", final_where, cursor_cond);
+            "ASC"
+        };
+        (format!("ORDER BY {} {}", quoted_col, order_dir), Some((raw_col, order_dir)))
+    } else {
+        // Deterministic default ordering:
+        // In PostgreSQL and MVCC relational databases, an UPDATE rewrites the tuple on disk.
+        // Without an explicit ORDER BY, updated rows move to the bottom of the table heap.
+        // We introspect the table columns to find the primary key, or fallback to "id" if present.
+        let default_sort_col = if let Some(ref cols) = table_cols {
+            cols.iter()
+                .find(|c| c.primary_key)
+                .map(|c| c.name.clone())
+                .or_else(|| cols.iter().find(|c| c.name.eq_ignore_ascii_case("id")).map(|c| c.name.clone()))
+        } else {
+            None
+        };
+
+        if let Some(sort_col) = default_sort_col {
+            let quoted_col = crate::database::filter_builder::quote_ident_dialect(&sort_col, dialect);
+            let raw_col = crate::database::filter_builder::sanitize_ident(&sort_col).into_owned();
+            let order_dir = if params.order.eq_ignore_ascii_case("desc") {
+                "DESC"
+            } else {
+                "ASC"
+            };
+            (format!("ORDER BY {} {}", quoted_col, order_dir), Some((raw_col, order_dir)))
+        } else if params.cursor.is_some() {
+            let quoted_col = crate::database::filter_builder::quote_ident_dialect("id", dialect);
+            let raw_col = "id".to_string();
+            let order_dir = if params.order.eq_ignore_ascii_case("desc") {
+                "DESC"
+            } else {
+                "ASC"
+            };
+            (format!("ORDER BY {} {}", quoted_col, order_dir), Some((raw_col, order_dir)))
+        } else {
+            ("".to_string(), None)
+        }
+    };
+
+    if let Some(cursor) = &params.cursor {
+        if let Some((ref raw_col, order_dir)) = order_col_opt {
+            let quoted_col = crate::database::filter_builder::quote_ident_dialect(raw_col, dialect);
+            let cursor_op = if order_dir == "DESC" { "<" } else { ">" };
+            let cursor_cond = format!("{} {} ?", quoted_col, cursor_op);
+
+            let is_numeric = table_cols.as_ref().map(|cols| {
+                cols.iter().any(|c| c.name.eq_ignore_ascii_case(raw_col) && (
+                    c.r#type.to_lowercase().contains("int") ||
+                    c.r#type.to_lowercase().contains("serial") ||
+                    c.r#type.to_lowercase().contains("num") ||
+                    c.r#type.to_lowercase().contains("dec") ||
+                    c.r#type.to_lowercase().contains("float") ||
+                    c.r#type.to_lowercase().contains("double")
+                ))
+            }).unwrap_or(false);
+
+            if is_numeric {
+                if let Ok(i) = cursor.trim().parse::<i64>() {
+                    values.push(Value::Number(i.into()));
+                } else if let Ok(f) = cursor.trim().parse::<f64>() {
+                    if let Some(num) = serde_json::Number::from_f64(f) {
+                        values.push(Value::Number(num));
+                    } else {
+                        values.push(Value::String(cursor.clone()));
+                    }
+                } else {
+                    values.push(Value::String(cursor.clone()));
+                }
+            } else {
+                values.push(Value::String(cursor.clone()));
+            }
+
+            if final_where.trim().is_empty() {
+                final_where = format!("WHERE {}", cursor_cond);
+            } else {
+                final_where = format!("{} AND {}", final_where, cursor_cond);
+            }
         }
     }
 
-    let sql = format!(
-        "SELECT * FROM {} {} ORDER BY {} {} LIMIT {}",
-        crate::database::filter_builder::sanitize_ident(&table_name),
-        final_where,
-        order_col,
-        order_dir,
-        limit
-    );
+    let quoted_table = crate::database::filter_builder::quote_ident_dialect(&table_name, dialect);
+    let sql = if order_by_sql.is_empty() {
+        format!(
+            "SELECT * FROM {} {} LIMIT {}",
+            quoted_table,
+            final_where,
+            limit
+        )
+    } else {
+        format!(
+            "SELECT * FROM {} {} {} LIMIT {}",
+            quoted_table,
+            final_where,
+            order_by_sql,
+            limit
+        )
+    };
 
     let (result, _) =
         QueryExecutionPipeline::run_query(&db_name, &sql, values, &auth, &db_cfg).await?;
@@ -666,13 +1184,14 @@ pub async fn fetch_rows(
     if let Some(ref rows) = result_inner.rows {
         if !rows.is_empty() && rows.len() == limit as usize {
             if let Some(last_row) = rows.last() {
-                // Determine cursor value by grabbing the column we sorted by
-                if let Some(val) = last_row.get(&*order_col) {
-                    next_cursor = match val {
-                        Value::String(s) => Some(s.clone()),
-                        Value::Number(n) => Some(n.to_string()),
-                        _ => None, // nulls or booleans not supported as cursors
-                    };
+                if let Some((ref order_col, _)) = order_col_opt {
+                    if let Some(val) = last_row.get(order_col.as_str()) {
+                        next_cursor = match val {
+                            Value::String(s) => Some(s.clone()),
+                            Value::Number(n) => Some(n.to_string()),
+                            _ => None,
+                        };
+                    }
                 }
             }
         }
@@ -723,13 +1242,27 @@ pub async fn update_rows(
         ));
     }
 
+    let engine = DatabasePoolManager::get_engine(&db_name).await;
+    let table_cols = if let Some(ref eng) = engine {
+        eng.describe_table(&table_name).await.ok()
+    } else {
+        None
+    };
+
+    let mut filter = payload.filter;
+    let mut update_data = payload.update;
+    if let Some(ref cols) = table_cols {
+        crate::database::filter_builder::coerce_filter_values(&mut filter, cols);
+        crate::database::filter_builder::coerce_record_values(&mut update_data, cols);
+    }
+
     let (sql, values) = crate::database::filter_builder::construct_update(
         &table_name,
-        &payload.update,
-        &payload.filter,
+        &update_data,
+        &filter,
     );
 
-    if sql.ends_with("WHERE ") || sql.contains("SET  WHERE") {
+    if sql.is_empty() || sql.ends_with("WHERE ") || sql.contains("SET  WHERE") {
         return Err(AxiomError::new(
             "BAD_REQUEST",
             "Invalid update or filter criteria",
@@ -766,8 +1299,20 @@ pub async fn delete_rows(
         ));
     }
 
+    let engine = DatabasePoolManager::get_engine(&db_name).await;
+    let table_cols = if let Some(ref eng) = engine {
+        eng.describe_table(&table_name).await.ok()
+    } else {
+        None
+    };
+
+    let mut filter = payload.filter;
+    if let Some(ref cols) = table_cols {
+        crate::database::filter_builder::coerce_filter_values(&mut filter, cols);
+    }
+
     let (sql, values) =
-        crate::database::filter_builder::construct_delete(&table_name, &payload.filter);
+        crate::database::filter_builder::construct_delete(&table_name, &filter);
 
     if sql.ends_with("WHERE ") {
         return Err(AxiomError::new(
@@ -825,6 +1370,106 @@ pub async fn describe_table(
     })))
 }
 
+const MAX_DATA_TYPE_LEN: usize = 64;
+const MAX_DEFAULT_VALUE_LEN: usize = 128;
+const MAX_CHECK_EXPR_LEN: usize = 512;
+
+/// SECURITY (H-4b): validate `add_column` free-text DDL fragments before they reach
+/// engine string interpolation. Column names are sanitized downstream; these are not.
+fn validate_add_column_payload(payload: &axiom_core::CreateColumnRequest) -> Result<(), AxiomError> {
+    let bad = |msg: &str| AxiomError::new("BAD_COLUMN_DEF", msg, StatusCode::BAD_REQUEST);
+    // data_type allowlist: base type + optional (N[,M]) / length. No statement chars.
+    let dt = payload.data_type.trim();
+    if dt.is_empty() || dt.len() > MAX_DATA_TYPE_LEN {
+        return Err(bad("Invalid data_type"));
+    }
+    let dt_up = dt.to_ascii_uppercase();
+    const BASES: &[&str] = &[
+        "TEXT", "VARCHAR", "CHAR", "NVARCHAR", "NCHAR", "INT", "INTEGER", "BIGINT",
+        "SMALLINT", "TINYINT", "BOOLEAN", "BOOL", "BIT", "FLOAT", "REAL", "DOUBLE",
+        "DECIMAL", "NUMERIC", "DATE", "TIME", "TIMESTAMP", "DATETIME", "DATETIME2",
+        "BLOB", "BYTEA", "JSON", "JSONB", "UUID", "SERIAL", "BIGSERIAL",
+    ];
+    let base_ok = BASES.iter().any(|b| dt_up == *b || dt_up.starts_with(&format!("{}(", b)));
+    // Allow e.g. VARCHAR(255), DECIMAL(10,2), CHAR(1)
+    let paren_ok = if dt.contains('(') {
+        let mut chars = dt.chars();
+        chars.all(|c| c.is_alphanumeric() || c == '(' || c == ')' || c == ',' || c == ' ' || c == '.')
+            && dt.ends_with(')')
+            && !dt.contains(';')
+    } else {
+        true
+    };
+    if !base_ok || !paren_ok || dt.contains(';') || dt.contains("--") || dt.contains("/*") {
+        return Err(bad("Invalid data_type"));
+    }
+    // default_value: literals only (numbers, bools, quoted strings, CURRENT_*).
+    if let Some(def) = payload.default_value.as_deref() {
+        let d = def.trim();
+        if d.len() > MAX_DEFAULT_VALUE_LEN || d.contains(';') || d.contains("--") || d.contains("/*") {
+            return Err(bad("Invalid default_value"));
+        }
+        let du = d.to_ascii_uppercase();
+        let literal_ok = du == "NULL"
+            || du == "TRUE" || du == "FALSE" || du == "CURRENT_TIMESTAMP"
+            || du == "CURRENT_DATE" || du == "CURRENT_TIME" || du == "NOW()"
+            || d.parse::<f64>().is_ok()
+            || (d.starts_with('\'') && d.ends_with('\'') && d.len() >= 2);
+        if !literal_ok {
+            return Err(bad("Invalid default_value"));
+        }
+    }
+    if let Some(check) = payload.check_expression.as_deref() {
+        if check.len() > MAX_CHECK_EXPR_LEN || check.contains(';') || check.contains("--") || check.contains("/*") {
+            return Err(bad("Invalid check_expression"));
+        }
+    }
+    if let Some(fk) = payload.foreign_key.as_ref() {
+        for action in [&fk.on_update, &fk.on_delete].into_iter().flatten() {
+            let a = action.trim().to_ascii_uppercase();
+            if !matches!(a.as_str(), "CASCADE" | "SET NULL" | "SET DEFAULT" | "RESTRICT" | "NO ACTION") {
+                return Err(bad("Invalid foreign key action"));
+            }
+        }
+    }
+    Ok(())
+}
+
+pub async fn add_column(
+    axum::extract::Path((db_name, table_name)): axum::extract::Path<(String, String)>,
+    axum::extract::Extension(auth): axum::extract::Extension<AuthContext>,
+    axum::Json(payload): axum::Json<axiom_core::CreateColumnRequest>,
+) -> Result<axum::Json<serde_json::Value>, AxiomError> {
+    // Check DDL permissions for role
+    PolicyEngine::evaluate(&auth, &db_name, &table_name, "DDL")?;
+    validate_add_column_payload(&payload)?;
+    let _db_cfg = get_db_config(&db_name, &auth).await?;
+
+    let engine = DatabasePoolManager::get_engine(&db_name)
+        .await
+        .ok_or_else(|| {
+            AxiomError::new("DB_NOT_FOUND", "Database not found", axum::http::StatusCode::NOT_FOUND)
+        })?;
+
+    engine
+        .add_column(&table_name, &payload)
+        .await
+        .map_err(|e| {
+            tracing::error!("Add column failed: {}", e);
+            AxiomError::new("ADD_COLUMN_FAILED", "Failed to add column", axum::http::StatusCode::INTERNAL_SERVER_ERROR)
+        })?;
+
+    Ok(axum::Json(serde_json::json!({
+        "success": true,
+        "data": {
+            "database": db_name,
+            "table": table_name,
+            "column": payload.name
+        },
+        "error": serde_json::Value::Null
+    })))
+}
+
 #[cfg(test)]
 mod tests {
 
@@ -836,6 +1481,26 @@ mod tests {
         assert_eq!(stmts[0].to_string(), "CREATE TABLE customers (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(100) NOT NULL)");
         assert_eq!(stmts[1].to_string(), "INSERT INTO customers (name) VALUES ('Alice')");
         assert_eq!(stmts[2].to_string(), "SELECT * FROM customers");
+    }
+
+    #[test]
+    fn test_drop_and_set_parse() {
+        let sql1 = "SET FOREIGN_KEY_CHECKS = 0;\nDROP TABLE foo;";
+        let res1 = sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::MySqlDialect {}, sql1);
+        assert!(res1.is_ok());
+        assert_eq!(res1.unwrap().len(), 2);
+
+        let sql2 = "DROP TABLE IF EXISTS a, b;\nDROP TABLE c;";
+        let res2 = sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::MySqlDialect {}, sql2);
+        assert!(res2.is_ok());
+        assert_eq!(res2.unwrap().len(), 2);
+
+        let sql3 = "PRAGMA foreign_keys = OFF;\nDROP TABLE IF EXISTS payments;\nPRAGMA foreign_keys = ON;";
+        let normalized3 = super::normalize_sqlite_pragmas(sql3);
+        assert_eq!(normalized3, "PRAGMA foreign_keys = 0;\nDROP TABLE IF EXISTS payments;\nPRAGMA foreign_keys = 1;");
+        let res3 = sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::SQLiteDialect {}, &normalized3);
+        assert!(res3.is_ok(), "PRAGMA normalization should parse successfully: {:?}", res3.err());
+        assert_eq!(res3.unwrap().len(), 3);
     }
 
     #[test]
@@ -852,10 +1517,120 @@ mod tests {
 
         super::AST_CACHE.insert(cache_key.clone(), info);
         let cached = super::AST_CACHE.get(&cache_key).expect("cached AST entry should exist");
-        assert_eq!(cached.is_mutation, false);
+        assert!(!cached.is_mutation);
         assert_eq!(cached.operations[0].0, "SELECT");
         assert_eq!(cached.operations[0].1, vec!["users".to_string()]);
         assert_eq!(cached.formatted_sql.as_deref(), Some("SELECT id, name, email FROM users WHERE status = $1 AND active = true"));
+    }
+
+    #[tokio::test]
+    async fn test_in_flight_queries_deduplication() {
+        use std::sync::Arc;
+        let test_key = "test_user:test_db:SELECT 1:[]".to_string();
+
+        // 1. First caller becomes leader and registers in IN_FLIGHT_QUERIES
+        let (tx, _) = tokio::sync::broadcast::channel(1);
+        super::IN_FLIGHT_QUERIES.insert(test_key.clone(), tx.clone());
+
+        // 2. Second concurrent caller subscribes as follower
+        let mut follower_rx = super::IN_FLIGHT_QUERIES.get(&test_key).unwrap().subscribe();
+
+        // 3. Leader completes DB execution and broadcasts result
+        let mock_result: Result<(Arc<axiom_core::QueryResult>, bytes::Bytes), axiom_core::AxiomError> =
+            Ok((Arc::new(axiom_core::QueryResult::default()), bytes::Bytes::from("{\"rows\":[]}")));
+
+        let _ = tx.send(mock_result);
+        super::IN_FLIGHT_QUERIES.remove(&test_key);
+
+        // 4. Follower receives exact leader outcome without duplicate execution
+        let received = follower_rx.recv().await.expect("follower should receive broadcast");
+        assert!(received.is_ok());
+        let (_, bytes) = received.unwrap();
+        assert_eq!(bytes, bytes::Bytes::from("{\"rows\":[]}"));
+        assert!(super::IN_FLIGHT_QUERIES.get(&test_key).is_none());
+    }
+
+    #[test]
+    fn test_negative_caching_ttl_differentiation() {
+        let empty_result = axiom_core::QueryResult {
+            rows: Some(vec![]),
+            ..Default::default()
+        };
+        let populated_result = axiom_core::QueryResult {
+            rows: Some(vec![serde_json::json!({"id": 1})]),
+            ..Default::default()
+        };
+
+        let normal_ttl = 60u64;
+        let negative_ttl = 5u64;
+
+        let is_empty_1 = empty_result.rows.as_ref().is_none_or(|r| r.is_empty());
+        let effective_ttl_1 = if is_empty_1 { negative_ttl } else { normal_ttl };
+        assert_eq!(effective_ttl_1, 5);
+
+        let is_empty_2 = populated_result.rows.as_ref().is_none_or(|r| r.is_empty());
+        let effective_ttl_2 = if is_empty_2 { negative_ttl } else { normal_ttl };
+        assert_eq!(effective_ttl_2, 60);
+    }
+
+    #[test]
+    fn test_parse_update_reproduction() {
+        let sql = "UPDATE customers SET email = ? WHERE id = ?";
+        use std::fmt::Write;
+        let mut formatted = String::new();
+        let mut idx = 1;
+        for c in sql.chars() {
+            if c == '?' {
+                let _ = write!(formatted, "${}", idx);
+                idx += 1;
+            } else {
+                formatted.push(c);
+            }
+        }
+        let res = sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::PostgreSqlDialect {}, &formatted);
+        assert!(res.is_ok(), "Failed to parse: {:?}", res.err());
+    }
+
+    #[test]
+    fn test_format_postgres_placeholders_advanced() {
+        use super::format_postgres_placeholders;
+
+        // 1. Basic replacement
+        let basic = "SELECT * FROM users WHERE id = ? AND email = ?";
+        assert_eq!(format_postgres_placeholders(basic), "SELECT * FROM users WHERE id = $1 AND email = $2");
+
+        // 2. Preserves single quotes and double quotes with question marks
+        let quotes = "SELECT 'Is this a question?' AS \"col?\" WHERE val = ?";
+        assert_eq!(format_postgres_placeholders(quotes), "SELECT 'Is this a question?' AS \"col?\" WHERE val = $1");
+
+        // 3. Preserves line and block comments with question marks
+        let comments = "SELECT 1 -- Comment with ?\n/* Block with ? */ WHERE id = ?";
+        assert_eq!(format_postgres_placeholders(comments), "SELECT 1 -- Comment with ?\n/* Block with ? */ WHERE id = $1");
+
+        // 4. Preserves dollar-quoted strings ($$ and $tag$)
+        let dollar = "SELECT $$Why? Because!$$, $fn$function body with ? mark$fn$ WHERE x = ?";
+        assert_eq!(format_postgres_placeholders(dollar), "SELECT $$Why? Because!$$, $fn$function body with ? mark$fn$ WHERE x = $1");
+
+        // 5. Preserves PostgreSQL JSONB operators (?| and ?&)
+        let jsonb = "SELECT * FROM logs WHERE data ?| array['a', 'b'] AND data ?& array['c'] AND status = ?";
+        assert_eq!(format_postgres_placeholders(jsonb), "SELECT * FROM logs WHERE data ?| array['a', 'b'] AND data ?& array['c'] AND status = $1");
+    }
+
+    #[test]
+    fn test_subquery_table_extraction() {
+        use super::collect_tables_from_query;
+
+        let sql = "SELECT u.id, (SELECT count(*) FROM orders o WHERE o.user_id = u.id) as cnt FROM users u WHERE u.id IN (SELECT user_id FROM audit_log WHERE level = 'admin') AND EXISTS (SELECT 1 FROM permissions p WHERE p.user_id = u.id)";
+        let stmts = sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::GenericDialect {}, sql).unwrap();
+        if let sqlparser::ast::Statement::Query(q) = &stmts[0] {
+            let mut tables = Vec::new();
+            collect_tables_from_query(q, &mut tables);
+            tables.sort();
+            tables.dedup();
+            assert_eq!(tables, vec!["audit_log", "orders", "permissions", "users"]);
+        } else {
+            panic!("Expected query");
+        }
     }
 }
 

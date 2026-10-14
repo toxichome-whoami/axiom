@@ -13,8 +13,9 @@ import { SlideOver } from '../components/ui/SlideOver';
 import { Button } from '../components/ui/Button';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { CustomSelect } from '../components/shared/CustomSelect';
-import { Database, Plus, CheckCircle2, Search, Trash2, RefreshCw, AlertTriangle, Check, Eye, EyeOff } from 'lucide-react';
+import { Database, Plus, CheckCircle2, Search, Trash2, RefreshCw, AlertTriangle, Check, Eye, EyeOff, Table } from 'lucide-react';
 import { api, DatabaseRecordApi } from '../api/client';
+
 
 export interface FilterRule {
   id: string;
@@ -579,7 +580,19 @@ export function Databases() {
       headerClassName: 'justify-end pr-4 text-right',
       className: 'pl-3 pr-4 justify-end',
       cell: (row) => (
-        <div className="flex items-center justify-end w-full">
+        <div className="flex items-center justify-end gap-2 w-full">
+          <button
+            type="button"
+            onClick={() => {
+              window.history.pushState(null, '', `/system/tables?db=${encodeURIComponent(row.alias)}`);
+              window.dispatchEvent(new PopStateEvent('popstate'));
+            }}
+            className="inline-flex items-center justify-center gap-1.5 h-7 px-2.5 rounded-[6px] text-[12.5px] font-medium leading-none text-blue-400 hover:text-blue-300 bg-blue-950/20 hover:bg-blue-950/40 border border-blue-800/40 hover:border-blue-700/60 transition-colors cursor-pointer shrink-0"
+            title="Open in Table & Schema Editor"
+          >
+            <Table className="w-3.5 h-3.5" />
+            Explore
+          </button>
           <button
             type="button"
             onClick={() => {
@@ -603,6 +616,7 @@ export function Databases() {
       ),
     },
   ];
+
 
   const activeColumns = useMemo(() => {
     const visible = columns.filter((col) => col.id === 'actions' || visibleCols[col.id] !== false);

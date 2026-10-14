@@ -2,13 +2,16 @@ import React, { useState, useEffect, Suspense, lazy } from 'react';
 import { Layout, NavPath } from './components/Layout';
 import { setSession, clearSession, hasActiveSession } from './api/session';
 import { api } from './api/client';
+import { GlobalAlertDialog } from './components/ui/AlertDialog';
+import { ErrorBoundary } from './components/ui/ErrorBoundary';
 
 const Overview = lazy(() => import('./pages/Overview').then((m) => ({ default: m.Overview })));
 const Databases = lazy(() => import('./pages/Databases').then((m) => ({ default: m.Databases })));
+const TableEditor = lazy(() => import('./pages/TableEditor').then((m) => ({ default: m.TableEditor })));
+const Storage = lazy(() => import('./pages/Storage').then((m) => ({ default: m.Storage })));
 const Keys = lazy(() => import('./pages/Keys').then((m) => ({ default: m.Keys })));
 const Roles = lazy(() => import('./pages/Roles').then((m) => ({ default: m.Roles })));
 const Mcp = lazy(() => import('./pages/Mcp').then((m) => ({ default: m.Mcp })));
-const Tester = lazy(() => import('./pages/Tester').then((m) => ({ default: m.Tester })));
 const Settings = lazy(() => import('./pages/Settings').then((m) => ({ default: m.Settings })));
 const AuthPage = lazy(() => import('./pages/AuthPage').then((m) => ({ default: m.AuthPage })));
 
@@ -31,22 +34,25 @@ export function App() {
     // Convenience aliases
     if (p === '/settings') p = '/system/settings';
     if (p === '/databases') p = '/system/databases';
+    if (p === '/tables' || p === '/editor' || p === '/table-editor') p = '/system/tables';
+    if (p === '/storage' || p === '/blobs') p = '/system/storage';
     if (p === '/keys') p = '/system/keys';
     if (p === '/roles') p = '/system/roles';
     if (p === '/mcp') p = '/system/mcp';
-    if (p === '/tester') p = '/system/tester';
 
     const validPaths: NavPath[] = [
       '/system',
       '/system/databases',
+      '/system/tables',
+      '/system/storage',
       '/system/keys',
       '/system/roles',
       '/system/mcp',
-      '/system/tester',
       '/system/settings',
     ];
     return validPaths.includes(p as NavPath) ? (p as NavPath) : '/system';
   }
+
 
   const [currentPath, setCurrentPath] = useState<NavPath>(() => {
     return normalizePath(window.location.pathname);
@@ -104,12 +110,15 @@ export function App() {
   if (!isAuthenticated || window.location.pathname.includes('/login') || window.location.pathname.includes('/setup')) {
     const isSetup = window.location.pathname.includes('/setup');
     return (
-      <Suspense fallback={<PageFallback />}>
-        <AuthPage
-          onLoginSuccess={handleLoginSuccess}
-          initialMode={isSetup ? 'setup' : 'login'}
-        />
-      </Suspense>
+      <>
+        <Suspense fallback={<PageFallback />}>
+          <AuthPage
+            onLoginSuccess={handleLoginSuccess}
+            initialMode={isSetup ? 'setup' : 'login'}
+          />
+        </Suspense>
+        <GlobalAlertDialog />
+      </>
     );
   }
 
@@ -117,14 +126,17 @@ export function App() {
     switch (currentPath) {
       case '/system/databases':
         return { title: 'Database Pools', component: <Databases /> };
+      case '/system/tables':
+        return { title: 'Table & Schema Editor', component: <TableEditor /> };
+      case '/system/storage':
+        return { title: 'Native Blob Storage', component: <Storage /> };
+
       case '/system/keys':
         return { title: 'API Keys', component: <Keys /> };
       case '/system/roles':
         return { title: 'Roles & RBAC', component: <Roles /> };
       case '/system/mcp':
         return { title: 'MCP Protocol', component: <Mcp /> };
-      case '/system/tester':
-        return { title: 'Database API Explorer', component: <Tester /> };
       case '/system/settings':
         return { title: 'Settings', component: <Settings /> };
       case '/system':
@@ -146,11 +158,16 @@ export function App() {
   const { title, component } = getPageDetails();
 
   return (
-    <Layout currentPath={currentPath} onNavigate={handleNavigate} title={title} onLogout={handleLogout}>
-      <Suspense fallback={<PageFallback />}>
-        {component}
-      </Suspense>
-    </Layout>
+    <>
+      <Layout currentPath={currentPath} onNavigate={handleNavigate} title={title} onLogout={handleLogout}>
+        <ErrorBoundary>
+          <Suspense fallback={<PageFallback />}>
+            {component}
+          </Suspense>
+        </ErrorBoundary>
+      </Layout>
+      <GlobalAlertDialog />
+    </>
   );
 }
 

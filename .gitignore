@@ -53,6 +53,7 @@ ui/dist/
 .opencode/
 .commandcode/
 .agents/
+.agent/
 .cargo/
 *.swp
 *.swo

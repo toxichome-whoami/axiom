@@ -17,7 +17,6 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::{Mutex, OnceCell};
 
-use axiom_core::AxiomConfig;
 use crate::models::*;
 use crate::snapshot::{
     update_snapshot, ApiKeySnapshot, DatabaseSnapshot, MetadataSnapshot, PermissionSnapshot,
@@ -27,6 +26,13 @@ use crate::snapshot::{
 // ─── Connection Registry ───────────────────────────────────────────────────
 static METADATA_CONN: OnceCell<Arc<Mutex<Connection>>> = OnceCell::const_new();
 static STORE_LOCK: Lazy<tokio::sync::Mutex<()>> = Lazy::new(|| tokio::sync::Mutex::new(()));
+static DUMMY_HASH: Lazy<String> = Lazy::new(|| {
+    let salt = SaltString::generate(&mut OsRng);
+    Argon2::default()
+        .hash_password(b"dummy_timing_mitigation_password", &salt)
+        .expect("dummy argon2 hash generation failed")
+        .to_string()
+});
 
 pub struct MetadataStore;
 
@@ -128,6 +134,36 @@ impl MetadataStore {
                 id TEXT PRIMARY KEY,
                 username TEXT NOT NULL,
                 expires_at INTEGER NOT NULL,
+                created_at INTEGER NOT NULL
+            );",
+            "CREATE TABLE IF NOT EXISTS ip_bans (
+                ip TEXT PRIMARY KEY,
+                reason TEXT NOT NULL,
+                banned_at INTEGER NOT NULL,
+                expires_at INTEGER NOT NULL
+            );",
+            "CREATE TABLE IF NOT EXISTS key_bans (
+                key_name TEXT PRIMARY KEY,
+                reason TEXT NOT NULL,
+                banned_at INTEGER NOT NULL,
+                expires_at INTEGER NOT NULL
+            );",
+            "CREATE TABLE IF NOT EXISTS blob_tickets (
+                id TEXT PRIMARY KEY,
+                namespace TEXT NOT NULL,
+                key TEXT NOT NULL,
+                operation TEXT NOT NULL,
+                expires_at INTEGER NOT NULL,
+                signature TEXT UNIQUE NOT NULL,
+                created_by TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                revoked INTEGER DEFAULT 0
+            );",
+            "CREATE INDEX IF NOT EXISTS idx_blob_tickets_lookup ON blob_tickets(namespace, key, revoked);",
+            "CREATE INDEX IF NOT EXISTS idx_blob_tickets_sig ON blob_tickets(signature);",
+            "CREATE TABLE IF NOT EXISTS system_secrets (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL,
                 created_at INTEGER NOT NULL
             );",
         ];
@@ -284,144 +320,7 @@ impl MetadataStore {
         Ok(())
     }
 
-    /// Seeds legacy `[api_key.*]` and `[database.*]` from `config.toml` on first boot if store is empty.
-    /// CONTRACT:
-    ///  - Precondition: Invoked once during server startup after `MetadataStore::init`.
-    ///  - Side effects: Inserts legacy configurations into SQLite and logs to audit table.
-    ///  - Idempotent: Yes (skips seeding if api_keys table contains records).
-    pub async fn seed_from_config(config: &AxiomConfig) -> Result<(), String> {
-        let _guard = STORE_LOCK.lock().await;
-        let conn = Self::get_conn().await?;
 
-        // Check if api_keys is already populated
-        let mut count_rows = conn
-            .query("SELECT COUNT(*) FROM api_keys", ())
-            .await
-            .map_err(|e| e.to_string())?;
-
-        let key_count: i64 = if let Ok(Some(row)) = count_rows.next().await {
-            row.get(0).unwrap_or(0)
-        } else {
-            0
-        };
-
-        if key_count > 0 {
-            // Already initialized; do not overwrite live state with static config
-            return Ok(());
-        }
-
-        tracing::info!("First-boot detected: auto-seeding metadata store from config.toml");
-        let now_unix = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs() as i64;
-
-        // Seed databases
-        for (alias, db_cfg) in &config.database {
-            let engine_dialect = if db_cfg.url.starts_with("postgres") {
-                "postgres"
-            } else if db_cfg.url.starts_with("mysql") || db_cfg.url.starts_with("mariadb") {
-                "mysql"
-            } else if db_cfg.url.starts_with("mssql") || db_cfg.url.starts_with("sqlserver") {
-                "mssql"
-            } else if db_cfg.url.starts_with("clickhouse") {
-                "clickhouse"
-            } else {
-                "sqlite"
-            };
-
-            conn.execute(
-                "INSERT OR REPLACE INTO databases (alias, url, engine, pool_min, pool_max, created_at) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-                libsql::params![
-                    alias.as_str(),
-                    db_cfg.url.as_str(),
-                    engine_dialect,
-                    db_cfg.pool_min as i64,
-                    db_cfg.pool_max as i64,
-                    now_unix
-                ],
-            )
-            .await
-            .map_err(|e| format!("Seeding database {} failed: {}", alias, e))?;
-        }
-
-        // Seed API keys and their synthesized initial roles
-        for (key_name, key_cfg) in &config.api_key {
-            let role_name = format!("{}_role", key_name);
-
-            // Create synthesized role
-            conn.execute(
-                "INSERT OR IGNORE INTO roles (name, description, created_at) VALUES (?1, ?2, ?3)",
-                libsql::params![
-                    role_name.as_str(),
-                    format!("Auto-generated role for key {}", key_name),
-                    now_unix
-                ],
-            )
-            .await
-            .map_err(|e| format!("Seeding role {} failed: {}", role_name, e))?;
-
-            // Determine permissions based on mode
-            let ops = if false {
-                vec!["SELECT", "INSERT", "UPDATE", "DELETE"]
-            } else {
-                match key_cfg.mode {
-                    axiom_core::ServerMode::Readonly => vec!["SELECT"],
-                    _ => vec!["SELECT", "INSERT", "UPDATE", "DELETE"],
-                }
-            };
-            let ops_json = serde_json::to_string(&ops).unwrap_or_else(|_| "[\"SELECT\"]".into());
-
-            for db_target in &key_cfg.db_scope {
-                conn.execute(
-                    "INSERT INTO permissions (role_name, database, table_name, operations) \
-                     VALUES (?1, ?2, ?3, ?4)",
-                    libsql::params![
-                        role_name.as_str(),
-                        db_target.as_str(),
-                        "*",
-                        ops_json.as_str()
-                    ],
-                )
-                .await
-                .map_err(|e| format!("Seeding permission failed: {}", e))?;
-            }
-
-            // Hash secret using BLAKE3
-            let secret_hash = blake3::hash(key_cfg.secret.as_bytes());
-            let hash_blob = secret_hash.as_bytes().to_vec();
-
-            conn.execute(
-                "INSERT OR REPLACE INTO api_keys (name, secret_hash, role_name, rate_limit, expires_at, created_at) \
-                 VALUES (?1, ?2, ?3, ?4, NULL, ?5)",
-                libsql::params![
-                    key_name.as_str(),
-                    hash_blob,
-                    role_name.as_str(),
-                    key_cfg.rate_limit_override as i64,
-                    now_unix
-                ],
-            )
-            .await
-            .map_err(|e| format!("Seeding API key {} failed: {}", key_name, e))?;
-        }
-
-        // Record audit entry
-        conn.execute(
-            "INSERT INTO audit_log (timestamp, actor, action, target, details) \
-             VALUES (?1, 'system', 'metadata.seed', 'axiom.db', 'Auto-seeded initial configuration from config.toml')",
-            libsql::params![now_unix],
-        )
-        .await
-        .map_err(|e| format!("Recording seed audit failed: {}", e))?;
-
-        drop(conn);
-        Self::sync_snapshot().await?;
-        tracing::info!("Auto-seeding completed; live ArcSwap metadata snapshot published");
-
-        Ok(())
-    }
 
     // ─── Key Management API ────────────────────────────────────────────────
 
@@ -1028,6 +927,7 @@ impl MetadataStore {
     }
 
     /// Verifies an admin user's credentials using constant-time Argon2 verification.
+    /// Resists username enumeration timing side-channels by performing dummy Argon2 computation if user is absent.
     pub async fn verify_user(username: &str, password: &str) -> Result<bool, String> {
         let conn = Self::get_conn().await?;
         let mut rows = conn
@@ -1038,16 +938,19 @@ impl MetadataStore {
             .await
             .map_err(|e| e.to_string())?;
 
-        if let Ok(Some(row)) = rows.next().await {
-            let stored_hash: String = row.get(0).map_err(|e| e.to_string())?;
-            let parsed_hash = PasswordHash::new(&stored_hash)
-                .map_err(|e| format!("Invalid stored password hash: {}", e))?;
-            Ok(Argon2::default()
-                .verify_password(password.as_bytes(), &parsed_hash)
-                .is_ok())
-        } else {
-            Ok(false)
-        }
+        let user_row = rows.next().await.ok().flatten();
+        let hash_to_verify = match &user_row {
+            Some(row) => row.get::<String>(0).map_err(|e| e.to_string())?,
+            None => DUMMY_HASH.clone(),
+        };
+
+        let parsed_hash = PasswordHash::new(&hash_to_verify)
+            .map_err(|e| format!("Invalid stored password hash: {}", e))?;
+        let matches = Argon2::default()
+            .verify_password(password.as_bytes(), &parsed_hash)
+            .is_ok();
+
+        Ok(user_row.is_some() && matches)
     }
 
     /// Checks if any admin users exist in the system (used by setup wizard).
@@ -1134,7 +1037,10 @@ impl MetadataStore {
         let _guard = STORE_LOCK.lock().await;
         let conn = Self::get_conn().await?;
 
-        let session_id = uuid::Uuid::new_v4().to_string().replace('-', "");
+        // SECURITY (M-4): Generate raw cryptographically-random session token, but store only
+        // its BLAKE3 hash in the database so session tokens cannot be harvested from backups/DB reads.
+        let raw_token = format!("axm_sess_{}", uuid::Uuid::new_v4().to_string().replace('-', ""));
+        let token_hash = blake3::hash(raw_token.as_bytes()).to_hex().to_string();
         let now_unix = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
@@ -1143,12 +1049,12 @@ impl MetadataStore {
 
         conn.execute(
             "INSERT INTO sessions (id, username, expires_at, created_at) VALUES (?1, ?2, ?3, ?4)",
-            libsql::params![session_id.as_str(), username, expires_at, now_unix],
+            libsql::params![token_hash.as_str(), username, expires_at, now_unix],
         )
         .await
         .map_err(|e| format!("Failed to create session: {}", e))?;
 
-        Ok(session_id)
+        Ok(raw_token)
     }
 
     /// Validates an active session token and returns the associated username if not expired.
@@ -1164,10 +1070,12 @@ impl MetadataStore {
             .unwrap_or_default()
             .as_secs() as i64;
 
+        let token_hash = blake3::hash(session_id.as_bytes()).to_hex().to_string();
+
         let mut rows = conn
             .query(
-                "SELECT username, expires_at FROM sessions WHERE id = ?1",
-                [session_id],
+                "SELECT username, expires_at FROM sessions WHERE id = ?1 OR id = ?2",
+                [token_hash.as_str(), session_id],
             )
             .await
             .map_err(|e| e.to_string())?;
@@ -1198,16 +1106,463 @@ impl MetadataStore {
         let _guard = STORE_LOCK.lock().await;
         let conn = Self::get_conn().await?;
 
+        let token_hash = blake3::hash(session_id.as_bytes()).to_hex().to_string();
+
         let affected = conn
-            .execute("DELETE FROM sessions WHERE id = ?1", [session_id])
+            .execute("DELETE FROM sessions WHERE id = ?1 OR id = ?2", [token_hash.as_str(), session_id])
             .await
             .map_err(|e| format!("Failed to delete session: {}", e))?;
 
         Ok(affected > 0)
     }
 
+    // ─── Ban List Management (M-7) ───────────────────────────────────────────
+    // Persists IP and API key bans in SQLite so suspensions survive daemon restarts.
+
+    /// Persists or updates an IP ban record in SQLite.
+    pub async fn save_ip_ban(ip: &str, reason: &str, expires_at: i64) -> Result<(), String> {
+        let _guard = STORE_LOCK.lock().await;
+        let conn = Self::get_conn().await?;
+        let now_unix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+
+        conn.execute(
+            "INSERT INTO ip_bans (ip, reason, banned_at, expires_at) VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(ip) DO UPDATE SET reason = ?2, banned_at = ?3, expires_at = ?4",
+            libsql::params![ip, reason, now_unix, expires_at],
+        )
+        .await
+        .map_err(|e| format!("Failed to save IP ban for {}: {}", ip, e))?;
+
+        Ok(())
+    }
+
+    /// Removes an IP ban record from SQLite.
+    pub async fn remove_ip_ban(ip: &str) -> Result<bool, String> {
+        let _guard = STORE_LOCK.lock().await;
+        let conn = Self::get_conn().await?;
+        let affected = conn
+            .execute("DELETE FROM ip_bans WHERE ip = ?1", [ip])
+            .await
+            .map_err(|e| format!("Failed to delete IP ban for {}: {}", ip, e))?;
+        Ok(affected > 0)
+    }
+
+    /// Loads all active IP bans (non-expired or permanent where expires_at == 0) from SQLite.
+    pub async fn load_active_ip_bans() -> Result<Vec<(String, String, i64)>, String> {
+        let conn = Self::get_conn().await?;
+        let now_unix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+
+        let mut rows = conn
+            .query(
+                "SELECT ip, reason, expires_at FROM ip_bans WHERE expires_at == 0 OR expires_at > ?1",
+                [now_unix],
+            )
+            .await
+            .map_err(|e| format!("Failed to query active IP bans: {}", e))?;
+
+        let mut bans = Vec::new();
+        while let Ok(Some(row)) = rows.next().await {
+            let ip: String = row.get(0).unwrap_or_default();
+            let reason: String = row.get(1).unwrap_or_default();
+            let expires_at: i64 = row.get(2).unwrap_or_default();
+            bans.push((ip, reason, expires_at));
+        }
+
+        Ok(bans)
+    }
+
+    /// Persists or updates an API key suspension record in SQLite.
+    pub async fn save_key_ban(key_name: &str, reason: &str, expires_at: i64) -> Result<(), String> {
+        let _guard = STORE_LOCK.lock().await;
+        let conn = Self::get_conn().await?;
+        let now_unix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+
+        conn.execute(
+            "INSERT INTO key_bans (key_name, reason, banned_at, expires_at) VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(key_name) DO UPDATE SET reason = ?2, banned_at = ?3, expires_at = ?4",
+            libsql::params![key_name, reason, now_unix, expires_at],
+        )
+        .await
+        .map_err(|e| format!("Failed to save key ban for {}: {}", key_name, e))?;
+
+        Ok(())
+    }
+
+    /// Removes an API key suspension record from SQLite.
+    pub async fn remove_key_ban(key_name: &str) -> Result<bool, String> {
+        let _guard = STORE_LOCK.lock().await;
+        let conn = Self::get_conn().await?;
+        let affected = conn
+            .execute("DELETE FROM key_bans WHERE key_name = ?1", [key_name])
+            .await
+            .map_err(|e| format!("Failed to delete key ban for {}: {}", key_name, e))?;
+        Ok(affected > 0)
+    }
+
+    /// Loads all active API key suspensions (non-expired or permanent where expires_at == 0) from SQLite.
+    pub async fn load_active_key_bans() -> Result<Vec<(String, String, i64)>, String> {
+        let conn = Self::get_conn().await?;
+        let now_unix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+
+        let mut rows = conn
+            .query(
+                "SELECT key_name, reason, expires_at FROM key_bans WHERE expires_at == 0 OR expires_at > ?1",
+                [now_unix],
+            )
+            .await
+            .map_err(|e| format!("Failed to query active key bans: {}", e))?;
+
+        let mut bans = Vec::new();
+        while let Ok(Some(row)) = rows.next().await {
+            let key_name: String = row.get(0).unwrap_or_default();
+            let reason: String = row.get(1).unwrap_or_default();
+            let expires_at: i64 = row.get(2).unwrap_or_default();
+            bans.push((key_name, reason, expires_at));
+        }
+
+        Ok(bans)
+    }
+
+    /// Purges expired IP and key bans from SQLite.
+    pub async fn cleanup_expired_bans() -> Result<(), String> {
+        let _guard = STORE_LOCK.lock().await;
+        let conn = Self::get_conn().await?;
+        let now_unix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+
+        let _ = conn
+            .execute("DELETE FROM ip_bans WHERE expires_at > 0 AND expires_at <= ?1", [now_unix])
+            .await;
+        let _ = conn
+            .execute("DELETE FROM key_bans WHERE expires_at > 0 AND expires_at <= ?1", [now_unix])
+            .await;
+
+        Ok(())
+    }
+
+    // ─── Blob Capability Ticket Management ─────────────────────────────────
+    // Persistent tracking and revocation registry for pre-signed blob access capability tickets.
+
+    /// Ensures the blob capability tickets table exists in the metadata database.
+    pub async fn ensure_blob_tickets_table(conn: &Connection) -> Result<(), String> {
+        let statements = [
+            "CREATE TABLE IF NOT EXISTS blob_tickets (
+                id TEXT PRIMARY KEY,
+                namespace TEXT NOT NULL,
+                key TEXT NOT NULL,
+                operation TEXT NOT NULL,
+                expires_at INTEGER NOT NULL,
+                signature TEXT UNIQUE NOT NULL,
+                created_by TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                revoked INTEGER DEFAULT 0
+            );",
+            "CREATE INDEX IF NOT EXISTS idx_blob_tickets_lookup ON blob_tickets(namespace, key, revoked);",
+            "CREATE INDEX IF NOT EXISTS idx_blob_tickets_sig ON blob_tickets(signature);",
+        ];
+        for stmt in statements {
+            let _ = conn.execute(stmt, ()).await;
+        }
+        Ok(())
+    }
+
+    /// Records an issued blob capability ticket in SQLite.
+    pub async fn record_blob_ticket(
+        id: &str,
+        namespace: &str,
+        key: &str,
+        operation: &str,
+        expires_at: i64,
+        signature: &str,
+        created_by: &str,
+    ) -> Result<(), String> {
+        let _guard = STORE_LOCK.lock().await;
+        let conn = Self::get_conn().await?;
+        let _ = Self::ensure_blob_tickets_table(&conn).await;
+
+        let now_unix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+
+        conn.execute(
+            "INSERT INTO blob_tickets (id, namespace, key, operation, expires_at, signature, created_by, created_at, revoked) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 0)",
+            libsql::params![id, namespace, key, operation, expires_at, signature, created_by, now_unix],
+        )
+        .await
+        .map_err(|e| format!("Failed to record blob ticket: {}", e))?;
+
+        Ok(())
+    }
+
+    /// Queries blob capability tickets matching an optional namespace and optional key filter.
+    pub async fn list_blob_tickets(
+        namespace: &str,
+        key: Option<&str>,
+        include_expired: bool,
+    ) -> Result<Vec<BlobTicketRecord>, String> {
+        let conn = Self::get_conn().await?;
+        let _ = Self::ensure_blob_tickets_table(&conn).await;
+
+        let now_unix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+
+        let clean_key = key.map(|k| k.trim_start_matches('/'));
+        let mut rows = match (key, clean_key, include_expired) {
+            (Some(raw_k), Some(clean_k), false) => {
+                conn.query(
+                    "SELECT id, namespace, key, operation, expires_at, signature, created_by, created_at, revoked \
+                     FROM blob_tickets \
+                     WHERE (?1 = '*' OR ?1 = '' OR namespace = ?1) \
+                       AND (key = ?2 OR key = ?3 OR key = '/' || ?3) \
+                       AND expires_at > ?4 \
+                     ORDER BY created_at DESC",
+                    libsql::params![namespace, raw_k, clean_k, now_unix],
+                )
+                .await
+            }
+            (Some(raw_k), Some(clean_k), true) => {
+                conn.query(
+                    "SELECT id, namespace, key, operation, expires_at, signature, created_by, created_at, revoked \
+                     FROM blob_tickets \
+                     WHERE (?1 = '*' OR ?1 = '' OR namespace = ?1) \
+                       AND (key = ?2 OR key = ?3 OR key = '/' || ?3) \
+                     ORDER BY created_at DESC",
+                    libsql::params![namespace, raw_k, clean_k],
+                )
+                .await
+            }
+            _ if !include_expired => {
+                conn.query(
+                    "SELECT id, namespace, key, operation, expires_at, signature, created_by, created_at, revoked \
+                     FROM blob_tickets \
+                     WHERE (?1 = '*' OR ?1 = '' OR namespace = ?1) \
+                       AND expires_at > ?2 \
+                     ORDER BY created_at DESC",
+                    libsql::params![namespace, now_unix],
+                )
+                .await
+            }
+            _ => {
+                conn.query(
+                    "SELECT id, namespace, key, operation, expires_at, signature, created_by, created_at, revoked \
+                     FROM blob_tickets \
+                     WHERE (?1 = '*' OR ?1 = '' OR namespace = ?1) \
+                     ORDER BY created_at DESC",
+                    libsql::params![namespace],
+                )
+                .await
+            }
+        }
+        .map_err(|e| format!("Failed to list blob tickets: {}", e))?;
+
+        let mut tickets = Vec::new();
+        while let Ok(Some(row)) = rows.next().await {
+            let id: String = row.get(0).map_err(|e| e.to_string())?;
+            let ns: String = row.get(1).map_err(|e| e.to_string())?;
+            let k: String = row.get(2).map_err(|e| e.to_string())?;
+            let op: String = row.get(3).map_err(|e| e.to_string())?;
+            let expires_at: i64 = row.get(4).map_err(|e| e.to_string())?;
+            let sig: String = row.get(5).map_err(|e| e.to_string())?;
+            let created_by: String = row.get(6).map_err(|e| e.to_string())?;
+            let created_at: i64 = row.get(7).map_err(|e| e.to_string())?;
+            let revoked_int: i64 = row.get(8).unwrap_or(0);
+
+            tickets.push(BlobTicketRecord {
+                id,
+                namespace: ns,
+                key: k,
+                operation: op,
+                expires_at,
+                signature: sig,
+                created_by,
+                created_at,
+                revoked: revoked_int != 0,
+            });
+        }
+
+        Ok(tickets)
+    }
+
+    /// Revokes a blob capability ticket by signature or id, immediately invalidating it.
+    pub async fn revoke_blob_ticket(signature_or_id: &str) -> Result<bool, String> {
+        let _guard = STORE_LOCK.lock().await;
+        let conn = Self::get_conn().await?;
+        let _ = Self::ensure_blob_tickets_table(&conn).await;
+
+        let affected = conn
+            .execute(
+                "UPDATE blob_tickets SET revoked = 1 WHERE (signature = ?1 OR id = ?1) AND revoked = 0",
+                libsql::params![signature_or_id],
+            )
+            .await
+            .map_err(|e| format!("Failed to revoke blob ticket: {}", e))?;
+
+        Ok(affected > 0)
+    }
+
+    /// Permanently deletes a blob capability ticket from SQLite.
+    pub async fn delete_blob_ticket(signature_or_id: &str) -> Result<bool, String> {
+        let _guard = STORE_LOCK.lock().await;
+        let conn = Self::get_conn().await?;
+        let _ = Self::ensure_blob_tickets_table(&conn).await;
+
+        let affected = conn
+            .execute(
+                "DELETE FROM blob_tickets WHERE signature = ?1 OR id = ?1",
+                libsql::params![signature_or_id],
+            )
+            .await
+            .map_err(|e| format!("Failed to delete blob ticket: {}", e))?;
+
+        Ok(affected > 0)
+    }
+
+    /// Checks if a ticket signature has been explicitly revoked.
+    pub async fn is_blob_ticket_revoked(signature: &str) -> Result<bool, String> {
+        let conn = Self::get_conn().await?;
+
+        let mut rows = match conn
+            .query(
+                "SELECT revoked FROM blob_tickets WHERE signature = ?1",
+                libsql::params![signature],
+            )
+            .await
+        {
+            Ok(r) => r,
+            Err(_) => return Ok(false),
+        };
+
+        if let Ok(Some(row)) = rows.next().await {
+            let revoked_int: i64 = row.get(0).unwrap_or(0);
+            Ok(revoked_int != 0)
+        } else {
+            // Not in registry (or generated prior to persistence); not revoked
+            Ok(false)
+        }
+    }
+
+    /// Purges expired blob tickets older than 7 days from SQLite.
+    pub async fn cleanup_expired_tickets() -> Result<u64, String> {
+        let _guard = STORE_LOCK.lock().await;
+        let conn = Self::get_conn().await?;
+        let now_unix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+        let retention_threshold = now_unix - (7 * 86_400);
+
+        let affected = conn
+            .execute(
+                "DELETE FROM blob_tickets WHERE expires_at < ?1",
+                [retention_threshold],
+            )
+            .await
+            .map_err(|e| format!("Failed to cleanup expired tickets: {}", e))?;
+
+        Ok(affected)
+    }
+
+    // ─── System Secrets Management ─────────────────────────────────────────
+    // Persistent cryptographic secrets (e.g. blob capability ticket signing secret) generated once on first boot.
+
+    /// Ensures the system_secrets table exists.
+    pub async fn ensure_system_secrets_table(conn: &Connection) -> Result<(), String> {
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS system_secrets (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL,
+                created_at INTEGER NOT NULL
+            );",
+            (),
+        )
+        .await
+        .map_err(|e| format!("Failed to ensure system_secrets table: {}", e))?;
+        Ok(())
+    }
+
+    /// Retrieves an existing system secret or generates and persists a new cryptographically secure secret.
+    /// CONTRACT:
+    ///  - Precondition: `key` must not be empty.
+    ///  - Postcondition: Returns the persistent secret string from `system_secrets` table.
+    ///  - Side effects: Inserts a new 64-character hex-encoded cryptographic secret if none exists.
+    ///  - Idempotency: Yes (subsequent calls with the same key return the identical stored secret).
+    pub async fn get_or_create_system_secret(key: &str) -> Result<String, String> {
+        let _guard = STORE_LOCK.lock().await;
+        let conn = Self::get_conn().await?;
+        let _ = Self::ensure_system_secrets_table(&conn).await;
+
+        let mut rows = conn
+            .query("SELECT value FROM system_secrets WHERE key = ?1", [key])
+            .await
+            .map_err(|e| format!("Failed to query system_secrets for key '{}': {}", key, e))?;
+
+        if let Ok(Some(row)) = rows.next().await {
+            let val: String = row.get(0).map_err(|e| format!("Failed to read system secret: {}", e))?;
+            return Ok(val);
+        }
+
+        // Generate 32 bytes (256 bits) of cryptographically secure entropy
+        let now_unix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+
+        let entropy = format!("{}_{}_{}", uuid::Uuid::new_v4(), now_unix, uuid::Uuid::new_v4());
+        let new_secret = blake3::hash(entropy.as_bytes()).to_hex().to_string();
+
+        conn.execute(
+            "INSERT INTO system_secrets (key, value, created_at) VALUES (?1, ?2, ?3)",
+            libsql::params![key, new_secret.clone(), now_unix],
+        )
+        .await
+        .map_err(|e| format!("Failed to persist system secret for key '{}': {}", key, e))?;
+
+        tracing::info!("Initialized and persisted system secret for '{}'", key);
+        Ok(new_secret)
+    }
+
     // ─── Audit Trail Management ────────────────────────────────────────────
     // Exposes immutable historical records of system modifications for compliance and forensic auditing.
+
+    /// Records an audit log entry in the metadata database.
+    /// CONTRACT:
+    ///  - Precondition: `actor`, `action`, and `target` non-empty strings.
+    ///  - Side effects: Appends an immutable record to SQLite `audit_log` table.
+    ///  - Idempotency: No (appends new historical log entry).
+    pub async fn record_audit(actor: &str, action: &str, target: &str, details: Option<&str>) -> Result<(), String> {
+        let conn = Self::get_conn().await?;
+        let now_unix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+
+        conn.execute(
+            "INSERT INTO audit_log (timestamp, actor, action, target, details) VALUES (?1, ?2, ?3, ?4, ?5)",
+            libsql::params![now_unix, actor, action, target, details.unwrap_or("")],
+        )
+        .await
+        .map_err(|e| format!("Failed to record audit log: {}", e))?;
+
+        Ok(())
+    }
 
     /// Queries paginated audit log entries ordered chronologically descending (newest first).
     /// CONTRACT:
@@ -1392,6 +1747,195 @@ mod tests {
 
         assert_eq!(stored_hash, blake3::hash(b"new_rotated_secret_456").as_bytes());
         assert_ne!(stored_hash, blake3::hash(b"initial_secret_123").as_bytes());
+    }
+
+    #[tokio::test]
+    async fn test_session_token_hashing_and_validation() {
+        let db_path = format!("file:test_session_{}.db", uuid::Uuid::new_v4().to_string().replace('-', ""));
+        let db = libsql::Builder::new_local(&db_path).build().await.unwrap();
+        let conn = db.connect().unwrap();
+
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS sessions (
+                id TEXT PRIMARY KEY,
+                username TEXT NOT NULL,
+                expires_at INTEGER NOT NULL,
+                created_at INTEGER NOT NULL
+            );",
+            (),
+        )
+        .await
+        .unwrap();
+
+        let raw_token = format!("axm_sess_{}", uuid::Uuid::new_v4().to_string().replace('-', ""));
+        let token_hash = blake3::hash(raw_token.as_bytes()).to_hex().to_string();
+        let expires_at = 9999999999_i64;
+
+        conn.execute(
+            "INSERT INTO sessions (id, username, expires_at, created_at) VALUES (?1, ?2, ?3, ?4)",
+            libsql::params![token_hash.as_str(), "admin_test", expires_at, 1000_i64],
+        )
+        .await
+        .unwrap();
+
+        // 1. Database holds the hash, NOT the raw token
+        let mut rows = conn
+            .query("SELECT id FROM sessions WHERE username = 'admin_test'", ())
+            .await
+            .unwrap();
+        let row = rows.next().await.unwrap().unwrap();
+        let stored_id: String = row.get(0).unwrap();
+        assert_eq!(stored_id, token_hash);
+        assert_ne!(stored_id, raw_token);
+
+        // 2. Lookup via hash succeeds
+        let lookup_hash = blake3::hash(raw_token.as_bytes()).to_hex().to_string();
+        let mut found_rows = conn
+            .query("SELECT username FROM sessions WHERE id = ?1", [lookup_hash])
+            .await
+            .unwrap();
+        let found_row = found_rows.next().await.unwrap().unwrap();
+        let found_user: String = found_row.get(0).unwrap();
+        assert_eq!(found_user, "admin_test");
+
+        let _ = std::fs::remove_file(db_path.replace("file:", ""));
+    }
+
+    #[tokio::test]
+    async fn test_ip_and_key_ban_persistence() {
+        let db_path = format!("file:test_bans_{}.db", uuid::Uuid::new_v4().to_string().replace('-', ""));
+        let db = Builder::new_local(db_path.replace("file:", "")).build().await.unwrap();
+        let conn = db.connect().unwrap();
+
+        let statements = [
+            "CREATE TABLE IF NOT EXISTS ip_bans (
+                ip TEXT PRIMARY KEY,
+                reason TEXT NOT NULL,
+                banned_at INTEGER NOT NULL,
+                expires_at INTEGER NOT NULL
+            );",
+            "CREATE TABLE IF NOT EXISTS key_bans (
+                key_name TEXT PRIMARY KEY,
+                reason TEXT NOT NULL,
+                banned_at INTEGER NOT NULL,
+                expires_at INTEGER NOT NULL
+            );",
+        ];
+        for stmt in statements {
+            conn.execute(stmt, ()).await.unwrap();
+        }
+
+        let now_unix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+
+        // 1. Insert permanent ban (expires_at = 0) and expiring ban (expires_at in past)
+        conn.execute(
+            "INSERT INTO ip_bans (ip, reason, banned_at, expires_at) VALUES (?1, ?2, ?3, ?4)",
+            libsql::params!["192.168.1.100", "Perm ban", now_unix, 0i64],
+        ).await.unwrap();
+
+        conn.execute(
+            "INSERT INTO ip_bans (ip, reason, banned_at, expires_at) VALUES (?1, ?2, ?3, ?4)",
+            libsql::params!["192.168.1.200", "Expired ban", now_unix - 100, now_unix - 10],
+        ).await.unwrap();
+
+        // Query active
+        let mut rows = conn
+            .query("SELECT ip, reason, expires_at FROM ip_bans WHERE expires_at == 0 OR expires_at > ?1", [now_unix])
+            .await
+            .unwrap();
+        let mut active = Vec::new();
+        while let Ok(Some(row)) = rows.next().await {
+            let ip: String = row.get(0).unwrap();
+            active.push(ip);
+        }
+        assert_eq!(active, vec!["192.168.1.100"]);
+
+        // Cleanup expired
+        let affected = conn
+            .execute("DELETE FROM ip_bans WHERE expires_at > 0 AND expires_at <= ?1", [now_unix])
+            .await
+            .unwrap();
+        assert_eq!(affected, 1);
+
+        let _ = std::fs::remove_file(db_path.replace("file:", ""));
+    }
+
+    #[tokio::test]
+    async fn test_blob_ticket_store_lifecycle() {
+        let db_path = format!("file:test_tickets_{}.db", uuid::Uuid::new_v4().to_string().replace('-', ""));
+        let db = Builder::new_local(db_path.replace("file:", "")).build().await.unwrap();
+        let conn = db.connect().unwrap();
+        MetadataStore::create_tables(&conn).await.unwrap();
+
+        let now_unix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+
+        // 1. Insert ticket
+        conn.execute(
+            "INSERT INTO blob_tickets (id, namespace, key, operation, expires_at, signature, created_by, created_at, revoked) \
+             VALUES ('t1', 'media', 'photos/1.jpg', 'READ', ?1, 'sig_abc_123', 'admin', ?2, 0)",
+            libsql::params![now_unix + 3600, now_unix],
+        ).await.unwrap();
+
+        // 2. Query active tickets
+        let mut rows = conn
+            .query("SELECT id, revoked FROM blob_tickets WHERE namespace = 'media' AND key = 'photos/1.jpg' AND expires_at > ?1", [now_unix])
+            .await
+            .unwrap();
+        let row = rows.next().await.unwrap().unwrap();
+        let tid: String = row.get(0).unwrap();
+        let revoked: i64 = row.get(1).unwrap();
+        assert_eq!(tid, "t1");
+        assert_eq!(revoked, 0);
+
+        // 3. Revoke ticket
+        conn.execute(
+            "UPDATE blob_tickets SET revoked = 1 WHERE signature = 'sig_abc_123'",
+            (),
+        ).await.unwrap();
+
+        let mut check_rows = conn
+            .query("SELECT revoked FROM blob_tickets WHERE signature = 'sig_abc_123'", ())
+            .await
+            .unwrap();
+        let check_row = check_rows.next().await.unwrap().unwrap();
+        let check_revoked: i64 = check_row.get(0).unwrap();
+        assert_eq!(check_revoked, 1);
+
+        let _ = std::fs::remove_file(db_path.replace("file:", ""));
+    }
+
+    #[tokio::test]
+    async fn test_system_secrets_lifecycle() {
+        let db_path = format!("file:test_secrets_{}.db", uuid::Uuid::new_v4().to_string().replace('-', ""));
+        let db = Builder::new_local(db_path.replace("file:", "")).build().await.unwrap();
+        let conn = db.connect().unwrap();
+        MetadataStore::create_tables(&conn).await.unwrap();
+
+        MetadataStore::ensure_system_secrets_table(&conn).await.unwrap();
+        let s1 = {
+            let entropy = format!("{}_{}", uuid::Uuid::new_v4(), uuid::Uuid::new_v4());
+            blake3::hash(entropy.as_bytes()).to_hex().to_string()
+        };
+        conn.execute(
+            "INSERT INTO system_secrets (key, value, created_at) VALUES ('test_key', ?1, 100)",
+            [s1.clone()],
+        ).await.unwrap();
+
+        let mut rows = conn
+            .query("SELECT value FROM system_secrets WHERE key = 'test_key'", ())
+            .await
+            .unwrap();
+        let row = rows.next().await.unwrap().unwrap();
+        let s2: String = row.get(0).unwrap();
+        assert_eq!(s1, s2);
+
+        let _ = std::fs::remove_file(db_path.replace("file:", ""));
     }
 }
 

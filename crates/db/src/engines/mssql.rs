@@ -16,7 +16,7 @@ use serde_json::Value;
 
 use axiom_core::config::schema::DatabaseDefConfig;
 use crate::engines::base::{
-    ColumnInfo, DatabaseEngine, EngineError, ForeignKeyInfo, QueryResult, TableInfo,
+    ColumnInfo, CreateColumnRequest, DatabaseEngine, EngineError, ForeignKeyInfo, QueryResult, TableInfo,
 };
 
 /// Precomputed column classification for fast zero-trial MSSQL row decoding.
@@ -28,6 +28,7 @@ enum MsSqlColKind {
     Int64,
     Float32,
     Float64,
+    Numeric,
     String,
     Fallback,
 }
@@ -43,6 +44,7 @@ impl MsSqlColKind {
             ColumnType::Int8 => MsSqlColKind::Int64,
             ColumnType::Float4 => MsSqlColKind::Float32,
             ColumnType::Float8 => MsSqlColKind::Float64,
+            ColumnType::Decimaln | ColumnType::Numericn | ColumnType::Money | ColumnType::Money4 => MsSqlColKind::Numeric,
             ColumnType::NVarchar
             | ColumnType::BigVarChar
             | ColumnType::NChar
@@ -395,6 +397,19 @@ impl DatabaseEngine for MssqlDatabaseEngine {
                             Value::Null
                         }
                     }
+                    MsSqlColKind::Numeric => {
+                        if let Ok(Some(dec)) = row.try_get::<rust_decimal::Decimal, _>(idx) {
+                            if let Ok(num) = dec.to_string().parse::<serde_json::Number>() {
+                                Value::Number(num)
+                            } else {
+                                Value::String(dec.to_string())
+                            }
+                        } else if let Ok(Some(f)) = row.try_get::<f64, _>(idx) {
+                            serde_json::Number::from_f64(f).map(Value::Number).unwrap_or(Value::Null)
+                        } else {
+                            Value::Null
+                        }
+                    }
                     MsSqlColKind::Bool => {
                         if let Ok(Some(b)) = row.try_get::<bool, _>(idx) {
                             Value::Bool(b)
@@ -403,7 +418,13 @@ impl DatabaseEngine for MssqlDatabaseEngine {
                         }
                     }
                     MsSqlColKind::Fallback => {
-                        if let Ok(Some(s)) = row.try_get::<&str, _>(idx) {
+                        if let Ok(Some(dec)) = row.try_get::<rust_decimal::Decimal, _>(idx) {
+                            if let Ok(num) = dec.to_string().parse::<serde_json::Number>() {
+                                Value::Number(num)
+                            } else {
+                                Value::String(dec.to_string())
+                            }
+                        } else if let Ok(Some(s)) = row.try_get::<&str, _>(idx) {
                             Value::String(s.to_string())
                         } else if let Ok(Some(i)) = row.try_get::<i64, _>(idx) {
                             Value::Number(i.into())
@@ -441,5 +462,77 @@ impl DatabaseEngine for MssqlDatabaseEngine {
 
     fn dialect(&self) -> &str {
         "mssql"
+    }
+
+    async fn add_column(&self, table: &str, req: &CreateColumnRequest) -> Result<(), EngineError> {
+        let client_arc = self.client.as_ref().ok_or_else(|| EngineError::Connection("Not connected".into()))?;
+        let mut client = client_arc.lock().await;
+
+        let col_name_clean: String = req.name.chars().filter(|c| c.is_alphanumeric() || *c == '_').collect();
+        if col_name_clean.is_empty() {
+            return Err(EngineError::Schema("Invalid column name".into()));
+        }
+
+        let escaped_table = format!("[{}]", table.replace(']', "]]"));
+        let escaped_col = format!("[{}]", col_name_clean.replace(']', "]]"));
+
+        // SQL Server syntax: ALTER TABLE [table] ADD [column] [data_type] ... (no COLUMN keyword)
+        let type_def = &req.data_type;
+        let mut sql = format!("ALTER TABLE {} ADD {} {}", escaped_table, escaped_col, type_def);
+
+        if req.primary_key {
+            sql.push_str(" PRIMARY KEY");
+        } else {
+            if req.unique {
+                sql.push_str(" UNIQUE");
+            }
+            if !req.nullable {
+                sql.push_str(" NOT NULL");
+            }
+        }
+
+        if let Some(ref def_val) = req.default_value {
+            let trimmed = def_val.trim();
+            if !trimmed.is_empty() && trimmed.to_uppercase() != "NULL" {
+                sql.push_str(&format!(" DEFAULT {}", trimmed));
+            }
+        }
+
+        if let Some(ref chk) = req.check_expression {
+            let trimmed = chk.trim();
+            if !trimmed.is_empty() {
+                sql.push_str(&format!(" CHECK ({})", trimmed));
+            }
+        }
+
+        if let Some(ref fk) = req.foreign_key {
+            let fk_table = fk.table.trim();
+            let fk_col = fk.column.trim();
+            if !fk_table.is_empty() && !fk_col.is_empty() {
+                let schema_prefix = fk.schema.as_ref()
+                    .filter(|s| !s.trim().is_empty())
+                    .map(|s| format!("[{}].", s.trim().replace(']', "]]")))
+                    .unwrap_or_default();
+                let escaped_fk_table = format!("{}[{}]", schema_prefix, fk_table.replace(']', "]]"));
+                let escaped_fk_col = format!("[{}]", fk_col.replace(']', "]]"));
+                sql.push_str(&format!(" FOREIGN KEY REFERENCES {} ({})", escaped_fk_table, escaped_fk_col));
+
+                if let Some(ref u) = fk.on_update {
+                    if u.to_uppercase() != "NO ACTION" {
+                        sql.push_str(&format!(" ON UPDATE {}", u));
+                    }
+                }
+                if let Some(ref d) = fk.on_delete {
+                    if d.to_uppercase() != "NO ACTION" {
+                        sql.push_str(&format!(" ON DELETE {}", d));
+                    }
+                }
+            }
+        }
+
+        let query = tiberius::Query::new(sql);
+        query.execute(&mut *client).await.map_err(|e| EngineError::Execution(e.to_string()))?;
+
+        Ok(())
     }
 }

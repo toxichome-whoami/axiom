@@ -42,6 +42,10 @@ pub fn get_router() -> Router {
                 .patch(crate::database::handlers::update_rows)
                 .delete(crate::database::handlers::delete_rows),
         )
+        .route(
+            "/:db_name/:table_name/columns",
+            post(crate::database::handlers::add_column),
+        )
 }
 
 use axiom_policy::PolicyEngine;
@@ -54,19 +58,9 @@ use axiom_policy::PolicyEngine;
 async fn list_databases(
     Extension(auth): Extension<AuthContext>,
 ) -> Result<Json<Value>, AxiomError> {
-    let config = ConfigManager::get();
     let snapshot = axiom_metadata::snapshot::get_snapshot();
 
-    // Aggregate unique database aliases from static config and dynamic metadata snapshot
-    let mut all_aliases = std::collections::HashSet::new();
-    for name in config.database.keys() {
-        all_aliases.insert(name.clone());
-    }
-    for name in snapshot.databases.keys() {
-        all_aliases.insert(name.clone());
-    }
-
-    let mut sorted_aliases: Vec<String> = all_aliases.into_iter().collect();
+    let mut sorted_aliases: Vec<String> = snapshot.databases.keys().cloned().collect();
     sorted_aliases.sort();
 
     // Filter by user role permissions
@@ -74,20 +68,26 @@ async fn list_databases(
 
     // Parallelize connectivity probes across authorized databases for minimum latency
     let check_futures = authorized_dbs.into_iter().map(|name| {
-        let config = config.clone();
         let snapshot = snapshot.clone();
         async move {
-            let (engine_str, mode_str) = if let Some(db_cfg) = config.database.get(&name) {
-                (format!("{:?}", db_cfg.engine).to_lowercase(), format!("{:?}", db_cfg.mode).to_lowercase())
-            } else {
-                let snap_db = snapshot.databases.get(&name)?;
-                (snap_db.engine.clone(), "readwrite".to_string())
-            };
+            let snap_db = snapshot.databases.get(&name)?;
+            let engine_str = snap_db.engine.clone();
+            let mode_str = "readwrite".to_string();
 
             let mut status = "down";
             let mut tables_count_str = "0".to_string();
-            if let Some(engine) = axiom_db::DatabasePoolManager::get_engine(&name).await {
-                if engine.health_check().await {
+            let probe_res = tokio::time::timeout(
+                std::time::Duration::from_millis(500),
+                axiom_db::DatabasePoolManager::get_engine(&name),
+            )
+            .await;
+            if let Ok(Some(engine)) = probe_res {
+                let hc_res = tokio::time::timeout(
+                    std::time::Duration::from_millis(500),
+                    engine.health_check(),
+                )
+                .await;
+                if let Ok(true) = hc_res {
                     status = "connected";
                     if let Ok(count) = engine.count_tables().await {
                         tables_count_str = count.to_string();
@@ -115,6 +115,12 @@ async fn list_databases(
     })))
 }
 
+#[derive(serde::Serialize, serde::Deserialize)]
+struct IdempotentEntry {
+    fingerprint: String,
+    body: String,
+}
+
 /// Executes a raw SQL query against a configured database engine with AST validation and timeouts.
 /// CONTRACT:
 ///  - Precondition: Valid AuthContext with database permissions; non-empty SQL string in payload.
@@ -126,25 +132,6 @@ async fn execute_query(
     Extension(auth): Extension<AuthContext>,
     Json(payload): Json<QueryRequest>,
 ) -> Result<axum::response::Response, AxiomError> {
-    let idempotency_key = headers
-        .get("Idempotency-Key")
-        .and_then(|v| v.to_str().ok())
-        .map(|s| format!("idemp:{}:{}", auth.api_key_name, s));
-    
-    if let Some(ref key) = idempotency_key {
-        if let Some(cached_response) = axiom_cache::CacheEngine::get(key).await {
-            return axum::response::Response::builder()
-                .header("content-type", "application/json")
-                .header("x-idempotency-hit", "true")
-                .body(axum::body::Body::from(cached_response))
-                .map_err(|e| {
-                    tracing::error!("Response build failed: {}", e);
-                    AxiomError::new("INTERNAL_ERROR", "Failed to build response", axum::http::StatusCode::INTERNAL_SERVER_ERROR)
-                });
-        }
-    }
-    let db_cfg = get_db_config(&db_name, &auth).await?;
-
     // Params can arrive as a JSON array [val1, val2] or object {"1": val1, "2": val2}.
     let mut params_array = Vec::new();
     if let Some(p) = payload.params {
@@ -170,6 +157,57 @@ async fn execute_query(
         }
     }
 
+    // SECURITY (H-4d): compute cryptographic payload fingerprint to bind Idempotency-Key
+    // strictly to the database, SQL text, and bound parameters.
+    let payload_fingerprint = {
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(db_name.as_bytes());
+        hasher.update(payload.sql.as_bytes());
+        if let Ok(p_str) = serde_json::to_string(&params_array) {
+            hasher.update(p_str.as_bytes());
+        }
+        hasher.finalize().to_hex().to_string()
+    };
+
+    let idempotency_key = headers
+        .get("Idempotency-Key")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| format!("idemp:{}:{}", auth.api_key_name, s));
+    
+    if let Some(ref key) = idempotency_key {
+        if let Some(cached_response) = axiom_cache::CacheEngine::get(key).await {
+            // Validate that the request matches the original cached fingerprint
+            if let Ok(entry) = serde_json::from_slice::<IdempotentEntry>(&cached_response) {
+                if entry.fingerprint != payload_fingerprint {
+                    return Err(AxiomError::new(
+                        "IDEMPOTENCY_CONFLICT",
+                        "This Idempotency-Key was previously used with a different SQL query or parameters",
+                        axum::http::StatusCode::CONFLICT,
+                    ));
+                }
+                return axum::response::Response::builder()
+                    .header("content-type", "application/json")
+                    .header("x-idempotency-hit", "true")
+                    .body(axum::body::Body::from(entry.body))
+                    .map_err(|e| {
+                        tracing::error!("Response build failed: {}", e);
+                        AxiomError::new("INTERNAL_ERROR", "Failed to build response", axum::http::StatusCode::INTERNAL_SERVER_ERROR)
+                    });
+            } else {
+                // Legacy cache entry fallback
+                return axum::response::Response::builder()
+                    .header("content-type", "application/json")
+                    .header("x-idempotency-hit", "true")
+                    .body(axum::body::Body::from(cached_response))
+                    .map_err(|e| {
+                        tracing::error!("Response build failed: {}", e);
+                        AxiomError::new("INTERNAL_ERROR", "Failed to build response", axum::http::StatusCode::INTERNAL_SERVER_ERROR)
+                    });
+            }
+        }
+    }
+    let db_cfg = get_db_config(&db_name, &auth).await?;
+
     let timeout_duration = std::time::Duration::from_secs(payload.timeout.unwrap_or(30).clamp(1, 300) as u64);
     let (_arc_result, json_bytes) = match tokio::time::timeout(
         timeout_duration,
@@ -182,13 +220,26 @@ async fn execute_query(
     };
 
     if let Some(key) = idempotency_key {
-        axiom_cache::CacheEngine::set(
-            &key,
-            json_bytes.clone(),
-            86400,
-            axiom_cache::Durability::Journaled,
-        )
-        .await;
+        let config = ConfigManager::get();
+        let idemp_ttl = if config.cache.idempotency_ttl > 0 {
+            config.cache.idempotency_ttl as u64
+        } else {
+            86400
+        };
+        let body_str = String::from_utf8_lossy(&json_bytes).to_string();
+        let entry = IdempotentEntry {
+            fingerprint: payload_fingerprint,
+            body: body_str,
+        };
+        if let Ok(entry_bytes) = serde_json::to_vec(&entry) {
+            axiom_cache::CacheEngine::set(
+                &key,
+                entry_bytes.into(),
+                idemp_ttl,
+                axiom_cache::Durability::Journaled,
+            )
+            .await;
+        }
     }
 
     axum::response::Response::builder()
@@ -198,4 +249,22 @@ async fn execute_query(
             tracing::error!("Response build failed: {}", e);
             AxiomError::new("INTERNAL_ERROR", "Failed to build response", axum::http::StatusCode::INTERNAL_SERVER_ERROR)
         })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_idempotent_entry_fingerprint_matching() {
+        let entry = IdempotentEntry {
+            fingerprint: "abc123hash".to_string(),
+            body: r#"{"success":true,"rows":[]}"#.to_string(),
+        };
+        let bytes = serde_json::to_vec(&entry).unwrap();
+        let decoded: IdempotentEntry = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(decoded.fingerprint, "abc123hash");
+        assert_ne!(decoded.fingerprint, "different_hash");
+        assert_eq!(decoded.body, r#"{"success":true,"rows":[]}"#);
+    }
 }

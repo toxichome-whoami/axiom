@@ -44,6 +44,7 @@ pub fn get_router() -> Router {
         .route("/setup/complete", post(setup_complete))
         .route("/auth/logout", post(logout_handler))
         .route("/users", get(list_users_handler))
+        .nest("/blobs", crate::blobs::get_admin_router())
         .layer(axum::middleware::from_fn(crate::middleware::auth::auth_middleware));
 
     Router::new()

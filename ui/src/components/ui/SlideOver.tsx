@@ -33,6 +33,7 @@ interface SlideOverProps {
   subtitle?: React.ReactNode;
   children: React.ReactNode;
   width?: string;
+  zIndex?: string;
 }
 
 export const SlideOver: React.FC<SlideOverProps> = ({
@@ -42,6 +43,7 @@ export const SlideOver: React.FC<SlideOverProps> = ({
   subtitle,
   children,
   width = 'w-[520px] max-w-full',
+  zIndex = 'z-50',
 }) => {
   const panelRef = useRef<HTMLDivElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
@@ -131,7 +133,7 @@ export const SlideOver: React.FC<SlideOverProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 overflow-hidden select-none font-sans"
+      className={cn("fixed inset-0 overflow-hidden select-none font-sans", zIndex)}
       role="dialog"
       aria-modal="true"
       aria-labelledby="slideover-title"
@@ -141,12 +143,12 @@ export const SlideOver: React.FC<SlideOverProps> = ({
         onClick={onClose}
         aria-hidden="true"
       />
-      <div className="fixed inset-y-0 sm:inset-y-2.5 right-0 flex max-w-full pl-0 sm:pl-10 pointer-events-none font-sans">
-        {/* Outer Container (Matching Table outer black frame) */}
+      <div className="fixed inset-y-0 right-0 flex max-w-full pl-0 sm:pl-10 pointer-events-none font-sans">
+        {/* Outer Container (Full height right drawer frame) */}
         <div
           ref={panelRef}
           className={cn(
-            'w-screen pointer-events-auto bg-black border-l border-y border-[#222222] rounded-tl-[8px] rounded-bl-[8px] shadow-2xl flex flex-col animate-in slide-in-from-right duration-200 ease-out select-text overflow-hidden font-sans',
+            'w-screen h-full pointer-events-auto bg-black border-l border-[#222222] shadow-2xl flex flex-col animate-in slide-in-from-right duration-200 ease-out select-text overflow-hidden font-sans',
             width
           )}
         >

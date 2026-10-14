@@ -65,19 +65,22 @@ export interface ApiKey {
   retiringSecret?: RetiringSecret | null;
 }
 
-export type PermissionOperation = 'SELECT' | 'INSERT' | 'UPDATE' | 'DELETE';
+export type DbOperation = 'SELECT' | 'INSERT' | 'UPDATE' | 'DELETE';
+export type BlobOperation = 'READ' | 'WRITE' | 'DELETE';
+export type PermissionOperation = DbOperation | BlobOperation | '*';
 
 export interface PermissionRule {
   database: string;
   table: string;
-  operations: PermissionOperation[];
+  operations: (PermissionOperation | string)[];
+  resourceType?: 'database' | 'blob';
 }
 
 export interface RbacRole {
   name: string;
   description: string;
   createdAt: string;
-  permissions: { database: string; table: string; operations: ('SELECT' | 'INSERT' | 'UPDATE' | 'DELETE')[] }[];
+  permissions: { database: string; table: string; operations: string[] }[];
 }
 
 export interface McpTool {
@@ -106,3 +109,139 @@ export interface ApiRoutePreset {
   defaultBody: string;
   defaultParams: string;
 }
+
+export interface BlobMetadata {
+  hash: string;
+  size: number;
+  content_type: string;
+  created_at: number;
+  inline: boolean;
+}
+
+export interface BlobEntry {
+  namespace: string;
+  key: string;
+  hash: string;
+  size: number;
+  content_type: string;
+  created_at: number;
+  inline: boolean;
+}
+
+export interface BlobStats {
+  total_objects: number;
+  unique_blobs: number;
+  total_logical_bytes: number;
+  total_physical_bytes: number;
+  dedup_saved_bytes: number;
+  inline_objects: number;
+  file_objects: number;
+}
+
+export interface ListBlobsResult {
+  items: BlobEntry[];
+  next_cursor: string | null;
+}
+
+export interface BlobTicket {
+  id: string;
+  namespace: string;
+  key: string;
+  operation: 'READ' | 'WRITE';
+  expires_at: number;
+  signature: string;
+  created_by: string;
+  created_at: number;
+  revoked: boolean;
+  url?: string;
+}
+
+export interface CreateBlobTicketResponse {
+  ticket?:
+    | {
+        namespace: string;
+        key: string;
+        operation: string;
+        expires_at: number;
+        signature: string;
+      }
+    | string;
+  signature?: string;
+  operation?: 'READ' | 'WRITE' | string;
+  expires_at?: number;
+  url: string;
+}
+
+export interface NamespaceInfo {
+  name: string;
+  created_at: number;
+  max_bytes: number | null;
+  total_objects: number;
+  total_bytes: number;
+}
+
+// ─── Table Editor & Schema Types ─────────────────────────────────────────────
+
+export interface ColumnInfoApi {
+  name: string;
+  type: string;
+  nullable: boolean;
+  primary_key: boolean;
+  default_value?: string;
+  unique?: boolean;
+  identity?: boolean;
+}
+
+export interface ForeignKeyDefApi {
+  schema?: string;
+  table: string;
+  column: string;
+  on_update?: string;
+  on_delete?: string;
+}
+
+export interface CreateColumnRequestApi {
+  name: string;
+  description?: string;
+  data_type: string;
+  is_array?: boolean;
+  primary_key?: boolean;
+  unique?: boolean;
+  nullable?: boolean;
+  default_value?: string;
+  check_expression?: string;
+  foreign_key?: ForeignKeyDefApi;
+}
+
+export interface ForeignKeyInfoApi {
+  column: string;
+  referenced_table: string;
+  referenced_column: string;
+}
+
+export interface TableInfoApi {
+  name: string;
+  row_count_estimate: number;
+  columns?: ColumnInfoApi[];
+  foreign_keys?: ForeignKeyInfoApi[];
+}
+
+export interface TableRowsResponse {
+  rows: Record<string, unknown>[];
+  pagination: {
+    limit: number;
+    has_more: boolean;
+    next_cursor: string | null;
+  };
+}
+
+export interface QueryResultApi {
+  success?: boolean;
+  columns?: string[];
+  rows?: Record<string, unknown>[];
+  affected_rows?: number;
+  truncated?: boolean;
+  next_cursor?: string;
+  duration_ms?: number;
+}
+
