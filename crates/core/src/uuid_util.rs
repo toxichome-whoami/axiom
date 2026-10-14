@@ -8,6 +8,13 @@
 
 use uuid::Uuid;
 
+/// Generates a RFC 9562 chronologically monotonic UUID version 7 string.
+/// CONTRACT:
+///  - Time-ordered: High-order 48 bits encode Unix epoch millisecond timestamp.
+///  - Monotonicity: Sequential values within the same millisecond increment sub-field entropy.
+///  - Index-friendly: Minimizes B-tree index fragmentation in database primary keys compared to random UUIDv4.
+///  - Returns: 36-character hyphenated UUID string.
+///  - Side effects: Reads system clock and secure system entropy.
 pub fn uuid7() -> String {
     Uuid::now_v7().to_string()
 }
