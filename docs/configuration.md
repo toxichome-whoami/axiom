@@ -5,7 +5,7 @@
 ### Production Configuration Reference, Security Architecture, and Deployment Manual
 **High-performance SQL Gateway · Content-Addressed Object Store · AI Agent Server**
 
-[![Version](https://img.shields.io/badge/version-4.0.0-111827.svg?style=flat-square)](https://github.com/toxichome/axiom/releases)
+[![Version](https://img.shields.io/badge/version-0.1.11-111827.svg?style=flat-square)](https://github.com/toxichome/axiom/releases)
 [![Rust](https://img.shields.io/badge/rust-1.88%2B-b7410e.svg?style=flat-square&logo=rust&logoColor=white)](https://www.rust-lang.org)
 [![License: MIT](https://img.shields.io/badge/license-MIT-111827.svg?style=flat-square)](../LICENSE)
 [![Platforms](https://img.shields.io/badge/platform-linux%20%C2%B7%20macos%20%C2%B7%20windows-111827.svg?style=flat-square)](https://github.com/toxichome/axiom/releases)
@@ -379,7 +379,7 @@ version: "3.8"
 
 services:
   axiom:
-    image: ghcr.io/toxichome/axiom:4.0.0
+    image: ghcr.io/toxichome/axiom:0.1.11
     container_name: axiom
     restart: unless-stopped
     ports:
