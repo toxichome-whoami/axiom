@@ -298,7 +298,17 @@ pub fn validate_api_key(
                     } else {
                         5
                     };
-                    BanList::record_failed_auth(key_name, penalty_threshold, 60);
+                    let window_secs = if config.rate_limit.window > 0 {
+                        config.rate_limit.window as u64
+                    } else {
+                        60
+                    };
+                    let cooldown_secs = if config.rate_limit.penalty_cooldown > 0 {
+                        config.rate_limit.penalty_cooldown as u64
+                    } else {
+                        0
+                    };
+                    BanList::record_failed_auth(key_name, penalty_threshold, window_secs, cooldown_secs);
                 }
             } else if snapshot.keys.contains_key(key_name) {
                 // Key exists in metadata snapshot but secret hash check failed
@@ -307,7 +317,17 @@ pub fn validate_api_key(
                 } else {
                     5
                 };
-                BanList::record_failed_auth(key_name, penalty_threshold, 60);
+                let window_secs = if config.rate_limit.window > 0 {
+                    config.rate_limit.window as u64
+                } else {
+                    60
+                };
+                let cooldown_secs = if config.rate_limit.penalty_cooldown > 0 {
+                    config.rate_limit.penalty_cooldown as u64
+                } else {
+                    0
+                };
+                BanList::record_failed_auth(key_name, penalty_threshold, window_secs, cooldown_secs);
             }
         }
     }

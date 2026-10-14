@@ -11,7 +11,7 @@ ServerSignature Off
 # ─── CRITICAL SECURITY: Block Sensitive Files ──────────────────────────────
 # If the Rust backend goes offline, Apache might try to serve files statically.
 # This prevents anyone from downloading your config, database, or binary files.
-<FilesMatch "(?i)\.(toml|db|exe|log|env|sh|ps1|go|rs|md|lock)$">
+<FilesMatch "(?i)\.(toml|db|sqlite|sqlite3|exe|log|env|sh|ps1|go|rs|md|lock|bak|swp|pid)$">
     Require all denied
 </FilesMatch>
 
@@ -20,8 +20,8 @@ ServerSignature Off
     Require all denied
 </FilesMatch>
 
-# Block direct access to internal folders
-RedirectMatch 404 ^/(src|data|logs|tools|scripts|docs)/
+# Block direct access to internal folders (fail-closed 403)
+RedirectMatch 403 ^/(src|data|logs|tools|scripts|docs|crates|target|ui|tests|benches)/
 # ─────────────────────────────────────────────────────────────────────────────
 
 <IfModule mod_rewrite.c>
@@ -43,10 +43,13 @@ RedirectMatch 404 ^/(src|data|logs|tools|scripts|docs)/
     RequestHeader set X-Forwarded-Port "443"
     
     # Hardened Security Headers (Double-layer protection before it hits Rust)
-    Header always set Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
+    # NOTE: HSTS only meaningful over HTTPS (enforced above); deprecated
+    # X-XSS-Protection removed (can introduce old-IE XSS sink).
+    Header always set Strict-Transport-Security "max-age=63072000; includeSubDomains; preload" env=HTTPS
     Header always set X-Content-Type-Options "nosniff"
     Header always set X-Frame-Options "DENY"
-    Header always set X-XSS-Protection "1; mode=block"
+    Header always set Referrer-Policy "no-referrer"
+    Header always set Permissions-Policy "camera=(), microphone=(), geolocation=()"
     
     # Hide the fact that Apache is running
     Header unset Server

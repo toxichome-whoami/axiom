@@ -115,11 +115,75 @@ fn collect_tables_from_table_with_joins(twj: &sqlparser::ast::TableWithJoins, ta
     }
 }
 
+fn collect_tables_from_expr(expr: &sqlparser::ast::Expr, tables: &mut Vec<String>) {
+    match expr {
+        sqlparser::ast::Expr::Subquery(query) => {
+            collect_tables_from_query(query, tables);
+        }
+        sqlparser::ast::Expr::InSubquery { subquery, expr, .. } => {
+            collect_tables_from_expr(expr, tables);
+            collect_tables_from_query(subquery, tables);
+        }
+        sqlparser::ast::Expr::Exists { subquery, .. } => {
+            collect_tables_from_query(subquery, tables);
+        }
+        sqlparser::ast::Expr::BinaryOp { left, right, .. } => {
+            collect_tables_from_expr(left, tables);
+            collect_tables_from_expr(right, tables);
+        }
+        sqlparser::ast::Expr::UnaryOp { expr, .. } => {
+            collect_tables_from_expr(expr, tables);
+        }
+        sqlparser::ast::Expr::Nested(inner) => {
+            collect_tables_from_expr(inner, tables);
+        }
+        sqlparser::ast::Expr::InList { expr, list, .. } => {
+            collect_tables_from_expr(expr, tables);
+            for item in list {
+                collect_tables_from_expr(item, tables);
+            }
+        }
+        sqlparser::ast::Expr::Between { expr, low, high, .. } => {
+            collect_tables_from_expr(expr, tables);
+            collect_tables_from_expr(low, tables);
+            collect_tables_from_expr(high, tables);
+        }
+        sqlparser::ast::Expr::Case { operand, conditions, else_result, .. } => {
+            if let Some(op) = operand {
+                collect_tables_from_expr(op, tables);
+            }
+            for cw in conditions {
+                collect_tables_from_expr(&cw.condition, tables);
+                collect_tables_from_expr(&cw.result, tables);
+            }
+            if let Some(el) = else_result {
+                collect_tables_from_expr(el, tables);
+            }
+        }
+        _ => {}
+    }
+}
+
 fn collect_tables_from_set_expr(expr: &sqlparser::ast::SetExpr, tables: &mut Vec<String>) {
     match expr {
         sqlparser::ast::SetExpr::Select(select) => {
             for twj in &select.from {
                 collect_tables_from_table_with_joins(twj, tables);
+            }
+            for item in &select.projection {
+                match item {
+                    sqlparser::ast::SelectItem::UnnamedExpr(e)
+                    | sqlparser::ast::SelectItem::ExprWithAlias { expr: e, .. } => {
+                        collect_tables_from_expr(e, tables);
+                    }
+                    _ => {}
+                }
+            }
+            if let Some(selection) = &select.selection {
+                collect_tables_from_expr(selection, tables);
+            }
+            if let Some(having) = &select.having {
+                collect_tables_from_expr(having, tables);
             }
         }
         sqlparser::ast::SetExpr::Query(q) => {
@@ -143,18 +207,29 @@ fn collect_tables_from_query(query: &sqlparser::ast::Query, tables: &mut Vec<Str
 }
 
 fn sanitize_db_error(raw_err: &str) -> String {
-    let mut msg = raw_err.trim();
-    while let Some(rest) = msg
-        .strip_prefix("Execution error: ")
-        .or_else(|| msg.strip_prefix("error returned from database: "))
-        .or_else(|| msg.strip_prefix("Database error: "))
+    // SECURITY (M-5): never reflect driver internals (table/column/constraint,
+    // dialect version) to clients/LLMs. Full error goes to tracing only.
+    // In debug builds keep detail for developers; in prod return generic.
+    #[cfg(debug_assertions)]
     {
-        msg = rest.trim();
+        let mut msg = raw_err.trim();
+        while let Some(rest) = msg
+            .strip_prefix("Execution error: ")
+            .or_else(|| msg.strip_prefix("error returned from database: "))
+            .or_else(|| msg.strip_prefix("Database error: "))
+        {
+            msg = rest.trim();
+        }
+        if msg.is_empty() {
+            "Database query execution failed".to_string()
+        } else {
+            msg.chars().take(300).collect()
+        }
     }
-    if msg.is_empty() {
+    #[cfg(not(debug_assertions))]
+    {
+        let _ = raw_err;
         "Database query execution failed".to_string()
-    } else {
-        msg.to_string()
     }
 }
 
@@ -425,6 +500,16 @@ impl QueryExecutionPipeline {
                 )
             })?;
 
+            // SECURITY (H-4a): single-statement only via /query. Stacked statements
+            // (`SELECT …; DROP …`) bypass per-statement param binding and widen blast radius.
+            if statements.len() > 1 {
+                return Err(AxiomError::new(
+                    "MULTI_STATEMENT_DENIED",
+                    "Multiple SQL statements in one request are not allowed",
+                    StatusCode::BAD_REQUEST,
+                ));
+            }
+
             let mut is_mutation = false;
             let mut operations = Vec::with_capacity(statements.len());
 
@@ -440,7 +525,18 @@ impl QueryExecutionPipeline {
                     | sqlparser::ast::Statement::ShowColumns { .. } => ("SELECT", Vec::new()),
                     sqlparser::ast::Statement::Insert(insert) => {
                         is_mutation = true;
-                        ("INSERT", vec![extract_table_name(&insert.table.to_string())])
+                        let mut tbls = vec![extract_table_name(&insert.table.to_string())];
+                        if let Some(source) = &insert.source {
+                            let mut source_tbls = Vec::new();
+                            collect_tables_from_query(source, &mut source_tbls);
+                            source_tbls.sort();
+                            source_tbls.dedup();
+                            for s_tbl in &source_tbls {
+                                PolicyEngine::evaluate(auth, db_name, s_tbl, "SELECT")?;
+                            }
+                            tbls.extend(source_tbls);
+                        }
+                        ("INSERT", tbls)
                     }
                     sqlparser::ast::Statement::Update(update) => {
                         is_mutation = true;
@@ -448,6 +544,16 @@ impl QueryExecutionPipeline {
                         collect_tables_from_table_with_joins(&update.table, &mut tbls);
                         if tbls.is_empty() {
                             tbls.push(extract_table_name(&update.table.to_string()));
+                        }
+                        if let Some(selection) = &update.selection {
+                            let mut subquery_tbls = Vec::new();
+                            collect_tables_from_expr(selection, &mut subquery_tbls);
+                            subquery_tbls.sort();
+                            subquery_tbls.dedup();
+                            for s_tbl in &subquery_tbls {
+                                PolicyEngine::evaluate(auth, db_name, s_tbl, "SELECT")?;
+                            }
+                            tbls.extend(subquery_tbls);
                         }
                         ("UPDATE", tbls)
                     }
@@ -463,6 +569,16 @@ impl QueryExecutionPipeline {
                                 tbls.push(extract_table_name(&name.to_string()));
                             }
                         };
+                        if let Some(selection) = &delete.selection {
+                            let mut subquery_tbls = Vec::new();
+                            collect_tables_from_expr(selection, &mut subquery_tbls);
+                            subquery_tbls.sort();
+                            subquery_tbls.dedup();
+                            for s_tbl in &subquery_tbls {
+                                PolicyEngine::evaluate(auth, db_name, s_tbl, "SELECT")?;
+                            }
+                            tbls.extend(subquery_tbls);
+                        }
                         ("DELETE", tbls)
                     }
                     sqlparser::ast::Statement::CreateTable { .. }
@@ -484,6 +600,10 @@ impl QueryExecutionPipeline {
                         ("DENY", Vec::new())
                     }
                 };
+
+                let mut tables = tables;
+                tables.sort();
+                tables.dedup();
 
                 if tables.is_empty() {
                     PolicyEngine::evaluate(auth, db_name, "*", op)?;
@@ -510,7 +630,16 @@ impl QueryExecutionPipeline {
                 None
             };
 
-            if AST_CACHE.len() < MAX_AST_CACHE_ENTRIES {
+            let max_ast_entries = {
+                let cfg = axiom_core::ConfigManager::get();
+                if cfg.performance.transpiler_cache_size > 0 {
+                    cfg.performance.transpiler_cache_size as usize
+                } else {
+                    MAX_AST_CACHE_ENTRIES
+                }
+            };
+
+            if AST_CACHE.len() < max_ast_entries {
                 AST_CACHE.insert(
                     ast_cache_key,
                     Arc::new(CachedAstInfo {
@@ -1244,6 +1373,71 @@ pub async fn describe_table(
     })))
 }
 
+const MAX_DATA_TYPE_LEN: usize = 64;
+const MAX_DEFAULT_VALUE_LEN: usize = 128;
+const MAX_CHECK_EXPR_LEN: usize = 512;
+
+/// SECURITY (H-4b): validate `add_column` free-text DDL fragments before they reach
+/// engine string interpolation. Column names are sanitized downstream; these are not.
+fn validate_add_column_payload(payload: &axiom_core::CreateColumnRequest) -> Result<(), AxiomError> {
+    let bad = |msg: &str| AxiomError::new("BAD_COLUMN_DEF", msg, StatusCode::BAD_REQUEST);
+    // data_type allowlist: base type + optional (N[,M]) / length. No statement chars.
+    let dt = payload.data_type.trim();
+    if dt.is_empty() || dt.len() > MAX_DATA_TYPE_LEN {
+        return Err(bad("Invalid data_type"));
+    }
+    let dt_up = dt.to_ascii_uppercase();
+    const BASES: &[&str] = &[
+        "TEXT", "VARCHAR", "CHAR", "NVARCHAR", "NCHAR", "INT", "INTEGER", "BIGINT",
+        "SMALLINT", "TINYINT", "BOOLEAN", "BOOL", "BIT", "FLOAT", "REAL", "DOUBLE",
+        "DECIMAL", "NUMERIC", "DATE", "TIME", "TIMESTAMP", "DATETIME", "DATETIME2",
+        "BLOB", "BYTEA", "JSON", "JSONB", "UUID", "SERIAL", "BIGSERIAL",
+    ];
+    let base_ok = BASES.iter().any(|b| dt_up == *b || dt_up.starts_with(&format!("{}(", b)));
+    // Allow e.g. VARCHAR(255), DECIMAL(10,2), CHAR(1)
+    let paren_ok = if dt.contains('(') {
+        let mut chars = dt.chars();
+        chars.all(|c| c.is_alphanumeric() || c == '(' || c == ')' || c == ',' || c == ' ' || c == '.')
+            && dt.ends_with(')')
+            && !dt.contains(';')
+    } else {
+        true
+    };
+    if !base_ok || !paren_ok || dt.contains(';') || dt.contains("--") || dt.contains("/*") {
+        return Err(bad("Invalid data_type"));
+    }
+    // default_value: literals only (numbers, bools, quoted strings, CURRENT_*).
+    if let Some(def) = payload.default_value.as_deref() {
+        let d = def.trim();
+        if d.len() > MAX_DEFAULT_VALUE_LEN || d.contains(';') || d.contains("--") || d.contains("/*") {
+            return Err(bad("Invalid default_value"));
+        }
+        let du = d.to_ascii_uppercase();
+        let literal_ok = du == "NULL"
+            || du == "TRUE" || du == "FALSE" || du == "CURRENT_TIMESTAMP"
+            || du == "CURRENT_DATE" || du == "CURRENT_TIME" || du == "NOW()"
+            || d.parse::<f64>().is_ok()
+            || (d.starts_with('\'') && d.ends_with('\'') && d.len() >= 2);
+        if !literal_ok {
+            return Err(bad("Invalid default_value"));
+        }
+    }
+    if let Some(check) = payload.check_expression.as_deref() {
+        if check.len() > MAX_CHECK_EXPR_LEN || check.contains(';') || check.contains("--") || check.contains("/*") {
+            return Err(bad("Invalid check_expression"));
+        }
+    }
+    if let Some(fk) = payload.foreign_key.as_ref() {
+        for action in [&fk.on_update, &fk.on_delete].into_iter().flatten() {
+            let a = action.trim().to_ascii_uppercase();
+            if !matches!(a.as_str(), "CASCADE" | "SET NULL" | "SET DEFAULT" | "RESTRICT" | "NO ACTION") {
+                return Err(bad("Invalid foreign key action"));
+            }
+        }
+    }
+    Ok(())
+}
+
 pub async fn add_column(
     axum::extract::Path((db_name, table_name)): axum::extract::Path<(String, String)>,
     axum::extract::Extension(auth): axum::extract::Extension<AuthContext>,
@@ -1251,6 +1445,7 @@ pub async fn add_column(
 ) -> Result<axum::Json<serde_json::Value>, AxiomError> {
     // Check DDL permissions for role
     PolicyEngine::evaluate(&auth, &db_name, &table_name, "DDL")?;
+    validate_add_column_payload(&payload)?;
     let _db_cfg = get_db_config(&db_name, &auth).await?;
 
     let engine = DatabasePoolManager::get_engine(&db_name)
@@ -1264,7 +1459,7 @@ pub async fn add_column(
         .await
         .map_err(|e| {
             tracing::error!("Add column failed: {}", e);
-            AxiomError::new("ADD_COLUMN_FAILED", &e.to_string(), axum::http::StatusCode::INTERNAL_SERVER_ERROR)
+            AxiomError::new("ADD_COLUMN_FAILED", "Failed to add column", axum::http::StatusCode::INTERNAL_SERVER_ERROR)
         })?;
 
     Ok(axum::Json(serde_json::json!({
@@ -1422,6 +1617,23 @@ mod tests {
         // 5. Preserves PostgreSQL JSONB operators (?| and ?&)
         let jsonb = "SELECT * FROM logs WHERE data ?| array['a', 'b'] AND data ?& array['c'] AND status = ?";
         assert_eq!(format_postgres_placeholders(jsonb), "SELECT * FROM logs WHERE data ?| array['a', 'b'] AND data ?& array['c'] AND status = $1");
+    }
+
+    #[test]
+    fn test_subquery_table_extraction() {
+        use super::collect_tables_from_query;
+
+        let sql = "SELECT u.id, (SELECT count(*) FROM orders o WHERE o.user_id = u.id) as cnt FROM users u WHERE u.id IN (SELECT user_id FROM audit_log WHERE level = 'admin') AND EXISTS (SELECT 1 FROM permissions p WHERE p.user_id = u.id)";
+        let stmts = sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::GenericDialect {}, sql).unwrap();
+        if let sqlparser::ast::Statement::Query(q) = &stmts[0] {
+            let mut tables = Vec::new();
+            collect_tables_from_query(q, &mut tables);
+            tables.sort();
+            tables.dedup();
+            assert_eq!(tables, vec!["audit_log", "orders", "permissions", "users"]);
+        } else {
+            panic!("Expected query");
+        }
     }
 }
 

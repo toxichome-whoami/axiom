@@ -137,6 +137,18 @@ impl MetadataStore {
                 expires_at INTEGER NOT NULL,
                 created_at INTEGER NOT NULL
             );",
+            "CREATE TABLE IF NOT EXISTS ip_bans (
+                ip TEXT PRIMARY KEY,
+                reason TEXT NOT NULL,
+                banned_at INTEGER NOT NULL,
+                expires_at INTEGER NOT NULL
+            );",
+            "CREATE TABLE IF NOT EXISTS key_bans (
+                key_name TEXT PRIMARY KEY,
+                reason TEXT NOT NULL,
+                banned_at INTEGER NOT NULL,
+                expires_at INTEGER NOT NULL
+            );",
         ];
 
         for stmt in statements {
@@ -1145,7 +1157,10 @@ impl MetadataStore {
         let _guard = STORE_LOCK.lock().await;
         let conn = Self::get_conn().await?;
 
-        let session_id = uuid::Uuid::new_v4().to_string().replace('-', "");
+        // SECURITY (M-4): Generate raw cryptographically-random session token, but store only
+        // its BLAKE3 hash in the database so session tokens cannot be harvested from backups/DB reads.
+        let raw_token = format!("axm_sess_{}", uuid::Uuid::new_v4().to_string().replace('-', ""));
+        let token_hash = blake3::hash(raw_token.as_bytes()).to_hex().to_string();
         let now_unix = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
@@ -1154,12 +1169,12 @@ impl MetadataStore {
 
         conn.execute(
             "INSERT INTO sessions (id, username, expires_at, created_at) VALUES (?1, ?2, ?3, ?4)",
-            libsql::params![session_id.as_str(), username, expires_at, now_unix],
+            libsql::params![token_hash.as_str(), username, expires_at, now_unix],
         )
         .await
         .map_err(|e| format!("Failed to create session: {}", e))?;
 
-        Ok(session_id)
+        Ok(raw_token)
     }
 
     /// Validates an active session token and returns the associated username if not expired.
@@ -1175,10 +1190,12 @@ impl MetadataStore {
             .unwrap_or_default()
             .as_secs() as i64;
 
+        let token_hash = blake3::hash(session_id.as_bytes()).to_hex().to_string();
+
         let mut rows = conn
             .query(
-                "SELECT username, expires_at FROM sessions WHERE id = ?1",
-                [session_id],
+                "SELECT username, expires_at FROM sessions WHERE id = ?1 OR id = ?2",
+                [token_hash.as_str(), session_id],
             )
             .await
             .map_err(|e| e.to_string())?;
@@ -1209,12 +1226,152 @@ impl MetadataStore {
         let _guard = STORE_LOCK.lock().await;
         let conn = Self::get_conn().await?;
 
+        let token_hash = blake3::hash(session_id.as_bytes()).to_hex().to_string();
+
         let affected = conn
-            .execute("DELETE FROM sessions WHERE id = ?1", [session_id])
+            .execute("DELETE FROM sessions WHERE id = ?1 OR id = ?2", [token_hash.as_str(), session_id])
             .await
             .map_err(|e| format!("Failed to delete session: {}", e))?;
 
         Ok(affected > 0)
+    }
+
+    // ─── Ban List Management (M-7) ───────────────────────────────────────────
+    // Persists IP and API key bans in SQLite so suspensions survive daemon restarts.
+
+    /// Persists or updates an IP ban record in SQLite.
+    pub async fn save_ip_ban(ip: &str, reason: &str, expires_at: i64) -> Result<(), String> {
+        let _guard = STORE_LOCK.lock().await;
+        let conn = Self::get_conn().await?;
+        let now_unix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+
+        conn.execute(
+            "INSERT INTO ip_bans (ip, reason, banned_at, expires_at) VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(ip) DO UPDATE SET reason = ?2, banned_at = ?3, expires_at = ?4",
+            libsql::params![ip, reason, now_unix, expires_at],
+        )
+        .await
+        .map_err(|e| format!("Failed to save IP ban for {}: {}", ip, e))?;
+
+        Ok(())
+    }
+
+    /// Removes an IP ban record from SQLite.
+    pub async fn remove_ip_ban(ip: &str) -> Result<bool, String> {
+        let _guard = STORE_LOCK.lock().await;
+        let conn = Self::get_conn().await?;
+        let affected = conn
+            .execute("DELETE FROM ip_bans WHERE ip = ?1", [ip])
+            .await
+            .map_err(|e| format!("Failed to delete IP ban for {}: {}", ip, e))?;
+        Ok(affected > 0)
+    }
+
+    /// Loads all active IP bans (non-expired or permanent where expires_at == 0) from SQLite.
+    pub async fn load_active_ip_bans() -> Result<Vec<(String, String, i64)>, String> {
+        let conn = Self::get_conn().await?;
+        let now_unix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+
+        let mut rows = conn
+            .query(
+                "SELECT ip, reason, expires_at FROM ip_bans WHERE expires_at == 0 OR expires_at > ?1",
+                [now_unix],
+            )
+            .await
+            .map_err(|e| format!("Failed to query active IP bans: {}", e))?;
+
+        let mut bans = Vec::new();
+        while let Ok(Some(row)) = rows.next().await {
+            let ip: String = row.get(0).unwrap_or_default();
+            let reason: String = row.get(1).unwrap_or_default();
+            let expires_at: i64 = row.get(2).unwrap_or_default();
+            bans.push((ip, reason, expires_at));
+        }
+
+        Ok(bans)
+    }
+
+    /// Persists or updates an API key suspension record in SQLite.
+    pub async fn save_key_ban(key_name: &str, reason: &str, expires_at: i64) -> Result<(), String> {
+        let _guard = STORE_LOCK.lock().await;
+        let conn = Self::get_conn().await?;
+        let now_unix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+
+        conn.execute(
+            "INSERT INTO key_bans (key_name, reason, banned_at, expires_at) VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(key_name) DO UPDATE SET reason = ?2, banned_at = ?3, expires_at = ?4",
+            libsql::params![key_name, reason, now_unix, expires_at],
+        )
+        .await
+        .map_err(|e| format!("Failed to save key ban for {}: {}", key_name, e))?;
+
+        Ok(())
+    }
+
+    /// Removes an API key suspension record from SQLite.
+    pub async fn remove_key_ban(key_name: &str) -> Result<bool, String> {
+        let _guard = STORE_LOCK.lock().await;
+        let conn = Self::get_conn().await?;
+        let affected = conn
+            .execute("DELETE FROM key_bans WHERE key_name = ?1", [key_name])
+            .await
+            .map_err(|e| format!("Failed to delete key ban for {}: {}", key_name, e))?;
+        Ok(affected > 0)
+    }
+
+    /// Loads all active API key suspensions (non-expired or permanent where expires_at == 0) from SQLite.
+    pub async fn load_active_key_bans() -> Result<Vec<(String, String, i64)>, String> {
+        let conn = Self::get_conn().await?;
+        let now_unix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+
+        let mut rows = conn
+            .query(
+                "SELECT key_name, reason, expires_at FROM key_bans WHERE expires_at == 0 OR expires_at > ?1",
+                [now_unix],
+            )
+            .await
+            .map_err(|e| format!("Failed to query active key bans: {}", e))?;
+
+        let mut bans = Vec::new();
+        while let Ok(Some(row)) = rows.next().await {
+            let key_name: String = row.get(0).unwrap_or_default();
+            let reason: String = row.get(1).unwrap_or_default();
+            let expires_at: i64 = row.get(2).unwrap_or_default();
+            bans.push((key_name, reason, expires_at));
+        }
+
+        Ok(bans)
+    }
+
+    /// Purges expired IP and key bans from SQLite.
+    pub async fn cleanup_expired_bans() -> Result<(), String> {
+        let _guard = STORE_LOCK.lock().await;
+        let conn = Self::get_conn().await?;
+        let now_unix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+
+        let _ = conn
+            .execute("DELETE FROM ip_bans WHERE expires_at > 0 AND expires_at <= ?1", [now_unix])
+            .await;
+        let _ = conn
+            .execute("DELETE FROM key_bans WHERE expires_at > 0 AND expires_at <= ?1", [now_unix])
+            .await;
+
+        Ok(())
     }
 
     // ─── Audit Trail Management ────────────────────────────────────────────
@@ -1425,6 +1582,120 @@ mod tests {
 
         assert_eq!(stored_hash, blake3::hash(b"new_rotated_secret_456").as_bytes());
         assert_ne!(stored_hash, blake3::hash(b"initial_secret_123").as_bytes());
+    }
+
+    #[tokio::test]
+    async fn test_session_token_hashing_and_validation() {
+        let db_path = format!("file:test_session_{}.db", uuid::Uuid::new_v4().to_string().replace('-', ""));
+        let db = libsql::Builder::new_local(&db_path).build().await.unwrap();
+        let conn = db.connect().unwrap();
+
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS sessions (
+                id TEXT PRIMARY KEY,
+                username TEXT NOT NULL,
+                expires_at INTEGER NOT NULL,
+                created_at INTEGER NOT NULL
+            );",
+            (),
+        )
+        .await
+        .unwrap();
+
+        let raw_token = format!("axm_sess_{}", uuid::Uuid::new_v4().to_string().replace('-', ""));
+        let token_hash = blake3::hash(raw_token.as_bytes()).to_hex().to_string();
+        let expires_at = 9999999999_i64;
+
+        conn.execute(
+            "INSERT INTO sessions (id, username, expires_at, created_at) VALUES (?1, ?2, ?3, ?4)",
+            libsql::params![token_hash.as_str(), "admin_test", expires_at, 1000_i64],
+        )
+        .await
+        .unwrap();
+
+        // 1. Database holds the hash, NOT the raw token
+        let mut rows = conn
+            .query("SELECT id FROM sessions WHERE username = 'admin_test'", ())
+            .await
+            .unwrap();
+        let row = rows.next().await.unwrap().unwrap();
+        let stored_id: String = row.get(0).unwrap();
+        assert_eq!(stored_id, token_hash);
+        assert_ne!(stored_id, raw_token);
+
+        // 2. Lookup via hash succeeds
+        let lookup_hash = blake3::hash(raw_token.as_bytes()).to_hex().to_string();
+        let mut found_rows = conn
+            .query("SELECT username FROM sessions WHERE id = ?1", [lookup_hash])
+            .await
+            .unwrap();
+        let found_row = found_rows.next().await.unwrap().unwrap();
+        let found_user: String = found_row.get(0).unwrap();
+        assert_eq!(found_user, "admin_test");
+
+        let _ = std::fs::remove_file(&db_path.replace("file:", ""));
+    }
+
+    #[tokio::test]
+    async fn test_ip_and_key_ban_persistence() {
+        let db_path = format!("file:test_bans_{}.db", uuid::Uuid::new_v4().to_string().replace('-', ""));
+        let db = Builder::new_local(db_path.replace("file:", "")).build().await.unwrap();
+        let conn = db.connect().unwrap();
+
+        let statements = [
+            "CREATE TABLE IF NOT EXISTS ip_bans (
+                ip TEXT PRIMARY KEY,
+                reason TEXT NOT NULL,
+                banned_at INTEGER NOT NULL,
+                expires_at INTEGER NOT NULL
+            );",
+            "CREATE TABLE IF NOT EXISTS key_bans (
+                key_name TEXT PRIMARY KEY,
+                reason TEXT NOT NULL,
+                banned_at INTEGER NOT NULL,
+                expires_at INTEGER NOT NULL
+            );",
+        ];
+        for stmt in statements {
+            conn.execute(stmt, ()).await.unwrap();
+        }
+
+        let now_unix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+
+        // 1. Insert permanent ban (expires_at = 0) and expiring ban (expires_at in past)
+        conn.execute(
+            "INSERT INTO ip_bans (ip, reason, banned_at, expires_at) VALUES (?1, ?2, ?3, ?4)",
+            libsql::params!["192.168.1.100", "Perm ban", now_unix, 0i64],
+        ).await.unwrap();
+
+        conn.execute(
+            "INSERT INTO ip_bans (ip, reason, banned_at, expires_at) VALUES (?1, ?2, ?3, ?4)",
+            libsql::params!["192.168.1.200", "Expired ban", now_unix - 100, now_unix - 10],
+        ).await.unwrap();
+
+        // Query active
+        let mut rows = conn
+            .query("SELECT ip, reason, expires_at FROM ip_bans WHERE expires_at == 0 OR expires_at > ?1", [now_unix])
+            .await
+            .unwrap();
+        let mut active = Vec::new();
+        while let Ok(Some(row)) = rows.next().await {
+            let ip: String = row.get(0).unwrap();
+            active.push(ip);
+        }
+        assert_eq!(active, vec!["192.168.1.100"]);
+
+        // Cleanup expired
+        let affected = conn
+            .execute("DELETE FROM ip_bans WHERE expires_at > 0 AND expires_at <= ?1", [now_unix])
+            .await
+            .unwrap();
+        assert_eq!(affected, 1);
+
+        let _ = std::fs::remove_file(&db_path.replace("file:", ""));
     }
 }
 

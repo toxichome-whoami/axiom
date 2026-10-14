@@ -46,12 +46,16 @@ pub async fn start_daemons() {
         }
     }
 
-    // Cache sweep daemon: purges expired entries every 60 seconds
+    // Initialize Persistent IP and API Key Ban Registry (M-7)
+    crate::security::ban_list::BanList::init_persistent().await;
+
+    // Cache sweep daemon: purges expired entries and expired bans every 60 seconds
     let cache_sweep_handle = tokio::spawn(async move {
         let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
         loop {
             interval.tick().await;
             axiom_cache::CacheEngine::sweep_expired().await;
+            let _ = axiom_metadata::store::MetadataStore::cleanup_expired_bans().await;
         }
     });
 

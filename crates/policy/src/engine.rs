@@ -233,7 +233,16 @@ impl PolicyEngine {
             ));
         }
 
-        // Backward compatibility fallback for legacy API keys
+        // Backward compatibility fallback for legacy API keys.
+        // SECURITY (H-4/A5): capability tickets must never escalate WRITE -> DELETE.
+        // A WRITE ticket yields mode=Readwrite; explicitly deny DELETE for ticket identities.
+        if auth.role.as_deref() == Some("ticket") && op_normalized == "DELETE" {
+            return Err(AxiomError::new(
+                "AUTH_FORBIDDEN",
+                "Ticket capabilities do not grant DELETE (request a dedicated grant)",
+                StatusCode::FORBIDDEN,
+            ));
+        }
         let db_in_scope = auth.db_scope.iter().any(|s| s == "*" || s.eq_ignore_ascii_case(namespace));
         if !db_in_scope {
             return Err(AxiomError::new(
@@ -262,11 +271,22 @@ impl PolicyEngine {
                         "Write-only keys cannot read blob objects",
                         StatusCode::FORBIDDEN,
                     ))
-                } else {
+                } else if op_normalized == "WRITE" {
+                    // WRITE-only: DELETE requires an explicit DELETE/BLOB_DELETE grant (see granular path above).
                     Ok(())
+                } else {
+                    Err(AxiomError::new(
+                        "AUTH_INSUFFICIENT_MODE",
+                        "Write-only keys cannot DELETE blob objects",
+                        StatusCode::FORBIDDEN,
+                    ))
                 }
             }
-            ServerMode::Readwrite => Ok(()),
+            ServerMode::Readwrite => {
+                // Legacy Readwrite keys retain full access, but ticket identities are
+                // already denied DELETE above. Non-ticket legacy keys keep compat.
+                Ok(())
+            }
         }
     }
 }

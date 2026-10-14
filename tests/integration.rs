@@ -714,9 +714,9 @@ fn brute_force_ip_auto_ban() {
 fn brute_force_distributed_key_suspension() {
     let key = "target_api_key";
     for _ in 0..4 {
-        assert!(!BanList::record_failed_auth(key, 5, 60));
+        assert!(!BanList::record_failed_auth(key, 5, 60, 0));
     }
-    assert!(BanList::record_failed_auth(key, 5, 60)); // 5th triggers suspension
+    assert!(BanList::record_failed_auth(key, 5, 60, 0)); // 5th triggers suspension
     let (banned, reason) = BanList::is_key_banned(key);
     assert!(banned);
     assert!(reason.contains("failed authentication attempts"));

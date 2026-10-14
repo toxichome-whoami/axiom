@@ -22,6 +22,9 @@ use axiom_db::DatabasePoolManager;
 use axiom_metadata::models::PermissionRecord;
 use axiom_metadata::store::MetadataStore;
 
+pub const SETUP_SESSION_TTL_SECS: i64 = 30 * 24 * 60 * 60; // 30 days initial admin setup session
+pub const LOGIN_SESSION_TTL_SECS: i64 = 7 * 24 * 60 * 60;  // 7 days standard admin login session
+
 // ─── Request Schemas ───────────────────────────────────────────────────────
 
 #[derive(Debug, Deserialize)]
@@ -997,6 +1000,7 @@ pub async fn setup_begin() -> Result<impl IntoResponse, AxiomError> {
 ///  - Throws: 403 FORBIDDEN if setup has already been completed.
 ///  - Side effects: Inserts user and session, logs audit event.
 pub async fn setup_account(
+    headers: axum::http::HeaderMap,
     Json(payload): Json<SetupAccountRequest>,
 ) -> Result<impl IntoResponse, AxiomError> {
     let has_users = MetadataStore::has_users().await.unwrap_or(false);
@@ -1020,14 +1024,24 @@ pub async fn setup_account(
         .await
         .map_err(|e| AxiomError::new("USER_CREATION_FAILED", &e, StatusCode::INTERNAL_SERVER_ERROR))?;
 
-    let session_id = MetadataStore::create_session(&payload.username, 86400 * 30)
+    let session_id = MetadataStore::create_session(&payload.username, SETUP_SESSION_TTL_SECS)
         .await
         .map_err(|e| AxiomError::new("SESSION_CREATION_FAILED", &e, StatusCode::INTERNAL_SERVER_ERROR))?;
 
+    let config = axiom_core::ConfigManager::get();
+    let is_https = headers
+        .get("x-forwarded-proto")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.eq_ignore_ascii_case("https"))
+        .unwrap_or(false)
+        || !config.server.tls_cert.is_empty();
+    let secure_flag = if is_https { "; Secure" } else { "" };
+
     let cookie_header = format!(
-        "axiom_session={}; HttpOnly; SameSite=Strict; Path=/; Max-Age={}",
+        "axiom_session={}; HttpOnly; SameSite=Strict; Path=/; Max-Age={}{}",
         session_id,
-        86400 * 30
+        SETUP_SESSION_TTL_SECS,
+        secure_flag
     );
 
     Ok((
@@ -1195,6 +1209,7 @@ pub async fn setup_complete(
 ///  - Returns: Session token and Set-Cookie header.
 ///  - Side effects: Inserts session row.
 pub async fn login_handler(
+    headers: axum::http::HeaderMap,
     Json(payload): Json<LoginRequest>,
 ) -> Result<impl IntoResponse, AxiomError> {
     let valid = MetadataStore::verify_user(&payload.username, &payload.password)
@@ -1210,14 +1225,24 @@ pub async fn login_handler(
         ));
     }
 
-    let session_id = MetadataStore::create_session(&payload.username, 86400 * 7)
+    let session_id = MetadataStore::create_session(&payload.username, LOGIN_SESSION_TTL_SECS)
         .await
         .map_err(|e| AxiomError::new("SESSION_CREATION_FAILED", &e, StatusCode::INTERNAL_SERVER_ERROR))?;
 
+    let config = axiom_core::ConfigManager::get();
+    let is_https = headers
+        .get("x-forwarded-proto")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.eq_ignore_ascii_case("https"))
+        .unwrap_or(false)
+        || !config.server.tls_cert.is_empty();
+    let secure_flag = if is_https { "; Secure" } else { "" };
+
     let cookie_header = format!(
-        "axiom_session={}; HttpOnly; SameSite=Strict; Path=/; Max-Age={}",
+        "axiom_session={}; HttpOnly; SameSite=Strict; Path=/; Max-Age={}{}",
         session_id,
-        86400 * 7
+        LOGIN_SESSION_TTL_SECS,
+        secure_flag
     );
 
     Ok((

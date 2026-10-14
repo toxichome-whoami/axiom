@@ -129,6 +129,12 @@ async fn list_databases(
     })))
 }
 
+#[derive(serde::Serialize, serde::Deserialize)]
+struct IdempotentEntry {
+    fingerprint: String,
+    body: String,
+}
+
 /// Executes a raw SQL query against a configured database engine with AST validation and timeouts.
 /// CONTRACT:
 ///  - Precondition: Valid AuthContext with database permissions; non-empty SQL string in payload.
@@ -140,25 +146,6 @@ async fn execute_query(
     Extension(auth): Extension<AuthContext>,
     Json(payload): Json<QueryRequest>,
 ) -> Result<axum::response::Response, AxiomError> {
-    let idempotency_key = headers
-        .get("Idempotency-Key")
-        .and_then(|v| v.to_str().ok())
-        .map(|s| format!("idemp:{}:{}", auth.api_key_name, s));
-    
-    if let Some(ref key) = idempotency_key {
-        if let Some(cached_response) = axiom_cache::CacheEngine::get(key).await {
-            return axum::response::Response::builder()
-                .header("content-type", "application/json")
-                .header("x-idempotency-hit", "true")
-                .body(axum::body::Body::from(cached_response))
-                .map_err(|e| {
-                    tracing::error!("Response build failed: {}", e);
-                    AxiomError::new("INTERNAL_ERROR", "Failed to build response", axum::http::StatusCode::INTERNAL_SERVER_ERROR)
-                });
-        }
-    }
-    let db_cfg = get_db_config(&db_name, &auth).await?;
-
     // Params can arrive as a JSON array [val1, val2] or object {"1": val1, "2": val2}.
     let mut params_array = Vec::new();
     if let Some(p) = payload.params {
@@ -184,6 +171,57 @@ async fn execute_query(
         }
     }
 
+    // SECURITY (H-4d): compute cryptographic payload fingerprint to bind Idempotency-Key
+    // strictly to the database, SQL text, and bound parameters.
+    let payload_fingerprint = {
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(db_name.as_bytes());
+        hasher.update(payload.sql.as_bytes());
+        if let Ok(p_str) = serde_json::to_string(&params_array) {
+            hasher.update(p_str.as_bytes());
+        }
+        hasher.finalize().to_hex().to_string()
+    };
+
+    let idempotency_key = headers
+        .get("Idempotency-Key")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| format!("idemp:{}:{}", auth.api_key_name, s));
+    
+    if let Some(ref key) = idempotency_key {
+        if let Some(cached_response) = axiom_cache::CacheEngine::get(key).await {
+            // Validate that the request matches the original cached fingerprint
+            if let Ok(entry) = serde_json::from_slice::<IdempotentEntry>(&cached_response) {
+                if entry.fingerprint != payload_fingerprint {
+                    return Err(AxiomError::new(
+                        "IDEMPOTENCY_CONFLICT",
+                        "This Idempotency-Key was previously used with a different SQL query or parameters",
+                        axum::http::StatusCode::CONFLICT,
+                    ));
+                }
+                return axum::response::Response::builder()
+                    .header("content-type", "application/json")
+                    .header("x-idempotency-hit", "true")
+                    .body(axum::body::Body::from(entry.body))
+                    .map_err(|e| {
+                        tracing::error!("Response build failed: {}", e);
+                        AxiomError::new("INTERNAL_ERROR", "Failed to build response", axum::http::StatusCode::INTERNAL_SERVER_ERROR)
+                    });
+            } else {
+                // Legacy cache entry fallback
+                return axum::response::Response::builder()
+                    .header("content-type", "application/json")
+                    .header("x-idempotency-hit", "true")
+                    .body(axum::body::Body::from(cached_response))
+                    .map_err(|e| {
+                        tracing::error!("Response build failed: {}", e);
+                        AxiomError::new("INTERNAL_ERROR", "Failed to build response", axum::http::StatusCode::INTERNAL_SERVER_ERROR)
+                    });
+            }
+        }
+    }
+    let db_cfg = get_db_config(&db_name, &auth).await?;
+
     let timeout_duration = std::time::Duration::from_secs(payload.timeout.unwrap_or(30).clamp(1, 300) as u64);
     let (_arc_result, json_bytes) = match tokio::time::timeout(
         timeout_duration,
@@ -196,13 +234,26 @@ async fn execute_query(
     };
 
     if let Some(key) = idempotency_key {
-        axiom_cache::CacheEngine::set(
-            &key,
-            json_bytes.clone(),
-            86400,
-            axiom_cache::Durability::Journaled,
-        )
-        .await;
+        let config = ConfigManager::get();
+        let idemp_ttl = if config.cache.idempotency_ttl > 0 {
+            config.cache.idempotency_ttl as u64
+        } else {
+            86400
+        };
+        let body_str = String::from_utf8_lossy(&json_bytes).to_string();
+        let entry = IdempotentEntry {
+            fingerprint: payload_fingerprint,
+            body: body_str,
+        };
+        if let Ok(entry_bytes) = serde_json::to_vec(&entry) {
+            axiom_cache::CacheEngine::set(
+                &key,
+                entry_bytes.into(),
+                idemp_ttl,
+                axiom_cache::Durability::Journaled,
+            )
+            .await;
+        }
     }
 
     axum::response::Response::builder()
@@ -212,4 +263,22 @@ async fn execute_query(
             tracing::error!("Response build failed: {}", e);
             AxiomError::new("INTERNAL_ERROR", "Failed to build response", axum::http::StatusCode::INTERNAL_SERVER_ERROR)
         })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_idempotent_entry_fingerprint_matching() {
+        let entry = IdempotentEntry {
+            fingerprint: "abc123hash".to_string(),
+            body: r#"{"success":true,"rows":[]}"#.to_string(),
+        };
+        let bytes = serde_json::to_vec(&entry).unwrap();
+        let decoded: IdempotentEntry = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(decoded.fingerprint, "abc123hash");
+        assert_ne!(decoded.fingerprint, "different_hash");
+        assert_eq!(decoded.body, r#"{"success":true,"rows":[]}"#);
+    }
 }

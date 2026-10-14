@@ -29,7 +29,23 @@ pub fn resolve_ticket_secret(configured_secret: &str) -> &str {
     }
 }
 
-/// Structured representation of a signed capability ticket.
+/// Max ticket lifetime: 24h. Min: 60s. Default: 1h. Prevents near-eternal capabilities (M-3).
+pub const MAX_TICKET_TTL_SECS: u64 = 86_400;
+pub const MIN_TICKET_TTL_SECS: u64 = 60;
+pub const DEFAULT_TICKET_TTL_SECS: u64 = 3_600;
+
+/// Validate ticket operation against allowlist (READ/WRITE only; DELETE must never be ticket-scoped).
+pub fn normalize_ticket_operation(op: &str) -> Result<String, BlobError> {
+    let upper = op.to_uppercase();
+    if upper == "READ" || upper == "WRITE" {
+        Ok(upper)
+    } else {
+        Err(BlobError::InvalidTicket(format!(
+            "Unsupported ticket operation '{}' (allowed: READ, WRITE)",
+            op
+        )))
+    }
+}
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SignedTicket {
     /// Target namespace.
@@ -61,14 +77,17 @@ pub fn generate_ticket(
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs() as i64;
-    let expires_at = now + ttl_seconds as i64;
+    let ttl_clamped = ttl_seconds.clamp(MIN_TICKET_TTL_SECS, MAX_TICKET_TTL_SECS);
+    let ttl_i64: i64 = ttl_clamped.try_into().unwrap_or(MAX_TICKET_TTL_SECS as i64);
+    let expires_at = now.checked_add(ttl_i64).unwrap_or(i64::MAX);
+    let op_norm = normalize_ticket_operation(operation).unwrap_or_else(|_| "READ".to_string());
 
-    let signature = compute_signature(secret, namespace, key, operation, expires_at);
+    let signature = compute_signature(secret, namespace, key, &op_norm, expires_at);
 
     SignedTicket {
         namespace: namespace.to_string(),
         key: key.to_string(),
-        operation: operation.to_uppercase(),
+        operation: op_norm,
         expires_at,
         signature,
     }
@@ -178,9 +197,13 @@ mod tests {
     #[test]
     fn test_ticket_expiration() {
         let secret = "axiom_master_dev_secret_key_12345";
-        let mut ticket = generate_ticket(secret, "docs", "file.pdf", "READ", 0);
-        // Artificially set expiration into the past
-        ticket.expires_at -= 10;
+        let mut ticket = generate_ticket(secret, "docs", "file.pdf", "READ", 60);
+        // Artificially set expiration into the past (TTL is clamped to >=60s, so force past)
+        ticket.expires_at = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64
+            - 10;
         // Recompute signature for expired timestamp to test the expiry check specifically
         ticket.signature = compute_signature(secret, &ticket.namespace, &ticket.key, &ticket.operation, ticket.expires_at);
 

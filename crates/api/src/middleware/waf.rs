@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Web Application Firewall (WAF) middleware for HTTP edge sanitization.
  * Owned by: crates/api (middleware)
  * Key deps: axiom_core, axum, urlencoding
@@ -8,6 +8,89 @@
 
 use axiom_core::{parse_size, AxiomError, ConfigManager};
 use axum::{extract::Request, middleware::Next, response::Response};
+use std::sync::Arc;
+
+/// Resolve effective body limit per-request (no stale OnceLock cache so
+/// hot-reload / tests see current config). Falls back to safe defaults.
+fn resolve_body_limit(req: &Request, is_blob_route: bool) -> u64 {
+    let default = if is_blob_route {
+        5 * 1024 * 1024 * 1024u64
+    } else {
+        10 * 1024 * 1024u64
+    };
+    let configured = req
+        .extensions()
+        .get::<Arc<axiom_core::AxiomConfig>>()
+        .map(|c| {
+            if is_blob_route {
+                parse_size(&c.blob.max_object).unwrap_or(default)
+            } else {
+                parse_size(&c.server.body_limit).unwrap_or(default)
+            }
+        })
+        .unwrap_or_else(|| {
+            let c = ConfigManager::get();
+            if is_blob_route {
+                parse_size(&c.blob.max_object).unwrap_or(default)
+            } else {
+                parse_size(&c.server.body_limit).unwrap_or(default)
+            }
+        });
+    configured
+}
+
+/// Normalize URL text for keyword inspection: lowercase, convert
+/// tab/newline/CR to space, strip C-style comments, collapse whitespace.
+fn normalize_for_sqli(s: &str) -> String {
+    let lower = s.to_lowercase();
+    let mut out = String::with_capacity(lower.len());
+    let bytes = lower.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        // strip /* ... */ comments
+        if i + 1 < bytes.len() && bytes[i] == b'/' && bytes[i + 1] == b'*' {
+            out.push(' ');
+            i += 2;
+            while i + 1 < bytes.len() && !(bytes[i] == b'*' && bytes[i + 1] == b'/') {
+                i += 1;
+            }
+            i = (i + 2).min(bytes.len());
+            continue;
+        }
+        let c = bytes[i] as char;
+        if c == '\t' || c == '\n' || c == '\r' || c == '\x0c' {
+            out.push(' ');
+        } else {
+            out.push(c);
+        }
+        i += 1;
+    }
+    // collapse consecutive whitespace to single space
+    let mut collapsed = String::with_capacity(out.len());
+    let mut prev_space = false;
+    for c in out.chars() {
+        if c == ' ' {
+            if !prev_space {
+                collapsed.push(' ');
+            }
+            prev_space = true;
+        } else {
+            collapsed.push(c);
+            prev_space = false;
+        }
+    }
+    collapsed
+}
+
+fn contains_sqli(normalized: &str) -> bool {
+    // Keyword with trailing space OR keyword glued to * ( ) ; Eg select* / select( / union(select
+    const KEYWORDS: &[&str] = &[
+        "select ", "select*", "select(", "drop ", "union ", "union(", "unionselect",
+        "delete ", "insert ", "update ", " or ", " and ", "--", ";", "/*",
+        "information_schema", "sleep(", "benchmark(", "outfile ", "load_file(",
+    ];
+    KEYWORDS.iter().any(|k| normalized.contains(k))
+}
 
 /// Intercepts incoming HTTP requests to block protocol-level attacks before route matching.
 /// CONTRACT:
@@ -21,21 +104,13 @@ pub async fn waf_middleware(req: Request, next: Next) -> Result<Response, AxiomE
     let query = uri.query().unwrap_or("");
 
     // Enforce body limits based on endpoint classification:
-    // Blob uploads respect blob.max_object (streaming friendly), while all other endpoints respect server.body_limit (10MB default)
+    // Blob uploads respect blob.max_object (streaming friendly), while all other endpoints respect server.body_limit (10MB default).
+    // NOTE: Content-Length alone is insufficient (chunked / lying header bypass, H-1).
+    // Axum's DefaultBodyLimit (10 MB, app.rs) is the authoritative backstop for
+    // non-blob routes; here we fail fast on declared length and flag chunked
+    // bodies without a length so operators can observe the bypass vector.
     let is_blob_route = path.starts_with("/api/v1/blobs");
-    let body_limit = if is_blob_route {
-        static BLOB_LIMIT: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
-        *BLOB_LIMIT.get_or_init(|| {
-            let config_inner = ConfigManager::get();
-            parse_size(&config_inner.blob.max_object).unwrap_or(5 * 1024 * 1024 * 1024)
-        })
-    } else {
-        static BODY_LIMIT: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
-        *BODY_LIMIT.get_or_init(|| {
-            let config_inner = ConfigManager::get();
-            parse_size(&config_inner.server.body_limit).unwrap_or(10 * 1024 * 1024)
-        })
-    };
+    let body_limit = resolve_body_limit(&req, is_blob_route);
 
     if let Some(cl) = req.headers().get("content-length") {
         if let Ok(cl_str) = cl.to_str() {
@@ -49,6 +124,14 @@ pub async fn waf_middleware(req: Request, next: Next) -> Result<Response, AxiomE
                 }
             }
         }
+    } else if let Some(te) = req.headers().get("transfer-encoding") {
+        // No declarable length: non-blob routes rely on axum DefaultBodyLimit;
+        // blob routes rely on blob.max_object streaming cap. Emit observability.
+        if let Ok(te_str) = te.to_str() {
+            if te_str.to_ascii_lowercase().contains("chunked") && !is_blob_route {
+                tracing::debug!("WAF: chunked request without content-length on non-blob route; deferred to DefaultBodyLimit");
+            }
+        }
     }
 
     if raw_uri.len() > 2048 || path.len() + query.len() > 2048 {
@@ -59,7 +142,7 @@ pub async fn waf_middleware(req: Request, next: Next) -> Result<Response, AxiomE
         ));
     }
 
-    if path.contains('\0') || query.contains('\0') || raw_uri.contains("%00") {
+    if path.contains('\0') || query.contains('\0') || raw_uri.to_ascii_lowercase().contains("%00") || raw_uri.contains("%u0000") || raw_uri.contains("%U0000") {
         return Err(AxiomError::new(
             "WAF_NULL_BYTE",
             "Null byte detected",
@@ -79,24 +162,30 @@ pub async fn waf_middleware(req: Request, next: Next) -> Result<Response, AxiomE
     if path.contains('%')
         || path.contains('.')
         || path.contains(' ')
+        || path.contains('\t')
         || query.contains('%')
         || query.contains('.')
         || query.contains(' ')
+        || query.contains('\t')
+        || query.contains(';')
         || raw_uri.contains("..")
     {
         let mut combined = format!("{}?{}", path, query).to_lowercase();
-        // Decode up to 3 times to prevent multi-encoding bypasses
-        for _ in 0..3 {
+        // Decode up to 5 times to prevent multi-encoding bypasses (cap length to avoid DoS)
+        for _ in 0..5 {
+            if combined.len() > 8192 {
+                break;
+            }
             let decoded = urlencoding::decode(&combined)
                 .unwrap_or(std::borrow::Cow::Borrowed(&combined))
                 .to_string();
             if decoded == combined {
                 break;
             }
-            combined = decoded;
+            combined = decoded.to_lowercase();
         }
 
-        if combined.contains('\0') || combined.contains("%00") {
+        if combined.contains('\0') || combined.contains("%00") || combined.contains("%u0000") {
             return Err(AxiomError::new(
                 "WAF_NULL_BYTE",
                 "Null byte detected",
@@ -112,17 +201,9 @@ pub async fn waf_middleware(req: Request, next: Next) -> Result<Response, AxiomE
             ));
         }
 
-        // SQL injection attempt in URL path parameters
-        let path_lower = path.to_lowercase();
-        if path_lower.contains("select ")
-            || path_lower.contains("drop ")
-            || path_lower.contains("union ")
-            || path_lower.contains("delete ")
-            || path_lower.contains("insert ")
-            || combined.contains("select ")
-            || combined.contains("drop ")
-            || combined.contains("union ")
-        {
+        // SQL injection attempt in URL path parameters (defense-in-depth; body SQL is AST firewall job)
+        let normalized = normalize_for_sqli(&combined);
+        if contains_sqli(&normalized) || contains_sqli(&normalize_for_sqli(&path.to_lowercase())) {
             return Err(AxiomError::new(
                 "WAF_SQL_INJECTION",
                 "SQL injection attempt in URL detected",

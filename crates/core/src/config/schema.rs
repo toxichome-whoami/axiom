@@ -39,7 +39,7 @@ impl Default for ServerConfig {
             tls_key: "".to_string(),
             allowed_ips: Vec::new(),
             trusted_proxies: vec!["127.0.0.1".to_string()],
-            cors_origins: vec!["*".to_string()],
+            cors_origins: Vec::new(),
             shutdown_timeout: 30,
         }
     }
@@ -288,7 +288,7 @@ impl Default for BlobConfig {
             inline_max: "64kb".to_string(),
             max_object: "5gb".to_string(),
             verify_reads: false,
-            ticket_secret: "axiom_default_ticket_secret_change_in_production".to_string(),
+            ticket_secret: "".to_string(),
         }
     }
 }

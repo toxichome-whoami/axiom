@@ -168,35 +168,75 @@ pub async fn get_blob_handler(
         .collect();
     let disposition = format!("attachment; filename=\"{}\"", safe_filename);
 
-    // Check for HTTP Range header
+    // Check for HTTP Range header. Max single range: 256 MB (bandwidth/DoS cap, L-fix).
+    // Malformed or multi-range headers fail closed with 416 (was: silent full 200).
+    const MAX_RANGE_BYTES: u64 = 256 * 1024 * 1024;
     let range_hdr = headers.get(header::RANGE).and_then(|h| h.to_str().ok());
     let parsed_range = if let Some(r) = range_hdr {
+        if r.contains(',') {
+            return Err(AxiomError::new(
+                "RANGE_NOT_SATISFIABLE",
+                "Multiple ranges are not supported",
+                StatusCode::RANGE_NOT_SATISFIABLE,
+            ));
+        }
         if let Some(spec) = r.strip_prefix("bytes=") {
             let mut parts = spec.split('-');
             let start_str = parts.next().unwrap_or("").trim();
             let end_str = parts.next().unwrap_or("").trim();
 
             if start_str.is_empty() && !end_str.is_empty() {
-                // Suffix range: bytes=-500 (last 500 bytes)
+                // Suffix range: bytes=-500 (last 500 bytes), capped at 256 MB.
                 if let Ok(suffix) = end_str.parse::<u64>() {
+                    let suffix = suffix.min(MAX_RANGE_BYTES);
                     let total = engine.head(&namespace, &key).map_err(map_blob_error)?.size;
                     let start = total.saturating_sub(suffix);
                     Some((start, None))
                 } else {
-                    None
+                    return Err(AxiomError::new(
+                        "RANGE_NOT_SATISFIABLE",
+                        "Invalid Range header",
+                        StatusCode::RANGE_NOT_SATISFIABLE,
+                    ));
                 }
             } else if let Ok(start) = start_str.parse::<u64>() {
+                // Cap open-ended / huge ranges at 256 MB from start.
                 let end = if end_str.is_empty() {
-                    None
+                    Some(start.saturating_add(MAX_RANGE_BYTES))
                 } else {
-                    end_str.parse::<u64>().ok()
+                    end_str.parse::<u64>().ok().map(|e| {
+                        if e < start {
+                            e
+                        } else {
+                            start.saturating_add((e.saturating_sub(start)).min(MAX_RANGE_BYTES))
+                        }
+                    })
+                };
+                // Unparseable end with explicit `-` still fails closed.
+                let end = match (end_str.is_empty(), end) {
+                    (false, None) => {
+                        return Err(AxiomError::new(
+                            "RANGE_NOT_SATISFIABLE",
+                            "Invalid Range header",
+                            StatusCode::RANGE_NOT_SATISFIABLE,
+                        ));
+                    }
+                    (_, e) => e,
                 };
                 Some((start, end))
             } else {
-                None
+                return Err(AxiomError::new(
+                    "RANGE_NOT_SATISFIABLE",
+                    "Invalid Range header",
+                    StatusCode::RANGE_NOT_SATISFIABLE,
+                ));
             }
         } else {
-            None
+            return Err(AxiomError::new(
+                "RANGE_NOT_SATISFIABLE",
+                "Invalid Range header",
+                StatusCode::RANGE_NOT_SATISFIABLE,
+            ));
         }
     } else {
         None
@@ -746,18 +786,30 @@ pub async fn create_ticket_handler(
     Extension(auth): Extension<AuthContext>,
     Json(payload): Json<CreateTicketRequest>,
 ) -> Result<impl IntoResponse, AxiomError> {
-    let op = payload.operation.as_deref().unwrap_or("READ").to_uppercase();
+    let op_raw = payload.operation.as_deref().unwrap_or("READ");
+    let op = axiom_blob::tickets::normalize_ticket_operation(op_raw).map_err(|e| {
+        AxiomError::new("BAD_TICKET_OP", &e.to_string(), StatusCode::BAD_REQUEST)
+    })?;
     PolicyEngine::evaluate_blob(&auth, &namespace, &payload.key, &op)?;
 
     let config = ConfigManager::get();
     let secret = axiom_blob::tickets::resolve_ticket_secret(&config.blob.ticket_secret);
 
-    let ttl = payload.ttl_seconds.unwrap_or(3600);
+    let ttl = payload
+        .ttl_seconds
+        .unwrap_or(axiom_blob::tickets::DEFAULT_TICKET_TTL_SECS)
+        .clamp(
+            axiom_blob::tickets::MIN_TICKET_TTL_SECS,
+            axiom_blob::tickets::MAX_TICKET_TTL_SECS,
+        );
     let ticket = axiom_blob::generate_ticket(secret, &namespace, &payload.key, &op, ttl);
 
     let url = format!(
         "/api/v1/blobs/{}/{}?ticket_sig={}&ticket_exp={}",
-        namespace, payload.key, ticket.signature, ticket.expires_at
+        urlencoding::encode(&namespace),
+        urlencoding::encode(&payload.key),
+        ticket.signature,
+        ticket.expires_at
     );
 
     Ok((
