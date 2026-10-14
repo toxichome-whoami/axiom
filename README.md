@@ -23,7 +23,6 @@
 
 </div>
 
----
 
 ## What is Axiom?
 
@@ -36,48 +35,61 @@ Axiom is an ultra-fast, single-binary database gateway and object store written 
 
 All configuration and dynamic metadata (databases, users, roles, permissions, API keys) live in an embedded `axiom.db` file powered by LibSQL. The hot data path reads immutable snapshots via `ArcSwap`, adding zero database locks to incoming requests.
 
----
-
 ## How It Works
 
-```
-+-----------------------------------------------------------------------------------------+
-|                                     INCOMING TRAFFIC                                    |
-|         Web Applications          Mobile / Edge Clients              AI Agents          |
-|        [ X-Axiom-Key Header ]     [ Pre-signed Tickets ]      [ Claude / Cursor MCP ]   |
-+-----------------------------------------------------------------------------------------+
-                                             |
-                                             v
-+-----------------------------------------------------------------------------------------+
-|                                   AXIOM DATA PLANE                                      |
-|                                                                                         |
-|  [ Web Application Firewall ]                                                           |
-|    - 2048-byte URI length guard   - 3x recursive URL decode   - Null-byte filter        |
-|                                                                                         |
-|  [ Rate Limiting & Defense ]                                                            |
-|    - Per-IP fixed-window counter  - Per-key rate limiter      - Brute-force ban list    |
-|                                                                                         |
-|  [ Authentication & RBAC ]                                                              |
-|    - BLAKE3 constant-time hash    - ArcSwap snapshot cache    - Zero-lock hot path      |
-|                                                                                         |
-|  [ Execution Engines ]                                                                  |
-|    +--------------------------------------+  +---------------------------------------+  |
-|    | SQL AST Engine (sqlparser)           |  | Native Blob Engine                    |  |
-|    | - Single-statement enforcement       |  | - BLAKE3 content-addressed dedup      |  |
-|    | - Mutation & destructive DDL guard   |  | - Two-tier storage (Fjall LSM + Disk) |  |
-|    | - Keyset pagination & filter builder |  | - Pre-signed capability tickets       |  |
-|    | - Per-alias connection pooling       |  | - HTTP 206 byte-range streaming       |  |
-|    +--------------------------------------+  +---------------------------------------+  |
-+-----------------------------------------------------------------------------------------+
-         |                       |                       |                      |
-         v                       v                       v                      v
-+-----------------+     +-----------------+     +------------------+     +----------------+
-|   PostgreSQL    |     |  MySQL/MariaDB  |     |   MS SQL Server  |     | SQLite / Turso |
-|  12, 13, 14-17  |     |  8.0+ / 10.4+   |     |   2017 - 2022    |     |   & ClickHouse |
-+-----------------+     +-----------------+     +------------------+     +----------------+
+```mermaid
+flowchart TD
+    subgraph Clients["Clients and AI Agents"]
+        C1["Web & Mobile Apps (X-Axiom-Key Header)"]
+        C2["Edge & Direct Clients (Pre-signed Capability Tickets)"]
+        C3["AI Agents: Claude, Cursor, Windsurf (MCP at /mcp/v1)"]
+        C4["Operators & Admins (Web UI at /system & CLI)"]
+    end
+
+    subgraph Axiom["Axiom Gateway (Single Binary, <10 MB RAM)"]
+        WAF["WAF: 2048-byte Guard, 3x URL Decode, Null-byte Filter"]
+        RL["Rate Limiter: Per-IP and Per-Key Counters, Auto-Ban"]
+        AUTH["Auth & RBAC: BLAKE3 Constant-Time, ArcSwap Zero-Lock Snapshot"]
+
+        subgraph Core["Execution Engines"]
+            SQL["SQL AST Engine (Single-Statement Guard, Keyset Pagination, Circuit Breaker)"]
+            BLOB["Native Blob Engine (BLAKE3 Dedup, Two-Tier LSM Storage, Range Streaming)"]
+            MCP["MCP Server (Governed Tool-Based Database & Blob Access)"]
+            ADMIN["Admin Engine (Embedded Web UI, CLI, LibSQL Metadata Store)"]
+        end
+
+        WAF --> RL --> AUTH
+        AUTH --> SQL
+        AUTH --> BLOB
+        AUTH --> MCP
+        AUTH --> ADMIN
+    end
+
+    subgraph Upstream["Databases & Storage Volumes"]
+        DB1["PostgreSQL (12 - 17)"]
+        DB2["MySQL / MariaDB (8.0+ / 10.4+)"]
+        DB3["Microsoft SQL Server (2017 - 2022)"]
+        DB4["SQLite / LibSQL (Local & Turso Remote)"]
+        DB5["ClickHouse (Analytical HTTP Engine)"]
+        DISK["Local NVMe / Disk Shards (Object Blobs)"]
+    end
+
+    C1 --> WAF
+    C2 --> WAF
+    C3 --> WAF
+    C4 --> WAF
+
+    SQL --> DB1
+    SQL --> DB2
+    SQL --> DB3
+    SQL --> DB4
+    SQL --> DB5
+    BLOB --> DISK
 ```
 
----
+**Connect** any SQL database and local storage volume &rarr; Axiom **introspects** the schema and mounts the engines &rarr; Instantly generates **REST CRUD endpoints**, **content-addressed blob storage**, **MCP tools for AI agents**, and an **embedded Admin Web UI** &mdash; all secured with constant-time authentication, rate limiting, and zero-lock RBAC.
+
+
 
 ## 60-Second Quickstart
 
@@ -109,7 +121,7 @@ docker run -d \
   toxichome/axiom:latest
 ```
 
----
+
 
 ### 2. Start Axiom
 
@@ -121,7 +133,7 @@ axiom server run
 
 Axiom starts immediately on `http://localhost:4500` with an empty state and under 10 MB RAM footprint.
 
----
+
 
 ### 3. Setup Flow: Two Paths
 
@@ -166,7 +178,7 @@ curl -X PUT "http://localhost:4500/api/v1/blobs/assets/documents/report.pdf" \
   --data-binary "@report.pdf"
 ```
 
----
+
 
 ## MCP Server for AI Agents
 
@@ -244,7 +256,7 @@ Add to `~/.codeium/windsurf/mcp_config.json`:
 | `blob_list` | Storage | Enumerate stored objects within an authorized namespace | Yes |
 | `blob_issue_ticket` | Storage | Generate pre-signed capability tickets for secure client downloads | Yes |
 
----
+
 
 ## Content-Addressed Blob Storage
 
@@ -283,7 +295,7 @@ curl -X POST "http://localhost:4500/api/v1/blobs/assets/ticket" \
 curl -O "http://localhost:4500/api/v1/blobs/assets/documents/report.pdf?ticket=v1.assets..."
 ```
 
----
+
 
 ## CLI Reference
 
@@ -333,7 +345,7 @@ COMMANDS:
 
 All commands support `--json` and `--jsonl` flags for clean script and CI/CD piping.
 
----
+
 
 ## API Route Map
 
@@ -369,7 +381,6 @@ All commands support `--json` and `--jsonl` flags for clean script and CI/CD pip
 | `POST` | `/mcp/v1` | JSON-RPC 2.0 Model Context Protocol endpoint |
 | `GET` | `/system/*` | Embedded Web UI single-page application |
 
----
 
 ## Filter Syntax
 
@@ -397,7 +408,7 @@ Filter expressions for `GET /api/v1/db/:alias/:table/rows` are passed as URL-enc
 | `in` | `IN (?, ?, ...)` | `{"role": {"in": ["admin", "editor"]}}` |
 | `is_null` | `IS NULL` / `IS NOT NULL` | `{"verified_at": {"is_null": false}}` |
 
----
+
 
 ## Axiom vs Faucet vs PostgREST vs Hasura vs Supabase
 
@@ -414,7 +425,7 @@ Filter expressions for `GET /api/v1/db/:alias/:table/rows` are passed as URL-enc
 | **Deployment Model** | **Single static binary** | Single binary | Single binary | Multi-service | 12+ Docker containers |
 | **License** | **MIT** | MIT | MIT | Apache 2.0 / BSL | Apache 2.0 |
 
----
+
 
 ## Performance Targets
 
@@ -431,7 +442,7 @@ Every performance metric is governed by automated micro-benchmarks (`benches/ben
 | Cold Boot to TCP Accept | `< 200 ms` | Startup process timing |
 | Stripped Binary Size | `< 15 MB` | Release profile with LTO and strip enabled |
 
----
+
 
 ## Frequently Asked Questions
 
@@ -447,7 +458,7 @@ Rather than relying on brittle regular expressions, Axiom parses incoming SQL st
 #### Is blob storage required to use the database gateway?
 The blob engine runs natively inside the single binary with zero external services required. If you do not issue blob requests, the subsystem remains completely idle, incurring zero background CPU overhead.
 
----
+
 
 ## License
 
