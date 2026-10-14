@@ -329,43 +329,85 @@ The single binary functions both as the server daemon and the full administrativ
 ```text
 axiom [OPTIONS] [COMMAND]
 
-COMMANDS:
+GLOBAL OPTIONS:
+  -u, --url <URL>              Target Axiom server base URL (default: http://127.0.0.1:4500)
+  -k, --key <KEY>              Master API key (base64) or bearer session token
+      --json                   Format command output as structured JSON
+      --jsonl                  Format command output as JSON Lines (JSONL stream)
+
+SERVER DAEMON:
   server run                   Start the Axiom gateway daemon (default action)
+  doctor                       Comprehensive environmental diagnostics & DB reachability check
+  benchmark                    Run high-concurrency pipeline load & throughput benchmark
+
+ADMIN USER MANAGEMENT:
   user add <USER>              Create administrative user (interactive password prompt)
   user list                    Enumerate administrative users
   user delete <USER>           Remove an administrative user
-  db add                       Register an upstream database connection
-  db list                      List registered database connections
+  login <USER>                 Authenticate admin credentials and issue a session token
+  logout                       Invalidate active administrative session
+
+DATABASE MANAGEMENT & DATA OPERATIONS:
+  db add                       Register an upstream database connection (--alias, --conn, --engine)
+  db list                      List registered database connections and status
   db test <ALIAS>              Probe database connection and measure ping latency
   db test-url <URL>            Test connectivity to raw URL before saving
   db remove <ALIAS>            Deregister database connection
-  db query <ALIAS> <SQL>       Run parameterized SQL query via terminal
-  db tables <ALIAS>            List tables in an upstream database
+  db query <ALIAS> <SQL>       Run parameterized SQL query via terminal (--params, --timeout)
+  db tables <ALIAS>            List tables in an upstream database (--cursor, --limit)
   db schema <ALIAS> <TABLE>    Describe table columns, indices, and foreign keys
-  db rows <ALIAS> <TABLE>      Fetch rows with limit, offset, and sorting
-  blob put <NS> <KEY>          Upload file into blob namespace
-  blob get <NS> <KEY>          Download object from blob namespace
+  db rows <ALIAS> <TABLE>      Fetch rows with limit, offset, sorting, and filter
+  db insert <ALIAS> <TABLE>    Insert row object or array (--data '{"col":"val"}')
+  db update <ALIAS> <TABLE>    Update rows matching filter (<FILTER> <UPDATE>)
+  db delete-rows <ALIAS> <TB>  Delete rows matching mandatory filter (<FILTER>)
+  db add-column <ALIAS> <TB>   Safely append a column to a table (<COL> <TYPE>)
+
+BLOB STORAGE & TICKETS:
+  blob put <NS> <KEY> <FILE>   Upload local file (or stdin '-') into namespace (--ttl, -t MIME)
+  blob get <NS> <KEY>          Download object from blob namespace (--output, --ticket)
+  blob head <NS> <KEY>         Inspect object metadata (headers, size, BLAKE3 hash, TTL)
   blob delete <NS> <KEY>       Delete object from blob namespace
-  blob list <NS>               List objects stored in namespace
-  blob stats                   Display blob engine storage metrics and deduplication ratio
-  blob ticket <NS> <KEY>       Generate capability ticket for key
-  key create                   Generate scoped API machine key
-  key list                     List active API keys and attached roles
-  key rotate <NAME>            Atomically roll secret for an API key
+  blob list <NS>               List objects stored in namespace (--prefix, --cursor, --limit)
+  blob copy <SRC> <DST>        Copy object or directory prefix (--prefix, --dest-namespace)
+  blob move <SRC> <DST>        Move or rename object or directory prefix (--prefix)
+  blob delete-prefix <NS> <P>  Bulk delete all objects matching prefix
+  blob verify <NS> <KEY>       Cryptographically verify blob integrity on disk
+  blob stats                   Display blob storage utilization and deduplication ratio
+  blob scrub                   Storage-wide cryptographic integrity audit of all blobs
+  blob sweep                   Manually trigger expired object cleanup (TTL sweep)
+  blob ticket <NS> <KEY>       Generate pre-signed capability download ticket URL
+  blob ns list                 List storage namespaces and quota limits
+  blob ns create <NS>          Create storage namespace (--max-bytes)
+  blob ns update <NS>          Update namespace quota or rename (--max-bytes, --new-name)
+  blob ns delete <NS>          Delete namespace and all contained objects
+
+API KEYS & ACCESS TOKENS:
+  key create                   Generate scoped API machine key (--name, --role, --secret)
+  key list                     List active API keys, attached roles, and expiration
+  key rotate <NAME>            Atomically roll cryptographic secret for an API key
   key delete <NAME>            Revoke and delete API key
-  role create                  Create an RBAC role with permissions JSON
+
+RBAC ROLES & PERMISSIONS:
+  role create                  Create an RBAC role with permissions JSON (--permissions)
   role list                    List roles and permission matrices
-  role update <NAME>           Update permission matrix for a role
+  role update <NAME>           Update permission matrix or description for a role
   role delete <NAME>           Remove an RBAC role
+
+CACHE OPERATIONS:
   cache stats                  Inspect L1 RAM and L2 disk cache utilization
-  cache flush                  Flush all transient caches
+  cache flush                  Flush all transient cache entries
+
+CONFIGURATION TOOLING:
+  config init                  Initialize a new default config.toml file (--path, --to-env)
+  config to-env                Convert config.toml into an environment variable .env file
+  config show                  Validate and display active configuration values
+
+SYSTEM & TELEMETRY:
   health                       Check gateway status and reachability
-  ready                        Execute readiness probe
+  ready                        Execute upstream readiness probe
   metrics                      Dump Prometheus exposition metrics
-  audit                        Query immutable control plane audit history
+  audit                        Query immutable control plane audit history (--limit, --offset)
   reload                       Force instant synchronization of metadata snapshots
-  doctor                       Comprehensive environmental diagnostics
-  benchmark                    Run high-concurrency local load benchmark
 ```
 
 All commands support `--json` and `--jsonl` flags for clean script and CI/CD piping.
