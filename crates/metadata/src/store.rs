@@ -1798,7 +1798,7 @@ mod tests {
         let found_user: String = found_row.get(0).unwrap();
         assert_eq!(found_user, "admin_test");
 
-        let _ = std::fs::remove_file(&db_path.replace("file:", ""));
+        let _ = std::fs::remove_file(db_path.replace("file:", ""));
     }
 
     #[tokio::test]
@@ -1860,7 +1860,7 @@ mod tests {
             .unwrap();
         assert_eq!(affected, 1);
 
-        let _ = std::fs::remove_file(&db_path.replace("file:", ""));
+        let _ = std::fs::remove_file(db_path.replace("file:", ""));
     }
 
     #[tokio::test]
@@ -1907,7 +1907,7 @@ mod tests {
         let check_revoked: i64 = check_row.get(0).unwrap();
         assert_eq!(check_revoked, 1);
 
-        let _ = std::fs::remove_file(&db_path.replace("file:", ""));
+        let _ = std::fs::remove_file(db_path.replace("file:", ""));
     }
 
     #[tokio::test]
@@ -1935,7 +1935,7 @@ mod tests {
         let s2: String = row.get(0).unwrap();
         assert_eq!(s1, s2);
 
-        let _ = std::fs::remove_file(&db_path.replace("file:", ""));
+        let _ = std::fs::remove_file(db_path.replace("file:", ""));
     }
 }
 

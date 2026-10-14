@@ -1517,7 +1517,7 @@ mod tests {
 
         super::AST_CACHE.insert(cache_key.clone(), info);
         let cached = super::AST_CACHE.get(&cache_key).expect("cached AST entry should exist");
-        assert_eq!(cached.is_mutation, false);
+        assert!(!cached.is_mutation);
         assert_eq!(cached.operations[0].0, "SELECT");
         assert_eq!(cached.operations[0].1, vec!["users".to_string()]);
         assert_eq!(cached.formatted_sql.as_deref(), Some("SELECT id, name, email FROM users WHERE status = $1 AND active = true"));
@@ -1564,11 +1564,11 @@ mod tests {
         let normal_ttl = 60u64;
         let negative_ttl = 5u64;
 
-        let is_empty_1 = empty_result.rows.as_ref().map_or(true, |r| r.is_empty());
+        let is_empty_1 = empty_result.rows.as_ref().is_none_or(|r| r.is_empty());
         let effective_ttl_1 = if is_empty_1 { negative_ttl } else { normal_ttl };
         assert_eq!(effective_ttl_1, 5);
 
-        let is_empty_2 = populated_result.rows.as_ref().map_or(true, |r| r.is_empty());
+        let is_empty_2 = populated_result.rows.as_ref().is_none_or(|r| r.is_empty());
         let effective_ttl_2 = if is_empty_2 { negative_ttl } else { normal_ttl };
         assert_eq!(effective_ttl_2, 60);
     }

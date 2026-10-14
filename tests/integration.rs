@@ -1297,7 +1297,7 @@ async fn blob_storage_chunked_upload_lifecycle() {
     let upload_id = init_json["data"]["upload_id"].as_str().unwrap();
 
     // 2. Upload part 1
-    let part1_req = Request::put(&format!("/api/v1/blobs/multichunk/uploads/{}/parts/1", upload_id))
+    let part1_req = Request::put(format!("/api/v1/blobs/multichunk/uploads/{}/parts/1", upload_id))
         .header("X-Axiom-Key", &admin_token)
         .body(Body::from(b"CHUNK1_DATA_".to_vec()))
         .unwrap();
@@ -1305,7 +1305,7 @@ async fn blob_storage_chunked_upload_lifecycle() {
     assert_eq!(part1_res.status(), StatusCode::OK);
 
     // 3. Upload part 2
-    let part2_req = Request::put(&format!("/api/v1/blobs/multichunk/uploads/{}/parts/2", upload_id))
+    let part2_req = Request::put(format!("/api/v1/blobs/multichunk/uploads/{}/parts/2", upload_id))
         .header("X-Axiom-Key", &admin_token)
         .body(Body::from(b"CHUNK2_DATA".to_vec()))
         .unwrap();
@@ -1313,7 +1313,7 @@ async fn blob_storage_chunked_upload_lifecycle() {
     assert_eq!(part2_res.status(), StatusCode::OK);
 
     // 4. Complete upload
-    let complete_req = Request::post(&format!("/api/v1/blobs/multichunk/uploads/{}/complete", upload_id))
+    let complete_req = Request::post(format!("/api/v1/blobs/multichunk/uploads/{}/complete", upload_id))
         .header("X-Axiom-Key", &admin_token)
         .body(Body::empty())
         .unwrap();
