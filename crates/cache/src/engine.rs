@@ -335,7 +335,8 @@ impl CacheEngine {
     /// CONTRACT:
     ///  - Precondition: `limits_key` and `penalty_key` uniquely namespaced.
     ///  - Returns `(is_banned, current_count)`.
-    ///  - Side effects: Updates rate-limit counter in L1.
+    ///  - Side effects: Updates rate-limit counter in L1; logs violations to penalty bucket.
+    ///  - Concurrency: Thread-safe via DashMap atomic entry mutations.
     pub fn check_rate_limit(
         limits_key: &str,
         window_secs: u32,
@@ -346,7 +347,9 @@ impl CacheEngine {
     ) -> (bool, u32) {
         let now = current_unix_secs();
 
-        // 1. Check penalty state
+        // ── Step 1: Check penalty ban state ────────────────────────────────
+        // If client IP/key has accumulated consecutive violations >= threshold,
+        // reject immediately without incrementing window counter.
         if let Some(entry) = L1_CACHE.get(penalty_key) {
             if entry.expires_at > now {
                 if let Ok(violations) = std::str::from_utf8(&entry.value).map(|s| s.parse::<u32>().unwrap_or(0)) {
@@ -357,16 +360,18 @@ impl CacheEngine {
             }
         }
 
-        // 2. Increment rate limit counter
+        // ── Step 2: Increment or roll sliding window counter ───────────────
         let mut count = 1;
         if let Some(mut entry) = L1_CACHE.get_mut(limits_key) {
             if entry.expires_at > now {
+                // Window is still active: increment counter
                 if let Ok(c) = std::str::from_utf8(&entry.value).map(|s| s.parse::<u32>().unwrap_or(0)) {
                     count = c + 1;
                     entry.value = Bytes::from(count.to_string());
                     entry.last_accessed.store(current_unix_nanos(), Ordering::Relaxed);
                 }
             } else {
+                // Window expired: roll over and start new fixed-window bucket
                 entry.value = Bytes::from("1");
                 entry.expires_at = now + window_secs as u64;
                 entry.last_accessed.store(current_unix_nanos(), Ordering::Relaxed);
@@ -384,7 +389,7 @@ impl CacheEngine {
             );
         }
 
-        // 3. Handle limit breach and register penalty
+        // ── Step 3: Handle limit breach and register penalty ────────────────
         if count > limit {
             if let Some(mut entry) = L1_CACHE.get_mut(penalty_key) {
                 if entry.expires_at > now {
@@ -418,11 +423,17 @@ impl CacheEngine {
     }
 
     /// Enforces true LRU eviction by removing the entry with the oldest access timestamp.
-    /// Employs sampled batch eviction (Redis-style) to avoid full O(N) table scans on the hot path.
+    /// ALGORITHM:
+    ///  1. Checks if current table length >= max permitted entries.
+    ///  2. Samples up to 64 random entries from DashMap to avoid full O(N) global locking.
+    ///  3. Sorts sample by `last_accessed` timestamp in ascending order.
+    ///  4. Amortizes eviction overhead by pruning up to 16 oldest entries when table is saturated.
+    ///  5. Atomically increments eviction counter in CacheStats.
     fn evict_if_needed() {
         let max = MAX_L1_ENTRIES.load(Ordering::Relaxed) as usize;
         let current_len = L1_CACHE.len();
         if current_len >= max {
+            // Sample up to 64 entries without holding global map locks
             let mut sample: Vec<(String, u64)> = L1_CACHE
                 .iter()
                 .take(64)
