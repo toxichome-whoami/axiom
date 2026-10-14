@@ -35,9 +35,9 @@ API keys and database connections are managed live via the Web UI or Admin API, 
 | `body_limit` | string | `"10 MB"` | Max request body. Accepts `"10mb"`, `"1gb"`, etc. |
 | `tls_cert` | string | `""` | Path to TLS certificate (PEM). Leave blank for plain HTTP. |
 | `tls_key` | string | `""` | Path to TLS private key (PEM). |
-| `allowed_ips` | string[] | `[]` | IPs exempt from rate limiting. Supports trailing `*` wildcard. |
+| `allowed_ips` | string[] | `[]` | Exact IPs exempt from rate limiting. `host:port` entries (e.g. `"localhost:4500"`) never match and are rejected with a warning; `*` wildcards must end at an octet boundary (`"10.0.0.*"`). |
 | `trusted_proxies` | string[] | `["127.0.0.1"]` | IPs trusted to set `X-Forwarded-For`. Using `"*"` is insecure — logs a warning. |
-| `cors_origins` | string[] | `["*"]` | Allowed CORS origins. Replace `"*"` with explicit origins for production. |
+| `cors_origins` | string[] | `[]` | Same-origin only by default. Set explicit origins in prod (e.g. `["https://app.example.com"]`); `"*"` logs a startup warning. |
 | `shutdown_timeout` | int | `30` | Seconds to wait for active requests during graceful shutdown. |
 
 ---
@@ -116,7 +116,7 @@ Axiom includes an embedded content-addressed object store with an LSM metadata i
 | `inline_max` | string | `"64kb"` | Payloads `<=` this size are stored inline inside the LSM database. Accepts size strings (`"64kb"`, `"128kb"`). |
 | `max_object` | string | `"5gb"` | Hard cap on maximum single blob upload size. Accepts size strings (`"1gb"`, `"5gb"`). |
 | `verify_reads` | bool | `false` | When true, re-computes BLAKE3 hash on every read operation to detect bit rot. |
-| `ticket_secret` | string | `"..."` | Secret key used to HMAC-sign pre-signed capability download tickets. Change in production. |
+| `ticket_secret` | string | `""` | Key for BLAKE3 ticket MACs. Empty (default) → ephemeral per-boot secret + warning (tickets invalidate on restart). Set a long random value in production. |
 
 ---
 
@@ -142,14 +142,6 @@ Axiom includes an embedded content-addressed object store with an LSM metadata i
 | `query_cache_size` | int | `2048` | Max entries in the in-memory AST cache. |
 | `transpiler_cache_size` | int | `4096` | Internal transpiler slot budget (reserved, not actively used). |
 | `rate_limit_cache_size` | int | `256` | Rate limit metadata lookup slots (reserved). |
-
----
-
-## `[features]`
-
-| Key | Type | Default | Notes |
-|-----|------|---------|-------|
-| `database` | bool | `true` | Enable the SQL database gateway (`/api/v1/db`). |
 
 ---
 

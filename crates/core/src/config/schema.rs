@@ -47,20 +47,6 @@ impl Default for ServerConfig {
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 #[serde(default)]
-pub struct FeaturesConfig {
-    pub database: bool,
-}
-
-impl Default for FeaturesConfig {
-    fn default() -> Self {
-        Self {
-            database: true,
-        }
-    }
-}
-
-#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
-#[serde(default)]
 pub struct LoggingConfig {
     pub enabled: bool,
     pub level: String,
@@ -298,7 +284,6 @@ impl Default for BlobConfig {
 pub struct AxiomConfig {
     pub server: ServerConfig,
     pub version: String,
-    pub features: FeaturesConfig,
     pub logging: LoggingConfig,
     pub rate_limit: RateLimitConfig,
     pub cache: CacheConfig,
@@ -315,7 +300,6 @@ impl Default for AxiomConfig {
         Self {
             server: ServerConfig::default(),
             version: "3.0.1".to_string(),
-            features: FeaturesConfig::default(),
             logging: LoggingConfig::default(),
             rate_limit: RateLimitConfig::default(),
             cache: CacheConfig::default(),

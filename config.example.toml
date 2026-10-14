@@ -21,11 +21,6 @@ trusted_proxies = ["127.0.0.1"]  # Proxies to trust for X-Forwarded-For headers
 cors_origins = ["*"]             # Allowed CORS origins
 shutdown_timeout = 30            # Seconds to wait for active requests during shutdown
 
-# ─── Modular Features ─────────────────────────────────
-# Toggle major subsystems to minimize RAM and CPU footprint.
-[features]
-database = true                  # Enable SQL Database Gateway
-
 # ─── Logging ──────────────────────────────────────────
 [logging]
 enabled = true                   # false = suppress all logging
