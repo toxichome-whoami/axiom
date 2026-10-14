@@ -12,14 +12,16 @@ use axiom_core::{AxiomError, AuthContext, ServerMode};
 pub struct PolicyEngine;
 
 impl PolicyEngine {
+// ─── SQL Database Policy Evaluation ─────────────────────────────────────────
+
     /// Evaluates whether an authenticated identity has permission to perform an operation on a database table.
     /// CONTRACT:
     ///  - Precondition: `auth` contains verified identity context from authentication middleware.
     ///  - Precondition: `operation` should be one of "SELECT", "INSERT", "UPDATE", "DELETE", or "*" (case-insensitive).
     ///  - Returns `Ok(())` if authorized.
-    ///  - Throws `AxiomError(FORBIDDEN, 403)` if permission is denied.
+    ///  - Throws `AxiomError(AUTH_FORBIDDEN, 403)` or `AxiomError(AUTH_SCOPE_DENIED, 403)` if permission is denied.
     ///  - Side effects: None (pure evaluator).
-    ///  - Idempotent: Yes.
+    ///  - Concurrency: Zero locks, zero dynamic allocations on hot path.
     pub fn evaluate(
         auth: &AuthContext,
         database: &str,
@@ -36,7 +38,9 @@ impl PolicyEngine {
             let op_normalized = operation.to_ascii_uppercase();
 
             for perm in &auth.permissions {
+                // Database match: explicit wildcard "*" or case-insensitive alias match
                 let db_match = perm.database == "*" || perm.database.eq_ignore_ascii_case(database);
+                // Table match: explicit wildcard "*" or case-insensitive table name match
                 let table_match = perm.table_name == "*" || perm.table_name.eq_ignore_ascii_case(table);
 
                 if db_match && table_match {
@@ -114,6 +118,8 @@ impl PolicyEngine {
         }
     }
 
+// ─── Resource Listing Filters ───────────────────────────────────────────────
+
     /// Filters a list of database aliases to only those accessible to the current identity.
     /// 
     /// CONTRACT:
@@ -174,11 +180,14 @@ impl PolicyEngine {
             .collect()
     }
 
+// ─── Native Blob Storage Policy Evaluation ──────────────────────────────────
+
     /// Evaluates authorization for native blob storage operations.
     /// CONTRACT:
     ///  - Precondition: `operation` is "READ", "WRITE", or "DELETE" (case-insensitive).
     ///  - Checks granular permissions matching `*`, `namespace`, or `blob:{namespace}`.
-    ///  - Throws `AxiomError(FORBIDDEN, 403)` on unauthorized access.
+    ///  - Throws `AxiomError(AUTH_FORBIDDEN, 403)` or `AxiomError(AUTH_SCOPE_DENIED, 403)` on unauthorized access.
+    ///  - Invariant: Capability tickets can NEVER execute DELETE operations regardless of mode.
     ///  - Idempotent: Yes.
     pub fn evaluate_blob(
         auth: &AuthContext,
