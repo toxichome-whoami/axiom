@@ -19,16 +19,19 @@ pub fn get_router() -> Router {
         .route("/:namespace/ticket", post(create_ticket_handler))
         .route("/:namespace/uploads", post(init_upload_handler))
         .route(
+            "/:namespace/uploads/:upload_id",
+            get(get_upload_status_handler)
+                .put(upload_chunk_handler)
+                .patch(upload_chunk_handler)
+                .delete(abort_upload_handler),
+        )
+        .route(
             "/:namespace/uploads/:upload_id/parts/:part",
             put(put_part_handler),
         )
         .route(
             "/:namespace/uploads/:upload_id/complete",
             post(complete_upload_handler),
-        )
-        .route(
-            "/:namespace/uploads/:upload_id",
-            axum::routing::delete(abort_upload_handler),
         )
         .route(
             "/:namespace/*key",

@@ -21,7 +21,8 @@ use axum::{
 use bytes::Bytes;
 use serde::Deserialize;
 use serde_json::json;
-use tokio_util::io::ReaderStream;
+use tokio_util::io::{ReaderStream, StreamReader};
+use futures::TryStreamExt;
 
 /// Converts internal `BlobError` into an appropriate public `AxiomError` HTTP response.
 fn map_blob_error(err: BlobError) -> AxiomError {
@@ -82,6 +83,11 @@ fn map_blob_error(err: BlobError) -> AxiomError {
             "BLOB_UPLOAD_SESSION_NOT_FOUND",
             &format!("Upload session '{}' not found or expired", id),
             StatusCode::NOT_FOUND,
+        ),
+        BlobError::OffsetMismatch { expected, actual } => AxiomError::new(
+            "UPLOAD_OFFSET_MISMATCH",
+            &format!("Upload offset mismatch: expected offset {}, but received {}", expected, actual),
+            StatusCode::CONFLICT,
         ),
         BlobError::Io(msg) => AxiomError::new(
             "STORAGE_IO_ERROR",
@@ -1023,39 +1029,363 @@ pub async fn delete_ticket_handler(
 pub struct InitUploadRequest {
     pub key: String,
     pub content_type: Option<String>,
+    pub total_size: Option<u64>,
+    pub checksum: Option<String>,
     pub ttl_seconds: Option<u64>,
 }
 
-/// Starts an asynchronous chunked upload session for large objects.
+/// Helper function to parse HTTP Content-Range header: `bytes START-END/TOTAL` or `bytes START-END/*`.
+fn parse_content_range_header(header_val: &str) -> Result<(u64, Option<u64>, Option<u64>), AxiomError> {
+    let s = header_val.trim();
+    let s = s.strip_prefix("bytes ").unwrap_or(s);
+    let parts: Vec<&str> = s.split('/').collect();
+    if parts.is_empty() {
+        return Err(AxiomError::new("BAD_RANGE", "Invalid Content-Range format", StatusCode::BAD_REQUEST));
+    }
+
+    let total_size = if parts.len() > 1 && parts[1] != "*" {
+        parts[1].parse::<u64>().ok()
+    } else {
+        None
+    };
+
+    let range_part = parts[0].trim();
+    let range_nums: Vec<&str> = range_part.split('-').collect();
+    if range_nums.len() == 2 {
+        let start = range_nums[0].parse::<u64>().map_err(|_| {
+            AxiomError::new("BAD_RANGE", "Invalid start offset in Content-Range", StatusCode::BAD_REQUEST)
+        })?;
+        let end = range_nums[1].parse::<u64>().map_err(|_| {
+            AxiomError::new("BAD_RANGE", "Invalid end offset in Content-Range", StatusCode::BAD_REQUEST)
+        })?;
+        if start > end {
+            return Err(AxiomError::new("BAD_RANGE", "Content-Range start exceeds end", StatusCode::BAD_REQUEST));
+        }
+        Ok((start, Some(end), total_size))
+    } else if range_nums.len() == 1 {
+        let start = range_nums[0].parse::<u64>().map_err(|_| {
+            AxiomError::new("BAD_RANGE", "Invalid start offset in Content-Range", StatusCode::BAD_REQUEST)
+        })?;
+        Ok((start, None, total_size))
+    } else {
+        Err(AxiomError::new("BAD_RANGE", "Invalid Content-Range specification", StatusCode::BAD_REQUEST))
+    }
+}
+
+/// Starts an asynchronous resumable upload session for large objects.
 pub async fn init_upload_handler(
     Path(namespace): Path<String>,
     Extension(auth): Extension<AuthContext>,
+    headers: HeaderMap,
     Json(payload): Json<InitUploadRequest>,
-) -> Result<impl IntoResponse, AxiomError> {
+) -> Result<Response, AxiomError> {
     PolicyEngine::evaluate_blob(&auth, &namespace, &payload.key, "WRITE")?;
 
     let engine = get_blob_engine()?;
+
+    // Fall back to headers if total_size or content_type were not specified in JSON body
+    let content_type = payload
+        .content_type
+        .as_deref()
+        .or_else(|| headers.get("X-Upload-Content-Type").and_then(|h| h.to_str().ok()));
+
+    let total_size = payload.total_size.or_else(|| {
+        headers
+            .get("X-Upload-Content-Length")
+            .and_then(|h| h.to_str().ok())
+            .and_then(|v| v.parse::<u64>().ok())
+    });
+
+    let owner = if auth.is_session {
+        "admin".to_string()
+    } else {
+        auth.api_key_name.clone()
+    };
+
     let session = engine
-        .init_chunked_upload(
+        .init_resumable_upload(
             &namespace,
             &payload.key,
-            payload.content_type.as_deref(),
+            content_type,
+            total_size,
+            payload.checksum.as_deref(),
+            Some(&owner),
             payload.ttl_seconds,
         )
         .await
         .map_err(map_blob_error)?;
 
-    Ok((
-        StatusCode::CREATED,
-        Json(json!({
-            "success": true,
-            "data": session,
-            "error": serde_json::Value::Null
-        })),
-    ))
+    let location = format!(
+        "/api/v1/blobs/{}/uploads/{}",
+        urlencoding::encode(&namespace),
+        session.upload_id
+    );
+
+    let body_json = json!({
+        "success": true,
+        "data": session,
+        "error": serde_json::Value::Null
+    });
+
+    Response::builder()
+        .status(StatusCode::CREATED)
+        .header(header::LOCATION, location)
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(serde_json::to_vec(&body_json).unwrap_or_default()))
+        .map_err(|e| AxiomError::new("HTTP_ERROR", &e.to_string(), StatusCode::INTERNAL_SERVER_ERROR))
 }
 
-/// Uploads an individual chunk part into an active upload session.
+/// Queries the server-confirmed upload offset and session status.
+pub async fn get_upload_status_handler(
+    Path((namespace, upload_id)): Path<(String, String)>,
+    Extension(auth): Extension<AuthContext>,
+) -> Result<Response, AxiomError> {
+    let engine = get_blob_engine()?;
+    let session = engine
+        .get_upload_session(&upload_id)
+        .map_err(map_blob_error)?
+        .ok_or_else(|| AxiomError::new("UPLOAD_SESSION_NOT_FOUND", "Upload session not found", StatusCode::NOT_FOUND))?;
+
+    if session.namespace != namespace {
+        return Err(AxiomError::new("INVALID_NAMESPACE", "Upload session belongs to different namespace", StatusCode::BAD_REQUEST));
+    }
+
+    PolicyEngine::evaluate_blob(&auth, &namespace, &session.key, "WRITE")?;
+
+    // Prevent cross-identity upload hijacking
+    if !auth.is_session {
+        if let Some(ref owner) = session.owner {
+            if owner != &auth.api_key_name {
+                return Err(AxiomError::new(
+                    "AUTH_FORBIDDEN",
+                    "Upload session was created by a different identity",
+                    StatusCode::FORBIDDEN,
+                ));
+            }
+        }
+    }
+
+    let offset = engine.get_upload_offset(&upload_id).await.map_err(map_blob_error)?;
+
+    let mut res_builder = Response::builder()
+        .status(StatusCode::from_u16(308).unwrap_or(StatusCode::OK))
+        .header(header::CONTENT_TYPE, "application/json")
+        .header("Upload-Offset", offset.to_string())
+        .header("X-Upload-Offset", offset.to_string());
+
+    if offset > 0 {
+        res_builder = res_builder.header("Range", format!("bytes=0-{}", offset - 1));
+    }
+
+    if let Some(total) = session.total_size {
+        res_builder = res_builder.header("Upload-Length", total.to_string());
+    }
+
+    let body_json = json!({
+        "success": true,
+        "data": {
+            "upload_id": upload_id,
+            "namespace": namespace,
+            "key": session.key,
+            "offset": offset,
+            "total_size": session.total_size,
+            "completed": false,
+            "expires_at": session.expires_at,
+        },
+        "error": serde_json::Value::Null
+    });
+
+    res_builder
+        .body(Body::from(serde_json::to_vec(&body_json).unwrap_or_default()))
+        .map_err(|e| AxiomError::new("HTTP_ERROR", &e.to_string(), StatusCode::INTERNAL_SERVER_ERROR))
+}
+
+/// Receives an arbitrary chunk / byte range for an active resumable upload session.
+/// Streams request body directly to disk with bounded memory usage, persists via fsync,
+/// validates byte offsets, and finalizes automatically upon receiving the final byte.
+pub async fn upload_chunk_handler(
+    Path((namespace, upload_id)): Path<(String, String)>,
+    Extension(auth): Extension<AuthContext>,
+    headers: HeaderMap,
+    body: Body,
+) -> Result<Response, AxiomError> {
+    let engine = get_blob_engine()?;
+    let session = engine
+        .get_upload_session(&upload_id)
+        .map_err(map_blob_error)?
+        .ok_or_else(|| AxiomError::new("UPLOAD_SESSION_NOT_FOUND", "Upload session not found", StatusCode::NOT_FOUND))?;
+
+    if session.namespace != namespace {
+        return Err(AxiomError::new("INVALID_NAMESPACE", "Upload session belongs to different namespace", StatusCode::BAD_REQUEST));
+    }
+
+    PolicyEngine::evaluate_blob(&auth, &namespace, &session.key, "WRITE")?;
+
+    if !auth.is_session {
+        if let Some(ref owner) = session.owner {
+            if owner != &auth.api_key_name {
+                return Err(AxiomError::new(
+                    "AUTH_FORBIDDEN",
+                    "Upload session was created by a different identity",
+                    StatusCode::FORBIDDEN,
+                ));
+            }
+        }
+    }
+
+    let content_range = headers.get(header::CONTENT_RANGE).and_then(|h| h.to_str().ok());
+    let upload_offset_hdr = headers.get("Upload-Offset").or_else(|| headers.get("X-Upload-Offset")).and_then(|h| h.to_str().ok());
+
+    // Status inquiry query via PUT (standard YouTube / Google Cloud Storage resumable upload protocol)
+    if let Some(cr) = content_range {
+        let cr_trim = cr.trim();
+        if cr_trim.starts_with("bytes */") || cr_trim == "bytes */*" {
+            return get_upload_status_handler(Path((namespace, upload_id)), Extension(auth)).await;
+        }
+    }
+
+    let (start_offset, end_offset, total_size_hdr) = if let Some(cr) = content_range {
+        parse_content_range_header(cr)?
+    } else if let Some(uo) = upload_offset_hdr {
+        let offset = uo.parse::<u64>().map_err(|_| {
+            AxiomError::new("BAD_HEADER", "Invalid Upload-Offset header", StatusCode::BAD_REQUEST)
+        })?;
+        (offset, None, None)
+    } else {
+        let current = engine.get_upload_offset(&upload_id).await.map_err(map_blob_error)?;
+        (current, None, None)
+    };
+
+    let current_persisted = engine.get_upload_offset(&upload_id).await.map_err(map_blob_error)?;
+
+    // Handle offset gaps
+    if start_offset > current_persisted {
+        let mut res = Response::builder()
+            .status(StatusCode::CONFLICT)
+            .header(header::CONTENT_TYPE, "application/json")
+            .header("Upload-Offset", current_persisted.to_string())
+            .header("X-Upload-Offset", current_persisted.to_string());
+        if current_persisted > 0 {
+            res = res.header("Range", format!("bytes=0-{}", current_persisted - 1));
+        }
+        let body_json = json!({
+            "success": false,
+            "data": serde_json::Value::Null,
+            "error": {
+                "code": "UPLOAD_OFFSET_MISMATCH",
+                "message": format!("Expected upload offset {}, but request started at {}", current_persisted, start_offset)
+            }
+        });
+        return res
+            .body(Body::from(serde_json::to_vec(&body_json).unwrap_or_default()))
+            .map_err(|e| AxiomError::new("HTTP_ERROR", &e.to_string(), StatusCode::INTERNAL_SERVER_ERROR));
+    }
+
+    // Handle retransmitted duplicate chunks (idempotent acknowledge)
+    if let Some(end) = end_offset {
+        if end < current_persisted {
+            let mut res = Response::builder()
+                .status(StatusCode::from_u16(308).unwrap_or(StatusCode::OK))
+                .header(header::CONTENT_TYPE, "application/json")
+                .header("Upload-Offset", current_persisted.to_string())
+                .header("X-Upload-Offset", current_persisted.to_string());
+            if current_persisted > 0 {
+                res = res.header("Range", format!("bytes=0-{}", current_persisted - 1));
+            }
+            let body_json = json!({
+                "success": true,
+                "data": {
+                    "upload_id": upload_id,
+                    "namespace": namespace,
+                    "key": session.key,
+                    "offset": current_persisted,
+                    "total_size": session.total_size.or(total_size_hdr),
+                    "completed": false,
+                },
+                "error": serde_json::Value::Null
+            });
+            return res
+                .body(Body::from(serde_json::to_vec(&body_json).unwrap_or_default()))
+                .map_err(|e| AxiomError::new("HTTP_ERROR", &e.to_string(), StatusCode::INTERNAL_SERVER_ERROR));
+        }
+    }
+
+    let max_bytes = end_offset.map(|end| (end - start_offset) + 1);
+
+    let stream = body
+        .into_data_stream()
+        .map_err(std::io::Error::other);
+    let mut reader = StreamReader::new(stream);
+
+    let written = engine
+        .write_resumable_stream(&upload_id, start_offset, &mut reader, max_bytes)
+        .await
+        .map_err(map_blob_error)?;
+
+    let new_offset = start_offset + written;
+
+    // Check completion condition
+    let is_complete = match (session.total_size, total_size_hdr) {
+        (Some(t), _) => new_offset >= t,
+        (None, Some(t)) => new_offset >= t,
+        (None, None) => false,
+    };
+
+    if is_complete && new_offset > 0 {
+        let meta = engine.finalize_resumable_upload(&upload_id).await.map_err(map_blob_error)?;
+
+        let actor = if auth.is_session { "admin" } else { &auth.api_key_name };
+        let target = format!("{}/{}", namespace, session.key);
+        let details = format!("hash={}, size={}, resumable=true", meta.hash, meta.size);
+        let _ = MetadataStore::record_audit(actor, "blob.resumable_upload_complete", &target, Some(&details)).await;
+
+        let body_json = json!({
+            "success": true,
+            "data": meta,
+            "error": serde_json::Value::Null
+        });
+
+        return Response::builder()
+            .status(StatusCode::CREATED)
+            .header(header::CONTENT_TYPE, "application/json")
+            .header("Upload-Offset", meta.size.to_string())
+            .header("ETag", format!("\"{}\"", meta.hash))
+            .body(Body::from(serde_json::to_vec(&body_json).unwrap_or_default()))
+            .map_err(|e| AxiomError::new("HTTP_ERROR", &e.to_string(), StatusCode::INTERNAL_SERVER_ERROR));
+    }
+
+    let mut res = Response::builder()
+        .status(StatusCode::from_u16(308).unwrap_or(StatusCode::OK))
+        .header(header::CONTENT_TYPE, "application/json")
+        .header("Upload-Offset", new_offset.to_string())
+        .header("X-Upload-Offset", new_offset.to_string());
+
+    if new_offset > 0 {
+        res = res.header("Range", format!("bytes=0-{}", new_offset - 1));
+    }
+
+    if let Some(total) = session.total_size.or(total_size_hdr) {
+        res = res.header("Upload-Length", total.to_string());
+    }
+
+    let body_json = json!({
+        "success": true,
+        "data": {
+            "upload_id": upload_id,
+            "namespace": namespace,
+            "key": session.key,
+            "offset": new_offset,
+            "total_size": session.total_size.or(total_size_hdr),
+            "completed": false
+        },
+        "error": serde_json::Value::Null
+    });
+
+    res.body(Body::from(serde_json::to_vec(&body_json).unwrap_or_default()))
+        .map_err(|e| AxiomError::new("HTTP_ERROR", &e.to_string(), StatusCode::INTERNAL_SERVER_ERROR))
+}
+
+/// Uploads an individual chunk part into an active upload session (legacy multipart).
 pub async fn put_part_handler(
     Path((namespace, upload_id, part)): Path<(String, String, u32)>,
     Extension(auth): Extension<AuthContext>,
@@ -1073,6 +1403,18 @@ pub async fn put_part_handler(
 
     PolicyEngine::evaluate_blob(&auth, &namespace, &session.key, "WRITE")?;
 
+    if !auth.is_session {
+        if let Some(ref owner) = session.owner {
+            if owner != &auth.api_key_name {
+                return Err(AxiomError::new(
+                    "AUTH_FORBIDDEN",
+                    "Upload session was created by a different identity",
+                    StatusCode::FORBIDDEN,
+                ));
+            }
+        }
+    }
+
     engine
         .write_chunk(&upload_id, part, &body)
         .await
@@ -1089,7 +1431,7 @@ pub async fn put_part_handler(
     })))
 }
 
-/// Completes a chunked upload by assembling parts and committing metadata.
+/// Completes a resumable or chunked upload by assembling parts/staging data and committing metadata.
 pub async fn complete_upload_handler(
     Path((namespace, upload_id)): Path<(String, String)>,
     Extension(auth): Extension<AuthContext>,
@@ -1106,6 +1448,18 @@ pub async fn complete_upload_handler(
 
     PolicyEngine::evaluate_blob(&auth, &namespace, &session.key, "WRITE")?;
 
+    if !auth.is_session {
+        if let Some(ref owner) = session.owner {
+            if owner != &auth.api_key_name {
+                return Err(AxiomError::new(
+                    "AUTH_FORBIDDEN",
+                    "Upload session was created by a different identity",
+                    StatusCode::FORBIDDEN,
+                ));
+            }
+        }
+    }
+
     let meta = engine
         .complete_chunked_upload(&upload_id)
         .await
@@ -1113,7 +1467,7 @@ pub async fn complete_upload_handler(
 
     let actor = if auth.is_session { "admin" } else { &auth.api_key_name };
     let target = format!("{}/{}", namespace, session.key);
-    let details = format!("hash={}, size={}, parts={}", meta.hash, meta.size, session.parts.len());
+    let details = format!("hash={}, size={}, completed=true", meta.hash, meta.size);
     let _ = MetadataStore::record_audit(actor, "blob.upload_complete", &target, Some(&details)).await;
 
     Ok(Json(json!({
@@ -1123,7 +1477,7 @@ pub async fn complete_upload_handler(
     })))
 }
 
-/// Aborts an active chunked upload and purges staging data.
+/// Aborts an active chunked or resumable upload and purges staging data.
 pub async fn abort_upload_handler(
     Path((namespace, upload_id)): Path<(String, String)>,
     Extension(auth): Extension<AuthContext>,
@@ -1139,6 +1493,18 @@ pub async fn abort_upload_handler(
     }
 
     PolicyEngine::evaluate_blob(&auth, &namespace, &session.key, "WRITE")?;
+
+    if !auth.is_session {
+        if let Some(ref owner) = session.owner {
+            if owner != &auth.api_key_name {
+                return Err(AxiomError::new(
+                    "AUTH_FORBIDDEN",
+                    "Upload session was created by a different identity",
+                    StatusCode::FORBIDDEN,
+                ));
+            }
+        }
+    }
 
     engine
         .abort_chunked_upload(&upload_id)

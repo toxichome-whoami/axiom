@@ -8,7 +8,7 @@
 
 use crate::error::BlobError;
 use std::path::{Path, PathBuf};
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeekExt, AsyncWriteExt, SeekFrom};
 
 pub struct FileStore {
     base_dir: PathBuf,
@@ -154,16 +154,187 @@ impl FileStore {
         &self.base_dir
     }
 
+    /// Computes the isolated staging directory for an active upload session.
+    pub fn staging_dir(&self, upload_id: &str) -> Result<PathBuf, BlobError> {
+        if !upload_id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+            return Err(BlobError::InvalidKey("Invalid upload session id".to_string()));
+        }
+        Ok(self.tmp_dir.join("staging").join(upload_id))
+    }
+
+    /// Computes the path to the staged append-only resumable payload file.
+    pub fn staging_data_path(&self, upload_id: &str) -> Result<PathBuf, BlobError> {
+        Ok(self.staging_dir(upload_id)?.join("data.bin"))
+    }
+
+    /// Returns the exact number of bytes successfully persisted on disk for an upload session.
+    pub async fn get_staging_size(&self, upload_id: &str) -> Result<u64, BlobError> {
+        let path = self.staging_data_path(upload_id)?;
+        if tokio::fs::try_exists(&path).await.unwrap_or(false) {
+            let meta = tokio::fs::metadata(&path).await?;
+            Ok(meta.len())
+        } else {
+            Ok(0)
+        }
+    }
+
+    /// Streams an incoming byte range directly into the staging file starting at `offset`.
+    /// CONTRACT:
+    ///  - If `offset > current_size`, returns `BlobError::OffsetMismatch` (gap protection).
+    ///  - If `offset < current_size`, truncates file back to `offset` (prevents duplicate / stale trailing bytes).
+    ///  - Writes in bounded 64KB chunks to guarantee O(1) RAM usage.
+    ///  - Calls `file.sync_data()` before returning to guarantee physical durability.
+    pub async fn write_resumable_stream<R: AsyncRead + Unpin>(
+        &self,
+        upload_id: &str,
+        offset: u64,
+        reader: &mut R,
+        max_bytes: Option<u64>,
+    ) -> Result<u64, BlobError> {
+        let staging_dir = self.staging_dir(upload_id)?;
+        tokio::fs::create_dir_all(&staging_dir).await?;
+
+        let data_path = self.staging_data_path(upload_id)?;
+        let mut file = tokio::fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .read(true)
+            .write(true)
+            .open(&data_path)
+            .await?;
+
+        let curr_len = file.metadata().await?.len();
+        if offset > curr_len {
+            return Err(BlobError::OffsetMismatch {
+                expected: curr_len,
+                actual: offset,
+            });
+        }
+
+        if curr_len > offset {
+            file.set_len(offset).await?;
+        }
+        file.seek(SeekFrom::Start(offset)).await?;
+
+        let mut buffer = vec![0u8; 64 * 1024];
+        let mut bytes_written = 0u64;
+
+        loop {
+            let to_read = match max_bytes {
+                Some(limit) => {
+                    let rem = limit.saturating_sub(bytes_written);
+                    if rem == 0 {
+                        break;
+                    }
+                    (buffer.len() as u64).min(rem) as usize
+                }
+                None => buffer.len(),
+            };
+
+            let n = reader.read(&mut buffer[..to_read]).await?;
+            if n == 0 {
+                break;
+            }
+
+            file.write_all(&buffer[..n]).await?;
+            bytes_written += n as u64;
+        }
+
+        file.sync_data().await?;
+        Ok(bytes_written)
+    }
+
+    /// Sets staging file length directly for sparse file tests without physical disk allocation.
+    pub async fn set_staging_len_for_test(&self, upload_id: &str, len: u64) -> Result<(), BlobError> {
+        let staging_dir = self.staging_dir(upload_id)?;
+        tokio::fs::create_dir_all(&staging_dir).await?;
+        let data_path = self.staging_data_path(upload_id)?;
+        let file = tokio::fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .write(true)
+            .open(&data_path)
+            .await?;
+        file.set_len(len).await?;
+        file.sync_all().await?;
+        Ok(())
+    }
+
+    /// Finalizes a resumable upload session: hashes staging data incrementally,
+    /// performs zero-copy commit into content-addressed storage, and purges staging directory.
+    pub async fn finalize_resumable_upload(&self, upload_id: &str) -> Result<(String, u64), BlobError> {
+        let staging_dir = self.staging_dir(upload_id)?;
+        let data_path = self.staging_data_path(upload_id)?;
+
+        if tokio::fs::try_exists(&data_path).await.unwrap_or(false) {
+            let mut file = tokio::fs::File::open(&data_path).await?;
+            let mut hasher = crate::hash::Blake3StreamHasher::new();
+            let mut buffer = vec![0u8; 64 * 1024];
+
+            loop {
+                let n = file.read(&mut buffer).await?;
+                if n == 0 {
+                    break;
+                }
+                hasher.update(&buffer[..n]);
+            }
+            drop(file);
+
+            let hash = hasher.finalize_hex();
+            let total_bytes = hasher.bytes_read();
+            let target_path = self.content_path(&hash)?;
+
+            // Content-addressed deduplication: if identical payload exists, discard temp file
+            if tokio::fs::try_exists(&target_path).await.unwrap_or(false) {
+                let _ = tokio::fs::remove_file(&data_path).await;
+            } else {
+                if let Some(parent) = target_path.parent() {
+                    tokio::fs::create_dir_all(parent).await?;
+                }
+                if let Err(e) = tokio::fs::rename(&data_path, &target_path).await {
+                    if !tokio::fs::try_exists(&target_path).await.unwrap_or(false) {
+                        let _ = tokio::fs::remove_file(&data_path).await;
+                        return Err(BlobError::Io(format!("Failed to commit resumable blob: {}", e)));
+                    }
+                    let _ = tokio::fs::remove_file(&data_path).await;
+                }
+            }
+
+            let _ = tokio::fs::remove_dir_all(&staging_dir).await;
+            Ok((hash, total_bytes))
+        } else {
+            // Check for legacy multipart upload parts
+            let mut part_numbers = Vec::new();
+            if tokio::fs::try_exists(&staging_dir).await.unwrap_or(false) {
+                let mut read_dir = tokio::fs::read_dir(&staging_dir).await?;
+                while let Ok(Some(entry)) = read_dir.next_entry().await {
+                    let name = entry.file_name().to_string_lossy().to_string();
+                    if name.starts_with("part_") && name.ends_with(".part") {
+                        if let Ok(num) = name["part_".len()..name.len() - ".part".len()].parse::<u32>() {
+                            part_numbers.push(num);
+                        }
+                    }
+                }
+            }
+
+            if !part_numbers.is_empty() {
+                self.assemble_upload_parts(upload_id, &part_numbers).await
+            } else {
+                Err(BlobError::UploadSessionNotFound(format!(
+                    "No staged upload data found for session '{}'",
+                    upload_id
+                )))
+            }
+        }
+    }
+
     /// Writes an individual chunk/part into upload staging storage.
     /// CONTRACT:
     ///  - Precondition: `upload_id` must consist of alphanumeric, '-', or '_' chars.
     ///  - Part numbers must be >= 1.
     ///  - Atomically creates staging folder and writes chunk file.
     pub async fn write_upload_part(&self, upload_id: &str, part_number: u32, data: &[u8]) -> Result<(), BlobError> {
-        if !upload_id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
-            return Err(BlobError::InvalidKey("Invalid upload session id".to_string()));
-        }
-        let staging_dir = self.tmp_dir.join("staging").join(upload_id);
+        let staging_dir = self.staging_dir(upload_id)?;
         tokio::fs::create_dir_all(&staging_dir).await?;
 
         let part_filename = format!("part_{:06}.part", part_number);
@@ -182,7 +353,7 @@ impl FileStore {
     ///  - Atomically commits blob to content-addressed storage and purges staging directory.
     ///  - Returns `(hash, total_bytes)`.
     pub async fn assemble_upload_parts(&self, upload_id: &str, parts: &[u32]) -> Result<(String, u64), BlobError> {
-        let staging_dir = self.tmp_dir.join("staging").join(upload_id);
+        let staging_dir = self.staging_dir(upload_id)?;
         if !tokio::fs::try_exists(&staging_dir).await.unwrap_or(false) {
             return Err(BlobError::UploadSessionNotFound(upload_id.to_string()));
         }
@@ -246,11 +417,34 @@ impl FileStore {
 
     /// Aborts an active upload session and cleans up its staged parts.
     pub async fn abort_upload_staging(&self, upload_id: &str) -> Result<(), BlobError> {
-        let staging_dir = self.tmp_dir.join("staging").join(upload_id);
+        let staging_dir = self.staging_dir(upload_id)?;
         if tokio::fs::try_exists(&staging_dir).await.unwrap_or(false) {
             tokio::fs::remove_dir_all(staging_dir).await?;
         }
         Ok(())
+    }
+
+    /// Sweeps orphaned staging directories that do not belong to active sessions.
+    pub async fn sweep_orphaned_staging(&self, active_upload_ids: &std::collections::HashSet<String>) -> Result<usize, BlobError> {
+        let staging_root = self.tmp_dir.join("staging");
+        if !tokio::fs::try_exists(&staging_root).await.unwrap_or(false) {
+            return Ok(0);
+        }
+        let mut count = 0;
+        let mut read_dir = tokio::fs::read_dir(&staging_root).await?;
+        while let Ok(Some(entry)) = read_dir.next_entry().await {
+            let path = entry.path();
+            if path.is_dir() {
+                if let Some(dir_name) = path.file_name().and_then(|n| n.to_str()) {
+                    if !active_upload_ids.contains(dir_name) {
+                        if let Ok(()) = tokio::fs::remove_dir_all(&path).await {
+                            count += 1;
+                        }
+                    }
+                }
+            }
+        }
+        Ok(count)
     }
 
     /// Verifies physical file integrity against its expected BLAKE3 hash.

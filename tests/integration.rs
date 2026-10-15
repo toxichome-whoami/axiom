@@ -1910,6 +1910,157 @@ async fn circuit_breaker_repeated_failure_tripping() {
     assert_eq!(body_json["error"]["code"], "CIRCUIT_BREAKER_OPEN");
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+//  24. Native Blob Storage HTTP Resumable Upload Lifecycle & Guarantees
+// ═══════════════════════════════════════════════════════════════════════════
 
+#[tokio::test]
+async fn blob_storage_resumable_upload_e2e_http_protocol() {
+    setup_test_metadata();
+    ensure_blob_engine().await;
 
+    let admin_token = BASE64_STANDARD.encode("admin_key:secret_admin");
+    let ns = "test_resumable_ns";
+    let key = "videos/stream_test.mp4";
+    let total_size = 20u64;
 
+    // 1. Initialize resumable upload session with X-Upload-Content-Length
+    let init_req = Request::post(format!("/api/v1/blobs/{}/uploads", ns))
+        .header("X-Axiom-Key", &admin_token)
+        .header("Content-Type", "application/json")
+        .header("X-Upload-Content-Type", "video/mp4")
+        .header("X-Upload-Content-Length", total_size.to_string())
+        .body(Body::from(serde_json::to_vec(&serde_json::json!({
+            "key": key
+        })).unwrap()))
+        .unwrap();
+
+    let init_res = create_app().oneshot(init_req).await.unwrap();
+    assert_eq!(init_res.status(), StatusCode::CREATED);
+    assert!(init_res.headers().contains_key("location"));
+    let location = init_res.headers().get("location").unwrap().to_str().unwrap().to_string();
+
+    let init_bytes = axum::body::to_bytes(init_res.into_body(), 4096).await.unwrap();
+    let init_json: Value = serde_json::from_slice(&init_bytes).unwrap();
+    let upload_id = init_json["data"]["upload_id"].as_str().unwrap().to_string();
+    assert!(location.contains(&upload_id));
+
+    // 2. Query initial status via GET (returns 308 with Upload-Offset: 0)
+    let status_req = Request::get(format!("/api/v1/blobs/{}/uploads/{}", ns, upload_id))
+        .header("X-Axiom-Key", &admin_token)
+        .body(Body::empty())
+        .unwrap();
+    let status_res = create_app().oneshot(status_req).await.unwrap();
+    assert_eq!(status_res.status(), StatusCode::PERMANENT_REDIRECT);
+    assert_eq!(status_res.headers().get("Upload-Offset").unwrap(), "0");
+    assert_eq!(status_res.headers().get("Upload-Length").unwrap(), "20");
+
+    // 3. Upload first chunk: bytes 0-7/20 (8 bytes)
+    let chunk1_req = Request::put(format!("/api/v1/blobs/{}/uploads/{}", ns, upload_id))
+        .header("X-Axiom-Key", &admin_token)
+        .header("Content-Range", "bytes 0-7/20")
+        .body(Body::from(b"CHUNK_A_".to_vec()))
+        .unwrap();
+    let chunk1_res = create_app().oneshot(chunk1_req).await.unwrap();
+    assert_eq!(chunk1_res.status(), StatusCode::PERMANENT_REDIRECT);
+    assert_eq!(chunk1_res.headers().get("Range").unwrap(), "bytes=0-7");
+    assert_eq!(chunk1_res.headers().get("Upload-Offset").unwrap(), "8");
+
+    // 4. Query status via empty PUT Content-Range: bytes */20 (status probe)
+    let probe_req = Request::put(format!("/api/v1/blobs/{}/uploads/{}", ns, upload_id))
+        .header("X-Axiom-Key", &admin_token)
+        .header("Content-Range", "bytes */20")
+        .body(Body::empty())
+        .unwrap();
+    let probe_res = create_app().oneshot(probe_req).await.unwrap();
+    assert_eq!(probe_res.status(), StatusCode::PERMANENT_REDIRECT);
+    assert_eq!(probe_res.headers().get("Range").unwrap(), "bytes=0-7");
+    assert_eq!(probe_res.headers().get("Upload-Offset").unwrap(), "8");
+
+    // 5. Duplicate chunk retry: re-sending bytes 0-7/20 must be safely handled without duplicating data
+    let dup_req = Request::put(format!("/api/v1/blobs/{}/uploads/{}", ns, upload_id))
+        .header("X-Axiom-Key", &admin_token)
+        .header("Content-Range", "bytes 0-7/20")
+        .body(Body::from(b"CHUNK_A_".to_vec()))
+        .unwrap();
+    let dup_res = create_app().oneshot(dup_req).await.unwrap();
+    assert_eq!(dup_res.status(), StatusCode::PERMANENT_REDIRECT);
+    assert_eq!(dup_res.headers().get("Upload-Offset").unwrap(), "8");
+
+    // 6. Conflicting / gap chunk: trying bytes 12-15/20 when offset is 8 must return 409 Conflict
+    let gap_req = Request::put(format!("/api/v1/blobs/{}/uploads/{}", ns, upload_id))
+        .header("X-Axiom-Key", &admin_token)
+        .header("Content-Range", "bytes 12-15/20")
+        .body(Body::from(b"GAP!".to_vec()))
+        .unwrap();
+    let gap_res = create_app().oneshot(gap_req).await.unwrap();
+    assert_eq!(gap_res.status(), StatusCode::CONFLICT);
+    assert_eq!(gap_res.headers().get("Upload-Offset").unwrap(), "8");
+
+    // 7. Resume from exact server-confirmed offset: bytes 8-19/20 (12 bytes)
+    // Reaching total length (20) triggers automatic atomic finalization
+    let chunk2_req = Request::put(format!("/api/v1/blobs/{}/uploads/{}", ns, upload_id))
+        .header("X-Axiom-Key", &admin_token)
+        .header("Content-Range", "bytes 8-19/20")
+        .body(Body::from(b"CHUNK_B_DATA".to_vec()))
+        .unwrap();
+    let chunk2_res = create_app().oneshot(chunk2_req).await.unwrap();
+    assert_eq!(chunk2_res.status(), StatusCode::CREATED);
+    let complete_bytes = axum::body::to_bytes(chunk2_res.into_body(), 4096).await.unwrap();
+    let complete_json: Value = serde_json::from_slice(&complete_bytes).unwrap();
+    assert_eq!(complete_json["success"], true);
+    assert_eq!(complete_json["data"]["size"], 20);
+
+    // 8. Download completed blob and verify exact content integrity
+    let dl_req = Request::get(format!("/api/v1/blobs/{}/{}", ns, key))
+        .header("X-Axiom-Key", &admin_token)
+        .body(Body::empty())
+        .unwrap();
+    let dl_res = create_app().oneshot(dl_req).await.unwrap();
+    assert_eq!(dl_res.status(), StatusCode::OK);
+    let dl_bytes = axum::body::to_bytes(dl_res.into_body(), 1024).await.unwrap();
+    assert_eq!(&dl_bytes[..], b"CHUNK_A_CHUNK_B_DATA");
+}
+
+#[tokio::test]
+async fn blob_storage_resumable_upload_cross_identity_protection() {
+    setup_test_metadata();
+    ensure_blob_engine().await;
+
+    let admin_token = BASE64_STANDARD.encode("admin_key:secret_admin");
+    let other_token = BASE64_STANDARD.encode("blob_wildcard_key:secret_blob_wildcard");
+    let ns = "media";
+    let key = "media/private_video.mp4";
+
+    // 1. Admin initializes upload session (owner is admin_key)
+    let init_req = Request::post(format!("/api/v1/blobs/{}/uploads", ns))
+        .header("X-Axiom-Key", &admin_token)
+        .header("Content-Type", "application/json")
+        .header("X-Upload-Content-Length", "10")
+        .body(Body::from(serde_json::to_vec(&serde_json::json!({
+            "key": key
+        })).unwrap()))
+        .unwrap();
+    let init_res = create_app().oneshot(init_req).await.unwrap();
+    assert_eq!(init_res.status(), StatusCode::CREATED);
+    let init_bytes = axum::body::to_bytes(init_res.into_body(), 4096).await.unwrap();
+    let init_json: Value = serde_json::from_slice(&init_bytes).unwrap();
+    let upload_id = init_json["data"]["upload_id"].as_str().unwrap();
+
+    // 2. Different user attempts to upload chunk into admin's session -> 403 Forbidden
+    let hijack_req = Request::put(format!("/api/v1/blobs/{}/uploads/{}", ns, upload_id))
+        .header("X-Axiom-Key", &other_token)
+        .header("Content-Range", "bytes 0-4/10")
+        .body(Body::from(b"HIJAK".to_vec()))
+        .unwrap();
+    let hijack_res = create_app().oneshot(hijack_req).await.unwrap();
+    assert_eq!(hijack_res.status(), StatusCode::FORBIDDEN);
+
+    // 3. Different user attempts to complete admin's session -> 403 Forbidden
+    let complete_req = Request::post(format!("/api/v1/blobs/{}/uploads/{}/complete", ns, upload_id))
+        .header("X-Axiom-Key", &other_token)
+        .body(Body::empty())
+        .unwrap();
+    let complete_res = create_app().oneshot(complete_req).await.unwrap();
+    assert_eq!(complete_res.status(), StatusCode::FORBIDDEN);
+}

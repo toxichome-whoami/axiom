@@ -578,6 +578,18 @@ impl BlobIndex {
         }
     }
 
+    /// Lists all active upload sessions stored in the index.
+    pub fn list_upload_sessions(&self) -> Result<Vec<crate::models::UploadSession>, BlobError> {
+        let mut sessions = Vec::new();
+        for guard in self.uploads_keyspace.iter() {
+            let (_, raw_val) = guard.into_inner()?;
+            if let Ok(session) = serde_json::from_slice::<crate::models::UploadSession>(&raw_val) {
+                sessions.push(session);
+            }
+        }
+        Ok(sessions)
+    }
+
     /// Returns a list of all distinct content hashes stored across the index for integrity scrubbing.
     pub fn list_content_hashes(&self) -> Result<Vec<String>, BlobError> {
         let mut hashes = Vec::new();

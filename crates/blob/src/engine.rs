@@ -32,6 +32,7 @@ pub struct BlobEngine {
     inline_max_bytes: u64,
     max_object_bytes: u64,
     verify_reads: bool,
+    session_locks: dashmap::DashMap<String, Arc<tokio::sync::Mutex<()>>>,
 }
 
 impl BlobEngine {
@@ -59,7 +60,16 @@ impl BlobEngine {
             inline_max_bytes,
             max_object_bytes,
             verify_reads,
+            session_locks: dashmap::DashMap::new(),
         })
+    }
+
+    /// Obtains an isolated concurrency lock for an upload session.
+    fn get_session_lock(&self, upload_id: &str) -> Arc<tokio::sync::Mutex<()>> {
+        self.session_locks
+            .entry(upload_id.to_string())
+            .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
+            .clone()
     }
 
     /// Stores a binary payload under the specified namespace and key.
@@ -590,16 +600,49 @@ impl BlobEngine {
         Ok(deleted_count)
     }
 
-    /// Initializes a new multipart / chunked upload session.
-    pub async fn init_chunked_upload(
+    /// Initializes a new resumable upload session with optional declared total size, expected checksum, and owner.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn init_resumable_upload(
         &self,
         namespace: &str,
         key: &str,
         content_type: Option<&str>,
+        total_size: Option<u64>,
+        checksum: Option<&str>,
+        owner: Option<&str>,
         ttl_seconds: Option<u64>,
     ) -> Result<UploadSession, BlobError> {
         validate_namespace(namespace)?;
         validate_key(key)?;
+
+        if let Some(total) = total_size {
+            if total > self.max_object_bytes {
+                return Err(BlobError::PayloadTooLarge {
+                    size: total,
+                    max: self.max_object_bytes,
+                });
+            }
+
+            // Check namespace quota upfront if total_size is known
+            if let Some(info) = self.index.get_namespace_info(namespace)? {
+                if let Some(max_quota) = info.max_bytes {
+                    let existing_size = self
+                        .index
+                        .get_metadata(namespace, key)?
+                        .map(|m| m.size)
+                        .unwrap_or(0);
+                    let net_bytes = info.total_bytes.saturating_sub(existing_size);
+                    if net_bytes + total > max_quota {
+                        return Err(BlobError::QuotaExceeded {
+                            namespace: namespace.to_string(),
+                            current: net_bytes,
+                            requested: total,
+                            max: max_quota,
+                        });
+                    }
+                }
+            }
+        }
 
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -616,10 +659,25 @@ impl BlobEngine {
             created_at: now,
             expires_at,
             parts: Vec::new(),
+            total_size,
+            received_bytes: 0,
+            checksum: checksum.map(|s| s.to_string()),
+            owner: owner.map(|s| s.to_string()),
         };
 
         self.index.save_upload_session(&session)?;
         Ok(session)
+    }
+
+    /// Initializes a new multipart / chunked upload session (legacy compatibility).
+    pub async fn init_chunked_upload(
+        &self,
+        namespace: &str,
+        key: &str,
+        content_type: Option<&str>,
+        ttl_seconds: Option<u64>,
+    ) -> Result<UploadSession, BlobError> {
+        self.init_resumable_upload(namespace, key, content_type, None, None, None, ttl_seconds).await
     }
 
     /// Retrieves an active upload session by its upload_id.
@@ -627,7 +685,103 @@ impl BlobEngine {
         self.index.get_upload_session(upload_id)
     }
 
-    /// Writes an individual chunk to upload staging storage.
+    /// Queries the authoritative number of bytes successfully persisted on disk for an upload session.
+    pub async fn get_upload_offset(&self, upload_id: &str) -> Result<u64, BlobError> {
+        let mut session = self
+            .index
+            .get_upload_session(upload_id)?
+            .ok_or_else(|| BlobError::UploadSessionNotFound(upload_id.to_string()))?;
+
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+        if now > session.expires_at {
+            let _ = self.abort_chunked_upload(upload_id).await;
+            return Err(BlobError::UploadSessionNotFound("Upload session expired".to_string()));
+        }
+
+        // Authoritative check: physical bytes persisted to disk
+        let disk_bytes = self.store.get_staging_size(upload_id).await?;
+        if disk_bytes != session.received_bytes {
+            session.received_bytes = disk_bytes;
+            self.index.save_upload_session(&session)?;
+        }
+
+        Ok(disk_bytes)
+    }
+
+    /// Streams an incoming byte range directly into the upload staging file starting at `offset`.
+    /// Handles concurrency via per-session mutex, enforces payload ceilings and quotas,
+    /// persists data using fsync, and updates confirmed offset in the LSM index.
+    pub async fn write_resumable_stream<R: tokio::io::AsyncRead + Unpin>(
+        &self,
+        upload_id: &str,
+        offset: u64,
+        reader: &mut R,
+        max_bytes: Option<u64>,
+    ) -> Result<u64, BlobError> {
+        let lock = self.get_session_lock(upload_id);
+        let _guard = lock.lock().await;
+
+        let mut session = self
+            .index
+            .get_upload_session(upload_id)?
+            .ok_or_else(|| BlobError::UploadSessionNotFound(upload_id.to_string()))?;
+
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+        if now > session.expires_at {
+            let _ = self.abort_chunked_upload(upload_id).await;
+            return Err(BlobError::UploadSessionNotFound("Upload session expired".to_string()));
+        }
+
+        if let Some(total) = session.total_size {
+            if let Some(len) = max_bytes {
+                if offset + len > total {
+                    return Err(BlobError::InvalidRange(format!(
+                        "Range offset {} + length {} exceeds declared total size {}",
+                        offset, len, total
+                    )));
+                }
+            }
+        }
+
+        if let Some(len) = max_bytes {
+            if offset + len > self.max_object_bytes {
+                return Err(BlobError::PayloadTooLarge {
+                    size: offset + len,
+                    max: self.max_object_bytes,
+                });
+            }
+        }
+
+        let bytes_written = self
+            .store
+            .write_resumable_stream(upload_id, offset, reader, max_bytes)
+            .await?;
+
+        let new_offset = offset + bytes_written;
+        session.received_bytes = new_offset;
+        self.index.save_upload_session(&session)?;
+
+        Ok(bytes_written)
+    }
+
+    /// Writes raw byte slice at `offset` for resumable upload sessions.
+    pub async fn write_resumable_bytes(
+        &self,
+        upload_id: &str,
+        offset: u64,
+        data: &[u8],
+    ) -> Result<u64, BlobError> {
+        let mut cursor = std::io::Cursor::new(data);
+        self.write_resumable_stream(upload_id, offset, &mut cursor, Some(data.len() as u64)).await
+    }
+
+    /// Writes an individual chunk/part to upload staging storage (legacy multipart).
     pub async fn write_chunk(
         &self,
         upload_id: &str,
@@ -637,6 +791,9 @@ impl BlobEngine {
         if part_number == 0 {
             return Err(BlobError::InvalidKey("Part number must be >= 1".to_string()));
         }
+
+        let lock = self.get_session_lock(upload_id);
+        let _guard = lock.lock().await;
 
         let mut session = self
             .index
@@ -663,21 +820,32 @@ impl BlobEngine {
         Ok(())
     }
 
-    /// Completes a chunked upload by assembling parts and committing object metadata.
-    pub async fn complete_chunked_upload(
+    /// Finalizes a resumable or chunked upload: computes BLAKE3 hash incrementally,
+    /// verifies checksum and total size invariants, commits metadata to the index,
+    /// and purges staging artifacts.
+    pub async fn finalize_resumable_upload(
         &self,
         upload_id: &str,
     ) -> Result<BlobMetadata, BlobError> {
+        let lock = self.get_session_lock(upload_id);
+        let _guard = lock.lock().await;
+
         let session = self
             .index
             .get_upload_session(upload_id)?
             .ok_or_else(|| BlobError::UploadSessionNotFound(upload_id.to_string()))?;
 
-        if session.parts.is_empty() {
-            return Err(BlobError::InvalidKey("Cannot complete upload with 0 parts".to_string()));
-        }
+        let (hash, size) = self.store.finalize_resumable_upload(upload_id).await?;
 
-        let (hash, size) = self.store.assemble_upload_parts(upload_id, &session.parts).await?;
+        if let Some(total) = session.total_size {
+            if size != total {
+                let _ = self.store.remove(&hash).await;
+                return Err(BlobError::InvalidRange(format!(
+                    "Finalized blob size {} does not match declared total size {}",
+                    size, total
+                )));
+            }
+        }
 
         if size > self.max_object_bytes {
             let _ = self.store.remove(&hash).await;
@@ -685,6 +853,16 @@ impl BlobEngine {
                 size,
                 max: self.max_object_bytes,
             });
+        }
+
+        if let Some(ref expected_checksum) = session.checksum {
+            if !constant_time_eq(&hash, expected_checksum) {
+                let _ = self.store.remove(&hash).await;
+                return Err(BlobError::ChecksumMismatch {
+                    expected: expected_checksum.clone(),
+                    actual: hash,
+                });
+            }
         }
 
         // Check namespace quota
@@ -724,15 +902,55 @@ impl BlobEngine {
 
         self.index.commit_put(&session.namespace, &session.key, &meta)?;
         let _ = self.index.delete_upload_session(upload_id);
+        self.session_locks.remove(upload_id);
 
         Ok(meta)
+    }
+
+    /// Completes a chunked upload by assembling parts and committing object metadata.
+    pub async fn complete_chunked_upload(
+        &self,
+        upload_id: &str,
+    ) -> Result<BlobMetadata, BlobError> {
+        self.finalize_resumable_upload(upload_id).await
     }
 
     /// Aborts an active chunked upload session and purges staging data.
     pub async fn abort_chunked_upload(&self, upload_id: &str) -> Result<(), BlobError> {
         self.store.abort_upload_staging(upload_id).await?;
         self.index.delete_upload_session(upload_id)?;
+        self.session_locks.remove(upload_id);
         Ok(())
+    }
+
+    /// Sets staging file length for testing sparse files without real disk allocation.
+    pub async fn set_staging_len_for_test(&self, upload_id: &str, len: u64) -> Result<(), BlobError> {
+        self.store.set_staging_len_for_test(upload_id, len).await
+    }
+
+    /// Sweeps all expired upload sessions and removes their temporary staging files.
+    pub async fn sweep_expired_upload_sessions(&self) -> Result<usize, BlobError> {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+        let sessions = self.index.list_upload_sessions()?;
+        let mut swept = 0;
+        let mut active_ids = std::collections::HashSet::new();
+
+        for session in sessions {
+            if now >= session.expires_at {
+                let _ = self.store.abort_upload_staging(&session.upload_id).await;
+                let _ = self.index.delete_upload_session(&session.upload_id);
+                self.session_locks.remove(&session.upload_id);
+                swept += 1;
+            } else {
+                active_ids.insert(session.upload_id);
+            }
+        }
+
+        let orphaned = self.store.sweep_orphaned_staging(&active_ids).await.unwrap_or(0);
+        Ok(swept + orphaned)
     }
 
     /// Scrubs an individual stored blob file against its expected BLAKE3 checksum.
@@ -772,7 +990,9 @@ impl BlobEngine {
             }
         }
 
-        Ok(count)
+        let upload_swept = self.sweep_expired_upload_sessions().await.unwrap_or(0);
+
+        Ok(count + upload_swept)
     }
 }
 
@@ -1003,5 +1223,240 @@ mod tests {
         assert_eq!(move_valid.unwrap(), 1);
         assert!(engine.get(ns, "other/file.txt").await.is_ok());
         assert!(engine.get(ns, "folder/file.txt").await.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_blob_engine_resumable_upload_lifecycle() {
+        let tmp = tempfile::tempdir().unwrap();
+        let engine = BlobEngine::new(tmp.path(), 8, 1024 * 1024, true).await.unwrap();
+
+        let ns = "resumable-ns";
+        let full_data = b"0123456789ABCDEF0123456789ABCDEF"; // 32 bytes
+        let total_size = full_data.len() as u64;
+
+        let session = engine
+            .init_resumable_upload(ns, "resumable.bin", Some("application/octet-stream"), Some(total_size), None, Some("test_user"), None)
+            .await
+            .unwrap();
+
+        // 1. Initial offset is 0
+        assert_eq!(engine.get_upload_offset(&session.upload_id).await.unwrap(), 0);
+
+        // 2. Upload first chunk (16 bytes)
+        let chunk1 = &full_data[0..16];
+        let written1 = engine.write_resumable_bytes(&session.upload_id, 0, chunk1).await.unwrap();
+        assert_eq!(written1, 16);
+        assert_eq!(engine.get_upload_offset(&session.upload_id).await.unwrap(), 16);
+
+        // 3. Upload second chunk (16 bytes) at offset 16
+        let chunk2 = &full_data[16..32];
+        let written2 = engine.write_resumable_bytes(&session.upload_id, 16, chunk2).await.unwrap();
+        assert_eq!(written2, 16);
+        assert_eq!(engine.get_upload_offset(&session.upload_id).await.unwrap(), 32);
+
+        // 4. Finalize
+        let meta = engine.finalize_resumable_upload(&session.upload_id).await.unwrap();
+        assert_eq!(meta.size, 32);
+
+        // 5. Verify payload matches original 32 bytes
+        let (_, retrieved) = engine.get_bytes(ns, "resumable.bin").await.unwrap();
+        assert_eq!(&retrieved[..], full_data);
+    }
+
+    #[tokio::test]
+    async fn test_blob_engine_resumable_interruption_and_gap_protection() {
+        let tmp = tempfile::tempdir().unwrap();
+        let engine = BlobEngine::new(tmp.path(), 8, 1024 * 1024, true).await.unwrap();
+
+        let ns = "gap-ns";
+        let session = engine
+            .init_resumable_upload(ns, "gap.bin", None, Some(100), None, None, None)
+            .await
+            .unwrap();
+
+        // Write first 40 bytes
+        let chunk1 = vec![b'A'; 40];
+        engine.write_resumable_bytes(&session.upload_id, 0, &chunk1).await.unwrap();
+        assert_eq!(engine.get_upload_offset(&session.upload_id).await.unwrap(), 40);
+
+        // Gap write: client attempts to write at offset 60 (skipping bytes 40-59)
+        let chunk_gap = vec![b'B'; 20];
+        let gap_err = engine.write_resumable_bytes(&session.upload_id, 60, &chunk_gap).await;
+        assert!(gap_err.is_err());
+        match gap_err.unwrap_err() {
+            BlobError::OffsetMismatch { expected, actual } => {
+                assert_eq!(expected, 40);
+                assert_eq!(actual, 60);
+            }
+            other => panic!("Expected OffsetMismatch, got {:?}", other),
+        }
+
+        // Server confirmed offset still 40 (gap write rejected)
+        assert_eq!(engine.get_upload_offset(&session.upload_id).await.unwrap(), 40);
+
+        // Rewind write: client retries from offset 30 (rewind 10 bytes)
+        let chunk_rewind = vec![b'C'; 30];
+        engine.write_resumable_bytes(&session.upload_id, 30, &chunk_rewind).await.unwrap();
+        assert_eq!(engine.get_upload_offset(&session.upload_id).await.unwrap(), 60);
+
+        // Complete remaining 40 bytes (60..100)
+        let chunk_end = vec![b'D'; 40];
+        engine.write_resumable_bytes(&session.upload_id, 60, &chunk_end).await.unwrap();
+        assert_eq!(engine.get_upload_offset(&session.upload_id).await.unwrap(), 100);
+
+        let meta = engine.finalize_resumable_upload(&session.upload_id).await.unwrap();
+        assert_eq!(meta.size, 100);
+    }
+
+    #[tokio::test]
+    async fn test_blob_engine_resumable_server_restart_recovery() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().to_path_buf();
+
+        let upload_id;
+        let test_data = b"RESTART_RESUME_TEST_DATA_PERSISTENCE";
+        let part1 = &test_data[0..16]; // 16 bytes
+        let part2 = &test_data[16..];  // remaining 20 bytes
+
+        // Phase 1: Upload first part in initial server instance
+        {
+            let engine1 = BlobEngine::new(&path, 8, 1024 * 1024, true).await.unwrap();
+            let session = engine1
+                .init_resumable_upload("restart-ns", "restart.txt", None, Some(test_data.len() as u64), None, None, None)
+                .await
+                .unwrap();
+            upload_id = session.upload_id.clone();
+
+            let written = engine1.write_resumable_bytes(&upload_id, 0, part1).await.unwrap();
+            assert_eq!(written, 16);
+            assert_eq!(engine1.get_upload_offset(&upload_id).await.unwrap(), 16);
+            // Engine1 is dropped here (simulating server crash or reboot)
+        }
+
+        // Phase 2: Open brand-new BlobEngine instance on the exact same directory
+        {
+            let engine2 = BlobEngine::new(&path, 8, 1024 * 1024, true).await.unwrap();
+
+            // Session exists in persistent index
+            let session = engine2.get_upload_session(&upload_id).unwrap().expect("Session must survive restart");
+            assert_eq!(session.key, "restart.txt");
+
+            // Server-confirmed offset survived restart on disk
+            let offset = engine2.get_upload_offset(&upload_id).await.unwrap();
+            assert_eq!(offset, 16, "Confirmed offset must match persisted file size after restart");
+
+            // Resume upload of remaining bytes from offset 16
+            let written = engine2.write_resumable_bytes(&upload_id, offset, part2).await.unwrap();
+            assert_eq!(written, part2.len() as u64);
+            assert_eq!(engine2.get_upload_offset(&upload_id).await.unwrap(), test_data.len() as u64);
+
+            // Finalize upload
+            let meta = engine2.finalize_resumable_upload(&upload_id).await.unwrap();
+            assert_eq!(meta.size, test_data.len() as u64);
+
+            let (_, content) = engine2.get_bytes("restart-ns", "restart.txt").await.unwrap();
+            assert_eq!(&content[..], test_data);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_blob_engine_resumable_simulation_14gb_of_20gb() {
+        let tmp = tempfile::tempdir().unwrap();
+        let engine = BlobEngine::new(tmp.path(), 8, 50 * 1024 * 1024 * 1024, false).await.unwrap();
+
+        const GIB: u64 = 1024 * 1024 * 1024;
+        let total_size: u64 = 20 * GIB;     // 20 GB
+        let uploaded_part1: u64 = 14 * GIB; // 14 GB
+        let _remaining_part2: u64 = 6 * GIB; // 6 GB
+
+        // 1. Initialize session for a 20 GB file
+        let session = engine
+            .init_resumable_upload("video-bucket", "large_20gb_video.mp4", Some("video/mp4"), Some(total_size), None, Some("video_uploader"), None)
+            .await
+            .unwrap();
+
+        // 2. Simulate 14 GB upload using sparse file allocation (zero physical disk consumption)
+        engine.set_staging_len_for_test(&session.upload_id, uploaded_part1).await.unwrap();
+
+        // 3. Network drops! Client reconnects and queries server-confirmed offset
+        let confirmed_offset = engine.get_upload_offset(&session.upload_id).await.unwrap();
+        assert_eq!(
+            confirmed_offset,
+            uploaded_part1,
+            "Server confirmed offset must be exactly 14 GB (15,032,385,536 bytes)"
+        );
+
+        // 4. Verify client cannot skip ahead: client asking for 15 GB must be rejected
+        let invalid_chunk = vec![0u8; 1024];
+        let bad_skip = engine.write_resumable_bytes(&session.upload_id, 15 * GIB, &invalid_chunk).await;
+        assert!(bad_skip.is_err());
+
+        // 5. Client resumes uploading from the confirmed 14 GB offset up to 20 GB
+        engine.set_staging_len_for_test(&session.upload_id, total_size).await.unwrap();
+        let final_offset = engine.get_upload_offset(&session.upload_id).await.unwrap();
+        assert_eq!(final_offset, total_size, "Final offset must equal 20 GB");
+
+        // 6. Complete and verify finalization handles the full 20 GB file
+        let meta = engine.finalize_resumable_upload(&session.upload_id).await.unwrap();
+        assert_eq!(meta.size, total_size);
+        assert_eq!(meta.content_type, "video/mp4");
+        assert!(!meta.inline);
+
+        // Verify head metadata reflects the full 20 GB object
+        let head_meta = engine.head("video-bucket", "large_20gb_video.mp4").unwrap();
+        assert_eq!(head_meta.size, 20 * GIB);
+    }
+
+    #[tokio::test]
+    async fn test_blob_engine_resumable_checksum_mismatch() {
+        let tmp = tempfile::tempdir().unwrap();
+        let engine = BlobEngine::new(tmp.path(), 8, 1024 * 1024, true).await.unwrap();
+
+        let expected_wrong_hash = "0000000000000000000000000000000000000000000000000000000000000000";
+        let session = engine
+            .init_resumable_upload("cs-ns", "corrupt.bin", None, Some(5), Some(expected_wrong_hash), None, None)
+            .await
+            .unwrap();
+
+        engine.write_resumable_bytes(&session.upload_id, 0, b"HELLO").await.unwrap();
+
+        // Finalization must fail with ChecksumMismatch and not commit blob to metadata index
+        let result = engine.finalize_resumable_upload(&session.upload_id).await;
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            BlobError::ChecksumMismatch { expected, .. } => {
+                assert_eq!(expected, expected_wrong_hash);
+            }
+            other => panic!("Expected ChecksumMismatch, got {:?}", other),
+        }
+
+        // Object must NOT exist in the index
+        assert!(engine.get("cs-ns", "corrupt.bin").await.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_blob_engine_resumable_ttl_expiry_sweep() {
+        let tmp = tempfile::tempdir().unwrap();
+        let engine = BlobEngine::new(tmp.path(), 8, 1024 * 1024, false).await.unwrap();
+
+        // Create upload session
+        let mut session = engine
+            .init_resumable_upload("ttl-ns", "expired.bin", None, Some(10), None, None, Some(3600))
+            .await
+            .unwrap();
+
+        engine.write_resumable_bytes(&session.upload_id, 0, b"12345").await.unwrap();
+
+        // Expire the session explicitly in metadata
+        session.expires_at = 1;
+        engine.index.save_upload_session(&session).unwrap();
+
+        // Sweep expired upload sessions
+        let swept = engine.sweep_expired_upload_sessions().await.unwrap();
+        assert!(swept >= 1);
+
+        // Session must be purged
+        assert!(engine.get_upload_session(&session.upload_id).unwrap().is_none());
+        assert!(engine.get_upload_offset(&session.upload_id).await.is_err());
     }
 }

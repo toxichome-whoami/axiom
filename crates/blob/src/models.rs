@@ -49,7 +49,7 @@ impl ByteRange {
     }
 }
 
-/// Active multipart/chunked upload session metadata.
+/// Active multipart/chunked and resumable upload session metadata.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UploadSession {
     /// Unique identifier for the staged upload session.
@@ -62,10 +62,36 @@ pub struct UploadSession {
     pub content_type: String,
     /// Creation timestamp in Unix seconds.
     pub created_at: i64,
-    /// Optional expiration timestamp for this upload session.
+    /// Expiration timestamp for this upload session.
     pub expires_at: i64,
-    /// List of 1-indexed part numbers successfully received.
+    /// List of 1-indexed part numbers successfully received (for legacy multipart).
+    #[serde(default)]
     pub parts: Vec<u32>,
+    /// Expected total byte size if declared in advance.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub total_size: Option<u64>,
+    /// Number of bytes successfully persisted on disk.
+    #[serde(default)]
+    pub received_bytes: u64,
+    /// Optional expected BLAKE3 cryptographic hash.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub checksum: Option<String>,
+    /// Identity (API key name or admin username) who initiated the session.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub owner: Option<String>,
+}
+
+/// Status descriptor returned when querying an active resumable upload session.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UploadSessionStatus {
+    pub upload_id: String,
+    pub namespace: String,
+    pub key: String,
+    pub offset: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub total_size: Option<u64>,
+    pub completed: bool,
+    pub expires_at: i64,
 }
 
 /// Content-addressed reference tracking deduplication and garbage collection lifecycle.

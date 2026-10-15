@@ -49,6 +49,11 @@ pub enum BlobError {
     InvalidTicket(String),
     /// Multipart / chunked upload session was not found or expired.
     UploadSessionNotFound(String),
+    /// Upload offset mismatch during resumable upload.
+    OffsetMismatch {
+        expected: u64,
+        actual: u64,
+    },
     /// Host filesystem input/output failure.
     Io(String),
     /// Underlying LSM database or indexing failure.
@@ -85,6 +90,11 @@ impl fmt::Display for BlobError {
             Self::InvalidRange(msg) => write!(f, "Invalid range: {}", msg),
             Self::InvalidTicket(msg) => write!(f, "Invalid capability ticket: {}", msg),
             Self::UploadSessionNotFound(id) => write!(f, "Upload session '{}' not found", id),
+            Self::OffsetMismatch { expected, actual } => write!(
+                f,
+                "Upload offset mismatch: expected offset {}, but received {}",
+                expected, actual
+            ),
             Self::Io(msg) => write!(f, "Storage I/O failure: {}", msg),
             Self::Engine(msg) => write!(f, "Storage engine error: {}", msg),
         }
