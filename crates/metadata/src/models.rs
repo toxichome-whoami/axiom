@@ -39,6 +39,8 @@ pub struct PermissionRecord {
     pub database: String,    // '*' = all databases
     pub table_name: String,  // '*' = all tables
     pub operations: Vec<String>, // ["SELECT", "INSERT", "UPDATE", "DELETE"]
+    #[serde(default)]
+    pub rls_filter: Option<String>,
 }
 
 // ─── Machine API Key Model ─────────────────────────────────────────────────

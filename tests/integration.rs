@@ -49,6 +49,7 @@ fn setup_test_metadata() {
                 database: "*".to_string(),
                 table_name: "*".to_string(),
                 operations: vec!["*".to_string()],
+                rls_filter: None,
             }],
         },
     );
@@ -72,6 +73,7 @@ fn setup_test_metadata() {
                 database: "db_alpha".to_string(),
                 table_name: "*".to_string(),
                 operations: vec!["SELECT".to_string()],
+                rls_filter: None,
             }],
         },
     );
@@ -107,6 +109,7 @@ fn setup_test_metadata() {
                 database: "blob:reports".to_string(),
                 table_name: "*".to_string(),
                 operations: vec!["READ".to_string()],
+                rls_filter: None,
             }],
         },
     );
@@ -130,6 +133,7 @@ fn setup_test_metadata() {
                 database: "blob:*".to_string(),
                 table_name: "media/*".to_string(),
                 operations: vec!["READ".to_string(), "WRITE".to_string()],
+                rls_filter: None,
             }],
         },
     );
@@ -177,6 +181,7 @@ fn setup_test_metadata() {
                 database: "testdb".to_string(),
                 table_name: "items".to_string(),
                 operations: vec!["SELECT".to_string()],
+                rls_filter: None,
             }],
         },
     );
@@ -223,6 +228,7 @@ async fn ensure_metadata_store() {
                     database: "*".to_string(),
                     table_name: "*".to_string(),
                     operations: vec!["*".to_string()],
+                    rls_filter: None,
                 }],
             ).await;
 
@@ -235,6 +241,7 @@ async fn ensure_metadata_store() {
                     database: "db_alpha".to_string(),
                     table_name: "*".to_string(),
                     operations: vec!["SELECT".to_string()],
+                    rls_filter: None,
                 }],
             ).await;
 
@@ -247,6 +254,7 @@ async fn ensure_metadata_store() {
                     database: "blob:reports".to_string(),
                     table_name: "*".to_string(),
                     operations: vec!["READ".to_string()],
+                    rls_filter: None,
                 }],
             ).await;
 
@@ -259,6 +267,7 @@ async fn ensure_metadata_store() {
                     database: "blob:*".to_string(),
                     table_name: "media/*".to_string(),
                     operations: vec!["READ".to_string(), "WRITE".to_string()],
+                    rls_filter: None,
                 }],
             ).await;
 
@@ -271,6 +280,7 @@ async fn ensure_metadata_store() {
                     database: "testdb".to_string(),
                     table_name: "items".to_string(),
                     operations: vec!["SELECT".to_string()],
+                    rls_filter: None,
                 }],
             ).await;
 
@@ -2064,3 +2074,118 @@ async fn blob_storage_resumable_upload_cross_identity_protection() {
     let complete_res = create_app().oneshot(complete_req).await.unwrap();
     assert_eq!(complete_res.status(), StatusCode::FORBIDDEN);
 }
+
+#[tokio::test]
+async fn ndjson_streaming_response() {
+    ensure_test_items_table().await;
+    let admin_token = BASE64_STANDARD.encode("admin_key:secret_admin");
+
+    // Insert a test item
+    let insert_req = Request::post("/api/v1/db/testdb/items/rows")
+        .header("X-Axiom-Key", &admin_token)
+        .header("Content-Type", "application/json")
+        .body(Body::from(serde_json::to_vec(&serde_json::json!({
+            "row": {"name": "stream_item", "price": 19.99, "stock": 100}
+        })).unwrap()))
+        .unwrap();
+    let insert_res = create_app().oneshot(insert_req).await.unwrap();
+    assert_eq!(insert_res.status(), StatusCode::OK);
+
+    // Fetch with Accept: application/x-ndjson
+    let req = Request::get("/api/v1/db/testdb/items/rows")
+        .header("X-Axiom-Key", &admin_token)
+        .header("Accept", "application/x-ndjson")
+        .body(Body::empty())
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    assert_eq!(
+        res.headers().get("content-type").unwrap(),
+        "application/x-ndjson"
+    );
+
+    let body_bytes = axum::body::to_bytes(res.into_body(), 65536).await.unwrap();
+    let body_str = std::str::from_utf8(&body_bytes).unwrap();
+    assert!(!body_str.is_empty());
+    for line in body_str.lines() {
+        let parsed: Value = serde_json::from_str(line).unwrap();
+        assert!(parsed.is_object());
+    }
+}
+
+#[tokio::test]
+async fn row_level_security_predicate_filtering() {
+    ensure_test_items_table().await;
+    let admin_token = BASE64_STANDARD.encode("admin_key:secret_admin");
+
+    // Insert tenant A and tenant B items
+    let _ = create_app().oneshot(
+        Request::post("/api/v1/db/testdb/items/rows")
+            .header("X-Axiom-Key", &admin_token)
+            .header("Content-Type", "application/json")
+            .body(Body::from(serde_json::to_vec(&serde_json::json!({
+                "row": {"name": "tenant_a_secret_doc", "price": 10.0, "stock": 1}
+            })).unwrap()))
+            .unwrap()
+    ).await.unwrap();
+
+    let _ = create_app().oneshot(
+        Request::post("/api/v1/db/testdb/items/rows")
+            .header("X-Axiom-Key", &admin_token)
+            .header("Content-Type", "application/json")
+            .body(Body::from(serde_json::to_vec(&serde_json::json!({
+                "row": {"name": "tenant_b_public_doc", "price": 20.0, "stock": 2}
+            })).unwrap()))
+            .unwrap()
+    ).await.unwrap();
+
+    // Create an RLS-restricted role and key for Tenant A
+    let _ = axiom_metadata::MetadataStore::create_role(
+        "tenant_a_role",
+        Some("Tenant A Isolated"),
+        &[axiom_metadata::PermissionRecord {
+            id: 0,
+            role_name: "tenant_a_role".to_string(),
+            database: "testdb".to_string(),
+            table_name: "items".to_string(),
+            operations: vec!["SELECT".to_string()],
+            rls_filter: Some("name LIKE 'tenant_a_%'".to_string()),
+        }],
+    ).await;
+
+    let _ = axiom_metadata::MetadataStore::create_key(
+        "tenant_a_key",
+        Some("tenant_a_role"),
+        Some("secret_tenant_a"),
+        0,
+        None,
+    ).await;
+
+    axiom_metadata::MetadataStore::sync_snapshot().await.unwrap();
+
+    let tenant_a_token = BASE64_STANDARD.encode("tenant_a_key:secret_tenant_a");
+
+    // Query rows with tenant_a_key
+    let req = Request::get("/api/v1/db/testdb/items/rows")
+        .header("X-Axiom-Key", &tenant_a_token)
+        .body(Body::empty())
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    let body_bytes = axum::body::to_bytes(res.into_body(), 65536).await.unwrap();
+    let body_json: Value = serde_json::from_slice(&body_bytes).unwrap();
+    let rows = body_json["data"]["rows"].as_array().unwrap();
+
+    // Invariant: Tenant A caller MUST NOT see tenant B items
+    assert!(!rows.is_empty());
+    for r in rows {
+        let name = r["name"].as_str().unwrap();
+        assert!(
+            name.starts_with("tenant_a_"),
+            "RLS violation: tenant A observed row: {}",
+            name
+        );
+    }
+}
+

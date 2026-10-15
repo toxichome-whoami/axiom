@@ -345,6 +345,7 @@ mod tests {
                     database: "*".to_string(),
                     table_name: "*".to_string(),
                     operations: vec!["*".to_string()],
+                    rls_filter: None,
                 }],
             },
         );

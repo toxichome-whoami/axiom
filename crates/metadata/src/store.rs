@@ -104,7 +104,8 @@ impl MetadataStore {
                 role_name TEXT NOT NULL REFERENCES roles(name) ON DELETE CASCADE,
                 database TEXT NOT NULL,
                 table_name TEXT NOT NULL,
-                operations TEXT NOT NULL
+                operations TEXT NOT NULL,
+                rls_filter TEXT
             );",
             "CREATE TABLE IF NOT EXISTS api_keys (
                 name TEXT PRIMARY KEY,
@@ -174,6 +175,9 @@ impl MetadataStore {
                 .map_err(|e| format!("Metadata schema creation failed on '{}': {}", stmt, e))?;
         }
 
+        // Idempotently ensure rls_filter column exists for preexisting databases
+        let _ = conn.execute("ALTER TABLE permissions ADD COLUMN rls_filter TEXT", ()).await;
+
         Ok(())
     }
 
@@ -218,7 +222,7 @@ impl MetadataStore {
 
         let mut perm_rows = conn
             .query(
-                "SELECT role_name, database, table_name, operations FROM permissions",
+                "SELECT role_name, database, table_name, operations, rls_filter FROM permissions",
                 (),
             )
             .await
@@ -232,11 +236,13 @@ impl MetadataStore {
                 row.get_str(3),
             ) {
                 let operations: Vec<String> = serde_json::from_str(ops_json).unwrap_or_default();
+                let rls_filter = row.get_str(4).ok().map(|s| s.to_string()).filter(|s| !s.trim().is_empty());
                 if let Some(role) = roles_map.get_mut(role_name) {
                     role.permissions.push(PermissionSnapshot {
                         database: database.to_string(),
                         table_name: table_name.to_string(),
                         operations,
+                        rls_filter,
                     });
                 }
             }
@@ -515,10 +521,11 @@ impl MetadataStore {
         for perm in permissions {
             let ops_json = serde_json::to_string(&perm.operations)
                 .map_err(|e| format!("Invalid operations array: {}", e))?;
+            let rls_val = perm.rls_filter.as_deref().unwrap_or("");
 
             conn.execute(
-                "INSERT INTO permissions (role_name, database, table_name, operations) VALUES (?1, ?2, ?3, ?4)",
-                libsql::params![name, perm.database.as_str(), perm.table_name.as_str(), ops_json.as_str()],
+                "INSERT INTO permissions (role_name, database, table_name, operations, rls_filter) VALUES (?1, ?2, ?3, ?4, ?5)",
+                libsql::params![name, perm.database.as_str(), perm.table_name.as_str(), ops_json.as_str(), rls_val],
             )
             .await
             .map_err(|e| format!("Failed to create permission for role '{}': {}", name, e))?;
@@ -571,10 +578,11 @@ impl MetadataStore {
             for perm in &perms {
                 let ops_json = serde_json::to_string(&perm.operations)
                     .map_err(|e| format!("Invalid operations array: {}", e))?;
+                let rls_val = perm.rls_filter.as_deref().unwrap_or("");
 
                 conn.execute(
-                    "INSERT INTO permissions (role_name, database, table_name, operations) VALUES (?1, ?2, ?3, ?4)",
-                    libsql::params![name, perm.database.as_str(), perm.table_name.as_str(), ops_json.as_str()],
+                    "INSERT INTO permissions (role_name, database, table_name, operations, rls_filter) VALUES (?1, ?2, ?3, ?4, ?5)",
+                    libsql::params![name, perm.database.as_str(), perm.table_name.as_str(), ops_json.as_str(), rls_val],
                 )
                 .await
                 .map_err(|e| format!("Failed to insert updated permission: {}", e))?;
@@ -655,7 +663,7 @@ impl MetadataStore {
         for role in &mut roles {
             let mut perm_rows = conn
                 .query(
-                    "SELECT id, database, table_name, operations FROM permissions WHERE role_name = ?1",
+                    "SELECT id, database, table_name, operations, rls_filter FROM permissions WHERE role_name = ?1",
                     [role.name.as_str()],
                 )
                 .await
@@ -667,6 +675,7 @@ impl MetadataStore {
                 let table_name: String = row.get(2).map_err(|e| e.to_string())?;
                 let ops_json: String = row.get(3).unwrap_or_else(|_| "[]".to_string());
                 let operations: Vec<String> = serde_json::from_str(&ops_json).unwrap_or_default();
+                let rls_filter = row.get_str(4).ok().map(|s| s.to_string()).filter(|s| !s.trim().is_empty());
 
                 role.permissions.push(PermissionRecord {
                     id,
@@ -674,6 +683,7 @@ impl MetadataStore {
                     database,
                     table_name,
                     operations,
+                    rls_filter,
                 });
             }
         }

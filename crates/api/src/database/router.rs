@@ -242,6 +242,24 @@ async fn execute_query(
         }
     }
 
+    let is_ndjson = headers
+        .get(axum::http::header::ACCEPT)
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.contains("ndjson"))
+        .unwrap_or(false);
+
+    if is_ndjson {
+        let rows = _arc_result.rows.clone().unwrap_or_default();
+        let stream = crate::database::streaming::stream_ndjson_rows(rows);
+        return axum::response::Response::builder()
+            .header("content-type", "application/x-ndjson")
+            .body(axum::body::Body::from_stream(stream))
+            .map_err(|e| {
+                tracing::error!("Response build failed: {}", e);
+                AxiomError::new("INTERNAL_ERROR", "Failed to build response", axum::http::StatusCode::INTERNAL_SERVER_ERROR)
+            });
+    }
+
     axum::response::Response::builder()
         .header("content-type", "application/json")
         .body(axum::body::Body::from(json_bytes))

@@ -389,6 +389,25 @@ pub fn format_postgres_placeholders(sql: &str) -> String {
     out
 }
 
+fn parse_sql_with_dialect(
+    dialect_name: &str,
+    sql: &str,
+) -> Result<Vec<sqlparser::ast::Statement>, sqlparser::parser::ParserError> {
+    if dialect_name == "postgres" {
+        sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::PostgreSqlDialect {}, sql)
+    } else if dialect_name == "clickhouse" {
+        sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::ClickHouseDialect {}, sql)
+    } else if dialect_name == "mssql" {
+        sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::MsSqlDialect {}, sql)
+    } else if dialect_name == "mysql" {
+        sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::MySqlDialect {}, sql)
+    } else if dialect_name == "sqlite" {
+        sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::SQLiteDialect {}, sql)
+    } else {
+        sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::GenericDialect {}, sql)
+    }
+}
+
 impl QueryExecutionPipeline {
     /// Executes a database query through the complete pipeline: circuit breaker, cache, blacklist, AST, and engine.
     /// CONTRACT:
@@ -477,21 +496,9 @@ impl QueryExecutionPipeline {
                 std::borrow::Cow::Borrowed(sql)
             };
 
-            let ast_result = if dialect_name == "postgres" {
-                sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::PostgreSqlDialect {}, &parse_target_sql)
-            } else if dialect_name == "clickhouse" {
-                sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::ClickHouseDialect {}, &parse_target_sql)
-            } else if dialect_name == "mssql" {
-                sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::MsSqlDialect {}, &parse_target_sql)
-            } else if dialect_name == "mysql" {
-                sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::MySqlDialect {}, &parse_target_sql)
-            } else if dialect_name == "sqlite" {
-                sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::SQLiteDialect {}, &parse_target_sql)
-            } else {
-                sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::GenericDialect {}, &parse_target_sql)
-            };
+            let ast_result = parse_sql_with_dialect(dialect_name, &parse_target_sql);
 
-            let statements = ast_result.map_err(|e| {
+            let mut statements = ast_result.map_err(|e| {
                 tracing::error!("SQL parse error: {}", e);
                 AxiomError::new(
                     "SQL_PARSE_ERROR",
@@ -615,11 +622,119 @@ impl QueryExecutionPipeline {
                 operations.push((op, tables));
             }
 
+            // ─── Row-Level Security (RLS) AST Predicate Pushdown ───────────
+            // If the authenticated caller has row-level filter expressions configured
+            // for any referenced table, rewrite the AST in-place to enforce row boundaries.
+            let mut rls_rewritten = false;
+            for stmt in &mut statements {
+                match stmt {
+                    sqlparser::ast::Statement::Query(query) => {
+                        if let sqlparser::ast::SetExpr::Select(select) = &mut *query.body {
+                            for twj in &select.from {
+                                let tbl = extract_table_name(&twj.relation.to_string());
+                                if let Some(rls_pred) = PolicyEngine::get_rls_predicate(auth, db_name, &tbl, "SELECT") {
+                                    if let Ok(mut rls_stmts) = parse_sql_with_dialect(
+                                        dialect_name,
+                                        &format!("SELECT 1 WHERE ({})", rls_pred),
+                                    ) {
+                                        if let Some(sqlparser::ast::Statement::Query(rls_q)) = rls_stmts.pop() {
+                                            if let sqlparser::ast::SetExpr::Select(rls_sel) = *rls_q.body {
+                                                if let Some(rls_expr) = rls_sel.selection {
+                                                    select.selection = match select.selection.take() {
+                                                        Some(existing) => Some(sqlparser::ast::Expr::BinaryOp {
+                                                            left: Box::new(existing),
+                                                            op: sqlparser::ast::BinaryOperator::And,
+                                                            right: Box::new(rls_expr),
+                                                        }),
+                                                        None => Some(rls_expr),
+                                                    };
+                                                    rls_rewritten = true;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    sqlparser::ast::Statement::Update(update) => {
+                        let tbl = extract_table_name(&update.table.to_string());
+                        if let Some(rls_pred) = PolicyEngine::get_rls_predicate(auth, db_name, &tbl, "UPDATE") {
+                            if let Ok(mut rls_stmts) = parse_sql_with_dialect(
+                                dialect_name,
+                                &format!("SELECT 1 WHERE ({})", rls_pred),
+                            ) {
+                                if let Some(sqlparser::ast::Statement::Query(rls_q)) = rls_stmts.pop() {
+                                    if let sqlparser::ast::SetExpr::Select(rls_sel) = *rls_q.body {
+                                        if let Some(rls_expr) = rls_sel.selection {
+                                            update.selection = match update.selection.take() {
+                                                Some(existing) => Some(sqlparser::ast::Expr::BinaryOp {
+                                                    left: Box::new(existing),
+                                                    op: sqlparser::ast::BinaryOperator::And,
+                                                    right: Box::new(rls_expr),
+                                                }),
+                                                None => Some(rls_expr),
+                                            };
+                                            rls_rewritten = true;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    sqlparser::ast::Statement::Delete(delete) => {
+                        let mut tbls = Vec::new();
+                        if let sqlparser::ast::FromTable::WithFromKeyword(from_tables) = &delete.from {
+                            for twj in from_tables {
+                                collect_tables_from_table_with_joins(twj, &mut tbls);
+                            }
+                        } else {
+                            for name in &delete.tables {
+                                tbls.push(extract_table_name(&name.to_string()));
+                            }
+                        }
+                        for tbl in &tbls {
+                            if let Some(rls_pred) = PolicyEngine::get_rls_predicate(auth, db_name, tbl, "DELETE") {
+                                if let Ok(mut rls_stmts) = parse_sql_with_dialect(
+                                    dialect_name,
+                                    &format!("SELECT 1 WHERE ({})", rls_pred),
+                                ) {
+                                    if let Some(sqlparser::ast::Statement::Query(rls_q)) = rls_stmts.pop() {
+                                        if let sqlparser::ast::SetExpr::Select(rls_sel) = *rls_q.body {
+                                            if let Some(rls_expr) = rls_sel.selection {
+                                                delete.selection = match delete.selection.take() {
+                                                    Some(existing) => Some(sqlparser::ast::Expr::BinaryOp {
+                                                        left: Box::new(existing),
+                                                        op: sqlparser::ast::BinaryOperator::And,
+                                                        right: Box::new(rls_expr),
+                                                    }),
+                                                    None => Some(rls_expr),
+                                                };
+                                                rls_rewritten = true;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+
+            let sql_for_format = if rls_rewritten && !statements.is_empty() {
+                statements[0].to_string()
+            } else {
+                sql.to_string()
+            };
+
             // Format placeholders based on engine dialect
-            let opt_formatted_sql = if (dialect_name == "postgres" || dialect_name == "any") && sql.contains('?') {
-                Some(format_postgres_placeholders(sql))
-            } else if dialect_name == "sqlite" && sql.to_ascii_uppercase().contains("PRAGMA") {
-                Some(normalize_sqlite_pragmas(sql))
+            let opt_formatted_sql = if (dialect_name == "postgres" || dialect_name == "any") && sql_for_format.contains('?') {
+                Some(format_postgres_placeholders(&sql_for_format))
+            } else if dialect_name == "sqlite" && sql_for_format.to_ascii_uppercase().contains("PRAGMA") {
+                Some(normalize_sqlite_pragmas(&sql_for_format))
+            } else if rls_rewritten {
+                Some(sql_for_format)
             } else {
                 None
             };
@@ -639,7 +754,8 @@ impl QueryExecutionPipeline {
                 }
             };
 
-            if AST_CACHE.len() < max_ast_entries {
+            // Only cache in global AST cache if not rewritten with caller-specific RLS predicates
+            if !rls_rewritten && AST_CACHE.len() < max_ast_entries {
                 AST_CACHE.insert(
                     ast_cache_key,
                     Arc::new(CachedAstInfo {
@@ -1024,11 +1140,12 @@ pub async fn insert_rows(
 
 pub async fn fetch_rows(
     axum::extract::Path((db_name, table_name)): axum::extract::Path<(String, String)>,
+    headers: axum::http::HeaderMap,
     axum::extract::Extension(auth): axum::extract::Extension<AuthContext>,
     axum::extract::Query(params): axum::extract::Query<
         crate::database::schemas::FetchRowsParams,
     >,
-) -> Result<axum::Json<Value>, AxiomError> {
+) -> Result<axum::response::Response, AxiomError> {
     PolicyEngine::evaluate(&auth, &db_name, &table_name, "SELECT")?;
     let db_cfg = get_db_config(&db_name, &auth).await?;
 
@@ -1157,6 +1274,15 @@ pub async fn fetch_rows(
         }
     }
 
+    // Enforce Row-Level Security (RLS) predicate if active for this table
+    if let Some(rls_pred) = PolicyEngine::get_rls_predicate(&auth, &db_name, &table_name, "SELECT") {
+        if final_where.trim().is_empty() {
+            final_where = format!("WHERE ({})", rls_pred);
+        } else {
+            final_where = format!("{} AND ({})", final_where, rls_pred);
+        }
+    }
+
     let quoted_table = crate::database::filter_builder::quote_ident_dialect(&table_name, dialect);
     let sql = if order_by_sql.is_empty() {
         format!(
@@ -1199,23 +1325,63 @@ pub async fn fetch_rows(
 
     let rows_data = result_inner.rows.unwrap_or_default();
 
-    Ok(axum::Json(serde_json::json!({
-        "success": true,
-        "data": {
-            "rows": rows_data,
-            "pagination": {
-                "limit": limit,
-                "has_more": next_cursor.is_some(),
-                "next_cursor": next_cursor
-            }
-        },
-        "pagination": {
-            "limit": limit,
-            "has_more": next_cursor.is_some(),
-            "next_cursor": next_cursor
-        },
-        "error": serde_json::Value::Null
-    })))
+    let is_ndjson = headers
+        .get(axum::http::header::ACCEPT)
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.contains("ndjson"))
+        .unwrap_or(false);
+
+    let pagination_meta = serde_json::json!({
+        "limit": limit,
+        "has_more": next_cursor.is_some(),
+        "next_cursor": next_cursor
+    });
+
+    if is_ndjson {
+        let stream = crate::database::streaming::stream_ndjson_rows(rows_data);
+        let body = axum::body::Body::from_stream(stream);
+        axum::response::Response::builder()
+            .status(axum::http::StatusCode::OK)
+            .header(axum::http::header::CONTENT_TYPE, "application/x-ndjson")
+            .body(body)
+            .map_err(|e| {
+                tracing::error!("Response build error: {}", e);
+                AxiomError::new("INTERNAL_ERROR", "Failed to build response", axum::http::StatusCode::INTERNAL_SERVER_ERROR)
+            })
+    } else if params.stream == Some(true) || rows_data.len() > 100 {
+        let stream = crate::database::streaming::stream_json_array_envelope(rows_data, pagination_meta);
+        let body = axum::body::Body::from_stream(stream);
+        axum::response::Response::builder()
+            .status(axum::http::StatusCode::OK)
+            .header(axum::http::header::CONTENT_TYPE, "application/json")
+            .body(body)
+            .map_err(|e| {
+                tracing::error!("Response build error: {}", e);
+                AxiomError::new("INTERNAL_ERROR", "Failed to build response", axum::http::StatusCode::INTERNAL_SERVER_ERROR)
+            })
+    } else {
+        let envelope = serde_json::json!({
+            "success": true,
+            "data": {
+                "rows": rows_data,
+                "pagination": pagination_meta
+            },
+            "pagination": pagination_meta,
+            "error": serde_json::Value::Null
+        });
+        let bytes = serde_json::to_vec(&envelope).map_err(|e| {
+            tracing::error!("Serialization error: {}", e);
+            AxiomError::new("SERIALIZATION_FAILED", "Failed to serialize response", axum::http::StatusCode::INTERNAL_SERVER_ERROR)
+        })?;
+        axum::response::Response::builder()
+            .status(axum::http::StatusCode::OK)
+            .header(axum::http::header::CONTENT_TYPE, "application/json")
+            .body(axum::body::Body::from(bytes))
+            .map_err(|e| {
+                tracing::error!("Response build error: {}", e);
+                AxiomError::new("INTERNAL_ERROR", "Failed to build response", axum::http::StatusCode::INTERNAL_SERVER_ERROR)
+            })
+    }
 }
 
 pub async fn update_rows(
@@ -1256,11 +1422,19 @@ pub async fn update_rows(
         crate::database::filter_builder::coerce_record_values(&mut update_data, cols);
     }
 
-    let (sql, values) = crate::database::filter_builder::construct_update(
+    let (mut sql, values) = crate::database::filter_builder::construct_update(
         &table_name,
         &update_data,
         &filter,
     );
+
+    if let Some(rls_pred) = PolicyEngine::get_rls_predicate(&auth, &db_name, &table_name, "UPDATE") {
+        if sql.contains(" WHERE ") {
+            sql = format!("{} AND ({})", sql, rls_pred);
+        } else {
+            sql = format!("{} WHERE ({})", sql, rls_pred);
+        }
+    }
 
     if sql.is_empty() || sql.ends_with("WHERE ") || sql.contains("SET  WHERE") {
         return Err(AxiomError::new(
@@ -1311,8 +1485,16 @@ pub async fn delete_rows(
         crate::database::filter_builder::coerce_filter_values(&mut filter, cols);
     }
 
-    let (sql, values) =
+    let (mut sql, values) =
         crate::database::filter_builder::construct_delete(&table_name, &filter);
+
+    if let Some(rls_pred) = PolicyEngine::get_rls_predicate(&auth, &db_name, &table_name, "DELETE") {
+        if sql.contains(" WHERE ") {
+            sql = format!("{} AND ({})", sql, rls_pred);
+        } else {
+            sql = format!("{} WHERE ({})", sql, rls_pred);
+        }
+    }
 
     if sql.ends_with("WHERE ") {
         return Err(AxiomError::new(

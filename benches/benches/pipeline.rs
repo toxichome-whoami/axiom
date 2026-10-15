@@ -100,6 +100,7 @@ fn bench_policy_evaluation(c: &mut Criterion) {
             database: "main_db".to_string(),
             table_name: "users".to_string(),
             operations: vec!["SELECT".to_string(), "UPDATE".to_string()],
+            rls_filter: None,
         }],
         ..Default::default()
     };
@@ -122,6 +123,7 @@ fn bench_policy_evaluation(c: &mut Criterion) {
             database: format!("db_{}", i),
             table_name: format!("tbl_{}", i),
             operations: vec!["SELECT".to_string()],
+            rls_filter: None,
         });
     }
 
@@ -155,6 +157,7 @@ fn bench_policy_evaluation(c: &mut Criterion) {
             database: "target_database".to_string(),
             table_name: "target_table".to_string(),
             operations: vec!["SELECT".to_string(), "UPDATE".to_string()],
+            rls_filter: None,
         });
     }
 
@@ -186,6 +189,7 @@ fn bench_policy_evaluation(c: &mut Criterion) {
             database: "*".to_string(),
             table_name: "*".to_string(),
             operations: vec!["*".to_string()],
+            rls_filter: None,
         }],
         ..Default::default()
     };
@@ -287,6 +291,7 @@ fn bench_auth_verification(c: &mut Criterion) {
                 database: "*".to_string(),
                 table_name: "*".to_string(),
                 operations: vec!["*".to_string()],
+                rls_filter: None,
             }],
         },
     );
@@ -427,6 +432,7 @@ fn bench_metadata_snapshot(c: &mut Criterion) {
                     database: "db".to_string(),
                     table_name: "tbl".to_string(),
                     operations: vec!["SELECT".to_string()],
+                    rls_filter: None,
                 }],
             },
         );

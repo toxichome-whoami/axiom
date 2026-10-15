@@ -70,6 +70,8 @@ pub struct PermissionPayload {
     pub database: String,
     pub table_name: String,
     pub operations: Vec<String>,
+    #[serde(default)]
+    pub rls_filter: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -630,6 +632,7 @@ pub async fn create_role(
             database: p.database,
             table_name: p.table_name,
             operations: p.operations,
+            rls_filter: p.rls_filter,
         })
         .collect();
 
@@ -681,6 +684,7 @@ pub async fn update_role(
                 database: p.database,
                 table_name: p.table_name,
                 operations: p.operations,
+                rls_filter: p.rls_filter,
             })
             .collect()
     });

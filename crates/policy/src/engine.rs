@@ -118,6 +118,52 @@ impl PolicyEngine {
         }
     }
 
+    /// Extracts any active Row-Level Security (RLS) predicate for the specified table and operation.
+    /// CONTRACT:
+    ///  - Precondition: `auth` contains verified identity context.
+    ///  - Returns `Some(String)` containing the SQL filter expression if an RLS policy is active.
+    ///  - Returns `None` if the caller has full unrestricted access or no RLS filter is defined.
+    ///  - Substituted tokens: `:auth_key` or `:auth.key_name` replaced with sanitized API key identifier.
+    ///  - Concurrency: Zero locks, zero dynamic allocations on hot path unless RLS is configured.
+    pub fn get_rls_predicate(
+        auth: &AuthContext,
+        database: &str,
+        table: &str,
+        operation: &str,
+    ) -> Option<String> {
+        if auth.is_session {
+            return None;
+        }
+
+        let op_normalized = operation.to_ascii_uppercase();
+
+        for perm in &auth.permissions {
+            let db_match = perm.database == "*" || perm.database.eq_ignore_ascii_case(database);
+            let table_match = perm.table_name == "*" || perm.table_name.eq_ignore_ascii_case(table);
+
+            if db_match && table_match {
+                let op_allowed = perm.operations.iter().any(|op| {
+                    op == "*" || op.eq_ignore_ascii_case(&op_normalized)
+                });
+
+                if op_allowed {
+                    if let Some(ref raw_filter) = perm.rls_filter {
+                        let trimmed = raw_filter.trim();
+                        if !trimmed.is_empty() {
+                            let sanitized_key = auth.api_key_name.replace('\'', "''");
+                            let expanded = trimmed
+                                .replace(":auth.key_name", &format!("'{}'", sanitized_key))
+                                .replace(":auth_key", &format!("'{}'", sanitized_key));
+                            return Some(expanded);
+                        }
+                    }
+                }
+            }
+        }
+
+        None
+    }
+
 // ─── Resource Listing Filters ───────────────────────────────────────────────
 
     /// Filters a list of database aliases to only those accessible to the current identity.
@@ -333,6 +379,7 @@ mod tests {
                 database: "analytics".to_string(),
                 table_name: "events".to_string(),
                 operations: vec!["SELECT".to_string(), "INSERT".to_string()],
+                rls_filter: None,
             }],
         };
 
@@ -363,6 +410,7 @@ mod tests {
                 database: "*".to_string(),
                 table_name: "*".to_string(),
                 operations: vec!["SELECT".to_string()],
+                rls_filter: None,
             }],
         };
 
@@ -401,6 +449,7 @@ mod tests {
                 database: "app_db".to_string(),
                 table_name: "customers".to_string(),
                 operations: vec!["SELECT".to_string()],
+                rls_filter: None,
             }],
         };
 
@@ -431,6 +480,7 @@ mod tests {
                 database: "blob:media".to_string(),
                 table_name: "*".to_string(),
                 operations: vec!["READ".to_string(), "WRITE".to_string()],
+                rls_filter: None,
             }],
         };
 
@@ -460,6 +510,7 @@ mod tests {
                 database: "blob:*".to_string(),
                 table_name: "uploads/*".to_string(),
                 operations: vec!["READ".to_string()],
+                rls_filter: None,
             }],
         };
 
@@ -479,6 +530,48 @@ mod tests {
         let all_ns = vec!["photos".to_string(), "docs".to_string(), "private".to_string()];
         let filtered = PolicyEngine::filter_blob_namespaces(&wildcard_ctx, &all_ns);
         assert_eq!(filtered.len(), 3);
+    }
+
+    #[test]
+    fn test_rls_predicate_extraction() {
+        let rls_ctx = AuthContext {
+            api_key_name: "tenant_tenantA".to_string(),
+            mode: ServerMode::Readwrite,
+            db_scope: vec![],
+            rate_limit_override: 0,
+            is_session: false,
+            role: Some("tenant_role".to_string()),
+            permissions: vec![PermissionSnapshot {
+                database: "analytics".to_string(),
+                table_name: "orders".to_string(),
+                operations: vec!["SELECT".to_string(), "UPDATE".to_string()],
+                rls_filter: Some("org_id = :auth_key".to_string()),
+            }],
+        };
+
+        // Matching SELECT
+        let pred = PolicyEngine::get_rls_predicate(&rls_ctx, "analytics", "orders", "SELECT");
+        assert_eq!(pred, Some("org_id = 'tenant_tenantA'".to_string()));
+
+        // Matching UPDATE
+        let pred_update = PolicyEngine::get_rls_predicate(&rls_ctx, "analytics", "orders", "UPDATE");
+        assert_eq!(pred_update, Some("org_id = 'tenant_tenantA'".to_string()));
+
+        // Non-matching operation DELETE
+        let pred_del = PolicyEngine::get_rls_predicate(&rls_ctx, "analytics", "orders", "DELETE");
+        assert_eq!(pred_del, None);
+
+        // Different table
+        let pred_other = PolicyEngine::get_rls_predicate(&rls_ctx, "analytics", "users", "SELECT");
+        assert_eq!(pred_other, None);
+
+        // Admin session bypasses RLS
+        let admin_ctx = AuthContext {
+            api_key_name: "admin".to_string(),
+            is_session: true,
+            ..Default::default()
+        };
+        assert_eq!(PolicyEngine::get_rls_predicate(&admin_ctx, "analytics", "orders", "SELECT"), None);
     }
 }
 

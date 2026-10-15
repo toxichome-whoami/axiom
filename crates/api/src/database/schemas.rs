@@ -16,6 +16,8 @@ pub struct QueryRequest {
     pub sql: String,
     pub params: Option<Value>,
     pub timeout: Option<i32>,
+    #[serde(default)]
+    pub stream: Option<bool>,
 }
 
 /// Query parameters for listing database tables with cursor pagination.
@@ -58,6 +60,8 @@ pub struct FetchRowsParams {
     pub filter: Option<String>,
     pub search: Option<String>,
     pub search_fields: Option<String>,
+    #[serde(default)]
+    pub stream: Option<bool>,
 }
 
 fn default_page() -> i32 {

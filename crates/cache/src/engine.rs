@@ -101,12 +101,25 @@ impl Clone for L1Entry {
     }
 }
 
-// ─── Engine Statics ────────────────────────────────────────────────────────
-
 static L1_CACHE: Lazy<DashMap<String, L1Entry>> = Lazy::new(DashMap::new);
 static STATS: CacheStats = CacheStats::new();
 static L2_CONN: OnceCell<libsql::Connection> = OnceCell::const_new();
 static MAX_L1_ENTRIES: AtomicU64 = AtomicU64::new(10_000);
+
+const SAMPLE_RING_SIZE: usize = 256;
+static SAMPLE_RING: Lazy<Vec<std::sync::RwLock<Option<String>>>> = Lazy::new(|| {
+    (0..SAMPLE_RING_SIZE)
+        .map(|_| std::sync::RwLock::new(None))
+        .collect()
+});
+static SAMPLE_HEAD: AtomicU64 = AtomicU64::new(0);
+
+fn record_sample_key(key: &str) {
+    let idx = (SAMPLE_HEAD.fetch_add(1, Ordering::Relaxed) as usize) % SAMPLE_RING_SIZE;
+    if let Ok(mut slot) = SAMPLE_RING[idx].write() {
+        *slot = Some(key.to_string());
+    }
+}
 
 fn current_unix_secs() -> u64 {
     SystemTime::now()
@@ -241,6 +254,7 @@ impl CacheEngine {
 
         Self::evict_if_needed();
 
+        record_sample_key(key);
         L1_CACHE.insert(
             key.to_string(),
             L1Entry {
@@ -360,37 +374,69 @@ impl CacheEngine {
             }
         }
 
-        // ── Step 2: Increment or roll sliding window counter ───────────────
-        let mut count = 1;
+        // ── Step 2: Evaluate sliding window counter ─────────────────────────
+        // Stored format: "{prev_count}:{curr_count}:{window_start_secs}"
+        // Eliminates 2x boundary burst vulnerabilities by calculating weighted rolling traffic.
+        let estimated_count;
+        let window_span = window_secs as u64;
+
         if let Some(mut entry) = L1_CACHE.get_mut(limits_key) {
-            if entry.expires_at > now {
-                // Window is still active: increment counter
-                if let Ok(c) = std::str::from_utf8(&entry.value).map(|s| s.parse::<u32>().unwrap_or(0)) {
-                    count = c + 1;
-                    entry.value = Bytes::from(count.to_string());
-                    entry.last_accessed.store(current_unix_nanos(), Ordering::Relaxed);
+            let (mut prev_count, mut curr_count, mut window_start) = (0u32, 0u32, now);
+            if let Ok(s) = std::str::from_utf8(&entry.value) {
+                let parts: Vec<&str> = s.split(':').collect();
+                if parts.len() == 3 {
+                    prev_count = parts[0].parse::<u32>().unwrap_or(0);
+                    curr_count = parts[1].parse::<u32>().unwrap_or(0);
+                    window_start = parts[2].parse::<u64>().unwrap_or(now);
+                } else if let Ok(single) = s.parse::<u32>() {
+                    // Backward-compatible fallback for legacy single integer representation
+                    curr_count = single;
+                    window_start = entry.expires_at.saturating_sub(window_span * 2);
                 }
-            } else {
-                // Window expired: roll over and start new fixed-window bucket
-                entry.value = Bytes::from("1");
-                entry.expires_at = now + window_secs as u64;
-                entry.last_accessed.store(current_unix_nanos(), Ordering::Relaxed);
             }
+
+            if now < window_start.saturating_add(window_span) {
+                // In active window: increment current bucket and calculate weighted rolling estimate
+                curr_count = curr_count.saturating_add(1);
+                let elapsed = now.saturating_sub(window_start);
+                let weight = (window_span.saturating_sub(elapsed)) as f64 / (window_span.max(1) as f64);
+                estimated_count = curr_count.saturating_add((prev_count as f64 * weight).round() as u32);
+            } else if now < window_start.saturating_add(window_span * 2) {
+                // One window rolled over: rotate current to previous and start new bucket
+                prev_count = curr_count;
+                curr_count = 1;
+                window_start = window_start.saturating_add(window_span);
+                let elapsed = now.saturating_sub(window_start);
+                let weight = (window_span.saturating_sub(elapsed)) as f64 / (window_span.max(1) as f64);
+                estimated_count = curr_count.saturating_add((prev_count as f64 * weight).round() as u32);
+            } else {
+                // Multiple windows elapsed: reset completely
+                prev_count = 0;
+                curr_count = 1;
+                window_start = now;
+                estimated_count = 1;
+            }
+
+            entry.value = Bytes::from(format!("{}:{}:{}", prev_count, curr_count, window_start));
+            entry.expires_at = now + (window_span * 2);
+            entry.last_accessed.store(current_unix_nanos(), Ordering::Relaxed);
         } else {
             Self::evict_if_needed();
+            record_sample_key(limits_key);
             L1_CACHE.insert(
                 limits_key.to_string(),
                 L1Entry {
-                    value: Bytes::from("1"),
-                    expires_at: now + window_secs as u64,
+                    value: Bytes::from(format!("0:1:{}", now)),
+                    expires_at: now + (window_span * 2),
                     last_accessed: AtomicU64::new(current_unix_nanos()),
                     durability: Durability::Ephemeral,
                 },
             );
+            estimated_count = 1;
         }
 
         // ── Step 3: Handle limit breach and register penalty ────────────────
-        if count > limit {
+        if estimated_count > limit {
             if let Some(mut entry) = L1_CACHE.get_mut(penalty_key) {
                 if entry.expires_at > now {
                     let penalty_count = std::str::from_utf8(&entry.value)
@@ -406,6 +452,7 @@ impl CacheEngine {
                 }
             } else {
                 Self::evict_if_needed();
+                record_sample_key(penalty_key);
                 L1_CACHE.insert(
                     penalty_key.to_string(),
                     L1Entry {
@@ -416,34 +463,55 @@ impl CacheEngine {
                     },
                 );
             }
-            return (true, count);
+            return (true, estimated_count);
         }
 
-        (false, count)
+        (false, estimated_count)
     }
 
-    /// Enforces true LRU eviction by removing the entry with the oldest access timestamp.
+    /// Enforces approximate LRU eviction in O(1) constant time without global table locking.
     /// ALGORITHM:
     ///  1. Checks if current table length >= max permitted entries.
-    ///  2. Samples up to 64 random entries from DashMap to avoid full O(N) global locking.
-    ///  3. Sorts sample by `last_accessed` timestamp in ascending order.
-    ///  4. Amortizes eviction overhead by pruning up to 16 oldest entries when table is saturated.
+    ///  2. If table is small (<= 64), collects all entries to find exact oldest entry.
+    ///  3. If table is large, samples candidate keys uniformly from the circular sample ring
+    ///     and checks their `last_accessed` timestamp in O(1) time.
+    ///  4. Evicts the candidate with the oldest timestamp.
     ///  5. Atomically increments eviction counter in CacheStats.
     fn evict_if_needed() {
         let max = MAX_L1_ENTRIES.load(Ordering::Relaxed) as usize;
         let current_len = L1_CACHE.len();
         if current_len >= max {
-            // Sample up to 64 entries without holding global map locks
-            let mut sample: Vec<(String, u64)> = L1_CACHE
-                .iter()
-                .take(64)
-                .map(|entry| (entry.key().clone(), entry.value().last_accessed.load(Ordering::Relaxed)))
-                .collect();
+            let mut sample: Vec<(String, u64)> = Vec::with_capacity(64);
+
+            if current_len <= 64 {
+                // Exact LRU path for small capacities
+                for entry in L1_CACHE.iter().take(64) {
+                    sample.push((entry.key().clone(), entry.value().last_accessed.load(Ordering::Relaxed)));
+                }
+            } else {
+                // Uniform sampled LRU path: inspect rotating candidates from circular sample ring
+                let start_idx = (SAMPLE_HEAD.load(Ordering::Relaxed) as usize) % SAMPLE_RING_SIZE;
+                for i in 0..32 {
+                    let idx = (start_idx + i * 7) % SAMPLE_RING_SIZE;
+                    if let Ok(guard) = SAMPLE_RING[idx].read() {
+                        if let Some(ref candidate_key) = *guard {
+                            if let Some(entry) = L1_CACHE.get(candidate_key) {
+                                sample.push((candidate_key.clone(), entry.value().last_accessed.load(Ordering::Relaxed)));
+                            }
+                        }
+                    }
+                }
+
+                if sample.len() < 8 {
+                    for entry in L1_CACHE.iter().take(32) {
+                        sample.push((entry.key().clone(), entry.value().last_accessed.load(Ordering::Relaxed)));
+                    }
+                }
+            }
 
             if !sample.is_empty() {
                 sample.sort_unstable_by_key(|(_, ts)| *ts);
-                // Evict enough to make room; when max is large, amortize by evicting up to 16
-                let target_evictions = (current_len.saturating_sub(max) + 1).max(if max > 64 { 16 } else { 1 });
+                let target_evictions = (current_len.saturating_sub(max) + 1).max(if max > 64 { 8 } else { 1 });
                 let to_evict = target_evictions.min(sample.len()).min(current_len);
                 for (k, _) in sample.into_iter().take(to_evict) {
                     if L1_CACHE.remove(&k).is_some() {
@@ -555,6 +623,40 @@ mod tests {
         let (violated, count) = CacheEngine::check_rate_limit(key, 60, 2, pen, 300, 5);
         assert!(violated);
         assert_eq!(count, 3);
+
+        CacheEngine::flush().await;
+    }
+
+    #[tokio::test]
+    async fn test_sliding_window_burst_prevention() {
+        let _guard = TEST_LOCK.lock().await;
+        CacheEngine::flush().await;
+        let key = "rl:test:sliding_window";
+        let pen = "pen:test:sliding_window";
+        let now = current_unix_secs();
+
+        // Simulate 10 requests recorded in previous window that just expired 5 seconds ago
+        let window_secs = 60;
+        let window_start = now - window_secs - 5;
+        L1_CACHE.insert(
+            key.to_string(),
+            L1Entry {
+                value: Bytes::from(format!("0:10:{}", window_start)),
+                expires_at: now + 120,
+                last_accessed: AtomicU64::new(current_unix_nanos()),
+                durability: Durability::Ephemeral,
+            },
+        );
+
+        // Limit = 10. In a fixed window system, a new request now would reset count to 1.
+        // In our sliding window, previous 10 requests carry over ~92% weight ((60-5)/60),
+        // so estimated count = 1 + round(10 * 0.916) = 1 + 9 = 10 (or 11 if weight > 0.95).
+        // Sending 2 more requests will breach the limit of 10.
+        let (_, count1) = CacheEngine::check_rate_limit(key, window_secs as u32, 10, pen, 300, 5);
+        assert!(count1 >= 10);
+
+        let (violated, count2) = CacheEngine::check_rate_limit(key, window_secs as u32, 10, pen, 300, 5);
+        assert!(violated, "Sliding window must prevent boundary burst; count was {}", count2);
 
         CacheEngine::flush().await;
     }

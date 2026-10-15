@@ -59,6 +59,9 @@ pub struct PermissionSnapshot {
     pub table_name: String,
     /// Allowed operations array (e.g. ["SELECT", "INSERT", "UPDATE", "DELETE"]).
     pub operations: Vec<String>,
+    /// Optional row-level security (RLS) SQL predicate filter applied to queries.
+    #[serde(default)]
+    pub rls_filter: Option<String>,
 }
 
 /// Injected request extension containing caller identity, session state, and permissions.
