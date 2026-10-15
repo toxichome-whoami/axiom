@@ -61,6 +61,7 @@ export interface PermissionRecordApi {
   database: string;
   table_name: string;
   operations: string[];
+  rls_filter?: string | null;
 }
 
 export interface RoleRecordApi {
@@ -411,13 +412,136 @@ export const api = {
     const qs = params.toString() ? `?${params.toString()}` : '';
     return request<ListBlobsResult>(`/api/v1/blobs/${encodeURIComponent(namespace)}${qs}`);
   },
+  /**
+   * Resumable chunked upload protocol implementation matching the backend
+   * chunked upload pipeline. Slices blobs into bounded chunks, streams them
+   * sequentially with Content-Range validation, and recovers offsets on transient failure.
+   */
+  uploadBlobResumable: async (
+    namespace: string,
+    key: string,
+    file: Blob,
+    contentType?: string,
+    signal?: AbortSignal,
+    onProgress?: (uploadedBytes: number, totalBytes: number) => void
+  ): Promise<BlobMetadata> => {
+    const totalSize = file.size;
+    const mime = contentType || file.type || 'application/octet-stream';
+    const chunkSize = 8 * 1024 * 1024; // 8 MB chunks
+
+    // Step 1: Initialize session
+    const sessionRes = await request<{
+      upload_id: string;
+      namespace: string;
+      key: string;
+      total_size?: number;
+    }>(`/api/v1/blobs/${encodeURIComponent(namespace)}/uploads`, {
+      method: 'POST',
+      body: JSON.stringify({
+        key,
+        content_type: mime,
+        total_size: totalSize,
+      }),
+      signal,
+    });
+
+    const uploadId = sessionRes.upload_id;
+    let offset = 0;
+    const token = getSessionToken();
+
+    // Step 2: Upload chunks sequentially
+    while (offset < totalSize) {
+      if (signal?.aborted) {
+        throw new Error('Upload aborted by user');
+      }
+
+      const chunkEnd = Math.min(offset + chunkSize, totalSize) - 1;
+      const chunk = file.slice(offset, chunkEnd + 1);
+      const targetUrl = resolveEndpoint(
+        `/api/v1/blobs/${encodeURIComponent(namespace)}/uploads/${encodeURIComponent(uploadId)}`
+      );
+
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/octet-stream',
+        'Content-Range': `bytes ${offset}-${chunkEnd}/${totalSize}`,
+      };
+      if (token && token !== 'undefined' && token !== 'null') {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      let res: Response;
+      try {
+        res = await fetch(targetUrl, {
+          method: 'PUT',
+          headers,
+          body: chunk,
+          signal,
+          credentials: 'include',
+        });
+      } catch (networkErr: unknown) {
+        if (signal?.aborted) throw networkErr;
+        // Probe offset from server on transient network interruption
+        try {
+          const statusRes = await fetch(targetUrl, {
+            method: 'GET',
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+            credentials: 'include',
+          });
+          const offsetHdr = statusRes.headers.get('Upload-Offset') || statusRes.headers.get('X-Upload-Offset');
+          if (offsetHdr) {
+            offset = parseInt(offsetHdr, 10);
+            continue;
+          }
+        } catch {
+          // If status probe also fails, rethrow initial error
+        }
+        throw networkErr;
+      }
+
+      if (res.status === 200 || res.status === 201) {
+        // Auto-completed on last byte
+        const json = await res.json();
+        return (json.data || json) as BlobMetadata;
+      }
+
+      if (res.status === 308) {
+        const offsetHdr = res.headers.get('Upload-Offset') || res.headers.get('X-Upload-Offset');
+        if (offsetHdr) {
+          offset = parseInt(offsetHdr, 10);
+        } else {
+          offset = chunkEnd + 1;
+        }
+        if (onProgress) {
+          onProgress(offset, totalSize);
+        }
+      } else {
+        const errText = await res.text();
+        throw new Error(`Chunk upload failed with status ${res.status}: ${errText}`);
+      }
+    }
+
+    // Step 3: Complete upload if not automatically completed
+    return request<BlobMetadata>(
+      `/api/v1/blobs/${encodeURIComponent(namespace)}/uploads/${encodeURIComponent(uploadId)}/complete`,
+      {
+        method: 'POST',
+        signal,
+      }
+    );
+  },
   uploadBlob: async (
     namespace: string,
     key: string,
     data: BodyInit,
     contentType?: string,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    onProgress?: (uploadedBytes: number, totalBytes: number) => void
   ) => {
+    // If payload is a File/Blob >= 8MB, delegate to chunked resumable upload protocol
+    if (typeof Blob !== 'undefined' && data instanceof Blob && data.size >= 8 * 1024 * 1024) {
+      return api.uploadBlobResumable(namespace, key, data, contentType, signal, onProgress);
+    }
+
     const sanitizedKey = key.split('/').map(encodeURIComponent).join('/');
     return request<BlobMetadata>(`/api/v1/blobs/${encodeURIComponent(namespace)}/${sanitizedKey}`, {
       method: 'PUT',

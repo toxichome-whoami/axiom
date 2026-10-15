@@ -25,6 +25,7 @@ export interface UploadTask {
   key: string;
   namespace: string;
   status: 'pending' | 'uploading' | 'completed' | 'failed' | 'cancelled';
+  uploadedBytes?: number;
   error?: string;
   abortController?: AbortController;
 }
@@ -152,6 +153,11 @@ export function UploadProgressDrawer({
                       </div>
                       <div className="text-[11px] text-[#71717a] flex items-center gap-1.5 truncate">
                         <span>{formatBytes(task.size)}</span>
+                        {task.status === 'uploading' && task.uploadedBytes !== undefined && task.size > 0 && (
+                          <span className="text-[#38bdf8] font-mono">
+                            • {Math.min(100, Math.round((task.uploadedBytes / task.size) * 100))}% ({formatBytes(task.uploadedBytes)})
+                          </span>
+                        )}
                         {task.status === 'failed' && (
                           <span className="text-[#ef4444] truncate">
                             • {task.error || 'Failed'}

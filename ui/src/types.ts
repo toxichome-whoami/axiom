@@ -74,13 +74,19 @@ export interface PermissionRule {
   table: string;
   operations: (PermissionOperation | string)[];
   resourceType?: 'database' | 'blob';
+  rls_filter?: string | null;
 }
 
 export interface RbacRole {
   name: string;
   description: string;
   createdAt: string;
-  permissions: { database: string; table: string; operations: string[] }[];
+  permissions: {
+    database: string;
+    table: string;
+    operations: string[];
+    rls_filter?: string | null;
+  }[];
 }
 
 export interface McpTool {

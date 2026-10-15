@@ -584,7 +584,12 @@ export function StoragePage() {
           task.key,
           file,
           file.type || 'application/octet-stream',
-          task.abortController?.signal
+          task.abortController?.signal,
+          (uploadedBytes) => {
+            setUploadTasks((prev) =>
+              prev.map((t) => (t.id === task.id ? { ...t, uploadedBytes } : t))
+            );
+          }
         );
 
         setUploadTasks((prev) =>

@@ -129,6 +129,7 @@ export function Roles() {
           database: p.database,
           table: p.table_name,
           operations: p.operations,
+          rls_filter: p.rls_filter || null,
         })),
       }));
       setRoles(loaded);
@@ -207,7 +208,13 @@ export function Roles() {
     setSelectedRole(role);
     setEditRoleName(role.name);
     setEditRoleDesc(role.description);
-    setEditPerms(role.permissions.map((p) => ({ ...p, operations: [...p.operations] })));
+    setEditPerms(
+      role.permissions.map((p) => ({
+        ...p,
+        operations: [...p.operations],
+        rls_filter: p.rls_filter || '',
+      }))
+    );
     setManageTab('edit');
     setManageOpen(true);
   }
@@ -237,6 +244,7 @@ export function Roles() {
         database: p.database,
         table_name: p.table,
         operations: p.operations,
+        rls_filter: p.rls_filter?.trim() ? p.rls_filter.trim() : null,
       }));
       await api.updateRole(selectedRole.name, {
         description: editRoleDesc,
@@ -256,6 +264,7 @@ export function Roles() {
         database: p.database,
         table_name: p.table,
         operations: p.operations,
+        rls_filter: p.rls_filter?.trim() ? p.rls_filter.trim() : null,
       }));
       await api.createRole({
         name: newRoleName.trim(),
@@ -410,6 +419,7 @@ export function Roles() {
       cell: (row) => {
         const dbCount = row.permissions.filter((p) => !p.database.toLowerCase().startsWith('blob:')).length;
         const blobCount = row.permissions.filter((p) => p.database.toLowerCase().startsWith('blob:')).length;
+        const rlsCount = row.permissions.filter((p) => Boolean(p.rls_filter && p.rls_filter.trim().length > 0)).length;
         return (
           <div className="flex items-center gap-1.5 flex-wrap font-sans">
             {dbCount > 0 && (
@@ -422,6 +432,15 @@ export function Roles() {
               <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-[#18181b] text-[#cccccc] border border-[#27272a]">
                 <Package className="w-3.5 h-3.5 text-[#8c8c8c] shrink-0" />
                 <span>{blobCount} Blob</span>
+              </span>
+            )}
+            {rlsCount > 0 && (
+              <span
+                className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-[#1e1b4b]/60 text-[#a5b4fc] border border-[#4338ca]/30"
+                title={`${rlsCount} rule${rlsCount > 1 ? 's have' : ' has'} Row-Level Security predicate filter`}
+              >
+                <Shield className="w-3 h-3 shrink-0" />
+                <span>{rlsCount} RLS</span>
               </span>
             )}
             {dbCount === 0 && blobCount === 0 && (

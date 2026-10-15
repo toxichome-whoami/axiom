@@ -17,6 +17,7 @@ import {
   FileCode,
   AlertCircle,
   AlertTriangle,
+  Filter,
 } from 'lucide-react';
 
 export interface DbPermissionRule {
@@ -24,6 +25,7 @@ export interface DbPermissionRule {
   table: string;
   operations: string[];
   resourceType?: 'database' | 'blob';
+  rls_filter?: string | null;
 }
 
 export interface PermissionTableProps {
@@ -149,6 +151,7 @@ export function PermissionTable({ value, onChange, readOnly = false }: Permissio
           database: '',
           table: '',
           operations: ['SELECT'],
+          rls_filter: '',
         },
       ]);
     }
@@ -189,6 +192,7 @@ export function PermissionTable({ value, onChange, readOnly = false }: Permissio
           database: isBlob ? (d === '*' ? 'blob:*' : `blob:${d}`) : d,
           table: t,
           operations: [...rule.operations],
+          rls_filter: rule.rls_filter,
         });
       }
     }
@@ -449,6 +453,37 @@ export function PermissionTable({ value, onChange, readOnly = false }: Permissio
                 )}
               </div>
             </div>
+
+            {/* Field 3: Row-Level Security Predicate (Relational Databases only) */}
+            {!isBlob && (
+              <div className="pt-0.5">
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="flex items-center gap-1.5 text-[12px] font-medium text-[#a3a3a3]">
+                    <Filter className="w-3.5 h-3.5 text-[#8c8c8c]" />
+                    <span>Row-Level Security (RLS SQL Filter)</span>
+                  </label>
+                  <span className="text-[11px] text-[#737373] font-mono">Optional</span>
+                </div>
+                {readOnly ? (
+                  <div className="min-h-[38px] rounded-[6px] border border-[#262626] bg-[#0c0c0c] px-3 flex items-center text-[12px] text-[#a3a3a3] font-mono">
+                    {rule.rls_filter ? rule.rls_filter : <span className="text-[#525252]">None (full table access)</span>}
+                  </div>
+                ) : (
+                  <>
+                    <input
+                      type="text"
+                      value={rule.rls_filter || ''}
+                      onChange={(e) => setRule(idx, { rls_filter: e.target.value })}
+                      placeholder="e.g. tenant_id = :auth_key OR department = 'billing'"
+                      className="min-h-[38px] w-full rounded-[6px] border border-[#262626] bg-[#0c0c0c] px-3 text-[12px] font-mono text-white placeholder-[#525252] focus:outline-none focus:border-[#2f80ed] hover:border-[#383838] transition-colors"
+                    />
+                    <p className="mt-1 text-[11px] text-[#737373] font-sans">
+                      Automatically pushed down to SQL WHERE clause on SELECT, UPDATE, and DELETE.
+                    </p>
+                  </>
+                )}
+              </div>
+            )}
 
             {/* Edge-to-edge subtle divider */}
             <div className="-mx-4 border-t border-[#1f1f1f]" />
