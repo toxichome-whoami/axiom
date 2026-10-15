@@ -127,8 +127,20 @@ pub async fn put_blob_handler(
         .and_then(|h| h.to_str().ok())
         .and_then(|v| v.parse::<u64>().ok());
 
+    // Extract custom user metadata headers (X-Axiom-Meta-* or x-amz-meta-*)
+    let mut custom_metadata = std::collections::HashMap::new();
+    for (hdr_name, hdr_val) in headers.iter() {
+        let name_lower = hdr_name.as_str().to_ascii_lowercase();
+        if let Some(key_suffix) = name_lower.strip_prefix("x-axiom-meta-").or_else(|| name_lower.strip_prefix("x-amz-meta-")) {
+            if let Ok(val_str) = hdr_val.to_str() {
+                custom_metadata.insert(key_suffix.to_string(), val_str.to_string());
+            }
+        }
+    }
+    let custom_opt = if custom_metadata.is_empty() { None } else { Some(custom_metadata) };
+
     let meta = engine
-        .put_with_options(&namespace, &key, Some(content_type), &body, ttl_seconds)
+        .put_with_options(&namespace, &key, Some(content_type), &body, ttl_seconds, custom_opt)
         .await
         .map_err(map_blob_error)?;
 
@@ -420,10 +432,10 @@ pub async fn list_blobs_handler(
 pub async fn blob_stats_handler(
     Extension(auth): Extension<AuthContext>,
 ) -> Result<impl IntoResponse, AxiomError> {
-    if !auth.is_session {
+    if !auth.is_session && auth.role.as_deref() != Some("admin") {
         return Err(AxiomError::new(
             "FORBIDDEN",
-            "Admin session required to view storage telemetry",
+            "Admin privileges required to view storage telemetry",
             StatusCode::FORBIDDEN,
         ));
     }
@@ -442,22 +454,25 @@ pub async fn blob_stats_handler(
 pub struct CreateNamespaceRequest {
     pub name: String,
     pub max_bytes: Option<u64>,
+    pub is_public: Option<bool>,
 }
 
 #[derive(serde::Deserialize)]
 pub struct UpdateNamespaceRequest {
     pub new_name: Option<String>,
     pub max_bytes: Option<Option<u64>>,
+    pub is_public: Option<bool>,
+    pub cors_origins: Option<Vec<String>>,
 }
 
 /// Administrative handler returning all configured storage namespaces with usage metrics.
 pub async fn list_namespaces_handler(
     Extension(auth): Extension<AuthContext>,
 ) -> Result<impl IntoResponse, AxiomError> {
-    if !auth.is_session {
+    if !auth.is_session && auth.role.as_deref() != Some("admin") {
         return Err(AxiomError::new(
             "FORBIDDEN",
-            "Admin session required to list storage namespaces",
+            "Admin privileges required to list storage namespaces",
             StatusCode::FORBIDDEN,
         ));
     }
@@ -477,17 +492,17 @@ pub async fn create_namespace_handler(
     Extension(auth): Extension<AuthContext>,
     Json(payload): Json<CreateNamespaceRequest>,
 ) -> Result<impl IntoResponse, AxiomError> {
-    if !auth.is_session {
+    if !auth.is_session && auth.role.as_deref() != Some("admin") {
         return Err(AxiomError::new(
             "FORBIDDEN",
-            "Admin session required to create storage namespaces",
+            "Admin privileges required to create storage namespaces",
             StatusCode::FORBIDDEN,
         ));
     }
 
     let engine = get_blob_engine()?;
     let info = engine
-        .create_namespace(&payload.name, payload.max_bytes)
+        .create_namespace(&payload.name, payload.max_bytes, payload.is_public.unwrap_or(false))
         .map_err(map_blob_error)?;
 
     Ok((
@@ -500,23 +515,29 @@ pub async fn create_namespace_handler(
     ))
 }
 
-/// Administrative handler updating an existing namespace quota or renaming it.
+/// Administrative handler updating an existing namespace quota, public status, CORS, or renaming it.
 pub async fn update_namespace_handler(
     Path(namespace): Path<String>,
     Extension(auth): Extension<AuthContext>,
     Json(payload): Json<UpdateNamespaceRequest>,
 ) -> Result<impl IntoResponse, AxiomError> {
-    if !auth.is_session {
+    if !auth.is_session && auth.role.as_deref() != Some("admin") {
         return Err(AxiomError::new(
             "FORBIDDEN",
-            "Admin session required to update storage namespaces",
+            "Admin privileges required to update storage namespaces",
             StatusCode::FORBIDDEN,
         ));
     }
 
     let engine = get_blob_engine()?;
     let info = engine
-        .update_namespace(&namespace, payload.new_name.as_deref(), payload.max_bytes)
+        .update_namespace(
+            &namespace,
+            payload.new_name.as_deref(),
+            payload.max_bytes,
+            payload.is_public,
+            payload.cors_origins,
+        )
         .map_err(map_blob_error)?;
 
     Ok(Json(json!({
@@ -531,10 +552,10 @@ pub async fn delete_namespace_handler(
     Path(namespace): Path<String>,
     Extension(auth): Extension<AuthContext>,
 ) -> Result<impl IntoResponse, AxiomError> {
-    if !auth.is_session {
+    if !auth.is_session && auth.role.as_deref() != Some("admin") {
         return Err(AxiomError::new(
             "FORBIDDEN",
-            "Admin session required to delete storage namespaces",
+            "Admin privileges required to delete storage namespaces",
             StatusCode::FORBIDDEN,
         ));
     }
@@ -1555,6 +1576,277 @@ pub async fn sweep_expired_handler(
         "data": {
             "swept_objects": count,
         },
+        "error": serde_json::Value::Null
+    })))
+}
+
+/// Helper to attach namespace-specific or wildcard CORS headers for web embedding.
+fn apply_cors_headers(resp: &mut Response, engine: &axiom_blob::BlobEngine, namespace: &str) {
+    if let Ok(origins) = engine.get_namespace_cors(namespace) {
+        if !origins.is_empty() {
+            let origin_val = origins.join(", ");
+            if let Ok(hv) = header::HeaderValue::from_str(&origin_val) {
+                resp.headers_mut().insert(header::ACCESS_CONTROL_ALLOW_ORIGIN, hv);
+            }
+        } else {
+            // Default: allow public assets to be fetched/embedded from any website
+            resp.headers_mut().insert(header::ACCESS_CONTROL_ALLOW_ORIGIN, header::HeaderValue::from_static("*"));
+        }
+    }
+}
+
+/// Unauthenticated public blob retrieval handler for static website media.
+/// CONTRACT:
+///  - Precondition: Namespace must have `is_public == true`. If not, returns 403 Forbidden.
+///  - Supports: HTTP 304 Not Modified via `If-None-Match`.
+///  - Supports: HTTP 206 Partial Content via `Range: bytes=start-end`.
+///  - Emits: `Cache-Control: public, max-age=31536000, immutable`, `ETag: "<hash>"`.
+///  - Enforces: `inline` Content-Disposition for web images/media to allow browser display.
+pub async fn get_public_blob_handler(
+    Path((namespace, key)): Path<(String, String)>,
+    headers: HeaderMap,
+) -> Result<Response, AxiomError> {
+    let engine = get_blob_engine()?;
+
+    // 1. Verify that the namespace is configured as public
+    if !engine.is_namespace_public(&namespace).map_err(map_blob_error)? {
+        return Err(AxiomError::new(
+            "FORBIDDEN",
+            &format!("Namespace '{}' is not public", namespace),
+            StatusCode::FORBIDDEN,
+        ));
+    }
+
+    // 2. Fetch metadata to evaluate conditional caching (If-None-Match)
+    let meta = engine.head(&namespace, &key).map_err(map_blob_error)?;
+    let etag_val = format!("\"{}\"", meta.hash);
+
+    if let Some(inm) = headers.get(header::IF_NONE_MATCH).and_then(|h| h.to_str().ok()) {
+        if inm.trim() == etag_val || inm.trim() == meta.hash {
+            let mut resp = Response::builder()
+                .status(StatusCode::NOT_MODIFIED)
+                .header(header::ETAG, etag_val)
+                .header(header::CACHE_CONTROL, "public, max-age=31536000, immutable")
+                .body(Body::empty())
+                .unwrap();
+            apply_cors_headers(&mut resp, &engine, &namespace);
+            return Ok(resp);
+        }
+    }
+
+    // Determine filename and disposition (inline for web media, attachment for executable/HTML/SVG)
+    let filename = key.rsplit(['/', '\\']).next().unwrap_or("blob.bin");
+    let safe_filename: String = filename
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '.' || *c == '-' || *c == '_')
+        .collect();
+
+    let is_web_media = (meta.content_type.starts_with("image/") && !meta.content_type.contains("svg"))
+        || meta.content_type.starts_with("video/")
+        || meta.content_type.starts_with("audio/");
+
+    let disposition = if is_web_media {
+        format!("inline; filename=\"{}\"", safe_filename)
+    } else {
+        format!("attachment; filename=\"{}\"", safe_filename)
+    };
+
+    // Range handling (max single range: 256 MB)
+    const MAX_RANGE_BYTES: u64 = 256 * 1024 * 1024;
+    let range_hdr = headers.get(header::RANGE).and_then(|h| h.to_str().ok());
+    let parsed_range = if let Some(r) = range_hdr {
+        if r.contains(',') {
+            return Err(AxiomError::new(
+                "RANGE_NOT_SATISFIABLE",
+                "Multiple ranges are not supported",
+                StatusCode::RANGE_NOT_SATISFIABLE,
+            ));
+        }
+        if let Some(spec) = r.strip_prefix("bytes=") {
+            let mut parts = spec.split('-');
+            let start_str = parts.next().unwrap_or("").trim();
+            let end_str = parts.next().unwrap_or("").trim();
+
+            if start_str.is_empty() && !end_str.is_empty() {
+                if let Ok(suffix) = end_str.parse::<u64>() {
+                    let suffix = suffix.min(MAX_RANGE_BYTES);
+                    let start = meta.size.saturating_sub(suffix);
+                    Some((start, None))
+                } else {
+                    return Err(AxiomError::new("RANGE_NOT_SATISFIABLE", "Invalid Range header", StatusCode::RANGE_NOT_SATISFIABLE));
+                }
+            } else if let Ok(start) = start_str.parse::<u64>() {
+                let end = if end_str.is_empty() {
+                    Some(start.saturating_add(MAX_RANGE_BYTES))
+                } else {
+                    end_str.parse::<u64>().ok().map(|e| {
+                        if e < start { e } else { start.saturating_add((e.saturating_sub(start)).min(MAX_RANGE_BYTES)) }
+                    })
+                };
+                let end = match (end_str.is_empty(), end) {
+                    (false, None) => return Err(AxiomError::new("RANGE_NOT_SATISFIABLE", "Invalid Range header", StatusCode::RANGE_NOT_SATISFIABLE)),
+                    (_, e) => e,
+                };
+                Some((start, end))
+            } else {
+                return Err(AxiomError::new("RANGE_NOT_SATISFIABLE", "Invalid Range header", StatusCode::RANGE_NOT_SATISFIABLE));
+            }
+        } else {
+            return Err(AxiomError::new("RANGE_NOT_SATISFIABLE", "Invalid Range header", StatusCode::RANGE_NOT_SATISFIABLE));
+        }
+    } else {
+        None
+    };
+
+    let response_builder = if let Some((start, end)) = parsed_range {
+        let (meta, byte_range, data) = engine
+            .get_range(&namespace, &key, start, end)
+            .await
+            .map_err(map_blob_error)?;
+
+        let range_len = byte_range.length();
+        let content_range = format!("bytes {}-{}/{}", byte_range.start, byte_range.end, byte_range.total);
+
+        let builder = Response::builder()
+            .status(StatusCode::PARTIAL_CONTENT)
+            .header(header::CONTENT_TYPE, meta.content_type)
+            .header(header::CONTENT_LENGTH, range_len.to_string())
+            .header(header::CONTENT_RANGE, content_range)
+            .header(header::ACCEPT_RANGES, "bytes")
+            .header(header::ETAG, etag_val)
+            .header(header::CACHE_CONTROL, "public, max-age=31536000, immutable")
+            .header(header::X_CONTENT_TYPE_OPTIONS, "nosniff")
+            .header(header::CONTENT_DISPOSITION, disposition);
+
+        let mut resp = match data {
+            BlobData::Inline(bytes) => builder.body(Body::from(bytes)).unwrap(),
+            BlobData::File(file, len) => {
+                use tokio::io::AsyncReadExt;
+                let stream = ReaderStream::new(file.take(len));
+                builder.body(Body::from_stream(stream)).unwrap()
+            }
+        };
+
+        for (k, v) in &meta.metadata {
+            if let (Ok(name), Ok(val)) = (
+                header::HeaderName::from_bytes(format!("x-axiom-meta-{}", k.to_ascii_lowercase()).as_bytes()),
+                header::HeaderValue::from_str(v),
+            ) {
+                resp.headers_mut().insert(name, val);
+            }
+        }
+        apply_cors_headers(&mut resp, &engine, &namespace);
+        return Ok(resp);
+    } else {
+        Response::builder()
+            .status(StatusCode::OK)
+            .header(header::CONTENT_TYPE, meta.content_type.clone())
+            .header(header::CONTENT_LENGTH, meta.size.to_string())
+            .header(header::ACCEPT_RANGES, "bytes")
+            .header(header::ETAG, etag_val)
+            .header(header::CACHE_CONTROL, "public, max-age=31536000, immutable")
+            .header(header::X_CONTENT_TYPE_OPTIONS, "nosniff")
+            .header(header::CONTENT_DISPOSITION, disposition)
+    };
+
+    let (_, data) = engine.get(&namespace, &key).await.map_err(map_blob_error)?;
+    let mut resp = match data {
+        BlobData::Inline(bytes) => response_builder.body(Body::from(bytes)).unwrap(),
+        BlobData::File(file, len) => {
+            use tokio::io::AsyncReadExt;
+            let stream = ReaderStream::new(file.take(len));
+            response_builder.body(Body::from_stream(stream)).unwrap()
+        }
+    };
+
+    for (k, v) in &meta.metadata {
+        if let (Ok(name), Ok(val)) = (
+            header::HeaderName::from_bytes(format!("x-axiom-meta-{}", k.to_ascii_lowercase()).as_bytes()),
+            header::HeaderValue::from_str(v),
+        ) {
+            resp.headers_mut().insert(name, val);
+        }
+    }
+    apply_cors_headers(&mut resp, &engine, &namespace);
+    Ok(resp)
+}
+
+/// Head request for public unauthenticated blob metadata.
+pub async fn head_public_blob_handler(
+    Path((namespace, key)): Path<(String, String)>,
+) -> Result<Response, AxiomError> {
+    let engine = get_blob_engine()?;
+
+    if !engine.is_namespace_public(&namespace).map_err(map_blob_error)? {
+        return Err(AxiomError::new(
+            "FORBIDDEN",
+            &format!("Namespace '{}' is not public", namespace),
+            StatusCode::FORBIDDEN,
+        ));
+    }
+
+    let meta = engine.head(&namespace, &key).map_err(map_blob_error)?;
+    let filename = key.rsplit(['/', '\\']).next().unwrap_or("blob.bin");
+    let safe_filename: String = filename
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '.' || *c == '-' || *c == '_')
+        .collect();
+
+    let is_web_media = (meta.content_type.starts_with("image/") && !meta.content_type.contains("svg"))
+        || meta.content_type.starts_with("video/")
+        || meta.content_type.starts_with("audio/");
+
+    let disposition = if is_web_media {
+        format!("inline; filename=\"{}\"", safe_filename)
+    } else {
+        format!("attachment; filename=\"{}\"", safe_filename)
+    };
+
+    let mut resp = Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, meta.content_type)
+        .header(header::CONTENT_LENGTH, meta.size.to_string())
+        .header(header::ETAG, format!("\"{}\"", meta.hash))
+        .header(header::CACHE_CONTROL, "public, max-age=31536000, immutable")
+        .header(header::X_CONTENT_TYPE_OPTIONS, "nosniff")
+        .header(header::CONTENT_DISPOSITION, disposition)
+        .body(Body::empty())
+        .map_err(|e| AxiomError::new("RESPONSE_BUILD_FAILED", &e.to_string(), StatusCode::INTERNAL_SERVER_ERROR))?;
+
+    for (k, v) in &meta.metadata {
+        if let (Ok(name), Ok(val)) = (
+            header::HeaderName::from_bytes(format!("x-axiom-meta-{}", k.to_ascii_lowercase()).as_bytes()),
+            header::HeaderValue::from_str(v),
+        ) {
+            resp.headers_mut().insert(name, val);
+        }
+    }
+    apply_cors_headers(&mut resp, &engine, &namespace);
+    Ok(resp)
+}
+
+/// Batch multi-object deletion handler (S3 Multi-Object Delete).
+pub async fn batch_delete_blobs_handler(
+    Path(namespace): Path<String>,
+    Extension(auth): Extension<AuthContext>,
+    Json(payload): Json<axiom_blob::DeleteObjectsRequest>,
+) -> Result<impl IntoResponse, AxiomError> {
+    PolicyEngine::evaluate_blob(&auth, &namespace, "*", "DELETE")?;
+
+    let engine = get_blob_engine()?;
+    let result = engine.delete_objects(&namespace, &payload.keys).await.map_err(map_blob_error)?;
+
+    let actor = if auth.is_session {
+        "admin"
+    } else {
+        &auth.api_key_name
+    };
+    let details = format!("deleted={}, errors={}", result.deleted.len(), result.errors.len());
+    let _ = MetadataStore::record_audit(actor, "blob.batch_delete", &namespace, Some(&details)).await;
+
+    Ok(Json(json!({
+        "success": true,
+        "data": result,
         "error": serde_json::Value::Null
     })))
 }

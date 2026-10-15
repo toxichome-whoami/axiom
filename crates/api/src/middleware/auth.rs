@@ -135,6 +135,18 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, A
     let path = req.uri().path();
     let stripped_blob_path = path.strip_prefix("/api/v1/blobs/").or_else(|| path.strip_prefix("/blobs/"));
     if let Some(stripped) = stripped_blob_path {
+        // Fast-path: Unauthenticated public blob reads (/api/v1/blobs/public/:namespace/*key)
+        // Handler validates that target namespace has is_public == true.
+        if stripped.starts_with("public/") && (*req.method() == axum::http::Method::GET || *req.method() == axum::http::Method::HEAD) {
+            let ctx = AuthContext {
+                api_key_name: "public:anonymous".to_string(),
+                role: Some("public".to_string()),
+                ..Default::default()
+            };
+            req.extensions_mut().insert(ctx);
+            return Ok(next.run(req).await);
+        }
+
         if let Some(query) = req.uri().query() {
             let mut ticket_sig = None;
             let mut ticket_exp_str = None;

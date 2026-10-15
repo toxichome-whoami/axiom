@@ -24,6 +24,9 @@ pub struct BlobMetadata {
     /// Optional expiration timestamp in Unix epoch seconds (TTL).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expires_at: Option<i64>,
+    /// Custom user-defined metadata key-value tags (e.g. S3 x-amz-meta-* / X-Axiom-Meta-*).
+    #[serde(default, skip_serializing_if = "std::collections::HashMap::is_empty")]
+    pub metadata: std::collections::HashMap<String, String>,
 }
 
 /// Concrete byte boundary for HTTP 206 Partial Content slicing.
@@ -153,4 +156,23 @@ pub struct NamespaceInfo {
     pub total_objects: u64,
     /// Total logical bytes occupied by objects inside this namespace.
     pub total_bytes: u64,
+    /// Whether this namespace permits unauthenticated public reads for web assets.
+    #[serde(default)]
+    pub is_public: bool,
+    /// Permitted CORS origins for browser fetch/embed (e.g. ["*"] or ["https://example.com"]).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cors_origins: Vec<String>,
+}
+
+/// Request payload for batch multi-object deletion.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DeleteObjectsRequest {
+    pub keys: Vec<String>,
+}
+
+/// Result summary for batch multi-object deletion.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DeleteObjectsResult {
+    pub deleted: Vec<String>,
+    pub errors: Vec<(String, String)>,
 }

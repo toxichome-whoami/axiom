@@ -902,7 +902,7 @@ async fn exec_write_blob(
     };
 
     let engine = crate::blobs::get_blob_engine().map_err(|e| e.to_string())?;
-    let meta = engine.put_with_options(ns, key, content_type, &raw_bytes, ttl_seconds)
+    let meta = engine.put_with_options(ns, key, content_type, &raw_bytes, ttl_seconds, None)
         .await
         .map_err(|e| e.to_string())?;
 

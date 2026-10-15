@@ -2189,3 +2189,136 @@ async fn row_level_security_predicate_filtering() {
     }
 }
 
+#[tokio::test]
+async fn test_modern_s3_public_blob_and_batch_workflow() {
+    setup_test_metadata();
+    ensure_blob_engine().await;
+    let admin_token = BASE64_STANDARD.encode("admin_key:secret_admin");
+
+    // 1. Create a public namespace for website media
+    let req = Request::post("/admin/v1/blobs/namespaces")
+        .header("Authorization", format!("Bearer {}", admin_token))
+        .header("Content-Type", "application/json")
+        .body(Body::from(serde_json::to_vec(&serde_json::json!({
+            "name": "site-media",
+            "is_public": true
+        })).unwrap()))
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::CREATED);
+
+    // 2. Upload an image to the public namespace with custom metadata
+    let img_payload = b"FAKE_JPEG_IMAGE_PAYLOAD_FOR_TESTING";
+    let req = Request::put("/api/v1/blobs/site-media/banners/hero.jpg")
+        .header("X-Axiom-Key", &admin_token)
+        .header("Content-Type", "image/jpeg")
+        .header("X-Axiom-Meta-Author", "Engineering")
+        .header("X-Axiom-Meta-Env", "Production")
+        .body(Body::from(img_payload.as_slice()))
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::CREATED);
+
+    let put_body = axum::body::to_bytes(res.into_body(), 65536).await.unwrap();
+    let put_json: Value = serde_json::from_slice(&put_body).unwrap();
+    let etag = put_json["data"]["hash"].as_str().unwrap().to_string();
+
+    // 3. Unauthenticated GET /api/v1/blobs/public/site-media/banners/hero.jpg
+    let req = Request::get("/api/v1/blobs/public/site-media/banners/hero.jpg")
+        .body(Body::empty())
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    assert_eq!(res.headers().get("content-type").unwrap(), "image/jpeg");
+    assert_eq!(
+        res.headers().get("cache-control").unwrap(),
+        "public, max-age=31536000, immutable"
+    );
+    assert_eq!(
+        res.headers().get("etag").unwrap(),
+        &format!("\"{}\"", etag)
+    );
+    assert_eq!(
+        res.headers().get("x-axiom-meta-author").unwrap(),
+        "Engineering"
+    );
+    assert_eq!(
+        res.headers().get("x-axiom-meta-env").unwrap(),
+        "Production"
+    );
+    let body_bytes = axum::body::to_bytes(res.into_body(), 65536).await.unwrap();
+    assert_eq!(&body_bytes[..], img_payload);
+
+    // 4. Test If-None-Match conditional request returns 304 Not Modified with 0 body bytes
+    let req = Request::get("/api/v1/blobs/public/site-media/banners/hero.jpg")
+        .header("If-None-Match", format!("\"{}\"", etag))
+        .body(Body::empty())
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::NOT_MODIFIED);
+    let cached_body = axum::body::to_bytes(res.into_body(), 65536).await.unwrap();
+    assert!(cached_body.is_empty());
+
+    // 5. Test private namespace rejection: create private namespace
+    let req = Request::post("/admin/v1/blobs/namespaces")
+        .header("Authorization", format!("Bearer {}", admin_token))
+        .header("Content-Type", "application/json")
+        .body(Body::from(serde_json::to_vec(&serde_json::json!({
+            "name": "private-vault",
+            "is_public": false
+        })).unwrap()))
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::CREATED);
+
+    let req = Request::put("/api/v1/blobs/private-vault/secret.txt")
+        .header("X-Axiom-Key", &admin_token)
+        .body(Body::from("CONFIDENTIAL"))
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::CREATED);
+
+    // Unauthenticated access to private namespace must return 403 Forbidden
+    let req = Request::get("/api/v1/blobs/public/private-vault/secret.txt")
+        .body(Body::empty())
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::FORBIDDEN);
+
+    // 6. Unauthenticated PUT to public namespace must return 401 Unauthorized
+    let req = Request::put("/api/v1/blobs/public/site-media/exploit.jpg")
+        .body(Body::from("ATTACK"))
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+
+    // 7. Batch multi-object deletion
+    let req = Request::put("/api/v1/blobs/site-media/file1.png")
+        .header("X-Axiom-Key", &admin_token)
+        .body(Body::from("DATA1"))
+        .unwrap();
+    create_app().oneshot(req).await.unwrap();
+
+    let req = Request::put("/api/v1/blobs/site-media/file2.png")
+        .header("X-Axiom-Key", &admin_token)
+        .body(Body::from("DATA2"))
+        .unwrap();
+    create_app().oneshot(req).await.unwrap();
+
+    let req = Request::post("/api/v1/blobs/site-media/delete-objects")
+        .header("X-Axiom-Key", &admin_token)
+        .header("Content-Type", "application/json")
+        .body(Body::from(serde_json::to_vec(&serde_json::json!({
+            "keys": ["file1.png", "file2.png"]
+        })).unwrap()))
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    let del_body = axum::body::to_bytes(res.into_body(), 65536).await.unwrap();
+    let del_json: Value = serde_json::from_slice(&del_body).unwrap();
+    let deleted = del_json["data"]["deleted"].as_array().unwrap();
+    assert_eq!(deleted.len(), 2);
+}
+
+

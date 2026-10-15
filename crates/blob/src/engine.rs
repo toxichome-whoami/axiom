@@ -88,10 +88,10 @@ impl BlobEngine {
         content_type: Option<&str>,
         data: &[u8],
     ) -> Result<BlobMetadata, BlobError> {
-        self.put_with_options(namespace, key, content_type, data, None).await
+        self.put_with_options(namespace, key, content_type, data, None, None).await
     }
 
-    /// Stores a binary payload with optional TTL lifecycle expiration.
+    /// Stores a binary payload with optional TTL lifecycle expiration and custom user metadata tags.
     pub async fn put_with_options(
         &self,
         namespace: &str,
@@ -99,6 +99,7 @@ impl BlobEngine {
         content_type: Option<&str>,
         data: &[u8],
         ttl_seconds: Option<u64>,
+        metadata: Option<std::collections::HashMap<String, String>>,
     ) -> Result<BlobMetadata, BlobError> {
         validate_namespace(namespace)?;
         validate_key(key)?;
@@ -149,6 +150,7 @@ impl BlobEngine {
             created_at: now,
             inline: is_inline,
             expires_at,
+            metadata: metadata.unwrap_or_default(),
         };
 
         self.index.commit_put(namespace, key, &meta)?;
@@ -321,6 +323,34 @@ impl BlobEngine {
         }
     }
 
+    /// Deletes multiple objects in a batch operation (S3 Multi-Object Delete).
+    /// CONTRACT:
+    ///  - Iterates keys, validating and deleting each.
+    ///  - S3 idempotent semantics: non-existent keys are reported as deleted.
+    ///  - Returns `DeleteObjectsResult` detailing successes and failures.
+    pub async fn delete_objects(
+        &self,
+        namespace: &str,
+        keys: &[String],
+    ) -> Result<crate::models::DeleteObjectsResult, BlobError> {
+        validate_namespace(namespace)?;
+        let mut result = crate::models::DeleteObjectsResult::default();
+        for key in keys {
+            if let Err(e) = validate_key(key) {
+                result.errors.push((key.clone(), e.to_string()));
+                continue;
+            }
+            match self.delete(namespace, key).await {
+                Ok(_) => result.deleted.push(key.clone()),
+                Err(BlobError::NotFound { .. }) => {
+                    result.deleted.push(key.clone());
+                }
+                Err(e) => result.errors.push((key.clone(), e.to_string())),
+            }
+        }
+        Ok(result)
+    }
+
     /// Lists object keys in a namespace matching an optional prefix.
     pub fn list(
         &self,
@@ -351,10 +381,20 @@ impl BlobEngine {
         self.index.list_namespaces()
     }
 
-    /// Registers a new namespace with an optional quota limit.
-    pub fn create_namespace(&self, name: &str, max_bytes: Option<u64>) -> Result<NamespaceInfo, BlobError> {
+    /// Registers a new namespace with an optional quota limit and public status.
+    pub fn create_namespace(&self, name: &str, max_bytes: Option<u64>, is_public: bool) -> Result<NamespaceInfo, BlobError> {
         validate_namespace(name)?;
-        self.index.create_namespace(name, max_bytes)
+        self.index.create_namespace(name, max_bytes, is_public)
+    }
+
+    /// Checks whether the specified namespace allows unauthenticated public reads.
+    pub fn is_namespace_public(&self, namespace: &str) -> Result<bool, BlobError> {
+        self.index.is_namespace_public(namespace)
+    }
+
+    /// Retrieves CORS allowed origins for the specified namespace.
+    pub fn get_namespace_cors(&self, namespace: &str) -> Result<Vec<String>, BlobError> {
+        self.index.get_namespace_cors(namespace)
     }
 
     /// Retrieves detailed info and live metrics for a single namespace.
@@ -368,18 +408,20 @@ impl BlobEngine {
         self.index.list_namespaces_info()
     }
 
-    /// Updates quota or renames a namespace.
+    /// Updates quota, visibility (is_public), CORS, or renames a namespace.
     pub fn update_namespace(
         &self,
         name: &str,
         new_name: Option<&str>,
         max_bytes: Option<Option<u64>>,
+        is_public: Option<bool>,
+        cors_origins: Option<Vec<String>>,
     ) -> Result<NamespaceInfo, BlobError> {
         validate_namespace(name)?;
         if let Some(nn) = new_name {
             validate_namespace(nn)?;
         }
-        self.index.update_namespace(name, new_name, max_bytes)
+        self.index.update_namespace(name, new_name, max_bytes, is_public, cors_origins)
     }
 
     /// Duplicates an existing object into a target key/namespace at zero physical I/O cost (content-addressed refcount increment).
@@ -438,6 +480,7 @@ impl BlobEngine {
             created_at: now,
             inline: src_meta.inline,
             expires_at: src_meta.expires_at,
+            metadata: src_meta.metadata.clone(),
         };
 
         self.index.commit_put(dest_ns, dest_key, &dest_meta)?;
@@ -898,6 +941,7 @@ impl BlobEngine {
             created_at: now,
             inline: false,
             expires_at: None,
+            metadata: std::collections::HashMap::new(),
         };
 
         self.index.commit_put(&session.namespace, &session.key, &meta)?;
@@ -1179,7 +1223,7 @@ mod tests {
 
         let ns = "scrub-test";
         let payload = vec![77u8; 128]; // Disk file
-        let meta = engine.put_with_options(ns, "temp.bin", None, &payload, Some(0)).await.unwrap();
+        let meta = engine.put_with_options(ns, "temp.bin", None, &payload, Some(0), None).await.unwrap();
 
         // Scrub check passes
         assert!(engine.scrub_blob(&meta.hash).await.unwrap());
@@ -1458,5 +1502,48 @@ mod tests {
         // Session must be purged
         assert!(engine.get_upload_session(&session.upload_id).unwrap().is_none());
         assert!(engine.get_upload_offset(&session.upload_id).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_blob_engine_public_namespace_and_batch_delete() {
+        let tmp = tempfile::tempdir().unwrap();
+        let engine = BlobEngine::new(tmp.path(), 64, 1024 * 1024, false).await.unwrap();
+
+        let ns = "public-media";
+        let info = engine.create_namespace(ns, None, true).unwrap();
+        assert!(info.is_public);
+        assert!(engine.is_namespace_public(ns).unwrap());
+
+        // Put object with custom metadata tags
+        let mut custom_meta = std::collections::HashMap::new();
+        custom_meta.insert("author".to_string(), "alice".to_string());
+        custom_meta.insert("license".to_string(), "mit".to_string());
+
+        let meta = engine.put_with_options(
+            ns,
+            "banner.jpg",
+            Some("image/jpeg"),
+            b"JPEG_BINARY_DATA",
+            None,
+            Some(custom_meta.clone()),
+        ).await.unwrap();
+
+        assert_eq!(meta.metadata.get("author").unwrap(), "alice");
+        assert_eq!(meta.metadata.get("license").unwrap(), "mit");
+
+        // Put another object
+        engine.put(ns, "logo.png", Some("image/png"), b"PNG_DATA").await.unwrap();
+
+        // Batch delete both objects
+        let del_res = engine.delete_objects(ns, &[
+            "banner.jpg".to_string(),
+            "logo.png".to_string(),
+            "nonexistent.txt".to_string(),
+        ]).await.unwrap();
+
+        assert_eq!(del_res.deleted.len(), 3);
+        assert!(del_res.errors.is_empty());
+        assert!(engine.get(ns, "banner.jpg").await.is_err());
+        assert!(engine.get(ns, "logo.png").await.is_err());
     }
 }

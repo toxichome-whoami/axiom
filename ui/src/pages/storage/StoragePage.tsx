@@ -123,6 +123,8 @@ export function StoragePage() {
   const [newNsName, setNewNsName] = useState('');
   const [newNsQuotaPreset, setNewNsQuotaPreset] = useState('unlimited');
   const [newNsCustomBytes, setNewNsCustomBytes] = useState('');
+  const [newNsIsPublic, setNewNsIsPublic] = useState(false);
+  const [newNsCors, setNewNsCors] = useState('');
   const [isCreatingNs, setIsCreatingNs] = useState(false);
 
   const [isManageNsOpen, setIsManageNsOpen] = useState(false);
@@ -130,6 +132,8 @@ export function StoragePage() {
   const [editNsName, setEditNsName] = useState('');
   const [editNsQuotaPreset, setEditNsQuotaPreset] = useState('unlimited');
   const [editNsCustomBytes, setEditNsCustomBytes] = useState('');
+  const [editNsIsPublic, setEditNsIsPublic] = useState(false);
+  const [editNsCors, setEditNsCors] = useState('');
   const [isSavingNs, setIsSavingNs] = useState(false);
   const [nsToDelete, setNsToDelete] = useState<NamespaceInfo | null>(null);
   const [isDeletingNs, setIsDeletingNs] = useState(false);
@@ -883,6 +887,14 @@ export function StoragePage() {
     setTimeout(() => setCopiedKey(null), 2000);
   };
 
+  // Copy direct CDN / public URL for web integration
+  const handleCopyPublicUrl = useCallback((item: StorageItem) => {
+    const publicUrl = `${window.location.origin}/api/v1/blobs/public/${activeNamespace}/${item.fullKey}`;
+    navigator.clipboard.writeText(publicUrl);
+    setCopiedKey('public-url');
+    setTimeout(() => setCopiedKey(null), 2000);
+  }, [activeNamespace]);
+
   // Paste item from clipboard
   const handlePaste = async () => {
     if (!clipboard) return;
@@ -917,9 +929,15 @@ export function StoragePage() {
       } else if (newNsQuotaPreset !== 'unlimited') {
         maxBytes = parseInt(newNsQuotaPreset, 10);
       }
-      await api.createBlobNamespace(name, maxBytes);
+      const corsList = newNsCors
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+      await api.createBlobNamespace(name, maxBytes, newNsIsPublic, corsList);
       setIsNewNsOpen(false);
       setNewNsName('');
+      setNewNsIsPublic(false);
+      setNewNsCors('');
       setActiveNamespace(name);
       setCurrentPrefix('');
       syncLocation(name, '', true);
@@ -946,7 +964,16 @@ export function StoragePage() {
       } else if (editNsQuotaPreset !== 'unlimited') {
         maxBytes = parseInt(editNsQuotaPreset, 10);
       }
-      await api.updateBlobNamespace(currentNsInfo.name, { new_name: name, max_bytes: maxBytes });
+      const corsList = editNsCors
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+      await api.updateBlobNamespace(currentNsInfo.name, {
+        new_name: name,
+        max_bytes: maxBytes,
+        is_public: editNsIsPublic,
+        cors_origins: corsList,
+      });
       setIsManageNsOpen(false);
       if (currentNsInfo.name === activeNamespace) {
         setActiveNamespace(name);
@@ -1010,12 +1037,16 @@ export function StoragePage() {
           setNewNsName('');
           setNewNsQuotaPreset('unlimited');
           setNewNsCustomBytes('');
+          setNewNsIsPublic(false);
+          setNewNsCors('');
           setIsNewNsOpen(true);
         }}
         onOpenManageNamespace={() => {
           const ns = namespaces.find((n) => n.name === activeNamespace);
           if (ns) {
             setEditNsName(ns.name);
+            setEditNsIsPublic(Boolean(ns.is_public));
+            setEditNsCors((ns.cors_origins || []).join(', '));
             if (!ns.max_bytes) {
               setEditNsQuotaPreset('unlimited');
               setEditNsCustomBytes('');
@@ -1108,6 +1139,7 @@ export function StoragePage() {
           onDropOnFolder={handleDropOnFolder}
           selectedFileItem={selectedItem && selectedItem.type === 'file' ? selectedItem : null}
           onShareClick={handleOpenShare}
+          isPublic={Boolean(currentNsInfo?.is_public)}
         />
 
         {/* Main Files/Folders View Area */}
@@ -1238,6 +1270,7 @@ export function StoragePage() {
         currentNsInfo={currentNsInfo}
         onDownload={handleDownload}
         onShare={handleOpenShare}
+        onCopyPublicUrl={handleCopyPublicUrl}
         onOpenMove={(item) => {
           setItemToMove(item);
           setIsMoveOpen(true);
@@ -1481,6 +1514,43 @@ export function StoragePage() {
                 </div>
               )}
 
+              <div className="pt-2 border-t border-[#1e1e1e] space-y-3">
+                <label className="flex items-start gap-2.5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={newNsIsPublic}
+                    onChange={(e) => setNewNsIsPublic(e.target.checked)}
+                    className="mt-0.5 rounded bg-[#141414] border-[#262626] text-blue-600 focus:ring-0 cursor-pointer"
+                  />
+                  <div>
+                    <span className="text-[13px] font-medium text-white block">
+                      Enable Public Read Access
+                    </span>
+                    <span className="text-[11.5px] text-[#777777] leading-relaxed block mt-0.5">
+                      Direct static URLs (<code className="text-[#a3a3a3]">/api/v1/blobs/public/:namespace/*key</code>) with HTTP 304 browser caching for websites. Writes remain strictly authenticated.
+                    </span>
+                  </div>
+                </label>
+
+                {newNsIsPublic && (
+                  <div>
+                    <label className="block text-[12.5px] text-[#999999] font-medium mb-1.5">
+                      Allowed CORS Origins (Optional)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. *, https://example.com"
+                      value={newNsCors}
+                      onChange={(e) => setNewNsCors(e.target.value)}
+                      className="w-full h-9 px-3 rounded-[6px] bg-[#141414] border border-[#262626] focus:border-[#383838] text-white text-[13px] outline-none"
+                    />
+                    <span className="text-[11px] text-[#666666] block mt-1">
+                      Comma-separated list of origins. Leave empty to allow any origin when public.
+                    </span>
+                  </div>
+                )}
+              </div>
+
               <div className="flex items-center justify-end gap-2 pt-1">
                 <button
                   type="button"
@@ -1603,6 +1673,41 @@ export function StoragePage() {
                   </div>
                 )}
 
+                <div className="pt-2 border-t border-[#1e1e1e] space-y-3">
+                  <label className="flex items-start gap-2.5 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={editNsIsPublic}
+                      onChange={(e) => setEditNsIsPublic(e.target.checked)}
+                      className="mt-0.5 rounded bg-[#141414] border-[#262626] text-blue-600 focus:ring-0 cursor-pointer"
+                    />
+                    <div>
+                      <span className="text-[13px] font-medium text-white block">
+                        Enable Public Read Access
+                      </span>
+                      <span className="text-[11.5px] text-[#777777] leading-relaxed block mt-0.5">
+                        Direct static URLs (<code className="text-[#a3a3a3]">/api/v1/blobs/public/:namespace/*key</code>) with HTTP 304 browser caching for websites.
+                      </span>
+                    </div>
+                  </label>
+
+                  <div>
+                    <label className="block text-[12.5px] text-[#999999] font-medium mb-1.5">
+                      Allowed CORS Origins
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. *, https://example.com"
+                      value={editNsCors}
+                      onChange={(e) => setEditNsCors(e.target.value)}
+                      className="w-full h-9 px-3 rounded-[6px] bg-[#141414] border border-[#262626] focus:border-[#383838] text-white text-[13px] outline-none"
+                    />
+                    <span className="text-[11px] text-[#666666] block mt-1">
+                      Comma-separated origins. Leave empty to allow any origin when public.
+                    </span>
+                  </div>
+                </div>
+
                 <div className="flex items-center justify-end gap-2 pt-2">
                   <button
                     type="button"
@@ -1683,6 +1788,8 @@ export function StoragePage() {
         }}
         onDownload={(item) => handleDownload(item.fullKey)}
         onShare={handleOpenShare}
+        onCopyPublicUrl={handleCopyPublicUrl}
+        isPublicNamespace={Boolean(currentNsInfo?.is_public)}
         onMove={(item) => {
           setItemToMove(item);
           setIsMoveOpen(true);
@@ -1725,6 +1832,7 @@ export function StoragePage() {
         }}
         item={itemToShare}
         namespace={activeNamespace}
+        isPublicNamespace={Boolean(currentNsInfo?.is_public)}
       />
 
       {/* Floating Asynchronous Upload Progress Drawer */}

@@ -390,12 +390,20 @@ export const api = {
   // Native Blob Storage Subsystem
   getBlobStats: () => request<BlobStats>('/admin/v1/blobs/stats'),
   listBlobNamespaces: () => request<NamespaceInfo[]>('/admin/v1/blobs/namespaces'),
-  createBlobNamespace: (name: string, max_bytes?: number | null) =>
+  createBlobNamespace: (name: string, max_bytes?: number | null, is_public?: boolean, cors_origins?: string[]) =>
     request<NamespaceInfo>('/admin/v1/blobs/namespaces', {
       method: 'POST',
-      body: JSON.stringify({ name, max_bytes: max_bytes ?? null }),
+      body: JSON.stringify({
+        name,
+        max_bytes: max_bytes ?? null,
+        is_public: is_public ?? false,
+        cors_origins: cors_origins ?? [],
+      }),
     }),
-  updateBlobNamespace: (name: string, data: { new_name?: string; max_bytes?: number | null }) =>
+  updateBlobNamespace: (
+    name: string,
+    data: { new_name?: string; max_bytes?: number | null; is_public?: boolean; cors_origins?: string[] }
+  ) =>
     request<NamespaceInfo>(`/admin/v1/blobs/namespaces/${encodeURIComponent(name)}`, {
       method: 'PATCH',
       body: JSON.stringify(data),

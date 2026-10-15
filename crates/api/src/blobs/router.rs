@@ -15,6 +15,11 @@ use axum::{
 /// Builds the public Data API router for blob storage mounted at `/api/v1/blobs`.
 pub fn get_router() -> Router {
     Router::new()
+        .route(
+            "/public/:namespace/*key",
+            get(get_public_blob_handler).head(head_public_blob_handler),
+        )
+        .route("/:namespace/delete-objects", post(batch_delete_blobs_handler))
         .route("/:namespace", get(list_blobs_handler))
         .route("/:namespace/ticket", post(create_ticket_handler))
         .route("/:namespace/uploads", post(init_upload_handler))

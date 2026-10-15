@@ -184,6 +184,8 @@ export interface NamespaceInfo {
   max_bytes: number | null;
   total_objects: number;
   total_bytes: number;
+  is_public?: boolean;
+  cors_origins?: string[];
 }
 
 // ─── Table Editor & Schema Types ─────────────────────────────────────────────

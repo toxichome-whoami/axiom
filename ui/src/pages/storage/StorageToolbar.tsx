@@ -37,6 +37,7 @@ export interface StorageToolbarProps {
   onDropOnFolder: (targetFolderKey: string, item?: StorageItem) => void;
   selectedFileItem?: StorageItem | null;
   onShareClick?: (item: StorageItem) => void;
+  isPublic?: boolean;
 }
 
 export function StorageToolbar({
@@ -58,13 +59,14 @@ export function StorageToolbar({
   onDropOnFolder,
   selectedFileItem,
   onShareClick,
+  isPublic,
 }: StorageToolbarProps) {
   const [dragOverTargetKey, setDragOverTargetKey] = useState<string | null>(null);
 
   return (
     <div className="h-[54px] shrink-0 px-4 border-b border-[#222222] bg-[#0c0c0c] flex items-center justify-between gap-3 select-none font-sans">
       {/* ─── Left: Interactive Breadcrumbs Navigator ─────────────── */}
-      <div className="flex items-center gap-1 text-[13px] overflow-x-auto scrollbar-none min-w-0 py-0.5">
+      <div className="flex items-center gap-1.5 text-[13px] overflow-x-auto scrollbar-none min-w-0 py-0.5">
         <button
           type="button"
           onClick={() => onNavigateToPrefix('')}
@@ -94,7 +96,7 @@ export function StorageToolbar({
               await onDropOnFolder('', draggedItemRef.current);
             }
           }}
-          className={`hover:text-white transition-colors cursor-pointer font-medium shrink-0 h-7 px-2 flex items-center rounded-[5px] ${
+          className={`hover:text-white transition-colors cursor-pointer font-medium shrink-0 h-7 px-2 flex items-center gap-1.5 rounded-[5px] ${
             dragOverTargetKey === ''
               ? 'bg-blue-600/30 text-blue-300 ring-1 ring-blue-500/60'
               : currentPrefix === ''
@@ -102,7 +104,18 @@ export function StorageToolbar({
               : 'text-[#8c8c8c]'
           }`}
         >
-          {activeNamespace || 'Root'}
+          <span>{activeNamespace || 'Root'}</span>
+          {activeNamespace && (
+            <span
+              className={`px-1.5 py-0.2 rounded-[3px] text-[10px] font-medium tracking-wide ${
+                isPublic
+                  ? 'bg-emerald-950/60 border border-emerald-800/60 text-emerald-400'
+                  : 'bg-[#181818] border border-[#2a2a2a] text-[#777777]'
+              }`}
+            >
+              {isPublic ? 'Public' : 'Private'}
+            </span>
+          )}
         </button>
 
         {breadcrumbSegments.map((seg, idx) => {

@@ -19,6 +19,7 @@ import {
   RefreshCw,
   Copy,
   Share2,
+  Globe,
 } from 'lucide-react';
 import { StorageItem, ClipboardState } from './types';
 
@@ -35,6 +36,8 @@ export interface ContextMenuProps {
   onOpenFolder?: (item: StorageItem) => void;
   onDownload?: (item: StorageItem) => void;
   onShare?: (item: StorageItem) => void;
+  onCopyPublicUrl?: (item: StorageItem) => void;
+  isPublicNamespace?: boolean;
   onMove?: (item: StorageItem) => void;
   onRename?: (item: StorageItem) => void;
   onCopy?: (item: StorageItem) => void;
@@ -54,6 +57,8 @@ export function ContextMenu({
   onOpenFolder,
   onDownload,
   onShare,
+  onCopyPublicUrl,
+  isPublicNamespace,
   onMove,
   onRename,
   onCopy,
@@ -157,6 +162,20 @@ export function ContextMenu({
             >
               <Share2 className="w-4 h-4 text-[#F6821F] shrink-0" />
               <span>Share Link...</span>
+            </button>
+          )}
+
+          {item.type === 'file' && isPublicNamespace && onCopyPublicUrl && (
+            <button
+              type="button"
+              onClick={() => {
+                onCopyPublicUrl(item);
+                onClose();
+              }}
+              className="w-full flex items-center gap-2.5 px-2.5 py-1.5 text-[13px] text-[#34d399] hover:text-[#10b981] hover:bg-[#10b981]/10 rounded-[6px] transition-colors cursor-pointer text-left"
+            >
+              <Globe className="w-4 h-4 text-[#34d399] shrink-0" />
+              <span>Copy Public Link</span>
             </button>
           )}
 

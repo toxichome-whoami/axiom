@@ -17,6 +17,10 @@ struct NamespaceRecord {
     pub name: String,
     pub created_at: i64,
     pub max_bytes: Option<u64>,
+    #[serde(default)]
+    pub is_public: bool,
+    #[serde(default)]
+    pub cors_origins: Vec<String>,
 }
 
 pub struct BlobIndex {
@@ -317,6 +321,8 @@ impl BlobIndex {
                 name: namespace.to_string(),
                 created_at: now,
                 max_bytes: None,
+                is_public: false,
+                cors_origins: Vec::new(),
             };
             let bytes = serde_json::to_vec(&record)
                 .map_err(|e| BlobError::Engine(format!("Failed to serialize namespace: {}", e)))?;
@@ -325,8 +331,13 @@ impl BlobIndex {
         Ok(())
     }
 
-    /// Registers a new namespace with an optional quota limit.
-    pub fn create_namespace(&self, name: &str, max_bytes: Option<u64>) -> Result<NamespaceInfo, BlobError> {
+    /// Registers a new namespace with an optional quota limit and public status.
+    pub fn create_namespace(
+        &self,
+        name: &str,
+        max_bytes: Option<u64>,
+        is_public: bool,
+    ) -> Result<NamespaceInfo, BlobError> {
         if self.namespaces_keyspace.get(name.as_bytes())?.is_some() {
             return Err(BlobError::Engine(format!("Namespace '{}' already exists", name)));
         }
@@ -338,6 +349,8 @@ impl BlobIndex {
             name: name.to_string(),
             created_at: now,
             max_bytes,
+            is_public,
+            cors_origins: Vec::new(),
         };
         let bytes = serde_json::to_vec(&record)
             .map_err(|e| BlobError::Engine(format!("Failed to serialize namespace: {}", e)))?;
@@ -348,6 +361,8 @@ impl BlobIndex {
             max_bytes,
             total_objects: 0,
             total_bytes: 0,
+            is_public,
+            cors_origins: Vec::new(),
         })
     }
 
@@ -363,6 +378,8 @@ impl BlobIndex {
                     name: name.to_string(),
                     created_at: 0,
                     max_bytes: None,
+                    is_public: false,
+                    cors_origins: Vec::new(),
                 },
                 false,
             )
@@ -398,6 +415,8 @@ impl BlobIndex {
             max_bytes: record.max_bytes,
             total_objects,
             total_bytes,
+            is_public: record.is_public,
+            cors_origins: record.cors_origins,
         }))
     }
 
@@ -418,6 +437,8 @@ impl BlobIndex {
                             name: name.to_string(),
                             created_at: 0,
                             max_bytes: None,
+                            is_public: false,
+                            cors_origins: Vec::new(),
                         },
                         0,
                         0,
@@ -436,6 +457,8 @@ impl BlobIndex {
                             name: ns,
                             created_at: 0,
                             max_bytes: None,
+                            is_public: false,
+                            cors_origins: Vec::new(),
                         },
                         0,
                         0,
@@ -459,18 +482,42 @@ impl BlobIndex {
                 max_bytes: rec.max_bytes,
                 total_objects: count,
                 total_bytes: bytes,
+                is_public: rec.is_public,
+                cors_origins: rec.cors_origins,
             })
             .collect();
 
         Ok(result)
     }
 
-    /// Updates namespace quota or renames namespace.
+    /// Checks whether the specified namespace allows unauthenticated public reads.
+    pub fn is_namespace_public(&self, namespace: &str) -> Result<bool, BlobError> {
+        if let Some(slice) = self.namespaces_keyspace.get(namespace.as_bytes())? {
+            if let Ok(record) = serde_json::from_slice::<NamespaceRecord>(&slice) {
+                return Ok(record.is_public);
+            }
+        }
+        Ok(false)
+    }
+
+    /// Retrieves CORS allowed origins for the specified namespace.
+    pub fn get_namespace_cors(&self, namespace: &str) -> Result<Vec<String>, BlobError> {
+        if let Some(slice) = self.namespaces_keyspace.get(namespace.as_bytes())? {
+            if let Ok(record) = serde_json::from_slice::<NamespaceRecord>(&slice) {
+                return Ok(record.cors_origins);
+            }
+        }
+        Ok(Vec::new())
+    }
+
+    /// Updates namespace quota, visibility (is_public), CORS, or renames namespace.
     pub fn update_namespace(
         &self,
         name: &str,
         new_name: Option<&str>,
         max_bytes: Option<Option<u64>>,
+        is_public: Option<bool>,
+        cors_origins: Option<Vec<String>>,
     ) -> Result<NamespaceInfo, BlobError> {
         let mut info = self.get_namespace_info(name)?.ok_or_else(|| {
             BlobError::NamespaceNotFound(name.to_string())
@@ -516,6 +563,9 @@ impl BlobIndex {
             None => info.max_bytes,
         };
 
+        let new_is_public = is_public.unwrap_or(info.is_public);
+        let new_cors = cors_origins.unwrap_or(info.cors_origins);
+
         let record = NamespaceRecord {
             name: target_name.to_string(),
             created_at: if info.created_at > 0 { info.created_at } else {
@@ -525,6 +575,8 @@ impl BlobIndex {
                     .as_secs() as i64
             },
             max_bytes: new_max_bytes,
+            is_public: new_is_public,
+            cors_origins: new_cors.clone(),
         };
 
         let bytes = serde_json::to_vec(&record)
@@ -533,6 +585,8 @@ impl BlobIndex {
 
         info.name = target_name.to_string();
         info.max_bytes = new_max_bytes;
+        info.is_public = new_is_public;
+        info.cors_origins = new_cors;
         Ok(info)
     }
 

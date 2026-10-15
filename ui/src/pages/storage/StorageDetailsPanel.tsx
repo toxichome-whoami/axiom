@@ -19,6 +19,7 @@ import {
   Layers,
   HardDrive,
   Share2,
+  Globe,
 } from 'lucide-react';
 import { StorageItem } from './types';
 import { NamespaceInfo } from '../../types';
@@ -33,6 +34,7 @@ export interface StorageDetailsPanelProps {
   currentNsInfo: NamespaceInfo | null;
   onDownload: (key: string) => void;
   onShare?: (item: StorageItem) => void;
+  onCopyPublicUrl?: (item: StorageItem) => void;
   onOpenMove: (item: StorageItem) => void;
   onDelete: (item: StorageItem) => void;
   onVerifyBlob: (key: string) => Promise<void>;
@@ -49,6 +51,7 @@ export function StorageDetailsPanel({
   currentNsInfo,
   onDownload,
   onShare,
+  onCopyPublicUrl,
   onOpenMove,
   onDelete,
   onVerifyBlob,
@@ -124,6 +127,17 @@ export function StorageDetailsPanel({
                   </button>
                 )}
 
+                {selectedItem.type === 'file' && currentNsInfo?.is_public && onCopyPublicUrl && (
+                  <button
+                    type="button"
+                    onClick={() => onCopyPublicUrl(selectedItem)}
+                    className="inline-flex items-center justify-center gap-1.5 h-7 px-2 rounded-[5px] text-[12px] font-medium text-emerald-400 hover:text-emerald-300 bg-emerald-950/20 hover:bg-emerald-950/40 border border-emerald-900/30 transition-colors cursor-pointer"
+                  >
+                    <Globe className="w-3.5 h-3.5" />
+                    <span>Public URL</span>
+                  </button>
+                )}
+
                 <button
                   type="button"
                   onClick={() => onOpenMove(selectedItem)}
@@ -153,8 +167,57 @@ export function StorageDetailsPanel({
               <div className="rounded-[6px] bg-[#111111] border border-[#222222] divide-y divide-[#1a1a1a] text-[12.5px]">
                 <div className="flex items-center justify-between px-3 py-2">
                   <span className="text-[#888888]">Namespace</span>
-                  <span className="text-white font-medium">{activeNamespace}</span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-white font-medium">{activeNamespace}</span>
+                    {currentNsInfo?.is_public && (
+                      <span className="px-1.5 py-0.2 rounded-[3px] bg-emerald-950/60 border border-emerald-800/60 text-[9.5px] font-medium text-emerald-400">
+                        Public
+                      </span>
+                    )}
+                  </div>
                 </div>
+
+                <div className="flex items-center justify-between px-3 py-2">
+                  <span className="text-[#888888]">Access Policy</span>
+                  <span
+                    className={`font-medium ${
+                      currentNsInfo?.is_public ? 'text-emerald-400' : 'text-[#888888]'
+                    }`}
+                  >
+                    {currentNsInfo?.is_public ? 'Public Direct (CDN)' : 'Private (Signed Ticket Only)'}
+                  </span>
+                </div>
+
+                {selectedItem.type === 'file' && currentNsInfo?.is_public && (
+                  <div className="flex items-center justify-between px-3 py-2 gap-2">
+                    <span className="text-[#888888] shrink-0">Direct CDN URL</span>
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span
+                        className="text-emerald-400 text-[11.5px] truncate max-w-[140px] font-mono"
+                        title={`${window.location.origin}/api/v1/blobs/public/${activeNamespace}/${selectedItem.fullKey}`}
+                      >
+                        /api/v1/blobs/public/{activeNamespace}/{selectedItem.fullKey}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          onCopyText(
+                            `${window.location.origin}/api/v1/blobs/public/${activeNamespace}/${selectedItem.fullKey}`,
+                            'public-url'
+                          )
+                        }
+                        title="Copy direct CDN / Public URL"
+                        className="text-[#777777] hover:text-white p-0.5 cursor-pointer shrink-0"
+                      >
+                        {copiedKey === 'public-url' ? (
+                          <Check className="w-3.5 h-3.5 text-emerald-400" />
+                        ) : (
+                          <Copy className="w-3.5 h-3.5" />
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 <div className="flex items-center justify-between px-3 py-2 gap-2">
                   <span className="text-[#888888] shrink-0">Path Key</span>
