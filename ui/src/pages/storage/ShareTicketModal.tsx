@@ -245,11 +245,11 @@ export function ShareTicketModal({
         </div>
 
         {isPublicNamespace && (
-          <div className="mx-5 mt-3 p-3 rounded-[6px] bg-emerald-950/20 border border-emerald-900/40 text-[12.5px] text-emerald-300 flex items-center justify-between gap-3">
+          <div className="mx-5 mt-3 p-3 rounded-[6px] bg-[#30a46c]/10 border border-[#30a46c]/30 text-[12.5px] text-[#30a46c] flex items-center justify-between gap-3">
             <div className="flex items-center gap-2 min-w-0">
-              <Globe className="w-4 h-4 text-emerald-400 shrink-0" />
+              <Globe className="w-4 h-4 text-[#30a46c] shrink-0" />
               <div className="truncate">
-                <span className="font-medium text-emerald-300">Public Namespace:</span>
+                <span className="font-medium text-[#30a46c]">Public Namespace:</span>
                 <span className="text-[#a3a3a3] ml-1">Direct static CDN URLs work without expiration.</span>
               </div>
             </div>
@@ -259,7 +259,7 @@ export function ShareTicketModal({
                 const url = `${window.location.origin}/api/v1/blobs/public/${namespace}/${item.fullKey}`;
                 copyToClipboard(url, 'public-cdn-url');
               }}
-              className="px-2.5 py-1 rounded-[5px] bg-emerald-900/40 hover:bg-emerald-900/60 border border-emerald-700/50 text-[11.5px] font-medium text-emerald-200 transition-colors shrink-0 cursor-pointer"
+              className="px-2.5 py-1 rounded-[5px] bg-[#30a46c]/20 hover:bg-[#30a46c]/30 border border-[#30a46c]/40 text-[11.5px] font-medium text-[#30a46c] transition-colors shrink-0 cursor-pointer"
             >
               {copiedKey === 'public-cdn-url' ? 'Copied!' : 'Copy CDN Link'}
             </button>

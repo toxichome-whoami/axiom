@@ -106,7 +106,7 @@ export function StorageSidebar({
                     {activeNamespace || 'Select Namespace'}
                   </span>
                   {currentNsInfo?.is_public && (
-                    <span className="px-1.5 py-0.5 rounded-[4px] bg-emerald-950/60 border border-emerald-800/60 text-[10px] font-medium text-emerald-400 shrink-0">
+                    <span className="px-1.5 py-0.5 rounded-[4px] bg-[#30a46c]/15 border border-[#30a46c]/30 text-[10px] font-medium text-[#30a46c] shrink-0">
                       Public
                     </span>
                   )}
@@ -149,7 +149,7 @@ export function StorageSidebar({
                           <HardDrive className={`w-3.5 h-3.5 shrink-0 ${isActive ? 'text-blue-400' : 'text-[#777777]'}`} />
                           <span className="truncate">{ns.name}</span>
                           {ns.is_public && (
-                            <span className="px-1.5 py-0.2 rounded-[3px] bg-emerald-950/60 border border-emerald-800/60 text-[9.5px] font-medium text-emerald-400 shrink-0">
+                            <span className="px-1.5 py-0.2 rounded-[3px] bg-[#30a46c]/15 border border-[#30a46c]/30 text-[9.5px] font-medium text-[#30a46c] shrink-0">
                               Public
                             </span>
                           )}

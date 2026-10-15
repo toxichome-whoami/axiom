@@ -170,7 +170,7 @@ export function StorageDetailsPanel({
                   <div className="flex items-center gap-1.5">
                     <span className="text-white font-medium">{activeNamespace}</span>
                     {currentNsInfo?.is_public && (
-                      <span className="px-1.5 py-0.2 rounded-[3px] bg-emerald-950/60 border border-emerald-800/60 text-[9.5px] font-medium text-emerald-400">
+                      <span className="px-1.5 py-0.2 rounded-[3px] bg-[#30a46c]/15 border border-[#30a46c]/30 text-[9.5px] font-medium text-[#30a46c]">
                         Public
                       </span>
                     )}
@@ -181,7 +181,7 @@ export function StorageDetailsPanel({
                   <span className="text-[#888888]">Access Policy</span>
                   <span
                     className={`font-medium ${
-                      currentNsInfo?.is_public ? 'text-emerald-400' : 'text-[#888888]'
+                      currentNsInfo?.is_public ? 'text-[#30a46c]' : 'text-[#888888]'
                     }`}
                   >
                     {currentNsInfo?.is_public ? 'Public Direct (CDN)' : 'Private (Signed Ticket Only)'}
@@ -193,7 +193,7 @@ export function StorageDetailsPanel({
                     <span className="text-[#888888] shrink-0">Direct CDN URL</span>
                     <div className="flex items-center gap-1.5 min-w-0">
                       <span
-                        className="text-emerald-400 text-[11.5px] truncate max-w-[140px] font-mono"
+                        className="text-[#30a46c] text-[11.5px] truncate max-w-[140px] font-mono"
                         title={`${window.location.origin}/api/v1/blobs/public/${activeNamespace}/${selectedItem.fullKey}`}
                       >
                         /api/v1/blobs/public/{activeNamespace}/{selectedItem.fullKey}
@@ -210,7 +210,7 @@ export function StorageDetailsPanel({
                         className="text-[#777777] hover:text-white p-0.5 cursor-pointer shrink-0"
                       >
                         {copiedKey === 'public-url' ? (
-                          <Check className="w-3.5 h-3.5 text-emerald-400" />
+                          <Check className="w-3.5 h-3.5 text-[#30a46c]" />
                         ) : (
                           <Copy className="w-3.5 h-3.5" />
                         )}
@@ -232,7 +232,7 @@ export function StorageDetailsPanel({
                       className="text-[#777777] hover:text-white p-0.5 cursor-pointer shrink-0"
                     >
                       {copiedKey === 'path-key' ? (
-                        <Check className="w-3.5 h-3.5 text-emerald-400" />
+                        <Check className="w-3.5 h-3.5 text-[#30a46c]" />
                       ) : (
                         <Copy className="w-3.5 h-3.5" />
                       )}
@@ -287,8 +287,8 @@ export function StorageDetailsPanel({
                   >
                     {copiedKey === 'blake3-hash' ? (
                       <>
-                        <Check className="w-3 h-3 text-emerald-400" />
-                        <span className="text-emerald-400 font-medium">Copied!</span>
+                        <Check className="w-3 h-3 text-[#30a46c]" />
+                        <span className="text-[#30a46c] font-medium">Copied!</span>
                       </>
                     ) : (
                       <>

@@ -109,8 +109,8 @@ export function StorageToolbar({
             <span
               className={`px-1.5 py-0.2 rounded-[3px] text-[10px] font-medium tracking-wide ${
                 isPublic
-                  ? 'bg-emerald-950/60 border border-emerald-800/60 text-emerald-400'
-                  : 'bg-[#181818] border border-[#2a2a2a] text-[#777777]'
+                  ? 'bg-[#30a46c]/15 border border-[#30a46c]/30 text-[#30a46c]'
+                  : 'bg-[#161616] border border-[#262626] text-[#8c8c8c]'
               }`}
             >
               {isPublic ? 'Public' : 'Private'}

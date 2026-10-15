@@ -24,6 +24,8 @@ import { sanitizeFolder, parentOf, joinKey, validateName } from './paths';
 import { MoveDialog } from './MoveDialog';
 import { ContextMenu, ContextMenuPosition } from './ContextMenu';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
+import { Button } from '../../components/ui/Button';
+import { Switch } from '../../components/ui/Switch';
 import { CustomSelect } from '../../components/shared/CustomSelect';
 import { UploadProgressDrawer, UploadTask } from './UploadProgressDrawer';
 import { StorageSidebar } from './StorageSidebar';
@@ -1321,25 +1323,28 @@ export function StoragePage() {
                   placeholder="e.g. assets"
                   value={newFolderName}
                   onChange={(e) => setNewFolderName(e.target.value)}
-                  className="w-full h-9 px-3 rounded-[6px] bg-[#141414] border border-[#262626] focus:border-[#383838] text-white text-[13.5px] sm:text-[14px] outline-none"
+                  className="w-full h-9 px-3 rounded-[6px] bg-[#141414] border border-[#262626] focus:border-[#3b82f6] text-white text-[13.5px] sm:text-[14px] outline-none"
                 />
               </div>
 
               <div className="flex items-center justify-end gap-2 pt-1">
-                <button
+                <Button
+                  variant="secondary"
+                  size="md"
                   type="button"
                   onClick={() => setIsNewFolderOpen(false)}
-                  className="h-9 px-3.5 rounded-[6px] text-[13.5px] sm:text-[14px] font-medium text-[#cccccc] hover:text-white bg-transparent hover:bg-[#161616] border border-[#262626] transition-colors cursor-pointer"
                 >
                   Cancel
-                </button>
-                <button
+                </Button>
+                <Button
+                  variant="primary"
+                  size="md"
                   type="submit"
                   disabled={isCreatingFolder || !newFolderName.trim()}
-                  className="h-9 px-4 rounded-[6px] text-[13.5px] sm:text-[14px] font-medium text-white bg-blue-600 hover:bg-blue-500 border border-blue-500/80 transition-colors cursor-pointer disabled:opacity-40"
+                  isLoading={isCreatingFolder}
                 >
                   {isCreatingFolder ? 'Creating...' : 'Create Folder'}
-                </button>
+                </Button>
               </div>
             </form>
           </div>
@@ -1382,7 +1387,7 @@ export function StoragePage() {
                   required
                   value={renameInput}
                   onChange={(e) => setRenameInput(e.target.value)}
-                  className="w-full h-9 px-3 rounded-[6px] bg-[#141414] border border-[#262626] focus:border-[#383838] text-white text-[13.5px] sm:text-[14px] outline-none"
+                  className="w-full h-9 px-3 rounded-[6px] bg-[#141414] border border-[#262626] focus:border-[#3b82f6] text-white text-[13.5px] sm:text-[14px] outline-none"
                 />
                 {renameError && (
                   <p className="text-[12px] text-rose-400 mt-1">{renameError}</p>
@@ -1390,20 +1395,23 @@ export function StoragePage() {
               </div>
 
               <div className="flex items-center justify-end gap-2 pt-1">
-                <button
+                <Button
+                  variant="secondary"
+                  size="md"
                   type="button"
                   onClick={() => setIsRenameOpen(false)}
-                  className="h-9 px-3.5 rounded-[6px] text-[13.5px] sm:text-[14px] font-medium text-[#cccccc] hover:text-white bg-transparent hover:bg-[#161616] border border-[#262626] transition-colors cursor-pointer"
                 >
                   Cancel
-                </button>
-                <button
+                </Button>
+                <Button
+                  variant="primary"
+                  size="md"
                   type="submit"
                   disabled={isRenaming || !renameInput.trim()}
-                  className="h-9 px-4 rounded-[6px] text-[13.5px] sm:text-[14px] font-medium text-white bg-blue-600 hover:bg-blue-500 border border-blue-500/80 transition-colors cursor-pointer disabled:opacity-40"
+                  isLoading={isRenaming}
                 >
                   {isRenaming ? 'Renaming...' : 'Rename'}
-                </button>
+                </Button>
               </div>
             </form>
           </div>
@@ -1482,7 +1490,7 @@ export function StoragePage() {
                   placeholder="e.g. avatars, invoices"
                   value={newNsName}
                   onChange={(e) => setNewNsName(e.target.value)}
-                  className="w-full h-9 px-3 rounded-[6px] bg-[#141414] border border-[#262626] focus:border-[#383838] text-white text-[13.5px] sm:text-[14px] outline-none"
+                  className="w-full h-9 px-3 rounded-[6px] bg-[#141414] border border-[#262626] focus:border-[#3b82f6] text-white text-[13.5px] sm:text-[14px] outline-none"
                 />
               </div>
 
@@ -1509,28 +1517,28 @@ export function StoragePage() {
                     value={newNsCustomBytes}
                     onChange={(e) => setNewNsCustomBytes(e.target.value)}
                     placeholder="e.g. 104857600"
-                    className="w-full h-9 px-3 rounded-[6px] bg-[#141414] border border-[#262626] focus:border-[#383838] text-white text-[13.5px] sm:text-[14px] outline-none"
+                    className="w-full h-9 px-3 rounded-[6px] bg-[#141414] border border-[#262626] focus:border-[#3b82f6] text-white text-[13.5px] sm:text-[14px] outline-none"
                   />
                 </div>
               )}
 
               <div className="pt-2 border-t border-[#1e1e1e] space-y-3">
-                <label className="flex items-start gap-2.5 cursor-pointer">
-                  <input
-                    type="checkbox"
+                <div className="flex items-start gap-3">
+                  <Switch
                     checked={newNsIsPublic}
-                    onChange={(e) => setNewNsIsPublic(e.target.checked)}
-                    className="mt-0.5 rounded bg-[#141414] border-[#262626] text-blue-600 focus:ring-0 cursor-pointer"
+                    onCheckedChange={setNewNsIsPublic}
+                    id="new-ns-public-switch"
+                    className="mt-0.5"
                   />
                   <div>
-                    <span className="text-[13px] font-medium text-white block">
+                    <label htmlFor="new-ns-public-switch" className="text-[13px] font-medium text-white block cursor-pointer">
                       Enable Public Read Access
-                    </span>
+                    </label>
                     <span className="text-[11.5px] text-[#777777] leading-relaxed block mt-0.5">
                       Direct static URLs (<code className="text-[#a3a3a3]">/api/v1/blobs/public/:namespace/*key</code>) with HTTP 304 browser caching for websites. Writes remain strictly authenticated.
                     </span>
                   </div>
-                </label>
+                </div>
 
                 {newNsIsPublic && (
                   <div>
@@ -1542,7 +1550,7 @@ export function StoragePage() {
                       placeholder="e.g. *, https://example.com"
                       value={newNsCors}
                       onChange={(e) => setNewNsCors(e.target.value)}
-                      className="w-full h-9 px-3 rounded-[6px] bg-[#141414] border border-[#262626] focus:border-[#383838] text-white text-[13px] outline-none"
+                      className="w-full h-9 px-3 rounded-[6px] bg-[#141414] border border-[#262626] focus:border-[#3b82f6] text-white text-[13px] outline-none"
                     />
                     <span className="text-[11px] text-[#666666] block mt-1">
                       Comma-separated list of origins. Leave empty to allow any origin when public.
@@ -1552,20 +1560,23 @@ export function StoragePage() {
               </div>
 
               <div className="flex items-center justify-end gap-2 pt-1">
-                <button
+                <Button
+                  variant="secondary"
+                  size="md"
                   type="button"
                   onClick={() => setIsNewNsOpen(false)}
-                  className="h-9 px-3.5 rounded-[6px] text-[13.5px] sm:text-[14px] font-medium text-[#cccccc] hover:text-white bg-transparent hover:bg-[#161616] border border-[#262626] transition-colors cursor-pointer"
                 >
                   Cancel
-                </button>
-                <button
+                </Button>
+                <Button
+                  variant="primary"
+                  size="md"
                   type="submit"
                   disabled={isCreatingNs || !newNsName.trim()}
-                  className="h-9 px-4 rounded-[6px] text-[13.5px] sm:text-[14px] font-medium text-white bg-blue-600 hover:bg-blue-500 border border-blue-500/80 transition-colors cursor-pointer disabled:opacity-40"
+                  isLoading={isCreatingNs}
                 >
                   {isCreatingNs ? 'Creating...' : 'Create Namespace'}
-                </button>
+                </Button>
               </div>
             </form>
           </div>
@@ -1642,7 +1653,7 @@ export function StoragePage() {
                     required
                     value={editNsName}
                     onChange={(e) => setEditNsName(e.target.value)}
-                    className="w-full h-9 px-3 rounded-[6px] bg-[#141414] border border-[#262626] focus:border-[#383838] text-white text-[13.5px] sm:text-[14px] outline-none"
+                    className="w-full h-9 px-3 rounded-[6px] bg-[#141414] border border-[#262626] focus:border-[#3b82f6] text-white text-[13.5px] sm:text-[14px] outline-none"
                   />
                 </div>
 
@@ -1668,28 +1679,28 @@ export function StoragePage() {
                       min="1"
                       value={editNsCustomBytes}
                       onChange={(e) => setEditNsCustomBytes(e.target.value)}
-                      className="w-full h-9 px-3 rounded-[6px] bg-[#141414] border border-[#262626] focus:border-[#383838] text-white text-[13.5px] sm:text-[14px] outline-none"
+                      className="w-full h-9 px-3 rounded-[6px] bg-[#141414] border border-[#262626] focus:border-[#3b82f6] text-white text-[13.5px] sm:text-[14px] outline-none"
                     />
                   </div>
                 )}
 
                 <div className="pt-2 border-t border-[#1e1e1e] space-y-3">
-                  <label className="flex items-start gap-2.5 cursor-pointer">
-                    <input
-                      type="checkbox"
+                  <div className="flex items-start gap-3">
+                    <Switch
                       checked={editNsIsPublic}
-                      onChange={(e) => setEditNsIsPublic(e.target.checked)}
-                      className="mt-0.5 rounded bg-[#141414] border-[#262626] text-blue-600 focus:ring-0 cursor-pointer"
+                      onCheckedChange={setEditNsIsPublic}
+                      id="edit-ns-public-switch"
+                      className="mt-0.5"
                     />
                     <div>
-                      <span className="text-[13px] font-medium text-white block">
+                      <label htmlFor="edit-ns-public-switch" className="text-[13px] font-medium text-white block cursor-pointer">
                         Enable Public Read Access
-                      </span>
+                      </label>
                       <span className="text-[11.5px] text-[#777777] leading-relaxed block mt-0.5">
                         Direct static URLs (<code className="text-[#a3a3a3]">/api/v1/blobs/public/:namespace/*key</code>) with HTTP 304 browser caching for websites.
                       </span>
                     </div>
-                  </label>
+                  </div>
 
                   <div>
                     <label className="block text-[12.5px] text-[#999999] font-medium mb-1.5">
@@ -1700,7 +1711,7 @@ export function StoragePage() {
                       placeholder="e.g. *, https://example.com"
                       value={editNsCors}
                       onChange={(e) => setEditNsCors(e.target.value)}
-                      className="w-full h-9 px-3 rounded-[6px] bg-[#141414] border border-[#262626] focus:border-[#383838] text-white text-[13px] outline-none"
+                      className="w-full h-9 px-3 rounded-[6px] bg-[#141414] border border-[#262626] focus:border-[#3b82f6] text-white text-[13px] outline-none"
                     />
                     <span className="text-[11px] text-[#666666] block mt-1">
                       Comma-separated origins. Leave empty to allow any origin when public.
@@ -1709,46 +1720,51 @@ export function StoragePage() {
                 </div>
 
                 <div className="flex items-center justify-end gap-2 pt-2">
-                  <button
+                  <Button
+                    variant="secondary"
+                    size="md"
                     type="button"
                     onClick={() => setIsManageNsOpen(false)}
-                    className="h-9 px-3.5 rounded-[6px] text-[13.5px] sm:text-[14px] font-medium text-[#cccccc] hover:text-white bg-transparent hover:bg-[#161616] border border-[#262626] transition-colors cursor-pointer"
                   >
                     Cancel
-                  </button>
-                  <button
+                  </Button>
+                  <Button
+                    variant="primary"
+                    size="md"
                     type="submit"
                     disabled={isSavingNs || !editNsName.trim()}
-                    className="h-9 px-4 rounded-[6px] text-[13.5px] sm:text-[14px] font-medium text-white bg-blue-600 hover:bg-blue-500 border border-blue-500/80 transition-colors cursor-pointer disabled:opacity-40"
+                    isLoading={isSavingNs}
                   >
                     {isSavingNs ? 'Saving...' : 'Save Changes'}
-                  </button>
+                  </Button>
                 </div>
               </form>
             ) : (
               <div className="space-y-4">
-                <div className="p-3.5 rounded-[6px] bg-rose-950/20 border border-rose-900/40 text-[13px] text-rose-300 leading-relaxed flex items-start gap-2.5">
-                  <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                <div className="p-3.5 rounded-[6px] bg-[#2a1113] border border-[#5c1d24] text-[13px] text-[#f87171] leading-relaxed flex items-start gap-2.5">
+                  <AlertTriangle className="w-4 h-4 text-[#e5484d] shrink-0 mt-0.5" />
                   <div>
                     Permanently delete namespace <strong className="text-white">{currentNsInfo.name}</strong> and all{' '}
                     <strong className="text-white">{currentNsInfo.total_objects} stored objects</strong> inside it. This action cannot be undone.
                   </div>
                 </div>
                 <div className="flex items-center justify-end gap-2">
-                  <button
+                  <Button
+                    variant="secondary"
+                    size="md"
                     type="button"
                     onClick={() => setIsManageNsOpen(false)}
-                    className="h-9 px-3.5 rounded-[6px] text-[13.5px] sm:text-[14px] font-medium text-[#cccccc] hover:text-white bg-transparent hover:bg-[#161616] border border-[#262626] transition-colors cursor-pointer"
                   >
                     Cancel
-                  </button>
-                  <button
+                  </Button>
+                  <Button
+                    variant="danger"
+                    size="md"
                     type="button"
                     onClick={() => setNsToDelete(currentNsInfo)}
-                    className="h-9 px-4 rounded-[6px] text-[13.5px] sm:text-[14px] font-medium text-rose-400 hover:text-rose-300 bg-rose-950/30 hover:bg-rose-950/50 border border-rose-900/50 transition-colors cursor-pointer"
                   >
                     Delete Namespace
-                  </button>
+                  </Button>
                 </div>
               </div>
             )}

@@ -134,8 +134,10 @@ export function Settings() {
   const storageEndpoints = [
     { method: 'GET', path: '/api/v1/blobs/{namespace}', desc: 'List stored objects' },
     { method: 'GET', path: '/api/v1/blobs/{namespace}/{key}', desc: 'Download object payload' },
+    { method: 'GET', path: '/api/v1/blobs/public/{namespace}/{key}', desc: 'Direct static CDN media with 304 caching' },
     { method: 'PUT', path: '/api/v1/blobs/{namespace}/{key}', desc: 'Upload or overwrite object' },
     { method: 'DELETE', path: '/api/v1/blobs/{namespace}/{key}', desc: 'Delete stored object' },
+    { method: 'POST', path: '/api/v1/blobs/{namespace}/delete-objects', desc: 'Batch delete multiple objects' },
     { method: 'GET', path: '/admin/v1/blobs/namespaces', desc: 'List storage namespaces' },
     { method: 'POST', path: '/admin/v1/blobs/copy', desc: 'Copy object or prefix tree' },
     { method: 'POST', path: '/admin/v1/blobs/move', desc: 'Move or rename object' },
