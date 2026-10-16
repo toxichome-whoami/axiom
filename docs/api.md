@@ -523,7 +523,48 @@ ETag: "8f434346648f6b96df89dda901c5176b10a6d83961dd3c1ac88b59b2dc327aa4"
 
 ---
 
-### 3. Retrieve Object Metadata
+### 3. Public Direct Media & Static CDN Caching
+```http
+GET /api/v1/blobs/public/:namespace/*key
+```
+
+When a namespace has **Public Read Access** enabled, any client or browser can fetch objects directly without an `X-Axiom-Key` header or pre-signed ticket. This endpoint is optimized for static website assets (`<img src="...">`, `<video>`, CSS, JS, documents) with aggressive browser caching and zero CPU authentication overhead on the hot path.
+
+```bash
+# Direct fetch from any browser or CDN (no auth required)
+curl -s -i "http://127.0.0.1:4500/api/v1/blobs/public/media/avatars/user_101.png"
+```
+
+Response includes standard caching headers:
+```http
+HTTP/1.1 200 OK
+Content-Type: image/png
+Content-Length: 48201
+ETag: "8f434346648f6b96df89dda901c5176b10a6d83961dd3c1ac88b59b2dc327aa4"
+Cache-Control: public, max-age=31536000, immutable
+Access-Control-Allow-Origin: *
+```
+
+#### Conditional 304 Caching (`If-None-Match`)
+Browsers caching the asset will send the `If-None-Match` header on subsequent page loads. Axiom responds with `304 Not Modified` without re-transmitting the payload body:
+
+```bash
+curl -s -i "http://127.0.0.1:4500/api/v1/blobs/public/media/avatars/user_101.png" \
+  -H 'If-None-Match: "8f434346648f6b96df89dda901c5176b10a6d83961dd3c1ac88b59b2dc327aa4"'
+```
+
+```http
+HTTP/1.1 304 Not Modified
+ETag: "8f434346648f6b96df89dda901c5176b10a6d83961dd3c1ac88b59b2dc327aa4"
+Cache-Control: public, max-age=31536000, immutable
+```
+
+> [!NOTE]
+> Public Read Access only permits unauthenticated `GET` and `HEAD` requests. Mutation operations (`PUT`, `DELETE`, `POST`) remain strictly protected by API key authentication and RBAC policies. If public access is disabled on a namespace, requests to `/api/v1/blobs/public/...` return `403 Forbidden`.
+
+---
+
+### 4. Retrieve Object Metadata
 ```http
 HEAD /api/v1/blobs/:namespace/*key
 ```
@@ -532,7 +573,7 @@ Returns object headers (`Content-Type`, `Content-Length`, `ETag`, `X-Axiom-Hash`
 
 ---
 
-### 4. Delete Object
+### 5. Delete Object
 ```http
 DELETE /api/v1/blobs/:namespace/*key
 ```
@@ -544,7 +585,46 @@ Removes the key reference from the namespace and decrements the internal BLAKE3 
 
 ---
 
-### 5. List Blobs by Prefix
+### 6. Batch Delete Objects
+```http
+POST /api/v1/blobs/:namespace/delete-objects
+Content-Type: application/json
+```
+
+Deletes up to 1,000 object keys from a namespace in a single atomic request. Requires an authenticated API key with `DELETE` permission on the target namespace.
+
+```bash
+curl -s -X POST "http://127.0.0.1:4500/api/v1/blobs/media/delete-objects" \
+  -H "X-Axiom-Key: $KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "keys": [
+      "avatars/user_101.png",
+      "avatars/user_102.png",
+      "temp/cached_file.tmp"
+    ]
+  }'
+```
+
+```json
+{
+  "success": true,
+  "data": {
+    "deleted": [
+      "avatars/user_101.png",
+      "avatars/user_102.png",
+      "temp/cached_file.tmp"
+    ],
+    "errors": []
+  },
+  "error": null,
+  "meta": { "request_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890", "duration_ms": 1.12, "cached": false }
+}
+```
+
+---
+
+### 7. List Blobs by Prefix
 ```http
 GET /api/v1/blobs/:namespace?prefix=avatars/&limit=50&cursor=0
 ```
@@ -572,7 +652,7 @@ GET /api/v1/blobs/:namespace?prefix=avatars/&limit=50&cursor=0
 
 ---
 
-### 6. Multipart Upload Workflow (Large Files)
+### 8. Multipart Upload Workflow (Large Files)
 
 For reliable uploads of large objects (up to 5 GB), Axiom provides a 4-step multipart session workflow:
 

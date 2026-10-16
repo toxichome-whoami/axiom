@@ -428,6 +428,8 @@ flowchart LR
 - **Content-Addressed Deduplication**: Objects are indexed by their raw BLAKE3 cryptographic digest. Storing identical content under different keys consumes zero additional storage.
 - **Two-Tier Engine**: Payloads under 64 KB are written directly into an embedded Fjall LSM tree for microsecond retrieval. Payloads over 64 KB stream to sharded filesystem chunks.
 - **Byte-Range Streaming**: Full support for HTTP 206 Partial Content (`Range: bytes=0-1048575`). Stream audio/video or download large files in parallel without holding payloads in RAM.
+- **Public Read Access & Static CDN Caching**: Enable unauthenticated public reads per namespace (`/api/v1/blobs/public/:namespace/*key`) for website images, media, and assets with HTTP 304 caching (`ETag`) and configurable CORS allowed origins. Writes and deletions remain strictly authenticated.
+- **Batch Multi-Object Deletions**: Atomically remove up to 1,000 object keys per request (`POST /api/v1/blobs/:namespace/delete-objects`).
 - **Chunked Multipart Uploads**: Upload multi-gigabyte archives in discrete chunks with atomic assembly and BLAKE3 verification.
 
 ### Basic Blob Operations
@@ -463,23 +465,46 @@ curl -i -H "X-Axiom-Key: $KEY" \
   "http://localhost:4500/api/v1/blobs/media/videos/demo.mp4" -o part.bin
 ```
 
-#### 3. Inspect Object Metadata
+#### 3. Direct Public CDN Media (No Auth & 304 Caching)
+```bash
+# Direct fetch from any browser or CDN (no auth header needed)
+curl -i "http://localhost:4500/api/v1/blobs/public/media/avatars/user_101.png"
+
+# Conditional request with ETag (returns HTTP 304 Not Modified)
+curl -i "http://localhost:4500/api/v1/blobs/public/media/avatars/user_101.png" \
+  -H 'If-None-Match: "8f434346648f6b96df89dda901c5176b10a6d83961dd3c1ac88b59b2dc327aa4"'
+```
+
+#### 4. Inspect Object Metadata
 ```bash
 curl -I -H "X-Axiom-Key: $KEY" \
   "http://localhost:4500/api/v1/blobs/media/avatars/user_101.png"
 ```
 Returns headers (`Content-Type`, `Content-Length`, `ETag`, `X-Axiom-Hash`) without downloading the body payload.
 
-#### 4. List Objects by Prefix
+#### 5. List Objects by Prefix
 ```bash
 curl -s -H "X-Axiom-Key: $KEY" \
   "http://localhost:4500/api/v1/blobs/media?prefix=avatars/&limit=50"
 ```
 
-#### 5. Delete Object
+#### 6. Delete Single Object
 ```bash
 curl -X DELETE -H "X-Axiom-Key: $KEY" \
   "http://localhost:4500/api/v1/blobs/media/avatars/user_101.png"
+```
+
+#### 7. Batch Delete Objects
+```bash
+curl -X POST "http://localhost:4500/api/v1/blobs/media/delete-objects" \
+  -H "X-Axiom-Key: $KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "keys": [
+      "avatars/user_101.png",
+      "avatars/user_102.png"
+    ]
+  }'
 ```
 
 
