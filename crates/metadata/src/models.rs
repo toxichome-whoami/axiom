@@ -100,6 +100,35 @@ pub struct BlobTicketRecord {
     pub revoked: bool,
 }
 
+// ─── Peer Node Cluster Model ───────────────────────────────────────────────
+// Stored in `cluster_nodes` table; coordinates authenticated P2P mesh peers.
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PeerNodeRecord {
+    pub node_id: String,
+    pub moniker: String,
+    pub url: String,
+    #[serde(skip_serializing)]
+    pub shared_secret_hash: Vec<u8>,
+    pub status: String, // 'connected', 'unreachable', 'pending'
+    pub last_ping_ms: i64,
+    pub last_seen_at: i64,
+    pub created_at: i64,
+}
+
+// ─── Cluster Full Sync Payload ─────────────────────────────────────────────
+// Transferred during peer state reconciliation to synchronize metadata.
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ClusterSyncPayload {
+    pub node_id: String,
+    pub epoch_version: u64,
+    pub roles: Vec<RoleRecord>,
+    pub api_keys: Vec<ApiKeyRecord>,
+    pub databases: Vec<DatabaseRecord>,
+    pub active_bans: Vec<String>,
+}
+
 // ─── Tests ─────────────────────────────────────────────────────────────────
 // Tests for security invariants around serialization of models.
 

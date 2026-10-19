@@ -119,8 +119,14 @@ impl BanList {
         Self::ban_ip_with_ttl(ip, reason, 0);
     }
 
-    /// Suspends an IP address with a TTL in seconds and persists to SQLite (M-7).
+    /// Suspends an IP address with a TTL in seconds and persists to SQLite, broadcasting to cluster peers.
     pub fn ban_ip_with_ttl(ip: &str, reason: &str, ttl_secs: u64) {
+        Self::ban_ip_local(ip, reason, ttl_secs);
+        crate::cluster::ClusterBroadcaster::broadcast_ban_ip(ip, reason, ttl_secs);
+    }
+
+    /// Suspends an IP address locally without triggering peer cluster fanout (used by cluster event receivers).
+    pub fn ban_ip_local(ip: &str, reason: &str, ttl_secs: u64) {
         let now_unix = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
@@ -144,8 +150,14 @@ impl BanList {
         }
     }
 
-    /// Lifts an IP address suspension in memory and SQLite.
+    /// Lifts an IP address suspension in memory and SQLite, broadcasting to cluster peers.
     pub fn unban_ip(ip: &str) {
+        Self::unban_ip_local(ip);
+        crate::cluster::ClusterBroadcaster::broadcast_unban_ip(ip);
+    }
+
+    /// Lifts an IP address suspension locally without triggering peer cluster fanout.
+    pub fn unban_ip_local(ip: &str) {
         IP_BANS.remove(ip);
         let ip_owned = ip.to_string();
         if let Ok(handle) = tokio::runtime::Handle::try_current() {
@@ -160,8 +172,14 @@ impl BanList {
         Self::ban_key_with_ttl(key_name, reason, 0);
     }
 
-    /// Suspends an API key name with a TTL in seconds and persists to SQLite (M-7).
+    /// Suspends an API key name with a TTL in seconds and persists to SQLite, broadcasting to cluster peers.
     pub fn ban_key_with_ttl(key_name: &str, reason: &str, ttl_secs: u64) {
+        Self::ban_key_local(key_name, reason, ttl_secs);
+        crate::cluster::ClusterBroadcaster::broadcast_ban_key(key_name, reason, ttl_secs);
+    }
+
+    /// Suspends an API key name locally without triggering peer cluster fanout.
+    pub fn ban_key_local(key_name: &str, reason: &str, ttl_secs: u64) {
         let now_unix = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
@@ -185,8 +203,14 @@ impl BanList {
         }
     }
 
-    /// Lifts an API key suspension in memory and SQLite.
+    /// Lifts an API key suspension in memory and SQLite, broadcasting to cluster peers.
     pub fn unban_key(key_name: &str) {
+        Self::unban_key_local(key_name);
+        crate::cluster::ClusterBroadcaster::broadcast_unban_key(key_name);
+    }
+
+    /// Lifts an API key suspension locally without triggering peer cluster fanout.
+    pub fn unban_key_local(key_name: &str) {
         KEY_BANS.remove(key_name);
         let key_owned = key_name.to_string();
         if let Ok(handle) = tokio::runtime::Handle::try_current() {
@@ -279,6 +303,18 @@ impl BanList {
         FAILED_AUTH_BY_KEY.remove(key_name);
         let tracking_key = format!("{}:{}", client_ip, key_name);
         FAILED_AUTH_BY_IP_KEY.remove(&tracking_key);
+    }
+
+    /// Returns a list of all currently active suspended IPv4/IPv6 client addresses.
+    pub fn list_active_banned_ips() -> Vec<String> {
+        let now_unix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+        IP_BANS.iter()
+            .filter(|entry| entry.value().expires_at == 0 || entry.value().expires_at > now_unix)
+            .map(|entry| entry.key().clone())
+            .collect()
     }
 }
 

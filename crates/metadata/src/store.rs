@@ -167,6 +167,23 @@ impl MetadataStore {
                 value TEXT NOT NULL,
                 created_at INTEGER NOT NULL
             );",
+            "CREATE TABLE IF NOT EXISTS cluster_nodes (
+                node_id TEXT PRIMARY KEY,
+                moniker TEXT NOT NULL,
+                url TEXT NOT NULL,
+                shared_secret_hash BLOB NOT NULL,
+                status TEXT NOT NULL,
+                last_ping_ms INTEGER DEFAULT 0,
+                last_seen_at INTEGER NOT NULL,
+                created_at INTEGER NOT NULL
+            );",
+            "CREATE TABLE IF NOT EXISTS cluster_events (
+                event_id TEXT PRIMARY KEY,
+                event_type TEXT NOT NULL,
+                payload TEXT NOT NULL,
+                origin_node_id TEXT NOT NULL,
+                created_at INTEGER NOT NULL
+            );",
         ];
 
         for stmt in statements {
@@ -1640,6 +1657,265 @@ impl MetadataStore {
 
         Ok(records)
     }
+
+    // ─── Cluster P2P Mesh Management ──────────────────────────────────────────
+    // Coordinates zero-config peer-to-peer discovery, mutual TLS/HMAC pairings, and state synchronization.
+
+    /// Retrieves or securely generates the local node's cluster identity (node_id, moniker, cluster_secret).
+    /// CONTRACT:
+    ///  - Postcondition: Returns `(node_id, moniker, cluster_secret)`.
+    ///  - Side effects: Persists missing identity tokens into `system_secrets`.
+    ///  - Idempotency: Yes.
+    pub async fn get_or_create_cluster_identity() -> Result<(String, String, String), String> {
+        let _guard = STORE_LOCK.lock().await;
+        let conn = Self::get_conn().await?;
+        let _ = Self::ensure_system_secrets_table(&conn).await;
+
+        let now_unix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+
+        // 1. Local Node ID
+        let mut node_rows = conn
+            .query("SELECT value FROM system_secrets WHERE key = 'cluster_node_id'", ())
+            .await
+            .map_err(|e| format!("Query cluster_node_id failed: {}", e))?;
+
+        let node_id = if let Ok(Some(row)) = node_rows.next().await {
+            row.get::<String>(0).map_err(|e| e.to_string())?
+        } else {
+            let raw_uuid = uuid::Uuid::new_v4().to_string().replace('-', "");
+            let generated_id = format!("axm_node_{}", &raw_uuid[..16]);
+            conn.execute(
+                "INSERT INTO system_secrets (key, value, created_at) VALUES ('cluster_node_id', ?1, ?2)",
+                libsql::params![generated_id.clone(), now_unix],
+            )
+            .await
+            .map_err(|e| format!("Failed to persist cluster_node_id: {}", e))?;
+            generated_id
+        };
+
+        // 2. Moniker (human-readable node label)
+        let mut moniker_rows = conn
+            .query("SELECT value FROM system_secrets WHERE key = 'cluster_moniker'", ())
+            .await
+            .map_err(|e| format!("Query cluster_moniker failed: {}", e))?;
+
+        let moniker = if let Ok(Some(row)) = moniker_rows.next().await {
+            row.get::<String>(0).map_err(|e| e.to_string())?
+        } else {
+            let default_moniker = format!("axiom-node-{}", &node_id[9..13]);
+            conn.execute(
+                "INSERT INTO system_secrets (key, value, created_at) VALUES ('cluster_moniker', ?1, ?2)",
+                libsql::params![default_moniker.clone(), now_unix],
+            )
+            .await
+            .map_err(|e| format!("Failed to persist cluster_moniker: {}", e))?;
+            default_moniker
+        };
+
+        // 3. Cluster Shared Secret
+        let mut secret_rows = conn
+            .query("SELECT value FROM system_secrets WHERE key = 'cluster_secret'", ())
+            .await
+            .map_err(|e| format!("Query cluster_secret failed: {}", e))?;
+
+        let cluster_secret = if let Ok(Some(row)) = secret_rows.next().await {
+            row.get::<String>(0).map_err(|e| e.to_string())?
+        } else {
+            let entropy = format!("{}_{}_{}", uuid::Uuid::new_v4(), now_unix, uuid::Uuid::new_v4());
+            let generated_secret = blake3::hash(entropy.as_bytes()).to_hex().to_string();
+            conn.execute(
+                "INSERT INTO system_secrets (key, value, created_at) VALUES ('cluster_secret', ?1, ?2)",
+                libsql::params![generated_secret.clone(), now_unix],
+            )
+            .await
+            .map_err(|e| format!("Failed to persist cluster_secret: {}", e))?;
+            generated_secret
+        };
+
+        Ok((node_id, moniker, cluster_secret))
+    }
+
+    /// Sets or updates the human-readable moniker for the local cluster node.
+    pub async fn set_cluster_moniker(moniker: &str) -> Result<(), String> {
+        let _guard = STORE_LOCK.lock().await;
+        let conn = Self::get_conn().await?;
+        let _ = Self::ensure_system_secrets_table(&conn).await;
+
+        let now_unix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+
+        conn.execute(
+            "INSERT INTO system_secrets (key, value, created_at) VALUES ('cluster_moniker', ?1, ?2) \
+             ON CONFLICT(key) DO UPDATE SET value = ?1",
+            libsql::params![moniker, now_unix],
+        )
+        .await
+        .map_err(|e| format!("Failed to set cluster_moniker: {}", e))?;
+
+        Ok(())
+    }
+
+    /// Lists all registered peer nodes in the cluster.
+    pub async fn list_peers() -> Result<Vec<PeerNodeRecord>, String> {
+        let conn = Self::get_conn().await?;
+        let mut rows = conn
+            .query(
+                "SELECT node_id, moniker, url, shared_secret_hash, status, last_ping_ms, last_seen_at, created_at \
+                 FROM cluster_nodes ORDER BY moniker ASC",
+                (),
+            )
+            .await
+            .map_err(|e| format!("Query cluster_nodes failed: {}", e))?;
+
+        let mut peers = Vec::new();
+        while let Ok(Some(row)) = rows.next().await {
+            let node_id: String = row.get(0).map_err(|e| e.to_string())?;
+            let moniker: String = row.get(1).map_err(|e| e.to_string())?;
+            let url: String = row.get(2).map_err(|e| e.to_string())?;
+            let shared_secret_hash: Vec<u8> = row.get(3).unwrap_or_default();
+            let status: String = row.get(4).map_err(|e| e.to_string())?;
+            let last_ping_ms: i64 = row.get(5).unwrap_or(0);
+            let last_seen_at: i64 = row.get(6).unwrap_or(0);
+            let created_at: i64 = row.get(7).unwrap_or(0);
+
+            peers.push(PeerNodeRecord {
+                node_id,
+                moniker,
+                url,
+                shared_secret_hash,
+                status,
+                last_ping_ms,
+                last_seen_at,
+                created_at,
+            });
+        }
+
+        Ok(peers)
+    }
+
+    /// Retrieves a single peer record by node_id.
+    pub async fn get_peer(node_id: &str) -> Result<Option<PeerNodeRecord>, String> {
+        let conn = Self::get_conn().await?;
+        let mut rows = conn
+            .query(
+                "SELECT node_id, moniker, url, shared_secret_hash, status, last_ping_ms, last_seen_at, created_at \
+                 FROM cluster_nodes WHERE node_id = ?1",
+                [node_id],
+            )
+            .await
+            .map_err(|e| format!("Query cluster_nodes for node '{}' failed: {}", node_id, e))?;
+
+        if let Ok(Some(row)) = rows.next().await {
+            let node_id: String = row.get(0).map_err(|e| e.to_string())?;
+            let moniker: String = row.get(1).map_err(|e| e.to_string())?;
+            let url: String = row.get(2).map_err(|e| e.to_string())?;
+            let shared_secret_hash: Vec<u8> = row.get(3).unwrap_or_default();
+            let status: String = row.get(4).map_err(|e| e.to_string())?;
+            let last_ping_ms: i64 = row.get(5).unwrap_or(0);
+            let last_seen_at: i64 = row.get(6).unwrap_or(0);
+            let created_at: i64 = row.get(7).unwrap_or(0);
+
+            Ok(Some(PeerNodeRecord {
+                node_id,
+                moniker,
+                url,
+                shared_secret_hash,
+                status,
+                last_ping_ms,
+                last_seen_at,
+                created_at,
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Inserts or updates a peer record in the cluster registry.
+    pub async fn upsert_peer(peer: &PeerNodeRecord) -> Result<(), String> {
+        let _guard = STORE_LOCK.lock().await;
+        let conn = Self::get_conn().await?;
+
+        conn.execute(
+            "INSERT INTO cluster_nodes (node_id, moniker, url, shared_secret_hash, status, last_ping_ms, last_seen_at, created_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8) \
+             ON CONFLICT(node_id) DO UPDATE SET moniker=?2, url=?3, shared_secret_hash=?4, status=?5, last_ping_ms=?6, last_seen_at=?7",
+            libsql::params![
+                peer.node_id.as_str(),
+                peer.moniker.as_str(),
+                peer.url.as_str(),
+                peer.shared_secret_hash.clone(),
+                peer.status.as_str(),
+                peer.last_ping_ms,
+                peer.last_seen_at,
+                peer.created_at,
+            ],
+        )
+        .await
+        .map_err(|e| format!("Failed to upsert peer '{}': {}", peer.node_id, e))?;
+
+        Ok(())
+    }
+
+    /// Removes a peer from the cluster mesh.
+    pub async fn remove_peer(node_id: &str) -> Result<(), String> {
+        let _guard = STORE_LOCK.lock().await;
+        let conn = Self::get_conn().await?;
+
+        conn.execute("DELETE FROM cluster_nodes WHERE node_id = ?1", [node_id])
+            .await
+            .map_err(|e| format!("Failed to remove peer '{}': {}", node_id, e))?;
+
+        Ok(())
+    }
+
+    /// Updates peer liveness status and round-trip latency.
+    pub async fn update_peer_status(node_id: &str, status: &str, latency_ms: i64) -> Result<(), String> {
+        let conn = Self::get_conn().await?;
+        let now_unix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+
+        conn.execute(
+            "UPDATE cluster_nodes SET status = ?1, last_ping_ms = ?2, last_seen_at = ?3 WHERE node_id = ?4",
+            libsql::params![status, latency_ms, now_unix, node_id],
+        )
+        .await
+        .map_err(|e| format!("Failed to update peer status for '{}': {}", node_id, e))?;
+
+        Ok(())
+    }
+
+    /// Records an ingested cluster event with deduplication.
+    /// Returns `Ok(true)` if the event was newly recorded, or `Ok(false)` if it was already processed.
+    pub async fn record_cluster_event(
+        event_id: &str,
+        event_type: &str,
+        payload: &str,
+        origin_node_id: &str,
+    ) -> Result<bool, String> {
+        let conn = Self::get_conn().await?;
+        let now_unix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+
+        let affected = conn
+            .execute(
+                "INSERT OR IGNORE INTO cluster_events (event_id, event_type, payload, origin_node_id, created_at) \
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                libsql::params![event_id, event_type, payload, origin_node_id, now_unix],
+            )
+            .await
+            .map_err(|e| format!("Failed to record cluster event '{}': {}", event_id, e))?;
+
+        Ok(affected > 0)
+    }
 }
 
 #[cfg(test)]
@@ -1972,5 +2248,69 @@ mod tests {
 
         let _ = std::fs::remove_file(db_path.replace("file:", ""));
     }
+
+    #[tokio::test]
+    async fn test_cluster_mesh_lifecycle() {
+        let db_path = format!("file:test_cluster_{}.db", uuid::Uuid::new_v4().to_string().replace('-', ""));
+        let db = Builder::new_local(db_path.replace("file:", "")).build().await.unwrap();
+        let conn = db.connect().unwrap();
+        MetadataStore::create_tables(&conn).await.unwrap();
+
+        // 1. Insert peer
+        let peer = PeerNodeRecord {
+            node_id: "axm_node_london".to_string(),
+            moniker: "London-Edge".to_string(),
+            url: "https://london.internal:4500".to_string(),
+            shared_secret_hash: vec![1, 2, 3, 4],
+            status: "connected".to_string(),
+            last_ping_ms: 24,
+            last_seen_at: 1000,
+            created_at: 1000,
+        };
+
+        conn.execute(
+            "INSERT INTO cluster_nodes (node_id, moniker, url, shared_secret_hash, status, last_ping_ms, last_seen_at, created_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            libsql::params![
+                peer.node_id.as_str(),
+                peer.moniker.as_str(),
+                peer.url.as_str(),
+                peer.shared_secret_hash.clone(),
+                peer.status.as_str(),
+                peer.last_ping_ms,
+                peer.last_seen_at,
+                peer.created_at,
+            ],
+        ).await.unwrap();
+
+        // 2. Query peer
+        let mut rows = conn
+            .query("SELECT moniker, status FROM cluster_nodes WHERE node_id = 'axm_node_london'", ())
+            .await
+            .unwrap();
+        let row = rows.next().await.unwrap().unwrap();
+        let moniker: String = row.get(0).unwrap();
+        let status: String = row.get(1).unwrap();
+        assert_eq!(moniker, "London-Edge");
+        assert_eq!(status, "connected");
+
+        // 3. Cluster event deduplication
+        let inserted1 = conn.execute(
+            "INSERT OR IGNORE INTO cluster_events (event_id, event_type, payload, origin_node_id, created_at) \
+             VALUES ('evt_123', 'ban.ip', '{\"ip\":\"1.2.3.4\"}', 'axm_node_london', 1000)",
+            (),
+        ).await.unwrap();
+        assert_eq!(inserted1, 1);
+
+        let inserted2 = conn.execute(
+            "INSERT OR IGNORE INTO cluster_events (event_id, event_type, payload, origin_node_id, created_at) \
+             VALUES ('evt_123', 'ban.ip', '{\"ip\":\"1.2.3.4\"}', 'axm_node_london', 1000)",
+            (),
+        ).await.unwrap();
+        assert_eq!(inserted2, 0);
+
+        let _ = std::fs::remove_file(db_path.replace("file:", ""));
+    }
 }
+
 

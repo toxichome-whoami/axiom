@@ -34,3 +34,7 @@ libsql = { workspace = true }
 regex = { workspace = true }
 rand = { workspace = true }
 futures = { workspace = true }
+reqwest = { workspace = true }
+uuid = { workspace = true }
+
+

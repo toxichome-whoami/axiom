@@ -158,6 +158,7 @@ pub fn create_app() -> Router {
     Router::new()
         .nest("/api/v1", api_routes)
         .nest("/admin/v1", admin_routes)
+        .nest("/internal/v1/cluster", crate::cluster::cluster_router())
         .nest("/mcp/v1", mcp_routes)
         .nest("/system", ui_routes)
         .route("/system/", get(crate::ui::index_handler))

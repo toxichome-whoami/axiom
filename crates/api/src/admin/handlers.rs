@@ -1441,6 +1441,257 @@ pub async fn list_users_handler(
     })))
 }
 
+// ─── Cluster Administration Endpoints ─────────────────────────────────────
+// Coordinates peer pairing, cluster overview metrics, and manual peer lifecycle management.
+
+#[derive(Debug, Deserialize)]
+pub struct ConnectPeerRequest {
+    pub url: String,
+    pub cluster_secret: String,
+    pub moniker: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateMonikerRequest {
+    pub moniker: String,
+}
+
+/// Returns the local cluster node identity, cluster secret, and connected peer counts.
+pub async fn get_cluster_status(
+    Extension(auth): Extension<AuthContext>,
+) -> Result<impl IntoResponse, AxiomError> {
+    if !auth.is_session {
+        return Err(AxiomError::new(
+            "FORBIDDEN",
+            "Admin privileges required",
+            StatusCode::FORBIDDEN,
+        ));
+    }
+
+    let identity = MetadataStore::get_or_create_cluster_identity()
+        .await
+        .map_err(|e| AxiomError::new("CLUSTER_ERROR", &e, StatusCode::INTERNAL_SERVER_ERROR))?;
+    let (node_id, moniker, cluster_secret) = identity;
+
+    let peers = MetadataStore::list_peers()
+        .await
+        .map_err(|e| AxiomError::new("METADATA_ERROR", &e, StatusCode::INTERNAL_SERVER_ERROR))?;
+
+    let total_peers = peers.len();
+    let connected_peers = peers.iter().filter(|p| p.status == "connected").count();
+
+    Ok(Json(json!({
+        "success": true,
+        "data": {
+            "node_id": node_id,
+            "moniker": moniker,
+            "cluster_secret": cluster_secret,
+            "total_peers": total_peers,
+            "connected_peers": connected_peers
+        },
+        "error": Value::Null
+    })))
+}
+
+/// Lists all known peers in the cluster mesh.
+pub async fn list_cluster_peers(
+    Extension(auth): Extension<AuthContext>,
+) -> Result<impl IntoResponse, AxiomError> {
+    if !auth.is_session {
+        return Err(AxiomError::new(
+            "FORBIDDEN",
+            "Admin privileges required",
+            StatusCode::FORBIDDEN,
+        ));
+    }
+
+    let peers = MetadataStore::list_peers()
+        .await
+        .map_err(|e| AxiomError::new("METADATA_ERROR", &e, StatusCode::INTERNAL_SERVER_ERROR))?;
+
+    Ok(Json(json!({
+        "success": true,
+        "data": {
+            "peers": peers
+        },
+        "error": Value::Null
+    })))
+}
+
+/// Initiates an authenticated pairing handshake with a remote Axiom node.
+pub async fn connect_cluster_peer(
+    Extension(auth): Extension<AuthContext>,
+    Json(req): Json<ConnectPeerRequest>,
+) -> Result<impl IntoResponse, AxiomError> {
+    if !auth.is_session {
+        return Err(AxiomError::new(
+            "FORBIDDEN",
+            "Admin privileges required",
+            StatusCode::FORBIDDEN,
+        ));
+    }
+
+    let target_url = req.url.trim().trim_end_matches('/').to_string();
+    if !target_url.starts_with("http://") && !target_url.starts_with("https://") {
+        return Err(AxiomError::new(
+            "INVALID_URL",
+            "Peer URL must begin with http:// or https://",
+            StatusCode::BAD_REQUEST,
+        ));
+    }
+
+    let identity = MetadataStore::get_or_create_cluster_identity()
+        .await
+        .map_err(|e| AxiomError::new("CLUSTER_ERROR", &e, StatusCode::INTERNAL_SERVER_ERROR))?;
+    let (my_node_id, my_moniker, _my_secret) = identity;
+
+    let config = axiom_core::ConfigManager::get();
+    let my_advertise_url = format!(
+        "http://{}:{}",
+        if config.server.host == "0.0.0.0" { "127.0.0.1" } else { &config.server.host },
+        config.server.port
+    );
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(3))
+        .build()
+        .map_err(|e| AxiomError::new("CLIENT_INIT_FAILED", &e.to_string(), StatusCode::INTERNAL_SERVER_ERROR))?;
+
+    let handshake_payload = json!({
+        "node_id": my_node_id,
+        "moniker": my_moniker,
+        "advertise_url": my_advertise_url,
+        "cluster_secret": req.cluster_secret,
+    });
+
+    let endpoint = format!("{}/internal/v1/cluster/handshake", target_url);
+    let start = std::time::Instant::now();
+    let resp = client
+        .post(&endpoint)
+        .json(&handshake_payload)
+        .send()
+        .await
+        .map_err(|e| {
+            AxiomError::new(
+                "HANDSHAKE_NETWORK_ERROR",
+                &format!("Could not reach peer at {}: {}", endpoint, e),
+                StatusCode::BAD_GATEWAY,
+            )
+        })?;
+
+    let latency_ms = start.elapsed().as_millis() as i64;
+
+    if !resp.status().is_success() {
+        let err_text = resp
+            .text()
+            .await
+            .unwrap_or_else(|_| "Peer rejected handshake".to_string());
+        return Err(AxiomError::new(
+            "HANDSHAKE_REJECTED",
+            &format!("Peer rejected handshake: {}", err_text),
+            StatusCode::UNAUTHORIZED,
+        ));
+    }
+
+    let handshake_res: crate::cluster::handlers::HandshakeResponse = resp
+        .json()
+        .await
+        .map_err(|e| {
+            AxiomError::new(
+                "INVALID_HANDSHAKE_RESPONSE",
+                &format!("Malformed response from peer: {}", e),
+                StatusCode::BAD_GATEWAY,
+            )
+        })?;
+
+    let now_unix = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
+
+    let peer = axiom_metadata::models::PeerNodeRecord {
+        node_id: handshake_res.node_id.clone(),
+        moniker: req.moniker.unwrap_or(handshake_res.moniker),
+        url: target_url,
+        shared_secret_hash: blake3::hash(req.cluster_secret.as_bytes()).as_bytes().to_vec(),
+        status: "connected".to_string(),
+        last_ping_ms: latency_ms,
+        last_seen_at: now_unix,
+        created_at: now_unix,
+    };
+
+    MetadataStore::upsert_peer(&peer)
+        .await
+        .map_err(|e| AxiomError::new("STORE_PEER_FAILED", &e, StatusCode::INTERNAL_SERVER_ERROR))?;
+
+    Ok(Json(json!({
+        "success": true,
+        "data": peer,
+        "error": Value::Null
+    })))
+}
+
+/// Removes a registered peer from the cluster mesh.
+pub async fn remove_cluster_peer(
+    Extension(auth): Extension<AuthContext>,
+    Path(node_id): Path<String>,
+) -> Result<impl IntoResponse, AxiomError> {
+    if !auth.is_session {
+        return Err(AxiomError::new(
+            "FORBIDDEN",
+            "Admin privileges required",
+            StatusCode::FORBIDDEN,
+        ));
+    }
+
+    MetadataStore::remove_peer(&node_id)
+        .await
+        .map_err(|e| AxiomError::new("METADATA_ERROR", &e, StatusCode::INTERNAL_SERVER_ERROR))?;
+
+    Ok(Json(json!({
+        "success": true,
+        "data": {
+            "message": format!("Peer '{}' successfully removed", node_id)
+        },
+        "error": Value::Null
+    })))
+}
+
+/// Updates the local node moniker.
+pub async fn update_cluster_moniker(
+    Extension(auth): Extension<AuthContext>,
+    Json(req): Json<UpdateMonikerRequest>,
+) -> Result<impl IntoResponse, AxiomError> {
+    if !auth.is_session {
+        return Err(AxiomError::new(
+            "FORBIDDEN",
+            "Admin privileges required",
+            StatusCode::FORBIDDEN,
+        ));
+    }
+
+    let moniker = req.moniker.trim();
+    if moniker.is_empty() {
+        return Err(AxiomError::new(
+            "INVALID_MONIKER",
+            "Node moniker cannot be empty",
+            StatusCode::BAD_REQUEST,
+        ));
+    }
+
+    MetadataStore::set_cluster_moniker(moniker)
+        .await
+        .map_err(|e| AxiomError::new("METADATA_ERROR", &e, StatusCode::INTERNAL_SERVER_ERROR))?;
+
+    Ok(Json(json!({
+        "success": true,
+        "data": {
+            "moniker": moniker
+        },
+        "error": Value::Null
+    })))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

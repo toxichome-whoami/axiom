@@ -60,6 +60,16 @@ pub async fn start_daemons() {
         }
     }
 
+    // Initialize Cluster Node Identity (Node ID, Moniker, Secret)
+    match axiom_metadata::store::MetadataStore::get_or_create_cluster_identity().await {
+        Ok((node_id, moniker, _)) => {
+            tracing::info!("Cluster mesh identity initialized: '{}' ({})", moniker, node_id);
+        }
+        Err(e) => {
+            tracing::error!("Failed to initialize cluster node identity: {}", e);
+        }
+    }
+
     // Cache sweep daemon: purges expired entries and expired bans every 60 seconds
     let cache_sweep_handle = tokio::spawn(async move {
         let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
@@ -86,11 +96,17 @@ pub async fn start_daemons() {
         }
     });
 
+    // Background cluster peer heartbeat prober
+    let cluster_heartbeat_handle = tokio::spawn(async move {
+        crate::cluster::ClusterBroadcaster::run_heartbeat_loop().await;
+    });
+
     {
         let mut tasks = DAEMONS.lock().unwrap();
         tasks.push(cache_sweep_handle);
         tasks.push(rotator_handle);
         tasks.push(metadata_sync_handle);
+        tasks.push(cluster_heartbeat_handle);
     }
 
     // Initialize Native Blob Storage Engine (always enabled as native gateway feature)

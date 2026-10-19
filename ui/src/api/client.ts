@@ -121,6 +121,30 @@ export interface UserRecordApi {
   created_at: number;
 }
 
+export interface ClusterStatusData {
+  node_id: string;
+  moniker: string;
+  cluster_secret: string;
+  total_peers: number;
+  connected_peers: number;
+}
+
+export interface PeerNodeRecordApi {
+  node_id: string;
+  moniker: string;
+  url: string;
+  status: 'connected' | 'unreachable' | 'pending';
+  last_ping_ms: number;
+  last_seen_at: number;
+  created_at: number;
+}
+
+export interface ConnectPeerRequestApi {
+  url: string;
+  cluster_secret: string;
+  moniker?: string;
+}
+
 import { getSessionToken, clearSession } from './session';
 import type {
   BlobMetadata,
@@ -728,5 +752,24 @@ export const api = {
       body: JSON.stringify({ sql, params, timeout }),
       timeoutMs: (Math.max(timeout, 60) + 30) * 1000,
     }),
+
+  // ─── Cluster P2P Mesh API ──────────────────────────────────────────────────
+  getClusterStatus: () => request<ClusterStatusData>('/admin/v1/cluster/status'),
+  listClusterPeers: () => request<{ peers: PeerNodeRecordApi[] }>('/admin/v1/cluster/peers'),
+  connectClusterPeer: (payload: ConnectPeerRequestApi) =>
+    request<PeerNodeRecordApi>('/admin/v1/cluster/peers', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  removeClusterPeer: (nodeId: string) =>
+    request<{ message: string }>(`/admin/v1/cluster/peers/${encodeURIComponent(nodeId)}`, {
+      method: 'DELETE',
+    }),
+  updateClusterMoniker: (moniker: string) =>
+    request<{ moniker: string }>('/admin/v1/cluster/moniker', {
+      method: 'PATCH',
+      body: JSON.stringify({ moniker }),
+    }),
 };
+
 

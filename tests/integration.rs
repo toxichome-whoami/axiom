@@ -2408,4 +2408,155 @@ async fn test_modern_s3_public_blob_and_batch_workflow() {
     assert_eq!(deleted.len(), 2);
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+//  Cluster P2P Mesh Integration Tests
+// ═══════════════════════════════════════════════════════════════════════════
+
+#[tokio::test]
+async fn test_cluster_handshake_and_signature_verification() {
+    setup_test_metadata();
+    ensure_metadata_store().await;
+
+    let (_node_id, _moniker, cluster_secret) =
+        axiom_metadata::MetadataStore::get_or_create_cluster_identity().await.unwrap();
+
+    // 1. Handshake with invalid secret fails
+    let bad_handshake = serde_json::json!({
+        "node_id": "axm_node_attacker",
+        "moniker": "Evil-Node",
+        "advertise_url": "http://10.0.0.99:4500",
+        "cluster_secret": "wrong_secret_123"
+    });
+    let req = Request::post("/internal/v1/cluster/handshake")
+        .header("Content-Type", "application/json")
+        .body(Body::from(serde_json::to_vec(&bad_handshake).unwrap()))
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+
+    // 2. Handshake with valid secret succeeds and registers peer
+    let valid_handshake = serde_json::json!({
+        "node_id": "axm_node_tokyo",
+        "moniker": "Tokyo-Edge",
+        "advertise_url": "http://10.0.0.50:4500",
+        "cluster_secret": cluster_secret
+    });
+    let req = Request::post("/internal/v1/cluster/handshake")
+        .header("Content-Type", "application/json")
+        .body(Body::from(serde_json::to_vec(&valid_handshake).unwrap()))
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    let body = axum::body::to_bytes(res.into_body(), 65536).await.unwrap();
+    let json: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(json["status"], "connected");
+
+    // 3. Ping without signature headers fails
+    let req = Request::get("/internal/v1/cluster/ping")
+        .body(Body::empty())
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+
+    // 4. Ping with signed headers succeeds
+    let (node_h, ts_h, nonce_h, sig_h) =
+        axiom_api::cluster::signing::sign_outbound_packet("axm_node_tokyo", &cluster_secret, b"");
+    let req = Request::get("/internal/v1/cluster/ping")
+        .header("X-Axiom-Node-Id", node_h)
+        .header("X-Axiom-Timestamp", ts_h.to_string())
+        .header("X-Axiom-Nonce", nonce_h)
+        .header("X-Axiom-Signature", sig_h)
+        .body(Body::empty())
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn test_cluster_ban_propagation_and_instant_rejection() {
+    setup_test_metadata();
+    ensure_metadata_store().await;
+
+    let (_node_id, _moniker, cluster_secret) =
+        axiom_metadata::MetadataStore::get_or_create_cluster_identity().await.unwrap();
+
+    let target_ip = "198.51.100.77";
+    assert!(!BanList::is_ip_banned(target_ip).0);
+
+    // 1. Simulate inbound cluster broadcast event: Node 1 bans attacker
+    let ban_packet = serde_json::json!({
+        "event_id": format!("evt_test_ban_{}", uuid::Uuid::new_v4().to_string().replace('-', "")),
+        "event_type": "ban.ip",
+        "payload": {
+            "ip": target_ip,
+            "reason": "Brute-force attack detected on Tokyo-Edge",
+            "ttl_secs": 3600
+        },
+        "origin_node_id": "axm_node_tokyo",
+        "timestamp": std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64
+    });
+
+    let body_bytes = serde_json::to_vec(&ban_packet).unwrap();
+    let (node_h, ts_h, nonce_h, sig_h) =
+        axiom_api::cluster::signing::sign_outbound_packet("axm_node_tokyo", &cluster_secret, &body_bytes);
+
+    let req = Request::post("/internal/v1/cluster/event")
+        .header("X-Axiom-Node-Id", node_h)
+        .header("X-Axiom-Timestamp", ts_h.to_string())
+        .header("X-Axiom-Nonce", nonce_h)
+        .header("X-Axiom-Signature", sig_h)
+        .header("Content-Type", "application/json")
+        .body(Body::from(body_bytes))
+        .unwrap();
+
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    // 2. Invariant: Node 2 immediately recognizes the banned IP in memory
+    let (is_banned, reason) = BanList::is_ip_banned(target_ip);
+    assert!(is_banned);
+    assert!(reason.contains("Tokyo-Edge"));
+
+    // 3. Attacker connects to Node 2: immediately rejected by RateLimit/Ban middleware with 403 Forbidden
+    let req = Request::get("/api/v1/db/databases")
+        .header("X-Forwarded-For", target_ip)
+        .header("X-Axiom-Key", BASE64_STANDARD.encode("admin_key:secret_admin"))
+        .body(Body::empty())
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::FORBIDDEN);
+
+    // 4. Simulate unban broadcast
+    let unban_packet = serde_json::json!({
+        "event_id": format!("evt_test_unban_{}", uuid::Uuid::new_v4().to_string().replace('-', "")),
+        "event_type": "unban.ip",
+        "payload": {
+            "ip": target_ip
+        },
+        "origin_node_id": "axm_node_tokyo",
+        "timestamp": std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64
+    });
+
+    let unban_bytes = serde_json::to_vec(&unban_packet).unwrap();
+    let (node_h, ts_h, nonce_h, sig_h) =
+        axiom_api::cluster::signing::sign_outbound_packet("axm_node_tokyo", &cluster_secret, &unban_bytes);
+
+    let req = Request::post("/internal/v1/cluster/event")
+        .header("X-Axiom-Node-Id", node_h)
+        .header("X-Axiom-Timestamp", ts_h.to_string())
+        .header("X-Axiom-Nonce", nonce_h)
+        .header("X-Axiom-Signature", sig_h)
+        .header("Content-Type", "application/json")
+        .body(Body::from(unban_bytes))
+        .unwrap();
+
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    // IP is now unbanned
+    assert!(!BanList::is_ip_banned(target_ip).0);
+}
+
+
 

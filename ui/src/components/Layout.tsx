@@ -23,6 +23,7 @@ import {
   X,
   HardDrive,
   Table,
+  Network,
 } from 'lucide-react';
 
 export type NavPath =
@@ -30,6 +31,7 @@ export type NavPath =
   | '/system/databases'
   | '/system/tables'
   | '/system/storage'
+  | '/system/cluster'
   | '/system/keys'
   | '/system/roles'
   | '/system/mcp'
@@ -68,6 +70,7 @@ export function Layout({ currentPath, onNavigate, title, children, onLogout }: L
     { label: 'Database Pools', path: '/system/databases' as NavPath, icon: Database, category: 'Data & Access' },
     { label: 'Table & Schema Editor', path: '/system/tables' as NavPath, icon: Table, category: 'Data & Access' },
     { label: 'Blob Storage', path: '/system/storage' as NavPath, icon: HardDrive, category: 'Data & Access' },
+    { label: 'Cluster Mesh', path: '/system/cluster' as NavPath, icon: Network, category: 'Data & Access' },
     { label: 'API Keys', path: '/system/keys' as NavPath, icon: Key, category: 'Data & Access' },
     { label: 'Roles', path: '/system/roles' as NavPath, icon: Shield, category: 'Data & Access' },
     { label: 'MCP Protocol', path: '/system/mcp' as NavPath, icon: Bot, category: 'Protocols & Tools' },
@@ -168,7 +171,11 @@ export function Layout({ currentPath, onNavigate, title, children, onLogout }: L
           label: 'Blob Storage',
           icon: HardDrive,
         },
-
+        {
+          path: '/system/cluster' as NavPath,
+          label: 'Cluster Mesh',
+          icon: Network,
+        },
         {
           path: '/system/keys' as NavPath,
           label: 'API Keys',
