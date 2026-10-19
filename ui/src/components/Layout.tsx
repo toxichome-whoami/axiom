@@ -208,7 +208,7 @@ export function Layout({ currentPath, onNavigate, title, children, onLogout }: L
 
 
   return (
-    <div className={cn('flex min-h-screen w-full bg-[#000000] text-[#f3f4f6] font-sans antialiased', isFullPage && 'h-screen overflow-hidden')}>
+    <div className={cn('flex min-h-screen min-h-dvh w-full bg-[#000000] text-[#f3f4f6] font-sans antialiased', isFullPage && 'h-screen h-dvh overflow-hidden')}>
       {/* Mobile Drawer Backdrop */}
       {isSidebarOpen && (
         <div
@@ -217,13 +217,13 @@ export function Layout({ currentPath, onNavigate, title, children, onLogout }: L
         />
       )}
 
-      {/* Cloudflare/Vercel Left Sidebar (matched exactly to binary_alive) */}
+      {/* Cloudflare/Vercel Left Sidebar */}
       <aside
         data-sidebar="sidebar"
         className={cn(
-          'flex min-h-screen shrink-0 flex-col bg-[#000000] border-r border-[#222222] transition-[width,transform] duration-200 select-none z-40',
+          'flex min-h-screen min-h-dvh shrink-0 flex-col bg-[#000000] border-r border-[#222222] transition-[width,transform] duration-200 select-none z-40',
           isCollapsed ? 'w-[58px]' : 'w-[260px]',
-          'fixed md:sticky top-0 h-screen',
+          'fixed md:sticky top-0 h-screen h-dvh',
           isSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
         )}
       >
@@ -231,12 +231,15 @@ export function Layout({ currentPath, onNavigate, title, children, onLogout }: L
         <div
           data-sidebar="header"
           className={cn(
-            'flex h-[58px] shrink-0 items-center justify-center border-b border-[#222222] transition-[padding] duration-200 select-none relative z-30',
+            'flex h-[58px] shrink-0 items-center justify-center border-b border-[#222222] transition-[padding] duration-200 select-none relative z-30 pt-safe',
             isCollapsed ? 'px-2' : 'px-4'
           )}
         >
           <button
-            onClick={() => onNavigate('/system')}
+            onClick={() => {
+              onNavigate('/system');
+              setIsSidebarOpen(false);
+            }}
             aria-label="Axiom Gateway"
             className="flex items-center justify-center gap-2 bg-transparent border-0 p-0 text-center cursor-pointer min-w-0 group"
           >
@@ -253,10 +256,10 @@ export function Layout({ currentPath, onNavigate, title, children, onLogout }: L
             )}
           </button>
 
-          {/* Mobile close button positioned absolute right */}
+          {/* Mobile close button positioned absolute right with >=44px touch target */}
           <button
             onClick={() => setIsSidebarOpen(false)}
-            className="p-1 text-[#8c8c8c] hover:text-white md:hidden absolute right-3 shrink-0 cursor-pointer"
+            className="w-11 h-11 flex items-center justify-center text-[#8c8c8c] hover:text-white md:hidden absolute right-1 shrink-0 cursor-pointer rounded-lg active:bg-[#1a1a1a]"
             aria-label="Close sidebar"
           >
             <X className="w-5 h-5" />
@@ -396,12 +399,12 @@ export function Layout({ currentPath, onNavigate, title, children, onLogout }: L
       </aside>
 
       {/* Main Workspace Frame */}
-      <div className={cn('flex-1 flex flex-col min-w-0 min-h-screen bg-[#000000]', isFullPage && 'min-h-0 h-screen overflow-hidden')}>
-        {/* Top Header Bar (matched to Cloudflare TopBar in binary_alive) */}
-        <header className="h-[58px] bg-[#000000] shrink-0 border-b border-[#222222] flex items-center px-4 sm:px-6 z-20 sticky top-0 gap-2 select-none justify-between">
+      <div className={cn('flex-1 flex flex-col min-w-0 min-h-screen min-h-dvh bg-[#000000]', isFullPage && 'min-h-0 h-screen h-dvh overflow-hidden')}>
+        {/* Top Header Bar */}
+        <header className="h-[58px] bg-[#000000] shrink-0 border-b border-[#222222] flex items-center px-3 sm:px-6 z-20 sticky top-0 gap-2 select-none justify-between pt-safe">
           <button
             onClick={() => setIsSidebarOpen(true)}
-            className="p-1.5 -ml-1 text-[#8c8c8c] hover:text-white rounded-lg md:hidden hover:bg-[#161616] transition-colors cursor-pointer"
+            className="w-11 h-11 flex items-center justify-center -ml-2 text-[#8c8c8c] hover:text-white rounded-lg md:hidden hover:bg-[#161616] active:bg-[#202020] transition-colors cursor-pointer"
             aria-label="Toggle navigation"
             type="button"
           >
@@ -518,8 +521,8 @@ export function Layout({ currentPath, onNavigate, title, children, onLogout }: L
         <main
           className={
             isFullPage
-              ? 'flex-1 w-full min-w-0 p-0 max-w-none h-[calc(100vh-58px)] overflow-hidden flex flex-col'
-              : 'flex-1 p-4 sm:p-6 w-full max-w-[1600px] mx-auto min-w-0'
+              ? 'flex-1 w-full min-w-0 p-0 max-w-none h-[calc(100vh-58px)] max-h-[calc(100dvh-58px)] overflow-hidden flex flex-col pb-safe'
+              : 'flex-1 p-3 sm:p-6 w-full max-w-[1600px] mx-auto min-w-0 pb-safe'
           }
         >
           {children}

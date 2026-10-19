@@ -290,7 +290,7 @@ export function DataTable<T>({
         </div>
       )}
 
-      <div className="overflow-x-auto w-full">
+      <div className="overflow-x-auto w-full touch-scroll scrollbar-thin">
         <table role="table" aria-label={ariaLabel} className={`w-full max-md:min-w-0 ${minTableWidth} text-left border-collapse`}>
           {/* Table Header */}
           <thead className="sticky top-0 z-10 max-md:hidden">

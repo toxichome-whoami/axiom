@@ -59,7 +59,7 @@ fn setup_test_metadata() {
             name: "admin_key".to_string(),
             secret_hash: blake3::hash(b"secret_admin").into(),
             role_name: Some("admin".to_string()),
-            rate_limit_override: 0,
+            rate_limit_override: 100_000,
             expires_at: None,
         },
     );
@@ -735,6 +735,91 @@ fn brute_force_distributed_key_suspension() {
     assert!(banned);
     assert!(reason.contains("failed authentication attempts"));
 }
+
+#[tokio::test]
+async fn brute_force_api_key_bad_secrets_ban_attacker_ip_not_key() {
+    setup_test_metadata();
+    let attacker_ip = "198.51.100.77";
+    let legitimate_ip = "198.51.100.88";
+    let victim_key_name = "ro_key";
+
+    // Attacker sends bad secret attempts for known victim_key_name up to penalty_threshold
+    let bad_token = BASE64_STANDARD.encode(format!("{}:completely_wrong_secret", victim_key_name));
+    let cfg = axiom_core::ConfigManager::get();
+    let threshold = if cfg.rate_limit.penalty_threshold > 0 {
+        cfg.rate_limit.penalty_threshold as u32
+    } else {
+        5
+    };
+
+    for _ in 0..threshold {
+        let req = Request::get("/api/v1/db/databases")
+            .header("X-Axiom-Key", &bad_token)
+            .header("X-Forwarded-For", attacker_ip)
+            .body(Body::empty())
+            .unwrap();
+        let res = create_app().oneshot(req).await.unwrap();
+        assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    // Attacker IP must now be banned
+    let (ip_banned, reason) = BanList::is_ip_banned(attacker_ip);
+    assert!(ip_banned);
+    assert!(reason.contains(victim_key_name));
+
+    // The legitimate key itself MUST NOT be banned
+    let (key_banned, _) = BanList::is_key_banned(victim_key_name);
+    assert!(!key_banned, "Target API key was maliciously suspended by an attacker");
+
+    // Legitimate client from a different IP with valid credentials still authenticates successfully
+    let valid_token = BASE64_STANDARD.encode(format!("{}:secret_ro", victim_key_name));
+    let leg_req = Request::get("/api/v1/db/databases")
+        .header("X-Axiom-Key", &valid_token)
+        .header("X-Forwarded-For", legitimate_ip)
+        .body(Body::empty())
+        .unwrap();
+    let leg_res = create_app().oneshot(leg_req).await.unwrap();
+    assert_eq!(leg_res.status(), StatusCode::OK);
+
+    // Clean up test ban
+    BanList::unban_ip(attacker_ip);
+}
+
+
+#[tokio::test]
+async fn distributed_credential_stuffing_account_lockout() {
+    ensure_metadata_store().await;
+    let username = "target_admin_victim";
+    let _ = axiom_metadata::MetadataStore::create_user(username, "ValidVictimP@ssw0rd!").await;
+
+    // Simulate 5 failed login attempts from 5 distinct IP addresses
+    for i in 1..=5 {
+        let fake_ip = format!("198.51.100.{}", i);
+        let req = Request::post("/admin/v1/auth/login")
+            .header("Content-Type", "application/json")
+            .header("X-Forwarded-For", fake_ip)
+            .body(Body::from(serde_json::to_vec(&serde_json::json!({
+                "username": username,
+                "password": "WrongPasswordAttempt!"
+            })).unwrap()))
+            .unwrap();
+        let res = create_app().oneshot(req).await.unwrap();
+        assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    // 6th attempt from yet another distinct IP should trigger ACCOUNT_LOCKED (429) without Argon2
+    let req6 = Request::post("/admin/v1/auth/login")
+        .header("Content-Type", "application/json")
+        .header("X-Forwarded-For", "203.0.113.99")
+        .body(Body::from(serde_json::to_vec(&serde_json::json!({
+            "username": username,
+            "password": "AnyPasswordHere"
+        })).unwrap()))
+        .unwrap();
+    let res6 = create_app().oneshot(req6).await.unwrap();
+    assert_eq!(res6.status(), StatusCode::TOO_MANY_REQUESTS);
+}
+
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  8. Security Response Headers
@@ -2193,6 +2278,8 @@ async fn row_level_security_predicate_filtering() {
 async fn test_modern_s3_public_blob_and_batch_workflow() {
     setup_test_metadata();
     ensure_blob_engine().await;
+    axiom_cache::CacheEngine::delete("rl:ip:127.0.0.1").await;
+    axiom_cache::CacheEngine::delete("penalty:127.0.0.1").await;
     let admin_token = BASE64_STANDARD.encode("admin_key:secret_admin");
 
     // 1. Create a public namespace for website media

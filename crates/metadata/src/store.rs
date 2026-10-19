@@ -938,29 +938,54 @@ impl MetadataStore {
 
     /// Verifies an admin user's credentials using constant-time Argon2 verification.
     /// Resists username enumeration timing side-channels by performing dummy Argon2 computation if user is absent.
+    /// Enforces a strict concurrency limit (max 3 concurrent hashes) to prevent CPU starvation under credential stuffing attacks.
     pub async fn verify_user(username: &str, password: &str) -> Result<bool, String> {
-        let conn = Self::get_conn().await?;
-        let mut rows = conn
-            .query(
-                "SELECT password_hash FROM users WHERE username = ?1",
-                [username],
-            )
-            .await
-            .map_err(|e| e.to_string())?;
+        static ARGON2_SEMAPHORE: Lazy<Arc<tokio::sync::Semaphore>> =
+            Lazy::new(|| Arc::new(tokio::sync::Semaphore::new(3)));
 
-        let user_row = rows.next().await.ok().flatten();
-        let hash_to_verify = match &user_row {
-            Some(row) => row.get::<String>(0).map_err(|e| e.to_string())?,
-            None => DUMMY_HASH.clone(),
+        let (user_row_exists, hash_to_verify) = {
+            let conn = Self::get_conn().await?;
+            let mut rows = conn
+                .query(
+                    "SELECT password_hash FROM users WHERE username = ?1",
+                    [username],
+                )
+                .await
+                .map_err(|e| e.to_string())?;
+
+            let user_row = rows.next().await.ok().flatten();
+            let hash = match &user_row {
+                Some(row) => row.get::<String>(0).map_err(|e| e.to_string())?,
+                None => DUMMY_HASH.clone(),
+            };
+            (user_row.is_some(), hash)
         };
 
-        let parsed_hash = PasswordHash::new(&hash_to_verify)
-            .map_err(|e| format!("Invalid stored password hash: {}", e))?;
-        let matches = Argon2::default()
-            .verify_password(password.as_bytes(), &parsed_hash)
-            .is_ok();
+        let password_owned = password.to_string();
+        let permit = match tokio::time::timeout(
+            std::time::Duration::from_millis(500),
+            ARGON2_SEMAPHORE.clone().acquire_owned(),
+        )
+        .await
+        {
+            Ok(Ok(p)) => p,
+            _ => return Err("SERVER_BUSY_AUTH_THROTTLED".to_string()),
+        };
 
-        Ok(user_row.is_some() && matches)
+        let is_match = tokio::task::spawn_blocking(move || {
+            let _permit = permit;
+            let parsed_hash = match PasswordHash::new(&hash_to_verify) {
+                Ok(h) => h,
+                Err(_) => return false,
+            };
+            Argon2::default()
+                .verify_password(password_owned.as_bytes(), &parsed_hash)
+                .is_ok()
+        })
+        .await
+        .map_err(|e| format!("Password verification task failed: {}", e))?;
+
+        Ok(user_row_exists && is_match)
     }
 
     /// Checks if any admin users exist in the system (used by setup wizard).

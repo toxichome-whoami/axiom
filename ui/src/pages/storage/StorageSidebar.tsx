@@ -74,6 +74,7 @@ export function StorageSidebar({
   onClearSelection,
 }: StorageSidebarProps) {
   const [isNsDropdownOpen, setIsNsDropdownOpen] = useState(false);
+  const [isMobileOpen, setIsMobileOpen] = useState(false);
   const nsDropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -167,7 +168,7 @@ export function StorageSidebar({
           )}
         </div>
 
-        {/* Action icons: Settings & Create Namespace */}
+        {/* Action icons: Settings & Create Namespace + Mobile Collapse Toggle */}
         <div className="flex items-center gap-1 shrink-0">
           {activeNamespace && (
             <button
@@ -188,18 +189,35 @@ export function StorageSidebar({
           >
             <Plus className="w-3.5 h-3.5" />
           </button>
+
+          {/* Mobile expand/collapse toggle for tree view */}
+          <button
+            type="button"
+            onClick={() => setIsMobileOpen(!isMobileOpen)}
+            title={isMobileOpen ? 'Collapse Explorer Tree' : 'Expand Explorer Tree'}
+            aria-label={isMobileOpen ? 'Collapse Explorer Tree' : 'Expand Explorer Tree'}
+            className="w-8 h-8 flex items-center justify-center rounded-[6px] text-[#8c8c8c] hover:text-white hover:bg-[#161616] lg:hidden transition-colors cursor-pointer shrink-0"
+          >
+            <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${isMobileOpen ? 'rotate-180' : ''}`} />
+          </button>
         </div>
       </div>
 
-      {/* ─── Directory & File Tree ─────────────── */}
-      <div className="flex-1 overflow-hidden min-h-0 flex flex-col">
+      {/* ─── Directory & File Tree (collapsible on mobile, always visible on lg+) ─────────────── */}
+      <div className={`flex-1 overflow-hidden min-h-0 flex-col ${isMobileOpen ? 'flex' : 'hidden lg:flex'}`}>
         <FileTree
           blobs={blobs}
           currentPrefix={currentPrefix}
           selectedItem={selectedItem}
           activeNamespace={activeNamespace}
-          onSelectFolder={onSelectFolder}
-          onSelectFile={onSelectFile}
+          onSelectFolder={(path, item) => {
+            onSelectFolder(path, item);
+            setIsMobileOpen(false);
+          }}
+          onSelectFile={(fileItem) => {
+            onSelectFile(fileItem);
+            setIsMobileOpen(false);
+          }}
           onContextMenu={onContextMenu}
           onNewFolder={onNewFolder}
           onUpload={onUpload}
@@ -215,7 +233,7 @@ export function StorageSidebar({
       </div>
 
       {/* ─── Footer: Storage Statistics & Quota ─────────────── */}
-      <div className="h-12 shrink-0 px-3.5 border-t border-[#222222] flex items-center justify-between text-[13px] text-[#cccccc] select-none font-sans">
+      <div className={`h-12 shrink-0 px-3.5 border-t border-[#222222] items-center justify-between text-[13px] text-[#cccccc] select-none font-sans ${isMobileOpen ? 'flex' : 'hidden lg:flex'}`}>
         <span className="tabular-nums text-[13px]">
           {realObjectsCount} {realObjectsCount === 1 ? 'object' : 'objects'}
         </span>

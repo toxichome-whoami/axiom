@@ -16,26 +16,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 // Emitted once if an insecure wildcard proxy configuration is detected.
 static WILDCARD_PROXY_WARNED: AtomicBool = AtomicBool::new(false);
 
-/// Evaluates client rate limits across IP and API-key buckets before allowing request downstream.
-/// CONTRACT:
-///  - Precondition: Request must be accepted by upstream WAF.
-///  - Returns `Ok(Response)` with `x-ratelimit-*` headers attached on success.
-///  - Throws `AxiomError(RATE_LIMIT_EXCEEDED, 429)` or `AxiomError(BANNED, 403)`.
-///  - Side effects: Increments hit counters in cache backend; may record IP penalties.
-///  - Idempotent: No (modifies sliding window counter state).
-pub async fn rate_limit_middleware(req: Request, next: Next) -> Result<Response, AxiomError> {
-    let config = req
-        .extensions()
-        .get::<std::sync::Arc<axiom_core::AxiomConfig>>()
-        .cloned()
-        .unwrap_or_else(ConfigManager::get);
-
-    if !config.rate_limit.enabled {
-        return Ok(next.run(req).await);
-    }
-
-    // ─── IP Resolution ─────────────────────────────────────────────────────
-    // Resolve peer TCP address. Only trust forwarding headers if peer is in trusted_proxies list.
+/// Resolves client IP address from TCP peer address and trusted forwarding headers.
+pub fn resolve_client_ip(req: &Request, config: &axiom_core::AxiomConfig) -> String {
     let mut client_ip = "127.0.0.1".to_string();
     if let Some(connect_info) = req.extensions().get::<axum::extract::ConnectInfo<std::net::SocketAddr>>() {
         client_ip = connect_info.0.ip().to_string();
@@ -63,6 +45,31 @@ pub async fn rate_limit_middleware(req: Request, next: Next) -> Result<Response,
             }
         }
     }
+
+    client_ip
+}
+
+/// Evaluates client rate limits across IP and API-key buckets before allowing request downstream.
+/// CONTRACT:
+///  - Precondition: Request must be accepted by upstream WAF.
+///  - Returns `Ok(Response)` with `x-ratelimit-*` headers attached on success.
+///  - Throws `AxiomError(RATE_LIMIT_EXCEEDED, 429)` or `AxiomError(BANNED, 403)`.
+///  - Side effects: Increments hit counters in cache backend; may record IP penalties.
+///  - Idempotent: No (modifies sliding window counter state).
+pub async fn rate_limit_middleware(req: Request, next: Next) -> Result<Response, AxiomError> {
+    let config = req
+        .extensions()
+        .get::<std::sync::Arc<axiom_core::AxiomConfig>>()
+        .cloned()
+        .unwrap_or_else(ConfigManager::get);
+
+    if !config.rate_limit.enabled {
+        return Ok(next.run(req).await);
+    }
+
+    // ─── IP Resolution ─────────────────────────────────────────────────────
+    // Resolve peer TCP address. Only trust forwarding headers if peer is in trusted_proxies list.
+    let client_ip = resolve_client_ip(&req, &config);
 
     // Short-circuit banned IP addresses immediately
     let (is_banned, reason) = crate::security::ban_list::BanList::is_ip_banned(&client_ip);

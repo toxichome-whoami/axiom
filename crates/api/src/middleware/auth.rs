@@ -54,9 +54,10 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, A
     }
 
     if let Some(raw_token) = raw_token_opt {
-        match validate_api_key(raw_token, &config) {
+        let client_ip = crate::middleware::rate_limit::resolve_client_ip(&req, &config);
+        match validate_api_key_with_client_ip(raw_token, &config, Some(&client_ip)) {
             Ok(ctx) => {
-                BanList::record_successful_auth(&ctx.api_key_name);
+                BanList::record_successful_auth_for_ip(&client_ip, &ctx.api_key_name);
                 req.extensions_mut().insert(ctx);
                 return Ok(next.run(req).await);
             }
@@ -222,9 +223,10 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, A
 ///  - Returns `Err(None)` if key format is invalid, unknown, or secret mismatch.
 ///  - Side effects: Increments failure counter for recognized key names when secret fails.
 ///  - Concurrency: Zero database locks on hot path via ArcSwap metadata snapshot.
-pub fn validate_api_key(
+pub fn validate_api_key_with_client_ip(
     raw_token: &str,
     config: &axiom_core::AxiomConfig,
+    client_ip: Option<&str>,
 ) -> Result<AuthContext, Option<String>> {
     let decoded_str = BASE64_STANDARD
         .decode(raw_token)
@@ -261,21 +263,11 @@ pub fn validate_api_key(
                 }
 
                 if match_result == 0 {
-                    
                     let mut permissions = Vec::new();
 
                     if let Some(ref r_name) = key_snap.role_name {
                         if let Some(role_snap) = snapshot.roles.get(r_name) {
                             permissions = role_snap.permissions.clone();
-                            if r_name == "admin"
-                                || permissions.iter().any(|p| {
-                                    p.database == "*"
-                                        && p.table_name == "*"
-                                        && p.operations.iter().any(|op| op == "*")
-                                })
-                            {
-                                
-                            }
                         }
                     }
 
@@ -305,13 +297,28 @@ pub fn validate_api_key(
                     } else {
                         0
                     };
-                    BanList::record_failed_auth(key_name, penalty_threshold, window_secs, cooldown_secs);
+
+                    // SECURITY (Anti-DoS): If client_ip is known, ban the attacking client IP
+                    // rather than globally suspending the API key, preventing 3rd-party lockout of legitimate keys.
+                    if let Some(ip) = client_ip {
+                        BanList::record_failed_auth_for_ip(ip, key_name, penalty_threshold, window_secs, cooldown_secs);
+                    } else {
+                        BanList::record_failed_auth(key_name, penalty_threshold, window_secs, cooldown_secs);
+                    }
                 }
             }
         }
     }
 
     Err(None)
+}
+
+/// Backwards-compatible validator for API key tokens without explicit client IP context.
+pub fn validate_api_key(
+    raw_token: &str,
+    config: &axiom_core::AxiomConfig,
+) -> Result<AuthContext, Option<String>> {
+    validate_api_key_with_client_ip(raw_token, config, None)
 }
 
 #[cfg(test)]

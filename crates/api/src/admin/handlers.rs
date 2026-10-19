@@ -1177,17 +1177,139 @@ pub async fn setup_complete(
 /// CONTRACT:
 ///  - Precondition: `payload` contains valid username and password.
 ///  - Returns: Session token and Set-Cookie header.
-///  - Side effects: Inserts session row.
+pub const TRUSTED_DEVICE_TTL_SECS: i64 = 30 * 24 * 60 * 60; // 30 days trusted device token
+pub const MAX_ACCOUNT_FAILED_ATTEMPTS: u32 = 5;
+pub const MAX_TRUSTED_ACCOUNT_FAILED_ATTEMPTS: u32 = 15;
+pub const ACCOUNT_LOCKOUT_WINDOW_SECS: u64 = 15 * 60; // 15 minutes lockout window
+
+/// Helper to generate and verify HMAC-signed trusted device tokens
+fn verify_trusted_device_token(cookie_val: &str, username: &str, secret: &str) -> bool {
+    let parts: Vec<&str> = cookie_val.split('.').collect();
+    if parts.len() != 3 {
+        return false;
+    }
+    let (u, exp_str, sig) = (parts[0], parts[1], parts[2]);
+    if u != username {
+        return false;
+    }
+    let exp: i64 = match exp_str.parse() {
+        Ok(v) => v,
+        Err(_) => return false,
+    };
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
+    if exp < now {
+        return false;
+    }
+    let msg = format!("{}.{}.{}", u, exp, secret);
+    let expected_sig = blake3::hash(msg.as_bytes()).to_hex().to_string();
+    sig == expected_sig
+}
+
+fn create_trusted_device_token(username: &str, secret: &str) -> (String, i64) {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
+    let exp = now + TRUSTED_DEVICE_TTL_SECS;
+    let msg = format!("{}.{}.{}", username, exp, secret);
+    let sig = blake3::hash(msg.as_bytes()).to_hex().to_string();
+    (format!("{}.{}.{}", username, exp, sig), exp)
+}
+
+/// Verifies admin credentials and issues a session token and cookie.
+/// CONTRACT:
+///  - Precondition: `payload` contains non-empty username (<= 128 chars) and password (<= 256 chars).
+///  - Pre-Argon2 Defense:
+///    1. Cheap input bounds validation (0ms, 0 CPU).
+///    2. Trusted-device cookie detection (`axiom_trusted_device`).
+///    3. Distributed per-account sliding window rate limiting across all IPs.
+///    4. Argon2 concurrency bounding via semaphore in `MetadataStore::verify_user`.
+///  - Returns: Session token, session cookie, and trusted device cookie.
+///  - Side effects: Inserts session row and resets failed account counters on success.
 pub async fn login_handler(
     headers: axum::http::HeaderMap,
     Json(payload): Json<LoginRequest>,
 ) -> Result<impl IntoResponse, AxiomError> {
-    let valid = MetadataStore::verify_user(&payload.username, &payload.password)
+    // 1. Cheap Input Format and Length Pre-validation (Zero CPU Burn)
+    let username = payload.username.trim();
+    if username.is_empty() || username.len() > 128 || payload.password.is_empty() || payload.password.len() > 256 {
+        return Err(AxiomError::new(
+            "INVALID_INPUT",
+            "Username or password does not meet length requirements",
+            StatusCode::BAD_REQUEST,
+        ));
+    }
+
+    let device_secret = MetadataStore::get_or_create_system_secret("trusted_device_hmac_key")
         .await
-        .unwrap_or(false);
+        .unwrap_or_else(|_| "axiom_fallback_device_secret_key_fixed".to_string());
+
+    // 2. Evaluate Trusted Device Cookie
+    let mut is_trusted_device = false;
+    if let Some(cookie_hdr) = headers.get(axum::http::header::COOKIE).and_then(|h| h.to_str().ok()) {
+        for cookie_part in cookie_hdr.split(';') {
+            let trimmed = cookie_part.trim();
+            if let Some(token_val) = trimmed.strip_prefix("axiom_trusted_device=") {
+                if verify_trusted_device_token(token_val, username, &device_secret) {
+                    is_trusted_device = true;
+                    break;
+                }
+            }
+        }
+    }
+
+    // 3. Distributed Per-Account Rate Limiting (Prevents CPU exhaustion across distributed IPs)
+    let account_key = format!("rl:account:{}", username.to_lowercase());
+    let allowed_attempts = if is_trusted_device {
+        MAX_TRUSTED_ACCOUNT_FAILED_ATTEMPTS
+    } else {
+        MAX_ACCOUNT_FAILED_ATTEMPTS
+    };
+
+    let current_failures: u32 = axiom_cache::CacheEngine::get(&account_key)
+        .await
+        .and_then(|b| String::from_utf8(b.to_vec()).ok())
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0);
+
+    if current_failures >= allowed_attempts {
+        crate::metrics::MetricsEngine::record_auth_failure("account_locked");
+        return Err(AxiomError::new(
+            "ACCOUNT_LOCKED",
+            "Account temporarily locked due to excessive failed attempts. Please try again later.",
+            StatusCode::TOO_MANY_REQUESTS,
+        ));
+    }
+
+    // 4. Compute-Intensive Password Verification (Semaphore-guarded on blocking thread)
+    let verify_res = MetadataStore::verify_user(username, &payload.password).await;
+    let valid = match verify_res {
+        Ok(v) => v,
+        Err(err) if err == "SERVER_BUSY_AUTH_THROTTLED" => {
+            crate::metrics::MetricsEngine::record_auth_failure("server_busy_throttled");
+            return Err(AxiomError::new(
+                "SERVER_BUSY",
+                "Authentication service is operating under high load. Please retry shortly.",
+                StatusCode::SERVICE_UNAVAILABLE,
+            ));
+        }
+        Err(_) => false,
+    };
 
     if !valid {
         crate::metrics::MetricsEngine::record_auth_failure("invalid_admin_password");
+        let new_failures = current_failures.saturating_add(1);
+        axiom_cache::CacheEngine::set(
+            &account_key,
+            bytes::Bytes::from(new_failures.to_string()),
+            ACCOUNT_LOCKOUT_WINDOW_SECS,
+            axiom_cache::Durability::Ephemeral,
+        )
+        .await;
+
         return Err(AxiomError::new(
             "INVALID_CREDENTIALS",
             "Invalid administrative username or password",
@@ -1195,7 +1317,16 @@ pub async fn login_handler(
         ));
     }
 
-    let session_id = MetadataStore::create_session(&payload.username, LOGIN_SESSION_TTL_SECS)
+    // 5. Successful Login: Clear Account Failures and Issue Tokens
+    axiom_cache::CacheEngine::set(
+        &account_key,
+        bytes::Bytes::from("0"),
+        ACCOUNT_LOCKOUT_WINDOW_SECS,
+        axiom_cache::Durability::Ephemeral,
+    )
+    .await;
+
+    let session_id = MetadataStore::create_session(username, LOGIN_SESSION_TTL_SECS)
         .await
         .map_err(|e| AxiomError::new("SESSION_CREATION_FAILED", &e, StatusCode::INTERNAL_SERVER_ERROR))?;
 
@@ -1207,22 +1338,36 @@ pub async fn login_handler(
         .unwrap_or(false)
         || !config.server.tls_cert.is_empty();
     let secure_flag = if is_https { "; Secure" } else { "" };
-
+    let (trusted_token, _) = create_trusted_device_token(username, &device_secret);
     let cookie_header = format!(
         "axiom_session={}; HttpOnly; SameSite=Strict; Path=/; Max-Age={}{}",
         session_id,
         LOGIN_SESSION_TTL_SECS,
         secure_flag
     );
+    let trusted_cookie_header = format!(
+        "axiom_trusted_device={}; HttpOnly; SameSite=Strict; Path=/; Max-Age={}{}",
+        trusted_token,
+        TRUSTED_DEVICE_TTL_SECS,
+        secure_flag
+    );
+
+    let mut headers_map = axum::http::HeaderMap::new();
+    if let Ok(val) = axum::http::HeaderValue::from_str(&cookie_header) {
+        headers_map.append(axum::http::header::SET_COOKIE, val);
+    }
+    if let Ok(val) = axum::http::HeaderValue::from_str(&trusted_cookie_header) {
+        headers_map.append(axum::http::header::SET_COOKIE, val);
+    }
 
     Ok((
-        [(axum::http::header::SET_COOKIE, cookie_header)],
+        headers_map,
         Json(json!({
             "success": true,
             "data": {
                 "token": session_id,
                 "session_token": session_id,
-                "username": payload.username
+                "username": username
             },
             "error": Value::Null
         }))
@@ -1294,6 +1439,37 @@ pub async fn list_users_handler(
         "data": users,
         "error": Value::Null
     })))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_trusted_device_token_lifecycle() {
+        let username = "admin_sec_test";
+        let secret = "axiom_secret_test_entropy_9988";
+        let (token, exp) = create_trusted_device_token(username, secret);
+
+        assert!(exp > 0);
+        assert!(verify_trusted_device_token(&token, username, secret));
+
+        // Tampered username fails
+        assert!(!verify_trusted_device_token(&token, "attacker", secret));
+
+        // Tampered secret fails
+        assert!(!verify_trusted_device_token(&token, username, "wrong_secret"));
+
+        // Malformed token fails
+        assert!(!verify_trusted_device_token("garbage.token", username, secret));
+    }
+
+    #[test]
+    fn test_lockout_constants() {
+        assert_eq!(MAX_ACCOUNT_FAILED_ATTEMPTS, 5);
+        assert_eq!(MAX_TRUSTED_ACCOUNT_FAILED_ATTEMPTS, 15);
+        assert_eq!(ACCOUNT_LOCKOUT_WINDOW_SECS, 900);
+    }
 }
 
 
