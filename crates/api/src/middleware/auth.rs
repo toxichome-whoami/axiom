@@ -1,4 +1,4 @@
-/*
+﻿/*
  * API key authentication and identity resolution middleware.
  * Owned by: middleware
  * Key deps: axum, base64, blake3, crate::config, axiom_metadata::snapshot, crate::security::ban_list, axiom_core::AuthContext
@@ -75,10 +75,12 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, A
         }
     }
 
-    // Check for administrative session token (via Bearer header or Cookie)
+    // Check for administrative session token (via Bearer header or Cookie).
+    // Session tokens have the "axm_sess_" prefix. Match on prefix, not fixed length,
+    // so the check stays correct even if the UUID representation changes.
     let mut session_id_opt = None;
     if let Some(raw_token) = raw_token_opt {
-        if !raw_token.contains(':') && raw_token.len() == 32 {
+        if raw_token.starts_with("axm_sess_") {
             session_id_opt = Some(raw_token);
         }
     }
