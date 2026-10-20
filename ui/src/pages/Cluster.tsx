@@ -1,7 +1,7 @@
 /*
  * Cluster Mesh management dashboard for zero-database peer-to-peer distributed coordination.
  * Owned by: ui/pages
- * Key deps: api/client, lucide-react, components/ui/SlideOver, components/ui/Button, components/ui/ConfirmDialog
+ * Key deps: api/client, lucide-react, DataTable, SlideOver, Button, ConfirmDialog
  * Invariants: Monikers and secrets conform to cryptographic pairing specifications; peer removal requires confirmation.
  */
 
@@ -11,11 +11,11 @@ import {
   ClusterStatusData,
   PeerNodeRecordApi,
 } from '../api/client';
+import { DataTable, Column } from '../components/shared/DataTable';
 import { SlideOver } from '../components/ui/SlideOver';
 import { Button } from '../components/ui/Button';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import {
-  Network,
   Plus,
   RefreshCw,
   Copy,
@@ -23,15 +23,19 @@ import {
   Eye,
   EyeOff,
   Trash2,
-  Server,
-  ShieldCheck,
-  Zap,
-  Activity,
   Edit2,
-  CheckCircle2,
   AlertTriangle,
-  XCircle,
 } from 'lucide-react';
+
+function formatLastSeen(timestampSecs: number) {
+  if (!timestampSecs) return 'Never';
+  const nowSecs = Math.floor(Date.now() / 1000);
+  const diff = nowSecs - timestampSecs;
+  if (diff < 5) return 'Just now';
+  if (diff < 60) return `${diff}s ago`;
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  return `${Math.floor(diff / 3600)}h ago`;
+}
 
 export function Cluster() {
   const [status, setStatus] = useState<ClusterStatusData | null>(null);
@@ -40,17 +44,14 @@ export function Cluster() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Secret visibility & copy state
   const [showSecret, setShowSecret] = useState(false);
   const [copiedSecret, setCopiedSecret] = useState(false);
   const [copiedNodeId, setCopiedNodeId] = useState(false);
 
-  // Edit moniker modal/inline state
   const [isEditingMoniker, setIsEditingMoniker] = useState(false);
   const [editMonikerValue, setEditMonikerValue] = useState('');
   const [isSavingMoniker, setIsSavingMoniker] = useState(false);
 
-  // Connect Peer SlideOver state
   const [isConnectOpen, setIsConnectOpen] = useState(false);
   const [peerUrl, setPeerUrl] = useState('');
   const [peerSecret, setPeerSecret] = useState('');
@@ -58,7 +59,6 @@ export function Cluster() {
   const [connectError, setConnectError] = useState<string | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
 
-  // Remove peer confirmation state
   const [peerToDelete, setPeerToDelete] = useState<PeerNodeRecordApi | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
@@ -82,7 +82,6 @@ export function Cluster() {
 
   useEffect(() => {
     fetchClusterData();
-    // Auto-poll peer health every 15 seconds
     const interval = setInterval(fetchClusterData, 15000);
     return () => clearInterval(interval);
   }, [fetchClusterData]);
@@ -174,47 +173,158 @@ export function Cluster() {
     }
   };
 
-  const formatLastSeen = (timestampSecs: number) => {
-    if (!timestampSecs) return 'Never';
-    const nowSecs = Math.floor(Date.now() / 1000);
-    const diff = nowSecs - timestampSecs;
-    if (diff < 5) return 'Just now';
-    if (diff < 60) return `${diff}s ago`;
-    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-    return `${Math.floor(diff / 3600)}h ago`;
-  };
+  const columns = useMemo<Column<PeerNodeRecordApi>[]>(
+    () => [
+      {
+        id: 'status',
+        header: 'Status',
+        accessorKey: 'status',
+        width: 120,
+        isResizable: true,
+        className: 'pl-4 pr-3',
+        cell: (peer) => {
+          const label =
+            peer.status === 'connected'
+              ? 'Connected'
+              : peer.status === 'unreachable'
+              ? 'Unreachable'
+              : 'Pending';
+          const dot =
+            peer.status === 'connected'
+              ? 'bg-[#30a46c]'
+              : peer.status === 'unreachable'
+              ? 'bg-[#e5484d]'
+              : 'bg-[#f59e0b]';
+          return (
+            <div className="flex items-center gap-2 text-[13px] text-[#cccccc] truncate whitespace-nowrap">
+              <span className={`size-1.5 rounded-full shrink-0 ${dot}`} />
+              <span className="truncate whitespace-nowrap">{label}</span>
+            </div>
+          );
+        },
+      },
+      {
+        id: 'moniker',
+        header: 'Moniker',
+        accessorKey: 'moniker',
+        width: 170,
+        isResizable: true,
+        className: 'px-3',
+        cell: (peer) => (
+          <span
+            className="text-[14px] font-medium text-white truncate whitespace-nowrap block"
+            title={peer.moniker}
+          >
+            {peer.moniker}
+          </span>
+        ),
+      },
+      {
+        id: 'nodeId',
+        header: 'Node ID',
+        accessorKey: 'node_id',
+        width: 220,
+        isResizable: true,
+        className: 'px-3',
+        cell: (peer) => (
+          <span
+            className="font-mono text-[12px] text-[#8c8c8c] truncate whitespace-nowrap block"
+            title={peer.node_id}
+          >
+            {peer.node_id}
+          </span>
+        ),
+      },
+      {
+        id: 'url',
+        header: 'Advertise URL',
+        accessorKey: 'url',
+        isFlex: true,
+        className: 'px-3',
+        cell: (peer) => (
+          <span
+            className="font-mono text-[12px] text-[#8c8c8c] truncate whitespace-nowrap block"
+            title={peer.url}
+          >
+            {peer.url}
+          </span>
+        ),
+      },
+      {
+        id: 'latency',
+        header: 'Latency',
+        accessorKey: 'last_ping_ms',
+        width: 110,
+        isResizable: true,
+        className: 'px-3',
+        cell: (peer) =>
+          peer.status === 'connected' ? (
+            <span
+              className={`tabular-nums text-[13px] ${
+                peer.last_ping_ms < 50 ? 'text-[#30a46c]' : 'text-[#f59e0b]'
+              }`}
+            >
+              {peer.last_ping_ms} ms
+            </span>
+          ) : (
+            <span className="text-[13px] text-[#666666]">—</span>
+          ),
+      },
+      {
+        id: 'lastSeen',
+        header: 'Last Seen',
+        accessorKey: 'last_seen_at',
+        width: 120,
+        isResizable: true,
+        className: 'px-3',
+        cell: (peer) => (
+          <span className="tabular-nums text-[13px] text-[#8c8c8c] truncate whitespace-nowrap block">
+            {formatLastSeen(peer.last_seen_at)}
+          </span>
+        ),
+      },
+      {
+        id: 'actions',
+        header: <span className="sr-only">Actions</span>,
+        width: 72,
+        headerClassName: 'justify-end pr-4',
+        className: 'pl-3 pr-4 justify-end',
+        cell: (peer) => (
+          <div className="flex items-center justify-end w-full">
+            <button
+              type="button"
+              onClick={() => setPeerToDelete(peer)}
+              className="flex items-center justify-center h-7 w-7 rounded-[6px] text-[#8c8c8c] hover:text-[#f87171] hover:bg-[#2a1113] transition-colors cursor-pointer"
+              title="Remove peer from mesh"
+              aria-label={`Remove ${peer.moniker} from mesh`}
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        ),
+      },
+    ],
+    []
+  );
 
   return (
-    <div className="flex-1 flex flex-col min-w-0 bg-[#000000] text-[#f3f4f6] px-4 md:px-8 py-6 space-y-6">
-      {/* ─── Header & Primary Controls ───────────────────────────────────── */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-[#222222] pb-5">
+    <div className="space-y-6">
+      {/* Top Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2.5">
-            <Network className="w-5 h-5 text-[#30a46c]" />
-            <h1 className="text-xl font-semibold tracking-tight text-[#f3f4f6]">Cluster Mesh</h1>
-            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-medium bg-[#13231b] text-[#30a46c] border border-[#1b3d2b]">
-              <span className="w-1.5 h-1.5 rounded-full bg-[#30a46c] animate-pulse" />
-              P2P Active
-            </span>
-          </div>
-          <p className="text-xs text-[#8c8c8c] mt-1 max-w-2xl">
-            Zero-database peer-to-peer synchronization mesh. Nodes broadcast security events, share API keys & catalogs,
-            and reject attackers on arrival in sub-50ms.
-          </p>
+          <h1 className="text-[16px] font-medium text-white tracking-tight">Cluster Mesh</h1>
         </div>
-
-        <div className="flex items-center gap-2.5 shrink-0">
-          <Button
-            variant="outline"
-            size="sm"
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
             onClick={handleManualRefresh}
             disabled={isRefreshing}
-            className="border-[#262626] hover:bg-[#141416] text-[#d4d4d4] text-xs h-8 px-3"
+            title="Refresh cluster status"
+            aria-label="Refresh cluster status"
+            className="flex items-center justify-center h-8 w-8 text-[#8c8c8c] hover:text-white rounded-[8px] bg-[#0c0c0c] hover:bg-[#141414] border border-[#262626] hover:border-[#383838] transition-colors cursor-pointer shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${isRefreshing ? 'animate-spin' : ''}`} />
-            Refresh
-          </Button>
-
+            <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin opacity-50' : ''}`} />
+          </button>
           <Button
             variant="primary"
             size="sm"
@@ -222,412 +332,257 @@ export function Cluster() {
               setConnectError(null);
               setIsConnectOpen(true);
             }}
-            className="bg-[#30a46c] hover:bg-[#288f5d] text-white text-xs h-8 px-3.5 font-medium"
           >
-            <Plus className="w-3.5 h-3.5 mr-1.5" />
+            <Plus className="w-3.5 h-3.5 mr-1" />
             Connect Peer
           </Button>
         </div>
       </div>
 
       {errorMessage && (
-        <div className="flex items-center gap-2.5 p-3 rounded-lg bg-[#261214] border border-[#4a1c20] text-xs text-[#f87171]">
-          <AlertTriangle className="w-4 h-4 shrink-0" />
+        <div className="flex items-center gap-2 p-3 rounded-lg bg-[#2a1113] border border-[#5c1d24] text-[#f87171] text-[13px]">
+          <AlertTriangle className="w-4 h-4 shrink-0 text-[#ef4444]" />
           <span>{errorMessage}</span>
         </div>
       )}
 
-      {/* ─── Local Node Identity Card ────────────────────────────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* Node Information Card */}
-        <div className="lg:col-span-2 bg-[#0c0c0e] border border-[#222222] rounded-lg p-5 flex flex-col justify-between">
-          <div>
-            <div className="flex items-center justify-between pb-3 border-b border-[#1c1c1f]">
+      {/* Local Node */}
+      <div className="rounded-lg border border-[#262626] bg-[#0e0e0e]">
+        <div className="grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-[#222222]">
+          <div className="px-4 py-3.5 min-w-0">
+            <span className="block text-[12px] text-[#8c8c8c] font-medium mb-1.5">Node Moniker</span>
+            {isEditingMoniker ? (
               <div className="flex items-center gap-2">
-                <Server className="w-4 h-4 text-[#8c8c8c]" />
-                <span className="text-xs uppercase tracking-wider text-[#8c8c8c] font-medium">Local Node Identity</span>
+                <input
+                  type="text"
+                  value={editMonikerValue}
+                  onChange={(e) => setEditMonikerValue(e.target.value)}
+                  className="h-8 min-w-0 flex-1 rounded-[6px] border border-[#262626] bg-[#121212] px-2.5 text-[13px] text-white placeholder-[#555555] focus:outline-none focus:border-[#3b82f6]"
+                  autoFocus
+                />
+                <button
+                  type="button"
+                  onClick={handleSaveMoniker}
+                  disabled={isSavingMoniker}
+                  className="h-7 px-2.5 rounded-[6px] bg-[#2563eb] text-[12px] font-medium text-white hover:bg-[#1d4ed8] transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
+                >
+                  Save
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsEditingMoniker(false)}
+                  className="h-7 px-2.5 rounded-[6px] border border-[#262626] text-[12px] text-[#cccccc] hover:text-white hover:border-[#383838] transition-colors cursor-pointer shrink-0"
+                >
+                  Cancel
+                </button>
               </div>
-              <div className="flex items-center gap-1.5 text-xs text-[#30a46c] font-mono">
-                <span className="w-2 h-2 rounded-full bg-[#30a46c]" />
-                Healthy
+            ) : (
+              <div className="flex items-center gap-1.5 min-w-0">
+                <span
+                  className="text-[14px] font-medium text-white truncate"
+                  title={status?.moniker || undefined}
+                >
+                  {status?.moniker || '—'}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditMonikerValue(status?.moniker || '');
+                    setIsEditingMoniker(true);
+                  }}
+                  className="flex items-center justify-center h-6 w-6 rounded-[6px] text-[#8c8c8c] hover:text-white hover:bg-[#1a1a1a] transition-colors cursor-pointer shrink-0"
+                  title="Edit node moniker"
+                  aria-label="Edit node moniker"
+                >
+                  <Edit2 className="w-3.5 h-3.5" />
+                </button>
               </div>
-            </div>
+            )}
+          </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-              {/* Moniker */}
-              <div>
-                <label className="text-[11px] uppercase tracking-wider text-[#666666] font-semibold block mb-1">
-                  Node Moniker
-                </label>
-                {isEditingMoniker ? (
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="text"
-                      value={editMonikerValue}
-                      onChange={(e) => setEditMonikerValue(e.target.value)}
-                      className="bg-[#141416] border border-[#333333] rounded px-2.5 py-1 text-xs text-[#f3f4f6] font-medium focus:outline-none focus:border-[#30a46c] w-full"
-                      autoFocus
-                    />
-                    <Button
-                      size="sm"
-                      variant="primary"
-                      onClick={handleSaveMoniker}
-                      disabled={isSavingMoniker}
-                      className="h-7 px-2.5 bg-[#30a46c] text-white text-[11px]"
-                    >
-                      Save
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => setIsEditingMoniker(false)}
-                      className="h-7 px-2 border-[#333333] text-[11px]"
-                    >
-                      Cancel
-                    </Button>
-                  </div>
+          <div className="px-4 py-3.5 min-w-0">
+            <span className="block text-[12px] text-[#8c8c8c] font-medium mb-1.5">Node ID</span>
+            <div className="flex items-center gap-1.5 min-w-0">
+              <span
+                className="font-mono text-[13px] text-[#cccccc] truncate"
+                title={status?.node_id || undefined}
+              >
+                {status?.node_id || '—'}
+              </span>
+              <button
+                type="button"
+                onClick={handleCopyNodeId}
+                className="flex items-center justify-center h-6 w-6 rounded-[6px] text-[#8c8c8c] hover:text-white hover:bg-[#1a1a1a] transition-colors cursor-pointer shrink-0"
+                title="Copy Node ID"
+                aria-label="Copy Node ID"
+              >
+                {copiedNodeId ? (
+                  <Check className="w-3.5 h-3.5 text-[#30a46c]" />
                 ) : (
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-semibold text-[#f3f4f6]">{status?.moniker || '---'}</span>
-                    <button
-                      onClick={() => {
-                        setEditMonikerValue(status?.moniker || '');
-                        setIsEditingMoniker(true);
-                      }}
-                      className="text-[#666666] hover:text-[#f3f4f6] transition-colors p-1"
-                      title="Edit node moniker"
-                    >
-                      <Edit2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
+                  <Copy className="w-3.5 h-3.5" />
                 )}
-              </div>
-
-              {/* Node ID */}
-              <div>
-                <label className="text-[11px] uppercase tracking-wider text-[#666666] font-semibold block mb-1">
-                  Node Identifier
-                </label>
-                <div className="flex items-center gap-2">
-                  <span className="font-mono text-xs text-[#a3a3a3] bg-[#141416] px-2 py-0.5 rounded border border-[#222222]">
-                    {status?.node_id || '---'}
-                  </span>
-                  <button
-                    onClick={handleCopyNodeId}
-                    className="text-[#666666] hover:text-[#f3f4f6] transition-colors p-1"
-                    title="Copy Node ID"
-                  >
-                    {copiedNodeId ? <Check className="w-3.5 h-3.5 text-[#30a46c]" /> : <Copy className="w-3.5 h-3.5" />}
-                  </button>
-                </div>
-              </div>
+              </button>
             </div>
+          </div>
 
-            {/* Cluster Shared Secret */}
-            <div className="mt-4 pt-3 border-t border-[#1c1c1f]">
-              <div className="flex items-center justify-between mb-1">
-                <label className="text-[11px] uppercase tracking-wider text-[#666666] font-semibold">
-                  Cluster Secret (Pairing Token)
-                </label>
-                <span className="text-[10px] text-[#8c8c8c]">Required on remote node to pair</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="flex-1 bg-[#141416] border border-[#222222] rounded px-3 py-1.5 font-mono text-xs text-[#a3a3a3] truncate select-all">
-                  {showSecret ? status?.cluster_secret : '••••••••••••••••••••••••••••••••••••••••••••••••'}
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setShowSecret(!showSecret)}
-                  className="p-1.5 bg-[#141416] border border-[#222222] hover:bg-[#1c1c1f] rounded text-[#8c8c8c] hover:text-[#f3f4f6]"
-                  title={showSecret ? 'Hide secret' : 'Show secret'}
-                >
-                  {showSecret ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-                <button
-                  type="button"
-                  onClick={handleCopySecret}
-                  className="p-1.5 bg-[#141416] border border-[#222222] hover:bg-[#1c1c1f] rounded text-[#8c8c8c] hover:text-[#f3f4f6]"
-                  title="Copy Pairing Secret"
-                >
-                  {copiedSecret ? <Check className="w-4 h-4 text-[#30a46c]" /> : <Copy className="w-4 h-4" />}
-                </button>
-              </div>
+          <div className="px-4 py-3.5 min-w-0">
+            <span className="block text-[12px] text-[#8c8c8c] font-medium mb-1.5">Connected Peers</span>
+            <div className="flex items-baseline gap-1.5">
+              <span className="tabular-nums text-[14px] font-medium text-white">
+                {status?.connected_peers ?? 0}
+              </span>
+              <span className="text-[12px] text-[#8c8c8c]">
+                of {status?.total_peers ?? 0} known
+              </span>
             </div>
           </div>
         </div>
 
-        {/* Mesh Metrics Summary */}
-        <div className="bg-[#0c0c0e] border border-[#222222] rounded-lg p-5 flex flex-col justify-between">
-          <div>
-            <div className="flex items-center gap-2 pb-3 border-b border-[#1c1c1f]">
-              <Activity className="w-4 h-4 text-[#8c8c8c]" />
-              <span className="text-xs uppercase tracking-wider text-[#8c8c8c] font-medium">Mesh Topology</span>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4 mt-4">
-              <div className="bg-[#141416] border border-[#222222] rounded p-3">
-                <span className="text-[11px] text-[#8c8c8c] block">Connected Peers</span>
-                <span className="text-2xl font-semibold text-[#30a46c] mt-1 block">
-                  {status?.connected_peers ?? 0}
-                </span>
-              </div>
-              <div className="bg-[#141416] border border-[#222222] rounded p-3">
-                <span className="text-[11px] text-[#8c8c8c] block">Total Known Peers</span>
-                <span className="text-2xl font-semibold text-[#f3f4f6] mt-1 block">
-                  {status?.total_peers ?? 0}
-                </span>
-              </div>
-            </div>
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 border-t border-[#222222] px-4 py-3">
+          <div className="sm:w-[200px] shrink-0">
+            <span className="block text-[12px] text-[#8c8c8c] font-medium">Cluster Secret</span>
+            <span className="block text-[12px] text-[#666666]">Required to pair a remote node</span>
           </div>
-
-          <div className="mt-4 pt-3 border-t border-[#1c1c1f] text-[11px] text-[#8c8c8c] space-y-1">
-            <div className="flex items-center justify-between">
-              <span>Security Broadcast:</span>
-              <span className="text-[#30a46c] font-mono">Active (sub-50ms)</span>
+          <div className="flex items-center gap-2 min-w-0 flex-1">
+            <div className="flex items-center h-8 flex-1 min-w-0 rounded-[6px] border border-[#262626] bg-[#121212] px-2.5 font-mono text-[12px] text-[#cccccc] truncate select-all">
+              {showSecret
+                ? status?.cluster_secret || '—'
+                : '••••••••••••••••••••••••••••••••••••••••'}
             </div>
-            <div className="flex items-center justify-between">
-              <span>Coordination Engine:</span>
-              <span className="text-[#d4d4d4] font-mono">P2P BLAKE3-MAC</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* ─── Real-time Threat Defense Invariant Card ──────────────────────── */}
-      <div className="bg-[#0c0c0e] border border-[#1b3d2b] rounded-lg p-4 flex items-center gap-4">
-        <div className="w-10 h-10 rounded-full bg-[#13231b] border border-[#1b3d2b] flex items-center justify-center shrink-0">
-          <Zap className="w-5 h-5 text-[#30a46c]" />
-        </div>
-        <div className="flex-1">
-          <h4 className="text-xs font-semibold text-[#f3f4f6]">Active Threat Fanout Engine</h4>
-          <p className="text-[11px] text-[#8c8c8c] mt-0.5">
-            If an attacker brute-forces Server 1, their IP is immediately banned across all paired nodes in this mesh.
-            Subsequent attacks against Server 2 or Server 3 are refused instantly on arrival without touching your databases.
-          </p>
-        </div>
-      </div>
-
-      {/* ─── Peers Data Table ────────────────────────────────────────────── */}
-      <div className="bg-[#0c0c0e] border border-[#222222] rounded-lg overflow-hidden">
-        <div className="px-5 py-3.5 border-b border-[#222222] flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Server className="w-4 h-4 text-[#8c8c8c]" />
-            <span className="text-xs font-semibold text-[#f3f4f6]">Registered Cluster Peers</span>
-            <span className="text-[11px] text-[#666666] font-mono">({peers.length})</span>
-          </div>
-        </div>
-
-        {peers.length === 0 ? (
-          <div className="py-12 px-4 text-center">
-            <Network className="w-8 h-8 text-[#444444] mx-auto mb-3" />
-            <h3 className="text-sm font-medium text-[#f3f4f6]">No Connected Cluster Peers</h3>
-            <p className="text-xs text-[#8c8c8c] mt-1 max-w-sm mx-auto">
-              This node is operating in standalone mode. Click &quot;Connect Peer&quot; to establish an encrypted mesh
-              pairing with another Axiom server.
-            </p>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setIsConnectOpen(true)}
-              className="mt-4 border-[#333333] text-xs h-8"
+            <button
+              type="button"
+              onClick={() => setShowSecret(!showSecret)}
+              className="flex items-center justify-center h-8 w-8 rounded-[6px] border border-[#262626] bg-[#0c0c0c] text-[#8c8c8c] hover:text-white hover:border-[#383838] transition-colors cursor-pointer shrink-0"
+              title={showSecret ? 'Hide secret' : 'Show secret'}
+              aria-label={showSecret ? 'Hide cluster secret' : 'Show cluster secret'}
             >
-              <Plus className="w-3.5 h-3.5 mr-1.5" />
-              Connect First Peer
-            </Button>
+              {showSecret ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+            </button>
+            <button
+              type="button"
+              onClick={handleCopySecret}
+              className="flex items-center justify-center h-8 w-8 rounded-[6px] border border-[#262626] bg-[#0c0c0c] text-[#8c8c8c] hover:text-white hover:border-[#383838] transition-colors cursor-pointer shrink-0"
+              title="Copy cluster secret"
+              aria-label="Copy cluster secret"
+            >
+              {copiedSecret ? (
+                <Check className="w-3.5 h-3.5 text-[#30a46c]" />
+              ) : (
+                <Copy className="w-3.5 h-3.5" />
+              )}
+            </button>
           </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs border-collapse">
-              <thead>
-                <tr className="border-b border-[#222222] text-[#8c8c8c] bg-[#08080a] select-none">
-                  <th className="py-2.5 px-4 font-medium uppercase text-[10px] tracking-wider">Status</th>
-                  <th className="py-2.5 px-4 font-medium uppercase text-[10px] tracking-wider">Moniker</th>
-                  <th className="py-2.5 px-4 font-medium uppercase text-[10px] tracking-wider">Node ID</th>
-                  <th className="py-2.5 px-4 font-medium uppercase text-[10px] tracking-wider">Advertise URL</th>
-                  <th className="py-2.5 px-4 font-medium uppercase text-[10px] tracking-wider">Latency</th>
-                  <th className="py-2.5 px-4 font-medium uppercase text-[10px] tracking-wider">Last Seen</th>
-                  <th className="py-2.5 px-4 font-medium uppercase text-[10px] tracking-wider text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#1c1c1f]">
-                {peers.map((peer) => {
-                  const isConnected = peer.status === 'connected';
-                  return (
-                    <tr key={peer.node_id} className="hover:bg-[#141416]/50 transition-colors">
-                      {/* Status */}
-                      <td className="py-3 px-4 whitespace-nowrap">
-                        <span
-                          className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-medium border ${
-                            isConnected
-                              ? 'bg-[#13231b] text-[#30a46c] border-[#1b3d2b]'
-                              : 'bg-[#261214] text-[#f87171] border-[#4a1c20]'
-                          }`}
-                        >
-                          <span
-                            className={`w-1.5 h-1.5 rounded-full ${
-                              isConnected ? 'bg-[#30a46c]' : 'bg-[#f87171]'
-                            }`}
-                          />
-                          {isConnected ? 'Connected' : 'Unreachable'}
-                        </span>
-                      </td>
-
-                      {/* Moniker */}
-                      <td className="py-3 px-4 font-medium text-[#f3f4f6] whitespace-nowrap">
-                        {peer.moniker}
-                      </td>
-
-                      {/* Node ID */}
-                      <td className="py-3 px-4 font-mono text-[11px] text-[#8c8c8c] whitespace-nowrap">
-                        {peer.node_id}
-                      </td>
-
-                      {/* URL */}
-                      <td className="py-3 px-4 font-mono text-[11px] text-[#a3a3a3] whitespace-nowrap">
-                        {peer.url}
-                      </td>
-
-                      {/* Latency */}
-                      <td className="py-3 px-4 whitespace-nowrap font-mono text-[11px]">
-                        {isConnected ? (
-                          <span className={peer.last_ping_ms < 50 ? 'text-[#30a46c]' : 'text-[#f59e0b]'}>
-                            {peer.last_ping_ms} ms
-                          </span>
-                        ) : (
-                          <span className="text-[#666666]">---</span>
-                        )}
-                      </td>
-
-                      {/* Last Seen */}
-                      <td className="py-3 px-4 text-[#8c8c8c] whitespace-nowrap">
-                        {formatLastSeen(peer.last_seen_at)}
-                      </td>
-
-                      {/* Actions */}
-                      <td className="py-3 px-4 whitespace-nowrap text-right">
-                        <button
-                          onClick={() => setPeerToDelete(peer)}
-                          className="p-1 text-[#666666] hover:text-[#f87171] transition-colors rounded hover:bg-[#261214]"
-                          title="Remove peer from mesh"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
+        </div>
       </div>
 
-      {/* ─── Connect Peer SlideOver ──────────────────────────────────────── */}
+      {/* Peers Table */}
+      <DataTable
+        columns={columns}
+        data={peers}
+        keyExtractor={(peer) => peer.node_id}
+        isLoading={isLoading}
+        ariaLabel="Cluster Peers Table"
+        emptyMessage="No cluster peers connected. Connect a peer to join the mesh."
+      />
+
+      {/* Connect Peer SlideOver */}
       <SlideOver
         isOpen={isConnectOpen}
         onClose={() => setIsConnectOpen(false)}
-        title="Connect Cluster Peer"
+        title="Connect Peer"
+        subtitle="Pair with another Axiom node using its URL and cluster secret"
       >
-        <form onSubmit={handleConnectPeerSubmit} className="space-y-4">
-          <p className="text-xs text-[#8c8c8c]">
-            Enter the remote Axiom instance endpoint and its cluster secret. Both nodes will perform an authenticated
-            mutual handshake and register each other symmetrically.
-          </p>
+        <form onSubmit={handleConnectPeerSubmit} className="flex flex-col flex-1 min-h-0">
+          <div className="flex-1 p-5 overflow-y-auto space-y-4">
+            {connectError && (
+              <div className="flex items-center gap-2 p-3 rounded-lg bg-[#2a1113] border border-[#5c1d24] text-[#f87171] text-[13px]">
+                <AlertTriangle className="w-4 h-4 shrink-0 text-[#ef4444]" />
+                <span>{connectError}</span>
+              </div>
+            )}
 
-          {connectError && (
-            <div className="p-3 rounded bg-[#261214] border border-[#4a1c20] text-xs text-[#f87171]">
-              {connectError}
+            <div>
+              <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">
+                Remote Peer URL <span className="text-[#e5484d]">*</span>
+              </label>
+              <input
+                type="text"
+                placeholder="https://peer.example.com:4500"
+                value={peerUrl}
+                onChange={(e) => setPeerUrl(e.target.value)}
+                className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] px-3 text-[14px] text-white placeholder-[#555555] focus:outline-none focus:border-[#3b82f6] font-mono"
+                required
+              />
+              <span className="block text-[12px] text-[#666666] mt-1">
+                Reachable HTTP or HTTPS base URL of the remote node.
+              </span>
             </div>
-          )}
 
-          <div>
-            <label className="text-xs font-medium text-[#d4d4d4] block mb-1.5">
-              Remote Peer URL <span className="text-[#f87171]">*</span>
-            </label>
-            <input
-              type="text"
-              placeholder="https://peer.example.com:4500"
-              value={peerUrl}
-              onChange={(e) => setPeerUrl(e.target.value)}
-              className="w-full bg-[#141416] border border-[#333333] rounded px-3 py-2 text-xs text-[#f3f4f6] font-mono focus:outline-none focus:border-[#30a46c]"
-              required
-            />
-            <span className="text-[10px] text-[#666666] mt-1 block">
-              The internal or public reachable HTTP/HTTPS base URL of the remote node.
-            </span>
+            <div>
+              <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">
+                Cluster Secret <span className="text-[#e5484d]">*</span>
+              </label>
+              <input
+                type="password"
+                placeholder="Paste the remote node's cluster secret"
+                value={peerSecret}
+                onChange={(e) => setPeerSecret(e.target.value)}
+                className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] px-3 text-[14px] text-white placeholder-[#555555] focus:outline-none focus:border-[#3b82f6] font-mono"
+                required
+              />
+              <span className="block text-[12px] text-[#666666] mt-1">
+                Copied from the remote node&apos;s cluster page.
+              </span>
+            </div>
+
+            <div>
+              <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">
+                Custom Moniker <span className="text-[#666666] font-normal">(optional)</span>
+              </label>
+              <input
+                type="text"
+                placeholder="e.g. London-Edge-01"
+                value={peerMoniker}
+                onChange={(e) => setPeerMoniker(e.target.value)}
+                className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] px-3 text-[14px] text-white placeholder-[#555555] focus:outline-none focus:border-[#3b82f6]"
+              />
+              <span className="block text-[12px] text-[#666666] mt-1">
+                Leave blank to use the peer&apos;s advertised node name.
+              </span>
+            </div>
           </div>
 
-          <div>
-            <label className="text-xs font-medium text-[#d4d4d4] block mb-1.5">
-              Cluster Secret / Pairing Token <span className="text-[#f87171]">*</span>
-            </label>
-            <input
-              type="password"
-              placeholder="Paste remote node's cluster secret"
-              value={peerSecret}
-              onChange={(e) => setPeerSecret(e.target.value)}
-              className="w-full bg-[#141416] border border-[#333333] rounded px-3 py-2 text-xs text-[#f3f4f6] font-mono focus:outline-none focus:border-[#30a46c]"
-              required
-            />
-            <span className="text-[10px] text-[#666666] mt-1 block">
-              Copied from the remote node&apos;s Cluster Dashboard.
-            </span>
-          </div>
-
-          <div>
-            <label className="text-xs font-medium text-[#d4d4d4] block mb-1.5">
-              Custom Moniker (Optional)
-            </label>
-            <input
-              type="text"
-              placeholder="e.g. London-Edge-01"
-              value={peerMoniker}
-              onChange={(e) => setPeerMoniker(e.target.value)}
-              className="w-full bg-[#141416] border border-[#333333] rounded px-3 py-2 text-xs text-[#f3f4f6] focus:outline-none focus:border-[#30a46c]"
-            />
-            <span className="text-[10px] text-[#666666] mt-1 block">
-              Leave blank to adopt the peer&apos;s advertised node name.
-            </span>
-          </div>
-
-          <div className="pt-4 flex items-center justify-end gap-2 border-t border-[#222222]">
+          <div className="p-4 border-t border-[#222222] bg-[#0e0e0e] flex items-center justify-end gap-2.5">
             <Button
               type="button"
               variant="outline"
-              size="sm"
+              size="md"
               onClick={() => setIsConnectOpen(false)}
-              className="border-[#333333] text-xs h-8"
             >
               Cancel
             </Button>
-            <Button
-              type="submit"
-              variant="primary"
-              size="sm"
-              disabled={isConnecting}
-              className="bg-[#30a46c] hover:bg-[#288f5d] text-white text-xs h-8 px-4"
-            >
+            <Button type="submit" variant="primary" size="md" disabled={isConnecting}>
               {isConnecting ? (
                 <>
-                  <RefreshCw className="w-3.5 h-3.5 mr-1.5 animate-spin" />
-                  Pairing...
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  Pairing
                 </>
               ) : (
-                'Establish Pairing'
+                'Connect Peer'
               )}
             </Button>
           </div>
         </form>
       </SlideOver>
 
-      {/* ─── Remove Peer Confirmation Dialog ────────────────────────────── */}
+      {/* Remove Peer Confirmation */}
       <ConfirmDialog
         isOpen={Boolean(peerToDelete)}
         onClose={() => setPeerToDelete(null)}
         onConfirm={handleConfirmRemovePeer}
-        title="Remove Peer Node"
-        description={`Are you sure you want to remove peer "${peerToDelete?.moniker}" (${peerToDelete?.node_id}) from the cluster mesh? Security events will no longer be broadcast to or received from this node.`}
-        confirmLabel="Remove Peer"
+        title="Remove Peer"
+        description={`Remove "${peerToDelete?.moniker}" from this cluster mesh? Security events will no longer sync with this node.`}
+        confirmLabel={isDeleting ? 'Removing…' : 'Remove Peer'}
         variant="danger"
       />
     </div>
