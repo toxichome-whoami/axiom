@@ -1112,10 +1112,10 @@ export function StoragePage() {
       >
         {/* Drag and Drop Active Overlay */}
         {isDraggingOver && (
-          <div className="absolute inset-0 z-30 pointer-events-none select-none bg-black/85 backdrop-blur-xs border-2 border-dashed border-[#555555] rounded-[10px] flex flex-col items-center justify-center p-6 text-center animate-in fade-in duration-100 font-sans">
+          <div className="absolute inset-0 z-30 pointer-events-none select-none bg-black/85 backdrop-blur-xs border-2 border-dashed border-[#555555] rounded-lg flex flex-col items-center justify-center p-6 text-center animate-in fade-in duration-100 font-sans">
             <Upload className="w-8 h-8 text-white mb-2 animate-bounce" />
-            <h3 className="text-[15px] font-medium text-white">Drop files to upload</h3>
-            <p className="text-[12px] text-[#777777] mt-1">
+            <h3 className="text-sm font-medium text-white">Drop files to upload</h3>
+            <p className="text-xs text-[#8c8c8c] mt-1">
               Uploading directly into {activeNamespace} / {currentPrefix || 'root'}
             </p>
           </div>
@@ -1165,9 +1165,9 @@ export function StoragePage() {
         >
           {/* Loading Skeleton */}
           {isLoading && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2.5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
               {Array.from({ length: 10 }).map((_, i) => (
-                <div key={i} className="h-28 rounded-[6px] bg-[#141414] border border-[#222222] animate-pulse" />
+                <div key={i} className="h-28 rounded-lg bg-[#141414] border border-[#222222] animate-pulse" />
               ))}
             </div>
           )}
@@ -1289,7 +1289,7 @@ export function StoragePage() {
       {/* New Folder Modal */}
       {isNewFolderOpen && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs font-sans"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs font-sans select-none"
           onClick={(e) => {
             if (e.target === e.currentTarget && !isCreatingFolder) {
               setIsNewFolderOpen(false);
@@ -1298,10 +1298,10 @@ export function StoragePage() {
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-sm rounded-[8px] bg-[#0e0e0e] border border-[#262626] p-5 shadow-2xl space-y-4"
+            className="w-full max-w-sm rounded-lg bg-[#0e0e0e] border border-[#262626] p-5 shadow-2xl space-y-4"
           >
             <div className="flex items-center justify-between">
-              <h3 className="text-[14px] font-medium text-white">New Folder</h3>
+              <h3 className="text-sm font-medium text-white">New Folder</h3>
               <button
                 type="button"
                 onClick={() => setIsNewFolderOpen(false)}
@@ -1313,7 +1313,7 @@ export function StoragePage() {
 
             <form onSubmit={handleCreateFolder} className="space-y-4">
               <div>
-                <label className="block text-[13px] text-[#999999] font-medium mb-1.5">
+                <label className="block text-xs text-[#8c8c8c] font-medium mb-1.5">
                   Folder Name
                 </label>
                 <input
@@ -1323,7 +1323,7 @@ export function StoragePage() {
                   placeholder="e.g. assets"
                   value={newFolderName}
                   onChange={(e) => setNewFolderName(e.target.value)}
-                  className="w-full h-9 px-3 rounded-[6px] bg-[#141414] border border-[#262626] focus:border-[#3b82f6] text-white text-[13.5px] sm:text-[14px] outline-none"
+                  className="w-full h-9 px-3 rounded-md bg-[#141414] border border-[#262626] focus:border-[#3b82f6] text-white text-sm outline-none"
                 />
               </div>
 
@@ -1354,7 +1354,7 @@ export function StoragePage() {
       {/* Rename Modal */}
       {isRenameOpen && itemToRename && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs font-sans"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs font-sans select-none"
           onClick={(e) => {
             if (e.target === e.currentTarget && !isRenaming) {
               setIsRenameOpen(false);
@@ -1363,10 +1363,10 @@ export function StoragePage() {
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-sm rounded-[8px] bg-[#0e0e0e] border border-[#262626] p-5 shadow-2xl space-y-4"
+            className="w-full max-w-sm rounded-lg bg-[#0e0e0e] border border-[#262626] p-5 shadow-2xl space-y-4"
           >
             <div className="flex items-center justify-between">
-              <h3 className="text-[14.5px] sm:text-[15px] font-semibold text-white">Rename Item</h3>
+              <h3 className="text-sm font-medium text-white">Rename Item</h3>
               <button
                 type="button"
                 onClick={() => setIsRenameOpen(false)}
@@ -1378,7 +1378,7 @@ export function StoragePage() {
 
             <form onSubmit={handleRename} className="space-y-4">
               <div>
-                <label className="block text-[13px] text-[#999999] font-medium mb-1.5">
+                <label className="block text-xs text-[#8c8c8c] font-medium mb-1.5">
                   New Name
                 </label>
                 <input
@@ -1387,10 +1387,10 @@ export function StoragePage() {
                   required
                   value={renameInput}
                   onChange={(e) => setRenameInput(e.target.value)}
-                  className="w-full h-9 px-3 rounded-[6px] bg-[#141414] border border-[#262626] focus:border-[#3b82f6] text-white text-[13.5px] sm:text-[14px] outline-none"
+                  className="w-full h-9 px-3 rounded-md bg-[#141414] border border-[#262626] focus:border-[#3b82f6] text-white text-sm outline-none"
                 />
                 {renameError && (
-                  <p className="text-[12px] text-rose-400 mt-1">{renameError}</p>
+                  <p className="text-xs text-rose-400 mt-1">{renameError}</p>
                 )}
               </div>
 
@@ -1456,7 +1456,7 @@ export function StoragePage() {
       {/* New Namespace Modal */}
       {isNewNsOpen && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs font-sans"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs font-sans select-none"
           onClick={(e) => {
             if (e.target === e.currentTarget && !isCreatingNs) {
               setIsNewNsOpen(false);
@@ -1465,10 +1465,10 @@ export function StoragePage() {
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-sm rounded-[8px] bg-[#0e0e0e] border border-[#262626] p-5 shadow-2xl space-y-4"
+            className="w-full max-w-sm rounded-lg bg-[#0e0e0e] border border-[#262626] p-5 shadow-2xl space-y-4"
           >
             <div className="flex items-center justify-between">
-              <h3 className="text-[14.5px] sm:text-[15px] font-semibold text-white">Create Namespace</h3>
+              <h3 className="text-sm font-medium text-white">Create Namespace</h3>
               <button
                 type="button"
                 onClick={() => setIsNewNsOpen(false)}
@@ -1480,7 +1480,7 @@ export function StoragePage() {
 
             <form onSubmit={handleCreateNamespace} className="space-y-4">
               <div>
-                <label className="block text-[13px] text-[#999999] font-medium mb-1.5">
+                <label className="block text-xs text-[#8c8c8c] font-medium mb-1.5">
                   Namespace Name
                 </label>
                 <input
@@ -1490,12 +1490,12 @@ export function StoragePage() {
                   placeholder="e.g. avatars, invoices"
                   value={newNsName}
                   onChange={(e) => setNewNsName(e.target.value)}
-                  className="w-full h-9 px-3 rounded-[6px] bg-[#141414] border border-[#262626] focus:border-[#3b82f6] text-white text-[13.5px] sm:text-[14px] outline-none"
+                  className="w-full h-9 px-3 rounded-md bg-[#141414] border border-[#262626] focus:border-[#3b82f6] text-white text-sm outline-none"
                 />
               </div>
 
               <div>
-                <label className="block text-[13px] text-[#999999] font-medium mb-1.5">
+                <label className="block text-xs text-[#8c8c8c] font-medium mb-1.5">
                   Storage Quota Limit
                 </label>
                 <CustomSelect
@@ -1508,7 +1508,7 @@ export function StoragePage() {
 
               {newNsQuotaPreset === 'custom' && (
                 <div>
-                  <label className="block text-[13px] text-[#999999] font-medium mb-1.5">
+                  <label className="block text-xs text-[#8c8c8c] font-medium mb-1.5">
                     Limit in Bytes
                   </label>
                   <input
@@ -1517,7 +1517,7 @@ export function StoragePage() {
                     value={newNsCustomBytes}
                     onChange={(e) => setNewNsCustomBytes(e.target.value)}
                     placeholder="e.g. 104857600"
-                    className="w-full h-9 px-3 rounded-[6px] bg-[#141414] border border-[#262626] focus:border-[#3b82f6] text-white text-[13.5px] sm:text-[14px] outline-none"
+                    className="w-full h-9 px-3 rounded-md bg-[#141414] border border-[#262626] focus:border-[#3b82f6] text-white text-sm outline-none"
                   />
                 </div>
               )}
@@ -1531,10 +1531,10 @@ export function StoragePage() {
                     className="mt-0.5"
                   />
                   <div>
-                    <label htmlFor="new-ns-public-switch" className="text-[13px] font-medium text-white block cursor-pointer">
+                    <label htmlFor="new-ns-public-switch" className="text-xs font-medium text-white block cursor-pointer">
                       Enable Public Read Access
                     </label>
-                    <span className="text-[11.5px] text-[#777777] leading-relaxed block mt-0.5">
+                    <span className="text-xs text-[#777777] leading-relaxed block mt-0.5">
                       Direct static URLs (<code className="text-[#a3a3a3]">/api/v1/blobs/public/:namespace/*key</code>) with HTTP 304 browser caching for websites. Writes remain strictly authenticated.
                     </span>
                   </div>
@@ -1542,7 +1542,7 @@ export function StoragePage() {
 
                 {newNsIsPublic && (
                   <div>
-                    <label className="block text-[12.5px] text-[#999999] font-medium mb-1.5">
+                    <label className="block text-xs text-[#8c8c8c] font-medium mb-1.5">
                       Allowed CORS Origins (Optional)
                     </label>
                     <input
@@ -1550,7 +1550,7 @@ export function StoragePage() {
                       placeholder="e.g. *, https://example.com"
                       value={newNsCors}
                       onChange={(e) => setNewNsCors(e.target.value)}
-                      className="w-full h-9 px-3 rounded-[6px] bg-[#141414] border border-[#262626] focus:border-[#3b82f6] text-white text-[13px] outline-none"
+                      className="w-full h-9 px-3 rounded-md bg-[#141414] border border-[#262626] focus:border-[#3b82f6] text-white text-xs outline-none"
                     />
                     <span className="text-[11px] text-[#666666] block mt-1">
                       Comma-separated list of origins. Leave empty to allow any origin when public.
@@ -1586,7 +1586,7 @@ export function StoragePage() {
       {/* Manage Namespace Modal */}
       {isManageNsOpen && currentNsInfo && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs font-sans"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs font-sans select-none"
           onClick={(e) => {
             if (e.target === e.currentTarget && !isSavingNs) {
               setIsManageNsOpen(false);
@@ -1595,19 +1595,19 @@ export function StoragePage() {
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-md rounded-[8px] bg-[#0e0e0e] border border-[#262626] p-5 shadow-2xl space-y-4"
+            className="w-full max-w-md rounded-lg bg-[#0e0e0e] border border-[#262626] p-5 shadow-2xl space-y-4"
           >
             <div className="flex items-center justify-between pb-0.5">
               <div className="flex items-center gap-2">
-                <h3 className="text-[14px] font-semibold text-white tracking-tight">Manage Namespace</h3>
-                <span className="px-1.5 py-0.5 rounded-[4px] bg-[#161616] border border-[#262626] text-[11px] font-mono text-[#8c8c8c]">
+                <h3 className="text-sm font-medium text-white tracking-tight">Manage Namespace</h3>
+                <span className="px-1.5 py-0.5 rounded bg-[#161616] border border-[#262626] text-xs font-mono text-[#8c8c8c]">
                   {currentNsInfo.name}
                 </span>
               </div>
               <button
                 type="button"
                 onClick={() => setIsManageNsOpen(false)}
-                className="w-7 h-7 flex items-center justify-center rounded-[6px] text-[#777777] hover:text-white hover:bg-white/5 transition-colors cursor-pointer"
+                className="w-7 h-7 flex items-center justify-center rounded-md text-[#777777] hover:text-white hover:bg-white/5 transition-colors cursor-pointer"
                 title="Close"
               >
                 <X className="w-4 h-4" />
@@ -1616,11 +1616,11 @@ export function StoragePage() {
 
             {/* Tab bar (Segmented control matching dashboard) */}
             <div className="-mx-5 px-5 py-2.5 border-b border-[#222222] bg-[#0e0e0e]">
-              <div className="inline-flex items-center p-0.5 rounded-[8px] bg-transparent border border-[#262626]">
+              <div className="inline-flex items-center p-0.5 rounded-lg bg-transparent border border-[#262626]">
                 <button
                   type="button"
                   onClick={() => setManageNsTab('settings')}
-                  className={`flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[13px] font-medium transition-colors duration-75 cursor-pointer font-sans outline-none focus:outline-none border ${
+                  className={`flex items-center gap-1.5 h-8 px-3 rounded-md text-xs font-medium transition-colors duration-75 cursor-pointer font-sans outline-none focus:outline-none border ${
                     manageNsTab === 'settings'
                       ? 'bg-[#161616] text-white border-[#333333]'
                       : 'text-[#8c8c8c] hover:text-white hover:bg-[#141414] border-transparent'
@@ -1631,7 +1631,7 @@ export function StoragePage() {
                 <button
                   type="button"
                   onClick={() => setManageNsTab('danger')}
-                  className={`flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[13px] font-medium transition-colors duration-75 cursor-pointer font-sans outline-none focus:outline-none border ${
+                  className={`flex items-center gap-1.5 h-8 px-3 rounded-md text-xs font-medium transition-colors duration-75 cursor-pointer font-sans outline-none focus:outline-none border ${
                     manageNsTab === 'danger'
                       ? 'bg-[#161616] text-white border-[#333333]'
                       : 'text-[#8c8c8c] hover:text-white hover:bg-[#141414] border-transparent'
@@ -1645,7 +1645,7 @@ export function StoragePage() {
             {manageNsTab === 'settings' ? (
               <form onSubmit={handleUpdateNamespace} className="space-y-4">
                 <div>
-                  <label className="block text-[13px] text-[#999999] font-medium mb-1.5">
+                  <label className="block text-xs text-[#8c8c8c] font-medium mb-1.5">
                     Identifier
                   </label>
                   <input
@@ -1653,12 +1653,12 @@ export function StoragePage() {
                     required
                     value={editNsName}
                     onChange={(e) => setEditNsName(e.target.value)}
-                    className="w-full h-9 px-3 rounded-[6px] bg-[#141414] border border-[#262626] focus:border-[#3b82f6] text-white text-[13.5px] sm:text-[14px] outline-none"
+                    className="w-full h-9 px-3 rounded-md bg-[#141414] border border-[#262626] focus:border-[#3b82f6] text-white text-sm outline-none"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-[13px] text-[#999999] font-medium mb-1.5">
+                  <label className="block text-xs text-[#8c8c8c] font-medium mb-1.5">
                     Quota Limit
                   </label>
                   <CustomSelect
@@ -1671,7 +1671,7 @@ export function StoragePage() {
 
                 {editNsQuotaPreset === 'custom' && (
                   <div>
-                    <label className="block text-[13px] text-[#999999] font-medium mb-1.5">
+                    <label className="block text-xs text-[#8c8c8c] font-medium mb-1.5">
                       Limit in Bytes
                     </label>
                     <input
@@ -1679,7 +1679,7 @@ export function StoragePage() {
                       min="1"
                       value={editNsCustomBytes}
                       onChange={(e) => setEditNsCustomBytes(e.target.value)}
-                      className="w-full h-9 px-3 rounded-[6px] bg-[#141414] border border-[#262626] focus:border-[#3b82f6] text-white text-[13.5px] sm:text-[14px] outline-none"
+                      className="w-full h-9 px-3 rounded-md bg-[#141414] border border-[#262626] focus:border-[#3b82f6] text-white text-sm outline-none"
                     />
                   </div>
                 )}
@@ -1693,17 +1693,17 @@ export function StoragePage() {
                       className="mt-0.5"
                     />
                     <div>
-                      <label htmlFor="edit-ns-public-switch" className="text-[13px] font-medium text-white block cursor-pointer">
+                      <label htmlFor="edit-ns-public-switch" className="text-xs font-medium text-white block cursor-pointer">
                         Enable Public Read Access
                       </label>
-                      <span className="text-[11.5px] text-[#777777] leading-relaxed block mt-0.5">
+                      <span className="text-xs text-[#777777] leading-relaxed block mt-0.5">
                         Direct static URLs (<code className="text-[#a3a3a3]">/api/v1/blobs/public/:namespace/*key</code>) with HTTP 304 browser caching for websites.
                       </span>
                     </div>
                   </div>
 
                   <div>
-                    <label className="block text-[12.5px] text-[#999999] font-medium mb-1.5">
+                    <label className="block text-xs text-[#8c8c8c] font-medium mb-1.5">
                       Allowed CORS Origins
                     </label>
                     <input
@@ -1711,7 +1711,7 @@ export function StoragePage() {
                       placeholder="e.g. *, https://example.com"
                       value={editNsCors}
                       onChange={(e) => setEditNsCors(e.target.value)}
-                      className="w-full h-9 px-3 rounded-[6px] bg-[#141414] border border-[#262626] focus:border-[#3b82f6] text-white text-[13px] outline-none"
+                      className="w-full h-9 px-3 rounded-md bg-[#141414] border border-[#262626] focus:border-[#3b82f6] text-white text-xs outline-none"
                     />
                     <span className="text-[11px] text-[#666666] block mt-1">
                       Comma-separated origins. Leave empty to allow any origin when public.
@@ -1741,7 +1741,7 @@ export function StoragePage() {
               </form>
             ) : (
               <div className="space-y-4">
-                <div className="p-3.5 rounded-[6px] bg-[#2a1113] border border-[#5c1d24] text-[13px] text-[#f87171] leading-relaxed flex items-start gap-2.5">
+                <div className="p-3.5 rounded-md bg-[#2a1113] border border-[#5c1d24] text-xs text-[#f87171] leading-relaxed flex items-start gap-2.5">
                   <AlertTriangle className="w-4 h-4 text-[#e5484d] shrink-0 mt-0.5" />
                   <div>
                     Permanently delete namespace <strong className="text-white">{currentNsInfo.name}</strong> and all{' '}

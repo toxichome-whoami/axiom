@@ -69,21 +69,21 @@ export function UploadProgressDrawer({
 
   return (
     <div
-      className="fixed bottom-4 right-4 z-50 w-80 sm:w-96 rounded-xl border border-[#2b2b2b] bg-[#141414] shadow-2xl overflow-hidden font-sans select-none animate-in fade-in slide-in-from-bottom-2 duration-150 ring-1 ring-blue-500/20"
+      className="fixed bottom-4 right-4 z-50 w-80 sm:w-96 rounded-lg border border-[#2b2b2b] bg-[#141414] shadow-2xl overflow-hidden font-sans select-none animate-in fade-in slide-in-from-bottom-2 duration-150 ring-1 ring-blue-500/20"
       role="region"
       aria-label="Upload progress"
     >
       {/* ─── Top Header Bar ────────────────────────────────────────────── */}
-      <div className="h-11 px-3.5 bg-[#181818] border-b border-[#242424] flex items-center justify-between gap-2">
+      <div className="h-10 px-3.5 bg-[#181818] border-b border-[#242424] flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
-          <span className="text-[13px] font-medium text-white truncate">{title}</span>
+          <span className="text-xs font-medium text-white truncate">{title}</span>
         </div>
 
         <div className="flex items-center gap-1 shrink-0">
           <button
             type="button"
             onClick={() => setIsMinimized(!isMinimized)}
-            className="w-7 h-7 flex items-center justify-center rounded-[6px] text-[#9ca3af] hover:text-white hover:bg-[#242424] transition-colors cursor-pointer"
+            className="w-7 h-7 flex items-center justify-center rounded-md text-[#8c8c8c] hover:text-white hover:bg-[#242424] transition-colors cursor-pointer"
             title={isMinimized ? 'Expand' : 'Collapse'}
             aria-label={isMinimized ? 'Expand upload drawer' : 'Collapse upload drawer'}
           >
@@ -92,7 +92,7 @@ export function UploadProgressDrawer({
           <button
             type="button"
             onClick={onDismiss}
-            className="w-7 h-7 flex items-center justify-center rounded-[6px] text-[#9ca3af] hover:text-white hover:bg-[#242424] transition-colors cursor-pointer"
+            className="w-7 h-7 flex items-center justify-center rounded-md text-[#8c8c8c] hover:text-white hover:bg-[#242424] transition-colors cursor-pointer"
             title="Dismiss"
             aria-label="Dismiss upload drawer"
           >
@@ -105,7 +105,7 @@ export function UploadProgressDrawer({
       {!isMinimized && (
         <>
           {/* Subheader status bar */}
-          <div className="h-9 px-3.5 bg-[#151515] border-b border-[#222222] flex items-center justify-between text-[12px]">
+          <div className="h-8 px-3.5 bg-[#151515] border-b border-[#222222] flex items-center justify-between text-xs">
             <span className="text-[#8c8c8c] truncate">
               {uploadingCount > 0
                 ? completedCount > 0
@@ -119,7 +119,7 @@ export function UploadProgressDrawer({
               <button
                 type="button"
                 onClick={onCancelAll}
-                className="text-[#60a5fa] hover:text-[#93c5fd] hover:underline font-medium text-[12px] cursor-pointer transition-colors shrink-0 ml-2"
+                className="text-blue-400 hover:text-blue-300 hover:underline font-medium text-xs cursor-pointer transition-colors shrink-0 ml-2"
               >
                 Cancel
               </button>
@@ -127,7 +127,7 @@ export function UploadProgressDrawer({
               <button
                 type="button"
                 onClick={onDismiss}
-                className="text-[#8c8c8c] hover:text-white text-[12px] cursor-pointer transition-colors shrink-0 ml-2"
+                className="text-[#8c8c8c] hover:text-white text-xs cursor-pointer transition-colors shrink-0 ml-2"
               >
                 Clear
               </button>
@@ -142,13 +142,13 @@ export function UploadProgressDrawer({
               return (
                 <div
                   key={task.id}
-                  className="px-3.5 py-2.5 flex items-center justify-between gap-3 hover:bg-[#181818] transition-colors"
+                  className="px-3.5 py-2 flex items-center justify-between gap-3 hover:bg-[#181818] transition-colors"
                 >
                   {/* Left: Icon and file name */}
                   <div className="flex items-center gap-2.5 min-w-0 flex-1">
                     <span className="shrink-0">{fileIcon}</span>
                     <div className="min-w-0 flex-1">
-                      <div className="text-[13px] text-[#e5e7eb] truncate font-normal" title={task.name}>
+                      <div className="text-xs text-[#e5e7eb] truncate font-normal" title={task.name}>
                         {task.name}
                       </div>
                       <div className="text-[11px] text-[#71717a] flex items-center gap-1.5 truncate">

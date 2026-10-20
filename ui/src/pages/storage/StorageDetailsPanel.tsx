@@ -65,16 +65,16 @@ export function StorageDetailsPanel({
 
   return (
     <aside className="w-72 lg:w-80 shrink-0 flex flex-col bg-[#0a0a0a] border-l border-[#222222] font-sans select-none overflow-hidden">
-      {/* ─── Header: Fixed h-[54px] (aligned with StorageToolbar & StorageSidebar) ─────────────── */}
-      <div className="h-[54px] shrink-0 px-4 border-b border-[#222222] bg-[#0c0c0c] flex items-center justify-between">
-        <h3 className="text-[13.5px] font-medium text-white truncate">
+      {/* ─── Header: Fixed h-12 (aligned with StorageToolbar & StorageSidebar) ─────────────── */}
+      <div className="h-12 shrink-0 px-4 border-b border-[#222222] bg-[#0c0c0c] flex items-center justify-between">
+        <h3 className="text-sm font-medium text-white truncate">
           {selectedItem ? (selectedItem.type === 'folder' ? 'Folder Details' : 'Object Details') : 'Namespace Overview'}
         </h3>
         <button
           type="button"
           onClick={onClose}
           title="Close details inspector"
-          className="w-7 h-7 flex items-center justify-center rounded-[6px] text-[#777777] hover:text-white hover:bg-[#1a1a1a] transition-colors cursor-pointer"
+          className="w-7 h-7 flex items-center justify-center rounded-md text-[#777777] hover:text-white hover:bg-[#1a1a1a] transition-colors cursor-pointer"
         >
           <X className="w-4 h-4" />
         </button>
@@ -85,8 +85,8 @@ export function StorageDetailsPanel({
         {selectedItem ? (
           <>
             {/* Hero Card */}
-            <div className="p-3.5 rounded-[6px] bg-[#111111] border border-[#222222] flex flex-col items-center text-center">
-              <div className="w-11 h-11 rounded-[6px] bg-[#161616] border border-[#242424] flex items-center justify-center mb-2">
+            <div className="p-3.5 rounded-lg bg-[#111111] border border-[#222222] flex flex-col items-center text-center">
+              <div className="w-10 h-10 rounded-md bg-[#161616] border border-[#242424] flex items-center justify-center mb-2">
                 {selectedItem.type === 'folder' ? (
                   <Folder className="w-5 h-5 text-[#eab308]" />
                 ) : (
@@ -94,22 +94,22 @@ export function StorageDetailsPanel({
                 )}
               </div>
 
-              <h4 className="text-[13px] font-medium text-white break-all max-w-full leading-snug">
+              <h4 className="text-sm font-medium text-white break-all max-w-full leading-snug">
                 {selectedItem.name}
               </h4>
-              <p className="text-[11.5px] text-[#888888] mt-0.5 truncate max-w-full">
+              <p className="text-xs text-[#8c8c8c] mt-0.5 truncate max-w-full">
                 {selectedItem.type === 'folder'
                   ? 'Virtual Directory'
                   : selectedItem.content_type || 'application/octet-stream'}
               </p>
 
-              {/* Quick Action Buttons (2-column balanced grid with edge-to-edge divider) */}
+              {/* Quick Action Buttons */}
               <div className="-mx-3.5 px-3.5 w-[calc(100%+1.75rem)] mt-3 pt-3 border-t border-[#1e1e1e] grid grid-cols-2 gap-1.5">
                 {selectedItem.type === 'file' && (
                   <button
                     type="button"
                     onClick={() => onDownload(selectedItem.fullKey)}
-                    className="inline-flex items-center justify-center gap-1.5 h-7 px-2 rounded-[5px] text-[12px] font-medium text-[#cccccc] hover:text-white bg-[#161616] hover:bg-[#202020] border border-[#262626] transition-colors cursor-pointer"
+                    className="inline-flex items-center justify-center gap-1.5 h-7 px-2 rounded-md text-xs font-medium text-[#cccccc] hover:text-white bg-[#161616] hover:bg-[#202020] border border-[#262626] transition-colors cursor-pointer"
                   >
                     <Download className="w-3.5 h-3.5 text-[#8c8c8c]" />
                     <span>Download</span>
@@ -120,7 +120,7 @@ export function StorageDetailsPanel({
                   <button
                     type="button"
                     onClick={() => onShare(selectedItem)}
-                    className="inline-flex items-center justify-center gap-1.5 h-7 px-2 rounded-[5px] text-[12px] font-medium text-[#cccccc] hover:text-white bg-[#161616] hover:bg-[#202020] border border-[#262626] transition-colors cursor-pointer"
+                    className="inline-flex items-center justify-center gap-1.5 h-7 px-2 rounded-md text-xs font-medium text-[#cccccc] hover:text-white bg-[#161616] hover:bg-[#202020] border border-[#262626] transition-colors cursor-pointer"
                   >
                     <Share2 className="w-3.5 h-3.5 text-[#8c8c8c]" />
                     <span>Share</span>
@@ -131,7 +131,7 @@ export function StorageDetailsPanel({
                   <button
                     type="button"
                     onClick={() => onCopyPublicUrl(selectedItem)}
-                    className="inline-flex items-center justify-center gap-1.5 h-7 px-2 rounded-[5px] text-[12px] font-medium text-emerald-400 hover:text-emerald-300 bg-emerald-950/20 hover:bg-emerald-950/40 border border-emerald-900/30 transition-colors cursor-pointer"
+                    className="inline-flex items-center justify-center gap-1.5 h-7 px-2 rounded-md text-xs font-medium text-emerald-400 hover:text-emerald-300 bg-emerald-950/20 hover:bg-emerald-950/40 border border-emerald-900/30 transition-colors cursor-pointer"
                   >
                     <Globe className="w-3.5 h-3.5" />
                     <span>Public URL</span>
@@ -141,7 +141,7 @@ export function StorageDetailsPanel({
                 <button
                   type="button"
                   onClick={() => onOpenMove(selectedItem)}
-                  className="inline-flex items-center justify-center gap-1.5 h-7 px-2 rounded-[5px] text-[12px] font-medium text-[#cccccc] hover:text-white bg-[#161616] hover:bg-[#202020] border border-[#262626] transition-colors cursor-pointer"
+                  className="inline-flex items-center justify-center gap-1.5 h-7 px-2 rounded-md text-xs font-medium text-[#cccccc] hover:text-white bg-[#161616] hover:bg-[#202020] border border-[#262626] transition-colors cursor-pointer"
                 >
                   <ArrowRight className="w-3.5 h-3.5 text-[#8c8c8c]" />
                   <span>Move</span>
@@ -150,7 +150,7 @@ export function StorageDetailsPanel({
                 <button
                   type="button"
                   onClick={() => onDelete(selectedItem)}
-                  className="inline-flex items-center justify-center gap-1.5 h-7 px-2 rounded-[5px] text-[12px] font-medium text-rose-400 hover:text-rose-300 bg-rose-950/20 hover:bg-rose-950/40 border border-rose-900/30 transition-colors cursor-pointer"
+                  className="inline-flex items-center justify-center gap-1.5 h-7 px-2 rounded-md text-xs font-medium text-rose-400 hover:text-rose-300 bg-rose-950/20 hover:bg-rose-950/40 border border-rose-900/30 transition-colors cursor-pointer"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                   <span>Delete</span>
@@ -160,17 +160,17 @@ export function StorageDetailsPanel({
 
             {/* Properties Group */}
             <div className="space-y-1">
-              <span className="text-[11.5px] font-medium text-[#888888] block px-0.5">
+              <span className="text-xs font-medium text-[#8c8c8c] block px-0.5">
                 Properties
               </span>
 
-              <div className="rounded-[6px] bg-[#111111] border border-[#222222] divide-y divide-[#1a1a1a] text-[12.5px]">
+              <div className="rounded-lg bg-[#111111] border border-[#222222] divide-y divide-[#1a1a1a] text-xs">
                 <div className="flex items-center justify-between px-3 py-2">
-                  <span className="text-[#888888]">Namespace</span>
+                  <span className="text-[#8c8c8c]">Namespace</span>
                   <div className="flex items-center gap-1.5">
                     <span className="text-white font-medium">{activeNamespace}</span>
                     {currentNsInfo?.is_public && (
-                      <span className="px-1.5 py-0.2 rounded-[3px] bg-[#30a46c]/15 border border-[#30a46c]/30 text-[9.5px] font-medium text-[#30a46c]">
+                      <span className="px-1.5 py-0.5 rounded text-[11px] bg-[#30a46c]/15 border border-[#30a46c]/30 font-medium text-[#30a46c]">
                         Public
                       </span>
                     )}
@@ -178,10 +178,10 @@ export function StorageDetailsPanel({
                 </div>
 
                 <div className="flex items-center justify-between px-3 py-2">
-                  <span className="text-[#888888]">Access Policy</span>
+                  <span className="text-[#8c8c8c]">Access Policy</span>
                   <span
                     className={`font-medium ${
-                      currentNsInfo?.is_public ? 'text-[#30a46c]' : 'text-[#888888]'
+                      currentNsInfo?.is_public ? 'text-[#30a46c]' : 'text-[#8c8c8c]'
                     }`}
                   >
                     {currentNsInfo?.is_public ? 'Public Direct (CDN)' : 'Private (Signed Ticket Only)'}
@@ -190,10 +190,10 @@ export function StorageDetailsPanel({
 
                 {selectedItem.type === 'file' && currentNsInfo?.is_public && (
                   <div className="flex items-center justify-between px-3 py-2 gap-2">
-                    <span className="text-[#888888] shrink-0">Direct CDN URL</span>
+                    <span className="text-[#8c8c8c] shrink-0">Direct CDN URL</span>
                     <div className="flex items-center gap-1.5 min-w-0">
                       <span
-                        className="text-[#30a46c] text-[11.5px] truncate max-w-[140px] font-mono"
+                        className="text-[#30a46c] text-xs truncate max-w-[140px] font-mono"
                         title={`${window.location.origin}/api/v1/blobs/public/${activeNamespace}/${selectedItem.fullKey}`}
                       >
                         /api/v1/blobs/public/{activeNamespace}/{selectedItem.fullKey}
@@ -220,9 +220,9 @@ export function StorageDetailsPanel({
                 )}
 
                 <div className="flex items-center justify-between px-3 py-2 gap-2">
-                  <span className="text-[#888888] shrink-0">Path Key</span>
+                  <span className="text-[#8c8c8c] shrink-0">Path Key</span>
                   <div className="flex items-center gap-1.5 min-w-0">
-                    <span className="text-white text-[12px] truncate max-w-[150px]" title={selectedItem.fullKey}>
+                    <span className="text-white text-xs truncate max-w-[150px]" title={selectedItem.fullKey}>
                       {selectedItem.fullKey}
                     </span>
                     <button
@@ -241,7 +241,7 @@ export function StorageDetailsPanel({
                 </div>
 
                 <div className="flex items-center justify-between px-3 py-2">
-                  <span className="text-[#888888]">
+                  <span className="text-[#8c8c8c]">
                     {selectedItem.type === 'folder' ? 'Contents' : 'Payload Size'}
                   </span>
                   <span className="text-white tabular-nums">
@@ -252,20 +252,20 @@ export function StorageDetailsPanel({
                 </div>
 
                 <div className="flex items-center justify-between px-3 py-2">
-                  <span className="text-[#888888]">Storage Tier</span>
+                  <span className="text-[#8c8c8c]">Storage Tier</span>
                   <span className="text-white font-medium">
                     {selectedItem.type === 'folder'
                       ? 'Virtual Directory'
                       : selectedItem.inline
-                      ? 'Fjall LSM Inline (<64KB)'
+                      ? 'LSM Inline (<64KB)'
                       : 'Disk Content Shard'}
                   </span>
                 </div>
 
                 {selectedItem.type === 'file' && selectedItem.created_at && (
                   <div className="flex items-center justify-between px-3 py-2">
-                    <span className="text-[#888888]">Uploaded</span>
-                    <span className="text-white tabular-nums text-[11.5px]">
+                    <span className="text-[#8c8c8c]">Uploaded</span>
+                    <span className="text-white tabular-nums text-xs">
                       {new Date(selectedItem.created_at * 1000).toLocaleString()}
                     </span>
                   </div>
@@ -277,13 +277,13 @@ export function StorageDetailsPanel({
             {selectedItem.type === 'file' && selectedItem.hash && (
               <div className="space-y-1">
                 <div className="flex items-center justify-between px-0.5">
-                  <span className="text-[11.5px] font-medium text-[#888888]">
+                  <span className="text-xs font-medium text-[#8c8c8c]">
                     BLAKE3 Integrity
                   </span>
                   <button
                     type="button"
                     onClick={() => onCopyText(selectedItem.hash!, 'blake3-hash')}
-                    className="text-[11.5px] text-[#8c8c8c] hover:text-white cursor-pointer inline-flex items-center gap-1"
+                    className="text-xs text-[#8c8c8c] hover:text-white cursor-pointer inline-flex items-center gap-1"
                   >
                     {copiedKey === 'blake3-hash' ? (
                       <>
@@ -299,8 +299,8 @@ export function StorageDetailsPanel({
                   </button>
                 </div>
 
-                <div className="rounded-[6px] bg-[#111111] border border-[#222222] p-2.5 space-y-2">
-                  <div className="p-2 rounded-[4px] bg-[#0c0c0c] border border-[#1f1f1f] text-[11px] text-[#a1a1aa] break-all select-all leading-relaxed">
+                <div className="rounded-lg bg-[#111111] border border-[#222222] p-2.5 space-y-2">
+                  <div className="p-2 rounded bg-[#0c0c0c] border border-[#1f1f1f] text-[11px] text-[#a1a1aa] break-all select-all leading-relaxed font-mono">
                     {selectedItem.hash}
                   </div>
 
@@ -308,7 +308,7 @@ export function StorageDetailsPanel({
                     type="button"
                     onClick={() => onVerifyBlob(selectedItem.fullKey)}
                     disabled={verifyStatus === 'verifying'}
-                    className={`w-full h-7 px-2.5 rounded-[5px] border text-[12px] font-medium flex items-center justify-center gap-1.5 transition-colors cursor-pointer ${
+                    className={`w-full h-7 px-2.5 rounded-md border text-xs font-medium flex items-center justify-center gap-1.5 transition-colors cursor-pointer ${
                       verifyStatus === 'valid'
                         ? 'border-emerald-900/50 bg-emerald-950/20 text-emerald-400'
                         : verifyStatus === 'invalid'
@@ -340,30 +340,30 @@ export function StorageDetailsPanel({
         ) : (
           /* Namespace Overview when no item is selected */
           <div className="space-y-3">
-            <div className="p-3 rounded-[6px] bg-[#111111] border border-[#222222] space-y-1.5">
+            <div className="p-3 rounded-lg bg-[#111111] border border-[#222222] space-y-1.5">
               <div className="flex items-center gap-2">
                 <HardDrive className="w-3.5 h-3.5 text-blue-400" />
-                <h4 className="text-[13px] font-medium text-white truncate">
+                <h4 className="text-sm font-medium text-white truncate">
                   {currentNsInfo ? currentNsInfo.name : activeNamespace || 'None'}
                 </h4>
               </div>
-              <p className="text-[11.5px] text-[#888888] leading-relaxed">
+              <p className="text-xs text-[#8c8c8c] leading-relaxed">
                 Dedicated container boundary backed by content-addressed storage.
               </p>
             </div>
 
             {currentNsInfo && (
-              <div className="rounded-[6px] bg-[#111111] border border-[#222222] divide-y divide-[#1a1a1a] text-[12.5px]">
+              <div className="rounded-lg bg-[#111111] border border-[#222222] divide-y divide-[#1a1a1a] text-xs">
                 <div className="flex items-center justify-between px-3 py-2">
-                  <span className="text-[#888888]">Total Objects</span>
+                  <span className="text-[#8c8c8c]">Total Objects</span>
                   <span className="text-white tabular-nums">{currentNsInfo.total_objects}</span>
                 </div>
                 <div className="flex items-center justify-between px-3 py-2">
-                  <span className="text-[#888888]">Consumed Bytes</span>
+                  <span className="text-[#8c8c8c]">Consumed Bytes</span>
                   <span className="text-white tabular-nums">{formatBytes(currentNsInfo.total_bytes)}</span>
                 </div>
                 <div className="flex items-center justify-between px-3 py-2">
-                  <span className="text-[#888888]">Allocated Quota</span>
+                  <span className="text-[#8c8c8c]">Allocated Quota</span>
                   <span className="text-white tabular-nums">
                     {currentNsInfo.max_bytes ? formatBytes(currentNsInfo.max_bytes) : 'Unlimited'}
                   </span>

@@ -378,11 +378,11 @@ export function FileTree({
           }}
           onContextMenu={(e) => onContextMenu(e, toStorageItem(node))}
           style={{ paddingLeft: `${depth * 14 + 6}px` }}
-          className={`group flex items-center gap-2 py-1.5 pr-2 rounded-[5px] text-[13.5px] sm:text-[14px] transition-all cursor-pointer ${
+          className={`group flex items-center gap-2 py-1 pr-2 rounded-md text-[13px] transition-all cursor-pointer ${
             isSelfDragged ? 'opacity-40' : ''
           } ${
             isTreeDropTarget
-              ? 'bg-blue-600/30 text-white ring-1 ring-blue-500/60 font-semibold'
+              ? 'bg-blue-600/30 text-white ring-1 ring-blue-500/60 font-medium'
               : isCurrentFolder || isSelected
               ? 'bg-[#1a1a1a] text-white font-medium'
               : 'text-[#cccccc] hover:text-white hover:bg-[#141414]'
@@ -436,7 +436,7 @@ export function FileTree({
   return (
     <div className="flex flex-col h-full overflow-hidden font-sans">
       {/* Explorer Tree Header Bar (h-9 matches StorageListView table header) */}
-      <div className="h-9 shrink-0 px-3 border-b border-[#222222] flex items-center justify-between text-[12.5px] font-medium text-[#888888] bg-[#0a0a0a]">
+      <div className="h-9 shrink-0 px-3 border-b border-[#222222] flex items-center justify-between text-xs font-medium text-[#888888] bg-[#0a0a0a]">
         <div
           onClick={() => onSelectFolder('', null)}
           onDragOver={(e) => {

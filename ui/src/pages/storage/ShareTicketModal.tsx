@@ -213,7 +213,7 @@ export function ShareTicketModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs font-sans"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs font-sans select-none"
       onClick={(e) => {
         if (e.target === e.currentTarget) {
           onClose();
@@ -222,16 +222,16 @@ export function ShareTicketModal({
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-[460px] rounded-[10px] bg-[#0c0c0c] border border-[#262626] shadow-2xl overflow-hidden font-sans flex flex-col"
+        className="w-full max-w-[460px] rounded-lg bg-[#0c0c0c] border border-[#262626] shadow-2xl overflow-hidden font-sans flex flex-col"
       >
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-[#1f1f1f]">
           <div className="min-w-0 pr-3">
             <div className="flex items-center gap-2">
-              <Share2 className="w-4 h-4 text-[#888888]" />
-              <h3 className="text-[14px] font-semibold text-white tracking-tight">Share Object</h3>
+              <Share2 className="w-4 h-4 text-white" />
+              <h3 className="text-sm font-semibold text-white tracking-tight">Share Object</h3>
             </div>
-            <p className="text-[12px] text-[#777777] font-mono truncate mt-0.5" title={`${namespace}/${item.fullKey}`}>
+            <p className="text-xs text-[#8c8c8c] font-mono truncate mt-0.5" title={`${namespace}/${item.fullKey}`}>
               {item.name}
             </p>
           </div>
@@ -245,7 +245,7 @@ export function ShareTicketModal({
         </div>
 
         {isPublicNamespace && (
-          <div className="mx-5 mt-3 p-3 rounded-[6px] bg-[#30a46c]/10 border border-[#30a46c]/30 text-[12.5px] text-[#30a46c] flex items-center justify-between gap-3">
+          <div className="mx-5 mt-3 p-3 rounded-md bg-[#30a46c]/10 border border-[#30a46c]/30 text-xs text-[#30a46c] flex items-center justify-between gap-3">
             <div className="flex items-center gap-2 min-w-0">
               <Globe className="w-4 h-4 text-[#30a46c] shrink-0" />
               <div className="truncate">
@@ -259,7 +259,7 @@ export function ShareTicketModal({
                 const url = `${window.location.origin}/api/v1/blobs/public/${namespace}/${item.fullKey}`;
                 copyToClipboard(url, 'public-cdn-url');
               }}
-              className="px-2.5 py-1 rounded-[5px] bg-[#30a46c]/20 hover:bg-[#30a46c]/30 border border-[#30a46c]/40 text-[11.5px] font-medium text-[#30a46c] transition-colors shrink-0 cursor-pointer"
+              className="px-2.5 py-1 rounded bg-[#30a46c]/20 hover:bg-[#30a46c]/30 border border-[#30a46c]/40 text-[11px] font-medium text-[#30a46c] transition-colors shrink-0 cursor-pointer"
             >
               {copiedKey === 'public-cdn-url' ? 'Copied!' : 'Copy CDN Link'}
             </button>
@@ -271,7 +271,7 @@ export function ShareTicketModal({
           <button
             type="button"
             onClick={() => setActiveTab('create')}
-            className={`pb-2.5 text-[13px] font-medium transition-colors relative cursor-pointer ${
+            className={`pb-2.5 text-xs font-medium transition-colors relative cursor-pointer ${
               activeTab === 'create' ? 'text-white' : 'text-[#777777] hover:text-[#cccccc]'
             }`}
           >
@@ -286,7 +286,7 @@ export function ShareTicketModal({
               setActiveTab('manage');
               loadTickets();
             }}
-            className={`pb-2.5 text-[13px] font-medium transition-colors relative flex items-center gap-1.5 cursor-pointer ${
+            className={`pb-2.5 text-xs font-medium transition-colors relative flex items-center gap-1.5 cursor-pointer ${
               activeTab === 'manage' ? 'text-white' : 'text-[#777777] hover:text-[#cccccc]'
             }`}
           >
@@ -310,7 +310,7 @@ export function ShareTicketModal({
                 /* Link Created View */
                 <div className="space-y-4">
                   <div>
-                    <label className="block text-[12px] font-medium text-[#999999] mb-1.5">
+                    <label className="block text-xs font-medium text-[#8c8c8c] mb-1.5">
                       Capability Link
                     </label>
                     <div className="flex items-center gap-2">
@@ -318,7 +318,7 @@ export function ShareTicketModal({
                         type="text"
                         readOnly
                         value={fullTicketUrl}
-                        className="flex-1 h-9 px-3 rounded-[6px] bg-[#141414] border border-[#262626] text-white font-mono text-[12px] select-all outline-none"
+                        className="flex-1 h-9 px-3 rounded-md bg-[#141414] border border-[#262626] text-white font-mono text-xs select-all outline-none"
                       />
                       <Button
                         type="button"
@@ -342,10 +342,10 @@ export function ShareTicketModal({
                   </div>
 
                   {/* Summary row */}
-                  <div className="flex items-center justify-between p-3 rounded-[6px] bg-[#121212] border border-[#202020] text-[12px]">
+                  <div className="flex items-center justify-between p-3 rounded-md bg-[#121212] border border-[#202020] text-xs">
                     <div className="flex items-center gap-2">
-                      <span className="text-[#777777]">Access:</span>
-                      <span className="font-mono text-[#cccccc] uppercase text-[11px] font-medium px-1.5 py-0.5 rounded bg-[#1c1c1c] border border-[#2a2a2a]">
+                      <span className="text-[#8c8c8c]">Access:</span>
+                      <span className="font-mono text-[#cccccc] text-[11px] font-medium px-1.5 py-0.5 rounded bg-[#1c1c1c] border border-[#2a2a2a]">
                         {ticketOp}
                       </span>
                     </div>
@@ -359,7 +359,7 @@ export function ShareTicketModal({
                     <button
                       type="button"
                       onClick={() => setGeneratedTicket(null)}
-                      className="text-[12px] text-[#888888] hover:text-white transition-colors cursor-pointer"
+                      className="text-xs text-[#888888] hover:text-white transition-colors cursor-pointer"
                     >
                       ← Create another link
                     </button>
@@ -372,7 +372,7 @@ export function ShareTicketModal({
                 /* Create Form */
                 <form id="share-create-form" onSubmit={handleCreate} className="space-y-4">
                   {createError && (
-                    <div className="p-2.5 rounded-[6px] bg-[#ef4444]/10 border border-[#ef4444]/30 text-[12px] text-[#ef4444] flex items-center gap-2">
+                    <div className="p-2.5 rounded-md bg-[#ef4444]/10 border border-[#ef4444]/30 text-xs text-[#ef4444] flex items-center gap-2">
                       <AlertTriangle className="w-4 h-4 shrink-0" />
                       <span>{createError}</span>
                     </div>
@@ -380,16 +380,16 @@ export function ShareTicketModal({
 
                   {/* Permission Segmented Toggle */}
                   <div>
-                    <label className="block text-[12px] font-medium text-[#999999] mb-1.5">
+                    <label className="block text-xs font-medium text-[#8c8c8c] mb-1.5">
                       Permission
                     </label>
-                    <div className="grid grid-cols-2 gap-1 p-1 bg-[#141414] border border-[#242424] rounded-[6px]">
+                    <div className="grid grid-cols-2 gap-1 p-1 bg-[#141414] border border-[#242424] rounded-md">
                       <button
                         type="button"
                         onClick={() => setOperation('READ')}
-                        className={`h-8 rounded-[5px] text-[12.5px] font-medium transition-colors cursor-pointer flex items-center justify-center gap-1.5 ${
+                        className={`h-8 rounded text-xs font-medium transition-colors cursor-pointer flex items-center justify-center gap-1.5 ${
                           operation === 'READ'
-                            ? 'bg-[#222222] text-white shadow-xs'
+                            ? 'bg-[#222222] text-white'
                             : 'text-[#888888] hover:text-white'
                         }`}
                       >
@@ -399,9 +399,9 @@ export function ShareTicketModal({
                       <button
                         type="button"
                         onClick={() => setOperation('WRITE')}
-                        className={`h-8 rounded-[5px] text-[12.5px] font-medium transition-colors cursor-pointer flex items-center justify-center gap-1.5 ${
+                        className={`h-8 rounded text-xs font-medium transition-colors cursor-pointer flex items-center justify-center gap-1.5 ${
                           operation === 'WRITE'
-                            ? 'bg-[#222222] text-white shadow-xs'
+                            ? 'bg-[#222222] text-white'
                             : 'text-[#888888] hover:text-white'
                         }`}
                       >
@@ -413,18 +413,18 @@ export function ShareTicketModal({
 
                   {/* Expiration Segmented Control */}
                   <div>
-                    <label className="block text-[12px] font-medium text-[#999999] mb-1.5">
+                    <label className="block text-xs font-medium text-[#8c8c8c] mb-1.5">
                       Expiration
                     </label>
-                    <div className="grid grid-cols-5 gap-1 p-1 bg-[#141414] border border-[#242424] rounded-[6px]">
+                    <div className="grid grid-cols-5 gap-1 p-1 bg-[#141414] border border-[#242424] rounded-md">
                       {TTL_PRESETS.map((preset) => (
                         <button
                           key={preset.label}
                           type="button"
                           onClick={() => setSelectedTtl(preset.seconds)}
-                          className={`h-8 rounded-[5px] text-[12px] font-medium transition-colors cursor-pointer flex items-center justify-center ${
+                          className={`h-8 rounded text-xs font-medium transition-colors cursor-pointer flex items-center justify-center ${
                             selectedTtl === preset.seconds
-                              ? 'bg-[#222222] text-white shadow-xs'
+                              ? 'bg-[#222222] text-white'
                               : 'text-[#888888] hover:text-white'
                           }`}
                         >
@@ -441,9 +441,9 @@ export function ShareTicketModal({
                           value={customHours}
                           onChange={(e) => setCustomHours(e.target.value)}
                           placeholder="12"
-                          className="w-24 h-8 px-2.5 rounded-[6px] bg-[#141414] border border-[#262626] focus:border-[#383838] text-white text-[12.5px] outline-none"
+                          className="w-24 h-8 px-2.5 rounded-md bg-[#141414] border border-[#262626] focus:border-[#383838] text-white text-xs outline-none"
                         />
-                        <span className="text-[12px] text-[#777777]">hours</span>
+                        <span className="text-xs text-[#777777]">hours</span>
                       </div>
                     )}
                   </div>
@@ -454,14 +454,14 @@ export function ShareTicketModal({
             /* Manage Links Tab */
             <div className="space-y-3 max-h-72 overflow-y-auto">
               <div className="flex items-center justify-between pb-1">
-                <span className="text-[12px] font-medium text-[#888888]">
+                <span className="text-xs font-medium text-[#888888]">
                   Existing Links ({tickets.length})
                 </span>
                 <button
                   type="button"
                   onClick={loadTickets}
                   disabled={isLoadingTickets}
-                  className="flex items-center gap-1 text-[11.5px] text-[#777777] hover:text-white transition-colors cursor-pointer"
+                  className="flex items-center gap-1 text-xs text-[#777777] hover:text-white transition-colors cursor-pointer"
                 >
                   <RefreshCw
                     className={`w-3 h-3 ${isLoadingTickets ? 'animate-spin' : ''}`}
@@ -471,32 +471,32 @@ export function ShareTicketModal({
               </div>
 
               {manageError && (
-                <div className="p-2.5 rounded-[6px] bg-[#ef4444]/10 border border-[#ef4444]/30 text-[12px] text-[#ef4444] flex items-center gap-2">
+                <div className="p-2.5 rounded-md bg-[#ef4444]/10 border border-[#ef4444]/30 text-xs text-[#ef4444] flex items-center gap-2">
                   <AlertTriangle className="w-4 h-4 shrink-0" />
                   <span>{manageError}</span>
                 </div>
               )}
 
               {isLoadingTickets && tickets.length === 0 ? (
-                <div className="py-8 text-center text-[#777777] text-[12.5px]">
+                <div className="py-8 text-center text-[#777777] text-xs">
                   Loading links...
                 </div>
               ) : tickets.length === 0 ? (
-                <div className="py-8 rounded-[6px] bg-[#111111] border border-[#1e1e1e] text-center space-y-2">
+                <div className="py-8 rounded-md bg-[#111111] border border-[#1e1e1e] text-center space-y-2">
                   <LinkIcon className="w-5 h-5 text-[#555555] mx-auto" />
-                  <p className="text-[12.5px] text-[#888888]">
+                  <p className="text-xs text-[#888888]">
                     No capability links created yet.
                   </p>
                   <button
                     type="button"
                     onClick={() => setActiveTab('create')}
-                    className="text-[12px] text-blue-400 hover:text-blue-300 transition-colors cursor-pointer"
+                    className="text-xs text-blue-400 hover:text-blue-300 transition-colors cursor-pointer"
                   >
                     Create a share link
                   </button>
                 </div>
               ) : (
-                <div className="divide-y divide-[#1c1c1c] border border-[#202020] rounded-[6px] bg-[#111111] overflow-hidden">
+                <div className="divide-y divide-[#1c1c1c] border border-[#202020] rounded-md bg-[#111111] overflow-hidden">
                   {tickets.map((t) => {
                     const sig = t?.signature || '';
                     const exp = t?.expires_at || 0;
@@ -521,21 +521,21 @@ export function ShareTicketModal({
                       >
                         <div className="flex items-center justify-between gap-2">
                           <div className="flex items-center gap-2">
-                            <span className="px-1.5 py-0.5 rounded-[3px] text-[10.5px] font-mono font-medium text-[#cccccc] bg-[#1a1a1a] border border-[#2a2a2a]">
+                            <span className="px-1.5 py-0.5 rounded text-[11px] font-mono font-medium text-[#cccccc] bg-[#1a1a1a] border border-[#2a2a2a]">
                               {t.operation || 'READ'}
                             </span>
 
                             {isRevoked ? (
-                              <span className="text-[11px] text-[#ef4444] font-medium flex items-center gap-1">
+                              <span className="text-xs text-[#ef4444] font-medium flex items-center gap-1">
                                 <Ban className="w-3 h-3" />
                                 <span>Revoked</span>
                               </span>
                             ) : remaining.isExpired ? (
-                              <span className="text-[11px] text-[#777777]">
+                              <span className="text-xs text-[#777777]">
                                 Expired
                               </span>
                             ) : (
-                              <span className="text-[11px] text-[#22c55e] font-medium flex items-center gap-1.5">
+                              <span className="text-xs text-[#22c55e] font-medium flex items-center gap-1.5">
                                 <span className="w-1.5 h-1.5 rounded-full bg-[#22c55e]" />
                                 <span>{remaining.text}</span>
                               </span>
@@ -548,7 +548,7 @@ export function ShareTicketModal({
                               <button
                                 type="button"
                                 onClick={() => copyToClipboard(fullUrl, `url-${sig}`)}
-                                className="h-6.5 px-2 rounded-[4px] text-[11px] font-medium text-[#cccccc] hover:text-white bg-[#1a1a1a] hover:bg-[#222222] border border-[#2a2a2a] transition-colors cursor-pointer flex items-center gap-1"
+                                className="h-6.5 px-2 rounded text-xs font-medium text-[#cccccc] hover:text-white bg-[#1a1a1a] hover:bg-[#222222] border border-[#2a2a2a] transition-colors cursor-pointer flex items-center gap-1"
                                 title="Copy link"
                               >
                                 {copiedKey === `url-${sig}` ? (
@@ -569,7 +569,7 @@ export function ShareTicketModal({
                                 type="button"
                                 onClick={() => handleRevoke(sig)}
                                 disabled={isRevoking}
-                                className="h-6.5 px-2 rounded-[4px] text-[11px] font-medium text-[#f59e0b] hover:text-[#fbbf24] bg-transparent hover:bg-[#f59e0b]/10 border border-[#f59e0b]/30 transition-colors cursor-pointer flex items-center gap-1 disabled:opacity-50"
+                                className="h-6.5 px-2 rounded text-xs font-medium text-[#f59e0b] hover:text-[#fbbf24] bg-transparent hover:bg-[#f59e0b]/10 border border-[#f59e0b]/30 transition-colors cursor-pointer flex items-center gap-1 disabled:opacity-50"
                                 title="Revoke link immediately"
                               >
                                 <Ban className="w-3 h-3" />
@@ -581,7 +581,7 @@ export function ShareTicketModal({
                                 type="button"
                                 onClick={() => handleDelete(sig)}
                                 disabled={isDeleting}
-                                className="h-6.5 w-6.5 rounded-[4px] text-[#777777] hover:text-[#ef4444] hover:bg-[#ef4444]/10 transition-colors cursor-pointer flex items-center justify-center disabled:opacity-50"
+                                className="h-6.5 w-6.5 rounded text-[#777777] hover:text-[#ef4444] hover:bg-[#ef4444]/10 transition-colors cursor-pointer flex items-center justify-center disabled:opacity-50"
                                 title="Delete link record"
                               >
                                 <Trash2 className="w-3 h-3" />
@@ -592,7 +592,7 @@ export function ShareTicketModal({
 
                         {/* Direct link text */}
                         {fullUrl && (
-                          <div className="text-[11px] text-[#666666] font-mono truncate select-all">
+                          <div className="text-xs text-[#8c8c8c] font-mono truncate select-all">
                             {fullUrl}
                           </div>
                         )}

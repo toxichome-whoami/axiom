@@ -74,15 +74,15 @@ export function StorageGridView({
       {folderItems.length > 0 && (
         <div className="space-y-3">
           <div className="flex items-center justify-between px-0.5">
-            <span className="text-[14px] font-medium text-[#999999]">
+            <span className="text-sm font-medium text-[#8c8c8c]">
               Folders
             </span>
-            <span className="text-[12.5px] tabular-nums text-[#666666]">
+            <span className="text-xs tabular-nums text-[#666666]">
               {folderItems.length}
             </span>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3.5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3">
             {folderItems.map((f) => {
               const isSelected = Boolean(selectedItem && (selectedItem.fullKey === f.fullKey || selectedItem.id === f.id));
               const isDropTarget = dragOverTargetKey === f.fullKey;
@@ -138,7 +138,7 @@ export function StorageGridView({
                   }}
                   onDoubleClick={() => onNavigateToPrefix(f.fullKey)}
                   onContextMenu={(e) => onContextMenu(e, f)}
-                  className={`group p-3.5 rounded-[8px] border transition-colors cursor-pointer flex items-center justify-between gap-3 min-h-[58px] ${
+                  className={`group p-3 rounded-lg border transition-colors cursor-pointer flex items-center justify-between gap-3 min-h-[52px] ${
                     isSelfDragged ? 'opacity-40 border-dashed border-[#555555]' : ''
                   } ${
                     isDropTarget
@@ -149,14 +149,14 @@ export function StorageGridView({
                   }`}
                 >
                   <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                    <div className="w-8 h-8 rounded-[5px] bg-[#1a1a1a] border border-[#2a2a2a] flex items-center justify-center shrink-0">
+                    <div className="w-8 h-8 rounded-md bg-[#1a1a1a] border border-[#2a2a2a] flex items-center justify-center shrink-0">
                       <Folder className={`w-4 h-4 ${isDropTarget ? 'text-blue-400 animate-pulse' : 'text-[#eab308]'}`} />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <div className="text-[13px] font-medium text-white truncate" title={f.name}>
+                      <div className="text-sm font-medium text-white truncate" title={f.name}>
                         {f.name}
                       </div>
-                      <div className="text-[11.5px] text-[#888888] tabular-nums truncate">
+                      <div className="text-xs text-[#8c8c8c] tabular-nums truncate">
                         {isDropTarget ? (
                           <span className="text-blue-400 font-medium">Drop here</span>
                         ) : (
@@ -173,7 +173,7 @@ export function StorageGridView({
                       onOpenMove(f);
                     }}
                     title="Move folder"
-                    className="opacity-0 group-hover:opacity-100 text-[#888888] hover:text-white w-7 h-7 flex items-center justify-center rounded-[5px] hover:bg-[#242424] transition-all cursor-pointer shrink-0"
+                    className="opacity-0 group-hover:opacity-100 text-[#8c8c8c] hover:text-white w-7 h-7 flex items-center justify-center rounded-md hover:bg-[#242424] transition-all cursor-pointer shrink-0"
                   >
                     <ArrowRight className="w-3.5 h-3.5" />
                   </button>
@@ -193,15 +193,15 @@ export function StorageGridView({
       {fileItems.length > 0 && (
         <div className="space-y-3">
           <div className="flex items-center justify-between px-0.5">
-            <span className="text-[13px] font-medium text-[#999999]">
+            <span className="text-sm font-medium text-[#8c8c8c]">
               Files
             </span>
-            <span className="text-[12px] tabular-nums text-[#666666]">
+            <span className="text-xs tabular-nums text-[#666666]">
               {fileItems.length}
             </span>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3.5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3">
             {fileItems.map((item) => {
               const isSelected = Boolean(selectedItem && (selectedItem.fullKey === item.fullKey || selectedItem.id === item.id));
               const isSelfDragged = draggedItem?.id === item.id;
@@ -218,7 +218,7 @@ export function StorageGridView({
                     onSelectItem(item);
                   }}
                   onContextMenu={(e) => onContextMenu(e, item)}
-                  className={`group p-3 rounded-[7px] border transition-colors cursor-pointer flex flex-col justify-between h-32 relative ${
+                  className={`group p-3 rounded-lg border transition-colors cursor-pointer flex flex-col justify-between h-28 relative ${
                     isSelfDragged ? 'opacity-40 border-dashed border-[#555555]' : ''
                   } ${
                     isSelected
@@ -228,15 +228,15 @@ export function StorageGridView({
                 >
                   {/* Top row: Icon, Name, and Actions */}
                   <div className="flex items-start justify-between gap-2">
-                    <div className="w-8 h-8 rounded-[5px] bg-[#181818] border border-[#262626] flex items-center justify-center shrink-0">
+                    <div className="w-8 h-8 rounded-md bg-[#181818] border border-[#262626] flex items-center justify-center shrink-0">
                       {getFileIcon(item.name, 'w-4 h-4')}
                     </div>
 
                     <div className="min-w-0 flex-1 pt-0.5">
-                      <div className="text-[13px] font-medium text-white truncate leading-snug" title={item.name}>
+                      <div className="text-sm font-medium text-white truncate leading-snug" title={item.name}>
                         {item.name}
                       </div>
-                      <div className="text-[11.5px] text-[#888888] truncate" title={item.content_type || 'application/octet-stream'}>
+                      <div className="text-xs text-[#8c8c8c] truncate" title={item.content_type || 'application/octet-stream'}>
                         {item.content_type?.split('/')[1] || 'binary'}
                       </div>
                     </div>
@@ -248,18 +248,18 @@ export function StorageGridView({
                         onContextMenu(e, item);
                       }}
                       title="File actions"
-                      className="opacity-0 group-hover:opacity-100 text-[#888888] hover:text-white w-7 h-7 flex items-center justify-center rounded-[5px] hover:bg-[#242424] transition-all cursor-pointer shrink-0"
+                      className="opacity-0 group-hover:opacity-100 text-[#8c8c8c] hover:text-white w-7 h-7 flex items-center justify-center rounded-md hover:bg-[#242424] transition-all cursor-pointer shrink-0"
                     >
                       <MoreVertical className="w-3.5 h-3.5" />
                     </button>
                   </div>
 
                   {/* Bottom row: Size & Storage Tier pill (edge-to-edge card line) */}
-                  <div className="-mx-3 px-3 pt-2 border-t border-[#1e1e1e] flex items-center justify-between text-[12px] text-[#999999] tabular-nums">
+                  <div className="-mx-3 px-3 pt-2 border-t border-[#1e1e1e] flex items-center justify-between text-xs text-[#8c8c8c] tabular-nums">
                     <span>{formatBytes(item.size || 0)}</span>
 
                     <span
-                      className={`inline-flex items-center px-1.5 py-0.5 rounded-[4px] text-[10.5px] font-medium ${
+                      className={`inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-medium ${
                         item.inline
                           ? 'bg-amber-950/30 text-amber-400 border border-amber-900/40'
                           : 'bg-zinc-900 text-zinc-400 border border-zinc-800'

@@ -70,7 +70,7 @@ export function StorageListView({
     >
       <table className="w-full text-left border-collapse">
         <thead>
-          <tr className="sticky top-0 z-10 h-9 bg-[#0a0a0a] border-b border-[#222222] text-[12.5px] font-medium text-[#888888]">
+          <tr className="sticky top-0 z-10 h-9 bg-[#0a0a0a] border-b border-[#222222] text-xs font-medium text-[#888888]">
             <th className="px-4 font-medium">Name</th>
             <th className="px-3 font-medium w-36">Storage Tier</th>
             <th className="px-3 font-medium w-32 text-right">Size</th>
@@ -132,7 +132,7 @@ export function StorageListView({
                   }
                 }}
                 onContextMenu={(e) => onContextMenu(e, item)}
-                className={`group h-[36px] transition-colors cursor-pointer text-[13px] ${
+                className={`group h-9 transition-colors cursor-pointer text-sm ${
                   isSelfDragged ? 'opacity-40' : ''
                 } ${
                   isDropTarget
@@ -152,36 +152,36 @@ export function StorageListView({
                         getFileIcon(item.name, 'w-3.5 h-3.5')
                       )}
                     </div>
-                    <span className="truncate font-medium text-[13px] text-white">{item.name}</span>
+                    <span className="truncate font-medium text-sm text-white">{item.name}</span>
                   </div>
                 </td>
 
                 {/* Column 2: Storage Tier */}
                 <td className="px-3">
                   {isFolder ? (
-                    <span className="text-[12px] text-[#777777]">Directory</span>
+                    <span className="text-xs text-[#8c8c8c]">Directory</span>
                   ) : (
                     <span
-                      className={`inline-flex items-center px-2 py-0.5 rounded-[4px] text-[11px] font-medium ${
+                      className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium ${
                         item.inline
                           ? 'bg-amber-950/30 text-amber-400 border border-amber-900/40'
                           : 'bg-zinc-900 text-zinc-400 border border-zinc-800'
                       }`}
                     >
-                      {item.inline ? 'Fjall LSM' : 'Disk Shard'}
+                      {item.inline ? 'LSM' : 'Disk'}
                     </span>
                   )}
                 </td>
 
                 {/* Column 3: Payload Size */}
-                <td className="px-3 text-right tabular-nums text-[12.5px] text-[#999999]">
+                <td className="px-3 text-right tabular-nums text-xs text-[#8c8c8c]">
                   {isFolder
                     ? `${item.itemCount || 0} items`
                     : formatBytes(item.size || 0)}
                 </td>
 
                 {/* Column 4: Uploaded / Created Date */}
-                <td className="px-4 text-right tabular-nums text-[12px] text-[#777777] hidden sm:table-cell">
+                <td className="px-4 text-right tabular-nums text-xs text-[#8c8c8c] hidden sm:table-cell">
                   {item.created_at
                     ? new Date(item.created_at * 1000).toLocaleDateString()
                     : '—'}
