@@ -3,13 +3,28 @@
  * Owned by: ui/mcp
  * Key deps: SlideOver, Button, lucide-react
  * Invariants: MCP schema matches backend /mcp/v1 tool capabilities and transport specs.
- * Last structural change: Standardized MCP tool catalog and client configuration generation.
+ * Last structural change: Standardized on Axiom pure dark neutral palette, horizontal tab navigation, and 13px typography.
  */
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { SlideOver } from '../components/ui/SlideOver';
 import { Button } from '../components/ui/Button';
-import { Copy, Check, Plug, Wrench, Database, HardDrive } from 'lucide-react';
+import {
+  Copy,
+  Check,
+  Plug,
+  Wrench,
+  Database,
+  HardDrive,
+  Search,
+  Bot,
+  ExternalLink,
+  Terminal,
+  FileCode,
+  Shield,
+  Layers,
+  ChevronRight,
+} from 'lucide-react';
 
 interface McpToolItem {
   name: string;
@@ -32,8 +47,10 @@ interface McpResourceItem {
 }
 
 export function Mcp() {
-  const [activeNav, setActiveNav] = useState<'tools' | 'connect'>('tools');
-  const [activeCategory, setActiveCategory] = useState<'database' | 'blob'>('database');
+  const [activeTab, setActiveTab] = useState<'tools' | 'resources' | 'connect'>('tools');
+  const [activeCategory, setActiveCategory] = useState<'all' | 'database' | 'blob'>('all');
+  const [activeType, setActiveType] = useState<'all' | 'READ' | 'WRITE'>('all');
+  const [searchQuery, setSearchQuery] = useState('');
   const [selectedTool, setSelectedTool] = useState<McpToolItem | null>(null);
   const [inspectOpen, setInspectOpen] = useState(false);
   const [clientTab, setClientTab] = useState<'claude' | 'cursor' | 'curl'>('claude');
@@ -321,6 +338,19 @@ export function Mcp() {
     },
   ];
 
+  const filteredTools = useMemo(() => {
+    return tools.filter((tool) => {
+      const matchCat = activeCategory === 'all' || tool.category === activeCategory;
+      const matchType = activeType === 'all' || tool.type === activeType;
+      const matchQuery =
+        !searchQuery.trim() ||
+        tool.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        tool.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        tool.permissionRequired.toLowerCase().includes(searchQuery.toLowerCase());
+      return matchCat && matchType && matchQuery;
+    });
+  }, [tools, activeCategory, activeType, searchQuery]);
+
   const claudeConfig = JSON.stringify(
     {
       mcpServers: {
@@ -366,335 +396,412 @@ export function Mcp() {
     <div className="w-full max-w-[1600px] mx-auto pb-12 select-none font-sans space-y-6">
       {/* Top Header */}
       <div className="space-y-1">
-        <h1 className="text-[16px] font-medium text-white tracking-tight">MCP Server</h1>
-        <p className="text-[13px] text-[#8c8c8c]">
-          Connect AI assistants to your databases via the Model Context Protocol
+        <h1 className="text-[16px] font-medium text-white tracking-tight">MCP Protocol</h1>
+        <p className="text-[13px] text-[#8c8c8c] font-normal">
+          Model Context Protocol server for AI assistants, Claude Desktop, Cursor IDE, and autonomous agents
         </p>
       </div>
 
-      {/* Main Two-Column Layout */}
-      <div className="flex flex-col md:flex-row gap-5 items-start">
-        {/* Left Sub-Navigation */}
-        <div className="w-full md:w-48 shrink-0 flex md:flex-col gap-1 font-sans">
-          <button
-            type="button"
-            onClick={() => setActiveNav('tools')}
-            className={`group w-full h-8 flex items-center gap-2 px-2.5 rounded-[6px] text-[13px] transition-all cursor-pointer text-left ${
-              activeNav === 'tools'
-                ? 'bg-[#14151a] text-white border border-[#3b82f6]/40 shadow-xs font-medium'
-                : 'text-[#8c8c8c] hover:text-white hover:bg-[#141414] border border-transparent font-normal'
-            }`}
-          >
-            <Wrench
-              className={`w-3.5 h-3.5 shrink-0 transition-colors ${
-                activeNav === 'tools' ? 'text-[#60a5fa]' : 'text-[#737373] group-hover:text-white'
-              }`}
-            />
-            <span>Tools</span>
-            <span
-              className={`ml-auto text-[11px] font-mono transition-colors ${
-                activeNav === 'tools'
-                  ? 'text-[#60a5fa]'
-                  : 'text-[#737373] group-hover:text-[#a3a3a3]'
-              }`}
-            >
-              {tools.length}
-            </span>
-          </button>
+      {/* Top Segmented Navigation Tabs */}
+      <div className="flex items-center gap-1 p-0.5 rounded-[8px] bg-[#0c0c0c] border border-[#262626] w-fit">
+        <button
+          type="button"
+          onClick={() => setActiveTab('tools')}
+          className={`flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[13px] font-medium transition-colors cursor-pointer outline-none ${
+            activeTab === 'tools'
+              ? 'bg-[#161616] text-white border border-[#333333]'
+              : 'text-[#8c8c8c] hover:text-white hover:bg-[#141414] border border-transparent'
+          }`}
+        >
+          <Wrench className="w-3.5 h-3.5 shrink-0" />
+          <span>Tools Catalog</span>
+          <span className="ml-1 text-[11px] font-mono tabular-nums px-1.5 py-0.5 rounded bg-[#1a1a1a] text-[#8c8c8c]">
+            {tools.length}
+          </span>
+        </button>
 
-          <button
-            type="button"
-            onClick={() => setActiveNav('connect')}
-            className={`group w-full h-8 flex items-center gap-2 px-2.5 rounded-[6px] text-[13px] transition-all cursor-pointer text-left ${
-              activeNav === 'connect'
-                ? 'bg-[#14151a] text-white border border-[#3b82f6]/40 shadow-xs font-medium'
-                : 'text-[#8c8c8c] hover:text-white hover:bg-[#141414] border border-transparent font-normal'
-            }`}
-          >
-            <Plug
-              className={`w-3.5 h-3.5 shrink-0 transition-colors ${
-                activeNav === 'connect' ? 'text-[#60a5fa]' : 'text-[#737373] group-hover:text-white'
-              }`}
-            />
-            <span>Connect</span>
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={() => setActiveTab('resources')}
+          className={`flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[13px] font-medium transition-colors cursor-pointer outline-none ${
+            activeTab === 'resources'
+              ? 'bg-[#161616] text-white border border-[#333333]'
+              : 'text-[#8c8c8c] hover:text-white hover:bg-[#141414] border border-transparent'
+          }`}
+        >
+          <FileCode className="w-3.5 h-3.5 shrink-0" />
+          <span>Resources</span>
+          <span className="ml-1 text-[11px] font-mono tabular-nums px-1.5 py-0.5 rounded bg-[#1a1a1a] text-[#8c8c8c]">
+            {resources.length}
+          </span>
+        </button>
 
-        {/* Right Main Content */}
-        <div className="flex-1 w-full min-w-0">
-          {/* TAB 1: TOOLS */}
-          {activeNav === 'tools' && (
-            <div className="space-y-5">
-              {/* Available Tools Card */}
-              <div className="rounded-[10px] border border-[#1e2025] bg-[#0c0d10] p-5 space-y-4">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div className="space-y-0.5">
-                    <h2 className="text-[15px] font-medium text-white tracking-tight">Available Tools</h2>
-                    <p className="text-[12px] text-[#8c8c8c]">
-                      {activeCategory === 'database'
-                        ? 'Relational SQL query and database schema inspection tools'
-                        : 'Object storage ingestion, chunked streaming, and capability ticket tools'}
-                    </p>
-                  </div>
+        <button
+          type="button"
+          onClick={() => setActiveTab('connect')}
+          className={`flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[13px] font-medium transition-colors cursor-pointer outline-none ${
+            activeTab === 'connect'
+              ? 'bg-[#161616] text-white border border-[#333333]'
+              : 'text-[#8c8c8c] hover:text-white hover:bg-[#141414] border border-transparent'
+          }`}
+        >
+          <Plug className="w-3.5 h-3.5 shrink-0" />
+          <span>Client Setup</span>
+        </button>
+      </div>
 
-                  {/* Clean Two-Way Segmented Switcher */}
-                  <div className="inline-flex items-center p-0.5 rounded-[6px] bg-[#08090c] border border-[#1e2025]">
-                    <button
-                      type="button"
-                      onClick={() => setActiveCategory('database')}
-                      className={`h-7 px-3 text-[12px] rounded-[5px] transition-colors cursor-pointer flex items-center gap-1.5 ${
-                        activeCategory === 'database'
-                          ? 'bg-[#181920] text-white shadow-xs font-medium'
-                          : 'text-[#8c8c8c] hover:text-white font-normal'
-                      }`}
-                    >
-                      <Database className="w-3.5 h-3.5 text-[#60a5fa]" />
-                      <span>Database</span>
-                      <span className={`text-[11px] font-mono ${activeCategory === 'database' ? 'text-[#93c5fd]' : 'text-[#71717a]'}`}>
-                        {tools.filter((t) => t.category === 'database').length}
-                      </span>
-                    </button>
+      {/* TAB 1: TOOLS */}
+      {activeTab === 'tools' && (
+        <div className="space-y-4">
+          {/* Filter & Search Bar */}
+          <div className="rounded-[8px] border border-[#262626] bg-[#0c0c0c] p-3 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+            {/* Search Input */}
+            <div className="relative flex-1 min-w-0">
+              <Search className="w-3.5 h-3.5 text-[#8c8c8c] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search tools by name, description, or permission..."
+                className="w-full h-8 pl-8 pr-3 rounded-[6px] bg-[#141414] border border-[#262626] hover:border-[#383838] focus:border-[#3b82f6] text-[13px] text-white placeholder-[#666666] outline-none transition-colors"
+              />
+            </div>
 
-                    <button
-                      type="button"
-                      onClick={() => setActiveCategory('blob')}
-                      className={`h-7 px-3 text-[12px] rounded-[5px] transition-colors cursor-pointer flex items-center gap-1.5 ${
-                        activeCategory === 'blob'
-                          ? 'bg-[#181920] text-white shadow-xs font-medium'
-                          : 'text-[#8c8c8c] hover:text-white font-normal'
-                      }`}
-                    >
-                      <HardDrive className="w-3.5 h-3.5 text-[#eab308]" />
-                      <span>Blob Storage</span>
-                      <span className={`text-[11px] font-mono ${activeCategory === 'blob' ? 'text-[#fde047]' : 'text-[#71717a]'}`}>
-                        {tools.filter((t) => t.category === 'blob').length}
-                      </span>
-                    </button>
-                  </div>
-                </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              {/* Category Filter */}
+              <div className="inline-flex items-center p-0.5 rounded-[6px] bg-[#141414] border border-[#262626]">
+                <button
+                  type="button"
+                  onClick={() => setActiveCategory('all')}
+                  className={`h-7 px-2.5 text-[12px] rounded-[5px] transition-colors cursor-pointer ${
+                    activeCategory === 'all'
+                      ? 'bg-[#1e1e1e] text-white font-medium border border-[#333333]'
+                      : 'text-[#8c8c8c] hover:text-white border border-transparent'
+                  }`}
+                >
+                  All ({tools.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveCategory('database')}
+                  className={`h-7 px-2.5 text-[12px] rounded-[5px] transition-colors cursor-pointer flex items-center gap-1.5 ${
+                    activeCategory === 'database'
+                      ? 'bg-[#1e1e1e] text-white font-medium border border-[#333333]'
+                      : 'text-[#8c8c8c] hover:text-white border border-transparent'
+                  }`}
+                >
+                  <Database className="w-3 h-3 text-[#3b82f6]" />
+                  <span>Database (8)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveCategory('blob')}
+                  className={`h-7 px-2.5 text-[12px] rounded-[5px] transition-colors cursor-pointer flex items-center gap-1.5 ${
+                    activeCategory === 'blob'
+                      ? 'bg-[#1e1e1e] text-white font-medium border border-[#333333]'
+                      : 'text-[#8c8c8c] hover:text-white border border-transparent'
+                  }`}
+                >
+                  <HardDrive className="w-3 h-3 text-[#eab308]" />
+                  <span>Blob Storage (7)</span>
+                </button>
+              </div>
 
-                {/* Tools List */}
-                <div className="space-y-2">
-                  {tools
-                    .filter((tool) => tool.category === activeCategory)
-                    .map((tool) => (
-                      <div
-                        key={tool.name}
-                        onClick={() => {
-                          setSelectedTool(tool);
-                          setInspectOpen(true);
-                        }}
-                        className="group rounded-[8px] border border-[#1e2025] bg-[#08090c] hover:bg-[#0c0d12] hover:border-[#2a2c35] p-3 flex items-start gap-3 transition-all cursor-pointer"
-                      >
+              {/* Type Filter */}
+              <div className="inline-flex items-center p-0.5 rounded-[6px] bg-[#141414] border border-[#262626]">
+                <button
+                  type="button"
+                  onClick={() => setActiveType('all')}
+                  className={`h-7 px-2.5 text-[12px] rounded-[5px] transition-colors cursor-pointer ${
+                    activeType === 'all'
+                      ? 'bg-[#1e1e1e] text-white font-medium border border-[#333333]'
+                      : 'text-[#8c8c8c] hover:text-white border border-transparent'
+                  }`}
+                >
+                  All Types
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveType('READ')}
+                  className={`h-7 px-2.5 text-[12px] rounded-[5px] transition-colors cursor-pointer ${
+                    activeType === 'READ'
+                      ? 'bg-[#1e1e1e] text-[#34d399] font-medium border border-[#333333]'
+                      : 'text-[#8c8c8c] hover:text-white border border-transparent'
+                  }`}
+                >
+                  Read
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveType('WRITE')}
+                  className={`h-7 px-2.5 text-[12px] rounded-[5px] transition-colors cursor-pointer ${
+                    activeType === 'WRITE'
+                      ? 'bg-[#1e1e1e] text-[#fbbf24] font-medium border border-[#333333]'
+                      : 'text-[#8c8c8c] hover:text-white border border-transparent'
+                  }`}
+                >
+                  Write
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Tools List */}
+          <div className="rounded-[8px] border border-[#262626] bg-[#0c0c0c] divide-y divide-[#1e1e1e] overflow-hidden">
+            {filteredTools.length === 0 ? (
+              <div className="p-12 text-center text-[#8c8c8c] text-[13px]">
+                No MCP tools matched your filter criteria.
+              </div>
+            ) : (
+              filteredTools.map((tool) => (
+                <div
+                  key={tool.name}
+                  onClick={() => {
+                    setSelectedTool(tool);
+                    setInspectOpen(true);
+                  }}
+                  className="group px-5 py-3.5 flex items-start gap-3.5 hover:bg-[#121212] transition-colors cursor-pointer"
+                >
+                  <span
+                    className={`inline-flex items-center justify-center px-2 py-0.5 rounded-[4px] text-[11px] font-mono font-medium shrink-0 mt-0.5 ${
+                      tool.type === 'READ'
+                        ? 'bg-emerald-950/40 text-emerald-400 border border-emerald-800/40'
+                        : 'bg-amber-950/40 text-amber-400 border border-amber-800/40'
+                    }`}
+                  >
+                    {tool.type === 'READ' ? 'Read' : 'Write'}
+                  </span>
+
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between gap-3 flex-wrap">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[13px] font-mono font-medium text-white group-hover:text-[#3b82f6] transition-colors">
+                          {tool.name}
+                        </span>
                         <span
-                          className={`inline-flex items-center justify-center px-2 py-0.5 rounded-[4px] text-[11px] font-medium shrink-0 mt-0.5 ${
-                            tool.type === 'READ'
-                              ? 'bg-[#072714] text-[#34d399] border border-[#059669]/30'
-                              : 'bg-[#2b1704] text-[#fb923c] border border-[#ea580c]/30'
+                          className={`text-[11px] px-1.5 py-0.2 rounded border font-normal flex items-center gap-1 ${
+                            tool.category === 'blob'
+                              ? 'bg-purple-950/30 text-purple-400 border-purple-800/40'
+                              : 'bg-blue-950/30 text-blue-400 border-blue-800/40'
                           }`}
                         >
-                          {tool.type === 'READ' ? 'Read' : 'Write'}
+                          {tool.category === 'blob' ? (
+                            <>
+                              <HardDrive className="w-2.5 h-2.5" />
+                              <span>Storage</span>
+                            </>
+                          ) : (
+                            <>
+                              <Database className="w-2.5 h-2.5" />
+                              <span>Database</span>
+                            </>
+                          )}
                         </span>
-
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="text-[13px] font-mono font-medium text-white group-hover:text-[#60a5fa] transition-colors">
-                              {tool.name}
-                            </span>
-                            <span className="text-[11px] font-mono text-[#71717a] group-hover:text-[#8c8c8c] transition-colors">
-                              grant: {tool.permissionRequired}
-                            </span>
-                          </div>
-                          <p className="text-[12px] font-normal text-[#8c8c8c] mt-0.5 leading-relaxed">
-                            {tool.description}
-                          </p>
-                        </div>
                       </div>
-                    ))}
-                </div>
-              </div>
-
-              {/* Resources Card */}
-              <div className="rounded-[10px] border border-[#1e2025] bg-[#0c0d10] p-5 space-y-4">
-                <div className="space-y-0.5">
-                  <h2 className="text-[15px] font-medium text-white tracking-tight">Resources</h2>
-                  <p className="text-[12px] text-[#8c8c8c]">
-                    {activeCategory === 'database'
-                      ? 'Contextual schema and service metadata URIs for AI agents'
-                      : 'Contextual namespace and object payload URIs for AI agents'}
-                  </p>
-                </div>
-
-                <div className="space-y-2">
-                  {resources
-                    .filter((res) => res.category === activeCategory)
-                    .map((res) => (
-                      <div
-                        key={res.uri}
-                        className="rounded-[8px] border border-[#1e2025] bg-[#08090c] hover:border-[#2a2c35] p-3 flex items-start gap-3 transition-all"
-                      >
-                        <span className="inline-flex items-center justify-center px-2 py-0.5 rounded-[4px] bg-[#0c1f3d] text-[#60a5fa] border border-[#2563eb]/30 text-[11px] font-medium shrink-0 mt-0.5">
-                          Resource
-                        </span>
-
-                        <div className="flex-1 min-w-0">
-                          <span className="text-[12px] font-mono text-white">
-                            {res.uri}
-                          </span>
-                          <p className="text-[12px] font-normal text-[#8c8c8c] mt-0.5 leading-relaxed">
-                            {res.description}
-                          </p>
-                        </div>
-                      </div>
-                    ))}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* TAB 2: CONNECT */}
-          {activeNav === 'connect' && (
-            <div className="space-y-5">
-              <div className="rounded-[10px] border border-[#1e2025] bg-[#0c0d10] p-5 space-y-4 overflow-hidden">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 -mx-5 -mt-5 px-5 py-3.5 border-b border-[#1e2025]">
-                  <div>
-                    <h2 className="text-[15px] font-medium text-white">Client Configuration</h2>
-                    <p className="text-[12px] text-[#8c8c8c] mt-0.5">
-                      Add Axiom to your AI development environment with one click
+                      <span className="text-[11px] font-mono text-[#737373] group-hover:text-[#8c8c8c] transition-colors">
+                        grant: {tool.permissionRequired}
+                      </span>
+                    </div>
+                    <p className="text-[13px] text-[#8c8c8c] font-normal mt-1 leading-relaxed">
+                      {tool.description}
                     </p>
                   </div>
-                  <div className="flex items-center gap-1 p-0.5 rounded-[6px] bg-[#08090c] border border-[#1f2127]">
-                    {(['claude', 'cursor', 'curl'] as const).map((tab) => (
-                      <button
-                        key={tab}
-                        type="button"
-                        onClick={() => setClientTab(tab)}
-                        className={`px-2.5 py-1 text-[12px] rounded-[5px] transition-colors cursor-pointer capitalize ${
-                          clientTab === tab
-                            ? 'bg-[#1a1b22] text-white shadow-xs font-medium'
-                            : 'text-[#8c8c8c] hover:text-white hover:bg-[#14151a] font-normal'
-                        }`}
-                      >
-                        {tab === 'claude' ? 'Claude Desktop' : tab === 'cursor' ? 'Cursor IDE' : 'cURL'}
-                      </button>
-                    ))}
+
+                  <ChevronRight className="w-4 h-4 text-[#555555] group-hover:text-white shrink-0 transition-colors self-center" />
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* TAB 2: RESOURCES */}
+      {activeTab === 'resources' && (
+        <div className="space-y-4">
+          <div className="rounded-[8px] border border-[#262626] bg-[#0c0c0c] overflow-hidden">
+            <div className="px-5 py-3.5 border-b border-[#222222]">
+              <h2 className="text-[14px] font-medium text-white tracking-tight">Contextual Agent Resources</h2>
+              <p className="text-[13px] text-[#8c8c8c] font-normal mt-0.5">
+                Deterministic URI schemas for reading live database and blob metadata directly into AI model context
+              </p>
+            </div>
+
+            <div className="divide-y divide-[#1e1e1e]">
+              {resources.map((res) => (
+                <div
+                  key={res.uri}
+                  className="px-5 py-3.5 flex items-start gap-3.5 hover:bg-[#121212] transition-colors"
+                >
+                  <span className="inline-flex items-center justify-center px-2 py-0.5 rounded-[4px] bg-blue-950/40 text-blue-400 border border-blue-800/40 text-[11px] font-mono font-medium shrink-0 mt-0.5">
+                    URI
+                  </span>
+
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between gap-3 flex-wrap">
+                      <span className="text-[13px] font-mono text-white font-medium select-all">
+                        {res.uri}
+                      </span>
+                      <span className="text-[11px] font-mono text-[#737373] bg-[#141414] border border-[#262626] px-2 py-0.5 rounded">
+                        {res.mimeType}
+                      </span>
+                    </div>
+                    <p className="text-[13px] text-[#8c8c8c] font-normal mt-1 leading-relaxed">
+                      {res.description}
+                    </p>
                   </div>
                 </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
-                <div className="relative">
-                  <pre className="rounded-[8px] border border-[#1e2025] bg-[#08090c] p-3.5 text-[12px] font-mono text-[#cccccc] overflow-x-auto leading-relaxed">
-                    {clientTab === 'claude' && claudeConfig}
-                    {clientTab === 'cursor' && cursorConfig}
-                    {clientTab === 'curl' && curlExample}
-                  </pre>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => {
-                      const text =
-                        clientTab === 'claude' ? claudeConfig : clientTab === 'cursor' ? cursorConfig : curlExample;
-                      navigator.clipboard.writeText(text);
-                      setCopiedCode(true);
-                      setTimeout(() => setCopiedCode(false), 2000);
-                    }}
-                    className="absolute top-2.5 right-2.5"
+      {/* TAB 3: CLIENT SETUP */}
+      {activeTab === 'connect' && (
+        <div className="space-y-5">
+          <div className="rounded-[8px] border border-[#262626] bg-[#0c0c0c] overflow-hidden">
+            <div className="px-5 py-3.5 border-b border-[#222222] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div>
+                <h2 className="text-[14px] font-medium text-white tracking-tight">Client Configuration</h2>
+                <p className="text-[13px] text-[#8c8c8c] font-normal mt-0.5">
+                  Configure your IDE or AI assistant to communicate with Axiom's MCP server
+                </p>
+              </div>
+
+              {/* Client Environment Switcher */}
+              <div className="inline-flex items-center p-0.5 rounded-[6px] bg-[#141414] border border-[#262626] shrink-0">
+                {(['claude', 'cursor', 'curl'] as const).map((tab) => (
+                  <button
+                    key={tab}
+                    type="button"
+                    onClick={() => setClientTab(tab)}
+                    className={`h-7 px-3 text-[12px] rounded-[5px] transition-colors cursor-pointer ${
+                      clientTab === tab
+                        ? 'bg-[#1e1e1e] text-white font-medium border border-[#333333]'
+                        : 'text-[#8c8c8c] hover:text-white border border-transparent'
+                    }`}
                   >
-                    {copiedCode ? <Check className="w-3.5 h-3.5 text-[#30a46c]" /> : <Copy className="w-3.5 h-3.5" />}
-                    <span className="text-[12px]">{copiedCode ? 'Copied' : 'Copy Config'}</span>
-                  </Button>
+                    {tab === 'claude' ? 'Claude Desktop' : tab === 'cursor' ? 'Cursor IDE' : 'cURL JSON-RPC'}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="p-5 space-y-4">
+              <div className="relative">
+                <pre className="rounded-[8px] border border-[#262626] bg-[#080808] p-4 text-[12px] font-mono text-[#e4e4e7] overflow-x-auto leading-relaxed select-all">
+                  {clientTab === 'claude' && claudeConfig}
+                  {clientTab === 'cursor' && cursorConfig}
+                  {clientTab === 'curl' && curlExample}
+                </pre>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => {
+                    const text =
+                      clientTab === 'claude' ? claudeConfig : clientTab === 'cursor' ? cursorConfig : curlExample;
+                    navigator.clipboard.writeText(text);
+                    setCopiedCode(true);
+                    setTimeout(() => setCopiedCode(false), 2000);
+                  }}
+                  className="absolute top-3 right-3"
+                >
+                  {copiedCode ? <Check className="w-3.5 h-3.5 text-[#30a46c]" /> : <Copy className="w-3.5 h-3.5" />}
+                  <span className="text-[12px]">{copiedCode ? 'Copied' : 'Copy Config'}</span>
+                </Button>
+              </div>
+
+              {/* Config File Locations */}
+              <div className="rounded-[8px] border border-[#262626] bg-[#0e0e0e] overflow-hidden">
+                <div className="px-4 py-2.5 border-b border-[#222222] flex items-center justify-between">
+                  <h4 className="text-[13px] font-medium text-white">Target File Locations</h4>
+                  <span className="text-[12px] font-normal text-[#8c8c8c]">Paste the configuration into your local file</span>
                 </div>
 
-                <div className="rounded-[8px] bg-[#08090c] border border-[#1e2025] overflow-hidden">
-                  <div className="px-3.5 py-2.5 border-b border-[#16181e] flex items-center justify-between">
-                    <h4 className="text-[13px] font-medium text-white">Config File Locations</h4>
-                    <span className="text-[12px] font-normal text-[#8c8c8c]">Target files to paste configuration</span>
-                  </div>
-
-                  <div className="divide-y divide-[#13141a]">
-                    {[
-                      {
-                        os: 'macOS',
-                        target: 'Claude Desktop',
-                        path: '~/Library/Application Support/Claude/claude_desktop_config.json',
-                      },
-                      {
-                        os: 'Windows',
-                        target: 'Claude Desktop',
-                        path: '%APPDATA%\\Claude\\claude_desktop_config.json',
-                      },
-                      {
-                        os: 'Cursor',
-                        target: 'Workspace root',
-                        path: '.cursor/mcp.json',
-                      },
-                    ].map((item) => (
-                      <div
-                        key={item.os}
-                        className="px-3.5 py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2 hover:bg-[#0c0d12] transition-colors"
-                      >
-                        <div className="flex items-center gap-2 shrink-0">
-                          <span className="text-[12px] font-medium text-white min-w-[64px]">{item.os}</span>
-                          <span className="text-[12px] text-[#8c8c8c] font-normal">({item.target})</span>
-                        </div>
-
-                        <div className="flex items-center gap-2 min-w-0 flex-1 sm:justify-end">
-                          <code className="text-[12px] font-mono text-[#e4e4e7] bg-[#0e0f14] border border-[#1e2025] px-2 py-1 rounded-[5px] truncate max-w-full select-all">
-                            {item.path}
-                          </code>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              navigator.clipboard.writeText(item.path);
-                              setCopiedPath(item.os);
-                              setTimeout(() => setCopiedPath(null), 1800);
-                            }}
-                            className="p-1 text-[#8c8c8c] hover:text-white hover:bg-[#1a1c22] rounded-[4px] transition-colors shrink-0 cursor-pointer"
-                            title={`Copy ${item.os} path`}
-                          >
-                            {copiedPath === item.os ? (
-                              <Check className="w-3.5 h-3.5 text-[#34d399]" />
-                            ) : (
-                              <Copy className="w-3.5 h-3.5" />
-                            )}
-                          </button>
-                        </div>
+                <div className="divide-y divide-[#1e1e1e]">
+                  {[
+                    {
+                      os: 'macOS',
+                      target: 'Claude Desktop',
+                      path: '~/Library/Application Support/Claude/claude_desktop_config.json',
+                    },
+                    {
+                      os: 'Windows',
+                      target: 'Claude Desktop',
+                      path: '%APPDATA%\\Claude\\claude_desktop_config.json',
+                    },
+                    {
+                      os: 'Cursor',
+                      target: 'Workspace root',
+                      path: '.cursor/mcp.json',
+                    },
+                  ].map((item) => (
+                    <div
+                      key={item.os}
+                      className="px-4 py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2 hover:bg-[#121212] transition-colors"
+                    >
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="text-[12px] font-medium text-white min-w-[64px]">{item.os}</span>
+                        <span className="text-[12px] text-[#8c8c8c] font-normal">({item.target})</span>
                       </div>
-                    ))}
-                  </div>
+
+                      <div className="flex items-center gap-2 min-w-0 flex-1 sm:justify-end">
+                        <code className="text-[12px] font-mono text-[#d4d4d4] bg-[#141414] border border-[#262626] px-2.5 py-1 rounded-[5px] truncate max-w-full select-all">
+                          {item.path}
+                        </code>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard.writeText(item.path);
+                            setCopiedPath(item.os);
+                            setTimeout(() => setCopiedPath(null), 1800);
+                          }}
+                          className="p-1 text-[#8c8c8c] hover:text-white hover:bg-[#1a1a1a] rounded-[4px] transition-colors shrink-0 cursor-pointer"
+                          title={`Copy ${item.os} path`}
+                        >
+                          {copiedPath === item.os ? (
+                            <Check className="w-3.5 h-3.5 text-[#34d399]" />
+                          ) : (
+                            <Copy className="w-3.5 h-3.5" />
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>
-          )}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Inspect Tool SlideOver */}
       <SlideOver
         isOpen={inspectOpen}
         onClose={() => setInspectOpen(false)}
-        width="w-[500px] max-w-full"
+        width="w-[520px] max-w-full"
         title={
           <div className="flex items-center gap-2 flex-wrap">
             <span
-              className={`px-2 py-0.5 rounded-[4px] text-[11px] font-medium ${
+              className={`px-2 py-0.5 rounded-[4px] text-[11px] font-mono font-medium ${
                 selectedTool?.type === 'READ'
-                  ? 'bg-[#072714] text-[#34d399] border border-[#059669]/30'
-                  : 'bg-[#2b1704] text-[#fb923c] border border-[#ea580c]/30'
+                  ? 'bg-emerald-950/40 text-emerald-400 border border-emerald-800/40'
+                  : 'bg-amber-950/40 text-amber-400 border border-amber-800/40'
               }`}
             >
               {selectedTool?.type === 'READ' ? 'Read' : 'Write'}
             </span>
             <span
-              className={`text-[10px] px-1.5 py-0.5 rounded border font-normal flex items-center gap-1 ${
+              className={`text-[11px] px-1.5 py-0.5 rounded border font-normal flex items-center gap-1 ${
                 selectedTool?.category === 'blob'
-                  ? 'bg-[#181507] text-[#eab308] border-[#854d0e]/30'
-                  : 'bg-[#0c1524] text-[#60a5fa] border-[#1d4ed8]/30'
+                  ? 'bg-purple-950/30 text-purple-400 border-purple-800/40'
+                  : 'bg-blue-950/30 text-blue-400 border-blue-800/40'
               }`}
             >
               {selectedTool?.category === 'blob' ? (
                 <>
                   <HardDrive className="w-2.5 h-2.5" />
-                  <span>Blob Storage</span>
+                  <span>Storage</span>
                 </>
               ) : (
                 <>
@@ -703,18 +810,18 @@ export function Mcp() {
                 </>
               )}
             </span>
-            <span className="text-white text-[15px] font-medium">{selectedTool?.name}</span>
+            <span className="text-white text-[14px] font-mono font-medium">{selectedTool?.name}</span>
           </div>
         }
         subtitle={selectedTool?.description}
       >
-        <div className="flex-1 p-4 overflow-y-auto space-y-4 font-sans">
+        <div className="flex-1 p-5 overflow-y-auto space-y-5 font-sans">
           {/* Metadata Card */}
-          <div className="p-3 rounded-[8px] border border-[#1e2025] bg-[#08090c] flex items-center justify-between gap-3">
-            <span className="text-[12px] text-[#8c8c8c] font-normal">
+          <div className="p-3.5 rounded-[8px] border border-[#262626] bg-[#0c0c0c] flex items-center justify-between gap-3">
+            <span className="text-[13px] text-[#8c8c8c] font-normal">
               Required Permission Grant
             </span>
-            <span className="text-[11px] font-mono text-[#60a5fa] bg-[#0d1f3d] border border-[#1d4ed8]/30 px-2 py-0.5 rounded-[4px]">
+            <span className="text-[11px] font-mono text-[#3b82f6] bg-blue-950/40 border border-blue-800/40 px-2 py-0.5 rounded-[4px]">
               {selectedTool?.permissionRequired}
             </span>
           </div>
@@ -731,39 +838,39 @@ export function Mcp() {
             </div>
 
             {Object.keys(selectedTool?.parameters.properties || {}).length === 0 ? (
-              <div className="p-3.5 rounded-[8px] border border-[#1e2025] bg-[#08090c] text-[12px] text-[#8c8c8c] text-center">
+              <div className="p-4 rounded-[8px] border border-[#262626] bg-[#0c0c0c] text-[13px] text-[#8c8c8c] text-center">
                 This tool takes no parameters.
               </div>
             ) : (
-              <div className="rounded-[8px] border border-[#1e2025] bg-[#08090c] divide-y divide-[#16181e] overflow-hidden">
+              <div className="rounded-[8px] border border-[#262626] bg-[#0c0c0c] divide-y divide-[#1e1e1e] overflow-hidden">
                 {Object.entries(selectedTool?.parameters.properties || {}).map(([paramName, prop]) => {
                   const isRequired = selectedTool?.parameters.required.includes(paramName);
                   return (
-                    <div key={paramName} className="p-3 space-y-1">
+                    <div key={paramName} className="p-3.5 space-y-1">
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-2">
-                          <span className="text-[12px] font-mono font-medium text-white">{paramName}</span>
-                          <span className="text-[11px] font-mono text-[#a1a1aa] bg-[#14151a] px-1.5 py-0.5 rounded">
+                          <span className="text-[13px] font-mono font-medium text-white">{paramName}</span>
+                          <span className="text-[11px] font-mono text-[#8c8c8c] bg-[#141414] border border-[#262626] px-1.5 py-0.5 rounded">
                             {prop.type}
                           </span>
                         </div>
                         {isRequired ? (
-                          <span className="text-[10px] font-medium text-[#f87171] bg-[#450a0a]/50 border border-[#b91c1c]/40 px-1.5 py-0.5 rounded-[4px]">
+                          <span className="text-[11px] font-medium text-[#f87171] bg-rose-950/40 border border-rose-800/40 px-1.5 py-0.5 rounded-[4px]">
                             Required
                           </span>
                         ) : (
-                          <span className="text-[10px] font-normal text-[#8c8c8c] bg-[#16171d] px-1.5 py-0.5 rounded-[4px]">
+                          <span className="text-[11px] font-normal text-[#8c8c8c] bg-[#141414] border border-[#262626] px-1.5 py-0.5 rounded-[4px]">
                             Optional
                           </span>
                         )}
                       </div>
-                      <p className="text-[12px] text-[#8c8c8c] font-normal leading-relaxed">
+                      <p className="text-[13px] text-[#8c8c8c] font-normal leading-relaxed">
                         {prop.description}
                       </p>
                       {prop.enum && (
-                        <div className="text-[11px] text-[#8c8c8c] flex items-center gap-1.5 pt-0.5">
+                        <div className="text-[12px] text-[#8c8c8c] flex items-center gap-1.5 pt-0.5">
                           <span>Allowed values:</span>
-                          <span className="font-mono text-[#d4d4d8]">{prop.enum.join(' | ')}</span>
+                          <span className="font-mono text-[#d4d4d4]">{prop.enum.join(' | ')}</span>
                         </div>
                       )}
                     </div>
@@ -776,7 +883,7 @@ export function Mcp() {
           {/* Example JSON-RPC Invocation */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <h3 className="text-[13px] font-medium text-white">JSON-RPC Example</h3>
+              <h3 className="text-[13px] font-medium text-white">JSON-RPC Call Example</h3>
               <button
                 type="button"
                 onClick={() => {
@@ -819,7 +926,7 @@ export function Mcp() {
               </button>
             </div>
 
-            <pre className="rounded-[8px] border border-[#1e2025] bg-[#08090c] p-3 text-[12px] font-mono text-[#cccccc] overflow-x-auto leading-relaxed">
+            <pre className="rounded-[8px] border border-[#262626] bg-[#080808] p-3.5 text-[12px] font-mono text-[#d4d4d4] overflow-x-auto leading-relaxed select-all">
               {JSON.stringify(
                 {
                   jsonrpc: '2.0',
@@ -842,8 +949,8 @@ export function Mcp() {
           </div>
         </div>
 
-        <div className="p-3.5 border-t border-[#1e2025] bg-[#0c0d10] flex items-center justify-end">
-          <Button variant="outline" size="sm" onClick={() => setInspectOpen(false)}>
+        <div className="p-4 border-t border-[#222222] bg-[#0c0c0c] flex items-center justify-end">
+          <Button variant="secondary" size="sm" onClick={() => setInspectOpen(false)}>
             Close
           </Button>
         </div>
