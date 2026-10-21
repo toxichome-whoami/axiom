@@ -95,6 +95,8 @@ export function Cluster() {
   const [peerTab, setPeerTab] = useState<'connection' | 'danger'>('connection');
   const [peerEditMoniker, setPeerEditMoniker] = useState('');
   const [peerEditUrl, setPeerEditUrl] = useState('');
+  const [peerEditSecret, setPeerEditSecret] = useState('');
+  const [showPeerEditSecret, setShowPeerEditSecret] = useState(false);
   const [isSavingPeer, setIsSavingPeer] = useState(false);
   const [isPingingPeer, setIsPingingPeer] = useState(false);
   const [peerPanelError, setPeerPanelError] = useState<string | null>(null);
@@ -234,6 +236,8 @@ export function Cluster() {
     setSelectedPeer(peer);
     setPeerEditMoniker(peer.moniker);
     setPeerEditUrl(peer.url);
+    setPeerEditSecret('');
+    setShowPeerEditSecret(false);
     setPeerPanelError(null);
     setPeerPanelSuccess(null);
     setCopiedPeerNodeId(false);
@@ -271,14 +275,20 @@ export function Cluster() {
       setIsSavingPeer(true);
       setPeerPanelError(null);
       setPeerPanelSuccess(null);
-      const updated = await api.updateClusterPeer(selectedPeer.node_id, {
+      const payload: { moniker: string; url: string; cluster_secret?: string } = {
         moniker: trimmedMoniker,
         url: trimmedUrl,
-      });
+      };
+      if (peerEditSecret.trim()) {
+        payload.cluster_secret = peerEditSecret.trim();
+      }
+      const updated = await api.updateClusterPeer(selectedPeer.node_id, payload);
       setSelectedPeer(updated);
       setPeers((prev) =>
         prev.map((p) => (p.node_id === updated.node_id ? updated : p))
       );
+      setPeerEditSecret('');
+      setShowPeerEditSecret(false);
       setPeerPanelSuccess('Peer configuration saved successfully.');
       setTimeout(() => setPeerPanelSuccess(null), 3500);
     } catch (err: unknown) {
@@ -1065,6 +1075,36 @@ export function Cluster() {
                   />
                   <p className="mt-1.5 text-[12px] text-[#737373]">
                     Direct HTTP/HTTPS address used by other nodes to dispatch heartbeats and security events.
+                  </p>
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block text-[13px] font-medium text-[#cccccc]">
+                      Cluster Secret <span className="text-[11px] font-normal text-[#888888]">(Authentication)</span>
+                    </label>
+                    <span className="text-[11px] text-[#666666]">Optional</span>
+                  </div>
+                  <div className="relative">
+                    <input
+                      type={showPeerEditSecret ? 'text' : 'password'}
+                      placeholder="Leave blank to keep existing secret"
+                      value={peerEditSecret}
+                      onChange={(e) => setPeerEditSecret(e.target.value)}
+                      className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] pl-3 pr-10 text-[14px] text-white placeholder-[#555555] focus:outline-none focus:border-[#3b82f6] font-mono transition-colors"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPeerEditSecret(!showPeerEditSecret)}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#777777] hover:text-[#cccccc] transition-colors cursor-pointer"
+                      tabIndex={-1}
+                      aria-label={showPeerEditSecret ? 'Hide secret' : 'Show secret'}
+                    >
+                      {showPeerEditSecret ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
+                  <p className="mt-1.5 text-[12px] text-[#737373]">
+                    Leave blank to keep existing paired credentials. Enter a new secret if the remote node was re-keyed or rotated.
                   </p>
                 </div>
               </div>

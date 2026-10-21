@@ -1828,9 +1828,10 @@ pub async fn remove_cluster_peer(
 pub struct UpdatePeerRequest {
     pub moniker: Option<String>,
     pub url: Option<String>,
+    pub cluster_secret: Option<String>,
 }
 
-/// Updates configuration (moniker, advertise URL) for an existing registered peer node.
+/// Updates configuration (moniker, advertise URL, shared secret) for an existing registered peer node.
 pub async fn update_cluster_peer(
     Extension(auth): Extension<AuthContext>,
     Path(node_id): Path<String>,
@@ -1860,6 +1861,13 @@ pub async fn update_cluster_peer(
         let trimmed = u.trim();
         if !trimmed.is_empty() {
             peer.url = trimmed.trim_end_matches('/').to_string();
+        }
+    }
+
+    if let Some(s) = req.cluster_secret {
+        let trimmed = s.trim();
+        if !trimmed.is_empty() {
+            peer.shared_secret_hash = blake3::hash(trimmed.as_bytes()).as_bytes().to_vec();
         }
     }
 
