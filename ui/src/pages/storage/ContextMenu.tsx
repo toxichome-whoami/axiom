@@ -217,7 +217,7 @@ export function ContextMenu({
               className="w-full flex items-center gap-2.5 px-2.5 py-1.5 text-[13px] text-[#d4d4d4] hover:text-white hover:bg-[#1a1a1a] rounded-md transition-colors cursor-pointer text-left"
             >
               <Copy className="w-4 h-4 text-[#8c8c8c] shrink-0" />
-              <span>Copy</span>
+              <span>Copy to...</span>
             </button>
           )}
 

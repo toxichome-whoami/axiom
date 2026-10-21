@@ -21,6 +21,7 @@ import {
   FolderUp,
   Files,
   CheckSquare,
+  Copy,
 } from 'lucide-react';
 import { api } from '../../api/client';
 import { BlobEntry, BlobStats, NamespaceInfo } from '../../types';
@@ -271,6 +272,10 @@ export function StoragePage() {
 
   const [isMoveOpen, setIsMoveOpen] = useState(false);
   const [itemToMove, setItemToMove] = useState<StorageItem | null>(null);
+
+  const [isCopyOpen, setIsCopyOpen] = useState(false);
+  const [isBatchCopyOpen, setIsBatchCopyOpen] = useState(false);
+  const [itemToCopy, setItemToCopy] = useState<StorageItem | null>(null);
 
   const [isRenameOpen, setIsRenameOpen] = useState(false);
   const [itemToRename, setItemToRename] = useState<StorageItem | null>(null);
@@ -733,6 +738,8 @@ export function StoragePage() {
         else if (isManageNsOpen) setIsManageNsOpen(false);
         else if (isMoveOpen) setIsMoveOpen(false);
         else if (isBatchMoveOpen) setIsBatchMoveOpen(false);
+        else if (isCopyOpen) setIsCopyOpen(false);
+        else if (isBatchCopyOpen) setIsBatchCopyOpen(false);
         else if (isBatchDeleteOpen) setIsBatchDeleteOpen(false);
         else if (isShareOpen) setIsShareOpen(false);
         else if (itemToDelete) setItemToDelete(null);
@@ -773,6 +780,8 @@ export function StoragePage() {
     isManageNsOpen,
     isMoveOpen,
     isBatchMoveOpen,
+    isCopyOpen,
+    isBatchCopyOpen,
     isBatchDeleteOpen,
     isShareOpen,
     itemToDelete,
@@ -919,30 +928,43 @@ export function StoragePage() {
     }
   };
 
-  // Check if an item can legally be dropped onto target folder
-  const canDropOnFolder = useCallback((dragged: StorageItem | null, targetFolderKey: string): boolean => {
-    if (!dragged) return false;
+  // Check if an item (or batch of items) can legally be dropped onto target folder
+  const canDropOnFolder = useCallback(
+    (dragged: StorageItem | null, targetFolderKey: string): boolean => {
+      if (!dragged) return false;
 
-    const normTarget = targetFolderKey ? sanitizeFolder(targetFolderKey) : '';
-    const normSrc = dragged.type === 'folder' ? sanitizeFolder(dragged.fullKey) : dragged.fullKey;
+      const normTarget = targetFolderKey ? sanitizeFolder(targetFolderKey) : '';
 
-    if (dragged.fullKey === targetFolderKey || (dragged.type === 'folder' && normSrc === normTarget)) {
-      return false;
-    }
+      // If dragged item is in multi-selection, validate the entire batch
+      const itemsToCheck =
+        selectedKeys.has(dragged.fullKey) && selectedItemsList.length > 0
+          ? selectedItemsList
+          : [dragged];
 
-    if (dragged.type === 'folder' && normTarget.startsWith(normSrc)) {
-      return false;
-    }
+      for (const it of itemsToCheck) {
+        const normSrc = it.type === 'folder' ? sanitizeFolder(it.fullKey) : it.fullKey;
 
-    const parentOfSrc = parentOf(dragged.fullKey);
-    if (parentOfSrc === normTarget || parentOfSrc === targetFolderKey) {
-      return false;
-    }
+        if (it.fullKey === targetFolderKey || (it.type === 'folder' && normSrc === normTarget)) {
+          return false;
+        }
 
-    return true;
-  }, []);
+        if (it.type === 'folder' && normTarget.startsWith(normSrc)) {
+          return false;
+        }
+      }
 
-  // Drop item directly into target folder (internal move)
+      // At least one item in the batch must not already reside in target directory
+      const hasMoveableItem = itemsToCheck.some((it) => {
+        const parentOfSrc = parentOf(it.fullKey);
+        return parentOfSrc !== normTarget && parentOfSrc !== targetFolderKey;
+      });
+
+      return hasMoveableItem;
+    },
+    [selectedKeys, selectedItemsList]
+  );
+
+  // Drop item(s) directly into target folder (internal move)
   const handleDropOnFolder = async (targetFolderKey: string, droppedItem?: StorageItem) => {
     const item = droppedItem || draggedItemRef.current;
     if (!item || !activeNamespace) return;
@@ -951,18 +973,28 @@ export function StoragePage() {
       return;
     }
 
-    const isFolder = item.type === 'folder';
     const normTarget = targetFolderKey ? sanitizeFolder(targetFolderKey) : '';
-    const destKey = joinKey(normTarget, item.name, isFolder);
+    const itemsToMove =
+      selectedKeys.has(item.fullKey) && selectedItemsList.length > 0
+        ? selectedItemsList
+        : [item];
 
     try {
-      await api.moveBlob(activeNamespace, item.fullKey, destKey, activeNamespace, isFolder);
-      if (selectedItem?.fullKey === item.fullKey) {
-        setSelectedItem(null);
+      for (const it of itemsToMove) {
+        const parentOfSrc = parentOf(it.fullKey);
+        if (parentOfSrc === normTarget || parentOfSrc === targetFolderKey) {
+          continue;
+        }
+
+        const isFolder = it.type === 'folder';
+        const destKey = joinKey(normTarget, it.name, isFolder);
+        await api.moveBlob(activeNamespace, it.fullKey, destKey, activeNamespace, isFolder);
       }
+
+      handleClearSelection();
       await loadData();
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : 'Failed to move item into folder');
+      alert(err instanceof Error ? err.message : 'Failed to move items into folder');
     }
   };
 
@@ -1020,6 +1052,11 @@ export function StoragePage() {
 
   // Internal item drag handlers
   const handleItemDragStart = (e: React.DragEvent, item: StorageItem) => {
+    if (!selectedKeys.has(item.fullKey)) {
+      setSelectedKeys(new Set([item.fullKey]));
+      setSelectedItem(item);
+      lastFocusedKeyRef.current = item.fullKey;
+    }
     setDraggedItem(item);
     draggedItemRef.current = item;
     e.dataTransfer.setData('text/plain', item.fullKey);
@@ -1088,6 +1125,28 @@ export function StoragePage() {
       const isFolder = it.type === 'folder';
       const destKey = joinKey(cleanDir, it.name, isFolder);
       await api.moveBlob(activeNamespace, it.fullKey, destKey, destNs, isFolder);
+    }
+    handleClearSelection();
+    await loadData();
+  };
+
+  // Copy single item handler
+  const handleCopy = async (destNs: string, destKey: string) => {
+    if (!itemToCopy) return;
+    const isFolder = itemToCopy.type === 'folder';
+    await api.copyBlob(activeNamespace, itemToCopy.fullKey, destKey, destNs, isFolder);
+    setItemToCopy(null);
+    await loadData();
+  };
+
+  // Batch Copy handler
+  const handleBatchCopy = async (destNs: string, targetFolder: string, items: StorageItem[]) => {
+    if (!activeNamespace || items.length === 0) return;
+    const cleanDir = sanitizeFolder(targetFolder);
+    for (const it of items) {
+      const isFolder = it.type === 'folder';
+      const destKey = joinKey(cleanDir, it.name, isFolder);
+      await api.copyBlob(activeNamespace, it.fullKey, destKey, destNs, isFolder);
     }
     handleClearSelection();
     await loadData();
@@ -1729,6 +1788,17 @@ export function StoragePage() {
               <span>Move</span>
             </button>
 
+            {/* Action: Copy */}
+            <button
+              type="button"
+              onClick={() => setIsBatchCopyOpen(true)}
+              title="Copy selected items"
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[#cccccc] hover:text-white hover:bg-[#202020] transition-colors cursor-pointer"
+            >
+              <Copy className="w-3.5 h-3.5" />
+              <span>Copy</span>
+            </button>
+
             {/* Action: Delete */}
             <button
               type="button"
@@ -1768,6 +1838,10 @@ export function StoragePage() {
         onOpenMove={(item) => {
           setItemToMove(item);
           setIsMoveOpen(true);
+        }}
+        onOpenCopy={(item) => {
+          setItemToCopy(item);
+          setIsCopyOpen(true);
         }}
         onDelete={(item) => setItemToDelete(item)}
         onVerifyBlob={handleVerifyBlob}
@@ -1956,6 +2030,35 @@ export function StoragePage() {
         currentNamespace={activeNamespace}
         availableFolders={availableFolders}
         onBatchMove={handleBatchMove}
+      />
+
+      {/* Copy Dialog Modal */}
+      <MoveDialog
+        isOpen={isCopyOpen}
+        mode="copy"
+        onClose={() => {
+          setIsCopyOpen(false);
+          setItemToCopy(null);
+        }}
+        item={itemToCopy}
+        namespaces={namespaces}
+        currentNamespace={activeNamespace}
+        availableFolders={availableFolders}
+        onMove={handleCopy}
+      />
+
+      {/* Batch Copy Dialog Modal */}
+      <MoveDialog
+        isOpen={isBatchCopyOpen}
+        mode="copy"
+        onClose={() => {
+          setIsBatchCopyOpen(false);
+        }}
+        items={selectedItemsList}
+        namespaces={namespaces}
+        currentNamespace={activeNamespace}
+        availableFolders={availableFolders}
+        onBatchMove={handleBatchCopy}
       />
 
       {/* Batch Delete Confirmation Modal */}
@@ -2342,13 +2445,12 @@ export function StoragePage() {
           setIsRenameOpen(true);
         }}
         onCopy={(item) => {
-          setClipboard({
-            mode: 'copy',
-            namespace: activeNamespace,
-            key: item.fullKey,
-            name: item.name,
-            isFolder: item.type === 'folder',
-          });
+          if (selectedKeys.has(item.fullKey) && selectedItemsList.length > 1) {
+            setIsBatchCopyOpen(true);
+          } else {
+            setItemToCopy(item);
+            setIsCopyOpen(true);
+          }
         }}
         onDelete={(item) => setItemToDelete(item)}
         onViewDetails={(item) => {

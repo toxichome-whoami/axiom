@@ -38,6 +38,7 @@ export interface StorageDetailsPanelProps {
   onShare?: (item: StorageItem) => void;
   onCopyPublicUrl?: (item: StorageItem) => void;
   onOpenMove: (item: StorageItem) => void;
+  onOpenCopy?: (item: StorageItem) => void;
   onDelete: (item: StorageItem) => void;
   onVerifyBlob: (key: string) => Promise<void>;
   verifyStatus: 'verifying' | 'valid' | 'invalid' | undefined;
@@ -57,6 +58,7 @@ export function StorageDetailsPanel({
   onShare,
   onCopyPublicUrl,
   onOpenMove,
+  onOpenCopy,
   onDelete,
   onVerifyBlob,
   verifyStatus,
@@ -163,6 +165,17 @@ export function StorageDetailsPanel({
                   <ArrowRight className="w-3.5 h-3.5 text-[#8c8c8c]" />
                   <span>Move</span>
                 </button>
+
+                {onOpenCopy && (
+                  <button
+                    type="button"
+                    onClick={() => onOpenCopy(selectedItem)}
+                    className="inline-flex items-center justify-center gap-1.5 h-7 px-2 rounded-md text-xs font-medium text-[#cccccc] hover:text-white bg-[#161616] hover:bg-[#202020] border border-[#262626] transition-colors cursor-pointer"
+                  >
+                    <Copy className="w-3.5 h-3.5 text-[#8c8c8c]" />
+                    <span>Copy</span>
+                  </button>
+                )}
 
                 <button
                   type="button"

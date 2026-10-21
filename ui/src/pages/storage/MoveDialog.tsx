@@ -7,7 +7,7 @@
  */
 
 import React, { useState } from 'react';
-import { Folder, X, AlertTriangle, ArrowRight } from 'lucide-react';
+import { Folder, X, AlertTriangle, ArrowRight, Copy } from 'lucide-react';
 import { NamespaceInfo } from '../../types';
 import { StorageItem } from './types';
 import { CustomSelect } from '../../components/shared/CustomSelect';
@@ -16,6 +16,7 @@ import { sanitizeFolder, isSelfOrDescendant, joinKey } from './paths';
 
 interface MoveDialogProps {
   isOpen: boolean;
+  mode?: 'move' | 'copy';
   item?: StorageItem | null;
   items?: StorageItem[] | null;
   currentNamespace: string;
@@ -28,6 +29,7 @@ interface MoveDialogProps {
 
 export const MoveDialog: React.FC<MoveDialogProps> = ({
   isOpen,
+  mode = 'move',
   item,
   items,
   currentNamespace,
@@ -37,6 +39,9 @@ export const MoveDialog: React.FC<MoveDialogProps> = ({
   onMove,
   onBatchMove,
 }) => {
+  const isCopy = mode === 'copy';
+  const actionWord = isCopy ? 'copy' : 'move';
+  const ActionWord = isCopy ? 'Copy' : 'Move';
   const [targetNs, setTargetNs] = useState(currentNamespace);
   const [targetFolder, setTargetFolder] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -74,7 +79,7 @@ export const MoveDialog: React.FC<MoveDialogProps> = ({
           return;
         }
         if (it.type === 'folder' && targetNs === currentNamespace && isSelfOrDescendant(it.fullKey, itemDestKey)) {
-          setError(`Cannot move directory "${it.name}" into itself or a child directory.`);
+          setError(`Cannot ${actionWord} directory "${it.name}" into itself or a child directory.`);
           return;
         }
       }
@@ -91,7 +96,7 @@ export const MoveDialog: React.FC<MoveDialogProps> = ({
         }
         onClose();
       } catch (err: unknown) {
-        setError(err instanceof Error ? err.message : 'Failed to move items');
+        setError(err instanceof Error ? err.message : `Failed to ${actionWord} items`);
       } finally {
         setIsSubmitting(false);
       }
@@ -106,7 +111,7 @@ export const MoveDialog: React.FC<MoveDialogProps> = ({
     }
 
     if (isFolder && targetNs === currentNamespace && isSelfOrDescendant(singleItem.fullKey, destKey)) {
-      setError('Cannot move a directory into itself or one of its child directories.');
+      setError(`Cannot ${actionWord} a directory into itself or one of its child directories.`);
       return;
     }
 
@@ -117,7 +122,7 @@ export const MoveDialog: React.FC<MoveDialogProps> = ({
       }
       onClose();
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to move item');
+      setError(err instanceof Error ? err.message : `Failed to ${actionWord} item`);
     } finally {
       setIsSubmitting(false);
     }
@@ -138,11 +143,15 @@ export const MoveDialog: React.FC<MoveDialogProps> = ({
       >
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Folder className="w-4 h-4 text-[#eab308]" />
+            {isCopy ? (
+              <Copy className="w-4 h-4 text-blue-400" />
+            ) : (
+              <Folder className="w-4 h-4 text-[#eab308]" />
+            )}
             <h3 className="text-sm font-medium text-white">
               {isMultiple
-                ? `Move ${activeItems.length} Items`
-                : `Move ${isFolder ? 'Folder' : 'Object'}`}
+                ? `${ActionWord} ${activeItems.length} Items`
+                : `${ActionWord} ${isFolder ? 'Folder' : 'Object'}`}
             </h3>
           </div>
           <button
@@ -255,8 +264,12 @@ export const MoveDialog: React.FC<MoveDialogProps> = ({
               size="md"
               isLoading={isSubmitting}
             >
-              <ArrowRight className="w-3.5 h-3.5 mr-1" />
-              {isMultiple ? `Move ${activeItems.length} Items` : 'Move Here'}
+              {isCopy ? (
+                <Copy className="w-3.5 h-3.5 mr-1" />
+              ) : (
+                <ArrowRight className="w-3.5 h-3.5 mr-1" />
+              )}
+              {isMultiple ? `${ActionWord} ${activeItems.length} Items` : `${ActionWord} Here`}
             </Button>
           </div>
         </form>
