@@ -7,6 +7,7 @@
 import React, { useState } from 'react';
 import {
   ChevronRight,
+  ChevronDown,
   Upload,
   Search,
   LayoutGrid,
@@ -15,6 +16,8 @@ import {
   SlidersHorizontal,
   X,
   Share2,
+  FolderPlus,
+  Files,
 } from 'lucide-react';
 import { StorageViewMode, StorageTierFilter, StorageItem } from './types';
 
@@ -30,6 +33,7 @@ export interface StorageToolbarProps {
   searchQuery: string;
   onSearchChange: (query: string) => void;
   onUploadClick: () => void;
+  onUploadFolderClick?: () => void;
   isDetailsOpen: boolean;
   onToggleDetails: () => void;
   canDropOnFolder: (dragged: StorageItem | null, targetFolderKey: string) => boolean;
@@ -52,6 +56,7 @@ export function StorageToolbar({
   searchQuery,
   onSearchChange,
   onUploadClick,
+  onUploadFolderClick,
   isDetailsOpen,
   onToggleDetails,
   canDropOnFolder,
@@ -62,6 +67,19 @@ export function StorageToolbar({
   isPublic,
 }: StorageToolbarProps) {
   const [dragOverTargetKey, setDragOverTargetKey] = useState<string | null>(null);
+  const [isUploadMenuOpen, setIsUploadMenuOpen] = useState(false);
+  const uploadMenuRef = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    if (!isUploadMenuOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (uploadMenuRef.current && !uploadMenuRef.current.contains(e.target as Node)) {
+        setIsUploadMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isUploadMenuOpen]);
 
   return (
     <div className="h-12 shrink-0 px-4 border-b border-[#222222] bg-[#0c0c0c] flex items-center justify-between gap-3 select-none font-sans">
@@ -283,17 +301,63 @@ export function StorageToolbar({
           </button>
         )}
 
-        {/* Direct Upload CTA Button */}
-        <button
-          type="button"
-          onClick={onUploadClick}
-          disabled={!activeNamespace}
-          title="Upload file into current directory"
-          className="flex items-center gap-1.5 h-8 px-3 rounded-md text-[13px] font-medium text-white bg-blue-600 hover:bg-blue-500 border border-blue-500/80 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
-        >
-          <Upload className="w-3.5 h-3.5" />
-          <span className="hidden sm:inline">Upload</span>
-        </button>
+        {/* Direct Upload CTA Button with Dropdown for Folder & Multi-file Upload */}
+        <div className="relative inline-flex items-center shrink-0" ref={uploadMenuRef}>
+          <button
+            type="button"
+            onClick={onUploadClick}
+            disabled={!activeNamespace}
+            title="Upload files into current directory"
+            className="flex items-center gap-1.5 h-8 px-2.5 rounded-l-md text-[13px] font-medium text-white bg-blue-600 hover:bg-blue-500 border border-blue-500/80 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <Upload className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Upload</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setIsUploadMenuOpen((prev) => !prev)}
+            disabled={!activeNamespace}
+            title="Upload options (files, folders for hosting)"
+            className="flex items-center justify-center h-8 w-6 rounded-r-md text-white bg-blue-600 hover:bg-blue-500 border-t border-b border-r border-l border-blue-500/80 border-l-blue-700/60 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <ChevronDown className="w-3.5 h-3.5" />
+          </button>
+
+          {/* Upload Dropdown Menu */}
+          {isUploadMenuOpen && (
+            <div className="absolute right-0 top-full mt-1.5 w-52 rounded-md bg-[#141414] border border-[#262626] shadow-xl py-1 z-40 animate-in fade-in zoom-in-95 duration-100 font-sans">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsUploadMenuOpen(false);
+                  onUploadClick();
+                }}
+                className="w-full text-left px-3 py-2 text-xs flex items-center gap-2.5 text-white hover:bg-[#1f1f1f] transition-colors cursor-pointer"
+              >
+                <Files className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                <div>
+                  <div className="font-medium">Upload Files</div>
+                  <div className="text-[11px] text-[#888888]">Select multiple files</div>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setIsUploadMenuOpen(false);
+                  onUploadFolderClick ? onUploadFolderClick() : onUploadClick();
+                }}
+                className="w-full text-left px-3 py-2 text-xs flex items-center gap-2.5 text-white hover:bg-[#1f1f1f] transition-colors cursor-pointer border-t border-[#222222]"
+              >
+                <FolderPlus className="w-3.5 h-3.5 text-[#eab308] shrink-0" />
+                <div>
+                  <div className="font-medium">Upload Folder</div>
+                  <div className="text-[11px] text-[#888888]">Preserves directories for hosting</div>
+                </div>
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

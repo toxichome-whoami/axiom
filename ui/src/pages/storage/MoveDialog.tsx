@@ -16,22 +16,26 @@ import { sanitizeFolder, isSelfOrDescendant, joinKey } from './paths';
 
 interface MoveDialogProps {
   isOpen: boolean;
-  item: StorageItem | null;
+  item?: StorageItem | null;
+  items?: StorageItem[] | null;
   currentNamespace: string;
   namespaces: NamespaceInfo[];
   availableFolders: string[];
   onClose: () => void;
-  onMove: (destNs: string, destKey: string) => Promise<void>;
+  onMove?: (destNs: string, destKey: string) => Promise<void>;
+  onBatchMove?: (destNs: string, targetFolder: string, items: StorageItem[]) => Promise<void>;
 }
 
 export const MoveDialog: React.FC<MoveDialogProps> = ({
   isOpen,
   item,
+  items,
   currentNamespace,
   namespaces,
   availableFolders,
   onClose,
   onMove,
+  onBatchMove,
 }) => {
   const [targetNs, setTargetNs] = useState(currentNamespace);
   const [targetFolder, setTargetFolder] = useState('');
@@ -49,29 +53,68 @@ export const MoveDialog: React.FC<MoveDialogProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, isSubmitting, onClose]);
 
-  if (!isOpen || !item) return null;
+  const activeItems = items && items.length > 0 ? items : item ? [item] : [];
+  if (!isOpen || activeItems.length === 0) return null;
 
-  const isFolder = item.type === 'folder';
+  const isMultiple = activeItems.length > 1;
+  const singleItem = !isMultiple ? activeItems[0] : null;
+  const isFolder = singleItem ? singleItem.type === 'folder' : false;
   const cleanDir = sanitizeFolder(targetFolder);
-  const destKey = joinKey(cleanDir, item.name, isFolder);
+  const destKey = singleItem ? joinKey(cleanDir, singleItem.name, isFolder) : cleanDir;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
 
-    if (targetNs === currentNamespace && destKey === item.fullKey) {
+    if (isMultiple) {
+      for (const it of activeItems) {
+        const itemDestKey = joinKey(cleanDir, it.name, it.type === 'folder');
+        if (targetNs === currentNamespace && itemDestKey === it.fullKey) {
+          setError(`Item "${it.name}" is already at the target location.`);
+          return;
+        }
+        if (it.type === 'folder' && targetNs === currentNamespace && isSelfOrDescendant(it.fullKey, itemDestKey)) {
+          setError(`Cannot move directory "${it.name}" into itself or a child directory.`);
+          return;
+        }
+      }
+
+      setIsSubmitting(true);
+      try {
+        if (onBatchMove) {
+          await onBatchMove(targetNs, cleanDir, activeItems);
+        } else if (onMove) {
+          for (const it of activeItems) {
+            const itemDest = joinKey(cleanDir, it.name, it.type === 'folder');
+            await onMove(targetNs, itemDest);
+          }
+        }
+        onClose();
+      } catch (err: unknown) {
+        setError(err instanceof Error ? err.message : 'Failed to move items');
+      } finally {
+        setIsSubmitting(false);
+      }
+      return;
+    }
+
+    if (!singleItem) return;
+
+    if (targetNs === currentNamespace && destKey === singleItem.fullKey) {
       setError('Destination path is identical to the current location.');
       return;
     }
 
-    if (isFolder && targetNs === currentNamespace && isSelfOrDescendant(item.fullKey, destKey)) {
+    if (isFolder && targetNs === currentNamespace && isSelfOrDescendant(singleItem.fullKey, destKey)) {
       setError('Cannot move a directory into itself or one of its child directories.');
       return;
     }
 
     setIsSubmitting(true);
     try {
-      await onMove(targetNs, destKey);
+      if (onMove) {
+        await onMove(targetNs, destKey);
+      }
       onClose();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to move item');
@@ -97,7 +140,9 @@ export const MoveDialog: React.FC<MoveDialogProps> = ({
           <div className="flex items-center gap-2">
             <Folder className="w-4 h-4 text-[#eab308]" />
             <h3 className="text-sm font-medium text-white">
-              Move {isFolder ? 'Folder' : 'Object'}
+              {isMultiple
+                ? `Move ${activeItems.length} Items`
+                : `Move ${isFolder ? 'Folder' : 'Object'}`}
             </h3>
           </div>
           <button
@@ -187,7 +232,11 @@ export const MoveDialog: React.FC<MoveDialogProps> = ({
             <div className="text-white flex items-center gap-1.5 truncate">
               <span className="text-[#cccccc]">{targetNs}</span>
               <span className="text-[#555555]">/</span>
-              <span className="truncate">{destKey}</span>
+              <span className="truncate">
+                {isMultiple
+                  ? `${cleanDir || '(root)'} (${activeItems.length} items)`
+                  : destKey}
+              </span>
             </div>
           </div>
 
@@ -207,7 +256,7 @@ export const MoveDialog: React.FC<MoveDialogProps> = ({
               isLoading={isSubmitting}
             >
               <ArrowRight className="w-3.5 h-3.5 mr-1" />
-              Move Here
+              {isMultiple ? `Move ${activeItems.length} Items` : 'Move Here'}
             </Button>
           </div>
         </form>

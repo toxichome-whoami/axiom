@@ -15,10 +15,16 @@ import {
   Plus,
   Settings,
   AlertTriangle,
+  Download,
+  Trash2,
+  ArrowRight,
+  FolderUp,
+  Files,
+  CheckSquare,
 } from 'lucide-react';
 import { api } from '../../api/client';
 import { BlobEntry, BlobStats, NamespaceInfo } from '../../types';
-import { StorageItem, StorageViewMode, ClipboardState, StorageTierFilter } from './types';
+import { StorageItem, StorageViewMode, ClipboardState, StorageTierFilter, UploadFileEntry } from './types';
 import { formatBytes, QUOTA_OPTIONS } from './format';
 import { sanitizeFolder, parentOf, joinKey, validateName } from './paths';
 import { MoveDialog } from './MoveDialog';
@@ -64,6 +70,70 @@ function getInitialStorageState(): {
   }
 }
 
+/**
+ * Recursively extracts files and directory hierarchies from drag-and-drop DataTransfer items.
+ * Preserves subfolder paths relative to dropped root, critical for hosting static sites/assets.
+ */
+async function scanFilesFromDataTransfer(items: DataTransferItemList): Promise<UploadFileEntry[]> {
+  const entries: UploadFileEntry[] = [];
+
+  async function traverseEntry(entry: any, path = ''): Promise<void> {
+    if (!entry) return;
+    if (entry.isFile) {
+      await new Promise<void>((resolve) => {
+        entry.file(
+          (file: File) => {
+            entries.push({
+              file,
+              relativePath: path ? `${path}/${file.name}` : file.name,
+            });
+            resolve();
+          },
+          () => resolve()
+        );
+      });
+    } else if (entry.isDirectory) {
+      const dirReader = entry.createReader();
+      const readAllEntries = async (): Promise<any[]> => {
+        let all: any[] = [];
+        while (true) {
+          const batch: any[] = await new Promise((resolve) => {
+            dirReader.readEntries(
+              (results: any[]) => resolve(results || []),
+              () => resolve([])
+            );
+          });
+          if (!batch || batch.length === 0) break;
+          all = all.concat(batch);
+        }
+        return all;
+      };
+
+      const childEntries = await readAllEntries();
+      const newPath = path ? `${path}/${entry.name}` : entry.name;
+      for (const child of childEntries) {
+        await traverseEntry(child, newPath);
+      }
+    }
+  }
+
+  const promises: Promise<void>[] = [];
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    const entry = item.webkitGetAsEntry ? item.webkitGetAsEntry() : null;
+    if (entry) {
+      promises.push(traverseEntry(entry, ''));
+    } else {
+      const file = item.getAsFile();
+      if (file) {
+        entries.push({ file, relativePath: file.name });
+      }
+    }
+  }
+  await Promise.all(promises);
+  return entries;
+}
+
 export function StoragePage() {
   const initialStorage = useMemo(() => getInitialStorageState(), []);
 
@@ -83,6 +153,13 @@ export function StoragePage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [tierFilter, setTierFilter] = useState<StorageTierFilter>('all');
   const [selectedItem, setSelectedItem] = useState<StorageItem | null>(null);
+  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
+  const lastFocusedKeyRef = useRef<string | null>(null);
+
+  // Batch Operations State
+  const [isBatchDeleteOpen, setIsBatchDeleteOpen] = useState(false);
+  const [isBatchDeleting, setIsBatchDeleting] = useState(false);
+  const [isBatchMoveOpen, setIsBatchMoveOpen] = useState(false);
 
   // Context Menu (Right Click) State
   const [contextMenu, setContextMenu] = useState<{ position: ContextMenuPosition; item: StorageItem | null } | null>(null);
@@ -147,6 +224,7 @@ export function StoragePage() {
   // Race condition guard for concurrent data loads
   const fetchGenRef = useRef(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const folderInputRef = useRef<HTMLInputElement>(null);
   const dragCounterRef = useRef(0);
 
   // Mutable reference for active path to avoid dependency cycle in loadData
@@ -159,37 +237,6 @@ export function StoragePage() {
   useEffect(() => {
     activeNsRef.current = activeNamespace;
   }, [activeNamespace]);
-
-  // Global Escape key listener to dismiss dialogs, context menus, or deselect items
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        if (isNewFolderOpen) setIsNewFolderOpen(false);
-        else if (isRenameOpen) setIsRenameOpen(false);
-        else if (isNewNsOpen) setIsNewNsOpen(false);
-        else if (isManageNsOpen) setIsManageNsOpen(false);
-        else if (isMoveOpen) setIsMoveOpen(false);
-        else if (isShareOpen) setIsShareOpen(false);
-        else if (itemToDelete) setItemToDelete(null);
-        else if (nsToDelete) setNsToDelete(null);
-        else if (contextMenu) setContextMenu(null);
-        else if (selectedItem) setSelectedItem(null);
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [
-    isNewFolderOpen,
-    isRenameOpen,
-    isNewNsOpen,
-    isManageNsOpen,
-    isMoveOpen,
-    isShareOpen,
-    itemToDelete,
-    nsToDelete,
-    contextMenu,
-    selectedItem,
-  ]);
 
   // Keep URL search parameters and localStorage synchronized with active navigation state
   const syncLocation = useCallback((ns: string, prefix: string, pushHistory = false) => {
@@ -232,8 +279,12 @@ export function StoragePage() {
       setCurrentPrefix(newPrefix);
       if (keepItem !== undefined) {
         setSelectedItem(keepItem);
+        setSelectedKeys(new Set(keepItem ? [keepItem.fullKey] : []));
+        lastFocusedKeyRef.current = keepItem ? keepItem.fullKey : null;
       } else {
         setSelectedItem(null);
+        setSelectedKeys(new Set());
+        lastFocusedKeyRef.current = null;
       }
       syncLocation(activeNsRef.current, newPrefix, pushHistory);
     },
@@ -256,6 +307,8 @@ export function StoragePage() {
         }
         setCurrentPrefix(urlPrefix);
         setSelectedItem(null);
+        setSelectedKeys(new Set());
+        lastFocusedKeyRef.current = null;
       } catch {
         // Ignore popstate errors
       }
@@ -505,6 +558,145 @@ export function StoragePage() {
     return null;
   }, [selectedItem, currentPrefix, folderItems.length, fileItems]);
 
+  // Flattened list of all items currently rendered in explorer
+  const allVisibleItems = useMemo(() => [...folderItems, ...fileItems], [folderItems, fileItems]);
+
+  // List of full StorageItems corresponding to selectedKeys
+  const selectedItemsList = useMemo(() => {
+    return allVisibleItems.filter((it) => selectedKeys.has(it.fullKey));
+  }, [allVisibleItems, selectedKeys]);
+
+  // Multi-selection handlers with shift-range and ctrl/meta toggle support
+  const handleToggleSelectItem = useCallback(
+    (item: StorageItem, e: React.MouseEvent) => {
+      setSelectedKeys((prev) => {
+        const next = new Set(prev);
+        if (e.shiftKey && lastFocusedKeyRef.current) {
+          const lastIdx = allVisibleItems.findIndex((it) => it.fullKey === lastFocusedKeyRef.current);
+          const curIdx = allVisibleItems.findIndex((it) => it.fullKey === item.fullKey);
+          if (lastIdx !== -1 && curIdx !== -1) {
+            const [start, end] = lastIdx < curIdx ? [lastIdx, curIdx] : [curIdx, lastIdx];
+            for (let i = start; i <= end; i++) {
+              next.add(allVisibleItems[i].fullKey);
+            }
+            setSelectedItem(item);
+            lastFocusedKeyRef.current = item.fullKey;
+            return next;
+          }
+        }
+
+        if (next.has(item.fullKey)) {
+          next.delete(item.fullKey);
+          if (selectedItem?.fullKey === item.fullKey) {
+            const remainingKey = Array.from(next)[0];
+            const remainingItem = remainingKey
+              ? allVisibleItems.find((it) => it.fullKey === remainingKey) || null
+              : null;
+            setSelectedItem(remainingItem);
+          }
+        } else {
+          next.add(item.fullKey);
+          setSelectedItem(item);
+        }
+        lastFocusedKeyRef.current = item.fullKey;
+        return next;
+      });
+    },
+    [allVisibleItems, selectedItem]
+  );
+
+  const handleSelectItem = useCallback((item: StorageItem) => {
+    setSelectedKeys(new Set([item.fullKey]));
+    setSelectedItem(item);
+    lastFocusedKeyRef.current = item.fullKey;
+  }, []);
+
+  const handleSelectAll = useCallback(() => {
+    setSelectedKeys((prev) => {
+      if (allVisibleItems.length === 0) return new Set();
+      const isAllSelected = allVisibleItems.every((it) => prev.has(it.fullKey));
+      if (isAllSelected) {
+        setSelectedItem(null);
+        lastFocusedKeyRef.current = null;
+        return new Set();
+      } else {
+        const next = new Set(allVisibleItems.map((it) => it.fullKey));
+        if (!selectedItem && allVisibleItems.length > 0) {
+          setSelectedItem(allVisibleItems[0]);
+          lastFocusedKeyRef.current = allVisibleItems[0].fullKey;
+        }
+        return next;
+      }
+    });
+  }, [allVisibleItems, selectedItem]);
+
+  const handleClearSelection = useCallback(() => {
+    setSelectedKeys(new Set());
+    setSelectedItem(null);
+    lastFocusedKeyRef.current = null;
+  }, []);
+
+  // Global keyboard shortcuts (Escape to deselect/dismiss, Ctrl+A to select all, Delete to batch delete)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (isNewFolderOpen) setIsNewFolderOpen(false);
+        else if (isRenameOpen) setIsRenameOpen(false);
+        else if (isNewNsOpen) setIsNewNsOpen(false);
+        else if (isManageNsOpen) setIsManageNsOpen(false);
+        else if (isMoveOpen) setIsMoveOpen(false);
+        else if (isBatchMoveOpen) setIsBatchMoveOpen(false);
+        else if (isBatchDeleteOpen) setIsBatchDeleteOpen(false);
+        else if (isShareOpen) setIsShareOpen(false);
+        else if (itemToDelete) setItemToDelete(null);
+        else if (nsToDelete) setNsToDelete(null);
+        else if (contextMenu) setContextMenu(null);
+        else if (selectedKeys.size > 0 || selectedItem) {
+          handleClearSelection();
+        }
+      } else if ((e.ctrlKey || e.metaKey) && (e.key === 'a' || e.key === 'A')) {
+        const target = e.target as HTMLElement;
+        if (
+          target.tagName !== 'INPUT' &&
+          target.tagName !== 'TEXTAREA' &&
+          !target.isContentEditable
+        ) {
+          e.preventDefault();
+          handleSelectAll();
+        }
+      } else if (e.key === 'Delete') {
+        const target = e.target as HTMLElement;
+        if (
+          target.tagName !== 'INPUT' &&
+          target.tagName !== 'TEXTAREA' &&
+          !target.isContentEditable &&
+          selectedKeys.size > 0
+        ) {
+          e.preventDefault();
+          setIsBatchDeleteOpen(true);
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [
+    isNewFolderOpen,
+    isRenameOpen,
+    isNewNsOpen,
+    isManageNsOpen,
+    isMoveOpen,
+    isBatchMoveOpen,
+    isBatchDeleteOpen,
+    isShareOpen,
+    itemToDelete,
+    nsToDelete,
+    contextMenu,
+    selectedItem,
+    selectedKeys.size,
+    handleClearSelection,
+    handleSelectAll,
+  ]);
+
   // Live object count excluding internal directory markers
   const realObjectsCount = useMemo(() => {
     return blobs.filter((b) => !b.key.endsWith('/.axiom_dir') && b.key !== '.axiom_dir').length;
@@ -553,28 +745,48 @@ export function StoragePage() {
     );
   }, []);
 
-  // Direct upload handler
-  const handleUploadFiles = async (files: FileList | File[], destinationPrefix?: string) => {
-    if (!files || files.length === 0 || !activeNamespace) return;
+  // Direct upload handler supporting multi-files, whole directories (webkitRelativePath), and nested folder entries
+  const handleUploadFiles = async (
+    files: FileList | File[] | UploadFileEntry[],
+    destinationPrefix?: string
+  ) => {
+    if (!files || (Array.isArray(files) ? files.length === 0 : files.length === 0) || !activeNamespace) return;
 
     const targetPrefix = destinationPrefix !== undefined ? sanitizeFolder(destinationPrefix) : currentPrefix;
-    const fileList = Array.from(files);
-    const newTasks: UploadTask[] = fileList.map((file, idx) => ({
-      id: `task-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 7)}`,
-      name: file.name,
-      size: file.size,
-      key: `${targetPrefix}${file.name}`,
-      namespace: activeNamespace,
-      status: 'pending' as const,
-      abortController: new AbortController(),
-    }));
+
+    // Normalize input to UploadFileEntry with preserved relative paths
+    const rawList = Array.from(files as any[]);
+    const entries: UploadFileEntry[] = rawList.map((item) => {
+      if (item && 'file' in item && item.file instanceof File) {
+        return item as UploadFileEntry;
+      }
+      const file = item as File;
+      return {
+        file,
+        relativePath: (file as any).webkitRelativePath || file.name,
+      };
+    });
+
+    const newTasks: UploadTask[] = entries.map((entry, idx) => {
+      const cleanRel = (entry.relativePath || entry.file.name).replace(/^[/\\]+/, '');
+      const key = `${targetPrefix}${cleanRel}`;
+      return {
+        id: `task-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 7)}`,
+        name: entry.file.name,
+        size: entry.file.size,
+        key,
+        namespace: activeNamespace,
+        status: 'pending' as const,
+        abortController: new AbortController(),
+      };
+    });
 
     setUploadTasks((prev) => [...prev, ...newTasks]);
     setIsUploadDrawerVisible(true);
 
     for (let i = 0; i < newTasks.length; i++) {
       const task = newTasks[i];
-      const file = fileList[i];
+      const entry = entries[i];
 
       if (task.abortController?.signal.aborted) {
         continue;
@@ -588,8 +800,8 @@ export function StoragePage() {
         await api.uploadBlob(
           task.namespace,
           task.key,
-          file,
-          file.type || 'application/octet-stream',
+          entry.file,
+          entry.file.type || 'application/octet-stream',
           task.abortController?.signal,
           (uploadedBytes) => {
             setUploadTasks((prev) =>
@@ -706,6 +918,14 @@ export function StoragePage() {
       return;
     }
 
+    if (e.dataTransfer.items && e.dataTransfer.items.length > 0) {
+      const scanned = await scanFilesFromDataTransfer(e.dataTransfer.items);
+      if (scanned.length > 0) {
+        await handleUploadFiles(scanned);
+        return;
+      }
+    }
+
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       await handleUploadFiles(e.dataTransfer.files);
     }
@@ -761,10 +981,28 @@ export function StoragePage() {
     if (!itemToMove) return;
     const isFolder = itemToMove.type === 'folder';
     await api.moveBlob(activeNamespace, itemToMove.fullKey, destKey, destNs, isFolder);
+    setSelectedKeys((prev) => {
+      const next = new Set(prev);
+      next.delete(itemToMove.fullKey);
+      return next;
+    });
     setItemToMove(null);
     if (selectedItem?.fullKey === itemToMove.fullKey) {
       setSelectedItem(null);
     }
+    await loadData();
+  };
+
+  // Batch Move handler
+  const handleBatchMove = async (destNs: string, targetFolder: string, items: StorageItem[]) => {
+    if (!activeNamespace || items.length === 0) return;
+    const cleanDir = sanitizeFolder(targetFolder);
+    for (const it of items) {
+      const isFolder = it.type === 'folder';
+      const destKey = joinKey(cleanDir, it.name, isFolder);
+      await api.moveBlob(activeNamespace, it.fullKey, destKey, destNs, isFolder);
+    }
+    handleClearSelection();
     await loadData();
   };
 
@@ -791,6 +1029,14 @@ export function StoragePage() {
     try {
       await api.moveBlob(activeNamespace, itemToRename.fullKey, destKey, activeNamespace, isFolder);
       setIsRenameOpen(false);
+      setSelectedKeys((prev) => {
+        const next = new Set(prev);
+        if (next.has(itemToRename.fullKey)) {
+          next.delete(itemToRename.fullKey);
+          next.add(destKey);
+        }
+        return next;
+      });
       setItemToRename(null);
       if (selectedItem?.fullKey === itemToRename.fullKey) {
         setSelectedItem((prev) => (prev ? { ...prev, name: renameInput.trim(), fullKey: destKey } : null));
@@ -831,6 +1077,18 @@ export function StoragePage() {
         setSelectedItem(null);
       }
 
+      setSelectedKeys((prev) => {
+        const next = new Set(prev);
+        if (deleted.type === 'folder') {
+          for (const k of prev) {
+            if (k.startsWith(deleted.fullKey)) next.delete(k);
+          }
+        } else {
+          next.delete(deleted.fullKey);
+        }
+        return next;
+      });
+
       // If deleted item is a folder and currentPrefix is inside or equal to the deleted folder,
       // navigate back to the parent of the deleted folder so newly created folders don't nest under it
       if (deleted.type === 'folder' && currentPrefix.startsWith(deleted.fullKey)) {
@@ -844,6 +1102,59 @@ export function StoragePage() {
       alert(err instanceof Error ? err.message : 'Failed to delete item');
     } finally {
       setIsDeleting(false);
+    }
+  };
+
+  // Batch Delete handler
+  const handleConfirmBatchDelete = async () => {
+    if (!activeNamespace || selectedKeys.size === 0) return;
+    setIsBatchDeleting(true);
+    try {
+      const folderItemsToDelete = selectedItemsList.filter((it) => it.type === 'folder');
+      const fileItemsToDelete = selectedItemsList.filter((it) => it.type === 'file');
+
+      // 1. Delete folders by prefix
+      for (const f of folderItemsToDelete) {
+        await api.deleteBlobPrefix(activeNamespace, f.fullKey);
+      }
+
+      // 2. Batch delete files using the high-performance deleteBlobsBatch endpoint
+      if (fileItemsToDelete.length > 0) {
+        const fileKeys = fileItemsToDelete.map((it) => it.fullKey);
+        await api.deleteBlobsBatch(activeNamespace, fileKeys);
+      }
+
+      // Optimistically remove deleted items from local state
+      const deletedPrefixes = folderItemsToDelete.map((f) => f.fullKey);
+      const deletedKeySet = new Set(fileItemsToDelete.map((f) => f.fullKey));
+
+      setBlobs((prev) =>
+        prev.filter((b) => {
+          if (deletedKeySet.has(b.key)) return false;
+          for (const p of deletedPrefixes) {
+            if (b.key.startsWith(p)) return false;
+          }
+          return true;
+        })
+      );
+
+      handleClearSelection();
+      setIsBatchDeleteOpen(false);
+      await loadData();
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'Failed to delete selected items');
+    } finally {
+      setIsBatchDeleting(false);
+    }
+  };
+
+  // Batch Download handler for all selected files
+  const handleBatchDownload = async () => {
+    const selectedFiles = selectedItemsList.filter((it) => it.type === 'file');
+    if (selectedFiles.length === 0) return;
+    for (const f of selectedFiles) {
+      await handleDownload(f.fullKey);
+      await new Promise((r) => setTimeout(r, 200));
     }
   };
 
@@ -1016,12 +1327,27 @@ export function StoragePage() {
 
   return (
     <div className="flex flex-col lg:flex-row w-full h-full min-h-0 select-none font-sans overflow-hidden bg-[#0c0c0c]">
-      {/* Hidden File Input for Native Upload Trigger */}
+      {/* Hidden File Input for Native Multi-File Upload Trigger */}
       <input
         ref={fileInputRef}
         type="file"
         multiple
         className="hidden"
+        onChange={(e) => {
+          if (e.target.files) {
+            handleUploadFiles(e.target.files);
+            e.target.value = '';
+          }
+        }}
+      />
+
+      {/* Hidden Folder Input for Recursive Directory Upload (Static Sites / Assets Hosting) */}
+      <input
+        ref={folderInputRef}
+        type="file"
+        className="hidden"
+        {...({ webkitdirectory: '', directory: '' } as any)}
+        multiple
         onChange={(e) => {
           if (e.target.files) {
             handleUploadFiles(e.target.files);
@@ -1134,6 +1460,7 @@ export function StoragePage() {
           searchQuery={searchQuery}
           onSearchChange={setSearchQuery}
           onUploadClick={() => fileInputRef.current?.click()}
+          onUploadFolderClick={() => folderInputRef.current?.click()}
           isDetailsOpen={isDetailsOpen}
           onToggleDetails={handleToggleDetails}
           canDropOnFolder={canDropOnFolder}
@@ -1149,7 +1476,7 @@ export function StoragePage() {
           onClick={(e) => {
             const target = e.target as HTMLElement;
             if (!target.closest('[data-storage-item="true"]') && !target.closest('button') && !target.closest('input')) {
-              setSelectedItem(null);
+              handleClearSelection();
             }
           }}
           onContextMenu={(e) => {
@@ -1218,7 +1545,9 @@ export function StoragePage() {
                 folderItems={folderItems}
                 fileItems={fileItems}
                 selectedItem={selectedItem}
-                onSelectItem={(item) => setSelectedItem(item)}
+                selectedKeys={selectedKeys}
+                onSelectItem={handleSelectItem}
+                onToggleSelectItem={handleToggleSelectItem}
                 onNavigateToPrefix={(p) => navigateToPrefix(p, true)}
                 onContextMenu={handleContextMenu}
                 onOpenMove={(item) => {
@@ -1234,14 +1563,17 @@ export function StoragePage() {
                 onDropOnFolder={handleDropOnFolder}
                 onUploadFiles={handleUploadFiles}
                 canDropOnFolder={canDropOnFolder}
-                onClearSelection={() => setSelectedItem(null)}
+                onClearSelection={handleClearSelection}
               />
             ) : (
               <StorageListView
                 folderItems={folderItems}
                 fileItems={fileItems}
                 selectedItem={selectedItem}
-                onSelectItem={(item) => setSelectedItem(item)}
+                selectedKeys={selectedKeys}
+                onSelectItem={handleSelectItem}
+                onToggleSelectItem={handleToggleSelectItem}
+                onSelectAll={handleSelectAll}
                 onNavigateToPrefix={(p) => navigateToPrefix(p, true)}
                 onContextMenu={handleContextMenu}
                 onDownload={handleDownload}
@@ -1256,11 +1588,75 @@ export function StoragePage() {
                 onItemDragEnd={handleItemDragEnd}
                 onDropOnFolder={handleDropOnFolder}
                 canDropOnFolder={canDropOnFolder}
-                onClearSelection={() => setSelectedItem(null)}
+                onClearSelection={handleClearSelection}
               />
             )
           )}
         </div>
+
+        {/* Floating Bulk Action Bar */}
+        {selectedKeys.size > 0 && (
+          <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-30 bg-[#121212]/95 border border-[#2b2b2b] shadow-2xl rounded-full px-4 py-2 flex items-center gap-2.5 backdrop-blur-md animate-in slide-in-from-bottom-3 duration-150 font-sans text-xs">
+            <div className="flex items-center gap-2 pr-2 border-r border-[#2a2a2a]">
+              <span className="inline-flex items-center justify-center px-2 py-0.5 rounded-full bg-blue-950/80 text-blue-400 border border-blue-800/60 font-semibold tabular-nums text-[11px]">
+                {selectedKeys.size} selected
+              </span>
+              {selectedKeys.size < allVisibleItems.length && (
+                <button
+                  type="button"
+                  onClick={handleSelectAll}
+                  className="text-[#999999] hover:text-white transition-colors cursor-pointer text-[11px]"
+                >
+                  Select all ({allVisibleItems.length})
+                </button>
+              )}
+            </div>
+
+            {/* Action: Download (only active if at least 1 file selected) */}
+            <button
+              type="button"
+              onClick={handleBatchDownload}
+              disabled={selectedItemsList.every((it) => it.type === 'folder')}
+              title="Download selected files"
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[#cccccc] hover:text-white hover:bg-[#202020] transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>Download</span>
+            </button>
+
+            {/* Action: Move */}
+            <button
+              type="button"
+              onClick={() => setIsBatchMoveOpen(true)}
+              title="Move selected items"
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[#cccccc] hover:text-white hover:bg-[#202020] transition-colors cursor-pointer"
+            >
+              <ArrowRight className="w-3.5 h-3.5" />
+              <span>Move</span>
+            </button>
+
+            {/* Action: Delete */}
+            <button
+              type="button"
+              onClick={() => setIsBatchDeleteOpen(true)}
+              title="Delete selected items"
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-red-400 hover:text-red-300 hover:bg-red-950/40 border border-red-900/30 transition-colors cursor-pointer"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Delete</span>
+            </button>
+
+            {/* Clear Selection */}
+            <button
+              type="button"
+              onClick={handleClearSelection}
+              title="Clear selection (Esc)"
+              className="p-1 rounded-full text-[#888888] hover:text-white hover:bg-[#202020] transition-colors cursor-pointer ml-1"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
       </section>
 
       {/* ─── Pane 3: Right Inspector / Details Panel ─────────────── */}
@@ -1451,6 +1847,39 @@ export function StoragePage() {
         currentNamespace={activeNamespace}
         availableFolders={availableFolders}
         onMove={handleMove}
+      />
+
+      {/* Batch Move Dialog Modal */}
+      <MoveDialog
+        isOpen={isBatchMoveOpen}
+        onClose={() => {
+          setIsBatchMoveOpen(false);
+        }}
+        items={selectedItemsList}
+        namespaces={namespaces}
+        currentNamespace={activeNamespace}
+        availableFolders={availableFolders}
+        onBatchMove={handleBatchMove}
+      />
+
+      {/* Batch Delete Confirmation Modal */}
+      <ConfirmDialog
+        isOpen={isBatchDeleteOpen}
+        onClose={() => setIsBatchDeleteOpen(false)}
+        onConfirm={handleConfirmBatchDelete}
+        title={`Delete ${selectedKeys.size} Selected Items`}
+        description={
+          <span>
+            Are you sure you want to permanently delete{' '}
+            <strong className="text-white">{selectedKeys.size} items</strong>
+            {selectedItemsList.some((it) => it.type === 'folder')
+              ? ' including all directories and their contents'
+              : ''}
+            ? This action cannot be undone.
+          </span>
+        }
+        confirmLabel={isBatchDeleting ? 'Deleting...' : `Delete ${selectedKeys.size} Items`}
+        variant="danger"
       />
 
       {/* New Namespace Modal */}

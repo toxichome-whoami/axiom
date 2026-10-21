@@ -34,3 +34,8 @@ export interface ClipboardState {
 }
 
 export type StorageTierFilter = 'all' | 'inline' | 'disk';
+
+export interface UploadFileEntry {
+  file: File;
+  relativePath?: string;
+}

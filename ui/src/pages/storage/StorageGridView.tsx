@@ -22,7 +22,9 @@ export interface StorageGridViewProps {
   folderItems: StorageItem[];
   fileItems: StorageItem[];
   selectedItem: StorageItem | null;
+  selectedKeys?: Set<string>;
   onSelectItem: (item: StorageItem) => void;
+  onToggleSelectItem?: (item: StorageItem, e: React.MouseEvent) => void;
   onNavigateToPrefix: (prefix: string) => void;
   onContextMenu: (e: React.MouseEvent, item: StorageItem) => void;
   onOpenMove: (item: StorageItem) => void;
@@ -44,7 +46,9 @@ export function StorageGridView({
   folderItems,
   fileItems,
   selectedItem,
+  selectedKeys,
   onSelectItem,
+  onToggleSelectItem,
   onNavigateToPrefix,
   onContextMenu,
   onOpenMove,
@@ -84,7 +88,9 @@ export function StorageGridView({
 
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3">
             {folderItems.map((f) => {
-              const isSelected = Boolean(selectedItem && (selectedItem.fullKey === f.fullKey || selectedItem.id === f.id));
+              const isSelected = selectedKeys
+                ? selectedKeys.has(f.fullKey)
+                : Boolean(selectedItem && (selectedItem.fullKey === f.fullKey || selectedItem.id === f.id));
               const isDropTarget = dragOverTargetKey === f.fullKey;
               const isSelfDragged = draggedItem?.id === f.id;
 
@@ -134,21 +140,44 @@ export function StorageGridView({
                   }}
                   onClick={(e) => {
                     e.stopPropagation();
-                    onSelectItem(f);
+                    if (e.ctrlKey || e.metaKey || e.shiftKey) {
+                      onToggleSelectItem ? onToggleSelectItem(f, e) : onSelectItem(f);
+                    } else {
+                      onSelectItem(f);
+                    }
                   }}
                   onDoubleClick={() => onNavigateToPrefix(f.fullKey)}
                   onContextMenu={(e) => onContextMenu(e, f)}
-                  className={`group p-3 rounded-lg border transition-colors cursor-pointer flex items-center justify-between gap-3 min-h-[52px] ${
+                  className={`group p-3 rounded-lg border transition-colors cursor-pointer flex items-center justify-between gap-3 min-h-[52px] relative ${
                     isSelfDragged ? 'opacity-40 border-dashed border-[#555555]' : ''
                   } ${
                     isDropTarget
                       ? 'bg-blue-950/40 border-blue-500/80 ring-1 ring-blue-500/50'
                       : isSelected
-                      ? 'bg-[#1c1c1c] border-[#3e3e3e]'
+                      ? 'bg-[#1c1c1c] border-blue-500/70 ring-1 ring-blue-500/30'
                       : 'bg-[#141414] hover:bg-[#1a1a1a] border-[#222222] hover:border-[#2e2e2e]'
                   }`}
                 >
                   <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                    <div
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onToggleSelectItem ? onToggleSelectItem(f, e) : onSelectItem(f);
+                      }}
+                      className={`w-4 h-4 shrink-0 flex items-center justify-center cursor-pointer transition-opacity ${
+                        isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        aria-label={`Select ${f.name}`}
+                        checked={isSelected}
+                        onChange={(e) => {
+                          onToggleSelectItem ? onToggleSelectItem(f, e as any) : onSelectItem(f);
+                        }}
+                        className="w-3.5 h-3.5 rounded bg-[#1a1a1a] border-[#333333] text-blue-500 focus:ring-0 focus:ring-offset-0 cursor-pointer accent-blue-600 align-middle"
+                      />
+                    </div>
                     <div className="w-8 h-8 rounded-md bg-[#1a1a1a] border border-[#2a2a2a] flex items-center justify-center shrink-0">
                       <Folder className={`w-4 h-4 ${isDropTarget ? 'text-blue-400 animate-pulse' : 'text-[#eab308]'}`} />
                     </div>
@@ -203,7 +232,9 @@ export function StorageGridView({
 
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3">
             {fileItems.map((item) => {
-              const isSelected = Boolean(selectedItem && (selectedItem.fullKey === item.fullKey || selectedItem.id === item.id));
+              const isSelected = selectedKeys
+                ? selectedKeys.has(item.fullKey)
+                : Boolean(selectedItem && (selectedItem.fullKey === item.fullKey || selectedItem.id === item.id));
               const isSelfDragged = draggedItem?.id === item.id;
 
               return (
@@ -215,17 +246,42 @@ export function StorageGridView({
                   onDragEnd={onItemDragEnd}
                   onClick={(e) => {
                     e.stopPropagation();
-                    onSelectItem(item);
+                    if (e.ctrlKey || e.metaKey || e.shiftKey) {
+                      onToggleSelectItem ? onToggleSelectItem(item, e) : onSelectItem(item);
+                    } else {
+                      onSelectItem(item);
+                    }
                   }}
                   onContextMenu={(e) => onContextMenu(e, item)}
                   className={`group p-3 rounded-lg border transition-colors cursor-pointer flex flex-col justify-between h-28 relative ${
                     isSelfDragged ? 'opacity-40 border-dashed border-[#555555]' : ''
                   } ${
                     isSelected
-                      ? 'bg-[#1c1c1c] border-[#3e3e3e]'
+                      ? 'bg-[#1c1c1c] border-blue-500/70 ring-1 ring-blue-500/30'
                       : 'bg-[#141414] hover:bg-[#1a1a1a] border-[#222222] hover:border-[#2e2e2e]'
                   }`}
                 >
+                  {/* Checkbox overlay */}
+                  <div
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onToggleSelectItem ? onToggleSelectItem(item, e) : onSelectItem(item);
+                    }}
+                    className={`absolute top-2 left-2 z-10 w-5 h-5 rounded flex items-center justify-center transition-opacity ${
+                      isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      aria-label={`Select ${item.name}`}
+                      checked={isSelected}
+                      onChange={(e) => {
+                        onToggleSelectItem ? onToggleSelectItem(item, e as any) : onSelectItem(item);
+                      }}
+                      className="w-3.5 h-3.5 rounded bg-[#181818] border-[#333333] text-blue-500 focus:ring-0 focus:ring-offset-0 cursor-pointer accent-blue-600 align-middle shadow-md"
+                    />
+                  </div>
+
                   {/* Top row: Icon, Name, and Actions */}
                   <div className="flex items-start justify-between gap-2">
                     <div className="w-8 h-8 rounded-md bg-[#181818] border border-[#262626] flex items-center justify-center shrink-0">

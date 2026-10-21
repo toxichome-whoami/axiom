@@ -630,6 +630,14 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ namespace, prefix }),
     }),
+  deleteBlobsBatch: (namespace: string, keys: string[]) =>
+    request<{ deleted: string[]; errors: [string, string][] }>(
+      `/api/v1/blobs/${encodeURIComponent(namespace)}/delete-objects`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ keys }),
+      }
+    ),
   verifyBlob: (namespace: string, key: string) => {
     const sanitizedKey = key.split('/').map(encodeURIComponent).join('/');
     return request<{ valid: boolean }>(`/admin/v1/blobs/verify/${encodeURIComponent(namespace)}/${sanitizedKey}`, {

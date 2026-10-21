@@ -20,7 +20,10 @@ export interface StorageListViewProps {
   folderItems: StorageItem[];
   fileItems: StorageItem[];
   selectedItem: StorageItem | null;
+  selectedKeys?: Set<string>;
   onSelectItem: (item: StorageItem) => void;
+  onToggleSelectItem?: (item: StorageItem, e: React.MouseEvent) => void;
+  onSelectAll?: () => void;
   onNavigateToPrefix: (prefix: string) => void;
   onContextMenu: (e: React.MouseEvent, item: StorageItem) => void;
   onDownload: (key: string) => void;
@@ -41,7 +44,10 @@ export function StorageListView({
   folderItems,
   fileItems,
   selectedItem,
+  selectedKeys,
   onSelectItem,
+  onToggleSelectItem,
+  onSelectAll,
   onNavigateToPrefix,
   onContextMenu,
   onDownload,
@@ -58,6 +64,8 @@ export function StorageListView({
   const [dragOverTargetKey, setDragOverTargetKey] = useState<string | null>(null);
 
   const allItems = [...folderItems, ...fileItems];
+  const allSelected = allItems.length > 0 && allItems.every((it) => selectedKeys?.has(it.fullKey));
+  const hasSelected = Boolean(selectedKeys && selectedKeys.size > 0);
 
   return (
     <div
@@ -71,7 +79,21 @@ export function StorageListView({
       <table className="w-full text-left border-collapse">
         <thead>
           <tr className="sticky top-0 z-10 h-9 bg-[#0a0a0a] border-b border-[#222222] text-xs font-medium text-[#888888]">
-            <th className="px-4 font-medium">Name</th>
+            <th className="w-9 px-3 py-2 text-center">
+              <input
+                type="checkbox"
+                aria-label="Select all"
+                checked={allSelected}
+                ref={(input) => {
+                  if (input) {
+                    input.indeterminate = Boolean(hasSelected && !allSelected);
+                  }
+                }}
+                onChange={() => onSelectAll?.()}
+                className="w-3.5 h-3.5 rounded bg-[#1a1a1a] border-[#333333] text-blue-500 focus:ring-0 focus:ring-offset-0 cursor-pointer accent-blue-600 align-middle"
+              />
+            </th>
+            <th className="px-3 font-medium">Name</th>
             <th className="px-3 font-medium w-36">Storage Tier</th>
             <th className="px-3 font-medium w-32 text-right">Size</th>
             <th className="px-4 font-medium w-44 text-right hidden sm:table-cell">Uploaded</th>
@@ -81,7 +103,9 @@ export function StorageListView({
         <tbody className="divide-y divide-[#1a1a1a]">
           {allItems.map((item) => {
             const isFolder = item.type === 'folder';
-            const isSelected = Boolean(selectedItem && (selectedItem.fullKey === item.fullKey || selectedItem.id === item.id));
+            const isSelected = selectedKeys
+              ? selectedKeys.has(item.fullKey)
+              : Boolean(selectedItem && (selectedItem.fullKey === item.fullKey || selectedItem.id === item.id));
             const isDropTarget = dragOverTargetKey === item.fullKey;
             const isSelfDragged = draggedItem?.id === item.id;
 
@@ -124,7 +148,11 @@ export function StorageListView({
                 }}
                 onClick={(e) => {
                   e.stopPropagation();
-                  onSelectItem(item);
+                  if (e.ctrlKey || e.metaKey || e.shiftKey) {
+                    onToggleSelectItem ? onToggleSelectItem(item, e) : onSelectItem(item);
+                  } else {
+                    onSelectItem(item);
+                  }
                 }}
                 onDoubleClick={() => {
                   if (isFolder) {
@@ -138,12 +166,25 @@ export function StorageListView({
                   isDropTarget
                     ? 'bg-blue-950/40 text-blue-300'
                     : isSelected
-                    ? 'bg-[#1a1a1a] text-white'
+                    ? 'bg-[#181818] text-white'
                     : 'text-[#cccccc] hover:bg-[#141414] hover:text-white'
                 }`}
               >
+                {/* Checkbox Column */}
+                <td className="w-9 px-3 py-2 text-center" onClick={(e) => e.stopPropagation()}>
+                  <input
+                    type="checkbox"
+                    aria-label={`Select ${item.name}`}
+                    checked={isSelected}
+                    onChange={(e) => {
+                      onToggleSelectItem ? onToggleSelectItem(item, e as any) : onSelectItem(item);
+                    }}
+                    className="w-3.5 h-3.5 rounded bg-[#1a1a1a] border-[#333333] text-blue-500 focus:ring-0 focus:ring-offset-0 cursor-pointer accent-blue-600 align-middle"
+                  />
+                </td>
+
                 {/* Column 1: Icon and Name */}
-                <td className="px-4 min-w-0 max-w-[280px] sm:max-w-md">
+                <td className="px-3 min-w-0 max-w-[280px] sm:max-w-md">
                   <div className="flex items-center gap-2 truncate">
                     <div className="w-4 h-4 flex items-center justify-center shrink-0">
                       {isFolder ? (
