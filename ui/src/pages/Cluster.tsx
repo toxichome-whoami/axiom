@@ -15,6 +15,7 @@ import { DataTable, Column } from '../components/shared/DataTable';
 import { SlideOver } from '../components/ui/SlideOver';
 import { Button } from '../components/ui/Button';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
+import { validateCleanName } from './Databases';
 import {
   Plus,
   RefreshCw,
@@ -164,9 +165,13 @@ export function Cluster() {
     setTimeout(() => setCopiedNodeId(false), 2000);
   };
 
+  const editMonikerValidation = validateCleanName(editMonikerValue);
+  const peerMonikerValidation = peerMoniker.trim().length > 0 ? validateCleanName(peerMoniker) : { valid: true };
+  const peerEditMonikerValidation = validateCleanName(peerEditMoniker);
+
   const handleSaveMoniker = async () => {
     const trimmed = editMonikerValue.trim();
-    if (!trimmed) return;
+    if (!trimmed || !editMonikerValidation.valid) return;
     try {
       setIsSavingMoniker(true);
       await api.updateClusterMoniker(trimmed);
@@ -196,6 +201,10 @@ export function Cluster() {
     }
     if (!trimmedSecret) {
       setConnectError('Cluster secret or pairing token is required.');
+      return;
+    }
+    if (peerMoniker.trim().length > 0 && !peerMonikerValidation.valid) {
+      setConnectError(peerMonikerValidation.error || 'Invalid moniker format.');
       return;
     }
 
@@ -258,8 +267,8 @@ export function Cluster() {
     const trimmedMoniker = peerEditMoniker.trim();
     const trimmedUrl = peerEditUrl.trim();
 
-    if (!trimmedMoniker) {
-      setPeerPanelError('Peer moniker cannot be empty.');
+    if (!trimmedMoniker || !peerEditMonikerValidation.valid) {
+      setPeerPanelError(peerEditMonikerValidation.error || 'Invalid moniker format.');
       return;
     }
     if (!trimmedUrl) {
@@ -560,32 +569,47 @@ export function Cluster() {
           <div className="px-4 py-3.5 min-w-0">
             <span className="block text-[12px] text-[#8c8c8c] font-medium mb-1.5">Node Moniker</span>
             {isEditingMoniker ? (
-              <div className="flex items-center gap-2">
-                <input
-                  type="text"
-                  value={editMonikerValue}
-                  onChange={(e) => setEditMonikerValue(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') handleSaveMoniker();
-                  }}
-                  className="h-8 min-w-0 flex-1 rounded-[6px] border border-[#262626] bg-[#121212] px-2.5 text-[13px] text-white placeholder-[#555555] focus:outline-none focus:border-[#3b82f6] font-sans"
-                  autoFocus
-                />
-                <button
-                  type="button"
-                  onClick={handleSaveMoniker}
-                  disabled={isSavingMoniker}
-                  className="h-7 px-2.5 rounded-[6px] bg-[#2563eb] text-[12px] font-medium text-white hover:bg-[#1d4ed8] transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
-                >
-                  Save
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setIsEditingMoniker(false)}
-                  className="h-7 px-2.5 rounded-[6px] border border-[#262626] text-[12px] text-[#cccccc] hover:text-white hover:border-[#383838] transition-colors cursor-pointer shrink-0"
-                >
-                  Cancel
-                </button>
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={editMonikerValue}
+                    onChange={(e) => setEditMonikerValue(e.target.value.toLowerCase().replace(/\s+/g, '_'))}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && editMonikerValidation.valid && !isSavingMoniker) {
+                        handleSaveMoniker();
+                      }
+                    }}
+                    placeholder="e.g. axiom_node_01"
+                    className={`h-8 min-w-0 flex-1 rounded-[6px] border px-2.5 text-[13px] text-white focus:outline-none lowercase transition-colors font-sans ${
+                      editMonikerValue.trim().length > 0 && !editMonikerValidation.valid
+                        ? 'border-[#e5484d] bg-[#1a0f0f] focus:border-[#e5484d] focus:ring-1 focus:ring-[#e5484d]/40'
+                        : 'border-[#262626] bg-[#121212] focus:border-[#3b82f6]'
+                    }`}
+                    autoFocus
+                  />
+                  <button
+                    type="button"
+                    onClick={handleSaveMoniker}
+                    disabled={isSavingMoniker || !editMonikerValue.trim() || !editMonikerValidation.valid}
+                    className="h-8 px-2.5 rounded-[6px] bg-[#2563eb] text-[12px] font-medium text-white hover:bg-[#1d4ed8] transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+                  >
+                    Save
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsEditingMoniker(false)}
+                    className="h-8 px-2.5 rounded-[6px] border border-[#262626] text-[12px] text-[#cccccc] hover:text-white hover:border-[#383838] transition-colors cursor-pointer shrink-0"
+                  >
+                    Cancel
+                  </button>
+                </div>
+                {editMonikerValue.trim().length > 0 && !editMonikerValidation.valid && (
+                  <div className="flex items-center gap-1.5 text-[11px] text-[#e5484d]">
+                    <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                    <span>{editMonikerValidation.error}</span>
+                  </div>
+                )}
               </div>
             ) : (
               <div className="flex items-center gap-1.5 min-w-0">
@@ -849,14 +873,25 @@ export function Cluster() {
               </label>
               <input
                 type="text"
-                placeholder="e.g. London-Edge-01"
+                placeholder="e.g. london_edge_01"
                 value={peerMoniker}
-                onChange={(e) => setPeerMoniker(e.target.value)}
-                className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] px-3 text-[14px] text-white placeholder-[#555555] focus:outline-none focus:border-[#3b82f6] transition-colors"
+                onChange={(e) => setPeerMoniker(e.target.value.toLowerCase().replace(/\s+/g, '_'))}
+                className={`h-9 w-full rounded-[6px] border px-3 text-[14px] text-white placeholder-[#555555] focus:outline-none font-sans lowercase transition-colors ${
+                  peerMoniker.trim().length > 0 && !peerMonikerValidation.valid
+                    ? 'border-[#e5484d] bg-[#1a0f0f] focus:border-[#e5484d] focus:ring-1 focus:ring-[#e5484d]/40'
+                    : 'border-[#262626] bg-[#121212] focus:border-[#3b82f6]'
+                }`}
               />
-              <span className="block text-[12px] text-[#666666] mt-1">
-                Leave blank to automatically inherit the peer&apos;s advertised node name.
-              </span>
+              {peerMoniker.trim().length > 0 && !peerMonikerValidation.valid ? (
+                <div className="mt-1.5 flex items-center gap-1.5 text-[12px] text-[#e5484d]">
+                  <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                  <span>{peerMonikerValidation.error}</span>
+                </div>
+              ) : (
+                <span className="block text-[12px] text-[#666666] mt-1">
+                  Leave blank to automatically inherit the peer&apos;s advertised node name.
+                </span>
+              )}
             </div>
           </div>
 
@@ -870,7 +905,7 @@ export function Cluster() {
             </button>
             <button
               type="submit"
-              disabled={isConnecting}
+              disabled={isConnecting || (peerMoniker.trim().length > 0 && !peerMonikerValidation.valid)}
               className="group relative flex shrink-0 items-center justify-center h-9 px-4 rounded-[8px] font-medium text-white shadow-xs outline-none cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed overflow-hidden ring-1 ring-[#1d4ed8] bg-[#2563eb] font-sans text-[14px]"
             >
               <span aria-hidden="true" className="pointer-events-none absolute inset-0 rounded-[inherit] bg-gradient-to-b from-[#3b82f6] to-[#2563eb] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2)]" />
@@ -1061,13 +1096,25 @@ export function Cluster() {
                   <input
                     type="text"
                     value={peerEditMoniker}
-                    onChange={(e) => setPeerEditMoniker(e.target.value)}
-                    className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] px-3 text-[14px] text-white focus:outline-none focus:border-[#3b82f6] font-sans transition-colors"
+                    onChange={(e) => setPeerEditMoniker(e.target.value.toLowerCase().replace(/\s+/g, '_'))}
+                    placeholder="e.g. london_edge_01"
+                    className={`h-9 w-full rounded-[6px] border px-3 text-[14px] text-white focus:outline-none font-sans lowercase transition-colors ${
+                      peerEditMoniker.trim().length > 0 && !peerEditMonikerValidation.valid
+                        ? 'border-[#e5484d] bg-[#1a0f0f] focus:border-[#e5484d] focus:ring-1 focus:ring-[#e5484d]/40'
+                        : 'border-[#262626] bg-[#121212] focus:border-[#3b82f6]'
+                    }`}
                     required
                   />
-                  <p className="mt-1.5 text-[12px] text-[#737373]">
-                    Human-readable label for this peer node in the cluster dashboard.
-                  </p>
+                  {peerEditMoniker.trim().length > 0 && !peerEditMonikerValidation.valid ? (
+                    <div className="mt-1.5 flex items-center gap-1.5 text-[12px] text-[#e5484d]">
+                      <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                      <span>{peerEditMonikerValidation.error}</span>
+                    </div>
+                  ) : (
+                    <p className="mt-1.5 text-[12px] text-[#737373]">
+                      Lowercase alphanumeric with hyphens or underscores (e.g. <span className="text-[#a3a3a3]">london_edge_01</span>).
+                    </p>
+                  )}
                 </div>
 
                 <div>
@@ -1129,7 +1176,7 @@ export function Cluster() {
               </button>
               <button
                 type="submit"
-                disabled={isSavingPeer}
+                disabled={isSavingPeer || !peerEditMoniker.trim() || !peerEditMonikerValidation.valid}
                 className="group relative flex shrink-0 items-center justify-center h-9 px-4 rounded-[8px] font-medium text-white shadow-xs outline-none cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed overflow-hidden ring-1 ring-[#1d4ed8] bg-[#2563eb] font-sans text-[14px]"
               >
                 <span aria-hidden="true" className="pointer-events-none absolute inset-0 rounded-[inherit] bg-gradient-to-b from-[#3b82f6] to-[#2563eb] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2)]" />
