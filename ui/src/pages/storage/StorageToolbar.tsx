@@ -326,20 +326,17 @@ export function StorageToolbar({
 
           {/* Upload Dropdown Menu */}
           {isUploadMenuOpen && (
-            <div className="absolute right-0 top-full mt-1.5 w-52 rounded-md bg-[#141414] border border-[#262626] shadow-xl py-1 z-40 animate-in fade-in zoom-in-95 duration-100 font-sans">
+            <div className="absolute right-0 top-full mt-1.5 w-44 bg-[#111111] border border-[#262626] rounded-[8px] shadow-2xl p-1 z-50 animate-in fade-in zoom-in-95 duration-100 font-sans">
               <button
                 type="button"
                 onClick={() => {
                   setIsUploadMenuOpen(false);
                   onUploadClick();
                 }}
-                className="w-full text-left px-3.5 py-2.5 text-[13px] flex items-center gap-2.5 text-white hover:bg-[#1f1f1f] transition-colors cursor-pointer"
+                className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-[6px] text-[13px] text-[#cccccc] hover:text-white hover:bg-[#1a1a1a] transition-colors cursor-pointer text-left"
               >
-                <Files className="w-4 h-4 text-blue-400 shrink-0" />
-                <div>
-                  <div className="font-medium">Upload Files</div>
-                  <div className="text-[12px] text-[#888888]">Select multiple files</div>
-                </div>
+                <Files className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                <span>Upload files</span>
               </button>
 
               <button
@@ -348,13 +345,10 @@ export function StorageToolbar({
                   setIsUploadMenuOpen(false);
                   onUploadFolderClick ? onUploadFolderClick() : onUploadClick();
                 }}
-                className="w-full text-left px-3.5 py-2.5 text-[13px] flex items-center gap-2.5 text-white hover:bg-[#1f1f1f] transition-colors cursor-pointer border-t border-[#222222]"
+                className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-[6px] text-[13px] text-[#cccccc] hover:text-white hover:bg-[#1a1a1a] transition-colors cursor-pointer text-left"
               >
-                <FolderPlus className="w-4 h-4 text-[#eab308] shrink-0" />
-                <div>
-                  <div className="font-medium">Upload Folder</div>
-                  <div className="text-[12px] text-[#888888]">Preserves directories for hosting</div>
-                </div>
+                <FolderPlus className="w-3.5 h-3.5 text-[#eab308] shrink-0" />
+                <span>Upload folder</span>
               </button>
             </div>
           )}
