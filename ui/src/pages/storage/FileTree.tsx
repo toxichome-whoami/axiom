@@ -395,17 +395,17 @@ export function FileTree({
             }
           }}
           onContextMenu={(e) => onContextMenu(e, toStorageItem(node))}
-          style={{ paddingLeft: `${depth * 14 + 6}px` }}
-          className={`group flex items-center gap-2 py-1 pr-2 rounded-md text-[13px] transition-all cursor-pointer ${
+          style={{ paddingLeft: `${depth * 16 + 10}px` }}
+          className={`group flex items-center gap-2 py-2 pr-4 w-full text-[13px] transition-colors cursor-pointer whitespace-nowrap border-b border-[#141414] select-none ${
             isSelfDragged ? 'opacity-40' : ''
           } ${
             isTreeDropTarget
-              ? 'bg-blue-600/30 text-white ring-1 ring-blue-500/60 font-medium'
+              ? 'bg-blue-600/30 text-white font-medium border-l-2 border-blue-500'
               : isSelected
-              ? 'bg-[#222222] text-white font-medium ring-1 ring-inset ring-[#333333]'
+              ? 'bg-[#181818] text-white font-medium border-l-2 border-white'
               : isCurrentFolder
-              ? 'bg-[#161616] text-white font-medium'
-              : 'text-[#cccccc] hover:text-white hover:bg-[#141414]'
+              ? 'bg-[#121212] text-white font-medium border-l-2 border-amber-500/70'
+              : 'text-[#cccccc] hover:text-white hover:bg-[#121212] border-l-2 border-transparent'
           }`}
         >
           {isFolder ? (
@@ -434,7 +434,7 @@ export function FileTree({
             </>
           )}
 
-          <span className="truncate flex-1" title={node.name}>
+          <span className={`whitespace-nowrap pr-2 font-normal ${isSelected ? 'text-white font-medium' : ''}`} title={node.name}>
             {node.name}
           </span>
         </div>
@@ -443,7 +443,7 @@ export function FileTree({
         {isFolder && isExpanded && node.children.length > 0 && (
           <div className="relative">
             <div
-              style={{ left: `${depth * 14 + 13}px` }}
+              style={{ left: `${depth * 16 + 17}px` }}
               className="absolute top-0 bottom-0 w-px bg-[#1f1f1f] pointer-events-none"
             />
             {node.children.map((child) => renderNode(child, depth + 1))}
@@ -526,45 +526,43 @@ export function FileTree({
         </div>
       </div>
 
-      {/* Tree View Scrolling List */}
+      {/* Tree View Scrolling List with Horizontal & Vertical Scroll, Edge-to-Edge Grid Style */}
       <div
         onClick={(e) => {
           if (!(e.target as HTMLElement).closest('[data-storage-item="true"]')) {
             onClearSelection?.();
           }
         }}
-        className="flex-1 overflow-y-auto px-1 py-1.5 space-y-0.5 scrollbar-thin scrollbar-thumb-[#222222]"
+        className="flex-1 overflow-auto divide-y divide-[#141414] select-none font-sans scrollbar-thin scrollbar-thumb-[#262626] scrollbar-track-transparent"
       >
-        {isLoading ? (
-          <div className="p-2 space-y-2 animate-pulse">
-            <div className="flex items-center gap-2 py-1">
-              <div className="w-4 h-4 rounded-[3px] bg-[#16171d]/80 border border-[#1e2025]/40" />
-              <div className="h-3.5 w-24 rounded-[4px] bg-[#16171d]/80 border border-[#1e2025]/40" />
+        <div className="min-w-full inline-block align-top">
+          {isLoading ? (
+            <div className="divide-y divide-[#141414] animate-pulse">
+              <div className="flex items-center gap-2 py-2 px-3">
+                <div className="w-4 h-4 rounded-[3px] bg-[#1a1a1a]" />
+                <div className="h-3.5 w-24 rounded-[4px] bg-[#1a1a1a]" />
+              </div>
+              <div className="flex items-center gap-2 py-2 px-3 pl-7">
+                <div className="w-4 h-4 rounded-[3px] bg-[#1a1a1a]" />
+                <div className="h-3.5 w-28 rounded-[4px] bg-[#1a1a1a]" />
+              </div>
+              <div className="flex items-center gap-2 py-2 px-3 pl-7">
+                <div className="w-4 h-4 rounded-[3px] bg-[#1a1a1a]" />
+                <div className="h-3.5 w-20 rounded-[4px] bg-[#1a1a1a]" />
+              </div>
+              <div className="flex items-center gap-2 py-2 px-3 pl-11">
+                <div className="w-4 h-4 rounded-[3px] bg-[#1a1a1a]" />
+                <div className="h-3.5 w-24 rounded-[4px] bg-[#1a1a1a]" />
+              </div>
             </div>
-            <div className="flex items-center gap-2 py-1 pl-4">
-              <div className="w-4 h-4 rounded-[3px] bg-[#16171d]/60 border border-[#1e2025]/30" />
-              <div className="h-3.5 w-28 rounded-[4px] bg-[#16171d]/60 border border-[#1e2025]/30" />
+          ) : treeNodes.length === 0 ? (
+            <div className="p-4 text-center text-[12px] text-[#666666]">
+              No files or folders yet.
             </div>
-            <div className="flex items-center gap-2 py-1 pl-4">
-              <div className="w-4 h-4 rounded-[3px] bg-[#16171d]/60 border border-[#1e2025]/30" />
-              <div className="h-3.5 w-20 rounded-[4px] bg-[#16171d]/60 border border-[#1e2025]/30" />
-            </div>
-            <div className="flex items-center gap-2 py-1 pl-8">
-              <div className="w-4 h-4 rounded-[3px] bg-[#16171d]/50 border border-[#1e2025]/20" />
-              <div className="h-3.5 w-24 rounded-[4px] bg-[#16171d]/50 border border-[#1e2025]/20" />
-            </div>
-            <div className="flex items-center gap-2 py-1">
-              <div className="w-4 h-4 rounded-[3px] bg-[#16171d]/80 border border-[#1e2025]/40" />
-              <div className="h-3.5 w-32 rounded-[4px] bg-[#16171d]/80 border border-[#1e2025]/40" />
-            </div>
-          </div>
-        ) : treeNodes.length === 0 ? (
-          <div className="p-4 text-center text-[12px] text-[#666666]">
-            No files or folders yet.
-          </div>
-        ) : (
-          treeNodes.map((node) => renderNode(node, 0))
-        )}
+          ) : (
+            treeNodes.map((node) => renderNode(node, 0))
+          )}
+        </div>
       </div>
     </div>
   );

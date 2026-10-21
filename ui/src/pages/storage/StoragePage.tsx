@@ -156,6 +156,93 @@ export function StoragePage() {
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
   const lastFocusedKeyRef = useRef<string | null>(null);
 
+  // Resizable Sidebar & Inspector dimensions (saved to localStorage)
+  const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('axiom_storage_sidebar_width');
+      return saved ? Math.max(180, Math.min(600, parseInt(saved, 10))) : 260;
+    } catch {
+      return 260;
+    }
+  });
+
+  const [detailsWidth, setDetailsWidth] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('axiom_storage_details_width');
+      return saved ? Math.max(240, Math.min(700, parseInt(saved, 10))) : 320;
+    } catch {
+      return 320;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('axiom_storage_sidebar_width', sidebarWidth.toString());
+    } catch {}
+  }, [sidebarWidth]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('axiom_storage_details_width', detailsWidth.toString());
+    } catch {}
+  }, [detailsWidth]);
+
+  // Left Sidebar Drag-to-Resize Handler
+  const handleSidebarResizeStart = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      const startX = e.clientX;
+      const startW = sidebarWidth;
+
+      const handleMouseMove = (ev: MouseEvent) => {
+        const delta = ev.clientX - startX;
+        const newWidth = Math.max(180, Math.min(600, startW + delta));
+        setSidebarWidth(newWidth);
+      };
+
+      const handleMouseUp = () => {
+        document.removeEventListener('mousemove', handleMouseMove);
+        document.removeEventListener('mouseup', handleMouseUp);
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+      };
+
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+    },
+    [sidebarWidth]
+  );
+
+  // Right Inspector Drag-to-Resize Handler
+  const handleDetailsResizeStart = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      const startX = e.clientX;
+      const startW = detailsWidth;
+
+      const handleMouseMove = (ev: MouseEvent) => {
+        const delta = startX - ev.clientX; // dragging leftwards widens the right panel
+        const newWidth = Math.max(240, Math.min(700, startW + delta));
+        setDetailsWidth(newWidth);
+      };
+
+      const handleMouseUp = () => {
+        document.removeEventListener('mousemove', handleMouseMove);
+        document.removeEventListener('mouseup', handleMouseUp);
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+      };
+
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+    },
+    [detailsWidth]
+  );
+
   // Batch Operations State
   const [isBatchDeleteOpen, setIsBatchDeleteOpen] = useState(false);
   const [isBatchDeleting, setIsBatchDeleting] = useState(false);
@@ -1358,6 +1445,8 @@ export function StoragePage() {
 
       {/* ─── Pane 1: Drive Sidebar (Namespaces & FileTree) ─────────────── */}
       <StorageSidebar
+        width={sidebarWidth}
+        onResizeStart={handleSidebarResizeStart}
         namespaces={namespaces}
         activeNamespace={activeNamespace}
         onSelectNamespace={handleNamespaceChange}
@@ -1666,6 +1755,8 @@ export function StoragePage() {
 
       {/* ─── Pane 3: Right Inspector / Details Panel ─────────────── */}
       <StorageDetailsPanel
+        width={detailsWidth}
+        onResizeStart={handleDetailsResizeStart}
         isOpen={isDetailsOpen}
         onClose={() => setIsDetailsOpen(false)}
         selectedItem={inspectorItem}

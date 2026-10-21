@@ -19,6 +19,8 @@ import { formatBytes } from './format';
 import { Skeleton } from '../../components/ui/Skeleton';
 
 export interface StorageSidebarProps {
+  width?: number;
+  onResizeStart?: (e: React.MouseEvent) => void;
   namespaces: NamespaceInfo[];
   activeNamespace: string;
   onSelectNamespace: (ns: string) => void;
@@ -50,6 +52,8 @@ export interface StorageSidebarProps {
 }
 
 export function StorageSidebar({
+  width,
+  onResizeStart,
   namespaces,
   activeNamespace,
   onSelectNamespace,
@@ -92,7 +96,20 @@ export function StorageSidebar({
   }, []);
 
   return (
-    <aside className="w-full lg:w-64 shrink-0 flex flex-col bg-[#0a0a0a] border-b lg:border-b-0 lg:border-r border-[#222222] overflow-hidden font-sans select-none">
+    <aside
+      style={{ width: isMobileOpen ? '100%' : width ? `${width}px` : undefined }}
+      className="w-full lg:w-64 shrink-0 flex flex-col bg-[#0a0a0a] border-b lg:border-b-0 lg:border-r border-[#222222] overflow-hidden font-sans select-none relative"
+    >
+      {/* Draggable Resize Handle on Right Border */}
+      {onResizeStart && (
+        <div
+          onMouseDown={onResizeStart}
+          title="Drag to resize sidebar"
+          className="hidden lg:block absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/50 active:bg-blue-500 transition-colors z-30 select-none group"
+        >
+          <div className="w-full h-full" />
+        </div>
+      )}
       {/* ─── Header: Namespace Selector (h-[54px] aligned with StorageToolbar & TableSidebar) ─────────────── */}
       <div className="h-[54px] shrink-0 px-3 border-b border-[#222222] flex items-center justify-between gap-2 relative">
         <div className="relative flex-1 min-w-0" ref={nsDropdownRef}>

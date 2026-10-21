@@ -27,6 +27,8 @@ import { getFileIcon } from './fileIcon';
 import { formatBytes } from './format';
 
 export interface StorageDetailsPanelProps {
+  width?: number;
+  onResizeStart?: (e: React.MouseEvent) => void;
   isOpen: boolean;
   onClose: () => void;
   selectedItem: StorageItem | null;
@@ -44,6 +46,8 @@ export interface StorageDetailsPanelProps {
 }
 
 export function StorageDetailsPanel({
+  width,
+  onResizeStart,
   isOpen,
   onClose,
   selectedItem,
@@ -64,7 +68,20 @@ export function StorageDetailsPanel({
   if (!isOpen) return null;
 
   return (
-    <aside className="w-72 lg:w-80 shrink-0 flex flex-col bg-[#0a0a0a] border-l border-[#222222] font-sans select-none overflow-hidden">
+    <aside
+      style={{ width: width ? `${width}px` : undefined }}
+      className="w-72 lg:w-80 shrink-0 flex flex-col bg-[#0a0a0a] border-l border-[#222222] font-sans select-none overflow-hidden relative"
+    >
+      {/* Draggable Resize Handle on Left Border */}
+      {onResizeStart && (
+        <div
+          onMouseDown={onResizeStart}
+          title="Drag to resize inspector"
+          className="hidden lg:block absolute left-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/50 active:bg-blue-500 transition-colors z-30 select-none group"
+        >
+          <div className="w-full h-full" />
+        </div>
+      )}
       {/* ─── Header: Fixed h-12 (aligned with StorageToolbar & StorageSidebar) ─────────────── */}
       <div className="h-12 shrink-0 px-4 border-b border-[#222222] bg-[#0c0c0c] flex items-center justify-between">
         <h3 className="text-sm font-medium text-white truncate">
