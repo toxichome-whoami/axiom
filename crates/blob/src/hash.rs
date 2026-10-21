@@ -7,6 +7,7 @@
  */
 
 /// Incremental streaming hasher for BLAKE3 checksum calculation.
+#[derive(Clone)]
 pub struct Blake3StreamHasher {
     hasher: blake3::Hasher,
     bytes_read: u64,
@@ -41,6 +42,46 @@ impl Blake3StreamHasher {
 impl Default for Blake3StreamHasher {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+// ─── Single-Pass Transparent Hashing Async Reader ───────────────────────────
+
+use std::pin::Pin;
+use std::task::{Context, Poll};
+use tokio::io::{AsyncRead, ReadBuf};
+
+/// Transparent wrapper over any `AsyncRead` that feeds read bytes into a `Blake3StreamHasher`
+/// as they stream through memory with zero extra allocations.
+pub struct HashingAsyncReader<'a, R> {
+    inner: Pin<&'a mut R>,
+    hasher: &'a mut Blake3StreamHasher,
+}
+
+impl<'a, R: AsyncRead + Unpin> HashingAsyncReader<'a, R> {
+    pub fn new(inner: &'a mut R, hasher: &'a mut Blake3StreamHasher) -> Self {
+        Self {
+            inner: Pin::new(inner),
+            hasher,
+        }
+    }
+}
+
+impl<'a, R: AsyncRead + Unpin> AsyncRead for HashingAsyncReader<'a, R> {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<std::io::Result<()>> {
+        let prev_len = buf.filled().len();
+        let poll = self.inner.as_mut().poll_read(cx, buf);
+        if let Poll::Ready(Ok(())) = &poll {
+            let new_bytes = &buf.filled()[prev_len..];
+            if !new_bytes.is_empty() {
+                self.hasher.update(new_bytes);
+            }
+        }
+        poll
     }
 }
 

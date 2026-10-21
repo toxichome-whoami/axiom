@@ -82,10 +82,10 @@ impl FileStore {
         let temp_filename = format!("upload_{}_{}.tmp", hash, uuid::Uuid::new_v4());
         let temp_path = self.tmp_dir.join(temp_filename);
 
-        // Stream bytes to staging file
+        // Stream bytes to staging file and flush data
         let mut file = tokio::fs::File::create(&temp_path).await?;
         file.write_all(data).await?;
-        file.sync_all().await?;
+        file.sync_data().await?;
         drop(file);
 
         // Ensure parent directory (ab/cd) exists
@@ -216,7 +216,7 @@ impl FileStore {
         }
         file.seek(SeekFrom::Start(offset)).await?;
 
-        let mut buffer = vec![0u8; 64 * 1024];
+        let mut buffer = vec![0u8; 128 * 1024];
         let mut bytes_written = 0u64;
 
         loop {
@@ -260,28 +260,40 @@ impl FileStore {
         Ok(())
     }
 
-    /// Finalizes a resumable upload session: hashes staging data incrementally,
-    /// performs zero-copy commit into content-addressed storage, and purges staging directory.
-    pub async fn finalize_resumable_upload(&self, upload_id: &str) -> Result<(String, u64), BlobError> {
+    /// Finalizes a resumable upload session: performs zero-copy commit into
+    /// content-addressed storage and purges the staging directory.
+    /// If an authoritative `precomputed_hash` is provided, skips re-reading from disk!
+    pub async fn finalize_resumable_upload_with_hash(
+        &self,
+        upload_id: &str,
+        precomputed_hash: Option<String>,
+    ) -> Result<(String, u64), BlobError> {
         let staging_dir = self.staging_dir(upload_id)?;
         let data_path = self.staging_data_path(upload_id)?;
 
         if tokio::fs::try_exists(&data_path).await.unwrap_or(false) {
-            let mut file = tokio::fs::File::open(&data_path).await?;
-            let mut hasher = crate::hash::Blake3StreamHasher::new();
-            let mut buffer = vec![0u8; 64 * 1024];
-
-            loop {
-                let n = file.read(&mut buffer).await?;
-                if n == 0 {
-                    break;
+            let (hash, total_bytes) = match precomputed_hash {
+                Some(h) => {
+                    let total_bytes = tokio::fs::metadata(&data_path).await?.len();
+                    (h, total_bytes)
                 }
-                hasher.update(&buffer[..n]);
-            }
-            drop(file);
+                None => {
+                    let mut file = tokio::fs::File::open(&data_path).await?;
+                    let mut hasher = crate::hash::Blake3StreamHasher::new();
+                    let mut buffer = vec![0u8; 128 * 1024];
 
-            let hash = hasher.finalize_hex();
-            let total_bytes = hasher.bytes_read();
+                    loop {
+                        let n = file.read(&mut buffer).await?;
+                        if n == 0 {
+                            break;
+                        }
+                        hasher.update(&buffer[..n]);
+                    }
+                    drop(file);
+                    (hasher.finalize_hex(), hasher.bytes_read())
+                }
+            };
+
             let target_path = self.content_path(&hash)?;
 
             // Content-addressed deduplication: if identical payload exists, discard temp file
@@ -328,6 +340,11 @@ impl FileStore {
         }
     }
 
+    /// Finalizes a resumable upload session without precomputed hash (legacy/fallback).
+    pub async fn finalize_resumable_upload(&self, upload_id: &str) -> Result<(String, u64), BlobError> {
+        self.finalize_resumable_upload_with_hash(upload_id, None).await
+    }
+
     /// Writes an individual chunk/part into upload staging storage.
     /// CONTRACT:
     ///  - Precondition: `upload_id` must consist of alphanumeric, '-', or '_' chars.
@@ -366,7 +383,7 @@ impl FileStore {
         let mut dest_file = tokio::fs::File::create(&temp_path).await?;
 
         let mut hasher = crate::hash::Blake3StreamHasher::new();
-        let mut buffer = vec![0u8; 64 * 1024]; // 64KB stream buffer for constant memory usage
+        let mut buffer = vec![0u8; 128 * 1024]; // 128KB stream buffer for constant memory usage
 
         for part_num in &sorted_parts {
             let part_filename = format!("part_{:06}.part", part_num);
@@ -386,7 +403,7 @@ impl FileStore {
             }
         }
 
-        dest_file.sync_all().await?;
+        dest_file.sync_data().await?;
         drop(dest_file);
 
         let hash = hasher.finalize_hex();

@@ -26,6 +26,15 @@ use crate::snapshot::{
 // ─── Connection Registry ───────────────────────────────────────────────────
 static METADATA_CONN: OnceCell<Arc<Mutex<Connection>>> = OnceCell::const_new();
 static STORE_LOCK: Lazy<tokio::sync::Mutex<()>> = Lazy::new(|| tokio::sync::Mutex::new(()));
+static AUDIT_CHANNEL: OnceCell<tokio::sync::mpsc::Sender<AuditTask>> = OnceCell::const_new();
+
+struct AuditTask {
+    timestamp: i64,
+    actor: String,
+    action: String,
+    target: String,
+    details: String,
+}
 static DUMMY_HASH: Lazy<String> = Lazy::new(|| {
     let salt = SaltString::generate(&mut OsRng);
     Argon2::default()
@@ -78,6 +87,34 @@ impl MetadataStore {
         Self::create_tables(&conn).await?;
 
         let _ = METADATA_CONN.set(Arc::new(Mutex::new(conn)));
+
+        // Spawn background lock-free audit ingestion worker
+        if AUDIT_CHANNEL.get().is_none() {
+            let (tx, mut rx) = tokio::sync::mpsc::channel::<AuditTask>(10_000);
+            let _ = AUDIT_CHANNEL.set(tx);
+
+            tokio::spawn(async move {
+                let mut buffer = Vec::with_capacity(256);
+                let mut interval = tokio::time::interval(std::time::Duration::from_millis(250));
+
+                loop {
+                    tokio::select! {
+                        biased;
+                        Some(task) = rx.recv() => {
+                            buffer.push(task);
+                            if buffer.len() >= 256 {
+                                Self::flush_audit_batch(&mut buffer).await;
+                            }
+                        }
+                        _ = interval.tick() => {
+                            if !buffer.is_empty() {
+                                Self::flush_audit_batch(&mut buffer).await;
+                            }
+                        }
+                    }
+                }
+            });
+        }
 
         // Synchronize in-memory snapshot immediately upon connection
         Self::sync_snapshot().await?;
@@ -1594,18 +1631,49 @@ impl MetadataStore {
     // ─── Audit Trail Management ────────────────────────────────────────────
     // Exposes immutable historical records of system modifications for compliance and forensic auditing.
 
-    /// Records an audit log entry in the metadata database.
-    /// CONTRACT:
-    ///  - Precondition: `actor`, `action`, and `target` non-empty strings.
-    ///  - Side effects: Appends an immutable record to SQLite `audit_log` table.
-    ///  - Idempotency: No (appends new historical log entry).
+    /// Flushes a batch of queued audit records to SQLite inside a single transaction.
+    async fn flush_audit_batch(buffer: &mut Vec<AuditTask>) {
+        if buffer.is_empty() {
+            return;
+        }
+
+        if let Ok(conn) = Self::get_conn().await {
+            let _ = conn.execute("BEGIN TRANSACTION", ()).await;
+            for task in buffer.drain(..) {
+                let _ = conn.execute(
+                    "INSERT INTO audit_log (timestamp, actor, action, target, details) VALUES (?1, ?2, ?3, ?4, ?5)",
+                    libsql::params![task.timestamp, task.actor, task.action, task.target, task.details],
+                ).await;
+            }
+            let _ = conn.execute("COMMIT", ()).await;
+        } else {
+            buffer.clear();
+        }
+    }
+
+    /// Records an audit log entry via non-blocking asynchronous queue (lock-free on data plane).
+    /// Falls back to direct write if background channel is uninitialized.
     pub async fn record_audit(actor: &str, action: &str, target: &str, details: Option<&str>) -> Result<(), String> {
-        let conn = Self::get_conn().await?;
         let now_unix = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs() as i64;
 
+        if let Some(tx) = AUDIT_CHANNEL.get() {
+            let task = AuditTask {
+                timestamp: now_unix,
+                actor: actor.to_string(),
+                action: action.to_string(),
+                target: target.to_string(),
+                details: details.unwrap_or("").to_string(),
+            };
+            if let Err(e) = tx.try_send(task) {
+                tracing::warn!("Audit queue full or dropped: {}", e);
+            }
+            return Ok(());
+        }
+
+        let conn = Self::get_conn().await?;
         conn.execute(
             "INSERT INTO audit_log (timestamp, actor, action, target, details) VALUES (?1, ?2, ?3, ?4, ?5)",
             libsql::params![now_unix, actor, action, target, details.unwrap_or("")],

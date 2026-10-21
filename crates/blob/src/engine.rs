@@ -16,6 +16,7 @@ use bytes::Bytes;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
+use tokio::io::AsyncWriteExt;
 
 /// Retrieved blob payload content representation.
 pub enum BlobData {
@@ -33,6 +34,7 @@ pub struct BlobEngine {
     max_object_bytes: u64,
     verify_reads: bool,
     session_locks: dashmap::DashMap<String, Arc<tokio::sync::Mutex<()>>>,
+    session_hashers: dashmap::DashMap<String, Arc<tokio::sync::Mutex<crate::hash::Blake3StreamHasher>>>,
 }
 
 impl BlobEngine {
@@ -61,6 +63,7 @@ impl BlobEngine {
             max_object_bytes,
             verify_reads,
             session_locks: dashmap::DashMap::new(),
+            session_hashers: dashmap::DashMap::new(),
         })
     }
 
@@ -70,6 +73,127 @@ impl BlobEngine {
             .entry(upload_id.to_string())
             .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
             .clone()
+    }
+
+    /// Obtains or initializes the running streaming BLAKE3 hasher for an active upload session.
+    fn get_session_hasher(&self, upload_id: &str) -> Arc<tokio::sync::Mutex<crate::hash::Blake3StreamHasher>> {
+        self.session_hashers
+            .entry(upload_id.to_string())
+            .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(crate::hash::Blake3StreamHasher::new())))
+            .clone()
+    }
+
+    /// Stores a streamed binary payload under the specified namespace and key.
+    /// CONTRACT:
+    ///  - Single-pass hashing during receipt.
+    ///  - Inlined into LSM if <= inline_max_bytes; persisted to CAS file if > inline_max_bytes.
+    ///  - O(1) memory footprint.
+    pub async fn put_stream<R: tokio::io::AsyncRead + Unpin>(
+        &self,
+        namespace: &str,
+        key: &str,
+        content_type: Option<&str>,
+        reader: &mut R,
+        ttl_seconds: Option<u64>,
+        metadata: Option<std::collections::HashMap<String, String>>,
+    ) -> Result<BlobMetadata, BlobError> {
+        validate_namespace(namespace)?;
+        validate_key(key)?;
+
+        let mut hasher = crate::hash::Blake3StreamHasher::new();
+        let mut hashing_reader = crate::hash::HashingAsyncReader::new(reader, &mut hasher);
+
+        let temp_filename = format!("upload_stream_{}.tmp", uuid::Uuid::new_v4());
+        let temp_path = self.store.base_dir().join("tmp").join(temp_filename);
+        if let Some(parent) = temp_path.parent() {
+            tokio::fs::create_dir_all(parent).await?;
+        }
+
+        let mut file = tokio::fs::File::create(&temp_path).await?;
+        let mut buffer = vec![0u8; 128 * 1024];
+        let mut size = 0u64;
+
+        loop {
+            use tokio::io::AsyncReadExt;
+            let n = hashing_reader.read(&mut buffer).await?;
+            if n == 0 {
+                break;
+            }
+            if size + (n as u64) > self.max_object_bytes {
+                let _ = tokio::fs::remove_file(&temp_path).await;
+                return Err(BlobError::PayloadTooLarge {
+                    size: size + (n as u64),
+                    max: self.max_object_bytes,
+                });
+            }
+            file.write_all(&buffer[..n]).await?;
+            size += n as u64;
+        }
+
+        file.sync_data().await?;
+        drop(file);
+
+        let hash = hasher.finalize_hex();
+
+        // Enforce namespace storage quota ceiling
+        if let Some(info) = self.index.get_namespace_info(namespace)? {
+            if let Some(max_quota) = info.max_bytes {
+                let existing_size = self.index.get_metadata(namespace, key)?.map(|m| m.size).unwrap_or(0);
+                let net_bytes = info.total_bytes.saturating_sub(existing_size);
+                if net_bytes + size > max_quota {
+                    let _ = tokio::fs::remove_file(&temp_path).await;
+                    return Err(BlobError::QuotaExceeded {
+                        namespace: namespace.to_string(),
+                        current: net_bytes,
+                        requested: size,
+                        max: max_quota,
+                    });
+                }
+            }
+        }
+
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+        let is_inline = size <= self.inline_max_bytes;
+
+        if is_inline {
+            let data = tokio::fs::read(&temp_path).await?;
+            self.index.put_inline_payload(&hash, &data)?;
+            let _ = tokio::fs::remove_file(&temp_path).await;
+        } else {
+            let target_path = self.store.content_path(&hash)?;
+            if tokio::fs::try_exists(&target_path).await.unwrap_or(false) {
+                let _ = tokio::fs::remove_file(&temp_path).await;
+            } else {
+                if let Some(parent) = target_path.parent() {
+                    tokio::fs::create_dir_all(parent).await?;
+                }
+                if let Err(e) = tokio::fs::rename(&temp_path, &target_path).await {
+                    if !tokio::fs::try_exists(&target_path).await.unwrap_or(false) {
+                        let _ = tokio::fs::remove_file(&temp_path).await;
+                        return Err(BlobError::Io(format!("Failed to commit streamed blob: {}", e)));
+                    }
+                    let _ = tokio::fs::remove_file(&temp_path).await;
+                }
+            }
+        }
+
+        let expires_at = ttl_seconds.map(|ttl| now + ttl as i64);
+
+        let meta = BlobMetadata {
+            hash,
+            size,
+            content_type: content_type.unwrap_or("application/octet-stream").to_string(),
+            created_at: now,
+            inline: is_inline,
+            expires_at,
+            metadata: metadata.unwrap_or_default(),
+        };
+
+        self.index.commit_put(namespace, key, &meta)?;
+        Ok(meta)
     }
 
     /// Stores a binary payload under the specified namespace and key.
@@ -801,10 +925,20 @@ impl BlobEngine {
             }
         }
 
-        let bytes_written = self
-            .store
-            .write_resumable_stream(upload_id, offset, reader, max_bytes)
-            .await?;
+        let bytes_written = {
+            let hasher_arc = self.get_session_hasher(upload_id);
+            let mut hasher_guard = hasher_arc.lock().await;
+
+            // If offset rewound or reset, rebuild hasher to stay consistent
+            if offset == 0 {
+                *hasher_guard = crate::hash::Blake3StreamHasher::new();
+            }
+
+            let mut hashing_reader = crate::hash::HashingAsyncReader::new(reader, &mut *hasher_guard);
+            self.store
+                .write_resumable_stream(upload_id, offset, &mut hashing_reader, max_bytes)
+                .await?
+        };
 
         let new_offset = offset + bytes_written;
         session.received_bytes = new_offset;
@@ -878,7 +1012,18 @@ impl BlobEngine {
             .get_upload_session(upload_id)?
             .ok_or_else(|| BlobError::UploadSessionNotFound(upload_id.to_string()))?;
 
-        let (hash, size) = self.store.finalize_resumable_upload(upload_id).await?;
+        let precomputed_hash = if let Some((_, hasher_lock)) = self.session_hashers.remove(upload_id) {
+            let h = hasher_lock.lock().await;
+            if h.bytes_read() == session.received_bytes && session.received_bytes > 0 {
+                Some(h.finalize_hex())
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        let (hash, size) = self.store.finalize_resumable_upload_with_hash(upload_id, precomputed_hash).await?;
 
         if let Some(total) = session.total_size {
             if size != total {
@@ -947,6 +1092,7 @@ impl BlobEngine {
         self.index.commit_put(&session.namespace, &session.key, &meta)?;
         let _ = self.index.delete_upload_session(upload_id);
         self.session_locks.remove(upload_id);
+        self.session_hashers.remove(upload_id);
 
         Ok(meta)
     }
@@ -964,6 +1110,7 @@ impl BlobEngine {
         self.store.abort_upload_staging(upload_id).await?;
         self.index.delete_upload_session(upload_id)?;
         self.session_locks.remove(upload_id);
+        self.session_hashers.remove(upload_id);
         Ok(())
     }
 
@@ -987,6 +1134,7 @@ impl BlobEngine {
                 let _ = self.store.abort_upload_staging(&session.upload_id).await;
                 let _ = self.index.delete_upload_session(&session.upload_id);
                 self.session_locks.remove(&session.upload_id);
+                self.session_hashers.remove(&session.upload_id);
                 swept += 1;
             } else {
                 active_ids.insert(session.upload_id);

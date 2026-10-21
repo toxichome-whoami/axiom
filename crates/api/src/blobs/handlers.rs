@@ -111,7 +111,7 @@ pub async fn put_blob_handler(
     Path((namespace, key)): Path<(String, String)>,
     Extension(auth): Extension<AuthContext>,
     headers: HeaderMap,
-    body: Bytes,
+    body: Body,
 ) -> Result<impl IntoResponse, AxiomError> {
     PolicyEngine::evaluate_blob(&auth, &namespace, &key, "WRITE")?;
 
@@ -139,8 +139,13 @@ pub async fn put_blob_handler(
     }
     let custom_opt = if custom_metadata.is_empty() { None } else { Some(custom_metadata) };
 
+    let stream = body
+        .into_data_stream()
+        .map_err(std::io::Error::other);
+    let mut reader = StreamReader::new(stream);
+
     let meta = engine
-        .put_with_options(&namespace, &key, Some(content_type), &body, ttl_seconds, custom_opt)
+        .put_stream(&namespace, &key, Some(content_type), &mut reader, ttl_seconds, custom_opt)
         .await
         .map_err(map_blob_error)?;
 
