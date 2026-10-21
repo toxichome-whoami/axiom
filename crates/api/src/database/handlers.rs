@@ -68,6 +68,45 @@ static AST_CACHE: once_cell::sync::Lazy<dashmap::DashMap<String, Arc<CachedAstIn
 
 const MAX_AST_CACHE_ENTRIES: usize = 4096;
 
+/// In-memory schema catalog caching table column definitions: "{db_name}:{table_name}" -> (Vec<ColumnInfo>, expires_at_unix)
+/// Eliminates redundant database-level information_schema roundtrips on CRUD hot-paths.
+static SCHEMA_CATALOG: once_cell::sync::Lazy<dashmap::DashMap<String, (Vec<axiom_core::ColumnInfo>, i64)>> =
+    once_cell::sync::Lazy::new(dashmap::DashMap::new);
+
+const SCHEMA_CACHE_TTL_SECS: i64 = 300; // 5-minute in-memory schema TTL
+
+/// Retrieves cached column schema or introspects the database lazily.
+pub async fn get_cached_table_columns(
+    engine: &std::sync::Arc<dyn axiom_db::DatabaseEngine>,
+    db_name: &str,
+    table_name: &str,
+) -> Option<Vec<axiom_core::ColumnInfo>> {
+    let key = format!("{}:{}", db_name, table_name);
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
+
+    if let Some(entry) = SCHEMA_CATALOG.get(&key) {
+        if entry.1 > now {
+            return Some(entry.0.clone());
+        }
+    }
+
+    if let Ok(cols) = engine.describe_table(table_name).await {
+        SCHEMA_CATALOG.insert(key, (cols.clone(), now + SCHEMA_CACHE_TTL_SECS));
+        Some(cols)
+    } else {
+        None
+    }
+}
+
+/// Evicts a table's schema from the in-memory catalog (e.g. after DDL alterations).
+pub fn invalidate_table_schema(db_name: &str, table_name: &str) {
+    let key = format!("{}:{}", db_name, table_name);
+    SCHEMA_CATALOG.remove(&key);
+}
+
 pub async fn warm_cache_from_turso(entries: Vec<(String, bytes::Bytes, i64)>) {
     let now_unix = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -460,11 +499,24 @@ impl QueryExecutionPipeline {
         let cache_enabled = config.cache.enabled && config.cache.query_cache;
         let cache_ttl = config.cache.query_results_ttl as u64;
 
-        // Cache key computed now but the lookup is deferred until AFTER RBAC passes.
+        // Cache key computed now using BLAKE3 to prevent dynamic heap string formatting,
+        // but lookup is deferred until AFTER RBAC passes.
         // WHY: returning bytes before PolicyEngine::evaluate would silently bypass
         // permission revocations for the duration of the TTL.
         let cache_key = if cache_enabled && !is_mutation_regex {
-            Some(format!("{}:{}:{}:{:?}", auth.api_key_name, db_name, sql, params))
+            let mut h = blake3::Hasher::new();
+            h.update(auth.api_key_name.as_bytes());
+            h.update(b":");
+            h.update(db_name.as_bytes());
+            h.update(b":");
+            h.update(sql.as_bytes());
+            if !params.is_empty() {
+                h.update(b":");
+                if let Ok(p_str) = serde_json::to_string(&params) {
+                    h.update(p_str.as_bytes());
+                }
+            }
+            Some(format!("qc:{}", h.finalize().to_hex()))
         } else {
             None
         };
@@ -1071,7 +1123,7 @@ pub async fn insert_rows(
 
     let engine = DatabasePoolManager::get_engine(&db_name).await;
     let table_cols = if let Some(ref eng) = engine {
-        eng.describe_table(&table_name).await.ok()
+        get_cached_table_columns(eng, &db_name, &table_name).await
     } else {
         None
     };
@@ -1151,7 +1203,7 @@ pub async fn fetch_rows(
 
     let engine = DatabasePoolManager::get_engine(&db_name).await;
     let table_cols = if let Some(ref eng) = engine {
-        eng.describe_table(&table_name).await.ok()
+        get_cached_table_columns(eng, &db_name, &table_name).await
     } else {
         None
     };
@@ -1410,7 +1462,7 @@ pub async fn update_rows(
 
     let engine = DatabasePoolManager::get_engine(&db_name).await;
     let table_cols = if let Some(ref eng) = engine {
-        eng.describe_table(&table_name).await.ok()
+        get_cached_table_columns(eng, &db_name, &table_name).await
     } else {
         None
     };
@@ -1475,7 +1527,7 @@ pub async fn delete_rows(
 
     let engine = DatabasePoolManager::get_engine(&db_name).await;
     let table_cols = if let Some(ref eng) = engine {
-        eng.describe_table(&table_name).await.ok()
+        get_cached_table_columns(eng, &db_name, &table_name).await
     } else {
         None
     };
@@ -1530,10 +1582,14 @@ pub async fn describe_table(
             AxiomError::new("DB_NOT_FOUND", "Database not found", axum::http::StatusCode::NOT_FOUND)
         })?;
 
-    let columns = engine
-        .describe_table(&table_name)
-        .await
-        .map_err(|e| { tracing::error!("Describe failed: {}", e); AxiomError::new("DESCRIBE_FAILED", "Failed to retrieve table schema", axum::http::StatusCode::INTERNAL_SERVER_ERROR) })?;
+    let columns = if let Some(cols) = get_cached_table_columns(&engine, &db_name, &table_name).await {
+        cols
+    } else {
+        engine
+            .describe_table(&table_name)
+            .await
+            .map_err(|e| { tracing::error!("Describe failed: {}", e); AxiomError::new("DESCRIBE_FAILED", "Failed to retrieve table schema", axum::http::StatusCode::INTERNAL_SERVER_ERROR) })?
+    };
 
     let foreign_keys = engine
         .get_foreign_keys(&table_name)
@@ -1640,6 +1696,9 @@ pub async fn add_column(
             tracing::error!("Add column failed: {}", e);
             AxiomError::new("ADD_COLUMN_FAILED", "Failed to add column", axum::http::StatusCode::INTERNAL_SERVER_ERROR)
         })?;
+
+    // Invalidate cached schema so subsequent queries observe the new column definition
+    invalidate_table_schema(&db_name, &table_name);
 
     Ok(axum::Json(serde_json::json!({
         "success": true,

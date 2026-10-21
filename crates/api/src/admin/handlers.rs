@@ -25,6 +25,59 @@ use axiom_metadata::store::MetadataStore;
 pub const SETUP_SESSION_TTL_SECS: i64 = 30 * 24 * 60 * 60; // 30 days initial admin setup session
 pub const LOGIN_SESSION_TTL_SECS: i64 = 7 * 24 * 60 * 60;  // 7 days standard admin login session
 
+/// Validates that an administrative identifier (database alias, role name, or API key name)
+/// is strictly lowercase alphanumeric with underscores or hyphens (`^[a-z0-9_-]+$`).
+/// Rejects spaces, uppercase characters, and special symbols.
+pub fn validate_clean_name(kind: &str, name: &str) -> Result<(), AxiomError> {
+    if name.is_empty() {
+        return Err(AxiomError::new(
+            "INVALID_NAME",
+            &format!("{} cannot be empty", kind),
+            StatusCode::BAD_REQUEST,
+        ));
+    }
+
+    if name.len() > 64 {
+        return Err(AxiomError::new(
+            "INVALID_NAME",
+            &format!("{} exceeds maximum length of 64 characters", kind),
+            StatusCode::BAD_REQUEST,
+        ));
+    }
+
+    // Require first and last characters to be alphanumeric
+    let bytes = name.as_bytes();
+    if !bytes[0].is_ascii_lowercase() && !bytes[0].is_ascii_digit() {
+        return Err(AxiomError::new(
+            "INVALID_NAME",
+            &format!("{} must start with a lowercase letter or digit", kind),
+            StatusCode::BAD_REQUEST,
+        ));
+    }
+    if !bytes[bytes.len() - 1].is_ascii_lowercase() && !bytes[bytes.len() - 1].is_ascii_digit() {
+        return Err(AxiomError::new(
+            "INVALID_NAME",
+            &format!("{} must end with a lowercase letter or digit", kind),
+            StatusCode::BAD_REQUEST,
+        ));
+    }
+
+    for c in name.chars() {
+        if !c.is_ascii_lowercase() && !c.is_ascii_digit() && c != '_' && c != '-' {
+            return Err(AxiomError::new(
+                "INVALID_NAME",
+                &format!(
+                    "{} '{}' is invalid: must be strictly lowercase alphanumeric with hyphens or underscores (e.g. 'data_element' or 'data-element')",
+                    kind, name
+                ),
+                StatusCode::BAD_REQUEST,
+            ));
+        }
+    }
+
+    Ok(())
+}
+
 // ─── Request Schemas ───────────────────────────────────────────────────────
 
 #[derive(Debug, Deserialize)]
@@ -200,13 +253,7 @@ pub async fn create_key(
         ));
     }
 
-    if payload.name.is_empty() || payload.name.contains(':') {
-        return Err(AxiomError::new(
-            "INVALID_KEY_NAME",
-            "Key name must be non-empty and cannot contain colons",
-            StatusCode::BAD_REQUEST,
-        ));
-    }
+    validate_clean_name("Key name", &payload.name)?;
 
     let secret = MetadataStore::create_key(
         &payload.name,
@@ -367,13 +414,7 @@ pub async fn add_database(
         ));
     }
 
-    if payload.alias.trim().is_empty() {
-        return Err(AxiomError::new(
-            "INVALID_ALIAS",
-            "Database alias cannot be empty",
-            StatusCode::BAD_REQUEST,
-        ));
-    }
+    validate_clean_name("Database alias", &payload.alias)?;
 
     let url_trimmed = payload.url.trim();
     let lookup_alias = payload.old_alias.as_deref().unwrap_or(&payload.alias);
@@ -615,13 +656,7 @@ pub async fn create_role(
     }
 
     let role_name = payload.name.trim();
-    if role_name.is_empty() {
-        return Err(AxiomError::new(
-            "INVALID_ROLE_NAME",
-            "Role name cannot be empty",
-            StatusCode::BAD_REQUEST,
-        ));
-    }
+    validate_clean_name("Role name", role_name)?;
 
     let permissions: Vec<PermissionRecord> = payload
         .permissions
@@ -1720,6 +1755,25 @@ mod tests {
         assert_eq!(MAX_ACCOUNT_FAILED_ATTEMPTS, 5);
         assert_eq!(MAX_TRUSTED_ACCOUNT_FAILED_ATTEMPTS, 15);
         assert_eq!(ACCOUNT_LOCKOUT_WINDOW_SECS, 900);
+    }
+
+    #[test]
+    fn test_validate_clean_name() {
+        // Valid names
+        assert!(validate_clean_name("database", "data_element").is_ok());
+        assert!(validate_clean_name("role", "data-element").is_ok());
+        assert!(validate_clean_name("key", "analytics_db_01").is_ok());
+        assert!(validate_clean_name("role", "admin-read-only").is_ok());
+
+        // Invalid names: uppercase, spaces, special symbols
+        assert!(validate_clean_name("database", "adadad ADADAD").is_err());
+        assert!(validate_clean_name("database", "DataElement").is_err());
+        assert!(validate_clean_name("database", "DATA_ELEMENT").is_err());
+        assert!(validate_clean_name("role", "role with spaces").is_err());
+        assert!(validate_clean_name("key", "key@name!").is_err());
+        assert!(validate_clean_name("key", "-start_with_dash").is_err());
+        assert!(validate_clean_name("key", "end_with_dash-").is_err());
+        assert!(validate_clean_name("key", "").is_err());
     }
 }
 

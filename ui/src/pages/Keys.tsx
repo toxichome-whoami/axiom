@@ -26,11 +26,13 @@ import {
   Search,
   Eye,
   EyeOff,
+  AlertCircle,
   AlertTriangle,
   Database,
   Package,
 } from 'lucide-react';
 import { api, ApiKeyRecordApi, RoleRecordApi } from '../api/client';
+import { validateCleanName } from './Databases';
 
 export interface FilterRule {
   id: string;
@@ -324,9 +326,13 @@ export function Keys() {
   const [showRotatedSecret, setShowRotatedSecret] = useState(false);
   const [copiedRotatedKey, setCopiedRotatedKey] = useState(false);
 
+  const keyNameValidation = validateCleanName(newName);
+  const editNameValidation = validateCleanName(editName);
+
   const isModified = Boolean(
     selectedKey &&
       editName.trim() !== '' &&
+      editNameValidation.valid &&
       (editName.trim() !== selectedKey.name ||
         editStatus !== selectedKey.status ||
         editRole !== selectedKey.role ||
@@ -350,7 +356,7 @@ export function Keys() {
 
   async function handleCreateKey() {
     const trimmed = newName.trim();
-    if (!trimmed || !/^[a-zA-Z0-9_-]{1,64}$/.test(trimmed)) return;
+    if (!trimmed || !keyNameValidation.valid) return;
     let expiresUnix: number | null = null;
     if (newExpiresAt) {
       const expMs = new Date(newExpiresAt).getTime();
@@ -373,7 +379,7 @@ export function Keys() {
   }
 
   function handleSaveEdit() {
-    if (!selectedKey || !editName.trim()) return;
+    if (!selectedKey || !editName.trim() || !editNameValidation.valid) return;
     setManageOpen(false);
   }
 
@@ -984,14 +990,30 @@ export function Keys() {
 
               {/* 1. Name */}
               <div>
-                <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">Key Identifier Name</label>
+                <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">
+                  Key Identifier Name <span className="text-[#e5484d]">*</span>
+                </label>
                 <input
                   type="text"
                   value={newName}
-                  onChange={(e) => setNewName(e.target.value)}
+                  onChange={(e) => setNewName(e.target.value.toLowerCase().replace(/\s+/g, '_'))}
                   placeholder="e.g. payment_service_prod"
-                  className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] px-3 text-[14px] text-white focus:outline-none focus:border-[#3b82f6]"
+                  className={`h-9 w-full rounded-[6px] border px-3 text-[14px] text-white focus:outline-none font-mono lowercase transition-colors ${
+                    newName.trim().length > 0 && !keyNameValidation.valid
+                      ? 'border-[#e5484d] bg-[#1a0f0f] focus:border-[#e5484d] focus:ring-1 focus:ring-[#e5484d]/40'
+                      : 'border-[#262626] bg-[#121212] focus:border-[#3b82f6]'
+                  }`}
                 />
+                {newName.trim().length > 0 && !keyNameValidation.valid ? (
+                  <div className="mt-1.5 flex items-center gap-1.5 text-[12px] text-[#e5484d]">
+                    <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                    <span>{keyNameValidation.error}</span>
+                  </div>
+                ) : (
+                  <p className="mt-1.5 text-[12px] text-[#737373]">
+                    Lowercase alphanumeric with hyphens or underscores (e.g. <span className="font-mono text-[#a3a3a3]">payment_service_prod</span>).
+                  </p>
+                )}
               </div>
 
               {/* 2. Role */}
@@ -1067,6 +1089,9 @@ export function Keys() {
                   onChange={(e) => setNewRateLimit(Number(e.target.value))}
                   className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] px-3 text-[14px] text-white focus:outline-none focus:border-[#3b82f6] tabular-nums"
                 />
+                <p className="mt-1.5 text-[12px] text-[#737373]">
+                  Maximum allowed API requests per minute. Set to 0 for unlimited.
+                </p>
               </div>
 
               {/* 4. Expiry Date */}
@@ -1077,7 +1102,7 @@ export function Keys() {
                   onChange={(val) => setNewExpiresAt(val)}
                   placeholder="No expiry (Never)"
                 />
-                <p className="text-[12px] text-[#8c8c8c] mt-1">
+                <p className="mt-1.5 text-[12px] text-[#737373]">
                   Optional. Leave empty or choose Never to keep key valid indefinitely.
                 </p>
               </div>
@@ -1110,7 +1135,7 @@ export function Keys() {
               <button
                 type="button"
                 onClick={handleCreateKey}
-                disabled={!newName.trim()}
+                disabled={!newName.trim() || !keyNameValidation.valid}
                 className="group relative flex shrink-0 items-center justify-center h-9 px-4 rounded-[8px] font-medium text-white shadow-xs outline-none cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed overflow-hidden ring-1 ring-[#1d4ed8] bg-[#2563eb] font-sans text-[14px]"
               >
                 <span aria-hidden="true" className="pointer-events-none absolute inset-0 rounded-[inherit] bg-gradient-to-b from-[#3b82f6] to-[#2563eb] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2)]" />
@@ -1190,14 +1215,30 @@ export function Keys() {
 
             {/* 2. Name */}
             <div>
-              <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">Key Identifier Name</label>
+              <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">
+                Key Identifier Name <span className="text-[#e5484d]">*</span>
+              </label>
               <input
                 type="text"
                 value={editName}
-                onChange={(e) => setEditName(e.target.value)}
+                onChange={(e) => setEditName(e.target.value.toLowerCase().replace(/\s+/g, '_'))}
                 placeholder="e.g. payment_service_prod"
-                className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] px-3 text-[14px] text-white focus:outline-none focus:border-[#3b82f6]"
+                className={`h-9 w-full rounded-[6px] border px-3 text-[14px] text-white focus:outline-none font-mono lowercase transition-colors ${
+                  editName.trim().length > 0 && !editNameValidation.valid
+                    ? 'border-[#e5484d] bg-[#1a0f0f] focus:border-[#e5484d] focus:ring-1 focus:ring-[#e5484d]/40'
+                    : 'border-[#262626] bg-[#121212] focus:border-[#3b82f6]'
+                }`}
               />
+              {editName.trim().length > 0 && !editNameValidation.valid ? (
+                <div className="mt-1.5 flex items-center gap-1.5 text-[12px] text-[#e5484d]">
+                  <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                  <span>{editNameValidation.error}</span>
+                </div>
+              ) : (
+                <p className="mt-1.5 text-[12px] text-[#737373]">
+                  Lowercase alphanumeric with hyphens or underscores.
+                </p>
+              )}
             </div>
 
             {/* 3. Role */}
@@ -1268,6 +1309,9 @@ export function Keys() {
                 onChange={(e) => setEditRate(Number(e.target.value))}
                 className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] px-3 text-[14px] text-white focus:outline-none focus:border-[#3b82f6] tabular-nums"
               />
+              <p className="mt-1.5 text-[12px] text-[#737373]">
+                Maximum allowed API requests per minute. Set to 0 for unlimited.
+              </p>
             </div>
 
             {/* 5. Expiry Date */}
@@ -1278,7 +1322,7 @@ export function Keys() {
                 onChange={(val) => setEditExpiresAt(val)}
                 placeholder="No expiry (Never)"
               />
-              <p className="text-[12px] text-[#8c8c8c] mt-1">
+              <p className="mt-1.5 text-[12px] text-[#737373]">
                 Optional. Leave empty or choose Never to keep key valid indefinitely.
               </p>
             </div>

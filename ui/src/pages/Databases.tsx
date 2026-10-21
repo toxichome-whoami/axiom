@@ -13,8 +13,40 @@ import { SlideOver } from '../components/ui/SlideOver';
 import { Button } from '../components/ui/Button';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { CustomSelect } from '../components/shared/CustomSelect';
-import { Database, Plus, CheckCircle2, Search, Trash2, RefreshCw, AlertTriangle, Check, Eye, EyeOff, Table } from 'lucide-react';
+import { Database, Plus, CheckCircle2, Search, Trash2, RefreshCw, AlertTriangle, AlertCircle, Check, Eye, EyeOff, Table } from 'lucide-react';
 import { api, DatabaseRecordApi } from '../api/client';
+
+export function validateCleanName(name: string): { valid: boolean; error?: string } {
+  const trimmed = name.trim();
+  if (!trimmed) {
+    return { valid: false, error: 'Name cannot be empty.' };
+  }
+  if (trimmed.length > 64) {
+    return { valid: false, error: 'Name must not exceed 64 characters.' };
+  }
+  if (/[A-Z]/.test(trimmed)) {
+    return { valid: false, error: 'Uppercase letters not allowed. Use lowercase only.' };
+  }
+  if (/\s/.test(trimmed)) {
+    return { valid: false, error: 'Spaces not allowed. Use hyphens or underscores.' };
+  }
+  if (/[^a-z0-9_-]/.test(trimmed)) {
+    return { valid: false, error: 'Only lowercase letters, numbers, hyphens, and underscores allowed.' };
+  }
+  if (trimmed.startsWith('_') || trimmed.startsWith('-')) {
+    return { valid: false, error: 'Cannot start with a hyphen or underscore.' };
+  }
+  if (trimmed.endsWith('_') || trimmed.endsWith('-')) {
+    return { valid: false, error: 'Cannot end with a trailing hyphen or underscore.' };
+  }
+  if (trimmed.length === 1 && !/^[a-z0-9]$/.test(trimmed)) {
+    return { valid: false, error: 'Must be a lowercase letter or number.' };
+  }
+  if (!/^[a-z0-9][a-z0-9_-]*[a-z0-9]$/.test(trimmed)) {
+    return { valid: false, error: 'Must be lowercase alphanumeric with hyphens or underscores.' };
+  }
+  return { valid: true };
+}
 
 
 export interface FilterRule {
@@ -319,9 +351,12 @@ export function Databases() {
     )
   );
 
+  const aliasValidation = validateCleanName(newAlias);
+  const editAliasValidation = validateCleanName(editAlias);
+
   const canSave = Boolean(
     isChanged &&
-    editAlias.trim().length > 0 &&
+    editAliasValidation.valid &&
     editUrlValidation.valid &&
     editPoolOk &&
     !isSaving &&
@@ -330,6 +365,11 @@ export function Databases() {
 
   async function handleAttach() {
     if (!newAlias.trim() || !poolOk) return;
+    if (!aliasValidation.valid) {
+      setAttachError(aliasValidation.error || 'Invalid alias format.');
+      setTestResult('fail');
+      return;
+    }
     const validation = validateDatabaseUrl(newEngine, newUrl);
     if (!validation.valid) {
       setAttachError(validation.error || 'Invalid URL format for selected engine.');
@@ -957,31 +997,36 @@ export function Databases() {
           </div>
 
           <div>
-            <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">Pool Alias (Identifier)</label>
+            <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">
+              Pool Alias (Identifier) <span className="text-[#e5484d]">*</span>
+            </label>
             <input
               type="text"
               value={newAlias}
-              onChange={(e) => setNewAlias(e.target.value)}
+              onChange={(e) => setNewAlias(e.target.value.toLowerCase().replace(/\s+/g, '_'))}
               placeholder="e.g. analytics_warehouse"
-              className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] px-3 text-[14px] text-white focus:outline-none focus:border-[#3b82f6]"
+              className={`h-9 w-full rounded-[6px] border px-3 text-[14px] text-white focus:outline-none font-mono lowercase transition-colors ${
+                newAlias.trim().length > 0 && !aliasValidation.valid
+                  ? 'border-[#e5484d] bg-[#1a0f0f] focus:border-[#e5484d] focus:ring-1 focus:ring-[#e5484d]/40'
+                  : 'border-[#262626] bg-[#121212] focus:border-[#3b82f6]'
+              }`}
             />
+            {newAlias.trim().length > 0 && !aliasValidation.valid ? (
+              <div className="mt-1.5 flex items-center gap-1.5 text-[12px] text-[#e5484d]">
+                <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                <span>{aliasValidation.error}</span>
+              </div>
+            ) : (
+              <p className="mt-1.5 text-[12px] text-[#737373]">
+                Unique endpoint identifier used in API routes (e.g. <span className="font-mono text-[#a3a3a3]">analytics_warehouse</span>).
+              </p>
+            )}
           </div>
 
           <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <label className="block text-[13px] font-medium text-[#cccccc]">Connection URL</label>
-              {newUrl.trim().length > 0 && (
-                validateDatabaseUrl(newEngine, newUrl).valid ? (
-                  <span className="text-[12px] text-[#30a46c] font-medium flex items-center gap-1">
-                    Valid scheme
-                  </span>
-                ) : (
-                  <span className="text-[12px] text-[#e5484d] font-medium flex items-center gap-1">
-                    Invalid {formatEngine(newEngine)} scheme
-                  </span>
-                )
-              )}
-            </div>
+            <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">
+              Connection URL <span className="text-[#e5484d]">*</span>
+            </label>
             <div className="relative">
               <input
                 type={showNewUrl ? 'text' : 'password'}
@@ -992,7 +1037,11 @@ export function Databases() {
                   setAttachError(null);
                 }}
                 placeholder={ENGINE_URL_SCHEMES[newEngine.toLowerCase()]?.example || 'postgres://user:secret@host:5432/dbname'}
-                className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] pl-3 pr-10 text-[14px] text-white focus:outline-none focus:border-[#3b82f6] font-mono"
+                className={`h-9 w-full rounded-[6px] border pl-3 pr-10 text-[14px] text-white focus:outline-none font-mono transition-colors ${
+                  newUrl.trim().length > 0 && !validateDatabaseUrl(newEngine, newUrl).valid
+                    ? 'border-[#e5484d] bg-[#1a0f0f] focus:border-[#e5484d] focus:ring-1 focus:ring-[#e5484d]/40'
+                    : 'border-[#262626] bg-[#121212] focus:border-[#3b82f6]'
+                }`}
               />
               <button
                 type="button"
@@ -1004,6 +1053,24 @@ export function Databases() {
                 {showNewUrl ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
               </button>
             </div>
+            {newUrl.trim().length > 0 && (
+              validateDatabaseUrl(newEngine, newUrl).valid ? (
+                <div className="mt-1.5 flex items-center gap-1.5 text-[12px] text-[#30a46c]">
+                  <Check className="w-3.5 h-3.5 shrink-0" />
+                  <span>Valid connection scheme</span>
+                </div>
+              ) : (
+                <div className="mt-1.5 flex items-center gap-1.5 text-[12px] text-[#e5484d]">
+                  <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                  <span>Invalid {formatEngine(newEngine)} scheme. Expected prefix: <code className="font-mono text-[#ff8080]">{ENGINE_URL_SCHEMES[newEngine.toLowerCase()]?.prefixes.join(', ')}</code></span>
+                </div>
+              )
+            )}
+            {newUrl.trim().length === 0 && (
+              <p className="mt-1.5 text-[12px] text-[#737373]">
+                Must start with <code className="font-mono text-[#a3a3a3]">{newEngine.toLowerCase()}://</code> or supported protocol.
+              </p>
+            )}
           </div>
 
           <div>
@@ -1184,14 +1251,30 @@ export function Databases() {
 
               <div className="space-y-3.5">
                 <div>
-                  <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">Pool Name (Alias)</label>
+                  <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">
+                    Pool Name (Alias) <span className="text-[#e5484d]">*</span>
+                  </label>
                   <input
                     type="text"
                     value={editAlias}
-                    onChange={(e) => setEditAlias(e.target.value)}
+                    onChange={(e) => setEditAlias(e.target.value.toLowerCase().replace(/\s+/g, '_'))}
                     placeholder="e.g. analytics_warehouse"
-                    className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] px-3 text-[14px] text-white focus:outline-none focus:border-[#3b82f6]"
+                    className={`h-9 w-full rounded-[6px] border px-3 text-[14px] text-white focus:outline-none font-mono lowercase transition-colors ${
+                      editAlias.trim().length > 0 && !editAliasValidation.valid
+                        ? 'border-[#e5484d] bg-[#1a0f0f] focus:border-[#e5484d] focus:ring-1 focus:ring-[#e5484d]/40'
+                        : 'border-[#262626] bg-[#121212] focus:border-[#3b82f6]'
+                    }`}
                   />
+                  {editAlias.trim().length > 0 && !editAliasValidation.valid ? (
+                    <div className="mt-1.5 flex items-center gap-1.5 text-[12px] text-[#e5484d]">
+                      <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                      <span>{editAliasValidation.error}</span>
+                    </div>
+                  ) : (
+                    <p className="mt-1.5 text-[12px] text-[#737373]">
+                      Unique endpoint identifier used in API routes.
+                    </p>
+                  )}
                 </div>
 
                 <div>
@@ -1209,20 +1292,9 @@ export function Databases() {
                 </div>
 
                 <div>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <label className="block text-[13px] font-medium text-[#cccccc]">Connection URL</label>
-                    {urlChanged && (
-                      editUrlValidation.valid ? (
-                        <span className="text-[12px] text-[#f59e0b] font-medium flex items-center gap-1">
-                          New URI · Test required
-                        </span>
-                      ) : (
-                        <span className="text-[12px] text-[#e5484d] font-medium flex items-center gap-1">
-                          Invalid {formatEngine(editEngine)} scheme
-                        </span>
-                      )
-                    )}
-                  </div>
+                  <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">
+                    Connection URL <span className="text-[#e5484d]">*</span>
+                  </label>
                   <div className="relative">
                     <input
                       type={showEditUrl ? 'text' : 'password'}
@@ -1233,7 +1305,11 @@ export function Databases() {
                         setManageError(null);
                       }}
                       placeholder="Leave blank to keep the existing"
-                      className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] pl-3 pr-10 text-[14px] text-white focus:outline-none focus:border-[#3b82f6] font-mono"
+                      className={`h-9 w-full rounded-[6px] border pl-3 pr-10 text-[14px] text-white focus:outline-none font-mono transition-colors ${
+                        urlChanged && !editUrlValidation.valid
+                          ? 'border-[#e5484d] bg-[#1a0f0f] focus:border-[#e5484d] focus:ring-1 focus:ring-[#e5484d]/40'
+                          : 'border-[#262626] bg-[#121212] focus:border-[#3b82f6]'
+                      }`}
                     />
                     <button
                       type="button"
@@ -1245,9 +1321,24 @@ export function Databases() {
                       {showEditUrl ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                     </button>
                   </div>
-                  <p className="text-[12px] text-[#8c8c8c] mt-1">
-                    Hidden for security reasons.
-                  </p>
+                  {urlChanged && (
+                    editUrlValidation.valid ? (
+                      <div className="mt-1.5 flex items-center gap-1.5 text-[12px] text-[#f59e0b]">
+                        <Check className="w-3.5 h-3.5 shrink-0" />
+                        <span>New URI configured · Test required before saving</span>
+                      </div>
+                    ) : (
+                      <div className="mt-1.5 flex items-center gap-1.5 text-[12px] text-[#e5484d]">
+                        <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                        <span>Invalid {formatEngine(editEngine)} scheme. Expected prefix: <code className="font-mono text-[#ff8080]">{ENGINE_URL_SCHEMES[editEngine.toLowerCase()]?.prefixes.join(', ')}</code></span>
+                      </div>
+                    )
+                  )}
+                  {!urlChanged && (
+                    <p className="mt-1.5 text-[12px] text-[#737373]">
+                      Leave empty to keep existing password and connection credentials.
+                    </p>
+                  )}
                 </div>
 
                 <div>

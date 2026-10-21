@@ -26,6 +26,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { api, RoleRecordApi, PermissionRecordApi } from '../api/client';
+import { validateCleanName } from './Databases';
 
 export interface FilterRule {
   id: string;
@@ -257,8 +258,10 @@ export function Roles() {
     }
   }
 
+  const roleNameValidation = validateCleanName(newRoleName);
+
   async function handleCreateRole() {
-    if (!newRoleName.trim() || hasNewPermErrors) return;
+    if (!newRoleName.trim() || !roleNameValidation.valid || hasNewPermErrors) return;
     try {
       const permPayload: PermissionRecordApi[] = newPerms.map((p) => ({
         database: p.database,
@@ -998,17 +1001,30 @@ export function Roles() {
 
           <div className="space-y-4">
             <div>
-              <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">Role Name</label>
+              <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">
+                Role Name <span className="text-[#e5484d]">*</span>
+              </label>
               <input
                 type="text"
                 value={newRoleName}
-                onChange={(e) => setNewRoleName(e.target.value)}
+                onChange={(e) => setNewRoleName(e.target.value.toLowerCase().replace(/\s+/g, '_'))}
                 placeholder="e.g. analytics_reader or blob_uploader"
-                className="h-9 w-full rounded-[8px] border border-[#262626] bg-[#121212] px-3 text-[14px] text-white placeholder-[#666666] focus:outline-none focus:border-[#2f80ed] hover:border-[#383838] transition-colors font-sans"
+                className={`h-9 w-full rounded-[8px] border px-3 text-[14px] text-white placeholder-[#666666] focus:outline-none hover:border-[#383838] transition-colors font-mono lowercase ${
+                  newRoleName.trim().length > 0 && !roleNameValidation.valid
+                    ? 'border-[#e5484d] bg-[#1a0f0f] focus:border-[#e5484d] focus:ring-1 focus:ring-[#e5484d]/40'
+                    : 'border-[#262626] bg-[#121212] focus:border-[#2f80ed]'
+                }`}
               />
-              <p className="text-[12px] text-[#8c8c8c] mt-1 font-sans">
-                Unique identifier for RBAC role assignment.
-              </p>
+              {newRoleName.trim().length > 0 && !roleNameValidation.valid ? (
+                <div className="mt-1.5 flex items-center gap-1.5 text-[12px] text-[#e5484d]">
+                  <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                  <span>{roleNameValidation.error}</span>
+                </div>
+              ) : (
+                <p className="mt-1.5 text-[12px] text-[#737373]">
+                  Unique lowercase identifier for RBAC role assignment (e.g. <span className="font-mono text-[#a3a3a3]">analytics_reader</span>).
+                </p>
+              )}
             </div>
 
             <div>
