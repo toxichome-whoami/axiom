@@ -1491,9 +1491,9 @@ export function StoragePage() {
         selectedItem={selectedItem}
         selectedKeys={selectedKeys}
         onToggleSelectItem={handleToggleSelectItem}
-        onSelectFolder={(path, item) => {
+        onSelectFolder={(path) => {
           if (searchQuery) setSearchQuery('');
-          navigateToPrefix(path, true, item);
+          navigateToPrefix(path, true);
         }}
         onSelectFile={(fileItem) => {
           if (searchQuery) setSearchQuery('');
@@ -1689,11 +1689,11 @@ export function StoragePage() {
         </div>
 
         {/* Floating Bulk Action Bar */}
-        {selectedKeys.size > 0 && (
+        {selectedItemsList.length > 0 && (
           <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-30 bg-[#121212]/95 border border-[#2b2b2b] shadow-2xl rounded-full px-4 py-2 flex items-center gap-2.5 backdrop-blur-md animate-in slide-in-from-bottom-3 duration-150 font-sans text-xs">
             <div className="flex items-center gap-2 pr-2 border-r border-[#2a2a2a]">
               <span className="inline-flex items-center justify-center px-2 py-0.5 rounded-full bg-blue-950/80 text-blue-400 border border-blue-800/60 font-semibold tabular-nums text-[11px]">
-                {selectedKeys.size} selected
+                {selectedItemsList.length} selected
               </span>
               {selectedKeys.size < allVisibleItems.length && (
                 <button
@@ -1963,18 +1963,18 @@ export function StoragePage() {
         isOpen={isBatchDeleteOpen}
         onClose={() => setIsBatchDeleteOpen(false)}
         onConfirm={handleConfirmBatchDelete}
-        title={`Delete ${selectedKeys.size} Selected Items`}
+        title={`Delete ${selectedItemsList.length} Selected Items`}
         description={
           <span>
             Are you sure you want to permanently delete{' '}
-            <strong className="text-white">{selectedKeys.size} items</strong>
+            <strong className="text-white">{selectedItemsList.length} items</strong>
             {selectedItemsList.some((it) => it.type === 'folder')
               ? ' including all directories and their contents'
               : ''}
             ? This action cannot be undone.
           </span>
         }
-        confirmLabel={isBatchDeleting ? 'Deleting...' : `Delete ${selectedKeys.size} Items`}
+        confirmLabel={isBatchDeleting ? 'Deleting...' : `Delete ${selectedItemsList.length} Items`}
         variant="danger"
       />
 

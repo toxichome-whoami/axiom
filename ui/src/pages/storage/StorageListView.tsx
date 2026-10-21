@@ -69,7 +69,7 @@ export function StorageListView({
 
   const allItems = [...folderItems, ...fileItems];
   const allSelected = allItems.length > 0 && allItems.every((it) => selectedKeys?.has(it.fullKey));
-  const hasSelected = Boolean(selectedKeys && selectedKeys.size > 0);
+  const someSelected = allItems.some((it) => selectedKeys?.has(it.fullKey));
 
   return (
     <div
@@ -111,18 +111,18 @@ export function StorageListView({
                   }}
                   title={allSelected ? 'Deselect all' : 'Select all'}
                   aria-label={allSelected ? 'Deselect all rows' : 'Select all rows'}
-                  aria-checked={allSelected ? 'true' : hasSelected ? 'mixed' : 'false'}
+                  aria-checked={allSelected ? 'true' : someSelected ? 'mixed' : 'false'}
                   className={`peer h-4 w-4 shrink-0 rounded-[4px] border border-[#383838] shadow-xs transition-all focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/40 cursor-pointer flex items-center justify-center ${
                     allSelected
                       ? 'bg-white border-white text-black'
-                      : hasSelected
+                      : someSelected
                       ? 'bg-white border-white text-black'
                       : 'bg-transparent hover:border-[#666666] hover:bg-white/[0.04]'
                   }`}
                 >
                   {allSelected ? (
                     <Check className="h-3 w-3 stroke-[3]" />
-                  ) : hasSelected ? (
+                  ) : someSelected ? (
                     <Minus className="h-3 w-3 stroke-[3]" />
                   ) : null}
                 </button>
