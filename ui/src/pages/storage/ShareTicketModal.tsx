@@ -222,16 +222,16 @@ export function ShareTicketModal({
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-[460px] rounded-lg bg-[#0c0c0c] border border-[#262626] shadow-2xl overflow-hidden font-sans flex flex-col"
+        className="w-full max-w-[480px] rounded-[10px] bg-[#0c0c0c] border border-[#262626] shadow-2xl overflow-hidden font-sans flex flex-col"
       >
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-[#1f1f1f]">
           <div className="min-w-0 pr-3">
             <div className="flex items-center gap-2">
               <Share2 className="w-4 h-4 text-white" />
-              <h3 className="text-sm font-semibold text-white tracking-tight">Share Object</h3>
+              <h3 className="text-[15px] font-medium text-white tracking-tight">Share Object</h3>
             </div>
-            <p className="text-xs text-[#8c8c8c] font-mono truncate mt-0.5" title={`${namespace}/${item.fullKey}`}>
+            <p className="text-[13px] text-[#8c8c8c] font-mono truncate mt-0.5" title={`${namespace}/${item.fullKey}`}>
               {item.name}
             </p>
           </div>
@@ -245,7 +245,7 @@ export function ShareTicketModal({
         </div>
 
         {isPublicNamespace && (
-          <div className="mx-5 mt-3 p-3 rounded-md bg-[#30a46c]/10 border border-[#30a46c]/30 text-xs text-[#30a46c] flex items-center justify-between gap-3">
+          <div className="mx-5 mt-3.5 p-3.5 rounded-[8px] bg-[#30a46c]/10 border border-[#30a46c]/30 text-[13px] text-[#30a46c] flex items-center justify-between gap-3">
             <div className="flex items-center gap-2 min-w-0">
               <Globe className="w-4 h-4 text-[#30a46c] shrink-0" />
               <div className="truncate">
@@ -259,7 +259,7 @@ export function ShareTicketModal({
                 const url = `${window.location.origin}/api/v1/blobs/public/${namespace}/${item.fullKey}`;
                 copyToClipboard(url, 'public-cdn-url');
               }}
-              className="px-2.5 py-1 rounded bg-[#30a46c]/20 hover:bg-[#30a46c]/30 border border-[#30a46c]/40 text-[11px] font-medium text-[#30a46c] transition-colors shrink-0 cursor-pointer"
+              className="px-2.5 py-1 rounded-[4px] bg-[#30a46c]/20 hover:bg-[#30a46c]/30 border border-[#30a46c]/40 text-[12px] font-medium text-[#30a46c] transition-colors shrink-0 cursor-pointer"
             >
               {copiedKey === 'public-cdn-url' ? 'Copied!' : 'Copy CDN Link'}
             </button>
@@ -271,7 +271,7 @@ export function ShareTicketModal({
           <button
             type="button"
             onClick={() => setActiveTab('create')}
-            className={`pb-2.5 text-xs font-medium transition-colors relative cursor-pointer ${
+            className={`pb-2.5 text-[13.5px] font-medium transition-colors relative cursor-pointer ${
               activeTab === 'create' ? 'text-white' : 'text-[#777777] hover:text-[#cccccc]'
             }`}
           >
@@ -286,7 +286,7 @@ export function ShareTicketModal({
               setActiveTab('manage');
               loadTickets();
             }}
-            className={`pb-2.5 text-xs font-medium transition-colors relative flex items-center gap-1.5 cursor-pointer ${
+            className={`pb-2.5 text-[13.5px] font-medium transition-colors relative flex items-center gap-1.5 cursor-pointer ${
               activeTab === 'manage' ? 'text-white' : 'text-[#777777] hover:text-[#cccccc]'
             }`}
           >
@@ -310,7 +310,7 @@ export function ShareTicketModal({
                 /* Link Created View */
                 <div className="space-y-4">
                   <div>
-                    <label className="block text-xs font-medium text-[#8c8c8c] mb-1.5">
+                    <label className="block text-[13px] font-medium text-[#8c8c8c] mb-1.5">
                       Capability Link
                     </label>
                     <div className="flex items-center gap-2">
@@ -318,7 +318,7 @@ export function ShareTicketModal({
                         type="text"
                         readOnly
                         value={fullTicketUrl}
-                        className="flex-1 h-9 px-3 rounded-md bg-[#141414] border border-[#262626] text-white font-mono text-xs select-all outline-none"
+                        className="flex-1 h-9 px-3 rounded-[8px] bg-[#141414] border border-[#262626] text-white font-mono text-[13px] select-all outline-none"
                       />
                       <Button
                         type="button"
@@ -380,7 +380,7 @@ export function ShareTicketModal({
 
                   {/* Permission Segmented Toggle */}
                   <div>
-                    <label className="block text-xs font-medium text-[#8c8c8c] mb-1.5">
+                    <label className="block text-[13px] font-medium text-[#8c8c8c] mb-1.5">
                       Permission
                     </label>
                     <div className="grid grid-cols-2 gap-1 p-1 bg-[#141414] border border-[#262626] rounded-[7px]">
@@ -413,7 +413,7 @@ export function ShareTicketModal({
 
                   {/* Expiration Segmented Control */}
                   <div>
-                    <label className="block text-xs font-medium text-[#8c8c8c] mb-1.5">
+                    <label className="block text-[13px] font-medium text-[#8c8c8c] mb-1.5">
                       Expiration
                     </label>
                     <div className="grid grid-cols-5 gap-1 p-1 bg-[#141414] border border-[#262626] rounded-[7px]">

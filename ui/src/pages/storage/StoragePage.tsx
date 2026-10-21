@@ -1749,16 +1749,16 @@ export function StoragePage() {
 
         {/* Floating Bulk Action Bar */}
         {selectedItemsList.length > 0 && (
-          <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-30 bg-[#121212]/95 border border-[#2b2b2b] shadow-2xl rounded-full px-4 py-2 flex items-center gap-2.5 backdrop-blur-md animate-in slide-in-from-bottom-3 duration-150 font-sans text-xs">
+          <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-30 bg-[#121212]/95 border border-[#2b2b2b] shadow-2xl rounded-full px-4 py-2 flex items-center gap-2.5 backdrop-blur-md animate-in slide-in-from-bottom-3 duration-150 font-sans text-[13px]">
             <div className="flex items-center gap-2 pr-2 border-r border-[#2a2a2a]">
-              <span className="inline-flex items-center justify-center px-2 py-0.5 rounded-full bg-blue-950/80 text-blue-400 border border-blue-800/60 font-semibold tabular-nums text-[11px]">
+              <span className="inline-flex items-center justify-center px-2.5 py-0.5 rounded-full bg-blue-950/80 text-blue-400 border border-blue-800/60 font-medium tabular-nums text-[12px]">
                 {selectedItemsList.length} selected
               </span>
               {selectedKeys.size < allVisibleItems.length && (
                 <button
                   type="button"
                   onClick={handleSelectAll}
-                  className="text-[#999999] hover:text-white transition-colors cursor-pointer text-[11px]"
+                  className="text-[#999999] hover:text-white transition-colors cursor-pointer text-[12.5px]"
                 >
                   Select all ({allVisibleItems.length})
                 </button>
@@ -1771,7 +1771,7 @@ export function StoragePage() {
               onClick={handleBatchDownload}
               disabled={selectedItemsList.every((it) => it.type === 'folder')}
               title="Download selected files"
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[#cccccc] hover:text-white hover:bg-[#202020] transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[13px] font-medium text-[#cccccc] hover:text-white hover:bg-[#202020] transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <Download className="w-3.5 h-3.5" />
               <span>Download</span>
@@ -1782,7 +1782,7 @@ export function StoragePage() {
               type="button"
               onClick={() => setIsBatchMoveOpen(true)}
               title="Move selected items"
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[#cccccc] hover:text-white hover:bg-[#202020] transition-colors cursor-pointer"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[13px] font-medium text-[#cccccc] hover:text-white hover:bg-[#202020] transition-colors cursor-pointer"
             >
               <ArrowRight className="w-3.5 h-3.5" />
               <span>Move</span>
@@ -1793,7 +1793,7 @@ export function StoragePage() {
               type="button"
               onClick={() => setIsBatchCopyOpen(true)}
               title="Copy selected items"
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[#cccccc] hover:text-white hover:bg-[#202020] transition-colors cursor-pointer"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[13px] font-medium text-[#cccccc] hover:text-white hover:bg-[#202020] transition-colors cursor-pointer"
             >
               <Copy className="w-3.5 h-3.5" />
               <span>Copy</span>
@@ -1804,7 +1804,7 @@ export function StoragePage() {
               type="button"
               onClick={() => setIsBatchDeleteOpen(true)}
               title="Delete selected items"
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-red-400 hover:text-red-300 hover:bg-red-950/40 border border-red-900/30 transition-colors cursor-pointer"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[13px] font-medium text-red-400 hover:text-red-300 hover:bg-red-950/40 border border-red-900/30 transition-colors cursor-pointer"
             >
               <Trash2 className="w-3.5 h-3.5" />
               <span>Delete</span>
@@ -1864,10 +1864,10 @@ export function StoragePage() {
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-sm rounded-lg bg-[#0e0e0e] border border-[#262626] p-5 shadow-2xl space-y-4"
+            className="w-full max-w-sm rounded-[10px] bg-[#0e0e0e] border border-[#262626] p-5 shadow-2xl space-y-4"
           >
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-medium text-white">New Folder</h3>
+              <h3 className="text-[15px] font-medium text-white tracking-tight">New Folder</h3>
               <button
                 type="button"
                 onClick={() => setIsNewFolderOpen(false)}
@@ -1879,7 +1879,7 @@ export function StoragePage() {
 
             <form onSubmit={handleCreateFolder} className="space-y-4">
               <div>
-                <label className="block text-xs text-[#8c8c8c] font-medium mb-1.5">
+                <label className="block text-[13px] text-[#8c8c8c] font-medium mb-1.5">
                   Folder Name
                 </label>
                 <input
@@ -1889,7 +1889,7 @@ export function StoragePage() {
                   placeholder="e.g. assets"
                   value={newFolderName}
                   onChange={(e) => setNewFolderName(e.target.value)}
-                  className="w-full h-9 px-3 rounded-md bg-[#141414] border border-[#262626] focus:border-[#3b82f6] text-white text-sm outline-none"
+                  className="w-full h-9 px-3 rounded-[8px] bg-[#141414] border border-[#262626] focus:border-[#383838] text-white text-[14px] outline-none"
                 />
               </div>
 
@@ -1929,10 +1929,10 @@ export function StoragePage() {
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-sm rounded-lg bg-[#0e0e0e] border border-[#262626] p-5 shadow-2xl space-y-4"
+            className="w-full max-w-sm rounded-[10px] bg-[#0e0e0e] border border-[#262626] p-5 shadow-2xl space-y-4"
           >
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-medium text-white">Rename Item</h3>
+              <h3 className="text-[15px] font-medium text-white tracking-tight">Rename Item</h3>
               <button
                 type="button"
                 onClick={() => setIsRenameOpen(false)}
@@ -1944,7 +1944,7 @@ export function StoragePage() {
 
             <form onSubmit={handleRename} className="space-y-4">
               <div>
-                <label className="block text-xs text-[#8c8c8c] font-medium mb-1.5">
+                <label className="block text-[13px] text-[#8c8c8c] font-medium mb-1.5">
                   New Name
                 </label>
                 <input
@@ -1953,7 +1953,7 @@ export function StoragePage() {
                   required
                   value={renameInput}
                   onChange={(e) => setRenameInput(e.target.value)}
-                  className="w-full h-9 px-3 rounded-md bg-[#141414] border border-[#262626] focus:border-[#3b82f6] text-white text-sm outline-none"
+                  className="w-full h-9 px-3 rounded-[8px] bg-[#141414] border border-[#262626] focus:border-[#383838] text-white text-[14px] outline-none"
                 />
                 {renameError && (
                   <p className="text-xs text-rose-400 mt-1">{renameError}</p>
@@ -2093,10 +2093,10 @@ export function StoragePage() {
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-sm rounded-lg bg-[#0e0e0e] border border-[#262626] p-5 shadow-2xl space-y-4"
+            className="w-full max-w-sm rounded-[10px] bg-[#0e0e0e] border border-[#262626] p-5 shadow-2xl space-y-4"
           >
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-medium text-white">Create Namespace</h3>
+              <h3 className="text-[15px] font-medium text-white tracking-tight">Create Namespace</h3>
               <button
                 type="button"
                 onClick={() => setIsNewNsOpen(false)}
@@ -2108,7 +2108,7 @@ export function StoragePage() {
 
             <form onSubmit={handleCreateNamespace} className="space-y-4">
               <div>
-                <label className="block text-xs text-[#8c8c8c] font-medium mb-1.5">
+                <label className="block text-[13px] text-[#8c8c8c] font-medium mb-1.5">
                   Namespace Name
                 </label>
                 <input
@@ -2118,12 +2118,12 @@ export function StoragePage() {
                   placeholder="e.g. avatars, invoices"
                   value={newNsName}
                   onChange={(e) => setNewNsName(e.target.value)}
-                  className="w-full h-9 px-3 rounded-md bg-[#141414] border border-[#262626] focus:border-[#3b82f6] text-white text-sm outline-none"
+                  className="w-full h-9 px-3 rounded-[8px] bg-[#141414] border border-[#262626] focus:border-[#383838] text-white text-[14px] outline-none"
                 />
               </div>
 
               <div>
-                <label className="block text-xs text-[#8c8c8c] font-medium mb-1.5">
+                <label className="block text-[13px] text-[#8c8c8c] font-medium mb-1.5">
                   Storage Quota Limit
                 </label>
                 <CustomSelect
@@ -2136,7 +2136,7 @@ export function StoragePage() {
 
               {newNsQuotaPreset === 'custom' && (
                 <div>
-                  <label className="block text-xs text-[#8c8c8c] font-medium mb-1.5">
+                  <label className="block text-[13px] text-[#8c8c8c] font-medium mb-1.5">
                     Limit in Bytes
                   </label>
                   <input
@@ -2145,7 +2145,7 @@ export function StoragePage() {
                     value={newNsCustomBytes}
                     onChange={(e) => setNewNsCustomBytes(e.target.value)}
                     placeholder="e.g. 104857600"
-                    className="w-full h-9 px-3 rounded-md bg-[#141414] border border-[#262626] focus:border-[#3b82f6] text-white text-sm outline-none"
+                    className="w-full h-9 px-3 rounded-[8px] bg-[#141414] border border-[#262626] focus:border-[#383838] text-white text-[14px] outline-none"
                   />
                 </div>
               )}
@@ -2159,10 +2159,10 @@ export function StoragePage() {
                     className="mt-0.5"
                   />
                   <div>
-                    <label htmlFor="new-ns-public-switch" className="text-xs font-medium text-white block cursor-pointer">
+                    <label htmlFor="new-ns-public-switch" className="text-[13px] font-medium text-white block cursor-pointer">
                       Enable Public Read Access
                     </label>
-                    <span className="text-xs text-[#777777] leading-relaxed block mt-0.5">
+                    <span className="text-[12.5px] text-[#777777] leading-relaxed block mt-0.5">
                       Direct static URLs (<code className="text-[#a3a3a3]">/api/v1/blobs/public/:namespace/*key</code>) with HTTP 304 browser caching for websites. Writes remain strictly authenticated.
                     </span>
                   </div>
@@ -2170,7 +2170,7 @@ export function StoragePage() {
 
                 {newNsIsPublic && (
                   <div>
-                    <label className="block text-xs text-[#8c8c8c] font-medium mb-1.5">
+                    <label className="block text-[13px] text-[#8c8c8c] font-medium mb-1.5">
                       Allowed CORS Origins (Optional)
                     </label>
                     <input
@@ -2178,9 +2178,9 @@ export function StoragePage() {
                       placeholder="e.g. *, https://example.com"
                       value={newNsCors}
                       onChange={(e) => setNewNsCors(e.target.value)}
-                      className="w-full h-9 px-3 rounded-md bg-[#141414] border border-[#262626] focus:border-[#3b82f6] text-white text-xs outline-none"
+                      className="w-full h-9 px-3 rounded-[8px] bg-[#141414] border border-[#262626] focus:border-[#383838] text-white text-[14px] outline-none"
                     />
-                    <span className="text-[11px] text-[#666666] block mt-1">
+                    <span className="text-[12px] text-[#666666] block mt-1">
                       Comma-separated list of origins. Leave empty to allow any origin when public.
                     </span>
                   </div>
@@ -2223,11 +2223,11 @@ export function StoragePage() {
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-md rounded-lg bg-[#0e0e0e] border border-[#262626] p-5 shadow-2xl space-y-4"
+            className="w-full max-w-md rounded-[10px] bg-[#0e0e0e] border border-[#262626] p-5 shadow-2xl space-y-4"
           >
             <div className="flex items-center justify-between pb-0.5">
               <div className="flex items-center gap-2">
-                <h3 className="text-sm font-medium text-white tracking-tight">Manage Namespace</h3>
+                <h3 className="text-[15px] font-medium text-white tracking-tight">Manage Namespace</h3>
                 <span className="px-1.5 py-0.5 rounded bg-[#161616] border border-[#262626] text-xs font-mono text-[#8c8c8c]">
                   {currentNsInfo.name}
                 </span>
@@ -2248,7 +2248,7 @@ export function StoragePage() {
                 <button
                   type="button"
                   onClick={() => setManageNsTab('settings')}
-                  className={`flex items-center gap-1.5 h-8 px-3 rounded-md text-xs font-medium transition-colors duration-75 cursor-pointer font-sans outline-none focus:outline-none border ${
+                  className={`flex items-center gap-1.5 h-8 px-3.5 rounded-[6px] text-[13px] font-medium transition-colors duration-75 cursor-pointer font-sans outline-none focus:outline-none border ${
                     manageNsTab === 'settings'
                       ? 'bg-[#161616] text-white border-[#333333]'
                       : 'text-[#8c8c8c] hover:text-white hover:bg-[#141414] border-transparent'
@@ -2259,7 +2259,7 @@ export function StoragePage() {
                 <button
                   type="button"
                   onClick={() => setManageNsTab('danger')}
-                  className={`flex items-center gap-1.5 h-8 px-3 rounded-md text-xs font-medium transition-colors duration-75 cursor-pointer font-sans outline-none focus:outline-none border ${
+                  className={`flex items-center gap-1.5 h-8 px-3.5 rounded-[6px] text-[13px] font-medium transition-colors duration-75 cursor-pointer font-sans outline-none focus:outline-none border ${
                     manageNsTab === 'danger'
                       ? 'bg-[#161616] text-white border-[#333333]'
                       : 'text-[#8c8c8c] hover:text-white hover:bg-[#141414] border-transparent'
@@ -2273,7 +2273,7 @@ export function StoragePage() {
             {manageNsTab === 'settings' ? (
               <form onSubmit={handleUpdateNamespace} className="space-y-4">
                 <div>
-                  <label className="block text-xs text-[#8c8c8c] font-medium mb-1.5">
+                  <label className="block text-[13px] text-[#8c8c8c] font-medium mb-1.5">
                     Identifier
                   </label>
                   <input
@@ -2281,12 +2281,12 @@ export function StoragePage() {
                     required
                     value={editNsName}
                     onChange={(e) => setEditNsName(e.target.value)}
-                    className="w-full h-9 px-3 rounded-md bg-[#141414] border border-[#262626] focus:border-[#3b82f6] text-white text-sm outline-none"
+                    className="w-full h-9 px-3 rounded-[8px] bg-[#141414] border border-[#262626] focus:border-[#383838] text-white text-[14px] outline-none"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs text-[#8c8c8c] font-medium mb-1.5">
+                  <label className="block text-[13px] text-[#8c8c8c] font-medium mb-1.5">
                     Quota Limit
                   </label>
                   <CustomSelect
@@ -2299,7 +2299,7 @@ export function StoragePage() {
 
                 {editNsQuotaPreset === 'custom' && (
                   <div>
-                    <label className="block text-xs text-[#8c8c8c] font-medium mb-1.5">
+                    <label className="block text-[13px] text-[#8c8c8c] font-medium mb-1.5">
                       Limit in Bytes
                     </label>
                     <input
@@ -2307,7 +2307,7 @@ export function StoragePage() {
                       min="1"
                       value={editNsCustomBytes}
                       onChange={(e) => setEditNsCustomBytes(e.target.value)}
-                      className="w-full h-9 px-3 rounded-md bg-[#141414] border border-[#262626] focus:border-[#3b82f6] text-white text-sm outline-none"
+                      className="w-full h-9 px-3 rounded-[8px] bg-[#141414] border border-[#262626] focus:border-[#383838] text-white text-[14px] outline-none"
                     />
                   </div>
                 )}
@@ -2321,17 +2321,17 @@ export function StoragePage() {
                       className="mt-0.5"
                     />
                     <div>
-                      <label htmlFor="edit-ns-public-switch" className="text-xs font-medium text-white block cursor-pointer">
+                      <label htmlFor="edit-ns-public-switch" className="text-[13px] font-medium text-white block cursor-pointer">
                         Enable Public Read Access
                       </label>
-                      <span className="text-xs text-[#777777] leading-relaxed block mt-0.5">
+                      <span className="text-[12.5px] text-[#777777] leading-relaxed block mt-0.5">
                         Direct static URLs (<code className="text-[#a3a3a3]">/api/v1/blobs/public/:namespace/*key</code>) with HTTP 304 browser caching for websites.
                       </span>
                     </div>
                   </div>
 
                   <div>
-                    <label className="block text-xs text-[#8c8c8c] font-medium mb-1.5">
+                    <label className="block text-[13px] text-[#8c8c8c] font-medium mb-1.5">
                       Allowed CORS Origins
                     </label>
                     <input
@@ -2339,9 +2339,9 @@ export function StoragePage() {
                       placeholder="e.g. *, https://example.com"
                       value={editNsCors}
                       onChange={(e) => setEditNsCors(e.target.value)}
-                      className="w-full h-9 px-3 rounded-md bg-[#141414] border border-[#262626] focus:border-[#3b82f6] text-white text-xs outline-none"
+                      className="w-full h-9 px-3 rounded-[8px] bg-[#141414] border border-[#262626] focus:border-[#383838] text-white text-[14px] outline-none"
                     />
-                    <span className="text-[11px] text-[#666666] block mt-1">
+                    <span className="text-[12px] text-[#666666] block mt-1">
                       Comma-separated origins. Leave empty to allow any origin when public.
                     </span>
                   </div>

@@ -82,9 +82,9 @@ export function StorageListView({
     >
       <table className="w-full text-left border-collapse">
         <thead>
-          <tr className="sticky top-0 z-10 h-9 bg-[#0a0a0a] border-b border-[#222222] text-xs font-medium text-[#888888]">
+          <tr className="sticky top-0 z-10 h-10 bg-[#0a0a0a] border-b border-[#222222] text-[13px] font-medium text-[#888888]">
             <th
-              className="w-10 px-3 py-2 text-center select-none"
+              className="w-12 px-3 py-2 text-center select-none"
               onClick={(e) => e.stopPropagation()}
               onDoubleClick={(e) => {
                 e.stopPropagation();
@@ -130,9 +130,9 @@ export function StorageListView({
             </th>
             <th className="px-3 font-medium">Name</th>
             <th className="px-3 font-medium w-36">Storage Tier</th>
-            <th className="px-3 font-medium w-32 text-right">Size</th>
+            <th className="px-3 font-medium w-36 text-right">Size</th>
             <th className="px-4 font-medium w-44 text-right hidden sm:table-cell">Uploaded</th>
-            <th className="px-3 w-16 text-right"><span className="sr-only">Actions</span></th>
+            <th className="px-3 w-20 text-right"><span className="sr-only">Actions</span></th>
           </tr>
         </thead>
         <tbody className="divide-y divide-[#1a1a1a]">
@@ -216,7 +216,7 @@ export function StorageListView({
               >
                 {/* Custom Checkbox Button (Matching TableGridView.tsx) */}
                 <td
-                  className="w-10 px-3 py-2 text-center select-none"
+                  className="w-12 px-3 py-2 text-center select-none"
                   onClick={(e) => e.stopPropagation()}
                   onDoubleClick={(e) => {
                     e.stopPropagation();
@@ -260,22 +260,22 @@ export function StorageListView({
                   <div className="flex items-center gap-2 truncate">
                     <div className="w-4 h-4 flex items-center justify-center shrink-0">
                       {isFolder ? (
-                        <Folder className="w-3.5 h-3.5 text-[#eab308]" />
+                        <Folder className="w-4 h-4 text-[#eab308]" />
                       ) : (
-                        getFileIcon(item.name, 'w-3.5 h-3.5')
+                        getFileIcon(item.name, 'w-4 h-4')
                       )}
                     </div>
-                    <span className="truncate font-medium text-sm text-white">{item.name}</span>
+                    <span className="truncate font-medium text-[14px] text-white">{item.name}</span>
                   </div>
                 </td>
 
                 {/* Column 2: Storage Tier */}
                 <td className="px-3">
                   {isFolder ? (
-                    <span className="text-xs text-[#8c8c8c]">Directory</span>
+                    <span className="text-[13px] text-[#8c8c8c]">Directory</span>
                   ) : (
                     <span
-                      className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium ${
+                      className={`inline-flex items-center px-2.5 py-0.5 rounded-[4px] text-[12px] font-medium ${
                         item.inline
                           ? 'bg-amber-950/30 text-amber-400 border border-amber-900/40'
                           : 'bg-zinc-900 text-zinc-400 border border-zinc-800'
@@ -287,14 +287,14 @@ export function StorageListView({
                 </td>
 
                 {/* Column 3: Payload Size */}
-                <td className="px-3 text-right tabular-nums text-xs text-[#8c8c8c]">
+                <td className="px-3 text-right tabular-nums text-[14px] text-[#8c8c8c] font-normal">
                   {isFolder
                     ? `${item.itemCount || 0} items`
                     : formatBytes(item.size || 0)}
                 </td>
 
                 {/* Column 4: Uploaded / Created Date */}
-                <td className="px-4 text-right tabular-nums text-xs text-[#8c8c8c] hidden sm:table-cell">
+                <td className="px-4 text-right tabular-nums text-[14px] text-[#8c8c8c] font-normal hidden sm:table-cell">
                   {item.created_at
                     ? new Date(item.created_at * 1000).toLocaleDateString()
                     : '—'}

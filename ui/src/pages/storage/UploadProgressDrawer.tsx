@@ -69,14 +69,14 @@ export function UploadProgressDrawer({
 
   return (
     <div
-      className="fixed bottom-4 right-4 z-50 w-80 sm:w-96 rounded-lg border border-[#2b2b2b] bg-[#141414] shadow-2xl overflow-hidden font-sans select-none animate-in fade-in slide-in-from-bottom-2 duration-150 ring-1 ring-blue-500/20"
+      className="fixed bottom-4 right-4 z-50 w-80 sm:w-96 rounded-[10px] border border-[#2b2b2b] bg-[#141414] shadow-2xl overflow-hidden font-sans select-none animate-in fade-in slide-in-from-bottom-2 duration-150 ring-1 ring-blue-500/20"
       role="region"
       aria-label="Upload progress"
     >
       {/* ─── Top Header Bar ────────────────────────────────────────────── */}
       <div className="h-10 px-3.5 bg-[#181818] border-b border-[#242424] flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
-          <span className="text-xs font-medium text-white truncate">{title}</span>
+          <span className="text-[13.5px] font-medium text-white truncate">{title}</span>
         </div>
 
         <div className="flex items-center gap-1 shrink-0">
@@ -105,7 +105,7 @@ export function UploadProgressDrawer({
       {!isMinimized && (
         <>
           {/* Subheader status bar */}
-          <div className="h-8 px-3.5 bg-[#151515] border-b border-[#222222] flex items-center justify-between text-xs">
+          <div className="h-9 px-3.5 bg-[#151515] border-b border-[#222222] flex items-center justify-between text-[12.5px]">
             <span className="text-[#8c8c8c] truncate">
               {uploadingCount > 0
                 ? completedCount > 0
@@ -148,10 +148,10 @@ export function UploadProgressDrawer({
                   <div className="flex items-center gap-2.5 min-w-0 flex-1">
                     <span className="shrink-0">{fileIcon}</span>
                     <div className="min-w-0 flex-1">
-                      <div className="text-xs text-[#e5e7eb] truncate font-normal" title={task.name}>
+                      <div className="text-[13px] text-[#e5e7eb] truncate font-normal" title={task.name}>
                         {task.name}
                       </div>
-                      <div className="text-[11px] text-[#71717a] flex items-center gap-1.5 truncate">
+                      <div className="text-[12px] text-[#71717a] flex items-center gap-1.5 truncate">
                         <span>{formatBytes(task.size)}</span>
                         {task.status === 'uploading' && task.uploadedBytes !== undefined && task.size > 0 && (
                           <span className="text-[#38bdf8] font-mono">

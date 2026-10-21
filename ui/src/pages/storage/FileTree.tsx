@@ -395,8 +395,8 @@ export function FileTree({
             }
           }}
           onContextMenu={(e) => onContextMenu(e, toStorageItem(node))}
-          style={{ paddingLeft: `${depth * 16 + 10}px` }}
-          className={`group flex items-center gap-2 py-2 pr-4 w-full text-[13px] transition-colors cursor-pointer whitespace-nowrap border-b border-[#141414] select-none ${
+          style={{ paddingLeft: `${depth * 18 + 12}px` }}
+          className={`group flex items-center gap-2.5 py-2 pr-4 w-full text-[13.5px] transition-colors cursor-pointer whitespace-nowrap border-b border-[#141414] select-none ${
             isSelfDragged ? 'opacity-40' : ''
           } ${
             isTreeDropTarget
@@ -416,9 +416,9 @@ export function FileTree({
                 className="w-4 h-4 flex items-center justify-center text-[#777777] hover:text-white rounded shrink-0 cursor-default"
               >
                 {isExpanded ? (
-                  <ChevronDown className="w-3.5 h-3.5" />
+                  <ChevronDown className="w-4 h-4" />
                 ) : (
-                  <ChevronRight className="w-3.5 h-3.5" />
+                  <ChevronRight className="w-4 h-4" />
                 )}
               </button>
               {isExpanded ? (
@@ -430,7 +430,7 @@ export function FileTree({
           ) : (
             <>
               <span className="w-4 h-4 shrink-0" />
-              {getFileIcon(node.name, 'w-3.5 h-3.5 shrink-0')}
+              {getFileIcon(node.name, 'w-4 h-4 shrink-0')}
             </>
           )}
 
@@ -443,7 +443,7 @@ export function FileTree({
         {isFolder && isExpanded && node.children.length > 0 && (
           <div className="relative">
             <div
-              style={{ left: `${depth * 16 + 17}px` }}
+              style={{ left: `${depth * 18 + 19}px` }}
               className="absolute top-0 bottom-0 w-px bg-[#1f1f1f] pointer-events-none"
             />
             {node.children.map((child) => renderNode(child, depth + 1))}
@@ -456,7 +456,7 @@ export function FileTree({
   return (
     <div className="flex flex-col h-full overflow-hidden font-sans">
       {/* Explorer Tree Header Bar (h-9 matches StorageListView table header) */}
-      <div className="h-9 shrink-0 px-3 border-b border-[#222222] flex items-center justify-between text-xs font-medium text-[#888888] bg-[#0a0a0a]">
+      <div className="h-10 shrink-0 px-3 border-b border-[#222222] flex items-center justify-between text-[13px] font-medium text-[#888888] bg-[#0a0a0a]">
         <div
           onClick={() => onSelectFolder('', null)}
           onDragOver={(e) => {
@@ -492,7 +492,7 @@ export function FileTree({
           }`}
           title="Root directory"
         >
-          <TreeIcon className="w-3.5 h-3.5 text-[#666666]" />
+          <TreeIcon className="w-4 h-4 text-[#888888]" />
           <span>Files</span>
         </div>
 
@@ -501,26 +501,26 @@ export function FileTree({
             type="button"
             onClick={onNewFolder}
             title="New Folder"
-            className="p-1 rounded text-[#8c8c8c] hover:text-white hover:bg-[#1a1a1a] transition-colors cursor-pointer"
+            className="p-1.5 rounded-[6px] text-[#8c8c8c] hover:text-white hover:bg-[#1a1a1a] transition-colors cursor-pointer"
           >
-            <FolderPlus className="w-3.5 h-3.5" />
+            <FolderPlus className="w-4 h-4" />
           </button>
           <button
             type="button"
             onClick={onUpload}
             title="Upload Files"
-            className="p-1 rounded text-[#8c8c8c] hover:text-white hover:bg-[#1a1a1a] transition-colors cursor-pointer"
+            className="p-1.5 rounded-[6px] text-[#8c8c8c] hover:text-white hover:bg-[#1a1a1a] transition-colors cursor-pointer"
           >
-            <Upload className="w-3.5 h-3.5" />
+            <Upload className="w-4 h-4" />
           </button>
           {onRefresh && (
             <button
               type="button"
               onClick={onRefresh}
               title="Refresh"
-              className="p-1 rounded text-[#8c8c8c] hover:text-white hover:bg-[#1a1a1a] transition-colors cursor-pointer"
+              className="p-1.5 rounded-[6px] text-[#8c8c8c] hover:text-white hover:bg-[#1a1a1a] transition-colors cursor-pointer"
             >
-              <RefreshCw className="w-3.5 h-3.5" />
+              <RefreshCw className="w-4 h-4" />
             </button>
           )}
         </div>

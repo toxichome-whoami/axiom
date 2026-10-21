@@ -139,7 +139,7 @@ export const MoveDialog: React.FC<MoveDialogProps> = ({
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-md rounded-lg bg-[#0e0e0e] border border-[#262626] p-5 shadow-2xl space-y-4"
+        className="w-full max-w-md rounded-[10px] bg-[#0e0e0e] border border-[#262626] p-5 shadow-2xl space-y-4"
       >
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -148,7 +148,7 @@ export const MoveDialog: React.FC<MoveDialogProps> = ({
             ) : (
               <Folder className="w-4 h-4 text-[#eab308]" />
             )}
-            <h3 className="text-sm font-medium text-white">
+            <h3 className="text-[15px] font-medium text-white tracking-tight">
               {isMultiple
                 ? `${ActionWord} ${activeItems.length} Items`
                 : `${ActionWord} ${isFolder ? 'Folder' : 'Object'}`}
@@ -172,7 +172,7 @@ export const MoveDialog: React.FC<MoveDialogProps> = ({
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-xs text-[#8c8c8c] font-medium mb-1.5">
+            <label className="block text-[13px] text-[#8c8c8c] font-medium mb-1.5">
               Target Namespace
             </label>
             <CustomSelect
@@ -191,7 +191,7 @@ export const MoveDialog: React.FC<MoveDialogProps> = ({
 
           <div>
             <div className="flex items-center justify-between mb-1.5">
-              <label className="text-xs text-[#8c8c8c] font-medium">
+              <label className="text-[13px] text-[#8c8c8c] font-medium">
                 Destination Folder Path
               </label>
               <div className="flex items-center gap-1">
@@ -213,19 +213,19 @@ export const MoveDialog: React.FC<MoveDialogProps> = ({
                 setError(null);
               }}
               placeholder="e.g. documents/archive/ (blank for root)"
-              className="w-full h-9 px-3 rounded-md bg-[#141414] border border-[#262626] focus:border-[#383838] text-white text-sm outline-none"
+              className="w-full h-9 px-3 rounded-[8px] bg-[#141414] border border-[#262626] focus:border-[#383838] text-white text-[14px] outline-none"
             />
 
             {availableFolders.length > 0 && (
               <div className="mt-2.5 space-y-1.5">
-                <span className="text-xs text-[#777777] block">Quick folder picker:</span>
+                <span className="text-[12.5px] text-[#777777] block">Quick folder picker:</span>
                 <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
                   {availableFolders.map((f) => (
                     <button
                       key={f}
                       type="button"
                       onClick={() => setTargetFolder(f)}
-                      className="text-xs text-[#cccccc] hover:text-white px-2.5 py-1 rounded-md bg-[#181818] border border-[#262626] hover:border-[#383838] cursor-pointer"
+                      className="text-[12.5px] text-[#cccccc] hover:text-white px-2.5 py-1 rounded-[6px] bg-[#181818] border border-[#262626] hover:border-[#383838] cursor-pointer"
                     >
                       {f}
                     </button>
@@ -236,8 +236,8 @@ export const MoveDialog: React.FC<MoveDialogProps> = ({
           </div>
 
           {/* Destination Preview */}
-          <div className="p-3 rounded-md bg-[#080808] border border-[#222222] text-xs space-y-1">
-            <span className="text-[#8c8c8c] block text-xs">Resulting Location:</span>
+          <div className="p-3 rounded-[8px] bg-[#080808] border border-[#222222] text-[13px] space-y-1">
+            <span className="text-[#8c8c8c] block text-[12px]">Resulting Location:</span>
             <div className="text-white flex items-center gap-1.5 truncate">
               <span className="text-[#cccccc]">{targetNs}</span>
               <span className="text-[#555555]">/</span>

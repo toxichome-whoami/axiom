@@ -79,10 +79,10 @@ export function StorageGridView({
       {folderItems.length > 0 && (
         <div className="space-y-3">
           <div className="flex items-center justify-between px-0.5">
-            <span className="text-sm font-medium text-[#8c8c8c]">
+            <span className="text-[15px] font-medium text-white">
               Folders
             </span>
-            <span className="text-xs tabular-nums text-[#666666]">
+            <span className="text-[12px] font-mono px-2 py-0.5 rounded-[4px] bg-[#141414] border border-[#242424] text-[#888888] tabular-nums">
               {folderItems.length}
             </span>
           </div>
@@ -146,7 +146,7 @@ export function StorageGridView({
                     onNavigateToPrefix(f.fullKey);
                   }}
                   onContextMenu={(e) => onContextMenu(e, f)}
-                  className={`group p-3 rounded-lg border transition-colors cursor-pointer flex items-center justify-between gap-3 min-h-[52px] relative ${
+                  className={`group p-3.5 rounded-[10px] border transition-colors cursor-pointer flex items-center justify-between gap-3 min-h-[56px] relative ${
                     isSelfDragged ? 'opacity-40 border-dashed border-[#555555]' : ''
                   } ${
                     isDropTarget
@@ -191,14 +191,14 @@ export function StorageGridView({
                         {isSelected && <Check className="h-3 w-3 stroke-[3]" />}
                       </button>
                     </div>
-                    <div className="w-8 h-8 rounded-md bg-[#1a1a1a] border border-[#2a2a2a] flex items-center justify-center shrink-0">
+                    <div className="w-9 h-9 rounded-[8px] bg-[#161616] border border-[#262626] flex items-center justify-center shrink-0">
                       <Folder className={`w-4 h-4 ${isDropTarget ? 'text-blue-400 animate-pulse' : 'text-[#eab308]'}`} />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <div className="text-sm font-medium text-white truncate" title={f.name}>
+                      <div className="text-[14px] font-medium text-white truncate" title={f.name}>
                         {f.name}
                       </div>
-                      <div className="text-xs text-[#8c8c8c] tabular-nums truncate">
+                      <div className="text-[12.5px] text-[#8c8c8c] tabular-nums truncate">
                         {isDropTarget ? (
                           <span className="text-blue-400 font-medium">Drop here</span>
                         ) : (
@@ -239,10 +239,10 @@ export function StorageGridView({
       {fileItems.length > 0 && (
         <div className="space-y-3">
           <div className="flex items-center justify-between px-0.5">
-            <span className="text-sm font-medium text-[#8c8c8c]">
+            <span className="text-[15px] font-medium text-white">
               Files
             </span>
-            <span className="text-xs tabular-nums text-[#666666]">
+            <span className="text-[12px] font-mono px-2 py-0.5 rounded-[4px] bg-[#141414] border border-[#242424] text-[#888888] tabular-nums">
               {fileItems.length}
             </span>
           </div>
@@ -270,7 +270,7 @@ export function StorageGridView({
                     }
                   }}
                   onContextMenu={(e) => onContextMenu(e, item)}
-                  className={`group p-3 rounded-lg border transition-colors cursor-pointer flex flex-col justify-between h-28 relative ${
+                  className={`group p-3.5 rounded-[10px] border transition-colors cursor-pointer flex flex-col justify-between min-h-[128px] relative ${
                     isSelfDragged ? 'opacity-40 border-dashed border-[#555555]' : ''
                   } ${
                     isSelected
@@ -316,15 +316,15 @@ export function StorageGridView({
 
                   {/* Top row: Icon, Name, and Actions */}
                   <div className="flex items-start justify-between gap-2">
-                    <div className="w-8 h-8 rounded-md bg-[#181818] border border-[#262626] flex items-center justify-center shrink-0">
+                    <div className="w-9 h-9 rounded-[8px] bg-[#181818] border border-[#262626] flex items-center justify-center shrink-0">
                       {getFileIcon(item.name, 'w-4 h-4')}
                     </div>
 
                     <div className="min-w-0 flex-1 pt-0.5">
-                      <div className="text-sm font-medium text-white truncate leading-snug" title={item.name}>
+                      <div className="text-[14px] font-medium text-white truncate leading-snug" title={item.name}>
                         {item.name}
                       </div>
-                      <div className="text-xs text-[#8c8c8c] truncate" title={item.content_type || 'application/octet-stream'}>
+                      <div className="text-[12px] text-[#8c8c8c] truncate" title={item.content_type || 'application/octet-stream'}>
                         {item.content_type?.split('/')[1] || 'binary'}
                       </div>
                     </div>
@@ -347,11 +347,11 @@ export function StorageGridView({
                   </div>
 
                   {/* Bottom row: Size & Storage Tier pill (edge-to-edge card line) */}
-                  <div className="-mx-3 px-3 pt-2 border-t border-[#1e1e1e] flex items-center justify-between text-xs text-[#8c8c8c] tabular-nums">
+                  <div className="-mx-3.5 px-3.5 pt-2.5 border-t border-[#1e1e1e] flex items-center justify-between text-[13px] text-[#8c8c8c] tabular-nums">
                     <span>{formatBytes(item.size || 0)}</span>
 
                     <span
-                      className={`inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-medium ${
+                      className={`inline-flex items-center px-2 py-0.5 rounded-[4px] text-[12px] font-medium ${
                         item.inline
                           ? 'bg-amber-950/30 text-amber-400 border border-amber-900/40'
                           : 'bg-zinc-900 text-zinc-400 border border-zinc-800'
