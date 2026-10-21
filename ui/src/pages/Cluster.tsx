@@ -23,7 +23,6 @@ import {
   Check,
   Eye,
   EyeOff,
-  Trash2,
   Edit2,
   AlertTriangle,
   Search,
@@ -1197,28 +1196,31 @@ export function Cluster() {
         )}
 
         {selectedPeer && peerTab === 'danger' && (
-          <div className="flex-1 p-5 overflow-y-auto space-y-4">
-            <div>
-              <h3 className="text-[16px] font-medium text-white tracking-tight">Danger Zone</h3>
-              <p className="text-[13px] text-[#8c8c8c] mt-0.5">Destructive actions for this cluster peer node.</p>
-            </div>
-            <div className="rounded-lg border border-[#e5484d]/30 bg-[#e5484d]/5 p-4 space-y-3">
-              <div>
-                <h4 className="text-[14px] font-medium text-[#e5484d]">Disconnect Peer from Mesh</h4>
-                <p className="text-[13px] text-[#8c8c8c] mt-1 leading-relaxed">
-                  Disconnects this node from the cluster. Security audit synchronizations, cross-node heartbeats, and peer health pings will immediately cease.
-                </p>
-              </div>
+          <div className="flex-1 p-5 overflow-y-auto">
+            <div className="rounded-[8px] border border-[#3a1515] bg-[#0e0404] p-4">
+              <h3 className="text-[16px] font-medium text-[#e5484d] mb-1">Disconnect Peer</h3>
+              <p className="text-[13px] text-[#8c8c8c] mb-4">
+                Permanently remove <span className="text-white font-medium text-[13px]">{selectedPeer.moniker}</span> from the cluster mesh. All cross-node synchronizations and heartbeats will be terminated.
+              </p>
               <button
                 type="button"
                 onClick={() => {
                   setIsPeerPanelOpen(false);
                   setPeerToDelete(selectedPeer);
                 }}
-                className="inline-flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[13px] font-medium bg-[#e5484d] text-white hover:bg-[#dc2626] transition-colors cursor-pointer"
+                className="group relative flex shrink-0 items-center justify-center h-8 px-3.5 rounded-[8px] font-medium text-white shadow-xs outline-none cursor-pointer overflow-hidden ring-1 ring-[#be123c] bg-[#e11d48] font-sans text-[13px]"
               >
-                <Trash2 className="w-3.5 h-3.5" />
-                Remove Peer Node
+                <span
+                  aria-hidden="true"
+                  className="pointer-events-none absolute inset-0 rounded-[inherit] bg-gradient-to-b from-[#f43f5e] to-[#e11d48] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2)]"
+                />
+                <span
+                  aria-hidden="true"
+                  className="pointer-events-none absolute inset-0 rounded-[inherit] bg-black opacity-0 group-hover:opacity-15 transition-opacity duration-200"
+                />
+                <span className="relative flex items-center gap-1.5 font-sans">
+                  Disconnect Peer
+                </span>
               </button>
             </div>
           </div>
@@ -1230,9 +1232,16 @@ export function Cluster() {
         isOpen={Boolean(peerToDelete)}
         onClose={() => setPeerToDelete(null)}
         onConfirm={handleConfirmRemovePeer}
-        title="Remove Peer"
-        description={`Remove "${peerToDelete?.moniker}" from this cluster mesh? Security events will no longer sync with this node.`}
-        confirmLabel={isDeleting ? 'Removing…' : 'Remove Peer'}
+        title="Disconnect Peer Node"
+        description={
+          <>
+            Permanently remove peer node{' '}
+            <span className="text-white font-medium">{peerToDelete?.moniker}</span>{' '}
+            from this cluster mesh? All cross-node synchronizations and heartbeats will be terminated.
+          </>
+        }
+        confirmLabel={isDeleting ? 'Disconnecting…' : 'Disconnect Peer'}
+        cancelLabel="Cancel"
         variant="danger"
       />
     </div>
