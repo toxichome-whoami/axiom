@@ -383,14 +383,14 @@ export function ShareTicketModal({
                     <label className="block text-xs font-medium text-[#8c8c8c] mb-1.5">
                       Permission
                     </label>
-                    <div className="grid grid-cols-2 gap-1 p-1 bg-[#141414] border border-[#242424] rounded-md">
+                    <div className="grid grid-cols-2 gap-1 p-1 bg-[#141414] border border-[#262626] rounded-[7px]">
                       <button
                         type="button"
                         onClick={() => setOperation('READ')}
-                        className={`h-8 rounded text-xs font-medium transition-colors cursor-pointer flex items-center justify-center gap-1.5 ${
+                        className={`h-8.5 rounded-[5px] text-[13px] font-medium transition-colors cursor-pointer flex items-center justify-center gap-1.5 ${
                           operation === 'READ'
-                            ? 'bg-[#222222] text-white'
-                            : 'text-[#888888] hover:text-white'
+                            ? 'bg-[#222222] text-white shadow-sm'
+                            : 'text-[#8c8c8c] hover:text-white'
                         }`}
                       >
                         <Download className="w-3.5 h-3.5" />
@@ -399,10 +399,10 @@ export function ShareTicketModal({
                       <button
                         type="button"
                         onClick={() => setOperation('WRITE')}
-                        className={`h-8 rounded text-xs font-medium transition-colors cursor-pointer flex items-center justify-center gap-1.5 ${
+                        className={`h-8.5 rounded-[5px] text-[13px] font-medium transition-colors cursor-pointer flex items-center justify-center gap-1.5 ${
                           operation === 'WRITE'
-                            ? 'bg-[#222222] text-white'
-                            : 'text-[#888888] hover:text-white'
+                            ? 'bg-[#222222] text-white shadow-sm'
+                            : 'text-[#8c8c8c] hover:text-white'
                         }`}
                       >
                         <Upload className="w-3.5 h-3.5" />
@@ -416,16 +416,16 @@ export function ShareTicketModal({
                     <label className="block text-xs font-medium text-[#8c8c8c] mb-1.5">
                       Expiration
                     </label>
-                    <div className="grid grid-cols-5 gap-1 p-1 bg-[#141414] border border-[#242424] rounded-md">
+                    <div className="grid grid-cols-5 gap-1 p-1 bg-[#141414] border border-[#262626] rounded-[7px]">
                       {TTL_PRESETS.map((preset) => (
                         <button
                           key={preset.label}
                           type="button"
                           onClick={() => setSelectedTtl(preset.seconds)}
-                          className={`h-8 rounded text-xs font-medium transition-colors cursor-pointer flex items-center justify-center ${
+                          className={`h-8.5 rounded-[5px] text-[13px] font-medium transition-colors cursor-pointer flex items-center justify-center ${
                             selectedTtl === preset.seconds
-                              ? 'bg-[#222222] text-white'
-                              : 'text-[#888888] hover:text-white'
+                              ? 'bg-[#222222] text-white shadow-sm'
+                              : 'text-[#8c8c8c] hover:text-white'
                           }`}
                         >
                           {preset.label}

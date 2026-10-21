@@ -13,7 +13,6 @@ import {
   LayoutGrid,
   List as ListIcon,
   PanelRight,
-  SlidersHorizontal,
   X,
   Share2,
   FolderPlus,
@@ -82,7 +81,7 @@ export function StorageToolbar({
   }, [isUploadMenuOpen]);
 
   return (
-    <div className="h-12 shrink-0 px-4 border-b border-[#222222] bg-[#0c0c0c] flex items-center justify-between gap-3 select-none font-sans">
+    <div className="h-[54px] shrink-0 px-4 border-b border-[#222222] bg-[#0c0c0c] flex items-center justify-between gap-3 select-none font-sans">
       {/* ─── Left: Interactive Breadcrumbs Navigator ─────────────── */}
       <div className="flex items-center gap-1.5 text-sm overflow-x-auto scrollbar-none min-w-0 py-0.5">
         <button
@@ -114,7 +113,7 @@ export function StorageToolbar({
               await onDropOnFolder('', draggedItemRef.current);
             }
           }}
-          className={`hover:text-white transition-colors cursor-pointer font-medium shrink-0 h-7 px-2 flex items-center gap-1.5 rounded-md ${
+          className={`hover:text-white transition-colors cursor-pointer font-medium shrink-0 h-8 px-2.5 flex items-center gap-1.5 rounded-[6px] ${
             dragOverTargetKey === ''
               ? 'bg-blue-600/30 text-blue-300 ring-1 ring-blue-500/60'
               : currentPrefix === ''
@@ -171,7 +170,7 @@ export function StorageToolbar({
                     await onDropOnFolder(seg.prefix, draggedItemRef.current);
                   }
                 }}
-                className={`hover:text-white transition-colors cursor-pointer font-medium truncate max-w-[160px] shrink-0 h-7 px-2 flex items-center rounded-md text-sm ${
+                className={`hover:text-white transition-colors cursor-pointer font-medium truncate max-w-[160px] shrink-0 h-8 px-2.5 flex items-center rounded-[6px] text-sm ${
                   isDropTarget
                     ? 'bg-blue-600/30 text-blue-300 ring-1 ring-blue-500/60'
                     : isLast
@@ -190,33 +189,33 @@ export function StorageToolbar({
       <div className="flex items-center gap-2 shrink-0">
         {/* Live Search Input */}
         <div className="relative w-44 sm:w-56">
-          <Search className="w-3.5 h-3.5 text-[#8c8c8c] absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+          <Search className="w-3.5 h-3.5 text-[#8c8c8c] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => onSearchChange(e.target.value)}
             placeholder="Search files..."
-            className="w-full h-8 pl-8 pr-6 rounded-md bg-[#141414] border border-[#262626] focus:border-[#383838] text-[13px] text-white placeholder-[#8c8c8c] outline-none transition-colors"
+            className="w-full h-9 pl-9 pr-7 rounded-[7px] bg-[#141414] border border-[#262626] focus:border-[#383838] text-[13px] text-white placeholder-[#8c8c8c] outline-none transition-colors"
           />
           {searchQuery && (
             <button
               type="button"
               onClick={() => onSearchChange('')}
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-[#8c8c8c] hover:text-white p-0.5 cursor-pointer"
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#8c8c8c] hover:text-white p-0.5 cursor-pointer"
             >
               <X className="w-3.5 h-3.5" />
             </button>
           )}
         </div>
 
-        {/* Storage Tier Filter Pill */}
-        <div className="flex items-center p-0.5 rounded-md bg-[#141414] border border-[#262626] h-8">
+        {/* Storage Tier Filter Pill (Matching TableToolbar design system) */}
+        <div className="flex items-center p-1 rounded-[7px] bg-[#141414] border border-[#262626] h-9">
           <button
             type="button"
             onClick={() => onTierFilterChange('all')}
-            className={`px-2.5 py-0.5 rounded text-xs font-medium transition-colors cursor-pointer ${
+            className={`px-3 py-1 rounded-[5px] text-[13px] font-medium transition-colors cursor-pointer ${
               tierFilter === 'all'
-                ? 'bg-[#222222] text-white'
+                ? 'bg-[#222222] text-white shadow-sm'
                 : 'text-[#8c8c8c] hover:text-white'
             }`}
           >
@@ -225,9 +224,9 @@ export function StorageToolbar({
           <button
             type="button"
             onClick={() => onTierFilterChange('inline')}
-            className={`px-2.5 py-0.5 rounded text-xs font-medium transition-colors cursor-pointer ${
+            className={`px-3 py-1 rounded-[5px] text-[13px] font-medium transition-colors cursor-pointer ${
               tierFilter === 'inline'
-                ? 'bg-[#222222] text-white'
+                ? 'bg-[#222222] text-white shadow-sm'
                 : 'text-[#8c8c8c] hover:text-white'
             }`}
           >
@@ -236,9 +235,9 @@ export function StorageToolbar({
           <button
             type="button"
             onClick={() => onTierFilterChange('disk')}
-            className={`px-2.5 py-0.5 rounded text-xs font-medium transition-colors cursor-pointer ${
+            className={`px-3 py-1 rounded-[5px] text-[13px] font-medium transition-colors cursor-pointer ${
               tierFilter === 'disk'
-                ? 'bg-[#222222] text-white'
+                ? 'bg-[#222222] text-white shadow-sm'
                 : 'text-[#8c8c8c] hover:text-white'
             }`}
           >
@@ -246,31 +245,33 @@ export function StorageToolbar({
           </button>
         </div>
 
-        {/* View Mode Switcher Pills */}
-        <div className="flex items-center p-0.5 rounded-md bg-[#141414] border border-[#262626] h-8">
+        {/* View Mode Switcher Pills (Matching TableToolbar design system) */}
+        <div className="flex items-center p-1 rounded-[7px] bg-[#141414] border border-[#262626] h-9">
           <button
             type="button"
             onClick={() => onViewModeChange('grid')}
             title="Grid View"
-            className={`flex items-center justify-center w-7 h-7 rounded transition-colors cursor-pointer ${
+            className={`flex items-center gap-1.5 px-3 py-1 rounded-[5px] text-[13px] font-medium transition-colors cursor-pointer ${
               viewMode === 'grid'
-                ? 'bg-[#222222] text-white'
+                ? 'bg-[#222222] text-white shadow-sm'
                 : 'text-[#8c8c8c] hover:text-white'
             }`}
           >
             <LayoutGrid className="w-3.5 h-3.5" />
+            <span className="hidden md:inline">Grid</span>
           </button>
           <button
             type="button"
             onClick={() => onViewModeChange('list')}
             title="Table View"
-            className={`flex items-center justify-center w-7 h-7 rounded transition-colors cursor-pointer ${
+            className={`flex items-center gap-1.5 px-3 py-1 rounded-[5px] text-[13px] font-medium transition-colors cursor-pointer ${
               viewMode === 'list'
-                ? 'bg-[#222222] text-white'
+                ? 'bg-[#222222] text-white shadow-sm'
                 : 'text-[#8c8c8c] hover:text-white'
             }`}
           >
             <ListIcon className="w-3.5 h-3.5" />
+            <span className="hidden md:inline">Table</span>
           </button>
         </div>
 
@@ -279,7 +280,7 @@ export function StorageToolbar({
           type="button"
           onClick={onToggleDetails}
           title={isDetailsOpen ? 'Hide Details Panel' : 'Show Details Panel'}
-          className={`flex items-center justify-center w-8 h-8 rounded-md border transition-colors cursor-pointer ${
+          className={`flex items-center justify-center w-9 h-9 rounded-[7px] border transition-colors cursor-pointer ${
             isDetailsOpen
               ? 'bg-[#1c1c1c] text-white border-[#383838]'
               : 'bg-[#141414] text-[#8c8c8c] hover:text-white border-[#262626] hover:border-[#383838]'
@@ -294,7 +295,7 @@ export function StorageToolbar({
             type="button"
             onClick={() => onShareClick(selectedFileItem)}
             title={`Share link for ${selectedFileItem.name}`}
-            className="flex items-center gap-1.5 h-8 px-2.5 rounded-md text-[13px] font-medium text-white bg-[#1a1a1a] hover:bg-[#222222] border border-[#333333] transition-colors cursor-pointer shrink-0"
+            className="flex items-center gap-1.5 h-9 px-3 rounded-[7px] text-[13px] font-medium text-white bg-[#141414] hover:bg-[#1c1c1c] border border-[#262626] hover:border-[#383838] transition-colors cursor-pointer shrink-0"
           >
             <Share2 className="w-3.5 h-3.5 text-white" />
             <span className="hidden sm:inline">Share</span>
@@ -308,7 +309,7 @@ export function StorageToolbar({
             onClick={onUploadClick}
             disabled={!activeNamespace}
             title="Upload files into current directory"
-            className="flex items-center gap-1.5 h-8 px-2.5 rounded-l-md text-[13px] font-medium text-white bg-blue-600 hover:bg-blue-500 border border-blue-500/80 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+            className="flex items-center gap-1.5 h-9 px-3.5 rounded-l-[7px] text-[13px] font-medium text-white bg-blue-600 hover:bg-blue-500 border border-blue-500/80 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <Upload className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">Upload</span>
@@ -318,7 +319,7 @@ export function StorageToolbar({
             onClick={() => setIsUploadMenuOpen((prev) => !prev)}
             disabled={!activeNamespace}
             title="Upload options (files, folders for hosting)"
-            className="flex items-center justify-center h-8 w-6 rounded-r-md text-white bg-blue-600 hover:bg-blue-500 border-t border-b border-r border-l border-blue-500/80 border-l-blue-700/60 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+            className="flex items-center justify-center h-9 w-7 rounded-r-[7px] text-white bg-blue-600 hover:bg-blue-500 border-t border-b border-r border-l border-blue-500/80 border-l-blue-700/60 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <ChevronDown className="w-3.5 h-3.5" />
           </button>

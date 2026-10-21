@@ -89,13 +89,13 @@ export function StorageSidebar({
 
   return (
     <aside className="w-full lg:w-64 shrink-0 flex flex-col bg-[#0a0a0a] border-b lg:border-b-0 lg:border-r border-[#222222] overflow-hidden font-sans select-none">
-      {/* ─── Header: Namespace Selector (h-12 aligned with StorageToolbar) ─────────────── */}
-      <div className="h-12 shrink-0 px-3 border-b border-[#222222] flex items-center justify-between gap-2 relative">
+      {/* ─── Header: Namespace Selector (h-[54px] aligned with StorageToolbar & TableSidebar) ─────────────── */}
+      <div className="h-[54px] shrink-0 px-3 border-b border-[#222222] flex items-center justify-between gap-2 relative">
         <div className="relative flex-1 min-w-0" ref={nsDropdownRef}>
           <button
             type="button"
             onClick={() => setIsNsDropdownOpen(!isNsDropdownOpen)}
-            className="w-full h-8 px-2.5 rounded-md bg-[#141414] hover:bg-[#1a1a1a] border border-[#242424] hover:border-[#383838] flex items-center justify-between gap-2 text-left transition-colors cursor-pointer"
+            className="w-full h-9 px-2.5 rounded-[7px] bg-[#141414] hover:bg-[#1a1a1a] border border-[#242424] hover:border-[#383838] flex items-center justify-between gap-2 text-left transition-colors cursor-pointer"
           >
             <div className="flex items-center gap-1.5 truncate min-w-0">
               <HardDrive className="w-3.5 h-3.5 text-blue-400 shrink-0" />
@@ -119,16 +119,15 @@ export function StorageSidebar({
 
           {/* Namespace Dropdown Popup */}
           {isNsDropdownOpen && (
-            <div className="absolute left-0 top-full mt-1.5 w-64 bg-[#111111] border border-[#262626] rounded-md shadow-2xl p-1 z-50 animate-in fade-in zoom-in-95 duration-100 font-sans">
-              <div className="px-2.5 py-1.5 text-xs font-medium text-[#888888]">
-                Storage Namespaces
+            <div className="absolute left-0 top-full mt-1.5 w-60 bg-[#111111] border border-[#262626] rounded-[8px] shadow-2xl p-1 z-50 animate-in fade-in zoom-in-95 duration-100 font-sans">
+              <div className="px-2.5 py-1.5 text-xs font-medium text-[#888888] select-none flex items-center justify-between">
+                <span>Storage Namespaces</span>
+                <span className="text-[11px] font-mono text-[#666666]">{namespaces.length}</span>
               </div>
 
               <div className="max-h-52 overflow-y-auto space-y-0.5 py-0.5">
                 {namespaces.length === 0 ? (
-                  <div className="px-2.5 py-2 text-xs text-[#777777]">
-                    No namespaces created yet.
-                  </div>
+                  <div className="px-2.5 py-2 text-xs text-[#777777]">No namespaces found</div>
                 ) : (
                   namespaces.map((ns) => {
                     const isActive = ns.name === activeNamespace;
@@ -140,23 +139,22 @@ export function StorageSidebar({
                           onSelectNamespace(ns.name);
                           setIsNsDropdownOpen(false);
                         }}
-                        className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-md text-sm transition-colors cursor-pointer text-left ${
+                        className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-[6px] text-xs transition-colors cursor-pointer text-left ${
                           isActive
-                            ? 'bg-[#1c1c1c] text-white font-medium'
-                            : 'text-[#d4d4d4] hover:text-white hover:bg-[#161616]'
+                            ? 'bg-[#1a1a1a] text-white font-medium'
+                            : 'text-[#cccccc] hover:bg-[#161616] hover:text-white'
                         }`}
                       >
-                        <div className="flex items-center gap-1.5 truncate min-w-0">
+                        <div className="flex items-center gap-2 truncate min-w-0">
                           <HardDrive className={`w-3.5 h-3.5 shrink-0 ${isActive ? 'text-blue-400' : 'text-[#777777]'}`} />
                           <span className="truncate">{ns.name}</span>
+                        </div>
+                        <div className="flex items-center gap-1.5 shrink-0 ml-2">
                           {ns.is_public && (
-                            <span className="px-1.5 py-0.5 rounded text-[11px] font-medium bg-[#30a46c]/15 border border-[#30a46c]/30 text-[#30a46c] shrink-0">
-                              Public
+                            <span className="px-1 py-0.2 rounded text-[10px] bg-[#30a46c]/15 text-[#30a46c]">
+                              pub
                             </span>
                           )}
-                        </div>
-                        <div className="flex items-center gap-1.5 shrink-0 text-xs text-[#777777]">
-                          <span className="tabular-nums">{isActive && blobs.length > 0 ? realObjectsCount : ns.total_objects}</span>
                           {isActive && <Check className="w-3.5 h-3.5 text-white shrink-0" />}
                         </div>
                       </button>
@@ -175,7 +173,7 @@ export function StorageSidebar({
               type="button"
               onClick={onOpenManageNamespace}
               title="Manage Namespace Quota & Settings"
-              className="w-8 h-8 flex items-center justify-center rounded-md text-[#8c8c8c] hover:text-white hover:bg-[#161616] transition-colors cursor-pointer shrink-0"
+              className="w-9 h-9 flex items-center justify-center rounded-[7px] text-[#8c8c8c] hover:text-white hover:bg-[#161616] transition-colors cursor-pointer shrink-0"
             >
               <Settings className="w-3.5 h-3.5" />
             </button>
@@ -185,7 +183,7 @@ export function StorageSidebar({
             type="button"
             onClick={onOpenNewNamespace}
             title="Create new namespace"
-            className="w-8 h-8 flex items-center justify-center rounded-md text-[#8c8c8c] hover:text-white hover:bg-[#161616] transition-colors cursor-pointer shrink-0"
+            className="w-9 h-9 flex items-center justify-center rounded-[7px] text-[#8c8c8c] hover:text-white hover:bg-[#161616] transition-colors cursor-pointer shrink-0"
           >
             <Plus className="w-3.5 h-3.5" />
           </button>
@@ -196,7 +194,7 @@ export function StorageSidebar({
             onClick={() => setIsMobileOpen(!isMobileOpen)}
             title={isMobileOpen ? 'Collapse Explorer Tree' : 'Expand Explorer Tree'}
             aria-label={isMobileOpen ? 'Collapse Explorer Tree' : 'Expand Explorer Tree'}
-            className="w-8 h-8 flex items-center justify-center rounded-md text-[#8c8c8c] hover:text-white hover:bg-[#161616] lg:hidden transition-colors cursor-pointer shrink-0"
+            className="w-9 h-9 flex items-center justify-center rounded-[7px] text-[#8c8c8c] hover:text-white hover:bg-[#161616] lg:hidden transition-colors cursor-pointer shrink-0"
           >
             <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${isMobileOpen ? 'rotate-180' : ''}`} />
           </button>
