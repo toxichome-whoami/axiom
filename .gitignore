@@ -81,6 +81,9 @@ htmlcov/
 # Axiom Runtime & Local Data
 # ─────────────────────────────────────────────────────────────────────────────
 config.toml
+config_*.toml
+data_*/
+logs_*/
 data/
 logs/
 *.log

@@ -71,8 +71,8 @@ pub async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
         socket2::Type::STREAM,
         Some(socket2::Protocol::TCP),
     )?;
-    #[cfg(unix)]
-    socket.set_reuse_address(true)?;
+
+    let _ = socket.set_reuse_address(true);
     #[cfg(all(unix, not(target_os = "solaris"), not(target_os = "illumos")))]
     let _ = socket.set_reuse_port(true);
     socket.set_nonblocking(true)?;
@@ -107,6 +107,7 @@ async fn shutdown_signal() {
             .await
             .expect("Failed to install Ctrl+C handler");
     };
+
 
     #[cfg(unix)]
     let terminate = async {

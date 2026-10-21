@@ -27,7 +27,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    axiom_core::ConfigManager::load("config.toml").ok();
+    let mut config_path = "config.toml".to_string();
+    for i in 0..args.len() {
+        if (args[i] == "-c" || args[i] == "--config") && i + 1 < args.len() {
+            config_path = args[i + 1].clone();
+            break;
+        }
+    }
+    axiom_core::ConfigManager::load(&config_path).ok();
 
     let config = axiom_core::ConfigManager::get();
     let workers = config.server.workers as usize;
