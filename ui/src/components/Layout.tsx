@@ -66,13 +66,13 @@ export function Layout({ currentPath, onNavigate, title, children, onLogout }: L
   }, [title]);
 
   const searchItems = [
-    { label: 'Overview', path: '/system' as NavPath, icon: LayoutDashboard, category: 'Data & Access' },
-    { label: 'Database Pools', path: '/system/databases' as NavPath, icon: Database, category: 'Data & Access' },
-    { label: 'Table & Schema Editor', path: '/system/tables' as NavPath, icon: Table, category: 'Data & Access' },
-    { label: 'Blob Storage', path: '/system/storage' as NavPath, icon: HardDrive, category: 'Data & Access' },
-    { label: 'Cluster Mesh', path: '/system/cluster' as NavPath, icon: Network, category: 'Data & Access' },
-    { label: 'API Keys', path: '/system/keys' as NavPath, icon: Key, category: 'Data & Access' },
-    { label: 'Roles', path: '/system/roles' as NavPath, icon: Shield, category: 'Data & Access' },
+    { label: 'Overview', path: '/system' as NavPath, icon: LayoutDashboard, category: 'Overview' },
+    { label: 'Database Pools', path: '/system/databases' as NavPath, icon: Database, category: 'Data & Storage' },
+    { label: 'Table Editor', path: '/system/tables' as NavPath, icon: Table, category: 'Data & Storage' },
+    { label: 'Blob Storage', path: '/system/storage' as NavPath, icon: HardDrive, category: 'Data & Storage' },
+    { label: 'Cluster Mesh', path: '/system/cluster' as NavPath, icon: Network, category: 'Infrastructure' },
+    { label: 'API Keys', path: '/system/keys' as NavPath, icon: Key, category: 'Security & Access' },
+    { label: 'Roles', path: '/system/roles' as NavPath, icon: Shield, category: 'Security & Access' },
     { label: 'MCP Protocol', path: '/system/mcp' as NavPath, icon: Bot, category: 'Protocols & Tools' },
     { label: 'Settings', path: '/system/settings' as NavPath, icon: Settings, category: 'Configuration' },
   ];
@@ -149,13 +149,18 @@ export function Layout({ currentPath, onNavigate, title, children, onLogout }: L
 
   const navSections = [
     {
-      title: 'Data & Access',
+      title: '',
       items: [
         {
           path: '/system' as NavPath,
           label: 'Overview',
           icon: LayoutDashboard,
         },
+      ],
+    },
+    {
+      title: 'Data & Storage',
+      items: [
         {
           path: '/system/databases' as NavPath,
           label: 'Database Pools',
@@ -171,11 +176,11 @@ export function Layout({ currentPath, onNavigate, title, children, onLogout }: L
           label: 'Blob Storage',
           icon: HardDrive,
         },
-        {
-          path: '/system/cluster' as NavPath,
-          label: 'Cluster Mesh',
-          icon: Network,
-        },
+      ],
+    },
+    {
+      title: 'Security & Access',
+      items: [
         {
           path: '/system/keys' as NavPath,
           label: 'API Keys',
@@ -185,6 +190,16 @@ export function Layout({ currentPath, onNavigate, title, children, onLogout }: L
           path: '/system/roles' as NavPath,
           label: 'Roles',
           icon: Shield,
+        },
+      ],
+    },
+    {
+      title: 'Infrastructure',
+      items: [
+        {
+          path: '/system/cluster' as NavPath,
+          label: 'Cluster Mesh',
+          icon: Network,
         },
       ],
     },
