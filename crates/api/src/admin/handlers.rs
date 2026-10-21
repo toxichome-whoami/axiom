@@ -78,6 +78,119 @@ pub fn validate_clean_name(kind: &str, name: &str) -> Result<(), AxiomError> {
     Ok(())
 }
 
+/// Resolves and sanitizes database connection URLs with security constraints:
+/// - LibSQL / SQLite:
+///   - If URL is empty or whitespace: defaults to local file `sqlite://data/{alias}.db`
+///   - If local file path: enforces strict jail to the `data/` directory.
+///     Rejects directory traversal (`..`), absolute drive paths (e.g. `C:`), and root paths.
+///   - If token is provided (for Turso or remote LibSQL): appends `?authToken={token}` if not already present.
+/// - Other engines:
+///   - Requires non-empty URL.
+pub fn resolve_and_sanitize_db_url(
+    alias: &str,
+    raw_url: &str,
+    engine: Option<&str>,
+    token: Option<&str>,
+) -> Result<String, AxiomError> {
+    let trimmed = raw_url.trim();
+    let engine_lower = engine.unwrap_or("").trim().to_lowercase();
+    let is_libsql = engine_lower == "libsql"
+        || engine_lower == "sqlite"
+        || trimmed.starts_with("libsql://")
+        || trimmed.starts_with("sqlite://")
+        || trimmed.starts_with("file:")
+        || trimmed.starts_with("file://");
+
+    let mut resolved = if is_libsql {
+        if trimmed.is_empty() {
+            // Default to embedded sqlite file in data/ directory
+            let clean_alias = alias.trim();
+            if clean_alias.is_empty() {
+                "sqlite://data/database.db".to_string()
+            } else {
+                format!("sqlite://data/{}.db", clean_alias)
+            }
+        } else if trimmed == ":memory:"
+            || trimmed == "sqlite://:memory:"
+            || trimmed == "file::memory:"
+            || trimmed == "file://:memory:"
+        {
+            "sqlite://:memory:".to_string()
+        } else if trimmed.starts_with("libsql://")
+            || trimmed.starts_with("https://")
+            || trimmed.starts_with("http://")
+        {
+            // Remote Turso or LibSQL server
+            trimmed.to_string()
+        } else {
+            // Local file path - must be jailed strictly to data/
+            let stripped = trimmed
+                .strip_prefix("sqlite://")
+                .or_else(|| trimmed.strip_prefix("file://"))
+                .or_else(|| trimmed.strip_prefix("file:"))
+                .unwrap_or(trimmed);
+
+            let normalized = stripped.replace('\\', "/");
+
+            // Disallow directory traversal
+            if normalized.contains("..") {
+                return Err(AxiomError::new(
+                    "FORBIDDEN_PATH",
+                    "Local database files are restricted to the 'data/' directory. Directory traversal ('..') is prohibited.",
+                    StatusCode::FORBIDDEN,
+                ));
+            }
+
+            // Disallow Windows drive letters (e.g. C:, D:)
+            if normalized.contains(':') {
+                return Err(AxiomError::new(
+                    "FORBIDDEN_PATH",
+                    "Local database files are restricted to the 'data/' directory. Absolute drive paths are prohibited.",
+                    StatusCode::FORBIDDEN,
+                ));
+            }
+
+            // Disallow Unix root paths (e.g. /etc/passwd)
+            if normalized.starts_with('/') {
+                return Err(AxiomError::new(
+                    "FORBIDDEN_PATH",
+                    "Local database files are restricted to the 'data/' directory. Absolute root paths are prohibited.",
+                    StatusCode::FORBIDDEN,
+                ));
+            }
+
+            let path_part = normalized.trim_start_matches("./");
+            if path_part.starts_with("data/") {
+                format!("sqlite://{}", path_part)
+            } else {
+                format!("sqlite://data/{}", path_part.trim_start_matches('/'))
+            }
+        }
+    } else {
+        if trimmed.is_empty() {
+            return Err(AxiomError::new(
+                "INVALID_URL",
+                "Database connection URL cannot be empty",
+                StatusCode::BAD_REQUEST,
+            ));
+        }
+        trimmed.to_string()
+    };
+
+    // If an auth token was supplied and the resolved URL doesn't already contain authToken
+    if let Some(tok) = token.map(|t| t.trim()).filter(|t| !t.is_empty()) {
+        if !resolved.contains("authToken=") {
+            if resolved.contains('?') {
+                resolved.push_str(&format!("&authToken={}", tok));
+            } else {
+                resolved.push_str(&format!("?authToken={}", tok));
+            }
+        }
+    }
+
+    Ok(resolved)
+}
+
 // ─── Request Schemas ───────────────────────────────────────────────────────
 
 #[derive(Debug, Deserialize)]
@@ -116,6 +229,8 @@ pub struct AddDatabaseRequest {
     pub pool_max: Option<i64>,
     #[serde(default)]
     pub old_alias: Option<String>,
+    #[serde(default)]
+    pub token: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -419,25 +534,25 @@ pub async fn add_database(
     let url_trimmed = payload.url.trim();
     let lookup_alias = payload.old_alias.as_deref().unwrap_or(&payload.alias);
     let is_existing = axiom_metadata::snapshot::get_snapshot().databases.contains_key(lookup_alias);
-    if url_trimmed.is_empty() && !is_existing {
-        return Err(AxiomError::new(
-            "INVALID_URL",
-            "Database connection URL cannot be empty for new database",
-            StatusCode::BAD_REQUEST,
-        ));
-    }
 
     // Determine the effective connection URL to test and save
-    let effective_url = if !url_trimmed.is_empty() && !url_trimmed.contains('•') {
-        url_trimmed.to_string()
-    } else if let Some(existing) = axiom_metadata::snapshot::get_snapshot().databases.get(lookup_alias) {
-        existing.url.clone()
+    let effective_url = if is_existing && (url_trimmed.is_empty() || url_trimmed.contains('•')) {
+        if let Some(existing) = axiom_metadata::snapshot::get_snapshot().databases.get(lookup_alias) {
+            existing.url.clone()
+        } else {
+            return Err(AxiomError::new(
+                "INVALID_URL",
+                "Database connection URL cannot be empty",
+                StatusCode::BAD_REQUEST,
+            ));
+        }
     } else {
-        return Err(AxiomError::new(
-            "INVALID_URL",
-            "Database connection URL cannot be empty",
-            StatusCode::BAD_REQUEST,
-        ));
+        resolve_and_sanitize_db_url(
+            &payload.alias,
+            url_trimmed,
+            payload.engine.as_deref(),
+            payload.token.as_deref(),
+        )?
     };
 
     // Enforce uniqueness: Reject if another database alias already uses this connection URL
@@ -1079,6 +1194,10 @@ pub async fn setup_account(
 pub struct TestUrlRequest {
     pub url: String,
     pub alias: Option<String>,
+    #[serde(default)]
+    pub engine: Option<String>,
+    #[serde(default)]
+    pub token: Option<String>,
 }
 
 /// Tests connectivity against a raw database URL directly without saving it.
@@ -1094,14 +1213,21 @@ pub async fn test_database_url(
         ));
     }
 
-    let dialect = DatabasePoolManager::test_url(&payload.url)
+    let effective_url = resolve_and_sanitize_db_url(
+        payload.alias.as_deref().unwrap_or("test_db"),
+        &payload.url,
+        payload.engine.as_deref(),
+        payload.token.as_deref(),
+    )?;
+
+    let dialect = DatabasePoolManager::test_url(&effective_url)
         .await
         .map_err(|e| AxiomError::new("DATABASE_CONNECTION_FAILED", &e, StatusCode::BAD_REQUEST))?;
 
     // Check if this URL is already registered under another database alias
     let snapshot = axiom_metadata::snapshot::get_snapshot();
     for (existing_alias, existing_db) in snapshot.databases.iter() {
-        if Some(existing_alias) != payload.alias.as_ref() && MetadataStore::urls_match(&existing_db.url, &payload.url) {
+        if Some(existing_alias) != payload.alias.as_ref() && MetadataStore::urls_match(&existing_db.url, &effective_url) {
             return Err(AxiomError::new(
                 "DATABASE_URL_ALREADY_EXISTS",
                 &format!(
@@ -1113,13 +1239,12 @@ pub async fn test_database_url(
         }
     }
 
-
-
     Ok(Json(json!({
         "success": true,
         "data": {
             "status": "connected",
             "dialect": dialect,
+            "resolved_url": effective_url,
             "message": "Connection healthy"
         },
         "error": Value::Null
@@ -1142,15 +1267,22 @@ pub async fn setup_database(
         ));
     }
 
+    let effective_url = resolve_and_sanitize_db_url(
+        &payload.alias,
+        &payload.url,
+        payload.engine.as_deref(),
+        payload.token.as_deref(),
+    )?;
+
     // 1. Verify database connectivity before saving
-    let dialect = DatabasePoolManager::test_url(&payload.url)
+    let dialect = DatabasePoolManager::test_url(&effective_url)
         .await
         .map_err(|e| AxiomError::new("DATABASE_CONNECTION_FAILED", &format!("Connection failed: {}", e), StatusCode::BAD_REQUEST))?;
 
     // 2. Enforce uniqueness: Check if this URL is already registered
     let snapshot = axiom_metadata::snapshot::get_snapshot();
     for (existing_alias, existing_db) in snapshot.databases.iter() {
-        if existing_alias != &payload.alias && MetadataStore::urls_match(&existing_db.url, &payload.url) {
+        if existing_alias != &payload.alias && MetadataStore::urls_match(&existing_db.url, &effective_url) {
             return Err(AxiomError::new(
                 "DATABASE_URL_ALREADY_EXISTS",
                 &format!(
@@ -1164,7 +1296,7 @@ pub async fn setup_database(
 
     MetadataStore::add_database(
         &payload.alias,
-        &payload.url,
+        &effective_url,
         payload.engine.as_deref().or(Some(&dialect)),
         payload.pool_min,
         payload.pool_max,
@@ -1774,6 +1906,72 @@ mod tests {
         assert!(validate_clean_name("key", "-start_with_dash").is_err());
         assert!(validate_clean_name("key", "end_with_dash-").is_err());
         assert!(validate_clean_name("key", "").is_err());
+    }
+
+    #[test]
+    fn test_resolve_and_sanitize_db_url() {
+        // 1. LibSQL / SQLite empty URL defaults to sqlite://data/{alias}.db
+        let default_url = resolve_and_sanitize_db_url("mydb", "", Some("libsql"), None).unwrap();
+        assert_eq!(default_url, "sqlite://data/mydb.db");
+
+        // 2. LibSQL / SQLite with relative filename puts it in data/
+        let rel_url = resolve_and_sanitize_db_url("mydb", "my_custom.db", Some("libsql"), None).unwrap();
+        assert_eq!(rel_url, "sqlite://data/my_custom.db");
+
+        // 3. LibSQL / SQLite with data/ prefix stays intact
+        let in_data = resolve_and_sanitize_db_url("mydb", "data/nested.db", Some("libsql"), None).unwrap();
+        assert_eq!(in_data, "sqlite://data/nested.db");
+
+        let sqlite_in_data = resolve_and_sanitize_db_url("mydb", "sqlite://data/nested.db", None, None).unwrap();
+        assert_eq!(sqlite_in_data, "sqlite://data/nested.db");
+
+        // 4. Memory databases permitted
+        let mem = resolve_and_sanitize_db_url("mydb", ":memory:", Some("libsql"), None).unwrap();
+        assert_eq!(mem, "sqlite://:memory:");
+
+        // 5. Remote Turso URL with token
+        let turso = resolve_and_sanitize_db_url(
+            "turso_db",
+            "libsql://my-org.turso.io",
+            Some("libsql"),
+            Some("jwt_token_123"),
+        )
+        .unwrap();
+        assert_eq!(turso, "libsql://my-org.turso.io?authToken=jwt_token_123");
+
+        // 6. Remote Turso with existing param
+        let turso_existing = resolve_and_sanitize_db_url(
+            "turso_db",
+            "libsql://my-org.turso.io?tls=true",
+            Some("libsql"),
+            Some("jwt_token_123"),
+        )
+        .unwrap();
+        assert_eq!(turso_existing, "libsql://my-org.turso.io?tls=true&authToken=jwt_token_123");
+
+        // 7. Security: Directory traversal rejected
+        let trav = resolve_and_sanitize_db_url("mydb", "../evil.db", Some("libsql"), None);
+        assert!(trav.is_err());
+        assert_eq!(trav.unwrap_err().code, "FORBIDDEN_PATH");
+
+        let trav_nested = resolve_and_sanitize_db_url("mydb", "data/../../evil.db", Some("libsql"), None);
+        assert!(trav_nested.is_err());
+        assert_eq!(trav_nested.unwrap_err().code, "FORBIDDEN_PATH");
+
+        // 8. Security: Absolute drive paths rejected
+        let drive = resolve_and_sanitize_db_url("mydb", "C:/Windows/win.db", Some("libsql"), None);
+        assert!(drive.is_err());
+        assert_eq!(drive.unwrap_err().code, "FORBIDDEN_PATH");
+
+        // 9. Security: Root paths rejected
+        let root = resolve_and_sanitize_db_url("mydb", "/etc/shadow.db", Some("libsql"), None);
+        assert!(root.is_err());
+        assert_eq!(root.unwrap_err().code, "FORBIDDEN_PATH");
+
+        // 10. Non-libsql empty URL rejected
+        let empty_pg = resolve_and_sanitize_db_url("pgdb", "", Some("postgres"), None);
+        assert!(empty_pg.is_err());
+        assert_eq!(empty_pg.unwrap_err().code, "INVALID_URL");
     }
 }
 

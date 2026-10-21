@@ -310,7 +310,7 @@ export const api = {
 
   // Managed Databases
   listDatabases: () => request<{ databases: DatabaseRecordApi[] }>('/admin/v1/databases'),
-  addDatabase: (data: { alias: string; url: string; engine?: string; pool_min?: number; pool_max?: number; old_alias?: string }) =>
+  addDatabase: (data: { alias: string; url: string; engine?: string; token?: string; pool_min?: number; pool_max?: number; old_alias?: string }) =>
     request<{ alias: string; message: string }>('/admin/v1/databases', {
       method: 'POST',
       body: JSON.stringify(data),
@@ -396,15 +396,15 @@ export const api = {
     const username = res.user?.username || res.username || data.username;
     return { username, token, session_token: token, expires_at: res.expires_at || 0 };
   },
-  setupDatabase: (data: { alias: string; url: string; engine?: string }) =>
+  setupDatabase: (data: { alias: string; url: string; engine?: string; token?: string }) =>
     request<{ alias: string; message: string }>('/admin/v1/setup/database', {
       method: 'POST',
       body: JSON.stringify(data),
     }),
-  testDatabaseUrl: (url: string, alias?: string) =>
+  testDatabaseUrl: (url: string, alias?: string, engine?: string, token?: string) =>
     request<{ status: string; dialect: string; message: string }>('/admin/v1/setup/database/test', {
       method: 'POST',
-      body: JSON.stringify({ url, alias }),
+      body: JSON.stringify({ url, alias, engine, token }),
     }),
   setupComplete: () =>
     request<{ message: string; api_key: { name: string; token: string } }>('/admin/v1/setup/complete', {

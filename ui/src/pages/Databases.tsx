@@ -78,8 +78,8 @@ export const ENGINE_URL_SCHEMES: Record<string, { prefixes: string[]; example: s
     example: 'clickhouse://user:secret@host:8123/default',
   },
   libsql: {
-    prefixes: ['libsql://', 'sqlite://', 'file:'],
-    example: 'libsql://database.turso.io or sqlite://local.db',
+    prefixes: ['libsql://', 'sqlite://', 'file:', 'https://'],
+    example: 'libsql://database.turso.io, https://database.turso.io, or leave blank',
   },
 };
 
@@ -89,16 +89,38 @@ export const ENGINE_URL_SCHEMES: Record<string, { prefixes: string[]; example: s
  *  - Fails closed on empty, whitespace, or invalid scheme prefix.
  *  - Case-insensitive on protocol scheme.
  *  - Enforces minimum URI structure (scheme + target endpoint).
+ *  - LibSQL allows empty string (defaults to data/{alias}.db) and restricts local paths to data/.
  * @param engine - Dialect identifier (e.g. 'PostgreSQL', 'MySQL', 'LibSQL')
  * @param rawUrl - Input URI string to validate
  */
 export function validateDatabaseUrl(engine: string, rawUrl: string): { valid: boolean; error?: string } {
   const trimmed = rawUrl.trim();
+  const normEngine = engine.toLowerCase().trim();
+
+  // LibSQL / SQLite allows blank URL to auto-create sqlite://data/{alias}.db
   if (!trimmed) {
+    if (normEngine === 'libsql' || normEngine === 'sqlite') {
+      return { valid: true };
+    }
     return { valid: false, error: 'Connection URL is required.' };
   }
 
-  const normEngine = engine.toLowerCase().trim();
+  // Security jailing checks for local LibSQL / SQLite
+  if (normEngine === 'libsql' || normEngine === 'sqlite') {
+    if (trimmed.includes('..')) {
+      return {
+        valid: false,
+        error: "Directory traversal ('..') is prohibited. Local databases are restricted to the 'data/' directory.",
+      };
+    }
+    if (/^[a-zA-Z]:/.test(trimmed) || (trimmed.startsWith('/') && !trimmed.startsWith('//'))) {
+      return {
+        valid: false,
+        error: "Absolute drive and root paths are prohibited. Local databases are restricted to the 'data/' directory.",
+      };
+    }
+  }
+
   const spec = ENGINE_URL_SCHEMES[normEngine];
   if (!spec) {
     return { valid: trimmed.includes('://') || trimmed.startsWith('file:') };
@@ -107,6 +129,12 @@ export function validateDatabaseUrl(engine: string, rawUrl: string): { valid: bo
   const lowerUrl = trimmed.toLowerCase();
   const matched = spec.prefixes.some((p) => lowerUrl.startsWith(p));
   if (!matched) {
+    // For LibSQL/SQLite, plain relative file names (e.g. mydb.db or data/mydb.db) are valid
+    if (normEngine === 'libsql' || normEngine === 'sqlite') {
+      if (!trimmed.includes('://')) {
+        return { valid: true };
+      }
+    }
     return {
       valid: false,
       error: `Invalid URL protocol for ${formatEngine(engine)}. Expected prefix: ${spec.prefixes.join(' or ')}`,
@@ -241,6 +269,8 @@ export function Databases() {
   const [newEngine, setNewEngine] = useState<string>('PostgreSQL');
   const [newUrl, setNewUrl] = useState('');
   const [showNewUrl, setShowNewUrl] = useState(false);
+  const [newToken, setNewToken] = useState('');
+  const [showNewToken, setShowNewToken] = useState(false);
   const [newMin, setNewMin] = useState(1);
   const [newMax, setNewMax] = useState(10);
   const [newTimeout, setNewTimeout] = useState(30);
@@ -256,6 +286,8 @@ export function Databases() {
   const [editEngine, setEditEngine] = useState<EngineType>('PostgreSQL');
   const [editUrl, setEditUrl] = useState('');
   const [showEditUrl, setShowEditUrl] = useState(false);
+  const [editToken, setEditToken] = useState('');
+  const [showEditToken, setShowEditToken] = useState(false);
   const [editMin, setEditMin] = useState(1);
   const [editMax, setEditMax] = useState(10);
   const [editTimeout, setEditTimeout] = useState(30);
@@ -275,7 +307,7 @@ export function Databases() {
     setAttachError(null);
     setTestResult('testing');
     try {
-      await api.testDatabaseUrl(newUrl.trim(), newAlias.trim() || undefined);
+      await api.testDatabaseUrl(newUrl.trim(), newAlias.trim() || undefined, newEngine, newToken.trim() || undefined);
       setTestResult('success');
     } catch (err: unknown) {
       setTestResult('fail');
@@ -288,14 +320,14 @@ export function Databases() {
     setManageError(null);
     setManageTestResult('testing');
     try {
-      if (urlChanged) {
+      if (urlChanged || editToken.trim().length > 0) {
         const validation = validateDatabaseUrl(editEngine, editUrl);
         if (!validation.valid) {
           setManageTestResult('fail');
           setManageError(validation.error || 'Invalid URL format for selected engine.');
           return;
         }
-        await api.testDatabaseUrl(editUrl.trim(), selectedPool.alias);
+        await api.testDatabaseUrl(editUrl.trim(), selectedPool.alias, editEngine, editToken.trim() || undefined);
         setManageTestResult('success');
         setSelectedPool((prev) => (prev ? { ...prev, status: 'Ready' } : null));
         setPools((prev) =>
@@ -345,6 +377,7 @@ export function Databases() {
       editAlias.trim() !== selectedPool.alias ||
       editEngine !== selectedPool.engine ||
       urlChanged ||
+      editToken.trim().length > 0 ||
       editMin !== selectedPool.minConnections ||
       editMax !== selectedPool.maxConnections ||
       editTimeout !== selectedPool.idleTimeoutSeconds
@@ -383,7 +416,7 @@ export function Databases() {
 
     try {
       // 1. Mandatory live connection check every time when adding
-      await api.testDatabaseUrl(newUrl.trim(), newAlias.trim() || undefined);
+      await api.testDatabaseUrl(newUrl.trim(), newAlias.trim() || undefined, newEngine, newToken.trim() || undefined);
       setTestResult('success');
 
       // 2. Register database once connection is verified
@@ -391,6 +424,7 @@ export function Databases() {
         alias: newAlias.trim(),
         url: newUrl.trim(),
         engine: newEngine,
+        token: newToken.trim() || undefined,
         pool_min: newMin,
         pool_max: newMax,
       });
@@ -398,6 +432,8 @@ export function Databases() {
       setAttachOpen(false);
       setNewAlias('');
       setNewUrl('');
+      setNewToken('');
+      setShowNewToken(false);
       setNewMin(1);
       setNewMax(10);
       setNewTimeout(30);
@@ -422,8 +458,8 @@ export function Databases() {
 
     try {
       // 1. Mandatory live connection check every time when updating
-      if (urlChanged) {
-        await api.testDatabaseUrl(updatedUrl, selectedPool.alias);
+      if (urlChanged || editToken.trim().length > 0) {
+        await api.testDatabaseUrl(updatedUrl, selectedPool.alias, editEngine, editToken.trim() || undefined);
       } else {
         const test = await api.testDatabase(oldAlias);
         if (test.status !== 'up' && test.status !== 'connected') {
@@ -437,6 +473,7 @@ export function Databases() {
         alias: updatedAlias,
         url: updatedUrl,
         engine: editEngine,
+        token: editToken.trim() || undefined,
         pool_min: editMin,
         pool_max: editMax,
         old_alias: oldAlias,
@@ -446,6 +483,8 @@ export function Databases() {
       }
       await loadDatabases();
       setManageOpen(false);
+      setEditToken('');
+      setShowEditToken(false);
     } catch (err: unknown) {
       setManageTestResult('fail');
       setManageError(err instanceof Error ? err.message : 'Database connection test failed. Unable to save.');
@@ -640,6 +679,8 @@ export function Databases() {
               setEditAlias(row.alias);
               setEditEngine(row.engine);
               setEditUrl('');
+              setEditToken('');
+              setShowEditToken(false);
               setEditMin(row.minConnections);
               setEditMax(row.maxConnections);
               setEditTimeout(row.idleTimeoutSeconds);
@@ -692,6 +733,10 @@ export function Databases() {
             onClick={() => {
               setTestResult(null);
               setAttachError(null);
+              setNewAlias('');
+              setNewUrl('');
+              setNewToken('');
+              setShowNewToken(false);
               setNewMin(1);
               setNewMax(10);
               setNewTimeout(30);
@@ -1024,9 +1069,14 @@ export function Databases() {
           </div>
 
           <div>
-            <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">
-              Connection URL <span className="text-[#e5484d]">*</span>
-            </label>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="block text-[13px] font-medium text-[#cccccc]">
+                Connection URL {newEngine.toLowerCase() !== 'libsql' && <span className="text-[#e5484d]">*</span>}
+              </label>
+              {newEngine.toLowerCase() === 'libsql' && (
+                <span className="text-[11px] text-[#888888]">Optional for local DB</span>
+              )}
+            </div>
             <div className="relative">
               <input
                 type={showNewUrl ? 'text' : 'password'}
@@ -1036,7 +1086,11 @@ export function Databases() {
                   setTestResult(null);
                   setAttachError(null);
                 }}
-                placeholder={ENGINE_URL_SCHEMES[newEngine.toLowerCase()]?.example || 'postgres://user:secret@host:5432/dbname'}
+                placeholder={
+                  newEngine.toLowerCase() === 'libsql'
+                    ? `Leave blank to create data/${newAlias.trim() || 'database'}.db`
+                    : ENGINE_URL_SCHEMES[newEngine.toLowerCase()]?.example || 'postgres://user:secret@host:5432/dbname'
+                }
                 className={`h-9 w-full rounded-[6px] border pl-3 pr-10 text-[14px] text-white focus:outline-none font-mono transition-colors ${
                   newUrl.trim().length > 0 && !validateDatabaseUrl(newEngine, newUrl).valid
                     ? 'border-[#e5484d] bg-[#1a0f0f] focus:border-[#e5484d] focus:ring-1 focus:ring-[#e5484d]/40'
@@ -1068,15 +1122,59 @@ export function Databases() {
             )}
             {newUrl.trim().length === 0 && (
               <p className="mt-1.5 text-[12px] text-[#737373]">
-                Must start with <code className="font-mono text-[#a3a3a3]">{newEngine.toLowerCase()}://</code> or supported protocol.
+                {newEngine.toLowerCase() === 'libsql' ? (
+                  <span>
+                    Leave blank to automatically create <code className="font-mono text-[#a3a3a3]">data/{newAlias.trim() || 'database'}.db</code> inside the protected <code className="font-mono text-[#a3a3a3]">data/</code> directory.
+                  </span>
+                ) : (
+                  <span>
+                    Must start with <code className="font-mono text-[#a3a3a3]">{newEngine.toLowerCase()}://</code> or supported protocol.
+                  </span>
+                )}
               </p>
             )}
           </div>
 
+          {newEngine.toLowerCase() === 'libsql' && (
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block text-[13px] font-medium text-[#cccccc]">
+                  Auth Token <span className="text-[11px] font-normal text-[#888888]">(Turso / Remote LibSQL)</span>
+                </label>
+                <span className="text-[11px] text-[#666666]">Optional</span>
+              </div>
+              <div className="relative">
+                <input
+                  type={showNewToken ? 'text' : 'password'}
+                  value={newToken}
+                  onChange={(e) => {
+                    setNewToken(e.target.value);
+                    setTestResult(null);
+                    setAttachError(null);
+                  }}
+                  placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6..."
+                  className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] pl-3 pr-10 text-[14px] text-white focus:outline-none focus:border-[#3b82f6] font-mono transition-colors"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowNewToken(!showNewToken)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#777777] hover:text-[#cccccc] transition-colors cursor-pointer"
+                  tabIndex={-1}
+                  aria-label={showNewToken ? 'Hide token' : 'Show token'}
+                >
+                  {showNewToken ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                </button>
+              </div>
+              <p className="mt-1.5 text-[12px] text-[#737373]">
+                JWT auth token required for remote Turso cloud databases. Leave blank for local files.
+              </p>
+            </div>
+          )}
+
           <div>
             <button
               type="button"
-              disabled={testResult === 'testing' || !newUrl.trim()}
+              disabled={testResult === 'testing' || (!newUrl.trim() && newEngine.toLowerCase() !== 'libsql')}
               onClick={handleTestConnection}
               className={`h-8 px-3 rounded-[6px] text-[13px] font-medium border transition-colors inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50 ${
                 testResult === 'success'
@@ -1186,7 +1284,7 @@ export function Databases() {
           <button
             type="button"
             onClick={handleAttach}
-            disabled={isAttaching || !poolOk || !newAlias.trim() || !newUrl.trim()}
+            disabled={isAttaching || !poolOk || !newAlias.trim() || (!newUrl.trim() && newEngine.toLowerCase() !== 'libsql')}
             className="group relative flex shrink-0 items-center justify-center h-9 px-4 rounded-[8px] font-medium text-white shadow-xs outline-none cursor-pointer overflow-hidden ring-1 ring-[#1d4ed8] bg-[#2563eb] font-sans disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <span aria-hidden="true" className="pointer-events-none absolute inset-0 rounded-[inherit] bg-gradient-to-b from-[#3b82f6] to-[#2563eb] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2)]" />
@@ -1340,6 +1438,42 @@ export function Databases() {
                     </p>
                   )}
                 </div>
+
+                {editEngine.toLowerCase() === 'libsql' && (
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="block text-[13px] font-medium text-[#cccccc]">
+                        Auth Token <span className="text-[11px] font-normal text-[#888888]">(Turso / Remote LibSQL)</span>
+                      </label>
+                      <span className="text-[11px] text-[#666666]">Optional</span>
+                    </div>
+                    <div className="relative">
+                      <input
+                        type={showEditToken ? 'text' : 'password'}
+                        value={editToken}
+                        onChange={(e) => {
+                          setEditToken(e.target.value);
+                          setManageTestResult(null);
+                          setManageError(null);
+                        }}
+                        placeholder="Leave blank to keep existing token"
+                        className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] pl-3 pr-10 text-[14px] text-white focus:outline-none focus:border-[#3b82f6] font-mono transition-colors"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowEditToken(!showEditToken)}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#777777] hover:text-[#cccccc] transition-colors cursor-pointer"
+                        tabIndex={-1}
+                        aria-label={showEditToken ? 'Hide token' : 'Show token'}
+                      >
+                        {showEditToken ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                      </button>
+                    </div>
+                    <p className="mt-1.5 text-[12px] text-[#737373]">
+                      Update auth token for Turso. Leave empty to preserve existing credentials.
+                    </p>
+                  </div>
+                )}
 
                 <div>
                   <button

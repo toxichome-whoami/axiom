@@ -87,7 +87,7 @@ impl DatabasePoolManager {
                         return None;
                     }
                 }
-            } else if url.starts_with("sqlite://") || url.starts_with("libsql://") {
+            } else if url.starts_with("sqlite://") || url.starts_with("libsql://") || url.starts_with("file:") || url.starts_with("file://") {
                 let mut engine = LibsqlDatabaseEngine::new(db_config.clone());
                 match tokio::time::timeout(conn_timeout, engine.connect()).await {
                     Ok(Ok(())) => Arc::new(engine),
@@ -191,7 +191,7 @@ impl DatabasePoolManager {
         let mut engine: Box<dyn DatabaseEngine> =
             if trimmed.starts_with("mssql://") || trimmed.starts_with("sqlserver://") {
                 Box::new(MssqlDatabaseEngine::new(db_config))
-            } else if trimmed.starts_with("sqlite://") || trimmed.starts_with("libsql://") {
+            } else if trimmed.starts_with("sqlite://") || trimmed.starts_with("libsql://") || trimmed.starts_with("file:") || trimmed.starts_with("file://") {
                 Box::new(LibsqlDatabaseEngine::new(db_config))
             } else if trimmed.starts_with("postgres://") || trimmed.starts_with("postgresql://") {
                 Box::new(PostgresDatabaseEngine::new(db_config))
