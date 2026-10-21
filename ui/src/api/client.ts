@@ -329,11 +329,9 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(data),
     }),
-  rotateKey: (name: string, options?: { grace_period?: number; idempotencyKey?: string }) =>
+  rotateKey: (name: string) =>
     request<{ name: string; token: string; secret: string; note: string }>(`/admin/v1/keys/${encodeURIComponent(name)}/rotate`, {
       method: 'POST',
-      headers: options?.idempotencyKey ? { 'Idempotency-Key': options.idempotencyKey } : undefined,
-      body: options?.grace_period ? JSON.stringify({ grace_period: options.grace_period }) : undefined,
     }),
   deleteKey: (name: string) =>
     request<{ message: string }>(`/admin/v1/keys/${encodeURIComponent(name)}`, {

@@ -8,7 +8,7 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { RbacRole } from '../types';
 import { DataTable, Column } from '../components/shared/DataTable';
-import { PermissionTable, DbPermissionRule } from '../components/shared/PermissionTable';
+import { PermissionTable, DbPermissionRule, isBlobRule } from '../components/shared/PermissionTable';
 import { SlideOver } from '../components/ui/SlideOver';
 import { Button } from '../components/ui/Button';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
@@ -104,6 +104,25 @@ const ROLE_PRESETS: {
   },
 ];
 
+function areRulesEqual(a: DbPermissionRule[], b: DbPermissionRule[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const rA = a[i];
+    const rB = b[i];
+    if (rA.database.trim() !== rB.database.trim()) return false;
+    if (rA.table.trim() !== rB.table.trim()) return false;
+    if ((rA.rls_filter?.trim() || '') !== (rB.rls_filter?.trim() || '')) return false;
+
+    const opsA = [...rA.operations].sort();
+    const opsB = [...rB.operations].sort();
+    if (opsA.length !== opsB.length) return false;
+    for (let j = 0; j < opsA.length; j++) {
+      if (opsA[j] !== opsB[j]) return false;
+    }
+  }
+  return true;
+}
+
 export function Roles() {
   const [roles, setRoles] = useState<RbacRole[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -198,6 +217,10 @@ export function Roles() {
   const [editRoleDesc, setEditRoleDesc] = useState('');
   const [editPerms, setEditPerms] = useState<DbPermissionRule[]>([]);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+  const [confirmDiscardCreateOpen, setConfirmDiscardCreateOpen] = useState(false);
+  const [confirmDiscardManageOpen, setConfirmDiscardManageOpen] = useState(false);
+  const [isCreatingRole, setIsCreatingRole] = useState(false);
+  const [isSavingRole, setIsSavingRole] = useState(false);
 
   // Create panel state
   const [createOpen, setCreateOpen] = useState(false);
@@ -205,17 +228,36 @@ export function Roles() {
   const [newRoleDesc, setNewRoleDesc] = useState('');
   const [newPerms, setNewPerms] = useState<DbPermissionRule[]>([...READONLY_RULES]);
 
+  const initialManageStateRef = useRef<{
+    name: string;
+    description: string;
+    perms: DbPermissionRule[];
+  } | null>(null);
+
   function openManage(role: RbacRole) {
     setSelectedRole(role);
     setEditRoleName(role.name);
-    setEditRoleDesc(role.description);
-    setEditPerms(
-      role.permissions.map((p) => ({
-        ...p,
-        operations: [...p.operations],
-        rls_filter: p.rls_filter || '',
-      }))
-    );
+    const desc = role.description || '';
+    setEditRoleDesc(desc);
+    const initialRules: DbPermissionRule[] = (role.permissions || []).map((p) => ({
+      database: p.database || '',
+      table: p.table || '',
+      operations: [...p.operations],
+      rls_filter: p.rls_filter || '',
+      resourceType: isBlobRule(p) ? 'blob' : 'database',
+    }));
+    setEditPerms(initialRules);
+    initialManageStateRef.current = {
+      name: role.name,
+      description: desc,
+      perms: initialRules.map((r) => ({
+        database: r.database,
+        table: r.table,
+        operations: [...r.operations],
+        rls_filter: r.rls_filter || '',
+        resourceType: r.resourceType,
+      })),
+    };
     setManageTab('edit');
     setManageOpen(true);
   }
@@ -230,17 +272,61 @@ export function Roles() {
     [newPerms]
   );
 
-  const isModified = Boolean(
-    selectedRole &&
-      editRoleName.trim() !== '' &&
-      (editRoleName.trim() !== selectedRole.name ||
-        editRoleDesc !== selectedRole.description ||
-        JSON.stringify(editPerms) !== JSON.stringify(selectedRole.permissions))
+  const roleNameValidation = validateCleanName(newRoleName);
+  const editRoleNameValidation = validateCleanName(editRoleName);
+
+  const isCreateDirty = Boolean(
+    newRoleName.trim().length > 0 ||
+    newRoleDesc.trim().length > 0 ||
+    newPerms.length !== 1 ||
+    newPerms[0].database !== '' ||
+    newPerms[0].table !== '' ||
+    newPerms[0].operations.length !== 1 ||
+    newPerms[0].operations[0] !== 'SELECT'
   );
 
+  function requestCloseCreate() {
+    if (isCreateDirty) {
+      setConfirmDiscardCreateOpen(true);
+    } else {
+      forceCloseCreate();
+    }
+  }
+
+  function forceCloseCreate() {
+    setConfirmDiscardCreateOpen(false);
+    setCreateOpen(false);
+    setNewRoleName('');
+    setNewRoleDesc('');
+    setNewPerms([...READONLY_RULES]);
+  }
+
+  function requestCloseManage() {
+    if (manageTab === 'edit' && isModified) {
+      setConfirmDiscardManageOpen(true);
+    } else {
+      forceCloseManage();
+    }
+  }
+
+  function forceCloseManage() {
+    setConfirmDiscardManageOpen(false);
+    setManageOpen(false);
+    setManageTab('edit');
+    initialManageStateRef.current = null;
+  }
+
+  const isModified = useMemo(() => {
+    if (!selectedRole || !initialManageStateRef.current) return false;
+    if (editRoleName.trim() !== initialManageStateRef.current.name.trim()) return true;
+    if (editRoleDesc.trim() !== initialManageStateRef.current.description.trim()) return true;
+    return !areRulesEqual(editPerms, initialManageStateRef.current.perms);
+  }, [selectedRole, editRoleName, editRoleDesc, editPerms]);
+
   async function handleSaveEdit() {
-    if (!selectedRole || !editRoleName.trim() || hasEditPermErrors) return;
+    if (!selectedRole || !editRoleName.trim() || !editRoleNameValidation.valid || hasEditPermErrors || isSavingRole) return;
     try {
+      setIsSavingRole(true);
       const permPayload: PermissionRecordApi[] = editPerms.map((p) => ({
         database: p.database,
         table_name: p.table,
@@ -252,17 +338,18 @@ export function Roles() {
         permissions: permPayload,
       });
       await loadRoles();
-      setManageOpen(false);
+      forceCloseManage();
     } catch (err) {
       console.error('Failed to update role:', err);
+    } finally {
+      setIsSavingRole(false);
     }
   }
 
-  const roleNameValidation = validateCleanName(newRoleName);
-
   async function handleCreateRole() {
-    if (!newRoleName.trim() || !roleNameValidation.valid || hasNewPermErrors) return;
+    if (!newRoleName.trim() || !roleNameValidation.valid || hasNewPermErrors || newPerms.length === 0 || isCreatingRole) return;
     try {
+      setIsCreatingRole(true);
       const permPayload: PermissionRecordApi[] = newPerms.map((p) => ({
         database: p.database,
         table_name: p.table,
@@ -281,6 +368,8 @@ export function Roles() {
       setNewPerms([...READONLY_RULES]);
     } catch (err) {
       console.error('Failed to create role:', err);
+    } finally {
+      setIsCreatingRole(false);
     }
   }
 
@@ -414,9 +503,9 @@ export function Roles() {
     {
       id: 'rules',
       header: 'Rules',
-      width: 180,
-      minWidth: 120,
-      maxWidth: 260,
+      width: 190,
+      minWidth: 160,
+      maxWidth: 280,
       isResizable: true,
       className: 'px-3',
       cell: (row) => {
@@ -424,25 +513,25 @@ export function Roles() {
         const blobCount = row.permissions.filter((p) => p.database.toLowerCase().startsWith('blob:')).length;
         const rlsCount = row.permissions.filter((p) => Boolean(p.rls_filter && p.rls_filter.trim().length > 0)).length;
         return (
-          <div className="flex items-center gap-1.5 flex-wrap font-sans">
+          <div className="flex items-center gap-1.5 shrink-0 whitespace-nowrap font-sans">
             {dbCount > 0 && (
-              <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-[#1e293b]/60 text-[#38bdf8] border border-[#0284c7]/30">
-                <Database className="w-3 h-3 shrink-0" />
+              <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-[#18181b] text-[#cccccc] border border-[#27272a] shrink-0">
+                <Database className="w-3 h-3 text-[#8c8c8c] shrink-0" />
                 <span>{dbCount} SQL</span>
               </span>
             )}
             {blobCount > 0 && (
-              <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-[#18181b] text-[#cccccc] border border-[#27272a]">
+              <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-[#18181b] text-[#cccccc] border border-[#27272a] shrink-0">
                 <Package className="w-3.5 h-3.5 text-[#8c8c8c] shrink-0" />
                 <span>{blobCount} Blob</span>
               </span>
             )}
             {rlsCount > 0 && (
               <span
-                className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-[#1e1b4b]/60 text-[#a5b4fc] border border-[#4338ca]/30"
+                className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-[#18181b] text-[#cccccc] border border-[#27272a] shrink-0"
                 title={`${rlsCount} rule${rlsCount > 1 ? 's have' : ' has'} Row-Level Security predicate filter`}
               >
-                <Shield className="w-3 h-3 shrink-0" />
+                <Shield className="w-3 h-3 text-[#8c8c8c] shrink-0" />
                 <span>{rlsCount} RLS</span>
               </span>
             )}
@@ -798,7 +887,7 @@ export function Roles() {
       {/* Manage Role SlideOver */}
       <SlideOver
         isOpen={manageOpen}
-        onClose={() => setManageOpen(false)}
+        onClose={requestCloseManage}
         title={selectedRole?.name ?? ''}
         subtitle={selectedRole?.description ?? ''}
         width="w-[620px] max-w-full"
@@ -931,14 +1020,14 @@ export function Roles() {
             <div className="flex items-center gap-2.5">
               <button
                 type="button"
-                onClick={() => setManageOpen(false)}
+                onClick={requestCloseManage}
                 className="inline-flex items-center justify-center h-8 px-3.5 rounded-[8px] text-[13px] font-medium text-[#cccccc] hover:text-white bg-transparent hover:bg-[#161616] border border-[#262626] hover:border-[#383838] transition-colors cursor-pointer font-sans"
               >
                 Cancel
               </button>
               <button
                 type="button"
-                disabled={!isModified || hasEditPermErrors}
+                disabled={!isModified || hasEditPermErrors || !editRoleNameValidation.valid || isSavingRole}
                 onClick={handleSaveEdit}
                 className="group relative flex shrink-0 items-center justify-center h-8 px-4 rounded-[8px] font-medium text-white shadow-xs outline-none cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed overflow-hidden ring-1 ring-[#1d4ed8] bg-[#2563eb] font-sans text-[13px]"
               >
@@ -962,7 +1051,7 @@ export function Roles() {
       {/* Create Role SlideOver */}
       <SlideOver
         isOpen={createOpen}
-        onClose={() => setCreateOpen(false)}
+        onClose={requestCloseCreate}
         title="Create Role"
         subtitle="Define database access rules and operation permissions"
         width="w-[620px] max-w-full"
@@ -1071,14 +1160,14 @@ export function Roles() {
           <div className="flex items-center gap-2.5">
             <button
               type="button"
-              onClick={() => setCreateOpen(false)}
+              onClick={requestCloseCreate}
               className="inline-flex items-center justify-center h-8 px-3.5 rounded-[8px] text-[13px] font-medium text-[#cccccc] hover:text-white bg-transparent hover:bg-[#161616] border border-[#262626] hover:border-[#383838] transition-colors cursor-pointer font-sans"
             >
               Cancel
             </button>
             <button
               type="button"
-              disabled={!newRoleName.trim() || hasNewPermErrors}
+              disabled={!newRoleName.trim() || !roleNameValidation.valid || hasNewPermErrors || newPerms.length === 0 || isCreatingRole}
               onClick={handleCreateRole}
               className="group relative flex shrink-0 items-center justify-center h-8 px-4 rounded-[8px] font-medium text-white shadow-xs outline-none cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed overflow-hidden ring-1 ring-[#1d4ed8] bg-[#2563eb] font-sans text-[13px]"
             >
@@ -1124,6 +1213,29 @@ export function Roles() {
         }
         confirmLabel="Delete Role"
         cancelLabel="Cancel"
+      />
+      {/* Discard Create Role Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={confirmDiscardCreateOpen}
+        onClose={() => setConfirmDiscardCreateOpen(false)}
+        onConfirm={forceCloseCreate}
+        title="Discard New Role"
+        description="You have unsaved role configuration. Are you sure you want to discard your changes?"
+        confirmLabel="Discard Changes"
+        cancelLabel="Keep Editing"
+        variant="warning"
+      />
+
+      {/* Discard Manage/Edit Role Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={confirmDiscardManageOpen}
+        onClose={() => setConfirmDiscardManageOpen(false)}
+        onConfirm={forceCloseManage}
+        title="Discard Unsaved Changes"
+        description="You have unsaved changes to this role. Are you sure you want to discard them?"
+        confirmLabel="Discard Changes"
+        cancelLabel="Keep Editing"
+        variant="warning"
       />
     </div>
   );

@@ -295,6 +295,8 @@ export function Databases() {
   const [manageError, setManageError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [confirmDisconnectOpen, setConfirmDisconnectOpen] = useState(false);
+  const [confirmDiscardAttachOpen, setConfirmDiscardAttachOpen] = useState(false);
+  const [confirmDiscardEditOpen, setConfirmDiscardEditOpen] = useState(false);
 
   async function handleTestConnection() {
     const validation = validateDatabaseUrl(newEngine, newUrl);
@@ -385,6 +387,7 @@ export function Databases() {
   );
 
   const aliasValidation = validateCleanName(newAlias);
+  const urlValidation = validateDatabaseUrl(newEngine, newUrl);
   const editAliasValidation = validateCleanName(editAlias);
 
   const canSave = Boolean(
@@ -395,6 +398,62 @@ export function Databases() {
     !isSaving &&
     manageTestResult !== 'testing'
   );
+
+  const isAttachDirty = Boolean(
+    newAlias.trim().length > 0 ||
+    newUrl.trim().length > 0 ||
+    newToken.trim().length > 0 ||
+    newEngine !== 'PostgreSQL' ||
+    newMin !== 1 ||
+    newMax !== 10 ||
+    newTimeout !== 30
+  );
+
+  const canAttach = Boolean(
+    !isAttaching &&
+    newAlias.trim().length > 0 &&
+    aliasValidation.valid &&
+    poolOk &&
+    (newEngine.toLowerCase() === 'libsql' ? true : newUrl.trim().length > 0 && urlValidation.valid)
+  );
+
+  function requestCloseAttach() {
+    if (isAttachDirty) {
+      setConfirmDiscardAttachOpen(true);
+    } else {
+      forceCloseAttach();
+    }
+  }
+
+  function forceCloseAttach() {
+    setConfirmDiscardAttachOpen(false);
+    setAttachOpen(false);
+    setNewAlias('');
+    setNewUrl('');
+    setNewToken('');
+    setNewEngine('PostgreSQL');
+    setNewMin(1);
+    setNewMax(10);
+    setNewTimeout(30);
+    setAttachError(null);
+    setTestResult(null);
+  }
+
+  function requestCloseManage() {
+    if (isChanged) {
+      setConfirmDiscardEditOpen(true);
+    } else {
+      forceCloseManage();
+    }
+  }
+
+  function forceCloseManage() {
+    setConfirmDiscardEditOpen(false);
+    setManageOpen(false);
+    setManageTab('details');
+    setManageError(null);
+    setManageTestResult(null);
+  }
 
   async function handleAttach() {
     if (!newAlias.trim() || !poolOk) return;
@@ -1017,7 +1076,7 @@ export function Databases() {
       {/* Attach DB SlideOver */}
       <SlideOver
         isOpen={attachOpen}
-        onClose={() => setAttachOpen(false)}
+        onClose={requestCloseAttach}
         title="Attach Database Pool"
         subtitle="Configure connection endpoint, dialect engine, and credential URI"
       >
@@ -1276,7 +1335,7 @@ export function Databases() {
         <div className="p-4 border-t border-[#222222] bg-[#0e0e0e] flex items-center justify-end gap-2.5 font-sans">
           <button
             type="button"
-            onClick={() => setAttachOpen(false)}
+            onClick={requestCloseAttach}
             className="inline-flex items-center justify-center h-9 px-4 rounded-[8px] text-[14px] font-medium text-[#cccccc] hover:text-white bg-transparent hover:bg-[#161616] border border-[#262626] hover:border-[#383838] transition-colors cursor-pointer font-sans"
           >
             Cancel
@@ -1284,7 +1343,7 @@ export function Databases() {
           <button
             type="button"
             onClick={handleAttach}
-            disabled={isAttaching || !poolOk || !newAlias.trim() || (!newUrl.trim() && newEngine.toLowerCase() !== 'libsql')}
+            disabled={!canAttach}
             className="group relative flex shrink-0 items-center justify-center h-9 px-4 rounded-[8px] font-medium text-white shadow-xs outline-none cursor-pointer overflow-hidden ring-1 ring-[#1d4ed8] bg-[#2563eb] font-sans disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <span aria-hidden="true" className="pointer-events-none absolute inset-0 rounded-[inherit] bg-gradient-to-b from-[#3b82f6] to-[#2563eb] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2)]" />
@@ -1306,7 +1365,7 @@ export function Databases() {
       {/* Manage Pool SlideOver */}
       <SlideOver
         isOpen={manageOpen}
-        onClose={() => { setManageOpen(false); setManageTab('details'); }}
+        onClose={requestCloseManage}
         title={selectedPool?.alias ?? ''}
         subtitle={selectedPool ? `${selectedPool.engine} · ${selectedPool.status}` : ''}
       >
@@ -1604,7 +1663,7 @@ export function Databases() {
           <div className="p-4 border-t border-[#222222] bg-[#0e0e0e] flex items-center justify-end gap-2.5 font-sans">
             <button
               type="button"
-              onClick={() => setManageOpen(false)}
+              onClick={requestCloseManage}
               className="inline-flex items-center justify-center h-9 px-4 rounded-[8px] text-[14px] font-medium text-[#cccccc] hover:text-white bg-transparent hover:bg-[#161616] border border-[#262626] hover:border-[#383838] transition-colors cursor-pointer font-sans"
             >
               Cancel
@@ -1658,6 +1717,29 @@ export function Databases() {
         }
         confirmLabel="Disconnect Pool"
         cancelLabel="Cancel"
+      />
+      {/* Discard Attach Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={confirmDiscardAttachOpen}
+        onClose={() => setConfirmDiscardAttachOpen(false)}
+        onConfirm={forceCloseAttach}
+        title="Discard New Database"
+        description="You have unsaved database configuration. Are you sure you want to discard your changes?"
+        confirmLabel="Discard Changes"
+        cancelLabel="Keep Editing"
+        variant="warning"
+      />
+
+      {/* Discard Manage/Edit Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={confirmDiscardEditOpen}
+        onClose={() => setConfirmDiscardEditOpen(false)}
+        onConfirm={forceCloseManage}
+        title="Discard Unsaved Changes"
+        description="You have unsaved changes to this database pool. Are you sure you want to discard them?"
+        confirmLabel="Discard Changes"
+        cancelLabel="Keep Editing"
+        variant="warning"
       />
     </div>
   );

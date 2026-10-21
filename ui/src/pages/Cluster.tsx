@@ -84,6 +84,8 @@ export function Cluster() {
   const [showPeerSecret, setShowPeerSecret] = useState(false);
   const [connectError, setConnectError] = useState<string | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
+  const [confirmDiscardConnectOpen, setConfirmDiscardConnectOpen] = useState(false);
+  const [confirmDiscardManagePeerOpen, setConfirmDiscardManagePeerOpen] = useState(false);
 
   // Deletion confirmation state
   const [peerToDelete, setPeerToDelete] = useState<PeerNodeRecordApi | null>(null);
@@ -187,6 +189,58 @@ export function Cluster() {
       isPeerEditUrlValid &&
       !isSavingPeer
   );
+
+  const isPeerUrlValid = Boolean(
+    peerUrl.trim().length > 0 &&
+      (peerUrl.trim().startsWith('http://') || peerUrl.trim().startsWith('https://'))
+  );
+
+  const isConnectDirty = Boolean(
+    peerUrl.trim().length > 0 ||
+    peerSecret.trim().length > 0 ||
+    peerMoniker.trim().length > 0
+  );
+
+  const canConnectPeer = Boolean(
+    !isConnecting &&
+    peerUrl.trim().length > 0 &&
+    isPeerUrlValid &&
+    peerSecret.trim().length > 0 &&
+    (peerMoniker.trim().length === 0 || peerMonikerValidation.valid)
+  );
+
+  function requestCloseConnect() {
+    if (isConnectDirty) {
+      setConfirmDiscardConnectOpen(true);
+    } else {
+      forceCloseConnect();
+    }
+  }
+
+  function forceCloseConnect() {
+    setConfirmDiscardConnectOpen(false);
+    setIsConnectOpen(false);
+    setPeerUrl('');
+    setPeerSecret('');
+    setPeerMoniker('');
+    setConnectError(null);
+  }
+
+  function requestCloseManagePeer() {
+    if (peerTab === 'connection' && isPeerChanged) {
+      setConfirmDiscardManagePeerOpen(true);
+    } else {
+      forceCloseManagePeer();
+    }
+  }
+
+  function forceCloseManagePeer() {
+    setConfirmDiscardManagePeerOpen(false);
+    setIsPeerPanelOpen(false);
+    setPeerTab('connection');
+    setPeerPanelError(null);
+    setPeerPanelSuccess(null);
+  }
 
   const handleSaveMoniker = async () => {
     const trimmed = editMonikerValue.trim();
@@ -825,7 +879,7 @@ export function Cluster() {
       {/* Connect Peer SlideOver (Matches Databases.tsx Attach Database style) */}
       <SlideOver
         isOpen={isConnectOpen}
-        onClose={() => setIsConnectOpen(false)}
+        onClose={requestCloseConnect}
         title="Connect Peer"
         subtitle="Pair with another Axiom node using its advertise URL and cluster secret"
       >
@@ -923,14 +977,14 @@ export function Cluster() {
           <div className="p-4 border-t border-[#222222] bg-[#0e0e0e] flex items-center justify-end gap-2.5 font-sans">
             <button
               type="button"
-              onClick={() => setIsConnectOpen(false)}
+              onClick={requestCloseConnect}
               className="inline-flex items-center justify-center h-9 px-4 rounded-[8px] text-[14px] font-medium text-[#cccccc] hover:text-white bg-transparent hover:bg-[#161616] border border-[#262626] hover:border-[#383838] transition-colors cursor-pointer font-sans"
             >
               Cancel
             </button>
             <button
               type="submit"
-              disabled={isConnecting || (peerMoniker.trim().length > 0 && !peerMonikerValidation.valid)}
+              disabled={!canConnectPeer}
               className="group relative flex shrink-0 items-center justify-center h-9 px-4 rounded-[8px] font-medium text-white shadow-xs outline-none cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed overflow-hidden ring-1 ring-[#1d4ed8] bg-[#2563eb] font-sans text-[14px]"
             >
               <span aria-hidden="true" className="pointer-events-none absolute inset-0 rounded-[inherit] bg-gradient-to-b from-[#3b82f6] to-[#2563eb] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2)]" />
@@ -953,10 +1007,7 @@ export function Cluster() {
       {/* Manage Peer SlideOver (Matches Databases.tsx & Keys.tsx manage panel) */}
       <SlideOver
         isOpen={isPeerPanelOpen}
-        onClose={() => {
-          setIsPeerPanelOpen(false);
-          setPeerTab('connection');
-        }}
+        onClose={requestCloseManagePeer}
         title={selectedPeer?.moniker ?? 'Peer Node'}
         subtitle={selectedPeer ? `${selectedPeer.url} · ${selectedPeer.status}` : ''}
       >
@@ -1194,7 +1245,7 @@ export function Cluster() {
             <div className="p-4 border-t border-[#222222] bg-[#0e0e0e] flex items-center justify-end gap-2.5 font-sans">
               <button
                 type="button"
-                onClick={() => setIsPeerPanelOpen(false)}
+                onClick={requestCloseManagePeer}
                 className="inline-flex items-center justify-center h-9 px-4 rounded-[8px] text-[14px] font-medium text-[#cccccc] hover:text-white bg-transparent hover:bg-[#161616] border border-[#262626] hover:border-[#383838] transition-colors cursor-pointer font-sans"
               >
                 Cancel
@@ -1268,6 +1319,29 @@ export function Cluster() {
         confirmLabel={isDeleting ? 'Disconnecting…' : 'Disconnect Peer'}
         cancelLabel="Cancel"
         variant="danger"
+      />
+      {/* Discard Connect Peer Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={confirmDiscardConnectOpen}
+        onClose={() => setConfirmDiscardConnectOpen(false)}
+        onConfirm={forceCloseConnect}
+        title="Discard Peer Connection"
+        description="You have unsaved peer connection details. Are you sure you want to discard your changes?"
+        confirmLabel="Discard Changes"
+        cancelLabel="Keep Editing"
+        variant="warning"
+      />
+
+      {/* Discard Manage Peer Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={confirmDiscardManagePeerOpen}
+        onClose={() => setConfirmDiscardManagePeerOpen(false)}
+        onConfirm={forceCloseManagePeer}
+        title="Discard Unsaved Changes"
+        description="You have unsaved changes to this peer connection. Are you sure you want to discard them?"
+        confirmLabel="Discard Changes"
+        cancelLabel="Keep Editing"
+        variant="warning"
       />
     </div>
   );
