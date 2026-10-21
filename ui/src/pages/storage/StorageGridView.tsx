@@ -138,7 +138,13 @@ export function StorageGridView({
                       onSelectItem(f);
                     }
                   }}
-                  onDoubleClick={() => onNavigateToPrefix(f.fullKey)}
+                  onDoubleClick={(e) => {
+                    const target = e.target as HTMLElement;
+                    if (target.closest('button, input, [role="button"]')) {
+                      return;
+                    }
+                    onNavigateToPrefix(f.fullKey);
+                  }}
                   onContextMenu={(e) => onContextMenu(e, f)}
                   className={`group p-3 rounded-lg border transition-colors cursor-pointer flex items-center justify-between gap-3 min-h-[52px] relative ${
                     isSelfDragged ? 'opacity-40 border-dashed border-[#555555]' : ''
@@ -156,12 +162,24 @@ export function StorageGridView({
                         e.stopPropagation();
                         onToggleSelectItem ? onToggleSelectItem(f, e) : onSelectItem(f);
                       }}
+                      onDoubleClick={(e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                      }}
                       className={`w-4 h-4 shrink-0 flex items-center justify-center cursor-pointer transition-opacity ${
                         isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
                       }`}
                     >
                       <button
                         type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onToggleSelectItem ? onToggleSelectItem(f, e) : onSelectItem(f);
+                        }}
+                        onDoubleClick={(e) => {
+                          e.stopPropagation();
+                          e.preventDefault();
+                        }}
                         aria-label={`Select ${f.name}`}
                         aria-checked={isSelected ? 'true' : 'false'}
                         className={`peer h-4 w-4 shrink-0 rounded-[4px] border border-[#383838] shadow-xs transition-all focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/40 cursor-pointer flex items-center justify-center ${
@@ -195,6 +213,10 @@ export function StorageGridView({
                     onClick={(e) => {
                       e.stopPropagation();
                       onOpenMove(f);
+                    }}
+                    onDoubleClick={(e) => {
+                      e.stopPropagation();
+                      e.preventDefault();
                     }}
                     title="Move folder"
                     className="opacity-0 group-hover:opacity-100 text-[#8c8c8c] hover:text-white w-7 h-7 flex items-center justify-center rounded-md hover:bg-[#242424] transition-all cursor-pointer shrink-0"
@@ -262,12 +284,24 @@ export function StorageGridView({
                       e.stopPropagation();
                       onToggleSelectItem ? onToggleSelectItem(item, e) : onSelectItem(item);
                     }}
+                    onDoubleClick={(e) => {
+                      e.stopPropagation();
+                      e.preventDefault();
+                    }}
                     className={`absolute top-2.5 left-2.5 z-10 w-4 h-4 rounded-[4px] flex items-center justify-center transition-opacity ${
                       isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
                     }`}
                   >
                     <button
                       type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onToggleSelectItem ? onToggleSelectItem(item, e) : onSelectItem(item);
+                      }}
+                      onDoubleClick={(e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                      }}
                       aria-label={`Select ${item.name}`}
                       aria-checked={isSelected ? 'true' : 'false'}
                       className={`peer h-4 w-4 shrink-0 rounded-[4px] border border-[#383838] shadow-xs transition-all focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/40 cursor-pointer flex items-center justify-center ${
@@ -300,6 +334,10 @@ export function StorageGridView({
                       onClick={(e) => {
                         e.stopPropagation();
                         onContextMenu(e, item);
+                      }}
+                      onDoubleClick={(e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
                       }}
                       title="File actions"
                       className="opacity-0 group-hover:opacity-100 text-[#8c8c8c] hover:text-white w-7 h-7 flex items-center justify-center rounded-md hover:bg-[#242424] transition-all cursor-pointer shrink-0"

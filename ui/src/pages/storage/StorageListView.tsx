@@ -83,13 +83,31 @@ export function StorageListView({
       <table className="w-full text-left border-collapse">
         <thead>
           <tr className="sticky top-0 z-10 h-9 bg-[#0a0a0a] border-b border-[#222222] text-xs font-medium text-[#888888]">
-            <th className="w-10 px-3 py-2 text-center select-none">
-              <div className="flex items-center justify-center">
+            <th
+              className="w-10 px-3 py-2 text-center select-none"
+              onClick={(e) => e.stopPropagation()}
+              onDoubleClick={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+              }}
+            >
+              <div
+                className="flex items-center justify-center"
+                onClick={(e) => e.stopPropagation()}
+                onDoubleClick={(e) => {
+                  e.stopPropagation();
+                  e.preventDefault();
+                }}
+              >
                 <button
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation();
                     onSelectAll?.();
+                  }}
+                  onDoubleClick={(e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
                   }}
                   title={allSelected ? 'Deselect all' : 'Select all'}
                   aria-label={allSelected ? 'Deselect all rows' : 'Select all rows'}
@@ -173,7 +191,12 @@ export function StorageListView({
                     onSelectItem(item);
                   }
                 }}
-                onDoubleClick={() => {
+                onDoubleClick={(e) => {
+                  // Guard: Ignore double clicks originating from interactive controls or checkbox column
+                  const target = e.target as HTMLElement;
+                  if (target.closest('button, input, [role="button"], td:first-child')) {
+                    return;
+                  }
                   if (isFolder) {
                     onNavigateToPrefix(item.fullKey);
                   } else {
@@ -192,12 +215,31 @@ export function StorageListView({
                 }`}
               >
                 {/* Custom Checkbox Button (Matching TableGridView.tsx) */}
-                <td className="w-10 px-3 py-2 text-center" onClick={(e) => e.stopPropagation()}>
-                  <div className="flex items-center justify-center">
+                <td
+                  className="w-10 px-3 py-2 text-center select-none"
+                  onClick={(e) => e.stopPropagation()}
+                  onDoubleClick={(e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                  }}
+                >
+                  <div
+                    className="flex items-center justify-center"
+                    onClick={(e) => e.stopPropagation()}
+                    onDoubleClick={(e) => {
+                      e.stopPropagation();
+                      e.preventDefault();
+                    }}
+                  >
                     <button
                       type="button"
                       onClick={(e) => {
+                        e.stopPropagation();
                         onToggleSelectItem ? onToggleSelectItem(item, e) : onSelectItem(item);
+                      }}
+                      onDoubleClick={(e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
                       }}
                       title={isSelected ? `Deselect ${item.name}` : `Select ${item.name}`}
                       aria-label={isSelected ? `Deselect ${item.name}` : `Select ${item.name}`}
@@ -259,14 +301,32 @@ export function StorageListView({
                 </td>
 
                 {/* Column 5: Actions */}
-                <td className="px-3 text-right">
-                  <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                <td
+                  className="px-3 text-right"
+                  onClick={(e) => e.stopPropagation()}
+                  onDoubleClick={(e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                  }}
+                >
+                  <div
+                    className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                    onClick={(e) => e.stopPropagation()}
+                    onDoubleClick={(e) => {
+                      e.stopPropagation();
+                      e.preventDefault();
+                    }}
+                  >
                     {!isFolder && (
                       <button
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
                           onDownload(item.fullKey);
+                        }}
+                        onDoubleClick={(e) => {
+                          e.stopPropagation();
+                          e.preventDefault();
                         }}
                         title="Download object"
                         className="p-1 rounded text-[#8c8c8c] hover:text-white hover:bg-[#222222] transition-colors cursor-pointer"
@@ -280,6 +340,10 @@ export function StorageListView({
                       onClick={(e) => {
                         e.stopPropagation();
                         onContextMenu(e, item);
+                      }}
+                      onDoubleClick={(e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
                       }}
                       title="More actions"
                       className="p-1 rounded text-[#8c8c8c] hover:text-white hover:bg-[#222222] transition-colors cursor-pointer"
