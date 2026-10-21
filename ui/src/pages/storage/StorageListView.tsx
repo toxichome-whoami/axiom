@@ -4,7 +4,7 @@
  * Design reference: TableGridView in TableEditor (exact row height, border colors, tabular fonts, custom checkbox buttons)
  */
 
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   Folder,
   ArrowRight,
@@ -13,6 +13,7 @@ import {
   MoreVertical,
   Check,
   Minus,
+  Loader2,
 } from 'lucide-react';
 import { StorageItem } from './types';
 import { getFileIcon } from './fileIcon';
@@ -41,6 +42,11 @@ export interface StorageListViewProps {
   onUploadFiles?: (files: FileList | File[], destinationPrefix?: string) => void;
   canDropOnFolder: (dragged: StorageItem | null, targetFolderKey: string) => boolean;
   onClearSelection?: () => void;
+
+  // Pagination & Lazy loading
+  hasMore?: boolean;
+  isLoadingMore?: boolean;
+  onLoadMore?: () => void;
 }
 
 export function StorageListView({
@@ -64,8 +70,30 @@ export function StorageListView({
   onUploadFiles,
   canDropOnFolder,
   onClearSelection,
+  hasMore = false,
+  isLoadingMore = false,
+  onLoadMore,
 }: StorageListViewProps) {
   const [dragOverTargetKey, setDragOverTargetKey] = useState<string | null>(null);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!hasMore || isLoadingMore || !onLoadMore) return;
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) {
+          onLoadMore();
+        }
+      },
+      { rootMargin: '250px' }
+    );
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [hasMore, isLoadingMore, onLoadMore]);
 
   const allItems = [...folderItems, ...fileItems];
   const allSelected = allItems.length > 0 && allItems.every((it) => selectedKeys?.has(it.fullKey));
@@ -76,6 +104,13 @@ export function StorageListView({
       onClick={(e) => {
         if (!(e.target as HTMLElement).closest('[data-storage-item="true"]')) {
           onClearSelection?.();
+        }
+      }}
+      onScroll={(e) => {
+        if (!hasMore || isLoadingMore || !onLoadMore) return;
+        const target = e.currentTarget;
+        if (target.scrollHeight - target.scrollTop - target.clientHeight < 250) {
+          onLoadMore();
         }
       }}
       className="flex-1 w-full overflow-auto select-none font-sans bg-[#0a0a0a]"
@@ -339,6 +374,20 @@ export function StorageListView({
           })}
         </tbody>
       </table>
+
+      {/* Sentinel & Lazy Load Indicator */}
+      {hasMore && (
+        <div ref={sentinelRef} className="py-4 flex items-center justify-center gap-2 text-[13px] text-[#888888] font-sans">
+          {isLoadingMore ? (
+            <>
+              <Loader2 className="w-4 h-4 animate-spin text-blue-400" />
+              <span>Loading more files...</span>
+            </>
+          ) : (
+            <span className="opacity-0 pointer-events-none">Load more</span>
+          )}
+        </div>
+      )}
     </div>
   );
 }

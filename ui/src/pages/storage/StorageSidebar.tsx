@@ -31,6 +31,7 @@ export interface StorageSidebarProps {
   currentNsInfo: NamespaceInfo | null;
   quotaUsedPercent: number | null;
   realObjectsCount: number;
+  hasMore?: boolean;
 
   // FileTree Props
   blobs: BlobEntry[];
@@ -64,6 +65,7 @@ export function StorageSidebar({
   currentNsInfo,
   quotaUsedPercent,
   realObjectsCount,
+  hasMore,
   blobs,
   currentPrefix,
   selectedItem,
@@ -256,7 +258,7 @@ export function StorageSidebar({
       {/* ─── Footer: Storage Statistics & Quota ─────────────── */}
       <div className={`h-12 shrink-0 px-3.5 border-t border-[#222222] items-center justify-between text-[12px] text-[#8c8c8c] select-none font-sans ${isMobileOpen ? 'flex' : 'hidden lg:flex'}`}>
         <span className="tabular-nums">
-          {realObjectsCount} {realObjectsCount === 1 ? 'object' : 'objects'}
+          {realObjectsCount}{hasMore ? '+' : ''} {realObjectsCount === 1 ? 'object' : 'objects'}
         </span>
 
         {currentNsInfo && (

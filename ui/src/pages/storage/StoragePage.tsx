@@ -143,6 +143,8 @@ export function StoragePage() {
   const [namespaces, setNamespaces] = useState<NamespaceInfo[]>([]);
   const [activeNamespace, setActiveNamespace] = useState<string>(initialStorage.ns);
   const [blobs, setBlobs] = useState<BlobEntry[]>([]);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -393,9 +395,15 @@ export function StoragePage() {
         if (urlNs && urlNs !== activeNsRef.current) {
           setActiveNamespace(urlNs);
           api
-            .listBlobs(urlNs)
-            .then((res) => setBlobs(res.items || []))
-            .catch(() => setBlobs([]));
+            .listBlobs(urlNs, undefined, undefined, 100)
+            .then((res) => {
+              setBlobs(res.items || []);
+              setNextCursor(res.next_cursor || null);
+            })
+            .catch(() => {
+              setBlobs([]);
+              setNextCursor(null);
+            });
         }
         setCurrentPrefix(urlPrefix);
         setSelectedItem(null);
@@ -472,10 +480,11 @@ export function StoragePage() {
 
       if (activeNs) {
         try {
-          const listRes = await api.listBlobs(activeNs);
+          const listRes = await api.listBlobs(activeNs, undefined, undefined, 100);
           if (curGen === fetchGenRef.current) {
             const items = listRes.items || [];
             setBlobs(items);
+            setNextCursor(listRes.next_cursor || null);
             if (
               currentPrefixRef.current &&
               items.length > 0 &&
@@ -489,11 +498,13 @@ export function StoragePage() {
         } catch {
           if (curGen === fetchGenRef.current) {
             setBlobs([]);
+            setNextCursor(null);
           }
         }
       } else {
         if (curGen === fetchGenRef.current) {
           setBlobs([]);
+          setNextCursor(null);
         }
       }
     } catch (err: unknown) {
@@ -519,15 +530,40 @@ export function StoragePage() {
     setSelectedItem(null);
     syncLocation(ns, '', true);
     setIsLoading(true);
+    setNextCursor(null);
     try {
-      const res = await api.listBlobs(ns);
+      const res = await api.listBlobs(ns, undefined, undefined, 100);
       setBlobs(res.items || []);
+      setNextCursor(res.next_cursor || null);
     } catch {
       setBlobs([]);
+      setNextCursor(null);
     } finally {
       setIsLoading(false);
     }
   };
+
+  // Cursor-paginated lazy loader: appends next batch of blobs when scrolling near bottom
+  const handleLoadMore = useCallback(async () => {
+    if (!nextCursor || isLoadingMore || isLoading || !activeNamespace) return;
+    setIsLoadingMore(true);
+    try {
+      const res = await api.listBlobs(activeNamespace, undefined, nextCursor, 100);
+      const newItems = res.items || [];
+      if (newItems.length > 0) {
+        setBlobs((prev) => {
+          const existingKeys = new Set(prev.map((b) => b.key));
+          const uniqueNew = newItems.filter((b) => !existingKeys.has(b.key));
+          return [...prev, ...uniqueNew];
+        });
+      }
+      setNextCursor(res.next_cursor || null);
+    } catch (err: unknown) {
+      console.error('Failed to load next page of blobs:', err);
+    } finally {
+      setIsLoadingMore(false);
+    }
+  }, [nextCursor, isLoadingMore, isLoading, activeNamespace]);
 
   const currentNsInfo = useMemo(() => {
     return namespaces.find((n) => n.name === activeNamespace) || null;
@@ -1575,6 +1611,7 @@ export function StoragePage() {
         currentNsInfo={currentNsInfo}
         quotaUsedPercent={quotaUsedPercent}
         realObjectsCount={realObjectsCount}
+        hasMore={Boolean(nextCursor)}
         blobs={blobs}
         currentPrefix={currentPrefix}
         selectedItem={selectedItem}
@@ -1666,6 +1703,14 @@ export function StoragePage() {
               handleContextMenu(e, null);
             }
           }}
+          onScroll={(e) => {
+            if (viewMode === 'grid' && nextCursor && !isLoadingMore) {
+              const el = e.currentTarget;
+              if (el.scrollHeight - el.scrollTop - el.clientHeight < 250) {
+                handleLoadMore();
+              }
+            }
+          }}
           className={`flex-1 min-h-0 flex flex-col ${
             !isLoading && activeNamespace && (folderItems.length > 0 || fileItems.length > 0) && viewMode === 'list'
               ? 'p-0 overflow-hidden'
@@ -1746,6 +1791,9 @@ export function StoragePage() {
                 onUploadFiles={handleUploadFiles}
                 canDropOnFolder={canDropOnFolder}
                 onClearSelection={handleClearSelection}
+                hasMore={Boolean(nextCursor)}
+                isLoadingMore={isLoadingMore}
+                onLoadMore={handleLoadMore}
               />
             ) : (
               <StorageListView
@@ -1772,6 +1820,9 @@ export function StoragePage() {
                 onUploadFiles={handleUploadFiles}
                 canDropOnFolder={canDropOnFolder}
                 onClearSelection={handleClearSelection}
+                hasMore={Boolean(nextCursor)}
+                isLoadingMore={isLoadingMore}
+                onLoadMore={handleLoadMore}
               />
             )
           )}

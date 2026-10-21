@@ -4,7 +4,7 @@
  * Design reference: Vercel / Linear card aesthetic (minimal borders, quiet hover, typography contrast, custom checkbox button)
  */
 
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   Folder,
   ArrowRight,
@@ -14,6 +14,7 @@ import {
   Layers,
   HardDrive,
   Check,
+  Loader2,
 } from 'lucide-react';
 import { StorageItem } from './types';
 import { getFileIcon } from './fileIcon';
@@ -41,6 +42,11 @@ export interface StorageGridViewProps {
   onUploadFiles: (files: FileList | File[], destinationPrefix?: string) => void;
   canDropOnFolder: (dragged: StorageItem | null, targetFolderKey: string) => boolean;
   onClearSelection?: () => void;
+
+  // Pagination & Lazy loading
+  hasMore?: boolean;
+  isLoadingMore?: boolean;
+  onLoadMore?: () => void;
 }
 
 export function StorageGridView({
@@ -63,8 +69,30 @@ export function StorageGridView({
   onUploadFiles,
   canDropOnFolder,
   onClearSelection,
+  hasMore = false,
+  isLoadingMore = false,
+  onLoadMore,
 }: StorageGridViewProps) {
   const [dragOverTargetKey, setDragOverTargetKey] = useState<string | null>(null);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!hasMore || isLoadingMore || !onLoadMore) return;
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) {
+          onLoadMore();
+        }
+      },
+      { rootMargin: '250px' }
+    );
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [hasMore, isLoadingMore, onLoadMore]);
 
   return (
     <div
@@ -350,6 +378,20 @@ export function StorageGridView({
               );
             })}
           </div>
+        </div>
+      )}
+
+      {/* Sentinel & Lazy Load Indicator */}
+      {hasMore && (
+        <div ref={sentinelRef} className="py-6 flex items-center justify-center gap-2 text-[13px] text-[#8c8c8c] font-sans">
+          {isLoadingMore ? (
+            <>
+              <Loader2 className="w-4 h-4 animate-spin text-blue-400" />
+              <span>Loading more files...</span>
+            </>
+          ) : (
+            <span className="opacity-0 pointer-events-none">Load more</span>
+          )}
         </div>
       )}
     </div>
