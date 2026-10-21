@@ -168,6 +168,26 @@ export function Cluster() {
   const peerMonikerValidation = peerMoniker.trim().length > 0 ? validateCleanName(peerMoniker) : { valid: true };
   const peerEditMonikerValidation = validateCleanName(peerEditMoniker);
 
+  const isPeerChanged = Boolean(
+    selectedPeer &&
+      (peerEditMoniker.trim() !== selectedPeer.moniker ||
+        peerEditUrl.trim() !== selectedPeer.url ||
+        peerEditSecret.trim().length > 0)
+  );
+
+  const isPeerEditUrlValid = Boolean(
+    peerEditUrl.trim().length > 0 &&
+      (peerEditUrl.trim().startsWith('http://') || peerEditUrl.trim().startsWith('https://'))
+  );
+
+  const canSavePeer = Boolean(
+    isPeerChanged &&
+      peerEditMoniker.trim().length > 0 &&
+      peerEditMonikerValidation.valid &&
+      isPeerEditUrlValid &&
+      !isSavingPeer
+  );
+
   const handleSaveMoniker = async () => {
     const trimmed = editMonikerValue.trim();
     if (!trimmed || !editMonikerValidation.valid) return;
@@ -263,7 +283,7 @@ export function Cluster() {
 
   const handleSavePeerUpdates = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedPeer) return;
+    if (!selectedPeer || !canSavePeer) return;
     const trimmedMoniker = peerEditMoniker.trim();
     const trimmedUrl = peerEditUrl.trim();
 
@@ -292,14 +312,14 @@ export function Cluster() {
         payload.cluster_secret = peerEditSecret.trim();
       }
       const updated = await api.updateClusterPeer(selectedPeer.node_id, payload);
-      setSelectedPeer(updated);
       setPeers((prev) =>
         prev.map((p) => (p.node_id === updated.node_id ? updated : p))
       );
       setPeerEditSecret('');
       setShowPeerEditSecret(false);
-      setPeerPanelSuccess('Peer configuration saved successfully.');
-      setTimeout(() => setPeerPanelSuccess(null), 3500);
+      setIsPeerPanelOpen(false);
+      setSelectedPeer(null);
+      fetchClusterData();
     } catch (err: unknown) {
       setPeerPanelError(err instanceof Error ? err.message : 'Failed to update peer');
     } finally {
@@ -591,7 +611,12 @@ export function Cluster() {
                   <button
                     type="button"
                     onClick={handleSaveMoniker}
-                    disabled={isSavingMoniker || !editMonikerValue.trim() || !editMonikerValidation.valid}
+                    disabled={
+                      isSavingMoniker ||
+                      !editMonikerValue.trim() ||
+                      !editMonikerValidation.valid ||
+                      editMonikerValue.trim() === status?.moniker
+                    }
                     className="h-8 px-2.5 rounded-[6px] bg-[#2563eb] text-[12px] font-medium text-white hover:bg-[#1d4ed8] transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
                   >
                     Save
@@ -1176,7 +1201,7 @@ export function Cluster() {
               </button>
               <button
                 type="submit"
-                disabled={isSavingPeer || !peerEditMoniker.trim() || !peerEditMonikerValidation.valid}
+                disabled={!canSavePeer || isSavingPeer}
                 className="group relative flex shrink-0 items-center justify-center h-9 px-4 rounded-[8px] font-medium text-white shadow-xs outline-none cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed overflow-hidden ring-1 ring-[#1d4ed8] bg-[#2563eb] font-sans text-[14px]"
               >
                 <span aria-hidden="true" className="pointer-events-none absolute inset-0 rounded-[inherit] bg-gradient-to-b from-[#3b82f6] to-[#2563eb] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2)]" />
