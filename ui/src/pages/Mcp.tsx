@@ -46,6 +46,65 @@ interface McpResourceItem {
   mimeType: string;
 }
 
+/**
+ * Formats JSON strings with dark syntax highlighting (VS Code/GitHub Dark style).
+ */
+function highlightJson(json: string): React.ReactNode {
+  const tokenRegex = /("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\\-]?\d+)?|[{}[\],])/g;
+  const elements: React.ReactNode[] = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = tokenRegex.exec(json)) !== null) {
+    if (match.index > lastIndex) {
+      elements.push(json.slice(lastIndex, match.index));
+    }
+    const token = match[0];
+    if (token.endsWith(':')) {
+      const key = token.slice(0, -1);
+      elements.push(
+        <span key={match.index} className="text-[#9cdcfe]">
+          {key}
+        </span>
+      );
+      elements.push(
+        <span key={`${match.index}-colon`} className="text-[#737373]">
+          :
+        </span>
+      );
+    } else if (token.startsWith('"')) {
+      elements.push(
+        <span key={match.index} className="text-[#ce9178]">
+          {token}
+        </span>
+      );
+    } else if (/^(true|false|null)$/.test(token)) {
+      elements.push(
+        <span key={match.index} className="text-[#569cd6]">
+          {token}
+        </span>
+      );
+    } else if (/^-?\d/.test(token)) {
+      elements.push(
+        <span key={match.index} className="text-[#b5cea8]">
+          {token}
+        </span>
+      );
+    } else {
+      elements.push(
+        <span key={match.index} className="text-[#737373]">
+          {token}
+        </span>
+      );
+    }
+    lastIndex = tokenRegex.lastIndex;
+  }
+  if (lastIndex < json.length) {
+    elements.push(json.slice(lastIndex));
+  }
+  return <>{elements}</>;
+}
+
 export function Mcp() {
   const [activeTab, setActiveTab] = useState<'tools' | 'resources' | 'connect'>('tools');
   const [activeCategory, setActiveCategory] = useState<'all' | 'database' | 'blob'>('all');
@@ -64,7 +123,7 @@ export function Mcp() {
       name: 'axiom_list_services',
       category: 'database',
       type: 'READ',
-      description: 'Lists all configured database services that the caller is authorized to access',
+      description: 'List all database connections you have access to',
       permissionRequired: 'pools_view',
       parameters: {
         type: 'object',
@@ -76,14 +135,14 @@ export function Mcp() {
       name: 'axiom_list_tables',
       category: 'database',
       type: 'READ',
-      description: 'Lists tables in the target database, with pagination support. Filtered by RBAC policies',
+      description: 'List tables in a database with pagination',
       permissionRequired: 'db_select',
       parameters: {
         type: 'object',
         properties: {
-          database: { type: 'string', description: 'Database service alias' },
-          cursor: { type: 'string', description: 'Optional pagination cursor' },
-          limit: { type: 'integer', description: 'Max tables to return (default: 100)' },
+          database: { type: 'string', description: 'Database name' },
+          cursor: { type: 'string', description: 'Pagination cursor' },
+          limit: { type: 'integer', description: 'Maximum tables to return (default: 100)' },
         },
         required: ['database'],
       },
@@ -92,13 +151,13 @@ export function Mcp() {
       name: 'axiom_describe_table',
       category: 'database',
       type: 'READ',
-      description: 'Returns schema metadata for a table including columns, types, nullability, primary keys, and foreign keys',
+      description: 'Show columns, data types, and keys for a table',
       permissionRequired: 'db_schema_describe',
       parameters: {
         type: 'object',
         properties: {
-          database: { type: 'string', description: 'Database service alias' },
-          table: { type: 'string', description: 'Table name to describe' },
+          database: { type: 'string', description: 'Database name' },
+          table: { type: 'string', description: 'Table name' },
         },
         required: ['database', 'table'],
       },
@@ -107,17 +166,17 @@ export function Mcp() {
       name: 'axiom_query',
       category: 'database',
       type: 'READ',
-      description: 'Executes a structured, dialect-agnostic SELECT query with JSON filters and sorting',
+      description: 'Query table rows with optional filters and sorting',
       permissionRequired: 'db_select',
       parameters: {
         type: 'object',
         properties: {
-          database: { type: 'string', description: 'Database service alias' },
-          table: { type: 'string', description: 'Table name to query' },
+          database: { type: 'string', description: 'Database name' },
+          table: { type: 'string', description: 'Table name' },
           filter: { type: 'object', description: 'JSON filter criteria (e.g. {"status": {"eq": "active"}})' },
-          sort: { type: 'string', description: 'Column name to sort by' },
-          order: { type: 'string', description: 'Sort direction: asc | desc' },
-          limit: { type: 'integer', description: 'Max rows to return (default: 50, max: 500)' },
+          sort: { type: 'string', description: 'Column to sort by' },
+          order: { type: 'string', description: 'Sort direction: asc or desc' },
+          limit: { type: 'integer', description: 'Maximum rows to return (default: 50, max: 500)' },
           cursor: { type: 'string', description: 'Pagination cursor' },
         },
         required: ['database', 'table'],
@@ -127,15 +186,15 @@ export function Mcp() {
       name: 'axiom_insert',
       category: 'database',
       type: 'WRITE',
-      description: 'Inserts one or more rows into a table using parameterized queries',
+      description: 'Insert one or more rows into a table',
       permissionRequired: 'db_insert',
       parameters: {
         type: 'object',
         properties: {
-          database: { type: 'string', description: 'Database service alias' },
-          table: { type: 'string', description: 'Table name to insert into' },
-          rows: { type: 'array', description: 'Array of row objects to insert' },
-          row: { type: 'object', description: 'Single row object to insert' },
+          database: { type: 'string', description: 'Database name' },
+          table: { type: 'string', description: 'Table name' },
+          rows: { type: 'array', description: 'Array of rows to insert' },
+          row: { type: 'object', description: 'Single row to insert' },
         },
         required: ['database', 'table'],
       },
@@ -144,15 +203,15 @@ export function Mcp() {
       name: 'axiom_update',
       category: 'database',
       type: 'WRITE',
-      description: 'Updates rows matching a required filter criteria. Guardrail: rejects unconstrained full-table updates',
+      description: 'Update rows matching a filter',
       permissionRequired: 'db_update',
       parameters: {
         type: 'object',
         properties: {
-          database: { type: 'string', description: 'Database service alias' },
-          table: { type: 'string', description: 'Table name to update' },
-          filter: { type: 'object', description: 'Filter criteria matching target rows (must not be empty)' },
-          data: { type: 'object', description: 'Column key-values to set' },
+          database: { type: 'string', description: 'Database name' },
+          table: { type: 'string', description: 'Table name' },
+          filter: { type: 'object', description: 'Filter criteria matching target rows' },
+          data: { type: 'object', description: 'Column values to update' },
         },
         required: ['database', 'table', 'filter', 'data'],
       },
@@ -161,14 +220,14 @@ export function Mcp() {
       name: 'axiom_delete',
       category: 'database',
       type: 'WRITE',
-      description: 'Deletes rows matching a required filter criteria. Guardrail: rejects unconstrained full-table wipes',
+      description: 'Delete rows matching a filter',
       permissionRequired: 'db_delete',
       parameters: {
         type: 'object',
         properties: {
-          database: { type: 'string', description: 'Database service alias' },
-          table: { type: 'string', description: 'Table name to delete from' },
-          filter: { type: 'object', description: 'Filter criteria matching target rows (must not be empty)' },
+          database: { type: 'string', description: 'Database name' },
+          table: { type: 'string', description: 'Table name' },
+          filter: { type: 'object', description: 'Filter criteria matching target rows' },
         },
         required: ['database', 'table', 'filter'],
       },
@@ -177,14 +236,14 @@ export function Mcp() {
       name: 'axiom_raw_sql',
       category: 'database',
       type: 'WRITE',
-      description: 'Executes raw SQL query against a database. Subject to AST firewall validation and role permission enforcement',
+      description: 'Execute a raw SQL query against a database',
       permissionRequired: 'db_execute_raw',
       parameters: {
         type: 'object',
         properties: {
-          database: { type: 'string', description: 'Database service alias' },
-          sql: { type: 'string', description: 'Raw SQL query string' },
-          params: { type: 'array', description: 'Optional positional parameters' },
+          database: { type: 'string', description: 'Database name' },
+          sql: { type: 'string', description: 'SQL query string' },
+          params: { type: 'array', description: 'Positional query parameters' },
         },
         required: ['database', 'sql'],
       },
@@ -195,7 +254,7 @@ export function Mcp() {
       name: 'axiom_list_blob_namespaces',
       category: 'blob',
       type: 'READ',
-      description: 'Discovers all blob storage namespaces authorized for the caller under active RBAC policies',
+      description: 'List accessible storage buckets',
       permissionRequired: 'blob_read',
       parameters: {
         type: 'object',
@@ -207,15 +266,15 @@ export function Mcp() {
       name: 'axiom_list_blobs',
       category: 'blob',
       type: 'READ',
-      description: 'Lists stored objects and virtual directories in a blob namespace matching an optional prefix and cursor',
+      description: 'List files in a storage bucket',
       permissionRequired: 'blob_read',
       parameters: {
         type: 'object',
         properties: {
-          namespace: { type: 'string', description: 'Target blob namespace' },
-          prefix: { type: 'string', description: 'Optional virtual path prefix (e.g. "reports/" or "images/")' },
-          cursor: { type: 'string', description: 'Optional pagination cursor' },
-          limit: { type: 'integer', description: 'Max objects to return (default: 50, max: 500)' },
+          namespace: { type: 'string', description: 'Storage bucket name' },
+          prefix: { type: 'string', description: 'Folder or file path prefix' },
+          cursor: { type: 'string', description: 'Pagination cursor' },
+          limit: { type: 'integer', description: 'Maximum files to return (default: 50, max: 500)' },
         },
         required: ['namespace'],
       },
@@ -224,13 +283,13 @@ export function Mcp() {
       name: 'axiom_get_blob_metadata',
       category: 'blob',
       type: 'READ',
-      description: 'Retrieves object metadata (size, MIME type, BLAKE3 hash, storage tier) without fetching payload bytes',
+      description: 'Get file details (size, MIME type, hash) without downloading content',
       permissionRequired: 'blob_read',
       parameters: {
         type: 'object',
         properties: {
-          namespace: { type: 'string', description: 'Target blob namespace' },
-          key: { type: 'string', description: 'Object key / virtual file path' },
+          namespace: { type: 'string', description: 'Storage bucket name' },
+          key: { type: 'string', description: 'File path or key' },
         },
         required: ['namespace', 'key'],
       },
@@ -239,15 +298,15 @@ export function Mcp() {
       name: 'axiom_read_blob',
       category: 'blob',
       type: 'READ',
-      description: 'Reads object contents into context with safety size capping (max 20MB) and Base64 fallback for binary files',
+      description: 'Read file contents as text or base64',
       permissionRequired: 'blob_read',
       parameters: {
         type: 'object',
         properties: {
-          namespace: { type: 'string', description: 'Target blob namespace' },
-          key: { type: 'string', description: 'Object key / virtual file path' },
-          encoding: { type: 'string', enum: ['utf8', 'base64'], description: 'Content encoding (default: utf8)' },
-          max_bytes: { type: 'integer', description: 'Maximum bytes to ingest into context (default: 5242880, max: 20971520)' },
+          namespace: { type: 'string', description: 'Storage bucket name' },
+          key: { type: 'string', description: 'File path or key' },
+          encoding: { type: 'string', enum: ['utf8', 'base64'], description: 'Encoding: utf8 or base64 (default: utf8)' },
+          max_bytes: { type: 'integer', description: 'Maximum bytes to read (default: 5MB, max: 20MB)' },
         },
         required: ['namespace', 'key'],
       },
@@ -256,17 +315,17 @@ export function Mcp() {
       name: 'axiom_write_blob',
       category: 'blob',
       type: 'WRITE',
-      description: 'Stores or overwrites a blob object using UTF-8 text or Base64 payload, with optional TTL expiration',
+      description: 'Upload or update a file in a storage bucket',
       permissionRequired: 'blob_write',
       parameters: {
         type: 'object',
         properties: {
-          namespace: { type: 'string', description: 'Target blob namespace' },
-          key: { type: 'string', description: 'Object key / path (e.g. "reports/summary.md")' },
-          content: { type: 'string', description: 'File payload as UTF-8 text or Base64 string' },
+          namespace: { type: 'string', description: 'Storage bucket name' },
+          key: { type: 'string', description: 'File path or key (e.g. reports/summary.md)' },
+          content: { type: 'string', description: 'File contents (text or base64)' },
           encoding: { type: 'string', enum: ['utf8', 'base64'], description: 'Payload encoding (default: utf8)' },
-          content_type: { type: 'string', description: 'MIME type (e.g. "text/markdown" or "image/png")' },
-          ttl_seconds: { type: 'integer', description: 'Optional time-to-live in seconds for automatic deletion' },
+          content_type: { type: 'string', description: 'MIME type (e.g. text/markdown, image/png)' },
+          ttl_seconds: { type: 'integer', description: 'Expiration in seconds before auto-deletion' },
         },
         required: ['namespace', 'key', 'content'],
       },
@@ -275,13 +334,13 @@ export function Mcp() {
       name: 'axiom_delete_blob',
       category: 'blob',
       type: 'WRITE',
-      description: 'Permanently deletes an object key from the specified namespace. Enforced under RBAC DELETE policy',
+      description: 'Delete a file from a storage bucket',
       permissionRequired: 'blob_delete',
       parameters: {
         type: 'object',
         properties: {
-          namespace: { type: 'string', description: 'Target blob namespace' },
-          key: { type: 'string', description: 'Object key to delete' },
+          namespace: { type: 'string', description: 'Storage bucket name' },
+          key: { type: 'string', description: 'File path or key to delete' },
         },
         required: ['namespace', 'key'],
       },
@@ -290,15 +349,15 @@ export function Mcp() {
       name: 'axiom_create_download_ticket',
       category: 'blob',
       type: 'READ',
-      description: 'Generates a time-bounded cryptographic pre-signed capability download ticket URL for human users or direct retrieval',
+      description: 'Create a temporary download link for a file',
       permissionRequired: 'blob_read',
       parameters: {
         type: 'object',
         properties: {
-          namespace: { type: 'string', description: 'Target blob namespace' },
-          key: { type: 'string', description: 'Target object key' },
-          operation: { type: 'string', enum: ['READ', 'WRITE'], description: 'Authorized capability operation (default: READ)' },
-          ttl_seconds: { type: 'integer', description: 'Ticket validity in seconds (default: 3600, max: 86400)' },
+          namespace: { type: 'string', description: 'Storage bucket name' },
+          key: { type: 'string', description: 'File path or key' },
+          operation: { type: 'string', enum: ['READ', 'WRITE'], description: 'Authorized operation: READ or WRITE' },
+          ttl_seconds: { type: 'integer', description: 'Link validity in seconds (default: 3600, max: 86400)' },
         },
         required: ['namespace', 'key'],
       },
@@ -309,31 +368,31 @@ export function Mcp() {
     {
       uri: 'axiom://services',
       category: 'database',
-      description: 'Catalog of active database services and operational health',
+      description: 'List of configured databases and connection status',
       mimeType: 'application/json',
     },
     {
       uri: 'axiom://schema/{database}',
       category: 'database',
-      description: 'Table definitions and schema metadata for target database',
+      description: 'Table schemas for a database',
       mimeType: 'application/json',
     },
     {
       uri: 'axiom://blobs',
       category: 'blob',
-      description: 'Catalog of active blob storage namespaces and storage telemetry',
+      description: 'List of storage buckets',
       mimeType: 'application/json',
     },
     {
       uri: 'axiom://blobs/{namespace}',
       category: 'blob',
-      description: 'Listing of stored objects and virtual directories in target namespace',
+      description: 'Files in a storage bucket',
       mimeType: 'application/json',
     },
     {
       uri: 'axiom://blob/{namespace}/{key}',
       category: 'blob',
-      description: 'Direct object content retrieval with MIME type and binary fallback',
+      description: 'Direct file contents',
       mimeType: 'application/octet-stream',
     },
   ];
@@ -398,12 +457,12 @@ export function Mcp() {
       <div className="space-y-1">
         <h1 className="text-[16px] font-medium text-white tracking-tight">MCP Protocol</h1>
         <p className="text-[13px] text-[#8c8c8c] font-normal">
-          Model Context Protocol server for AI assistants, Claude Desktop, Cursor IDE, and autonomous agents
+          Model Context Protocol server for Claude Desktop, Cursor, and AI agents
         </p>
       </div>
 
       {/* Top Segmented Navigation Tabs */}
-      <div className="flex items-center gap-1 p-0.5 rounded-[8px] bg-[#0c0c0c] border border-[#262626] w-fit">
+      <div className="flex items-center gap-1 p-0.5 rounded-[8px] bg-[#0c0c0c] border border-[#262626] w-fit font-sans">
         <button
           type="button"
           onClick={() => setActiveTab('tools')}
@@ -414,8 +473,8 @@ export function Mcp() {
           }`}
         >
           <Wrench className="w-3.5 h-3.5 shrink-0" />
-          <span>Tools Catalog</span>
-          <span className="ml-1 text-[11px] font-mono tabular-nums px-1.5 py-0.5 rounded bg-[#1a1a1a] text-[#8c8c8c]">
+          <span>Tools</span>
+          <span className="ml-1 text-[11px] font-sans tabular-nums px-1.5 py-0.5 rounded bg-[#1a1a1a] text-[#8c8c8c]">
             {tools.length}
           </span>
         </button>
@@ -431,7 +490,7 @@ export function Mcp() {
         >
           <FileCode className="w-3.5 h-3.5 shrink-0" />
           <span>Resources</span>
-          <span className="ml-1 text-[11px] font-mono tabular-nums px-1.5 py-0.5 rounded bg-[#1a1a1a] text-[#8c8c8c]">
+          <span className="ml-1 text-[11px] font-sans tabular-nums px-1.5 py-0.5 rounded bg-[#1a1a1a] text-[#8c8c8c]">
             {resources.length}
           </span>
         </button>
@@ -463,13 +522,13 @@ export function Mcp() {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search tools by name, description, or permission..."
-                className="w-full h-8 pl-8 pr-3 rounded-[6px] bg-[#141414] border border-[#262626] hover:border-[#383838] focus:border-[#3b82f6] text-[13px] text-white placeholder-[#666666] outline-none transition-colors"
+                className="w-full h-8 pl-8 pr-3 rounded-[6px] bg-[#141414] border border-[#262626] hover:border-[#383838] focus:border-[#3b82f6] text-[13px] text-white placeholder-[#666666] outline-none transition-colors font-sans"
               />
             </div>
 
             <div className="flex items-center gap-2 flex-wrap">
               {/* Category Filter */}
-              <div className="inline-flex items-center p-0.5 rounded-[6px] bg-[#141414] border border-[#262626]">
+              <div className="inline-flex items-center p-0.5 rounded-[6px] bg-[#141414] border border-[#262626] font-sans">
                 <button
                   type="button"
                   onClick={() => setActiveCategory('all')}
@@ -490,8 +549,8 @@ export function Mcp() {
                       : 'text-[#8c8c8c] hover:text-white border border-transparent'
                   }`}
                 >
-                  <Database className="w-3 h-3 text-[#3b82f6]" />
-                  <span>Database (8)</span>
+                  <Database className="w-3 h-3 text-[#8c8c8c]" />
+                  <span>Databases (8)</span>
                 </button>
                 <button
                   type="button"
@@ -502,13 +561,13 @@ export function Mcp() {
                       : 'text-[#8c8c8c] hover:text-white border border-transparent'
                   }`}
                 >
-                  <HardDrive className="w-3 h-3 text-[#eab308]" />
-                  <span>Blob Storage (7)</span>
+                  <HardDrive className="w-3 h-3 text-[#8c8c8c]" />
+                  <span>Storage (7)</span>
                 </button>
               </div>
 
               {/* Type Filter */}
-              <div className="inline-flex items-center p-0.5 rounded-[6px] bg-[#141414] border border-[#262626]">
+              <div className="inline-flex items-center p-0.5 rounded-[6px] bg-[#141414] border border-[#262626] font-sans">
                 <button
                   type="button"
                   onClick={() => setActiveType('all')}
@@ -525,7 +584,7 @@ export function Mcp() {
                   onClick={() => setActiveType('READ')}
                   className={`h-7 px-2.5 text-[12px] rounded-[5px] transition-colors cursor-pointer ${
                     activeType === 'READ'
-                      ? 'bg-[#1e1e1e] text-[#34d399] font-medium border border-[#333333]'
+                      ? 'bg-[#1e1e1e] text-white font-medium border border-[#333333]'
                       : 'text-[#8c8c8c] hover:text-white border border-transparent'
                   }`}
                 >
@@ -536,7 +595,7 @@ export function Mcp() {
                   onClick={() => setActiveType('WRITE')}
                   className={`h-7 px-2.5 text-[12px] rounded-[5px] transition-colors cursor-pointer ${
                     activeType === 'WRITE'
-                      ? 'bg-[#1e1e1e] text-[#fbbf24] font-medium border border-[#333333]'
+                      ? 'bg-[#1e1e1e] text-white font-medium border border-[#333333]'
                       : 'text-[#8c8c8c] hover:text-white border border-transparent'
                   }`}
                 >
@@ -549,7 +608,7 @@ export function Mcp() {
           {/* Tools List */}
           <div className="rounded-[8px] border border-[#262626] bg-[#0c0c0c] divide-y divide-[#1e1e1e] overflow-hidden">
             {filteredTools.length === 0 ? (
-              <div className="p-12 text-center text-[#8c8c8c] text-[13px]">
+              <div className="p-12 text-center text-[#8c8c8c] text-[13px] font-sans">
                 No MCP tools matched your filter criteria.
               </div>
             ) : (
@@ -563,10 +622,10 @@ export function Mcp() {
                   className="group px-5 py-3.5 flex items-start gap-3.5 hover:bg-[#121212] transition-colors cursor-pointer"
                 >
                   <span
-                    className={`inline-flex items-center justify-center px-2 py-0.5 rounded-[4px] text-[11px] font-mono font-medium shrink-0 mt-0.5 ${
+                    className={`inline-flex items-center justify-center px-2 py-0.5 rounded-[4px] text-[11px] font-sans font-medium shrink-0 mt-0.5 ${
                       tool.type === 'READ'
-                        ? 'bg-emerald-950/40 text-emerald-400 border border-emerald-800/40'
-                        : 'bg-amber-950/40 text-amber-400 border border-amber-800/40'
+                        ? 'bg-[#30a46c]/10 text-[#30a46c] border border-[#30a46c]/25'
+                        : 'bg-[#1c160c] text-[#f59e0b] border border-[#3d2c14]'
                     }`}
                   >
                     {tool.type === 'READ' ? 'Read' : 'Write'}
@@ -575,34 +634,28 @@ export function Mcp() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between gap-3 flex-wrap">
                       <div className="flex items-center gap-2">
-                        <span className="text-[13px] font-mono font-medium text-white group-hover:text-[#3b82f6] transition-colors">
+                        <span className="text-[13px] font-sans font-medium text-white group-hover:text-[#3b82f6] transition-colors">
                           {tool.name}
                         </span>
-                        <span
-                          className={`text-[11px] px-1.5 py-0.2 rounded border font-normal flex items-center gap-1 ${
-                            tool.category === 'blob'
-                              ? 'bg-purple-950/30 text-purple-400 border-purple-800/40'
-                              : 'bg-blue-950/30 text-blue-400 border-blue-800/40'
-                          }`}
-                        >
+                        <span className="text-[11px] font-sans px-1.5 py-0.5 rounded-[4px] border border-[#262626] bg-[#141414] text-[#8c8c8c] font-medium flex items-center gap-1">
                           {tool.category === 'blob' ? (
                             <>
-                              <HardDrive className="w-2.5 h-2.5" />
+                              <HardDrive className="w-2.5 h-2.5 text-[#737373]" />
                               <span>Storage</span>
                             </>
                           ) : (
                             <>
-                              <Database className="w-2.5 h-2.5" />
+                              <Database className="w-2.5 h-2.5 text-[#737373]" />
                               <span>Database</span>
                             </>
                           )}
                         </span>
                       </div>
-                      <span className="text-[11px] font-mono text-[#737373] group-hover:text-[#8c8c8c] transition-colors">
-                        grant: {tool.permissionRequired}
+                      <span className="text-[12px] font-sans text-[#737373] group-hover:text-[#8c8c8c] transition-colors">
+                        Permission: <span className="text-[#a3a3a3]">{tool.permissionRequired}</span>
                       </span>
                     </div>
-                    <p className="text-[13px] text-[#8c8c8c] font-normal mt-1 leading-relaxed">
+                    <p className="text-[13px] text-[#8c8c8c] font-normal mt-1 leading-relaxed font-sans">
                       {tool.description}
                     </p>
                   </div>
@@ -620,9 +673,9 @@ export function Mcp() {
         <div className="space-y-4">
           <div className="rounded-[8px] border border-[#262626] bg-[#0c0c0c] overflow-hidden">
             <div className="px-5 py-3.5 border-b border-[#222222]">
-              <h2 className="text-[14px] font-medium text-white tracking-tight">Contextual Agent Resources</h2>
+              <h2 className="text-[14px] font-medium text-white tracking-tight">Resource Endpoints</h2>
               <p className="text-[13px] text-[#8c8c8c] font-normal mt-0.5">
-                Deterministic URI schemas for reading live database and blob metadata directly into AI model context
+                Direct URIs for querying database schemas and file storage
               </p>
             </div>
 
@@ -632,20 +685,20 @@ export function Mcp() {
                   key={res.uri}
                   className="px-5 py-3.5 flex items-start gap-3.5 hover:bg-[#121212] transition-colors"
                 >
-                  <span className="inline-flex items-center justify-center px-2 py-0.5 rounded-[4px] bg-blue-950/40 text-blue-400 border border-blue-800/40 text-[11px] font-mono font-medium shrink-0 mt-0.5">
+                  <span className="inline-flex items-center justify-center px-2 py-0.5 rounded-[4px] bg-[#141414] text-[#8c8c8c] border border-[#262626] text-[11px] font-sans font-medium shrink-0 mt-0.5">
                     URI
                   </span>
 
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between gap-3 flex-wrap">
-                      <span className="text-[13px] font-mono text-white font-medium select-all">
+                      <span className="text-[13px] font-sans text-white font-medium select-all">
                         {res.uri}
                       </span>
-                      <span className="text-[11px] font-mono text-[#737373] bg-[#141414] border border-[#262626] px-2 py-0.5 rounded">
+                      <span className="text-[11px] font-sans text-[#737373] bg-[#141414] border border-[#262626] px-2 py-0.5 rounded-[4px]">
                         {res.mimeType}
                       </span>
                     </div>
-                    <p className="text-[13px] text-[#8c8c8c] font-normal mt-1 leading-relaxed">
+                    <p className="text-[13px] text-[#8c8c8c] font-normal mt-1 leading-relaxed font-sans">
                       {res.description}
                     </p>
                   </div>
@@ -664,12 +717,12 @@ export function Mcp() {
               <div>
                 <h2 className="text-[14px] font-medium text-white tracking-tight">Client Configuration</h2>
                 <p className="text-[13px] text-[#8c8c8c] font-normal mt-0.5">
-                  Configure your IDE or AI assistant to communicate with Axiom's MCP server
+                  Configure Claude Desktop, Cursor, or scripts to connect to Axiom
                 </p>
               </div>
 
               {/* Client Environment Switcher */}
-              <div className="inline-flex items-center p-0.5 rounded-[6px] bg-[#141414] border border-[#262626] shrink-0">
+              <div className="inline-flex items-center p-0.5 rounded-[6px] bg-[#141414] border border-[#262626] shrink-0 font-sans">
                 {(['claude', 'cursor', 'curl'] as const).map((tab) => (
                   <button
                     key={tab}
@@ -681,7 +734,7 @@ export function Mcp() {
                         : 'text-[#8c8c8c] hover:text-white border border-transparent'
                     }`}
                   >
-                    {tab === 'claude' ? 'Claude Desktop' : tab === 'cursor' ? 'Cursor IDE' : 'cURL JSON-RPC'}
+                    {tab === 'claude' ? 'Claude Desktop' : tab === 'cursor' ? 'Cursor IDE' : 'cURL'}
                   </button>
                 ))}
               </div>
@@ -689,9 +742,9 @@ export function Mcp() {
 
             <div className="p-5 space-y-4">
               <div className="relative">
-                <pre className="rounded-[8px] border border-[#262626] bg-[#080808] p-4 text-[12px] font-mono text-[#e4e4e7] overflow-x-auto leading-relaxed select-all">
-                  {clientTab === 'claude' && claudeConfig}
-                  {clientTab === 'cursor' && cursorConfig}
+                <pre className="rounded-[8px] border border-[#262626] bg-[#080808] p-4 text-[12px] font-mono text-[#d4d4d4] overflow-x-auto leading-relaxed select-all">
+                  {clientTab === 'claude' && highlightJson(claudeConfig)}
+                  {clientTab === 'cursor' && highlightJson(cursorConfig)}
                   {clientTab === 'curl' && curlExample}
                 </pre>
                 <Button
@@ -712,10 +765,10 @@ export function Mcp() {
               </div>
 
               {/* Config File Locations */}
-              <div className="rounded-[8px] border border-[#262626] bg-[#0e0e0e] overflow-hidden">
+              <div className="rounded-[8px] border border-[#262626] bg-[#0e0e0e] overflow-hidden font-sans">
                 <div className="px-4 py-2.5 border-b border-[#222222] flex items-center justify-between">
-                  <h4 className="text-[13px] font-medium text-white">Target File Locations</h4>
-                  <span className="text-[12px] font-normal text-[#8c8c8c]">Paste the configuration into your local file</span>
+                  <h4 className="text-[13px] font-medium text-white">Configuration Files</h4>
+                  <span className="text-[12px] font-normal text-[#8c8c8c]">Add this to your local configuration file</span>
                 </div>
 
                 <div className="divide-y divide-[#1e1e1e]">
@@ -760,7 +813,7 @@ export function Mcp() {
                           title={`Copy ${item.os} path`}
                         >
                           {copiedPath === item.os ? (
-                            <Check className="w-3.5 h-3.5 text-[#34d399]" />
+                            <Check className="w-3.5 h-3.5 text-[#30a46c]" />
                           ) : (
                             <Copy className="w-3.5 h-3.5" />
                           )}
@@ -781,36 +834,30 @@ export function Mcp() {
         onClose={() => setInspectOpen(false)}
         width="w-[520px] max-w-full"
         title={
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-2 flex-wrap font-sans">
             <span
-              className={`px-2 py-0.5 rounded-[4px] text-[11px] font-mono font-medium ${
+              className={`px-2 py-0.5 rounded-[4px] text-[11px] font-sans font-medium ${
                 selectedTool?.type === 'READ'
-                  ? 'bg-emerald-950/40 text-emerald-400 border border-emerald-800/40'
-                  : 'bg-amber-950/40 text-amber-400 border border-amber-800/40'
+                  ? 'bg-[#30a46c]/10 text-[#30a46c] border border-[#30a46c]/25'
+                  : 'bg-[#1c160c] text-[#f59e0b] border border-[#3d2c14]'
               }`}
             >
               {selectedTool?.type === 'READ' ? 'Read' : 'Write'}
             </span>
-            <span
-              className={`text-[11px] px-1.5 py-0.5 rounded border font-normal flex items-center gap-1 ${
-                selectedTool?.category === 'blob'
-                  ? 'bg-purple-950/30 text-purple-400 border-purple-800/40'
-                  : 'bg-blue-950/30 text-blue-400 border-blue-800/40'
-              }`}
-            >
+            <span className="text-[11px] font-sans px-1.5 py-0.5 rounded-[4px] border border-[#262626] bg-[#141414] text-[#8c8c8c] font-medium flex items-center gap-1">
               {selectedTool?.category === 'blob' ? (
                 <>
-                  <HardDrive className="w-2.5 h-2.5" />
+                  <HardDrive className="w-2.5 h-2.5 text-[#737373]" />
                   <span>Storage</span>
                 </>
               ) : (
                 <>
-                  <Database className="w-2.5 h-2.5" />
+                  <Database className="w-2.5 h-2.5 text-[#737373]" />
                   <span>Database</span>
                 </>
               )}
             </span>
-            <span className="text-white text-[14px] font-mono font-medium">{selectedTool?.name}</span>
+            <span className="text-white text-[15px] font-sans font-medium">{selectedTool?.name}</span>
           </div>
         }
         subtitle={selectedTool?.description}
@@ -819,9 +866,9 @@ export function Mcp() {
           {/* Metadata Card */}
           <div className="p-3.5 rounded-[8px] border border-[#262626] bg-[#0c0c0c] flex items-center justify-between gap-3">
             <span className="text-[13px] text-[#8c8c8c] font-normal">
-              Required Permission Grant
+              Required Permission
             </span>
-            <span className="text-[11px] font-mono text-[#3b82f6] bg-blue-950/40 border border-blue-800/40 px-2 py-0.5 rounded-[4px]">
+            <span className="text-[12px] font-sans font-medium text-[#cccccc] bg-[#141414] border border-[#262626] px-2 py-0.5 rounded-[4px]">
               {selectedTool?.permissionRequired}
             </span>
           </div>
@@ -849,17 +896,17 @@ export function Mcp() {
                     <div key={paramName} className="p-3.5 space-y-1">
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-2">
-                          <span className="text-[13px] font-mono font-medium text-white">{paramName}</span>
-                          <span className="text-[11px] font-mono text-[#8c8c8c] bg-[#141414] border border-[#262626] px-1.5 py-0.5 rounded">
+                          <span className="text-[13px] font-sans font-medium text-white">{paramName}</span>
+                          <span className="text-[11px] font-sans text-[#737373] bg-[#141414] border border-[#262626] px-1.5 py-0.5 rounded-[4px]">
                             {prop.type}
                           </span>
                         </div>
                         {isRequired ? (
-                          <span className="text-[11px] font-medium text-[#f87171] bg-rose-950/40 border border-rose-800/40 px-1.5 py-0.5 rounded-[4px]">
+                          <span className="text-[11px] font-sans font-medium text-[#e5484d] bg-[#e5484d]/10 border border-[#e5484d]/25 px-1.5 py-0.5 rounded-[4px]">
                             Required
                           </span>
                         ) : (
-                          <span className="text-[11px] font-normal text-[#8c8c8c] bg-[#141414] border border-[#262626] px-1.5 py-0.5 rounded-[4px]">
+                          <span className="text-[11px] font-sans font-normal text-[#737373] bg-[#141414] border border-[#262626] px-1.5 py-0.5 rounded-[4px]">
                             Optional
                           </span>
                         )}
@@ -868,9 +915,9 @@ export function Mcp() {
                         {prop.description}
                       </p>
                       {prop.enum && (
-                        <div className="text-[12px] text-[#8c8c8c] flex items-center gap-1.5 pt-0.5">
+                        <div className="text-[12px] text-[#737373] flex items-center gap-1.5 pt-0.5">
                           <span>Allowed values:</span>
-                          <span className="font-mono text-[#d4d4d4]">{prop.enum.join(' | ')}</span>
+                          <span className="text-[#a3a3a3]">{prop.enum.join(' · ')}</span>
                         </div>
                       )}
                     </div>
@@ -883,7 +930,10 @@ export function Mcp() {
           {/* Example JSON-RPC Invocation */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <h3 className="text-[13px] font-medium text-white">JSON-RPC Call Example</h3>
+              <h3 className="text-[13px] font-medium text-white flex items-center gap-1.5 font-sans">
+                <span className="text-[#3b82f6] font-semibold">JSON-RPC</span>
+                <span>Example</span>
+              </h3>
               <button
                 type="button"
                 onClick={() => {
@@ -914,8 +964,8 @@ export function Mcp() {
               >
                 {copiedToolExample ? (
                   <>
-                    <Check className="w-3 h-3 text-[#34d399]" />
-                    <span className="text-[#34d399]">Copied</span>
+                    <Check className="w-3 h-3 text-[#30a46c]" />
+                    <span className="text-[#30a46c]">Copied</span>
                   </>
                 ) : (
                   <>
@@ -927,29 +977,32 @@ export function Mcp() {
             </div>
 
             <pre className="rounded-[8px] border border-[#262626] bg-[#080808] p-3.5 text-[12px] font-mono text-[#d4d4d4] overflow-x-auto leading-relaxed select-all">
-              {JSON.stringify(
-                {
-                  jsonrpc: '2.0',
-                  id: 1,
-                  method: 'tools/call',
-                  params: {
-                    name: selectedTool?.name,
-                    arguments: Object.fromEntries(
-                      Object.entries(selectedTool?.parameters.properties || {}).map(([k, v]) => [
-                        k,
-                        v.type === 'integer' ? 100 : v.type === 'object' ? {} : `<${k}>`,
-                      ])
-                    ),
-                  },
-                },
-                null,
-                2
-              )}
+              {selectedTool &&
+                highlightJson(
+                  JSON.stringify(
+                    {
+                      jsonrpc: '2.0',
+                      id: 1,
+                      method: 'tools/call',
+                      params: {
+                        name: selectedTool.name,
+                        arguments: Object.fromEntries(
+                          Object.entries(selectedTool.parameters.properties || {}).map(([k, v]) => [
+                            k,
+                            v.type === 'integer' ? 100 : v.type === 'object' ? {} : `<${k}>`,
+                          ])
+                        ),
+                      },
+                    },
+                    null,
+                    2
+                  )
+                )}
             </pre>
           </div>
         </div>
 
-        <div className="p-4 border-t border-[#222222] bg-[#0c0c0c] flex items-center justify-end">
+        <div className="p-4 border-t border-[#222222] bg-[#0c0c0c] flex items-center justify-end font-sans">
           <Button variant="secondary" size="sm" onClick={() => setInspectOpen(false)}>
             Close
           </Button>

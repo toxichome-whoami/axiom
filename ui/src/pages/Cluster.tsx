@@ -232,6 +232,7 @@ export function Cluster() {
       setIsDeleting(true);
       await api.removeClusterPeer(peerToDelete.node_id);
       setPeerToDelete(null);
+      setIsPeerPanelOpen(false);
       fetchClusterData();
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : 'Failed to remove peer');
@@ -1205,7 +1206,6 @@ export function Cluster() {
               <button
                 type="button"
                 onClick={() => {
-                  setIsPeerPanelOpen(false);
                   setPeerToDelete(selectedPeer);
                 }}
                 className="group relative flex shrink-0 items-center justify-center h-8 px-3.5 rounded-[8px] font-medium text-white shadow-xs outline-none cursor-pointer overflow-hidden ring-1 ring-[#be123c] bg-[#e11d48] font-sans text-[13px]"
