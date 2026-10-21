@@ -1,7 +1,7 @@
 /*
  * Dense data table list view subcomponent for Storage objects and folders.
  * Owned by: ui/pages/storage
- * Design reference: TableGridView in TableEditor (exact row height, border colors, tabular fonts)
+ * Design reference: TableGridView in TableEditor (exact row height, border colors, tabular fonts, custom checkbox buttons)
  */
 
 import React, { useState } from 'react';
@@ -11,6 +11,8 @@ import {
   Download,
   Trash2,
   MoreVertical,
+  Check,
+  Minus,
 } from 'lucide-react';
 import { StorageItem } from './types';
 import { getFileIcon } from './fileIcon';
@@ -36,6 +38,7 @@ export interface StorageListViewProps {
   onItemDragStart: (e: React.DragEvent, item: StorageItem) => void;
   onItemDragEnd: () => void;
   onDropOnFolder: (targetFolderKey: string, droppedItem?: StorageItem) => void;
+  onUploadFiles?: (files: FileList | File[], destinationPrefix?: string) => void;
   canDropOnFolder: (dragged: StorageItem | null, targetFolderKey: string) => boolean;
   onClearSelection?: () => void;
 }
@@ -58,6 +61,7 @@ export function StorageListView({
   onItemDragStart,
   onItemDragEnd,
   onDropOnFolder,
+  onUploadFiles,
   canDropOnFolder,
   onClearSelection,
 }: StorageListViewProps) {
@@ -79,19 +83,32 @@ export function StorageListView({
       <table className="w-full text-left border-collapse">
         <thead>
           <tr className="sticky top-0 z-10 h-9 bg-[#0a0a0a] border-b border-[#222222] text-xs font-medium text-[#888888]">
-            <th className="w-9 px-3 py-2 text-center">
-              <input
-                type="checkbox"
-                aria-label="Select all"
-                checked={allSelected}
-                ref={(input) => {
-                  if (input) {
-                    input.indeterminate = Boolean(hasSelected && !allSelected);
-                  }
-                }}
-                onChange={() => onSelectAll?.()}
-                className="w-3.5 h-3.5 rounded bg-[#1a1a1a] border-[#333333] text-blue-500 focus:ring-0 focus:ring-offset-0 cursor-pointer accent-blue-600 align-middle"
-              />
+            <th className="w-10 px-3 py-2 text-center select-none">
+              <div className="flex items-center justify-center">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onSelectAll?.();
+                  }}
+                  title={allSelected ? 'Deselect all' : 'Select all'}
+                  aria-label={allSelected ? 'Deselect all rows' : 'Select all rows'}
+                  aria-checked={allSelected ? 'true' : hasSelected ? 'mixed' : 'false'}
+                  className={`peer h-4 w-4 shrink-0 rounded-[4px] border border-[#383838] shadow-xs transition-all focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/40 cursor-pointer flex items-center justify-center ${
+                    allSelected
+                      ? 'bg-white border-white text-black'
+                      : hasSelected
+                      ? 'bg-white border-white text-black'
+                      : 'bg-transparent hover:border-[#666666] hover:bg-white/[0.04]'
+                  }`}
+                >
+                  {allSelected ? (
+                    <Check className="h-3 w-3 stroke-[3]" />
+                  ) : hasSelected ? (
+                    <Minus className="h-3 w-3 stroke-[3]" />
+                  ) : null}
+                </button>
+              </div>
             </th>
             <th className="px-3 font-medium">Name</th>
             <th className="px-3 font-medium w-36">Storage Tier</th>
@@ -106,7 +123,7 @@ export function StorageListView({
             const isSelected = selectedKeys
               ? selectedKeys.has(item.fullKey)
               : Boolean(selectedItem && (selectedItem.fullKey === item.fullKey || selectedItem.id === item.id));
-            const isDropTarget = dragOverTargetKey === item.fullKey;
+            const isDropTarget = isFolder && dragOverTargetKey === item.fullKey;
             const isSelfDragged = draggedItem?.id === item.id;
 
             return (
@@ -143,6 +160,8 @@ export function StorageListView({
                     setDragOverTargetKey(null);
                     if (draggedItemRef.current) {
                       await onDropOnFolder(item.fullKey, draggedItemRef.current);
+                    } else if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                      await onUploadFiles?.(e.dataTransfer.files, item.fullKey);
                     }
                   }
                 }}
@@ -157,10 +176,12 @@ export function StorageListView({
                 onDoubleClick={() => {
                   if (isFolder) {
                     onNavigateToPrefix(item.fullKey);
+                  } else {
+                    onDownload(item.fullKey);
                   }
                 }}
                 onContextMenu={(e) => onContextMenu(e, item)}
-                className={`group h-9 transition-colors cursor-pointer text-sm ${
+                className={`group transition-colors cursor-pointer select-none h-10 ${
                   isSelfDragged ? 'opacity-40' : ''
                 } ${
                   isDropTarget
@@ -170,17 +191,26 @@ export function StorageListView({
                     : 'text-[#cccccc] hover:bg-[#141414] hover:text-white'
                 }`}
               >
-                {/* Checkbox Column */}
-                <td className="w-9 px-3 py-2 text-center" onClick={(e) => e.stopPropagation()}>
-                  <input
-                    type="checkbox"
-                    aria-label={`Select ${item.name}`}
-                    checked={isSelected}
-                    onChange={(e) => {
-                      onToggleSelectItem ? onToggleSelectItem(item, e as any) : onSelectItem(item);
-                    }}
-                    className="w-3.5 h-3.5 rounded bg-[#1a1a1a] border-[#333333] text-blue-500 focus:ring-0 focus:ring-offset-0 cursor-pointer accent-blue-600 align-middle"
-                  />
+                {/* Custom Checkbox Button (Matching TableGridView.tsx) */}
+                <td className="w-10 px-3 py-2 text-center" onClick={(e) => e.stopPropagation()}>
+                  <div className="flex items-center justify-center">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        onToggleSelectItem ? onToggleSelectItem(item, e) : onSelectItem(item);
+                      }}
+                      title={isSelected ? `Deselect ${item.name}` : `Select ${item.name}`}
+                      aria-label={isSelected ? `Deselect ${item.name}` : `Select ${item.name}`}
+                      aria-checked={isSelected ? 'true' : 'false'}
+                      className={`peer h-4 w-4 shrink-0 rounded-[4px] border border-[#383838] shadow-xs transition-all focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/40 cursor-pointer flex items-center justify-center ${
+                        isSelected
+                          ? 'bg-white border-white text-black'
+                          : 'bg-transparent hover:border-[#666666] hover:bg-white/[0.04]'
+                      }`}
+                    >
+                      {isSelected && <Check className="h-3 w-3 stroke-[3]" />}
+                    </button>
+                  </div>
                 </td>
 
                 {/* Column 1: Icon and Name */}

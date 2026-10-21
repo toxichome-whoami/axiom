@@ -1587,6 +1587,7 @@ export function StoragePage() {
                 onItemDragStart={handleItemDragStart}
                 onItemDragEnd={handleItemDragEnd}
                 onDropOnFolder={handleDropOnFolder}
+                onUploadFiles={handleUploadFiles}
                 canDropOnFolder={canDropOnFolder}
                 onClearSelection={handleClearSelection}
               />

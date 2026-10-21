@@ -1,7 +1,7 @@
 /*
  * Grid card view subcomponent for Storage objects and virtual folders.
  * Owned by: ui/pages/storage
- * Design reference: Vercel / Linear card aesthetic (minimal borders, quiet hover, typography contrast)
+ * Design reference: Vercel / Linear card aesthetic (minimal borders, quiet hover, typography contrast, custom checkbox button)
  */
 
 import React, { useState } from 'react';
@@ -13,6 +13,7 @@ import {
   MoreVertical,
   Layers,
   HardDrive,
+  Check,
 } from 'lucide-react';
 import { StorageItem } from './types';
 import { getFileIcon } from './fileIcon';
@@ -102,19 +103,10 @@ export function StorageGridView({
                   onDragStart={(e) => onItemDragStart(e, f)}
                   onDragEnd={onItemDragEnd}
                   onDragOver={(e) => {
-                    if (draggedItemRef.current) {
-                      if (canDropOnFolder(draggedItemRef.current, f.fullKey)) {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        e.dataTransfer.dropEffect = 'move';
-                        if (dragOverTargetKey !== f.fullKey) {
-                          setDragOverTargetKey(f.fullKey);
-                        }
-                      }
-                    } else if (e.dataTransfer.types.includes('Files')) {
+                    if (draggedItemRef.current && canDropOnFolder(draggedItemRef.current, f.fullKey)) {
                       e.preventDefault();
                       e.stopPropagation();
-                      e.dataTransfer.dropEffect = 'copy';
+                      e.dataTransfer.dropEffect = 'move';
                       if (dragOverTargetKey !== f.fullKey) {
                         setDragOverTargetKey(f.fullKey);
                       }
@@ -168,15 +160,18 @@ export function StorageGridView({
                         isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
                       }`}
                     >
-                      <input
-                        type="checkbox"
+                      <button
+                        type="button"
                         aria-label={`Select ${f.name}`}
-                        checked={isSelected}
-                        onChange={(e) => {
-                          onToggleSelectItem ? onToggleSelectItem(f, e as any) : onSelectItem(f);
-                        }}
-                        className="w-3.5 h-3.5 rounded bg-[#1a1a1a] border-[#333333] text-blue-500 focus:ring-0 focus:ring-offset-0 cursor-pointer accent-blue-600 align-middle"
-                      />
+                        aria-checked={isSelected ? 'true' : 'false'}
+                        className={`peer h-4 w-4 shrink-0 rounded-[4px] border border-[#383838] shadow-xs transition-all focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/40 cursor-pointer flex items-center justify-center ${
+                          isSelected
+                            ? 'bg-white border-white text-black'
+                            : 'bg-transparent hover:border-[#666666] hover:bg-white/[0.04]'
+                        }`}
+                      >
+                        {isSelected && <Check className="h-3 w-3 stroke-[3]" />}
+                      </button>
                     </div>
                     <div className="w-8 h-8 rounded-md bg-[#1a1a1a] border border-[#2a2a2a] flex items-center justify-center shrink-0">
                       <Folder className={`w-4 h-4 ${isDropTarget ? 'text-blue-400 animate-pulse' : 'text-[#eab308]'}`} />
@@ -261,25 +256,28 @@ export function StorageGridView({
                       : 'bg-[#141414] hover:bg-[#1a1a1a] border-[#222222] hover:border-[#2e2e2e]'
                   }`}
                 >
-                  {/* Checkbox overlay */}
+                  {/* Checkbox overlay matching TableGridView button checkbox */}
                   <div
                     onClick={(e) => {
                       e.stopPropagation();
                       onToggleSelectItem ? onToggleSelectItem(item, e) : onSelectItem(item);
                     }}
-                    className={`absolute top-2 left-2 z-10 w-5 h-5 rounded flex items-center justify-center transition-opacity ${
+                    className={`absolute top-2.5 left-2.5 z-10 w-4 h-4 rounded-[4px] flex items-center justify-center transition-opacity ${
                       isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
                     }`}
                   >
-                    <input
-                      type="checkbox"
+                    <button
+                      type="button"
                       aria-label={`Select ${item.name}`}
-                      checked={isSelected}
-                      onChange={(e) => {
-                        onToggleSelectItem ? onToggleSelectItem(item, e as any) : onSelectItem(item);
-                      }}
-                      className="w-3.5 h-3.5 rounded bg-[#181818] border-[#333333] text-blue-500 focus:ring-0 focus:ring-offset-0 cursor-pointer accent-blue-600 align-middle shadow-md"
-                    />
+                      aria-checked={isSelected ? 'true' : 'false'}
+                      className={`peer h-4 w-4 shrink-0 rounded-[4px] border border-[#383838] shadow-xs transition-all focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/40 cursor-pointer flex items-center justify-center ${
+                        isSelected
+                          ? 'bg-white border-white text-black'
+                          : 'bg-transparent hover:border-[#666666] hover:bg-white/[0.04]'
+                      }`}
+                    >
+                      {isSelected && <Check className="h-3 w-3 stroke-[3]" />}
+                    </button>
                   </div>
 
                   {/* Top row: Icon, Name, and Actions */}
