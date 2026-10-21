@@ -1400,6 +1400,8 @@ export function StoragePage() {
         blobs={blobs}
         currentPrefix={currentPrefix}
         selectedItem={selectedItem}
+        selectedKeys={selectedKeys}
+        onToggleSelectItem={handleToggleSelectItem}
         onSelectFolder={(path, item) => {
           if (searchQuery) setSearchQuery('');
           navigateToPrefix(path, true, item);
@@ -1412,6 +1414,8 @@ export function StoragePage() {
             navigateToPrefix(parentFolder, true, fileItem);
           } else {
             setSelectedItem(fileItem);
+            setSelectedKeys(new Set([fileItem.fullKey]));
+            lastFocusedKeyRef.current = fileItem.fullKey;
           }
         }}
         onContextMenu={handleContextMenu}
@@ -1425,7 +1429,7 @@ export function StoragePage() {
         onItemDragEnd={handleItemDragEnd}
         onDropOnFolder={handleDropOnFolder}
         canDropOnFolder={canDropOnFolder}
-        onClearSelection={() => setSelectedItem(null)}
+        onClearSelection={handleClearSelection}
       />
 
       {/* ─── Pane 2: File Explorer Main Center Canvas ─────────────── */}

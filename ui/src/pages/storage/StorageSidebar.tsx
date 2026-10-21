@@ -34,6 +34,8 @@ export interface StorageSidebarProps {
   blobs: BlobEntry[];
   currentPrefix: string;
   selectedItem: StorageItem | null;
+  selectedKeys?: Set<string>;
+  onToggleSelectItem?: (item: StorageItem, e: React.MouseEvent) => void;
   onSelectFolder: (path: string, item?: StorageItem | null) => void;
   onSelectFile: (fileItem: StorageItem) => void;
   onContextMenu: (e: React.MouseEvent, item: StorageItem | null) => void;
@@ -61,6 +63,8 @@ export function StorageSidebar({
   blobs,
   currentPrefix,
   selectedItem,
+  selectedKeys,
+  onToggleSelectItem,
   onSelectFolder,
   onSelectFile,
   onContextMenu,
@@ -207,6 +211,7 @@ export function StorageSidebar({
           blobs={blobs}
           currentPrefix={currentPrefix}
           selectedItem={selectedItem}
+          selectedKeys={selectedKeys}
           activeNamespace={activeNamespace}
           onSelectFolder={(path, item) => {
             onSelectFolder(path, item);
@@ -216,6 +221,7 @@ export function StorageSidebar({
             onSelectFile(fileItem);
             setIsMobileOpen(false);
           }}
+          onToggleSelectItem={onToggleSelectItem}
           onContextMenu={onContextMenu}
           onNewFolder={onNewFolder}
           onUpload={onUpload}

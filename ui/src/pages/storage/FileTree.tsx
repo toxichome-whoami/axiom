@@ -192,9 +192,11 @@ export interface FileTreeProps {
   blobs: BlobEntry[];
   currentPrefix: string;
   selectedItem: StorageItem | null;
+  selectedKeys?: Set<string>;
   activeNamespace?: string;
   onSelectFolder: (path: string, item?: StorageItem | null) => void;
   onSelectFile: (fileItem: StorageItem) => void;
+  onToggleSelectItem?: (item: StorageItem, e: React.MouseEvent) => void;
   onContextMenu: (e: React.MouseEvent, item: StorageItem | null) => void;
   onNewFolder: () => void;
   onUpload: () => void;
@@ -213,9 +215,11 @@ export function FileTree({
   blobs,
   currentPrefix,
   selectedItem,
+  selectedKeys,
   activeNamespace,
   onSelectFolder,
   onSelectFile,
+  onToggleSelectItem,
   onContextMenu,
   onNewFolder,
   onUpload,
@@ -318,11 +322,16 @@ export function FileTree({
     const isExpanded = expandedPaths.has(node.path);
     const isCurrentFolder = isFolder && currentPrefix === node.path;
     const isSelected = Boolean(
-      selectedItem &&
+      (selectedKeys && (
+        selectedKeys.has(node.path) ||
+        selectedKeys.has(node.id) ||
+        (isFolder && selectedKeys.has(node.path.endsWith('/') ? node.path.slice(0, -1) : `${node.path}/`))
+      )) ||
+      (selectedItem &&
         (selectedItem.fullKey === node.path ||
           selectedItem.id === node.id ||
           selectedItem.id === `file-${node.path}` ||
-          selectedItem.id === `folder-${node.path}`)
+          selectedItem.id === `folder-${node.path}`))
     );
 
     const isTreeDropTarget = isFolder && treeDragTarget === node.path;
@@ -368,12 +377,21 @@ export function FileTree({
             e.stopPropagation();
             if (isFolder) {
               const item = toStorageItem(node);
-              onSelectFolder(node.path, item);
-              if (!isExpanded) {
-                setExpandedPaths((prev) => new Set(prev).add(node.path));
+              if ((e.ctrlKey || e.metaKey || e.shiftKey) && onToggleSelectItem) {
+                onToggleSelectItem(item, e);
+              } else {
+                onSelectFolder(node.path, item);
+                if (!isExpanded) {
+                  setExpandedPaths((prev) => new Set(prev).add(node.path));
+                }
               }
             } else {
-              onSelectFile(toStorageItem(node));
+              const item = toStorageItem(node);
+              if ((e.ctrlKey || e.metaKey || e.shiftKey) && onToggleSelectItem) {
+                onToggleSelectItem(item, e);
+              } else {
+                onSelectFile(item);
+              }
             }
           }}
           onContextMenu={(e) => onContextMenu(e, toStorageItem(node))}
@@ -383,8 +401,10 @@ export function FileTree({
           } ${
             isTreeDropTarget
               ? 'bg-blue-600/30 text-white ring-1 ring-blue-500/60 font-medium'
-              : isCurrentFolder || isSelected
-              ? 'bg-[#1a1a1a] text-white font-medium'
+              : isSelected
+              ? 'bg-[#222222] text-white font-medium ring-1 ring-inset ring-[#333333]'
+              : isCurrentFolder
+              ? 'bg-[#161616] text-white font-medium'
               : 'text-[#cccccc] hover:text-white hover:bg-[#141414]'
           }`}
         >
