@@ -661,40 +661,70 @@ export function StoragePage() {
   // Multi-selection handlers with shift-range and ctrl/meta toggle support
   const handleToggleSelectItem = useCallback(
     (item: StorageItem, e: React.MouseEvent) => {
-      setSelectedKeys((prev) => {
-        const next = new Set(prev);
-        if (e.shiftKey && lastFocusedKeyRef.current) {
-          const lastIdx = allVisibleItems.findIndex((it) => it.fullKey === lastFocusedKeyRef.current);
-          const curIdx = allVisibleItems.findIndex((it) => it.fullKey === item.fullKey);
-          if (lastIdx !== -1 && curIdx !== -1) {
-            const [start, end] = lastIdx < curIdx ? [lastIdx, curIdx] : [curIdx, lastIdx];
-            for (let i = start; i <= end; i++) {
-              next.add(allVisibleItems[i].fullKey);
-            }
-            setSelectedItem(item);
-            lastFocusedKeyRef.current = item.fullKey;
-            return next;
-          }
+      const isShift = Boolean(e.shiftKey);
+      const isCtrlOrMeta = Boolean(e.ctrlKey || e.metaKey);
+
+      // Determine current item index in visible items list
+      const curIdx = allVisibleItems.findIndex((it) => it.fullKey === item.fullKey);
+      if (curIdx === -1) return;
+
+      if (isShift) {
+        // Resolve anchor key: prefer lastFocusedKeyRef, then selectedItem, then first selected key
+        const anchorKey =
+          lastFocusedKeyRef.current &&
+          allVisibleItems.some((it) => it.fullKey === lastFocusedKeyRef.current)
+            ? lastFocusedKeyRef.current
+            : selectedItem && allVisibleItems.some((it) => it.fullKey === selectedItem.fullKey)
+            ? selectedItem.fullKey
+            : selectedKeys.size > 0
+            ? Array.from(selectedKeys).find((k) => allVisibleItems.some((it) => it.fullKey === k)) || null
+            : null;
+
+        const anchorIdx = anchorKey
+          ? allVisibleItems.findIndex((it) => it.fullKey === anchorKey)
+          : 0;
+
+        const validAnchorIdx = anchorIdx !== -1 ? anchorIdx : 0;
+        const [start, end] =
+          validAnchorIdx < curIdx
+            ? [validAnchorIdx, curIdx]
+            : [curIdx, validAnchorIdx];
+
+        // If Ctrl/Cmd is also held, preserve existing selections and union with range; else replace with range
+        const rangeKeys = new Set(isCtrlOrMeta ? selectedKeys : []);
+        for (let i = start; i <= end; i++) {
+          rangeKeys.add(allVisibleItems[i].fullKey);
         }
 
-        if (next.has(item.fullKey)) {
-          next.delete(item.fullKey);
-          if (selectedItem?.fullKey === item.fullKey) {
-            const remainingKey = Array.from(next)[0];
-            const remainingItem = remainingKey
-              ? allVisibleItems.find((it) => it.fullKey === remainingKey) || null
-              : null;
-            setSelectedItem(remainingItem);
-          }
-        } else {
-          next.add(item.fullKey);
-          setSelectedItem(item);
+        setSelectedKeys(rangeKeys);
+        setSelectedItem(item);
+
+        // Keep the original anchor key so subsequent Shift-clicks adjust from the same anchor point
+        if (!lastFocusedKeyRef.current || !allVisibleItems.some((it) => it.fullKey === lastFocusedKeyRef.current)) {
+          lastFocusedKeyRef.current = allVisibleItems[validAnchorIdx].fullKey;
         }
-        lastFocusedKeyRef.current = item.fullKey;
-        return next;
-      });
+        return;
+      }
+
+      // Normal toggle or Ctrl/Cmd toggle
+      const nextKeys = new Set(selectedKeys);
+      if (nextKeys.has(item.fullKey)) {
+        nextKeys.delete(item.fullKey);
+        if (selectedItem?.fullKey === item.fullKey) {
+          const remainingKey = Array.from(nextKeys)[0];
+          const remainingItem = remainingKey
+            ? allVisibleItems.find((it) => it.fullKey === remainingKey) || null
+            : null;
+          setSelectedItem(remainingItem);
+        }
+      } else {
+        nextKeys.add(item.fullKey);
+        setSelectedItem(item);
+      }
+      setSelectedKeys(nextKeys);
+      lastFocusedKeyRef.current = item.fullKey;
     },
-    [allVisibleItems, selectedItem]
+    [allVisibleItems, selectedItem, selectedKeys]
   );
 
   const handleSelectItem = useCallback((item: StorageItem) => {

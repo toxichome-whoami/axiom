@@ -84,35 +84,24 @@ export function StorageListView({
         <thead>
           <tr className="sticky top-0 z-10 h-10 bg-[#0a0a0a] border-b border-[#222222] text-[13px] font-medium text-[#888888]">
             <th
-              className="w-12 px-3 py-2 text-center select-none"
-              onClick={(e) => e.stopPropagation()}
+              className="w-12 px-3 py-2 text-center select-none cursor-pointer"
+              onClick={(e) => {
+                e.stopPropagation();
+                onSelectAll?.();
+              }}
               onDoubleClick={(e) => {
                 e.stopPropagation();
                 e.preventDefault();
               }}
             >
-              <div
-                className="flex items-center justify-center"
-                onClick={(e) => e.stopPropagation()}
-                onDoubleClick={(e) => {
-                  e.stopPropagation();
-                  e.preventDefault();
-                }}
-              >
+              <div className="flex items-center justify-center pointer-events-none">
                 <button
                   type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onSelectAll?.();
-                  }}
-                  onDoubleClick={(e) => {
-                    e.stopPropagation();
-                    e.preventDefault();
-                  }}
+                  tabIndex={-1}
                   title={allSelected ? 'Deselect all' : 'Select all'}
                   aria-label={allSelected ? 'Deselect all rows' : 'Select all rows'}
                   aria-checked={allSelected ? 'true' : someSelected ? 'mixed' : 'false'}
-                  className={`peer h-4 w-4 shrink-0 rounded-[4px] border border-[#383838] shadow-xs transition-all focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/40 cursor-pointer flex items-center justify-center ${
+                  className={`peer h-4 w-4 shrink-0 rounded-[4px] border border-[#383838] shadow-xs transition-all flex items-center justify-center ${
                     allSelected
                       ? 'bg-white border-white text-black'
                       : someSelected
@@ -216,38 +205,31 @@ export function StorageListView({
               >
                 {/* Custom Checkbox Button (Matching TableGridView.tsx) */}
                 <td
-                  className="w-12 px-3 py-2 text-center select-none"
-                  onClick={(e) => e.stopPropagation()}
+                  className="w-12 px-3 py-2 text-center select-none cursor-pointer"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (onToggleSelectItem) {
+                      onToggleSelectItem(item, e);
+                    } else {
+                      onSelectItem(item);
+                    }
+                  }}
                   onDoubleClick={(e) => {
                     e.stopPropagation();
                     e.preventDefault();
                   }}
                 >
-                  <div
-                    className="flex items-center justify-center"
-                    onClick={(e) => e.stopPropagation()}
-                    onDoubleClick={(e) => {
-                      e.stopPropagation();
-                      e.preventDefault();
-                    }}
-                  >
+                  <div className="flex items-center justify-center pointer-events-none">
                     <button
                       type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onToggleSelectItem ? onToggleSelectItem(item, e) : onSelectItem(item);
-                      }}
-                      onDoubleClick={(e) => {
-                        e.stopPropagation();
-                        e.preventDefault();
-                      }}
+                      tabIndex={-1}
                       title={isSelected ? `Deselect ${item.name}` : `Select ${item.name}`}
                       aria-label={isSelected ? `Deselect ${item.name}` : `Select ${item.name}`}
                       aria-checked={isSelected ? 'true' : 'false'}
-                      className={`peer h-4 w-4 shrink-0 rounded-[4px] border border-[#383838] shadow-xs transition-all focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/40 cursor-pointer flex items-center justify-center ${
+                      className={`peer h-4 w-4 shrink-0 rounded-[4px] border border-[#383838] shadow-xs transition-all flex items-center justify-center ${
                         isSelected
                           ? 'bg-white border-white text-black'
-                          : 'bg-transparent hover:border-[#666666] hover:bg-white/[0.04]'
+                          : 'bg-transparent group-hover:border-[#666666] hover:bg-white/[0.04]'
                       }`}
                     >
                       {isSelected && <Check className="h-3 w-3 stroke-[3]" />}

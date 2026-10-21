@@ -254,21 +254,21 @@ export function StorageSidebar({
       </div>
 
       {/* ─── Footer: Storage Statistics & Quota ─────────────── */}
-      <div className={`h-10 shrink-0 px-3.5 border-t border-[#222222] items-center justify-between text-[13px] text-[#cccccc] select-none font-sans ${isMobileOpen ? 'flex' : 'hidden lg:flex'}`}>
+      <div className={`h-12 shrink-0 px-3.5 border-t border-[#222222] items-center justify-between text-[12px] text-[#8c8c8c] select-none font-sans ${isMobileOpen ? 'flex' : 'hidden lg:flex'}`}>
         <span className="tabular-nums">
           {realObjectsCount} {realObjectsCount === 1 ? 'object' : 'objects'}
         </span>
 
         {currentNsInfo && (
           <div className="flex items-center gap-1.5">
-            <span className="tabular-nums text-[13px] text-[#888888]">
+            <span className="tabular-nums text-[12px] text-[#8c8c8c]">
               {formatBytes(currentNsInfo.total_bytes)}
               {currentNsInfo.max_bytes ? ` / ${formatBytes(currentNsInfo.max_bytes)}` : ''}
             </span>
             {quotaUsedPercent !== null && (
               <span
-                className={`text-[13px] tabular-nums font-medium ${
-                  quotaUsedPercent > 90 ? 'text-rose-400' : 'text-[#888888]'
+                className={`text-[12px] tabular-nums font-medium ${
+                  quotaUsedPercent > 90 ? 'text-rose-400' : 'text-[#8c8c8c]'
                 }`}
               >
                 ({quotaUsedPercent}%)
