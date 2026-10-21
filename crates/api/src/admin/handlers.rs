@@ -1824,6 +1824,119 @@ pub async fn remove_cluster_peer(
     })))
 }
 
+#[derive(Debug, Deserialize)]
+pub struct UpdatePeerRequest {
+    pub moniker: Option<String>,
+    pub url: Option<String>,
+}
+
+/// Updates configuration (moniker, advertise URL) for an existing registered peer node.
+pub async fn update_cluster_peer(
+    Extension(auth): Extension<AuthContext>,
+    Path(node_id): Path<String>,
+    Json(req): Json<UpdatePeerRequest>,
+) -> Result<impl IntoResponse, AxiomError> {
+    if !auth.is_session {
+        return Err(AxiomError::new(
+            "FORBIDDEN",
+            "Admin privileges required",
+            StatusCode::FORBIDDEN,
+        ));
+    }
+
+    let mut peer = MetadataStore::get_peer(&node_id)
+        .await
+        .map_err(|e| AxiomError::new("METADATA_ERROR", &e, StatusCode::INTERNAL_SERVER_ERROR))?
+        .ok_or_else(|| AxiomError::new("PEER_NOT_FOUND", "Peer node not found", StatusCode::NOT_FOUND))?;
+
+    if let Some(m) = req.moniker {
+        let trimmed = m.trim();
+        if !trimmed.is_empty() {
+            peer.moniker = trimmed.to_string();
+        }
+    }
+
+    if let Some(u) = req.url {
+        let trimmed = u.trim();
+        if !trimmed.is_empty() {
+            peer.url = trimmed.trim_end_matches('/').to_string();
+        }
+    }
+
+    MetadataStore::upsert_peer(&peer)
+        .await
+        .map_err(|e| AxiomError::new("METADATA_ERROR", &e, StatusCode::INTERNAL_SERVER_ERROR))?;
+
+    Ok(Json(json!({
+        "success": true,
+        "data": peer,
+        "error": Value::Null
+    })))
+}
+
+/// Dispatches an immediate signed ping heartbeat to verify peer liveness and refresh latency telemetry.
+pub async fn ping_cluster_peer(
+    Extension(auth): Extension<AuthContext>,
+    Path(node_id): Path<String>,
+) -> Result<impl IntoResponse, AxiomError> {
+    if !auth.is_session {
+        return Err(AxiomError::new(
+            "FORBIDDEN",
+            "Admin privileges required",
+            StatusCode::FORBIDDEN,
+        ));
+    }
+
+    let mut peer = MetadataStore::get_peer(&node_id)
+        .await
+        .map_err(|e| AxiomError::new("METADATA_ERROR", &e, StatusCode::INTERNAL_SERVER_ERROR))?
+        .ok_or_else(|| AxiomError::new("PEER_NOT_FOUND", "Peer node not found", StatusCode::NOT_FOUND))?;
+
+    let identity = MetadataStore::get_or_create_cluster_identity()
+        .await
+        .map_err(|e| AxiomError::new("CLUSTER_ERROR", &e, StatusCode::INTERNAL_SERVER_ERROR))?;
+    let (my_node_id, _moniker, cluster_secret) = identity;
+
+    let target_url = format!("{}/internal/v1/cluster/ping", peer.url.trim_end_matches('/'));
+    let (node_header, ts_header, nonce_header, sig_header) =
+        crate::cluster::signing::sign_outbound_packet(&my_node_id, &cluster_secret, b"");
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(3))
+        .build()
+        .map_err(|e| AxiomError::new("CLIENT_INIT_FAILED", &e.to_string(), StatusCode::INTERNAL_SERVER_ERROR))?;
+
+    let start = std::time::Instant::now();
+    let res = client
+        .get(&target_url)
+        .header("X-Axiom-Node-Id", node_header)
+        .header("X-Axiom-Timestamp", ts_header.to_string())
+        .header("X-Axiom-Nonce", nonce_header)
+        .header("X-Axiom-Signature", sig_header)
+        .send()
+        .await;
+
+    let latency_ms = start.elapsed().as_millis() as i64;
+    let (new_status, new_latency) = match res {
+        Ok(resp) if resp.status().is_success() => ("connected", latency_ms),
+        _ => ("unreachable", latency_ms),
+    };
+
+    let _ = MetadataStore::update_peer_status(&node_id, new_status, new_latency).await;
+    peer.status = new_status.to_string();
+    peer.last_ping_ms = new_latency;
+    peer.last_seen_at = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
+
+    Ok(Json(json!({
+        "success": true,
+        "data": peer,
+        "error": Value::Null
+    })))
+}
+
 /// Updates the local node moniker.
 pub async fn update_cluster_moniker(
     Extension(auth): Extension<AuthContext>,

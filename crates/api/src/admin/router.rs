@@ -46,7 +46,8 @@ pub fn get_router() -> Router {
         .route("/users", get(list_users_handler))
         .route("/cluster/status", get(get_cluster_status))
         .route("/cluster/peers", get(list_cluster_peers).post(connect_cluster_peer))
-        .route("/cluster/peers/:node_id", delete(remove_cluster_peer))
+        .route("/cluster/peers/:node_id", delete(remove_cluster_peer).patch(update_cluster_peer))
+        .route("/cluster/peers/:node_id/ping", post(ping_cluster_peer))
         .route("/cluster/moniker", patch(update_cluster_moniker))
         .nest("/blobs", crate::blobs::get_admin_router())
         .layer(axum::middleware::from_fn(crate::middleware::auth::auth_middleware));

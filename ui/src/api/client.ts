@@ -778,6 +778,15 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify({ moniker }),
     }),
+  updateClusterPeer: (nodeId: string, payload: { moniker?: string; url?: string }) =>
+    request<PeerNodeRecordApi>(`/admin/v1/cluster/peers/${encodeURIComponent(nodeId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    }),
+  pingClusterPeer: (nodeId: string) =>
+    request<PeerNodeRecordApi>(`/admin/v1/cluster/peers/${encodeURIComponent(nodeId)}/ping`, {
+      method: 'POST',
+    }),
 };
 
 
