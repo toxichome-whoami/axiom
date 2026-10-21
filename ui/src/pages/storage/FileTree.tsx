@@ -400,12 +400,12 @@ export function FileTree({
             isSelfDragged ? 'opacity-40' : ''
           } ${
             isTreeDropTarget
-              ? 'bg-blue-600/30 text-white font-medium border-l-2 border-blue-500'
+              ? 'bg-blue-600/20 text-white font-medium'
               : isSelected
-              ? 'bg-[#181818] text-white font-medium border-l-2 border-white'
+              ? 'bg-[#1e1e1e] text-white font-medium'
               : isCurrentFolder
-              ? 'bg-[#121212] text-white font-medium border-l-2 border-amber-500/70'
-              : 'text-[#cccccc] hover:text-white hover:bg-[#121212] border-l-2 border-transparent'
+              ? 'bg-[#141414] text-white font-medium'
+              : 'text-[#a1a1aa] hover:text-white hover:bg-[#101010]'
           }`}
         >
           {isFolder ? (
