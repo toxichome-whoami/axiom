@@ -12,7 +12,7 @@ use std::path::Path;
 
 use crate::client::{clear_saved_session, save_session, AdminClient};
 use crate::commands::{
-    BlobCommands, BlobNsCommands, CacheCommands, Cli, Commands, ConfigCommands, DbCommands,
+    BlobCommands, BlobNsCommands, CacheCommands, Cli, ClusterCommands, Commands, ConfigCommands, DbCommands,
     KeyCommands, RoleCommands, SetupCommands, UserCommands,
 };
 use axiom_core::ConfigManager;
@@ -159,6 +159,13 @@ pub async fn run() -> Result<bool, Box<dyn std::error::Error>> {
             run_doctor(&cli.url, format).await?;
             Ok(true)
         }
+
+        Some(Commands::Cluster { command }) => {
+            let client = AdminClient::new(&cli.url, cli.key);
+            handle_cluster_command(client, command, format).await?;
+            Ok(true)
+        }
+
 
         Some(Commands::Config { command }) => {
             handle_config_command(command, format).await?;
@@ -838,6 +845,203 @@ async fn handle_reload_command(
     Ok(())
 }
 
+// ─── Cluster Mesh Command Handlers ──────────────────────────────────────────
+
+async fn handle_cluster_command(
+    client: AdminClient,
+    command: ClusterCommands,
+    format: OutputFormat,
+) -> Result<(), Box<dyn std::error::Error>> {
+    match command {
+        ClusterCommands::Status => {
+            let resp = client.get_cluster_status().await?;
+            if format == OutputFormat::Json {
+                println!("{}", serde_json::to_string_pretty(&resp)?);
+            } else if format == OutputFormat::Jsonl {
+                println!("{}", serde_json::to_string(&resp)?);
+            } else {
+                println!("Axiom Cluster Mesh Status");
+                println!("{:-<60}", "");
+                if let Some(data) = resp.get("data") {
+                    let node_id = data.get("node_id").and_then(|v| v.as_str()).unwrap_or("-");
+                    let moniker = data.get("moniker").and_then(|v| v.as_str()).unwrap_or("-");
+                    let secret = data.get("cluster_secret").and_then(|v| v.as_str()).unwrap_or("-");
+                    let connected = data.get("connected_peers").and_then(|v| v.as_i64()).unwrap_or(0);
+                    let total = data.get("total_peers").and_then(|v| v.as_i64()).unwrap_or(0);
+
+                    println!("{:<18}: {}", "Node ID", node_id);
+                    println!("{:<18}: {}", "Node Moniker", moniker);
+                    println!("{:<18}: {}", "Cluster Secret", secret);
+                    println!("{:<18}: {} connected / {} total", "Peer Mesh", connected, total);
+                } else {
+                    println!("{}", serde_json::to_string_pretty(&resp)?);
+                }
+            }
+        }
+
+        ClusterCommands::Peers => {
+            let resp = client.list_cluster_peers().await?;
+            if format == OutputFormat::Json {
+                println!("{}", serde_json::to_string_pretty(&resp)?);
+            } else if format == OutputFormat::Jsonl {
+                if let Some(peers) = resp.get("data").and_then(|d| d.get("peers")).and_then(|p| p.as_array()) {
+                    for peer in peers {
+                        println!("{}", serde_json::to_string(peer)?);
+                    }
+                } else {
+                    println!("{}", serde_json::to_string(&resp)?);
+                }
+            } else {
+                let peers = resp
+                    .get("data")
+                    .and_then(|d| d.get("peers"))
+                    .and_then(|p| p.as_array());
+
+                match peers {
+                    Some(list) if !list.is_empty() => {
+                        println!(
+                            "{:<38} {:<18} {:<28} {:<12} {:<10} {:<16}",
+                            "NODE ID", "MONIKER", "URL", "STATUS", "LATENCY", "LAST SEEN"
+                        );
+                        println!("{:-<126}", "");
+                        for p in list {
+                            let node_id = p.get("node_id").and_then(|v| v.as_str()).unwrap_or("-");
+                            let moniker = p.get("moniker").and_then(|v| v.as_str()).unwrap_or("-");
+                            let url = p.get("url").and_then(|v| v.as_str()).unwrap_or("-");
+                            let status = p.get("status").and_then(|v| v.as_str()).unwrap_or("unknown");
+                            let latency = p
+                                .get("latency_ms")
+                                .and_then(|v| v.as_i64())
+                                .map(|l| format!("{}ms", l))
+                                .unwrap_or_else(|| "-".to_string());
+                            let last_seen = p
+                                .get("last_seen")
+                                .and_then(|v| v.as_i64())
+                                .map(|ts| {
+                                    let now = std::time::SystemTime::now()
+                                        .duration_since(std::time::UNIX_EPOCH)
+                                        .unwrap_or_default()
+                                        .as_secs() as i64;
+                                    let diff = (now - ts).max(0);
+                                    if diff < 60 {
+                                        format!("{}s ago", diff)
+                                    } else if diff < 3600 {
+                                        format!("{}m ago", diff / 60)
+                                    } else {
+                                        format!("{}h ago", diff / 3600)
+                                    }
+                                })
+                                .unwrap_or_else(|| "-".to_string());
+
+                            println!(
+                                "{:<38} {:<18} {:<28} {:<12} {:<10} {:<16}",
+                                node_id, moniker, url, status, latency, last_seen
+                            );
+                        }
+                    }
+                    _ => {
+                        println!("No cluster peers paired yet. Use 'axiom cluster connect <url> --secret <secret>' to join a node.");
+                    }
+                }
+            }
+        }
+
+        ClusterCommands::Connect { target_url, secret } => {
+            let resp = client.connect_cluster_peer(&target_url, &secret).await?;
+            if format == OutputFormat::Json {
+                println!("{}", serde_json::to_string_pretty(&resp)?);
+            } else if format == OutputFormat::Jsonl {
+                println!("{}", serde_json::to_string(&resp)?);
+            } else {
+                println!("Successfully paired and connected with cluster peer at '{}'.", target_url);
+                if let Some(peer) = resp.get("data") {
+                    if let Some(moniker) = peer.get("moniker").and_then(|v| v.as_str()) {
+                        println!("  Moniker: {}", moniker);
+                    }
+                    if let Some(node_id) = peer.get("node_id").and_then(|v| v.as_str()) {
+                        println!("  Node ID: {}", node_id);
+                    }
+                }
+            }
+        }
+
+        ClusterCommands::Remove { node_id } => {
+            let resp = client.remove_cluster_peer(&node_id).await?;
+            if format == OutputFormat::Json {
+                println!("{}", serde_json::to_string_pretty(&resp)?);
+            } else if format == OutputFormat::Jsonl {
+                println!("{}", serde_json::to_string(&resp)?);
+            } else {
+                println!("Peer node '{}' successfully removed from cluster mesh.", node_id);
+            }
+        }
+
+        ClusterCommands::Update {
+            node_id,
+            moniker,
+            url,
+            secret,
+        } => {
+            let resp = client
+                .update_cluster_peer(
+                    &node_id,
+                    moniker.as_deref(),
+                    url.as_deref(),
+                    secret.as_deref(),
+                )
+                .await?;
+            if format == OutputFormat::Json {
+                println!("{}", serde_json::to_string_pretty(&resp)?);
+            } else if format == OutputFormat::Jsonl {
+                println!("{}", serde_json::to_string(&resp)?);
+            } else {
+                println!("Configuration for peer node '{}' successfully updated.", node_id);
+            }
+        }
+
+        ClusterCommands::Ping { node_id } => {
+            let resp = client.ping_cluster_peer(&node_id).await?;
+            if format == OutputFormat::Json {
+                println!("{}", serde_json::to_string_pretty(&resp)?);
+            } else if format == OutputFormat::Jsonl {
+                println!("{}", serde_json::to_string(&resp)?);
+            } else {
+                let data = resp.get("data");
+                let latency = data
+                    .and_then(|d| d.get("latency_ms"))
+                    .and_then(|v| v.as_i64())
+                    .unwrap_or(0);
+                let moniker = data
+                    .and_then(|d| d.get("moniker"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or(&node_id);
+                let status = data
+                    .and_then(|d| d.get("status"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("connected");
+
+                println!(
+                    "Peer '{}' ({}) responded in {}ms - Status: {}",
+                    moniker, node_id, latency, status
+                );
+            }
+        }
+
+        ClusterCommands::Moniker { moniker } => {
+            let resp = client.update_cluster_moniker(&moniker).await?;
+            if format == OutputFormat::Json {
+                println!("{}", serde_json::to_string_pretty(&resp)?);
+            } else if format == OutputFormat::Jsonl {
+                println!("{}", serde_json::to_string(&resp)?);
+            } else {
+                println!("Local cluster node moniker successfully updated to '{}'.", moniker);
+            }
+        }
+    }
+
+    Ok(())
+}
+
 // ─── Diagnostics and System Doctor ─────────────────────────────────────────
 
 async fn run_doctor(base_url: &str, format: OutputFormat) -> Result<(), Box<dyn std::error::Error>> {
@@ -937,7 +1141,31 @@ async fn run_doctor(base_url: &str, format: OutputFormat) -> Result<(), Box<dyn 
         }
     }
 
-    // 4. Runtime environment
+    // 4. Cluster mesh status check
+    let cluster_url = format!("{}/admin/v1/cluster/status", base_url.trim_end_matches('/'));
+    match client.get(&cluster_url).send().await {
+        Ok(resp) if resp.status().is_success() => {
+            if let Ok(body) = resp.json::<serde_json::Value>().await {
+                let moniker = body.get("data").and_then(|d| d.get("moniker")).and_then(|v| v.as_str()).unwrap_or("node");
+                let connected = body.get("data").and_then(|d| d.get("connected_peers")).and_then(|v| v.as_i64()).unwrap_or(0);
+                let total = body.get("data").and_then(|d| d.get("total_peers")).and_then(|v| v.as_i64()).unwrap_or(0);
+                checks.push(json!({
+                    "item": "Cluster mesh status",
+                    "status": "PASS",
+                    "detail": format!("Node '{}' active with {} connected / {} total peers", moniker, connected, total)
+                }));
+            }
+        }
+        _ => {
+            checks.push(json!({
+                "item": "Cluster mesh status",
+                "status": "INFO",
+                "detail": "Cluster status requires running gateway and admin credentials"
+            }));
+        }
+    }
+
+    // 5. Runtime environment
     checks.push(json!({
         "item": "Host environment",
         "status": "PASS",

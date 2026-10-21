@@ -129,6 +129,12 @@ pub enum Commands {
     /// Diagnose system environment and database reachability
     Doctor,
 
+    /// Cluster mesh and node federation management (via Admin API)
+    Cluster {
+        #[command(subcommand)]
+        command: ClusterCommands,
+    },
+
     /// Configuration initialization, conversion, and inspection
     Config {
         #[command(subcommand)]
@@ -175,6 +181,59 @@ pub enum CacheCommands {
     Stats,
     /// Flush all cache entries from L1 RAM and L2 persistent storage
     Flush,
+}
+
+#[derive(Subcommand, Debug, Clone)]
+pub enum ClusterCommands {
+    /// Display local node identity, cluster secret, and peer connectivity status
+    Status,
+
+    /// List all registered peer nodes in the cluster mesh
+    #[command(alias = "list")]
+    Peers,
+
+    /// Connect and pair with a remote cluster peer node
+    Connect {
+        #[arg(help = "Remote peer URL (e.g. http://10.0.0.2:4500)")]
+        target_url: String,
+
+        #[arg(short, long, help = "Shared cluster secret for mutual authentication")]
+        secret: String,
+    },
+
+    /// Disconnect and unregister a peer node from the cluster mesh
+    #[command(alias = "disconnect")]
+    Remove {
+        #[arg(help = "Node ID of the peer to remove")]
+        node_id: String,
+    },
+
+    /// Update configuration for an existing registered peer node
+    Update {
+        #[arg(help = "Node ID of the peer to update")]
+        node_id: String,
+
+        #[arg(short, long, help = "Updated peer display moniker")]
+        moniker: Option<String>,
+
+        #[arg(short, long, help = "Updated peer URL endpoint")]
+        url: Option<String>,
+
+        #[arg(short, long, help = "Updated shared secret")]
+        secret: Option<String>,
+    },
+
+    /// Send a live ping probe to verify connectivity and measure latency to a peer node
+    Ping {
+        #[arg(help = "Node ID of the peer to ping")]
+        node_id: String,
+    },
+
+    /// Update the local node's cluster moniker
+    Moniker {
+        #[arg(help = "New moniker for this local cluster node")]
+        moniker: String,
+    },
 }
 
 #[derive(Args, Debug, Default, Clone)]
@@ -877,6 +936,81 @@ mod tests {
                 assert_eq!(password, Some("longsecretpass".to_string()));
             }
             _ => panic!("Expected Setup Account command"),
+        }
+    }
+
+    #[test]
+    fn test_cli_parse_cluster_commands() {
+        // Status
+        let args = ["axiom", "cluster", "status"];
+        let cli = Cli::try_parse_from(args).expect("Failed to parse cluster status");
+        assert!(matches!(cli.command, Some(Commands::Cluster { command: ClusterCommands::Status })));
+
+        // Peers / list
+        let args = ["axiom", "cluster", "peers"];
+        let cli = Cli::try_parse_from(args).expect("Failed to parse cluster peers");
+        assert!(matches!(cli.command, Some(Commands::Cluster { command: ClusterCommands::Peers })));
+
+        let args = ["axiom", "cluster", "list"];
+        let cli = Cli::try_parse_from(args).expect("Failed to parse cluster list");
+        assert!(matches!(cli.command, Some(Commands::Cluster { command: ClusterCommands::Peers })));
+
+        // Connect
+        let args = ["axiom", "cluster", "connect", "http://10.0.0.2:4500", "-s", "shared_secret_123"];
+        let cli = Cli::try_parse_from(args).expect("Failed to parse cluster connect");
+        match cli.command {
+            Some(Commands::Cluster { command: ClusterCommands::Connect { target_url, secret } }) => {
+                assert_eq!(target_url, "http://10.0.0.2:4500");
+                assert_eq!(secret, "shared_secret_123");
+            }
+            _ => panic!("Expected Cluster Connect command"),
+        }
+
+        // Remove / disconnect
+        let args = ["axiom", "cluster", "remove", "node_999"];
+        let cli = Cli::try_parse_from(args).expect("Failed to parse cluster remove");
+        match cli.command {
+            Some(Commands::Cluster { command: ClusterCommands::Remove { node_id } }) => {
+                assert_eq!(node_id, "node_999");
+            }
+            _ => panic!("Expected Cluster Remove command"),
+        }
+
+        let args = ["axiom", "cluster", "disconnect", "node_999"];
+        let cli = Cli::try_parse_from(args).expect("Failed to parse cluster disconnect");
+        assert!(matches!(cli.command, Some(Commands::Cluster { command: ClusterCommands::Remove { .. } })));
+
+        // Update
+        let args = ["axiom", "cluster", "update", "node_999", "-m", "node-east", "--url", "http://10.0.0.3:4500", "-s", "new_secret"];
+        let cli = Cli::try_parse_from(args).expect("Failed to parse cluster update");
+        match cli.command {
+            Some(Commands::Cluster { command: ClusterCommands::Update { node_id, moniker, url, secret } }) => {
+                assert_eq!(node_id, "node_999");
+                assert_eq!(moniker, Some("node-east".to_string()));
+                assert_eq!(url, Some("http://10.0.0.3:4500".to_string()));
+                assert_eq!(secret, Some("new_secret".to_string()));
+            }
+            _ => panic!("Expected Cluster Update command"),
+        }
+
+        // Ping
+        let args = ["axiom", "cluster", "ping", "node_999"];
+        let cli = Cli::try_parse_from(args).expect("Failed to parse cluster ping");
+        match cli.command {
+            Some(Commands::Cluster { command: ClusterCommands::Ping { node_id } }) => {
+                assert_eq!(node_id, "node_999");
+            }
+            _ => panic!("Expected Cluster Ping command"),
+        }
+
+        // Moniker
+        let args = ["axiom", "cluster", "moniker", "local-gateway-primary"];
+        let cli = Cli::try_parse_from(args).expect("Failed to parse cluster moniker");
+        match cli.command {
+            Some(Commands::Cluster { command: ClusterCommands::Moniker { moniker } }) => {
+                assert_eq!(moniker, "local-gateway-primary");
+            }
+            _ => panic!("Expected Cluster Moniker command"),
         }
     }
 }

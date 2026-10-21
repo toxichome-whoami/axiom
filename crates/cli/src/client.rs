@@ -800,5 +800,72 @@ impl AdminClient {
     /// Lists administrative users via the Admin API.
     pub async fn list_users(&self) -> Result<Value, String> {
         self.request(reqwest::Method::GET, "/admin/v1/users", None).await
+
     }
+
+    // ─── Cluster Mesh / Node Federation ─────────────────────────────────────
+
+    /// Fetches local cluster node identity, cluster secret, and peer counters.
+    pub async fn get_cluster_status(&self) -> Result<Value, String> {
+        self.request(reqwest::Method::GET, "/admin/v1/cluster/status", None).await
+    }
+
+    /// Lists all known peer nodes registered in the cluster mesh.
+    pub async fn list_cluster_peers(&self) -> Result<Value, String> {
+        self.request(reqwest::Method::GET, "/admin/v1/cluster/peers", None).await
+    }
+
+    /// Connects and handshakes with a remote cluster peer node.
+    pub async fn connect_cluster_peer(&self, target_url: &str, cluster_secret: &str) -> Result<Value, String> {
+        let body = serde_json::json!({
+            "target_url": target_url,
+            "cluster_secret": cluster_secret,
+        });
+        self.request(reqwest::Method::POST, "/admin/v1/cluster/peers", Some(body)).await
+    }
+
+    /// Unregisters and removes a peer node from the cluster mesh.
+    pub async fn remove_cluster_peer(&self, node_id: &str) -> Result<Value, String> {
+        let path = format!("/admin/v1/cluster/peers/{}", node_id);
+        self.request(reqwest::Method::DELETE, &path, None).await
+    }
+
+    /// Updates moniker, URL, or shared secret for an existing peer node.
+    pub async fn update_cluster_peer(
+        &self,
+        node_id: &str,
+        moniker: Option<&str>,
+        url: Option<&str>,
+        cluster_secret: Option<&str>,
+    ) -> Result<Value, String> {
+        let path = format!("/admin/v1/cluster/peers/{}", node_id);
+        let mut body = serde_json::Map::new();
+        if let Some(m) = moniker {
+            body.insert("moniker".to_string(), serde_json::Value::String(m.to_string()));
+        }
+        if let Some(u) = url {
+            body.insert("url".to_string(), serde_json::Value::String(u.to_string()));
+        }
+        if let Some(s) = cluster_secret {
+            body.insert("cluster_secret".to_string(), serde_json::Value::String(s.to_string()));
+        }
+        self.request(reqwest::Method::PATCH, &path, Some(serde_json::Value::Object(body))).await
+    }
+
+    /// Sends a live ping probe to verify connectivity and measure latency to a peer node.
+    pub async fn ping_cluster_peer(&self, node_id: &str) -> Result<Value, String> {
+        let path = format!("/admin/v1/cluster/peers/{}/ping", node_id);
+        self.request(reqwest::Method::POST, &path, None).await
+    }
+
+    /// Updates the local node's cluster moniker.
+    pub async fn update_cluster_moniker(&self, moniker: &str) -> Result<Value, String> {
+        let body = serde_json::json!({
+            "moniker": moniker,
+        });
+        self.request(reqwest::Method::PATCH, "/admin/v1/cluster/moniker", Some(body)).await
+    }
+
+
+
 }
