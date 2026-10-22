@@ -108,19 +108,32 @@ chmod +x axiom
 ./axiom --version
 ```
 
-#### From Source (Cargo or Zig)
+#### From Source (Zig & Cargo)
+
+Axiom includes a **zero-bloat, self-bootstrapping build pipeline** powered by [Zig](https://ziglang.org). You don't need MSYS64, MinGW, or 10 GB Visual Studio C++ build tools &mdash; Zig compiles all embedded C/C++ dependencies (`libsql`, `mimalloc`, `aws-lc`, `ring`) automatically:
+
 ```bash
 git clone https://github.com/toxichome/axiom.git
 cd axiom
 
-# Zero-bloat build with Zig (No MSYS64, MinGW, or heavy Visual Studio installs required):
-zig build setup     # Generates lightweight shims in .tools/bin & configures .cargo/config.toml
-zig build           # Builds Axiom in release mode
+# Production release build (executable placed in target/release/axiom):
+zig build
 
-# Or standard Cargo build:
-cargo build --release
-# Executable is placed in ./target/release/axiom
+# Fast debug build for local development:
+zig build dev
+
+# Sub-second workspace typecheck:
+zig build check
+
+# Run workspace linter & tests:
+zig build clippy
+zig build test
 ```
+
+> [!TIP]
+> For advanced toolchain architecture, passthrough commands (`./tools/zig/runner cargo ...`), and direct Cargo usage, see the **[Building & Toolchain Guide](./docs/building.md)**.
+>
+> If you prefer standard Cargo without Zig: `cargo build --release`.
 
 #### Docker
 ```bash
@@ -932,6 +945,7 @@ Comprehensive guides and technical specifications are available in the `docs/` d
 
 | Document | Description |
 |---|---|
+| **[Building & Toolchain Guide](./docs/building.md)** | Zero-bloat self-bootstrapping build system using Zig (no MSYS64 / MinGW / VS Build Tools needed) |
 | **[API Reference](./docs/api.md)** | Complete endpoint reference across Core, Database, Blobs Data, Admin Control Plane, Internal P2P Cluster Mesh, and MCP |
 | **[Configuration Guide](./docs/configuration.md)** | Detailed `config.toml` specification covering all 8 configuration sections, defaults, and environment variable overrides |
 
