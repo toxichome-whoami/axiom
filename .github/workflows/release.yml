@@ -35,7 +35,7 @@ jobs:
             archive: tar.gz
 
           # Darwin amd64 (macOS Intel)
-          - os: macos-13
+          - os: macos-14
             target: x86_64-apple-darwin
             platform: darwin_amd64
             bin: axiom
