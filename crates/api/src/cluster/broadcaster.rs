@@ -9,8 +9,8 @@ use once_cell::sync::Lazy;
 use serde_json::json;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use axiom_metadata::MetadataStore;
 use crate::cluster::signing::sign_outbound_packet;
+use axiom_metadata::MetadataStore;
 
 static HTTP_CLIENT: Lazy<reqwest::Client> = Lazy::new(|| {
     reqwest::Client::builder()
@@ -161,7 +161,10 @@ impl ClusterBroadcaster {
             let payload_bytes = body_bytes.clone();
 
             tokio::spawn(async move {
-                let target_url = format!("{}/internal/v1/cluster/event", peer_url.trim_end_matches('/'));
+                let target_url = format!(
+                    "{}/internal/v1/cluster/event",
+                    peer_url.trim_end_matches('/')
+                );
                 let (node_header, ts_header, nonce_header, sig_header) =
                     sign_outbound_packet(&my_id, &secret, &payload_bytes);
 
@@ -181,7 +184,12 @@ impl ClusterBroadcaster {
 
                 match res {
                     Ok(resp) if resp.status().is_success() => {
-                        let _ = MetadataStore::update_peer_status(&peer_node_id, "connected", latency_ms).await;
+                        let _ = MetadataStore::update_peer_status(
+                            &peer_node_id,
+                            "connected",
+                            latency_ms,
+                        )
+                        .await;
                     }
                     Ok(resp) => {
                         tracing::warn!(
@@ -192,7 +200,12 @@ impl ClusterBroadcaster {
                     }
                     Err(e) => {
                         tracing::warn!("Failed to broadcast event to peer {}: {}", peer_node_id, e);
-                        let _ = MetadataStore::update_peer_status(&peer_node_id, "unreachable", latency_ms).await;
+                        let _ = MetadataStore::update_peer_status(
+                            &peer_node_id,
+                            "unreachable",
+                            latency_ms,
+                        )
+                        .await;
                     }
                 }
             });
@@ -224,7 +237,10 @@ impl ClusterBroadcaster {
                 let secret = cluster_secret.clone();
 
                 tokio::spawn(async move {
-                    let target_url = format!("{}/internal/v1/cluster/ping", peer_url.trim_end_matches('/'));
+                    let target_url = format!(
+                        "{}/internal/v1/cluster/ping",
+                        peer_url.trim_end_matches('/')
+                    );
                     let (node_header, ts_header, nonce_header, sig_header) =
                         sign_outbound_packet(&my_id, &secret, b"");
 
@@ -242,10 +258,20 @@ impl ClusterBroadcaster {
 
                     match res {
                         Ok(resp) if resp.status().is_success() => {
-                            let _ = MetadataStore::update_peer_status(&peer_node_id, "connected", latency_ms).await;
+                            let _ = MetadataStore::update_peer_status(
+                                &peer_node_id,
+                                "connected",
+                                latency_ms,
+                            )
+                            .await;
                         }
                         _ => {
-                            let _ = MetadataStore::update_peer_status(&peer_node_id, "unreachable", latency_ms).await;
+                            let _ = MetadataStore::update_peer_status(
+                                &peer_node_id,
+                                "unreachable",
+                                latency_ms,
+                            )
+                            .await;
                         }
                     }
                 });

@@ -20,8 +20,10 @@ use serde_json::{json, Value};
 ///  - Updates `content-length` header upon JSON envelope modification.
 pub async fn envelope_middleware(res: Response<Body>) -> Response<Body> {
     let (mut parts, body) = res.into_parts();
-    
-    let is_json = parts.headers.get(header::CONTENT_TYPE)
+
+    let is_json = parts
+        .headers
+        .get(header::CONTENT_TYPE)
         .and_then(|v| v.to_str().ok())
         .map(|v| v.starts_with("application/json"))
         .unwrap_or(false);
@@ -35,7 +37,13 @@ pub async fn envelope_middleware(res: Response<Body>) -> Response<Body> {
     // Limit buffer to 10MB to prevent memory exhaustion
     let bytes = match axum::body::to_bytes(body, 10_485_760).await {
         Ok(b) => b,
-        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to read response body").into_response(),
+        Err(_) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to read response body",
+            )
+                .into_response()
+        }
     };
 
     if bytes.is_empty() {
@@ -55,7 +63,7 @@ pub async fn envelope_middleware(res: Response<Body>) -> Response<Body> {
             if !obj.contains_key("success") {
                 obj.insert("success".to_string(), json!(status.is_success()));
             }
-            
+
             // Re-serialize with the new field
             if let Ok(new_bytes) = serde_json::to_vec(&json_val) {
                 if let Ok(len_val) = header::HeaderValue::from_str(&new_bytes.len().to_string()) {

@@ -6,10 +6,10 @@
  * Last structural change: Phase 1 ArcSwap snapshot BLAKE3 verification with zero-lock hot path.
  */
 
-use axiom_core::AxiomError;
-use axiom_core::ConfigManager;
 use crate::security::ban_list::BanList;
 use axiom_core::AuthContext;
+use axiom_core::AxiomError;
+use axiom_core::ConfigManager;
 use axum::{extract::Request, middleware::Next, response::Response};
 use base64::prelude::*;
 
@@ -46,7 +46,11 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, A
     }
 
     if raw_token_opt.is_none() {
-        if let Some(auth_hdr) = req.headers().get("Authorization").and_then(|h| h.to_str().ok()) {
+        if let Some(auth_hdr) = req
+            .headers()
+            .get("Authorization")
+            .and_then(|h| h.to_str().ok())
+        {
             if let Some(stripped) = auth_hdr.strip_prefix("Bearer ") {
                 raw_token_opt = Some(stripped);
             }
@@ -112,14 +116,17 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, A
             }
         }
 
-        if let Ok(Some(username)) = axiom_metadata::store::MetadataStore::validate_session(session_id).await {
+        if let Ok(Some(username)) =
+            axiom_metadata::store::MetadataStore::validate_session(session_id).await
+        {
             // Cache active session in RAM for 60 seconds
             axiom_cache::CacheEngine::set(
                 &cache_key,
                 bytes::Bytes::from(username.clone()),
                 60,
                 axiom_cache::Durability::MemoryOnly,
-            ).await;
+            )
+            .await;
 
             let ctx = AuthContext {
                 api_key_name: format!("user:{}", username),
@@ -136,11 +143,16 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, A
     // Validates pre-signed URLs on native blob endpoints (/api/v1/blobs/*)
     // using keyed BLAKE3 HMAC signatures and sub-microsecond cache revocation.
     let path = req.uri().path();
-    let stripped_blob_path = path.strip_prefix("/api/v1/blobs/").or_else(|| path.strip_prefix("/blobs/"));
+    let stripped_blob_path = path
+        .strip_prefix("/api/v1/blobs/")
+        .or_else(|| path.strip_prefix("/blobs/"));
     if let Some(stripped) = stripped_blob_path {
         // Fast-path: Unauthenticated public blob reads (/api/v1/blobs/public/:namespace/*key)
         // Handler validates that target namespace has is_public == true.
-        if stripped.starts_with("public/") && (*req.method() == axum::http::Method::GET || *req.method() == axum::http::Method::HEAD) {
+        if stripped.starts_with("public/")
+            && (*req.method() == axum::http::Method::GET
+                || *req.method() == axum::http::Method::HEAD)
+        {
             let ctx = AuthContext {
                 api_key_name: "public:anonymous".to_string(),
                 role: Some("public".to_string()),
@@ -156,9 +168,17 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, A
             for pair in query.split('&') {
                 if let Some((k, v)) = pair.split_once('=') {
                     if k == "ticket_sig" {
-                        ticket_sig = Some(urlencoding::decode(v).unwrap_or(std::borrow::Cow::Borrowed(v)).into_owned());
+                        ticket_sig = Some(
+                            urlencoding::decode(v)
+                                .unwrap_or(std::borrow::Cow::Borrowed(v))
+                                .into_owned(),
+                        );
                     } else if k == "ticket_exp" {
-                        ticket_exp_str = Some(urlencoding::decode(v).unwrap_or(std::borrow::Cow::Borrowed(v)).into_owned());
+                        ticket_exp_str = Some(
+                            urlencoding::decode(v)
+                                .unwrap_or(std::borrow::Cow::Borrowed(v))
+                                .into_owned(),
+                        );
                     }
                 }
             }
@@ -174,11 +194,15 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, A
 
                         let secret = axiom_blob::tickets::get_ticket_secret();
 
-                        if axiom_blob::tickets::verify_ticket(secret, ns, key, op, exp, sig).is_ok() {
+                        if axiom_blob::tickets::verify_ticket(secret, ns, key, op, exp, sig).is_ok()
+                        {
                             // Instant revocation check: fast in-memory L1 cache check, falling back to SQLite metadata
                             let cache_key = format!("ticket:revoked:{}", sig);
-                            let is_revoked = axiom_cache::CacheEngine::get(&cache_key).await.is_some()
-                                || axiom_metadata::MetadataStore::is_blob_ticket_revoked(sig).await.unwrap_or(false);
+                            let is_revoked =
+                                axiom_cache::CacheEngine::get(&cache_key).await.is_some()
+                                    || axiom_metadata::MetadataStore::is_blob_ticket_revoked(sig)
+                                        .await
+                                        .unwrap_or(false);
 
                             if is_revoked {
                                 return Err(AxiomError::new(
@@ -193,7 +217,11 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, A
                             let ctx = AuthContext {
                                 api_key_name: format!("ticket:{}:{}", ns, key),
                                 role: Some("ticket".to_string()),
-                                mode: if op == "READ" { axiom_core::ServerMode::Readonly } else { axiom_core::ServerMode::Readwrite },
+                                mode: if op == "READ" {
+                                    axiom_core::ServerMode::Readonly
+                                } else {
+                                    axiom_core::ServerMode::Readwrite
+                                },
                                 db_scope: vec![ns.to_string()],
                                 ..Default::default()
                             };
@@ -260,7 +288,11 @@ pub fn validate_api_key_with_client_ip(
                 // Compute BLAKE3 hash of incoming secret and compare constant-time
                 let computed_hash = blake3::hash(key_secret.as_bytes());
                 let mut match_result = 0;
-                for (a, b) in computed_hash.as_bytes().iter().zip(key_snap.secret_hash.iter()) {
+                for (a, b) in computed_hash
+                    .as_bytes()
+                    .iter()
+                    .zip(key_snap.secret_hash.iter())
+                {
                     match_result |= a ^ b;
                 }
 
@@ -303,9 +335,20 @@ pub fn validate_api_key_with_client_ip(
                     // SECURITY (Anti-DoS): If client_ip is known, ban the attacking client IP
                     // rather than globally suspending the API key, preventing 3rd-party lockout of legitimate keys.
                     if let Some(ip) = client_ip {
-                        BanList::record_failed_auth_for_ip(ip, key_name, penalty_threshold, window_secs, cooldown_secs);
+                        BanList::record_failed_auth_for_ip(
+                            ip,
+                            key_name,
+                            penalty_threshold,
+                            window_secs,
+                            cooldown_secs,
+                        );
                     } else {
-                        BanList::record_failed_auth(key_name, penalty_threshold, window_secs, cooldown_secs);
+                        BanList::record_failed_auth(
+                            key_name,
+                            penalty_threshold,
+                            window_secs,
+                            cooldown_secs,
+                        );
                     }
                 }
             }
@@ -326,12 +369,12 @@ pub fn validate_api_key(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashMap;
-    use once_cell::sync::Lazy;
-    use std::sync::Mutex;
     use axiom_metadata::snapshot::{
         update_snapshot, ApiKeySnapshot, MetadataSnapshot, PermissionSnapshot, RoleSnapshot,
     };
+    use once_cell::sync::Lazy;
+    use std::collections::HashMap;
+    use std::sync::Mutex;
 
     static TEST_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
 

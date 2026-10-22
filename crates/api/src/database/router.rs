@@ -15,9 +15,9 @@ use serde_json::Value;
 
 use crate::database::handlers::{get_db_config, QueryExecutionPipeline};
 use crate::database::schemas::QueryRequest;
+use axiom_core::AuthContext;
 use axiom_core::AxiomError;
 use axiom_core::ConfigManager;
-use axiom_core::AuthContext;
 
 /// Builds and returns the Axum router for the `/api/v1/db` endpoint subtree.
 /// CONTRACT:
@@ -141,11 +141,9 @@ async fn execute_query(
             }
             serde_json::Value::Object(mut map) => {
                 let mut keys: Vec<String> = map.keys().cloned().collect();
-                keys.sort_by(|a, b| {
-                    match (a.parse::<i32>(), b.parse::<i32>()) {
-                        (Ok(n1), Ok(n2)) => n1.cmp(&n2),
-                        _ => a.cmp(b),
-                    }
+                keys.sort_by(|a, b| match (a.parse::<i32>(), b.parse::<i32>()) {
+                    (Ok(n1), Ok(n2)) => n1.cmp(&n2),
+                    _ => a.cmp(b),
                 });
                 for k in keys {
                     if let Some(val) = map.remove(&k) {
@@ -173,7 +171,7 @@ async fn execute_query(
         .get("Idempotency-Key")
         .and_then(|v| v.to_str().ok())
         .map(|s| format!("idemp:{}:{}", auth.api_key_name, s));
-    
+
     if let Some(ref key) = idempotency_key {
         if let Some(cached_response) = axiom_cache::CacheEngine::get(key).await {
             // Validate that the request matches the original cached fingerprint
@@ -191,7 +189,11 @@ async fn execute_query(
                     .body(axum::body::Body::from(entry.body))
                     .map_err(|e| {
                         tracing::error!("Response build failed: {}", e);
-                        AxiomError::new("INTERNAL_ERROR", "Failed to build response", axum::http::StatusCode::INTERNAL_SERVER_ERROR)
+                        AxiomError::new(
+                            "INTERNAL_ERROR",
+                            "Failed to build response",
+                            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                        )
                     });
             } else {
                 // Legacy cache entry fallback
@@ -201,21 +203,32 @@ async fn execute_query(
                     .body(axum::body::Body::from(cached_response))
                     .map_err(|e| {
                         tracing::error!("Response build failed: {}", e);
-                        AxiomError::new("INTERNAL_ERROR", "Failed to build response", axum::http::StatusCode::INTERNAL_SERVER_ERROR)
+                        AxiomError::new(
+                            "INTERNAL_ERROR",
+                            "Failed to build response",
+                            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                        )
                     });
             }
         }
     }
     let db_cfg = get_db_config(&db_name, &auth).await?;
 
-    let timeout_duration = std::time::Duration::from_secs(payload.timeout.unwrap_or(30).clamp(1, 300) as u64);
+    let timeout_duration =
+        std::time::Duration::from_secs(payload.timeout.unwrap_or(30).clamp(1, 300) as u64);
     let (_arc_result, json_bytes) = match tokio::time::timeout(
         timeout_duration,
-        QueryExecutionPipeline::run_query(&db_name, &payload.sql, params_array, &auth, &db_cfg)
-    ).await {
+        QueryExecutionPipeline::run_query(&db_name, &payload.sql, params_array, &auth, &db_cfg),
+    )
+    .await
+    {
         Ok(result) => result?,
         Err(_) => {
-            return Err(AxiomError::new("QUERY_TIMEOUT", "Query execution timed out", axum::http::StatusCode::GATEWAY_TIMEOUT));
+            return Err(AxiomError::new(
+                "QUERY_TIMEOUT",
+                "Query execution timed out",
+                axum::http::StatusCode::GATEWAY_TIMEOUT,
+            ));
         }
     };
 
@@ -256,7 +269,11 @@ async fn execute_query(
             .body(axum::body::Body::from_stream(stream))
             .map_err(|e| {
                 tracing::error!("Response build failed: {}", e);
-                AxiomError::new("INTERNAL_ERROR", "Failed to build response", axum::http::StatusCode::INTERNAL_SERVER_ERROR)
+                AxiomError::new(
+                    "INTERNAL_ERROR",
+                    "Failed to build response",
+                    axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                )
             });
     }
 
@@ -265,7 +282,11 @@ async fn execute_query(
         .body(axum::body::Body::from(json_bytes))
         .map_err(|e| {
             tracing::error!("Response build failed: {}", e);
-            AxiomError::new("INTERNAL_ERROR", "Failed to build response", axum::http::StatusCode::INTERNAL_SERVER_ERROR)
+            AxiomError::new(
+                "INTERNAL_ERROR",
+                "Failed to build response",
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            )
         })
 }
 

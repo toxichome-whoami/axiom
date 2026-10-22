@@ -8,28 +8,25 @@
  *             Blob Storage & Capability Tickets (Group H).
  */
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use bytes::Bytes;
+use axum::{body::Body, http::Request};
 use base64::prelude::*;
+use bytes::Bytes;
+use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tower::ServiceExt;
-use axum::{body::Body, http::Request};
 
-use axiom_core::{
-    parse_size, format_size, AxiomConfig, AxiomError, AuthContext, ConfigManager, PermissionSnapshot,
-};
-use axiom_policy::PolicyEngine;
-use axiom_cache::{CacheEngine, Durability};
-use axiom_blob::{
-    generate_ticket, verify_ticket, validate_key, validate_namespace,
-};
-use axiom_metadata::snapshot::{
-    update_snapshot, ApiKeySnapshot, MetadataSnapshot, RoleSnapshot,
-};
-use axiom_api::middleware::auth::validate_api_key;
 use axiom_api::database::filter_builder::build_where_clause;
+use axiom_api::middleware::auth::validate_api_key;
 use axiom_api::server::app::create_app;
+use axiom_blob::{generate_ticket, validate_key, validate_namespace, verify_ticket};
+use axiom_cache::{CacheEngine, Durability};
+use axiom_core::{
+    format_size, parse_size, AuthContext, AxiomConfig, AxiomError, ConfigManager,
+    PermissionSnapshot,
+};
+use axiom_metadata::snapshot::{update_snapshot, ApiKeySnapshot, MetadataSnapshot, RoleSnapshot};
+use axiom_policy::PolicyEngine;
 
 // ─── Group A: Core Foundational Micro-Benchmarks ───────────────────────────
 
@@ -222,7 +219,13 @@ fn bench_cache_operations(c: &mut Criterion) {
 
     // Pre-populate keys for GET benchmarks
     rt.block_on(async {
-        CacheEngine::set("bench:hot_key", Bytes::from("hot_value_payload"), 3600, Durability::MemoryOnly).await;
+        CacheEngine::set(
+            "bench:hot_key",
+            Bytes::from("hot_value_payload"),
+            3600,
+            Durability::MemoryOnly,
+        )
+        .await;
     });
 
     group.bench_function("l1_get_hot_hit", |b| {
@@ -344,7 +347,10 @@ fn bench_filter_builder(c: &mut Criterion) {
     let mut simple_filter = HashMap::new();
     simple_filter.insert("status".to_string(), serde_json::json!({ "$eq": "active" }));
     simple_filter.insert("age".to_string(), serde_json::json!({ "$gte": 21 }));
-    simple_filter.insert("role".to_string(), serde_json::json!({ "$in": ["admin", "operator"] }));
+    simple_filter.insert(
+        "role".to_string(),
+        serde_json::json!({ "$in": ["admin", "operator"] }),
+    );
 
     group.bench_function("filter_build_simple", |b| {
         b.iter(|| {
@@ -357,7 +363,10 @@ fn bench_filter_builder(c: &mut Criterion) {
     // and parameter extraction without lazy drops or dead-code elimination.
     let in_items: Vec<String> = (0..500).map(|i| format!("item_{}", i)).collect();
     let mut in_500_filter = HashMap::new();
-    in_500_filter.insert("item_id".to_string(), serde_json::json!({ "$in": in_items }));
+    in_500_filter.insert(
+        "item_id".to_string(),
+        serde_json::json!({ "$in": in_items }),
+    );
 
     group.bench_function("filter_build_in_500", |b| {
         b.iter(|| {
@@ -372,7 +381,10 @@ fn bench_filter_builder(c: &mut Criterion) {
     nested_filter.insert("group2".to_string(), serde_json::json!({ "$ne": "beta" }));
     nested_filter.insert("group3".to_string(), serde_json::json!({ "$gt": 100 }));
     nested_filter.insert("group4".to_string(), serde_json::json!({ "$lte": 500 }));
-    nested_filter.insert("group5".to_string(), serde_json::json!({ "$like": "%search%" }));
+    nested_filter.insert(
+        "group5".to_string(),
+        serde_json::json!({ "$like": "%search%" }),
+    );
 
     group.bench_function("filter_build_multi_clause", |b| {
         b.iter(|| {
@@ -385,7 +397,10 @@ fn bench_filter_builder(c: &mut Criterion) {
     let sql_stmt = "SELECT id, name, email, created_at FROM users WHERE status = ? AND age >= ? ORDER BY created_at DESC";
     group.bench_function("ast_uncached_parse", |b| {
         b.iter(|| {
-            let res = sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::PostgreSqlDialect {}, black_box(sql_stmt));
+            let res = sqlparser::parser::Parser::parse_sql(
+                &sqlparser::dialect::PostgreSqlDialect {},
+                black_box(sql_stmt),
+            );
             black_box(res.map(|s| s.len()).unwrap_or(0));
         });
     });
@@ -522,7 +537,9 @@ fn bench_http_pipeline(c: &mut Criterion) {
         b.to_async(&rt).iter(|| {
             let app = Arc::clone(&app);
             async move {
-                let req = Request::get("/api/v1/blobs/assets/documents/specs.pdf").body(Body::empty()).unwrap();
+                let req = Request::get("/api/v1/blobs/assets/documents/specs.pdf")
+                    .body(Body::empty())
+                    .unwrap();
                 let res = (*app).clone().oneshot(req).await.unwrap();
                 black_box(res);
             }

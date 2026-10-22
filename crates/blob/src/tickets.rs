@@ -142,7 +142,9 @@ pub fn verify_ticket(
     let expected_sig = compute_signature(secret, namespace, key, operation, expires_at);
 
     if !constant_time_eq(signature, &expected_sig) {
-        return Err(BlobError::InvalidTicket("Invalid ticket signature".to_string()));
+        return Err(BlobError::InvalidTicket(
+            "Invalid ticket signature".to_string(),
+        ));
     }
 
     Ok(())
@@ -232,7 +234,13 @@ mod tests {
             .as_secs() as i64
             - 10;
         // Recompute signature for expired timestamp to test the expiry check specifically
-        ticket.signature = compute_signature(secret, &ticket.namespace, &ticket.key, &ticket.operation, ticket.expires_at);
+        ticket.signature = compute_signature(
+            secret,
+            &ticket.namespace,
+            &ticket.key,
+            &ticket.operation,
+            ticket.expires_at,
+        );
 
         let res = verify_ticket(
             secret,

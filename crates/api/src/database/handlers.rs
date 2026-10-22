@@ -11,15 +11,16 @@ use serde_json::Value;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use axiom_core::AxiomError;
 use axiom_core::config::schema::DatabaseDefConfig;
+use axiom_core::AuthContext;
+use axiom_core::AxiomError;
 use axiom_core::QueryResult;
 use axiom_db::DatabasePoolManager;
 use axiom_policy::PolicyEngine;
-use axiom_core::AuthContext;
 
 // Consecutive execution failure counter per database alias for circuit breaker (Debt #4 fix).
-static CIRCUIT_FAILURES: once_cell::sync::Lazy<dashmap::DashMap<String, u32>> = once_cell::sync::Lazy::new(dashmap::DashMap::new);
+static CIRCUIT_FAILURES: once_cell::sync::Lazy<dashmap::DashMap<String, u32>> =
+    once_cell::sync::Lazy::new(dashmap::DashMap::new);
 
 // Type alias for broadcast channel results to simplify complex nested types.
 type InFlightResult = Result<(Arc<QueryResult>, bytes::Bytes), AxiomError>;
@@ -32,7 +33,10 @@ static IN_FLIGHT_QUERIES: once_cell::sync::Lazy<InFlightQueriesMap> =
 
 // Fast heuristic regex to skip cache key allocation on obvious mutation statements.
 static MUTATION_RE: once_cell::sync::Lazy<regex::Regex> = once_cell::sync::Lazy::new(|| {
-    regex::Regex::new(r"(?i)\b(INSERT|UPDATE|DELETE|DROP|CREATE|ALTER|TRUNCATE|REPLACE|GRANT|REVOKE|PRAGMA)\b").unwrap()
+    regex::Regex::new(
+        r"(?i)\b(INSERT|UPDATE|DELETE|DROP|CREATE|ALTER|TRUNCATE|REPLACE|GRANT|REVOKE|PRAGMA)\b",
+    )
+    .unwrap()
 });
 
 static PRAGMA_ON_RE: once_cell::sync::Lazy<regex::Regex> = once_cell::sync::Lazy::new(|| {
@@ -49,7 +53,9 @@ static PRAGMA_OFF_RE: once_cell::sync::Lazy<regex::Regex> = once_cell::sync::Laz
 /// This prevents sqlparser-rs from rejecting ON/OFF keywords as "Expected: a concrete value".
 pub fn normalize_sqlite_pragmas(sql: &str) -> String {
     let replaced_off = PRAGMA_OFF_RE.replace_all(sql, "PRAGMA $1 = 0");
-    PRAGMA_ON_RE.replace_all(&replaced_off, "PRAGMA $1 = 1").into_owned()
+    PRAGMA_ON_RE
+        .replace_all(&replaced_off, "PRAGMA $1 = 1")
+        .into_owned()
 }
 
 /// Precomputed AST analysis and formatted query statement for fast-path execution.
@@ -70,8 +76,9 @@ const MAX_AST_CACHE_ENTRIES: usize = 4096;
 
 /// In-memory schema catalog caching table column definitions: "{db_name}:{table_name}" -> (Vec<ColumnInfo>, expires_at_unix)
 /// Eliminates redundant database-level information_schema roundtrips on CRUD hot-paths.
-static SCHEMA_CATALOG: once_cell::sync::Lazy<dashmap::DashMap<String, (Vec<axiom_core::ColumnInfo>, i64)>> =
-    once_cell::sync::Lazy::new(dashmap::DashMap::new);
+static SCHEMA_CATALOG: once_cell::sync::Lazy<
+    dashmap::DashMap<String, (Vec<axiom_core::ColumnInfo>, i64)>,
+> = once_cell::sync::Lazy::new(dashmap::DashMap::new);
 
 const SCHEMA_CACHE_TTL_SECS: i64 = 300; // 5-minute in-memory schema TTL
 
@@ -116,7 +123,13 @@ pub async fn warm_cache_from_turso(entries: Vec<(String, bytes::Bytes, i64)>) {
     for (key, bytes, expires_at) in entries {
         let remaining = expires_at - now_unix;
         if remaining > 0 {
-            axiom_cache::CacheEngine::set(&key, bytes, remaining as u64, axiom_cache::Durability::MemoryOnly).await;
+            axiom_cache::CacheEngine::set(
+                &key,
+                bytes,
+                remaining as u64,
+                axiom_cache::Durability::MemoryOnly,
+            )
+            .await;
         }
     }
 }
@@ -124,7 +137,11 @@ pub async fn warm_cache_from_turso(entries: Vec<(String, bytes::Bytes, i64)>) {
 pub struct QueryExecutionPipeline;
 
 fn extract_table_name(raw: &str) -> String {
-    let clean = raw.trim().trim_matches('"').trim_matches('`').trim_matches('\'');
+    let clean = raw
+        .trim()
+        .trim_matches('"')
+        .trim_matches('`')
+        .trim_matches('\'');
     if let Some((_, right)) = clean.rsplit_once('.') {
         right.trim_matches('"').trim_matches('`').to_string()
     } else {
@@ -140,14 +157,19 @@ fn collect_tables_from_factor(factor: &sqlparser::ast::TableFactor, tables: &mut
         sqlparser::ast::TableFactor::Derived { subquery, .. } => {
             collect_tables_from_query(subquery, tables);
         }
-        sqlparser::ast::TableFactor::NestedJoin { table_with_joins, .. } => {
+        sqlparser::ast::TableFactor::NestedJoin {
+            table_with_joins, ..
+        } => {
             collect_tables_from_table_with_joins(table_with_joins, tables);
         }
         _ => {}
     }
 }
 
-fn collect_tables_from_table_with_joins(twj: &sqlparser::ast::TableWithJoins, tables: &mut Vec<String>) {
+fn collect_tables_from_table_with_joins(
+    twj: &sqlparser::ast::TableWithJoins,
+    tables: &mut Vec<String>,
+) {
     collect_tables_from_factor(&twj.relation, tables);
     for join in &twj.joins {
         collect_tables_from_factor(&join.relation, tables);
@@ -182,12 +204,19 @@ fn collect_tables_from_expr(expr: &sqlparser::ast::Expr, tables: &mut Vec<String
                 collect_tables_from_expr(item, tables);
             }
         }
-        sqlparser::ast::Expr::Between { expr, low, high, .. } => {
+        sqlparser::ast::Expr::Between {
+            expr, low, high, ..
+        } => {
             collect_tables_from_expr(expr, tables);
             collect_tables_from_expr(low, tables);
             collect_tables_from_expr(high, tables);
         }
-        sqlparser::ast::Expr::Case { operand, conditions, else_result, .. } => {
+        sqlparser::ast::Expr::Case {
+            operand,
+            conditions,
+            else_result,
+            ..
+        } => {
             if let Some(op) = operand {
                 collect_tables_from_expr(op, tables);
             }
@@ -293,7 +322,11 @@ pub fn format_postgres_placeholders(sql: &str) -> String {
 
     while i < len {
         let c = chars[i];
-        let next_c = if i + 1 < len { Some(chars[i + 1]) } else { None };
+        let next_c = if i + 1 < len {
+            Some(chars[i + 1])
+        } else {
+            None
+        };
 
         if in_line_comment {
             out.push(c);
@@ -466,7 +499,11 @@ impl QueryExecutionPipeline {
         if config.circuit_breaker.enabled {
             if let Some(failures) = CIRCUIT_FAILURES.get(db_name) {
                 if *failures.value() as i32 >= config.circuit_breaker.failure_threshold {
-                    return Err(AxiomError::new("CIRCUIT_BREAKER_OPEN", "Database connection temporarily blocked due to repeated failures", StatusCode::SERVICE_UNAVAILABLE));
+                    return Err(AxiomError::new(
+                        "CIRCUIT_BREAKER_OPEN",
+                        "Database connection temporarily blocked due to repeated failures",
+                        StatusCode::SERVICE_UNAVAILABLE,
+                    ));
                 }
             }
         }
@@ -525,7 +562,9 @@ impl QueryExecutionPipeline {
         let dialect_name = engine.dialect();
         let ast_cache_key = format!("{}:{}", dialect_name, sql);
 
-        let (is_mutation, formatted_sql, multiple_statements) = if let Some(cached) = AST_CACHE.get(&ast_cache_key) {
+        let (is_mutation, formatted_sql, multiple_statements) = if let Some(cached) =
+            AST_CACHE.get(&ast_cache_key)
+        {
             for (op, tables) in &cached.operations {
                 if tables.is_empty() {
                     PolicyEngine::evaluate(auth, db_name, "*", op)?;
@@ -535,18 +574,23 @@ impl QueryExecutionPipeline {
                     }
                 }
             }
-            let cow = cached.formatted_sql.clone().map(std::borrow::Cow::Owned).unwrap_or_else(|| std::borrow::Cow::Borrowed(sql));
+            let cow = cached
+                .formatted_sql
+                .clone()
+                .map(std::borrow::Cow::Owned)
+                .unwrap_or_else(|| std::borrow::Cow::Borrowed(sql));
             (cached.is_mutation, cow, cached.multiple_statements.clone())
         } else {
             // For PostgreSQL dialect, replace '?' with '$1', '$2', ... placeholders before AST parsing,
             // because PostgreSQL grammar rejects raw '?' parameter placeholders.
-            let parse_target_sql: std::borrow::Cow<'_, str> = if (dialect_name == "postgres" || dialect_name == "any") && sql.contains('?') {
-                std::borrow::Cow::Owned(format_postgres_placeholders(sql))
-            } else if dialect_name == "sqlite" && sql.to_ascii_uppercase().contains("PRAGMA") {
-                std::borrow::Cow::Owned(normalize_sqlite_pragmas(sql))
-            } else {
-                std::borrow::Cow::Borrowed(sql)
-            };
+            let parse_target_sql: std::borrow::Cow<'_, str> =
+                if (dialect_name == "postgres" || dialect_name == "any") && sql.contains('?') {
+                    std::borrow::Cow::Owned(format_postgres_placeholders(sql))
+                } else if dialect_name == "sqlite" && sql.to_ascii_uppercase().contains("PRAGMA") {
+                    std::borrow::Cow::Owned(normalize_sqlite_pragmas(sql))
+                } else {
+                    std::borrow::Cow::Borrowed(sql)
+                };
 
             let ast_result = parse_sql_with_dialect(dialect_name, &parse_target_sql);
 
@@ -619,7 +663,9 @@ impl QueryExecutionPipeline {
                     sqlparser::ast::Statement::Delete(delete) => {
                         is_mutation = true;
                         let mut tbls = Vec::new();
-                        if let sqlparser::ast::FromTable::WithFromKeyword(from_tables) = &delete.from {
+                        if let sqlparser::ast::FromTable::WithFromKeyword(from_tables) =
+                            &delete.from
+                        {
                             for twj in from_tables {
                                 collect_tables_from_table_with_joins(twj, &mut tbls);
                             }
@@ -686,7 +732,9 @@ impl QueryExecutionPipeline {
                         if let sqlparser::ast::SetExpr::Select(select) = &mut *query.body {
                             for twj in &select.from {
                                 let tbl = extract_table_name(&twj.relation.to_string());
-                                if let Some(rls_pred) = PolicyEngine::get_rls_predicate(auth, db_name, &tbl, "SELECT") {
+                                if let Some(rls_pred) =
+                                    PolicyEngine::get_rls_predicate(auth, db_name, &tbl, "SELECT")
+                                {
                                     let mut rls_stmts = parse_sql_with_dialect(
                                         dialect_name,
                                         &format!("SELECT 1 WHERE ({})", rls_pred),
@@ -697,15 +745,21 @@ impl QueryExecutionPipeline {
                                             StatusCode::FORBIDDEN,
                                         )
                                     })?;
-                                    if let Some(sqlparser::ast::Statement::Query(rls_q)) = rls_stmts.pop() {
-                                        if let sqlparser::ast::SetExpr::Select(rls_sel) = *rls_q.body {
+                                    if let Some(sqlparser::ast::Statement::Query(rls_q)) =
+                                        rls_stmts.pop()
+                                    {
+                                        if let sqlparser::ast::SetExpr::Select(rls_sel) =
+                                            *rls_q.body
+                                        {
                                             if let Some(rls_expr) = rls_sel.selection {
                                                 select.selection = match select.selection.take() {
-                                                    Some(existing) => Some(sqlparser::ast::Expr::BinaryOp {
-                                                        left: Box::new(existing),
-                                                        op: sqlparser::ast::BinaryOperator::And,
-                                                        right: Box::new(rls_expr),
-                                                    }),
+                                                    Some(existing) => {
+                                                        Some(sqlparser::ast::Expr::BinaryOp {
+                                                            left: Box::new(existing),
+                                                            op: sqlparser::ast::BinaryOperator::And,
+                                                            right: Box::new(rls_expr),
+                                                        })
+                                                    }
                                                     None => Some(rls_expr),
                                                 };
                                                 rls_rewritten = true;
@@ -724,14 +778,20 @@ impl QueryExecutionPipeline {
                     }
                     sqlparser::ast::Statement::Update(update) => {
                         let tbl = extract_table_name(&update.table.to_string());
-                        if let Some(rls_pred) = PolicyEngine::get_rls_predicate(auth, db_name, &tbl, "UPDATE") {
+                        if let Some(rls_pred) =
+                            PolicyEngine::get_rls_predicate(auth, db_name, &tbl, "UPDATE")
+                        {
                             let mut rls_stmts = parse_sql_with_dialect(
                                 dialect_name,
                                 &format!("SELECT 1 WHERE ({})", rls_pred),
-                            ).map_err(|e| {
+                            )
+                            .map_err(|e| {
                                 AxiomError::new(
                                     "AUTH_FORBIDDEN",
-                                    &format!("Invalid Row-Level Security predicate for table '{}': {}", tbl, e),
+                                    &format!(
+                                        "Invalid Row-Level Security predicate for table '{}': {}",
+                                        tbl, e
+                                    ),
                                     StatusCode::FORBIDDEN,
                                 )
                             })?;
@@ -739,11 +799,13 @@ impl QueryExecutionPipeline {
                                 if let sqlparser::ast::SetExpr::Select(rls_sel) = *rls_q.body {
                                     if let Some(rls_expr) = rls_sel.selection {
                                         update.selection = match update.selection.take() {
-                                            Some(existing) => Some(sqlparser::ast::Expr::BinaryOp {
-                                                left: Box::new(existing),
-                                                op: sqlparser::ast::BinaryOperator::And,
-                                                right: Box::new(rls_expr),
-                                            }),
+                                            Some(existing) => {
+                                                Some(sqlparser::ast::Expr::BinaryOp {
+                                                    left: Box::new(existing),
+                                                    op: sqlparser::ast::BinaryOperator::And,
+                                                    right: Box::new(rls_expr),
+                                                })
+                                            }
                                             None => Some(rls_expr),
                                         };
                                         rls_rewritten = true;
@@ -752,7 +814,10 @@ impl QueryExecutionPipeline {
                             } else {
                                 return Err(AxiomError::new(
                                     "AUTH_FORBIDDEN",
-                                    &format!("Malformed Row-Level Security predicate for table '{}'", tbl),
+                                    &format!(
+                                        "Malformed Row-Level Security predicate for table '{}'",
+                                        tbl
+                                    ),
                                     StatusCode::FORBIDDEN,
                                 ));
                             }
@@ -760,7 +825,9 @@ impl QueryExecutionPipeline {
                     }
                     sqlparser::ast::Statement::Delete(delete) => {
                         let mut tbls = Vec::new();
-                        if let sqlparser::ast::FromTable::WithFromKeyword(from_tables) = &delete.from {
+                        if let sqlparser::ast::FromTable::WithFromKeyword(from_tables) =
+                            &delete.from
+                        {
                             for twj in from_tables {
                                 collect_tables_from_table_with_joins(twj, &mut tbls);
                             }
@@ -770,7 +837,9 @@ impl QueryExecutionPipeline {
                             }
                         }
                         for tbl in &tbls {
-                            if let Some(rls_pred) = PolicyEngine::get_rls_predicate(auth, db_name, tbl, "DELETE") {
+                            if let Some(rls_pred) =
+                                PolicyEngine::get_rls_predicate(auth, db_name, tbl, "DELETE")
+                            {
                                 let mut rls_stmts = parse_sql_with_dialect(
                                     dialect_name,
                                     &format!("SELECT 1 WHERE ({})", rls_pred),
@@ -781,15 +850,19 @@ impl QueryExecutionPipeline {
                                         StatusCode::FORBIDDEN,
                                     )
                                 })?;
-                                if let Some(sqlparser::ast::Statement::Query(rls_q)) = rls_stmts.pop() {
+                                if let Some(sqlparser::ast::Statement::Query(rls_q)) =
+                                    rls_stmts.pop()
+                                {
                                     if let sqlparser::ast::SetExpr::Select(rls_sel) = *rls_q.body {
                                         if let Some(rls_expr) = rls_sel.selection {
                                             delete.selection = match delete.selection.take() {
-                                                Some(existing) => Some(sqlparser::ast::Expr::BinaryOp {
-                                                    left: Box::new(existing),
-                                                    op: sqlparser::ast::BinaryOperator::And,
-                                                    right: Box::new(rls_expr),
-                                                }),
+                                                Some(existing) => {
+                                                    Some(sqlparser::ast::Expr::BinaryOp {
+                                                        left: Box::new(existing),
+                                                        op: sqlparser::ast::BinaryOperator::And,
+                                                        right: Box::new(rls_expr),
+                                                    })
+                                                }
                                                 None => Some(rls_expr),
                                             };
                                             rls_rewritten = true;
@@ -798,7 +871,10 @@ impl QueryExecutionPipeline {
                                 } else {
                                     return Err(AxiomError::new(
                                         "AUTH_FORBIDDEN",
-                                        &format!("Malformed Row-Level Security predicate for table '{}'", tbl),
+                                        &format!(
+                                            "Malformed Row-Level Security predicate for table '{}'",
+                                            tbl
+                                        ),
                                         StatusCode::FORBIDDEN,
                                     ));
                                 }
@@ -816,9 +892,13 @@ impl QueryExecutionPipeline {
             };
 
             // Format placeholders based on engine dialect
-            let opt_formatted_sql = if (dialect_name == "postgres" || dialect_name == "any") && sql_for_format.contains('?') {
+            let opt_formatted_sql = if (dialect_name == "postgres" || dialect_name == "any")
+                && sql_for_format.contains('?')
+            {
                 Some(format_postgres_placeholders(&sql_for_format))
-            } else if dialect_name == "sqlite" && sql_for_format.to_ascii_uppercase().contains("PRAGMA") {
+            } else if dialect_name == "sqlite"
+                && sql_for_format.to_ascii_uppercase().contains("PRAGMA")
+            {
                 Some(normalize_sqlite_pragmas(&sql_for_format))
             } else if rls_rewritten {
                 Some(sql_for_format)
@@ -854,7 +934,9 @@ impl QueryExecutionPipeline {
                 );
             }
 
-            let cow = opt_formatted_sql.map(std::borrow::Cow::Owned).unwrap_or_else(|| std::borrow::Cow::Borrowed(sql));
+            let cow = opt_formatted_sql
+                .map(std::borrow::Cow::Owned)
+                .unwrap_or_else(|| std::borrow::Cow::Borrowed(sql));
             (is_mutation, cow, mult_stmts)
         };
 
@@ -871,7 +953,10 @@ impl QueryExecutionPipeline {
                     let qr: QueryResult = match serde_json::from_slice(&bytes) {
                         Ok(res) => res,
                         Err(e) => {
-                            tracing::warn!("Failed to deserialize cached QueryResult from bytes: {}", e);
+                            tracing::warn!(
+                                "Failed to deserialize cached QueryResult from bytes: {}",
+                                e
+                            );
                             QueryResult {
                                 affected_rows: Some(0),
                                 ..Default::default()
@@ -903,11 +988,14 @@ impl QueryExecutionPipeline {
         }
 
         let start_time = std::time::Instant::now();
-        let exec_result: Result<QueryResult, String> = if let Some(stmt_strs) = multiple_statements {
+        let exec_result: Result<QueryResult, String> = if let Some(stmt_strs) = multiple_statements
+        {
             let mut last_res = None;
             let mut exec_err = None;
             for (idx, stmt_str) in stmt_strs.iter().enumerate() {
-                let stmt_formatted = if (dialect_name == "postgres" || dialect_name == "any") && stmt_str.contains('?') {
+                let stmt_formatted = if (dialect_name == "postgres" || dialect_name == "any")
+                    && stmt_str.contains('?')
+                {
                     format_postgres_placeholders(stmt_str)
                 } else {
                     stmt_str.clone()
@@ -934,7 +1022,10 @@ impl QueryExecutionPipeline {
                 }))
             }
         } else {
-            engine.execute(&formatted_sql, &params).await.map_err(|e| e.to_string())
+            engine
+                .execute(&formatted_sql, &params)
+                .await
+                .map_err(|e| e.to_string())
         };
         let duration_secs = start_time.elapsed().as_secs_f64();
         let op_label = if is_mutation { "MUTATION" } else { "SELECT" };
@@ -958,10 +1049,11 @@ impl QueryExecutionPipeline {
                         let json_bytes = bytes::Bytes::from(b);
                         if !is_mutation {
                             if let Some(ref key) = cache_key {
-                                let durability = match config.cache.backend.to_ascii_lowercase().as_str() {
-                                    "hybrid" | "hybird" => axiom_cache::Durability::Journaled,
-                                    _ => axiom_cache::Durability::MemoryOnly,
-                                };
+                                let durability =
+                                    match config.cache.backend.to_ascii_lowercase().as_str() {
+                                        "hybrid" | "hybird" => axiom_cache::Durability::Journaled,
+                                        _ => axiom_cache::Durability::MemoryOnly,
+                                    };
                                 // Differentiated Negative Caching TTL:
                                 // Empty results (0 rows) use negative_cache_ttl (default 5s) to absorb
                                 // bursts on missing keys without polluting the bounded L1 LRU cache.
@@ -971,14 +1063,24 @@ impl QueryExecutionPipeline {
                                 } else {
                                     cache_ttl
                                 };
-                                axiom_cache::CacheEngine::set(key, json_bytes.clone(), effective_ttl, durability).await;
+                                axiom_cache::CacheEngine::set(
+                                    key,
+                                    json_bytes.clone(),
+                                    effective_ttl,
+                                    durability,
+                                )
+                                .await;
                             }
                         }
                         Ok((arc_res, json_bytes))
                     }
                     Err(e) => {
                         tracing::error!("Serialization error: {}", e);
-                        Err(AxiomError::new("SERIALIZATION_FAILED", "Failed to serialize response", StatusCode::INTERNAL_SERVER_ERROR))
+                        Err(AxiomError::new(
+                            "SERIALIZATION_FAILED",
+                            "Failed to serialize response",
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                        ))
                     }
                 }
             }
@@ -1050,7 +1152,10 @@ pub async fn get_db_config(
         ));
     }
 
-    if let Some(snap_db) = axiom_metadata::snapshot::get_snapshot().databases.get(db_name) {
+    if let Some(snap_db) = axiom_metadata::snapshot::get_snapshot()
+        .databases
+        .get(db_name)
+    {
         Ok(DatabaseDefConfig {
             url: snap_db.url.clone(),
             pool_min: snap_db.pool_min as i32,
@@ -1069,9 +1174,7 @@ pub async fn get_db_config(
 pub async fn list_tables(
     axum::extract::Path(db_name): axum::extract::Path<String>,
     axum::extract::Extension(auth): axum::extract::Extension<AuthContext>,
-    axum::extract::Query(params): axum::extract::Query<
-        crate::database::schemas::ListTablesParams,
-    >,
+    axum::extract::Query(params): axum::extract::Query<crate::database::schemas::ListTablesParams>,
 ) -> Result<axum::Json<Value>, AxiomError> {
     PolicyEngine::evaluate(&auth, &db_name, "*", "SELECT")?;
     let _db_cfg = get_db_config(&db_name, &auth).await?;
@@ -1113,7 +1216,7 @@ pub async fn list_tables(
                 "Database query execution failed",
                 StatusCode::INTERNAL_SERVER_ERROR,
             ))
-        },
+        }
     }
 }
 
@@ -1131,10 +1234,12 @@ pub async fn insert_rows(
         vec![single]
     } else if let Some(d) = payload.data {
         if let Value::Array(arr) = d {
-            arr.into_iter().filter_map(|v| match v {
-                Value::Object(map) => Some(map.into_iter().collect()),
-                _ => None,
-            }).collect()
+            arr.into_iter()
+                .filter_map(|v| match v {
+                    Value::Object(map) => Some(map.into_iter().collect()),
+                    _ => None,
+                })
+                .collect()
         } else if let Value::Object(map) = d {
             vec![map.into_iter().collect()]
         } else {
@@ -1179,7 +1284,12 @@ pub async fn insert_rows(
     let first_row = &rows_to_insert[0];
     let column_pairs: Vec<(&String, String)> = first_row
         .keys()
-        .map(|k| (k, crate::database::filter_builder::quote_ident_dialect(k, dialect)))
+        .map(|k| {
+            (
+                k,
+                crate::database::filter_builder::quote_ident_dialect(k, dialect),
+            )
+        })
         .collect();
     let cols_str = column_pairs
         .iter()
@@ -1233,9 +1343,7 @@ pub async fn fetch_rows(
     axum::extract::Path((db_name, table_name)): axum::extract::Path<(String, String)>,
     headers: axum::http::HeaderMap,
     axum::extract::Extension(auth): axum::extract::Extension<AuthContext>,
-    axum::extract::Query(params): axum::extract::Query<
-        crate::database::schemas::FetchRowsParams,
-    >,
+    axum::extract::Query(params): axum::extract::Query<crate::database::schemas::FetchRowsParams>,
 ) -> Result<axum::response::Response, AxiomError> {
     PolicyEngine::evaluate(&auth, &db_name, &table_name, "SELECT")?;
     let db_cfg = get_db_config(&db_name, &auth).await?;
@@ -1291,7 +1399,10 @@ pub async fn fetch_rows(
         } else {
             "ASC"
         };
-        (format!("ORDER BY {} {}", quoted_col, order_dir), Some((raw_col, order_dir)))
+        (
+            format!("ORDER BY {} {}", quoted_col, order_dir),
+            Some((raw_col, order_dir)),
+        )
     } else {
         // Deterministic default ordering:
         // In PostgreSQL and MVCC relational databases, an UPDATE rewrites the tuple on disk.
@@ -1301,20 +1412,28 @@ pub async fn fetch_rows(
             cols.iter()
                 .find(|c| c.primary_key)
                 .map(|c| c.name.clone())
-                .or_else(|| cols.iter().find(|c| c.name.eq_ignore_ascii_case("id")).map(|c| c.name.clone()))
+                .or_else(|| {
+                    cols.iter()
+                        .find(|c| c.name.eq_ignore_ascii_case("id"))
+                        .map(|c| c.name.clone())
+                })
         } else {
             None
         };
 
         if let Some(sort_col) = default_sort_col {
-            let quoted_col = crate::database::filter_builder::quote_ident_dialect(&sort_col, dialect);
+            let quoted_col =
+                crate::database::filter_builder::quote_ident_dialect(&sort_col, dialect);
             let raw_col = crate::database::filter_builder::sanitize_ident(&sort_col).into_owned();
             let order_dir = if params.order.eq_ignore_ascii_case("desc") {
                 "DESC"
             } else {
                 "ASC"
             };
-            (format!("ORDER BY {} {}", quoted_col, order_dir), Some((raw_col, order_dir)))
+            (
+                format!("ORDER BY {} {}", quoted_col, order_dir),
+                Some((raw_col, order_dir)),
+            )
         } else if params.cursor.is_some() {
             let quoted_col = crate::database::filter_builder::quote_ident_dialect("id", dialect);
             let raw_col = "id".to_string();
@@ -1323,7 +1442,10 @@ pub async fn fetch_rows(
             } else {
                 "ASC"
             };
-            (format!("ORDER BY {} {}", quoted_col, order_dir), Some((raw_col, order_dir)))
+            (
+                format!("ORDER BY {} {}", quoted_col, order_dir),
+                Some((raw_col, order_dir)),
+            )
         } else {
             ("".to_string(), None)
         }
@@ -1335,16 +1457,20 @@ pub async fn fetch_rows(
             let cursor_op = if order_dir == "DESC" { "<" } else { ">" };
             let cursor_cond = format!("{} {} ?", quoted_col, cursor_op);
 
-            let is_numeric = table_cols.as_ref().map(|cols| {
-                cols.iter().any(|c| c.name.eq_ignore_ascii_case(raw_col) && (
-                    c.r#type.to_lowercase().contains("int") ||
-                    c.r#type.to_lowercase().contains("serial") ||
-                    c.r#type.to_lowercase().contains("num") ||
-                    c.r#type.to_lowercase().contains("dec") ||
-                    c.r#type.to_lowercase().contains("float") ||
-                    c.r#type.to_lowercase().contains("double")
-                ))
-            }).unwrap_or(false);
+            let is_numeric = table_cols
+                .as_ref()
+                .map(|cols| {
+                    cols.iter().any(|c| {
+                        c.name.eq_ignore_ascii_case(raw_col)
+                            && (c.r#type.to_lowercase().contains("int")
+                                || c.r#type.to_lowercase().contains("serial")
+                                || c.r#type.to_lowercase().contains("num")
+                                || c.r#type.to_lowercase().contains("dec")
+                                || c.r#type.to_lowercase().contains("float")
+                                || c.r#type.to_lowercase().contains("double"))
+                    })
+                })
+                .unwrap_or(false);
 
             if is_numeric {
                 if let Ok(i) = cursor.trim().parse::<i64>() {
@@ -1371,7 +1497,8 @@ pub async fn fetch_rows(
     }
 
     // Enforce Row-Level Security (RLS) predicate if active for this table
-    if let Some(rls_pred) = PolicyEngine::get_rls_predicate(&auth, &db_name, &table_name, "SELECT") {
+    if let Some(rls_pred) = PolicyEngine::get_rls_predicate(&auth, &db_name, &table_name, "SELECT")
+    {
         if final_where.trim().is_empty() {
             final_where = format!("WHERE ({})", rls_pred);
         } else {
@@ -1389,25 +1516,17 @@ pub async fn fetch_rows(
         };
         format!(
             "SELECT * FROM {} {} {} OFFSET 0 ROWS FETCH NEXT {} ROWS ONLY",
-            quoted_table,
-            final_where,
-            order,
-            limit
+            quoted_table, final_where, order, limit
         )
     } else if order_by_sql.is_empty() {
         format!(
             "SELECT * FROM {} {} LIMIT {}",
-            quoted_table,
-            final_where,
-            limit
+            quoted_table, final_where, limit
         )
     } else {
         format!(
             "SELECT * FROM {} {} {} LIMIT {}",
-            quoted_table,
-            final_where,
-            order_by_sql,
-            limit
+            quoted_table, final_where, order_by_sql, limit
         )
     };
 
@@ -1456,10 +1575,15 @@ pub async fn fetch_rows(
             .body(body)
             .map_err(|e| {
                 tracing::error!("Response build error: {}", e);
-                AxiomError::new("INTERNAL_ERROR", "Failed to build response", axum::http::StatusCode::INTERNAL_SERVER_ERROR)
+                AxiomError::new(
+                    "INTERNAL_ERROR",
+                    "Failed to build response",
+                    axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                )
             })
     } else if params.stream == Some(true) || rows_data.len() > 100 {
-        let stream = crate::database::streaming::stream_json_array_envelope(rows_data, pagination_meta);
+        let stream =
+            crate::database::streaming::stream_json_array_envelope(rows_data, pagination_meta);
         let body = axum::body::Body::from_stream(stream);
         axum::response::Response::builder()
             .status(axum::http::StatusCode::OK)
@@ -1467,7 +1591,11 @@ pub async fn fetch_rows(
             .body(body)
             .map_err(|e| {
                 tracing::error!("Response build error: {}", e);
-                AxiomError::new("INTERNAL_ERROR", "Failed to build response", axum::http::StatusCode::INTERNAL_SERVER_ERROR)
+                AxiomError::new(
+                    "INTERNAL_ERROR",
+                    "Failed to build response",
+                    axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                )
             })
     } else {
         let envelope = serde_json::json!({
@@ -1481,7 +1609,11 @@ pub async fn fetch_rows(
         });
         let bytes = serde_json::to_vec(&envelope).map_err(|e| {
             tracing::error!("Serialization error: {}", e);
-            AxiomError::new("SERIALIZATION_FAILED", "Failed to serialize response", axum::http::StatusCode::INTERNAL_SERVER_ERROR)
+            AxiomError::new(
+                "SERIALIZATION_FAILED",
+                "Failed to serialize response",
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            )
         })?;
         axum::response::Response::builder()
             .status(axum::http::StatusCode::OK)
@@ -1489,7 +1621,11 @@ pub async fn fetch_rows(
             .body(axum::body::Body::from(bytes))
             .map_err(|e| {
                 tracing::error!("Response build error: {}", e);
-                AxiomError::new("INTERNAL_ERROR", "Failed to build response", axum::http::StatusCode::INTERNAL_SERVER_ERROR)
+                AxiomError::new(
+                    "INTERNAL_ERROR",
+                    "Failed to build response",
+                    axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                )
             })
     }
 }
@@ -1540,7 +1676,8 @@ pub async fn update_rows(
         dialect,
     );
 
-    if let Some(rls_pred) = PolicyEngine::get_rls_predicate(&auth, &db_name, &table_name, "UPDATE") {
+    if let Some(rls_pred) = PolicyEngine::get_rls_predicate(&auth, &db_name, &table_name, "UPDATE")
+    {
         if sql.contains(" WHERE ") {
             sql = format!("{} AND ({})", sql, rls_pred);
         } else {
@@ -1601,7 +1738,8 @@ pub async fn delete_rows(
     let (mut sql, values) =
         crate::database::filter_builder::construct_delete_dialect(&table_name, &filter, dialect);
 
-    if let Some(rls_pred) = PolicyEngine::get_rls_predicate(&auth, &db_name, &table_name, "DELETE") {
+    if let Some(rls_pred) = PolicyEngine::get_rls_predicate(&auth, &db_name, &table_name, "DELETE")
+    {
         if sql.contains(" WHERE ") {
             sql = format!("{} AND ({})", sql, rls_pred);
         } else {
@@ -1640,22 +1778,35 @@ pub async fn describe_table(
     let engine = DatabasePoolManager::get_engine(&db_name)
         .await
         .ok_or_else(|| {
-            AxiomError::new("DB_NOT_FOUND", "Database not found", axum::http::StatusCode::NOT_FOUND)
+            AxiomError::new(
+                "DB_NOT_FOUND",
+                "Database not found",
+                axum::http::StatusCode::NOT_FOUND,
+            )
         })?;
 
-    let columns = if let Some(cols) = get_cached_table_columns(&engine, &db_name, &table_name).await {
+    let columns = if let Some(cols) = get_cached_table_columns(&engine, &db_name, &table_name).await
+    {
         cols
     } else {
-        engine
-            .describe_table(&table_name)
-            .await
-            .map_err(|e| { tracing::error!("Describe failed: {}", e); AxiomError::new("DESCRIBE_FAILED", "Failed to retrieve table schema", axum::http::StatusCode::INTERNAL_SERVER_ERROR) })?
+        engine.describe_table(&table_name).await.map_err(|e| {
+            tracing::error!("Describe failed: {}", e);
+            AxiomError::new(
+                "DESCRIBE_FAILED",
+                "Failed to retrieve table schema",
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            )
+        })?
     };
 
-    let foreign_keys = engine
-        .get_foreign_keys(&table_name)
-        .await
-        .map_err(|e| { tracing::error!("FK fetch failed: {}", e); AxiomError::new("FK_FETCH_FAILED", "Failed to retrieve foreign keys", axum::http::StatusCode::INTERNAL_SERVER_ERROR) })?;
+    let foreign_keys = engine.get_foreign_keys(&table_name).await.map_err(|e| {
+        tracing::error!("FK fetch failed: {}", e);
+        AxiomError::new(
+            "FK_FETCH_FAILED",
+            "Failed to retrieve foreign keys",
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+        )
+    })?;
 
     Ok(axum::Json(serde_json::json!({
         "success": true,
@@ -1675,7 +1826,9 @@ const MAX_CHECK_EXPR_LEN: usize = 512;
 
 /// SECURITY (H-4b): validate `add_column` free-text DDL fragments before they reach
 /// engine string interpolation. Column names are sanitized downstream; these are not.
-fn validate_add_column_payload(payload: &axiom_core::CreateColumnRequest) -> Result<(), AxiomError> {
+fn validate_add_column_payload(
+    payload: &axiom_core::CreateColumnRequest,
+) -> Result<(), AxiomError> {
     let bad = |msg: &str| AxiomError::new("BAD_COLUMN_DEF", msg, StatusCode::BAD_REQUEST);
     // data_type allowlist: base type + optional (N[,M]) / length. No statement chars.
     let dt = payload.data_type.trim();
@@ -1684,17 +1837,46 @@ fn validate_add_column_payload(payload: &axiom_core::CreateColumnRequest) -> Res
     }
     let dt_up = dt.to_ascii_uppercase();
     const BASES: &[&str] = &[
-        "TEXT", "VARCHAR", "CHAR", "NVARCHAR", "NCHAR", "INT", "INTEGER", "BIGINT",
-        "SMALLINT", "TINYINT", "BOOLEAN", "BOOL", "BIT", "FLOAT", "REAL", "DOUBLE",
-        "DECIMAL", "NUMERIC", "DATE", "TIME", "TIMESTAMP", "DATETIME", "DATETIME2",
-        "BLOB", "BYTEA", "JSON", "JSONB", "UUID", "SERIAL", "BIGSERIAL",
+        "TEXT",
+        "VARCHAR",
+        "CHAR",
+        "NVARCHAR",
+        "NCHAR",
+        "INT",
+        "INTEGER",
+        "BIGINT",
+        "SMALLINT",
+        "TINYINT",
+        "BOOLEAN",
+        "BOOL",
+        "BIT",
+        "FLOAT",
+        "REAL",
+        "DOUBLE",
+        "DECIMAL",
+        "NUMERIC",
+        "DATE",
+        "TIME",
+        "TIMESTAMP",
+        "DATETIME",
+        "DATETIME2",
+        "BLOB",
+        "BYTEA",
+        "JSON",
+        "JSONB",
+        "UUID",
+        "SERIAL",
+        "BIGSERIAL",
     ];
-    let base_ok = BASES.iter().any(|b| dt_up == *b || dt_up.starts_with(&format!("{}(", b)));
+    let base_ok = BASES
+        .iter()
+        .any(|b| dt_up == *b || dt_up.starts_with(&format!("{}(", b)));
     // Allow e.g. VARCHAR(255), DECIMAL(10,2), CHAR(1)
     let paren_ok = if dt.contains('(') {
         let mut chars = dt.chars();
-        chars.all(|c| c.is_alphanumeric() || c == '(' || c == ')' || c == ',' || c == ' ' || c == '.')
-            && dt.ends_with(')')
+        chars.all(|c| {
+            c.is_alphanumeric() || c == '(' || c == ')' || c == ',' || c == ' ' || c == '.'
+        }) && dt.ends_with(')')
             && !dt.contains(';')
     } else {
         true
@@ -1705,13 +1887,21 @@ fn validate_add_column_payload(payload: &axiom_core::CreateColumnRequest) -> Res
     // default_value: literals only (numbers, bools, quoted strings, CURRENT_*).
     if let Some(def) = payload.default_value.as_deref() {
         let d = def.trim();
-        if d.len() > MAX_DEFAULT_VALUE_LEN || d.contains(';') || d.contains("--") || d.contains("/*") {
+        if d.len() > MAX_DEFAULT_VALUE_LEN
+            || d.contains(';')
+            || d.contains("--")
+            || d.contains("/*")
+        {
             return Err(bad("Invalid default_value"));
         }
         let du = d.to_ascii_uppercase();
         let literal_ok = du == "NULL"
-            || du == "TRUE" || du == "FALSE" || du == "CURRENT_TIMESTAMP"
-            || du == "CURRENT_DATE" || du == "CURRENT_TIME" || du == "NOW()"
+            || du == "TRUE"
+            || du == "FALSE"
+            || du == "CURRENT_TIMESTAMP"
+            || du == "CURRENT_DATE"
+            || du == "CURRENT_TIME"
+            || du == "NOW()"
             || d.parse::<f64>().is_ok()
             || (d.starts_with('\'') && d.ends_with('\'') && d.len() >= 2);
         if !literal_ok {
@@ -1719,14 +1909,21 @@ fn validate_add_column_payload(payload: &axiom_core::CreateColumnRequest) -> Res
         }
     }
     if let Some(check) = payload.check_expression.as_deref() {
-        if check.len() > MAX_CHECK_EXPR_LEN || check.contains(';') || check.contains("--") || check.contains("/*") {
+        if check.len() > MAX_CHECK_EXPR_LEN
+            || check.contains(';')
+            || check.contains("--")
+            || check.contains("/*")
+        {
             return Err(bad("Invalid check_expression"));
         }
     }
     if let Some(fk) = payload.foreign_key.as_ref() {
         for action in [&fk.on_update, &fk.on_delete].into_iter().flatten() {
             let a = action.trim().to_ascii_uppercase();
-            if !matches!(a.as_str(), "CASCADE" | "SET NULL" | "SET DEFAULT" | "RESTRICT" | "NO ACTION") {
+            if !matches!(
+                a.as_str(),
+                "CASCADE" | "SET NULL" | "SET DEFAULT" | "RESTRICT" | "NO ACTION"
+            ) {
                 return Err(bad("Invalid foreign key action"));
             }
         }
@@ -1747,7 +1944,11 @@ pub async fn add_column(
     let engine = DatabasePoolManager::get_engine(&db_name)
         .await
         .ok_or_else(|| {
-            AxiomError::new("DB_NOT_FOUND", "Database not found", axum::http::StatusCode::NOT_FOUND)
+            AxiomError::new(
+                "DB_NOT_FOUND",
+                "Database not found",
+                axum::http::StatusCode::NOT_FOUND,
+            )
         })?;
 
     engine
@@ -1755,7 +1956,11 @@ pub async fn add_column(
         .await
         .map_err(|e| {
             tracing::error!("Add column failed: {}", e);
-            AxiomError::new("ADD_COLUMN_FAILED", "Failed to add column", axum::http::StatusCode::INTERNAL_SERVER_ERROR)
+            AxiomError::new(
+                "ADD_COLUMN_FAILED",
+                "Failed to add column",
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            )
         })?;
 
     // Invalidate cached schema so subsequent queries observe the new column definition
@@ -1778,10 +1983,14 @@ mod tests {
     #[test]
     fn test_multi_statement_sqlparser() {
         let sql = "CREATE TABLE customers (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(100) NOT NULL); INSERT INTO customers (name) VALUES ('Alice'); SELECT * FROM customers;";
-        let stmts = sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::MySqlDialect {}, sql).unwrap();
+        let stmts = sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::MySqlDialect {}, sql)
+            .unwrap();
         assert_eq!(stmts.len(), 3);
         assert_eq!(stmts[0].to_string(), "CREATE TABLE customers (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(100) NOT NULL)");
-        assert_eq!(stmts[1].to_string(), "INSERT INTO customers (name) VALUES ('Alice')");
+        assert_eq!(
+            stmts[1].to_string(),
+            "INSERT INTO customers (name) VALUES ('Alice')"
+        );
         assert_eq!(stmts[2].to_string(), "SELECT * FROM customers");
     }
 
@@ -1797,11 +2006,22 @@ mod tests {
         assert!(res2.is_ok());
         assert_eq!(res2.unwrap().len(), 2);
 
-        let sql3 = "PRAGMA foreign_keys = OFF;\nDROP TABLE IF EXISTS payments;\nPRAGMA foreign_keys = ON;";
+        let sql3 =
+            "PRAGMA foreign_keys = OFF;\nDROP TABLE IF EXISTS payments;\nPRAGMA foreign_keys = ON;";
         let normalized3 = super::normalize_sqlite_pragmas(sql3);
-        assert_eq!(normalized3, "PRAGMA foreign_keys = 0;\nDROP TABLE IF EXISTS payments;\nPRAGMA foreign_keys = 1;");
-        let res3 = sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::SQLiteDialect {}, &normalized3);
-        assert!(res3.is_ok(), "PRAGMA normalization should parse successfully: {:?}", res3.err());
+        assert_eq!(
+            normalized3,
+            "PRAGMA foreign_keys = 0;\nDROP TABLE IF EXISTS payments;\nPRAGMA foreign_keys = 1;"
+        );
+        let res3 = sqlparser::parser::Parser::parse_sql(
+            &sqlparser::dialect::SQLiteDialect {},
+            &normalized3,
+        );
+        assert!(
+            res3.is_ok(),
+            "PRAGMA normalization should parse successfully: {:?}",
+            res3.err()
+        );
         assert_eq!(res3.unwrap().len(), 3);
     }
 
@@ -1813,16 +2033,23 @@ mod tests {
         let info = std::sync::Arc::new(super::CachedAstInfo {
             is_mutation: false,
             operations: vec![("SELECT", vec!["users".to_string()])],
-            formatted_sql: Some("SELECT id, name, email FROM users WHERE status = $1 AND active = true".to_string()),
+            formatted_sql: Some(
+                "SELECT id, name, email FROM users WHERE status = $1 AND active = true".to_string(),
+            ),
             multiple_statements: None,
         });
 
         super::AST_CACHE.insert(cache_key.clone(), info);
-        let cached = super::AST_CACHE.get(&cache_key).expect("cached AST entry should exist");
+        let cached = super::AST_CACHE
+            .get(&cache_key)
+            .expect("cached AST entry should exist");
         assert!(!cached.is_mutation);
         assert_eq!(cached.operations[0].0, "SELECT");
         assert_eq!(cached.operations[0].1, vec!["users".to_string()]);
-        assert_eq!(cached.formatted_sql.as_deref(), Some("SELECT id, name, email FROM users WHERE status = $1 AND active = true"));
+        assert_eq!(
+            cached.formatted_sql.as_deref(),
+            Some("SELECT id, name, email FROM users WHERE status = $1 AND active = true")
+        );
     }
 
     #[tokio::test]
@@ -1838,14 +2065,22 @@ mod tests {
         let mut follower_rx = super::IN_FLIGHT_QUERIES.get(&test_key).unwrap().subscribe();
 
         // 3. Leader completes DB execution and broadcasts result
-        let mock_result: Result<(Arc<axiom_core::QueryResult>, bytes::Bytes), axiom_core::AxiomError> =
-            Ok((Arc::new(axiom_core::QueryResult::default()), bytes::Bytes::from("{\"rows\":[]}")));
+        let mock_result: Result<
+            (Arc<axiom_core::QueryResult>, bytes::Bytes),
+            axiom_core::AxiomError,
+        > = Ok((
+            Arc::new(axiom_core::QueryResult::default()),
+            bytes::Bytes::from("{\"rows\":[]}"),
+        ));
 
         let _ = tx.send(mock_result);
         super::IN_FLIGHT_QUERIES.remove(&test_key);
 
         // 4. Follower receives exact leader outcome without duplicate execution
-        let received = follower_rx.recv().await.expect("follower should receive broadcast");
+        let received = follower_rx
+            .recv()
+            .await
+            .expect("follower should receive broadcast");
         assert!(received.is_ok());
         let (_, bytes) = received.unwrap();
         assert_eq!(bytes, bytes::Bytes::from("{\"rows\":[]}"));
@@ -1889,7 +2124,10 @@ mod tests {
                 formatted.push(c);
             }
         }
-        let res = sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::PostgreSqlDialect {}, &formatted);
+        let res = sqlparser::parser::Parser::parse_sql(
+            &sqlparser::dialect::PostgreSqlDialect {},
+            &formatted,
+        );
         assert!(res.is_ok(), "Failed to parse: {:?}", res.err());
     }
 
@@ -1899,19 +2137,31 @@ mod tests {
 
         // 1. Basic replacement
         let basic = "SELECT * FROM users WHERE id = ? AND email = ?";
-        assert_eq!(format_postgres_placeholders(basic), "SELECT * FROM users WHERE id = $1 AND email = $2");
+        assert_eq!(
+            format_postgres_placeholders(basic),
+            "SELECT * FROM users WHERE id = $1 AND email = $2"
+        );
 
         // 2. Preserves single quotes and double quotes with question marks
         let quotes = "SELECT 'Is this a question?' AS \"col?\" WHERE val = ?";
-        assert_eq!(format_postgres_placeholders(quotes), "SELECT 'Is this a question?' AS \"col?\" WHERE val = $1");
+        assert_eq!(
+            format_postgres_placeholders(quotes),
+            "SELECT 'Is this a question?' AS \"col?\" WHERE val = $1"
+        );
 
         // 3. Preserves line and block comments with question marks
         let comments = "SELECT 1 -- Comment with ?\n/* Block with ? */ WHERE id = ?";
-        assert_eq!(format_postgres_placeholders(comments), "SELECT 1 -- Comment with ?\n/* Block with ? */ WHERE id = $1");
+        assert_eq!(
+            format_postgres_placeholders(comments),
+            "SELECT 1 -- Comment with ?\n/* Block with ? */ WHERE id = $1"
+        );
 
         // 4. Preserves dollar-quoted strings ($$ and $tag$)
         let dollar = "SELECT $$Why? Because!$$, $fn$function body with ? mark$fn$ WHERE x = ?";
-        assert_eq!(format_postgres_placeholders(dollar), "SELECT $$Why? Because!$$, $fn$function body with ? mark$fn$ WHERE x = $1");
+        assert_eq!(
+            format_postgres_placeholders(dollar),
+            "SELECT $$Why? Because!$$, $fn$function body with ? mark$fn$ WHERE x = $1"
+        );
 
         // 5. Preserves PostgreSQL JSONB operators (?| and ?&)
         let jsonb = "SELECT * FROM logs WHERE data ?| array['a', 'b'] AND data ?& array['c'] AND status = ?";
@@ -1923,7 +2173,9 @@ mod tests {
         use super::collect_tables_from_query;
 
         let sql = "SELECT u.id, (SELECT count(*) FROM orders o WHERE o.user_id = u.id) as cnt FROM users u WHERE u.id IN (SELECT user_id FROM audit_log WHERE level = 'admin') AND EXISTS (SELECT 1 FROM permissions p WHERE p.user_id = u.id)";
-        let stmts = sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::GenericDialect {}, sql).unwrap();
+        let stmts =
+            sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::GenericDialect {}, sql)
+                .unwrap();
         if let sqlparser::ast::Statement::Query(q) = &stmts[0] {
             let mut tables = Vec::new();
             collect_tables_from_query(q, &mut tables);
@@ -1935,4 +2187,3 @@ mod tests {
         }
     }
 }
-

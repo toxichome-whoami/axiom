@@ -156,8 +156,13 @@ impl FileStore {
 
     /// Computes the isolated staging directory for an active upload session.
     pub fn staging_dir(&self, upload_id: &str) -> Result<PathBuf, BlobError> {
-        if !upload_id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
-            return Err(BlobError::InvalidKey("Invalid upload session id".to_string()));
+        if !upload_id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+        {
+            return Err(BlobError::InvalidKey(
+                "Invalid upload session id".to_string(),
+            ));
         }
         Ok(self.tmp_dir.join("staging").join(upload_id))
     }
@@ -245,7 +250,11 @@ impl FileStore {
     }
 
     /// Sets staging file length directly for sparse file tests without physical disk allocation.
-    pub async fn set_staging_len_for_test(&self, upload_id: &str, len: u64) -> Result<(), BlobError> {
+    pub async fn set_staging_len_for_test(
+        &self,
+        upload_id: &str,
+        len: u64,
+    ) -> Result<(), BlobError> {
         let staging_dir = self.staging_dir(upload_id)?;
         tokio::fs::create_dir_all(&staging_dir).await?;
         let data_path = self.staging_data_path(upload_id)?;
@@ -306,7 +315,10 @@ impl FileStore {
                 if let Err(e) = tokio::fs::rename(&data_path, &target_path).await {
                     if !tokio::fs::try_exists(&target_path).await.unwrap_or(false) {
                         let _ = tokio::fs::remove_file(&data_path).await;
-                        return Err(BlobError::Io(format!("Failed to commit resumable blob: {}", e)));
+                        return Err(BlobError::Io(format!(
+                            "Failed to commit resumable blob: {}",
+                            e
+                        )));
                     }
                     let _ = tokio::fs::remove_file(&data_path).await;
                 }
@@ -322,7 +334,9 @@ impl FileStore {
                 while let Ok(Some(entry)) = read_dir.next_entry().await {
                     let name = entry.file_name().to_string_lossy().to_string();
                     if name.starts_with("part_") && name.ends_with(".part") {
-                        if let Ok(num) = name["part_".len()..name.len() - ".part".len()].parse::<u32>() {
+                        if let Ok(num) =
+                            name["part_".len()..name.len() - ".part".len()].parse::<u32>()
+                        {
                             part_numbers.push(num);
                         }
                     }
@@ -341,8 +355,12 @@ impl FileStore {
     }
 
     /// Finalizes a resumable upload session without precomputed hash (legacy/fallback).
-    pub async fn finalize_resumable_upload(&self, upload_id: &str) -> Result<(String, u64), BlobError> {
-        self.finalize_resumable_upload_with_hash(upload_id, None).await
+    pub async fn finalize_resumable_upload(
+        &self,
+        upload_id: &str,
+    ) -> Result<(String, u64), BlobError> {
+        self.finalize_resumable_upload_with_hash(upload_id, None)
+            .await
     }
 
     /// Writes an individual chunk/part into upload staging storage.
@@ -350,7 +368,12 @@ impl FileStore {
     ///  - Precondition: `upload_id` must consist of alphanumeric, '-', or '_' chars.
     ///  - Part numbers must be >= 1.
     ///  - Atomically creates staging folder and writes chunk file.
-    pub async fn write_upload_part(&self, upload_id: &str, part_number: u32, data: &[u8]) -> Result<(), BlobError> {
+    pub async fn write_upload_part(
+        &self,
+        upload_id: &str,
+        part_number: u32,
+        data: &[u8],
+    ) -> Result<(), BlobError> {
         let staging_dir = self.staging_dir(upload_id)?;
         tokio::fs::create_dir_all(&staging_dir).await?;
 
@@ -369,7 +392,11 @@ impl FileStore {
     ///  - Dedup: if content with identical hash exists, skips duplicate file creation.
     ///  - Atomically commits blob to content-addressed storage and purges staging directory.
     ///  - Returns `(hash, total_bytes)`.
-    pub async fn assemble_upload_parts(&self, upload_id: &str, parts: &[u32]) -> Result<(String, u64), BlobError> {
+    pub async fn assemble_upload_parts(
+        &self,
+        upload_id: &str,
+        parts: &[u32],
+    ) -> Result<(String, u64), BlobError> {
         let staging_dir = self.staging_dir(upload_id)?;
         if !tokio::fs::try_exists(&staging_dir).await.unwrap_or(false) {
             return Err(BlobError::UploadSessionNotFound(upload_id.to_string()));
@@ -420,7 +447,10 @@ impl FileStore {
             if let Err(e) = tokio::fs::rename(&temp_path, &target_path).await {
                 if !tokio::fs::try_exists(&target_path).await.unwrap_or(false) {
                     let _ = tokio::fs::remove_file(&temp_path).await;
-                    return Err(BlobError::Io(format!("Failed to commit assembled blob: {}", e)));
+                    return Err(BlobError::Io(format!(
+                        "Failed to commit assembled blob: {}",
+                        e
+                    )));
                 }
                 let _ = tokio::fs::remove_file(&temp_path).await;
             }
@@ -442,7 +472,10 @@ impl FileStore {
     }
 
     /// Sweeps orphaned staging directories that do not belong to active sessions.
-    pub async fn sweep_orphaned_staging(&self, active_upload_ids: &std::collections::HashSet<String>) -> Result<usize, BlobError> {
+    pub async fn sweep_orphaned_staging(
+        &self,
+        active_upload_ids: &std::collections::HashSet<String>,
+    ) -> Result<usize, BlobError> {
         let staging_root = self.tmp_dir.join("staging");
         if !tokio::fs::try_exists(&staging_root).await.unwrap_or(false) {
             return Ok(0);

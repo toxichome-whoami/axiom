@@ -36,8 +36,8 @@ pub struct RoleRecord {
 pub struct PermissionRecord {
     pub id: i64,
     pub role_name: String,
-    pub database: String,    // '*' = all databases
-    pub table_name: String,  // '*' = all tables
+    pub database: String,        // '*' = all databases
+    pub table_name: String,      // '*' = all tables
     pub operations: Vec<String>, // ["SELECT", "INSERT", "UPDATE", "DELETE"]
     #[serde(default)]
     pub rls_filter: Option<String>,
@@ -135,7 +135,7 @@ pub struct ClusterSyncPayload {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::{to_value, from_value};
+    use serde_json::{from_value, to_value};
 
     #[test]
     fn test_user_record_serialization_hides_password_hash() {

@@ -279,8 +279,14 @@ mod tests {
     fn test_extract_next_cursor_priority() {
         let cols = vec!["created_at".to_string(), "id".to_string()];
         let mut row_map = serde_json::Map::new();
-        row_map.insert("created_at".to_string(), Value::String("2026-09-28".to_string()));
-        row_map.insert("id".to_string(), Value::Number(serde_json::Number::from(1054)));
+        row_map.insert(
+            "created_at".to_string(),
+            Value::String("2026-09-28".to_string()),
+        );
+        row_map.insert(
+            "id".to_string(),
+            Value::Number(serde_json::Number::from(1054)),
+        );
         let rows = vec![Value::Object(row_map)];
 
         // Prioritizes "id" column
@@ -290,7 +296,10 @@ mod tests {
         // When "id" is absent, falls back to first column
         let cols_no_id = vec!["created_at".to_string(), "name".to_string()];
         let mut row_no_id = serde_json::Map::new();
-        row_no_id.insert("created_at".to_string(), Value::String("2026-09-28".to_string()));
+        row_no_id.insert(
+            "created_at".to_string(),
+            Value::String("2026-09-28".to_string()),
+        );
         row_no_id.insert("name".to_string(), Value::String("test".to_string()));
         let rows_no_id = vec![Value::Object(row_no_id)];
         let cursor2 = extract_next_cursor(&rows_no_id, &cols_no_id);

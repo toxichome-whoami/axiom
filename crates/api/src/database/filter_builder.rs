@@ -238,9 +238,7 @@ where
                                     let placeholders = vec!["?"; arr.len()].join(", ");
                                     parts.push(format!(
                                         "{} {} ({})",
-                                        clean_col,
-                                        sql_op,
-                                        placeholders
+                                        clean_col, sql_op, placeholders
                                     ));
                                     for item in arr {
                                         values.push(item.clone());
@@ -374,9 +372,11 @@ pub fn construct_delete(table: &str, filter: &HashMap<String, Value>) -> (String
     (sql, values)
 }
 
-
 /// Dialect-aware variant of `build_where_clause` that quotes identifiers according to the target SQL dialect.
-pub fn build_where_clause_dialect(filter: &HashMap<String, Value>, dialect: &str) -> (String, Vec<Value>) {
+pub fn build_where_clause_dialect(
+    filter: &HashMap<String, Value>,
+    dialect: &str,
+) -> (String, Vec<Value>) {
     build_where_clause_dialect_inner(filter.iter(), dialect)
 }
 
@@ -394,7 +394,8 @@ where
                 let mut sub_clauses = Vec::new();
                 for sub_filter in arr {
                     if let Some(obj) = sub_filter.as_object() {
-                        let (sub_clause, mut sub_vals) = build_where_clause_dialect_inner(obj.iter(), dialect);
+                        let (sub_clause, mut sub_vals) =
+                            build_where_clause_dialect_inner(obj.iter(), dialect);
                         if !sub_clause.is_empty() {
                             sub_clauses.push(format!("({})", sub_clause));
                             values.append(&mut sub_vals);
@@ -459,9 +460,7 @@ where
                                     let placeholders = vec!["?"; arr.len()].join(", ");
                                     parts.push(format!(
                                         "{} {} ({})",
-                                        quoted_col,
-                                        sql_op,
-                                        placeholders
+                                        quoted_col, sql_op, placeholders
                                     ));
                                     for item in arr {
                                         values.push(item.clone());
@@ -543,14 +542,14 @@ pub fn construct_update_dialect(
 }
 
 /// Dialect-aware variant of `construct_delete` with quoted table and column identifiers.
-pub fn construct_delete_dialect(table: &str, filter: &HashMap<String, Value>, dialect: &str) -> (String, Vec<Value>) {
+pub fn construct_delete_dialect(
+    table: &str,
+    filter: &HashMap<String, Value>,
+    dialect: &str,
+) -> (String, Vec<Value>) {
     let (where_clause, values) = build_where_clause_dialect(filter, dialect);
     let quoted_table = quote_ident_dialect(table, dialect);
-    let sql = format!(
-        "DELETE FROM {} WHERE {}",
-        quoted_table,
-        where_clause
-    );
+    let sql = format!("DELETE FROM {} WHERE {}", quoted_table, where_clause);
     (sql, values)
 }
 
@@ -582,10 +581,10 @@ mod tests {
     fn test_construct_update() {
         let mut update_data = HashMap::new();
         update_data.insert("name".to_string(), json!("bob"));
-        
+
         let mut filter = HashMap::new();
         filter.insert("id".to_string(), json!({ "$eq": 1 }));
-        
+
         let (sql, values) = construct_update("users", &update_data, &filter);
         assert!(sql.starts_with("UPDATE users SET"));
         assert!(sql.contains("WHERE id = ?"));
@@ -596,7 +595,7 @@ mod tests {
     fn test_construct_delete() {
         let mut filter = HashMap::new();
         filter.insert("id".to_string(), json!({ "$eq": 42 }));
-        
+
         let (sql, values) = construct_delete("users", &filter);
         assert_eq!(sql, "DELETE FROM users WHERE id = ?");
         assert_eq!(values.len(), 1);
@@ -605,7 +604,7 @@ mod tests {
     #[test]
     fn test_build_where_clause_operators() {
         let mut f = HashMap::new();
-        
+
         f.insert("f_ne".to_string(), json!({ "$ne": 1 }));
         let (sql, _) = build_where_clause(&f);
         assert!(sql.contains("f_ne != ?"));
@@ -706,9 +705,18 @@ mod tests {
         coerce_filter_values(&mut filter, &cols);
 
         assert_eq!(filter.get("id").unwrap().get("eq").unwrap(), &json!(42));
-        assert_eq!(filter.get("price").unwrap().get("gte").unwrap(), &json!(19.99));
-        assert_eq!(filter.get("is_active").unwrap().get("eq").unwrap(), &json!(true));
-        assert_eq!(filter.get("title").unwrap().get("eq").unwrap(), &json!("123"));
+        assert_eq!(
+            filter.get("price").unwrap().get("gte").unwrap(),
+            &json!(19.99)
+        );
+        assert_eq!(
+            filter.get("is_active").unwrap().get("eq").unwrap(),
+            &json!(true)
+        );
+        assert_eq!(
+            filter.get("title").unwrap().get("eq").unwrap(),
+            &json!("123")
+        );
     }
 
     #[test]

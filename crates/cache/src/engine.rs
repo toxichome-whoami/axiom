@@ -166,7 +166,9 @@ impl CacheEngine {
         };
 
         let db = db_res.map_err(|e| format!("Failed to build L2 cache database: {}", e))?;
-        let conn = db.connect().map_err(|e| format!("Failed to connect to L2 cache: {}", e))?;
+        let conn = db
+            .connect()
+            .map_err(|e| format!("Failed to connect to L2 cache: {}", e))?;
 
         // Initialize persistent AOF cache table
         conn.execute(
@@ -197,7 +199,9 @@ impl CacheEngine {
         // 1. Check L1 RAM cache (ultra-fast sub-microsecond shared read lock)
         if let Some(entry) = L1_CACHE.get(key) {
             if entry.expires_at > now {
-                entry.last_accessed.store(current_unix_nanos(), Ordering::Relaxed);
+                entry
+                    .last_accessed
+                    .store(current_unix_nanos(), Ordering::Relaxed);
                 STATS.hits_l1.fetch_add(1, Ordering::Relaxed);
                 return Some(entry.value.clone());
             }
@@ -309,7 +313,9 @@ impl CacheEngine {
     /// Security invariant: Preserves active rate-limiting counters (`rl:*`),
     /// revoked capability ticket tombstones (`ticket:revoked:*`), and active bans (`ban:*`).
     pub async fn flush() {
-        L1_CACHE.retain(|k, _| k.starts_with("rl:") || k.starts_with("ticket:revoked:") || k.starts_with("ban:"));
+        L1_CACHE.retain(|k, _| {
+            k.starts_with("rl:") || k.starts_with("ticket:revoked:") || k.starts_with("ban:")
+        });
         if let Some(conn) = L2_CONN.get() {
             let _ = conn.execute("DELETE FROM cache_aof WHERE key NOT LIKE 'rl:%' AND key NOT LIKE 'ticket:revoked:%' AND key NOT LIKE 'ban:%'", ()).await;
         }
@@ -329,7 +335,8 @@ impl CacheEngine {
         // Approximate memory: sum of key lengths and byte buffer sizes
         let mut memory_bytes = 0;
         for entry in L1_CACHE.iter() {
-            memory_bytes += entry.key().len() + entry.value().value.len() + std::mem::size_of::<L1Entry>();
+            memory_bytes +=
+                entry.key().len() + entry.value().value.len() + std::mem::size_of::<L1Entry>();
         }
 
         STATS.snapshot(entries_count, memory_bytes)
@@ -373,7 +380,9 @@ impl CacheEngine {
         // reject immediately without incrementing window counter.
         if let Some(entry) = L1_CACHE.get(penalty_key) {
             if entry.expires_at > now {
-                if let Ok(violations) = std::str::from_utf8(&entry.value).map(|s| s.parse::<u32>().unwrap_or(0)) {
+                if let Ok(violations) =
+                    std::str::from_utf8(&entry.value).map(|s| s.parse::<u32>().unwrap_or(0))
+                {
                     if violations >= penalty_threshold {
                         return (true, 0); // Banned
                     }
@@ -406,16 +415,20 @@ impl CacheEngine {
                 // In active window: increment current bucket and calculate weighted rolling estimate
                 curr_count = curr_count.saturating_add(1);
                 let elapsed = now.saturating_sub(window_start);
-                let weight = (window_span.saturating_sub(elapsed)) as f64 / (window_span.max(1) as f64);
-                estimated_count = curr_count.saturating_add((prev_count as f64 * weight).round() as u32);
+                let weight =
+                    (window_span.saturating_sub(elapsed)) as f64 / (window_span.max(1) as f64);
+                estimated_count =
+                    curr_count.saturating_add((prev_count as f64 * weight).round() as u32);
             } else if now < window_start.saturating_add(window_span * 2) {
                 // One window rolled over: rotate current to previous and start new bucket
                 prev_count = curr_count;
                 curr_count = 1;
                 window_start = window_start.saturating_add(window_span);
                 let elapsed = now.saturating_sub(window_start);
-                let weight = (window_span.saturating_sub(elapsed)) as f64 / (window_span.max(1) as f64);
-                estimated_count = curr_count.saturating_add((prev_count as f64 * weight).round() as u32);
+                let weight =
+                    (window_span.saturating_sub(elapsed)) as f64 / (window_span.max(1) as f64);
+                estimated_count =
+                    curr_count.saturating_add((prev_count as f64 * weight).round() as u32);
             } else {
                 // Multiple windows elapsed: reset completely
                 prev_count = 0;
@@ -426,7 +439,9 @@ impl CacheEngine {
 
             entry.value = Bytes::from(format!("{}:{}:{}", prev_count, curr_count, window_start));
             entry.expires_at = now + (window_span * 2);
-            entry.last_accessed.store(current_unix_nanos(), Ordering::Relaxed);
+            entry
+                .last_accessed
+                .store(current_unix_nanos(), Ordering::Relaxed);
         } else {
             Self::evict_if_needed();
             record_sample_key(limits_key);
@@ -449,13 +464,18 @@ impl CacheEngine {
                     let penalty_count = std::str::from_utf8(&entry.value)
                         .ok()
                         .and_then(|s| s.parse::<u32>().ok())
-                        .unwrap_or(0) + 1;
+                        .unwrap_or(0)
+                        + 1;
                     entry.value = Bytes::from(penalty_count.to_string());
-                    entry.last_accessed.store(current_unix_nanos(), Ordering::Relaxed);
+                    entry
+                        .last_accessed
+                        .store(current_unix_nanos(), Ordering::Relaxed);
                 } else {
                     entry.value = Bytes::from("1");
                     entry.expires_at = now + penalty_cooldown as u64;
-                    entry.last_accessed.store(current_unix_nanos(), Ordering::Relaxed);
+                    entry
+                        .last_accessed
+                        .store(current_unix_nanos(), Ordering::Relaxed);
                 }
             } else {
                 Self::evict_if_needed();
@@ -493,7 +513,10 @@ impl CacheEngine {
             if current_len <= 64 {
                 // Exact LRU path for small capacities
                 for entry in L1_CACHE.iter().take(64) {
-                    sample.push((entry.key().clone(), entry.value().last_accessed.load(Ordering::Relaxed)));
+                    sample.push((
+                        entry.key().clone(),
+                        entry.value().last_accessed.load(Ordering::Relaxed),
+                    ));
                 }
             } else {
                 // Uniform sampled LRU path: inspect rotating candidates from circular sample ring
@@ -503,7 +526,10 @@ impl CacheEngine {
                     if let Ok(guard) = SAMPLE_RING[idx].read() {
                         if let Some(ref candidate_key) = *guard {
                             if let Some(entry) = L1_CACHE.get(candidate_key) {
-                                sample.push((candidate_key.clone(), entry.value().last_accessed.load(Ordering::Relaxed)));
+                                sample.push((
+                                    candidate_key.clone(),
+                                    entry.value().last_accessed.load(Ordering::Relaxed),
+                                ));
                             }
                         }
                     }
@@ -511,14 +537,18 @@ impl CacheEngine {
 
                 if sample.len() < 8 {
                     for entry in L1_CACHE.iter().take(32) {
-                        sample.push((entry.key().clone(), entry.value().last_accessed.load(Ordering::Relaxed)));
+                        sample.push((
+                            entry.key().clone(),
+                            entry.value().last_accessed.load(Ordering::Relaxed),
+                        ));
                     }
                 }
             }
 
             if !sample.is_empty() {
                 sample.sort_unstable_by_key(|(_, ts)| *ts);
-                let target_evictions = (current_len.saturating_sub(max) + 1).max(if max > 64 { 8 } else { 1 });
+                let target_evictions =
+                    (current_len.saturating_sub(max) + 1).max(if max > 64 { 8 } else { 1 });
                 let to_evict = target_evictions.min(sample.len()).min(current_len);
                 for (k, _) in sample.into_iter().take(to_evict) {
                     if L1_CACHE.remove(&k).is_some() {
@@ -662,10 +692,14 @@ mod tests {
         let (_, count1) = CacheEngine::check_rate_limit(key, window_secs as u32, 10, pen, 300, 5);
         assert!(count1 >= 10);
 
-        let (violated, count2) = CacheEngine::check_rate_limit(key, window_secs as u32, 10, pen, 300, 5);
-        assert!(violated, "Sliding window must prevent boundary burst; count was {}", count2);
+        let (violated, count2) =
+            CacheEngine::check_rate_limit(key, window_secs as u32, 10, pen, 300, 5);
+        assert!(
+            violated,
+            "Sliding window must prevent boundary burst; count was {}",
+            count2
+        );
 
         CacheEngine::flush().await;
     }
 }
-

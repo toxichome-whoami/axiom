@@ -124,7 +124,10 @@ mod tests {
         // Verify data alias
         let json_data = r#"{"filter": {"id": 2}, "data": {"status": "inactive"}}"#;
         let parsed_data: UpdateRequest = serde_json::from_str(json_data).unwrap();
-        assert_eq!(parsed_data.update.get("status"), Some(&serde_json::json!("inactive")));
+        assert_eq!(
+            parsed_data.update.get("status"),
+            Some(&serde_json::json!("inactive"))
+        );
     }
 
     #[test]

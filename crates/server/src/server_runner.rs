@@ -35,7 +35,11 @@ pub async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
     let metadata_url = &config.metadata.url;
     let metadata_token = &config.metadata.token;
     if let Err(e) = axiom_metadata::MetadataStore::init(metadata_url, metadata_token).await {
-        tracing::error!("Failed to initialize metadata store ({}): {}", metadata_url, e);
+        tracing::error!(
+            "Failed to initialize metadata store ({}): {}",
+            metadata_url,
+            e
+        );
     }
 
     // 3. Start Background Daemons (TTL sweeper, metrics flusher, etc.)
@@ -67,7 +71,11 @@ pub async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
     // - 1MB send/recv buffers: prevent TCP window collapse under burst concurrency
     // - Backlog 1024: raise OS listen queue from default 128 to absorb spikes
     let socket = socket2::Socket::new(
-        if addr.is_ipv6() { socket2::Domain::IPV6 } else { socket2::Domain::IPV4 },
+        if addr.is_ipv6() {
+            socket2::Domain::IPV6
+        } else {
+            socket2::Domain::IPV4
+        },
         socket2::Type::STREAM,
         Some(socket2::Protocol::TCP),
     )?;
@@ -90,12 +98,19 @@ pub async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
         env!("CARGO_PKG_VERSION"),
         addr
     );
-    println!("Axiom Server v{} running on http://{}", env!("CARGO_PKG_VERSION"), addr);
+    println!(
+        "Axiom Server v{} running on http://{}",
+        env!("CARGO_PKG_VERSION"),
+        addr
+    );
     println!("Web UI dashboard available at http://{}/system", addr);
 
-    axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>())
-        .with_graceful_shutdown(shutdown_signal())
-        .await?;
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .with_graceful_shutdown(shutdown_signal())
+    .await?;
 
     Ok(())
 }
@@ -107,7 +122,6 @@ async fn shutdown_signal() {
             .await
             .expect("Failed to install Ctrl+C handler");
     };
-
 
     #[cfg(unix)]
     let terminate = async {

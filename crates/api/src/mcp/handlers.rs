@@ -14,15 +14,15 @@ use std::collections::HashMap;
 
 use crate::database::filter_builder;
 use crate::database::handlers::{get_db_config, QueryExecutionPipeline};
-use axiom_core::AxiomError;
 use crate::mcp::schema::{
-    JsonRpcRequest, JsonRpcResponse, McpCapabilities, McpInitializeResult,
-    McpResource, McpResourceContent, McpResourceReadResult, McpResourcesCapability, McpServerInfo,
-    McpTool, McpToolCallResult, McpToolsCapability,
+    JsonRpcRequest, JsonRpcResponse, McpCapabilities, McpInitializeResult, McpResource,
+    McpResourceContent, McpResourceReadResult, McpResourcesCapability, McpServerInfo, McpTool,
+    McpToolCallResult, McpToolsCapability,
 };
+use axiom_core::AuthContext;
+use axiom_core::AxiomError;
 use axiom_db::DatabasePoolManager;
 use axiom_policy::PolicyEngine;
-use axiom_core::AuthContext;
 
 // ─── JSON-RPC Entrypoint Dispatcher ────────────────────────────────────────
 // Parses inbound JSON-RPC 2.0 requests, dispatches methods, and formats envelopes.
@@ -62,10 +62,14 @@ pub async fn handle_mcp(
         "tools/call" => handle_tools_call(id, req.params, &auth).await,
         "resources/list" => handle_resources_list(id, &auth).await,
         "resources/read" => handle_resources_read(id, req.params, &auth).await,
-        "resources/templates/list" => JsonRpcResponse::success(id, json!({ "resourceTemplates": [] })),
+        "resources/templates/list" => {
+            JsonRpcResponse::success(id, json!({ "resourceTemplates": [] }))
+        }
         "prompts/list" => JsonRpcResponse::success(id, json!({ "prompts": [] })),
         "logging/setLevel" => JsonRpcResponse::success(id, json!({})),
-        "completion/complete" => JsonRpcResponse::success(id, json!({ "completion": { "values": [] } })),
+        "completion/complete" => {
+            JsonRpcResponse::success(id, json!({ "completion": { "values": [] } }))
+        }
         m if m.starts_with("notifications/") => JsonRpcResponse::success(id, json!({})),
         _ => JsonRpcResponse::error(
             id,
@@ -84,7 +88,9 @@ fn handle_initialize(id: Option<Value>) -> JsonRpcResponse {
     let result = McpInitializeResult {
         protocol_version: "2024-11-05".to_string(),
         capabilities: McpCapabilities {
-            tools: McpToolsCapability { list_changed: false },
+            tools: McpToolsCapability {
+                list_changed: false,
+            },
             resources: McpResourcesCapability {
                 subscribe: false,
                 list_changed: false,
@@ -363,9 +369,10 @@ async fn handle_tools_call(
         "axiom_update" | "update" => exec_update(auth, &arguments).await,
         "axiom_delete" | "delete" => exec_delete(auth, &arguments).await,
         "axiom_raw_sql" | "raw_sql" => exec_raw_sql(auth, &arguments).await,
-        "axiom_list_blob_namespaces" | "list_blob_namespaces" | "axiom_list_namespaces" | "list_namespaces" => {
-            exec_list_blob_namespaces(auth).await
-        }
+        "axiom_list_blob_namespaces"
+        | "list_blob_namespaces"
+        | "axiom_list_namespaces"
+        | "list_namespaces" => exec_list_blob_namespaces(auth).await,
         "axiom_list_blobs" | "list_blobs" => exec_list_blobs(auth, &arguments).await,
         "axiom_get_blob_metadata" | "get_blob_metadata" | "head_blob" | "axiom_head_blob" => {
             exec_get_blob_metadata(auth, &arguments).await
@@ -375,9 +382,10 @@ async fn handle_tools_call(
             exec_write_blob(auth, &arguments).await
         }
         "axiom_delete_blob" | "delete_blob" => exec_delete_blob(auth, &arguments).await,
-        "axiom_create_download_ticket" | "create_download_ticket" | "generate_download_ticket" | "axiom_generate_blob_ticket" => {
-            exec_create_download_ticket(auth, &arguments).await
-        }
+        "axiom_create_download_ticket"
+        | "create_download_ticket"
+        | "generate_download_ticket"
+        | "axiom_generate_blob_ticket" => exec_create_download_ticket(auth, &arguments).await,
         _ => Err(format!("Unknown tool: '{}'", tool_name)),
     };
 
@@ -388,14 +396,17 @@ async fn handle_tools_call(
             } else {
                 serde_json::to_string(&val).unwrap_or_default()
             };
-            JsonRpcResponse::success(id, serde_json::to_value(McpToolCallResult::success(text)).unwrap_or_default())
+            JsonRpcResponse::success(
+                id,
+                serde_json::to_value(McpToolCallResult::success(text)).unwrap_or_default(),
+            )
         }
-        Err(err_msg) => {
-            JsonRpcResponse::success(id, serde_json::to_value(McpToolCallResult::error(err_msg)).unwrap_or_default())
-        }
+        Err(err_msg) => JsonRpcResponse::success(
+            id,
+            serde_json::to_value(McpToolCallResult::error(err_msg)).unwrap_or_default(),
+        ),
     }
 }
-
 
 // ─── AI Parameter Parsing Resilience ───────────────────────────────────────
 // LLMs (Claude, GPT-4, Cursor, Windsurf) frequently serialize nested objects
@@ -453,19 +464,30 @@ async fn exec_list_tables(
     auth: &AuthContext,
     args: &serde_json::Map<String, Value>,
 ) -> Result<Value, String> {
-    let db = args.get("database").and_then(|v| v.as_str())
+    let db = args
+        .get("database")
+        .and_then(|v| v.as_str())
         .ok_or_else(|| "Missing required parameter 'database'".to_string())?;
 
-    PolicyEngine::evaluate(auth, db, "*", "SELECT")
-        .map_err(|e| e.to_string())?;
+    PolicyEngine::evaluate(auth, db, "*", "SELECT").map_err(|e| e.to_string())?;
 
-    let cursor = args.get("cursor").and_then(|v| v.as_str()).map(|s| s.to_string());
-    let limit = args.get("limit").and_then(|v| v.as_i64()).unwrap_or(100).clamp(1, 500) as usize;
+    let cursor = args
+        .get("cursor")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+    let limit = args
+        .get("limit")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(100)
+        .clamp(1, 500) as usize;
 
-    let engine = DatabasePoolManager::get_engine(db).await
+    let engine = DatabasePoolManager::get_engine(db)
+        .await
         .ok_or_else(|| format!("Database service '{}' not found or pool unavailable", db))?;
 
-    let tables = engine.list_tables(cursor, limit).await
+    let tables = engine
+        .list_tables(cursor, limit)
+        .await
         .map_err(|e| format!("Failed to list tables: {}", e))?;
 
     // Filter tables through RBAC policy
@@ -481,18 +503,24 @@ async fn exec_describe_table(
     auth: &AuthContext,
     args: &serde_json::Map<String, Value>,
 ) -> Result<Value, String> {
-    let db = args.get("database").and_then(|v| v.as_str())
+    let db = args
+        .get("database")
+        .and_then(|v| v.as_str())
         .ok_or_else(|| "Missing required parameter 'database'".to_string())?;
-    let table = args.get("table").and_then(|v| v.as_str())
+    let table = args
+        .get("table")
+        .and_then(|v| v.as_str())
         .ok_or_else(|| "Missing required parameter 'table'".to_string())?;
 
-    PolicyEngine::evaluate(auth, db, table, "SELECT")
-        .map_err(|e| e.to_string())?;
+    PolicyEngine::evaluate(auth, db, table, "SELECT").map_err(|e| e.to_string())?;
 
-    let engine = DatabasePoolManager::get_engine(db).await
+    let engine = DatabasePoolManager::get_engine(db)
+        .await
         .ok_or_else(|| format!("Database service '{}' not found", db))?;
 
-    let columns = engine.describe_table(table).await
+    let columns = engine
+        .describe_table(table)
+        .await
         .map_err(|e| format!("Failed to describe table: {}", e))?;
     let foreign_keys = engine.get_foreign_keys(table).await.unwrap_or_default();
 
@@ -508,16 +536,18 @@ async fn exec_query(
     auth: &AuthContext,
     args: &serde_json::Map<String, Value>,
 ) -> Result<Value, String> {
-    let db = args.get("database").and_then(|v| v.as_str())
+    let db = args
+        .get("database")
+        .and_then(|v| v.as_str())
         .ok_or_else(|| "Missing required parameter 'database'".to_string())?;
-    let table = args.get("table").and_then(|v| v.as_str())
+    let table = args
+        .get("table")
+        .and_then(|v| v.as_str())
         .ok_or_else(|| "Missing required parameter 'table'".to_string())?;
 
-    PolicyEngine::evaluate(auth, db, table, "SELECT")
-        .map_err(|e| e.to_string())?;
+    PolicyEngine::evaluate(auth, db, table, "SELECT").map_err(|e| e.to_string())?;
 
-    let db_cfg = get_db_config(db, auth).await
-        .map_err(|e| e.to_string())?;
+    let db_cfg = get_db_config(db, auth).await.map_err(|e| e.to_string())?;
 
     let engine = DatabasePoolManager::get_engine(db).await;
     let dialect = engine.as_ref().map(|e| e.dialect()).unwrap_or("postgres");
@@ -540,11 +570,20 @@ async fn exec_query(
     };
 
     let sort_col = args.get("sort").and_then(|v| v.as_str()).unwrap_or("id");
-    let order_dir = match args.get("order").and_then(|v| v.as_str()).map(|s| s.to_ascii_uppercase()).as_deref() {
+    let order_dir = match args
+        .get("order")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_ascii_uppercase())
+        .as_deref()
+    {
         Some("DESC") => "DESC",
         _ => "ASC",
     };
-    let limit = args.get("limit").and_then(|v| v.as_i64()).unwrap_or(50).clamp(1, 500);
+    let limit = args
+        .get("limit")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(50)
+        .clamp(1, 500);
 
     let quoted_table = filter_builder::quote_ident_dialect(table, dialect);
     let quoted_sort = filter_builder::quote_ident_dialect(sort_col, dialect);
@@ -565,20 +604,12 @@ async fn exec_query(
     let sql = if is_mssql {
         format!(
             "SELECT * FROM {} {} ORDER BY {} {} OFFSET 0 ROWS FETCH NEXT {} ROWS ONLY",
-            quoted_table,
-            final_where,
-            quoted_sort,
-            order_dir,
-            limit
+            quoted_table, final_where, quoted_sort, order_dir, limit
         )
     } else {
         format!(
             "SELECT * FROM {} {} ORDER BY {} {} LIMIT {}",
-            quoted_table,
-            final_where,
-            quoted_sort,
-            order_dir,
-            limit
+            quoted_table, final_where, quoted_sort, order_dir, limit
         )
     };
 
@@ -598,46 +629,53 @@ async fn exec_insert(
     auth: &AuthContext,
     args: &serde_json::Map<String, Value>,
 ) -> Result<Value, String> {
-    let db = args.get("database").and_then(|v| v.as_str())
+    let db = args
+        .get("database")
+        .and_then(|v| v.as_str())
         .ok_or_else(|| "Missing required parameter 'database'".to_string())?;
-    let table = args.get("table").and_then(|v| v.as_str())
+    let table = args
+        .get("table")
+        .and_then(|v| v.as_str())
         .ok_or_else(|| "Missing required parameter 'table'".to_string())?;
 
-    PolicyEngine::evaluate(auth, db, table, "INSERT")
-        .map_err(|e| e.to_string())?;
+    PolicyEngine::evaluate(auth, db, table, "INSERT").map_err(|e| e.to_string())?;
 
-    let db_cfg = get_db_config(db, auth).await
-        .map_err(|e| e.to_string())?;
+    let db_cfg = get_db_config(db, auth).await.map_err(|e| e.to_string())?;
 
-    let rows_to_insert: Vec<HashMap<String, Value>> = if let Some(arr) = args.get("rows").and_then(|v| v.as_array()) {
-        arr.iter().filter_map(|r| serde_json::from_value(r.clone()).ok()).collect()
-    } else if let Some(single) = args.get("row").and_then(|v| v.as_object()) {
-        vec![single.iter().map(|(k, v)| (k.clone(), v.clone())).collect()]
-    } else if let Some(data_val) = args.get("data") {
-        if let Some(arr) = data_val.as_array() {
-            arr.iter().filter_map(|r| serde_json::from_value(r.clone()).ok()).collect()
-        } else if let Some(single) = data_val.as_object() {
+    let rows_to_insert: Vec<HashMap<String, Value>> =
+        if let Some(arr) = args.get("rows").and_then(|v| v.as_array()) {
+            arr.iter()
+                .filter_map(|r| serde_json::from_value(r.clone()).ok())
+                .collect()
+        } else if let Some(single) = args.get("row").and_then(|v| v.as_object()) {
             vec![single.iter().map(|(k, v)| (k.clone(), v.clone())).collect()]
-        } else if let Some(s) = data_val.as_str() {
-            if let Ok(arr) = serde_json::from_str::<Vec<HashMap<String, Value>>>(s) {
-                arr
-            } else if let Ok(single) = serde_json::from_str::<HashMap<String, Value>>(s) {
-                vec![single]
+        } else if let Some(data_val) = args.get("data") {
+            if let Some(arr) = data_val.as_array() {
+                arr.iter()
+                    .filter_map(|r| serde_json::from_value(r.clone()).ok())
+                    .collect()
+            } else if let Some(single) = data_val.as_object() {
+                vec![single.iter().map(|(k, v)| (k.clone(), v.clone())).collect()]
+            } else if let Some(s) = data_val.as_str() {
+                if let Ok(arr) = serde_json::from_str::<Vec<HashMap<String, Value>>>(s) {
+                    arr
+                } else if let Ok(single) = serde_json::from_str::<HashMap<String, Value>>(s) {
+                    vec![single]
+                } else {
+                    return Err("Failed to parse JSON string in 'data'".to_string());
+                }
             } else {
-                return Err("Failed to parse JSON string in 'data'".to_string());
+                return Err("Invalid 'data' format: expected object or array".to_string());
             }
+        } else if let Some(s) = args.get("rows").and_then(|v| v.as_str()) {
+            serde_json::from_str(s).map_err(|e| format!("Invalid JSON string in 'rows': {}", e))?
+        } else if let Some(s) = args.get("row").and_then(|v| v.as_str()) {
+            let single: HashMap<String, Value> = serde_json::from_str(s)
+                .map_err(|e| format!("Invalid JSON string in 'row': {}", e))?;
+            vec![single]
         } else {
-            return Err("Invalid 'data' format: expected object or array".to_string());
-        }
-    } else if let Some(s) = args.get("rows").and_then(|v| v.as_str()) {
-        serde_json::from_str(s).map_err(|e| format!("Invalid JSON string in 'rows': {}", e))?
-    } else if let Some(s) = args.get("row").and_then(|v| v.as_str()) {
-        let single: HashMap<String, Value> = serde_json::from_str(s)
-            .map_err(|e| format!("Invalid JSON string in 'row': {}", e))?;
-        vec![single]
-    } else {
-        return Err("Missing 'rows' array or 'row' object to insert".to_string());
-    };
+            return Err("Missing 'rows' array or 'row' object to insert".to_string());
+        };
 
     if rows_to_insert.is_empty() {
         return Err("Rows list to insert cannot be empty".to_string());
@@ -648,7 +686,10 @@ async fn exec_insert(
 
     let first_row = &rows_to_insert[0];
     let column_keys: Vec<&String> = first_row.keys().collect();
-    let quoted_cols: Vec<String> = column_keys.iter().map(|k| filter_builder::quote_ident_dialect(k, dialect)).collect();
+    let quoted_cols: Vec<String> = column_keys
+        .iter()
+        .map(|k| filter_builder::quote_ident_dialect(k, dialect))
+        .collect();
     let cols_str = quoted_cols.join(", ");
 
     let mut all_params = Vec::new();
@@ -686,9 +727,13 @@ async fn exec_update(
     auth: &AuthContext,
     args: &serde_json::Map<String, Value>,
 ) -> Result<Value, String> {
-    let db = args.get("database").and_then(|v| v.as_str())
+    let db = args
+        .get("database")
+        .and_then(|v| v.as_str())
         .ok_or_else(|| "Missing required parameter 'database'".to_string())?;
-    let table = args.get("table").and_then(|v| v.as_str())
+    let table = args
+        .get("table")
+        .and_then(|v| v.as_str())
         .ok_or_else(|| "Missing required parameter 'table'".to_string())?;
 
     let filter = parse_json_object(args.get("filter"))
@@ -705,11 +750,9 @@ async fn exec_update(
         return Err("'data' object must not be empty".to_string());
     }
 
-    PolicyEngine::evaluate(auth, db, table, "UPDATE")
-        .map_err(|e| e.to_string())?;
+    PolicyEngine::evaluate(auth, db, table, "UPDATE").map_err(|e| e.to_string())?;
 
-    let db_cfg = get_db_config(db, auth).await
-        .map_err(|e| e.to_string())?;
+    let db_cfg = get_db_config(db, auth).await.map_err(|e| e.to_string())?;
 
     let engine = DatabasePoolManager::get_engine(db).await;
     let dialect = engine.as_ref().map(|e| e.dialect()).unwrap_or("postgres");
@@ -729,9 +772,13 @@ async fn exec_delete(
     auth: &AuthContext,
     args: &serde_json::Map<String, Value>,
 ) -> Result<Value, String> {
-    let db = args.get("database").and_then(|v| v.as_str())
+    let db = args
+        .get("database")
+        .and_then(|v| v.as_str())
         .ok_or_else(|| "Missing required parameter 'database'".to_string())?;
-    let table = args.get("table").and_then(|v| v.as_str())
+    let table = args
+        .get("table")
+        .and_then(|v| v.as_str())
         .ok_or_else(|| "Missing required parameter 'table'".to_string())?;
 
     let filter = parse_json_object(args.get("filter"))
@@ -741,11 +788,9 @@ async fn exec_delete(
         return Err("Safety guardrail: 'filter' object must not be empty".to_string());
     }
 
-    PolicyEngine::evaluate(auth, db, table, "DELETE")
-        .map_err(|e| e.to_string())?;
+    PolicyEngine::evaluate(auth, db, table, "DELETE").map_err(|e| e.to_string())?;
 
-    let db_cfg = get_db_config(db, auth).await
-        .map_err(|e| e.to_string())?;
+    let db_cfg = get_db_config(db, auth).await.map_err(|e| e.to_string())?;
 
     let engine = DatabasePoolManager::get_engine(db).await;
     let dialect = engine.as_ref().map(|e| e.dialect()).unwrap_or("postgres");
@@ -765,15 +810,20 @@ async fn exec_raw_sql(
     auth: &AuthContext,
     args: &serde_json::Map<String, Value>,
 ) -> Result<Value, String> {
-    let db = args.get("database").and_then(|v| v.as_str())
+    let db = args
+        .get("database")
+        .and_then(|v| v.as_str())
         .ok_or_else(|| "Missing required parameter 'database'".to_string())?;
-    let sql = args.get("sql").or_else(|| args.get("query")).and_then(|v| v.as_str())
+    let sql = args
+        .get("sql")
+        .or_else(|| args.get("query"))
+        .and_then(|v| v.as_str())
         .ok_or_else(|| "Missing required parameter 'sql'".to_string())?;
 
-    let db_cfg = get_db_config(db, auth).await
-        .map_err(|e| e.to_string())?;
+    let db_cfg = get_db_config(db, auth).await.map_err(|e| e.to_string())?;
 
-    let params: Vec<Value> = args.get("params")
+    let params: Vec<Value> = args
+        .get("params")
         .and_then(|p| p.as_array())
         .cloned()
         .unwrap_or_default();
@@ -817,19 +867,26 @@ async fn exec_list_blobs(
     auth: &AuthContext,
     args: &serde_json::Map<String, Value>,
 ) -> Result<Value, String> {
-    let ns = args.get("namespace").and_then(|v| v.as_str())
+    let ns = args
+        .get("namespace")
+        .and_then(|v| v.as_str())
         .ok_or_else(|| "Missing required parameter 'namespace'".to_string())?;
     let prefix = args.get("prefix").and_then(|v| v.as_str());
     let cursor = args.get("cursor").and_then(|v| v.as_str());
-    let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(50).min(500) as usize;
+    let limit = args
+        .get("limit")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(50)
+        .min(500) as usize;
 
     // Check READ permissions on the namespace / prefix pattern
     let check_key = prefix.unwrap_or("*");
-    PolicyEngine::evaluate_blob(auth, ns, check_key, "READ")
-        .map_err(|e| e.to_string())?;
+    PolicyEngine::evaluate_blob(auth, ns, check_key, "READ").map_err(|e| e.to_string())?;
 
     let engine = crate::blobs::get_blob_engine().map_err(|e| e.to_string())?;
-    let list_res = engine.list(ns, prefix, cursor, limit).map_err(|e| e.to_string())?;
+    let list_res = engine
+        .list(ns, prefix, cursor, limit)
+        .map_err(|e| e.to_string())?;
 
     Ok(json!({
         "namespace": ns,
@@ -848,13 +905,16 @@ async fn exec_get_blob_metadata(
     auth: &AuthContext,
     args: &serde_json::Map<String, Value>,
 ) -> Result<Value, String> {
-    let ns = args.get("namespace").and_then(|v| v.as_str())
+    let ns = args
+        .get("namespace")
+        .and_then(|v| v.as_str())
         .ok_or_else(|| "Missing required parameter 'namespace'".to_string())?;
-    let key = args.get("key").and_then(|v| v.as_str())
+    let key = args
+        .get("key")
+        .and_then(|v| v.as_str())
         .ok_or_else(|| "Missing required parameter 'key'".to_string())?;
 
-    PolicyEngine::evaluate_blob(auth, ns, key, "READ")
-        .map_err(|e| e.to_string())?;
+    PolicyEngine::evaluate_blob(auth, ns, key, "READ").map_err(|e| e.to_string())?;
 
     let engine = crate::blobs::get_blob_engine().map_err(|e| e.to_string())?;
     let meta = engine.head(ns, key).map_err(|e| e.to_string())?;
@@ -882,11 +942,19 @@ async fn exec_read_blob(
     auth: &AuthContext,
     args: &serde_json::Map<String, Value>,
 ) -> Result<Value, String> {
-    let ns = args.get("namespace").and_then(|v| v.as_str())
+    let ns = args
+        .get("namespace")
+        .and_then(|v| v.as_str())
         .ok_or_else(|| "Missing required parameter 'namespace'".to_string())?;
-    let key = args.get("key").and_then(|v| v.as_str())
+    let key = args
+        .get("key")
+        .and_then(|v| v.as_str())
         .ok_or_else(|| "Missing required parameter 'key'".to_string())?;
-    let encoding = args.get("encoding").and_then(|v| v.as_str()).unwrap_or("utf8").to_lowercase();
+    let encoding = args
+        .get("encoding")
+        .and_then(|v| v.as_str())
+        .unwrap_or("utf8")
+        .to_lowercase();
     let max_bytes = match args.get("max_bytes").and_then(|v| v.as_u64()) {
         Some(mb) if mb > 20 * 1024 * 1024 => {
             return Err("Safety guardrail: requested max_bytes exceeds 20MB limit. Use 'axiom_create_download_ticket' for larger objects.".to_string());
@@ -895,8 +963,7 @@ async fn exec_read_blob(
         None => 5 * 1024 * 1024,
     };
 
-    PolicyEngine::evaluate_blob(auth, ns, key, "READ")
-        .map_err(|e| e.to_string())?;
+    PolicyEngine::evaluate_blob(auth, ns, key, "READ").map_err(|e| e.to_string())?;
 
     let engine = crate::blobs::get_blob_engine().map_err(|e| e.to_string())?;
     let meta = engine.head(ns, key).map_err(|e| e.to_string())?;
@@ -944,28 +1011,40 @@ async fn exec_write_blob(
     auth: &AuthContext,
     args: &serde_json::Map<String, Value>,
 ) -> Result<Value, String> {
-    let ns = args.get("namespace").and_then(|v| v.as_str())
+    let ns = args
+        .get("namespace")
+        .and_then(|v| v.as_str())
         .ok_or_else(|| "Missing required parameter 'namespace'".to_string())?;
-    let key = args.get("key").and_then(|v| v.as_str())
+    let key = args
+        .get("key")
+        .and_then(|v| v.as_str())
         .ok_or_else(|| "Missing required parameter 'key'".to_string())?;
-    let content = args.get("content").or_else(|| args.get("data")).and_then(|v| v.as_str())
+    let content = args
+        .get("content")
+        .or_else(|| args.get("data"))
+        .and_then(|v| v.as_str())
         .ok_or_else(|| "Missing required parameter 'content'".to_string())?;
-    let encoding = args.get("encoding").and_then(|v| v.as_str()).unwrap_or("utf8").to_lowercase();
+    let encoding = args
+        .get("encoding")
+        .and_then(|v| v.as_str())
+        .unwrap_or("utf8")
+        .to_lowercase();
     let content_type = args.get("content_type").and_then(|v| v.as_str());
     let ttl_seconds = args.get("ttl_seconds").and_then(|v| v.as_u64());
 
-    PolicyEngine::evaluate_blob(auth, ns, key, "WRITE")
-        .map_err(|e| e.to_string())?;
+    PolicyEngine::evaluate_blob(auth, ns, key, "WRITE").map_err(|e| e.to_string())?;
 
     let raw_bytes = if encoding == "base64" {
-        BASE64_STANDARD.decode(content.trim())
+        BASE64_STANDARD
+            .decode(content.trim())
             .map_err(|e| format!("Invalid base64 payload: {}", e))?
     } else {
         content.as_bytes().to_vec()
     };
 
     let engine = crate::blobs::get_blob_engine().map_err(|e| e.to_string())?;
-    let meta = engine.put_with_options(ns, key, content_type, &raw_bytes, ttl_seconds, None)
+    let meta = engine
+        .put_with_options(ns, key, content_type, &raw_bytes, ttl_seconds, None)
         .await
         .map_err(|e| e.to_string())?;
 
@@ -989,13 +1068,16 @@ async fn exec_delete_blob(
     auth: &AuthContext,
     args: &serde_json::Map<String, Value>,
 ) -> Result<Value, String> {
-    let ns = args.get("namespace").and_then(|v| v.as_str())
+    let ns = args
+        .get("namespace")
+        .and_then(|v| v.as_str())
         .ok_or_else(|| "Missing required parameter 'namespace'".to_string())?;
-    let key = args.get("key").and_then(|v| v.as_str())
+    let key = args
+        .get("key")
+        .and_then(|v| v.as_str())
         .ok_or_else(|| "Missing required parameter 'key'".to_string())?;
 
-    PolicyEngine::evaluate_blob(auth, ns, key, "DELETE")
-        .map_err(|e| e.to_string())?;
+    PolicyEngine::evaluate_blob(auth, ns, key, "DELETE").map_err(|e| e.to_string())?;
 
     let engine = crate::blobs::get_blob_engine().map_err(|e| e.to_string())?;
     let deleted = engine.delete(ns, key).await.map_err(|e| e.to_string())?;
@@ -1016,15 +1098,26 @@ async fn exec_create_download_ticket(
     auth: &AuthContext,
     args: &serde_json::Map<String, Value>,
 ) -> Result<Value, String> {
-    let ns = args.get("namespace").and_then(|v| v.as_str())
+    let ns = args
+        .get("namespace")
+        .and_then(|v| v.as_str())
         .ok_or_else(|| "Missing required parameter 'namespace'".to_string())?;
-    let key = args.get("key").and_then(|v| v.as_str())
+    let key = args
+        .get("key")
+        .and_then(|v| v.as_str())
         .ok_or_else(|| "Missing required parameter 'key'".to_string())?;
-    let operation = args.get("operation").and_then(|v| v.as_str()).unwrap_or("READ").to_uppercase();
-    let ttl_seconds = args.get("ttl_seconds").and_then(|v| v.as_u64()).unwrap_or(3600).min(86400);
+    let operation = args
+        .get("operation")
+        .and_then(|v| v.as_str())
+        .unwrap_or("READ")
+        .to_uppercase();
+    let ttl_seconds = args
+        .get("ttl_seconds")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(3600)
+        .min(86400);
 
-    PolicyEngine::evaluate_blob(auth, ns, key, &operation)
-        .map_err(|e| e.to_string())?;
+    PolicyEngine::evaluate_blob(auth, ns, key, &operation).map_err(|e| e.to_string())?;
 
     let secret = axiom_blob::tickets::get_ticket_secret();
 
@@ -1054,20 +1147,21 @@ async fn handle_resources_list(id: Option<Value>, auth: &AuthContext) -> JsonRpc
     sorted_aliases.sort();
 
     let authorized_dbs = PolicyEngine::filter_databases(auth, &sorted_aliases);
-    let mut resources = vec![
-        McpResource {
-            uri: "axiom://services".to_string(),
-            name: "Active Database Services".to_string(),
-            description: "Catalog of active database connections and operational health".to_string(),
-            mime_type: "application/json".to_string(),
-        },
-    ];
+    let mut resources = vec![McpResource {
+        uri: "axiom://services".to_string(),
+        name: "Active Database Services".to_string(),
+        description: "Catalog of active database connections and operational health".to_string(),
+        mime_type: "application/json".to_string(),
+    }];
 
     for name in authorized_dbs {
         resources.push(McpResource {
             uri: format!("axiom://schema/{}", name),
             name: format!("Schema for {}", name),
-            description: format!("Table definitions and schema metadata for database '{}'", name),
+            description: format!(
+                "Table definitions and schema metadata for database '{}'",
+                name
+            ),
             mime_type: "application/json".to_string(),
         });
     }
@@ -1079,7 +1173,8 @@ async fn handle_resources_list(id: Option<Value>, auth: &AuthContext) -> JsonRpc
             resources.push(McpResource {
                 uri: "axiom://blobs".to_string(),
                 name: "Active Blob Storage Namespaces".to_string(),
-                description: "Catalog of active object namespaces and storage telemetry".to_string(),
+                description: "Catalog of active object namespaces and storage telemetry"
+                    .to_string(),
                 mime_type: "application/json".to_string(),
             });
 
@@ -1087,7 +1182,10 @@ async fn handle_resources_list(id: Option<Value>, auth: &AuthContext) -> JsonRpc
                 resources.push(McpResource {
                     uri: format!("axiom://blobs/{}", ns),
                     name: format!("Blob Namespace '{}'", ns),
-                    description: format!("Listing of stored objects and virtual directories in namespace '{}'", ns),
+                    description: format!(
+                        "Listing of stored objects and virtual directories in namespace '{}'",
+                        ns
+                    ),
                     mime_type: "application/json".to_string(),
                 });
             }
@@ -1102,12 +1200,13 @@ async fn handle_resources_read(
     params: Option<Value>,
     auth: &AuthContext,
 ) -> JsonRpcResponse {
-    let uri = match params.and_then(|p| p.get("uri").and_then(|u| u.as_str()).map(|s| s.to_string())) {
-        Some(u) => u,
-        None => {
-            return JsonRpcResponse::error(id, -32602, "Missing 'uri' parameter", None);
-        }
-    };
+    let uri =
+        match params.and_then(|p| p.get("uri").and_then(|u| u.as_str()).map(|s| s.to_string())) {
+            Some(u) => u,
+            None => {
+                return JsonRpcResponse::error(id, -32602, "Missing 'uri' parameter", None);
+            }
+        };
 
     if uri == "axiom://services" {
         match exec_list_services(auth).await {
@@ -1117,9 +1216,17 @@ async fn handle_resources_read(
                     mime_type: "application/json".to_string(),
                     text: serde_json::to_string_pretty(&val).unwrap_or_default(),
                 };
-                JsonRpcResponse::success(id, serde_json::to_value(McpResourceReadResult { contents: vec![content] }).unwrap_or_default())
+                JsonRpcResponse::success(
+                    id,
+                    serde_json::to_value(McpResourceReadResult {
+                        contents: vec![content],
+                    })
+                    .unwrap_or_default(),
+                )
             }
-            Err(e) => JsonRpcResponse::error(id, -32603, format!("Failed to read services: {}", e), None),
+            Err(e) => {
+                JsonRpcResponse::error(id, -32603, format!("Failed to read services: {}", e), None)
+            }
         }
     } else if let Some(service) = uri.strip_prefix("axiom://schema/") {
         let mut map = serde_json::Map::new();
@@ -1131,9 +1238,17 @@ async fn handle_resources_read(
                     mime_type: "application/json".to_string(),
                     text: serde_json::to_string_pretty(&tables_val).unwrap_or_default(),
                 };
-                JsonRpcResponse::success(id, serde_json::to_value(McpResourceReadResult { contents: vec![content] }).unwrap_or_default())
+                JsonRpcResponse::success(
+                    id,
+                    serde_json::to_value(McpResourceReadResult {
+                        contents: vec![content],
+                    })
+                    .unwrap_or_default(),
+                )
             }
-            Err(e) => JsonRpcResponse::error(id, -32603, format!("Failed to read schema: {}", e), None),
+            Err(e) => {
+                JsonRpcResponse::error(id, -32603, format!("Failed to read schema: {}", e), None)
+            }
         }
     } else if uri == "axiom://blobs" {
         match exec_list_blob_namespaces(auth).await {
@@ -1143,11 +1258,25 @@ async fn handle_resources_read(
                     mime_type: "application/json".to_string(),
                     text: serde_json::to_string_pretty(&val).unwrap_or_default(),
                 };
-                JsonRpcResponse::success(id, serde_json::to_value(McpResourceReadResult { contents: vec![content] }).unwrap_or_default())
+                JsonRpcResponse::success(
+                    id,
+                    serde_json::to_value(McpResourceReadResult {
+                        contents: vec![content],
+                    })
+                    .unwrap_or_default(),
+                )
             }
-            Err(e) => JsonRpcResponse::error(id, -32603, format!("Failed to read blob namespaces: {}", e), None),
+            Err(e) => JsonRpcResponse::error(
+                id,
+                -32603,
+                format!("Failed to read blob namespaces: {}", e),
+                None,
+            ),
         }
-    } else if let Some(path) = uri.strip_prefix("axiom://blobs/").or_else(|| uri.strip_prefix("axiom://blob/")) {
+    } else if let Some(path) = uri
+        .strip_prefix("axiom://blobs/")
+        .or_else(|| uri.strip_prefix("axiom://blob/"))
+    {
         if let Some((ns, key)) = path.split_once('/') {
             // Read specific blob payload
             let mut map = serde_json::Map::new();
@@ -1155,16 +1284,35 @@ async fn handle_resources_read(
             map.insert("key".to_string(), Value::String(key.to_string()));
             match exec_read_blob(auth, &map).await {
                 Ok(val) => {
-                    let content_type = val.get("content_type").and_then(|ct| ct.as_str()).unwrap_or("text/plain").to_string();
-                    let text = val.get("data").and_then(|d| d.as_str()).unwrap_or_default().to_string();
+                    let content_type = val
+                        .get("content_type")
+                        .and_then(|ct| ct.as_str())
+                        .unwrap_or("text/plain")
+                        .to_string();
+                    let text = val
+                        .get("data")
+                        .and_then(|d| d.as_str())
+                        .unwrap_or_default()
+                        .to_string();
                     let content = McpResourceContent {
                         uri,
                         mime_type: content_type,
                         text,
                     };
-                    JsonRpcResponse::success(id, serde_json::to_value(McpResourceReadResult { contents: vec![content] }).unwrap_or_default())
+                    JsonRpcResponse::success(
+                        id,
+                        serde_json::to_value(McpResourceReadResult {
+                            contents: vec![content],
+                        })
+                        .unwrap_or_default(),
+                    )
                 }
-                Err(e) => JsonRpcResponse::error(id, -32603, format!("Failed to read blob '{}': {}", path, e), None),
+                Err(e) => JsonRpcResponse::error(
+                    id,
+                    -32603,
+                    format!("Failed to read blob '{}': {}", path, e),
+                    None,
+                ),
             }
         } else {
             // List namespace contents
@@ -1177,13 +1325,29 @@ async fn handle_resources_read(
                         mime_type: "application/json".to_string(),
                         text: serde_json::to_string_pretty(&val).unwrap_or_default(),
                     };
-                    JsonRpcResponse::success(id, serde_json::to_value(McpResourceReadResult { contents: vec![content] }).unwrap_or_default())
+                    JsonRpcResponse::success(
+                        id,
+                        serde_json::to_value(McpResourceReadResult {
+                            contents: vec![content],
+                        })
+                        .unwrap_or_default(),
+                    )
                 }
-                Err(e) => JsonRpcResponse::error(id, -32603, format!("Failed to read blob namespace '{}': {}", path, e), None),
+                Err(e) => JsonRpcResponse::error(
+                    id,
+                    -32603,
+                    format!("Failed to read blob namespace '{}': {}", path, e),
+                    None,
+                ),
             }
         }
     } else {
-        JsonRpcResponse::error(id, -32602, format!("Resource URI '{}' not found", uri), None)
+        JsonRpcResponse::error(
+            id,
+            -32602,
+            format!("Resource URI '{}' not found", uri),
+            None,
+        )
     }
 }
 
@@ -1252,7 +1416,10 @@ mod tests {
         assert_eq!(resp.jsonrpc, "2.0");
         let res = resp.result.unwrap();
         assert_eq!(res["isError"], true);
-        assert!(res["content"][0]["text"].as_str().unwrap().contains("Unknown tool"));
+        assert!(res["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("Unknown tool"));
     }
 
     #[tokio::test]
@@ -1331,7 +1498,9 @@ mod tests {
         assert!(err.contains("Missing required parameter 'namespace'"));
 
         // exec_create_download_ticket requires 'namespace' and 'key'
-        let err = exec_create_download_ticket(&ctx, &empty_args).await.unwrap_err();
+        let err = exec_create_download_ticket(&ctx, &empty_args)
+            .await
+            .unwrap_err();
         assert!(err.contains("Missing required parameter 'namespace'"));
     }
 
@@ -1399,12 +1568,21 @@ mod tests {
                     ..Default::default()
                 }),
                 axum::Json(rpc),
-            ).await;
+            )
+            .await;
 
             let body = resp.expect("handle_mcp should succeed").0;
-            assert!(body.get("error").is_none() || body.get("error").unwrap().is_null(),
-                "Method '{}' returned error: {:?}", method, body.get("error"));
-            assert!(body.get("result").is_some(), "Method '{}' returned no result", method);
+            assert!(
+                body.get("error").is_none() || body.get("error").unwrap().is_null(),
+                "Method '{}' returned error: {:?}",
+                method,
+                body.get("error")
+            );
+            assert!(
+                body.get("result").is_some(),
+                "Method '{}' returned no result",
+                method
+            );
         }
     }
 

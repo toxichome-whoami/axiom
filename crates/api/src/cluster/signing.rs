@@ -28,9 +28,13 @@ impl std::fmt::Display for ClusterAuthError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::MissingHeaders => write!(f, "Missing required cluster security headers"),
-            Self::TimestampSkewExceeded => write!(f, "Timestamp skew exceeds 30-second allowable drift"),
+            Self::TimestampSkewExceeded => {
+                write!(f, "Timestamp skew exceeds 30-second allowable drift")
+            }
             Self::ReplayDetected => write!(f, "Nonce replay attack detected"),
-            Self::InvalidSignature => write!(f, "Cryptographic cluster signature validation failed"),
+            Self::InvalidSignature => {
+                write!(f, "Cryptographic cluster signature validation failed")
+            }
             Self::PeerNotFound => write!(f, "Unregistered or untrusted peer node identifier"),
             Self::InternalError(e) => write!(f, "Internal cluster auth error: {}", e),
         }
@@ -152,7 +156,8 @@ mod tests {
 
         // Tampered body should fail
         let tampered_body = b"{\"action\":\"ban.ip\",\"ip\":\"5.6.7.8\"}";
-        let bad_sig = verify_inbound_packet(&node, secret, ts, "fresh_nonce_1", tampered_body, &sig);
+        let bad_sig =
+            verify_inbound_packet(&node, secret, ts, "fresh_nonce_1", tampered_body, &sig);
         assert_eq!(bad_sig, Err(ClusterAuthError::InvalidSignature));
 
         // Expired timestamp should fail

@@ -65,7 +65,11 @@ mod tests {
         assert!(handle_version_flag(&["axiom".into(), "--version".into()]));
         assert!(handle_version_flag(&["axiom".into(), "-v".into()]));
         assert!(!handle_version_flag(&["axiom".into()]));
-        assert!(!handle_version_flag(&["axiom".into(), "user".into(), "list".into()]));
+        assert!(!handle_version_flag(&[
+            "axiom".into(),
+            "user".into(),
+            "list".into()
+        ]));
     }
 
     #[test]

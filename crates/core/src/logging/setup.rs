@@ -7,16 +7,19 @@
  */
 
 use crate::config::loader::ConfigManager;
+use std::fmt::Result as FmtResult;
+use tracing::{Event, Level, Subscriber};
 use tracing_appender::rolling;
+use tracing_subscriber::registry::LookupSpan;
 use tracing_subscriber::{
-    fmt::{self, format::FmtSpan, format::FormatEvent, format::FormatFields, FmtContext, format::Writer},
+    fmt::{
+        self, format::FmtSpan, format::FormatEvent, format::FormatFields, format::Writer,
+        FmtContext,
+    },
     layer::SubscriberExt,
     util::SubscriberInitExt,
     EnvFilter, Registry,
 };
-use tracing::{Event, Subscriber, Level};
-use tracing_subscriber::registry::LookupSpan;
-use std::fmt::Result as FmtResult;
 
 struct AxiomLogFormatter;
 
@@ -32,13 +35,13 @@ where
         event: &Event<'_>,
     ) -> FmtResult {
         let meta = event.metadata();
-        
+
         let level = meta.level();
         let color = match *level {
-            Level::TRACE => "\x1b[35m", // Magenta
-            Level::DEBUG => "\x1b[36m", // Cyan
-            Level::INFO  => "\x1b[32m", // Green
-            Level::WARN  => "\x1b[33m", // Yellow
+            Level::TRACE => "\x1b[35m",        // Magenta
+            Level::DEBUG => "\x1b[36m",        // Cyan
+            Level::INFO => "\x1b[32m",         // Green
+            Level::WARN => "\x1b[33m",         // Yellow
             Level::ERROR => "\x1b[31m\x1b[1m", // Bold Red
         };
         let reset = "\x1b[0m";
@@ -49,9 +52,9 @@ where
 
         write!(writer, "{dim}[{timestamp}]{reset} ")?;
         write!(writer, "{color}{bold}{:<5}{reset} ", level.as_str())?;
-        
+
         write!(writer, "{dim}[{}]{reset} ", meta.target())?;
-        
+
         ctx.format_fields(writer.by_ref(), event)?;
         writeln!(writer)
     }
@@ -61,7 +64,10 @@ where
 /// CONTRACT:
 ///  - Returns `Ok(Some(WorkerGuard))` if file logging is enabled; caller must retain guard in main scope.
 ///  - Respects `logging.format` (json vs pretty) and `logging.level` from configuration.
-pub fn setup_logging() -> std::result::Result<Option<tracing_appender::non_blocking::WorkerGuard>, Box<dyn std::error::Error>> {
+pub fn setup_logging() -> std::result::Result<
+    Option<tracing_appender::non_blocking::WorkerGuard>,
+    Box<dyn std::error::Error>,
+> {
     let config = ConfigManager::get();
 
     if !config.logging.enabled {
@@ -111,4 +117,3 @@ pub fn setup_logging() -> std::result::Result<Option<tracing_appender::non_block
 
     Ok(Some(_guard))
 }
-

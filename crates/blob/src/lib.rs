@@ -22,5 +22,8 @@ pub use models::{
     BlobEntry, BlobMetadata, BlobStats, ByteRange, ContentRef, DeleteObjectsRequest,
     DeleteObjectsResult, ListResult, NamespaceInfo, UploadSession, UploadSessionStatus,
 };
-pub use tickets::{generate_ticket, get_ticket_secret, resolve_ticket_secret, set_ticket_secret, verify_ticket, SignedTicket};
+pub use tickets::{
+    generate_ticket, get_ticket_secret, resolve_ticket_secret, set_ticket_secret, verify_ticket,
+    SignedTicket,
+};
 pub use validation::{validate_key, validate_namespace};

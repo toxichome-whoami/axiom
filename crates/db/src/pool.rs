@@ -52,7 +52,10 @@ impl DatabasePoolManager {
 
         // Do not attempt to connect if the URL is empty
         if db_config.url.is_empty() {
-            tracing::warn!(database = alias, "Database has an empty URL, skipping connection");
+            tracing::warn!(
+                database = alias,
+                "Database has an empty URL, skipping connection"
+            );
             return None;
         }
 
@@ -71,78 +74,88 @@ impl DatabasePoolManager {
         tracing::info!(database = alias, "Initializing database connection pool");
 
         let url = db_config.url.as_str();
-        let conn_timeout = std::time::Duration::from_secs(db_config.connection_timeout.clamp(1, 30) as u64);
+        let conn_timeout =
+            std::time::Duration::from_secs(db_config.connection_timeout.clamp(1, 30) as u64);
 
-        let arc_engine: Arc<dyn DatabaseEngine> =
-            if url.starts_with("mssql://") || url.starts_with("sqlserver://") {
-                let mut engine = MssqlDatabaseEngine::new(db_config.clone());
-                match tokio::time::timeout(conn_timeout, engine.connect()).await {
-                    Ok(Ok(())) => Arc::new(engine),
-                    Ok(Err(e)) => {
-                        tracing::error!(database = alias, error = %e, "Failed to connect to MSSQL");
-                        return None;
-                    }
-                    Err(_) => {
-                        tracing::error!(database = alias, "MSSQL connection timed out");
-                        return None;
-                    }
+        let arc_engine: Arc<dyn DatabaseEngine> = if url.starts_with("mssql://")
+            || url.starts_with("sqlserver://")
+        {
+            let mut engine = MssqlDatabaseEngine::new(db_config.clone());
+            match tokio::time::timeout(conn_timeout, engine.connect()).await {
+                Ok(Ok(())) => Arc::new(engine),
+                Ok(Err(e)) => {
+                    tracing::error!(database = alias, error = %e, "Failed to connect to MSSQL");
+                    return None;
                 }
-            } else if url.starts_with("sqlite://") || url.starts_with("libsql://") || url.starts_with("file:") || url.starts_with("file://") {
-                let mut engine = LibsqlDatabaseEngine::new(db_config.clone());
-                match tokio::time::timeout(conn_timeout, engine.connect()).await {
-                    Ok(Ok(())) => Arc::new(engine),
-                    Ok(Err(e)) => {
-                        tracing::error!(database = alias, error = %e, "Failed to connect to SQLite/Turso");
-                        return None;
-                    }
-                    Err(_) => {
-                        tracing::error!(database = alias, "SQLite connection timed out");
-                        return None;
-                    }
+                Err(_) => {
+                    tracing::error!(database = alias, "MSSQL connection timed out");
+                    return None;
                 }
-            } else if url.starts_with("postgres://") || url.starts_with("postgresql://") {
-                let mut engine = PostgresDatabaseEngine::new(db_config.clone());
-                match tokio::time::timeout(conn_timeout, engine.connect()).await {
-                    Ok(Ok(())) => Arc::new(engine),
-                    Ok(Err(e)) => {
-                        tracing::error!(database = alias, error = %e, "Failed to connect to Postgres");
-                        return None;
-                    }
-                    Err(_) => {
-                        tracing::error!(database = alias, "Postgres connection timed out");
-                        return None;
-                    }
+            }
+        } else if url.starts_with("sqlite://")
+            || url.starts_with("libsql://")
+            || url.starts_with("file:")
+            || url.starts_with("file://")
+        {
+            let mut engine = LibsqlDatabaseEngine::new(db_config.clone());
+            match tokio::time::timeout(conn_timeout, engine.connect()).await {
+                Ok(Ok(())) => Arc::new(engine),
+                Ok(Err(e)) => {
+                    tracing::error!(database = alias, error = %e, "Failed to connect to SQLite/Turso");
+                    return None;
                 }
-            } else if url.starts_with("clickhouse://") || url.starts_with("clickhouse+https://") {
-                let mut engine = ClickHouseDatabaseEngine::new(db_config.clone());
-                match tokio::time::timeout(conn_timeout, engine.connect()).await {
-                    Ok(Ok(())) => Arc::new(engine),
-                    Ok(Err(e)) => {
-                        tracing::error!(database = alias, error = %e, "Failed to connect to ClickHouse");
-                        return None;
-                    }
-                    Err(_) => {
-                        tracing::error!(database = alias, "ClickHouse connection timed out");
-                        return None;
-                    }
+                Err(_) => {
+                    tracing::error!(database = alias, "SQLite connection timed out");
+                    return None;
                 }
-            } else if url.starts_with("mysql://") || url.starts_with("mariadb://") {
-                let mut engine = MysqlDatabaseEngine::new(db_config.clone());
-                match tokio::time::timeout(conn_timeout, engine.connect()).await {
-                    Ok(Ok(())) => Arc::new(engine),
-                    Ok(Err(e)) => {
-                        tracing::error!(database = alias, error = %e, "Failed to connect to MySQL");
-                        return None;
-                    }
-                    Err(_) => {
-                        tracing::error!(database = alias, "MySQL connection timed out");
-                        return None;
-                    }
+            }
+        } else if url.starts_with("postgres://") || url.starts_with("postgresql://") {
+            let mut engine = PostgresDatabaseEngine::new(db_config.clone());
+            match tokio::time::timeout(conn_timeout, engine.connect()).await {
+                Ok(Ok(())) => Arc::new(engine),
+                Ok(Err(e)) => {
+                    tracing::error!(database = alias, error = %e, "Failed to connect to Postgres");
+                    return None;
                 }
-            } else {
-                tracing::error!(database = alias, url = url, "Unsupported database URL protocol");
-                return None;
-            };
+                Err(_) => {
+                    tracing::error!(database = alias, "Postgres connection timed out");
+                    return None;
+                }
+            }
+        } else if url.starts_with("clickhouse://") || url.starts_with("clickhouse+https://") {
+            let mut engine = ClickHouseDatabaseEngine::new(db_config.clone());
+            match tokio::time::timeout(conn_timeout, engine.connect()).await {
+                Ok(Ok(())) => Arc::new(engine),
+                Ok(Err(e)) => {
+                    tracing::error!(database = alias, error = %e, "Failed to connect to ClickHouse");
+                    return None;
+                }
+                Err(_) => {
+                    tracing::error!(database = alias, "ClickHouse connection timed out");
+                    return None;
+                }
+            }
+        } else if url.starts_with("mysql://") || url.starts_with("mariadb://") {
+            let mut engine = MysqlDatabaseEngine::new(db_config.clone());
+            match tokio::time::timeout(conn_timeout, engine.connect()).await {
+                Ok(Ok(())) => Arc::new(engine),
+                Ok(Err(e)) => {
+                    tracing::error!(database = alias, error = %e, "Failed to connect to MySQL");
+                    return None;
+                }
+                Err(_) => {
+                    tracing::error!(database = alias, "MySQL connection timed out");
+                    return None;
+                }
+            }
+        } else {
+            tracing::error!(
+                database = alias,
+                url = url,
+                "Unsupported database URL protocol"
+            );
+            return None;
+        };
 
         ENGINES.insert(alias.to_string(), arc_engine.clone());
 
@@ -164,7 +177,10 @@ impl DatabasePoolManager {
     ///  - Idempotent: Yes.
     pub async fn remove_engine(alias: &str) {
         if let Some((_, engine)) = ENGINES.remove(alias) {
-            tracing::info!(database = alias, "Closing pool for dynamically removed database");
+            tracing::info!(
+                database = alias,
+                "Closing pool for dynamically removed database"
+            );
             let _ = engine.disconnect().await;
         }
     }
@@ -188,32 +204,39 @@ impl DatabasePoolManager {
             ..Default::default()
         };
 
-        let mut engine: Box<dyn DatabaseEngine> =
-            if trimmed.starts_with("mssql://") || trimmed.starts_with("sqlserver://") {
-                Box::new(MssqlDatabaseEngine::new(db_config))
-            } else if trimmed.starts_with("sqlite://") || trimmed.starts_with("libsql://") || trimmed.starts_with("file:") || trimmed.starts_with("file://") {
-                Box::new(LibsqlDatabaseEngine::new(db_config))
-            } else if trimmed.starts_with("postgres://") || trimmed.starts_with("postgresql://") {
-                Box::new(PostgresDatabaseEngine::new(db_config))
-            } else if trimmed.starts_with("clickhouse://") || trimmed.starts_with("clickhouse+https://") {
-                Box::new(ClickHouseDatabaseEngine::new(db_config))
-            } else if trimmed.starts_with("mysql://") || trimmed.starts_with("mariadb://") {
-                Box::new(MysqlDatabaseEngine::new(db_config))
-            } else {
-                return Err(format!(
+        let mut engine: Box<dyn DatabaseEngine> = if trimmed.starts_with("mssql://")
+            || trimmed.starts_with("sqlserver://")
+        {
+            Box::new(MssqlDatabaseEngine::new(db_config))
+        } else if trimmed.starts_with("sqlite://")
+            || trimmed.starts_with("libsql://")
+            || trimmed.starts_with("file:")
+            || trimmed.starts_with("file://")
+        {
+            Box::new(LibsqlDatabaseEngine::new(db_config))
+        } else if trimmed.starts_with("postgres://") || trimmed.starts_with("postgresql://") {
+            Box::new(PostgresDatabaseEngine::new(db_config))
+        } else if trimmed.starts_with("clickhouse://") || trimmed.starts_with("clickhouse+https://")
+        {
+            Box::new(ClickHouseDatabaseEngine::new(db_config))
+        } else if trimmed.starts_with("mysql://") || trimmed.starts_with("mariadb://") {
+            Box::new(MysqlDatabaseEngine::new(db_config))
+        } else {
+            return Err(format!(
                     "Unsupported database URL protocol: '{}'. Expected postgres://, mysql://, sqlite://, libsql://, mssql://, or clickhouse://",
                     trimmed
                 ));
-            };
+        };
 
         tokio::time::timeout(std::time::Duration::from_secs(5), engine.connect())
             .await
             .map_err(|_| "Connection timed out after 5 seconds".to_string())?
             .map_err(|e| format!("Connection error: {}", e))?;
 
-        let is_healthy = tokio::time::timeout(std::time::Duration::from_secs(3), engine.health_check())
-            .await
-            .unwrap_or(false);
+        let is_healthy =
+            tokio::time::timeout(std::time::Duration::from_secs(3), engine.health_check())
+                .await
+                .unwrap_or(false);
 
         let dialect = engine.dialect().to_string();
         let _ = engine.disconnect().await;
@@ -285,4 +308,3 @@ mod tests {
         assert!(!ENGINES.contains_key("unit_test_mem_db"));
     }
 }
-

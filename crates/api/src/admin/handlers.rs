@@ -17,13 +17,13 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use axiom_core::{AxiomError, AuthContext};
+use axiom_core::{AuthContext, AxiomError};
 use axiom_db::DatabasePoolManager;
 use axiom_metadata::models::PermissionRecord;
 use axiom_metadata::store::MetadataStore;
 
 pub const SETUP_SESSION_TTL_SECS: i64 = 30 * 24 * 60 * 60; // 30 days initial admin setup session
-pub const LOGIN_SESSION_TTL_SECS: i64 = 7 * 24 * 60 * 60;  // 7 days standard admin login session
+pub const LOGIN_SESSION_TTL_SECS: i64 = 7 * 24 * 60 * 60; // 7 days standard admin login session
 
 /// Validates that an administrative identifier (database alias, role name, or API key name)
 /// is strictly lowercase alphanumeric with underscores or hyphens (`^[a-z0-9_-]+$`).
@@ -309,9 +309,13 @@ pub async fn reload_metadata(
         ));
     }
 
-    MetadataStore::sync_snapshot()
-        .await
-        .map_err(|e| AxiomError::new("METADATA_SYNC_FAILED", &e, StatusCode::INTERNAL_SERVER_ERROR))?;
+    MetadataStore::sync_snapshot().await.map_err(|e| {
+        AxiomError::new(
+            "METADATA_SYNC_FAILED",
+            &e,
+            StatusCode::INTERNAL_SERVER_ERROR,
+        )
+    })?;
 
     let snapshot = axiom_metadata::snapshot::get_snapshot();
     Ok(Json(json!({
@@ -413,9 +417,9 @@ pub async fn delete_key(
         ));
     }
 
-    let deleted = MetadataStore::delete_key(&name)
-        .await
-        .map_err(|e| AxiomError::new("KEY_DELETION_FAILED", &e, StatusCode::INTERNAL_SERVER_ERROR))?;
+    let deleted = MetadataStore::delete_key(&name).await.map_err(|e| {
+        AxiomError::new("KEY_DELETION_FAILED", &e, StatusCode::INTERNAL_SERVER_ERROR)
+    })?;
 
     if !deleted {
         return Err(AxiomError::new(
@@ -453,15 +457,13 @@ pub async fn rotate_key(
         ));
     }
 
-    let secret = MetadataStore::rotate_key(&name)
-        .await
-        .map_err(|e| {
-            if e.contains("not found") {
-                AxiomError::new("KEY_NOT_FOUND", &e, StatusCode::NOT_FOUND)
-            } else {
-                AxiomError::new("KEY_ROTATION_FAILED", &e, StatusCode::INTERNAL_SERVER_ERROR)
-            }
-        })?;
+    let secret = MetadataStore::rotate_key(&name).await.map_err(|e| {
+        if e.contains("not found") {
+            AxiomError::new("KEY_NOT_FOUND", &e, StatusCode::NOT_FOUND)
+        } else {
+            AxiomError::new("KEY_ROTATION_FAILED", &e, StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    })?;
 
     // Encode standard base64(name:secret) token payload for API client authentication
     let raw_token = format!("{}:{}", name, secret);
@@ -533,11 +535,16 @@ pub async fn add_database(
 
     let url_trimmed = payload.url.trim();
     let lookup_alias = payload.old_alias.as_deref().unwrap_or(&payload.alias);
-    let is_existing = axiom_metadata::snapshot::get_snapshot().databases.contains_key(lookup_alias);
+    let is_existing = axiom_metadata::snapshot::get_snapshot()
+        .databases
+        .contains_key(lookup_alias);
 
     // Determine the effective connection URL to test and save
     let effective_url = if is_existing && (url_trimmed.is_empty() || url_trimmed.contains('•')) {
-        if let Some(existing) = axiom_metadata::snapshot::get_snapshot().databases.get(lookup_alias) {
+        if let Some(existing) = axiom_metadata::snapshot::get_snapshot()
+            .databases
+            .get(lookup_alias)
+        {
             existing.url.clone()
         } else {
             return Err(AxiomError::new(
@@ -637,9 +644,13 @@ pub async fn delete_database(
         ));
     }
 
-    let deleted = MetadataStore::delete_database(&alias)
-        .await
-        .map_err(|e| AxiomError::new("DATABASE_DELETION_FAILED", &e, StatusCode::INTERNAL_SERVER_ERROR))?;
+    let deleted = MetadataStore::delete_database(&alias).await.map_err(|e| {
+        AxiomError::new(
+            "DATABASE_DELETION_FAILED",
+            &e,
+            StatusCode::INTERNAL_SERVER_ERROR,
+        )
+    })?;
 
     if !deleted {
         return Err(AxiomError::new(
@@ -679,7 +690,9 @@ pub async fn test_database(
         ));
     }
 
-    let exists = axiom_metadata::snapshot::get_snapshot().databases.contains_key(&alias);
+    let exists = axiom_metadata::snapshot::get_snapshot()
+        .databases
+        .contains_key(&alias);
 
     if !exists {
         return Err(AxiomError::new(
@@ -786,13 +799,9 @@ pub async fn create_role(
         })
         .collect();
 
-    MetadataStore::create_role(
-        role_name,
-        payload.description.as_deref(),
-        &permissions,
-    )
-    .await
-    .map_err(|e| AxiomError::new("ROLE_CREATION_FAILED", &e, StatusCode::BAD_REQUEST))?;
+    MetadataStore::create_role(role_name, payload.description.as_deref(), &permissions)
+        .await
+        .map_err(|e| AxiomError::new("ROLE_CREATION_FAILED", &e, StatusCode::BAD_REQUEST))?;
 
     Ok((
         StatusCode::CREATED,
@@ -839,13 +848,11 @@ pub async fn update_role(
             .collect()
     });
 
-    let updated = MetadataStore::update_role(
-        &name,
-        payload.description.as_deref(),
-        permissions,
-    )
-    .await
-    .map_err(|e| AxiomError::new("ROLE_UPDATE_FAILED", &e, StatusCode::INTERNAL_SERVER_ERROR))?;
+    let updated = MetadataStore::update_role(&name, payload.description.as_deref(), permissions)
+        .await
+        .map_err(|e| {
+            AxiomError::new("ROLE_UPDATE_FAILED", &e, StatusCode::INTERNAL_SERVER_ERROR)
+        })?;
 
     if !updated {
         return Err(AxiomError::new(
@@ -881,15 +888,17 @@ pub async fn delete_role(
         ));
     }
 
-    let deleted = MetadataStore::delete_role(&name)
-        .await
-        .map_err(|e| {
-            if e.contains("active API key") {
-                AxiomError::new("ROLE_IN_USE", &e, StatusCode::CONFLICT)
-            } else {
-                AxiomError::new("ROLE_DELETION_FAILED", &e, StatusCode::INTERNAL_SERVER_ERROR)
-            }
-        })?;
+    let deleted = MetadataStore::delete_role(&name).await.map_err(|e| {
+        if e.contains("active API key") {
+            AxiomError::new("ROLE_IN_USE", &e, StatusCode::CONFLICT)
+        } else {
+            AxiomError::new(
+                "ROLE_DELETION_FAILED",
+                &e,
+                StatusCode::INTERNAL_SERVER_ERROR,
+            )
+        }
+    })?;
 
     if !deleted {
         return Err(AxiomError::new(
@@ -981,7 +990,9 @@ pub async fn get_audit_log(
 
     let logs = MetadataStore::query_audit_log(limit, offset)
         .await
-        .map_err(|e| AxiomError::new("AUDIT_QUERY_FAILED", &e, StatusCode::INTERNAL_SERVER_ERROR))?;
+        .map_err(|e| {
+            AxiomError::new("AUDIT_QUERY_FAILED", &e, StatusCode::INTERNAL_SERVER_ERROR)
+        })?;
 
     let has_more = logs.len() == limit;
     let next_cursor = if has_more {
@@ -1045,16 +1056,34 @@ pub async fn get_metrics(
         }))
         .unwrap_or_default();
         return axum::response::Response::builder()
-            .header(axum::http::header::CONTENT_TYPE, "application/json; charset=utf-8")
+            .header(
+                axum::http::header::CONTENT_TYPE,
+                "application/json; charset=utf-8",
+            )
             .body(axum::body::Body::from(body))
-            .map_err(|e| AxiomError::new("HTTP_ERROR", &e.to_string(), StatusCode::INTERNAL_SERVER_ERROR));
+            .map_err(|e| {
+                AxiomError::new(
+                    "HTTP_ERROR",
+                    &e.to_string(),
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                )
+            });
     }
 
     let metrics_text = crate::metrics::MetricsEngine::render_prometheus();
     axum::response::Response::builder()
-        .header(axum::http::header::CONTENT_TYPE, "text/plain; version=0.0.4; charset=utf-8")
+        .header(
+            axum::http::header::CONTENT_TYPE,
+            "text/plain; version=0.0.4; charset=utf-8",
+        )
         .body(axum::body::Body::from(metrics_text))
-        .map_err(|e| AxiomError::new("HTTP_ERROR", &e.to_string(), StatusCode::INTERNAL_SERVER_ERROR))
+        .map_err(|e| {
+            AxiomError::new(
+                "HTTP_ERROR",
+                &e.to_string(),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            )
+        })
 }
 
 /// Detailed health check for administrators.
@@ -1094,9 +1123,10 @@ pub async fn get_admin_health(
         }
     }
 
-    let (cpu_percent, memory_used_mb) = tokio::task::spawn_blocking(crate::core::health::get_system_stats)
-        .await
-        .unwrap_or((0.0, 0));
+    let (cpu_percent, memory_used_mb) =
+        tokio::task::spawn_blocking(crate::core::health::get_system_stats)
+            .await
+            .unwrap_or((0.0, 0));
 
     Ok(Json(json!({
         "success": true,
@@ -1160,11 +1190,23 @@ pub async fn setup_account(
 
     MetadataStore::create_user(&payload.username, &payload.password)
         .await
-        .map_err(|e| AxiomError::new("USER_CREATION_FAILED", &e, StatusCode::INTERNAL_SERVER_ERROR))?;
+        .map_err(|e| {
+            AxiomError::new(
+                "USER_CREATION_FAILED",
+                &e,
+                StatusCode::INTERNAL_SERVER_ERROR,
+            )
+        })?;
 
     let session_id = MetadataStore::create_session(&payload.username, SETUP_SESSION_TTL_SECS)
         .await
-        .map_err(|e| AxiomError::new("SESSION_CREATION_FAILED", &e, StatusCode::INTERNAL_SERVER_ERROR))?;
+        .map_err(|e| {
+            AxiomError::new(
+                "SESSION_CREATION_FAILED",
+                &e,
+                StatusCode::INTERNAL_SERVER_ERROR,
+            )
+        })?;
 
     let config = axiom_core::ConfigManager::get();
     let is_https = headers
@@ -1177,9 +1219,7 @@ pub async fn setup_account(
 
     let cookie_header = format!(
         "axiom_session={}; HttpOnly; SameSite=Strict; Path=/; Max-Age={}{}",
-        session_id,
-        SETUP_SESSION_TTL_SECS,
-        secure_flag
+        session_id, SETUP_SESSION_TTL_SECS, secure_flag
     );
 
     Ok((
@@ -1192,7 +1232,7 @@ pub async fn setup_account(
                 "username": payload.username
             },
             "error": Value::Null
-        }))
+        })),
     ))
 }
 
@@ -1233,7 +1273,9 @@ pub async fn test_database_url(
     // Check if this URL is already registered under another database alias
     let snapshot = axiom_metadata::snapshot::get_snapshot();
     for (existing_alias, existing_db) in snapshot.databases.iter() {
-        if Some(existing_alias) != payload.alias.as_ref() && MetadataStore::urls_match(&existing_db.url, &effective_url) {
+        if Some(existing_alias) != payload.alias.as_ref()
+            && MetadataStore::urls_match(&existing_db.url, &effective_url)
+        {
             return Err(AxiomError::new(
                 "DATABASE_URL_ALREADY_EXISTS",
                 &format!(
@@ -1283,12 +1325,20 @@ pub async fn setup_database(
     // 1. Verify database connectivity before saving
     let dialect = DatabasePoolManager::test_url(&effective_url)
         .await
-        .map_err(|e| AxiomError::new("DATABASE_CONNECTION_FAILED", &format!("Connection failed: {}", e), StatusCode::BAD_REQUEST))?;
+        .map_err(|e| {
+            AxiomError::new(
+                "DATABASE_CONNECTION_FAILED",
+                &format!("Connection failed: {}", e),
+                StatusCode::BAD_REQUEST,
+            )
+        })?;
 
     // 2. Enforce uniqueness: Check if this URL is already registered
     let snapshot = axiom_metadata::snapshot::get_snapshot();
     for (existing_alias, existing_db) in snapshot.databases.iter() {
-        if existing_alias != &payload.alias && MetadataStore::urls_match(&existing_db.url, &effective_url) {
+        if existing_alias != &payload.alias
+            && MetadataStore::urls_match(&existing_db.url, &effective_url)
+        {
             return Err(AxiomError::new(
                 "DATABASE_URL_ALREADY_EXISTS",
                 &format!(
@@ -1309,7 +1359,13 @@ pub async fn setup_database(
         None,
     )
     .await
-    .map_err(|e| AxiomError::new("DATABASE_REGISTRATION_FAILED", &e, StatusCode::INTERNAL_SERVER_ERROR))?;
+    .map_err(|e| {
+        AxiomError::new(
+            "DATABASE_REGISTRATION_FAILED",
+            &e,
+            StatusCode::INTERNAL_SERVER_ERROR,
+        )
+    })?;
 
     Ok(Json(json!({
         "success": true,
@@ -1408,7 +1464,11 @@ pub async fn login_handler(
 ) -> Result<impl IntoResponse, AxiomError> {
     // 1. Cheap Input Format and Length Pre-validation (Zero CPU Burn)
     let username = payload.username.trim();
-    if username.is_empty() || username.len() > 128 || payload.password.is_empty() || payload.password.len() > 256 {
+    if username.is_empty()
+        || username.len() > 128
+        || payload.password.is_empty()
+        || payload.password.len() > 256
+    {
         return Err(AxiomError::new(
             "INVALID_INPUT",
             "Username or password does not meet length requirements",
@@ -1422,7 +1482,10 @@ pub async fn login_handler(
 
     // 2. Evaluate Trusted Device Cookie
     let mut is_trusted_device = false;
-    if let Some(cookie_hdr) = headers.get(axum::http::header::COOKIE).and_then(|h| h.to_str().ok()) {
+    if let Some(cookie_hdr) = headers
+        .get(axum::http::header::COOKIE)
+        .and_then(|h| h.to_str().ok())
+    {
         for cookie_part in cookie_hdr.split(';') {
             let trimmed = cookie_part.trim();
             if let Some(token_val) = trimmed.strip_prefix("axiom_trusted_device=") {
@@ -1501,7 +1564,13 @@ pub async fn login_handler(
 
     let session_id = MetadataStore::create_session(username, LOGIN_SESSION_TTL_SECS)
         .await
-        .map_err(|e| AxiomError::new("SESSION_CREATION_FAILED", &e, StatusCode::INTERNAL_SERVER_ERROR))?;
+        .map_err(|e| {
+            AxiomError::new(
+                "SESSION_CREATION_FAILED",
+                &e,
+                StatusCode::INTERNAL_SERVER_ERROR,
+            )
+        })?;
 
     let config = axiom_core::ConfigManager::get();
     let is_https = headers
@@ -1514,15 +1583,11 @@ pub async fn login_handler(
     let (trusted_token, _) = create_trusted_device_token(username, &device_secret);
     let cookie_header = format!(
         "axiom_session={}; HttpOnly; SameSite=Strict; Path=/; Max-Age={}{}",
-        session_id,
-        LOGIN_SESSION_TTL_SECS,
-        secure_flag
+        session_id, LOGIN_SESSION_TTL_SECS, secure_flag
     );
     let trusted_cookie_header = format!(
         "axiom_trusted_device={}; HttpOnly; SameSite=Strict; Path=/; Max-Age={}{}",
-        trusted_token,
-        TRUSTED_DEVICE_TTL_SECS,
-        secure_flag
+        trusted_token, TRUSTED_DEVICE_TTL_SECS, secure_flag
     );
 
     let mut headers_map = axum::http::HeaderMap::new();
@@ -1543,7 +1608,7 @@ pub async fn login_handler(
                 "username": username
             },
             "error": Value::Null
-        }))
+        })),
     ))
 }
 
@@ -1554,13 +1619,19 @@ pub async fn logout_handler(
     headers: axum::http::HeaderMap,
 ) -> Result<impl IntoResponse, AxiomError> {
     let mut token = None;
-    if let Some(auth_hdr) = headers.get(axum::http::header::AUTHORIZATION).and_then(|h| h.to_str().ok()) {
+    if let Some(auth_hdr) = headers
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|h| h.to_str().ok())
+    {
         if let Some(stripped) = auth_hdr.strip_prefix("Bearer ") {
             token = Some(stripped.to_string());
         }
     }
     if token.is_none() {
-        if let Some(cookie_hdr) = headers.get(axum::http::header::COOKIE).and_then(|h| h.to_str().ok()) {
+        if let Some(cookie_hdr) = headers
+            .get(axum::http::header::COOKIE)
+            .and_then(|h| h.to_str().ok())
+        {
             for part in cookie_hdr.split(';') {
                 let trimmed = part.trim();
                 if let Some(val) = trimmed.strip_prefix("axiom_session=") {
@@ -1585,7 +1656,7 @@ pub async fn logout_handler(
                 "message": "Logged out successfully"
             },
             "error": Value::Null
-        }))
+        })),
     ))
 }
 
@@ -1603,9 +1674,9 @@ pub async fn list_users_handler(
         ));
     }
 
-    let users = MetadataStore::list_users()
-        .await
-        .map_err(|e| AxiomError::new("USERS_FETCH_FAILED", &e, StatusCode::INTERNAL_SERVER_ERROR))?;
+    let users = MetadataStore::list_users().await.map_err(|e| {
+        AxiomError::new("USERS_FETCH_FAILED", &e, StatusCode::INTERNAL_SERVER_ERROR)
+    })?;
 
     Ok(Json(json!({
         "success": true,
@@ -1721,14 +1792,24 @@ pub async fn connect_cluster_peer(
     let config = axiom_core::ConfigManager::get();
     let my_advertise_url = format!(
         "http://{}:{}",
-        if config.server.host == "0.0.0.0" { "127.0.0.1" } else { &config.server.host },
+        if config.server.host == "0.0.0.0" {
+            "127.0.0.1"
+        } else {
+            &config.server.host
+        },
         config.server.port
     );
 
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(3))
         .build()
-        .map_err(|e| AxiomError::new("CLIENT_INIT_FAILED", &e.to_string(), StatusCode::INTERNAL_SERVER_ERROR))?;
+        .map_err(|e| {
+            AxiomError::new(
+                "CLIENT_INIT_FAILED",
+                &e.to_string(),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            )
+        })?;
 
     let handshake_payload = json!({
         "node_id": my_node_id,
@@ -1766,10 +1847,8 @@ pub async fn connect_cluster_peer(
         ));
     }
 
-    let handshake_res: crate::cluster::handlers::HandshakeResponse = resp
-        .json()
-        .await
-        .map_err(|e| {
+    let handshake_res: crate::cluster::handlers::HandshakeResponse =
+        resp.json().await.map_err(|e| {
             AxiomError::new(
                 "INVALID_HANDSHAKE_RESPONSE",
                 &format!("Malformed response from peer: {}", e),
@@ -1786,7 +1865,9 @@ pub async fn connect_cluster_peer(
         node_id: handshake_res.node_id.clone(),
         moniker: req.moniker.unwrap_or(handshake_res.moniker),
         url: target_url,
-        shared_secret_hash: blake3::hash(req.cluster_secret.as_bytes()).as_bytes().to_vec(),
+        shared_secret_hash: blake3::hash(req.cluster_secret.as_bytes())
+            .as_bytes()
+            .to_vec(),
         status: "connected".to_string(),
         last_ping_ms: latency_ms,
         last_seen_at: now_unix,
@@ -1854,7 +1935,13 @@ pub async fn update_cluster_peer(
     let mut peer = MetadataStore::get_peer(&node_id)
         .await
         .map_err(|e| AxiomError::new("METADATA_ERROR", &e, StatusCode::INTERNAL_SERVER_ERROR))?
-        .ok_or_else(|| AxiomError::new("PEER_NOT_FOUND", "Peer node not found", StatusCode::NOT_FOUND))?;
+        .ok_or_else(|| {
+            AxiomError::new(
+                "PEER_NOT_FOUND",
+                "Peer node not found",
+                StatusCode::NOT_FOUND,
+            )
+        })?;
 
     if let Some(m) = req.moniker {
         let trimmed = m.trim();
@@ -1904,21 +1991,36 @@ pub async fn ping_cluster_peer(
     let mut peer = MetadataStore::get_peer(&node_id)
         .await
         .map_err(|e| AxiomError::new("METADATA_ERROR", &e, StatusCode::INTERNAL_SERVER_ERROR))?
-        .ok_or_else(|| AxiomError::new("PEER_NOT_FOUND", "Peer node not found", StatusCode::NOT_FOUND))?;
+        .ok_or_else(|| {
+            AxiomError::new(
+                "PEER_NOT_FOUND",
+                "Peer node not found",
+                StatusCode::NOT_FOUND,
+            )
+        })?;
 
     let identity = MetadataStore::get_or_create_cluster_identity()
         .await
         .map_err(|e| AxiomError::new("CLUSTER_ERROR", &e, StatusCode::INTERNAL_SERVER_ERROR))?;
     let (my_node_id, _moniker, cluster_secret) = identity;
 
-    let target_url = format!("{}/internal/v1/cluster/ping", peer.url.trim_end_matches('/'));
+    let target_url = format!(
+        "{}/internal/v1/cluster/ping",
+        peer.url.trim_end_matches('/')
+    );
     let (node_header, ts_header, nonce_header, sig_header) =
         crate::cluster::signing::sign_outbound_packet(&my_node_id, &cluster_secret, b"");
 
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(3))
         .build()
-        .map_err(|e| AxiomError::new("CLIENT_INIT_FAILED", &e.to_string(), StatusCode::INTERNAL_SERVER_ERROR))?;
+        .map_err(|e| {
+            AxiomError::new(
+                "CLIENT_INIT_FAILED",
+                &e.to_string(),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            )
+        })?;
 
     let start = std::time::Instant::now();
     let res = client
@@ -2003,10 +2105,18 @@ mod tests {
         assert!(!verify_trusted_device_token(&token, "attacker", secret));
 
         // Tampered secret fails
-        assert!(!verify_trusted_device_token(&token, username, "wrong_secret"));
+        assert!(!verify_trusted_device_token(
+            &token,
+            username,
+            "wrong_secret"
+        ));
 
         // Malformed token fails
-        assert!(!verify_trusted_device_token("garbage.token", username, secret));
+        assert!(!verify_trusted_device_token(
+            "garbage.token",
+            username,
+            secret
+        ));
     }
 
     #[test]
@@ -2042,14 +2152,17 @@ mod tests {
         assert_eq!(default_url, "sqlite://data/mydb.db");
 
         // 2. LibSQL / SQLite with relative filename puts it in data/
-        let rel_url = resolve_and_sanitize_db_url("mydb", "my_custom.db", Some("libsql"), None).unwrap();
+        let rel_url =
+            resolve_and_sanitize_db_url("mydb", "my_custom.db", Some("libsql"), None).unwrap();
         assert_eq!(rel_url, "sqlite://data/my_custom.db");
 
         // 3. LibSQL / SQLite with data/ prefix stays intact
-        let in_data = resolve_and_sanitize_db_url("mydb", "data/nested.db", Some("libsql"), None).unwrap();
+        let in_data =
+            resolve_and_sanitize_db_url("mydb", "data/nested.db", Some("libsql"), None).unwrap();
         assert_eq!(in_data, "sqlite://data/nested.db");
 
-        let sqlite_in_data = resolve_and_sanitize_db_url("mydb", "sqlite://data/nested.db", None, None).unwrap();
+        let sqlite_in_data =
+            resolve_and_sanitize_db_url("mydb", "sqlite://data/nested.db", None, None).unwrap();
         assert_eq!(sqlite_in_data, "sqlite://data/nested.db");
 
         // 4. Memory databases permitted
@@ -2074,14 +2187,18 @@ mod tests {
             Some("jwt_token_123"),
         )
         .unwrap();
-        assert_eq!(turso_existing, "libsql://my-org.turso.io?tls=true&authToken=jwt_token_123");
+        assert_eq!(
+            turso_existing,
+            "libsql://my-org.turso.io?tls=true&authToken=jwt_token_123"
+        );
 
         // 7. Security: Directory traversal rejected
         let trav = resolve_and_sanitize_db_url("mydb", "../evil.db", Some("libsql"), None);
         assert!(trav.is_err());
         assert_eq!(trav.unwrap_err().code, "FORBIDDEN_PATH");
 
-        let trav_nested = resolve_and_sanitize_db_url("mydb", "data/../../evil.db", Some("libsql"), None);
+        let trav_nested =
+            resolve_and_sanitize_db_url("mydb", "data/../../evil.db", Some("libsql"), None);
         assert!(trav_nested.is_err());
         assert_eq!(trav_nested.unwrap_err().code, "FORBIDDEN_PATH");
 
@@ -2101,5 +2218,3 @@ mod tests {
         assert_eq!(empty_pg.unwrap_err().code, "INVALID_URL");
     }
 }
-
-

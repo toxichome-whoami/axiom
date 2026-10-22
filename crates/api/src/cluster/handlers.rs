@@ -14,9 +14,9 @@ use bytes::Bytes;
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use axiom_metadata::{get_snapshot, models::*, MetadataStore};
 use crate::cluster::signing::{constant_time_str_eq, verify_inbound_packet};
 use crate::security::ban_list::BanList;
+use axiom_metadata::{get_snapshot, models::*, MetadataStore};
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct HandshakeRequest {
@@ -154,7 +154,10 @@ pub async fn handle_ping(headers: HeaderMap) -> impl IntoResponse {
         }
     };
 
-    let signature = match headers.get("X-Axiom-Signature").and_then(|h| h.to_str().ok()) {
+    let signature = match headers
+        .get("X-Axiom-Signature")
+        .and_then(|h| h.to_str().ok())
+    {
         Some(s) => s,
         None => {
             return (
@@ -164,7 +167,9 @@ pub async fn handle_ping(headers: HeaderMap) -> impl IntoResponse {
         }
     };
 
-    if let Err(err) = verify_inbound_packet(node_id, &cluster_secret, timestamp, nonce, b"", signature) {
+    if let Err(err) =
+        verify_inbound_packet(node_id, &cluster_secret, timestamp, nonce, b"", signature)
+    {
         return (
             StatusCode::UNAUTHORIZED,
             Json(serde_json::json!({ "error": err.to_string() })),
@@ -233,7 +238,10 @@ pub async fn handle_event(headers: HeaderMap, body: Bytes) -> impl IntoResponse 
         }
     };
 
-    let signature = match headers.get("X-Axiom-Signature").and_then(|h| h.to_str().ok()) {
+    let signature = match headers
+        .get("X-Axiom-Signature")
+        .and_then(|h| h.to_str().ok())
+    {
         Some(s) => s,
         None => {
             return (
@@ -243,7 +251,9 @@ pub async fn handle_event(headers: HeaderMap, body: Bytes) -> impl IntoResponse 
         }
     };
 
-    if let Err(err) = verify_inbound_packet(node_id, &cluster_secret, timestamp, nonce, &body, signature) {
+    if let Err(err) =
+        verify_inbound_packet(node_id, &cluster_secret, timestamp, nonce, &body, signature)
+    {
         return (
             StatusCode::UNAUTHORIZED,
             Json(serde_json::json!({ "error": err.to_string() })),
@@ -407,7 +417,10 @@ pub async fn handle_sync(headers: HeaderMap) -> impl IntoResponse {
         }
     };
 
-    let signature = match headers.get("X-Axiom-Signature").and_then(|h| h.to_str().ok()) {
+    let signature = match headers
+        .get("X-Axiom-Signature")
+        .and_then(|h| h.to_str().ok())
+    {
         Some(s) => s,
         None => {
             return (
@@ -417,7 +430,9 @@ pub async fn handle_sync(headers: HeaderMap) -> impl IntoResponse {
         }
     };
 
-    if let Err(err) = verify_inbound_packet(node_id, &cluster_secret, timestamp, nonce, b"", signature) {
+    if let Err(err) =
+        verify_inbound_packet(node_id, &cluster_secret, timestamp, nonce, b"", signature)
+    {
         return (
             StatusCode::UNAUTHORIZED,
             Json(serde_json::json!({ "error": err.to_string() })),

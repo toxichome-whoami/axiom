@@ -11,10 +11,11 @@ use reqwest::{header, Client};
 use serde_json::Value;
 use url::Url;
 
-use axiom_core::config::schema::DatabaseDefConfig;
 use crate::engines::base::{
-    ColumnInfo, CreateColumnRequest, DatabaseEngine, EngineError, ForeignKeyInfo, QueryResult, TableInfo,
+    ColumnInfo, CreateColumnRequest, DatabaseEngine, EngineError, ForeignKeyInfo, QueryResult,
+    TableInfo,
 };
+use axiom_core::config::schema::DatabaseDefConfig;
 
 pub struct ClickHouseDatabaseEngine {
     config: DatabaseDefConfig,
@@ -41,17 +42,18 @@ impl ClickHouseDatabaseEngine {
 impl DatabaseEngine for ClickHouseDatabaseEngine {
     async fn connect(&mut self) -> Result<(), EngineError> {
         let parsed_url = Url::parse(&self.config.url)?;
-        
-        let scheme = if parsed_url.scheme() == "clickhouse+https" || parsed_url.scheme() == "https" {
+
+        let scheme = if parsed_url.scheme() == "clickhouse+https" || parsed_url.scheme() == "https"
+        {
             "https"
         } else {
             "http"
         };
         let host = parsed_url.host_str().unwrap_or("localhost");
         let port = parsed_url.port().unwrap_or(8123);
-        
+
         self.endpoint = format!("{}://{}:{}", scheme, host, port);
-        
+
         let path = parsed_url.path().trim_start_matches('/');
         if !path.is_empty() {
             self.database = path.to_string();
@@ -77,8 +79,12 @@ impl DatabaseEngine for ClickHouseDatabaseEngine {
             .default_headers(headers)
             .tcp_nodelay(true)
             .pool_max_idle_per_host(self.config.pool_max as usize)
-            .pool_idle_timeout(std::time::Duration::from_secs(self.config.idle_timeout as u64))
-            .timeout(std::time::Duration::from_secs(self.config.connection_timeout as u64))
+            .pool_idle_timeout(std::time::Duration::from_secs(
+                self.config.idle_timeout as u64,
+            ))
+            .timeout(std::time::Duration::from_secs(
+                self.config.connection_timeout as u64,
+            ))
             .build()
             .map_err(|e| EngineError::Connection(e.to_string()))?;
 
@@ -132,8 +138,10 @@ impl DatabaseEngine for ClickHouseDatabaseEngine {
 
     async fn count_tables(&self) -> Result<i64, EngineError> {
         let sql = "SELECT count() as count FROM system.tables WHERE database = ?";
-        let result = self.execute(sql, &[Value::String(self.database.clone())]).await?;
-        
+        let result = self
+            .execute(sql, &[Value::String(self.database.clone())])
+            .await?;
+
         if let Some(rows) = result.rows {
             if let Some(row) = rows.first() {
                 if let Some(count) = row.get("count") {
@@ -150,13 +158,29 @@ impl DatabaseEngine for ClickHouseDatabaseEngine {
 
     async fn describe_table(&self, table: &str) -> Result<Vec<ColumnInfo>, EngineError> {
         let sql = "SELECT name as column_name, type as data_type FROM system.columns WHERE database = ? AND table = ?";
-        let result = self.execute(sql, &[Value::String(self.database.clone()), Value::String(table.to_string())]).await?;
-        
+        let result = self
+            .execute(
+                sql,
+                &[
+                    Value::String(self.database.clone()),
+                    Value::String(table.to_string()),
+                ],
+            )
+            .await?;
+
         let mut columns = Vec::new();
         if let Some(rows) = result.rows {
             for row in rows {
-                let name = row.get("column_name").and_then(|v| v.as_str()).unwrap_or_default().to_string();
-                let data_type = row.get("data_type").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+                let name = row
+                    .get("column_name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string();
+                let data_type = row
+                    .get("data_type")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string();
                 let is_nullable = data_type.starts_with("Nullable");
                 columns.push(ColumnInfo {
                     name,
@@ -174,7 +198,11 @@ impl DatabaseEngine for ClickHouseDatabaseEngine {
         Ok(vec![])
     }
 
-    async fn execute(&self, sql: &str, params: &[serde_json::Value]) -> Result<QueryResult, EngineError> {
+    async fn execute(
+        &self,
+        sql: &str,
+        params: &[serde_json::Value],
+    ) -> Result<QueryResult, EngineError> {
         let is_mutation = sql.trim().to_uppercase().starts_with("INSERT")
             || sql.trim().to_uppercase().starts_with("ALTER")
             || sql.trim().to_uppercase().starts_with("DROP")
@@ -198,21 +226,21 @@ impl DatabaseEngine for ClickHouseDatabaseEngine {
                         (format!("{{{}:Float64}}", p_name), n.to_string())
                     }
                 }
-                Value::Bool(b) => {
-                    (format!("{{{}:UInt8}}", p_name), if *b { "1".to_string() } else { "0".to_string() })
-                }
+                Value::Bool(b) => (
+                    format!("{{{}:UInt8}}", p_name),
+                    if *b { "1".to_string() } else { "0".to_string() },
+                ),
                 Value::Null => {
                     // WHY Nullable(Nothing): ClickHouse infers the concrete null type from the
                     // target column's schema. Hardcoding Nullable(String) causes type coercion
                     // errors when inserting NULL into Int64/Float64/Date columns.
-                    (format!("{{{}:Nullable(Nothing)}}", p_name), "\\N".to_string())
+                    (
+                        format!("{{{}:Nullable(Nothing)}}", p_name),
+                        "\\N".to_string(),
+                    )
                 }
-                Value::String(s) => {
-                    (format!("{{{}:String}}", p_name), s.clone())
-                }
-                _ => {
-                    (format!("{{{}:String}}", p_name), param.to_string())
-                }
+                Value::String(s) => (format!("{{{}:String}}", p_name), s.clone()),
+                _ => (format!("{{{}:String}}", p_name), param.to_string()),
             };
 
             final_sql.push_str(&placeholder);
@@ -226,9 +254,15 @@ impl DatabaseEngine for ClickHouseDatabaseEngine {
             final_sql.push_str(next_part);
         }
 
-        let mut url = format!("{}?database={}", self.endpoint, urlencoding::encode(&self.database));
+        let mut url = format!(
+            "{}?database={}",
+            self.endpoint,
+            urlencoding::encode(&self.database)
+        );
         for (k, v) in &query_params {
-            if k == "database" { continue; }
+            if k == "database" {
+                continue;
+            }
             url.push('&');
             url.push_str(k);
             url.push('=');
@@ -244,10 +278,16 @@ impl DatabaseEngine for ClickHouseDatabaseEngine {
 
         req = req.body(final_sql);
 
-        let res = req.send().await.map_err(|e| EngineError::Execution(e.to_string()))?;
-        
+        let res = req
+            .send()
+            .await
+            .map_err(|e| EngineError::Execution(e.to_string()))?;
+
         if !res.status().is_success() {
-            let err = res.text().await.map_err(|e| EngineError::Execution(e.to_string()))?;
+            let err = res
+                .text()
+                .await
+                .map_err(|e| EngineError::Execution(e.to_string()))?;
             return Err(EngineError::Execution(format!("ClickHouse Error: {}", err)));
         }
 
@@ -262,8 +302,11 @@ impl DatabaseEngine for ClickHouseDatabaseEngine {
             });
         }
 
-        let mut body: Value = res.json().await.map_err(|e| EngineError::Execution(e.to_string()))?;
-        
+        let mut body: Value = res
+            .json()
+            .await
+            .map_err(|e| EngineError::Execution(e.to_string()))?;
+
         let mut column_names = Vec::new();
         if let Some(meta) = body.get("meta").and_then(|m| m.as_array()) {
             for col in meta {
@@ -306,7 +349,11 @@ impl DatabaseEngine for ClickHouseDatabaseEngine {
     }
 
     async fn add_column(&self, table: &str, req: &CreateColumnRequest) -> Result<(), EngineError> {
-        let col_name_clean: String = req.name.chars().filter(|c| c.is_alphanumeric() || *c == '_').collect();
+        let col_name_clean: String = req
+            .name
+            .chars()
+            .filter(|c| c.is_alphanumeric() || *c == '_')
+            .collect();
         if col_name_clean.is_empty() {
             return Err(EngineError::Schema("Invalid column name".into()));
         }
@@ -322,7 +369,10 @@ impl DatabaseEngine for ClickHouseDatabaseEngine {
             type_def = format!("Nullable({})", type_def);
         }
 
-        let mut sql = format!("ALTER TABLE {} ADD COLUMN {} {}", escaped_table, escaped_col, type_def);
+        let mut sql = format!(
+            "ALTER TABLE {} ADD COLUMN {} {}",
+            escaped_table, escaped_col, type_def
+        );
 
         if let Some(ref def_val) = req.default_value {
             let trimmed = def_val.trim();

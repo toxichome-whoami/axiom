@@ -6,11 +6,12 @@
  * Last structural change: Phase 0 cleanup adopting EngineError to eliminate hot-path Box allocations (Debt #2).
  */
 
-use axiom_core::config::schema::DatabaseDefConfig;
 use crate::engines::base::{
-    ColumnInfo, CreateColumnRequest, DatabaseEngine, EngineError, ForeignKeyInfo, QueryResult, TableInfo,
+    ColumnInfo, CreateColumnRequest, DatabaseEngine, EngineError, ForeignKeyInfo, QueryResult,
+    TableInfo,
 };
 use async_trait::async_trait;
+use axiom_core::config::schema::DatabaseDefConfig;
 use serde_json::Value;
 use sqlx::{mysql::MySqlPoolOptions, Column, MySqlPool, Row, TypeInfo};
 
@@ -45,7 +46,8 @@ impl MySqlColKind {
             "JSON" => MySqlColKind::Json,
             "TIMESTAMP" | "DATETIME" => MySqlColKind::DateTime,
             "DATE" => MySqlColKind::Date,
-            "VARCHAR" | "CHAR" | "TEXT" | "TINYTEXT" | "MEDIUMTEXT" | "LONGTEXT" | "ENUM" | "SET" => MySqlColKind::String,
+            "VARCHAR" | "CHAR" | "TEXT" | "TINYTEXT" | "MEDIUMTEXT" | "LONGTEXT" | "ENUM"
+            | "SET" => MySqlColKind::String,
             _ => MySqlColKind::Fallback,
         }
     }
@@ -69,7 +71,10 @@ impl MysqlDatabaseEngine {
 impl DatabaseEngine for MysqlDatabaseEngine {
     async fn connect(&mut self) -> Result<(), EngineError> {
         if self.pool.is_none() {
-            let connect_options = self.config.url.parse::<sqlx::mysql::MySqlConnectOptions>()
+            let connect_options = self
+                .config
+                .url
+                .parse::<sqlx::mysql::MySqlConnectOptions>()
                 .map_err(|e| EngineError::Connection(e.to_string()))?
                 .statement_cache_capacity(1024);
 
@@ -113,7 +118,10 @@ impl DatabaseEngine for MysqlDatabaseEngine {
         cursor: Option<String>,
         limit: usize,
     ) -> Result<Vec<TableInfo>, EngineError> {
-        let pool = self.pool.as_ref().ok_or_else(|| EngineError::Connection("Not connected".into()))?;
+        let pool = self
+            .pool
+            .as_ref()
+            .ok_or_else(|| EngineError::Connection("Not connected".into()))?;
 
         // MySQL parameter binding uses '?' placeholder
         let query_str = if cursor.is_some() {
@@ -137,7 +145,10 @@ impl DatabaseEngine for MysqlDatabaseEngine {
             query = query.bind(c);
         }
 
-        let rows = query.fetch_all(pool).await.map_err(|e| EngineError::Execution(e.to_string()))?;
+        let rows = query
+            .fetch_all(pool)
+            .await
+            .map_err(|e| EngineError::Execution(e.to_string()))?;
         let mut tables = Vec::new();
 
         for row in rows {
@@ -155,7 +166,10 @@ impl DatabaseEngine for MysqlDatabaseEngine {
     }
 
     async fn count_tables(&self) -> Result<i64, EngineError> {
-        let pool = self.pool.as_ref().ok_or_else(|| EngineError::Connection("Not connected".into()))?;
+        let pool = self
+            .pool
+            .as_ref()
+            .ok_or_else(|| EngineError::Connection("Not connected".into()))?;
         let row = sqlx::query(
             "SELECT COUNT(*) as cnt FROM information_schema.tables WHERE table_schema = DATABASE()",
         )
@@ -166,11 +180,11 @@ impl DatabaseEngine for MysqlDatabaseEngine {
         Ok(count)
     }
 
-    async fn describe_table(
-        &self,
-        table: &str,
-    ) -> Result<Vec<ColumnInfo>, EngineError> {
-        let pool = self.pool.as_ref().ok_or_else(|| EngineError::Connection("Not connected".into()))?;
+    async fn describe_table(&self, table: &str) -> Result<Vec<ColumnInfo>, EngineError> {
+        let pool = self
+            .pool
+            .as_ref()
+            .ok_or_else(|| EngineError::Connection("Not connected".into()))?;
 
         let rows = sqlx::query(
             "SELECT COLUMN_NAME as column_name, DATA_TYPE as data_type, \
@@ -196,11 +210,11 @@ impl DatabaseEngine for MysqlDatabaseEngine {
         Ok(columns)
     }
 
-    async fn get_foreign_keys(
-        &self,
-        table: &str,
-    ) -> Result<Vec<ForeignKeyInfo>, EngineError> {
-        let pool = self.pool.as_ref().ok_or_else(|| EngineError::Connection("Not connected".into()))?;
+    async fn get_foreign_keys(&self, table: &str) -> Result<Vec<ForeignKeyInfo>, EngineError> {
+        let pool = self
+            .pool
+            .as_ref()
+            .ok_or_else(|| EngineError::Connection("Not connected".into()))?;
 
         let rows = sqlx::query(
             "SELECT COLUMN_NAME as column_name, \
@@ -235,26 +249,49 @@ impl DatabaseEngine for MysqlDatabaseEngine {
         sql: &str,
         params: &[serde_json::Value],
     ) -> Result<QueryResult, EngineError> {
-        let pool = self.pool.as_ref().ok_or_else(|| EngineError::Connection("Not connected".into()))?;
+        let pool = self
+            .pool
+            .as_ref()
+            .ok_or_else(|| EngineError::Connection("Not connected".into()))?;
 
         let first_word = sql.split_whitespace().next().unwrap_or("").to_uppercase();
         let is_mutation = matches!(
             first_word.as_str(),
-            "INSERT" | "UPDATE" | "DELETE" | "CREATE" | "DROP" | "ALTER" | "TRUNCATE" | "REPLACE" | "SET" | "GRANT" | "REVOKE"
+            "INSERT"
+                | "UPDATE"
+                | "DELETE"
+                | "CREATE"
+                | "DROP"
+                | "ALTER"
+                | "TRUNCATE"
+                | "REPLACE"
+                | "SET"
+                | "GRANT"
+                | "REVOKE"
         );
 
         let mut query = sqlx::query(sql);
 
         for param in params {
             match param {
-                Value::String(s) => { query = query.bind(s); }
-                Value::Number(n) => {
-                    if let Some(i) = n.as_i64() { query = query.bind(i); }
-                    else if let Some(f) = n.as_f64() { query = query.bind(f); }
-                    else { query = query.bind(n.to_string()); }
+                Value::String(s) => {
+                    query = query.bind(s);
                 }
-                Value::Bool(b) => { query = query.bind(b); }
-                Value::Null => { query = query.bind(Option::<String>::None); }
+                Value::Number(n) => {
+                    if let Some(i) = n.as_i64() {
+                        query = query.bind(i);
+                    } else if let Some(f) = n.as_f64() {
+                        query = query.bind(f);
+                    } else {
+                        query = query.bind(n.to_string());
+                    }
+                }
+                Value::Bool(b) => {
+                    query = query.bind(b);
+                }
+                Value::Null => {
+                    query = query.bind(Option::<String>::None);
+                }
                 Value::Object(_) | Value::Array(_) => {
                     query = query.bind(sqlx::types::Json(param));
                 }
@@ -262,7 +299,10 @@ impl DatabaseEngine for MysqlDatabaseEngine {
         }
 
         if is_mutation {
-            let result = query.execute(pool).await.map_err(|e| EngineError::Execution(e.to_string()))?;
+            let result = query
+                .execute(pool)
+                .await
+                .map_err(|e| EngineError::Execution(e.to_string()))?;
             return Ok(QueryResult {
                 success: true,
                 columns: None,
@@ -299,7 +339,9 @@ impl DatabaseEngine for MysqlDatabaseEngine {
                 let val = match column_kinds[idx] {
                     MySqlColKind::String => {
                         if let Ok(Some(s)) = row.try_get::<Option<String>, _>(idx) {
-                            if (s.starts_with('{') && s.ends_with('}')) || (s.starts_with('[') && s.ends_with(']')) {
+                            if (s.starts_with('{') && s.ends_with('}'))
+                                || (s.starts_with('[') && s.ends_with(']'))
+                            {
                                 serde_json::from_str::<Value>(&s).unwrap_or(Value::String(s))
                             } else {
                                 Value::String(s)
@@ -340,20 +382,25 @@ impl DatabaseEngine for MysqlDatabaseEngine {
                     }
                     MySqlColKind::Float64 => {
                         if let Ok(Some(f)) = row.try_get::<Option<f64>, _>(idx) {
-                            serde_json::Number::from_f64(f).map(Value::Number).unwrap_or(Value::Null)
+                            serde_json::Number::from_f64(f)
+                                .map(Value::Number)
+                                .unwrap_or(Value::Null)
                         } else {
                             Value::Null
                         }
                     }
                     MySqlColKind::Float32 => {
                         if let Ok(Some(f)) = row.try_get::<Option<f32>, _>(idx) {
-                            serde_json::Number::from_f64(f as f64).map(Value::Number).unwrap_or(Value::Null)
+                            serde_json::Number::from_f64(f as f64)
+                                .map(Value::Number)
+                                .unwrap_or(Value::Null)
                         } else {
                             Value::Null
                         }
                     }
                     MySqlColKind::Numeric => {
-                        if let Ok(Some(dec)) = row.try_get::<Option<rust_decimal::Decimal>, _>(idx) {
+                        if let Ok(Some(dec)) = row.try_get::<Option<rust_decimal::Decimal>, _>(idx)
+                        {
                             if let Ok(num) = dec.to_string().parse::<serde_json::Number>() {
                                 Value::Number(num)
                             } else {
@@ -366,7 +413,9 @@ impl DatabaseEngine for MysqlDatabaseEngine {
                                 Value::String(s)
                             }
                         } else if let Ok(Some(f)) = row.try_get::<Option<f64>, _>(idx) {
-                            serde_json::Number::from_f64(f).map(Value::Number).unwrap_or(Value::Null)
+                            serde_json::Number::from_f64(f)
+                                .map(Value::Number)
+                                .unwrap_or(Value::Null)
                         } else {
                             Value::Null
                         }
@@ -379,9 +428,13 @@ impl DatabaseEngine for MysqlDatabaseEngine {
                         }
                     }
                     MySqlColKind::DateTime => {
-                        if let Ok(Some(dt)) = row.try_get::<Option<chrono::DateTime<chrono::Utc>>, _>(idx) {
+                        if let Ok(Some(dt)) =
+                            row.try_get::<Option<chrono::DateTime<chrono::Utc>>, _>(idx)
+                        {
                             Value::String(dt.to_rfc3339())
-                        } else if let Ok(Some(dt)) = row.try_get::<Option<chrono::NaiveDateTime>, _>(idx) {
+                        } else if let Ok(Some(dt)) =
+                            row.try_get::<Option<chrono::NaiveDateTime>, _>(idx)
+                        {
                             Value::String(dt.to_string())
                         } else {
                             Value::Null
@@ -395,14 +448,17 @@ impl DatabaseEngine for MysqlDatabaseEngine {
                         }
                     }
                     MySqlColKind::Fallback => {
-                        if let Ok(Some(dec)) = row.try_get::<Option<rust_decimal::Decimal>, _>(idx) {
+                        if let Ok(Some(dec)) = row.try_get::<Option<rust_decimal::Decimal>, _>(idx)
+                        {
                             if let Ok(num) = dec.to_string().parse::<serde_json::Number>() {
                                 Value::Number(num)
                             } else {
                                 Value::String(dec.to_string())
                             }
                         } else if let Ok(Some(s)) = row.try_get::<Option<String>, _>(idx) {
-                            if (s.starts_with('{') && s.ends_with('}')) || (s.starts_with('[') && s.ends_with(']')) {
+                            if (s.starts_with('{') && s.ends_with('}'))
+                                || (s.starts_with('[') && s.ends_with(']'))
+                            {
                                 serde_json::from_str::<Value>(&s).unwrap_or(Value::String(s))
                             } else {
                                 Value::String(s)
@@ -412,7 +468,9 @@ impl DatabaseEngine for MysqlDatabaseEngine {
                         } else if let Ok(Some(i)) = row.try_get::<Option<i32>, _>(idx) {
                             Value::Number(i.into())
                         } else if let Ok(Some(f)) = row.try_get::<Option<f64>, _>(idx) {
-                            serde_json::Number::from_f64(f).map(Value::Number).unwrap_or(Value::Null)
+                            serde_json::Number::from_f64(f)
+                                .map(Value::Number)
+                                .unwrap_or(Value::Null)
                         } else if let Ok(Some(b)) = row.try_get::<Option<bool>, _>(idx) {
                             Value::Bool(b)
                         } else {
@@ -446,9 +504,16 @@ impl DatabaseEngine for MysqlDatabaseEngine {
     }
 
     async fn add_column(&self, table: &str, req: &CreateColumnRequest) -> Result<(), EngineError> {
-        let pool = self.pool.as_ref().ok_or_else(|| EngineError::Connection("Not connected".into()))?;
+        let pool = self
+            .pool
+            .as_ref()
+            .ok_or_else(|| EngineError::Connection("Not connected".into()))?;
 
-        let col_name_clean: String = req.name.chars().filter(|c| c.is_alphanumeric() || *c == '_').collect();
+        let col_name_clean: String = req
+            .name
+            .chars()
+            .filter(|c| c.is_alphanumeric() || *c == '_')
+            .collect();
         if col_name_clean.is_empty() {
             return Err(EngineError::Schema("Invalid column name".into()));
         }
@@ -457,7 +522,10 @@ impl DatabaseEngine for MysqlDatabaseEngine {
         let escaped_col = format!("`{}`", col_name_clean.replace('`', "``"));
 
         let type_def = &req.data_type;
-        let mut sql = format!("ALTER TABLE {} ADD COLUMN {} {}", escaped_table, escaped_col, type_def);
+        let mut sql = format!(
+            "ALTER TABLE {} ADD COLUMN {} {}",
+            escaped_table, escaped_col, type_def
+        );
 
         if req.primary_key {
             sql.push_str(" PRIMARY KEY");
@@ -495,14 +563,20 @@ impl DatabaseEngine for MysqlDatabaseEngine {
             let fk_table = fk.table.trim();
             let fk_col = fk.column.trim();
             if !fk_table.is_empty() && !fk_col.is_empty() {
-                let schema_prefix = fk.schema.as_ref()
+                let schema_prefix = fk
+                    .schema
+                    .as_ref()
                     .filter(|s| !s.trim().is_empty())
                     .map(|s| format!("`{}`.", s.trim().replace('`', "``")))
                     .unwrap_or_default();
-                let escaped_fk_table = format!("{}`{}`", schema_prefix, fk_table.replace('`', "``"));
+                let escaped_fk_table =
+                    format!("{}`{}`", schema_prefix, fk_table.replace('`', "``"));
                 let escaped_fk_col = format!("`{}`", fk_col.replace('`', "``"));
-                
-                let mut fk_clause = format!(", ADD FOREIGN KEY ({}) REFERENCES {} ({})", escaped_col, escaped_fk_table, escaped_fk_col);
+
+                let mut fk_clause = format!(
+                    ", ADD FOREIGN KEY ({}) REFERENCES {} ({})",
+                    escaped_col, escaped_fk_table, escaped_fk_col
+                );
                 if let Some(ref u) = fk.on_update {
                     if u.to_uppercase() != "NO ACTION" {
                         fk_clause.push_str(&format!(" ON UPDATE {}", u));

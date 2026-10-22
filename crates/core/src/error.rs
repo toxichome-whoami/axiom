@@ -74,8 +74,8 @@ impl std::error::Error for AxiomError {}
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::response::IntoResponse;
     use axum::body::to_bytes;
+    use axum::response::IntoResponse;
     use serde_json::from_slice;
 
     #[test]

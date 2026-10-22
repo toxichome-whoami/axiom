@@ -6,11 +6,11 @@
  * Last structural change: Phase 4 mounting /mcp/v1 Model Context Protocol router.
  */
 
-use axiom_core::AxiomError;
-use axiom_core::ConfigManager;
 use crate::middleware::{
     auth::auth_middleware, rate_limit::rate_limit_middleware, waf::waf_middleware,
 };
+use axiom_core::AxiomError;
+use axiom_core::ConfigManager;
 use axum::http::header;
 use axum::{http::StatusCode, middleware, response::IntoResponse, routing::get, Json, Router};
 use serde_json::json;
@@ -78,8 +78,13 @@ async fn prometheus_metrics(
     }
 
     Ok(axum::response::Response::builder()
-        .header(header::CONTENT_TYPE, "text/plain; version=0.0.4; charset=utf-8")
-        .body(axum::body::Body::from(crate::metrics::MetricsEngine::render_prometheus()))
+        .header(
+            header::CONTENT_TYPE,
+            "text/plain; version=0.0.4; charset=utf-8",
+        )
+        .body(axum::body::Body::from(
+            crate::metrics::MetricsEngine::render_prometheus(),
+        ))
         .unwrap_or_else(|_| axum::response::Response::default()))
 }
 
@@ -131,20 +136,21 @@ pub fn create_app() -> Router {
         .allow_methods(allowed_methods)
         .allow_headers(allowed_headers)
         .expose_headers(exposed_headers);
-        
+
     if config.server.cors_origins.iter().any(|o| o == "*") {
         tracing::warn!("SECURITY WARNING: cors_origins contains '*' — any website can read API responses. Pin explicit origins in production.");
         cors = cors.allow_origin(Any);
     } else {
-        let origins: Vec<axum::http::HeaderValue> = config.server.cors_origins
+        let origins: Vec<axum::http::HeaderValue> = config
+            .server
+            .cors_origins
             .iter()
             .filter_map(|o| o.parse().ok())
             .collect();
         cors = cors.allow_origin(tower_http::cors::AllowOrigin::list(origins));
     }
     // Core Routes
-    let core_routes =
-        crate::core::health::get_router();
+    let core_routes = crate::core::health::get_router();
 
     // API versioning wrapper
     let api_routes = Router::new()
@@ -158,8 +164,7 @@ pub fn create_app() -> Router {
         .layer(middleware::from_fn(rate_limit_middleware));
 
     // Admin API versioning wrapper (auth applied inside get_router for protected routes)
-    let admin_routes = crate::admin::get_router()
-        .layer(middleware::from_fn(rate_limit_middleware));
+    let admin_routes = crate::admin::get_router().layer(middleware::from_fn(rate_limit_middleware));
 
     // Model Context Protocol (MCP) versioning wrapper
     let mcp_routes = crate::mcp::router::get_router()
@@ -184,7 +189,9 @@ pub fn create_app() -> Router {
             get(prometheus_metrics).layer(middleware::from_fn(auth_middleware)),
         )
         .fallback(fallback_handler)
-        .layer(middleware::from_fn(crate::middleware::metrics::metrics_middleware))
+        .layer(middleware::from_fn(
+            crate::middleware::metrics::metrics_middleware,
+        ))
         .layer(cors)
         .layer(tower_http::timeout::TimeoutLayer::new(
             std::time::Duration::from_secs(if config.server.request_timeout > 0 {
@@ -220,7 +227,9 @@ pub fn create_app() -> Router {
             header::HeaderValue::from_static("default-src 'none'; frame-ancestors 'none';"),
         ))
         .layer(tower_http::request_id::PropagateRequestIdLayer::x_request_id())
-        .layer(tower_http::request_id::SetRequestIdLayer::x_request_id(tower_http::request_id::MakeRequestUuid))
+        .layer(tower_http::request_id::SetRequestIdLayer::x_request_id(
+            tower_http::request_id::MakeRequestUuid,
+        ))
         .layer(axum::extract::DefaultBodyLimit::max(
             axiom_core::parse_size(&config.server.body_limit).unwrap_or(10 * 1024 * 1024) as usize,
         ))

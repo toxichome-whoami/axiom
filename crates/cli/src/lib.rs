@@ -6,9 +6,9 @@
  * Last structural change: Modularized CLI into dedicated scalable crate (v4.0).
  */
 
+pub mod cli;
 pub mod client;
 pub mod commands;
-pub mod cli;
 
 pub use cli::run;
 pub use client::AdminClient;

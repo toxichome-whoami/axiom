@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Web Application Firewall (WAF) middleware for HTTP edge sanitization.
  * Owned by: crates/api (middleware)
  * Key deps: axiom_core, axum, urlencoding
@@ -88,11 +88,32 @@ fn contains_sqli(normalized: &str) -> bool {
     // must not be blocked, as they cause false positives on natural search phrases ("bread and butter")
     // and legitimate string filter expressions. We check structural attack patterns instead.
     const KEYWORDS: &[&str] = &[
-        "select ", "select*", "select(", "drop ", "union ", "union(", "unionselect",
-        "delete ", "insert ", "update ", "--", ";", "/*",
-        "information_schema", "sleep(", "benchmark(", "outfile ", "load_file(",
-        " or 1=1", " or '1'='1'", " and 1=1", " and '1'='1'",
-        "' or '", "' and '", "\" or \"", "\" and \"",
+        "select ",
+        "select*",
+        "select(",
+        "drop ",
+        "union ",
+        "union(",
+        "unionselect",
+        "delete ",
+        "insert ",
+        "update ",
+        "--",
+        ";",
+        "/*",
+        "information_schema",
+        "sleep(",
+        "benchmark(",
+        "outfile ",
+        "load_file(",
+        " or 1=1",
+        " or '1'='1'",
+        " and 1=1",
+        " and '1'='1'",
+        "' or '",
+        "' and '",
+        "\" or \"",
+        "\" and \"",
     ];
     KEYWORDS.iter().any(|k| normalized.contains(k))
 }
@@ -104,7 +125,10 @@ fn contains_sqli(normalized: &str) -> bool {
 ///  - Returns `Ok(Response)` if request is clean; returns `Err(AxiomError)` with 400, 413, or 414 otherwise.
 pub async fn waf_middleware(req: Request, next: Next) -> Result<Response, AxiomError> {
     let uri = req.uri();
-    let raw_uri = uri.path_and_query().map(|pq| pq.as_str()).unwrap_or_else(|| uri.path());
+    let raw_uri = uri
+        .path_and_query()
+        .map(|pq| pq.as_str())
+        .unwrap_or_else(|| uri.path());
     let path = uri.path();
     let query = uri.query().unwrap_or("");
 
@@ -147,7 +171,12 @@ pub async fn waf_middleware(req: Request, next: Next) -> Result<Response, AxiomE
         ));
     }
 
-    if path.contains('\0') || query.contains('\0') || raw_uri.to_ascii_lowercase().contains("%00") || raw_uri.contains("%u0000") || raw_uri.contains("%U0000") {
+    if path.contains('\0')
+        || query.contains('\0')
+        || raw_uri.to_ascii_lowercase().contains("%00")
+        || raw_uri.contains("%u0000")
+        || raw_uri.contains("%U0000")
+    {
         return Err(AxiomError::new(
             "WAF_NULL_BYTE",
             "Null byte detected",
@@ -319,9 +348,10 @@ mod tests {
     #[tokio::test]
     async fn test_waf_natural_search_and_or_not_rejected() {
         let app = build_waf_test_app();
-        
+
         // Natural language query with "and" should be allowed
-        let res = app.clone()
+        let res = app
+            .clone()
             .oneshot(
                 Request::get("/test?search=bread%20and%20butter")
                     .body(Body::empty())
@@ -332,7 +362,8 @@ mod tests {
         assert_eq!(res.status(), StatusCode::OK);
 
         // Natural language query with "or" should be allowed
-        let res2 = app.clone()
+        let res2 = app
+            .clone()
             .oneshot(
                 Request::get("/test?filter=apples%20or%20oranges")
                     .body(Body::empty())

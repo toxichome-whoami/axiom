@@ -80,8 +80,14 @@ async fn static_handler(uri: Uri) -> impl IntoResponse {
         };
         return Response::builder()
             .header(header::CONTENT_TYPE, HeaderValue::from_static(mime))
-            .header(header::CONTENT_SECURITY_POLICY, HeaderValue::from_static(UI_CSP))
-            .header(header::CACHE_CONTROL, HeaderValue::from_static(cache_control))
+            .header(
+                header::CONTENT_SECURITY_POLICY,
+                HeaderValue::from_static(UI_CSP),
+            )
+            .header(
+                header::CACHE_CONTROL,
+                HeaderValue::from_static(cache_control),
+            )
             .body(Body::from(content.data))
             .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response());
     }
@@ -91,8 +97,14 @@ async fn static_handler(uri: Uri) -> impl IntoResponse {
     let index_subpath = format!("{clean_path}/index.html");
     if let Some(content) = Assets::get(&index_subpath) {
         return Response::builder()
-            .header(header::CONTENT_TYPE, HeaderValue::from_static("text/html; charset=utf-8"))
-            .header(header::CONTENT_SECURITY_POLICY, HeaderValue::from_static(UI_CSP))
+            .header(
+                header::CONTENT_TYPE,
+                HeaderValue::from_static("text/html; charset=utf-8"),
+            )
+            .header(
+                header::CONTENT_SECURITY_POLICY,
+                HeaderValue::from_static(UI_CSP),
+            )
             .header(header::CACHE_CONTROL, HeaderValue::from_static("no-cache"))
             .body(Body::from(content.data))
             .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response());
@@ -102,8 +114,14 @@ async fn static_handler(uri: Uri) -> impl IntoResponse {
     let html_subpath = format!("{clean_path}.html");
     if let Some(content) = Assets::get(&html_subpath) {
         return Response::builder()
-            .header(header::CONTENT_TYPE, HeaderValue::from_static("text/html; charset=utf-8"))
-            .header(header::CONTENT_SECURITY_POLICY, HeaderValue::from_static(UI_CSP))
+            .header(
+                header::CONTENT_TYPE,
+                HeaderValue::from_static("text/html; charset=utf-8"),
+            )
+            .header(
+                header::CONTENT_SECURITY_POLICY,
+                HeaderValue::from_static(UI_CSP),
+            )
             .header(header::CACHE_CONTROL, HeaderValue::from_static("no-cache"))
             .body(Body::from(content.data))
             .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response());
@@ -124,15 +142,27 @@ fn serve_asset(path: &str) -> Response {
             };
             Response::builder()
                 .header(header::CONTENT_TYPE, HeaderValue::from_static(mime))
-                .header(header::CONTENT_SECURITY_POLICY, HeaderValue::from_static(UI_CSP))
-                .header(header::CACHE_CONTROL, HeaderValue::from_static(cache_control))
+                .header(
+                    header::CONTENT_SECURITY_POLICY,
+                    HeaderValue::from_static(UI_CSP),
+                )
+                .header(
+                    header::CACHE_CONTROL,
+                    HeaderValue::from_static(cache_control),
+                )
                 .body(Body::from(content.data))
                 .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
         }
         None => Response::builder()
             .status(StatusCode::NOT_FOUND)
-            .header(header::CONTENT_TYPE, HeaderValue::from_static("text/plain; charset=utf-8"))
-            .header(header::CONTENT_SECURITY_POLICY, HeaderValue::from_static(UI_CSP))
+            .header(
+                header::CONTENT_TYPE,
+                HeaderValue::from_static("text/plain; charset=utf-8"),
+            )
+            .header(
+                header::CONTENT_SECURITY_POLICY,
+                HeaderValue::from_static(UI_CSP),
+            )
             .header(header::CACHE_CONTROL, HeaderValue::from_static("no-cache"))
             .body(Body::from("Axiom Web UI asset not found."))
             .unwrap_or_else(|_| StatusCode::NOT_FOUND.into_response()),
@@ -147,7 +177,10 @@ mod tests {
     fn test_ui_mime_resolution() {
         assert_eq!(get_mime("index.html"), "text/html; charset=utf-8");
         assert_eq!(get_mime("assets/main.css"), "text/css; charset=utf-8");
-        assert_eq!(get_mime("assets/main.js"), "application/javascript; charset=utf-8");
+        assert_eq!(
+            get_mime("assets/main.js"),
+            "application/javascript; charset=utf-8"
+        );
         assert_eq!(get_mime("favicon.ico"), "image/x-icon");
         assert_eq!(get_mime("logo.svg"), "image/svg+xml");
     }
@@ -155,7 +188,10 @@ mod tests {
     #[test]
     fn test_embedded_index_html_exists() {
         let asset = Assets::get("index.html");
-        assert!(asset.is_some(), "Embedded ui/dist/index.html must be present in the binary");
+        assert!(
+            asset.is_some(),
+            "Embedded ui/dist/index.html must be present in the binary"
+        );
     }
 
     #[tokio::test]
@@ -164,33 +200,93 @@ mod tests {
         use tower::ServiceExt;
         let app = crate::server::app::create_app();
 
-        let res_sys = app.clone().oneshot(Request::get("/system").body(axum::body::Body::empty()).unwrap()).await.unwrap();
+        let res_sys = app
+            .clone()
+            .oneshot(
+                Request::get("/system")
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
         assert_eq!(res_sys.status(), StatusCode::OK);
 
-        let res2 = app.clone().oneshot(Request::get("/system/").body(axum::body::Body::empty()).unwrap()).await.unwrap();
+        let res2 = app
+            .clone()
+            .oneshot(
+                Request::get("/system/")
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
         assert_eq!(res2.status(), StatusCode::OK);
 
-        let res3 = app.clone().oneshot(Request::get("/system/databases").body(axum::body::Body::empty()).unwrap()).await.unwrap();
+        let res3 = app
+            .clone()
+            .oneshot(
+                Request::get("/system/databases")
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
         assert_eq!(res3.status(), StatusCode::OK);
         assert_eq!(
             res3.headers().get("content-security-policy").unwrap(),
             UI_CSP
         );
 
-        let res_keys = app.clone().oneshot(Request::get("/system/keys").body(axum::body::Body::empty()).unwrap()).await.unwrap();
+        let res_keys = app
+            .clone()
+            .oneshot(
+                Request::get("/system/keys")
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
         assert_eq!(res_keys.status(), StatusCode::OK);
 
-        let res_roles = app.clone().oneshot(Request::get("/system/roles").body(axum::body::Body::empty()).unwrap()).await.unwrap();
+        let res_roles = app
+            .clone()
+            .oneshot(
+                Request::get("/system/roles")
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
         assert_eq!(res_roles.status(), StatusCode::OK);
 
-        let res_metrics = app.clone().oneshot(Request::get("/system/metrics").body(axum::body::Body::empty()).unwrap()).await.unwrap();
+        let res_metrics = app
+            .clone()
+            .oneshot(
+                Request::get("/system/metrics")
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
         assert_eq!(res_metrics.status(), StatusCode::OK);
 
-        let res_audit = app.clone().oneshot(Request::get("/system/audit").body(axum::body::Body::empty()).unwrap()).await.unwrap();
+        let res_audit = app
+            .clone()
+            .oneshot(
+                Request::get("/system/audit")
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
         assert_eq!(res_audit.status(), StatusCode::OK);
 
         // Verify /ui is no longer served
-        let res_old_ui = app.clone().oneshot(Request::get("/ui").body(axum::body::Body::empty()).unwrap()).await.unwrap();
+        let res_old_ui = app
+            .clone()
+            .oneshot(Request::get("/ui").body(axum::body::Body::empty()).unwrap())
+            .await
+            .unwrap();
         assert_ne!(res_old_ui.status(), StatusCode::OK);
 
         // Find the embedded CSS asset dynamically so hash updates never break tests
@@ -199,9 +295,22 @@ mod tests {
             .expect("Embedded bundle must include at least one compiled CSS stylesheet");
         let asset_url = format!("/system/{}", css_file);
 
-        let res_css = app.clone().oneshot(Request::get(&asset_url).body(axum::body::Body::empty()).unwrap()).await.unwrap();
+        let res_css = app
+            .clone()
+            .oneshot(
+                Request::get(&asset_url)
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
         assert_eq!(res_css.status(), StatusCode::OK);
-        let content_type = res_css.headers().get("content-type").unwrap().to_str().unwrap();
+        let content_type = res_css
+            .headers()
+            .get("content-type")
+            .unwrap()
+            .to_str()
+            .unwrap();
         assert!(content_type.contains("text/css"));
         assert_eq!(
             res_css.headers().get("content-security-policy").unwrap(),
@@ -209,7 +318,15 @@ mod tests {
         );
 
         // Also verify that non-UI API endpoints retain the strict default-src 'none' CSP
-        let res_api = app.clone().oneshot(Request::get("/api/v1/health").body(axum::body::Body::empty()).unwrap()).await.unwrap();
+        let res_api = app
+            .clone()
+            .oneshot(
+                Request::get("/api/v1/health")
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
         assert_eq!(
             res_api.headers().get("content-security-policy").unwrap(),
             "default-src 'none'; frame-ancestors 'none';"

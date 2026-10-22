@@ -9,5 +9,7 @@
 pub mod engines;
 pub mod pool;
 
-pub use engines::base::{ColumnInfo, DatabaseEngine, EngineError, ForeignKeyInfo, QueryResult, TableInfo};
+pub use engines::base::{
+    ColumnInfo, DatabaseEngine, EngineError, ForeignKeyInfo, QueryResult, TableInfo,
+};
 pub use pool::DatabasePoolManager;

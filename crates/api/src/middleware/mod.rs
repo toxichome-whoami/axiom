@@ -10,5 +10,5 @@ pub mod auth;
 pub mod cache;
 pub mod metrics;
 pub mod rate_limit;
-pub mod waf;
 pub mod response;
+pub mod waf;

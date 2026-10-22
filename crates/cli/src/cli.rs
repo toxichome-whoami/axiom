@@ -12,8 +12,8 @@ use std::path::Path;
 
 use crate::client::{clear_saved_session, save_session, AdminClient};
 use crate::commands::{
-    BlobCommands, BlobNsCommands, CacheCommands, Cli, ClusterCommands, Commands, ConfigCommands, DbCommands,
-    KeyCommands, RoleCommands, SetupCommands, UserCommands,
+    BlobCommands, BlobNsCommands, CacheCommands, Cli, ClusterCommands, Commands, ConfigCommands,
+    DbCommands, KeyCommands, RoleCommands, SetupCommands, UserCommands,
 };
 use axiom_core::ConfigManager;
 use axiom_metadata::MetadataStore;
@@ -140,13 +140,22 @@ pub async fn run() -> Result<bool, Box<dyn std::error::Error>> {
                 let data = resp.get("data");
                 if let Some(d) = data {
                     let status = d.get("status").and_then(|s| s.as_str()).unwrap_or("ONLINE");
-                    let uptime = d.get("uptime_seconds").and_then(|u| u.as_i64()).unwrap_or(0);
+                    let uptime = d
+                        .get("uptime_seconds")
+                        .and_then(|u| u.as_i64())
+                        .unwrap_or(0);
                     println!("Axiom Gateway Health: {}", status.to_uppercase());
                     println!("{:-<50}", "");
                     println!("Uptime:       {} seconds", uptime);
                     if let Some(sys) = d.get("system") {
-                        let cpu = sys.get("cpu_percent").and_then(|v| v.as_f64()).unwrap_or(0.0);
-                        let mem = sys.get("memory_used_mb").and_then(|v| v.as_i64()).unwrap_or(0);
+                        let cpu = sys
+                            .get("cpu_percent")
+                            .and_then(|v| v.as_f64())
+                            .unwrap_or(0.0);
+                        let mem = sys
+                            .get("memory_used_mb")
+                            .and_then(|v| v.as_i64())
+                            .unwrap_or(0);
                         println!("System:       CPU: {:.1}% | Memory: {} MB", cpu, mem);
                     }
                     if let Some(dbs) = d.get("databases").and_then(|v| v.as_object()) {
@@ -181,7 +190,10 @@ pub async fn run() -> Result<bool, Box<dyn std::error::Error>> {
             Ok(true)
         }
 
-        Some(Commands::Benchmark { requests, concurrency }) => {
+        Some(Commands::Benchmark {
+            requests,
+            concurrency,
+        }) => {
             run_benchmark(&cli.url, cli.key.as_deref(), requests, concurrency, format).await?;
             Ok(true)
         }
@@ -196,7 +208,6 @@ pub async fn run() -> Result<bool, Box<dyn std::error::Error>> {
             handle_cluster_command(client, command, format).await?;
             Ok(true)
         }
-
 
         Some(Commands::Config { command }) => {
             handle_config_command(command, format).await?;
@@ -215,8 +226,13 @@ async fn init_cli_metadata() -> Result<(), String> {
     MetadataStore::init(&cfg.metadata.url, &cfg.metadata.token).await
 }
 
-async fn handle_user_command(command: UserCommands, format: OutputFormat) -> Result<(), Box<dyn std::error::Error>> {
-    init_cli_metadata().await.map_err(|e| format!("Failed to connect to metadata store: {}", e))?;
+async fn handle_user_command(
+    command: UserCommands,
+    format: OutputFormat,
+) -> Result<(), Box<dyn std::error::Error>> {
+    init_cli_metadata()
+        .await
+        .map_err(|e| format!("Failed to connect to metadata store: {}", e))?;
 
     match command {
         UserCommands::Add { username, password } => {
@@ -232,7 +248,8 @@ async fn handle_user_command(command: UserCommands, format: OutputFormat) -> Res
                 return Err("Password cannot be empty".into());
             }
 
-            MetadataStore::create_user(&username, &pass).await
+            MetadataStore::create_user(&username, &pass)
+                .await
                 .map_err(|e| format!("User creation failed: {}", e))?;
 
             let res = json!({
@@ -250,7 +267,8 @@ async fn handle_user_command(command: UserCommands, format: OutputFormat) -> Res
         }
 
         UserCommands::List => {
-            let users = MetadataStore::list_users().await
+            let users = MetadataStore::list_users()
+                .await
                 .map_err(|e| format!("Failed to list users: {}", e))?;
 
             let res = json!({
@@ -274,7 +292,8 @@ async fn handle_user_command(command: UserCommands, format: OutputFormat) -> Res
         }
 
         UserCommands::Delete { username } => {
-            let deleted = MetadataStore::delete_user(&username).await
+            let deleted = MetadataStore::delete_user(&username)
+                .await
                 .map_err(|e| format!("Failed to delete user: {}", e))?;
 
             if !deleted {
@@ -315,7 +334,13 @@ async fn handle_key_command(
             expires_at,
         } => {
             let resp = client
-                .create_key(&name, role.as_deref(), secret.as_deref(), rate_limit, expires_at)
+                .create_key(
+                    &name,
+                    role.as_deref(),
+                    secret.as_deref(),
+                    rate_limit,
+                    expires_at,
+                )
                 .await?;
 
             if format == OutputFormat::Json {
@@ -341,7 +366,11 @@ async fn handle_key_command(
             if format == OutputFormat::Json {
                 println!("{}", serde_json::to_string_pretty(&resp)?);
             } else if format == OutputFormat::Jsonl {
-                if let Some(keys) = resp.get("data").and_then(|d| d.get("keys")).and_then(|k| k.as_array()) {
+                if let Some(keys) = resp
+                    .get("data")
+                    .and_then(|d| d.get("keys"))
+                    .and_then(|k| k.as_array())
+                {
                     for k in keys {
                         println!("{}", serde_json::to_string(k)?);
                     }
@@ -349,12 +378,22 @@ async fn handle_key_command(
                     println!("{}", serde_json::to_string(&resp)?);
                 }
             } else {
-                println!("{:<24} {:<20} {:<12} {:<20}", "KEY NAME", "ROLE", "RATE LIMIT", "CREATED AT");
+                println!(
+                    "{:<24} {:<20} {:<12} {:<20}",
+                    "KEY NAME", "ROLE", "RATE LIMIT", "CREATED AT"
+                );
                 println!("{:-<80}", "");
-                if let Some(keys) = resp.get("data").and_then(|d| d.get("keys")).and_then(|k| k.as_array()) {
+                if let Some(keys) = resp
+                    .get("data")
+                    .and_then(|d| d.get("keys"))
+                    .and_then(|k| k.as_array())
+                {
                     for k in keys {
                         let name = k.get("name").and_then(|n| n.as_str()).unwrap_or("-");
-                        let role = k.get("role_name").and_then(|r| r.as_str()).unwrap_or("none");
+                        let role = k
+                            .get("role_name")
+                            .and_then(|r| r.as_str())
+                            .unwrap_or("none");
                         let rl = k.get("rate_limit").and_then(|r| r.as_i64()).unwrap_or(0);
                         let created = k.get("created_at").and_then(|c| c.as_i64()).unwrap_or(0);
                         println!("{:<24} {:<20} {:<12} {:<20}", name, role, rl, created);
@@ -411,11 +450,14 @@ async fn handle_role_command(
             permissions,
         } => {
             let perms_val: Value = match permissions {
-                Some(p_str) => serde_json::from_str(&p_str).map_err(|e| format!("Invalid JSON permissions array: {}", e))?,
+                Some(p_str) => serde_json::from_str(&p_str)
+                    .map_err(|e| format!("Invalid JSON permissions array: {}", e))?,
                 None => json!([]),
             };
 
-            let resp = client.create_role(&name, description.as_deref(), perms_val).await?;
+            let resp = client
+                .create_role(&name, description.as_deref(), perms_val)
+                .await?;
             if format == OutputFormat::Json {
                 println!("{}", serde_json::to_string_pretty(&resp)?);
             } else if format == OutputFormat::Jsonl {
@@ -430,7 +472,11 @@ async fn handle_role_command(
             if format == OutputFormat::Json {
                 println!("{}", serde_json::to_string_pretty(&resp)?);
             } else if format == OutputFormat::Jsonl {
-                if let Some(roles) = resp.get("data").and_then(|d| d.get("roles")).and_then(|r| r.as_array()) {
+                if let Some(roles) = resp
+                    .get("data")
+                    .and_then(|d| d.get("roles"))
+                    .and_then(|r| r.as_array())
+                {
                     for r in roles {
                         println!("{}", serde_json::to_string(r)?);
                     }
@@ -438,13 +484,24 @@ async fn handle_role_command(
                     println!("{}", serde_json::to_string(&resp)?);
                 }
             } else {
-                println!("{:<20} {:<32} {:<12}", "ROLE NAME", "DESCRIPTION", "PERMISSIONS");
+                println!(
+                    "{:<20} {:<32} {:<12}",
+                    "ROLE NAME", "DESCRIPTION", "PERMISSIONS"
+                );
                 println!("{:-<72}", "");
-                if let Some(roles) = resp.get("data").and_then(|d| d.get("roles")).and_then(|r| r.as_array()) {
+                if let Some(roles) = resp
+                    .get("data")
+                    .and_then(|d| d.get("roles"))
+                    .and_then(|r| r.as_array())
+                {
                     for r in roles {
                         let name = r.get("name").and_then(|n| n.as_str()).unwrap_or("-");
                         let desc = r.get("description").and_then(|d| d.as_str()).unwrap_or("");
-                        let perm_count = r.get("permissions").and_then(|p| p.as_array()).map(|p| p.len()).unwrap_or(0);
+                        let perm_count = r
+                            .get("permissions")
+                            .and_then(|p| p.as_array())
+                            .map(|p| p.len())
+                            .unwrap_or(0);
                         println!("{:<20} {:<32} {:<12}", name, desc, perm_count);
                     }
                 }
@@ -457,11 +514,16 @@ async fn handle_role_command(
             permissions,
         } => {
             let perms_val: Option<Value> = match permissions {
-                Some(p_str) => Some(serde_json::from_str(&p_str).map_err(|e| format!("Invalid JSON permissions array: {}", e))?),
+                Some(p_str) => Some(
+                    serde_json::from_str(&p_str)
+                        .map_err(|e| format!("Invalid JSON permissions array: {}", e))?,
+                ),
                 None => None,
             };
 
-            let resp = client.update_role(&name, description.as_deref(), perms_val).await?;
+            let resp = client
+                .update_role(&name, description.as_deref(), perms_val)
+                .await?;
             if format == OutputFormat::Json {
                 println!("{}", serde_json::to_string_pretty(&resp)?);
             } else if format == OutputFormat::Jsonl {
@@ -501,7 +563,13 @@ async fn handle_db_command(
             pool_max,
         } => {
             let resp = client
-                .add_database(&alias, &connection_url, engine.as_deref(), pool_min, pool_max)
+                .add_database(
+                    &alias,
+                    &connection_url,
+                    engine.as_deref(),
+                    pool_min,
+                    pool_max,
+                )
                 .await?;
 
             if format == OutputFormat::Json {
@@ -518,7 +586,11 @@ async fn handle_db_command(
             if format == OutputFormat::Json {
                 println!("{}", serde_json::to_string_pretty(&resp)?);
             } else if format == OutputFormat::Jsonl {
-                if let Some(dbs) = resp.get("data").and_then(|d| d.get("databases")).and_then(|d| d.as_array()) {
+                if let Some(dbs) = resp
+                    .get("data")
+                    .and_then(|d| d.get("databases"))
+                    .and_then(|d| d.as_array())
+                {
                     for db in dbs {
                         println!("{}", serde_json::to_string(db)?);
                     }
@@ -526,9 +598,16 @@ async fn handle_db_command(
                     println!("{}", serde_json::to_string(&resp)?);
                 }
             } else {
-                println!("{:<20} {:<16} {:<10} {:<10}", "ALIAS", "ENGINE", "POOL MIN", "POOL MAX");
+                println!(
+                    "{:<20} {:<16} {:<10} {:<10}",
+                    "ALIAS", "ENGINE", "POOL MIN", "POOL MAX"
+                );
                 println!("{:-<60}", "");
-                if let Some(dbs) = resp.get("data").and_then(|d| d.get("databases")).and_then(|d| d.as_array()) {
+                if let Some(dbs) = resp
+                    .get("data")
+                    .and_then(|d| d.get("databases"))
+                    .and_then(|d| d.as_array())
+                {
                     for db in dbs {
                         let alias = db.get("alias").and_then(|a| a.as_str()).unwrap_or("-");
                         let engine = db.get("engine").and_then(|e| e.as_str()).unwrap_or("-");
@@ -548,7 +627,10 @@ async fn handle_db_command(
                 println!("{}", serde_json::to_string(&resp)?);
             } else {
                 let data = resp.get("data").cloned().unwrap_or(resp);
-                let dialect = data.get("dialect").and_then(|d| d.as_str()).unwrap_or("unknown");
+                let dialect = data
+                    .get("dialect")
+                    .and_then(|d| d.as_str())
+                    .unwrap_or("unknown");
                 let status = data.get("status").and_then(|s| s.as_str()).unwrap_or("ok");
                 let msg = data.get("message").and_then(|m| m.as_str()).unwrap_or("");
                 println!("Database Connection Probe for '{}'", alias);
@@ -567,9 +649,18 @@ async fn handle_db_command(
                 println!("{}", serde_json::to_string(&resp)?);
             } else {
                 let data = resp.get("data").cloned().unwrap_or(resp);
-                let dialect = data.get("dialect").and_then(|d| d.as_str()).unwrap_or("unknown");
-                let status = data.get("status").and_then(|s| s.as_str()).unwrap_or("connected");
-                let msg = data.get("message").and_then(|m| m.as_str()).unwrap_or("Connection test successful");
+                let dialect = data
+                    .get("dialect")
+                    .and_then(|d| d.as_str())
+                    .unwrap_or("unknown");
+                let status = data
+                    .get("status")
+                    .and_then(|s| s.as_str())
+                    .unwrap_or("connected");
+                let msg = data
+                    .get("message")
+                    .and_then(|m| m.as_str())
+                    .unwrap_or("Connection test successful");
                 println!("Raw Database URL Connectivity Probe");
                 println!("{:-<45}", "");
                 println!("Status:   {}", status);
@@ -589,13 +680,23 @@ async fn handle_db_command(
             }
         }
 
-        DbCommands::Query { alias, sql, params, timeout } => {
+        DbCommands::Query {
+            alias,
+            sql,
+            params,
+            timeout,
+        } => {
             let params_val: Option<Value> = match params {
-                Some(p_str) => Some(serde_json::from_str(&p_str).map_err(|e| format!("Invalid JSON parameters: {}", e))?),
+                Some(p_str) => Some(
+                    serde_json::from_str(&p_str)
+                        .map_err(|e| format!("Invalid JSON parameters: {}", e))?,
+                ),
                 None => None,
             };
 
-            let resp = client.query_database(&alias, &sql, params_val, timeout).await?;
+            let resp = client
+                .query_database(&alias, &sql, params_val, timeout)
+                .await?;
             if format == OutputFormat::Json {
                 println!("{}", serde_json::to_string_pretty(&resp)?);
             } else if format == OutputFormat::Jsonl {
@@ -603,7 +704,11 @@ async fn handle_db_command(
                     for row in rows {
                         println!("{}", serde_json::to_string(row)?);
                     }
-                } else if let Some(rows) = resp.get("data").and_then(|d| d.get("rows")).and_then(|r| r.as_array()) {
+                } else if let Some(rows) = resp
+                    .get("data")
+                    .and_then(|d| d.get("rows"))
+                    .and_then(|r| r.as_array())
+                {
                     for row in rows {
                         println!("{}", serde_json::to_string(row)?);
                     }
@@ -615,12 +720,20 @@ async fn handle_db_command(
             }
         }
 
-        DbCommands::Tables { alias, cursor, limit } => {
+        DbCommands::Tables {
+            alias,
+            cursor,
+            limit,
+        } => {
             let resp = client.list_database_tables(&alias, cursor, limit).await?;
             if format == OutputFormat::Json {
                 println!("{}", serde_json::to_string_pretty(&resp)?);
             } else if format == OutputFormat::Jsonl {
-                if let Some(tables) = resp.get("data").and_then(|d| d.get("tables")).and_then(|t| t.as_array()) {
+                if let Some(tables) = resp
+                    .get("data")
+                    .and_then(|d| d.get("tables"))
+                    .and_then(|t| t.as_array())
+                {
                     for table in tables {
                         println!("{}", serde_json::to_string(table)?);
                     }
@@ -630,15 +743,30 @@ async fn handle_db_command(
             } else {
                 println!("{:<28} {:<16} {:<12}", "TABLE NAME", "SCHEMA", "EST. ROWS");
                 println!("{:-<60}", "");
-                if let Some(tables) = resp.get("data").and_then(|d| d.get("tables")).and_then(|t| t.as_array()) {
+                if let Some(tables) = resp
+                    .get("data")
+                    .and_then(|d| d.get("tables"))
+                    .and_then(|t| t.as_array())
+                {
                     for table in tables {
                         let name = table.get("name").and_then(|n| n.as_str()).unwrap_or("-");
-                        let schema = table.get("schema").and_then(|s| s.as_str()).unwrap_or("public");
-                        let row_count = table.get("row_count").and_then(|r| r.as_i64()).map(|r| r.to_string()).unwrap_or_else(|| "-".to_string());
+                        let schema = table
+                            .get("schema")
+                            .and_then(|s| s.as_str())
+                            .unwrap_or("public");
+                        let row_count = table
+                            .get("row_count")
+                            .and_then(|r| r.as_i64())
+                            .map(|r| r.to_string())
+                            .unwrap_or_else(|| "-".to_string());
                         println!("{:<28} {:<16} {:<12}", name, schema, row_count);
                     }
                 }
-                if let Some(next) = resp.get("pagination").and_then(|p| p.get("next_cursor")).and_then(|c| c.as_str()) {
+                if let Some(next) = resp
+                    .get("pagination")
+                    .and_then(|p| p.get("next_cursor"))
+                    .and_then(|c| c.as_str())
+                {
                     println!("\nNext cursor: {}", next);
                 }
             }
@@ -653,42 +781,109 @@ async fn handle_db_command(
             } else {
                 println!("Schema definition for '{}.{}'", alias, table);
                 println!("{:-<84}", "");
-                println!("{:<24} {:<20} {:<10} {:<18} {:<10}", "COLUMN", "DATA TYPE", "NULLABLE", "DEFAULT", "PRIMARY KEY");
+                println!(
+                    "{:<24} {:<20} {:<10} {:<18} {:<10}",
+                    "COLUMN", "DATA TYPE", "NULLABLE", "DEFAULT", "PRIMARY KEY"
+                );
                 println!("{:-<84}", "");
-                if let Some(columns) = resp.get("data").and_then(|d| d.get("columns")).and_then(|c| c.as_array()) {
+                if let Some(columns) = resp
+                    .get("data")
+                    .and_then(|d| d.get("columns"))
+                    .and_then(|c| c.as_array())
+                {
                     for col in columns {
                         let col_name = col.get("name").and_then(|n| n.as_str()).unwrap_or("-");
                         let col_type = col.get("type").and_then(|t| t.as_str()).unwrap_or("-");
-                        let nullable = if col.get("nullable").and_then(|n| n.as_bool()).unwrap_or(true) { "YES" } else { "NO" };
-                        let default_val = col.get("default_value").and_then(|d| d.as_str()).unwrap_or("NULL");
-                        let pk = if col.get("primary_key").and_then(|p| p.as_bool()).unwrap_or(false) { "YES" } else { "NO" };
-                        println!("{:<24} {:<20} {:<10} {:<18} {:<10}", col_name, col_type, nullable, default_val, pk);
+                        let nullable = if col
+                            .get("nullable")
+                            .and_then(|n| n.as_bool())
+                            .unwrap_or(true)
+                        {
+                            "YES"
+                        } else {
+                            "NO"
+                        };
+                        let default_val = col
+                            .get("default_value")
+                            .and_then(|d| d.as_str())
+                            .unwrap_or("NULL");
+                        let pk = if col
+                            .get("primary_key")
+                            .and_then(|p| p.as_bool())
+                            .unwrap_or(false)
+                        {
+                            "YES"
+                        } else {
+                            "NO"
+                        };
+                        println!(
+                            "{:<24} {:<20} {:<10} {:<18} {:<10}",
+                            col_name, col_type, nullable, default_val, pk
+                        );
                     }
                 }
 
-                if let Some(fks) = resp.get("data").and_then(|d| d.get("foreign_keys")).and_then(|f| f.as_array()) {
+                if let Some(fks) = resp
+                    .get("data")
+                    .and_then(|d| d.get("foreign_keys"))
+                    .and_then(|f| f.as_array())
+                {
                     if !fks.is_empty() {
                         println!("\nForeign Key Constraints:");
-                        println!("{:<24} {:<20} {:<20} {:<20}", "FK NAME", "COLUMN", "REFERENCED TABLE", "REFERENCED COLUMN");
+                        println!(
+                            "{:<24} {:<20} {:<20} {:<20}",
+                            "FK NAME", "COLUMN", "REFERENCED TABLE", "REFERENCED COLUMN"
+                        );
                         println!("{:-<84}", "");
                         for fk in fks {
                             let fk_name = fk.get("name").and_then(|n| n.as_str()).unwrap_or("-");
                             let fk_col = fk.get("column").and_then(|c| c.as_str()).unwrap_or("-");
-                            let ref_table = fk.get("referenced_table").and_then(|r| r.as_str()).unwrap_or("-");
-                            let ref_col = fk.get("referenced_column").and_then(|r| r.as_str()).unwrap_or("-");
-                            println!("{:<24} {:<20} {:<20} {:<20}", fk_name, fk_col, ref_table, ref_col);
+                            let ref_table = fk
+                                .get("referenced_table")
+                                .and_then(|r| r.as_str())
+                                .unwrap_or("-");
+                            let ref_col = fk
+                                .get("referenced_column")
+                                .and_then(|r| r.as_str())
+                                .unwrap_or("-");
+                            println!(
+                                "{:<24} {:<20} {:<20} {:<20}",
+                                fk_name, fk_col, ref_table, ref_col
+                            );
                         }
                     }
                 }
             }
         }
 
-        DbCommands::Rows { alias, table, cursor, limit, sort, order, filter } => {
-            let resp = client.fetch_table_rows(&alias, &table, cursor.as_deref(), limit, sort.as_deref(), order.as_deref(), filter.as_deref()).await?;
+        DbCommands::Rows {
+            alias,
+            table,
+            cursor,
+            limit,
+            sort,
+            order,
+            filter,
+        } => {
+            let resp = client
+                .fetch_table_rows(
+                    &alias,
+                    &table,
+                    cursor.as_deref(),
+                    limit,
+                    sort.as_deref(),
+                    order.as_deref(),
+                    filter.as_deref(),
+                )
+                .await?;
             if format == OutputFormat::Json {
                 println!("{}", serde_json::to_string_pretty(&resp)?);
             } else if format == OutputFormat::Jsonl {
-                if let Some(rows) = resp.get("data").and_then(|d| d.get("rows")).and_then(|r| r.as_array()) {
+                if let Some(rows) = resp
+                    .get("data")
+                    .and_then(|d| d.get("rows"))
+                    .and_then(|r| r.as_array())
+                {
                     for row in rows {
                         println!("{}", serde_json::to_string(row)?);
                     }
@@ -700,9 +895,16 @@ async fn handle_db_command(
             }
         }
 
-        DbCommands::Insert { alias, table, data, row, rows } => {
+        DbCommands::Insert {
+            alias,
+            table,
+            data,
+            row,
+            rows,
+        } => {
             let (row_val, rows_val) = if let Some(d_str) = data {
-                let parsed: Value = serde_json::from_str(&d_str).map_err(|e| format!("Invalid JSON data: {}", e))?;
+                let parsed: Value = serde_json::from_str(&d_str)
+                    .map_err(|e| format!("Invalid JSON data: {}", e))?;
                 if parsed.is_array() {
                     (None, Some(parsed))
                 } else {
@@ -710,44 +912,80 @@ async fn handle_db_command(
                 }
             } else {
                 let r: Option<Value> = match row {
-                    Some(r_str) => Some(serde_json::from_str(&r_str).map_err(|e| format!("Invalid JSON row object: {}", e))?),
+                    Some(r_str) => Some(
+                        serde_json::from_str(&r_str)
+                            .map_err(|e| format!("Invalid JSON row object: {}", e))?,
+                    ),
                     None => None,
                 };
                 let rs: Option<Value> = match rows {
-                    Some(rs_str) => Some(serde_json::from_str(&rs_str).map_err(|e| format!("Invalid JSON rows array: {}", e))?),
+                    Some(rs_str) => Some(
+                        serde_json::from_str(&rs_str)
+                            .map_err(|e| format!("Invalid JSON rows array: {}", e))?,
+                    ),
                     None => None,
                 };
                 (r, rs)
             };
 
-            let resp = client.insert_table_row(&alias, &table, row_val, rows_val).await?;
+            let resp = client
+                .insert_table_row(&alias, &table, row_val, rows_val)
+                .await?;
             if format == OutputFormat::Json {
                 println!("{}", serde_json::to_string_pretty(&resp)?);
             } else if format == OutputFormat::Jsonl {
                 println!("{}", serde_json::to_string(&resp)?);
             } else {
-                let affected = resp.get("affected_rows").or_else(|| resp.get("data").and_then(|d| d.get("affected_rows"))).and_then(|a| a.as_i64()).unwrap_or(1);
-                println!("Inserted row(s) successfully into '{}.{}' ({} row(s) affected).", alias, table, affected);
+                let affected = resp
+                    .get("affected_rows")
+                    .or_else(|| resp.get("data").and_then(|d| d.get("affected_rows")))
+                    .and_then(|a| a.as_i64())
+                    .unwrap_or(1);
+                println!(
+                    "Inserted row(s) successfully into '{}.{}' ({} row(s) affected).",
+                    alias, table, affected
+                );
             }
         }
 
-        DbCommands::Update { alias, table, filter, update } => {
-            let filter_val: Value = serde_json::from_str(&filter).map_err(|e| format!("Invalid JSON filter: {}", e))?;
-            let update_val: Value = serde_json::from_str(&update).map_err(|e| format!("Invalid JSON update: {}", e))?;
+        DbCommands::Update {
+            alias,
+            table,
+            filter,
+            update,
+        } => {
+            let filter_val: Value =
+                serde_json::from_str(&filter).map_err(|e| format!("Invalid JSON filter: {}", e))?;
+            let update_val: Value =
+                serde_json::from_str(&update).map_err(|e| format!("Invalid JSON update: {}", e))?;
 
-            let resp = client.update_table_row(&alias, &table, filter_val, update_val).await?;
+            let resp = client
+                .update_table_row(&alias, &table, filter_val, update_val)
+                .await?;
             if format == OutputFormat::Json {
                 println!("{}", serde_json::to_string_pretty(&resp)?);
             } else if format == OutputFormat::Jsonl {
                 println!("{}", serde_json::to_string(&resp)?);
             } else {
-                let affected = resp.get("affected_rows").or_else(|| resp.get("data").and_then(|d| d.get("affected_rows"))).and_then(|a| a.as_i64()).unwrap_or(0);
-                println!("Updated row(s) in '{}.{}' ({} row(s) affected).", alias, table, affected);
+                let affected = resp
+                    .get("affected_rows")
+                    .or_else(|| resp.get("data").and_then(|d| d.get("affected_rows")))
+                    .and_then(|a| a.as_i64())
+                    .unwrap_or(0);
+                println!(
+                    "Updated row(s) in '{}.{}' ({} row(s) affected).",
+                    alias, table, affected
+                );
             }
         }
 
-        DbCommands::DeleteRows { alias, table, filter } => {
-            let filter_val: Value = serde_json::from_str(&filter).map_err(|e| format!("Invalid JSON filter: {}", e))?;
+        DbCommands::DeleteRows {
+            alias,
+            table,
+            filter,
+        } => {
+            let filter_val: Value =
+                serde_json::from_str(&filter).map_err(|e| format!("Invalid JSON filter: {}", e))?;
 
             let resp = client.delete_table_row(&alias, &table, filter_val).await?;
             if format == OutputFormat::Json {
@@ -755,19 +993,45 @@ async fn handle_db_command(
             } else if format == OutputFormat::Jsonl {
                 println!("{}", serde_json::to_string(&resp)?);
             } else {
-                let affected = resp.get("affected_rows").or_else(|| resp.get("data").and_then(|d| d.get("affected_rows"))).and_then(|a| a.as_i64()).unwrap_or(0);
-                println!("Deleted row(s) from '{}.{}' ({} row(s) affected).", alias, table, affected);
+                let affected = resp
+                    .get("affected_rows")
+                    .or_else(|| resp.get("data").and_then(|d| d.get("affected_rows")))
+                    .and_then(|a| a.as_i64())
+                    .unwrap_or(0);
+                println!(
+                    "Deleted row(s) from '{}.{}' ({} row(s) affected).",
+                    alias, table, affected
+                );
             }
         }
 
-        DbCommands::AddColumn { alias, table, column, data_type, nullable, default_val } => {
-            let resp = client.add_table_column(&alias, &table, &column, &data_type, nullable, default_val.as_deref()).await?;
+        DbCommands::AddColumn {
+            alias,
+            table,
+            column,
+            data_type,
+            nullable,
+            default_val,
+        } => {
+            let resp = client
+                .add_table_column(
+                    &alias,
+                    &table,
+                    &column,
+                    &data_type,
+                    nullable,
+                    default_val.as_deref(),
+                )
+                .await?;
             if format == OutputFormat::Json {
                 println!("{}", serde_json::to_string_pretty(&resp)?);
             } else if format == OutputFormat::Jsonl {
                 println!("{}", serde_json::to_string(&resp)?);
             } else {
-                println!("Added column '{}' ({}) to '{}.{}' successfully.", column, data_type, alias, table);
+                println!(
+                    "Added column '{}' ({}) to '{}.{}' successfully.",
+                    column, data_type, alias, table
+                );
             }
         }
     }
@@ -794,14 +1058,42 @@ async fn handle_cache_command(
                 println!("{:-<42}", "");
                 println!("{:<26} {:<12}", "METRIC", "VALUE");
                 println!("{:-<42}", "");
-                println!("{:<26} {:<12}", "L1 Cache Hits (RAM)", data.get("hits_l1").and_then(|v| v.as_u64()).unwrap_or(0));
-                println!("{:<26} {:<12}", "L2 Cache Hits (Disk)", data.get("hits_l2").and_then(|v| v.as_u64()).unwrap_or(0));
-                println!("{:<26} {:<12}", "Cache Misses", data.get("misses").and_then(|v| v.as_u64()).unwrap_or(0));
-                println!("{:<26} {:<12}", "Evictions (LRU)", data.get("evictions").and_then(|v| v.as_u64()).unwrap_or(0));
-                println!("{:<26} {:<12}", "Active L1 Entries", data.get("entries_count").and_then(|v| v.as_u64()).unwrap_or(0));
-                let hit_rate = data.get("hit_rate_pct").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                println!(
+                    "{:<26} {:<12}",
+                    "L1 Cache Hits (RAM)",
+                    data.get("hits_l1").and_then(|v| v.as_u64()).unwrap_or(0)
+                );
+                println!(
+                    "{:<26} {:<12}",
+                    "L2 Cache Hits (Disk)",
+                    data.get("hits_l2").and_then(|v| v.as_u64()).unwrap_or(0)
+                );
+                println!(
+                    "{:<26} {:<12}",
+                    "Cache Misses",
+                    data.get("misses").and_then(|v| v.as_u64()).unwrap_or(0)
+                );
+                println!(
+                    "{:<26} {:<12}",
+                    "Evictions (LRU)",
+                    data.get("evictions").and_then(|v| v.as_u64()).unwrap_or(0)
+                );
+                println!(
+                    "{:<26} {:<12}",
+                    "Active L1 Entries",
+                    data.get("entries_count")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(0)
+                );
+                let hit_rate = data
+                    .get("hit_rate_pct")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.0);
                 println!("{:<26} {:.2}%", "Hit Rate", hit_rate);
-                let mem = data.get("memory_bytes_approx").and_then(|v| v.as_u64()).unwrap_or(0);
+                let mem = data
+                    .get("memory_bytes_approx")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
                 println!("{:<26} {} bytes", "Approx Memory", mem);
             }
         }
@@ -832,7 +1124,11 @@ async fn handle_audit_command(
     if format == OutputFormat::Json {
         println!("{}", serde_json::to_string_pretty(&resp)?);
     } else if format == OutputFormat::Jsonl {
-        if let Some(entries) = resp.get("data").and_then(|d| d.get("audit")).and_then(|a| a.as_array()) {
+        if let Some(entries) = resp
+            .get("data")
+            .and_then(|d| d.get("audit"))
+            .and_then(|a| a.as_array())
+        {
             for entry in entries {
                 println!("{}", serde_json::to_string(entry)?);
             }
@@ -840,9 +1136,16 @@ async fn handle_audit_command(
             println!("{}", serde_json::to_string(&resp)?);
         }
     } else {
-        println!("{:<6} {:<18} {:<16} {:<18} {:<20}", "ID", "TIMESTAMP", "ACTOR", "ACTION", "TARGET");
+        println!(
+            "{:<6} {:<18} {:<16} {:<18} {:<20}",
+            "ID", "TIMESTAMP", "ACTOR", "ACTION", "TARGET"
+        );
         println!("{:-<80}", "");
-        if let Some(entries) = resp.get("data").and_then(|d| d.get("audit")).and_then(|a| a.as_array()) {
+        if let Some(entries) = resp
+            .get("data")
+            .and_then(|d| d.get("audit"))
+            .and_then(|a| a.as_array())
+        {
             if entries.is_empty() {
                 println!("No audit records found.");
             } else {
@@ -852,7 +1155,10 @@ async fn handle_audit_command(
                     let actor = e.get("actor").and_then(|v| v.as_str()).unwrap_or("-");
                     let action = e.get("action").and_then(|v| v.as_str()).unwrap_or("-");
                     let target = e.get("target").and_then(|v| v.as_str()).unwrap_or("-");
-                    println!("{:<6} {:<18} {:<16} {:<18} {:<20}", id, ts, actor, action, target);
+                    println!(
+                        "{:<6} {:<18} {:<16} {:<18} {:<20}",
+                        id, ts, actor, action, target
+                    );
                 }
             }
         }
@@ -896,14 +1202,26 @@ async fn handle_cluster_command(
                 if let Some(data) = resp.get("data") {
                     let node_id = data.get("node_id").and_then(|v| v.as_str()).unwrap_or("-");
                     let moniker = data.get("moniker").and_then(|v| v.as_str()).unwrap_or("-");
-                    let secret = data.get("cluster_secret").and_then(|v| v.as_str()).unwrap_or("-");
-                    let connected = data.get("connected_peers").and_then(|v| v.as_i64()).unwrap_or(0);
-                    let total = data.get("total_peers").and_then(|v| v.as_i64()).unwrap_or(0);
+                    let secret = data
+                        .get("cluster_secret")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("-");
+                    let connected = data
+                        .get("connected_peers")
+                        .and_then(|v| v.as_i64())
+                        .unwrap_or(0);
+                    let total = data
+                        .get("total_peers")
+                        .and_then(|v| v.as_i64())
+                        .unwrap_or(0);
 
                     println!("{:<18}: {}", "Node ID", node_id);
                     println!("{:<18}: {}", "Node Moniker", moniker);
                     println!("{:<18}: {}", "Cluster Secret", secret);
-                    println!("{:<18}: {} connected / {} total", "Peer Mesh", connected, total);
+                    println!(
+                        "{:<18}: {} connected / {} total",
+                        "Peer Mesh", connected, total
+                    );
                 } else {
                     println!("{}", serde_json::to_string_pretty(&resp)?);
                 }
@@ -915,7 +1233,11 @@ async fn handle_cluster_command(
             if format == OutputFormat::Json {
                 println!("{}", serde_json::to_string_pretty(&resp)?);
             } else if format == OutputFormat::Jsonl {
-                if let Some(peers) = resp.get("data").and_then(|d| d.get("peers")).and_then(|p| p.as_array()) {
+                if let Some(peers) = resp
+                    .get("data")
+                    .and_then(|d| d.get("peers"))
+                    .and_then(|p| p.as_array())
+                {
                     for peer in peers {
                         println!("{}", serde_json::to_string(peer)?);
                     }
@@ -939,7 +1261,10 @@ async fn handle_cluster_command(
                             let node_id = p.get("node_id").and_then(|v| v.as_str()).unwrap_or("-");
                             let moniker = p.get("moniker").and_then(|v| v.as_str()).unwrap_or("-");
                             let url = p.get("url").and_then(|v| v.as_str()).unwrap_or("-");
-                            let status = p.get("status").and_then(|v| v.as_str()).unwrap_or("unknown");
+                            let status = p
+                                .get("status")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("unknown");
                             let latency = p
                                 .get("latency_ms")
                                 .and_then(|v| v.as_i64())
@@ -952,7 +1277,8 @@ async fn handle_cluster_command(
                                     let now = std::time::SystemTime::now()
                                         .duration_since(std::time::UNIX_EPOCH)
                                         .unwrap_or_default()
-                                        .as_secs() as i64;
+                                        .as_secs()
+                                        as i64;
                                     let diff = (now - ts).max(0);
                                     if diff < 60 {
                                         format!("{}s ago", diff)
@@ -984,7 +1310,10 @@ async fn handle_cluster_command(
             } else if format == OutputFormat::Jsonl {
                 println!("{}", serde_json::to_string(&resp)?);
             } else {
-                println!("Successfully paired and connected with cluster peer at '{}'.", target_url);
+                println!(
+                    "Successfully paired and connected with cluster peer at '{}'.",
+                    target_url
+                );
                 if let Some(peer) = resp.get("data") {
                     if let Some(moniker) = peer.get("moniker").and_then(|v| v.as_str()) {
                         println!("  Moniker: {}", moniker);
@@ -1003,7 +1332,10 @@ async fn handle_cluster_command(
             } else if format == OutputFormat::Jsonl {
                 println!("{}", serde_json::to_string(&resp)?);
             } else {
-                println!("Peer node '{}' successfully removed from cluster mesh.", node_id);
+                println!(
+                    "Peer node '{}' successfully removed from cluster mesh.",
+                    node_id
+                );
             }
         }
 
@@ -1026,7 +1358,10 @@ async fn handle_cluster_command(
             } else if format == OutputFormat::Jsonl {
                 println!("{}", serde_json::to_string(&resp)?);
             } else {
-                println!("Configuration for peer node '{}' successfully updated.", node_id);
+                println!(
+                    "Configuration for peer node '{}' successfully updated.",
+                    node_id
+                );
             }
         }
 
@@ -1065,7 +1400,10 @@ async fn handle_cluster_command(
             } else if format == OutputFormat::Jsonl {
                 println!("{}", serde_json::to_string(&resp)?);
             } else {
-                println!("Local cluster node moniker successfully updated to '{}'.", moniker);
+                println!(
+                    "Local cluster node moniker successfully updated to '{}'.",
+                    moniker
+                );
             }
         }
     }
@@ -1075,7 +1413,10 @@ async fn handle_cluster_command(
 
 // ─── Diagnostics and System Doctor ─────────────────────────────────────────
 
-async fn run_doctor(base_url: &str, format: OutputFormat) -> Result<(), Box<dyn std::error::Error>> {
+async fn run_doctor(
+    base_url: &str,
+    format: OutputFormat,
+) -> Result<(), Box<dyn std::error::Error>> {
     let mut checks = Vec::new();
 
     // 1. Config file check & syntax parsing
@@ -1177,9 +1518,21 @@ async fn run_doctor(base_url: &str, format: OutputFormat) -> Result<(), Box<dyn 
     match client.get(&cluster_url).send().await {
         Ok(resp) if resp.status().is_success() => {
             if let Ok(body) = resp.json::<serde_json::Value>().await {
-                let moniker = body.get("data").and_then(|d| d.get("moniker")).and_then(|v| v.as_str()).unwrap_or("node");
-                let connected = body.get("data").and_then(|d| d.get("connected_peers")).and_then(|v| v.as_i64()).unwrap_or(0);
-                let total = body.get("data").and_then(|d| d.get("total_peers")).and_then(|v| v.as_i64()).unwrap_or(0);
+                let moniker = body
+                    .get("data")
+                    .and_then(|d| d.get("moniker"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("node");
+                let connected = body
+                    .get("data")
+                    .and_then(|d| d.get("connected_peers"))
+                    .and_then(|v| v.as_i64())
+                    .unwrap_or(0);
+                let total = body
+                    .get("data")
+                    .and_then(|d| d.get("total_peers"))
+                    .and_then(|v| v.as_i64())
+                    .unwrap_or(0);
                 checks.push(json!({
                     "item": "Cluster mesh status",
                     "status": "PASS",
@@ -1204,10 +1557,13 @@ async fn run_doctor(base_url: &str, format: OutputFormat) -> Result<(), Box<dyn 
     }));
 
     if format == OutputFormat::Json {
-        println!("{}", serde_json::to_string_pretty(&json!({
-            "success": true,
-            "data": { "checks": checks }
-        }))?);
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json!({
+                "success": true,
+                "data": { "checks": checks }
+            }))?
+        );
     } else if format == OutputFormat::Jsonl {
         for c in &checks {
             println!("{}", serde_json::to_string(c)?);
@@ -1250,7 +1606,10 @@ async fn run_benchmark(
     if format == OutputFormat::Table {
         println!("════════════════════════════════════════════════════════════════");
         println!(" AXIOM CLI HTTP PIPELINE BENCHMARK");
-        println!(" Target: {} | Requests: {} | Concurrency: {}", url, requests, concurrency);
+        println!(
+            " Target: {} | Requests: {} | Concurrency: {}",
+            url, requests, concurrency
+        );
         println!("════════════════════════════════════════════════════════════════\n");
     }
 
@@ -1314,12 +1673,14 @@ async fn run_benchmark(
         0.0
     };
     let p95 = if !latencies_ms.is_empty() {
-        latencies_ms[(latencies_ms.len() as f64 * 0.95).min((latencies_ms.len() - 1) as f64) as usize]
+        latencies_ms
+            [(latencies_ms.len() as f64 * 0.95).min((latencies_ms.len() - 1) as f64) as usize]
     } else {
         0.0
     };
     let p99 = if !latencies_ms.is_empty() {
-        latencies_ms[(latencies_ms.len() as f64 * 0.99).min((latencies_ms.len() - 1) as f64) as usize]
+        latencies_ms
+            [(latencies_ms.len() as f64 * 0.99).min((latencies_ms.len() - 1) as f64) as usize]
     } else {
         0.0
     };
@@ -1383,7 +1744,11 @@ pub async fn handle_config_command(
     format: OutputFormat,
 ) -> Result<(), Box<dyn std::error::Error>> {
     match command {
-        ConfigCommands::Init { path, force, to_env } => {
+        ConfigCommands::Init {
+            path,
+            force,
+            to_env,
+        } => {
             let target_path = Path::new(&path);
             let mut do_write = true;
             let mut do_convert = false;
@@ -1407,7 +1772,11 @@ pub async fn handle_config_command(
                         return Ok(());
                     }
                 } else {
-                    return Err(format!("File '{}' already exists. Use --force to overwrite.", path).into());
+                    return Err(format!(
+                        "File '{}' already exists. Use --force to overwrite.",
+                        path
+                    )
+                    .into());
                 }
             }
 
@@ -1420,11 +1789,22 @@ pub async fn handle_config_command(
                 }
                 std::fs::write(&path, template)?;
                 if format == OutputFormat::Json {
-                    println!("{}", json!({ "status": "success", "file": path, "action": "created" }));
+                    println!(
+                        "{}",
+                        json!({ "status": "success", "file": path, "action": "created" })
+                    );
                 } else if format == OutputFormat::Jsonl {
-                    println!("{}", serde_json::to_string(&json!({ "status": "success", "file": path, "action": "created" }))?);
+                    println!(
+                        "{}",
+                        serde_json::to_string(
+                            &json!({ "status": "success", "file": path, "action": "created" })
+                        )?
+                    );
                 } else {
-                    println!("Successfully initialized new configuration file at '{}'.", path);
+                    println!(
+                        "Successfully initialized new configuration file at '{}'.",
+                        path
+                    );
                 }
             }
 
@@ -1434,9 +1814,17 @@ pub async fn handle_config_command(
                 let env_content = toml_to_env_string(&toml_content)?;
                 std::fs::write(env_path, env_content)?;
                 if format == OutputFormat::Json {
-                    println!("{}", json!({ "status": "success", "file": env_path, "action": "converted" }));
+                    println!(
+                        "{}",
+                        json!({ "status": "success", "file": env_path, "action": "converted" })
+                    );
                 } else if format == OutputFormat::Jsonl {
-                    println!("{}", serde_json::to_string(&json!({ "status": "success", "file": env_path, "action": "converted" }))?);
+                    println!(
+                        "{}",
+                        serde_json::to_string(
+                            &json!({ "status": "success", "file": env_path, "action": "converted" })
+                        )?
+                    );
                 } else {
                     println!("Successfully converted '{}' into '{}'.", path, env_path);
                 }
@@ -1445,10 +1833,17 @@ pub async fn handle_config_command(
             Ok(())
         }
 
-        ConfigCommands::ToEnv { input, output, force } => {
+        ConfigCommands::ToEnv {
+            input,
+            output,
+            force,
+        } => {
             let out_path = Path::new(&output);
             if out_path.exists() && !force {
-                print!("Output file '{}' already exists. Overwrite? (y/N): ", output);
+                print!(
+                    "Output file '{}' already exists. Overwrite? (y/N): ",
+                    output
+                );
                 use std::io::Write;
                 let _ = std::io::stdout().flush();
                 let mut resp = String::new();
@@ -1459,7 +1854,11 @@ pub async fn handle_config_command(
                         return Ok(());
                     }
                 } else {
-                    return Err(format!("File '{}' already exists. Use --force to overwrite.", output).into());
+                    return Err(format!(
+                        "File '{}' already exists. Use --force to overwrite.",
+                        output
+                    )
+                    .into());
                 }
             }
 
@@ -1474,9 +1873,17 @@ pub async fn handle_config_command(
             std::fs::write(&output, env_content)?;
 
             if format == OutputFormat::Json {
-                println!("{}", json!({ "status": "success", "input": input, "output": output }));
+                println!(
+                    "{}",
+                    json!({ "status": "success", "input": input, "output": output })
+                );
             } else if format == OutputFormat::Jsonl {
-                println!("{}", serde_json::to_string(&json!({ "status": "success", "input": input, "output": output }))?);
+                println!(
+                    "{}",
+                    serde_json::to_string(
+                        &json!({ "status": "success", "input": input, "output": output })
+                    )?
+                );
             } else {
                 println!("Successfully converted '{}' to '{}'.", input, output);
             }
@@ -1530,9 +1937,11 @@ pub async fn handle_config_command(
 pub fn toml_to_env_string(toml_str: &str) -> Result<String, Box<dyn std::error::Error>> {
     let table: toml::Table = toml::from_str(toml_str)?;
     let mut lines = vec![
-        "# ─────────────────────────────────────────────────────────────────────────────".to_string(),
+        "# ─────────────────────────────────────────────────────────────────────────────"
+            .to_string(),
         "# Axiom Environment Configuration (Generated from TOML)".to_string(),
-        "# ─────────────────────────────────────────────────────────────────────────────".to_string(),
+        "# ─────────────────────────────────────────────────────────────────────────────"
+            .to_string(),
         "".to_string(),
     ];
 
@@ -1570,10 +1979,13 @@ fn format_env_line(key: &str, val: &toml::Value) -> String {
         toml::Value::Float(f) => f.to_string(),
         toml::Value::Boolean(b) => b.to_string(),
         toml::Value::Array(arr) => {
-            let elements: Vec<String> = arr.iter().map(|item| match item {
-                toml::Value::String(s) => format!("\"{}\"", s.replace('"', "\\\"")),
-                other => other.to_string(),
-            }).collect();
+            let elements: Vec<String> = arr
+                .iter()
+                .map(|item| match item {
+                    toml::Value::String(s) => format!("\"{}\"", s.replace('"', "\\\"")),
+                    other => other.to_string(),
+                })
+                .collect();
             format!("[{}]", elements.join(","))
         }
         toml::Value::Datetime(dt) => dt.to_string(),
@@ -1583,7 +1995,7 @@ fn format_env_line(key: &str, val: &toml::Value) -> String {
 }
 
 fn get_default_config_template() -> &'static str {
-r#"# ─────────────────────────────────────────────────────────────────────────────
+    r#"# ─────────────────────────────────────────────────────────────────────────────
 # Axiom API Gateway - Production-Ready Industrial Configuration
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -1671,13 +2083,21 @@ fn format_bytes(bytes: u64) -> String {
 
 fn render_query_results_table(resp: &Value) {
     let empty_vec = Vec::new();
-    let rows_opt = resp.get("rows").and_then(|r| r.as_array())
-        .or_else(|| resp.get("data").and_then(|d| d.get("rows")).and_then(|r| r.as_array()));
-    let cols_opt = resp.get("columns").and_then(|c| c.as_array())
-        .or_else(|| resp.get("data").and_then(|d| d.get("columns")).and_then(|c| c.as_array()));
+    let rows_opt = resp.get("rows").and_then(|r| r.as_array()).or_else(|| {
+        resp.get("data")
+            .and_then(|d| d.get("rows"))
+            .and_then(|r| r.as_array())
+    });
+    let cols_opt = resp.get("columns").and_then(|c| c.as_array()).or_else(|| {
+        resp.get("data")
+            .and_then(|d| d.get("columns"))
+            .and_then(|c| c.as_array())
+    });
 
     let col_names: Vec<String> = if let Some(cols) = cols_opt {
-        cols.iter().filter_map(|c| c.as_str().map(|s| s.to_string())).collect()
+        cols.iter()
+            .filter_map(|c| c.as_str().map(|s| s.to_string()))
+            .collect()
     } else if let Some(rows) = rows_opt {
         if let Some(first) = rows.first().and_then(|r| r.as_object()) {
             first.keys().cloned().collect()
@@ -1691,11 +2111,13 @@ fn render_query_results_table(resp: &Value) {
     let rows = rows_opt.unwrap_or(&empty_vec);
 
     if col_names.is_empty() || rows.is_empty() {
-        let affected = resp.get("affected_rows")
+        let affected = resp
+            .get("affected_rows")
             .or_else(|| resp.get("data").and_then(|d| d.get("affected_rows")))
             .and_then(|a| a.as_i64())
             .unwrap_or(0);
-        let exec_time = resp.get("execution_time_ms")
+        let exec_time = resp
+            .get("execution_time_ms")
             .or_else(|| resp.get("meta").and_then(|m| m.get("duration_ms")))
             .and_then(|t| t.as_f64());
 
@@ -1761,7 +2183,8 @@ fn render_query_results_table(resp: &Value) {
 
 fn render_rows_table(resp: &Value) {
     let empty_vec = Vec::new();
-    let rows_opt = resp.get("data")
+    let rows_opt = resp
+        .get("data")
         .and_then(|d| d.get("rows"))
         .and_then(|r| r.as_array())
         .or_else(|| resp.get("rows").and_then(|r| r.as_array()));
@@ -1773,7 +2196,9 @@ fn render_rows_table(resp: &Value) {
     }
 
     let first = rows[0].as_object();
-    let col_names: Vec<String> = first.map(|o| o.keys().cloned().collect()).unwrap_or_default();
+    let col_names: Vec<String> = first
+        .map(|o| o.keys().cloned().collect())
+        .unwrap_or_default();
     if col_names.is_empty() {
         println!("No columns found in row data.");
         return;
@@ -1825,7 +2250,11 @@ fn render_rows_table(resp: &Value) {
         println!("{}", row_line.join(" | "));
     }
 
-    if let Some(cursor) = resp.get("pagination").and_then(|p| p.get("next_cursor")).and_then(|c| c.as_str()) {
+    if let Some(cursor) = resp
+        .get("pagination")
+        .and_then(|p| p.get("next_cursor"))
+        .and_then(|c| c.as_str())
+    {
         println!("\nNext cursor for pagination: {}", cursor);
     }
 }
@@ -1850,14 +2279,34 @@ async fn handle_blob_command(
                 println!("{:-<45}", "");
                 println!("{:<28} {:<15}", "METRIC", "VALUE");
                 println!("{:-<45}", "");
-                let total_blobs = data.get("total_blobs").and_then(|v| v.as_u64()).unwrap_or(0);
-                let namespaces_count = data.get("namespaces_count").and_then(|v| v.as_u64()).unwrap_or(0);
-                let total_bytes = data.get("total_bytes").and_then(|v| v.as_u64()).unwrap_or(0);
-                let inline_blobs = data.get("inline_blobs").and_then(|v| v.as_u64()).unwrap_or(0);
-                let external_blobs = data.get("external_blobs").and_then(|v| v.as_u64()).unwrap_or(0);
+                let total_blobs = data
+                    .get("total_blobs")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
+                let namespaces_count = data
+                    .get("namespaces_count")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
+                let total_bytes = data
+                    .get("total_bytes")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
+                let inline_blobs = data
+                    .get("inline_blobs")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
+                let external_blobs = data
+                    .get("external_blobs")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
                 println!("{:<28} {:<15}", "Total Stored Blobs", total_blobs);
                 println!("{:<28} {:<15}", "Active Namespaces", namespaces_count);
-                println!("{:<28} {} ({} B)", "Total Storage Size", format_bytes(total_bytes), total_bytes);
+                println!(
+                    "{:<28} {} ({} B)",
+                    "Total Storage Size",
+                    format_bytes(total_bytes),
+                    total_bytes
+                );
                 println!("{:<28} {:<15}", "Inline Blobs (<64KB)", inline_blobs);
                 println!("{:<28} {:<15}", "External Chunk Blobs", external_blobs);
             }
@@ -1871,8 +2320,14 @@ async fn handle_blob_command(
                 println!("{}", serde_json::to_string(&resp)?);
             } else {
                 let data = resp.get("data").cloned().unwrap_or(resp);
-                let verified = data.get("verified_blobs").and_then(|v| v.as_u64()).unwrap_or(0);
-                let corrupted = data.get("corrupted_blobs").and_then(|v| v.as_u64()).unwrap_or(0);
+                let verified = data
+                    .get("verified_blobs")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
+                let corrupted = data
+                    .get("corrupted_blobs")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
                 println!("Axiom Storage Integrity Scrub Audit");
                 println!("{:-<40}", "");
                 println!("Verified Blobs (BLAKE3 OK): {}", verified);
@@ -1893,7 +2348,10 @@ async fn handle_blob_command(
                 println!("{}", serde_json::to_string(&resp)?);
             } else {
                 let data = resp.get("data").cloned().unwrap_or(resp);
-                let swept = data.get("swept_objects").and_then(|v| v.as_u64()).unwrap_or(0);
+                let swept = data
+                    .get("swept_objects")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
                 println!("TTL Expiration Sweep Complete.");
                 println!("Purged expired objects: {}", swept);
             }
@@ -1913,19 +2371,30 @@ async fn handle_blob_command(
                         println!("{}", serde_json::to_string(&resp)?);
                     }
                 } else {
-                    println!("{:<20} {:<12} {:<18} {:<16}", "NAMESPACE", "OBJECTS", "TOTAL SIZE", "QUOTA");
+                    println!(
+                        "{:<20} {:<12} {:<18} {:<16}",
+                        "NAMESPACE", "OBJECTS", "TOTAL SIZE", "QUOTA"
+                    );
                     println!("{:-<70}", "");
                     if let Some(list) = resp.get("data").and_then(|d| d.as_array()) {
                         for ns in list {
                             let name = ns.get("name").and_then(|n| n.as_str()).unwrap_or("-");
-                            let objects = ns.get("object_count").and_then(|c| c.as_u64()).unwrap_or(0);
+                            let objects =
+                                ns.get("object_count").and_then(|c| c.as_u64()).unwrap_or(0);
                             let bytes = ns.get("total_bytes").and_then(|b| b.as_u64()).unwrap_or(0);
-                            let quota_str = if let Some(q) = ns.get("max_bytes").and_then(|m| m.as_u64()) {
-                                format_bytes(q)
-                            } else {
-                                "unlimited".to_string()
-                            };
-                            println!("{:<20} {:<12} {:<18} {:<16}", name, objects, format_bytes(bytes), quota_str);
+                            let quota_str =
+                                if let Some(q) = ns.get("max_bytes").and_then(|m| m.as_u64()) {
+                                    format_bytes(q)
+                                } else {
+                                    "unlimited".to_string()
+                                };
+                            println!(
+                                "{:<20} {:<12} {:<18} {:<16}",
+                                name,
+                                objects,
+                                format_bytes(bytes),
+                                quota_str
+                            );
                         }
                     }
                 }
@@ -1940,8 +2409,14 @@ async fn handle_blob_command(
                     println!("Namespace '{}' created successfully.", name);
                 }
             }
-            BlobNsCommands::Update { name, new_name, max_bytes } => {
-                let resp = client.update_blob_namespace(&name, new_name.as_deref(), max_bytes).await?;
+            BlobNsCommands::Update {
+                name,
+                new_name,
+                max_bytes,
+            } => {
+                let resp = client
+                    .update_blob_namespace(&name, new_name.as_deref(), max_bytes)
+                    .await?;
                 if format == OutputFormat::Json {
                     println!("{}", serde_json::to_string_pretty(&resp)?);
                 } else if format == OutputFormat::Jsonl {
@@ -1957,18 +2432,36 @@ async fn handle_blob_command(
                 } else if format == OutputFormat::Jsonl {
                     println!("{}", serde_json::to_string(&resp)?);
                 } else {
-                    let count = resp.get("data").and_then(|d| d.get("deleted_objects")).and_then(|c| c.as_u64()).unwrap_or(0);
-                    println!("Namespace '{}' deleted successfully ({} objects removed).", name, count);
+                    let count = resp
+                        .get("data")
+                        .and_then(|d| d.get("deleted_objects"))
+                        .and_then(|c| c.as_u64())
+                        .unwrap_or(0);
+                    println!(
+                        "Namespace '{}' deleted successfully ({} objects removed).",
+                        name, count
+                    );
                 }
             }
         },
 
-        BlobCommands::List { namespace, prefix, cursor, limit } => {
-            let resp = client.list_blobs(&namespace, prefix.as_deref(), cursor.as_deref(), limit).await?;
+        BlobCommands::List {
+            namespace,
+            prefix,
+            cursor,
+            limit,
+        } => {
+            let resp = client
+                .list_blobs(&namespace, prefix.as_deref(), cursor.as_deref(), limit)
+                .await?;
             if format == OutputFormat::Json {
                 println!("{}", serde_json::to_string_pretty(&resp)?);
             } else if format == OutputFormat::Jsonl {
-                if let Some(items) = resp.get("data").and_then(|d| d.get("objects")).and_then(|o| o.as_array()) {
+                if let Some(items) = resp
+                    .get("data")
+                    .and_then(|d| d.get("objects"))
+                    .and_then(|o| o.as_array())
+                {
                     for item in items {
                         println!("{}", serde_json::to_string(item)?);
                     }
@@ -1976,49 +2469,97 @@ async fn handle_blob_command(
                     println!("{}", serde_json::to_string(&resp)?);
                 }
             } else {
-                println!("{:<32} {:<14} {:<24} {:<20}", "KEY", "SIZE", "CONTENT TYPE", "CREATED AT");
+                println!(
+                    "{:<32} {:<14} {:<24} {:<20}",
+                    "KEY", "SIZE", "CONTENT TYPE", "CREATED AT"
+                );
                 println!("{:-<92}", "");
-                if let Some(items) = resp.get("data").and_then(|d| d.get("objects")).and_then(|o| o.as_array()) {
+                if let Some(items) = resp
+                    .get("data")
+                    .and_then(|d| d.get("objects"))
+                    .and_then(|o| o.as_array())
+                {
                     for obj in items {
                         let key = obj.get("key").and_then(|k| k.as_str()).unwrap_or("-");
                         let size = obj.get("size").and_then(|s| s.as_u64()).unwrap_or(0);
-                        let ct = obj.get("content_type").and_then(|c| c.as_str()).unwrap_or("application/octet-stream");
-                        let created = obj.get("created_at_unix").and_then(|t| t.as_i64()).unwrap_or(0);
-                        println!("{:<32} {:<14} {:<24} {:<20}", key, format_bytes(size), ct, created);
+                        let ct = obj
+                            .get("content_type")
+                            .and_then(|c| c.as_str())
+                            .unwrap_or("application/octet-stream");
+                        let created = obj
+                            .get("created_at_unix")
+                            .and_then(|t| t.as_i64())
+                            .unwrap_or(0);
+                        println!(
+                            "{:<32} {:<14} {:<24} {:<20}",
+                            key,
+                            format_bytes(size),
+                            ct,
+                            created
+                        );
                     }
                 }
-                if let Some(next) = resp.get("data").and_then(|d| d.get("next_cursor")).and_then(|c| c.as_str()) {
+                if let Some(next) = resp
+                    .get("data")
+                    .and_then(|d| d.get("next_cursor"))
+                    .and_then(|c| c.as_str())
+                {
                     println!("\nNext cursor: {}", next);
                 }
             }
         }
 
-        BlobCommands::Put { namespace, object_key, file, content_type, ttl } => {
+        BlobCommands::Put {
+            namespace,
+            object_key,
+            file,
+            content_type,
+            ttl,
+        } => {
             let data = if file == "-" {
                 use std::io::Read;
                 let mut buf = Vec::new();
                 std::io::stdin().read_to_end(&mut buf)?;
                 buf
             } else {
-                tokio::fs::read(&file).await.map_err(|e| format!("Failed to read file '{}': {}", file, e))?
+                tokio::fs::read(&file)
+                    .await
+                    .map_err(|e| format!("Failed to read file '{}': {}", file, e))?
             };
 
-            let resp = client.put_blob(&namespace, &object_key, data, content_type.as_deref(), ttl).await?;
+            let resp = client
+                .put_blob(&namespace, &object_key, data, content_type.as_deref(), ttl)
+                .await?;
             if format == OutputFormat::Json {
                 println!("{}", serde_json::to_string_pretty(&resp)?);
             } else if format == OutputFormat::Jsonl {
                 println!("{}", serde_json::to_string(&resp)?);
             } else {
-                let hash = resp.get("data").and_then(|d| d.get("hash")).and_then(|h| h.as_str()).unwrap_or("-");
-                let size = resp.get("data").and_then(|d| d.get("size")).and_then(|s| s.as_u64()).unwrap_or(0);
+                let hash = resp
+                    .get("data")
+                    .and_then(|d| d.get("hash"))
+                    .and_then(|h| h.as_str())
+                    .unwrap_or("-");
+                let size = resp
+                    .get("data")
+                    .and_then(|d| d.get("size"))
+                    .and_then(|s| s.as_u64())
+                    .unwrap_or(0);
                 println!("Blob '{}/{}' uploaded successfully!", namespace, object_key);
                 println!("Size:     {}", format_bytes(size));
                 println!("BLAKE3:   {}", hash);
             }
         }
 
-        BlobCommands::Get { namespace, object_key, output, ticket } => {
-            let (bytes, content_type) = client.get_blob(&namespace, &object_key, ticket.as_deref()).await?;
+        BlobCommands::Get {
+            namespace,
+            object_key,
+            output,
+            ticket,
+        } => {
+            let (bytes, content_type) = client
+                .get_blob(&namespace, &object_key, ticket.as_deref())
+                .await?;
             if output.as_deref() == Some("-") {
                 use std::io::Write;
                 std::io::stdout().write_all(&bytes)?;
@@ -2026,11 +2567,14 @@ async fn handle_blob_command(
                 let dest = match output {
                     Some(out) => out,
                     None => {
-                        let default_name = object_key.rsplit(['/', '\\']).next().unwrap_or("blob.bin");
+                        let default_name =
+                            object_key.rsplit(['/', '\\']).next().unwrap_or("blob.bin");
                         default_name.to_string()
                     }
                 };
-                tokio::fs::write(&dest, &bytes).await.map_err(|e| format!("Failed to write to destination '{}': {}", dest, e))?;
+                tokio::fs::write(&dest, &bytes)
+                    .await
+                    .map_err(|e| format!("Failed to write to destination '{}': {}", dest, e))?;
                 if format == OutputFormat::Json || format == OutputFormat::Jsonl {
                     let out = json!({ "success": true, "namespace": namespace, "key": object_key, "destination": dest, "bytes": bytes.len(), "content_type": content_type });
                     if format == OutputFormat::Json {
@@ -2039,7 +2583,10 @@ async fn handle_blob_command(
                         println!("{}", out);
                     }
                 } else {
-                    println!("Blob '{}/{}' downloaded successfully.", namespace, object_key);
+                    println!(
+                        "Blob '{}/{}' downloaded successfully.",
+                        namespace, object_key
+                    );
                     println!("Saved to:     {}", dest);
                     println!("Size:         {}", format_bytes(bytes.len() as u64));
                     if let Some(ct) = content_type {
@@ -2049,7 +2596,10 @@ async fn handle_blob_command(
             }
         }
 
-        BlobCommands::Head { namespace, object_key } => {
+        BlobCommands::Head {
+            namespace,
+            object_key,
+        } => {
             let resp = client.head_blob(&namespace, &object_key).await?;
             if format == OutputFormat::Json {
                 println!("{}", serde_json::to_string_pretty(&resp)?);
@@ -2067,7 +2617,10 @@ async fn handle_blob_command(
             }
         }
 
-        BlobCommands::Delete { namespace, object_key } => {
+        BlobCommands::Delete {
+            namespace,
+            object_key,
+        } => {
             let resp = client.delete_blob(&namespace, &object_key).await?;
             if format == OutputFormat::Json {
                 println!("{}", serde_json::to_string_pretty(&resp)?);
@@ -2078,27 +2631,61 @@ async fn handle_blob_command(
             }
         }
 
-        BlobCommands::Copy { src_namespace, src_key, dest_key, dest_namespace, prefix } => {
-            let resp = client.copy_blob(&src_namespace, &src_key, &dest_key, dest_namespace.as_deref(), prefix).await?;
+        BlobCommands::Copy {
+            src_namespace,
+            src_key,
+            dest_key,
+            dest_namespace,
+            prefix,
+        } => {
+            let resp = client
+                .copy_blob(
+                    &src_namespace,
+                    &src_key,
+                    &dest_key,
+                    dest_namespace.as_deref(),
+                    prefix,
+                )
+                .await?;
             if format == OutputFormat::Json {
                 println!("{}", serde_json::to_string_pretty(&resp)?);
             } else if format == OutputFormat::Jsonl {
                 println!("{}", serde_json::to_string(&resp)?);
             } else {
                 let target_ns = dest_namespace.as_deref().unwrap_or(&src_namespace);
-                println!("Copied '{}/{}' -> '{}/{}'.", src_namespace, src_key, target_ns, dest_key);
+                println!(
+                    "Copied '{}/{}' -> '{}/{}'.",
+                    src_namespace, src_key, target_ns, dest_key
+                );
             }
         }
 
-        BlobCommands::Move { src_namespace, src_key, dest_key, dest_namespace, prefix } => {
-            let resp = client.move_blob(&src_namespace, &src_key, &dest_key, dest_namespace.as_deref(), prefix).await?;
+        BlobCommands::Move {
+            src_namespace,
+            src_key,
+            dest_key,
+            dest_namespace,
+            prefix,
+        } => {
+            let resp = client
+                .move_blob(
+                    &src_namespace,
+                    &src_key,
+                    &dest_key,
+                    dest_namespace.as_deref(),
+                    prefix,
+                )
+                .await?;
             if format == OutputFormat::Json {
                 println!("{}", serde_json::to_string_pretty(&resp)?);
             } else if format == OutputFormat::Jsonl {
                 println!("{}", serde_json::to_string(&resp)?);
             } else {
                 let target_ns = dest_namespace.as_deref().unwrap_or(&src_namespace);
-                println!("Moved '{}/{}' -> '{}/{}'.", src_namespace, src_key, target_ns, dest_key);
+                println!(
+                    "Moved '{}/{}' -> '{}/{}'.",
+                    src_namespace, src_key, target_ns, dest_key
+                );
             }
         }
 
@@ -2109,19 +2696,33 @@ async fn handle_blob_command(
             } else if format == OutputFormat::Jsonl {
                 println!("{}", serde_json::to_string(&resp)?);
             } else {
-                let deleted = resp.get("data").and_then(|d| d.get("deleted_objects")).and_then(|c| c.as_u64()).unwrap_or(0);
-                println!("Deleted {} object(s) with prefix '{}/{}'.", deleted, namespace, prefix);
+                let deleted = resp
+                    .get("data")
+                    .and_then(|d| d.get("deleted_objects"))
+                    .and_then(|c| c.as_u64())
+                    .unwrap_or(0);
+                println!(
+                    "Deleted {} object(s) with prefix '{}/{}'.",
+                    deleted, namespace, prefix
+                );
             }
         }
 
-        BlobCommands::Verify { namespace, object_key } => {
+        BlobCommands::Verify {
+            namespace,
+            object_key,
+        } => {
             let resp = client.verify_blob(&namespace, &object_key).await?;
             if format == OutputFormat::Json {
                 println!("{}", serde_json::to_string_pretty(&resp)?);
             } else if format == OutputFormat::Jsonl {
                 println!("{}", serde_json::to_string(&resp)?);
             } else {
-                let valid = resp.get("data").and_then(|d| d.get("valid")).and_then(|v| v.as_bool()).unwrap_or(false);
+                let valid = resp
+                    .get("data")
+                    .and_then(|d| d.get("valid"))
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
                 if valid {
                     println!("Cryptographic Integrity: VALID (BLAKE3 hash matches disk chunks)");
                 } else {
@@ -2130,8 +2731,15 @@ async fn handle_blob_command(
             }
         }
 
-        BlobCommands::Ticket { namespace, object_key, operation, ttl } => {
-            let resp = client.create_blob_ticket(&namespace, &object_key, operation.as_deref(), ttl).await?;
+        BlobCommands::Ticket {
+            namespace,
+            object_key,
+            operation,
+            ttl,
+        } => {
+            let resp = client
+                .create_blob_ticket(&namespace, &object_key, operation.as_deref(), ttl)
+                .await?;
             if format == OutputFormat::Json {
                 println!("{}", serde_json::to_string_pretty(&resp)?);
             } else if format == OutputFormat::Jsonl {
@@ -2139,8 +2747,16 @@ async fn handle_blob_command(
             } else {
                 let data = resp.get("data").cloned().unwrap_or(resp);
                 let url = data.get("url").and_then(|u| u.as_str()).unwrap_or("-");
-                let sig = data.get("ticket").and_then(|t| t.get("signature")).and_then(|s| s.as_str()).unwrap_or("-");
-                let exp = data.get("ticket").and_then(|t| t.get("expires_at")).and_then(|e| e.as_i64()).unwrap_or(0);
+                let sig = data
+                    .get("ticket")
+                    .and_then(|t| t.get("signature"))
+                    .and_then(|s| s.as_str())
+                    .unwrap_or("-");
+                let exp = data
+                    .get("ticket")
+                    .and_then(|t| t.get("expires_at"))
+                    .and_then(|e| e.as_i64())
+                    .unwrap_or(0);
                 println!("Pre-signed Capability Ticket Issued!");
                 println!("{:-<45}", "");
                 println!("Signature:  {}", sig);
@@ -2149,8 +2765,14 @@ async fn handle_blob_command(
             }
         }
 
-        BlobCommands::Tickets { namespace, key, all } => {
-            let resp = client.list_blob_tickets(namespace.as_deref(), key.as_deref(), all).await?;
+        BlobCommands::Tickets {
+            namespace,
+            key,
+            all,
+        } => {
+            let resp = client
+                .list_blob_tickets(namespace.as_deref(), key.as_deref(), all)
+                .await?;
             if format == OutputFormat::Json {
                 println!("{}", serde_json::to_string_pretty(&resp)?);
             } else if format == OutputFormat::Jsonl {
@@ -2175,7 +2797,8 @@ async fn handle_blob_command(
                             let ns = t.get("namespace").and_then(|v| v.as_str()).unwrap_or("-");
                             let k = t.get("key").and_then(|v| v.as_str()).unwrap_or("-");
                             let op = t.get("operation").and_then(|v| v.as_str()).unwrap_or("-");
-                            let revoked = t.get("revoked").and_then(|v| v.as_bool()).unwrap_or(false);
+                            let revoked =
+                                t.get("revoked").and_then(|v| v.as_bool()).unwrap_or(false);
                             let exp = t.get("expires_at").and_then(|v| v.as_i64()).unwrap_or(0);
                             let now = std::time::SystemTime::now()
                                 .duration_since(std::time::UNIX_EPOCH)
@@ -2193,7 +2816,10 @@ async fn handle_blob_command(
                             } else {
                                 format!("{}s ago", now - exp)
                             };
-                            println!("{:<6} {:<16} {:<24} {:<6} {:<10} {:<12}", id, ns, k, op, status, exp_str);
+                            println!(
+                                "{:<6} {:<16} {:<24} {:<6} {:<10} {:<12}",
+                                id, ns, k, op, status, exp_str
+                            );
                         }
                     }
                     _ => {
@@ -2285,7 +2911,11 @@ async fn handle_setup_command(
             } else if format == OutputFormat::Jsonl {
                 println!("{}", serde_json::to_string(&resp)?);
             } else {
-                let required = resp.get("data").and_then(|d| d.get("setup_required")).and_then(|s| s.as_bool()).unwrap_or(false);
+                let required = resp
+                    .get("data")
+                    .and_then(|d| d.get("setup_required"))
+                    .and_then(|s| s.as_bool())
+                    .unwrap_or(false);
                 if required {
                     println!("Initial setup is REQUIRED. Run 'axiom setup' to initialize your admin account.");
                 } else {
@@ -2303,7 +2933,11 @@ async fn handle_setup_command(
                 }
             };
             let resp = client.setup_account(&username, &pass).await?;
-            if let Some(token) = resp.get("data").and_then(|d| d.get("token")).and_then(|t| t.as_str()) {
+            if let Some(token) = resp
+                .get("data")
+                .and_then(|d| d.get("token"))
+                .and_then(|t| t.as_str())
+            {
                 let _ = save_session(token);
             }
             if format == OutputFormat::Json {
@@ -2311,21 +2945,33 @@ async fn handle_setup_command(
             } else if format == OutputFormat::Jsonl {
                 println!("{}", serde_json::to_string(&resp)?);
             } else {
-                println!("Admin account '{}' created successfully during setup!", username);
-                if let Some(token) = resp.get("data").and_then(|d| d.get("token")).and_then(|t| t.as_str()) {
+                println!(
+                    "Admin account '{}' created successfully during setup!",
+                    username
+                );
+                if let Some(token) = resp
+                    .get("data")
+                    .and_then(|d| d.get("token"))
+                    .and_then(|t| t.as_str())
+                {
                     println!("Session Token: {}", token);
                 }
             }
         }
 
         Some(SetupCommands::Database { alias, url, engine }) => {
-            let resp = client.setup_database(&alias, &url, engine.as_deref()).await?;
+            let resp = client
+                .setup_database(&alias, &url, engine.as_deref())
+                .await?;
             if format == OutputFormat::Json {
                 println!("{}", serde_json::to_string_pretty(&resp)?);
             } else if format == OutputFormat::Jsonl {
                 println!("{}", serde_json::to_string(&resp)?);
             } else {
-                println!("Initial database target '{}' registered and verified successfully.", alias);
+                println!(
+                    "Initial database target '{}' registered and verified successfully.",
+                    alias
+                );
             }
         }
 
@@ -2347,7 +2993,11 @@ async fn handle_setup_command(
             println!("===============================================\n");
 
             let check = client.setup_begin().await?;
-            let required = check.get("data").and_then(|d| d.get("setup_required")).and_then(|s| s.as_bool()).unwrap_or(false);
+            let required = check
+                .get("data")
+                .and_then(|d| d.get("setup_required"))
+                .and_then(|s| s.as_bool())
+                .unwrap_or(false);
             if !required {
                 println!("Setup wizard has already been completed on this server.");
                 return Ok(());
@@ -2359,7 +3009,11 @@ async fn handle_setup_command(
             let mut username_buf = String::new();
             stdin().read_line(&mut username_buf)?;
             let username = username_buf.trim();
-            let username = if username.is_empty() { "admin" } else { username };
+            let username = if username.is_empty() {
+                "admin"
+            } else {
+                username
+            };
 
             eprint!("2. Enter password (min 8 chars): ");
             let pass = rpassword::read_password()?;
@@ -2369,7 +3023,11 @@ async fn handle_setup_command(
 
             println!("\nCreating initial admin account...");
             let acc_resp = client.setup_account(username, &pass).await?;
-            if let Some(token) = acc_resp.get("data").and_then(|d| d.get("token")).and_then(|t| t.as_str()) {
+            if let Some(token) = acc_resp
+                .get("data")
+                .and_then(|d| d.get("token"))
+                .and_then(|t| t.as_str())
+            {
                 let _ = save_session(token);
             }
             println!("Admin account '{}' created and authenticated!\n", username);
@@ -2388,7 +3046,9 @@ async fn handle_setup_command(
                 let alias = alias_buf.trim();
                 let alias = if alias.is_empty() { "main_db" } else { alias };
 
-                print!("   Database connection URL (e.g. postgres://user:pass@localhost:5432/db): ");
+                print!(
+                    "   Database connection URL (e.g. postgres://user:pass@localhost:5432/db): "
+                );
                 stdout().flush()?;
                 let mut url_buf = String::new();
                 stdin().read_line(&mut url_buf)?;
@@ -2397,8 +3057,14 @@ async fn handle_setup_command(
                 if !url.is_empty() {
                     println!("   Testing and registering connection...");
                     match client.setup_database(alias, url, None).await {
-                        Ok(_) => println!("   Database '{}' connected and verified successfully!", alias),
-                        Err(e) => println!("   Warning: Failed to connect database ({}). You can add it later.", e),
+                        Ok(_) => println!(
+                            "   Database '{}' connected and verified successfully!",
+                            alias
+                        ),
+                        Err(e) => println!(
+                            "   Warning: Failed to connect database ({}). You can add it later.",
+                            e
+                        ),
                     }
                 }
             }

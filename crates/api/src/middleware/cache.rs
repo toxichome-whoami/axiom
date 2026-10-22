@@ -103,7 +103,7 @@ impl TursoCache {
         };
 
         let conn = db.connect()?;
-        
+
         // Initialize tables
         conn.execute(
             "CREATE TABLE IF NOT EXISTS rate_limits (
@@ -112,7 +112,8 @@ impl TursoCache {
                 expires_at INTEGER NOT NULL
             )",
             (),
-        ).await?;
+        )
+        .await?;
 
         conn.execute(
             "CREATE TABLE IF NOT EXISTS penalties (
@@ -121,7 +122,8 @@ impl TursoCache {
                 expires_at INTEGER NOT NULL
             )",
             (),
-        ).await?;
+        )
+        .await?;
 
         conn.execute(
             "CREATE TABLE IF NOT EXISTS query_cache (
@@ -130,20 +132,38 @@ impl TursoCache {
                 expires_at INTEGER NOT NULL
             )",
             (),
-        ).await?;
+        )
+        .await?;
 
         let _ = TURSO_DB.set(conn);
-        
+
         // Start cleanup daemon
         let handle = tokio::spawn(async move {
-            let Some(conn) = TURSO_DB.get() else { return; };
+            let Some(conn) = TURSO_DB.get() else {
+                return;
+            };
             let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
             loop {
                 interval.tick().await;
                 let now = now_secs() as i64;
-                let _ = conn.execute("DELETE FROM rate_limits WHERE expires_at < ?1", libsql::params![now]).await;
-                let _ = conn.execute("DELETE FROM penalties WHERE expires_at < ?1", libsql::params![now]).await;
-                let _ = conn.execute("DELETE FROM query_cache WHERE expires_at < ?1", libsql::params![now]).await;
+                let _ = conn
+                    .execute(
+                        "DELETE FROM rate_limits WHERE expires_at < ?1",
+                        libsql::params![now],
+                    )
+                    .await;
+                let _ = conn
+                    .execute(
+                        "DELETE FROM penalties WHERE expires_at < ?1",
+                        libsql::params![now],
+                    )
+                    .await;
+                let _ = conn
+                    .execute(
+                        "DELETE FROM query_cache WHERE expires_at < ?1",
+                        libsql::params![now],
+                    )
+                    .await;
             }
         });
         crate::server::lifespan::register_daemon(handle);
@@ -161,8 +181,15 @@ impl TursoCache {
     ) -> (bool, u32) {
         let Some(conn) = TURSO_DB.get() else {
             return MemoryCache::check_rate_limit(
-                &format!("rl:ip:{}", client_ip), window, limit, &format!("penalty:{}", client_ip), _burst, penalty_cooldown, penalty_threshold
-            ).await;
+                &format!("rl:ip:{}", client_ip),
+                window,
+                limit,
+                &format!("penalty:{}", client_ip),
+                _burst,
+                penalty_cooldown,
+                penalty_threshold,
+            )
+            .await;
         };
 
         let now = now_secs() as i64;
@@ -170,7 +197,13 @@ impl TursoCache {
         let penalty_expires = now + penalty_cooldown as i64;
 
         // Check if IP is currently banned
-        if let Ok(mut rows) = conn.query("SELECT violations FROM penalties WHERE ip = ?1 AND expires_at > ?2", libsql::params![client_ip.to_string(), now]).await {
+        if let Ok(mut rows) = conn
+            .query(
+                "SELECT violations FROM penalties WHERE ip = ?1 AND expires_at > ?2",
+                libsql::params![client_ip.to_string(), now],
+            )
+            .await
+        {
             if let Ok(Some(row)) = rows.next().await {
                 let violations: i32 = row.get(0).unwrap_or(0);
                 if violations >= penalty_threshold as i32 {
@@ -180,17 +213,25 @@ impl TursoCache {
         }
 
         // Increment hit count
-        let _ = conn.execute(
-            "INSERT INTO rate_limits (ip, hits, expires_at) 
+        let _ = conn
+            .execute(
+                "INSERT INTO rate_limits (ip, hits, expires_at) 
              VALUES (?1, 1, ?2) 
              ON CONFLICT(ip) DO UPDATE SET 
              hits = CASE WHEN expires_at < ?3 THEN 1 ELSE hits + 1 END,
              expires_at = CASE WHEN expires_at < ?3 THEN ?2 ELSE expires_at END",
-             libsql::params![client_ip.to_string(), expires_at, now]
-        ).await;
+                libsql::params![client_ip.to_string(), expires_at, now],
+            )
+            .await;
 
         let mut hits = 1;
-        if let Ok(mut rows) = conn.query("SELECT hits FROM rate_limits WHERE ip = ?1", libsql::params![client_ip.to_string()]).await {
+        if let Ok(mut rows) = conn
+            .query(
+                "SELECT hits FROM rate_limits WHERE ip = ?1",
+                libsql::params![client_ip.to_string()],
+            )
+            .await
+        {
             if let Ok(Some(row)) = rows.next().await {
                 hits = row.get(0).unwrap_or(1);
             }
@@ -198,14 +239,16 @@ impl TursoCache {
 
         if hits > limit as i32 {
             // Apply penalty
-            let _ = conn.execute(
-                "INSERT INTO penalties (ip, violations, expires_at)
+            let _ = conn
+                .execute(
+                    "INSERT INTO penalties (ip, violations, expires_at)
                  VALUES (?1, 1, ?2)
                  ON CONFLICT(ip) DO UPDATE SET 
                  violations = CASE WHEN expires_at < ?3 THEN 1 ELSE violations + 1 END,
                  expires_at = CASE WHEN expires_at < ?3 THEN ?2 ELSE expires_at END",
-                 libsql::params![client_ip.to_string(), penalty_expires, now]
-            ).await;
+                    libsql::params![client_ip.to_string(), penalty_expires, now],
+                )
+                .await;
             return (true, hits as u32);
         }
 
@@ -215,7 +258,13 @@ impl TursoCache {
     pub async fn get_query_cache(key: &str) -> Option<bytes::Bytes> {
         let conn = TURSO_DB.get()?;
         let now = now_secs() as i64;
-        if let Ok(mut rows) = conn.query("SELECT value FROM query_cache WHERE key = ?1 AND expires_at > ?2", libsql::params![key.to_string(), now]).await {
+        if let Ok(mut rows) = conn
+            .query(
+                "SELECT value FROM query_cache WHERE key = ?1 AND expires_at > ?2",
+                libsql::params![key.to_string(), now],
+            )
+            .await
+        {
             if let Ok(Some(row)) = rows.next().await {
                 let bytes: Vec<u8> = row.get(0).ok()?;
                 return Some(bytes::Bytes::from(bytes));
@@ -236,12 +285,24 @@ impl TursoCache {
     }
 
     pub async fn get_all_active_query_cache() -> Vec<(String, bytes::Bytes, i64)> {
-        let Some(conn) = TURSO_DB.get() else { return Vec::new(); };
+        let Some(conn) = TURSO_DB.get() else {
+            return Vec::new();
+        };
         let now = now_secs() as i64;
         let mut results = Vec::new();
-        if let Ok(mut rows) = conn.query("SELECT key, value, expires_at FROM query_cache WHERE expires_at > ?1", libsql::params![now]).await {
+        if let Ok(mut rows) = conn
+            .query(
+                "SELECT key, value, expires_at FROM query_cache WHERE expires_at > ?1",
+                libsql::params![now],
+            )
+            .await
+        {
             while let Ok(Some(row)) = rows.next().await {
-                if let (Ok(key), Ok(bytes), Ok(exp)) = (row.get::<String>(0), row.get::<Vec<u8>>(1), row.get::<i64>(2)) {
+                if let (Ok(key), Ok(bytes), Ok(exp)) = (
+                    row.get::<String>(0),
+                    row.get::<Vec<u8>>(1),
+                    row.get::<i64>(2),
+                ) {
                     results.push((key, bytes::Bytes::from(bytes), exp));
                 }
             }

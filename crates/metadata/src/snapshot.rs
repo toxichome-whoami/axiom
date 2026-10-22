@@ -110,4 +110,3 @@ mod tests {
         assert_eq!(key.secret_hash[0], 42);
     }
 }
-

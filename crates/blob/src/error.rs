@@ -17,20 +17,11 @@ pub enum BlobError {
     /// The specified namespace does not exist.
     NamespaceNotFound(String),
     /// The requested blob was not found within the designated namespace.
-    NotFound {
-        namespace: String,
-        key: String,
-    },
+    NotFound { namespace: String, key: String },
     /// Attempted to write to an object key that already exists when overwrite is forbidden.
-    AlreadyExists {
-        namespace: String,
-        key: String,
-    },
+    AlreadyExists { namespace: String, key: String },
     /// Upload payload exceeded configured size ceiling.
-    PayloadTooLarge {
-        size: u64,
-        max: u64,
-    },
+    PayloadTooLarge { size: u64, max: u64 },
     /// Storage quota for the target namespace would be exceeded.
     QuotaExceeded {
         namespace: String,
@@ -39,10 +30,7 @@ pub enum BlobError {
         max: u64,
     },
     /// BLAKE3 cryptographic checksum mismatch during verification.
-    ChecksumMismatch {
-        expected: String,
-        actual: String,
-    },
+    ChecksumMismatch { expected: String, actual: String },
     /// HTTP Range specification was malformed or unsatisfiable.
     InvalidRange(String),
     /// Capability ticket signature or expiration was invalid.
@@ -50,10 +38,7 @@ pub enum BlobError {
     /// Multipart / chunked upload session was not found or expired.
     UploadSessionNotFound(String),
     /// Upload offset mismatch during resumable upload.
-    OffsetMismatch {
-        expected: u64,
-        actual: u64,
-    },
+    OffsetMismatch { expected: u64, actual: u64 },
     /// Host filesystem input/output failure.
     Io(String),
     /// Underlying LSM database or indexing failure.
@@ -75,7 +60,12 @@ impl fmt::Display for BlobError {
             Self::PayloadTooLarge { size, max } => {
                 write!(f, "Payload size {} exceeds limit of {} bytes", size, max)
             }
-            Self::QuotaExceeded { namespace, current, requested, max } => {
+            Self::QuotaExceeded {
+                namespace,
+                current,
+                requested,
+                max,
+            } => {
                 write!(
                     f,
                     "Namespace '{}' quota exceeded: current {} B + payload {} B exceeds limit of {} B",

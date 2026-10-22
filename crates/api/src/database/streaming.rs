@@ -87,7 +87,9 @@ pub fn stream_json_array_envelope(
         loop {
             match state.stage {
                 StreamStage::Header => {
-                    state.buf.extend_from_slice(b"{\"success\":true,\"data\":{\"rows\":[");
+                    state
+                        .buf
+                        .extend_from_slice(b"{\"success\":true,\"data\":{\"rows\":[");
                     state.stage = StreamStage::Rows;
                     if state.buf.len() >= STREAM_CHUNK_SIZE {
                         let chunk = state.buf.split().freeze();
@@ -227,7 +229,10 @@ mod tests {
             total_bytes += chunk.len();
         }
 
-        assert!(chunk_count > 1, "Large row set must be split into multiple bounded chunks");
+        assert!(
+            chunk_count > 1,
+            "Large row set must be split into multiple bounded chunks"
+        );
         assert!(total_bytes > 2000 * 100);
     }
 }

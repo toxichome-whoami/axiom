@@ -51,7 +51,10 @@ impl BanList {
                 KEY_BANS.insert(key, BanEntry { reason, expires_at });
             }
             if count > 0 {
-                tracing::info!("Loaded {} persistent API key suspensions from metadata store", count);
+                tracing::info!(
+                    "Loaded {} persistent API key suspensions from metadata store",
+                    count
+                );
             }
         }
     }
@@ -131,7 +134,11 @@ impl BanList {
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs() as i64;
-        let expires_at = if ttl_secs > 0 { now_unix + ttl_secs as i64 } else { 0 };
+        let expires_at = if ttl_secs > 0 {
+            now_unix + ttl_secs as i64
+        } else {
+            0
+        };
 
         IP_BANS.insert(
             ip.to_string(),
@@ -145,7 +152,12 @@ impl BanList {
         let reason_owned = reason.to_string();
         if let Ok(handle) = tokio::runtime::Handle::try_current() {
             handle.spawn(async move {
-                let _ = axiom_metadata::MetadataStore::save_ip_ban(&ip_owned, &reason_owned, expires_at).await;
+                let _ = axiom_metadata::MetadataStore::save_ip_ban(
+                    &ip_owned,
+                    &reason_owned,
+                    expires_at,
+                )
+                .await;
             });
         }
     }
@@ -184,7 +196,11 @@ impl BanList {
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs() as i64;
-        let expires_at = if ttl_secs > 0 { now_unix + ttl_secs as i64 } else { 0 };
+        let expires_at = if ttl_secs > 0 {
+            now_unix + ttl_secs as i64
+        } else {
+            0
+        };
 
         KEY_BANS.insert(
             key_name.to_string(),
@@ -198,7 +214,12 @@ impl BanList {
         let reason_owned = reason.to_string();
         if let Ok(handle) = tokio::runtime::Handle::try_current() {
             handle.spawn(async move {
-                let _ = axiom_metadata::MetadataStore::save_key_ban(&key_owned, &reason_owned, expires_at).await;
+                let _ = axiom_metadata::MetadataStore::save_key_ban(
+                    &key_owned,
+                    &reason_owned,
+                    expires_at,
+                )
+                .await;
             });
         }
     }
@@ -228,12 +249,20 @@ impl BanList {
     ///    preventing unauthenticated attackers from causing Denial of Service against legitimate key owners.
     ///  - Side effects: Increments failure counter for (ip, key); automatically calls `ban_ip_with_ttl` when threshold reached.
     ///  - Idempotent: No (increments state).
-    pub fn record_failed_auth_for_ip(client_ip: &str, key_name: &str, threshold: u32, window_secs: u64, cooldown_secs: u64) -> bool {
+    pub fn record_failed_auth_for_ip(
+        client_ip: &str,
+        key_name: &str,
+        threshold: u32,
+        window_secs: u64,
+        cooldown_secs: u64,
+    ) -> bool {
         let now = Instant::now();
         let window = Duration::from_secs(window_secs);
         let tracking_key = format!("{}:{}", client_ip, key_name);
 
-        let mut entry = FAILED_AUTH_BY_IP_KEY.entry(tracking_key).or_insert((0, now));
+        let mut entry = FAILED_AUTH_BY_IP_KEY
+            .entry(tracking_key)
+            .or_insert((0, now));
         let (count, first_seen) = entry.value_mut();
 
         // Sliding reset: if window expired without breaching threshold, restart count
@@ -262,11 +291,18 @@ impl BanList {
     ///  - Returns `true` if this failure triggered an automatic key suspension.
     ///  - Side effects: Increments failure counter; automatically calls `ban_key` when threshold reached.
     ///  - Idempotent: No (increments state).
-    pub fn record_failed_auth(key_name: &str, threshold: u32, window_secs: u64, cooldown_secs: u64) -> bool {
+    pub fn record_failed_auth(
+        key_name: &str,
+        threshold: u32,
+        window_secs: u64,
+        cooldown_secs: u64,
+    ) -> bool {
         let now = Instant::now();
         let window = Duration::from_secs(window_secs);
 
-        let mut entry = FAILED_AUTH_BY_KEY.entry(key_name.to_string()).or_insert((0, now));
+        let mut entry = FAILED_AUTH_BY_KEY
+            .entry(key_name.to_string())
+            .or_insert((0, now));
         let (count, first_seen) = entry.value_mut();
 
         // Sliding reset: if window expired without breaching threshold, restart count
@@ -311,7 +347,8 @@ impl BanList {
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs() as i64;
-        IP_BANS.iter()
+        IP_BANS
+            .iter()
             .filter(|entry| entry.value().expires_at == 0 || entry.value().expires_at > now_unix)
             .map(|entry| entry.key().clone())
             .collect()

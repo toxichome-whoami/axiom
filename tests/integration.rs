@@ -19,15 +19,15 @@ use std::collections::HashMap;
 use tower::ServiceExt;
 
 use axiom_api::database::filter_builder::build_where_clause;
+use axiom_api::security::ban_list::BanList;
+use axiom_api::server::app::create_app;
 use axiom_cache::{CacheEngine, Durability};
+use axiom_core::AuthContext;
 use axiom_metadata::snapshot::{
     update_snapshot, ApiKeySnapshot, DatabaseSnapshot, MetadataSnapshot, PermissionSnapshot,
     RoleSnapshot,
 };
 use axiom_policy::PolicyEngine;
-use axiom_api::security::ban_list::BanList;
-use axiom_api::server::app::create_app;
-use axiom_core::AuthContext;
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  Fixtures
@@ -230,7 +230,8 @@ async fn ensure_metadata_store() {
                     operations: vec!["*".to_string()],
                     rls_filter: None,
                 }],
-            ).await;
+            )
+            .await;
 
             let _ = axiom_metadata::MetadataStore::create_role(
                 "readonly_role",
@@ -243,7 +244,8 @@ async fn ensure_metadata_store() {
                     operations: vec!["SELECT".to_string()],
                     rls_filter: None,
                 }],
-            ).await;
+            )
+            .await;
 
             let _ = axiom_metadata::MetadataStore::create_role(
                 "blob_reader_role",
@@ -256,7 +258,8 @@ async fn ensure_metadata_store() {
                     operations: vec!["READ".to_string()],
                     rls_filter: None,
                 }],
-            ).await;
+            )
+            .await;
 
             let _ = axiom_metadata::MetadataStore::create_role(
                 "blob_wildcard_role",
@@ -269,7 +272,8 @@ async fn ensure_metadata_store() {
                     operations: vec!["READ".to_string(), "WRITE".to_string()],
                     rls_filter: None,
                 }],
-            ).await;
+            )
+            .await;
 
             let _ = axiom_metadata::MetadataStore::create_role(
                 "items_reader_role",
@@ -282,7 +286,8 @@ async fn ensure_metadata_store() {
                     operations: vec!["SELECT".to_string()],
                     rls_filter: None,
                 }],
-            ).await;
+            )
+            .await;
 
             // Keys
             let _ = axiom_metadata::MetadataStore::create_key(
@@ -291,7 +296,8 @@ async fn ensure_metadata_store() {
                 Some("secret_admin"),
                 0,
                 None,
-            ).await;
+            )
+            .await;
 
             let _ = axiom_metadata::MetadataStore::create_key(
                 "ro_key",
@@ -299,7 +305,8 @@ async fn ensure_metadata_store() {
                 Some("secret_ro"),
                 0,
                 None,
-            ).await;
+            )
+            .await;
 
             let _ = axiom_metadata::MetadataStore::create_key(
                 "expired_key",
@@ -307,7 +314,8 @@ async fn ensure_metadata_store() {
                 Some("secret_exp"),
                 0,
                 Some(1000),
-            ).await;
+            )
+            .await;
 
             let _ = axiom_metadata::MetadataStore::create_key(
                 "blob_reader_key",
@@ -315,7 +323,8 @@ async fn ensure_metadata_store() {
                 Some("secret_blob_ro"),
                 0,
                 None,
-            ).await;
+            )
+            .await;
 
             let _ = axiom_metadata::MetadataStore::create_key(
                 "blob_wildcard_key",
@@ -323,7 +332,8 @@ async fn ensure_metadata_store() {
                 Some("secret_blob_wildcard"),
                 0,
                 None,
-            ).await;
+            )
+            .await;
 
             let _ = axiom_metadata::MetadataStore::create_key(
                 "items_reader_key",
@@ -331,7 +341,8 @@ async fn ensure_metadata_store() {
                 Some("secret_items_ro"),
                 0,
                 None,
-            ).await;
+            )
+            .await;
 
             // Databases
             let _ = axiom_metadata::MetadataStore::add_database(
@@ -341,7 +352,8 @@ async fn ensure_metadata_store() {
                 Some(1),
                 Some(5),
                 None,
-            ).await;
+            )
+            .await;
 
             let _ = axiom_metadata::MetadataStore::add_database(
                 "dead_db",
@@ -350,13 +362,17 @@ async fn ensure_metadata_store() {
                 Some(1),
                 Some(5),
                 None,
-            ).await;
+            )
+            .await;
 
             axiom_metadata::MetadataStore::sync_snapshot()
                 .await
                 .expect("Failed to sync initial metadata snapshot");
 
-            if let Ok(secret) = axiom_metadata::MetadataStore::get_or_create_system_secret("blob_ticket_secret").await {
+            if let Ok(secret) =
+                axiom_metadata::MetadataStore::get_or_create_system_secret("blob_ticket_secret")
+                    .await
+            {
                 axiom_blob::tickets::set_ticket_secret(&secret);
             }
         })
@@ -379,9 +395,12 @@ async fn ensure_test_items_table() {
             let create_req = Request::post("/api/v1/db/testdb/query")
                 .header("X-Axiom-Key", &admin_token)
                 .header("Content-Type", "application/json")
-                .body(Body::from(serde_json::to_vec(&serde_json::json!({
-                    "sql": create_sql
-                })).unwrap()))
+                .body(Body::from(
+                    serde_json::to_vec(&serde_json::json!({
+                        "sql": create_sql
+                    }))
+                    .unwrap(),
+                ))
                 .unwrap();
             let res = create_app().oneshot(create_req).await.unwrap();
             assert_eq!(res.status(), StatusCode::OK);
@@ -397,7 +416,11 @@ async fn ensure_test_items_table() {
 async fn auth_bypass_missing_header() {
     setup_test_metadata();
     let res = create_app()
-        .oneshot(Request::get("/api/v1/db/main/tables").body(Body::empty()).unwrap())
+        .oneshot(
+            Request::get("/api/v1/db/main/tables")
+                .body(Body::empty())
+                .unwrap(),
+        )
         .await
         .unwrap();
     assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
@@ -645,7 +668,11 @@ fn filter_unknown_operator_silently_ignored() {
 #[tokio::test]
 async fn waf_null_byte_rejection() {
     let res = create_app()
-        .oneshot(Request::get("/api/v1/db/main%00/tables").body(Body::empty()).unwrap())
+        .oneshot(
+            Request::get("/api/v1/db/main%00/tables")
+                .body(Body::empty())
+                .unwrap(),
+        )
         .await
         .unwrap();
     assert_eq!(res.status(), StatusCode::BAD_REQUEST);
@@ -654,7 +681,11 @@ async fn waf_null_byte_rejection() {
 #[tokio::test]
 async fn waf_path_traversal_rejection() {
     let res = create_app()
-        .oneshot(Request::get("/api/v1/db/../../etc/passwd").body(Body::empty()).unwrap())
+        .oneshot(
+            Request::get("/api/v1/db/../../etc/passwd")
+                .body(Body::empty())
+                .unwrap(),
+        )
         .await
         .unwrap();
     assert_eq!(res.status(), StatusCode::BAD_REQUEST);
@@ -769,7 +800,10 @@ async fn brute_force_api_key_bad_secrets_ban_attacker_ip_not_key() {
 
     // The legitimate key itself MUST NOT be banned
     let (key_banned, _) = BanList::is_key_banned(victim_key_name);
-    assert!(!key_banned, "Target API key was maliciously suspended by an attacker");
+    assert!(
+        !key_banned,
+        "Target API key was maliciously suspended by an attacker"
+    );
 
     // Legitimate client from a different IP with valid credentials still authenticates successfully
     let valid_token = BASE64_STANDARD.encode(format!("{}:secret_ro", victim_key_name));
@@ -785,7 +819,6 @@ async fn brute_force_api_key_bad_secrets_ban_attacker_ip_not_key() {
     BanList::unban_ip(attacker_ip);
 }
 
-
 #[tokio::test]
 async fn distributed_credential_stuffing_account_lockout() {
     ensure_metadata_store().await;
@@ -798,10 +831,13 @@ async fn distributed_credential_stuffing_account_lockout() {
         let req = Request::post("/admin/v1/auth/login")
             .header("Content-Type", "application/json")
             .header("X-Forwarded-For", fake_ip)
-            .body(Body::from(serde_json::to_vec(&serde_json::json!({
-                "username": username,
-                "password": "WrongPasswordAttempt!"
-            })).unwrap()))
+            .body(Body::from(
+                serde_json::to_vec(&serde_json::json!({
+                    "username": username,
+                    "password": "WrongPasswordAttempt!"
+                }))
+                .unwrap(),
+            ))
             .unwrap();
         let res = create_app().oneshot(req).await.unwrap();
         assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
@@ -811,15 +847,17 @@ async fn distributed_credential_stuffing_account_lockout() {
     let req6 = Request::post("/admin/v1/auth/login")
         .header("Content-Type", "application/json")
         .header("X-Forwarded-For", "203.0.113.99")
-        .body(Body::from(serde_json::to_vec(&serde_json::json!({
-            "username": username,
-            "password": "AnyPasswordHere"
-        })).unwrap()))
+        .body(Body::from(
+            serde_json::to_vec(&serde_json::json!({
+                "username": username,
+                "password": "AnyPasswordHere"
+            }))
+            .unwrap(),
+        ))
         .unwrap();
     let res6 = create_app().oneshot(req6).await.unwrap();
     assert_eq!(res6.status(), StatusCode::TOO_MANY_REQUESTS);
 }
-
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  8. Security Response Headers
@@ -831,7 +869,10 @@ async fn security_headers_present_on_all_responses() {
         .oneshot(Request::get("/").body(Body::empty()).unwrap())
         .await
         .unwrap();
-    assert_eq!(res.headers().get("x-content-type-options").unwrap(), "nosniff");
+    assert_eq!(
+        res.headers().get("x-content-type-options").unwrap(),
+        "nosniff"
+    );
     assert_eq!(res.headers().get("x-frame-options").unwrap(), "DENY");
     assert_eq!(
         res.headers().get("strict-transport-security").unwrap(),
@@ -857,9 +898,18 @@ async fn cache_poisoning_key_isolation() {
     let key_a = format!("user_a:{}:{}:{:?}", db, sql, params);
     let key_b = format!("user_b:{}:{}:{:?}", db, sql, params);
 
-    CacheEngine::set(&key_a, Bytes::from("secrets_for_a_only"), 60, Durability::MemoryOnly).await;
+    CacheEngine::set(
+        &key_a,
+        Bytes::from("secrets_for_a_only"),
+        60,
+        Durability::MemoryOnly,
+    )
+    .await;
 
-    assert_eq!(CacheEngine::get(&key_a).await, Some(Bytes::from("secrets_for_a_only")));
+    assert_eq!(
+        CacheEngine::get(&key_a).await,
+        Some(Bytes::from("secrets_for_a_only"))
+    );
     assert_eq!(CacheEngine::get(&key_b).await, None);
 }
 
@@ -889,7 +939,10 @@ async fn rate_limit_spoofed_xff_from_untrusted_proxy() {
 #[tokio::test]
 async fn waf_query_param_flood_rejected() {
     // 51 ampersands exceeds the 50-param limit
-    let params = (0..52).map(|i| format!("k{}=v", i)).collect::<Vec<_>>().join("&");
+    let params = (0..52)
+        .map(|i| format!("k{}=v", i))
+        .collect::<Vec<_>>()
+        .join("&");
     let uri = format!("/api/v1/db/main/tables?{}", params);
     let res = create_app()
         .oneshot(Request::get(&uri).body(Body::empty()).unwrap())
@@ -980,12 +1033,18 @@ async fn fallback_unknown_route_returns_404() {
 async fn error_response_has_correct_json_envelope() {
     setup_test_metadata();
     let res = create_app()
-        .oneshot(Request::get("/api/v1/db/main/tables").body(Body::empty()).unwrap())
+        .oneshot(
+            Request::get("/api/v1/db/main/tables")
+                .body(Body::empty())
+                .unwrap(),
+        )
         .await
         .unwrap();
     assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
 
-    let body_bytes = axum::body::to_bytes(res.into_body(), 1_000_000).await.unwrap();
+    let body_bytes = axum::body::to_bytes(res.into_body(), 1_000_000)
+        .await
+        .unwrap();
     let json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
 
     // Verify envelope contract: success=false, data=null, error.code, error.message
@@ -1042,16 +1101,17 @@ async fn api_key_cannot_access_admin_api() {
 /// Lazily initializes a global temporary BlobEngine instance for integration tests.
 /// Invariant: Only initialized once across all test workers to avoid keyspace lock contention.
 async fn ensure_blob_engine() {
-    static ENGINE_INIT: tokio::sync::OnceCell<tempfile::TempDir> = tokio::sync::OnceCell::const_new();
+    static ENGINE_INIT: tokio::sync::OnceCell<tempfile::TempDir> =
+        tokio::sync::OnceCell::const_new();
     let _ = ENGINE_INIT
         .get_or_init(|| async {
             ensure_metadata_store().await;
             let tmp = tempfile::tempdir().expect("Failed to create tempdir for blob engine test");
             axiom_api::blobs::init_blob_engine(
                 tmp.path().to_str().unwrap(),
-                64 * 1024,                  // 64 KB inline threshold
-                5 * 1024 * 1024 * 1024,     // 5 GB max object
-                true,                       // verify reads
+                64 * 1024,              // 64 KB inline threshold
+                5 * 1024 * 1024 * 1024, // 5 GB max object
+                true,                   // verify reads
             )
             .await
             .expect("Failed to init blob engine in test fixture");
@@ -1077,7 +1137,9 @@ async fn blob_storage_crud_lifecycle_and_headers() {
 
     let put_res = create_app().oneshot(put_req).await.unwrap();
     assert_eq!(put_res.status(), StatusCode::CREATED);
-    let put_body = axum::body::to_bytes(put_res.into_body(), usize::MAX).await.unwrap();
+    let put_body = axum::body::to_bytes(put_res.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let put_json: serde_json::Value = serde_json::from_slice(&put_body).unwrap();
     assert_eq!(put_json["success"], true);
     let hash = put_json["data"]["hash"].as_str().unwrap().to_string();
@@ -1093,9 +1155,21 @@ async fn blob_storage_crud_lifecycle_and_headers() {
     let head_res = create_app().oneshot(head_req).await.unwrap();
     assert_eq!(head_res.status(), StatusCode::OK);
     assert_eq!(head_res.headers().get("etag").unwrap(), &etag);
-    assert_eq!(head_res.headers().get("x-content-type-options").unwrap(), "nosniff");
-    assert_eq!(head_res.headers().get("content-type").unwrap(), "text/plain; charset=utf-8");
-    assert!(head_res.headers().get("content-disposition").unwrap().to_str().unwrap().contains("hello.txt"));
+    assert_eq!(
+        head_res.headers().get("x-content-type-options").unwrap(),
+        "nosniff"
+    );
+    assert_eq!(
+        head_res.headers().get("content-type").unwrap(),
+        "text/plain; charset=utf-8"
+    );
+    assert!(head_res
+        .headers()
+        .get("content-disposition")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .contains("hello.txt"));
 
     // 3. GET blob - verify data integrity
     let get_req = Request::get("/api/v1/blobs/testns/docs/hello.txt")
@@ -1104,7 +1178,9 @@ async fn blob_storage_crud_lifecycle_and_headers() {
         .unwrap();
     let get_res = create_app().oneshot(get_req).await.unwrap();
     assert_eq!(get_res.status(), StatusCode::OK);
-    let get_body = axum::body::to_bytes(get_res.into_body(), usize::MAX).await.unwrap();
+    let get_body = axum::body::to_bytes(get_res.into_body(), usize::MAX)
+        .await
+        .unwrap();
     assert_eq!(get_body.as_ref(), test_data.as_slice());
 
     // 4. GET blob with matching If-None-Match -> 304 Not Modified
@@ -1123,7 +1199,9 @@ async fn blob_storage_crud_lifecycle_and_headers() {
         .unwrap();
     let list_res = create_app().oneshot(list_req).await.unwrap();
     assert_eq!(list_res.status(), StatusCode::OK);
-    let list_body = axum::body::to_bytes(list_res.into_body(), usize::MAX).await.unwrap();
+    let list_body = axum::body::to_bytes(list_res.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let list_json: serde_json::Value = serde_json::from_slice(&list_body).unwrap();
     assert_eq!(list_json["success"], true);
     let items = list_json["data"]["items"].as_array().unwrap();
@@ -1251,7 +1329,10 @@ async fn blob_storage_validation_rejections() {
         .body(Body::from(b"test".to_vec()))
         .unwrap();
     let bad_ns_res = create_app().oneshot(bad_ns_req).await.unwrap();
-    assert!(bad_ns_res.status() == StatusCode::BAD_REQUEST || bad_ns_res.status() == StatusCode::FORBIDDEN);
+    assert!(
+        bad_ns_res.status() == StatusCode::BAD_REQUEST
+            || bad_ns_res.status() == StatusCode::FORBIDDEN
+    );
 
     // Invalid key: containing ".."
     let bad_key_req = Request::put("/api/v1/blobs/testns/sub/../../etc/passwd")
@@ -1259,7 +1340,10 @@ async fn blob_storage_validation_rejections() {
         .body(Body::from(b"test".to_vec()))
         .unwrap();
     let bad_key_res = create_app().oneshot(bad_key_req).await.unwrap();
-    assert!(bad_key_res.status() == StatusCode::BAD_REQUEST || bad_key_res.status() == StatusCode::FORBIDDEN);
+    assert!(
+        bad_key_res.status() == StatusCode::BAD_REQUEST
+            || bad_key_res.status() == StatusCode::FORBIDDEN
+    );
 }
 
 #[tokio::test]
@@ -1287,11 +1371,16 @@ async fn blob_storage_range_requests_partial_content() {
         .unwrap();
     let range_res1 = create_app().oneshot(range_req1).await.unwrap();
     assert_eq!(range_res1.status(), StatusCode::PARTIAL_CONTENT);
-    assert_eq!(range_res1.headers().get("Content-Range").unwrap(), "bytes 0-4/16");
+    assert_eq!(
+        range_res1.headers().get("Content-Range").unwrap(),
+        "bytes 0-4/16"
+    );
     assert_eq!(range_res1.headers().get("Content-Length").unwrap(), "5");
     assert_eq!(range_res1.headers().get("Accept-Ranges").unwrap(), "bytes");
 
-    let body_bytes1 = axum::body::to_bytes(range_res1.into_body(), 1024).await.unwrap();
+    let body_bytes1 = axum::body::to_bytes(range_res1.into_body(), 1024)
+        .await
+        .unwrap();
     assert_eq!(&body_bytes1[..], b"HELLO");
 
     // 3. Fetch partial range bytes=6-10 (5 bytes: "WORLD")
@@ -1302,8 +1391,13 @@ async fn blob_storage_range_requests_partial_content() {
         .unwrap();
     let range_res2 = create_app().oneshot(range_req2).await.unwrap();
     assert_eq!(range_res2.status(), StatusCode::PARTIAL_CONTENT);
-    assert_eq!(range_res2.headers().get("Content-Range").unwrap(), "bytes 6-10/16");
-    let body_bytes2 = axum::body::to_bytes(range_res2.into_body(), 1024).await.unwrap();
+    assert_eq!(
+        range_res2.headers().get("Content-Range").unwrap(),
+        "bytes 6-10/16"
+    );
+    let body_bytes2 = axum::body::to_bytes(range_res2.into_body(), 1024)
+        .await
+        .unwrap();
     assert_eq!(&body_bytes2[..], b"WORLD");
 
     // 4. Invalid range bytes=100-200 -> 416 Range Not Satisfiable
@@ -1335,35 +1429,46 @@ async fn blob_storage_presigned_capability_ticket_download() {
     let ticket_req = Request::post("/api/v1/blobs/secure/ticket")
         .header("X-Axiom-Key", &admin_token)
         .header("Content-Type", "application/json")
-        .body(Body::from(serde_json::to_vec(&serde_json::json!({
-            "key": "secret_doc.txt",
-            "operation": "READ",
-            "ttl_seconds": 120
-        })).unwrap()))
+        .body(Body::from(
+            serde_json::to_vec(&serde_json::json!({
+                "key": "secret_doc.txt",
+                "operation": "READ",
+                "ttl_seconds": 120
+            }))
+            .unwrap(),
+        ))
         .unwrap();
     let ticket_res = create_app().oneshot(ticket_req).await.unwrap();
     assert_eq!(ticket_res.status(), StatusCode::CREATED);
 
-    let ticket_body = axum::body::to_bytes(ticket_res.into_body(), 4096).await.unwrap();
+    let ticket_body = axum::body::to_bytes(ticket_res.into_body(), 4096)
+        .await
+        .unwrap();
     let ticket_json: serde_json::Value = serde_json::from_slice(&ticket_body).unwrap();
     let ticket_sig = ticket_json["data"]["ticket"]["signature"].as_str().unwrap();
-    let ticket_exp = ticket_json["data"]["ticket"]["expires_at"].as_i64().unwrap();
+    let ticket_exp = ticket_json["data"]["ticket"]["expires_at"]
+        .as_i64()
+        .unwrap();
 
     // 3. Download using ticket URL query string WITHOUT any X-Axiom-Key header
-    let dl_url = format!("/api/v1/blobs/secure/secret_doc.txt?ticket_sig={}&ticket_exp={}", ticket_sig, ticket_exp);
-    let dl_req = Request::get(&dl_url)
-        .body(Body::empty())
-        .unwrap();
+    let dl_url = format!(
+        "/api/v1/blobs/secure/secret_doc.txt?ticket_sig={}&ticket_exp={}",
+        ticket_sig, ticket_exp
+    );
+    let dl_req = Request::get(&dl_url).body(Body::empty()).unwrap();
     let dl_res = create_app().oneshot(dl_req).await.unwrap();
     assert_eq!(dl_res.status(), StatusCode::OK);
-    let dl_bytes = axum::body::to_bytes(dl_res.into_body(), 1024).await.unwrap();
+    let dl_bytes = axum::body::to_bytes(dl_res.into_body(), 1024)
+        .await
+        .unwrap();
     assert_eq!(&dl_bytes[..], b"Top secret capability test");
 
     // 4. Download with tampered signature fails with 401 Unauthorized
-    let bad_dl_url = format!("/api/v1/blobs/secure/secret_doc.txt?ticket_sig=0000000000000000&ticket_exp={}", ticket_exp);
-    let bad_dl_req = Request::get(&bad_dl_url)
-        .body(Body::empty())
-        .unwrap();
+    let bad_dl_url = format!(
+        "/api/v1/blobs/secure/secret_doc.txt?ticket_sig=0000000000000000&ticket_exp={}",
+        ticket_exp
+    );
+    let bad_dl_req = Request::get(&bad_dl_url).body(Body::empty()).unwrap();
     let bad_dl_res = create_app().oneshot(bad_dl_req).await.unwrap();
     assert_eq!(bad_dl_res.status(), StatusCode::UNAUTHORIZED);
 }
@@ -1379,39 +1484,53 @@ async fn blob_storage_chunked_upload_lifecycle() {
     let init_req = Request::post("/api/v1/blobs/multichunk/uploads")
         .header("X-Axiom-Key", &admin_token)
         .header("Content-Type", "application/json")
-        .body(Body::from(serde_json::to_vec(&serde_json::json!({
-            "key": "archive.tar",
-            "content_type": "application/x-tar"
-        })).unwrap()))
+        .body(Body::from(
+            serde_json::to_vec(&serde_json::json!({
+                "key": "archive.tar",
+                "content_type": "application/x-tar"
+            }))
+            .unwrap(),
+        ))
         .unwrap();
     let init_res = create_app().oneshot(init_req).await.unwrap();
     assert_eq!(init_res.status(), StatusCode::CREATED);
 
-    let init_body = axum::body::to_bytes(init_res.into_body(), 4096).await.unwrap();
+    let init_body = axum::body::to_bytes(init_res.into_body(), 4096)
+        .await
+        .unwrap();
     let init_json: serde_json::Value = serde_json::from_slice(&init_body).unwrap();
     let upload_id = init_json["data"]["upload_id"].as_str().unwrap();
 
     // 2. Upload part 1
-    let part1_req = Request::put(format!("/api/v1/blobs/multichunk/uploads/{}/parts/1", upload_id))
-        .header("X-Axiom-Key", &admin_token)
-        .body(Body::from(b"CHUNK1_DATA_".to_vec()))
-        .unwrap();
+    let part1_req = Request::put(format!(
+        "/api/v1/blobs/multichunk/uploads/{}/parts/1",
+        upload_id
+    ))
+    .header("X-Axiom-Key", &admin_token)
+    .body(Body::from(b"CHUNK1_DATA_".to_vec()))
+    .unwrap();
     let part1_res = create_app().oneshot(part1_req).await.unwrap();
     assert_eq!(part1_res.status(), StatusCode::OK);
 
     // 3. Upload part 2
-    let part2_req = Request::put(format!("/api/v1/blobs/multichunk/uploads/{}/parts/2", upload_id))
-        .header("X-Axiom-Key", &admin_token)
-        .body(Body::from(b"CHUNK2_DATA".to_vec()))
-        .unwrap();
+    let part2_req = Request::put(format!(
+        "/api/v1/blobs/multichunk/uploads/{}/parts/2",
+        upload_id
+    ))
+    .header("X-Axiom-Key", &admin_token)
+    .body(Body::from(b"CHUNK2_DATA".to_vec()))
+    .unwrap();
     let part2_res = create_app().oneshot(part2_req).await.unwrap();
     assert_eq!(part2_res.status(), StatusCode::OK);
 
     // 4. Complete upload
-    let complete_req = Request::post(format!("/api/v1/blobs/multichunk/uploads/{}/complete", upload_id))
-        .header("X-Axiom-Key", &admin_token)
-        .body(Body::empty())
-        .unwrap();
+    let complete_req = Request::post(format!(
+        "/api/v1/blobs/multichunk/uploads/{}/complete",
+        upload_id
+    ))
+    .header("X-Axiom-Key", &admin_token)
+    .body(Body::empty())
+    .unwrap();
     let complete_res = create_app().oneshot(complete_req).await.unwrap();
     assert_eq!(complete_res.status(), StatusCode::OK);
 
@@ -1422,7 +1541,9 @@ async fn blob_storage_chunked_upload_lifecycle() {
         .unwrap();
     let get_res = create_app().oneshot(get_req).await.unwrap();
     assert_eq!(get_res.status(), StatusCode::OK);
-    let get_bytes = axum::body::to_bytes(get_res.into_body(), 1024).await.unwrap();
+    let get_bytes = axum::body::to_bytes(get_res.into_body(), 1024)
+        .await
+        .unwrap();
     assert_eq!(&get_bytes[..], b"CHUNK1_DATA_CHUNK2_DATA");
 }
 
@@ -1439,7 +1560,8 @@ async fn blob_storage_integrity_scrub_and_ttl() {
         bytes::Bytes::from("admin_user"),
         60,
         axiom_cache::Durability::MemoryOnly,
-    ).await;
+    )
+    .await;
 
     // 1. Upload temporary blob with TTL 0
     let admin_token = BASE64_STANDARD.encode("admin_key:secret_admin");
@@ -1467,7 +1589,9 @@ async fn blob_storage_integrity_scrub_and_ttl() {
     let sweep_res = create_app().oneshot(sweep_req).await.unwrap();
     assert_eq!(sweep_res.status(), StatusCode::OK);
 
-    let sweep_body = axum::body::to_bytes(sweep_res.into_body(), 1024).await.unwrap();
+    let sweep_body = axum::body::to_bytes(sweep_res.into_body(), 1024)
+        .await
+        .unwrap();
     let sweep_json: serde_json::Value = serde_json::from_slice(&sweep_body).unwrap();
     assert!(sweep_json["data"]["swept_objects"].as_u64().unwrap() >= 1);
 }
@@ -1487,45 +1611,57 @@ async fn mcp_tools_list_and_blob_tools_execution() {
     let list_req = Request::post("/mcp/v1")
         .header("X-Axiom-Key", &admin_token)
         .header("Content-Type", "application/json")
-        .body(Body::from(serde_json::to_vec(&serde_json::json!({
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "tools/list",
-            "params": {}
-        })).unwrap()))
+        .body(Body::from(
+            serde_json::to_vec(&serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/list",
+                "params": {}
+            }))
+            .unwrap(),
+        ))
         .unwrap();
 
     let list_res = create_app().oneshot(list_req).await.unwrap();
     assert_eq!(list_res.status(), StatusCode::OK);
-    let list_bytes = axum::body::to_bytes(list_res.into_body(), 65536).await.unwrap();
+    let list_bytes = axum::body::to_bytes(list_res.into_body(), 65536)
+        .await
+        .unwrap();
     let list_json: serde_json::Value = serde_json::from_slice(&list_bytes).unwrap();
     assert_eq!(list_json["jsonrpc"], "2.0");
-    let tools = list_json["result"]["tools"].as_array().expect("tools array");
+    let tools = list_json["result"]["tools"]
+        .as_array()
+        .expect("tools array");
     assert_eq!(tools.len(), 15);
 
     // 2. tools/call - axiom_write_blob
     let write_req = Request::post("/mcp/v1")
         .header("X-Axiom-Key", &admin_token)
         .header("Content-Type", "application/json")
-        .body(Body::from(serde_json::to_vec(&serde_json::json!({
-            "jsonrpc": "2.0",
-            "id": 2,
-            "method": "tools/call",
-            "params": {
-                "name": "axiom_write_blob",
-                "arguments": {
-                    "namespace": "mcp_ns",
-                    "key": "notes/todo.txt",
-                    "data": "1. Test MCP blob integration\n2. Verify clean execution",
-                    "content_type": "text/plain"
+        .body(Body::from(
+            serde_json::to_vec(&serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "tools/call",
+                "params": {
+                    "name": "axiom_write_blob",
+                    "arguments": {
+                        "namespace": "mcp_ns",
+                        "key": "notes/todo.txt",
+                        "data": "1. Test MCP blob integration\n2. Verify clean execution",
+                        "content_type": "text/plain"
+                    }
                 }
-            }
-        })).unwrap()))
+            }))
+            .unwrap(),
+        ))
         .unwrap();
 
     let write_res = create_app().oneshot(write_req).await.unwrap();
     assert_eq!(write_res.status(), StatusCode::OK);
-    let write_bytes = axum::body::to_bytes(write_res.into_body(), 65536).await.unwrap();
+    let write_bytes = axum::body::to_bytes(write_res.into_body(), 65536)
+        .await
+        .unwrap();
     let write_json: serde_json::Value = serde_json::from_slice(&write_bytes).unwrap();
     assert_eq!(write_json["result"]["isError"], false);
 
@@ -1533,23 +1669,28 @@ async fn mcp_tools_list_and_blob_tools_execution() {
     let read_req = Request::post("/mcp/v1")
         .header("X-Axiom-Key", &admin_token)
         .header("Content-Type", "application/json")
-        .body(Body::from(serde_json::to_vec(&serde_json::json!({
-            "jsonrpc": "2.0",
-            "id": 3,
-            "method": "tools/call",
-            "params": {
-                "name": "axiom_read_blob",
-                "arguments": {
-                    "namespace": "mcp_ns",
-                    "key": "notes/todo.txt"
+        .body(Body::from(
+            serde_json::to_vec(&serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": 3,
+                "method": "tools/call",
+                "params": {
+                    "name": "axiom_read_blob",
+                    "arguments": {
+                        "namespace": "mcp_ns",
+                        "key": "notes/todo.txt"
+                    }
                 }
-            }
-        })).unwrap()))
+            }))
+            .unwrap(),
+        ))
         .unwrap();
 
     let read_res = create_app().oneshot(read_req).await.unwrap();
     assert_eq!(read_res.status(), StatusCode::OK);
-    let read_bytes = axum::body::to_bytes(read_res.into_body(), 65536).await.unwrap();
+    let read_bytes = axum::body::to_bytes(read_res.into_body(), 65536)
+        .await
+        .unwrap();
     let read_json: serde_json::Value = serde_json::from_slice(&read_bytes).unwrap();
     assert_eq!(read_json["result"]["isError"], false);
     let read_text = read_json["result"]["content"][0]["text"].as_str().unwrap();
@@ -1559,27 +1700,34 @@ async fn mcp_tools_list_and_blob_tools_execution() {
     let ticket_req = Request::post("/mcp/v1")
         .header("X-Axiom-Key", &admin_token)
         .header("Content-Type", "application/json")
-        .body(Body::from(serde_json::to_vec(&serde_json::json!({
-            "jsonrpc": "2.0",
-            "id": 4,
-            "method": "tools/call",
-            "params": {
-                "name": "axiom_create_download_ticket",
-                "arguments": {
-                    "namespace": "mcp_ns",
-                    "key": "notes/todo.txt",
-                    "ttl_seconds": 300
+        .body(Body::from(
+            serde_json::to_vec(&serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": 4,
+                "method": "tools/call",
+                "params": {
+                    "name": "axiom_create_download_ticket",
+                    "arguments": {
+                        "namespace": "mcp_ns",
+                        "key": "notes/todo.txt",
+                        "ttl_seconds": 300
+                    }
                 }
-            }
-        })).unwrap()))
+            }))
+            .unwrap(),
+        ))
         .unwrap();
 
     let ticket_res = create_app().oneshot(ticket_req).await.unwrap();
     assert_eq!(ticket_res.status(), StatusCode::OK);
-    let ticket_bytes = axum::body::to_bytes(ticket_res.into_body(), 65536).await.unwrap();
+    let ticket_bytes = axum::body::to_bytes(ticket_res.into_body(), 65536)
+        .await
+        .unwrap();
     let ticket_json: serde_json::Value = serde_json::from_slice(&ticket_bytes).unwrap();
     assert_eq!(ticket_json["result"]["isError"], false);
-    let ticket_data_text = ticket_json["result"]["content"][0]["text"].as_str().unwrap();
+    let ticket_data_text = ticket_json["result"]["content"][0]["text"]
+        .as_str()
+        .unwrap();
     assert!(ticket_data_text.contains("download_url"));
 }
 
@@ -1596,9 +1744,12 @@ async fn db_data_api_full_crud_pagination_and_column_lifecycle() {
     let drop_req = Request::post("/api/v1/db/testdb/query")
         .header("X-Axiom-Key", &admin_token)
         .header("Content-Type", "application/json")
-        .body(Body::from(serde_json::to_vec(&serde_json::json!({
-            "sql": "DROP TABLE IF EXISTS items_crud;"
-        })).unwrap()))
+        .body(Body::from(
+            serde_json::to_vec(&serde_json::json!({
+                "sql": "DROP TABLE IF EXISTS items_crud;"
+            }))
+            .unwrap(),
+        ))
         .unwrap();
     let _ = create_app().oneshot(drop_req).await;
 
@@ -1611,9 +1762,12 @@ async fn db_data_api_full_crud_pagination_and_column_lifecycle() {
     let create_req = Request::post("/api/v1/db/testdb/query")
         .header("X-Axiom-Key", &admin_token)
         .header("Content-Type", "application/json")
-        .body(Body::from(serde_json::to_vec(&serde_json::json!({
-            "sql": create_sql
-        })).unwrap()))
+        .body(Body::from(
+            serde_json::to_vec(&serde_json::json!({
+                "sql": create_sql
+            }))
+            .unwrap(),
+        ))
         .unwrap();
     let create_res = create_app().oneshot(create_req).await.unwrap();
     assert_eq!(create_res.status(), StatusCode::OK);
@@ -1622,28 +1776,42 @@ async fn db_data_api_full_crud_pagination_and_column_lifecycle() {
     let insert_req = Request::post("/api/v1/db/testdb/items_crud/rows")
         .header("X-Axiom-Key", &admin_token)
         .header("Content-Type", "application/json")
-        .body(Body::from(serde_json::to_vec(&serde_json::json!({
-            "rows": [
-                {"name": "Item Alpha", "price": 10.0, "stock": 100},
-                {"name": "Item Beta", "price": 25.5, "stock": 50},
-                {"name": "Item Gamma", "price": 80.0, "stock": 10},
-                {"name": "Item Delta", "price": 150.0, "stock": 2}
-            ]
-        })).unwrap()))
+        .body(Body::from(
+            serde_json::to_vec(&serde_json::json!({
+                "rows": [
+                    {"name": "Item Alpha", "price": 10.0, "stock": 100},
+                    {"name": "Item Beta", "price": 25.5, "stock": 50},
+                    {"name": "Item Gamma", "price": 80.0, "stock": 10},
+                    {"name": "Item Delta", "price": 150.0, "stock": 2}
+                ]
+            }))
+            .unwrap(),
+        ))
         .unwrap();
     let insert_res = create_app().oneshot(insert_req).await.unwrap();
     assert_eq!(insert_res.status(), StatusCode::OK);
-    let insert_body: Value = serde_json::from_slice(&axum::body::to_bytes(insert_res.into_body(), 65536).await.unwrap()).unwrap();
+    let insert_body: Value = serde_json::from_slice(
+        &axum::body::to_bytes(insert_res.into_body(), 65536)
+            .await
+            .unwrap(),
+    )
+    .unwrap();
     assert_eq!(insert_body["success"], true);
 
     // 3. Query with limit and sorting (pagination)
-    let fetch_page1_req = Request::get("/api/v1/db/testdb/items_crud/rows?limit=2&sort=id&order=asc")
-        .header("X-Axiom-Key", &admin_token)
-        .body(Body::empty())
-        .unwrap();
+    let fetch_page1_req =
+        Request::get("/api/v1/db/testdb/items_crud/rows?limit=2&sort=id&order=asc")
+            .header("X-Axiom-Key", &admin_token)
+            .body(Body::empty())
+            .unwrap();
     let fetch_page1_res = create_app().oneshot(fetch_page1_req).await.unwrap();
     assert_eq!(fetch_page1_res.status(), StatusCode::OK);
-    let page1_json: Value = serde_json::from_slice(&axum::body::to_bytes(fetch_page1_res.into_body(), 65536).await.unwrap()).unwrap();
+    let page1_json: Value = serde_json::from_slice(
+        &axum::body::to_bytes(fetch_page1_res.into_body(), 65536)
+            .await
+            .unwrap(),
+    )
+    .unwrap();
     assert_eq!(page1_json["success"], true);
     let rows1 = page1_json["data"]["rows"].as_array().unwrap();
     assert_eq!(rows1.len(), 2);
@@ -1654,32 +1822,47 @@ async fn db_data_api_full_crud_pagination_and_column_lifecycle() {
     let cursor_str = next_cursor.unwrap().to_string();
 
     // Fetch page 2 using cursor
-    let fetch_page2_req = Request::get(format!("/api/v1/db/testdb/items_crud/rows?limit=2&cursor={}&sort=id&order=asc", cursor_str))
-        .header("X-Axiom-Key", &admin_token)
-        .body(Body::empty())
-        .unwrap();
+    let fetch_page2_req = Request::get(format!(
+        "/api/v1/db/testdb/items_crud/rows?limit=2&cursor={}&sort=id&order=asc",
+        cursor_str
+    ))
+    .header("X-Axiom-Key", &admin_token)
+    .body(Body::empty())
+    .unwrap();
     let fetch_page2_res = create_app().oneshot(fetch_page2_req).await.unwrap();
     assert_eq!(fetch_page2_res.status(), StatusCode::OK);
 
     // 4. Query with filter (gte on price)
-    let filter_req = Request::get("/api/v1/db/testdb/items_crud/rows?filter=%7B%22price%22%3A%7B%22gte%22%3A50.0%7D%7D")
-        .header("X-Axiom-Key", &admin_token)
-        .body(Body::empty())
-        .unwrap();
+    let filter_req = Request::get(
+        "/api/v1/db/testdb/items_crud/rows?filter=%7B%22price%22%3A%7B%22gte%22%3A50.0%7D%7D",
+    )
+    .header("X-Axiom-Key", &admin_token)
+    .body(Body::empty())
+    .unwrap();
     let filter_res = create_app().oneshot(filter_req).await.unwrap();
     assert_eq!(filter_res.status(), StatusCode::OK);
-    let filter_json: Value = serde_json::from_slice(&axum::body::to_bytes(filter_res.into_body(), 65536).await.unwrap()).unwrap();
+    let filter_json: Value = serde_json::from_slice(
+        &axum::body::to_bytes(filter_res.into_body(), 65536)
+            .await
+            .unwrap(),
+    )
+    .unwrap();
     let filtered_rows = filter_json["data"]["rows"].as_array().unwrap();
-    assert!(filtered_rows.iter().all(|r| r["price"].as_f64().unwrap() >= 50.0));
+    assert!(filtered_rows
+        .iter()
+        .all(|r| r["price"].as_f64().unwrap() >= 50.0));
 
     // 5. Update rows
     let update_req = Request::patch("/api/v1/db/testdb/items_crud/rows")
         .header("X-Axiom-Key", &admin_token)
         .header("Content-Type", "application/json")
-        .body(Body::from(serde_json::to_vec(&serde_json::json!({
-            "filter": {"name": {"eq": "Item Alpha"}},
-            "update": {"stock": 199}
-        })).unwrap()))
+        .body(Body::from(
+            serde_json::to_vec(&serde_json::json!({
+                "filter": {"name": {"eq": "Item Alpha"}},
+                "update": {"stock": 199}
+            }))
+            .unwrap(),
+        ))
         .unwrap();
     let update_res = create_app().oneshot(update_req).await.unwrap();
     assert_eq!(update_res.status(), StatusCode::OK);
@@ -1688,9 +1871,12 @@ async fn db_data_api_full_crud_pagination_and_column_lifecycle() {
     let delete_req = Request::delete("/api/v1/db/testdb/items_crud/rows")
         .header("X-Axiom-Key", &admin_token)
         .header("Content-Type", "application/json")
-        .body(Body::from(serde_json::to_vec(&serde_json::json!({
-            "filter": {"name": {"eq": "Item Delta"}}
-        })).unwrap()))
+        .body(Body::from(
+            serde_json::to_vec(&serde_json::json!({
+                "filter": {"name": {"eq": "Item Delta"}}
+            }))
+            .unwrap(),
+        ))
         .unwrap();
     let delete_res = create_app().oneshot(delete_req).await.unwrap();
     assert_eq!(delete_res.status(), StatusCode::OK);
@@ -1699,11 +1885,14 @@ async fn db_data_api_full_crud_pagination_and_column_lifecycle() {
     let add_col_req = Request::post("/api/v1/db/testdb/items_crud/columns")
         .header("X-Axiom-Key", &admin_token)
         .header("Content-Type", "application/json")
-        .body(Body::from(serde_json::to_vec(&serde_json::json!({
-            "name": "barcode",
-            "data_type": "TEXT",
-            "nullable": true
-        })).unwrap()))
+        .body(Body::from(
+            serde_json::to_vec(&serde_json::json!({
+                "name": "barcode",
+                "data_type": "TEXT",
+                "nullable": true
+            }))
+            .unwrap(),
+        ))
         .unwrap();
     let add_col_res = create_app().oneshot(add_col_req).await.unwrap();
     assert_eq!(add_col_res.status(), StatusCode::OK);
@@ -1715,7 +1904,12 @@ async fn db_data_api_full_crud_pagination_and_column_lifecycle() {
         .unwrap();
     let schema_res = create_app().oneshot(schema_req).await.unwrap();
     assert_eq!(schema_res.status(), StatusCode::OK);
-    let schema_json: Value = serde_json::from_slice(&axum::body::to_bytes(schema_res.into_body(), 65536).await.unwrap()).unwrap();
+    let schema_json: Value = serde_json::from_slice(
+        &axum::body::to_bytes(schema_res.into_body(), 65536)
+            .await
+            .unwrap(),
+    )
+    .unwrap();
     let cols = schema_json["data"]["columns"].as_array().unwrap();
     assert!(cols.iter().any(|c| c["name"] == "barcode"));
 
@@ -1741,10 +1935,13 @@ async fn db_ast_firewall_blocks_destructive_ddl_and_unbounded_mutation() {
     let unbounded_update_req = Request::patch("/api/v1/db/testdb/items/rows")
         .header("X-Axiom-Key", &admin_token)
         .header("Content-Type", "application/json")
-        .body(Body::from(serde_json::to_vec(&serde_json::json!({
-            "filter": {},
-            "update": {"stock": 0}
-        })).unwrap()))
+        .body(Body::from(
+            serde_json::to_vec(&serde_json::json!({
+                "filter": {},
+                "update": {"stock": 0}
+            }))
+            .unwrap(),
+        ))
         .unwrap();
     let update_res = create_app().oneshot(unbounded_update_req).await.unwrap();
     assert_eq!(update_res.status(), StatusCode::BAD_REQUEST);
@@ -1753,9 +1950,12 @@ async fn db_ast_firewall_blocks_destructive_ddl_and_unbounded_mutation() {
     let unbounded_delete_req = Request::delete("/api/v1/db/testdb/items/rows")
         .header("X-Axiom-Key", &admin_token)
         .header("Content-Type", "application/json")
-        .body(Body::from(serde_json::to_vec(&serde_json::json!({
-            "filter": {}
-        })).unwrap()))
+        .body(Body::from(
+            serde_json::to_vec(&serde_json::json!({
+                "filter": {}
+            }))
+            .unwrap(),
+        ))
         .unwrap();
     let delete_res = create_app().oneshot(unbounded_delete_req).await.unwrap();
     assert_eq!(delete_res.status(), StatusCode::BAD_REQUEST);
@@ -1782,9 +1982,12 @@ async fn db_rbac_fine_grained_table_level_authorization() {
     let forbidden_insert_req = Request::post("/api/v1/db/testdb/items/rows")
         .header("X-Axiom-Key", &reader_token)
         .header("Content-Type", "application/json")
-        .body(Body::from(serde_json::to_vec(&serde_json::json!({
-            "rows": [{"name": "Malicious", "price": 0.0, "stock": 0}]
-        })).unwrap()))
+        .body(Body::from(
+            serde_json::to_vec(&serde_json::json!({
+                "rows": [{"name": "Malicious", "price": 0.0, "stock": 0}]
+            }))
+            .unwrap(),
+        ))
         .unwrap();
     let forbidden_insert_res = create_app().oneshot(forbidden_insert_req).await.unwrap();
     assert_eq!(forbidden_insert_res.status(), StatusCode::FORBIDDEN);
@@ -1832,7 +2035,12 @@ async fn db_idempotency_key_replay_protection() {
         .unwrap();
     let res2 = create_app().oneshot(req2).await.unwrap();
     assert_eq!(res2.status(), StatusCode::OK);
-    assert_eq!(res2.headers().get("x-idempotency-hit").and_then(|h| h.to_str().ok()), Some("true"));
+    assert_eq!(
+        res2.headers()
+            .get("x-idempotency-hit")
+            .and_then(|h| h.to_str().ok()),
+        Some("true")
+    );
     let bytes2 = axum::body::to_bytes(res2.into_body(), 65536).await.unwrap();
     assert_eq!(bytes1, bytes2);
 }
@@ -1849,15 +2057,29 @@ async fn admin_api_full_control_plane_lifecycle() {
     // 1. Admin Login
     let login_req = Request::post("/admin/v1/auth/login")
         .header("Content-Type", "application/json")
-        .body(Body::from(serde_json::to_vec(&serde_json::json!({
-            "username": "super_admin_ops",
-            "password": "SecretP@ss12345!"
-        })).unwrap()))
+        .body(Body::from(
+            serde_json::to_vec(&serde_json::json!({
+                "username": "super_admin_ops",
+                "password": "SecretP@ss12345!"
+            }))
+            .unwrap(),
+        ))
         .unwrap();
     let login_res = create_app().oneshot(login_req).await.unwrap();
     assert_eq!(login_res.status(), StatusCode::OK);
-    let cookie_val = login_res.headers().get(axum::http::header::SET_COOKIE).unwrap().to_str().unwrap().to_string();
-    let login_json: Value = serde_json::from_slice(&axum::body::to_bytes(login_res.into_body(), 65536).await.unwrap()).unwrap();
+    let cookie_val = login_res
+        .headers()
+        .get(axum::http::header::SET_COOKIE)
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_string();
+    let login_json: Value = serde_json::from_slice(
+        &axum::body::to_bytes(login_res.into_body(), 65536)
+            .await
+            .unwrap(),
+    )
+    .unwrap();
     let token = login_json["data"]["token"].as_str().unwrap().to_string();
 
     // 2. Status Check
@@ -1872,13 +2094,16 @@ async fn admin_api_full_control_plane_lifecycle() {
     let role_req = Request::post("/admin/v1/roles")
         .header(axum::http::header::COOKIE, &cookie_val)
         .header("Content-Type", "application/json")
-        .body(Body::from(serde_json::to_vec(&serde_json::json!({
-            "name": "auditor_role",
-            "description": "Compliance auditor",
-            "permissions": [
-                {"database": "testdb", "table_name": "*", "operations": ["SELECT"]}
-            ]
-        })).unwrap()))
+        .body(Body::from(
+            serde_json::to_vec(&serde_json::json!({
+                "name": "auditor_role",
+                "description": "Compliance auditor",
+                "permissions": [
+                    {"database": "testdb", "table_name": "*", "operations": ["SELECT"]}
+                ]
+            }))
+            .unwrap(),
+        ))
         .unwrap();
     let role_res = create_app().oneshot(role_req).await.unwrap();
     assert!(role_res.status() == StatusCode::OK || role_res.status() == StatusCode::CREATED);
@@ -1890,7 +2115,12 @@ async fn admin_api_full_control_plane_lifecycle() {
         .unwrap();
     let list_roles_res = create_app().oneshot(list_roles_req).await.unwrap();
     assert_eq!(list_roles_res.status(), StatusCode::OK);
-    let roles_json: Value = serde_json::from_slice(&axum::body::to_bytes(list_roles_res.into_body(), 65536).await.unwrap()).unwrap();
+    let roles_json: Value = serde_json::from_slice(
+        &axum::body::to_bytes(list_roles_res.into_body(), 65536)
+            .await
+            .unwrap(),
+    )
+    .unwrap();
     let roles_list = roles_json["data"]["roles"]
         .as_array()
         .or_else(|| roles_json["data"].as_array())
@@ -1901,11 +2131,14 @@ async fn admin_api_full_control_plane_lifecycle() {
     let key_req = Request::post("/admin/v1/keys")
         .header(axum::http::header::COOKIE, &cookie_val)
         .header("Content-Type", "application/json")
-        .body(Body::from(serde_json::to_vec(&serde_json::json!({
-            "name": "auditor_app_key",
-            "role": "auditor_role",
-            "rate_limit": 500
-        })).unwrap()))
+        .body(Body::from(
+            serde_json::to_vec(&serde_json::json!({
+                "name": "auditor_app_key",
+                "role": "auditor_role",
+                "rate_limit": 500
+            }))
+            .unwrap(),
+        ))
         .unwrap();
     let key_res = create_app().oneshot(key_req).await.unwrap();
     assert!(key_res.status() == StatusCode::OK || key_res.status() == StatusCode::CREATED);
@@ -1946,24 +2179,36 @@ async fn admin_api_full_control_plane_lifecycle() {
         .header(axum::http::header::COOKIE, &cookie_val)
         .body(Body::empty())
         .unwrap();
-    assert_eq!(create_app().oneshot(del_key_req).await.unwrap().status(), StatusCode::OK);
+    assert_eq!(
+        create_app().oneshot(del_key_req).await.unwrap().status(),
+        StatusCode::OK
+    );
 
     let del_role_req = Request::delete("/admin/v1/roles/auditor_role")
         .header(axum::http::header::COOKIE, &cookie_val)
         .body(Body::empty())
         .unwrap();
-    assert_eq!(create_app().oneshot(del_role_req).await.unwrap().status(), StatusCode::OK);
+    assert_eq!(
+        create_app().oneshot(del_role_req).await.unwrap().status(),
+        StatusCode::OK
+    );
 
     // 10. Admin Logout
     let logout_req = Request::post("/admin/v1/auth/logout")
         .header(axum::http::header::COOKIE, &cookie_val)
         .body(Body::empty())
         .unwrap();
-    assert_eq!(create_app().oneshot(logout_req).await.unwrap().status(), StatusCode::OK);
+    assert_eq!(
+        create_app().oneshot(logout_req).await.unwrap().status(),
+        StatusCode::OK
+    );
 
     // 11. Revoked Session Verification: Status call must now be rejected
     let rejected_req = Request::get("/admin/v1/status")
-        .header(axum::http::header::COOKIE, format!("axiom_session={}", token))
+        .header(
+            axum::http::header::COOKIE,
+            format!("axiom_session={}", token),
+        )
         .body(Body::empty())
         .unwrap();
     let rejected_res = create_app().oneshot(rejected_req).await.unwrap();
@@ -1984,9 +2229,12 @@ async fn circuit_breaker_repeated_failure_tripping() {
         let req = Request::post("/api/v1/db/dead_db/query")
             .header("X-Axiom-Key", &admin_token)
             .header("Content-Type", "application/json")
-            .body(Body::from(serde_json::to_vec(&serde_json::json!({
-                "sql": "SELECT 1;"
-            })).unwrap()))
+            .body(Body::from(
+                serde_json::to_vec(&serde_json::json!({
+                    "sql": "SELECT 1;"
+                }))
+                .unwrap(),
+            ))
             .unwrap();
         let _ = create_app().oneshot(req).await;
     }
@@ -1995,13 +2243,21 @@ async fn circuit_breaker_repeated_failure_tripping() {
     let fast_fail_req = Request::post("/api/v1/db/dead_db/query")
         .header("X-Axiom-Key", &admin_token)
         .header("Content-Type", "application/json")
-        .body(Body::from(serde_json::to_vec(&serde_json::json!({
-            "sql": "SELECT 1;"
-        })).unwrap()))
+        .body(Body::from(
+            serde_json::to_vec(&serde_json::json!({
+                "sql": "SELECT 1;"
+            }))
+            .unwrap(),
+        ))
         .unwrap();
     let fast_fail_res = create_app().oneshot(fast_fail_req).await.unwrap();
     assert_eq!(fast_fail_res.status(), StatusCode::SERVICE_UNAVAILABLE);
-    let body_json: Value = serde_json::from_slice(&axum::body::to_bytes(fast_fail_res.into_body(), 65536).await.unwrap()).unwrap();
+    let body_json: Value = serde_json::from_slice(
+        &axum::body::to_bytes(fast_fail_res.into_body(), 65536)
+            .await
+            .unwrap(),
+    )
+    .unwrap();
     assert_eq!(body_json["error"]["code"], "CIRCUIT_BREAKER_OPEN");
 }
 
@@ -2025,17 +2281,28 @@ async fn blob_storage_resumable_upload_e2e_http_protocol() {
         .header("Content-Type", "application/json")
         .header("X-Upload-Content-Type", "video/mp4")
         .header("X-Upload-Content-Length", total_size.to_string())
-        .body(Body::from(serde_json::to_vec(&serde_json::json!({
-            "key": key
-        })).unwrap()))
+        .body(Body::from(
+            serde_json::to_vec(&serde_json::json!({
+                "key": key
+            }))
+            .unwrap(),
+        ))
         .unwrap();
 
     let init_res = create_app().oneshot(init_req).await.unwrap();
     assert_eq!(init_res.status(), StatusCode::CREATED);
     assert!(init_res.headers().contains_key("location"));
-    let location = init_res.headers().get("location").unwrap().to_str().unwrap().to_string();
+    let location = init_res
+        .headers()
+        .get("location")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_string();
 
-    let init_bytes = axum::body::to_bytes(init_res.into_body(), 4096).await.unwrap();
+    let init_bytes = axum::body::to_bytes(init_res.into_body(), 4096)
+        .await
+        .unwrap();
     let init_json: Value = serde_json::from_slice(&init_bytes).unwrap();
     let upload_id = init_json["data"]["upload_id"].as_str().unwrap().to_string();
     assert!(location.contains(&upload_id));
@@ -2101,7 +2368,9 @@ async fn blob_storage_resumable_upload_e2e_http_protocol() {
         .unwrap();
     let chunk2_res = create_app().oneshot(chunk2_req).await.unwrap();
     assert_eq!(chunk2_res.status(), StatusCode::CREATED);
-    let complete_bytes = axum::body::to_bytes(chunk2_res.into_body(), 4096).await.unwrap();
+    let complete_bytes = axum::body::to_bytes(chunk2_res.into_body(), 4096)
+        .await
+        .unwrap();
     let complete_json: Value = serde_json::from_slice(&complete_bytes).unwrap();
     assert_eq!(complete_json["success"], true);
     assert_eq!(complete_json["data"]["size"], 20);
@@ -2113,7 +2382,9 @@ async fn blob_storage_resumable_upload_e2e_http_protocol() {
         .unwrap();
     let dl_res = create_app().oneshot(dl_req).await.unwrap();
     assert_eq!(dl_res.status(), StatusCode::OK);
-    let dl_bytes = axum::body::to_bytes(dl_res.into_body(), 1024).await.unwrap();
+    let dl_bytes = axum::body::to_bytes(dl_res.into_body(), 1024)
+        .await
+        .unwrap();
     assert_eq!(&dl_bytes[..], b"CHUNK_A_CHUNK_B_DATA");
 }
 
@@ -2132,13 +2403,18 @@ async fn blob_storage_resumable_upload_cross_identity_protection() {
         .header("X-Axiom-Key", &admin_token)
         .header("Content-Type", "application/json")
         .header("X-Upload-Content-Length", "10")
-        .body(Body::from(serde_json::to_vec(&serde_json::json!({
-            "key": key
-        })).unwrap()))
+        .body(Body::from(
+            serde_json::to_vec(&serde_json::json!({
+                "key": key
+            }))
+            .unwrap(),
+        ))
         .unwrap();
     let init_res = create_app().oneshot(init_req).await.unwrap();
     assert_eq!(init_res.status(), StatusCode::CREATED);
-    let init_bytes = axum::body::to_bytes(init_res.into_body(), 4096).await.unwrap();
+    let init_bytes = axum::body::to_bytes(init_res.into_body(), 4096)
+        .await
+        .unwrap();
     let init_json: Value = serde_json::from_slice(&init_bytes).unwrap();
     let upload_id = init_json["data"]["upload_id"].as_str().unwrap();
 
@@ -2152,10 +2428,13 @@ async fn blob_storage_resumable_upload_cross_identity_protection() {
     assert_eq!(hijack_res.status(), StatusCode::FORBIDDEN);
 
     // 3. Different user attempts to complete admin's session -> 403 Forbidden
-    let complete_req = Request::post(format!("/api/v1/blobs/{}/uploads/{}/complete", ns, upload_id))
-        .header("X-Axiom-Key", &other_token)
-        .body(Body::empty())
-        .unwrap();
+    let complete_req = Request::post(format!(
+        "/api/v1/blobs/{}/uploads/{}/complete",
+        ns, upload_id
+    ))
+    .header("X-Axiom-Key", &other_token)
+    .body(Body::empty())
+    .unwrap();
     let complete_res = create_app().oneshot(complete_req).await.unwrap();
     assert_eq!(complete_res.status(), StatusCode::FORBIDDEN);
 }
@@ -2169,9 +2448,12 @@ async fn ndjson_streaming_response() {
     let insert_req = Request::post("/api/v1/db/testdb/items/rows")
         .header("X-Axiom-Key", &admin_token)
         .header("Content-Type", "application/json")
-        .body(Body::from(serde_json::to_vec(&serde_json::json!({
-            "row": {"name": "stream_item", "price": 19.99, "stock": 100}
-        })).unwrap()))
+        .body(Body::from(
+            serde_json::to_vec(&serde_json::json!({
+                "row": {"name": "stream_item", "price": 19.99, "stock": 100}
+            }))
+            .unwrap(),
+        ))
         .unwrap();
     let insert_res = create_app().oneshot(insert_req).await.unwrap();
     assert_eq!(insert_res.status(), StatusCode::OK);
@@ -2205,25 +2487,37 @@ async fn row_level_security_predicate_filtering() {
     let admin_token = BASE64_STANDARD.encode("admin_key:secret_admin");
 
     // Insert tenant A and tenant B items
-    let _ = create_app().oneshot(
-        Request::post("/api/v1/db/testdb/items/rows")
-            .header("X-Axiom-Key", &admin_token)
-            .header("Content-Type", "application/json")
-            .body(Body::from(serde_json::to_vec(&serde_json::json!({
-                "row": {"name": "tenant_a_secret_doc", "price": 10.0, "stock": 1}
-            })).unwrap()))
-            .unwrap()
-    ).await.unwrap();
+    let _ = create_app()
+        .oneshot(
+            Request::post("/api/v1/db/testdb/items/rows")
+                .header("X-Axiom-Key", &admin_token)
+                .header("Content-Type", "application/json")
+                .body(Body::from(
+                    serde_json::to_vec(&serde_json::json!({
+                        "row": {"name": "tenant_a_secret_doc", "price": 10.0, "stock": 1}
+                    }))
+                    .unwrap(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
 
-    let _ = create_app().oneshot(
-        Request::post("/api/v1/db/testdb/items/rows")
-            .header("X-Axiom-Key", &admin_token)
-            .header("Content-Type", "application/json")
-            .body(Body::from(serde_json::to_vec(&serde_json::json!({
-                "row": {"name": "tenant_b_public_doc", "price": 20.0, "stock": 2}
-            })).unwrap()))
-            .unwrap()
-    ).await.unwrap();
+    let _ = create_app()
+        .oneshot(
+            Request::post("/api/v1/db/testdb/items/rows")
+                .header("X-Axiom-Key", &admin_token)
+                .header("Content-Type", "application/json")
+                .body(Body::from(
+                    serde_json::to_vec(&serde_json::json!({
+                        "row": {"name": "tenant_b_public_doc", "price": 20.0, "stock": 2}
+                    }))
+                    .unwrap(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
 
     // Create an RLS-restricted role and key for Tenant A
     if let Err(e) = axiom_metadata::MetadataStore::create_role(
@@ -2237,7 +2531,9 @@ async fn row_level_security_predicate_filtering() {
             operations: vec!["SELECT".to_string()],
             rls_filter: Some("name LIKE 'tenant_a_%'".to_string()),
         }],
-    ).await {
+    )
+    .await
+    {
         println!("create_role tenant_a_role note: {}", e);
     }
 
@@ -2247,11 +2543,15 @@ async fn row_level_security_predicate_filtering() {
         Some("secret_tenant_a"),
         0,
         None,
-    ).await {
+    )
+    .await
+    {
         println!("create_key tenant_a_key note: {}", e);
     }
 
-    axiom_metadata::MetadataStore::sync_snapshot().await.unwrap();
+    axiom_metadata::MetadataStore::sync_snapshot()
+        .await
+        .unwrap();
 
     let tenant_a_token = BASE64_STANDARD.encode("tenant_a_key:secret_tenant_a");
 
@@ -2264,7 +2564,11 @@ async fn row_level_security_predicate_filtering() {
     let status = res.status();
     let body_bytes = axum::body::to_bytes(res.into_body(), 65536).await.unwrap();
     if status != StatusCode::OK {
-        panic!("row_level_security_predicate_filtering failed with status {}: {}", status, String::from_utf8_lossy(&body_bytes));
+        panic!(
+            "row_level_security_predicate_filtering failed with status {}: {}",
+            status,
+            String::from_utf8_lossy(&body_bytes)
+        );
     }
     let body_json: Value = serde_json::from_slice(&body_bytes).unwrap();
     let rows = body_json["data"]["rows"].as_array().unwrap();
@@ -2293,10 +2597,13 @@ async fn test_modern_s3_public_blob_and_batch_workflow() {
     let req = Request::post("/admin/v1/blobs/namespaces")
         .header("Authorization", format!("Bearer {}", admin_token))
         .header("Content-Type", "application/json")
-        .body(Body::from(serde_json::to_vec(&serde_json::json!({
-            "name": "site-media",
-            "is_public": true
-        })).unwrap()))
+        .body(Body::from(
+            serde_json::to_vec(&serde_json::json!({
+                "name": "site-media",
+                "is_public": true
+            }))
+            .unwrap(),
+        ))
         .unwrap();
     let res = create_app().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::CREATED);
@@ -2328,18 +2635,12 @@ async fn test_modern_s3_public_blob_and_batch_workflow() {
         res.headers().get("cache-control").unwrap(),
         "public, max-age=31536000, immutable"
     );
-    assert_eq!(
-        res.headers().get("etag").unwrap(),
-        &format!("\"{}\"", etag)
-    );
+    assert_eq!(res.headers().get("etag").unwrap(), &format!("\"{}\"", etag));
     assert_eq!(
         res.headers().get("x-axiom-meta-author").unwrap(),
         "Engineering"
     );
-    assert_eq!(
-        res.headers().get("x-axiom-meta-env").unwrap(),
-        "Production"
-    );
+    assert_eq!(res.headers().get("x-axiom-meta-env").unwrap(), "Production");
     let body_bytes = axum::body::to_bytes(res.into_body(), 65536).await.unwrap();
     assert_eq!(&body_bytes[..], img_payload);
 
@@ -2357,10 +2658,13 @@ async fn test_modern_s3_public_blob_and_batch_workflow() {
     let req = Request::post("/admin/v1/blobs/namespaces")
         .header("Authorization", format!("Bearer {}", admin_token))
         .header("Content-Type", "application/json")
-        .body(Body::from(serde_json::to_vec(&serde_json::json!({
-            "name": "private-vault",
-            "is_public": false
-        })).unwrap()))
+        .body(Body::from(
+            serde_json::to_vec(&serde_json::json!({
+                "name": "private-vault",
+                "is_public": false
+            }))
+            .unwrap(),
+        ))
         .unwrap();
     let res = create_app().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::CREATED);
@@ -2402,9 +2706,12 @@ async fn test_modern_s3_public_blob_and_batch_workflow() {
     let req = Request::post("/api/v1/blobs/site-media/delete-objects")
         .header("X-Axiom-Key", &admin_token)
         .header("Content-Type", "application/json")
-        .body(Body::from(serde_json::to_vec(&serde_json::json!({
-            "keys": ["file1.png", "file2.png"]
-        })).unwrap()))
+        .body(Body::from(
+            serde_json::to_vec(&serde_json::json!({
+                "keys": ["file1.png", "file2.png"]
+            }))
+            .unwrap(),
+        ))
         .unwrap();
     let res = create_app().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
@@ -2425,7 +2732,9 @@ async fn test_cluster_handshake_and_signature_verification() {
     ensure_metadata_store().await;
 
     let (_node_id, _moniker, cluster_secret) =
-        axiom_metadata::MetadataStore::get_or_create_cluster_identity().await.unwrap();
+        axiom_metadata::MetadataStore::get_or_create_cluster_identity()
+            .await
+            .unwrap();
 
     // 1. Handshake with invalid secret fails
     let bad_handshake = serde_json::json!({
@@ -2486,7 +2795,9 @@ async fn test_cluster_ban_propagation_and_instant_rejection() {
     ensure_metadata_store().await;
 
     let (_node_id, _moniker, cluster_secret) =
-        axiom_metadata::MetadataStore::get_or_create_cluster_identity().await.unwrap();
+        axiom_metadata::MetadataStore::get_or_create_cluster_identity()
+            .await
+            .unwrap();
 
     let target_ip = "198.51.100.77";
     assert!(!BanList::is_ip_banned(target_ip).0);
@@ -2505,8 +2816,11 @@ async fn test_cluster_ban_propagation_and_instant_rejection() {
     });
 
     let body_bytes = serde_json::to_vec(&ban_packet).unwrap();
-    let (node_h, ts_h, nonce_h, sig_h) =
-        axiom_api::cluster::signing::sign_outbound_packet("axm_node_tokyo", &cluster_secret, &body_bytes);
+    let (node_h, ts_h, nonce_h, sig_h) = axiom_api::cluster::signing::sign_outbound_packet(
+        "axm_node_tokyo",
+        &cluster_secret,
+        &body_bytes,
+    );
 
     let req = Request::post("/internal/v1/cluster/event")
         .header("X-Axiom-Node-Id", node_h)
@@ -2528,7 +2842,10 @@ async fn test_cluster_ban_propagation_and_instant_rejection() {
     // 3. Attacker connects to Node 2: immediately rejected by RateLimit/Ban middleware with 403 Forbidden
     let req = Request::get("/api/v1/db/databases")
         .header("X-Forwarded-For", target_ip)
-        .header("X-Axiom-Key", BASE64_STANDARD.encode("admin_key:secret_admin"))
+        .header(
+            "X-Axiom-Key",
+            BASE64_STANDARD.encode("admin_key:secret_admin"),
+        )
         .body(Body::empty())
         .unwrap();
     let res = create_app().oneshot(req).await.unwrap();
@@ -2546,8 +2863,11 @@ async fn test_cluster_ban_propagation_and_instant_rejection() {
     });
 
     let unban_bytes = serde_json::to_vec(&unban_packet).unwrap();
-    let (node_h, ts_h, nonce_h, sig_h) =
-        axiom_api::cluster::signing::sign_outbound_packet("axm_node_tokyo", &cluster_secret, &unban_bytes);
+    let (node_h, ts_h, nonce_h, sig_h) = axiom_api::cluster::signing::sign_outbound_packet(
+        "axm_node_tokyo",
+        &cluster_secret,
+        &unban_bytes,
+    );
 
     let req = Request::post("/internal/v1/cluster/event")
         .header("X-Axiom-Node-Id", node_h)
@@ -2564,6 +2884,3 @@ async fn test_cluster_ban_propagation_and_instant_rejection() {
     // IP is now unbanned
     assert!(!BanList::is_ip_banned(target_ip).0);
 }
-
-
-

@@ -118,14 +118,14 @@ fn configure_path() void {
         const path_span = std.mem.span(@as([*:0]u8, @ptrCast(&cur_path)));
 
         var pos: usize = 0;
-        @memcpy(new_path[pos..pos + cwd_span.len], cwd_span);
+        @memcpy(new_path[pos .. pos + cwd_span.len], cwd_span);
         pos += cwd_span.len;
 
         const tools_suffix = "\\.tools\\bin;";
-        @memcpy(new_path[pos..pos + tools_suffix.len], tools_suffix);
+        @memcpy(new_path[pos .. pos + tools_suffix.len], tools_suffix);
         pos += tools_suffix.len;
 
-        @memcpy(new_path[pos..pos + path_span.len], path_span);
+        @memcpy(new_path[pos .. pos + path_span.len], path_span);
         pos += path_span.len;
 
         new_path[pos] = 0;
@@ -159,7 +159,7 @@ pub fn main() u8 {
     var pos: usize = 0;
 
     const cargo_prefix = "cargo";
-    @memcpy(cmd_buf[pos..pos + cargo_prefix.len], cargo_prefix);
+    @memcpy(cmd_buf[pos .. pos + cargo_prefix.len], cargo_prefix);
     pos += cargo_prefix.len;
 
     var start_idx: usize = 1;
@@ -173,7 +173,7 @@ pub fn main() u8 {
             cmd_buf[pos] = ' ';
             pos += 1;
             const arg_span = std.mem.span(arg);
-            @memcpy(cmd_buf[pos..pos + arg_span.len], arg_span);
+            @memcpy(cmd_buf[pos .. pos + arg_span.len], arg_span);
             pos += arg_span.len;
         }
     }

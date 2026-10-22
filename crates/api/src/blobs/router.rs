@@ -19,7 +19,10 @@ pub fn get_router() -> Router {
             "/public/:namespace/*key",
             get(get_public_blob_handler).head(head_public_blob_handler),
         )
-        .route("/:namespace/delete-objects", post(batch_delete_blobs_handler))
+        .route(
+            "/:namespace/delete-objects",
+            post(batch_delete_blobs_handler),
+        )
         .route("/:namespace", get(list_blobs_handler))
         .route("/:namespace/ticket", post(create_ticket_handler))
         .route("/:namespace/uploads", post(init_upload_handler))
