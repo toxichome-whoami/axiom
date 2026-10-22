@@ -82,7 +82,11 @@ pub enum Commands {
     Login {
         #[arg(help = "Admin username")]
         username: String,
-        #[arg(short, long, help = "Admin password (if omitted, interactive prompt is used)")]
+        #[arg(
+            short,
+            long,
+            help = "Admin password (if omitted, interactive prompt is used)"
+        )]
         password: Option<String>,
     },
 
@@ -103,7 +107,12 @@ pub enum Commands {
 
     /// Query administrative audit logs (via Admin API)
     Audit {
-        #[arg(short, long, help = "Number of audit entries to retrieve", default_value = "50")]
+        #[arg(
+            short,
+            long,
+            help = "Number of audit entries to retrieve",
+            default_value = "50"
+        )]
         limit: usize,
         #[arg(short, long, help = "Offset for pagination", default_value = "0")]
         offset: usize,
@@ -120,7 +129,12 @@ pub enum Commands {
 
     /// Run built-in HTTP pipeline latency and throughput benchmark
     Benchmark {
-        #[arg(short, long, default_value = "200", help = "Total number of benchmark requests")]
+        #[arg(
+            short,
+            long,
+            default_value = "200",
+            help = "Total number of benchmark requests"
+        )]
         requests: usize,
         #[arg(short, long, default_value = "10", help = "Concurrent worker tasks")]
         concurrency: usize,
@@ -128,6 +142,12 @@ pub enum Commands {
 
     /// Diagnose system environment and database reachability
     Doctor,
+
+    /// Cluster mesh and node federation management (via Admin API)
+    Cluster {
+        #[command(subcommand)]
+        command: ClusterCommands,
+    },
 
     /// Configuration initialization, conversion, and inspection
     Config {
@@ -140,7 +160,12 @@ pub enum Commands {
 pub enum ConfigCommands {
     /// Initialize a new default config.toml file
     Init {
-        #[arg(short, long, help = "Output path for the config file", default_value = "config.toml")]
+        #[arg(
+            short,
+            long,
+            help = "Output path for the config file",
+            default_value = "config.toml"
+        )]
         path: String,
 
         #[arg(short, long, help = "Force overwrite if file already exists")]
@@ -152,7 +177,12 @@ pub enum ConfigCommands {
 
     /// Convert a config.toml file into an environment variable .env file
     ToEnv {
-        #[arg(short, long, help = "Path to input TOML file", default_value = "config.toml")]
+        #[arg(
+            short,
+            long,
+            help = "Path to input TOML file",
+            default_value = "config.toml"
+        )]
         input: String,
 
         #[arg(short, long, help = "Path to output .env file", default_value = ".env")]
@@ -164,7 +194,12 @@ pub enum ConfigCommands {
 
     /// Validate and display active configuration values
     Show {
-        #[arg(short, long, help = "Path to config file", default_value = "config.toml")]
+        #[arg(
+            short,
+            long,
+            help = "Path to config file",
+            default_value = "config.toml"
+        )]
         config: String,
     },
 }
@@ -177,12 +212,70 @@ pub enum CacheCommands {
     Flush,
 }
 
+#[derive(Subcommand, Debug, Clone)]
+pub enum ClusterCommands {
+    /// Display local node identity, cluster secret, and peer connectivity status
+    Status,
+
+    /// List all registered peer nodes in the cluster mesh
+    #[command(alias = "list")]
+    Peers,
+
+    /// Connect and pair with a remote cluster peer node
+    Connect {
+        #[arg(help = "Remote peer URL (e.g. http://10.0.0.2:4500)")]
+        target_url: String,
+
+        #[arg(short, long, help = "Shared cluster secret for mutual authentication")]
+        secret: String,
+    },
+
+    /// Disconnect and unregister a peer node from the cluster mesh
+    #[command(alias = "disconnect")]
+    Remove {
+        #[arg(help = "Node ID of the peer to remove")]
+        node_id: String,
+    },
+
+    /// Update configuration for an existing registered peer node
+    Update {
+        #[arg(help = "Node ID of the peer to update")]
+        node_id: String,
+
+        #[arg(short, long, help = "Updated peer display moniker")]
+        moniker: Option<String>,
+
+        #[arg(short, long, help = "Updated peer URL endpoint")]
+        url: Option<String>,
+
+        #[arg(short, long, help = "Updated shared secret")]
+        secret: Option<String>,
+    },
+
+    /// Send a live ping probe to verify connectivity and measure latency to a peer node
+    Ping {
+        #[arg(help = "Node ID of the peer to ping")]
+        node_id: String,
+    },
+
+    /// Update the local node's cluster moniker
+    Moniker {
+        #[arg(help = "New moniker for this local cluster node")]
+        moniker: String,
+    },
+}
+
 #[derive(Args, Debug, Default, Clone)]
 pub struct ServerArgs {
     #[arg(value_name = "ACTION", help = "Optional server action (e.g. 'run')")]
     pub action: Option<String>,
 
-    #[arg(short, long, help = "Path to config file", default_value = "config.toml")]
+    #[arg(
+        short,
+        long,
+        help = "Path to config file",
+        default_value = "config.toml"
+    )]
     pub config: String,
 }
 
@@ -192,7 +285,11 @@ pub enum UserCommands {
     Add {
         #[arg(help = "Admin username")]
         username: String,
-        #[arg(short, long, help = "Password (if omitted, interactive prompt is used)")]
+        #[arg(
+            short,
+            long,
+            help = "Password (if omitted, interactive prompt is used)"
+        )]
         password: Option<String>,
     },
     /// List all administrative users
@@ -212,7 +309,11 @@ pub enum KeyCommands {
         name: String,
         #[arg(short, long, help = "Attached role name")]
         role: Option<String>,
-        #[arg(short, long, help = "Custom secret (if omitted, high-entropy secret is generated)")]
+        #[arg(
+            short,
+            long,
+            help = "Custom secret (if omitted, high-entropy secret is generated)"
+        )]
         secret: Option<String>,
         #[arg(long, help = "Rate limit per minute (0 = default)")]
         rate_limit: Option<i64>,
@@ -276,7 +377,11 @@ pub enum DbCommands {
     Add {
         #[arg(short, long, help = "Database alias")]
         alias: String,
-        #[arg(long = "conn", alias = "connection-url", help = "Database connection URL (e.g. postgres://..., sqlite://...)")]
+        #[arg(
+            long = "conn",
+            alias = "connection-url",
+            help = "Database connection URL (e.g. postgres://..., sqlite://...)"
+        )]
         connection_url: String,
         #[arg(
             short,
@@ -298,7 +403,11 @@ pub enum DbCommands {
     TestUrl {
         #[arg(help = "Database connection URL to probe")]
         url: String,
-        #[arg(short, long, help = "Optional existing alias to exclude from duplicate checks")]
+        #[arg(
+            short,
+            long,
+            help = "Optional existing alias to exclude from duplicate checks"
+        )]
         alias: Option<String>,
     },
     /// List all registered database connections
@@ -314,7 +423,11 @@ pub enum DbCommands {
         alias: String,
         #[arg(help = "SQL query string")]
         sql: String,
-        #[arg(short, long, help = r#"JSON parameters array or object, e.g. '[1, "active"]'"#)]
+        #[arg(
+            short,
+            long,
+            help = r#"JSON parameters array or object, e.g. '[1, "active"]'"#
+        )]
         params: Option<String>,
         #[arg(short, long, help = "Query timeout in seconds", default_value = "30")]
         timeout: Option<u64>,
@@ -323,7 +436,12 @@ pub enum DbCommands {
     Tables {
         #[arg(help = "Database alias")]
         alias: String,
-        #[arg(short, long, help = "Offset cursor for pagination", default_value = "0")]
+        #[arg(
+            short,
+            long,
+            help = "Offset cursor for pagination",
+            default_value = "0"
+        )]
         cursor: Option<i64>,
         #[arg(short, long, help = "Maximum tables to return", default_value = "100")]
         limit: Option<usize>,
@@ -349,7 +467,11 @@ pub enum DbCommands {
         sort: Option<String>,
         #[arg(short, long, help = "Sort order (asc or desc)", default_value = "asc")]
         order: Option<String>,
-        #[arg(short, long, help = r#"JSON filter condition, e.g. '{"status":{"eq":"active"}}'"#)]
+        #[arg(
+            short,
+            long,
+            help = r#"JSON filter condition, e.g. '{"status":{"eq":"active"}}'"#
+        )]
         filter: Option<String>,
     },
     /// Insert row(s) into a database table
@@ -434,7 +556,11 @@ pub enum BlobCommands {
         object_key: String,
         #[arg(help = "Path to local file to upload (or '-' for stdin)")]
         file: String,
-        #[arg(short = 't', long, help = "MIME Content-Type (e.g. application/json, image/png)")]
+        #[arg(
+            short = 't',
+            long,
+            help = "MIME Content-Type (e.g. application/json, image/png)"
+        )]
         content_type: Option<String>,
         #[arg(long, help = "Time-to-live expiration in seconds")]
         ttl: Option<u64>,
@@ -445,7 +571,11 @@ pub enum BlobCommands {
         namespace: String,
         #[arg(value_name = "KEY", help = "Object key (path)")]
         object_key: String,
-        #[arg(short, long, help = "Output file path (or '-' for stdout). Defaults to key filename")]
+        #[arg(
+            short,
+            long,
+            help = "Output file path (or '-' for stdout). Defaults to key filename"
+        )]
         output: Option<String>,
         #[arg(long, help = "Capability ticket signature for pre-signed download")]
         ticket: Option<String>,
@@ -510,10 +640,33 @@ pub enum BlobCommands {
         namespace: String,
         #[arg(value_name = "KEY", help = "Object key (path)")]
         object_key: String,
-        #[arg(short, long, help = "Permitted operation (READ, WRITE)", default_value = "READ")]
+        #[arg(
+            short,
+            long,
+            help = "Permitted operation (READ, WRITE)",
+            default_value = "READ"
+        )]
         operation: Option<String>,
         #[arg(long, help = "Ticket time-to-live in seconds", default_value = "3600")]
         ttl: Option<u64>,
+    },
+    /// List capability download/upload tickets (via Admin API)
+    Tickets {
+        #[arg(short, long, help = "Filter by namespace (defaults to all '*')")]
+        namespace: Option<String>,
+        #[arg(short, long, help = "Filter by object key")]
+        key: Option<String>,
+        #[arg(
+            long,
+            help = "Include expired and revoked tickets",
+            default_value = "true"
+        )]
+        all: bool,
+    },
+    /// Revoke a capability ticket by signature or ID
+    RevokeTicket {
+        #[arg(help = "Capability ticket signature or ID to revoke")]
+        signature: String,
     },
 }
 
@@ -525,7 +678,10 @@ pub enum BlobNsCommands {
     Create {
         #[arg(help = "Namespace name")]
         name: String,
-        #[arg(long, help = "Maximum storage quota in bytes (e.g. 1073741824 for 1GB)")]
+        #[arg(
+            long,
+            help = "Maximum storage quota in bytes (e.g. 1073741824 for 1GB)"
+        )]
         max_bytes: Option<u64>,
     },
     /// Update an existing namespace quota or rename it
@@ -552,7 +708,11 @@ pub enum SetupCommands {
     Account {
         #[arg(help = "Admin username")]
         username: String,
-        #[arg(short, long, help = "Admin password (if omitted, interactive prompt is used)")]
+        #[arg(
+            short,
+            long,
+            help = "Admin password (if omitted, interactive prompt is used)"
+        )]
         password: Option<String>,
     },
     /// Register the first upstream database during setup
@@ -577,7 +737,9 @@ mod tests {
         let args = ["axiom", "key", "create", "-n", "app_key", "-r", "readonly"];
         let cli = Cli::try_parse_from(args).expect("Failed to parse key create");
         match cli.command {
-            Some(Commands::Key { command: KeyCommands::Create { name, role, .. } }) => {
+            Some(Commands::Key {
+                command: KeyCommands::Create { name, role, .. },
+            }) => {
                 assert_eq!(name, "app_key");
                 assert_eq!(role, Some("readonly".to_string()));
             }
@@ -587,10 +749,28 @@ mod tests {
 
     #[test]
     fn test_cli_parse_db_add() {
-        let args = ["axiom", "db", "add", "-a", "analytics", "--conn", "postgres://localhost:5432/db", "--pool-max", "20"];
+        let args = [
+            "axiom",
+            "db",
+            "add",
+            "-a",
+            "analytics",
+            "--conn",
+            "postgres://localhost:5432/db",
+            "--pool-max",
+            "20",
+        ];
         let cli = Cli::try_parse_from(args).expect("Failed to parse db add");
         match cli.command {
-            Some(Commands::Db { command: DbCommands::Add { alias, connection_url, pool_max, .. } }) => {
+            Some(Commands::Db {
+                command:
+                    DbCommands::Add {
+                        alias,
+                        connection_url,
+                        pool_max,
+                        ..
+                    },
+            }) => {
                 assert_eq!(alias, "analytics");
                 assert_eq!(connection_url, "postgres://localhost:5432/db");
                 assert_eq!(pool_max, Some(20));
@@ -601,7 +781,13 @@ mod tests {
 
     #[test]
     fn test_cli_parse_global_flags() {
-        let args = ["axiom", "--url", "http://gateway.internal:4500", "--json", "doctor"];
+        let args = [
+            "axiom",
+            "--url",
+            "http://gateway.internal:4500",
+            "--json",
+            "doctor",
+        ];
         let cli = Cli::try_parse_from(args).expect("Failed to parse doctor");
         assert_eq!(cli.url, "http://gateway.internal:4500");
         assert!(cli.json);
@@ -613,7 +799,9 @@ mod tests {
         let args = ["axiom", "user", "add", "ops_admin", "-p", "secret123"];
         let cli = Cli::try_parse_from(args).expect("Failed to parse user add");
         match cli.command {
-            Some(Commands::User { command: UserCommands::Add { username, password } }) => {
+            Some(Commands::User {
+                command: UserCommands::Add { username, password },
+            }) => {
                 assert_eq!(username, "ops_admin");
                 assert_eq!(password, Some("secret123".to_string()));
             }
@@ -626,7 +814,9 @@ mod tests {
         let args = ["axiom", "key", "rotate", "app_service_key"];
         let cli = Cli::try_parse_from(args).expect("Failed to parse key rotate");
         match cli.command {
-            Some(Commands::Key { command: KeyCommands::Rotate { name } }) => {
+            Some(Commands::Key {
+                command: KeyCommands::Rotate { name },
+            }) => {
                 assert_eq!(name, "app_service_key");
             }
             _ => panic!("Expected Key Rotate command"),
@@ -635,10 +825,24 @@ mod tests {
 
     #[test]
     fn test_cli_parse_role_update() {
-        let args = ["axiom", "role", "update", "analyst", "-d", "Updated role description"];
+        let args = [
+            "axiom",
+            "role",
+            "update",
+            "analyst",
+            "-d",
+            "Updated role description",
+        ];
         let cli = Cli::try_parse_from(args).expect("Failed to parse role update");
         match cli.command {
-            Some(Commands::Role { command: RoleCommands::Update { name, description, permissions } }) => {
+            Some(Commands::Role {
+                command:
+                    RoleCommands::Update {
+                        name,
+                        description,
+                        permissions,
+                    },
+            }) => {
                 assert_eq!(name, "analyst");
                 assert_eq!(description, Some("Updated role description".to_string()));
                 assert!(permissions.is_none());
@@ -652,7 +856,9 @@ mod tests {
         let args = ["axiom", "db", "test", "production_pg"];
         let cli = Cli::try_parse_from(args).expect("Failed to parse db test");
         match cli.command {
-            Some(Commands::Db { command: DbCommands::Test { alias } }) => {
+            Some(Commands::Db {
+                command: DbCommands::Test { alias },
+            }) => {
                 assert_eq!(alias, "production_pg");
             }
             _ => panic!("Expected Db Test command"),
@@ -671,7 +877,10 @@ mod tests {
         let args = ["axiom", "benchmark", "-r", "500", "-c", "25"];
         let cli = Cli::try_parse_from(args).expect("Failed to parse benchmark");
         match cli.command {
-            Some(Commands::Benchmark { requests, concurrency }) => {
+            Some(Commands::Benchmark {
+                requests,
+                concurrency,
+            }) => {
                 assert_eq!(requests, 500);
                 assert_eq!(concurrency, 25);
             }
@@ -704,7 +913,9 @@ mod tests {
         let args = ["axiom", "db", "test-url", "sqlite://data/custom.db"];
         let cli = Cli::try_parse_from(args).expect("Failed to parse db test-url");
         match cli.command {
-            Some(Commands::Db { command: DbCommands::TestUrl { url, alias } }) => {
+            Some(Commands::Db {
+                command: DbCommands::TestUrl { url, alias },
+            }) => {
                 assert_eq!(url, "sqlite://data/custom.db");
                 assert!(alias.is_none());
             }
@@ -736,10 +947,25 @@ mod tests {
 
     #[test]
     fn test_cli_parse_config_init() {
-        let args = ["axiom", "config", "init", "--path", "custom.toml", "--force", "--to-env"];
+        let args = [
+            "axiom",
+            "config",
+            "init",
+            "--path",
+            "custom.toml",
+            "--force",
+            "--to-env",
+        ];
         let cli = Cli::try_parse_from(args).expect("Failed to parse config init");
         match cli.command {
-            Some(Commands::Config { command: ConfigCommands::Init { path, force, to_env } }) => {
+            Some(Commands::Config {
+                command:
+                    ConfigCommands::Init {
+                        path,
+                        force,
+                        to_env,
+                    },
+            }) => {
                 assert_eq!(path, "custom.toml");
                 assert!(force);
                 assert!(to_env);
@@ -750,10 +976,19 @@ mod tests {
 
     #[test]
     fn test_cli_parse_config_to_env() {
-        let args = ["axiom", "config", "to-env", "-i", "in.toml", "-o", "out.env", "-f"];
+        let args = [
+            "axiom", "config", "to-env", "-i", "in.toml", "-o", "out.env", "-f",
+        ];
         let cli = Cli::try_parse_from(args).expect("Failed to parse config to-env");
         match cli.command {
-            Some(Commands::Config { command: ConfigCommands::ToEnv { input, output, force } }) => {
+            Some(Commands::Config {
+                command:
+                    ConfigCommands::ToEnv {
+                        input,
+                        output,
+                        force,
+                    },
+            }) => {
                 assert_eq!(input, "in.toml");
                 assert_eq!(output, "out.env");
                 assert!(force);
@@ -764,10 +999,28 @@ mod tests {
 
     #[test]
     fn test_cli_parse_db_query() {
-        let args = ["axiom", "db", "query", "main_db", "SELECT * FROM users", "-p", r#"["active"]"#, "--timeout", "45"];
+        let args = [
+            "axiom",
+            "db",
+            "query",
+            "main_db",
+            "SELECT * FROM users",
+            "-p",
+            r#"["active"]"#,
+            "--timeout",
+            "45",
+        ];
         let cli = Cli::try_parse_from(args).expect("Failed to parse db query");
         match cli.command {
-            Some(Commands::Db { command: DbCommands::Query { alias, sql, params, timeout } }) => {
+            Some(Commands::Db {
+                command:
+                    DbCommands::Query {
+                        alias,
+                        sql,
+                        params,
+                        timeout,
+                    },
+            }) => {
                 assert_eq!(alias, "main_db");
                 assert_eq!(sql, "SELECT * FROM users");
                 assert_eq!(params, Some(r#"["active"]"#.to_string()));
@@ -782,7 +1035,9 @@ mod tests {
         let args = ["axiom", "db", "tables", "analytics_db", "--limit", "50"];
         let cli = Cli::try_parse_from(args).expect("Failed to parse db tables");
         match cli.command {
-            Some(Commands::Db { command: DbCommands::Tables { alias, limit, .. } }) => {
+            Some(Commands::Db {
+                command: DbCommands::Tables { alias, limit, .. },
+            }) => {
                 assert_eq!(alias, "analytics_db");
                 assert_eq!(limit, Some(50));
             }
@@ -792,7 +1047,9 @@ mod tests {
         let schema_args = ["axiom", "db", "schema", "analytics_db", "events"];
         let schema_cli = Cli::try_parse_from(schema_args).expect("Failed to parse db schema");
         match schema_cli.command {
-            Some(Commands::Db { command: DbCommands::Schema { alias, table } }) => {
+            Some(Commands::Db {
+                command: DbCommands::Schema { alias, table },
+            }) => {
                 assert_eq!(alias, "analytics_db");
                 assert_eq!(table, "events");
             }
@@ -802,10 +1059,32 @@ mod tests {
 
     #[test]
     fn test_cli_parse_db_rows() {
-        let args = ["axiom", "db", "rows", "main_db", "users", "--sort", "id", "--order", "desc", "--filter", r#"{"status":{"eq":"active"}}"#];
+        let args = [
+            "axiom",
+            "db",
+            "rows",
+            "main_db",
+            "users",
+            "--sort",
+            "id",
+            "--order",
+            "desc",
+            "--filter",
+            r#"{"status":{"eq":"active"}}"#,
+        ];
         let cli = Cli::try_parse_from(args).expect("Failed to parse db rows");
         match cli.command {
-            Some(Commands::Db { command: DbCommands::Rows { alias, table, sort, order, filter, .. } }) => {
+            Some(Commands::Db {
+                command:
+                    DbCommands::Rows {
+                        alias,
+                        table,
+                        sort,
+                        order,
+                        filter,
+                        ..
+                    },
+            }) => {
                 assert_eq!(alias, "main_db");
                 assert_eq!(table, "users");
                 assert_eq!(sort, Some("id".to_string()));
@@ -818,10 +1097,30 @@ mod tests {
 
     #[test]
     fn test_cli_parse_blob_commands() {
-        let args = ["axiom", "blob", "put", "avatars", "user1.png", "./me.png", "-t", "image/png", "--ttl", "86400"];
+        let args = [
+            "axiom",
+            "blob",
+            "put",
+            "avatars",
+            "user1.png",
+            "./me.png",
+            "-t",
+            "image/png",
+            "--ttl",
+            "86400",
+        ];
         let cli = Cli::try_parse_from(args).expect("Failed to parse blob put");
         match cli.command {
-            Some(Commands::Blob { command: BlobCommands::Put { namespace, object_key, file, content_type, ttl } }) => {
+            Some(Commands::Blob {
+                command:
+                    BlobCommands::Put {
+                        namespace,
+                        object_key,
+                        file,
+                        content_type,
+                        ttl,
+                    },
+            }) => {
                 assert_eq!(namespace, "avatars");
                 assert_eq!(object_key, "user1.png");
                 assert_eq!(file, "./me.png");
@@ -831,10 +1130,28 @@ mod tests {
             _ => panic!("Expected Blob Put command"),
         }
 
-        let get_args = ["axiom", "blob", "get", "avatars", "user1.png", "-o", "./download.png", "--ticket", "sig123"];
+        let get_args = [
+            "axiom",
+            "blob",
+            "get",
+            "avatars",
+            "user1.png",
+            "-o",
+            "./download.png",
+            "--ticket",
+            "sig123",
+        ];
         let get_cli = Cli::try_parse_from(get_args).expect("Failed to parse blob get");
         match get_cli.command {
-            Some(Commands::Blob { command: BlobCommands::Get { namespace, object_key, output, ticket } }) => {
+            Some(Commands::Blob {
+                command:
+                    BlobCommands::Get {
+                        namespace,
+                        object_key,
+                        output,
+                        ticket,
+                    },
+            }) => {
                 assert_eq!(namespace, "avatars");
                 assert_eq!(object_key, "user1.png");
                 assert_eq!(output, Some("./download.png".to_string()));
@@ -843,10 +1160,29 @@ mod tests {
             _ => panic!("Expected Blob Get command"),
         }
 
-        let copy_args = ["axiom", "blob", "copy", "raw", "data/", "backup/", "--dest-namespace", "archive", "--prefix"];
+        let copy_args = [
+            "axiom",
+            "blob",
+            "copy",
+            "raw",
+            "data/",
+            "backup/",
+            "--dest-namespace",
+            "archive",
+            "--prefix",
+        ];
         let copy_cli = Cli::try_parse_from(copy_args).expect("Failed to parse blob copy");
         match copy_cli.command {
-            Some(Commands::Blob { command: BlobCommands::Copy { src_namespace, src_key, dest_key, dest_namespace, prefix } }) => {
+            Some(Commands::Blob {
+                command:
+                    BlobCommands::Copy {
+                        src_namespace,
+                        src_key,
+                        dest_key,
+                        dest_namespace,
+                        prefix,
+                    },
+            }) => {
                 assert_eq!(src_namespace, "raw");
                 assert_eq!(src_key, "data/");
                 assert_eq!(dest_key, "backup/");
@@ -854,6 +1190,45 @@ mod tests {
                 assert!(prefix);
             }
             _ => panic!("Expected Blob Copy command"),
+        }
+
+        // Tickets & RevokeTicket
+        let tickets_args = [
+            "axiom",
+            "blob",
+            "tickets",
+            "-n",
+            "assets",
+            "-k",
+            "report.pdf",
+        ];
+        let tickets_cli = Cli::try_parse_from(tickets_args).expect("Failed to parse blob tickets");
+        match tickets_cli.command {
+            Some(Commands::Blob {
+                command:
+                    BlobCommands::Tickets {
+                        namespace,
+                        key,
+                        all,
+                    },
+            }) => {
+                assert_eq!(namespace, Some("assets".to_string()));
+                assert_eq!(key, Some("report.pdf".to_string()));
+                assert!(all);
+            }
+            _ => panic!("Expected Blob Tickets command"),
+        }
+
+        let revoke_args = ["axiom", "blob", "revoke-ticket", "sig_xyz_123"];
+        let revoke_cli =
+            Cli::try_parse_from(revoke_args).expect("Failed to parse blob revoke-ticket");
+        match revoke_cli.command {
+            Some(Commands::Blob {
+                command: BlobCommands::RevokeTicket { signature },
+            }) => {
+                assert_eq!(signature, "sig_xyz_123");
+            }
+            _ => panic!("Expected Blob RevokeTicket command"),
         }
     }
 
@@ -869,15 +1244,152 @@ mod tests {
             _ => panic!("Expected Login command"),
         }
 
-        let setup_args = ["axiom", "setup", "account", "superadmin", "-p", "longsecretpass"];
+        let setup_args = [
+            "axiom",
+            "setup",
+            "account",
+            "superadmin",
+            "-p",
+            "longsecretpass",
+        ];
         let setup_cli = Cli::try_parse_from(setup_args).expect("Failed to parse setup account");
         match setup_cli.command {
-            Some(Commands::Setup { command: Some(SetupCommands::Account { username, password }) }) => {
+            Some(Commands::Setup {
+                command: Some(SetupCommands::Account { username, password }),
+            }) => {
                 assert_eq!(username, "superadmin");
                 assert_eq!(password, Some("longsecretpass".to_string()));
             }
             _ => panic!("Expected Setup Account command"),
         }
     }
-}
 
+    #[test]
+    fn test_cli_parse_cluster_commands() {
+        // Status
+        let args = ["axiom", "cluster", "status"];
+        let cli = Cli::try_parse_from(args).expect("Failed to parse cluster status");
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Cluster {
+                command: ClusterCommands::Status
+            })
+        ));
+
+        // Peers / list
+        let args = ["axiom", "cluster", "peers"];
+        let cli = Cli::try_parse_from(args).expect("Failed to parse cluster peers");
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Cluster {
+                command: ClusterCommands::Peers
+            })
+        ));
+
+        let args = ["axiom", "cluster", "list"];
+        let cli = Cli::try_parse_from(args).expect("Failed to parse cluster list");
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Cluster {
+                command: ClusterCommands::Peers
+            })
+        ));
+
+        // Connect
+        let args = [
+            "axiom",
+            "cluster",
+            "connect",
+            "http://10.0.0.2:4500",
+            "-s",
+            "shared_secret_123",
+        ];
+        let cli = Cli::try_parse_from(args).expect("Failed to parse cluster connect");
+        match cli.command {
+            Some(Commands::Cluster {
+                command: ClusterCommands::Connect { target_url, secret },
+            }) => {
+                assert_eq!(target_url, "http://10.0.0.2:4500");
+                assert_eq!(secret, "shared_secret_123");
+            }
+            _ => panic!("Expected Cluster Connect command"),
+        }
+
+        // Remove / disconnect
+        let args = ["axiom", "cluster", "remove", "node_999"];
+        let cli = Cli::try_parse_from(args).expect("Failed to parse cluster remove");
+        match cli.command {
+            Some(Commands::Cluster {
+                command: ClusterCommands::Remove { node_id },
+            }) => {
+                assert_eq!(node_id, "node_999");
+            }
+            _ => panic!("Expected Cluster Remove command"),
+        }
+
+        let args = ["axiom", "cluster", "disconnect", "node_999"];
+        let cli = Cli::try_parse_from(args).expect("Failed to parse cluster disconnect");
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Cluster {
+                command: ClusterCommands::Remove { .. }
+            })
+        ));
+
+        // Update
+        let args = [
+            "axiom",
+            "cluster",
+            "update",
+            "node_999",
+            "-m",
+            "node-east",
+            "--url",
+            "http://10.0.0.3:4500",
+            "-s",
+            "new_secret",
+        ];
+        let cli = Cli::try_parse_from(args).expect("Failed to parse cluster update");
+        match cli.command {
+            Some(Commands::Cluster {
+                command:
+                    ClusterCommands::Update {
+                        node_id,
+                        moniker,
+                        url,
+                        secret,
+                    },
+            }) => {
+                assert_eq!(node_id, "node_999");
+                assert_eq!(moniker, Some("node-east".to_string()));
+                assert_eq!(url, Some("http://10.0.0.3:4500".to_string()));
+                assert_eq!(secret, Some("new_secret".to_string()));
+            }
+            _ => panic!("Expected Cluster Update command"),
+        }
+
+        // Ping
+        let args = ["axiom", "cluster", "ping", "node_999"];
+        let cli = Cli::try_parse_from(args).expect("Failed to parse cluster ping");
+        match cli.command {
+            Some(Commands::Cluster {
+                command: ClusterCommands::Ping { node_id },
+            }) => {
+                assert_eq!(node_id, "node_999");
+            }
+            _ => panic!("Expected Cluster Ping command"),
+        }
+
+        // Moniker
+        let args = ["axiom", "cluster", "moniker", "local-gateway-primary"];
+        let cli = Cli::try_parse_from(args).expect("Failed to parse cluster moniker");
+        match cli.command {
+            Some(Commands::Cluster {
+                command: ClusterCommands::Moniker { moniker },
+            }) => {
+                assert_eq!(moniker, "local-gateway-primary");
+            }
+            _ => panic!("Expected Cluster Moniker command"),
+        }
+    }
+}

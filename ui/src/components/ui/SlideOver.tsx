@@ -148,7 +148,7 @@ export const SlideOver: React.FC<SlideOverProps> = ({
         <div
           ref={panelRef}
           className={cn(
-            'w-screen h-full pointer-events-auto bg-black border-l border-[#222222] shadow-2xl flex flex-col animate-in slide-in-from-right duration-200 ease-out select-text overflow-hidden font-sans',
+            'w-screen h-full pointer-events-auto bg-black border-l border-[#222222] shadow-2xl flex flex-col animate-in slide-in-from-right duration-200 ease-out select-text overflow-hidden font-sans pt-safe pb-safe',
             width
           )}
         >
@@ -166,14 +166,14 @@ export const SlideOver: React.FC<SlideOverProps> = ({
             </div>
             <button
               onClick={onClose}
-              className="w-7 h-7 flex items-center justify-center text-[#888888] hover:text-white rounded-[8px] hover:bg-[#1a1a1a] transition-colors cursor-pointer shrink-0 ml-2"
+              className="w-10 h-10 -mr-2 flex items-center justify-center text-[#888888] hover:text-white rounded-[8px] hover:bg-[#1a1a1a] active:bg-[#222222] transition-colors cursor-pointer shrink-0"
               title="Close"
               aria-label="Close drawer"
             >
               <svg
                 xmlns="http://www.w3.org/2000/svg"
-                width="15"
-                height="15"
+                width="16"
+                height="16"
                 viewBox="0 0 256 256"
                 fill="currentColor"
               >
@@ -183,7 +183,7 @@ export const SlideOver: React.FC<SlideOverProps> = ({
           </div>
 
           {/* Inset Container ("container in container" design) */}
-          <div className="mx-[6px] mb-[6px] flex-1 flex flex-col border border-[#262626] rounded-[8px] bg-[#0e0e0e] overflow-hidden min-h-0">
+          <div className="mx-[6px] mb-[6px] flex-1 flex flex-col border border-[#262626] rounded-[8px] bg-[#0e0e0e] overflow-hidden min-h-0 touch-scroll">
             {children}
           </div>
         </div>

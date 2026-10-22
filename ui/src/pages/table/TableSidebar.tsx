@@ -41,6 +41,7 @@ export function TableSidebar({
   onDeleteTable,
 }: TableSidebarProps) {
   const [isDbDropdownOpen, setIsDbDropdownOpen] = React.useState(false);
+  const [isMobileOpen, setIsMobileOpen] = useState(false);
   const dbDropdownRef = useRef<HTMLDivElement>(null);
 
   const [tableMenuState, setTableMenuState] = useState<{
@@ -154,10 +155,21 @@ export function TableSidebar({
         >
           <RefreshCw className={`w-3.5 h-3.5 ${isTablesLoading ? 'animate-spin' : ''}`} />
         </button>
+
+        {/* Mobile expand/collapse toggle for tables list */}
+        <button
+          type="button"
+          onClick={() => setIsMobileOpen(!isMobileOpen)}
+          title={isMobileOpen ? 'Collapse Tables' : 'Expand Tables'}
+          aria-label={isMobileOpen ? 'Collapse Tables' : 'Expand Tables'}
+          className="w-8 h-8 flex items-center justify-center rounded-[6px] text-[#8c8c8c] hover:text-white hover:bg-[#161616] lg:hidden transition-colors cursor-pointer shrink-0"
+        >
+          <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${isMobileOpen ? 'rotate-180' : ''}`} />
+        </button>
       </div>
 
-      {/* Live Search Input & Create Table button */}
-      <div className="p-2.5 flex items-center gap-1.5">
+      {/* Live Search Input & Create Table button (collapsible on mobile) */}
+      <div className={`p-2.5 items-center gap-1.5 ${isMobileOpen ? 'flex' : 'hidden lg:flex'}`}>
         <div className="relative flex-1 min-w-0">
           <Search className="w-3.5 h-3.5 text-[#666666] absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
           <input
@@ -181,8 +193,8 @@ export function TableSidebar({
         )}
       </div>
 
-      {/* Table Tree Items */}
-      <div className="flex-1 overflow-y-auto p-1.5 space-y-0.5">
+      {/* Table Tree Items (collapsible on mobile) */}
+      <div className={`flex-1 overflow-y-auto p-1.5 space-y-0.5 max-h-[45vh] lg:max-h-none ${isMobileOpen ? 'block' : 'hidden lg:block'}`}>
         {isTablesLoading && tables.length === 0 ? (
           <div className="flex items-center justify-center p-8 text-zinc-500 text-[12px] gap-2">
             <RefreshCw className="w-3.5 h-3.5 animate-spin" />
@@ -199,7 +211,10 @@ export function TableSidebar({
             return (
               <div
                 key={t.name}
-                onClick={() => onSelectTable(t.name)}
+                onClick={() => {
+                  onSelectTable(t.name);
+                  setIsMobileOpen(false);
+                }}
                 className={`group relative w-full flex items-center justify-between px-2.5 py-1.5 rounded-[6px] text-left transition-colors cursor-pointer text-[14px] font-sans ${
                   isSelected
                     ? 'bg-[#1a1a1a] text-white font-medium'
@@ -235,7 +250,7 @@ export function TableSidebar({
       </div>
 
       {/* Navigator Footer */}
-      <div className="h-12 shrink-0 px-3.5 border-t border-[#222222] flex items-center justify-between text-[12px] text-[#8c8c8c] select-none font-sans">
+      <div className={`h-12 shrink-0 px-3.5 border-t border-[#222222] items-center justify-between text-[12px] text-[#8c8c8c] select-none font-sans ${isMobileOpen ? 'flex' : 'hidden lg:flex'}`}>
         <span>{tables.length} tables</span>
       </div>
 

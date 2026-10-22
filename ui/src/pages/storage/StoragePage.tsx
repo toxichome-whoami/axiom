@@ -15,15 +15,24 @@ import {
   Plus,
   Settings,
   AlertTriangle,
+  Download,
+  Trash2,
+  ArrowRight,
+  FolderUp,
+  Files,
+  CheckSquare,
+  Copy,
 } from 'lucide-react';
 import { api } from '../../api/client';
 import { BlobEntry, BlobStats, NamespaceInfo } from '../../types';
-import { StorageItem, StorageViewMode, ClipboardState, StorageTierFilter } from './types';
+import { StorageItem, StorageViewMode, ClipboardState, StorageTierFilter, UploadFileEntry } from './types';
 import { formatBytes, QUOTA_OPTIONS } from './format';
 import { sanitizeFolder, parentOf, joinKey, validateName } from './paths';
 import { MoveDialog } from './MoveDialog';
 import { ContextMenu, ContextMenuPosition } from './ContextMenu';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
+import { Button } from '../../components/ui/Button';
+import { Switch } from '../../components/ui/Switch';
 import { CustomSelect } from '../../components/shared/CustomSelect';
 import { UploadProgressDrawer, UploadTask } from './UploadProgressDrawer';
 import { StorageSidebar } from './StorageSidebar';
@@ -62,6 +71,70 @@ function getInitialStorageState(): {
   }
 }
 
+/**
+ * Recursively extracts files and directory hierarchies from drag-and-drop DataTransfer items.
+ * Preserves subfolder paths relative to dropped root, critical for hosting static sites/assets.
+ */
+async function scanFilesFromDataTransfer(items: DataTransferItemList): Promise<UploadFileEntry[]> {
+  const entries: UploadFileEntry[] = [];
+
+  async function traverseEntry(entry: any, path = ''): Promise<void> {
+    if (!entry) return;
+    if (entry.isFile) {
+      await new Promise<void>((resolve) => {
+        entry.file(
+          (file: File) => {
+            entries.push({
+              file,
+              relativePath: path ? `${path}/${file.name}` : file.name,
+            });
+            resolve();
+          },
+          () => resolve()
+        );
+      });
+    } else if (entry.isDirectory) {
+      const dirReader = entry.createReader();
+      const readAllEntries = async (): Promise<any[]> => {
+        let all: any[] = [];
+        while (true) {
+          const batch: any[] = await new Promise((resolve) => {
+            dirReader.readEntries(
+              (results: any[]) => resolve(results || []),
+              () => resolve([])
+            );
+          });
+          if (!batch || batch.length === 0) break;
+          all = all.concat(batch);
+        }
+        return all;
+      };
+
+      const childEntries = await readAllEntries();
+      const newPath = path ? `${path}/${entry.name}` : entry.name;
+      for (const child of childEntries) {
+        await traverseEntry(child, newPath);
+      }
+    }
+  }
+
+  const promises: Promise<void>[] = [];
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    const entry = item.webkitGetAsEntry ? item.webkitGetAsEntry() : null;
+    if (entry) {
+      promises.push(traverseEntry(entry, ''));
+    } else {
+      const file = item.getAsFile();
+      if (file) {
+        entries.push({ file, relativePath: file.name });
+      }
+    }
+  }
+  await Promise.all(promises);
+  return entries;
+}
+
 export function StoragePage() {
   const initialStorage = useMemo(() => getInitialStorageState(), []);
 
@@ -70,6 +143,8 @@ export function StoragePage() {
   const [namespaces, setNamespaces] = useState<NamespaceInfo[]>([]);
   const [activeNamespace, setActiveNamespace] = useState<string>(initialStorage.ns);
   const [blobs, setBlobs] = useState<BlobEntry[]>([]);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -81,6 +156,100 @@ export function StoragePage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [tierFilter, setTierFilter] = useState<StorageTierFilter>('all');
   const [selectedItem, setSelectedItem] = useState<StorageItem | null>(null);
+  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
+  const lastFocusedKeyRef = useRef<string | null>(null);
+
+  // Resizable Sidebar & Inspector dimensions (saved to localStorage)
+  const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('axiom_storage_sidebar_width');
+      return saved ? Math.max(180, Math.min(600, parseInt(saved, 10))) : 260;
+    } catch {
+      return 260;
+    }
+  });
+
+  const [detailsWidth, setDetailsWidth] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('axiom_storage_details_width');
+      return saved ? Math.max(240, Math.min(700, parseInt(saved, 10))) : 320;
+    } catch {
+      return 320;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('axiom_storage_sidebar_width', sidebarWidth.toString());
+    } catch {}
+  }, [sidebarWidth]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('axiom_storage_details_width', detailsWidth.toString());
+    } catch {}
+  }, [detailsWidth]);
+
+  // Left Sidebar Drag-to-Resize Handler
+  const handleSidebarResizeStart = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      const startX = e.clientX;
+      const startW = sidebarWidth;
+
+      const handleMouseMove = (ev: MouseEvent) => {
+        const delta = ev.clientX - startX;
+        const newWidth = Math.max(180, Math.min(600, startW + delta));
+        setSidebarWidth(newWidth);
+      };
+
+      const handleMouseUp = () => {
+        document.removeEventListener('mousemove', handleMouseMove);
+        document.removeEventListener('mouseup', handleMouseUp);
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+      };
+
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+    },
+    [sidebarWidth]
+  );
+
+  // Right Inspector Drag-to-Resize Handler
+  const handleDetailsResizeStart = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      const startX = e.clientX;
+      const startW = detailsWidth;
+
+      const handleMouseMove = (ev: MouseEvent) => {
+        const delta = startX - ev.clientX; // dragging leftwards widens the right panel
+        const newWidth = Math.max(240, Math.min(700, startW + delta));
+        setDetailsWidth(newWidth);
+      };
+
+      const handleMouseUp = () => {
+        document.removeEventListener('mousemove', handleMouseMove);
+        document.removeEventListener('mouseup', handleMouseUp);
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+      };
+
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+    },
+    [detailsWidth]
+  );
+
+  // Batch Operations State
+  const [isBatchDeleteOpen, setIsBatchDeleteOpen] = useState(false);
+  const [isBatchDeleting, setIsBatchDeleting] = useState(false);
+  const [isBatchMoveOpen, setIsBatchMoveOpen] = useState(false);
 
   // Context Menu (Right Click) State
   const [contextMenu, setContextMenu] = useState<{ position: ContextMenuPosition; item: StorageItem | null } | null>(null);
@@ -106,6 +275,10 @@ export function StoragePage() {
   const [isMoveOpen, setIsMoveOpen] = useState(false);
   const [itemToMove, setItemToMove] = useState<StorageItem | null>(null);
 
+  const [isCopyOpen, setIsCopyOpen] = useState(false);
+  const [isBatchCopyOpen, setIsBatchCopyOpen] = useState(false);
+  const [itemToCopy, setItemToCopy] = useState<StorageItem | null>(null);
+
   const [isRenameOpen, setIsRenameOpen] = useState(false);
   const [itemToRename, setItemToRename] = useState<StorageItem | null>(null);
   const [renameInput, setRenameInput] = useState('');
@@ -123,6 +296,8 @@ export function StoragePage() {
   const [newNsName, setNewNsName] = useState('');
   const [newNsQuotaPreset, setNewNsQuotaPreset] = useState('unlimited');
   const [newNsCustomBytes, setNewNsCustomBytes] = useState('');
+  const [newNsIsPublic, setNewNsIsPublic] = useState(false);
+  const [newNsCors, setNewNsCors] = useState('');
   const [isCreatingNs, setIsCreatingNs] = useState(false);
 
   const [isManageNsOpen, setIsManageNsOpen] = useState(false);
@@ -130,6 +305,8 @@ export function StoragePage() {
   const [editNsName, setEditNsName] = useState('');
   const [editNsQuotaPreset, setEditNsQuotaPreset] = useState('unlimited');
   const [editNsCustomBytes, setEditNsCustomBytes] = useState('');
+  const [editNsIsPublic, setEditNsIsPublic] = useState(false);
+  const [editNsCors, setEditNsCors] = useState('');
   const [isSavingNs, setIsSavingNs] = useState(false);
   const [nsToDelete, setNsToDelete] = useState<NamespaceInfo | null>(null);
   const [isDeletingNs, setIsDeletingNs] = useState(false);
@@ -141,6 +318,7 @@ export function StoragePage() {
   // Race condition guard for concurrent data loads
   const fetchGenRef = useRef(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const folderInputRef = useRef<HTMLInputElement>(null);
   const dragCounterRef = useRef(0);
 
   // Mutable reference for active path to avoid dependency cycle in loadData
@@ -153,37 +331,6 @@ export function StoragePage() {
   useEffect(() => {
     activeNsRef.current = activeNamespace;
   }, [activeNamespace]);
-
-  // Global Escape key listener to dismiss dialogs, context menus, or deselect items
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        if (isNewFolderOpen) setIsNewFolderOpen(false);
-        else if (isRenameOpen) setIsRenameOpen(false);
-        else if (isNewNsOpen) setIsNewNsOpen(false);
-        else if (isManageNsOpen) setIsManageNsOpen(false);
-        else if (isMoveOpen) setIsMoveOpen(false);
-        else if (isShareOpen) setIsShareOpen(false);
-        else if (itemToDelete) setItemToDelete(null);
-        else if (nsToDelete) setNsToDelete(null);
-        else if (contextMenu) setContextMenu(null);
-        else if (selectedItem) setSelectedItem(null);
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [
-    isNewFolderOpen,
-    isRenameOpen,
-    isNewNsOpen,
-    isManageNsOpen,
-    isMoveOpen,
-    isShareOpen,
-    itemToDelete,
-    nsToDelete,
-    contextMenu,
-    selectedItem,
-  ]);
 
   // Keep URL search parameters and localStorage synchronized with active navigation state
   const syncLocation = useCallback((ns: string, prefix: string, pushHistory = false) => {
@@ -226,8 +373,12 @@ export function StoragePage() {
       setCurrentPrefix(newPrefix);
       if (keepItem !== undefined) {
         setSelectedItem(keepItem);
+        setSelectedKeys(new Set(keepItem ? [keepItem.fullKey] : []));
+        lastFocusedKeyRef.current = keepItem ? keepItem.fullKey : null;
       } else {
         setSelectedItem(null);
+        setSelectedKeys(new Set());
+        lastFocusedKeyRef.current = null;
       }
       syncLocation(activeNsRef.current, newPrefix, pushHistory);
     },
@@ -244,12 +395,20 @@ export function StoragePage() {
         if (urlNs && urlNs !== activeNsRef.current) {
           setActiveNamespace(urlNs);
           api
-            .listBlobs(urlNs)
-            .then((res) => setBlobs(res.items || []))
-            .catch(() => setBlobs([]));
+            .listBlobs(urlNs, undefined, undefined, 100)
+            .then((res) => {
+              setBlobs(res.items || []);
+              setNextCursor(res.next_cursor || null);
+            })
+            .catch(() => {
+              setBlobs([]);
+              setNextCursor(null);
+            });
         }
         setCurrentPrefix(urlPrefix);
         setSelectedItem(null);
+        setSelectedKeys(new Set());
+        lastFocusedKeyRef.current = null;
       } catch {
         // Ignore popstate errors
       }
@@ -321,10 +480,11 @@ export function StoragePage() {
 
       if (activeNs) {
         try {
-          const listRes = await api.listBlobs(activeNs);
+          const listRes = await api.listBlobs(activeNs, undefined, undefined, 100);
           if (curGen === fetchGenRef.current) {
             const items = listRes.items || [];
             setBlobs(items);
+            setNextCursor(listRes.next_cursor || null);
             if (
               currentPrefixRef.current &&
               items.length > 0 &&
@@ -338,11 +498,13 @@ export function StoragePage() {
         } catch {
           if (curGen === fetchGenRef.current) {
             setBlobs([]);
+            setNextCursor(null);
           }
         }
       } else {
         if (curGen === fetchGenRef.current) {
           setBlobs([]);
+          setNextCursor(null);
         }
       }
     } catch (err: unknown) {
@@ -368,15 +530,40 @@ export function StoragePage() {
     setSelectedItem(null);
     syncLocation(ns, '', true);
     setIsLoading(true);
+    setNextCursor(null);
     try {
-      const res = await api.listBlobs(ns);
+      const res = await api.listBlobs(ns, undefined, undefined, 100);
       setBlobs(res.items || []);
+      setNextCursor(res.next_cursor || null);
     } catch {
       setBlobs([]);
+      setNextCursor(null);
     } finally {
       setIsLoading(false);
     }
   };
+
+  // Cursor-paginated lazy loader: appends next batch of blobs when scrolling near bottom
+  const handleLoadMore = useCallback(async () => {
+    if (!nextCursor || isLoadingMore || isLoading || !activeNamespace) return;
+    setIsLoadingMore(true);
+    try {
+      const res = await api.listBlobs(activeNamespace, undefined, nextCursor, 100);
+      const newItems = res.items || [];
+      if (newItems.length > 0) {
+        setBlobs((prev) => {
+          const existingKeys = new Set(prev.map((b) => b.key));
+          const uniqueNew = newItems.filter((b) => !existingKeys.has(b.key));
+          return [...prev, ...uniqueNew];
+        });
+      }
+      setNextCursor(res.next_cursor || null);
+    } catch (err: unknown) {
+      console.error('Failed to load next page of blobs:', err);
+    } finally {
+      setIsLoadingMore(false);
+    }
+  }, [nextCursor, isLoadingMore, isLoading, activeNamespace]);
 
   const currentNsInfo = useMemo(() => {
     return namespaces.find((n) => n.name === activeNamespace) || null;
@@ -499,6 +686,179 @@ export function StoragePage() {
     return null;
   }, [selectedItem, currentPrefix, folderItems.length, fileItems]);
 
+  // Flattened list of all items currently rendered in explorer
+  const allVisibleItems = useMemo(() => [...folderItems, ...fileItems], [folderItems, fileItems]);
+
+  // List of full StorageItems corresponding to selectedKeys
+  const selectedItemsList = useMemo(() => {
+    return allVisibleItems.filter((it) => selectedKeys.has(it.fullKey));
+  }, [allVisibleItems, selectedKeys]);
+
+  // Multi-selection handlers with shift-range and ctrl/meta toggle support
+  const handleToggleSelectItem = useCallback(
+    (item: StorageItem, e: React.MouseEvent) => {
+      const isShift = Boolean(e.shiftKey);
+      const isCtrlOrMeta = Boolean(e.ctrlKey || e.metaKey);
+
+      // Determine current item index in visible items list
+      const curIdx = allVisibleItems.findIndex((it) => it.fullKey === item.fullKey);
+      if (curIdx === -1) return;
+
+      if (isShift) {
+        // Resolve anchor key: prefer lastFocusedKeyRef, then selectedItem, then first selected key
+        const anchorKey =
+          lastFocusedKeyRef.current &&
+          allVisibleItems.some((it) => it.fullKey === lastFocusedKeyRef.current)
+            ? lastFocusedKeyRef.current
+            : selectedItem && allVisibleItems.some((it) => it.fullKey === selectedItem.fullKey)
+            ? selectedItem.fullKey
+            : selectedKeys.size > 0
+            ? Array.from(selectedKeys).find((k) => allVisibleItems.some((it) => it.fullKey === k)) || null
+            : null;
+
+        const anchorIdx = anchorKey
+          ? allVisibleItems.findIndex((it) => it.fullKey === anchorKey)
+          : 0;
+
+        const validAnchorIdx = anchorIdx !== -1 ? anchorIdx : 0;
+        const [start, end] =
+          validAnchorIdx < curIdx
+            ? [validAnchorIdx, curIdx]
+            : [curIdx, validAnchorIdx];
+
+        // If Ctrl/Cmd is also held, preserve existing selections and union with range; else replace with range
+        const rangeKeys = new Set(isCtrlOrMeta ? selectedKeys : []);
+        for (let i = start; i <= end; i++) {
+          rangeKeys.add(allVisibleItems[i].fullKey);
+        }
+
+        setSelectedKeys(rangeKeys);
+        setSelectedItem(item);
+
+        // Keep the original anchor key so subsequent Shift-clicks adjust from the same anchor point
+        if (!lastFocusedKeyRef.current || !allVisibleItems.some((it) => it.fullKey === lastFocusedKeyRef.current)) {
+          lastFocusedKeyRef.current = allVisibleItems[validAnchorIdx].fullKey;
+        }
+        return;
+      }
+
+      // Normal toggle or Ctrl/Cmd toggle
+      const nextKeys = new Set(selectedKeys);
+      if (nextKeys.has(item.fullKey)) {
+        nextKeys.delete(item.fullKey);
+        if (selectedItem?.fullKey === item.fullKey) {
+          const remainingKey = Array.from(nextKeys)[0];
+          const remainingItem = remainingKey
+            ? allVisibleItems.find((it) => it.fullKey === remainingKey) || null
+            : null;
+          setSelectedItem(remainingItem);
+        }
+      } else {
+        nextKeys.add(item.fullKey);
+        setSelectedItem(item);
+      }
+      setSelectedKeys(nextKeys);
+      lastFocusedKeyRef.current = item.fullKey;
+    },
+    [allVisibleItems, selectedItem, selectedKeys]
+  );
+
+  const handleSelectItem = useCallback((item: StorageItem) => {
+    setSelectedKeys(new Set([item.fullKey]));
+    setSelectedItem(item);
+    lastFocusedKeyRef.current = item.fullKey;
+  }, []);
+
+  const handleSelectAll = useCallback(() => {
+    setSelectedKeys((prev) => {
+      if (allVisibleItems.length === 0) return new Set();
+      const isAllSelected = allVisibleItems.every((it) => prev.has(it.fullKey));
+      if (isAllSelected) {
+        setSelectedItem(null);
+        lastFocusedKeyRef.current = null;
+        return new Set();
+      } else {
+        const next = new Set(allVisibleItems.map((it) => it.fullKey));
+        if (!selectedItem && allVisibleItems.length > 0) {
+          setSelectedItem(allVisibleItems[0]);
+          lastFocusedKeyRef.current = allVisibleItems[0].fullKey;
+        }
+        return next;
+      }
+    });
+  }, [allVisibleItems, selectedItem]);
+
+  const handleClearSelection = useCallback(() => {
+    setSelectedKeys(new Set());
+    setSelectedItem(null);
+    lastFocusedKeyRef.current = null;
+  }, []);
+
+  // Global keyboard shortcuts (Escape to deselect/dismiss, Ctrl+A to select all, Delete to batch delete)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (isNewFolderOpen) setIsNewFolderOpen(false);
+        else if (isRenameOpen) setIsRenameOpen(false);
+        else if (isNewNsOpen) setIsNewNsOpen(false);
+        else if (isManageNsOpen) setIsManageNsOpen(false);
+        else if (isMoveOpen) setIsMoveOpen(false);
+        else if (isBatchMoveOpen) setIsBatchMoveOpen(false);
+        else if (isCopyOpen) setIsCopyOpen(false);
+        else if (isBatchCopyOpen) setIsBatchCopyOpen(false);
+        else if (isBatchDeleteOpen) setIsBatchDeleteOpen(false);
+        else if (isShareOpen) setIsShareOpen(false);
+        else if (itemToDelete) setItemToDelete(null);
+        else if (nsToDelete) setNsToDelete(null);
+        else if (contextMenu) setContextMenu(null);
+        else if (selectedKeys.size > 0 || selectedItem) {
+          handleClearSelection();
+        }
+      } else if ((e.ctrlKey || e.metaKey) && (e.key === 'a' || e.key === 'A')) {
+        const target = e.target as HTMLElement;
+        if (
+          target.tagName !== 'INPUT' &&
+          target.tagName !== 'TEXTAREA' &&
+          !target.isContentEditable
+        ) {
+          e.preventDefault();
+          handleSelectAll();
+        }
+      } else if (e.key === 'Delete') {
+        const target = e.target as HTMLElement;
+        if (
+          target.tagName !== 'INPUT' &&
+          target.tagName !== 'TEXTAREA' &&
+          !target.isContentEditable &&
+          selectedKeys.size > 0
+        ) {
+          e.preventDefault();
+          setIsBatchDeleteOpen(true);
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [
+    isNewFolderOpen,
+    isRenameOpen,
+    isNewNsOpen,
+    isManageNsOpen,
+    isMoveOpen,
+    isBatchMoveOpen,
+    isCopyOpen,
+    isBatchCopyOpen,
+    isBatchDeleteOpen,
+    isShareOpen,
+    itemToDelete,
+    nsToDelete,
+    contextMenu,
+    selectedItem,
+    selectedKeys.size,
+    handleClearSelection,
+    handleSelectAll,
+  ]);
+
   // Live object count excluding internal directory markers
   const realObjectsCount = useMemo(() => {
     return blobs.filter((b) => !b.key.endsWith('/.axiom_dir') && b.key !== '.axiom_dir').length;
@@ -547,28 +907,48 @@ export function StoragePage() {
     );
   }, []);
 
-  // Direct upload handler
-  const handleUploadFiles = async (files: FileList | File[], destinationPrefix?: string) => {
-    if (!files || files.length === 0 || !activeNamespace) return;
+  // Direct upload handler supporting multi-files, whole directories (webkitRelativePath), and nested folder entries
+  const handleUploadFiles = async (
+    files: FileList | File[] | UploadFileEntry[],
+    destinationPrefix?: string
+  ) => {
+    if (!files || (Array.isArray(files) ? files.length === 0 : files.length === 0) || !activeNamespace) return;
 
     const targetPrefix = destinationPrefix !== undefined ? sanitizeFolder(destinationPrefix) : currentPrefix;
-    const fileList = Array.from(files);
-    const newTasks: UploadTask[] = fileList.map((file, idx) => ({
-      id: `task-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 7)}`,
-      name: file.name,
-      size: file.size,
-      key: `${targetPrefix}${file.name}`,
-      namespace: activeNamespace,
-      status: 'pending' as const,
-      abortController: new AbortController(),
-    }));
+
+    // Normalize input to UploadFileEntry with preserved relative paths
+    const rawList = Array.from(files as any[]);
+    const entries: UploadFileEntry[] = rawList.map((item) => {
+      if (item && 'file' in item && item.file instanceof File) {
+        return item as UploadFileEntry;
+      }
+      const file = item as File;
+      return {
+        file,
+        relativePath: (file as any).webkitRelativePath || file.name,
+      };
+    });
+
+    const newTasks: UploadTask[] = entries.map((entry, idx) => {
+      const cleanRel = (entry.relativePath || entry.file.name).replace(/^[/\\]+/, '');
+      const key = `${targetPrefix}${cleanRel}`;
+      return {
+        id: `task-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 7)}`,
+        name: entry.file.name,
+        size: entry.file.size,
+        key,
+        namespace: activeNamespace,
+        status: 'pending' as const,
+        abortController: new AbortController(),
+      };
+    });
 
     setUploadTasks((prev) => [...prev, ...newTasks]);
     setIsUploadDrawerVisible(true);
 
     for (let i = 0; i < newTasks.length; i++) {
       const task = newTasks[i];
-      const file = fileList[i];
+      const entry = entries[i];
 
       if (task.abortController?.signal.aborted) {
         continue;
@@ -582,9 +962,14 @@ export function StoragePage() {
         await api.uploadBlob(
           task.namespace,
           task.key,
-          file,
-          file.type || 'application/octet-stream',
-          task.abortController?.signal
+          entry.file,
+          entry.file.type || 'application/octet-stream',
+          task.abortController?.signal,
+          (uploadedBytes) => {
+            setUploadTasks((prev) =>
+              prev.map((t) => (t.id === task.id ? { ...t, uploadedBytes } : t))
+            );
+          }
         );
 
         setUploadTasks((prev) =>
@@ -609,30 +994,43 @@ export function StoragePage() {
     }
   };
 
-  // Check if an item can legally be dropped onto target folder
-  const canDropOnFolder = useCallback((dragged: StorageItem | null, targetFolderKey: string): boolean => {
-    if (!dragged) return false;
+  // Check if an item (or batch of items) can legally be dropped onto target folder
+  const canDropOnFolder = useCallback(
+    (dragged: StorageItem | null, targetFolderKey: string): boolean => {
+      if (!dragged) return false;
 
-    const normTarget = targetFolderKey ? sanitizeFolder(targetFolderKey) : '';
-    const normSrc = dragged.type === 'folder' ? sanitizeFolder(dragged.fullKey) : dragged.fullKey;
+      const normTarget = targetFolderKey ? sanitizeFolder(targetFolderKey) : '';
 
-    if (dragged.fullKey === targetFolderKey || (dragged.type === 'folder' && normSrc === normTarget)) {
-      return false;
-    }
+      // If dragged item is in multi-selection, validate the entire batch
+      const itemsToCheck =
+        selectedKeys.has(dragged.fullKey) && selectedItemsList.length > 0
+          ? selectedItemsList
+          : [dragged];
 
-    if (dragged.type === 'folder' && normTarget.startsWith(normSrc)) {
-      return false;
-    }
+      for (const it of itemsToCheck) {
+        const normSrc = it.type === 'folder' ? sanitizeFolder(it.fullKey) : it.fullKey;
 
-    const parentOfSrc = parentOf(dragged.fullKey);
-    if (parentOfSrc === normTarget || parentOfSrc === targetFolderKey) {
-      return false;
-    }
+        if (it.fullKey === targetFolderKey || (it.type === 'folder' && normSrc === normTarget)) {
+          return false;
+        }
 
-    return true;
-  }, []);
+        if (it.type === 'folder' && normTarget.startsWith(normSrc)) {
+          return false;
+        }
+      }
 
-  // Drop item directly into target folder (internal move)
+      // At least one item in the batch must not already reside in target directory
+      const hasMoveableItem = itemsToCheck.some((it) => {
+        const parentOfSrc = parentOf(it.fullKey);
+        return parentOfSrc !== normTarget && parentOfSrc !== targetFolderKey;
+      });
+
+      return hasMoveableItem;
+    },
+    [selectedKeys, selectedItemsList]
+  );
+
+  // Drop item(s) directly into target folder (internal move)
   const handleDropOnFolder = async (targetFolderKey: string, droppedItem?: StorageItem) => {
     const item = droppedItem || draggedItemRef.current;
     if (!item || !activeNamespace) return;
@@ -641,18 +1039,28 @@ export function StoragePage() {
       return;
     }
 
-    const isFolder = item.type === 'folder';
     const normTarget = targetFolderKey ? sanitizeFolder(targetFolderKey) : '';
-    const destKey = joinKey(normTarget, item.name, isFolder);
+    const itemsToMove =
+      selectedKeys.has(item.fullKey) && selectedItemsList.length > 0
+        ? selectedItemsList
+        : [item];
 
     try {
-      await api.moveBlob(activeNamespace, item.fullKey, destKey, activeNamespace, isFolder);
-      if (selectedItem?.fullKey === item.fullKey) {
-        setSelectedItem(null);
+      for (const it of itemsToMove) {
+        const parentOfSrc = parentOf(it.fullKey);
+        if (parentOfSrc === normTarget || parentOfSrc === targetFolderKey) {
+          continue;
+        }
+
+        const isFolder = it.type === 'folder';
+        const destKey = joinKey(normTarget, it.name, isFolder);
+        await api.moveBlob(activeNamespace, it.fullKey, destKey, activeNamespace, isFolder);
       }
+
+      handleClearSelection();
       await loadData();
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : 'Failed to move item into folder');
+      alert(err instanceof Error ? err.message : 'Failed to move items into folder');
     }
   };
 
@@ -695,6 +1103,14 @@ export function StoragePage() {
       return;
     }
 
+    if (e.dataTransfer.items && e.dataTransfer.items.length > 0) {
+      const scanned = await scanFilesFromDataTransfer(e.dataTransfer.items);
+      if (scanned.length > 0) {
+        await handleUploadFiles(scanned);
+        return;
+      }
+    }
+
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       await handleUploadFiles(e.dataTransfer.files);
     }
@@ -702,6 +1118,11 @@ export function StoragePage() {
 
   // Internal item drag handlers
   const handleItemDragStart = (e: React.DragEvent, item: StorageItem) => {
+    if (!selectedKeys.has(item.fullKey)) {
+      setSelectedKeys(new Set([item.fullKey]));
+      setSelectedItem(item);
+      lastFocusedKeyRef.current = item.fullKey;
+    }
     setDraggedItem(item);
     draggedItemRef.current = item;
     e.dataTransfer.setData('text/plain', item.fullKey);
@@ -750,10 +1171,50 @@ export function StoragePage() {
     if (!itemToMove) return;
     const isFolder = itemToMove.type === 'folder';
     await api.moveBlob(activeNamespace, itemToMove.fullKey, destKey, destNs, isFolder);
+    setSelectedKeys((prev) => {
+      const next = new Set(prev);
+      next.delete(itemToMove.fullKey);
+      return next;
+    });
     setItemToMove(null);
     if (selectedItem?.fullKey === itemToMove.fullKey) {
       setSelectedItem(null);
     }
+    await loadData();
+  };
+
+  // Batch Move handler
+  const handleBatchMove = async (destNs: string, targetFolder: string, items: StorageItem[]) => {
+    if (!activeNamespace || items.length === 0) return;
+    const cleanDir = sanitizeFolder(targetFolder);
+    for (const it of items) {
+      const isFolder = it.type === 'folder';
+      const destKey = joinKey(cleanDir, it.name, isFolder);
+      await api.moveBlob(activeNamespace, it.fullKey, destKey, destNs, isFolder);
+    }
+    handleClearSelection();
+    await loadData();
+  };
+
+  // Copy single item handler
+  const handleCopy = async (destNs: string, destKey: string) => {
+    if (!itemToCopy) return;
+    const isFolder = itemToCopy.type === 'folder';
+    await api.copyBlob(activeNamespace, itemToCopy.fullKey, destKey, destNs, isFolder);
+    setItemToCopy(null);
+    await loadData();
+  };
+
+  // Batch Copy handler
+  const handleBatchCopy = async (destNs: string, targetFolder: string, items: StorageItem[]) => {
+    if (!activeNamespace || items.length === 0) return;
+    const cleanDir = sanitizeFolder(targetFolder);
+    for (const it of items) {
+      const isFolder = it.type === 'folder';
+      const destKey = joinKey(cleanDir, it.name, isFolder);
+      await api.copyBlob(activeNamespace, it.fullKey, destKey, destNs, isFolder);
+    }
+    handleClearSelection();
     await loadData();
   };
 
@@ -780,6 +1241,14 @@ export function StoragePage() {
     try {
       await api.moveBlob(activeNamespace, itemToRename.fullKey, destKey, activeNamespace, isFolder);
       setIsRenameOpen(false);
+      setSelectedKeys((prev) => {
+        const next = new Set(prev);
+        if (next.has(itemToRename.fullKey)) {
+          next.delete(itemToRename.fullKey);
+          next.add(destKey);
+        }
+        return next;
+      });
       setItemToRename(null);
       if (selectedItem?.fullKey === itemToRename.fullKey) {
         setSelectedItem((prev) => (prev ? { ...prev, name: renameInput.trim(), fullKey: destKey } : null));
@@ -820,6 +1289,18 @@ export function StoragePage() {
         setSelectedItem(null);
       }
 
+      setSelectedKeys((prev) => {
+        const next = new Set(prev);
+        if (deleted.type === 'folder') {
+          for (const k of prev) {
+            if (k.startsWith(deleted.fullKey)) next.delete(k);
+          }
+        } else {
+          next.delete(deleted.fullKey);
+        }
+        return next;
+      });
+
       // If deleted item is a folder and currentPrefix is inside or equal to the deleted folder,
       // navigate back to the parent of the deleted folder so newly created folders don't nest under it
       if (deleted.type === 'folder' && currentPrefix.startsWith(deleted.fullKey)) {
@@ -833,6 +1314,59 @@ export function StoragePage() {
       alert(err instanceof Error ? err.message : 'Failed to delete item');
     } finally {
       setIsDeleting(false);
+    }
+  };
+
+  // Batch Delete handler
+  const handleConfirmBatchDelete = async () => {
+    if (!activeNamespace || selectedKeys.size === 0) return;
+    setIsBatchDeleting(true);
+    try {
+      const folderItemsToDelete = selectedItemsList.filter((it) => it.type === 'folder');
+      const fileItemsToDelete = selectedItemsList.filter((it) => it.type === 'file');
+
+      // 1. Delete folders by prefix
+      for (const f of folderItemsToDelete) {
+        await api.deleteBlobPrefix(activeNamespace, f.fullKey);
+      }
+
+      // 2. Batch delete files using the high-performance deleteBlobsBatch endpoint
+      if (fileItemsToDelete.length > 0) {
+        const fileKeys = fileItemsToDelete.map((it) => it.fullKey);
+        await api.deleteBlobsBatch(activeNamespace, fileKeys);
+      }
+
+      // Optimistically remove deleted items from local state
+      const deletedPrefixes = folderItemsToDelete.map((f) => f.fullKey);
+      const deletedKeySet = new Set(fileItemsToDelete.map((f) => f.fullKey));
+
+      setBlobs((prev) =>
+        prev.filter((b) => {
+          if (deletedKeySet.has(b.key)) return false;
+          for (const p of deletedPrefixes) {
+            if (b.key.startsWith(p)) return false;
+          }
+          return true;
+        })
+      );
+
+      handleClearSelection();
+      setIsBatchDeleteOpen(false);
+      await loadData();
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'Failed to delete selected items');
+    } finally {
+      setIsBatchDeleting(false);
+    }
+  };
+
+  // Batch Download handler for all selected files
+  const handleBatchDownload = async () => {
+    const selectedFiles = selectedItemsList.filter((it) => it.type === 'file');
+    if (selectedFiles.length === 0) return;
+    for (const f of selectedFiles) {
+      await handleDownload(f.fullKey);
+      await new Promise((r) => setTimeout(r, 200));
     }
   };
 
@@ -878,6 +1412,14 @@ export function StoragePage() {
     setTimeout(() => setCopiedKey(null), 2000);
   };
 
+  // Copy direct CDN / public URL for web integration
+  const handleCopyPublicUrl = useCallback((item: StorageItem) => {
+    const publicUrl = `${window.location.origin}/api/v1/blobs/public/${activeNamespace}/${item.fullKey}`;
+    navigator.clipboard.writeText(publicUrl);
+    setCopiedKey('public-url');
+    setTimeout(() => setCopiedKey(null), 2000);
+  }, [activeNamespace]);
+
   // Paste item from clipboard
   const handlePaste = async () => {
     if (!clipboard) return;
@@ -912,9 +1454,15 @@ export function StoragePage() {
       } else if (newNsQuotaPreset !== 'unlimited') {
         maxBytes = parseInt(newNsQuotaPreset, 10);
       }
-      await api.createBlobNamespace(name, maxBytes);
+      const corsList = newNsCors
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+      await api.createBlobNamespace(name, maxBytes, newNsIsPublic, corsList);
       setIsNewNsOpen(false);
       setNewNsName('');
+      setNewNsIsPublic(false);
+      setNewNsCors('');
       setActiveNamespace(name);
       setCurrentPrefix('');
       syncLocation(name, '', true);
@@ -941,7 +1489,16 @@ export function StoragePage() {
       } else if (editNsQuotaPreset !== 'unlimited') {
         maxBytes = parseInt(editNsQuotaPreset, 10);
       }
-      await api.updateBlobNamespace(currentNsInfo.name, { new_name: name, max_bytes: maxBytes });
+      const corsList = editNsCors
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+      await api.updateBlobNamespace(currentNsInfo.name, {
+        new_name: name,
+        max_bytes: maxBytes,
+        is_public: editNsIsPublic,
+        cors_origins: corsList,
+      });
       setIsManageNsOpen(false);
       if (currentNsInfo.name === activeNamespace) {
         setActiveNamespace(name);
@@ -982,7 +1539,7 @@ export function StoragePage() {
 
   return (
     <div className="flex flex-col lg:flex-row w-full h-full min-h-0 select-none font-sans overflow-hidden bg-[#0c0c0c]">
-      {/* Hidden File Input for Native Upload Trigger */}
+      {/* Hidden File Input for Native Multi-File Upload Trigger */}
       <input
         ref={fileInputRef}
         type="file"
@@ -996,8 +1553,25 @@ export function StoragePage() {
         }}
       />
 
+      {/* Hidden Folder Input for Recursive Directory Upload (Static Sites / Assets Hosting) */}
+      <input
+        ref={folderInputRef}
+        type="file"
+        className="hidden"
+        {...({ webkitdirectory: '', directory: '' } as any)}
+        multiple
+        onChange={(e) => {
+          if (e.target.files) {
+            handleUploadFiles(e.target.files);
+            e.target.value = '';
+          }
+        }}
+      />
+
       {/* ─── Pane 1: Drive Sidebar (Namespaces & FileTree) ─────────────── */}
       <StorageSidebar
+        width={sidebarWidth}
+        onResizeStart={handleSidebarResizeStart}
         namespaces={namespaces}
         activeNamespace={activeNamespace}
         onSelectNamespace={handleNamespaceChange}
@@ -1005,12 +1579,16 @@ export function StoragePage() {
           setNewNsName('');
           setNewNsQuotaPreset('unlimited');
           setNewNsCustomBytes('');
+          setNewNsIsPublic(false);
+          setNewNsCors('');
           setIsNewNsOpen(true);
         }}
         onOpenManageNamespace={() => {
           const ns = namespaces.find((n) => n.name === activeNamespace);
           if (ns) {
             setEditNsName(ns.name);
+            setEditNsIsPublic(Boolean(ns.is_public));
+            setEditNsCors((ns.cors_origins || []).join(', '));
             if (!ns.max_bytes) {
               setEditNsQuotaPreset('unlimited');
               setEditNsCustomBytes('');
@@ -1033,12 +1611,15 @@ export function StoragePage() {
         currentNsInfo={currentNsInfo}
         quotaUsedPercent={quotaUsedPercent}
         realObjectsCount={realObjectsCount}
+        hasMore={Boolean(nextCursor)}
         blobs={blobs}
         currentPrefix={currentPrefix}
         selectedItem={selectedItem}
-        onSelectFolder={(path, item) => {
+        selectedKeys={selectedKeys}
+        onToggleSelectItem={handleToggleSelectItem}
+        onSelectFolder={(path) => {
           if (searchQuery) setSearchQuery('');
-          navigateToPrefix(path, true, item);
+          navigateToPrefix(path, true);
         }}
         onSelectFile={(fileItem) => {
           if (searchQuery) setSearchQuery('');
@@ -1048,6 +1629,8 @@ export function StoragePage() {
             navigateToPrefix(parentFolder, true, fileItem);
           } else {
             setSelectedItem(fileItem);
+            setSelectedKeys(new Set([fileItem.fullKey]));
+            lastFocusedKeyRef.current = fileItem.fullKey;
           }
         }}
         onContextMenu={handleContextMenu}
@@ -1061,7 +1644,7 @@ export function StoragePage() {
         onItemDragEnd={handleItemDragEnd}
         onDropOnFolder={handleDropOnFolder}
         canDropOnFolder={canDropOnFolder}
-        onClearSelection={() => setSelectedItem(null)}
+        onClearSelection={handleClearSelection}
       />
 
       {/* ─── Pane 2: File Explorer Main Center Canvas ─────────────── */}
@@ -1074,10 +1657,10 @@ export function StoragePage() {
       >
         {/* Drag and Drop Active Overlay */}
         {isDraggingOver && (
-          <div className="absolute inset-0 z-30 pointer-events-none select-none bg-black/85 backdrop-blur-xs border-2 border-dashed border-[#555555] rounded-[10px] flex flex-col items-center justify-center p-6 text-center animate-in fade-in duration-100 font-sans">
+          <div className="absolute inset-0 z-30 pointer-events-none select-none bg-black/85 backdrop-blur-xs border-2 border-dashed border-[#555555] rounded-lg flex flex-col items-center justify-center p-6 text-center animate-in fade-in duration-100 font-sans">
             <Upload className="w-8 h-8 text-white mb-2 animate-bounce" />
-            <h3 className="text-[15px] font-medium text-white">Drop files to upload</h3>
-            <p className="text-[12px] text-[#777777] mt-1">
+            <h3 className="text-sm font-medium text-white">Drop files to upload</h3>
+            <p className="text-xs text-[#8c8c8c] mt-1">
               Uploading directly into {activeNamespace} / {currentPrefix || 'root'}
             </p>
           </div>
@@ -1096,6 +1679,7 @@ export function StoragePage() {
           searchQuery={searchQuery}
           onSearchChange={setSearchQuery}
           onUploadClick={() => fileInputRef.current?.click()}
+          onUploadFolderClick={() => folderInputRef.current?.click()}
           isDetailsOpen={isDetailsOpen}
           onToggleDetails={handleToggleDetails}
           canDropOnFolder={canDropOnFolder}
@@ -1103,6 +1687,7 @@ export function StoragePage() {
           onDropOnFolder={handleDropOnFolder}
           selectedFileItem={selectedItem && selectedItem.type === 'file' ? selectedItem : null}
           onShareClick={handleOpenShare}
+          isPublic={Boolean(currentNsInfo?.is_public)}
         />
 
         {/* Main Files/Folders View Area */}
@@ -1110,12 +1695,20 @@ export function StoragePage() {
           onClick={(e) => {
             const target = e.target as HTMLElement;
             if (!target.closest('[data-storage-item="true"]') && !target.closest('button') && !target.closest('input')) {
-              setSelectedItem(null);
+              handleClearSelection();
             }
           }}
           onContextMenu={(e) => {
             if (e.target === e.currentTarget) {
               handleContextMenu(e, null);
+            }
+          }}
+          onScroll={(e) => {
+            if (viewMode === 'grid' && nextCursor && !isLoadingMore) {
+              const el = e.currentTarget;
+              if (el.scrollHeight - el.scrollTop - el.clientHeight < 250) {
+                handleLoadMore();
+              }
             }
           }}
           className={`flex-1 min-h-0 flex flex-col ${
@@ -1126,9 +1719,9 @@ export function StoragePage() {
         >
           {/* Loading Skeleton */}
           {isLoading && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2.5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
               {Array.from({ length: 10 }).map((_, i) => (
-                <div key={i} className="h-28 rounded-[6px] bg-[#141414] border border-[#222222] animate-pulse" />
+                <div key={i} className="h-28 rounded-lg bg-[#141414] border border-[#222222] animate-pulse" />
               ))}
             </div>
           )}
@@ -1179,7 +1772,9 @@ export function StoragePage() {
                 folderItems={folderItems}
                 fileItems={fileItems}
                 selectedItem={selectedItem}
-                onSelectItem={(item) => setSelectedItem(item)}
+                selectedKeys={selectedKeys}
+                onSelectItem={handleSelectItem}
+                onToggleSelectItem={handleToggleSelectItem}
                 onNavigateToPrefix={(p) => navigateToPrefix(p, true)}
                 onContextMenu={handleContextMenu}
                 onOpenMove={(item) => {
@@ -1195,14 +1790,20 @@ export function StoragePage() {
                 onDropOnFolder={handleDropOnFolder}
                 onUploadFiles={handleUploadFiles}
                 canDropOnFolder={canDropOnFolder}
-                onClearSelection={() => setSelectedItem(null)}
+                onClearSelection={handleClearSelection}
+                hasMore={Boolean(nextCursor)}
+                isLoadingMore={isLoadingMore}
+                onLoadMore={handleLoadMore}
               />
             ) : (
               <StorageListView
                 folderItems={folderItems}
                 fileItems={fileItems}
                 selectedItem={selectedItem}
-                onSelectItem={(item) => setSelectedItem(item)}
+                selectedKeys={selectedKeys}
+                onSelectItem={handleSelectItem}
+                onToggleSelectItem={handleToggleSelectItem}
+                onSelectAll={handleSelectAll}
                 onNavigateToPrefix={(p) => navigateToPrefix(p, true)}
                 onContextMenu={handleContextMenu}
                 onDownload={handleDownload}
@@ -1216,16 +1817,97 @@ export function StoragePage() {
                 onItemDragStart={handleItemDragStart}
                 onItemDragEnd={handleItemDragEnd}
                 onDropOnFolder={handleDropOnFolder}
+                onUploadFiles={handleUploadFiles}
                 canDropOnFolder={canDropOnFolder}
-                onClearSelection={() => setSelectedItem(null)}
+                onClearSelection={handleClearSelection}
+                hasMore={Boolean(nextCursor)}
+                isLoadingMore={isLoadingMore}
+                onLoadMore={handleLoadMore}
               />
             )
           )}
         </div>
+
+        {/* Floating Bulk Action Bar */}
+        {selectedItemsList.length > 0 && (
+          <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-30 bg-[#121212]/95 border border-[#2b2b2b] shadow-2xl rounded-full px-4 py-2 flex items-center gap-2.5 backdrop-blur-md animate-in slide-in-from-bottom-3 duration-150 font-sans text-[13px]">
+            <div className="flex items-center gap-2 pr-2 border-r border-[#2a2a2a]">
+              <span className="inline-flex items-center justify-center px-2.5 py-0.5 rounded-full bg-blue-950/80 text-blue-400 border border-blue-800/60 font-medium tabular-nums text-[12px]">
+                {selectedItemsList.length} selected
+              </span>
+              {selectedKeys.size < allVisibleItems.length && (
+                <button
+                  type="button"
+                  onClick={handleSelectAll}
+                  className="text-[#999999] hover:text-white transition-colors cursor-pointer text-[12.5px]"
+                >
+                  Select all ({allVisibleItems.length})
+                </button>
+              )}
+            </div>
+
+            {/* Action: Download (only active if at least 1 file selected) */}
+            <button
+              type="button"
+              onClick={handleBatchDownload}
+              disabled={selectedItemsList.every((it) => it.type === 'folder')}
+              title="Download selected files"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[13px] font-medium text-[#cccccc] hover:text-white hover:bg-[#202020] transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>Download</span>
+            </button>
+
+            {/* Action: Move */}
+            <button
+              type="button"
+              onClick={() => setIsBatchMoveOpen(true)}
+              title="Move selected items"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[13px] font-medium text-[#cccccc] hover:text-white hover:bg-[#202020] transition-colors cursor-pointer"
+            >
+              <ArrowRight className="w-3.5 h-3.5" />
+              <span>Move</span>
+            </button>
+
+            {/* Action: Copy */}
+            <button
+              type="button"
+              onClick={() => setIsBatchCopyOpen(true)}
+              title="Copy selected items"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[13px] font-medium text-[#cccccc] hover:text-white hover:bg-[#202020] transition-colors cursor-pointer"
+            >
+              <Copy className="w-3.5 h-3.5" />
+              <span>Copy</span>
+            </button>
+
+            {/* Action: Delete */}
+            <button
+              type="button"
+              onClick={() => setIsBatchDeleteOpen(true)}
+              title="Delete selected items"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[13px] font-medium text-red-400 hover:text-red-300 hover:bg-red-950/40 border border-red-900/30 transition-colors cursor-pointer"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Delete</span>
+            </button>
+
+            {/* Clear Selection */}
+            <button
+              type="button"
+              onClick={handleClearSelection}
+              title="Clear selection (Esc)"
+              className="p-1 rounded-full text-[#888888] hover:text-white hover:bg-[#202020] transition-colors cursor-pointer ml-1"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
       </section>
 
       {/* ─── Pane 3: Right Inspector / Details Panel ─────────────── */}
       <StorageDetailsPanel
+        width={detailsWidth}
+        onResizeStart={handleDetailsResizeStart}
         isOpen={isDetailsOpen}
         onClose={() => setIsDetailsOpen(false)}
         selectedItem={inspectorItem}
@@ -1233,9 +1915,14 @@ export function StoragePage() {
         currentNsInfo={currentNsInfo}
         onDownload={handleDownload}
         onShare={handleOpenShare}
+        onCopyPublicUrl={handleCopyPublicUrl}
         onOpenMove={(item) => {
           setItemToMove(item);
           setIsMoveOpen(true);
+        }}
+        onOpenCopy={(item) => {
+          setItemToCopy(item);
+          setIsCopyOpen(true);
         }}
         onDelete={(item) => setItemToDelete(item)}
         onVerifyBlob={handleVerifyBlob}
@@ -1249,7 +1936,7 @@ export function StoragePage() {
       {/* New Folder Modal */}
       {isNewFolderOpen && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs font-sans"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs font-sans select-none"
           onClick={(e) => {
             if (e.target === e.currentTarget && !isCreatingFolder) {
               setIsNewFolderOpen(false);
@@ -1258,10 +1945,10 @@ export function StoragePage() {
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-sm rounded-[8px] bg-[#0e0e0e] border border-[#262626] p-5 shadow-2xl space-y-4"
+            className="w-full max-w-sm rounded-[10px] bg-[#0e0e0e] border border-[#262626] p-5 shadow-2xl space-y-4"
           >
             <div className="flex items-center justify-between">
-              <h3 className="text-[14px] font-medium text-white">New Folder</h3>
+              <h3 className="text-[15px] font-medium text-white tracking-tight">New Folder</h3>
               <button
                 type="button"
                 onClick={() => setIsNewFolderOpen(false)}
@@ -1273,7 +1960,7 @@ export function StoragePage() {
 
             <form onSubmit={handleCreateFolder} className="space-y-4">
               <div>
-                <label className="block text-[13px] text-[#999999] font-medium mb-1.5">
+                <label className="block text-[13px] text-[#8c8c8c] font-medium mb-1.5">
                   Folder Name
                 </label>
                 <input
@@ -1283,25 +1970,28 @@ export function StoragePage() {
                   placeholder="e.g. assets"
                   value={newFolderName}
                   onChange={(e) => setNewFolderName(e.target.value)}
-                  className="w-full h-9 px-3 rounded-[6px] bg-[#141414] border border-[#262626] focus:border-[#383838] text-white text-[13.5px] sm:text-[14px] outline-none"
+                  className="w-full h-9 px-3 rounded-[8px] bg-[#141414] border border-[#262626] focus:border-[#383838] text-white text-[14px] outline-none"
                 />
               </div>
 
               <div className="flex items-center justify-end gap-2 pt-1">
-                <button
+                <Button
+                  variant="secondary"
+                  size="md"
                   type="button"
                   onClick={() => setIsNewFolderOpen(false)}
-                  className="h-9 px-3.5 rounded-[6px] text-[13.5px] sm:text-[14px] font-medium text-[#cccccc] hover:text-white bg-transparent hover:bg-[#161616] border border-[#262626] transition-colors cursor-pointer"
                 >
                   Cancel
-                </button>
-                <button
+                </Button>
+                <Button
+                  variant="primary"
+                  size="md"
                   type="submit"
                   disabled={isCreatingFolder || !newFolderName.trim()}
-                  className="h-9 px-4 rounded-[6px] text-[13.5px] sm:text-[14px] font-medium text-white bg-blue-600 hover:bg-blue-500 border border-blue-500/80 transition-colors cursor-pointer disabled:opacity-40"
+                  isLoading={isCreatingFolder}
                 >
                   {isCreatingFolder ? 'Creating...' : 'Create Folder'}
-                </button>
+                </Button>
               </div>
             </form>
           </div>
@@ -1311,7 +2001,7 @@ export function StoragePage() {
       {/* Rename Modal */}
       {isRenameOpen && itemToRename && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs font-sans"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs font-sans select-none"
           onClick={(e) => {
             if (e.target === e.currentTarget && !isRenaming) {
               setIsRenameOpen(false);
@@ -1320,10 +2010,10 @@ export function StoragePage() {
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-sm rounded-[8px] bg-[#0e0e0e] border border-[#262626] p-5 shadow-2xl space-y-4"
+            className="w-full max-w-sm rounded-[10px] bg-[#0e0e0e] border border-[#262626] p-5 shadow-2xl space-y-4"
           >
             <div className="flex items-center justify-between">
-              <h3 className="text-[14.5px] sm:text-[15px] font-semibold text-white">Rename Item</h3>
+              <h3 className="text-[15px] font-medium text-white tracking-tight">Rename Item</h3>
               <button
                 type="button"
                 onClick={() => setIsRenameOpen(false)}
@@ -1335,7 +2025,7 @@ export function StoragePage() {
 
             <form onSubmit={handleRename} className="space-y-4">
               <div>
-                <label className="block text-[13px] text-[#999999] font-medium mb-1.5">
+                <label className="block text-[13px] text-[#8c8c8c] font-medium mb-1.5">
                   New Name
                 </label>
                 <input
@@ -1344,28 +2034,31 @@ export function StoragePage() {
                   required
                   value={renameInput}
                   onChange={(e) => setRenameInput(e.target.value)}
-                  className="w-full h-9 px-3 rounded-[6px] bg-[#141414] border border-[#262626] focus:border-[#383838] text-white text-[13.5px] sm:text-[14px] outline-none"
+                  className="w-full h-9 px-3 rounded-[8px] bg-[#141414] border border-[#262626] focus:border-[#383838] text-white text-[14px] outline-none"
                 />
                 {renameError && (
-                  <p className="text-[12px] text-rose-400 mt-1">{renameError}</p>
+                  <p className="text-xs text-rose-400 mt-1">{renameError}</p>
                 )}
               </div>
 
               <div className="flex items-center justify-end gap-2 pt-1">
-                <button
+                <Button
+                  variant="secondary"
+                  size="md"
                   type="button"
                   onClick={() => setIsRenameOpen(false)}
-                  className="h-9 px-3.5 rounded-[6px] text-[13.5px] sm:text-[14px] font-medium text-[#cccccc] hover:text-white bg-transparent hover:bg-[#161616] border border-[#262626] transition-colors cursor-pointer"
                 >
                   Cancel
-                </button>
-                <button
+                </Button>
+                <Button
+                  variant="primary"
+                  size="md"
                   type="submit"
                   disabled={isRenaming || !renameInput.trim()}
-                  className="h-9 px-4 rounded-[6px] text-[13.5px] sm:text-[14px] font-medium text-white bg-blue-600 hover:bg-blue-500 border border-blue-500/80 transition-colors cursor-pointer disabled:opacity-40"
+                  isLoading={isRenaming}
                 >
                   {isRenaming ? 'Renaming...' : 'Rename'}
-                </button>
+                </Button>
               </div>
             </form>
           </div>
@@ -1407,10 +2100,72 @@ export function StoragePage() {
         onMove={handleMove}
       />
 
+      {/* Batch Move Dialog Modal */}
+      <MoveDialog
+        isOpen={isBatchMoveOpen}
+        onClose={() => {
+          setIsBatchMoveOpen(false);
+        }}
+        items={selectedItemsList}
+        namespaces={namespaces}
+        currentNamespace={activeNamespace}
+        availableFolders={availableFolders}
+        onBatchMove={handleBatchMove}
+      />
+
+      {/* Copy Dialog Modal */}
+      <MoveDialog
+        isOpen={isCopyOpen}
+        mode="copy"
+        onClose={() => {
+          setIsCopyOpen(false);
+          setItemToCopy(null);
+        }}
+        item={itemToCopy}
+        namespaces={namespaces}
+        currentNamespace={activeNamespace}
+        availableFolders={availableFolders}
+        onMove={handleCopy}
+      />
+
+      {/* Batch Copy Dialog Modal */}
+      <MoveDialog
+        isOpen={isBatchCopyOpen}
+        mode="copy"
+        onClose={() => {
+          setIsBatchCopyOpen(false);
+        }}
+        items={selectedItemsList}
+        namespaces={namespaces}
+        currentNamespace={activeNamespace}
+        availableFolders={availableFolders}
+        onBatchMove={handleBatchCopy}
+      />
+
+      {/* Batch Delete Confirmation Modal */}
+      <ConfirmDialog
+        isOpen={isBatchDeleteOpen}
+        onClose={() => setIsBatchDeleteOpen(false)}
+        onConfirm={handleConfirmBatchDelete}
+        title={`Delete ${selectedItemsList.length} Selected Items`}
+        description={
+          <span>
+            Are you sure you want to permanently delete{' '}
+            <strong className="text-white">{selectedItemsList.length} items</strong>
+            {selectedItemsList.some((it) => it.type === 'folder')
+              ? ' including all directories and their contents'
+              : ''}
+            ? This action cannot be undone.
+          </span>
+        }
+        confirmLabel={isBatchDeleting ? 'Deleting...' : `Delete ${selectedItemsList.length} Items`}
+        variant="danger"
+      />
+
       {/* New Namespace Modal */}
       {isNewNsOpen && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs font-sans"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs font-sans select-none"
           onClick={(e) => {
             if (e.target === e.currentTarget && !isCreatingNs) {
               setIsNewNsOpen(false);
@@ -1419,10 +2174,10 @@ export function StoragePage() {
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-sm rounded-[8px] bg-[#0e0e0e] border border-[#262626] p-5 shadow-2xl space-y-4"
+            className="w-full max-w-sm rounded-[10px] bg-[#0e0e0e] border border-[#262626] p-5 shadow-2xl space-y-4"
           >
             <div className="flex items-center justify-between">
-              <h3 className="text-[14.5px] sm:text-[15px] font-semibold text-white">Create Namespace</h3>
+              <h3 className="text-[15px] font-medium text-white tracking-tight">Create Namespace</h3>
               <button
                 type="button"
                 onClick={() => setIsNewNsOpen(false)}
@@ -1434,7 +2189,7 @@ export function StoragePage() {
 
             <form onSubmit={handleCreateNamespace} className="space-y-4">
               <div>
-                <label className="block text-[13px] text-[#999999] font-medium mb-1.5">
+                <label className="block text-[13px] text-[#8c8c8c] font-medium mb-1.5">
                   Namespace Name
                 </label>
                 <input
@@ -1444,12 +2199,12 @@ export function StoragePage() {
                   placeholder="e.g. avatars, invoices"
                   value={newNsName}
                   onChange={(e) => setNewNsName(e.target.value)}
-                  className="w-full h-9 px-3 rounded-[6px] bg-[#141414] border border-[#262626] focus:border-[#383838] text-white text-[13.5px] sm:text-[14px] outline-none"
+                  className="w-full h-9 px-3 rounded-[8px] bg-[#141414] border border-[#262626] focus:border-[#383838] text-white text-[14px] outline-none"
                 />
               </div>
 
               <div>
-                <label className="block text-[13px] text-[#999999] font-medium mb-1.5">
+                <label className="block text-[13px] text-[#8c8c8c] font-medium mb-1.5">
                   Storage Quota Limit
                 </label>
                 <CustomSelect
@@ -1462,7 +2217,7 @@ export function StoragePage() {
 
               {newNsQuotaPreset === 'custom' && (
                 <div>
-                  <label className="block text-[13px] text-[#999999] font-medium mb-1.5">
+                  <label className="block text-[13px] text-[#8c8c8c] font-medium mb-1.5">
                     Limit in Bytes
                   </label>
                   <input
@@ -1471,26 +2226,66 @@ export function StoragePage() {
                     value={newNsCustomBytes}
                     onChange={(e) => setNewNsCustomBytes(e.target.value)}
                     placeholder="e.g. 104857600"
-                    className="w-full h-9 px-3 rounded-[6px] bg-[#141414] border border-[#262626] focus:border-[#383838] text-white text-[13.5px] sm:text-[14px] outline-none"
+                    className="w-full h-9 px-3 rounded-[8px] bg-[#141414] border border-[#262626] focus:border-[#383838] text-white text-[14px] outline-none"
                   />
                 </div>
               )}
 
+              <div className="pt-2 border-t border-[#1e1e1e] space-y-3">
+                <div className="flex items-start gap-3">
+                  <Switch
+                    checked={newNsIsPublic}
+                    onCheckedChange={setNewNsIsPublic}
+                    id="new-ns-public-switch"
+                    className="mt-0.5"
+                  />
+                  <div>
+                    <label htmlFor="new-ns-public-switch" className="text-[13px] font-medium text-white block cursor-pointer">
+                      Enable Public Read Access
+                    </label>
+                    <span className="text-[12.5px] text-[#777777] leading-relaxed block mt-0.5">
+                      Direct static URLs (<code className="text-[#a3a3a3]">/api/v1/blobs/public/:namespace/*key</code>) with HTTP 304 browser caching for websites. Writes remain strictly authenticated.
+                    </span>
+                  </div>
+                </div>
+
+                {newNsIsPublic && (
+                  <div>
+                    <label className="block text-[13px] text-[#8c8c8c] font-medium mb-1.5">
+                      Allowed CORS Origins (Optional)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. *, https://example.com"
+                      value={newNsCors}
+                      onChange={(e) => setNewNsCors(e.target.value)}
+                      className="w-full h-9 px-3 rounded-[8px] bg-[#141414] border border-[#262626] focus:border-[#383838] text-white text-[14px] outline-none"
+                    />
+                    <span className="text-[12px] text-[#666666] block mt-1">
+                      Comma-separated list of origins. Leave empty to allow any origin when public.
+                    </span>
+                  </div>
+                )}
+              </div>
+
               <div className="flex items-center justify-end gap-2 pt-1">
-                <button
+                <Button
+                  variant="secondary"
+                  size="md"
                   type="button"
                   onClick={() => setIsNewNsOpen(false)}
-                  className="h-9 px-3.5 rounded-[6px] text-[13.5px] sm:text-[14px] font-medium text-[#cccccc] hover:text-white bg-transparent hover:bg-[#161616] border border-[#262626] transition-colors cursor-pointer"
                 >
                   Cancel
-                </button>
-                <button
+                </Button>
+                <Button
+                  variant="primary"
+                  size="md"
                   type="submit"
                   disabled={isCreatingNs || !newNsName.trim()}
-                  className="h-9 px-4 rounded-[6px] text-[13.5px] sm:text-[14px] font-medium text-white bg-blue-600 hover:bg-blue-500 border border-blue-500/80 transition-colors cursor-pointer disabled:opacity-40"
+                  isLoading={isCreatingNs}
                 >
                   {isCreatingNs ? 'Creating...' : 'Create Namespace'}
-                </button>
+                </Button>
               </div>
             </form>
           </div>
@@ -1500,7 +2295,7 @@ export function StoragePage() {
       {/* Manage Namespace Modal */}
       {isManageNsOpen && currentNsInfo && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs font-sans"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs font-sans select-none"
           onClick={(e) => {
             if (e.target === e.currentTarget && !isSavingNs) {
               setIsManageNsOpen(false);
@@ -1509,19 +2304,19 @@ export function StoragePage() {
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-md rounded-[8px] bg-[#0e0e0e] border border-[#262626] p-5 shadow-2xl space-y-4"
+            className="w-full max-w-md rounded-[10px] bg-[#0e0e0e] border border-[#262626] p-5 shadow-2xl space-y-4"
           >
             <div className="flex items-center justify-between pb-0.5">
               <div className="flex items-center gap-2">
-                <h3 className="text-[14px] font-semibold text-white tracking-tight">Manage Namespace</h3>
-                <span className="px-1.5 py-0.5 rounded-[4px] bg-[#161616] border border-[#262626] text-[11px] font-mono text-[#8c8c8c]">
+                <h3 className="text-[15px] font-medium text-white tracking-tight">Manage Namespace</h3>
+                <span className="px-1.5 py-0.5 rounded bg-[#161616] border border-[#262626] text-xs font-mono text-[#8c8c8c]">
                   {currentNsInfo.name}
                 </span>
               </div>
               <button
                 type="button"
                 onClick={() => setIsManageNsOpen(false)}
-                className="w-7 h-7 flex items-center justify-center rounded-[6px] text-[#777777] hover:text-white hover:bg-white/5 transition-colors cursor-pointer"
+                className="w-7 h-7 flex items-center justify-center rounded-md text-[#777777] hover:text-white hover:bg-white/5 transition-colors cursor-pointer"
                 title="Close"
               >
                 <X className="w-4 h-4" />
@@ -1530,11 +2325,11 @@ export function StoragePage() {
 
             {/* Tab bar (Segmented control matching dashboard) */}
             <div className="-mx-5 px-5 py-2.5 border-b border-[#222222] bg-[#0e0e0e]">
-              <div className="inline-flex items-center p-0.5 rounded-[8px] bg-transparent border border-[#262626]">
+              <div className="inline-flex items-center p-0.5 rounded-lg bg-transparent border border-[#262626]">
                 <button
                   type="button"
                   onClick={() => setManageNsTab('settings')}
-                  className={`flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[13px] font-medium transition-colors duration-75 cursor-pointer font-sans outline-none focus:outline-none border ${
+                  className={`flex items-center gap-1.5 h-8 px-3.5 rounded-[6px] text-[13px] font-medium transition-colors duration-75 cursor-pointer font-sans outline-none focus:outline-none border ${
                     manageNsTab === 'settings'
                       ? 'bg-[#161616] text-white border-[#333333]'
                       : 'text-[#8c8c8c] hover:text-white hover:bg-[#141414] border-transparent'
@@ -1545,7 +2340,7 @@ export function StoragePage() {
                 <button
                   type="button"
                   onClick={() => setManageNsTab('danger')}
-                  className={`flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[13px] font-medium transition-colors duration-75 cursor-pointer font-sans outline-none focus:outline-none border ${
+                  className={`flex items-center gap-1.5 h-8 px-3.5 rounded-[6px] text-[13px] font-medium transition-colors duration-75 cursor-pointer font-sans outline-none focus:outline-none border ${
                     manageNsTab === 'danger'
                       ? 'bg-[#161616] text-white border-[#333333]'
                       : 'text-[#8c8c8c] hover:text-white hover:bg-[#141414] border-transparent'
@@ -1559,7 +2354,7 @@ export function StoragePage() {
             {manageNsTab === 'settings' ? (
               <form onSubmit={handleUpdateNamespace} className="space-y-4">
                 <div>
-                  <label className="block text-[13px] text-[#999999] font-medium mb-1.5">
+                  <label className="block text-[13px] text-[#8c8c8c] font-medium mb-1.5">
                     Identifier
                   </label>
                   <input
@@ -1567,12 +2362,12 @@ export function StoragePage() {
                     required
                     value={editNsName}
                     onChange={(e) => setEditNsName(e.target.value)}
-                    className="w-full h-9 px-3 rounded-[6px] bg-[#141414] border border-[#262626] focus:border-[#383838] text-white text-[13.5px] sm:text-[14px] outline-none"
+                    className="w-full h-9 px-3 rounded-[8px] bg-[#141414] border border-[#262626] focus:border-[#383838] text-white text-[14px] outline-none"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-[13px] text-[#999999] font-medium mb-1.5">
+                  <label className="block text-[13px] text-[#8c8c8c] font-medium mb-1.5">
                     Quota Limit
                   </label>
                   <CustomSelect
@@ -1585,7 +2380,7 @@ export function StoragePage() {
 
                 {editNsQuotaPreset === 'custom' && (
                   <div>
-                    <label className="block text-[13px] text-[#999999] font-medium mb-1.5">
+                    <label className="block text-[13px] text-[#8c8c8c] font-medium mb-1.5">
                       Limit in Bytes
                     </label>
                     <input
@@ -1593,52 +2388,92 @@ export function StoragePage() {
                       min="1"
                       value={editNsCustomBytes}
                       onChange={(e) => setEditNsCustomBytes(e.target.value)}
-                      className="w-full h-9 px-3 rounded-[6px] bg-[#141414] border border-[#262626] focus:border-[#383838] text-white text-[13.5px] sm:text-[14px] outline-none"
+                      className="w-full h-9 px-3 rounded-[8px] bg-[#141414] border border-[#262626] focus:border-[#383838] text-white text-[14px] outline-none"
                     />
                   </div>
                 )}
 
+                <div className="pt-2 border-t border-[#1e1e1e] space-y-3">
+                  <div className="flex items-start gap-3">
+                    <Switch
+                      checked={editNsIsPublic}
+                      onCheckedChange={setEditNsIsPublic}
+                      id="edit-ns-public-switch"
+                      className="mt-0.5"
+                    />
+                    <div>
+                      <label htmlFor="edit-ns-public-switch" className="text-[13px] font-medium text-white block cursor-pointer">
+                        Enable Public Read Access
+                      </label>
+                      <span className="text-[12.5px] text-[#777777] leading-relaxed block mt-0.5">
+                        Direct static URLs (<code className="text-[#a3a3a3]">/api/v1/blobs/public/:namespace/*key</code>) with HTTP 304 browser caching for websites.
+                      </span>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[13px] text-[#8c8c8c] font-medium mb-1.5">
+                      Allowed CORS Origins
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. *, https://example.com"
+                      value={editNsCors}
+                      onChange={(e) => setEditNsCors(e.target.value)}
+                      className="w-full h-9 px-3 rounded-[8px] bg-[#141414] border border-[#262626] focus:border-[#383838] text-white text-[14px] outline-none"
+                    />
+                    <span className="text-[12px] text-[#666666] block mt-1">
+                      Comma-separated origins. Leave empty to allow any origin when public.
+                    </span>
+                  </div>
+                </div>
+
                 <div className="flex items-center justify-end gap-2 pt-2">
-                  <button
+                  <Button
+                    variant="secondary"
+                    size="md"
                     type="button"
                     onClick={() => setIsManageNsOpen(false)}
-                    className="h-9 px-3.5 rounded-[6px] text-[13.5px] sm:text-[14px] font-medium text-[#cccccc] hover:text-white bg-transparent hover:bg-[#161616] border border-[#262626] transition-colors cursor-pointer"
                   >
                     Cancel
-                  </button>
-                  <button
+                  </Button>
+                  <Button
+                    variant="primary"
+                    size="md"
                     type="submit"
                     disabled={isSavingNs || !editNsName.trim()}
-                    className="h-9 px-4 rounded-[6px] text-[13.5px] sm:text-[14px] font-medium text-white bg-blue-600 hover:bg-blue-500 border border-blue-500/80 transition-colors cursor-pointer disabled:opacity-40"
+                    isLoading={isSavingNs}
                   >
                     {isSavingNs ? 'Saving...' : 'Save Changes'}
-                  </button>
+                  </Button>
                 </div>
               </form>
             ) : (
               <div className="space-y-4">
-                <div className="p-3.5 rounded-[6px] bg-rose-950/20 border border-rose-900/40 text-[13px] text-rose-300 leading-relaxed flex items-start gap-2.5">
-                  <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                <div className="p-3.5 rounded-md bg-[#2a1113] border border-[#5c1d24] text-xs text-[#f87171] leading-relaxed flex items-start gap-2.5">
+                  <AlertTriangle className="w-4 h-4 text-[#e5484d] shrink-0 mt-0.5" />
                   <div>
                     Permanently delete namespace <strong className="text-white">{currentNsInfo.name}</strong> and all{' '}
                     <strong className="text-white">{currentNsInfo.total_objects} stored objects</strong> inside it. This action cannot be undone.
                   </div>
                 </div>
                 <div className="flex items-center justify-end gap-2">
-                  <button
+                  <Button
+                    variant="secondary"
+                    size="md"
                     type="button"
                     onClick={() => setIsManageNsOpen(false)}
-                    className="h-9 px-3.5 rounded-[6px] text-[13.5px] sm:text-[14px] font-medium text-[#cccccc] hover:text-white bg-transparent hover:bg-[#161616] border border-[#262626] transition-colors cursor-pointer"
                   >
                     Cancel
-                  </button>
-                  <button
+                  </Button>
+                  <Button
+                    variant="danger"
+                    size="md"
                     type="button"
                     onClick={() => setNsToDelete(currentNsInfo)}
-                    className="h-9 px-4 rounded-[6px] text-[13.5px] sm:text-[14px] font-medium text-rose-400 hover:text-rose-300 bg-rose-950/30 hover:bg-rose-950/50 border border-rose-900/50 transition-colors cursor-pointer"
                   >
                     Delete Namespace
-                  </button>
+                  </Button>
                 </div>
               </div>
             )}
@@ -1678,6 +2513,8 @@ export function StoragePage() {
         }}
         onDownload={(item) => handleDownload(item.fullKey)}
         onShare={handleOpenShare}
+        onCopyPublicUrl={handleCopyPublicUrl}
+        isPublicNamespace={Boolean(currentNsInfo?.is_public)}
         onMove={(item) => {
           setItemToMove(item);
           setIsMoveOpen(true);
@@ -1689,13 +2526,12 @@ export function StoragePage() {
           setIsRenameOpen(true);
         }}
         onCopy={(item) => {
-          setClipboard({
-            mode: 'copy',
-            namespace: activeNamespace,
-            key: item.fullKey,
-            name: item.name,
-            isFolder: item.type === 'folder',
-          });
+          if (selectedKeys.has(item.fullKey) && selectedItemsList.length > 1) {
+            setIsBatchCopyOpen(true);
+          } else {
+            setItemToCopy(item);
+            setIsCopyOpen(true);
+          }
         }}
         onDelete={(item) => setItemToDelete(item)}
         onViewDetails={(item) => {
@@ -1720,6 +2556,7 @@ export function StoragePage() {
         }}
         item={itemToShare}
         namespace={activeNamespace}
+        isPublicNamespace={Boolean(currentNsInfo?.is_public)}
       />
 
       {/* Floating Asynchronous Upload Progress Drawer */}

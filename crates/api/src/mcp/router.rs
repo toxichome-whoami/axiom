@@ -6,8 +6,8 @@
  * Last structural change: Phase 4 initial implementation of MCP router.
  */
 
-use axum::{routing::post, Router};
 use crate::mcp::handlers::handle_mcp;
+use axum::{routing::post, Router};
 
 /// Returns an Axum Router binding the JSON-RPC Model Context Protocol handler.
 /// CONTRACT:
@@ -15,6 +15,5 @@ use crate::mcp::handlers::handle_mcp;
 ///  - Side effects: None.
 ///  - Idempotent: Yes.
 pub fn get_router() -> Router {
-    Router::new()
-        .route("/", post(handle_mcp))
+    Router::new().route("/", post(handle_mcp))
 }

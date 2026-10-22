@@ -27,6 +27,10 @@ static KEY_BANS: Lazy<DashMap<String, BanEntry>> = Lazy::new(DashMap::new);
 // Counter resets after `window_secs` elapses or on successful credential verification.
 static FAILED_AUTH_BY_KEY: Lazy<DashMap<String, (u32, Instant)>> = Lazy::new(DashMap::new);
 
+// Tracks failed authentication attempts per (client_ip:key_name) to penalize attacking IPs
+// without locking out legitimate clients sharing the same key identity.
+static FAILED_AUTH_BY_IP_KEY: Lazy<DashMap<String, (u32, Instant)>> = Lazy::new(DashMap::new);
+
 pub struct BanList;
 
 impl BanList {
@@ -47,7 +51,10 @@ impl BanList {
                 KEY_BANS.insert(key, BanEntry { reason, expires_at });
             }
             if count > 0 {
-                tracing::info!("Loaded {} persistent API key suspensions from metadata store", count);
+                tracing::info!(
+                    "Loaded {} persistent API key suspensions from metadata store",
+                    count
+                );
             }
         }
     }
@@ -115,13 +122,23 @@ impl BanList {
         Self::ban_ip_with_ttl(ip, reason, 0);
     }
 
-    /// Suspends an IP address with a TTL in seconds and persists to SQLite (M-7).
+    /// Suspends an IP address with a TTL in seconds and persists to SQLite, broadcasting to cluster peers.
     pub fn ban_ip_with_ttl(ip: &str, reason: &str, ttl_secs: u64) {
+        Self::ban_ip_local(ip, reason, ttl_secs);
+        crate::cluster::ClusterBroadcaster::broadcast_ban_ip(ip, reason, ttl_secs);
+    }
+
+    /// Suspends an IP address locally without triggering peer cluster fanout (used by cluster event receivers).
+    pub fn ban_ip_local(ip: &str, reason: &str, ttl_secs: u64) {
         let now_unix = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs() as i64;
-        let expires_at = if ttl_secs > 0 { now_unix + ttl_secs as i64 } else { 0 };
+        let expires_at = if ttl_secs > 0 {
+            now_unix + ttl_secs as i64
+        } else {
+            0
+        };
 
         IP_BANS.insert(
             ip.to_string(),
@@ -135,13 +152,24 @@ impl BanList {
         let reason_owned = reason.to_string();
         if let Ok(handle) = tokio::runtime::Handle::try_current() {
             handle.spawn(async move {
-                let _ = axiom_metadata::MetadataStore::save_ip_ban(&ip_owned, &reason_owned, expires_at).await;
+                let _ = axiom_metadata::MetadataStore::save_ip_ban(
+                    &ip_owned,
+                    &reason_owned,
+                    expires_at,
+                )
+                .await;
             });
         }
     }
 
-    /// Lifts an IP address suspension in memory and SQLite.
+    /// Lifts an IP address suspension in memory and SQLite, broadcasting to cluster peers.
     pub fn unban_ip(ip: &str) {
+        Self::unban_ip_local(ip);
+        crate::cluster::ClusterBroadcaster::broadcast_unban_ip(ip);
+    }
+
+    /// Lifts an IP address suspension locally without triggering peer cluster fanout.
+    pub fn unban_ip_local(ip: &str) {
         IP_BANS.remove(ip);
         let ip_owned = ip.to_string();
         if let Ok(handle) = tokio::runtime::Handle::try_current() {
@@ -156,13 +184,23 @@ impl BanList {
         Self::ban_key_with_ttl(key_name, reason, 0);
     }
 
-    /// Suspends an API key name with a TTL in seconds and persists to SQLite (M-7).
+    /// Suspends an API key name with a TTL in seconds and persists to SQLite, broadcasting to cluster peers.
     pub fn ban_key_with_ttl(key_name: &str, reason: &str, ttl_secs: u64) {
+        Self::ban_key_local(key_name, reason, ttl_secs);
+        crate::cluster::ClusterBroadcaster::broadcast_ban_key(key_name, reason, ttl_secs);
+    }
+
+    /// Suspends an API key name locally without triggering peer cluster fanout.
+    pub fn ban_key_local(key_name: &str, reason: &str, ttl_secs: u64) {
         let now_unix = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs() as i64;
-        let expires_at = if ttl_secs > 0 { now_unix + ttl_secs as i64 } else { 0 };
+        let expires_at = if ttl_secs > 0 {
+            now_unix + ttl_secs as i64
+        } else {
+            0
+        };
 
         KEY_BANS.insert(
             key_name.to_string(),
@@ -176,13 +214,24 @@ impl BanList {
         let reason_owned = reason.to_string();
         if let Ok(handle) = tokio::runtime::Handle::try_current() {
             handle.spawn(async move {
-                let _ = axiom_metadata::MetadataStore::save_key_ban(&key_owned, &reason_owned, expires_at).await;
+                let _ = axiom_metadata::MetadataStore::save_key_ban(
+                    &key_owned,
+                    &reason_owned,
+                    expires_at,
+                )
+                .await;
             });
         }
     }
 
-    /// Lifts an API key suspension in memory and SQLite.
+    /// Lifts an API key suspension in memory and SQLite, broadcasting to cluster peers.
     pub fn unban_key(key_name: &str) {
+        Self::unban_key_local(key_name);
+        crate::cluster::ClusterBroadcaster::broadcast_unban_key(key_name);
+    }
+
+    /// Lifts an API key suspension locally without triggering peer cluster fanout.
+    pub fn unban_key_local(key_name: &str) {
         KEY_BANS.remove(key_name);
         let key_owned = key_name.to_string();
         if let Ok(handle) = tokio::runtime::Handle::try_current() {
@@ -192,17 +241,68 @@ impl BanList {
         }
     }
 
+    /// Records a failed authentication attempt targeting an API key name from a specific client IP.
+    /// CONTRACT:
+    ///  - Precondition: `client_ip` and `key_name` must be non-empty.
+    ///  - Returns `true` if this failure triggered an automatic IP suspension.
+    ///  - Security Invariant: Suspends the offending CLIENT IP rather than globally banning the key,
+    ///    preventing unauthenticated attackers from causing Denial of Service against legitimate key owners.
+    ///  - Side effects: Increments failure counter for (ip, key); automatically calls `ban_ip_with_ttl` when threshold reached.
+    ///  - Idempotent: No (increments state).
+    pub fn record_failed_auth_for_ip(
+        client_ip: &str,
+        key_name: &str,
+        threshold: u32,
+        window_secs: u64,
+        cooldown_secs: u64,
+    ) -> bool {
+        let now = Instant::now();
+        let window = Duration::from_secs(window_secs);
+        let tracking_key = format!("{}:{}", client_ip, key_name);
+
+        let mut entry = FAILED_AUTH_BY_IP_KEY
+            .entry(tracking_key)
+            .or_insert((0, now));
+        let (count, first_seen) = entry.value_mut();
+
+        // Sliding reset: if window expired without breaching threshold, restart count
+        if now.duration_since(*first_seen) > window {
+            *count = 1;
+            *first_seen = now;
+            return false;
+        }
+
+        *count += 1;
+        if *count >= threshold {
+            let reason = format!(
+                "Suspended IP due to {} failed authentication attempts for key '{}' within {}s window",
+                *count, key_name, window_secs
+            );
+            Self::ban_ip_with_ttl(client_ip, &reason, cooldown_secs);
+            true
+        } else {
+            false
+        }
+    }
+
     /// Records a failed authentication attempt against an API key name across any IP.
     /// CONTRACT:
     ///  - Precondition: `key_name` must be non-empty.
     ///  - Returns `true` if this failure triggered an automatic key suspension.
     ///  - Side effects: Increments failure counter; automatically calls `ban_key` when threshold reached.
     ///  - Idempotent: No (increments state).
-    pub fn record_failed_auth(key_name: &str, threshold: u32, window_secs: u64, cooldown_secs: u64) -> bool {
+    pub fn record_failed_auth(
+        key_name: &str,
+        threshold: u32,
+        window_secs: u64,
+        cooldown_secs: u64,
+    ) -> bool {
         let now = Instant::now();
         let window = Duration::from_secs(window_secs);
 
-        let mut entry = FAILED_AUTH_BY_KEY.entry(key_name.to_string()).or_insert((0, now));
+        let mut entry = FAILED_AUTH_BY_KEY
+            .entry(key_name.to_string())
+            .or_insert((0, now));
         let (count, first_seen) = entry.value_mut();
 
         // Sliding reset: if window expired without breaching threshold, restart count
@@ -225,13 +325,33 @@ impl BanList {
         }
     }
 
-    /// Clears any recorded authentication failures for a key upon successful authentication.
+    /// Clears any recorded authentication failures for a key and client IP upon successful authentication.
     /// CONTRACT:
     ///  - Precondition: Called only after constant-time secret verification succeeds.
-    ///  - Side effects: Removes entry from `FAILED_AUTH_BY_KEY`.
+    ///  - Side effects: Removes entry from `FAILED_AUTH_BY_KEY` and `FAILED_AUTH_BY_IP_KEY`.
     ///  - Idempotent: Yes.
     pub fn record_successful_auth(key_name: &str) {
         FAILED_AUTH_BY_KEY.remove(key_name);
+    }
+
+    /// Clears any recorded authentication failures for a specific IP + key pair upon successful authentication.
+    pub fn record_successful_auth_for_ip(client_ip: &str, key_name: &str) {
+        FAILED_AUTH_BY_KEY.remove(key_name);
+        let tracking_key = format!("{}:{}", client_ip, key_name);
+        FAILED_AUTH_BY_IP_KEY.remove(&tracking_key);
+    }
+
+    /// Returns a list of all currently active suspended IPv4/IPv6 client addresses.
+    pub fn list_active_banned_ips() -> Vec<String> {
+        let now_unix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+        IP_BANS
+            .iter()
+            .filter(|entry| entry.value().expires_at == 0 || entry.value().expires_at > now_unix)
+            .map(|entry| entry.key().clone())
+            .collect()
     }
 }
 
@@ -311,5 +431,30 @@ mod tests {
         assert!(BanList::is_key_banned(key).0);
         BanList::unban_key(key);
         assert!(!BanList::is_key_banned(key).0);
+    }
+
+    #[test]
+    fn test_record_failed_auth_for_ip_bans_ip_not_key() {
+        let ip = "198.51.100.42";
+        let key = "victim_key_not_banned";
+
+        for _ in 0..4 {
+            assert!(!BanList::record_failed_auth_for_ip(ip, key, 5, 60, 0));
+        }
+
+        // 5th attempt triggers IP ban
+        assert!(BanList::record_failed_auth_for_ip(ip, key, 5, 60, 0));
+
+        // Offending IP must be banned
+        let (ip_banned, reason) = BanList::is_ip_banned(ip);
+        assert!(ip_banned);
+        assert!(reason.contains(key));
+
+        // Victim key MUST NOT be banned (prevents DoS)
+        assert!(!BanList::is_key_banned(key).0);
+
+        // Success from another IP or reset
+        BanList::record_successful_auth_for_ip(ip, key);
+        BanList::unban_ip(ip);
     }
 }

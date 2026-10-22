@@ -7,14 +7,16 @@
 import React, { useState } from 'react';
 import {
   ChevronRight,
+  ChevronDown,
   Upload,
   Search,
   LayoutGrid,
   List as ListIcon,
   PanelRight,
-  SlidersHorizontal,
   X,
   Share2,
+  FolderPlus,
+  Files,
 } from 'lucide-react';
 import { StorageViewMode, StorageTierFilter, StorageItem } from './types';
 
@@ -30,6 +32,7 @@ export interface StorageToolbarProps {
   searchQuery: string;
   onSearchChange: (query: string) => void;
   onUploadClick: () => void;
+  onUploadFolderClick?: () => void;
   isDetailsOpen: boolean;
   onToggleDetails: () => void;
   canDropOnFolder: (dragged: StorageItem | null, targetFolderKey: string) => boolean;
@@ -37,6 +40,7 @@ export interface StorageToolbarProps {
   onDropOnFolder: (targetFolderKey: string, item?: StorageItem) => void;
   selectedFileItem?: StorageItem | null;
   onShareClick?: (item: StorageItem) => void;
+  isPublic?: boolean;
 }
 
 export function StorageToolbar({
@@ -51,6 +55,7 @@ export function StorageToolbar({
   searchQuery,
   onSearchChange,
   onUploadClick,
+  onUploadFolderClick,
   isDetailsOpen,
   onToggleDetails,
   canDropOnFolder,
@@ -58,13 +63,27 @@ export function StorageToolbar({
   onDropOnFolder,
   selectedFileItem,
   onShareClick,
+  isPublic,
 }: StorageToolbarProps) {
   const [dragOverTargetKey, setDragOverTargetKey] = useState<string | null>(null);
+  const [isUploadMenuOpen, setIsUploadMenuOpen] = useState(false);
+  const uploadMenuRef = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    if (!isUploadMenuOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (uploadMenuRef.current && !uploadMenuRef.current.contains(e.target as Node)) {
+        setIsUploadMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isUploadMenuOpen]);
 
   return (
     <div className="h-[54px] shrink-0 px-4 border-b border-[#222222] bg-[#0c0c0c] flex items-center justify-between gap-3 select-none font-sans">
       {/* ─── Left: Interactive Breadcrumbs Navigator ─────────────── */}
-      <div className="flex items-center gap-1 text-[13px] overflow-x-auto scrollbar-none min-w-0 py-0.5">
+      <div className="flex items-center gap-1.5 text-sm overflow-x-auto scrollbar-none min-w-0 py-0.5">
         <button
           type="button"
           onClick={() => onNavigateToPrefix('')}
@@ -94,7 +113,7 @@ export function StorageToolbar({
               await onDropOnFolder('', draggedItemRef.current);
             }
           }}
-          className={`hover:text-white transition-colors cursor-pointer font-medium shrink-0 h-7 px-2 flex items-center rounded-[5px] ${
+          className={`hover:text-white transition-colors cursor-pointer font-medium shrink-0 h-8 px-2.5 flex items-center gap-2 rounded-[6px] text-[13px] ${
             dragOverTargetKey === ''
               ? 'bg-blue-600/30 text-blue-300 ring-1 ring-blue-500/60'
               : currentPrefix === ''
@@ -102,7 +121,18 @@ export function StorageToolbar({
               : 'text-[#8c8c8c]'
           }`}
         >
-          {activeNamespace || 'Root'}
+          <span>{activeNamespace || 'Root'}</span>
+          {activeNamespace && (
+            <span
+              className={`px-1.5 py-0.5 rounded-[4px] text-[11px] font-medium ${
+                isPublic
+                  ? 'bg-[#30a46c]/15 border border-[#30a46c]/30 text-[#30a46c]'
+                  : 'bg-[#161616] border border-[#262626] text-[#8c8c8c]'
+              }`}
+            >
+              {isPublic ? 'Public' : 'Private'}
+            </span>
+          )}
         </button>
 
         {breadcrumbSegments.map((seg, idx) => {
@@ -140,7 +170,7 @@ export function StorageToolbar({
                     await onDropOnFolder(seg.prefix, draggedItemRef.current);
                   }
                 }}
-                className={`hover:text-white transition-colors cursor-pointer font-medium truncate max-w-[160px] shrink-0 h-7 px-2 flex items-center rounded-[5px] ${
+                className={`hover:text-white transition-colors cursor-pointer font-medium truncate max-w-[180px] shrink-0 h-8 px-2.5 flex items-center rounded-[6px] text-[13px] ${
                   isDropTarget
                     ? 'bg-blue-600/30 text-blue-300 ring-1 ring-blue-500/60'
                     : isLast
@@ -156,36 +186,36 @@ export function StorageToolbar({
       </div>
 
       {/* ─── Right: Search, Filter, View Mode, Details Toggle, Upload ─────────────── */}
-      <div className="flex items-center gap-2 shrink-0">
-        {/* Live Search Input (32px / h-8 matching Table page) */}
-        <div className="relative w-40 sm:w-52">
-          <Search className="w-3.5 h-3.5 text-[#666666] absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+      <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+        {/* Live Search Input */}
+        <div className="relative w-28 sm:w-44 md:w-56">
+          <Search className="w-3.5 h-3.5 text-[#8c8c8c] absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => onSearchChange(e.target.value)}
-            placeholder="Search files..."
-            className="w-full h-8 pl-8 pr-6 rounded-[6px] bg-[#141414] border border-[#242424] focus:border-[#383838] text-[13px] text-white placeholder-[#666666] outline-none transition-colors"
+            placeholder="Search..."
+            className="w-full h-8 pl-8 pr-7 rounded-[6px] bg-[#141414] border border-[#262626] focus:border-[#383838] text-[13px] text-white placeholder-[#8c8c8c] outline-none transition-colors"
           />
           {searchQuery && (
             <button
               type="button"
               onClick={() => onSearchChange('')}
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-[#777777] hover:text-white p-0.5 cursor-pointer"
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-[#8c8c8c] hover:text-white p-0.5 cursor-pointer"
             >
-              <X className="w-3 h-3" />
+              <X className="w-3.5 h-3.5" />
             </button>
           )}
         </div>
 
-        {/* Storage Tier Filter Pill (32px / h-8) */}
-        <div className="flex items-center p-0.5 rounded-[6px] bg-[#141414] border border-[#262626] h-8">
+        {/* Storage Tier Filter Pill (Hidden on narrow screens to prevent overflow) */}
+        <div className="hidden md:flex items-center p-1 rounded-[7px] bg-[#141414] border border-[#262626] h-9">
           <button
             type="button"
             onClick={() => onTierFilterChange('all')}
-            className={`px-2.5 py-0.5 rounded-[4px] text-[12px] font-medium transition-colors cursor-pointer ${
+            className={`px-3 py-1 rounded-[5px] text-[13px] font-medium transition-colors cursor-pointer ${
               tierFilter === 'all'
-                ? 'bg-[#222222] text-white shadow-xs'
+                ? 'bg-[#222222] text-white shadow-sm'
                 : 'text-[#8c8c8c] hover:text-white'
             }`}
           >
@@ -194,9 +224,9 @@ export function StorageToolbar({
           <button
             type="button"
             onClick={() => onTierFilterChange('inline')}
-            className={`px-2.5 py-0.5 rounded-[4px] text-[12px] font-medium transition-colors cursor-pointer ${
+            className={`px-3 py-1 rounded-[5px] text-[13px] font-medium transition-colors cursor-pointer ${
               tierFilter === 'inline'
-                ? 'bg-[#222222] text-white shadow-xs'
+                ? 'bg-[#222222] text-white shadow-sm'
                 : 'text-[#8c8c8c] hover:text-white'
             }`}
           >
@@ -205,9 +235,9 @@ export function StorageToolbar({
           <button
             type="button"
             onClick={() => onTierFilterChange('disk')}
-            className={`px-2.5 py-0.5 rounded-[4px] text-[12px] font-medium transition-colors cursor-pointer ${
+            className={`px-3 py-1 rounded-[5px] text-[13px] font-medium transition-colors cursor-pointer ${
               tierFilter === 'disk'
-                ? 'bg-[#222222] text-white shadow-xs'
+                ? 'bg-[#222222] text-white shadow-sm'
                 : 'text-[#8c8c8c] hover:text-white'
             }`}
           >
@@ -215,35 +245,37 @@ export function StorageToolbar({
           </button>
         </div>
 
-        {/* View Mode Switcher Pills (32px / h-8) */}
-        <div className="flex items-center p-0.5 rounded-[6px] bg-[#141414] border border-[#262626] h-8">
+        {/* View Mode Switcher Pills (Matching TableToolbar design system, h-9 tabs, 13px font) */}
+        <div className="flex items-center p-1 rounded-[7px] bg-[#141414] border border-[#262626] h-9">
           <button
             type="button"
             onClick={() => onViewModeChange('grid')}
             title="Grid View"
-            className={`flex items-center justify-center w-7 h-7 rounded-[4px] transition-colors cursor-pointer ${
+            className={`flex items-center gap-1.5 px-3 py-1 rounded-[5px] text-[13px] font-medium transition-colors cursor-pointer ${
               viewMode === 'grid'
-                ? 'bg-[#222222] text-white shadow-xs'
+                ? 'bg-[#222222] text-white shadow-sm'
                 : 'text-[#8c8c8c] hover:text-white'
             }`}
           >
             <LayoutGrid className="w-3.5 h-3.5" />
+            <span className="hidden md:inline">Grid</span>
           </button>
           <button
             type="button"
             onClick={() => onViewModeChange('list')}
             title="Table View"
-            className={`flex items-center justify-center w-7 h-7 rounded-[4px] transition-colors cursor-pointer ${
+            className={`flex items-center gap-1.5 px-3 py-1 rounded-[5px] text-[13px] font-medium transition-colors cursor-pointer ${
               viewMode === 'list'
-                ? 'bg-[#222222] text-white shadow-xs'
+                ? 'bg-[#222222] text-white shadow-sm'
                 : 'text-[#8c8c8c] hover:text-white'
             }`}
           >
             <ListIcon className="w-3.5 h-3.5" />
+            <span className="hidden md:inline">Table</span>
           </button>
         </div>
 
-        {/* Inspector Panel Toggle Button (32px / w-8 h-8 matching Table page) */}
+        {/* Inspector Panel Toggle Button */}
         <button
           type="button"
           onClick={onToggleDetails}
@@ -251,36 +283,76 @@ export function StorageToolbar({
           className={`flex items-center justify-center w-8 h-8 rounded-[6px] border transition-colors cursor-pointer ${
             isDetailsOpen
               ? 'bg-[#1c1c1c] text-white border-[#383838]'
-              : 'bg-[#141414] text-[#8c8c8c] hover:text-white border-[#242424] hover:border-[#383838]'
+              : 'bg-[#141414] text-[#8c8c8c] hover:text-white border-[#262626] hover:border-[#383838]'
           }`}
         >
           <PanelRight className="w-3.5 h-3.5" />
         </button>
 
-        {/* Quick Share Link CTA Button (active when single file is selected) */}
+        {/* Quick Share Link CTA Button */}
         {selectedFileItem && selectedFileItem.type === 'file' && onShareClick && (
           <button
             type="button"
             onClick={() => onShareClick(selectedFileItem)}
             title={`Share link for ${selectedFileItem.name}`}
-            className="flex items-center gap-1.5 h-8 px-2.5 rounded-[6px] text-[13px] font-medium text-white bg-[#F6821F] hover:bg-[#e0751b] border border-[#F6821F]/80 transition-colors cursor-pointer shrink-0 shadow-xs"
+            className="flex items-center gap-1.5 h-8 px-2.5 rounded-[6px] text-[13px] font-medium text-white bg-[#141414] hover:bg-[#1c1c1c] border border-[#262626] hover:border-[#383838] transition-colors cursor-pointer shrink-0"
           >
-            <Share2 className="w-3.5 h-3.5" />
+            <Share2 className="w-3.5 h-3.5 text-white" />
             <span className="hidden sm:inline">Share</span>
           </button>
         )}
 
-        {/* Direct Upload CTA Button (32px / h-8 matching Table page Insert/Run buttons) */}
-        <button
-          type="button"
-          onClick={onUploadClick}
-          disabled={!activeNamespace}
-          title="Upload file into current directory"
-          className="flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[13px] font-medium text-white bg-blue-600 hover:bg-blue-500 border border-blue-500/80 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shrink-0 shadow-xs"
-        >
-          <Upload className="w-3.5 h-3.5" />
-          <span className="hidden sm:inline">Upload</span>
-        </button>
+        {/* Direct Upload CTA Button with Dropdown for Folder & Multi-file Upload */}
+        <div className="relative inline-flex items-center shrink-0" ref={uploadMenuRef}>
+          <button
+            type="button"
+            onClick={onUploadClick}
+            disabled={!activeNamespace}
+            title="Upload files into current directory"
+            className="flex items-center gap-1.5 h-8 px-3 rounded-l-[6px] text-[13px] font-medium text-white bg-blue-600 hover:bg-blue-500 border border-blue-500/80 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <Upload className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Upload</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setIsUploadMenuOpen((prev) => !prev)}
+            disabled={!activeNamespace}
+            title="Upload options (files, folders for hosting)"
+            className="flex items-center justify-center h-8 w-6.5 rounded-r-[6px] text-white bg-blue-600 hover:bg-blue-500 border-t border-b border-r border-l border-blue-500/80 border-l-blue-700/60 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <ChevronDown className="w-3.5 h-3.5" />
+          </button>
+
+          {/* Upload Dropdown Menu */}
+          {isUploadMenuOpen && (
+            <div className="absolute right-0 top-full mt-1.5 w-44 bg-[#111111] border border-[#262626] rounded-[8px] shadow-2xl p-1 z-50 animate-in fade-in zoom-in-95 duration-100 font-sans">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsUploadMenuOpen(false);
+                  onUploadClick();
+                }}
+                className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-[6px] text-[13px] text-[#cccccc] hover:text-white hover:bg-[#1a1a1a] transition-colors cursor-pointer text-left"
+              >
+                <Files className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                <span>Upload files</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setIsUploadMenuOpen(false);
+                  onUploadFolderClick ? onUploadFolderClick() : onUploadClick();
+                }}
+                className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-[6px] text-[13px] text-[#cccccc] hover:text-white hover:bg-[#1a1a1a] transition-colors cursor-pointer text-left"
+              >
+                <FolderPlus className="w-3.5 h-3.5 text-[#eab308] shrink-0" />
+                <span>Upload folder</span>
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

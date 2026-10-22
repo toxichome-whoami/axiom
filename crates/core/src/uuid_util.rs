@@ -34,6 +34,9 @@ mod tests {
     fn test_uuid7_uniqueness() {
         let id1 = uuid7();
         let id2 = uuid7();
-        assert_ne!(id1, id2, "consecutive uuid7 calls must produce distinct identifiers");
+        assert_ne!(
+            id1, id2,
+            "consecutive uuid7 calls must produce distinct identifiers"
+        );
     }
 }

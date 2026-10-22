@@ -60,7 +60,12 @@ impl JsonRpcResponse {
     ///  - Precondition: `code` is a standard JSON-RPC or MCP error code.
     ///  - Returns valid `JsonRpcResponse` with error populated and result None.
     ///  - Idempotent: Yes.
-    pub fn error(id: Option<Value>, code: i32, message: impl Into<String>, data: Option<Value>) -> Self {
+    pub fn error(
+        id: Option<Value>,
+        code: i32,
+        message: impl Into<String>,
+        data: Option<Value>,
+    ) -> Self {
         Self {
             jsonrpc: "2.0".to_string(),
             id,

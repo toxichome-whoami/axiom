@@ -6,11 +6,11 @@
  * Last structural change: Phase 1 initial implementation of Admin router.
  */
 
+use crate::admin::handlers::*;
 use axum::{
     routing::{delete, get, patch, post},
     Router,
 };
-use crate::admin::handlers::*;
 
 /// Constructs the Admin API sub-router.
 /// CONTRACT:
@@ -44,10 +44,21 @@ pub fn get_router() -> Router {
         .route("/setup/complete", post(setup_complete))
         .route("/auth/logout", post(logout_handler))
         .route("/users", get(list_users_handler))
+        .route("/cluster/status", get(get_cluster_status))
+        .route(
+            "/cluster/peers",
+            get(list_cluster_peers).post(connect_cluster_peer),
+        )
+        .route(
+            "/cluster/peers/:node_id",
+            delete(remove_cluster_peer).patch(update_cluster_peer),
+        )
+        .route("/cluster/peers/:node_id/ping", post(ping_cluster_peer))
+        .route("/cluster/moniker", patch(update_cluster_moniker))
         .nest("/blobs", crate::blobs::get_admin_router())
-        .layer(axum::middleware::from_fn(crate::middleware::auth::auth_middleware));
+        .layer(axum::middleware::from_fn(
+            crate::middleware::auth::auth_middleware,
+        ));
 
-    Router::new()
-        .merge(public_routes)
-        .merge(protected_routes)
+    Router::new().merge(public_routes).merge(protected_routes)
 }

@@ -24,6 +24,9 @@ pub struct BlobMetadata {
     /// Optional expiration timestamp in Unix epoch seconds (TTL).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expires_at: Option<i64>,
+    /// Custom user-defined metadata key-value tags (e.g. S3 x-amz-meta-* / X-Axiom-Meta-*).
+    #[serde(default, skip_serializing_if = "std::collections::HashMap::is_empty")]
+    pub metadata: std::collections::HashMap<String, String>,
 }
 
 /// Concrete byte boundary for HTTP 206 Partial Content slicing.
@@ -49,7 +52,7 @@ impl ByteRange {
     }
 }
 
-/// Active multipart/chunked upload session metadata.
+/// Active multipart/chunked and resumable upload session metadata.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UploadSession {
     /// Unique identifier for the staged upload session.
@@ -62,10 +65,36 @@ pub struct UploadSession {
     pub content_type: String,
     /// Creation timestamp in Unix seconds.
     pub created_at: i64,
-    /// Optional expiration timestamp for this upload session.
+    /// Expiration timestamp for this upload session.
     pub expires_at: i64,
-    /// List of 1-indexed part numbers successfully received.
+    /// List of 1-indexed part numbers successfully received (for legacy multipart).
+    #[serde(default)]
     pub parts: Vec<u32>,
+    /// Expected total byte size if declared in advance.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub total_size: Option<u64>,
+    /// Number of bytes successfully persisted on disk.
+    #[serde(default)]
+    pub received_bytes: u64,
+    /// Optional expected BLAKE3 cryptographic hash.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub checksum: Option<String>,
+    /// Identity (API key name or admin username) who initiated the session.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub owner: Option<String>,
+}
+
+/// Status descriptor returned when querying an active resumable upload session.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UploadSessionStatus {
+    pub upload_id: String,
+    pub namespace: String,
+    pub key: String,
+    pub offset: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub total_size: Option<u64>,
+    pub completed: bool,
+    pub expires_at: i64,
 }
 
 /// Content-addressed reference tracking deduplication and garbage collection lifecycle.
@@ -127,4 +156,23 @@ pub struct NamespaceInfo {
     pub total_objects: u64,
     /// Total logical bytes occupied by objects inside this namespace.
     pub total_bytes: u64,
+    /// Whether this namespace permits unauthenticated public reads for web assets.
+    #[serde(default)]
+    pub is_public: bool,
+    /// Permitted CORS origins for browser fetch/embed (e.g. ["*"] or ["https://example.com"]).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cors_origins: Vec<String>,
+}
+
+/// Request payload for batch multi-object deletion.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DeleteObjectsRequest {
+    pub keys: Vec<String>,
+}
+
+/// Result summary for batch multi-object deletion.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DeleteObjectsResult {
+    pub deleted: Vec<String>,
+    pub errors: Vec<(String, String)>,
 }

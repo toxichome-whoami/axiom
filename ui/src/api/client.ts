@@ -61,6 +61,7 @@ export interface PermissionRecordApi {
   database: string;
   table_name: string;
   operations: string[];
+  rls_filter?: string | null;
 }
 
 export interface RoleRecordApi {
@@ -118,6 +119,30 @@ export interface UserRecordApi {
   id: number;
   username: string;
   created_at: number;
+}
+
+export interface ClusterStatusData {
+  node_id: string;
+  moniker: string;
+  cluster_secret: string;
+  total_peers: number;
+  connected_peers: number;
+}
+
+export interface PeerNodeRecordApi {
+  node_id: string;
+  moniker: string;
+  url: string;
+  status: 'connected' | 'unreachable' | 'pending';
+  last_ping_ms: number;
+  last_seen_at: number;
+  created_at: number;
+}
+
+export interface ConnectPeerRequestApi {
+  url: string;
+  cluster_secret: string;
+  moniker?: string;
 }
 
 import { getSessionToken, clearSession } from './session';
@@ -285,7 +310,7 @@ export const api = {
 
   // Managed Databases
   listDatabases: () => request<{ databases: DatabaseRecordApi[] }>('/admin/v1/databases'),
-  addDatabase: (data: { alias: string; url: string; engine?: string; pool_min?: number; pool_max?: number; old_alias?: string }) =>
+  addDatabase: (data: { alias: string; url: string; engine?: string; token?: string; pool_min?: number; pool_max?: number; old_alias?: string }) =>
     request<{ alias: string; message: string }>('/admin/v1/databases', {
       method: 'POST',
       body: JSON.stringify(data),
@@ -304,11 +329,9 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(data),
     }),
-  rotateKey: (name: string, options?: { grace_period?: number; idempotencyKey?: string }) =>
+  rotateKey: (name: string) =>
     request<{ name: string; token: string; secret: string; note: string }>(`/admin/v1/keys/${encodeURIComponent(name)}/rotate`, {
       method: 'POST',
-      headers: options?.idempotencyKey ? { 'Idempotency-Key': options.idempotencyKey } : undefined,
-      body: options?.grace_period ? JSON.stringify({ grace_period: options.grace_period }) : undefined,
     }),
   deleteKey: (name: string) =>
     request<{ message: string }>(`/admin/v1/keys/${encodeURIComponent(name)}`, {
@@ -371,15 +394,15 @@ export const api = {
     const username = res.user?.username || res.username || data.username;
     return { username, token, session_token: token, expires_at: res.expires_at || 0 };
   },
-  setupDatabase: (data: { alias: string; url: string; engine?: string }) =>
+  setupDatabase: (data: { alias: string; url: string; engine?: string; token?: string }) =>
     request<{ alias: string; message: string }>('/admin/v1/setup/database', {
       method: 'POST',
       body: JSON.stringify(data),
     }),
-  testDatabaseUrl: (url: string, alias?: string) =>
+  testDatabaseUrl: (url: string, alias?: string, engine?: string, token?: string) =>
     request<{ status: string; dialect: string; message: string }>('/admin/v1/setup/database/test', {
       method: 'POST',
-      body: JSON.stringify({ url, alias }),
+      body: JSON.stringify({ url, alias, engine, token }),
     }),
   setupComplete: () =>
     request<{ message: string; api_key: { name: string; token: string } }>('/admin/v1/setup/complete', {
@@ -389,12 +412,20 @@ export const api = {
   // Native Blob Storage Subsystem
   getBlobStats: () => request<BlobStats>('/admin/v1/blobs/stats'),
   listBlobNamespaces: () => request<NamespaceInfo[]>('/admin/v1/blobs/namespaces'),
-  createBlobNamespace: (name: string, max_bytes?: number | null) =>
+  createBlobNamespace: (name: string, max_bytes?: number | null, is_public?: boolean, cors_origins?: string[]) =>
     request<NamespaceInfo>('/admin/v1/blobs/namespaces', {
       method: 'POST',
-      body: JSON.stringify({ name, max_bytes: max_bytes ?? null }),
+      body: JSON.stringify({
+        name,
+        max_bytes: max_bytes ?? null,
+        is_public: is_public ?? false,
+        cors_origins: cors_origins ?? [],
+      }),
     }),
-  updateBlobNamespace: (name: string, data: { new_name?: string; max_bytes?: number | null }) =>
+  updateBlobNamespace: (
+    name: string,
+    data: { new_name?: string; max_bytes?: number | null; is_public?: boolean; cors_origins?: string[] }
+  ) =>
     request<NamespaceInfo>(`/admin/v1/blobs/namespaces/${encodeURIComponent(name)}`, {
       method: 'PATCH',
       body: JSON.stringify(data),
@@ -411,13 +442,136 @@ export const api = {
     const qs = params.toString() ? `?${params.toString()}` : '';
     return request<ListBlobsResult>(`/api/v1/blobs/${encodeURIComponent(namespace)}${qs}`);
   },
+  /**
+   * Resumable chunked upload protocol implementation matching the backend
+   * chunked upload pipeline. Slices blobs into bounded chunks, streams them
+   * sequentially with Content-Range validation, and recovers offsets on transient failure.
+   */
+  uploadBlobResumable: async (
+    namespace: string,
+    key: string,
+    file: Blob,
+    contentType?: string,
+    signal?: AbortSignal,
+    onProgress?: (uploadedBytes: number, totalBytes: number) => void
+  ): Promise<BlobMetadata> => {
+    const totalSize = file.size;
+    const mime = contentType || file.type || 'application/octet-stream';
+    const chunkSize = 8 * 1024 * 1024; // 8 MB chunks
+
+    // Step 1: Initialize session
+    const sessionRes = await request<{
+      upload_id: string;
+      namespace: string;
+      key: string;
+      total_size?: number;
+    }>(`/api/v1/blobs/${encodeURIComponent(namespace)}/uploads`, {
+      method: 'POST',
+      body: JSON.stringify({
+        key,
+        content_type: mime,
+        total_size: totalSize,
+      }),
+      signal,
+    });
+
+    const uploadId = sessionRes.upload_id;
+    let offset = 0;
+    const token = getSessionToken();
+
+    // Step 2: Upload chunks sequentially
+    while (offset < totalSize) {
+      if (signal?.aborted) {
+        throw new Error('Upload aborted by user');
+      }
+
+      const chunkEnd = Math.min(offset + chunkSize, totalSize) - 1;
+      const chunk = file.slice(offset, chunkEnd + 1);
+      const targetUrl = resolveEndpoint(
+        `/api/v1/blobs/${encodeURIComponent(namespace)}/uploads/${encodeURIComponent(uploadId)}`
+      );
+
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/octet-stream',
+        'Content-Range': `bytes ${offset}-${chunkEnd}/${totalSize}`,
+      };
+      if (token && token !== 'undefined' && token !== 'null') {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      let res: Response;
+      try {
+        res = await fetch(targetUrl, {
+          method: 'PUT',
+          headers,
+          body: chunk,
+          signal,
+          credentials: 'include',
+        });
+      } catch (networkErr: unknown) {
+        if (signal?.aborted) throw networkErr;
+        // Probe offset from server on transient network interruption
+        try {
+          const statusRes = await fetch(targetUrl, {
+            method: 'GET',
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+            credentials: 'include',
+          });
+          const offsetHdr = statusRes.headers.get('Upload-Offset') || statusRes.headers.get('X-Upload-Offset');
+          if (offsetHdr) {
+            offset = parseInt(offsetHdr, 10);
+            continue;
+          }
+        } catch {
+          // If status probe also fails, rethrow initial error
+        }
+        throw networkErr;
+      }
+
+      if (res.status === 200 || res.status === 201) {
+        // Auto-completed on last byte
+        const json = await res.json();
+        return (json.data || json) as BlobMetadata;
+      }
+
+      if (res.status === 308) {
+        const offsetHdr = res.headers.get('Upload-Offset') || res.headers.get('X-Upload-Offset');
+        if (offsetHdr) {
+          offset = parseInt(offsetHdr, 10);
+        } else {
+          offset = chunkEnd + 1;
+        }
+        if (onProgress) {
+          onProgress(offset, totalSize);
+        }
+      } else {
+        const errText = await res.text();
+        throw new Error(`Chunk upload failed with status ${res.status}: ${errText}`);
+      }
+    }
+
+    // Step 3: Complete upload if not automatically completed
+    return request<BlobMetadata>(
+      `/api/v1/blobs/${encodeURIComponent(namespace)}/uploads/${encodeURIComponent(uploadId)}/complete`,
+      {
+        method: 'POST',
+        signal,
+      }
+    );
+  },
   uploadBlob: async (
     namespace: string,
     key: string,
     data: BodyInit,
     contentType?: string,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    onProgress?: (uploadedBytes: number, totalBytes: number) => void
   ) => {
+    // If payload is a File/Blob >= 8MB, delegate to chunked resumable upload protocol
+    if (typeof Blob !== 'undefined' && data instanceof Blob && data.size >= 8 * 1024 * 1024) {
+      return api.uploadBlobResumable(namespace, key, data, contentType, signal, onProgress);
+    }
+
     const sanitizedKey = key.split('/').map(encodeURIComponent).join('/');
     return request<BlobMetadata>(`/api/v1/blobs/${encodeURIComponent(namespace)}/${sanitizedKey}`, {
       method: 'PUT',
@@ -474,6 +628,14 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ namespace, prefix }),
     }),
+  deleteBlobsBatch: (namespace: string, keys: string[]) =>
+    request<{ deleted: string[]; errors: [string, string][] }>(
+      `/api/v1/blobs/${encodeURIComponent(namespace)}/delete-objects`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ keys }),
+      }
+    ),
   verifyBlob: (namespace: string, key: string) => {
     const sanitizedKey = key.split('/').map(encodeURIComponent).join('/');
     return request<{ valid: boolean }>(`/admin/v1/blobs/verify/${encodeURIComponent(namespace)}/${sanitizedKey}`, {
@@ -596,5 +758,33 @@ export const api = {
       body: JSON.stringify({ sql, params, timeout }),
       timeoutMs: (Math.max(timeout, 60) + 30) * 1000,
     }),
+
+  // ─── Cluster P2P Mesh API ──────────────────────────────────────────────────
+  getClusterStatus: () => request<ClusterStatusData>('/admin/v1/cluster/status'),
+  listClusterPeers: () => request<{ peers: PeerNodeRecordApi[] }>('/admin/v1/cluster/peers'),
+  connectClusterPeer: (payload: ConnectPeerRequestApi) =>
+    request<PeerNodeRecordApi>('/admin/v1/cluster/peers', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  removeClusterPeer: (nodeId: string) =>
+    request<{ message: string }>(`/admin/v1/cluster/peers/${encodeURIComponent(nodeId)}`, {
+      method: 'DELETE',
+    }),
+  updateClusterMoniker: (moniker: string) =>
+    request<{ moniker: string }>('/admin/v1/cluster/moniker', {
+      method: 'PATCH',
+      body: JSON.stringify({ moniker }),
+    }),
+  updateClusterPeer: (nodeId: string, payload: { moniker?: string; url?: string; cluster_secret?: string }) =>
+    request<PeerNodeRecordApi>(`/admin/v1/cluster/peers/${encodeURIComponent(nodeId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    }),
+  pingClusterPeer: (nodeId: string) =>
+    request<PeerNodeRecordApi>(`/admin/v1/cluster/peers/${encodeURIComponent(nodeId)}/ping`, {
+      method: 'POST',
+    }),
 };
+
 

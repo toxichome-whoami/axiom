@@ -39,11 +39,23 @@ pub fn normalize_path(path: &str) -> &'static str {
     // Admin API parameterized routes
     if trimmed.starts_with("admin/v1/") {
         if trimmed.starts_with("admin/v1/keys") {
-            return if trimmed == "admin/v1/keys" { "/admin/v1/keys" } else { "/admin/v1/keys/:name" };
+            return if trimmed == "admin/v1/keys" {
+                "/admin/v1/keys"
+            } else {
+                "/admin/v1/keys/:name"
+            };
         } else if trimmed.starts_with("admin/v1/roles") {
-            return if trimmed == "admin/v1/roles" { "/admin/v1/roles" } else { "/admin/v1/roles/:name" };
+            return if trimmed == "admin/v1/roles" {
+                "/admin/v1/roles"
+            } else {
+                "/admin/v1/roles/:name"
+            };
         } else if trimmed.starts_with("admin/v1/databases") {
-            return if trimmed == "admin/v1/databases" { "/admin/v1/databases" } else { "/admin/v1/databases/:alias" };
+            return if trimmed == "admin/v1/databases" {
+                "/admin/v1/databases"
+            } else {
+                "/admin/v1/databases/:alias"
+            };
         } else if trimmed == "admin/v1/status" {
             return "/admin/v1/status";
         } else if trimmed == "admin/v1/audit" {
@@ -108,9 +120,18 @@ mod tests {
 
     #[test]
     fn test_normalize_path() {
-        assert_eq!(normalize_path("/api/v1/db/pg_main/users/rows"), "/api/v1/db/:alias/:table/rows");
-        assert_eq!(normalize_path("/api/v1/db/pg_main/query"), "/api/v1/db/:alias/query");
-        assert_eq!(normalize_path("/admin/v1/keys/key_123"), "/admin/v1/keys/:name");
+        assert_eq!(
+            normalize_path("/api/v1/db/pg_main/users/rows"),
+            "/api/v1/db/:alias/:table/rows"
+        );
+        assert_eq!(
+            normalize_path("/api/v1/db/pg_main/query"),
+            "/api/v1/db/:alias/query"
+        );
+        assert_eq!(
+            normalize_path("/admin/v1/keys/key_123"),
+            "/admin/v1/keys/:name"
+        );
         assert_eq!(normalize_path("/health"), "/health");
         assert_eq!(normalize_path("/metrics"), "/metrics");
         assert_eq!(normalize_path("/"), "/");

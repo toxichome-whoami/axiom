@@ -17,6 +17,14 @@ struct NamespaceRecord {
     pub name: String,
     pub created_at: i64,
     pub max_bytes: Option<u64>,
+    #[serde(default)]
+    pub is_public: bool,
+    #[serde(default)]
+    pub cors_origins: Vec<String>,
+    #[serde(default)]
+    pub total_objects: u64,
+    #[serde(default)]
+    pub total_bytes: u64,
 }
 
 pub struct BlobIndex {
@@ -77,7 +85,11 @@ impl BlobIndex {
     }
 
     /// Retrieves metadata for an object key in a namespace.
-    pub fn get_metadata(&self, namespace: &str, key: &str) -> Result<Option<BlobMetadata>, BlobError> {
+    pub fn get_metadata(
+        &self,
+        namespace: &str,
+        key: &str,
+    ) -> Result<Option<BlobMetadata>, BlobError> {
         let mk = Self::meta_key(namespace, key);
         if let Some(slice) = self.meta_keyspace.get(&mk)? {
             let meta: BlobMetadata = serde_json::from_slice(&slice)
@@ -114,24 +126,35 @@ impl BlobIndex {
         let mk = Self::meta_key(namespace, key);
 
         // Check if previous metadata existed for this key; if so, decrement old hash refcount
-        if let Some(old_slice) = self.meta_keyspace.get(&mk)? {
+        let old_size_opt = if let Some(old_slice) = self.meta_keyspace.get(&mk)? {
             if let Ok(old_meta) = serde_json::from_slice::<BlobMetadata>(&old_slice) {
                 if old_meta.hash != metadata.hash {
                     let _ = self.decrement_refcount(&old_meta.hash)?;
                 }
+                Some(old_meta.size)
+            } else {
+                None
             }
-        }
+        } else {
+            None
+        };
 
         // Increment content refcount
-        let content_ref = self.increment_refcount(&metadata.hash, metadata.size, metadata.created_at)?;
+        let content_ref =
+            self.increment_refcount(&metadata.hash, metadata.size, metadata.created_at)?;
 
         // Write new metadata record
         let meta_json = serde_json::to_vec(metadata)
             .map_err(|e| BlobError::Engine(format!("Failed to serialize metadata: {}", e)))?;
         self.meta_keyspace.insert(&mk, meta_json)?;
 
-        // Automatically ensure namespace bucket is registered
-        let _ = self.ensure_namespace(namespace);
+        // Automatically ensure namespace bucket is registered and update atomic counters
+        let is_dir_marker = key.ends_with("/.axiom_dir") || key == ".axiom_dir";
+        if !is_dir_marker {
+            self.adjust_namespace_counters(namespace, old_size_opt, Some(metadata.size))?;
+        } else {
+            let _ = self.ensure_namespace(namespace);
+        }
 
         Ok(content_ref)
     }
@@ -162,6 +185,11 @@ impl BlobIndex {
                 let _ = self.inline_keyspace.remove(meta.hash.as_bytes());
             }
 
+            let is_dir_marker = key.ends_with("/.axiom_dir") || key == ".axiom_dir";
+            if !is_dir_marker {
+                self.adjust_namespace_counters(namespace, Some(meta.size), None)?;
+            }
+
             Ok((Some(meta), should_delete))
         } else {
             Ok((None, false))
@@ -169,12 +197,7 @@ impl BlobIndex {
     }
 
     /// Increments content refcount in the content keyspace.
-    fn increment_refcount(
-        &self,
-        hash: &str,
-        size: u64,
-        now: i64,
-    ) -> Result<ContentRef, BlobError> {
+    fn increment_refcount(&self, hash: &str, size: u64, now: i64) -> Result<ContentRef, BlobError> {
         let hk = hash.as_bytes();
         let updated = if let Some(slice) = self.content_keyspace.get(hk)? {
             let mut r: ContentRef = serde_json::from_slice(&slice)
@@ -306,9 +329,70 @@ impl BlobIndex {
         Ok(stats)
     }
 
+    /// Atomically updates a namespace's running object count and cumulative byte size.
+    pub fn adjust_namespace_counters(
+        &self,
+        namespace: &str,
+        old_size: Option<u64>,
+        new_size: Option<u64>,
+    ) -> Result<(), BlobError> {
+        let (mut record, created_now) =
+            if let Some(slice) = self.namespaces_keyspace.get(namespace.as_bytes())? {
+                let r: NamespaceRecord = serde_json::from_slice(&slice)
+                    .map_err(|e| BlobError::Engine(format!("Corrupt namespace record: {}", e)))?;
+                (r, false)
+            } else {
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs() as i64;
+                (
+                    NamespaceRecord {
+                        name: namespace.to_string(),
+                        created_at: now,
+                        max_bytes: None,
+                        is_public: false,
+                        cors_origins: Vec::new(),
+                        total_objects: 0,
+                        total_bytes: 0,
+                    },
+                    true,
+                )
+            };
+
+        match (old_size, new_size) {
+            (None, Some(add)) => {
+                // New object created
+                record.total_objects = record.total_objects.saturating_add(1);
+                record.total_bytes = record.total_bytes.saturating_add(add);
+            }
+            (Some(sub), None) => {
+                // Object deleted
+                record.total_objects = record.total_objects.saturating_sub(1);
+                record.total_bytes = record.total_bytes.saturating_sub(sub);
+            }
+            (Some(sub), Some(add)) => {
+                // Object overwritten with different size
+                record.total_bytes = record.total_bytes.saturating_sub(sub).saturating_add(add);
+            }
+            (None, None) => {}
+        }
+
+        let bytes = serde_json::to_vec(&record)
+            .map_err(|e| BlobError::Engine(format!("Failed to serialize namespace: {}", e)))?;
+        self.namespaces_keyspace
+            .insert(namespace.as_bytes(), bytes)?;
+        let _ = created_now;
+        Ok(())
+    }
+
     /// Ensures that an explicit namespace record exists in the index.
     pub fn ensure_namespace(&self, namespace: &str) -> Result<(), BlobError> {
-        if self.namespaces_keyspace.get(namespace.as_bytes())?.is_none() {
+        if self
+            .namespaces_keyspace
+            .get(namespace.as_bytes())?
+            .is_none()
+        {
             let now = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
@@ -317,18 +401,31 @@ impl BlobIndex {
                 name: namespace.to_string(),
                 created_at: now,
                 max_bytes: None,
+                is_public: false,
+                cors_origins: Vec::new(),
+                total_objects: 0,
+                total_bytes: 0,
             };
             let bytes = serde_json::to_vec(&record)
                 .map_err(|e| BlobError::Engine(format!("Failed to serialize namespace: {}", e)))?;
-            self.namespaces_keyspace.insert(namespace.as_bytes(), bytes)?;
+            self.namespaces_keyspace
+                .insert(namespace.as_bytes(), bytes)?;
         }
         Ok(())
     }
 
-    /// Registers a new namespace with an optional quota limit.
-    pub fn create_namespace(&self, name: &str, max_bytes: Option<u64>) -> Result<NamespaceInfo, BlobError> {
+    /// Registers a new namespace with an optional quota limit and public status.
+    pub fn create_namespace(
+        &self,
+        name: &str,
+        max_bytes: Option<u64>,
+        is_public: bool,
+    ) -> Result<NamespaceInfo, BlobError> {
         if self.namespaces_keyspace.get(name.as_bytes())?.is_some() {
-            return Err(BlobError::Engine(format!("Namespace '{}' already exists", name)));
+            return Err(BlobError::Engine(format!(
+                "Namespace '{}' already exists",
+                name
+            )));
         }
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -338,6 +435,10 @@ impl BlobIndex {
             name: name.to_string(),
             created_at: now,
             max_bytes,
+            is_public,
+            cors_origins: Vec::new(),
+            total_objects: 0,
+            total_bytes: 0,
         };
         let bytes = serde_json::to_vec(&record)
             .map_err(|e| BlobError::Engine(format!("Failed to serialize namespace: {}", e)))?;
@@ -348,11 +449,45 @@ impl BlobIndex {
             max_bytes,
             total_objects: 0,
             total_bytes: 0,
+            is_public,
+            cors_origins: Vec::new(),
         })
     }
 
     /// Retrieves detailed info and current storage usage for a single namespace.
+    /// Uses O(1) atomic counters stored in the namespace record.
     pub fn get_namespace_info(&self, name: &str) -> Result<Option<NamespaceInfo>, BlobError> {
+        if let Some(slice) = self.namespaces_keyspace.get(name.as_bytes())? {
+            let r: NamespaceRecord = serde_json::from_slice(&slice)
+                .map_err(|e| BlobError::Engine(format!("Corrupt namespace record: {}", e)))?;
+            Ok(Some(NamespaceInfo {
+                name: r.name,
+                created_at: r.created_at,
+                max_bytes: r.max_bytes,
+                total_objects: r.total_objects,
+                total_bytes: r.total_bytes,
+                is_public: r.is_public,
+                cors_origins: r.cors_origins,
+            }))
+        } else {
+            // Check if any legacy objects exist under this namespace prefix
+            let mut base_prefix = name.as_bytes().to_vec();
+            base_prefix.push(0);
+            let mut legacy_iter = self.meta_keyspace.prefix(&base_prefix);
+            if legacy_iter.next().is_some() {
+                // Self-heal: ensure namespace record exists and recalculate
+                self.recalculate_namespace_counters(name)
+            } else {
+                Ok(None)
+            }
+        }
+    }
+
+    /// Recalculates namespace atomic counters from scratch and saves the record.
+    pub fn recalculate_namespace_counters(
+        &self,
+        name: &str,
+    ) -> Result<Option<NamespaceInfo>, BlobError> {
         let (record, exists) = if let Some(slice) = self.namespaces_keyspace.get(name.as_bytes())? {
             let r: NamespaceRecord = serde_json::from_slice(&slice)
                 .map_err(|e| BlobError::Engine(format!("Corrupt namespace record: {}", e)))?;
@@ -363,6 +498,10 @@ impl BlobIndex {
                     name: name.to_string(),
                     created_at: 0,
                     max_bytes: None,
+                    is_public: false,
+                    cors_origins: Vec::new(),
+                    total_objects: 0,
+                    total_bytes: 0,
                 },
                 false,
             )
@@ -392,95 +531,100 @@ impl BlobIndex {
             return Ok(None);
         }
 
+        let mut updated_rec = record;
+        updated_rec.total_objects = total_objects;
+        updated_rec.total_bytes = total_bytes;
+
+        let bytes = serde_json::to_vec(&updated_rec)
+            .map_err(|e| BlobError::Engine(format!("Failed to serialize namespace: {}", e)))?;
+        self.namespaces_keyspace.insert(name.as_bytes(), bytes)?;
+
         Ok(Some(NamespaceInfo {
-            name: record.name,
-            created_at: record.created_at,
-            max_bytes: record.max_bytes,
+            name: updated_rec.name,
+            created_at: updated_rec.created_at,
+            max_bytes: updated_rec.max_bytes,
             total_objects,
             total_bytes,
+            is_public: updated_rec.is_public,
+            cors_origins: updated_rec.cors_origins,
         }))
     }
 
     /// Lists all namespaces with their metadata and live storage metrics.
+    /// Fast O(1) per-namespace read without scanning all object metadata keys.
     pub fn list_namespaces_info(&self) -> Result<Vec<NamespaceInfo>, BlobError> {
-        let mut map = std::collections::BTreeMap::<String, (NamespaceRecord, u64, u64)>::new();
+        let mut result = Vec::new();
 
-        // 1. Read all explicitly registered namespaces
         for guard in self.namespaces_keyspace.iter() {
             let (raw_key, raw_val) = guard.into_inner()?;
-            if let Ok(record) = serde_json::from_slice::<NamespaceRecord>(&raw_val) {
-                map.insert(record.name.clone(), (record, 0, 0));
-            } else if let Ok(name) = std::str::from_utf8(&raw_key) {
-                map.insert(
-                    name.to_string(),
-                    (
-                        NamespaceRecord {
-                            name: name.to_string(),
-                            created_at: 0,
-                            max_bytes: None,
-                        },
-                        0,
-                        0,
-                    ),
-                );
-            }
-        }
-
-        // 2. Scan meta keyspace to accumulate object counts & byte sizes per namespace
-        for guard in self.meta_keyspace.iter() {
-            let (raw_key, raw_val) = guard.into_inner()?;
-            if let Some((ns, key)) = Self::parse_meta_key(&raw_key) {
-                let entry = map.entry(ns.clone()).or_insert_with(|| {
-                    (
-                        NamespaceRecord {
-                            name: ns,
-                            created_at: 0,
-                            max_bytes: None,
-                        },
-                        0,
-                        0,
-                    )
+            if let Ok(rec) = serde_json::from_slice::<NamespaceRecord>(&raw_val) {
+                result.push(NamespaceInfo {
+                    name: rec.name,
+                    created_at: rec.created_at,
+                    max_bytes: rec.max_bytes,
+                    total_objects: rec.total_objects,
+                    total_bytes: rec.total_bytes,
+                    is_public: rec.is_public,
+                    cors_origins: rec.cors_origins,
                 });
-                if key.ends_with("/.axiom_dir") || key == ".axiom_dir" {
-                    continue;
-                }
-                if let Ok(meta) = serde_json::from_slice::<BlobMetadata>(&raw_val) {
-                    entry.1 += 1;
-                    entry.2 += meta.size;
-                }
+            } else if let Ok(name) = std::str::from_utf8(&raw_key) {
+                result.push(NamespaceInfo {
+                    name: name.to_string(),
+                    created_at: 0,
+                    max_bytes: None,
+                    total_objects: 0,
+                    total_bytes: 0,
+                    is_public: false,
+                    cors_origins: Vec::new(),
+                });
             }
         }
 
-        let result = map
-            .into_values()
-            .map(|(rec, count, bytes)| NamespaceInfo {
-                name: rec.name,
-                created_at: rec.created_at,
-                max_bytes: rec.max_bytes,
-                total_objects: count,
-                total_bytes: bytes,
-            })
-            .collect();
-
+        result.sort_by(|a, b| a.name.cmp(&b.name));
         Ok(result)
     }
 
-    /// Updates namespace quota or renames namespace.
+    /// Checks whether the specified namespace allows unauthenticated public reads.
+    pub fn is_namespace_public(&self, namespace: &str) -> Result<bool, BlobError> {
+        if let Some(slice) = self.namespaces_keyspace.get(namespace.as_bytes())? {
+            if let Ok(record) = serde_json::from_slice::<NamespaceRecord>(&slice) {
+                return Ok(record.is_public);
+            }
+        }
+        Ok(false)
+    }
+
+    /// Retrieves CORS allowed origins for the specified namespace.
+    pub fn get_namespace_cors(&self, namespace: &str) -> Result<Vec<String>, BlobError> {
+        if let Some(slice) = self.namespaces_keyspace.get(namespace.as_bytes())? {
+            if let Ok(record) = serde_json::from_slice::<NamespaceRecord>(&slice) {
+                return Ok(record.cors_origins);
+            }
+        }
+        Ok(Vec::new())
+    }
+
+    /// Updates namespace quota, visibility (is_public), CORS, or renames namespace.
     pub fn update_namespace(
         &self,
         name: &str,
         new_name: Option<&str>,
         max_bytes: Option<Option<u64>>,
+        is_public: Option<bool>,
+        cors_origins: Option<Vec<String>>,
     ) -> Result<NamespaceInfo, BlobError> {
-        let mut info = self.get_namespace_info(name)?.ok_or_else(|| {
-            BlobError::NamespaceNotFound(name.to_string())
-        })?;
+        let mut info = self
+            .get_namespace_info(name)?
+            .ok_or_else(|| BlobError::NamespaceNotFound(name.to_string()))?;
 
         let target_name = if let Some(nn) = new_name {
             if nn != name {
                 // Check if target name already exists
                 if self.namespaces_keyspace.get(nn.as_bytes())?.is_some() {
-                    return Err(BlobError::Engine(format!("Target namespace '{}' already exists", nn)));
+                    return Err(BlobError::Engine(format!(
+                        "Target namespace '{}' already exists",
+                        nn
+                    )));
                 }
 
                 // Re-key all objects in meta_keyspace from {name}\0{key} to {nn}\0{key}
@@ -516,23 +660,35 @@ impl BlobIndex {
             None => info.max_bytes,
         };
 
+        let new_is_public = is_public.unwrap_or(info.is_public);
+        let new_cors = cors_origins.unwrap_or(info.cors_origins);
+
         let record = NamespaceRecord {
             name: target_name.to_string(),
-            created_at: if info.created_at > 0 { info.created_at } else {
+            created_at: if info.created_at > 0 {
+                info.created_at
+            } else {
                 std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap_or_default()
                     .as_secs() as i64
             },
             max_bytes: new_max_bytes,
+            is_public: new_is_public,
+            cors_origins: new_cors.clone(),
+            total_objects: info.total_objects,
+            total_bytes: info.total_bytes,
         };
 
         let bytes = serde_json::to_vec(&record)
             .map_err(|e| BlobError::Engine(format!("Failed to serialize namespace: {}", e)))?;
-        self.namespaces_keyspace.insert(target_name.as_bytes(), bytes)?;
+        self.namespaces_keyspace
+            .insert(target_name.as_bytes(), bytes)?;
 
         info.name = target_name.to_string();
         info.max_bytes = new_max_bytes;
+        info.is_public = new_is_public;
+        info.cors_origins = new_cors;
         Ok(info)
     }
 
@@ -549,15 +705,22 @@ impl BlobIndex {
     }
 
     /// Persists an active chunked upload session descriptor.
-    pub fn save_upload_session(&self, session: &crate::models::UploadSession) -> Result<(), BlobError> {
+    pub fn save_upload_session(
+        &self,
+        session: &crate::models::UploadSession,
+    ) -> Result<(), BlobError> {
         let bytes = serde_json::to_vec(session)
             .map_err(|e| BlobError::Engine(format!("Failed to serialize upload session: {}", e)))?;
-        self.uploads_keyspace.insert(session.upload_id.as_bytes(), bytes)?;
+        self.uploads_keyspace
+            .insert(session.upload_id.as_bytes(), bytes)?;
         Ok(())
     }
 
     /// Retrieves an active upload session by its upload_id.
-    pub fn get_upload_session(&self, upload_id: &str) -> Result<Option<crate::models::UploadSession>, BlobError> {
+    pub fn get_upload_session(
+        &self,
+        upload_id: &str,
+    ) -> Result<Option<crate::models::UploadSession>, BlobError> {
         if let Some(slice) = self.uploads_keyspace.get(upload_id.as_bytes())? {
             let session: crate::models::UploadSession = serde_json::from_slice(&slice)
                 .map_err(|e| BlobError::Engine(format!("Corrupt upload session record: {}", e)))?;
@@ -578,6 +741,18 @@ impl BlobIndex {
         }
     }
 
+    /// Lists all active upload sessions stored in the index.
+    pub fn list_upload_sessions(&self) -> Result<Vec<crate::models::UploadSession>, BlobError> {
+        let mut sessions = Vec::new();
+        for guard in self.uploads_keyspace.iter() {
+            let (_, raw_val) = guard.into_inner()?;
+            if let Ok(session) = serde_json::from_slice::<crate::models::UploadSession>(&raw_val) {
+                sessions.push(session);
+            }
+        }
+        Ok(sessions)
+    }
+
     /// Returns a list of all distinct content hashes stored across the index for integrity scrubbing.
     pub fn list_content_hashes(&self) -> Result<Vec<String>, BlobError> {
         let mut hashes = Vec::new();
@@ -592,7 +767,10 @@ impl BlobIndex {
 
     /// Identifies and purges blobs whose expires_at timestamp is in the past.
     /// Returns a list of (namespace, key, hash, should_delete_physical_file).
-    pub fn sweep_expired_blobs(&self, now: i64) -> Result<Vec<(String, String, String, bool)>, BlobError> {
+    pub fn sweep_expired_blobs(
+        &self,
+        now: i64,
+    ) -> Result<Vec<(String, String, String, bool)>, BlobError> {
         let mut expired = Vec::new();
 
         for guard in self.meta_keyspace.iter() {

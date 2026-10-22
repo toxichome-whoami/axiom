@@ -10,8 +10,8 @@ use async_trait::async_trait;
 use serde_json::Value;
 
 pub use axiom_core::{
-    ColumnInfo, CreateColumnRequest, EngineError, ForeignKeyDef, ForeignKeyInfo, QueryResult, TableInfo,
-    DEFAULT_MAX_QUERY_ROWS, extract_next_cursor,
+    extract_next_cursor, ColumnInfo, CreateColumnRequest, EngineError, ForeignKeyDef,
+    ForeignKeyInfo, QueryResult, TableInfo, DEFAULT_MAX_QUERY_ROWS,
 };
 
 // ─── Database Engine Trait ─────────────────────────────────────────────────
@@ -45,7 +45,11 @@ pub trait DatabaseEngine: Send + Sync {
     ///  - Returns `Vec<TableInfo>` ordered deterministically by table name.
     ///  - Side effects: Queries system catalog / information_schema.
     ///  - Idempotent: Yes.
-    async fn list_tables(&self, cursor: Option<String>, limit: usize) -> Result<Vec<TableInfo>, EngineError>;
+    async fn list_tables(
+        &self,
+        cursor: Option<String>,
+        limit: usize,
+    ) -> Result<Vec<TableInfo>, EngineError>;
 
     /// Returns the total count of user-defined tables in the schema.
     /// CONTRACT:

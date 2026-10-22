@@ -13,8 +13,40 @@ import { SlideOver } from '../components/ui/SlideOver';
 import { Button } from '../components/ui/Button';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { CustomSelect } from '../components/shared/CustomSelect';
-import { Database, Plus, CheckCircle2, Search, Trash2, RefreshCw, AlertTriangle, Check, Eye, EyeOff, Table } from 'lucide-react';
+import { Database, Plus, CheckCircle2, Search, Trash2, RefreshCw, AlertTriangle, AlertCircle, Check, Eye, EyeOff, Table } from 'lucide-react';
 import { api, DatabaseRecordApi } from '../api/client';
+
+export function validateCleanName(name: string): { valid: boolean; error?: string } {
+  const trimmed = name.trim();
+  if (!trimmed) {
+    return { valid: false, error: 'Name cannot be empty.' };
+  }
+  if (trimmed.length > 64) {
+    return { valid: false, error: 'Name must not exceed 64 characters.' };
+  }
+  if (/[A-Z]/.test(trimmed)) {
+    return { valid: false, error: 'Uppercase letters not allowed. Use lowercase only.' };
+  }
+  if (/\s/.test(trimmed)) {
+    return { valid: false, error: 'Spaces not allowed. Use hyphens or underscores.' };
+  }
+  if (/[^a-z0-9_-]/.test(trimmed)) {
+    return { valid: false, error: 'Only lowercase letters, numbers, hyphens, and underscores allowed.' };
+  }
+  if (trimmed.startsWith('_') || trimmed.startsWith('-')) {
+    return { valid: false, error: 'Cannot start with a hyphen or underscore.' };
+  }
+  if (trimmed.endsWith('_') || trimmed.endsWith('-')) {
+    return { valid: false, error: 'Cannot end with a trailing hyphen or underscore.' };
+  }
+  if (trimmed.length === 1 && !/^[a-z0-9]$/.test(trimmed)) {
+    return { valid: false, error: 'Must be a lowercase letter or number.' };
+  }
+  if (!/^[a-z0-9][a-z0-9_-]*[a-z0-9]$/.test(trimmed)) {
+    return { valid: false, error: 'Must be lowercase alphanumeric with hyphens or underscores.' };
+  }
+  return { valid: true };
+}
 
 
 export interface FilterRule {
@@ -46,8 +78,8 @@ export const ENGINE_URL_SCHEMES: Record<string, { prefixes: string[]; example: s
     example: 'clickhouse://user:secret@host:8123/default',
   },
   libsql: {
-    prefixes: ['libsql://', 'sqlite://', 'file:'],
-    example: 'libsql://database.turso.io or sqlite://local.db',
+    prefixes: ['libsql://', 'sqlite://', 'file:', 'https://'],
+    example: 'libsql://database.turso.io, https://database.turso.io, or leave blank',
   },
 };
 
@@ -57,16 +89,38 @@ export const ENGINE_URL_SCHEMES: Record<string, { prefixes: string[]; example: s
  *  - Fails closed on empty, whitespace, or invalid scheme prefix.
  *  - Case-insensitive on protocol scheme.
  *  - Enforces minimum URI structure (scheme + target endpoint).
+ *  - LibSQL allows empty string (defaults to data/{alias}.db) and restricts local paths to data/.
  * @param engine - Dialect identifier (e.g. 'PostgreSQL', 'MySQL', 'LibSQL')
  * @param rawUrl - Input URI string to validate
  */
 export function validateDatabaseUrl(engine: string, rawUrl: string): { valid: boolean; error?: string } {
   const trimmed = rawUrl.trim();
+  const normEngine = engine.toLowerCase().trim();
+
+  // LibSQL / SQLite allows blank URL to auto-create sqlite://data/{alias}.db
   if (!trimmed) {
+    if (normEngine === 'libsql' || normEngine === 'sqlite') {
+      return { valid: true };
+    }
     return { valid: false, error: 'Connection URL is required.' };
   }
 
-  const normEngine = engine.toLowerCase().trim();
+  // Security jailing checks for local LibSQL / SQLite
+  if (normEngine === 'libsql' || normEngine === 'sqlite') {
+    if (trimmed.includes('..')) {
+      return {
+        valid: false,
+        error: "Directory traversal ('..') is prohibited. Local databases are restricted to the 'data/' directory.",
+      };
+    }
+    if (/^[a-zA-Z]:/.test(trimmed) || (trimmed.startsWith('/') && !trimmed.startsWith('//'))) {
+      return {
+        valid: false,
+        error: "Absolute drive and root paths are prohibited. Local databases are restricted to the 'data/' directory.",
+      };
+    }
+  }
+
   const spec = ENGINE_URL_SCHEMES[normEngine];
   if (!spec) {
     return { valid: trimmed.includes('://') || trimmed.startsWith('file:') };
@@ -75,6 +129,12 @@ export function validateDatabaseUrl(engine: string, rawUrl: string): { valid: bo
   const lowerUrl = trimmed.toLowerCase();
   const matched = spec.prefixes.some((p) => lowerUrl.startsWith(p));
   if (!matched) {
+    // For LibSQL/SQLite, plain relative file names (e.g. mydb.db or data/mydb.db) are valid
+    if (normEngine === 'libsql' || normEngine === 'sqlite') {
+      if (!trimmed.includes('://')) {
+        return { valid: true };
+      }
+    }
     return {
       valid: false,
       error: `Invalid URL protocol for ${formatEngine(engine)}. Expected prefix: ${spec.prefixes.join(' or ')}`,
@@ -209,6 +269,8 @@ export function Databases() {
   const [newEngine, setNewEngine] = useState<string>('PostgreSQL');
   const [newUrl, setNewUrl] = useState('');
   const [showNewUrl, setShowNewUrl] = useState(false);
+  const [newToken, setNewToken] = useState('');
+  const [showNewToken, setShowNewToken] = useState(false);
   const [newMin, setNewMin] = useState(1);
   const [newMax, setNewMax] = useState(10);
   const [newTimeout, setNewTimeout] = useState(30);
@@ -224,6 +286,8 @@ export function Databases() {
   const [editEngine, setEditEngine] = useState<EngineType>('PostgreSQL');
   const [editUrl, setEditUrl] = useState('');
   const [showEditUrl, setShowEditUrl] = useState(false);
+  const [editToken, setEditToken] = useState('');
+  const [showEditToken, setShowEditToken] = useState(false);
   const [editMin, setEditMin] = useState(1);
   const [editMax, setEditMax] = useState(10);
   const [editTimeout, setEditTimeout] = useState(30);
@@ -231,6 +295,8 @@ export function Databases() {
   const [manageError, setManageError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [confirmDisconnectOpen, setConfirmDisconnectOpen] = useState(false);
+  const [confirmDiscardAttachOpen, setConfirmDiscardAttachOpen] = useState(false);
+  const [confirmDiscardEditOpen, setConfirmDiscardEditOpen] = useState(false);
 
   async function handleTestConnection() {
     const validation = validateDatabaseUrl(newEngine, newUrl);
@@ -243,7 +309,7 @@ export function Databases() {
     setAttachError(null);
     setTestResult('testing');
     try {
-      await api.testDatabaseUrl(newUrl.trim(), newAlias.trim() || undefined);
+      await api.testDatabaseUrl(newUrl.trim(), newAlias.trim() || undefined, newEngine, newToken.trim() || undefined);
       setTestResult('success');
     } catch (err: unknown) {
       setTestResult('fail');
@@ -256,14 +322,14 @@ export function Databases() {
     setManageError(null);
     setManageTestResult('testing');
     try {
-      if (urlChanged) {
+      if (urlChanged || editToken.trim().length > 0) {
         const validation = validateDatabaseUrl(editEngine, editUrl);
         if (!validation.valid) {
           setManageTestResult('fail');
           setManageError(validation.error || 'Invalid URL format for selected engine.');
           return;
         }
-        await api.testDatabaseUrl(editUrl.trim(), selectedPool.alias);
+        await api.testDatabaseUrl(editUrl.trim(), selectedPool.alias, editEngine, editToken.trim() || undefined);
         setManageTestResult('success');
         setSelectedPool((prev) => (prev ? { ...prev, status: 'Ready' } : null));
         setPools((prev) =>
@@ -313,23 +379,89 @@ export function Databases() {
       editAlias.trim() !== selectedPool.alias ||
       editEngine !== selectedPool.engine ||
       urlChanged ||
+      editToken.trim().length > 0 ||
       editMin !== selectedPool.minConnections ||
       editMax !== selectedPool.maxConnections ||
       editTimeout !== selectedPool.idleTimeoutSeconds
     )
   );
 
+  const aliasValidation = validateCleanName(newAlias);
+  const urlValidation = validateDatabaseUrl(newEngine, newUrl);
+  const editAliasValidation = validateCleanName(editAlias);
+
   const canSave = Boolean(
     isChanged &&
-    editAlias.trim().length > 0 &&
+    editAliasValidation.valid &&
     editUrlValidation.valid &&
     editPoolOk &&
     !isSaving &&
     manageTestResult !== 'testing'
   );
 
+  const isAttachDirty = Boolean(
+    newAlias.trim().length > 0 ||
+    newUrl.trim().length > 0 ||
+    newToken.trim().length > 0 ||
+    newEngine !== 'PostgreSQL' ||
+    newMin !== 1 ||
+    newMax !== 10 ||
+    newTimeout !== 30
+  );
+
+  const canAttach = Boolean(
+    !isAttaching &&
+    newAlias.trim().length > 0 &&
+    aliasValidation.valid &&
+    poolOk &&
+    (newEngine.toLowerCase() === 'libsql' ? true : newUrl.trim().length > 0 && urlValidation.valid)
+  );
+
+  function requestCloseAttach() {
+    if (isAttachDirty) {
+      setConfirmDiscardAttachOpen(true);
+    } else {
+      forceCloseAttach();
+    }
+  }
+
+  function forceCloseAttach() {
+    setConfirmDiscardAttachOpen(false);
+    setAttachOpen(false);
+    setNewAlias('');
+    setNewUrl('');
+    setNewToken('');
+    setNewEngine('PostgreSQL');
+    setNewMin(1);
+    setNewMax(10);
+    setNewTimeout(30);
+    setAttachError(null);
+    setTestResult(null);
+  }
+
+  function requestCloseManage() {
+    if (isChanged) {
+      setConfirmDiscardEditOpen(true);
+    } else {
+      forceCloseManage();
+    }
+  }
+
+  function forceCloseManage() {
+    setConfirmDiscardEditOpen(false);
+    setManageOpen(false);
+    setManageTab('details');
+    setManageError(null);
+    setManageTestResult(null);
+  }
+
   async function handleAttach() {
     if (!newAlias.trim() || !poolOk) return;
+    if (!aliasValidation.valid) {
+      setAttachError(aliasValidation.error || 'Invalid alias format.');
+      setTestResult('fail');
+      return;
+    }
     const validation = validateDatabaseUrl(newEngine, newUrl);
     if (!validation.valid) {
       setAttachError(validation.error || 'Invalid URL format for selected engine.');
@@ -343,7 +475,7 @@ export function Databases() {
 
     try {
       // 1. Mandatory live connection check every time when adding
-      await api.testDatabaseUrl(newUrl.trim(), newAlias.trim() || undefined);
+      await api.testDatabaseUrl(newUrl.trim(), newAlias.trim() || undefined, newEngine, newToken.trim() || undefined);
       setTestResult('success');
 
       // 2. Register database once connection is verified
@@ -351,6 +483,7 @@ export function Databases() {
         alias: newAlias.trim(),
         url: newUrl.trim(),
         engine: newEngine,
+        token: newToken.trim() || undefined,
         pool_min: newMin,
         pool_max: newMax,
       });
@@ -358,6 +491,8 @@ export function Databases() {
       setAttachOpen(false);
       setNewAlias('');
       setNewUrl('');
+      setNewToken('');
+      setShowNewToken(false);
       setNewMin(1);
       setNewMax(10);
       setNewTimeout(30);
@@ -382,8 +517,8 @@ export function Databases() {
 
     try {
       // 1. Mandatory live connection check every time when updating
-      if (urlChanged) {
-        await api.testDatabaseUrl(updatedUrl, selectedPool.alias);
+      if (urlChanged || editToken.trim().length > 0) {
+        await api.testDatabaseUrl(updatedUrl, selectedPool.alias, editEngine, editToken.trim() || undefined);
       } else {
         const test = await api.testDatabase(oldAlias);
         if (test.status !== 'up' && test.status !== 'connected') {
@@ -397,6 +532,7 @@ export function Databases() {
         alias: updatedAlias,
         url: updatedUrl,
         engine: editEngine,
+        token: editToken.trim() || undefined,
         pool_min: editMin,
         pool_max: editMax,
         old_alias: oldAlias,
@@ -406,6 +542,8 @@ export function Databases() {
       }
       await loadDatabases();
       setManageOpen(false);
+      setEditToken('');
+      setShowEditToken(false);
     } catch (err: unknown) {
       setManageTestResult('fail');
       setManageError(err instanceof Error ? err.message : 'Database connection test failed. Unable to save.');
@@ -600,6 +738,8 @@ export function Databases() {
               setEditAlias(row.alias);
               setEditEngine(row.engine);
               setEditUrl('');
+              setEditToken('');
+              setShowEditToken(false);
               setEditMin(row.minConnections);
               setEditMax(row.maxConnections);
               setEditTimeout(row.idleTimeoutSeconds);
@@ -652,6 +792,10 @@ export function Databases() {
             onClick={() => {
               setTestResult(null);
               setAttachError(null);
+              setNewAlias('');
+              setNewUrl('');
+              setNewToken('');
+              setShowNewToken(false);
               setNewMin(1);
               setNewMax(10);
               setNewTimeout(30);
@@ -932,7 +1076,7 @@ export function Databases() {
       {/* Attach DB SlideOver */}
       <SlideOver
         isOpen={attachOpen}
-        onClose={() => setAttachOpen(false)}
+        onClose={requestCloseAttach}
         title="Attach Database Pool"
         subtitle="Configure connection endpoint, dialect engine, and credential URI"
       >
@@ -957,29 +1101,39 @@ export function Databases() {
           </div>
 
           <div>
-            <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">Pool Alias (Identifier)</label>
+            <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">
+              Pool Alias (Identifier) <span className="text-[#e5484d]">*</span>
+            </label>
             <input
               type="text"
               value={newAlias}
-              onChange={(e) => setNewAlias(e.target.value)}
+              onChange={(e) => setNewAlias(e.target.value.toLowerCase().replace(/\s+/g, '_'))}
               placeholder="e.g. analytics_warehouse"
-              className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] px-3 text-[14px] text-white focus:outline-none focus:border-[#3b82f6]"
+              className={`h-9 w-full rounded-[6px] border px-3 text-[14px] text-white focus:outline-none font-mono lowercase transition-colors ${
+                newAlias.trim().length > 0 && !aliasValidation.valid
+                  ? 'border-[#e5484d] bg-[#1a0f0f] focus:border-[#e5484d] focus:ring-1 focus:ring-[#e5484d]/40'
+                  : 'border-[#262626] bg-[#121212] focus:border-[#3b82f6]'
+              }`}
             />
+            {newAlias.trim().length > 0 && !aliasValidation.valid ? (
+              <div className="mt-1.5 flex items-center gap-1.5 text-[12px] text-[#e5484d]">
+                <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                <span>{aliasValidation.error}</span>
+              </div>
+            ) : (
+              <p className="mt-1.5 text-[12px] text-[#737373]">
+                Unique endpoint identifier used in API routes (e.g. <span className="font-mono text-[#a3a3a3]">analytics_warehouse</span>).
+              </p>
+            )}
           </div>
 
           <div>
             <div className="flex items-center justify-between mb-1.5">
-              <label className="block text-[13px] font-medium text-[#cccccc]">Connection URL</label>
-              {newUrl.trim().length > 0 && (
-                validateDatabaseUrl(newEngine, newUrl).valid ? (
-                  <span className="text-[12px] text-[#30a46c] font-medium flex items-center gap-1">
-                    Valid scheme
-                  </span>
-                ) : (
-                  <span className="text-[12px] text-[#e5484d] font-medium flex items-center gap-1">
-                    Invalid {formatEngine(newEngine)} scheme
-                  </span>
-                )
+              <label className="block text-[13px] font-medium text-[#cccccc]">
+                Connection URL {newEngine.toLowerCase() !== 'libsql' && <span className="text-[#e5484d]">*</span>}
+              </label>
+              {newEngine.toLowerCase() === 'libsql' && (
+                <span className="text-[11px] text-[#888888]">Optional for local DB</span>
               )}
             </div>
             <div className="relative">
@@ -991,8 +1145,16 @@ export function Databases() {
                   setTestResult(null);
                   setAttachError(null);
                 }}
-                placeholder={ENGINE_URL_SCHEMES[newEngine.toLowerCase()]?.example || 'postgres://user:secret@host:5432/dbname'}
-                className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] pl-3 pr-10 text-[14px] text-white focus:outline-none focus:border-[#3b82f6] font-mono"
+                placeholder={
+                  newEngine.toLowerCase() === 'libsql'
+                    ? `Leave blank to create data/${newAlias.trim() || 'database'}.db`
+                    : ENGINE_URL_SCHEMES[newEngine.toLowerCase()]?.example || 'postgres://user:secret@host:5432/dbname'
+                }
+                className={`h-9 w-full rounded-[6px] border pl-3 pr-10 text-[14px] text-white focus:outline-none font-mono transition-colors ${
+                  newUrl.trim().length > 0 && !validateDatabaseUrl(newEngine, newUrl).valid
+                    ? 'border-[#e5484d] bg-[#1a0f0f] focus:border-[#e5484d] focus:ring-1 focus:ring-[#e5484d]/40'
+                    : 'border-[#262626] bg-[#121212] focus:border-[#3b82f6]'
+                }`}
               />
               <button
                 type="button"
@@ -1004,12 +1166,74 @@ export function Databases() {
                 {showNewUrl ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
               </button>
             </div>
+            {newUrl.trim().length > 0 && (
+              validateDatabaseUrl(newEngine, newUrl).valid ? (
+                <div className="mt-1.5 flex items-center gap-1.5 text-[12px] text-[#30a46c]">
+                  <Check className="w-3.5 h-3.5 shrink-0" />
+                  <span>Valid connection scheme</span>
+                </div>
+              ) : (
+                <div className="mt-1.5 flex items-center gap-1.5 text-[12px] text-[#e5484d]">
+                  <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                  <span>Invalid {formatEngine(newEngine)} scheme. Expected prefix: <code className="font-mono text-[#ff8080]">{ENGINE_URL_SCHEMES[newEngine.toLowerCase()]?.prefixes.join(', ')}</code></span>
+                </div>
+              )
+            )}
+            {newUrl.trim().length === 0 && (
+              <p className="mt-1.5 text-[12px] text-[#737373]">
+                {newEngine.toLowerCase() === 'libsql' ? (
+                  <span>
+                    Leave blank to automatically create <code className="font-mono text-[#a3a3a3]">data/{newAlias.trim() || 'database'}.db</code> inside the protected <code className="font-mono text-[#a3a3a3]">data/</code> directory.
+                  </span>
+                ) : (
+                  <span>
+                    Must start with <code className="font-mono text-[#a3a3a3]">{newEngine.toLowerCase()}://</code> or supported protocol.
+                  </span>
+                )}
+              </p>
+            )}
           </div>
+
+          {newEngine.toLowerCase() === 'libsql' && (
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block text-[13px] font-medium text-[#cccccc]">
+                  Auth Token <span className="text-[11px] font-normal text-[#888888]">(Turso / Remote LibSQL)</span>
+                </label>
+                <span className="text-[11px] text-[#666666]">Optional</span>
+              </div>
+              <div className="relative">
+                <input
+                  type={showNewToken ? 'text' : 'password'}
+                  value={newToken}
+                  onChange={(e) => {
+                    setNewToken(e.target.value);
+                    setTestResult(null);
+                    setAttachError(null);
+                  }}
+                  placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6..."
+                  className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] pl-3 pr-10 text-[14px] text-white focus:outline-none focus:border-[#3b82f6] font-mono transition-colors"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowNewToken(!showNewToken)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#777777] hover:text-[#cccccc] transition-colors cursor-pointer"
+                  tabIndex={-1}
+                  aria-label={showNewToken ? 'Hide token' : 'Show token'}
+                >
+                  {showNewToken ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                </button>
+              </div>
+              <p className="mt-1.5 text-[12px] text-[#737373]">
+                JWT auth token required for remote Turso cloud databases. Leave blank for local files.
+              </p>
+            </div>
+          )}
 
           <div>
             <button
               type="button"
-              disabled={testResult === 'testing' || !newUrl.trim()}
+              disabled={testResult === 'testing' || (!newUrl.trim() && newEngine.toLowerCase() !== 'libsql')}
               onClick={handleTestConnection}
               className={`h-8 px-3 rounded-[6px] text-[13px] font-medium border transition-colors inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50 ${
                 testResult === 'success'
@@ -1111,7 +1335,7 @@ export function Databases() {
         <div className="p-4 border-t border-[#222222] bg-[#0e0e0e] flex items-center justify-end gap-2.5 font-sans">
           <button
             type="button"
-            onClick={() => setAttachOpen(false)}
+            onClick={requestCloseAttach}
             className="inline-flex items-center justify-center h-9 px-4 rounded-[8px] text-[14px] font-medium text-[#cccccc] hover:text-white bg-transparent hover:bg-[#161616] border border-[#262626] hover:border-[#383838] transition-colors cursor-pointer font-sans"
           >
             Cancel
@@ -1119,7 +1343,7 @@ export function Databases() {
           <button
             type="button"
             onClick={handleAttach}
-            disabled={isAttaching || !poolOk || !newAlias.trim() || !newUrl.trim()}
+            disabled={!canAttach}
             className="group relative flex shrink-0 items-center justify-center h-9 px-4 rounded-[8px] font-medium text-white shadow-xs outline-none cursor-pointer overflow-hidden ring-1 ring-[#1d4ed8] bg-[#2563eb] font-sans disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <span aria-hidden="true" className="pointer-events-none absolute inset-0 rounded-[inherit] bg-gradient-to-b from-[#3b82f6] to-[#2563eb] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2)]" />
@@ -1141,7 +1365,7 @@ export function Databases() {
       {/* Manage Pool SlideOver */}
       <SlideOver
         isOpen={manageOpen}
-        onClose={() => { setManageOpen(false); setManageTab('details'); }}
+        onClose={requestCloseManage}
         title={selectedPool?.alias ?? ''}
         subtitle={selectedPool ? `${selectedPool.engine} · ${selectedPool.status}` : ''}
       >
@@ -1184,14 +1408,30 @@ export function Databases() {
 
               <div className="space-y-3.5">
                 <div>
-                  <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">Pool Name (Alias)</label>
+                  <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">
+                    Pool Name (Alias) <span className="text-[#e5484d]">*</span>
+                  </label>
                   <input
                     type="text"
                     value={editAlias}
-                    onChange={(e) => setEditAlias(e.target.value)}
+                    onChange={(e) => setEditAlias(e.target.value.toLowerCase().replace(/\s+/g, '_'))}
                     placeholder="e.g. analytics_warehouse"
-                    className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] px-3 text-[14px] text-white focus:outline-none focus:border-[#3b82f6]"
+                    className={`h-9 w-full rounded-[6px] border px-3 text-[14px] text-white focus:outline-none font-mono lowercase transition-colors ${
+                      editAlias.trim().length > 0 && !editAliasValidation.valid
+                        ? 'border-[#e5484d] bg-[#1a0f0f] focus:border-[#e5484d] focus:ring-1 focus:ring-[#e5484d]/40'
+                        : 'border-[#262626] bg-[#121212] focus:border-[#3b82f6]'
+                    }`}
                   />
+                  {editAlias.trim().length > 0 && !editAliasValidation.valid ? (
+                    <div className="mt-1.5 flex items-center gap-1.5 text-[12px] text-[#e5484d]">
+                      <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                      <span>{editAliasValidation.error}</span>
+                    </div>
+                  ) : (
+                    <p className="mt-1.5 text-[12px] text-[#737373]">
+                      Unique endpoint identifier used in API routes.
+                    </p>
+                  )}
                 </div>
 
                 <div>
@@ -1209,20 +1449,9 @@ export function Databases() {
                 </div>
 
                 <div>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <label className="block text-[13px] font-medium text-[#cccccc]">Connection URL</label>
-                    {urlChanged && (
-                      editUrlValidation.valid ? (
-                        <span className="text-[12px] text-[#f59e0b] font-medium flex items-center gap-1">
-                          New URI · Test required
-                        </span>
-                      ) : (
-                        <span className="text-[12px] text-[#e5484d] font-medium flex items-center gap-1">
-                          Invalid {formatEngine(editEngine)} scheme
-                        </span>
-                      )
-                    )}
-                  </div>
+                  <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">
+                    Connection URL <span className="text-[#e5484d]">*</span>
+                  </label>
                   <div className="relative">
                     <input
                       type={showEditUrl ? 'text' : 'password'}
@@ -1233,7 +1462,11 @@ export function Databases() {
                         setManageError(null);
                       }}
                       placeholder="Leave blank to keep the existing"
-                      className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] pl-3 pr-10 text-[14px] text-white focus:outline-none focus:border-[#3b82f6] font-mono"
+                      className={`h-9 w-full rounded-[6px] border pl-3 pr-10 text-[14px] text-white focus:outline-none font-mono transition-colors ${
+                        urlChanged && !editUrlValidation.valid
+                          ? 'border-[#e5484d] bg-[#1a0f0f] focus:border-[#e5484d] focus:ring-1 focus:ring-[#e5484d]/40'
+                          : 'border-[#262626] bg-[#121212] focus:border-[#3b82f6]'
+                      }`}
                     />
                     <button
                       type="button"
@@ -1245,10 +1478,61 @@ export function Databases() {
                       {showEditUrl ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                     </button>
                   </div>
-                  <p className="text-[12px] text-[#8c8c8c] mt-1">
-                    Hidden for security reasons.
-                  </p>
+                  {urlChanged && (
+                    editUrlValidation.valid ? (
+                      <div className="mt-1.5 flex items-center gap-1.5 text-[12px] text-[#f59e0b]">
+                        <Check className="w-3.5 h-3.5 shrink-0" />
+                        <span>New URI configured · Test required before saving</span>
+                      </div>
+                    ) : (
+                      <div className="mt-1.5 flex items-center gap-1.5 text-[12px] text-[#e5484d]">
+                        <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                        <span>Invalid {formatEngine(editEngine)} scheme. Expected prefix: <code className="font-mono text-[#ff8080]">{ENGINE_URL_SCHEMES[editEngine.toLowerCase()]?.prefixes.join(', ')}</code></span>
+                      </div>
+                    )
+                  )}
+                  {!urlChanged && (
+                    <p className="mt-1.5 text-[12px] text-[#737373]">
+                      Leave empty to keep existing password and connection credentials.
+                    </p>
+                  )}
                 </div>
+
+                {editEngine.toLowerCase() === 'libsql' && (
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="block text-[13px] font-medium text-[#cccccc]">
+                        Auth Token <span className="text-[11px] font-normal text-[#888888]">(Turso / Remote LibSQL)</span>
+                      </label>
+                      <span className="text-[11px] text-[#666666]">Optional</span>
+                    </div>
+                    <div className="relative">
+                      <input
+                        type={showEditToken ? 'text' : 'password'}
+                        value={editToken}
+                        onChange={(e) => {
+                          setEditToken(e.target.value);
+                          setManageTestResult(null);
+                          setManageError(null);
+                        }}
+                        placeholder="Leave blank to keep existing token"
+                        className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] pl-3 pr-10 text-[14px] text-white focus:outline-none focus:border-[#3b82f6] font-mono transition-colors"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowEditToken(!showEditToken)}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#777777] hover:text-[#cccccc] transition-colors cursor-pointer"
+                        tabIndex={-1}
+                        aria-label={showEditToken ? 'Hide token' : 'Show token'}
+                      >
+                        {showEditToken ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                      </button>
+                    </div>
+                    <p className="mt-1.5 text-[12px] text-[#737373]">
+                      Update auth token for Turso. Leave empty to preserve existing credentials.
+                    </p>
+                  </div>
+                )}
 
                 <div>
                   <button
@@ -1379,7 +1663,7 @@ export function Databases() {
           <div className="p-4 border-t border-[#222222] bg-[#0e0e0e] flex items-center justify-end gap-2.5 font-sans">
             <button
               type="button"
-              onClick={() => setManageOpen(false)}
+              onClick={requestCloseManage}
               className="inline-flex items-center justify-center h-9 px-4 rounded-[8px] text-[14px] font-medium text-[#cccccc] hover:text-white bg-transparent hover:bg-[#161616] border border-[#262626] hover:border-[#383838] transition-colors cursor-pointer font-sans"
             >
               Cancel
@@ -1433,6 +1717,29 @@ export function Databases() {
         }
         confirmLabel="Disconnect Pool"
         cancelLabel="Cancel"
+      />
+      {/* Discard Attach Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={confirmDiscardAttachOpen}
+        onClose={() => setConfirmDiscardAttachOpen(false)}
+        onConfirm={forceCloseAttach}
+        title="Discard New Database"
+        description="You have unsaved database configuration. Are you sure you want to discard your changes?"
+        confirmLabel="Discard Changes"
+        cancelLabel="Keep Editing"
+        variant="warning"
+      />
+
+      {/* Discard Manage/Edit Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={confirmDiscardEditOpen}
+        onClose={() => setConfirmDiscardEditOpen(false)}
+        onConfirm={forceCloseManage}
+        title="Discard Unsaved Changes"
+        description="You have unsaved changes to this database pool. Are you sure you want to discard them?"
+        confirmLabel="Discard Changes"
+        cancelLabel="Keep Editing"
+        variant="warning"
       />
     </div>
   );

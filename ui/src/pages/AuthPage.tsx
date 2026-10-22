@@ -87,6 +87,8 @@ export function AuthPage({ onLoginSuccess, initialMode = 'login' }: AuthPageProp
   const [dbAlias, setDbAlias] = useState('main_db');
   const [dbEngine, setDbEngine] = useState('PostgreSQL');
   const [dbUrl, setDbUrl] = useState('postgresql://127.0.0.1:5432/localdb');
+  const [dbToken, setDbToken] = useState('');
+  const [showDbToken, setShowDbToken] = useState(false);
   const [dbTesting, setDbTesting] = useState(false);
   const [dbTestSuccess, setDbTestSuccess] = useState<boolean | null>(null);
 
@@ -220,18 +222,33 @@ export function AuthPage({ onLoginSuccess, initialMode = 'login' }: AuthPageProp
 
   function validateUrlScheme(engine: string, url: string): { valid: boolean; error?: string } {
     const trimmed = url.trim().toLowerCase();
+    const normEngine = engine.toLowerCase().trim();
     if (!trimmed) {
+      if (normEngine === 'libsql' || normEngine === 'sqlite') {
+        return { valid: true };
+      }
       return { valid: false, error: 'Database connection URI cannot be empty.' };
+    }
+    if (normEngine === 'libsql' || normEngine === 'sqlite') {
+      if (trimmed.includes('..')) {
+        return { valid: false, error: "Directory traversal ('..') is prohibited." };
+      }
+      if (/^[a-zA-Z]:/.test(trimmed) || (trimmed.startsWith('/') && !trimmed.startsWith('//'))) {
+        return { valid: false, error: "Local database file must reside in the data/ folder." };
+      }
     }
     const schemes: Record<string, string[]> = {
       postgresql: ['postgres://', 'postgresql://'],
       mysql: ['mysql://', 'mariadb://'],
       mssql: ['mssql://', 'sqlserver://'],
       clickhouse: ['clickhouse://', 'clickhouse+https://', 'http://', 'https://'],
-      libsql: ['sqlite://', 'libsql://', 'file:'],
+      libsql: ['sqlite://', 'libsql://', 'file:', 'https://'],
     };
-    const expected = schemes[engine.toLowerCase()];
+    const expected = schemes[normEngine];
     if (expected && !expected.some((prefix) => trimmed.startsWith(prefix))) {
+      if ((normEngine === 'libsql' || normEngine === 'sqlite') && !trimmed.includes('://')) {
+        return { valid: true };
+      }
       return {
         valid: false,
         error: `Invalid URL protocol for ${engine}. Expected scheme: ${expected.join(' or ')}`,
@@ -253,7 +270,7 @@ export function AuthPage({ onLoginSuccess, initialMode = 'login' }: AuthPageProp
     setErrorMessage(null);
 
     try {
-      await api.testDatabaseUrl(dbUrl.trim());
+      await api.testDatabaseUrl(dbUrl.trim(), dbAlias.trim() || undefined, dbEngine, dbToken.trim() || undefined);
       setDbTestSuccess(true);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Database connectivity test failed.';
@@ -265,8 +282,8 @@ export function AuthPage({ onLoginSuccess, initialMode = 'login' }: AuthPageProp
   }
 
   async function handleAttachDatabase() {
-    if (!dbAlias.trim() || !dbUrl.trim()) {
-      setErrorMessage('Database alias and URL are required.');
+    if (!dbAlias.trim() || (!dbUrl.trim() && dbEngine.toLowerCase() !== 'libsql')) {
+      setErrorMessage('Database alias is required.');
       return;
     }
 
@@ -285,6 +302,7 @@ export function AuthPage({ onLoginSuccess, initialMode = 'login' }: AuthPageProp
         alias: dbAlias.trim(),
         url: dbUrl.trim(),
         engine: dbEngine,
+        token: dbToken.trim() || undefined,
       });
       setDbTestSuccess(true);
       setCurrentStep(4);
@@ -650,9 +668,14 @@ export function AuthPage({ onLoginSuccess, initialMode = 'login' }: AuthPageProp
             </div>
 
             <div>
-              <label className="text-[13px] font-medium text-[#cccccc] mb-1.5 block">
-                Connection URI
-              </label>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="text-[13px] font-medium text-[#cccccc] block">
+                  Connection URI
+                </label>
+                {dbEngine.toLowerCase() === 'libsql' && (
+                  <span className="text-[11px] text-[#888888]">Optional for local DB</span>
+                )}
+              </div>
               <input
                 type="text"
                 value={dbUrl}
@@ -661,10 +684,46 @@ export function AuthPage({ onLoginSuccess, initialMode = 'login' }: AuthPageProp
                   setDbTestSuccess(null);
                   setErrorMessage(null);
                 }}
-                placeholder="postgres://user:pass@host:5432/db"
+                placeholder={
+                  dbEngine.toLowerCase() === 'libsql'
+                    ? `Leave blank to create data/${dbAlias.trim() || 'database'}.db`
+                    : 'postgres://user:pass@host:5432/db'
+                }
                 className="h-10 w-full rounded-[8px] bg-[#141414] border border-[#262626] focus:border-[#2563eb] focus:ring-1 focus:ring-[#2563eb] px-3 text-[14px] font-mono text-white outline-none placeholder-[#555555] transition-colors"
               />
             </div>
+
+            {dbEngine.toLowerCase() === 'libsql' && (
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-[13px] font-medium text-[#cccccc] block">
+                    Auth Token <span className="text-[11px] font-normal text-[#888888]">(Turso / Remote LibSQL)</span>
+                  </label>
+                  <span className="text-[11px] text-[#666666]">Optional</span>
+                </div>
+                <div className="relative">
+                  <input
+                    type={showDbToken ? 'text' : 'password'}
+                    value={dbToken}
+                    onChange={(e) => {
+                      setDbToken(e.target.value);
+                      setDbTestSuccess(null);
+                      setErrorMessage(null);
+                    }}
+                    placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6..."
+                    className="h-10 w-full rounded-[8px] bg-[#141414] border border-[#262626] focus:border-[#2563eb] focus:ring-1 focus:ring-[#2563eb] pl-3 pr-10 text-[14px] font-mono text-white outline-none placeholder-[#555555] transition-colors"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowDbToken(!showDbToken)}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#777777] hover:text-[#cccccc] transition-colors cursor-pointer"
+                    tabIndex={-1}
+                  >
+                    {showDbToken ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
+              </div>
+            )}
 
             {/* Test Connection Button */}
             <div className="flex items-center justify-between">

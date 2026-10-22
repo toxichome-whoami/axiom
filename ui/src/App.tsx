@@ -9,6 +9,7 @@ const Overview = lazy(() => import('./pages/Overview').then((m) => ({ default: m
 const Databases = lazy(() => import('./pages/Databases').then((m) => ({ default: m.Databases })));
 const TableEditor = lazy(() => import('./pages/TableEditor').then((m) => ({ default: m.TableEditor })));
 const Storage = lazy(() => import('./pages/Storage').then((m) => ({ default: m.Storage })));
+const Cluster = lazy(() => import('./pages/Cluster').then((m) => ({ default: m.Cluster })));
 const Keys = lazy(() => import('./pages/Keys').then((m) => ({ default: m.Keys })));
 const Roles = lazy(() => import('./pages/Roles').then((m) => ({ default: m.Roles })));
 const Mcp = lazy(() => import('./pages/Mcp').then((m) => ({ default: m.Mcp })));
@@ -36,6 +37,7 @@ export function App() {
     if (p === '/databases') p = '/system/databases';
     if (p === '/tables' || p === '/editor' || p === '/table-editor') p = '/system/tables';
     if (p === '/storage' || p === '/blobs') p = '/system/storage';
+    if (p === '/cluster' || p === '/mesh' || p === '/nodes') p = '/system/cluster';
     if (p === '/keys') p = '/system/keys';
     if (p === '/roles') p = '/system/roles';
     if (p === '/mcp') p = '/system/mcp';
@@ -45,6 +47,7 @@ export function App() {
       '/system/databases',
       '/system/tables',
       '/system/storage',
+      '/system/cluster',
       '/system/keys',
       '/system/roles',
       '/system/mcp',
@@ -130,6 +133,8 @@ export function App() {
         return { title: 'Table & Schema Editor', component: <TableEditor /> };
       case '/system/storage':
         return { title: 'Native Blob Storage', component: <Storage /> };
+      case '/system/cluster':
+        return { title: 'Cluster Mesh', component: <Cluster /> };
 
       case '/system/keys':
         return { title: 'API Keys', component: <Keys /> };

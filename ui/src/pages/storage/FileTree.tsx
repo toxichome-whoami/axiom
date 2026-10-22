@@ -192,9 +192,11 @@ export interface FileTreeProps {
   blobs: BlobEntry[];
   currentPrefix: string;
   selectedItem: StorageItem | null;
+  selectedKeys?: Set<string>;
   activeNamespace?: string;
   onSelectFolder: (path: string, item?: StorageItem | null) => void;
   onSelectFile: (fileItem: StorageItem) => void;
+  onToggleSelectItem?: (item: StorageItem, e: React.MouseEvent) => void;
   onContextMenu: (e: React.MouseEvent, item: StorageItem | null) => void;
   onNewFolder: () => void;
   onUpload: () => void;
@@ -213,9 +215,11 @@ export function FileTree({
   blobs,
   currentPrefix,
   selectedItem,
+  selectedKeys,
   activeNamespace,
   onSelectFolder,
   onSelectFile,
+  onToggleSelectItem,
   onContextMenu,
   onNewFolder,
   onUpload,
@@ -318,11 +322,16 @@ export function FileTree({
     const isExpanded = expandedPaths.has(node.path);
     const isCurrentFolder = isFolder && currentPrefix === node.path;
     const isSelected = Boolean(
-      selectedItem &&
+      (selectedKeys && (
+        selectedKeys.has(node.path) ||
+        selectedKeys.has(node.id) ||
+        (isFolder && selectedKeys.has(node.path.endsWith('/') ? node.path.slice(0, -1) : `${node.path}/`))
+      )) ||
+      (selectedItem &&
         (selectedItem.fullKey === node.path ||
           selectedItem.id === node.id ||
           selectedItem.id === `file-${node.path}` ||
-          selectedItem.id === `folder-${node.path}`)
+          selectedItem.id === `folder-${node.path}`))
     );
 
     const isTreeDropTarget = isFolder && treeDragTarget === node.path;
@@ -368,24 +377,35 @@ export function FileTree({
             e.stopPropagation();
             if (isFolder) {
               const item = toStorageItem(node);
-              onSelectFolder(node.path, item);
-              if (!isExpanded) {
-                setExpandedPaths((prev) => new Set(prev).add(node.path));
+              if ((e.ctrlKey || e.metaKey || e.shiftKey) && onToggleSelectItem) {
+                onToggleSelectItem(item, e);
+              } else {
+                onSelectFolder(node.path, item);
+                if (!isExpanded) {
+                  setExpandedPaths((prev) => new Set(prev).add(node.path));
+                }
               }
             } else {
-              onSelectFile(toStorageItem(node));
+              const item = toStorageItem(node);
+              if ((e.ctrlKey || e.metaKey || e.shiftKey) && onToggleSelectItem) {
+                onToggleSelectItem(item, e);
+              } else {
+                onSelectFile(item);
+              }
             }
           }}
           onContextMenu={(e) => onContextMenu(e, toStorageItem(node))}
-          style={{ paddingLeft: `${depth * 14 + 6}px` }}
-          className={`group flex items-center gap-2 py-1.5 pr-2 rounded-[5px] text-[13.5px] sm:text-[14px] transition-all cursor-pointer ${
+          style={{ paddingLeft: `${depth * 18 + 12}px` }}
+          className={`group flex items-center gap-2.5 py-2 pr-4 w-full text-[13.5px] transition-colors cursor-pointer whitespace-nowrap border-b border-[#141414] select-none ${
             isSelfDragged ? 'opacity-40' : ''
           } ${
             isTreeDropTarget
-              ? 'bg-blue-600/30 text-white ring-1 ring-blue-500/60 font-semibold'
-              : isCurrentFolder || isSelected
-              ? 'bg-[#1a1a1a] text-white font-medium'
-              : 'text-[#cccccc] hover:text-white hover:bg-[#141414]'
+              ? 'bg-blue-600/20 text-white font-medium'
+              : isSelected
+              ? 'bg-[#1e1e1e] text-white font-medium'
+              : isCurrentFolder
+              ? 'bg-[#141414] text-white font-medium'
+              : 'text-[#a1a1aa] hover:text-white hover:bg-[#101010]'
           }`}
         >
           {isFolder ? (
@@ -396,9 +416,9 @@ export function FileTree({
                 className="w-4 h-4 flex items-center justify-center text-[#777777] hover:text-white rounded shrink-0 cursor-default"
               >
                 {isExpanded ? (
-                  <ChevronDown className="w-3.5 h-3.5" />
+                  <ChevronDown className="w-4 h-4" />
                 ) : (
-                  <ChevronRight className="w-3.5 h-3.5" />
+                  <ChevronRight className="w-4 h-4" />
                 )}
               </button>
               {isExpanded ? (
@@ -410,11 +430,11 @@ export function FileTree({
           ) : (
             <>
               <span className="w-4 h-4 shrink-0" />
-              {getFileIcon(node.name, 'w-3.5 h-3.5 shrink-0')}
+              {getFileIcon(node.name, 'w-4 h-4 shrink-0')}
             </>
           )}
 
-          <span className="truncate flex-1" title={node.name}>
+          <span className={`whitespace-nowrap pr-2 font-normal ${isSelected ? 'text-white font-medium' : ''}`} title={node.name}>
             {node.name}
           </span>
         </div>
@@ -423,7 +443,7 @@ export function FileTree({
         {isFolder && isExpanded && node.children.length > 0 && (
           <div className="relative">
             <div
-              style={{ left: `${depth * 14 + 13}px` }}
+              style={{ left: `${depth * 18 + 19}px` }}
               className="absolute top-0 bottom-0 w-px bg-[#1f1f1f] pointer-events-none"
             />
             {node.children.map((child) => renderNode(child, depth + 1))}
@@ -436,7 +456,7 @@ export function FileTree({
   return (
     <div className="flex flex-col h-full overflow-hidden font-sans">
       {/* Explorer Tree Header Bar (h-9 matches StorageListView table header) */}
-      <div className="h-9 shrink-0 px-3 border-b border-[#222222] flex items-center justify-between text-[12.5px] font-medium text-[#888888] bg-[#0a0a0a]">
+      <div className="h-10 shrink-0 px-3 border-b border-[#222222] flex items-center justify-between text-[13px] font-medium text-[#888888] bg-[#0a0a0a]">
         <div
           onClick={() => onSelectFolder('', null)}
           onDragOver={(e) => {
@@ -472,7 +492,7 @@ export function FileTree({
           }`}
           title="Root directory"
         >
-          <TreeIcon className="w-3.5 h-3.5 text-[#666666]" />
+          <TreeIcon className="w-4 h-4 text-[#888888]" />
           <span>Files</span>
         </div>
 
@@ -481,70 +501,68 @@ export function FileTree({
             type="button"
             onClick={onNewFolder}
             title="New Folder"
-            className="p-1 rounded text-[#8c8c8c] hover:text-white hover:bg-[#1a1a1a] transition-colors cursor-pointer"
+            className="p-1.5 rounded-[6px] text-[#8c8c8c] hover:text-white hover:bg-[#1a1a1a] transition-colors cursor-pointer"
           >
-            <FolderPlus className="w-3.5 h-3.5" />
+            <FolderPlus className="w-4 h-4" />
           </button>
           <button
             type="button"
             onClick={onUpload}
             title="Upload Files"
-            className="p-1 rounded text-[#8c8c8c] hover:text-white hover:bg-[#1a1a1a] transition-colors cursor-pointer"
+            className="p-1.5 rounded-[6px] text-[#8c8c8c] hover:text-white hover:bg-[#1a1a1a] transition-colors cursor-pointer"
           >
-            <Upload className="w-3.5 h-3.5" />
+            <Upload className="w-4 h-4" />
           </button>
           {onRefresh && (
             <button
               type="button"
               onClick={onRefresh}
               title="Refresh"
-              className="p-1 rounded text-[#8c8c8c] hover:text-white hover:bg-[#1a1a1a] transition-colors cursor-pointer"
+              className="p-1.5 rounded-[6px] text-[#8c8c8c] hover:text-white hover:bg-[#1a1a1a] transition-colors cursor-pointer"
             >
-              <RefreshCw className="w-3.5 h-3.5" />
+              <RefreshCw className="w-4 h-4" />
             </button>
           )}
         </div>
       </div>
 
-      {/* Tree View Scrolling List */}
+      {/* Tree View Scrolling List with Horizontal & Vertical Scroll, Edge-to-Edge Grid Style */}
       <div
         onClick={(e) => {
           if (!(e.target as HTMLElement).closest('[data-storage-item="true"]')) {
             onClearSelection?.();
           }
         }}
-        className="flex-1 overflow-y-auto px-1 py-1.5 space-y-0.5 scrollbar-thin scrollbar-thumb-[#222222]"
+        className="flex-1 overflow-auto divide-y divide-[#141414] select-none font-sans scrollbar-thin scrollbar-thumb-[#262626] scrollbar-track-transparent"
       >
-        {isLoading ? (
-          <div className="p-2 space-y-2 animate-pulse">
-            <div className="flex items-center gap-2 py-1">
-              <div className="w-4 h-4 rounded-[3px] bg-[#16171d]/80 border border-[#1e2025]/40" />
-              <div className="h-3.5 w-24 rounded-[4px] bg-[#16171d]/80 border border-[#1e2025]/40" />
+        <div className="min-w-full inline-block align-top">
+          {isLoading ? (
+            <div className="divide-y divide-[#141414] animate-pulse">
+              <div className="flex items-center gap-2 py-2 px-3">
+                <div className="w-4 h-4 rounded-[3px] bg-[#1a1a1a]" />
+                <div className="h-3.5 w-24 rounded-[4px] bg-[#1a1a1a]" />
+              </div>
+              <div className="flex items-center gap-2 py-2 px-3 pl-7">
+                <div className="w-4 h-4 rounded-[3px] bg-[#1a1a1a]" />
+                <div className="h-3.5 w-28 rounded-[4px] bg-[#1a1a1a]" />
+              </div>
+              <div className="flex items-center gap-2 py-2 px-3 pl-7">
+                <div className="w-4 h-4 rounded-[3px] bg-[#1a1a1a]" />
+                <div className="h-3.5 w-20 rounded-[4px] bg-[#1a1a1a]" />
+              </div>
+              <div className="flex items-center gap-2 py-2 px-3 pl-11">
+                <div className="w-4 h-4 rounded-[3px] bg-[#1a1a1a]" />
+                <div className="h-3.5 w-24 rounded-[4px] bg-[#1a1a1a]" />
+              </div>
             </div>
-            <div className="flex items-center gap-2 py-1 pl-4">
-              <div className="w-4 h-4 rounded-[3px] bg-[#16171d]/60 border border-[#1e2025]/30" />
-              <div className="h-3.5 w-28 rounded-[4px] bg-[#16171d]/60 border border-[#1e2025]/30" />
+          ) : treeNodes.length === 0 ? (
+            <div className="p-4 text-center text-[12px] text-[#666666]">
+              No files or folders yet.
             </div>
-            <div className="flex items-center gap-2 py-1 pl-4">
-              <div className="w-4 h-4 rounded-[3px] bg-[#16171d]/60 border border-[#1e2025]/30" />
-              <div className="h-3.5 w-20 rounded-[4px] bg-[#16171d]/60 border border-[#1e2025]/30" />
-            </div>
-            <div className="flex items-center gap-2 py-1 pl-8">
-              <div className="w-4 h-4 rounded-[3px] bg-[#16171d]/50 border border-[#1e2025]/20" />
-              <div className="h-3.5 w-24 rounded-[4px] bg-[#16171d]/50 border border-[#1e2025]/20" />
-            </div>
-            <div className="flex items-center gap-2 py-1">
-              <div className="w-4 h-4 rounded-[3px] bg-[#16171d]/80 border border-[#1e2025]/40" />
-              <div className="h-3.5 w-32 rounded-[4px] bg-[#16171d]/80 border border-[#1e2025]/40" />
-            </div>
-          </div>
-        ) : treeNodes.length === 0 ? (
-          <div className="p-4 text-center text-[12px] text-[#666666]">
-            No files or folders yet.
-          </div>
-        ) : (
-          treeNodes.map((node) => renderNode(node, 0))
-        )}
+          ) : (
+            treeNodes.map((node) => renderNode(node, 0))
+          )}
+        </div>
       </div>
     </div>
   );

@@ -6,11 +6,11 @@
  * Last structural change: Phase 4 mounting /mcp/v1 Model Context Protocol router.
  */
 
-use axiom_core::AxiomError;
-use axiom_core::ConfigManager;
 use crate::middleware::{
     auth::auth_middleware, rate_limit::rate_limit_middleware, waf::waf_middleware,
 };
+use axiom_core::AxiomError;
+use axiom_core::ConfigManager;
 use axum::http::header;
 use axum::{http::StatusCode, middleware, response::IntoResponse, routing::get, Json, Router};
 use serde_json::json;
@@ -74,63 +74,83 @@ async fn prometheus_metrics(
         return Ok(axum::response::Response::builder()
             .header(header::CONTENT_TYPE, "application/json; charset=utf-8")
             .body(axum::body::Body::from(body))
-            .unwrap());
+            .unwrap_or_else(|_| axum::response::Response::default()));
     }
 
     Ok(axum::response::Response::builder()
-        .header(header::CONTENT_TYPE, "text/plain; version=0.0.4; charset=utf-8")
-        .body(axum::body::Body::from(crate::metrics::MetricsEngine::render_prometheus()))
-        .unwrap())
+        .header(
+            header::CONTENT_TYPE,
+            "text/plain; version=0.0.4; charset=utf-8",
+        )
+        .body(axum::body::Body::from(
+            crate::metrics::MetricsEngine::render_prometheus(),
+        ))
+        .unwrap_or_else(|_| axum::response::Response::default()))
 }
 
 pub fn create_app() -> Router {
     let config = ConfigManager::get();
 
+    // CORS Method Allowlist: PUT is essential for direct blob uploads and multipart uploads (SEC-3)
     let allowed_methods = [
         axum::http::Method::GET,
         axum::http::Method::POST,
+        axum::http::Method::PUT,
         axum::http::Method::PATCH,
         axum::http::Method::DELETE,
         axum::http::Method::HEAD,
         axum::http::Method::OPTIONS,
     ];
 
+    // CORS Request Headers: Support media streaming (Range), cache validation (If-None-Match),
+    // and resumable blob uploads (x-upload-offset)
     let allowed_headers = [
         header::CONTENT_TYPE,
         header::AUTHORIZATION,
         header::ACCEPT,
         header::ORIGIN,
+        header::RANGE,
+        header::IF_NONE_MATCH,
+        header::IF_MATCH,
         header::HeaderName::from_static("x-axiom-key"),
         header::HeaderName::from_static("x-api-key"),
         header::HeaderName::from_static("idempotency-key"),
         header::HeaderName::from_static("x-request-id"),
+        header::HeaderName::from_static("x-upload-offset"),
     ];
 
+    // CORS Exposed Response Headers: Expose ETag and Content-Range so browsers can handle media ranges and caching
     let exposed_headers = [
+        header::ETAG,
+        header::CONTENT_RANGE,
+        header::ACCEPT_RANGES,
+        header::CONTENT_LENGTH,
         header::HeaderName::from_static("x-request-id"),
         header::HeaderName::from_static("x-idempotency-hit"),
         header::HeaderName::from_static("x-ratelimit-limit"),
         header::HeaderName::from_static("x-ratelimit-remaining"),
+        header::HeaderName::from_static("x-upload-offset"),
     ];
 
     let mut cors = CorsLayer::new()
         .allow_methods(allowed_methods)
         .allow_headers(allowed_headers)
         .expose_headers(exposed_headers);
-        
+
     if config.server.cors_origins.iter().any(|o| o == "*") {
         tracing::warn!("SECURITY WARNING: cors_origins contains '*' — any website can read API responses. Pin explicit origins in production.");
         cors = cors.allow_origin(Any);
     } else {
-        let origins: Vec<axum::http::HeaderValue> = config.server.cors_origins
+        let origins: Vec<axum::http::HeaderValue> = config
+            .server
+            .cors_origins
             .iter()
             .filter_map(|o| o.parse().ok())
             .collect();
         cors = cors.allow_origin(tower_http::cors::AllowOrigin::list(origins));
     }
     // Core Routes
-    let core_routes =
-        crate::core::health::get_router();
+    let core_routes = crate::core::health::get_router();
 
     // API versioning wrapper
     let api_routes = Router::new()
@@ -144,8 +164,7 @@ pub fn create_app() -> Router {
         .layer(middleware::from_fn(rate_limit_middleware));
 
     // Admin API versioning wrapper (auth applied inside get_router for protected routes)
-    let admin_routes = crate::admin::get_router()
-        .layer(middleware::from_fn(rate_limit_middleware));
+    let admin_routes = crate::admin::get_router().layer(middleware::from_fn(rate_limit_middleware));
 
     // Model Context Protocol (MCP) versioning wrapper
     let mcp_routes = crate::mcp::router::get_router()
@@ -158,6 +177,7 @@ pub fn create_app() -> Router {
     Router::new()
         .nest("/api/v1", api_routes)
         .nest("/admin/v1", admin_routes)
+        .nest("/internal/v1/cluster", crate::cluster::cluster_router())
         .nest("/mcp/v1", mcp_routes)
         .nest("/system", ui_routes)
         .route("/system/", get(crate::ui::index_handler))
@@ -169,7 +189,9 @@ pub fn create_app() -> Router {
             get(prometheus_metrics).layer(middleware::from_fn(auth_middleware)),
         )
         .fallback(fallback_handler)
-        .layer(middleware::from_fn(crate::middleware::metrics::metrics_middleware))
+        .layer(middleware::from_fn(
+            crate::middleware::metrics::metrics_middleware,
+        ))
         .layer(cors)
         .layer(tower_http::timeout::TimeoutLayer::new(
             std::time::Duration::from_secs(if config.server.request_timeout > 0 {
@@ -205,7 +227,9 @@ pub fn create_app() -> Router {
             header::HeaderValue::from_static("default-src 'none'; frame-ancestors 'none';"),
         ))
         .layer(tower_http::request_id::PropagateRequestIdLayer::x_request_id())
-        .layer(tower_http::request_id::SetRequestIdLayer::x_request_id(tower_http::request_id::MakeRequestUuid))
+        .layer(tower_http::request_id::SetRequestIdLayer::x_request_id(
+            tower_http::request_id::MakeRequestUuid,
+        ))
         .layer(axum::extract::DefaultBodyLimit::max(
             axiom_core::parse_size(&config.server.body_limit).unwrap_or(10 * 1024 * 1024) as usize,
         ))

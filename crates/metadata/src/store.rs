@@ -26,6 +26,15 @@ use crate::snapshot::{
 // ─── Connection Registry ───────────────────────────────────────────────────
 static METADATA_CONN: OnceCell<Arc<Mutex<Connection>>> = OnceCell::const_new();
 static STORE_LOCK: Lazy<tokio::sync::Mutex<()>> = Lazy::new(|| tokio::sync::Mutex::new(()));
+static AUDIT_CHANNEL: OnceCell<tokio::sync::mpsc::Sender<AuditTask>> = OnceCell::const_new();
+
+struct AuditTask {
+    timestamp: i64,
+    actor: String,
+    action: String,
+    target: String,
+    details: String,
+}
 static DUMMY_HASH: Lazy<String> = Lazy::new(|| {
     let salt = SaltString::generate(&mut OsRng);
     Argon2::default()
@@ -79,6 +88,34 @@ impl MetadataStore {
 
         let _ = METADATA_CONN.set(Arc::new(Mutex::new(conn)));
 
+        // Spawn background lock-free audit ingestion worker
+        if AUDIT_CHANNEL.get().is_none() {
+            let (tx, mut rx) = tokio::sync::mpsc::channel::<AuditTask>(10_000);
+            let _ = AUDIT_CHANNEL.set(tx);
+
+            tokio::spawn(async move {
+                let mut buffer = Vec::with_capacity(256);
+                let mut interval = tokio::time::interval(std::time::Duration::from_millis(250));
+
+                loop {
+                    tokio::select! {
+                        biased;
+                        Some(task) = rx.recv() => {
+                            buffer.push(task);
+                            if buffer.len() >= 256 {
+                                Self::flush_audit_batch(&mut buffer).await;
+                            }
+                        }
+                        _ = interval.tick() => {
+                            if !buffer.is_empty() {
+                                Self::flush_audit_batch(&mut buffer).await;
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
         // Synchronize in-memory snapshot immediately upon connection
         Self::sync_snapshot().await?;
 
@@ -104,7 +141,8 @@ impl MetadataStore {
                 role_name TEXT NOT NULL REFERENCES roles(name) ON DELETE CASCADE,
                 database TEXT NOT NULL,
                 table_name TEXT NOT NULL,
-                operations TEXT NOT NULL
+                operations TEXT NOT NULL,
+                rls_filter TEXT
             );",
             "CREATE TABLE IF NOT EXISTS api_keys (
                 name TEXT PRIMARY KEY,
@@ -166,6 +204,23 @@ impl MetadataStore {
                 value TEXT NOT NULL,
                 created_at INTEGER NOT NULL
             );",
+            "CREATE TABLE IF NOT EXISTS cluster_nodes (
+                node_id TEXT PRIMARY KEY,
+                moniker TEXT NOT NULL,
+                url TEXT NOT NULL,
+                shared_secret_hash BLOB NOT NULL,
+                status TEXT NOT NULL,
+                last_ping_ms INTEGER DEFAULT 0,
+                last_seen_at INTEGER NOT NULL,
+                created_at INTEGER NOT NULL
+            );",
+            "CREATE TABLE IF NOT EXISTS cluster_events (
+                event_id TEXT PRIMARY KEY,
+                event_type TEXT NOT NULL,
+                payload TEXT NOT NULL,
+                origin_node_id TEXT NOT NULL,
+                created_at INTEGER NOT NULL
+            );",
         ];
 
         for stmt in statements {
@@ -173,6 +228,11 @@ impl MetadataStore {
                 .await
                 .map_err(|e| format!("Metadata schema creation failed on '{}': {}", stmt, e))?;
         }
+
+        // Idempotently ensure rls_filter column exists for preexisting databases
+        let _ = conn
+            .execute("ALTER TABLE permissions ADD COLUMN rls_filter TEXT", ())
+            .await;
 
         Ok(())
     }
@@ -218,7 +278,7 @@ impl MetadataStore {
 
         let mut perm_rows = conn
             .query(
-                "SELECT role_name, database, table_name, operations FROM permissions",
+                "SELECT role_name, database, table_name, operations, rls_filter FROM permissions",
                 (),
             )
             .await
@@ -232,11 +292,17 @@ impl MetadataStore {
                 row.get_str(3),
             ) {
                 let operations: Vec<String> = serde_json::from_str(ops_json).unwrap_or_default();
+                let rls_filter = row
+                    .get_str(4)
+                    .ok()
+                    .map(|s| s.to_string())
+                    .filter(|s| !s.trim().is_empty());
                 if let Some(role) = roles_map.get_mut(role_name) {
                     role.permissions.push(PermissionSnapshot {
                         database: database.to_string(),
                         table_name: table_name.to_string(),
                         operations,
+                        rls_filter,
                     });
                 }
             }
@@ -320,8 +386,6 @@ impl MetadataStore {
         Ok(())
     }
 
-
-
     // ─── Key Management API ────────────────────────────────────────────────
 
     /// Creates a new API key, persists BLAKE3 hash to SQLite, and returns generated secret.
@@ -363,11 +427,17 @@ impl MetadataStore {
         .await
         .map_err(|e| format!("Failed to create API key: {}", e))?;
 
-        let _ = conn.execute(
-            "INSERT INTO audit_log (timestamp, actor, action, target, details) \
+        let _ = conn
+            .execute(
+                "INSERT INTO audit_log (timestamp, actor, action, target, details) \
              VALUES (?1, 'admin', 'key.create', ?2, ?3)",
-            libsql::params![now_unix, name, format!("role={}", role_name.unwrap_or("none"))],
-        ).await;
+                libsql::params![
+                    now_unix,
+                    name,
+                    format!("role={}", role_name.unwrap_or("none"))
+                ],
+            )
+            .await;
 
         drop(conn);
         Self::sync_snapshot().await?;
@@ -411,11 +481,13 @@ impl MetadataStore {
             .unwrap_or_default()
             .as_secs() as i64;
 
-        let _ = conn.execute(
-            "INSERT INTO audit_log (timestamp, actor, action, target, details) \
+        let _ = conn
+            .execute(
+                "INSERT INTO audit_log (timestamp, actor, action, target, details) \
              VALUES (?1, 'admin', 'key.rotate', ?2, 'Secret regenerated')",
-            libsql::params![now_unix, name],
-        ).await;
+                libsql::params![now_unix, name],
+            )
+            .await;
 
         drop(conn);
         Self::sync_snapshot().await?;
@@ -439,11 +511,13 @@ impl MetadataStore {
                 .unwrap_or_default()
                 .as_secs() as i64;
 
-            let _ = conn.execute(
-                "INSERT INTO audit_log (timestamp, actor, action, target, details) \
+            let _ = conn
+                .execute(
+                    "INSERT INTO audit_log (timestamp, actor, action, target, details) \
                  VALUES (?1, 'admin', 'key.delete', ?2, NULL)",
-                libsql::params![now_unix, name],
-            ).await;
+                    libsql::params![now_unix, name],
+                )
+                .await;
         }
 
         drop(conn);
@@ -515,20 +589,27 @@ impl MetadataStore {
         for perm in permissions {
             let ops_json = serde_json::to_string(&perm.operations)
                 .map_err(|e| format!("Invalid operations array: {}", e))?;
+            let rls_val = perm.rls_filter.as_deref().unwrap_or("");
 
             conn.execute(
-                "INSERT INTO permissions (role_name, database, table_name, operations) VALUES (?1, ?2, ?3, ?4)",
-                libsql::params![name, perm.database.as_str(), perm.table_name.as_str(), ops_json.as_str()],
+                "INSERT INTO permissions (role_name, database, table_name, operations, rls_filter) VALUES (?1, ?2, ?3, ?4, ?5)",
+                libsql::params![name, perm.database.as_str(), perm.table_name.as_str(), ops_json.as_str(), rls_val],
             )
             .await
             .map_err(|e| format!("Failed to create permission for role '{}': {}", name, e))?;
         }
 
-        let _ = conn.execute(
-            "INSERT INTO audit_log (timestamp, actor, action, target, details) \
+        let _ = conn
+            .execute(
+                "INSERT INTO audit_log (timestamp, actor, action, target, details) \
              VALUES (?1, 'admin', 'role.create', ?2, ?3)",
-            libsql::params![now_unix, name, format!("permissions_count={}", permissions.len())],
-        ).await;
+                libsql::params![
+                    now_unix,
+                    name,
+                    format!("permissions_count={}", permissions.len())
+                ],
+            )
+            .await;
 
         drop(conn);
         Self::sync_snapshot().await?;
@@ -571,21 +652,24 @@ impl MetadataStore {
             for perm in &perms {
                 let ops_json = serde_json::to_string(&perm.operations)
                     .map_err(|e| format!("Invalid operations array: {}", e))?;
+                let rls_val = perm.rls_filter.as_deref().unwrap_or("");
 
                 conn.execute(
-                    "INSERT INTO permissions (role_name, database, table_name, operations) VALUES (?1, ?2, ?3, ?4)",
-                    libsql::params![name, perm.database.as_str(), perm.table_name.as_str(), ops_json.as_str()],
+                    "INSERT INTO permissions (role_name, database, table_name, operations, rls_filter) VALUES (?1, ?2, ?3, ?4, ?5)",
+                    libsql::params![name, perm.database.as_str(), perm.table_name.as_str(), ops_json.as_str(), rls_val],
                 )
                 .await
                 .map_err(|e| format!("Failed to insert updated permission: {}", e))?;
             }
         }
 
-        let _ = conn.execute(
-            "INSERT INTO audit_log (timestamp, actor, action, target, details) \
+        let _ = conn
+            .execute(
+                "INSERT INTO audit_log (timestamp, actor, action, target, details) \
              VALUES (?1, 'admin', 'role.update', ?2, NULL)",
-            libsql::params![now_unix, name],
-        ).await;
+                libsql::params![now_unix, name],
+            )
+            .await;
 
         drop(conn);
         Self::sync_snapshot().await?;
@@ -601,7 +685,24 @@ impl MetadataStore {
         let _guard = STORE_LOCK.lock().await;
         let conn = Self::get_conn().await?;
 
-        let _ = conn.execute("DELETE FROM permissions WHERE role_name = ?1", [name]).await;
+        // Check referential integrity: do not delete role if active API keys are assigned to it
+        let mut key_rows = conn
+            .query("SELECT COUNT(*) FROM api_keys WHERE role_name = ?1", [name])
+            .await
+            .map_err(|e| format!("Failed to check role references: {}", e))?;
+        if let Ok(Some(row)) = key_rows.next().await {
+            let count: i64 = row.get(0).unwrap_or(0);
+            if count > 0 {
+                return Err(format!(
+                    "Cannot delete role '{}': {} active API key(s) are currently assigned to it",
+                    name, count
+                ));
+            }
+        }
+
+        let _ = conn
+            .execute("DELETE FROM permissions WHERE role_name = ?1", [name])
+            .await;
         let affected = conn
             .execute("DELETE FROM roles WHERE name = ?1", [name])
             .await
@@ -613,11 +714,13 @@ impl MetadataStore {
                 .unwrap_or_default()
                 .as_secs() as i64;
 
-            let _ = conn.execute(
-                "INSERT INTO audit_log (timestamp, actor, action, target, details) \
+            let _ = conn
+                .execute(
+                    "INSERT INTO audit_log (timestamp, actor, action, target, details) \
                  VALUES (?1, 'admin', 'role.delete', ?2, NULL)",
-                libsql::params![now_unix, name],
-            ).await;
+                    libsql::params![now_unix, name],
+                )
+                .await;
         }
 
         drop(conn);
@@ -633,7 +736,10 @@ impl MetadataStore {
     pub async fn list_roles() -> Result<Vec<RoleRecord>, String> {
         let conn = Self::get_conn().await?;
         let mut role_rows = conn
-            .query("SELECT name, description, created_at FROM roles ORDER BY name ASC", ())
+            .query(
+                "SELECT name, description, created_at FROM roles ORDER BY name ASC",
+                (),
+            )
             .await
             .map_err(|e| e.to_string())?;
 
@@ -655,7 +761,7 @@ impl MetadataStore {
         for role in &mut roles {
             let mut perm_rows = conn
                 .query(
-                    "SELECT id, database, table_name, operations FROM permissions WHERE role_name = ?1",
+                    "SELECT id, database, table_name, operations, rls_filter FROM permissions WHERE role_name = ?1",
                     [role.name.as_str()],
                 )
                 .await
@@ -667,6 +773,11 @@ impl MetadataStore {
                 let table_name: String = row.get(2).map_err(|e| e.to_string())?;
                 let ops_json: String = row.get(3).unwrap_or_else(|_| "[]".to_string());
                 let operations: Vec<String> = serde_json::from_str(&ops_json).unwrap_or_default();
+                let rls_filter = row
+                    .get_str(4)
+                    .ok()
+                    .map(|s| s.to_string())
+                    .filter(|s| !s.trim().is_empty());
 
                 role.permissions.push(PermissionRecord {
                     id,
@@ -674,6 +785,7 @@ impl MetadataStore {
                     database,
                     table_name,
                     operations,
+                    rls_filter,
                 });
             }
         }
@@ -747,9 +859,12 @@ impl MetadataStore {
                 .await
                 .map_err(|e| format!("Database query error: {}", e))?;
             if let Ok(Some(row)) = rows.next().await {
-                row.get::<String>(0).map_err(|e| format!("Failed to read existing url: {}", e))?
+                row.get::<String>(0)
+                    .map_err(|e| format!("Failed to read existing url: {}", e))?
             } else {
-                return Err("Database connection URL cannot be empty for a new database".to_string());
+                return Err(
+                    "Database connection URL cannot be empty for a new database".to_string()
+                );
             }
         } else {
             url.to_string()
@@ -796,11 +911,15 @@ impl MetadataStore {
 
         if let Some(old) = old_alias {
             if old != alias {
-                let _ = conn.execute("DELETE FROM databases WHERE alias = ?1", [old]).await;
-                let _ = conn.execute(
-                    "UPDATE permissions SET database = ?1 WHERE database = ?2",
-                    libsql::params![alias, old],
-                ).await;
+                let _ = conn
+                    .execute("DELETE FROM databases WHERE alias = ?1", [old])
+                    .await;
+                let _ = conn
+                    .execute(
+                        "UPDATE permissions SET database = ?1 WHERE database = ?2",
+                        libsql::params![alias, old],
+                    )
+                    .await;
             }
         }
 
@@ -820,11 +939,13 @@ impl MetadataStore {
         .map_err(|e| format!("Failed to register database: {}", e))?;
 
         // Audit log entry for tracking infrastructure modifications
-        let _ = conn.execute(
-            "INSERT INTO audit_log (timestamp, actor, action, target, details) \
+        let _ = conn
+            .execute(
+                "INSERT INTO audit_log (timestamp, actor, action, target, details) \
              VALUES (?1, 'admin', 'db.add', ?2, ?3)",
-            libsql::params![now_unix, alias, format!("engine={}", engine_dialect)],
-        ).await;
+                libsql::params![now_unix, alias, format!("engine={}", engine_dialect)],
+            )
+            .await;
 
         drop(conn);
         Self::sync_snapshot().await?;
@@ -851,11 +972,13 @@ impl MetadataStore {
                 .unwrap_or_default()
                 .as_secs() as i64;
 
-            let _ = conn.execute(
-                "INSERT INTO audit_log (timestamp, actor, action, target, details) \
+            let _ = conn
+                .execute(
+                    "INSERT INTO audit_log (timestamp, actor, action, target, details) \
                  VALUES (?1, 'admin', 'db.delete', ?2, NULL)",
-                libsql::params![now_unix, alias],
-            ).await;
+                    libsql::params![now_unix, alias],
+                )
+                .await;
         }
 
         drop(conn);
@@ -928,29 +1051,54 @@ impl MetadataStore {
 
     /// Verifies an admin user's credentials using constant-time Argon2 verification.
     /// Resists username enumeration timing side-channels by performing dummy Argon2 computation if user is absent.
+    /// Enforces a strict concurrency limit (max 3 concurrent hashes) to prevent CPU starvation under credential stuffing attacks.
     pub async fn verify_user(username: &str, password: &str) -> Result<bool, String> {
-        let conn = Self::get_conn().await?;
-        let mut rows = conn
-            .query(
-                "SELECT password_hash FROM users WHERE username = ?1",
-                [username],
-            )
-            .await
-            .map_err(|e| e.to_string())?;
+        static ARGON2_SEMAPHORE: Lazy<Arc<tokio::sync::Semaphore>> =
+            Lazy::new(|| Arc::new(tokio::sync::Semaphore::new(3)));
 
-        let user_row = rows.next().await.ok().flatten();
-        let hash_to_verify = match &user_row {
-            Some(row) => row.get::<String>(0).map_err(|e| e.to_string())?,
-            None => DUMMY_HASH.clone(),
+        let (user_row_exists, hash_to_verify) = {
+            let conn = Self::get_conn().await?;
+            let mut rows = conn
+                .query(
+                    "SELECT password_hash FROM users WHERE username = ?1",
+                    [username],
+                )
+                .await
+                .map_err(|e| e.to_string())?;
+
+            let user_row = rows.next().await.ok().flatten();
+            let hash = match &user_row {
+                Some(row) => row.get::<String>(0).map_err(|e| e.to_string())?,
+                None => DUMMY_HASH.clone(),
+            };
+            (user_row.is_some(), hash)
         };
 
-        let parsed_hash = PasswordHash::new(&hash_to_verify)
-            .map_err(|e| format!("Invalid stored password hash: {}", e))?;
-        let matches = Argon2::default()
-            .verify_password(password.as_bytes(), &parsed_hash)
-            .is_ok();
+        let password_owned = password.to_string();
+        let permit = match tokio::time::timeout(
+            std::time::Duration::from_millis(500),
+            ARGON2_SEMAPHORE.clone().acquire_owned(),
+        )
+        .await
+        {
+            Ok(Ok(p)) => p,
+            _ => return Err("SERVER_BUSY_AUTH_THROTTLED".to_string()),
+        };
 
-        Ok(user_row.is_some() && matches)
+        let is_match = tokio::task::spawn_blocking(move || {
+            let _permit = permit;
+            let parsed_hash = match PasswordHash::new(&hash_to_verify) {
+                Ok(h) => h,
+                Err(_) => return false,
+            };
+            Argon2::default()
+                .verify_password(password_owned.as_bytes(), &parsed_hash)
+                .is_ok()
+        })
+        .await
+        .map_err(|e| format!("Password verification task failed: {}", e))?;
+
+        Ok(user_row_exists && is_match)
     }
 
     /// Checks if any admin users exist in the system (used by setup wizard).
@@ -975,7 +1123,10 @@ impl MetadataStore {
     pub async fn list_users() -> Result<Vec<UserRecord>, String> {
         let conn = Self::get_conn().await?;
         let mut rows = conn
-            .query("SELECT id, username, created_at FROM users ORDER BY id ASC", ())
+            .query(
+                "SELECT id, username, created_at FROM users ORDER BY id ASC",
+                (),
+            )
             .await
             .map_err(|e| e.to_string())?;
 
@@ -1014,11 +1165,13 @@ impl MetadataStore {
                 .unwrap_or_default()
                 .as_secs() as i64;
 
-            let _ = conn.execute(
-                "INSERT INTO audit_log (timestamp, actor, action, target, details) \
+            let _ = conn
+                .execute(
+                    "INSERT INTO audit_log (timestamp, actor, action, target, details) \
                  VALUES (?1, 'cli', 'user.delete', ?2, NULL)",
-                libsql::params![now_unix, username],
-            ).await;
+                    libsql::params![now_unix, username],
+                )
+                .await;
         }
 
         Ok(affected > 0)
@@ -1039,7 +1192,10 @@ impl MetadataStore {
 
         // SECURITY (M-4): Generate raw cryptographically-random session token, but store only
         // its BLAKE3 hash in the database so session tokens cannot be harvested from backups/DB reads.
-        let raw_token = format!("axm_sess_{}", uuid::Uuid::new_v4().to_string().replace('-', ""));
+        let raw_token = format!(
+            "axm_sess_{}",
+            uuid::Uuid::new_v4().to_string().replace('-', "")
+        );
         let token_hash = blake3::hash(raw_token.as_bytes()).to_hex().to_string();
         let now_unix = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -1109,7 +1265,10 @@ impl MetadataStore {
         let token_hash = blake3::hash(session_id.as_bytes()).to_hex().to_string();
 
         let affected = conn
-            .execute("DELETE FROM sessions WHERE id = ?1 OR id = ?2", [token_hash.as_str(), session_id])
+            .execute(
+                "DELETE FROM sessions WHERE id = ?1 OR id = ?2",
+                [token_hash.as_str(), session_id],
+            )
             .await
             .map_err(|e| format!("Failed to delete session: {}", e))?;
 
@@ -1245,10 +1404,16 @@ impl MetadataStore {
             .as_secs() as i64;
 
         let _ = conn
-            .execute("DELETE FROM ip_bans WHERE expires_at > 0 AND expires_at <= ?1", [now_unix])
+            .execute(
+                "DELETE FROM ip_bans WHERE expires_at > 0 AND expires_at <= ?1",
+                [now_unix],
+            )
             .await;
         let _ = conn
-            .execute("DELETE FROM key_bans WHERE expires_at > 0 AND expires_at <= ?1", [now_unix])
+            .execute(
+                "DELETE FROM key_bans WHERE expires_at > 0 AND expires_at <= ?1",
+                [now_unix],
+            )
             .await;
 
         Ok(())
@@ -1515,7 +1680,9 @@ impl MetadataStore {
             .map_err(|e| format!("Failed to query system_secrets for key '{}': {}", key, e))?;
 
         if let Ok(Some(row)) = rows.next().await {
-            let val: String = row.get(0).map_err(|e| format!("Failed to read system secret: {}", e))?;
+            let val: String = row
+                .get(0)
+                .map_err(|e| format!("Failed to read system secret: {}", e))?;
             return Ok(val);
         }
 
@@ -1525,7 +1692,12 @@ impl MetadataStore {
             .unwrap_or_default()
             .as_secs() as i64;
 
-        let entropy = format!("{}_{}_{}", uuid::Uuid::new_v4(), now_unix, uuid::Uuid::new_v4());
+        let entropy = format!(
+            "{}_{}_{}",
+            uuid::Uuid::new_v4(),
+            now_unix,
+            uuid::Uuid::new_v4()
+        );
         let new_secret = blake3::hash(entropy.as_bytes()).to_hex().to_string();
 
         conn.execute(
@@ -1542,18 +1714,54 @@ impl MetadataStore {
     // ─── Audit Trail Management ────────────────────────────────────────────
     // Exposes immutable historical records of system modifications for compliance and forensic auditing.
 
-    /// Records an audit log entry in the metadata database.
-    /// CONTRACT:
-    ///  - Precondition: `actor`, `action`, and `target` non-empty strings.
-    ///  - Side effects: Appends an immutable record to SQLite `audit_log` table.
-    ///  - Idempotency: No (appends new historical log entry).
-    pub async fn record_audit(actor: &str, action: &str, target: &str, details: Option<&str>) -> Result<(), String> {
-        let conn = Self::get_conn().await?;
+    /// Flushes a batch of queued audit records to SQLite inside a single transaction.
+    async fn flush_audit_batch(buffer: &mut Vec<AuditTask>) {
+        if buffer.is_empty() {
+            return;
+        }
+
+        if let Ok(conn) = Self::get_conn().await {
+            let _ = conn.execute("BEGIN TRANSACTION", ()).await;
+            for task in buffer.drain(..) {
+                let _ = conn.execute(
+                    "INSERT INTO audit_log (timestamp, actor, action, target, details) VALUES (?1, ?2, ?3, ?4, ?5)",
+                    libsql::params![task.timestamp, task.actor, task.action, task.target, task.details],
+                ).await;
+            }
+            let _ = conn.execute("COMMIT", ()).await;
+        } else {
+            buffer.clear();
+        }
+    }
+
+    /// Records an audit log entry via non-blocking asynchronous queue (lock-free on data plane).
+    /// Falls back to direct write if background channel is uninitialized.
+    pub async fn record_audit(
+        actor: &str,
+        action: &str,
+        target: &str,
+        details: Option<&str>,
+    ) -> Result<(), String> {
         let now_unix = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs() as i64;
 
+        if let Some(tx) = AUDIT_CHANNEL.get() {
+            let task = AuditTask {
+                timestamp: now_unix,
+                actor: actor.to_string(),
+                action: action.to_string(),
+                target: target.to_string(),
+                details: details.unwrap_or("").to_string(),
+            };
+            if let Err(e) = tx.try_send(task) {
+                tracing::warn!("Audit queue full or dropped: {}", e);
+            }
+            return Ok(());
+        }
+
+        let conn = Self::get_conn().await?;
         conn.execute(
             "INSERT INTO audit_log (timestamp, actor, action, target, details) VALUES (?1, ?2, ?3, ?4, ?5)",
             libsql::params![now_unix, actor, action, target, details.unwrap_or("")],
@@ -1604,6 +1812,283 @@ impl MetadataStore {
         }
 
         Ok(records)
+    }
+
+    // ─── Cluster P2P Mesh Management ──────────────────────────────────────────
+    // Coordinates zero-config peer-to-peer discovery, mutual TLS/HMAC pairings, and state synchronization.
+
+    /// Retrieves or securely generates the local node's cluster identity (node_id, moniker, cluster_secret).
+    /// CONTRACT:
+    ///  - Postcondition: Returns `(node_id, moniker, cluster_secret)`.
+    ///  - Side effects: Persists missing identity tokens into `system_secrets`.
+    ///  - Idempotency: Yes.
+    pub async fn get_or_create_cluster_identity() -> Result<(String, String, String), String> {
+        let _guard = STORE_LOCK.lock().await;
+        let conn = Self::get_conn().await?;
+        let _ = Self::ensure_system_secrets_table(&conn).await;
+
+        let now_unix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+
+        // 1. Local Node ID
+        let mut node_rows = conn
+            .query(
+                "SELECT value FROM system_secrets WHERE key = 'cluster_node_id'",
+                (),
+            )
+            .await
+            .map_err(|e| format!("Query cluster_node_id failed: {}", e))?;
+
+        let node_id = if let Ok(Some(row)) = node_rows.next().await {
+            row.get::<String>(0).map_err(|e| e.to_string())?
+        } else {
+            let raw_uuid = uuid::Uuid::new_v4().to_string().replace('-', "");
+            let generated_id = format!("axm_node_{}", &raw_uuid[..16]);
+            conn.execute(
+                "INSERT INTO system_secrets (key, value, created_at) VALUES ('cluster_node_id', ?1, ?2)",
+                libsql::params![generated_id.clone(), now_unix],
+            )
+            .await
+            .map_err(|e| format!("Failed to persist cluster_node_id: {}", e))?;
+            generated_id
+        };
+
+        // 2. Moniker (human-readable node label)
+        let mut moniker_rows = conn
+            .query(
+                "SELECT value FROM system_secrets WHERE key = 'cluster_moniker'",
+                (),
+            )
+            .await
+            .map_err(|e| format!("Query cluster_moniker failed: {}", e))?;
+
+        let moniker = if let Ok(Some(row)) = moniker_rows.next().await {
+            row.get::<String>(0).map_err(|e| e.to_string())?
+        } else {
+            let default_moniker = format!("axiom-node-{}", &node_id[9..13]);
+            conn.execute(
+                "INSERT INTO system_secrets (key, value, created_at) VALUES ('cluster_moniker', ?1, ?2)",
+                libsql::params![default_moniker.clone(), now_unix],
+            )
+            .await
+            .map_err(|e| format!("Failed to persist cluster_moniker: {}", e))?;
+            default_moniker
+        };
+
+        // 3. Cluster Shared Secret
+        let mut secret_rows = conn
+            .query(
+                "SELECT value FROM system_secrets WHERE key = 'cluster_secret'",
+                (),
+            )
+            .await
+            .map_err(|e| format!("Query cluster_secret failed: {}", e))?;
+
+        let cluster_secret = if let Ok(Some(row)) = secret_rows.next().await {
+            row.get::<String>(0).map_err(|e| e.to_string())?
+        } else {
+            let entropy = format!(
+                "{}_{}_{}",
+                uuid::Uuid::new_v4(),
+                now_unix,
+                uuid::Uuid::new_v4()
+            );
+            let generated_secret = blake3::hash(entropy.as_bytes()).to_hex().to_string();
+            conn.execute(
+                "INSERT INTO system_secrets (key, value, created_at) VALUES ('cluster_secret', ?1, ?2)",
+                libsql::params![generated_secret.clone(), now_unix],
+            )
+            .await
+            .map_err(|e| format!("Failed to persist cluster_secret: {}", e))?;
+            generated_secret
+        };
+
+        Ok((node_id, moniker, cluster_secret))
+    }
+
+    /// Sets or updates the human-readable moniker for the local cluster node.
+    pub async fn set_cluster_moniker(moniker: &str) -> Result<(), String> {
+        let _guard = STORE_LOCK.lock().await;
+        let conn = Self::get_conn().await?;
+        let _ = Self::ensure_system_secrets_table(&conn).await;
+
+        let now_unix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+
+        conn.execute(
+            "INSERT INTO system_secrets (key, value, created_at) VALUES ('cluster_moniker', ?1, ?2) \
+             ON CONFLICT(key) DO UPDATE SET value = ?1",
+            libsql::params![moniker, now_unix],
+        )
+        .await
+        .map_err(|e| format!("Failed to set cluster_moniker: {}", e))?;
+
+        Ok(())
+    }
+
+    /// Lists all registered peer nodes in the cluster.
+    pub async fn list_peers() -> Result<Vec<PeerNodeRecord>, String> {
+        let conn = Self::get_conn().await?;
+        let mut rows = conn
+            .query(
+                "SELECT node_id, moniker, url, shared_secret_hash, status, last_ping_ms, last_seen_at, created_at \
+                 FROM cluster_nodes ORDER BY moniker ASC",
+                (),
+            )
+            .await
+            .map_err(|e| format!("Query cluster_nodes failed: {}", e))?;
+
+        let mut peers = Vec::new();
+        while let Ok(Some(row)) = rows.next().await {
+            let node_id: String = row.get(0).map_err(|e| e.to_string())?;
+            let moniker: String = row.get(1).map_err(|e| e.to_string())?;
+            let url: String = row.get(2).map_err(|e| e.to_string())?;
+            let shared_secret_hash: Vec<u8> = row.get(3).unwrap_or_default();
+            let status: String = row.get(4).map_err(|e| e.to_string())?;
+            let last_ping_ms: i64 = row.get(5).unwrap_or(0);
+            let last_seen_at: i64 = row.get(6).unwrap_or(0);
+            let created_at: i64 = row.get(7).unwrap_or(0);
+
+            peers.push(PeerNodeRecord {
+                node_id,
+                moniker,
+                url,
+                shared_secret_hash,
+                status,
+                last_ping_ms,
+                last_seen_at,
+                created_at,
+            });
+        }
+
+        Ok(peers)
+    }
+
+    /// Retrieves a single peer record by node_id.
+    pub async fn get_peer(node_id: &str) -> Result<Option<PeerNodeRecord>, String> {
+        let conn = Self::get_conn().await?;
+        let mut rows = conn
+            .query(
+                "SELECT node_id, moniker, url, shared_secret_hash, status, last_ping_ms, last_seen_at, created_at \
+                 FROM cluster_nodes WHERE node_id = ?1",
+                [node_id],
+            )
+            .await
+            .map_err(|e| format!("Query cluster_nodes for node '{}' failed: {}", node_id, e))?;
+
+        if let Ok(Some(row)) = rows.next().await {
+            let node_id: String = row.get(0).map_err(|e| e.to_string())?;
+            let moniker: String = row.get(1).map_err(|e| e.to_string())?;
+            let url: String = row.get(2).map_err(|e| e.to_string())?;
+            let shared_secret_hash: Vec<u8> = row.get(3).unwrap_or_default();
+            let status: String = row.get(4).map_err(|e| e.to_string())?;
+            let last_ping_ms: i64 = row.get(5).unwrap_or(0);
+            let last_seen_at: i64 = row.get(6).unwrap_or(0);
+            let created_at: i64 = row.get(7).unwrap_or(0);
+
+            Ok(Some(PeerNodeRecord {
+                node_id,
+                moniker,
+                url,
+                shared_secret_hash,
+                status,
+                last_ping_ms,
+                last_seen_at,
+                created_at,
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Inserts or updates a peer record in the cluster registry.
+    pub async fn upsert_peer(peer: &PeerNodeRecord) -> Result<(), String> {
+        let _guard = STORE_LOCK.lock().await;
+        let conn = Self::get_conn().await?;
+
+        conn.execute(
+            "INSERT INTO cluster_nodes (node_id, moniker, url, shared_secret_hash, status, last_ping_ms, last_seen_at, created_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8) \
+             ON CONFLICT(node_id) DO UPDATE SET moniker=?2, url=?3, shared_secret_hash=?4, status=?5, last_ping_ms=?6, last_seen_at=?7",
+            libsql::params![
+                peer.node_id.as_str(),
+                peer.moniker.as_str(),
+                peer.url.as_str(),
+                peer.shared_secret_hash.clone(),
+                peer.status.as_str(),
+                peer.last_ping_ms,
+                peer.last_seen_at,
+                peer.created_at,
+            ],
+        )
+        .await
+        .map_err(|e| format!("Failed to upsert peer '{}': {}", peer.node_id, e))?;
+
+        Ok(())
+    }
+
+    /// Removes a peer from the cluster mesh.
+    pub async fn remove_peer(node_id: &str) -> Result<(), String> {
+        let _guard = STORE_LOCK.lock().await;
+        let conn = Self::get_conn().await?;
+
+        conn.execute("DELETE FROM cluster_nodes WHERE node_id = ?1", [node_id])
+            .await
+            .map_err(|e| format!("Failed to remove peer '{}': {}", node_id, e))?;
+
+        Ok(())
+    }
+
+    /// Updates peer liveness status and round-trip latency.
+    pub async fn update_peer_status(
+        node_id: &str,
+        status: &str,
+        latency_ms: i64,
+    ) -> Result<(), String> {
+        let conn = Self::get_conn().await?;
+        let now_unix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+
+        conn.execute(
+            "UPDATE cluster_nodes SET status = ?1, last_ping_ms = ?2, last_seen_at = ?3 WHERE node_id = ?4",
+            libsql::params![status, latency_ms, now_unix, node_id],
+        )
+        .await
+        .map_err(|e| format!("Failed to update peer status for '{}': {}", node_id, e))?;
+
+        Ok(())
+    }
+
+    /// Records an ingested cluster event with deduplication.
+    /// Returns `Ok(true)` if the event was newly recorded, or `Ok(false)` if it was already processed.
+    pub async fn record_cluster_event(
+        event_id: &str,
+        event_type: &str,
+        payload: &str,
+        origin_node_id: &str,
+    ) -> Result<bool, String> {
+        let conn = Self::get_conn().await?;
+        let now_unix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+
+        let affected = conn
+            .execute(
+                "INSERT OR IGNORE INTO cluster_events (event_id, event_type, payload, origin_node_id, created_at) \
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                libsql::params![event_id, event_type, payload, origin_node_id, now_unix],
+            )
+            .await
+            .map_err(|e| format!("Failed to record cluster event '{}': {}", event_id, e))?;
+
+        Ok(affected > 0)
     }
 }
 
@@ -1658,7 +2143,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_in_memory_metadata_tables_and_queries() {
-        let db = libsql::Builder::new_local(":memory:").build().await.unwrap();
+        let db = libsql::Builder::new_local(":memory:")
+            .build()
+            .await
+            .unwrap();
         let conn = db.connect().unwrap();
         MetadataStore::create_tables(&conn).await.unwrap();
 
@@ -1671,7 +2159,10 @@ mod tests {
         .unwrap();
 
         let mut rows = conn
-            .query("SELECT username FROM users WHERE username = 'testadmin'", ())
+            .query(
+                "SELECT username FROM users WHERE username = 'testadmin'",
+                (),
+            )
             .await
             .unwrap();
         let row = rows.next().await.unwrap().unwrap();
@@ -1694,7 +2185,10 @@ mod tests {
         .unwrap();
 
         let mut perm_rows = conn
-            .query("SELECT operations FROM permissions WHERE role_name = 'read_role'", ())
+            .query(
+                "SELECT operations FROM permissions WHERE role_name = 'read_role'",
+                (),
+            )
             .await
             .unwrap();
         let perm_row = perm_rows.next().await.unwrap().unwrap();
@@ -1706,7 +2200,10 @@ mod tests {
     async fn test_rotate_key_table_operation() {
         // Sets up an in-memory SQLite store to verify that rotating an API key correctly
         // regenerates the stored BLAKE3 hash blob, invalidating the previous credential.
-        let db = libsql::Builder::new_local(":memory:").build().await.unwrap();
+        let db = libsql::Builder::new_local(":memory:")
+            .build()
+            .await
+            .unwrap();
         let conn = db.connect().unwrap();
         MetadataStore::create_tables(&conn).await.unwrap();
 
@@ -1739,19 +2236,28 @@ mod tests {
         .unwrap();
 
         let mut rows = conn
-            .query("SELECT secret_hash FROM api_keys WHERE name = 'rotate_test'", ())
+            .query(
+                "SELECT secret_hash FROM api_keys WHERE name = 'rotate_test'",
+                (),
+            )
             .await
             .unwrap();
         let row = rows.next().await.unwrap().unwrap();
         let stored_hash: Vec<u8> = row.get(0).unwrap();
 
-        assert_eq!(stored_hash, blake3::hash(b"new_rotated_secret_456").as_bytes());
+        assert_eq!(
+            stored_hash,
+            blake3::hash(b"new_rotated_secret_456").as_bytes()
+        );
         assert_ne!(stored_hash, blake3::hash(b"initial_secret_123").as_bytes());
     }
 
     #[tokio::test]
     async fn test_session_token_hashing_and_validation() {
-        let db_path = format!("file:test_session_{}.db", uuid::Uuid::new_v4().to_string().replace('-', ""));
+        let db_path = format!(
+            "file:test_session_{}.db",
+            uuid::Uuid::new_v4().to_string().replace('-', "")
+        );
         let db = libsql::Builder::new_local(&db_path).build().await.unwrap();
         let conn = db.connect().unwrap();
 
@@ -1767,7 +2273,10 @@ mod tests {
         .await
         .unwrap();
 
-        let raw_token = format!("axm_sess_{}", uuid::Uuid::new_v4().to_string().replace('-', ""));
+        let raw_token = format!(
+            "axm_sess_{}",
+            uuid::Uuid::new_v4().to_string().replace('-', "")
+        );
         let token_hash = blake3::hash(raw_token.as_bytes()).to_hex().to_string();
         let expires_at = 9999999999_i64;
 
@@ -1803,8 +2312,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_ip_and_key_ban_persistence() {
-        let db_path = format!("file:test_bans_{}.db", uuid::Uuid::new_v4().to_string().replace('-', ""));
-        let db = Builder::new_local(db_path.replace("file:", "")).build().await.unwrap();
+        let db_path = format!(
+            "file:test_bans_{}.db",
+            uuid::Uuid::new_v4().to_string().replace('-', "")
+        );
+        let db = Builder::new_local(db_path.replace("file:", ""))
+            .build()
+            .await
+            .unwrap();
         let conn = db.connect().unwrap();
 
         let statements = [
@@ -1834,12 +2349,21 @@ mod tests {
         conn.execute(
             "INSERT INTO ip_bans (ip, reason, banned_at, expires_at) VALUES (?1, ?2, ?3, ?4)",
             libsql::params!["192.168.1.100", "Perm ban", now_unix, 0i64],
-        ).await.unwrap();
+        )
+        .await
+        .unwrap();
 
         conn.execute(
             "INSERT INTO ip_bans (ip, reason, banned_at, expires_at) VALUES (?1, ?2, ?3, ?4)",
-            libsql::params!["192.168.1.200", "Expired ban", now_unix - 100, now_unix - 10],
-        ).await.unwrap();
+            libsql::params![
+                "192.168.1.200",
+                "Expired ban",
+                now_unix - 100,
+                now_unix - 10
+            ],
+        )
+        .await
+        .unwrap();
 
         // Query active
         let mut rows = conn
@@ -1855,7 +2379,10 @@ mod tests {
 
         // Cleanup expired
         let affected = conn
-            .execute("DELETE FROM ip_bans WHERE expires_at > 0 AND expires_at <= ?1", [now_unix])
+            .execute(
+                "DELETE FROM ip_bans WHERE expires_at > 0 AND expires_at <= ?1",
+                [now_unix],
+            )
             .await
             .unwrap();
         assert_eq!(affected, 1);
@@ -1865,8 +2392,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_blob_ticket_store_lifecycle() {
-        let db_path = format!("file:test_tickets_{}.db", uuid::Uuid::new_v4().to_string().replace('-', ""));
-        let db = Builder::new_local(db_path.replace("file:", "")).build().await.unwrap();
+        let db_path = format!(
+            "file:test_tickets_{}.db",
+            uuid::Uuid::new_v4().to_string().replace('-', "")
+        );
+        let db = Builder::new_local(db_path.replace("file:", ""))
+            .build()
+            .await
+            .unwrap();
         let conn = db.connect().unwrap();
         MetadataStore::create_tables(&conn).await.unwrap();
 
@@ -1897,10 +2430,15 @@ mod tests {
         conn.execute(
             "UPDATE blob_tickets SET revoked = 1 WHERE signature = 'sig_abc_123'",
             (),
-        ).await.unwrap();
+        )
+        .await
+        .unwrap();
 
         let mut check_rows = conn
-            .query("SELECT revoked FROM blob_tickets WHERE signature = 'sig_abc_123'", ())
+            .query(
+                "SELECT revoked FROM blob_tickets WHERE signature = 'sig_abc_123'",
+                (),
+            )
             .await
             .unwrap();
         let check_row = check_rows.next().await.unwrap().unwrap();
@@ -1912,12 +2450,20 @@ mod tests {
 
     #[tokio::test]
     async fn test_system_secrets_lifecycle() {
-        let db_path = format!("file:test_secrets_{}.db", uuid::Uuid::new_v4().to_string().replace('-', ""));
-        let db = Builder::new_local(db_path.replace("file:", "")).build().await.unwrap();
+        let db_path = format!(
+            "file:test_secrets_{}.db",
+            uuid::Uuid::new_v4().to_string().replace('-', "")
+        );
+        let db = Builder::new_local(db_path.replace("file:", ""))
+            .build()
+            .await
+            .unwrap();
         let conn = db.connect().unwrap();
         MetadataStore::create_tables(&conn).await.unwrap();
 
-        MetadataStore::ensure_system_secrets_table(&conn).await.unwrap();
+        MetadataStore::ensure_system_secrets_table(&conn)
+            .await
+            .unwrap();
         let s1 = {
             let entropy = format!("{}_{}", uuid::Uuid::new_v4(), uuid::Uuid::new_v4());
             blake3::hash(entropy.as_bytes()).to_hex().to_string()
@@ -1925,10 +2471,15 @@ mod tests {
         conn.execute(
             "INSERT INTO system_secrets (key, value, created_at) VALUES ('test_key', ?1, 100)",
             [s1.clone()],
-        ).await.unwrap();
+        )
+        .await
+        .unwrap();
 
         let mut rows = conn
-            .query("SELECT value FROM system_secrets WHERE key = 'test_key'", ())
+            .query(
+                "SELECT value FROM system_secrets WHERE key = 'test_key'",
+                (),
+            )
             .await
             .unwrap();
         let row = rows.next().await.unwrap().unwrap();
@@ -1937,5 +2488,76 @@ mod tests {
 
         let _ = std::fs::remove_file(db_path.replace("file:", ""));
     }
-}
 
+    #[tokio::test]
+    async fn test_cluster_mesh_lifecycle() {
+        let db_path = format!(
+            "file:test_cluster_{}.db",
+            uuid::Uuid::new_v4().to_string().replace('-', "")
+        );
+        let db = Builder::new_local(db_path.replace("file:", ""))
+            .build()
+            .await
+            .unwrap();
+        let conn = db.connect().unwrap();
+        MetadataStore::create_tables(&conn).await.unwrap();
+
+        // 1. Insert peer
+        let peer = PeerNodeRecord {
+            node_id: "axm_node_london".to_string(),
+            moniker: "London-Edge".to_string(),
+            url: "https://london.internal:4500".to_string(),
+            shared_secret_hash: vec![1, 2, 3, 4],
+            status: "connected".to_string(),
+            last_ping_ms: 24,
+            last_seen_at: 1000,
+            created_at: 1000,
+        };
+
+        conn.execute(
+            "INSERT INTO cluster_nodes (node_id, moniker, url, shared_secret_hash, status, last_ping_ms, last_seen_at, created_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            libsql::params![
+                peer.node_id.as_str(),
+                peer.moniker.as_str(),
+                peer.url.as_str(),
+                peer.shared_secret_hash.clone(),
+                peer.status.as_str(),
+                peer.last_ping_ms,
+                peer.last_seen_at,
+                peer.created_at,
+            ],
+        ).await.unwrap();
+
+        // 2. Query peer
+        let mut rows = conn
+            .query(
+                "SELECT moniker, status FROM cluster_nodes WHERE node_id = 'axm_node_london'",
+                (),
+            )
+            .await
+            .unwrap();
+        let row = rows.next().await.unwrap().unwrap();
+        let moniker: String = row.get(0).unwrap();
+        let status: String = row.get(1).unwrap();
+        assert_eq!(moniker, "London-Edge");
+        assert_eq!(status, "connected");
+
+        // 3. Cluster event deduplication
+        let inserted1 = conn.execute(
+            "INSERT OR IGNORE INTO cluster_events (event_id, event_type, payload, origin_node_id, created_at) \
+             VALUES ('evt_123', 'ban.ip', '{\"ip\":\"1.2.3.4\"}', 'axm_node_london', 1000)",
+            (),
+        ).await.unwrap();
+        assert_eq!(inserted1, 1);
+
+        let inserted2 = conn.execute(
+            "INSERT OR IGNORE INTO cluster_events (event_id, event_type, payload, origin_node_id, created_at) \
+             VALUES ('evt_123', 'ban.ip', '{\"ip\":\"1.2.3.4\"}', 'axm_node_london', 1000)",
+            (),
+        ).await.unwrap();
+        assert_eq!(inserted2, 0);
+
+        let _ = std::fs::remove_file(db_path.replace("file:", ""));
+    }
+}

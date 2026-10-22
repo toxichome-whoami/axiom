@@ -1,7 +1,10 @@
-﻿{
+{
   "entries": [
     {
       "path": "~/.agent/skills"
+    },
+    {
+      "path": "C:/Users/mrtx1/.agent/skills"
     }
   ]
 }

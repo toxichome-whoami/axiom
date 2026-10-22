@@ -49,7 +49,6 @@ pub fn get_uptime() -> f64 {
     START_TIME.elapsed().as_secs_f64()
 }
 
-
 use crate::middleware::auth::auth_middleware;
 use axum::middleware;
 

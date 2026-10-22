@@ -118,14 +118,18 @@ impl MetricsEngine {
             DB_QUERIES_TOTAL.load(Ordering::Relaxed)
         ));
 
-        out.push_str("# HELP axiom_auth_failures_total Total number of failed authentication attempts\n");
+        out.push_str(
+            "# HELP axiom_auth_failures_total Total number of failed authentication attempts\n",
+        );
         out.push_str("# TYPE axiom_auth_failures_total counter\n");
         out.push_str(&format!(
             "axiom_auth_failures_total {}\n",
             AUTH_FAILURES_TOTAL.load(Ordering::Relaxed)
         ));
 
-        out.push_str("# HELP axiom_rate_limit_rejections_total Total requests rejected by rate limits\n");
+        out.push_str(
+            "# HELP axiom_rate_limit_rejections_total Total requests rejected by rate limits\n",
+        );
         out.push_str("# TYPE axiom_rate_limit_rejections_total counter\n");
         out.push_str(&format!(
             "axiom_rate_limit_rejections_total {}\n",
@@ -154,7 +158,6 @@ mod tests {
         assert!(rendered.contains("axiom_http_requests_total"));
         assert!(rendered.contains("axiom_process_uptime_seconds"));
     }
-
 
     #[test]
     fn test_snapshot_json() {

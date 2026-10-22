@@ -29,20 +29,34 @@ pub async fn start_daemons() {
     } else {
         10_000
     };
-    if let Err(e) = axiom_cache::CacheEngine::init(&config.cache.turso_url, &config.cache.turso_token, max_l1).await {
+    if let Err(e) =
+        axiom_cache::CacheEngine::init(&config.cache.turso_url, &config.cache.turso_token, max_l1)
+            .await
+    {
         tracing::warn!("Failed to initialize L2 cache persistence: {}", e);
     }
 
     if cache_needs_turso || rl_needs_turso {
-        let url = if cache_needs_turso { &config.cache.turso_url } else { &config.rate_limit.turso_url };
-        let token = if cache_needs_turso { &config.cache.turso_token } else { &config.rate_limit.turso_token };
+        let url = if cache_needs_turso {
+            &config.cache.turso_url
+        } else {
+            &config.rate_limit.turso_url
+        };
+        let token = if cache_needs_turso {
+            &config.cache.turso_token
+        } else {
+            &config.rate_limit.turso_token
+        };
         if let Err(e) = crate::middleware::cache::TursoCache::init(url, token).await {
             tracing::error!("Failed to initialize Turso cache: {}", e);
         } else if cache_needs_turso && config.cache.enabled && config.cache.query_cache {
             let entries = crate::middleware::cache::TursoCache::get_all_active_query_cache().await;
             let count = entries.len();
             crate::database::handlers::warm_cache_from_turso(entries).await;
-            tracing::info!("Pre-warmed L1 RAM cache with {} entries from Turso L2 storage", count);
+            tracing::info!(
+                "Pre-warmed L1 RAM cache with {} entries from Turso L2 storage",
+                count
+            );
         }
     }
 
@@ -50,13 +64,34 @@ pub async fn start_daemons() {
     crate::security::ban_list::BanList::init_persistent().await;
 
     // Initialize Persistent Capability Ticket Secret from metadata store
-    match axiom_metadata::store::MetadataStore::get_or_create_system_secret("blob_ticket_secret").await {
+    match axiom_metadata::store::MetadataStore::get_or_create_system_secret("blob_ticket_secret")
+        .await
+    {
         Ok(secret) => {
             axiom_blob::tickets::set_ticket_secret(&secret);
-            tracing::info!("Capability ticket cryptographic secret synchronized from metadata store");
+            tracing::info!(
+                "Capability ticket cryptographic secret synchronized from metadata store"
+            );
         }
         Err(e) => {
-            tracing::error!("Failed to initialize capability ticket secret from metadata store: {}", e);
+            tracing::error!(
+                "Failed to initialize capability ticket secret from metadata store: {}",
+                e
+            );
+        }
+    }
+
+    // Initialize Cluster Node Identity (Node ID, Moniker, Secret)
+    match axiom_metadata::store::MetadataStore::get_or_create_cluster_identity().await {
+        Ok((node_id, moniker, _)) => {
+            tracing::info!(
+                "Cluster mesh identity initialized: '{}' ({})",
+                moniker,
+                node_id
+            );
+        }
+        Err(e) => {
+            tracing::error!("Failed to initialize cluster node identity: {}", e);
         }
     }
 
@@ -86,25 +121,37 @@ pub async fn start_daemons() {
         }
     });
 
+    // Background cluster peer heartbeat prober
+    let cluster_heartbeat_handle = tokio::spawn(async move {
+        crate::cluster::ClusterBroadcaster::run_heartbeat_loop().await;
+    });
+
     {
-        let mut tasks = DAEMONS.lock().unwrap();
+        let mut tasks = DAEMONS.lock().unwrap_or_else(|p| p.into_inner());
         tasks.push(cache_sweep_handle);
         tasks.push(rotator_handle);
         tasks.push(metadata_sync_handle);
+        tasks.push(cluster_heartbeat_handle);
     }
 
     // Initialize Native Blob Storage Engine (always enabled as native gateway feature)
     let inline_max = axiom_core::parse_size(&config.blob.inline_max).unwrap_or(64 * 1024);
-    let max_object = axiom_core::parse_size(&config.blob.max_object).unwrap_or(5 * 1024 * 1024 * 1024);
+    let max_object =
+        axiom_core::parse_size(&config.blob.max_object).unwrap_or(5 * 1024 * 1024 * 1024);
     if let Err(e) = crate::blobs::init_blob_engine(
         &config.blob.path,
         inline_max as u64,
         max_object as u64,
         config.blob.verify_reads,
-    ).await {
+    )
+    .await
+    {
         tracing::error!("Failed to initialize Native Blob Engine: {}", e);
     } else {
-        tracing::info!("Native Blob Storage Engine initialized at '{}'", config.blob.path);
+        tracing::info!(
+            "Native Blob Storage Engine initialized at '{}'",
+            config.blob.path
+        );
     }
 }
 
@@ -117,7 +164,7 @@ pub fn register_daemon(handle: tokio::task::JoinHandle<()>) {
 
 /// Aborts all active background daemon tasks during graceful server shutdown.
 pub async fn stop_daemons() {
-    let mut tasks = DAEMONS.lock().unwrap();
+    let mut tasks = DAEMONS.lock().unwrap_or_else(|p| p.into_inner());
     for task in tasks.drain(..) {
         task.abort();
     }

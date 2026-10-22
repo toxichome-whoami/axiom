@@ -10,10 +10,11 @@ use async_trait::async_trait;
 use base64::Engine;
 use libsql::{Builder, Connection, Database};
 
-use axiom_core::config::schema::DatabaseDefConfig;
 use crate::engines::base::{
-    ColumnInfo, CreateColumnRequest, DatabaseEngine, EngineError, ForeignKeyInfo, QueryResult, TableInfo,
+    ColumnInfo, CreateColumnRequest, DatabaseEngine, EngineError, ForeignKeyInfo, QueryResult,
+    TableInfo,
 };
+use axiom_core::config::schema::DatabaseDefConfig;
 
 pub struct LibsqlDatabaseEngine {
     config: DatabaseDefConfig,
@@ -39,7 +40,7 @@ impl DatabaseEngine for LibsqlDatabaseEngine {
     async fn connect(&mut self) -> Result<(), EngineError> {
         let mut url = self.config.url.clone();
         let mut token = String::new();
-        
+
         if let Some(idx) = url.find("?authToken=") {
             token = url[idx + 11..].to_string();
             url = url[..idx].to_string();
@@ -51,7 +52,8 @@ impl DatabaseEngine for LibsqlDatabaseEngine {
         // Handle libsql:// or sqlite:// or file://
         let is_remote = url.starts_with("libsql://") || url.starts_with("https://");
         // WHY computed before builder: Builder::new_remote moves url, so we must check first.
-        let is_memory = !is_remote && (url == ":memory:" || url.contains(":memory:?") || url.ends_with("/:memory:"));
+        let is_memory = !is_remote
+            && (url == ":memory:" || url.contains(":memory:?") || url.ends_with("/:memory:"));
         let db = if is_remote {
             Builder::new_remote(url, token)
                 .build()
@@ -59,7 +61,10 @@ impl DatabaseEngine for LibsqlDatabaseEngine {
                 .map_err(|e| EngineError::Connection(e.to_string()))?
         } else {
             // Local SQLite file
-            let path = url.replace("sqlite://", "").replace("file://", "").replace("file:", "");
+            let path = url
+                .replace("sqlite://", "")
+                .replace("file://", "")
+                .replace("file:", "");
             if !is_memory {
                 if let Some(parent) = std::path::Path::new(&path).parent() {
                     if !parent.as_os_str().is_empty() {
@@ -72,8 +77,10 @@ impl DatabaseEngine for LibsqlDatabaseEngine {
                 .await
                 .map_err(|e| EngineError::Connection(e.to_string()))?
         };
-        
-        let conn = db.connect().map_err(|e| EngineError::Connection(e.to_string()))?;
+
+        let conn = db
+            .connect()
+            .map_err(|e| EngineError::Connection(e.to_string()))?;
 
         // High-concurrency tuning for local SQLite storage:
         // - WAL journal mode: concurrent readers do not block writers and vice versa
@@ -114,10 +121,13 @@ impl DatabaseEngine for LibsqlDatabaseEngine {
         cursor: Option<String>,
         limit: usize,
     ) -> Result<Vec<TableInfo>, EngineError> {
-        let conn = self.conn.as_ref().ok_or_else(|| EngineError::Connection("Not connected".into()))?;
-        
+        let conn = self
+            .conn
+            .as_ref()
+            .ok_or_else(|| EngineError::Connection("Not connected".into()))?;
+
         let mut query_str = "SELECT name as table_name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'".to_string();
-        
+
         let mut params = vec![];
         if let Some(c) = cursor {
             query_str.push_str(" AND name > ?1");
@@ -125,9 +135,15 @@ impl DatabaseEngine for LibsqlDatabaseEngine {
         }
         query_str.push_str(&format!(" ORDER BY name ASC LIMIT {}", limit));
 
-        let stmt = conn.prepare(&query_str).await.map_err(|e| EngineError::Execution(e.to_string()))?;
-        let mut rows = stmt.query(libsql::params_from_iter(params)).await.map_err(|e| EngineError::Execution(e.to_string()))?;
-        
+        let stmt = conn
+            .prepare(&query_str)
+            .await
+            .map_err(|e| EngineError::Execution(e.to_string()))?;
+        let mut rows = stmt
+            .query(libsql::params_from_iter(params))
+            .await
+            .map_err(|e| EngineError::Execution(e.to_string()))?;
+
         let mut tables = Vec::new();
         while let Ok(Some(row)) = rows.next().await {
             if let Ok(name) = row.get_str(0) {
@@ -144,7 +160,10 @@ impl DatabaseEngine for LibsqlDatabaseEngine {
     }
 
     async fn count_tables(&self) -> Result<i64, EngineError> {
-        let conn = self.conn.as_ref().ok_or_else(|| EngineError::Connection("Not connected".into()))?;
+        let conn = self
+            .conn
+            .as_ref()
+            .ok_or_else(|| EngineError::Connection("Not connected".into()))?;
         let mut rows = conn
             .query("SELECT count(*) FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'", ())
             .await
@@ -158,15 +177,25 @@ impl DatabaseEngine for LibsqlDatabaseEngine {
     }
 
     async fn describe_table(&self, table: &str) -> Result<Vec<ColumnInfo>, EngineError> {
-        let conn = self.conn.as_ref().ok_or_else(|| EngineError::Connection("Not connected".into()))?;
-        
+        let conn = self
+            .conn
+            .as_ref()
+            .ok_or_else(|| EngineError::Connection("Not connected".into()))?;
+
         let sql = format!("PRAGMA table_info('{}')", table.replace('\'', "''"));
-        let mut rows = conn.query(&sql, ()).await.map_err(|e| EngineError::Execution(e.to_string()))?;
-        
+        let mut rows = conn
+            .query(&sql, ())
+            .await
+            .map_err(|e| EngineError::Execution(e.to_string()))?;
+
         let mut columns = Vec::new();
         while let Ok(Some(row)) = rows.next().await {
-            let name: String = row.get::<String>(1).unwrap_or_else(|_| row.get_str(1).unwrap_or_default().to_string());
-            let data_type: String = row.get::<String>(2).unwrap_or_else(|_| row.get_str(2).unwrap_or_default().to_string());
+            let name: String = row
+                .get::<String>(1)
+                .unwrap_or_else(|_| row.get_str(1).unwrap_or_default().to_string());
+            let data_type: String = row
+                .get::<String>(2)
+                .unwrap_or_else(|_| row.get_str(2).unwrap_or_default().to_string());
             let notnull = match row.get_value(3) {
                 Ok(libsql::Value::Integer(v)) => v,
                 _ => 0,
@@ -186,16 +215,28 @@ impl DatabaseEngine for LibsqlDatabaseEngine {
     }
 
     async fn get_foreign_keys(&self, table: &str) -> Result<Vec<ForeignKeyInfo>, EngineError> {
-        let conn = self.conn.as_ref().ok_or_else(|| EngineError::Connection("Not connected".into()))?;
-        
+        let conn = self
+            .conn
+            .as_ref()
+            .ok_or_else(|| EngineError::Connection("Not connected".into()))?;
+
         let sql = format!("PRAGMA foreign_key_list('{}')", table.replace('\'', "''"));
-        let mut rows = conn.query(&sql, ()).await.map_err(|e| EngineError::Execution(e.to_string()))?;
-        
+        let mut rows = conn
+            .query(&sql, ())
+            .await
+            .map_err(|e| EngineError::Execution(e.to_string()))?;
+
         let mut fks = Vec::new();
         while let Ok(Some(row)) = rows.next().await {
-            let referenced_table_name: String = row.get::<String>(2).unwrap_or_else(|_| row.get_str(2).unwrap_or_default().to_string());
-            let column_name: String = row.get::<String>(3).unwrap_or_else(|_| row.get_str(3).unwrap_or_default().to_string());
-            let referenced_column_name: String = row.get::<String>(4).unwrap_or_else(|_| row.get_str(4).unwrap_or_default().to_string());
+            let referenced_table_name: String = row
+                .get::<String>(2)
+                .unwrap_or_else(|_| row.get_str(2).unwrap_or_default().to_string());
+            let column_name: String = row
+                .get::<String>(3)
+                .unwrap_or_else(|_| row.get_str(3).unwrap_or_default().to_string());
+            let referenced_column_name: String = row
+                .get::<String>(4)
+                .unwrap_or_else(|_| row.get_str(4).unwrap_or_default().to_string());
             fks.push(ForeignKeyInfo {
                 column: column_name,
                 referenced_table: referenced_table_name,
@@ -210,12 +251,25 @@ impl DatabaseEngine for LibsqlDatabaseEngine {
         sql: &str,
         params: &[serde_json::Value],
     ) -> Result<QueryResult, EngineError> {
-        let conn = self.conn.as_ref().ok_or_else(|| EngineError::Connection("Not connected".into()))?;
+        let conn = self
+            .conn
+            .as_ref()
+            .ok_or_else(|| EngineError::Connection("Not connected".into()))?;
 
         let first_word = sql.split_whitespace().next().unwrap_or("").to_uppercase();
         let is_mutation = matches!(
             first_word.as_str(),
-            "INSERT" | "UPDATE" | "DELETE" | "CREATE" | "DROP" | "ALTER" | "TRUNCATE" | "REPLACE" | "SET" | "GRANT" | "REVOKE"
+            "INSERT"
+                | "UPDATE"
+                | "DELETE"
+                | "CREATE"
+                | "DROP"
+                | "ALTER"
+                | "TRUNCATE"
+                | "REPLACE"
+                | "SET"
+                | "GRANT"
+                | "REVOKE"
         );
 
         let mut libsql_params = Vec::new();
@@ -237,7 +291,10 @@ impl DatabaseEngine for LibsqlDatabaseEngine {
         }
 
         if is_mutation {
-            let stmt = conn.prepare(sql).await.map_err(|e| EngineError::Execution(e.to_string()))?;
+            let stmt = conn
+                .prepare(sql)
+                .await
+                .map_err(|e| EngineError::Execution(e.to_string()))?;
             let affected = stmt
                 .execute(libsql::params_from_iter(libsql_params))
                 .await
@@ -252,7 +309,10 @@ impl DatabaseEngine for LibsqlDatabaseEngine {
             });
         }
 
-        let stmt = conn.prepare(sql).await.map_err(|e| EngineError::Execution(e.to_string()))?;
+        let stmt = conn
+            .prepare(sql)
+            .await
+            .map_err(|e| EngineError::Execution(e.to_string()))?;
         let mut rows = stmt
             .query(libsql::params_from_iter(libsql_params))
             .await
@@ -278,7 +338,9 @@ impl DatabaseEngine for LibsqlDatabaseEngine {
             for (i, col_name) in column_names.iter().enumerate() {
                 let val = match row.get_value(i as i32) {
                     Ok(libsql::Value::Text(s)) => {
-                        if (s.starts_with('{') && s.ends_with('}')) || (s.starts_with('[') && s.ends_with(']')) {
+                        if (s.starts_with('{') && s.ends_with('}'))
+                            || (s.starts_with('[') && s.ends_with(']'))
+                        {
                             if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&s) {
                                 parsed
                             } else {
@@ -288,7 +350,9 @@ impl DatabaseEngine for LibsqlDatabaseEngine {
                             serde_json::Value::String(s)
                         }
                     }
-                    Ok(libsql::Value::Integer(n)) => serde_json::Value::Number(serde_json::Number::from(n)),
+                    Ok(libsql::Value::Integer(n)) => {
+                        serde_json::Value::Number(serde_json::Number::from(n))
+                    }
                     Ok(libsql::Value::Real(f)) => {
                         if let Some(num) = serde_json::Number::from_f64(f) {
                             serde_json::Value::Number(num)
@@ -328,9 +392,16 @@ impl DatabaseEngine for LibsqlDatabaseEngine {
     }
 
     async fn add_column(&self, table: &str, req: &CreateColumnRequest) -> Result<(), EngineError> {
-        let conn = self.conn.as_ref().ok_or_else(|| EngineError::Connection("Not connected".into()))?;
+        let conn = self
+            .conn
+            .as_ref()
+            .ok_or_else(|| EngineError::Connection("Not connected".into()))?;
 
-        let col_name_clean: String = req.name.chars().filter(|c| c.is_alphanumeric() || *c == '_').collect();
+        let col_name_clean: String = req
+            .name
+            .chars()
+            .filter(|c| c.is_alphanumeric() || *c == '_')
+            .collect();
         if col_name_clean.is_empty() {
             return Err(EngineError::Schema("Invalid column name".into()));
         }
@@ -339,7 +410,10 @@ impl DatabaseEngine for LibsqlDatabaseEngine {
         let escaped_col = format!("\"{}\"", col_name_clean.replace('"', "\"\""));
 
         let type_def = &req.data_type;
-        let mut sql = format!("ALTER TABLE {} ADD COLUMN {} {}", escaped_table, escaped_col, type_def);
+        let mut sql = format!(
+            "ALTER TABLE {} ADD COLUMN {} {}",
+            escaped_table, escaped_col, type_def
+        );
 
         if req.primary_key {
             sql.push_str(" PRIMARY KEY");
@@ -372,7 +446,10 @@ impl DatabaseEngine for LibsqlDatabaseEngine {
             if !fk_table.is_empty() && !fk_col.is_empty() {
                 let escaped_fk_table = format!("\"{}\"", fk_table.replace('"', "\"\""));
                 let escaped_fk_col = format!("\"{}\"", fk_col.replace('"', "\"\""));
-                sql.push_str(&format!(" REFERENCES {} ({})", escaped_fk_table, escaped_fk_col));
+                sql.push_str(&format!(
+                    " REFERENCES {} ({})",
+                    escaped_fk_table, escaped_fk_col
+                ));
 
                 if let Some(ref u) = fk.on_update {
                     if u.to_uppercase() != "NO ACTION" {
@@ -387,7 +464,10 @@ impl DatabaseEngine for LibsqlDatabaseEngine {
             }
         }
 
-        let stmt = conn.prepare(&sql).await.map_err(|e| EngineError::Execution(e.to_string()))?;
+        let stmt = conn
+            .prepare(&sql)
+            .await
+            .map_err(|e| EngineError::Execution(e.to_string()))?;
         stmt.execute(libsql::params_from_iter(Vec::<libsql::Value>::new()))
             .await
             .map_err(|e| EngineError::Execution(e.to_string()))?;
@@ -444,7 +524,10 @@ mod tests {
 
         // 5. Insert rows with parameter bindings
         let insert_sql = "INSERT INTO users (id, name, score) VALUES (?, ?, ?);";
-        let insert_res = engine.execute(insert_sql, &[json!(1), json!("Alice"), json!(99.5)]).await.unwrap();
+        let insert_res = engine
+            .execute(insert_sql, &[json!(1), json!("Alice"), json!(99.5)])
+            .await
+            .unwrap();
         assert_eq!(insert_res.affected_rows, Some(1));
 
         // 6. Query rows with parameter bindings
@@ -469,7 +552,10 @@ mod tests {
         let mut engine = LibsqlDatabaseEngine::new(config);
         engine.connect().await.unwrap();
 
-        engine.execute("CREATE TABLE standalone (id INTEGER PRIMARY KEY);", &[]).await.unwrap();
+        engine
+            .execute("CREATE TABLE standalone (id INTEGER PRIMARY KEY);", &[])
+            .await
+            .unwrap();
         let fks = engine.get_foreign_keys("standalone").await.unwrap();
         assert!(fks.is_empty());
     }
@@ -483,12 +569,17 @@ mod tests {
         let mut engine = LibsqlDatabaseEngine::new(config);
         engine.connect().await.unwrap();
 
-        engine.execute("CREATE TABLE items (id INTEGER);", &[]).await.unwrap();
-        engine.execute("INSERT INTO items VALUES (1);", &[]).await.unwrap();
+        engine
+            .execute("CREATE TABLE items (id INTEGER);", &[])
+            .await
+            .unwrap();
+        engine
+            .execute("INSERT INTO items VALUES (1);", &[])
+            .await
+            .unwrap();
 
         let res = engine.execute("SELECT * FROM items;", &[]).await.unwrap();
         assert_eq!(res.rows.as_ref().unwrap().len(), 1);
         assert_eq!(res.truncated, None);
     }
 }
-

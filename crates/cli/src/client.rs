@@ -91,7 +91,12 @@ impl AdminClient {
     }
 
     /// Sends an HTTP request and parses the JSON response envelope.
-    async fn request(&self, method: reqwest::Method, endpoint: &str, body: Option<Value>) -> Result<Value, String> {
+    async fn request(
+        &self,
+        method: reqwest::Method,
+        endpoint: &str,
+        body: Option<Value>,
+    ) -> Result<Value, String> {
         let url = format!("{}{}", self.base_url, endpoint);
         let mut req = self.client.request(method, &url);
 
@@ -121,7 +126,12 @@ impl AdminClient {
                 .and_then(|e| e.get("message"))
                 .and_then(|m| m.as_str())
                 .unwrap_or("Unknown server error");
-            return Err(format!("Server returned HTTP {} ({}): {}", status.as_u16(), status.canonical_reason().unwrap_or(""), error_msg));
+            return Err(format!(
+                "Server returned HTTP {} ({}): {}",
+                status.as_u16(),
+                status.canonical_reason().unwrap_or(""),
+                error_msg
+            ));
         }
 
         Ok(json_resp)
@@ -129,7 +139,8 @@ impl AdminClient {
 
     /// Fetches server status and metadata telemetry.
     pub async fn get_status(&self) -> Result<Value, String> {
-        self.request(reqwest::Method::GET, "/admin/v1/status", None).await
+        self.request(reqwest::Method::GET, "/admin/v1/status", None)
+            .await
     }
 
     /// Checks basic server health endpoint.
@@ -137,9 +148,15 @@ impl AdminClient {
         self.request(reqwest::Method::GET, "/health", None).await
     }
 
+    pub async fn get_admin_health(&self) -> Result<Value, String> {
+        self.request(reqwest::Method::GET, "/admin/v1/health", None)
+            .await
+    }
+
     /// Lists registered API keys.
     pub async fn list_keys(&self) -> Result<Value, String> {
-        self.request(reqwest::Method::GET, "/admin/v1/keys", None).await
+        self.request(reqwest::Method::GET, "/admin/v1/keys", None)
+            .await
     }
 
     /// Creates a new API key.
@@ -158,7 +175,8 @@ impl AdminClient {
             "rate_limit": rate_limit,
             "expires_at": expires_at,
         });
-        self.request(reqwest::Method::POST, "/admin/v1/keys", Some(body)).await
+        self.request(reqwest::Method::POST, "/admin/v1/keys", Some(body))
+            .await
     }
 
     /// Rotates the secret for an existing API key.
@@ -175,7 +193,8 @@ impl AdminClient {
 
     /// Lists configured RBAC roles.
     pub async fn list_roles(&self) -> Result<Value, String> {
-        self.request(reqwest::Method::GET, "/admin/v1/roles", None).await
+        self.request(reqwest::Method::GET, "/admin/v1/roles", None)
+            .await
     }
 
     /// Creates an RBAC role with permission grants.
@@ -190,7 +209,8 @@ impl AdminClient {
             "description": description,
             "permissions": permissions,
         });
-        self.request(reqwest::Method::POST, "/admin/v1/roles", Some(body)).await
+        self.request(reqwest::Method::POST, "/admin/v1/roles", Some(body))
+            .await
     }
 
     /// Updates an existing RBAC role description or permissions.
@@ -208,7 +228,8 @@ impl AdminClient {
         if let Some(perms) = permissions {
             body.insert("permissions".to_string(), perms);
         }
-        self.request(reqwest::Method::PATCH, &endpoint, Some(Value::Object(body))).await
+        self.request(reqwest::Method::PATCH, &endpoint, Some(Value::Object(body)))
+            .await
     }
 
     /// Deletes an RBAC role.
@@ -219,7 +240,8 @@ impl AdminClient {
 
     /// Lists registered database connections.
     pub async fn list_databases(&self) -> Result<Value, String> {
-        self.request(reqwest::Method::GET, "/admin/v1/databases", None).await
+        self.request(reqwest::Method::GET, "/admin/v1/databases", None)
+            .await
     }
 
     /// Registers a new upstream database connection.
@@ -238,7 +260,8 @@ impl AdminClient {
             "pool_min": pool_min,
             "pool_max": pool_max,
         });
-        self.request(reqwest::Method::POST, "/admin/v1/databases", Some(body)).await
+        self.request(reqwest::Method::POST, "/admin/v1/databases", Some(body))
+            .await
     }
 
     /// Tests connectivity and health for an upstream database connection.
@@ -255,12 +278,14 @@ impl AdminClient {
 
     /// Fetches cache performance metrics and memory usage.
     pub async fn get_cache_stats(&self) -> Result<Value, String> {
-        self.request(reqwest::Method::GET, "/admin/v1/cache/stats", None).await
+        self.request(reqwest::Method::GET, "/admin/v1/cache/stats", None)
+            .await
     }
 
     /// Flushes all entries from L1 RAM and L2 persistent cache.
     pub async fn flush_cache(&self) -> Result<Value, String> {
-        self.request(reqwest::Method::POST, "/admin/v1/cache/flush", None).await
+        self.request(reqwest::Method::POST, "/admin/v1/cache/flush", None)
+            .await
     }
 
     /// Fetches Prometheus exposition format metrics text.
@@ -286,11 +311,16 @@ impl AdminClient {
 
     /// Triggers an immediate reload of the dynamic metadata store and ArcSwap snapshot.
     pub async fn reload_metadata(&self) -> Result<Value, String> {
-        self.request(reqwest::Method::POST, "/admin/v1/reload", None).await
+        self.request(reqwest::Method::POST, "/admin/v1/reload", None)
+            .await
     }
 
     /// Fetches audit log records with optional pagination.
-    pub async fn get_audit_log(&self, limit: Option<usize>, offset: Option<usize>) -> Result<Value, String> {
+    pub async fn get_audit_log(
+        &self,
+        limit: Option<usize>,
+        offset: Option<usize>,
+    ) -> Result<Value, String> {
         let mut endpoint = "/admin/v1/audit".to_string();
         let mut params = Vec::new();
         if let Some(l) = limit {
@@ -311,7 +341,12 @@ impl AdminClient {
             "url": url,
             "alias": alias,
         });
-        self.request(reqwest::Method::POST, "/admin/v1/databases/test-url", Some(body)).await
+        self.request(
+            reqwest::Method::POST,
+            "/admin/v1/databases/test-url",
+            Some(body),
+        )
+        .await
     }
 
     // ─── Database Data & Table API ─────────────────────────────────────────
@@ -330,7 +365,8 @@ impl AdminClient {
             "params": params,
             "timeout": timeout.unwrap_or(30),
         });
-        self.request(reqwest::Method::POST, &endpoint, Some(body)).await
+        self.request(reqwest::Method::POST, &endpoint, Some(body))
+            .await
     }
 
     /// Lists tables in an upstream database alias.
@@ -411,7 +447,12 @@ impl AdminClient {
         if let Some(rs) = rows {
             body_map.insert("rows".to_string(), rs);
         }
-        self.request(reqwest::Method::POST, &endpoint, Some(Value::Object(body_map))).await
+        self.request(
+            reqwest::Method::POST,
+            &endpoint,
+            Some(Value::Object(body_map)),
+        )
+        .await
     }
 
     /// Updates rows matching filter condition in a database table.
@@ -427,7 +468,8 @@ impl AdminClient {
             "filter": filter,
             "update": update,
         });
-        self.request(reqwest::Method::PATCH, &endpoint, Some(body)).await
+        self.request(reqwest::Method::PATCH, &endpoint, Some(body))
+            .await
     }
 
     /// Deletes rows matching filter condition in a database table.
@@ -441,7 +483,8 @@ impl AdminClient {
         let body = json!({
             "filter": filter,
         });
-        self.request(reqwest::Method::DELETE, &endpoint, Some(body)).await
+        self.request(reqwest::Method::DELETE, &endpoint, Some(body))
+            .await
     }
 
     /// Adds a new column to a database table.
@@ -461,38 +504,52 @@ impl AdminClient {
             "nullable": nullable,
             "default_value": default_val,
         });
-        self.request(reqwest::Method::POST, &endpoint, Some(body)).await
+        self.request(reqwest::Method::POST, &endpoint, Some(body))
+            .await
     }
 
     // ─── Native Blob Storage API ───────────────────────────────────────────
 
     /// Retrieves cluster-wide blob storage telemetry and statistics.
     pub async fn get_blob_stats(&self) -> Result<Value, String> {
-        self.request(reqwest::Method::GET, "/admin/v1/blobs/stats", None).await
+        self.request(reqwest::Method::GET, "/admin/v1/blobs/stats", None)
+            .await
     }
 
     /// Triggers an immediate storage-wide cryptographic scrub audit.
     pub async fn scrub_blobs(&self) -> Result<Value, String> {
-        self.request(reqwest::Method::POST, "/admin/v1/blobs/scrub", None).await
+        self.request(reqwest::Method::POST, "/admin/v1/blobs/scrub", None)
+            .await
     }
 
     /// Triggers a cleanup sweep of expired TTL blobs.
     pub async fn sweep_blobs(&self) -> Result<Value, String> {
-        self.request(reqwest::Method::POST, "/admin/v1/blobs/sweep", None).await
+        self.request(reqwest::Method::POST, "/admin/v1/blobs/sweep", None)
+            .await
     }
 
     /// Lists all storage namespaces and quotas.
     pub async fn list_blob_namespaces(&self) -> Result<Value, String> {
-        self.request(reqwest::Method::GET, "/admin/v1/blobs/namespaces", None).await
+        self.request(reqwest::Method::GET, "/admin/v1/blobs/namespaces", None)
+            .await
     }
 
     /// Creates a new storage namespace with an optional quota.
-    pub async fn create_blob_namespace(&self, name: &str, max_bytes: Option<u64>) -> Result<Value, String> {
+    pub async fn create_blob_namespace(
+        &self,
+        name: &str,
+        max_bytes: Option<u64>,
+    ) -> Result<Value, String> {
         let body = json!({
             "name": name,
             "max_bytes": max_bytes,
         });
-        self.request(reqwest::Method::POST, "/admin/v1/blobs/namespaces", Some(body)).await
+        self.request(
+            reqwest::Method::POST,
+            "/admin/v1/blobs/namespaces",
+            Some(body),
+        )
+        .await
     }
 
     /// Updates an existing storage namespace name or quota.
@@ -507,7 +564,8 @@ impl AdminClient {
             "max_bytes": max_bytes,
         });
         let endpoint = format!("/admin/v1/blobs/namespaces/{}", name);
-        self.request(reqwest::Method::PATCH, &endpoint, Some(body)).await
+        self.request(reqwest::Method::PATCH, &endpoint, Some(body))
+            .await
     }
 
     /// Deletes a storage namespace and all contained objects.
@@ -551,7 +609,10 @@ impl AdminClient {
         ttl: Option<u64>,
     ) -> Result<Value, String> {
         let sanitized_key = key.trim_start_matches('/');
-        let url = format!("{}/api/v1/blobs/{}/{}", self.base_url, namespace, sanitized_key);
+        let url = format!(
+            "{}/api/v1/blobs/{}/{}",
+            self.base_url, namespace, sanitized_key
+        );
         let mut req = self.client.put(&url).body(data);
 
         if let Some(ref auth) = self.auth_key {
@@ -586,7 +647,11 @@ impl AdminClient {
                 .and_then(|e| e.get("message"))
                 .and_then(|m| m.as_str())
                 .unwrap_or("Upload failed");
-            return Err(format!("Server returned HTTP {}: {}", status.as_u16(), error_msg));
+            return Err(format!(
+                "Server returned HTTP {}: {}",
+                status.as_u16(),
+                error_msg
+            ));
         }
 
         Ok(json_resp)
@@ -600,7 +665,10 @@ impl AdminClient {
         ticket: Option<&str>,
     ) -> Result<(Vec<u8>, Option<String>), String> {
         let sanitized_key = key.trim_start_matches('/');
-        let mut url = format!("{}/api/v1/blobs/{}/{}", self.base_url, namespace, sanitized_key);
+        let mut url = format!(
+            "{}/api/v1/blobs/{}/{}",
+            self.base_url, namespace, sanitized_key
+        );
         if let Some(t) = ticket {
             if t.contains("ticket_sig=") {
                 url = format!("{}?{}", url, t);
@@ -623,7 +691,11 @@ impl AdminClient {
         let status = res.status();
         if !status.is_success() {
             let err_body = res.text().await.unwrap_or_default();
-            return Err(format!("Download failed with HTTP {}: {}", status.as_u16(), err_body));
+            return Err(format!(
+                "Download failed with HTTP {}: {}",
+                status.as_u16(),
+                err_body
+            ));
         }
 
         let content_type = res
@@ -644,7 +716,10 @@ impl AdminClient {
     /// Queries headers and metadata for a storage object.
     pub async fn head_blob(&self, namespace: &str, key: &str) -> Result<Value, String> {
         let sanitized_key = key.trim_start_matches('/');
-        let url = format!("{}/api/v1/blobs/{}/{}", self.base_url, namespace, sanitized_key);
+        let url = format!(
+            "{}/api/v1/blobs/{}/{}",
+            self.base_url, namespace, sanitized_key
+        );
         let mut req = self.client.head(&url);
         if let Some(ref auth) = self.auth_key {
             req = req.header("X-Axiom-Key", auth);
@@ -697,7 +772,8 @@ impl AdminClient {
             "dest_key": dest_key,
             "is_prefix": is_prefix,
         });
-        self.request(reqwest::Method::POST, "/admin/v1/blobs/copy", Some(body)).await
+        self.request(reqwest::Method::POST, "/admin/v1/blobs/copy", Some(body))
+            .await
     }
 
     /// Moves or renames an object or directory prefix.
@@ -716,7 +792,8 @@ impl AdminClient {
             "dest_key": dest_key,
             "is_prefix": is_prefix,
         });
-        self.request(reqwest::Method::POST, "/admin/v1/blobs/move", Some(body)).await
+        self.request(reqwest::Method::POST, "/admin/v1/blobs/move", Some(body))
+            .await
     }
 
     /// Deletes all objects matching a prefix within a namespace.
@@ -725,7 +802,12 @@ impl AdminClient {
             "namespace": namespace,
             "prefix": prefix,
         });
-        self.request(reqwest::Method::POST, "/admin/v1/blobs/delete-prefix", Some(body)).await
+        self.request(
+            reqwest::Method::POST,
+            "/admin/v1/blobs/delete-prefix",
+            Some(body),
+        )
+        .await
     }
 
     /// Verifies cryptographic BLAKE3 integrity of an object on disk.
@@ -749,7 +831,8 @@ impl AdminClient {
             "operation": operation,
             "ttl_seconds": ttl,
         });
-        self.request(reqwest::Method::POST, &endpoint, Some(body)).await
+        self.request(reqwest::Method::POST, &endpoint, Some(body))
+            .await
     }
 
     // ─── Authentication & Setup Wizard API ─────────────────────────────────
@@ -760,17 +843,20 @@ impl AdminClient {
             "username": username,
             "password": password,
         });
-        self.request(reqwest::Method::POST, "/admin/v1/auth/login", Some(body)).await
+        self.request(reqwest::Method::POST, "/admin/v1/auth/login", Some(body))
+            .await
     }
 
     /// Revokes the active administrative session.
     pub async fn logout(&self) -> Result<Value, String> {
-        self.request(reqwest::Method::POST, "/admin/v1/auth/logout", None).await
+        self.request(reqwest::Method::POST, "/admin/v1/auth/logout", None)
+            .await
     }
 
     /// Checks if initial setup is required.
     pub async fn setup_begin(&self) -> Result<Value, String> {
-        self.request(reqwest::Method::POST, "/admin/v1/setup/begin", None).await
+        self.request(reqwest::Method::POST, "/admin/v1/setup/begin", None)
+            .await
     }
 
     /// Creates the initial administrative account during setup.
@@ -779,26 +865,151 @@ impl AdminClient {
             "username": username,
             "password": password,
         });
-        self.request(reqwest::Method::POST, "/admin/v1/setup/account", Some(body)).await
+        self.request(reqwest::Method::POST, "/admin/v1/setup/account", Some(body))
+            .await
     }
 
     /// Connects and registers the first database during setup.
-    pub async fn setup_database(&self, alias: &str, url: &str, engine: Option<&str>) -> Result<Value, String> {
+    pub async fn setup_database(
+        &self,
+        alias: &str,
+        url: &str,
+        engine: Option<&str>,
+    ) -> Result<Value, String> {
         let body = json!({
             "alias": alias,
             "url": url,
             "engine": engine,
         });
-        self.request(reqwest::Method::POST, "/admin/v1/setup/database", Some(body)).await
+        self.request(
+            reqwest::Method::POST,
+            "/admin/v1/setup/database",
+            Some(body),
+        )
+        .await
     }
 
     /// Finalizes and locks the setup wizard permanently.
     pub async fn setup_complete(&self) -> Result<Value, String> {
-        self.request(reqwest::Method::POST, "/admin/v1/setup/complete", None).await
+        self.request(reqwest::Method::POST, "/admin/v1/setup/complete", None)
+            .await
     }
 
     /// Lists administrative users via the Admin API.
     pub async fn list_users(&self) -> Result<Value, String> {
-        self.request(reqwest::Method::GET, "/admin/v1/users", None).await
+        self.request(reqwest::Method::GET, "/admin/v1/users", None)
+            .await
+    }
+
+    // ─── Cluster Mesh / Node Federation ─────────────────────────────────────
+
+    /// Fetches local cluster node identity, cluster secret, and peer counters.
+    pub async fn get_cluster_status(&self) -> Result<Value, String> {
+        self.request(reqwest::Method::GET, "/admin/v1/cluster/status", None)
+            .await
+    }
+
+    /// Lists all known peer nodes registered in the cluster mesh.
+    pub async fn list_cluster_peers(&self) -> Result<Value, String> {
+        self.request(reqwest::Method::GET, "/admin/v1/cluster/peers", None)
+            .await
+    }
+
+    /// Connects and handshakes with a remote cluster peer node.
+    pub async fn connect_cluster_peer(
+        &self,
+        target_url: &str,
+        cluster_secret: &str,
+    ) -> Result<Value, String> {
+        let body = serde_json::json!({
+            "target_url": target_url,
+            "cluster_secret": cluster_secret,
+        });
+        self.request(reqwest::Method::POST, "/admin/v1/cluster/peers", Some(body))
+            .await
+    }
+
+    /// Unregisters and removes a peer node from the cluster mesh.
+    pub async fn remove_cluster_peer(&self, node_id: &str) -> Result<Value, String> {
+        let path = format!("/admin/v1/cluster/peers/{}", node_id);
+        self.request(reqwest::Method::DELETE, &path, None).await
+    }
+
+    /// Updates moniker, URL, or shared secret for an existing peer node.
+    pub async fn update_cluster_peer(
+        &self,
+        node_id: &str,
+        moniker: Option<&str>,
+        url: Option<&str>,
+        cluster_secret: Option<&str>,
+    ) -> Result<Value, String> {
+        let path = format!("/admin/v1/cluster/peers/{}", node_id);
+        let mut body = serde_json::Map::new();
+        if let Some(m) = moniker {
+            body.insert(
+                "moniker".to_string(),
+                serde_json::Value::String(m.to_string()),
+            );
+        }
+        if let Some(u) = url {
+            body.insert("url".to_string(), serde_json::Value::String(u.to_string()));
+        }
+        if let Some(s) = cluster_secret {
+            body.insert(
+                "cluster_secret".to_string(),
+                serde_json::Value::String(s.to_string()),
+            );
+        }
+        self.request(
+            reqwest::Method::PATCH,
+            &path,
+            Some(serde_json::Value::Object(body)),
+        )
+        .await
+    }
+
+    /// Sends a live ping probe to verify connectivity and measure latency to a peer node.
+    pub async fn ping_cluster_peer(&self, node_id: &str) -> Result<Value, String> {
+        let path = format!("/admin/v1/cluster/peers/{}/ping", node_id);
+        self.request(reqwest::Method::POST, &path, None).await
+    }
+
+    /// Updates the local node's cluster moniker.
+    pub async fn update_cluster_moniker(&self, moniker: &str) -> Result<Value, String> {
+        let body = serde_json::json!({
+            "moniker": moniker,
+        });
+        self.request(
+            reqwest::Method::PATCH,
+            "/admin/v1/cluster/moniker",
+            Some(body),
+        )
+        .await
+    }
+
+    pub async fn list_blob_tickets(
+        &self,
+        namespace: Option<&str>,
+        key: Option<&str>,
+        all: bool,
+    ) -> Result<Value, String> {
+        let mut endpoint = "/admin/v1/blobs/tickets".to_string();
+        let mut params = Vec::new();
+        if let Some(ns) = namespace {
+            params.push(format!("namespace={}", urlencode(ns)));
+        }
+        if let Some(k) = key {
+            params.push(format!("key={}", urlencode(k)));
+        }
+        params.push(format!("all={}", all));
+        if !params.is_empty() {
+            endpoint = format!("{}?{}", endpoint, params.join("&"));
+        }
+        self.request(reqwest::Method::GET, &endpoint, None).await
+    }
+
+    pub async fn revoke_blob_ticket(&self, signature: &str) -> Result<Value, String> {
+        let endpoint = format!("/admin/v1/blobs/tickets/{}/revoke", urlencode(signature));
+        self.request(reqwest::Method::POST, &endpoint, None).await
     }
 }

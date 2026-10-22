@@ -16,6 +16,46 @@ use std::sync::atomic::{AtomicBool, Ordering};
 // Emitted once if an insecure wildcard proxy configuration is detected.
 static WILDCARD_PROXY_WARNED: AtomicBool = AtomicBool::new(false);
 
+/// Resolves client IP address from TCP peer address and trusted forwarding headers.
+pub fn resolve_client_ip(req: &Request, config: &axiom_core::AxiomConfig) -> String {
+    let mut client_ip = "127.0.0.1".to_string();
+    if let Some(connect_info) = req
+        .extensions()
+        .get::<axum::extract::ConnectInfo<std::net::SocketAddr>>()
+    {
+        client_ip = connect_info.0.ip().to_string();
+    }
+
+    let has_wildcard_proxy = config.server.trusted_proxies.iter().any(|p| p == "*");
+    if has_wildcard_proxy && !WILDCARD_PROXY_WARNED.swap(true, Ordering::Relaxed) {
+        // Warning: trusted_proxies = ["*"] allows arbitrary IP spoofing via X-Forwarded-For
+        tracing::warn!("SECURITY WARNING: trusted_proxies contains '*' — client IP can be spoofed via X-Forwarded-For headers! Do NOT use '*' in production!");
+    }
+
+    if config.server.trusted_proxies.contains(&client_ip) || has_wildcard_proxy {
+        if let Some(forwarded) = req
+            .headers()
+            .get("x-forwarded-for")
+            .or_else(|| req.headers().get("x-real-ip"))
+        {
+            if let Ok(fwd_str) = forwarded.to_str() {
+                // Take leftmost hop but validate it parses as an IP; ignore spoofed garbage.
+                // Full rightmost-untrusted-chain validation is proxy-specific; at minimum
+                // never accept `host:port` or non-IP tokens as client_ip.
+                if let Some(first) = fwd_str.split(',').next().map(str::trim) {
+                    if first.parse::<std::net::IpAddr>().is_ok() {
+                        client_ip = first.to_string();
+                    } else {
+                        tracing::debug!("Ignoring invalid X-Forwarded-For value");
+                    }
+                }
+            }
+        }
+    }
+
+    client_ip
+}
+
 /// Evaluates client rate limits across IP and API-key buckets before allowing request downstream.
 /// CONTRACT:
 ///  - Precondition: Request must be accepted by upstream WAF.
@@ -36,38 +76,16 @@ pub async fn rate_limit_middleware(req: Request, next: Next) -> Result<Response,
 
     // ─── IP Resolution ─────────────────────────────────────────────────────
     // Resolve peer TCP address. Only trust forwarding headers if peer is in trusted_proxies list.
-    let mut client_ip = "127.0.0.1".to_string();
-    if let Some(connect_info) = req.extensions().get::<axum::extract::ConnectInfo<std::net::SocketAddr>>() {
-        client_ip = connect_info.0.ip().to_string();
-    }
-
-    let has_wildcard_proxy = config.server.trusted_proxies.iter().any(|p| p == "*");
-    if has_wildcard_proxy && !WILDCARD_PROXY_WARNED.swap(true, Ordering::Relaxed) {
-        // Warning: trusted_proxies = ["*"] allows arbitrary IP spoofing via X-Forwarded-For
-        tracing::warn!("SECURITY WARNING: trusted_proxies contains '*' — client IP can be spoofed via X-Forwarded-For headers! Do NOT use '*' in production!");
-    }
-
-    if config.server.trusted_proxies.contains(&client_ip) || has_wildcard_proxy {
-        if let Some(forwarded) = req.headers().get("x-forwarded-for").or_else(|| req.headers().get("x-real-ip")) {
-            if let Ok(fwd_str) = forwarded.to_str() {
-                // Take leftmost hop but validate it parses as an IP; ignore spoofed garbage.
-                // Full rightmost-untrusted-chain validation is proxy-specific; at minimum
-                // never accept `host:port` or non-IP tokens as client_ip.
-                if let Some(first) = fwd_str.split(',').next().map(str::trim) {
-                    if first.parse::<std::net::IpAddr>().is_ok() {
-                        client_ip = first.to_string();
-                    } else {
-                        tracing::debug!("Ignoring invalid X-Forwarded-For value");
-                    }
-                }
-            }
-        }
-    }
+    let client_ip = resolve_client_ip(&req, &config);
 
     // Short-circuit banned IP addresses immediately
     let (is_banned, reason) = crate::security::ban_list::BanList::is_ip_banned(&client_ip);
     if is_banned {
-        return Err(AxiomError::new("BANNED", &format!("Your IP is banned: {}", reason), axum::http::StatusCode::FORBIDDEN));
+        return Err(AxiomError::new(
+            "BANNED",
+            &format!("Your IP is banned: {}", reason),
+            axum::http::StatusCode::FORBIDDEN,
+        ));
     }
 
     // Check IP allowlist bypass (e.g., internal monitoring or metrics scrapers).
@@ -79,7 +97,10 @@ pub async fn rate_limit_middleware(req: Request, next: Next) -> Result<Response,
     for allowed in &config.server.allowed_ips {
         if allowed.contains(':') && !allowed.ends_with("::") && allowed.matches(':').count() < 2 {
             // Likely `host:port` confusion (never a valid client IP) — fail closed.
-            tracing::warn!("Ignoring invalid allowed_ips entry '{}' (host:port never matches client IP)", allowed);
+            tracing::warn!(
+                "Ignoring invalid allowed_ips entry '{}' (host:port never matches client IP)",
+                allowed
+            );
             continue;
         }
         if allowed.ends_with('*') {
@@ -153,7 +174,11 @@ pub async fn rate_limit_middleware(req: Request, next: Next) -> Result<Response,
     let mut effective_count = ip_current_count as i32;
 
     let mut key_name_opt = None;
-    if let Some(key_header) = req.headers().get("x-axiom-key").or_else(|| req.headers().get("x-api-key")) {
+    if let Some(key_header) = req
+        .headers()
+        .get("x-axiom-key")
+        .or_else(|| req.headers().get("x-api-key"))
+    {
         if let Ok(token_str) = key_header.to_str() {
             if let Ok(decoded) = BASE64_STANDARD.decode(token_str) {
                 if let Ok(ident) = String::from_utf8(decoded) {
@@ -163,7 +188,11 @@ pub async fn rate_limit_middleware(req: Request, next: Next) -> Result<Response,
                 }
             }
         }
-    } else if let Some(auth_hdr) = req.headers().get("Authorization").and_then(|h| h.to_str().ok()) {
+    } else if let Some(auth_hdr) = req
+        .headers()
+        .get("Authorization")
+        .and_then(|h| h.to_str().ok())
+    {
         if let Some(stripped) = auth_hdr.strip_prefix("Bearer ") {
             if let Ok(decoded) = BASE64_STANDARD.decode(stripped) {
                 if let Ok(ident) = String::from_utf8(decoded) {
@@ -180,7 +209,13 @@ pub async fn rate_limit_middleware(req: Request, next: Next) -> Result<Response,
         let key_limit = snapshot
             .keys
             .get(&key_name)
-            .and_then(|k| if k.rate_limit_override > 0 { Some(k.rate_limit_override as i32) } else { None })
+            .and_then(|k| {
+                if k.rate_limit_override > 0 {
+                    Some(k.rate_limit_override as i32)
+                } else {
+                    None
+                }
+            })
             .unwrap_or(ip_limit);
 
         let key_rl_key = format!("rl:key:{}", key_name);

@@ -290,7 +290,7 @@ export function DataTable<T>({
         </div>
       )}
 
-      <div className="overflow-x-auto w-full">
+      <div className="overflow-x-auto w-full touch-scroll scrollbar-thin">
         <table role="table" aria-label={ariaLabel} className={`w-full max-md:min-w-0 ${minTableWidth} text-left border-collapse`}>
           {/* Table Header */}
           <thead className="sticky top-0 z-10 max-md:hidden">
@@ -500,8 +500,8 @@ export function DataTable<T>({
 
       {/* Pagination Footer */}
       {pagination && (
-        <div className="flex items-center justify-between px-4 py-2.5 border-t border-[#222222] bg-[#0e0e0e] rounded-b-lg">
-          <div className="flex items-center gap-3">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 px-3 sm:px-4 py-2.5 border-t border-[#222222] bg-[#0e0e0e] rounded-b-lg">
+          <div className="flex items-center justify-between sm:justify-start gap-3">
             <span className="text-[12px] text-[#8c8c8c] font-normal select-none">
               Showing{' '}
               <span className="text-[#cccccc] font-medium tabular-nums">
@@ -519,7 +519,7 @@ export function DataTable<T>({
             </div>
           </div>
 
-          <div className="flex items-center gap-2 select-none">
+          <div className="flex items-center justify-between sm:justify-end gap-2 select-none">
             <button
               type="button"
               disabled={safePage <= 1 || isLoading}

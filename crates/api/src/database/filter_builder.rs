@@ -225,16 +225,24 @@ where
                         }
                         "in" | "nin" => {
                             if let Some(arr) = val.as_array() {
-                                let sql_op = if norm_op == "in" { "IN" } else { "NOT IN" };
-                                let placeholders = vec!["?"; arr.len()].join(", ");
-                                parts.push(format!(
-                                    "{} {} ({})",
-                                    clean_col,
-                                    sql_op,
-                                    placeholders
-                                ));
-                                for item in arr {
-                                    values.push(item.clone());
+                                if arr.is_empty() {
+                                    // Fix DB-4: IN () is invalid SQL on all engines.
+                                    // IN empty array is FALSE (1 = 0); NOT IN empty array is TRUE (1 = 1).
+                                    if norm_op == "in" {
+                                        parts.push("1 = 0".to_string());
+                                    } else {
+                                        parts.push("1 = 1".to_string());
+                                    }
+                                } else {
+                                    let sql_op = if norm_op == "in" { "IN" } else { "NOT IN" };
+                                    let placeholders = vec!["?"; arr.len()].join(", ");
+                                    parts.push(format!(
+                                        "{} {} ({})",
+                                        clean_col, sql_op, placeholders
+                                    ));
+                                    for item in arr {
+                                        values.push(item.clone());
+                                    }
                                 }
                             }
                         }
@@ -364,6 +372,187 @@ pub fn construct_delete(table: &str, filter: &HashMap<String, Value>) -> (String
     (sql, values)
 }
 
+/// Dialect-aware variant of `build_where_clause` that quotes identifiers according to the target SQL dialect.
+pub fn build_where_clause_dialect(
+    filter: &HashMap<String, Value>,
+    dialect: &str,
+) -> (String, Vec<Value>) {
+    build_where_clause_dialect_inner(filter.iter(), dialect)
+}
+
+fn build_where_clause_dialect_inner<'a, I>(filter: I, dialect: &str) -> (String, Vec<Value>)
+where
+    I: Iterator<Item = (&'a String, &'a Value)>,
+{
+    let mut parts = Vec::new();
+    let mut values = Vec::new();
+
+    for (col, criteria) in filter {
+        if col == "$or" || col == "$and" {
+            let connector = if col == "$or" { " OR " } else { " AND " };
+            if let Some(arr) = criteria.as_array() {
+                let mut sub_clauses = Vec::new();
+                for sub_filter in arr {
+                    if let Some(obj) = sub_filter.as_object() {
+                        let (sub_clause, mut sub_vals) =
+                            build_where_clause_dialect_inner(obj.iter(), dialect);
+                        if !sub_clause.is_empty() {
+                            sub_clauses.push(format!("({})", sub_clause));
+                            values.append(&mut sub_vals);
+                        }
+                    }
+                }
+                if !sub_clauses.is_empty() {
+                    parts.push(format!("({})", sub_clauses.join(connector)));
+                }
+            }
+        } else {
+            let quoted_col = quote_ident_dialect(col, dialect);
+            if sanitize_ident(col).is_empty() {
+                continue;
+            }
+            if let Some(obj) = criteria.as_object() {
+                for (op, val) in obj {
+                    let norm_op = op.strip_prefix('$').unwrap_or(op.as_str());
+                    match norm_op {
+                        "eq" => {
+                            parts.push(format!("{} = ?", quoted_col));
+                            values.push(val.clone());
+                        }
+                        "ne" | "neq" => {
+                            parts.push(format!("{} != ?", quoted_col));
+                            values.push(val.clone());
+                        }
+                        "gt" => {
+                            parts.push(format!("{} > ?", quoted_col));
+                            values.push(val.clone());
+                        }
+                        "gte" => {
+                            parts.push(format!("{} >= ?", quoted_col));
+                            values.push(val.clone());
+                        }
+                        "lt" => {
+                            parts.push(format!("{} < ?", quoted_col));
+                            values.push(val.clone());
+                        }
+                        "lte" => {
+                            parts.push(format!("{} <= ?", quoted_col));
+                            values.push(val.clone());
+                        }
+                        "like" => {
+                            parts.push(format!("{} LIKE ?", quoted_col));
+                            values.push(val.clone());
+                        }
+                        "ilike" => {
+                            parts.push(format!("LOWER({}) LIKE LOWER(?)", quoted_col));
+                            values.push(val.clone());
+                        }
+                        "in" | "nin" => {
+                            if let Some(arr) = val.as_array() {
+                                if arr.is_empty() {
+                                    if norm_op == "in" {
+                                        parts.push("1 = 0".to_string());
+                                    } else {
+                                        parts.push("1 = 1".to_string());
+                                    }
+                                } else {
+                                    let sql_op = if norm_op == "in" { "IN" } else { "NOT IN" };
+                                    let placeholders = vec!["?"; arr.len()].join(", ");
+                                    parts.push(format!(
+                                        "{} {} ({})",
+                                        quoted_col, sql_op, placeholders
+                                    ));
+                                    for item in arr {
+                                        values.push(item.clone());
+                                    }
+                                }
+                            }
+                        }
+                        "null" | "is_null" => {
+                            if val.as_bool().unwrap_or(true) {
+                                parts.push(format!("{} IS NULL", quoted_col));
+                            } else {
+                                parts.push(format!("{} IS NOT NULL", quoted_col));
+                            }
+                        }
+                        "not_null" | "is_not_null" => {
+                            if val.as_bool().unwrap_or(true) {
+                                parts.push(format!("{} IS NOT NULL", quoted_col));
+                            } else {
+                                parts.push(format!("{} IS NULL", quoted_col));
+                            }
+                        }
+                        "between" => {
+                            if let Some(arr) = val.as_array() {
+                                if arr.len() == 2 {
+                                    parts.push(format!("{} BETWEEN ? AND ?", quoted_col));
+                                    values.push(arr[0].clone());
+                                    values.push(arr[1].clone());
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            } else {
+                parts.push(format!("{} = ?", quoted_col));
+                values.push(criteria.clone());
+            }
+        }
+    }
+
+    (parts.join(" AND "), values)
+}
+
+/// Dialect-aware variant of `construct_update` with quoted table and column identifiers.
+pub fn construct_update_dialect(
+    table: &str,
+    update_data: &HashMap<String, Value>,
+    filter: &HashMap<String, Value>,
+    dialect: &str,
+) -> (String, Vec<Value>) {
+    let mut set_parts = Vec::new();
+    let mut values = Vec::new();
+
+    for (k, v) in update_data {
+        if sanitize_ident(k).is_empty() {
+            continue;
+        }
+        let quoted_k = quote_ident_dialect(k, dialect);
+        set_parts.push(format!("{} = ?", quoted_k));
+        values.push(v.clone());
+    }
+
+    if set_parts.is_empty() {
+        return (String::new(), Vec::new());
+    }
+
+    let (where_clause, mut filter_vals) = build_where_clause_dialect(filter, dialect);
+    values.append(&mut filter_vals);
+
+    let quoted_table = quote_ident_dialect(table, dialect);
+    let sql = format!(
+        "UPDATE {} SET {} WHERE {}",
+        quoted_table,
+        set_parts.join(", "),
+        where_clause
+    );
+
+    (sql, values)
+}
+
+/// Dialect-aware variant of `construct_delete` with quoted table and column identifiers.
+pub fn construct_delete_dialect(
+    table: &str,
+    filter: &HashMap<String, Value>,
+    dialect: &str,
+) -> (String, Vec<Value>) {
+    let (where_clause, values) = build_where_clause_dialect(filter, dialect);
+    let quoted_table = quote_ident_dialect(table, dialect);
+    let sql = format!("DELETE FROM {} WHERE {}", quoted_table, where_clause);
+    (sql, values)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -392,10 +581,10 @@ mod tests {
     fn test_construct_update() {
         let mut update_data = HashMap::new();
         update_data.insert("name".to_string(), json!("bob"));
-        
+
         let mut filter = HashMap::new();
         filter.insert("id".to_string(), json!({ "$eq": 1 }));
-        
+
         let (sql, values) = construct_update("users", &update_data, &filter);
         assert!(sql.starts_with("UPDATE users SET"));
         assert!(sql.contains("WHERE id = ?"));
@@ -406,7 +595,7 @@ mod tests {
     fn test_construct_delete() {
         let mut filter = HashMap::new();
         filter.insert("id".to_string(), json!({ "$eq": 42 }));
-        
+
         let (sql, values) = construct_delete("users", &filter);
         assert_eq!(sql, "DELETE FROM users WHERE id = ?");
         assert_eq!(values.len(), 1);
@@ -415,7 +604,7 @@ mod tests {
     #[test]
     fn test_build_where_clause_operators() {
         let mut f = HashMap::new();
-        
+
         f.insert("f_ne".to_string(), json!({ "$ne": 1 }));
         let (sql, _) = build_where_clause(&f);
         assert!(sql.contains("f_ne != ?"));
@@ -516,9 +705,18 @@ mod tests {
         coerce_filter_values(&mut filter, &cols);
 
         assert_eq!(filter.get("id").unwrap().get("eq").unwrap(), &json!(42));
-        assert_eq!(filter.get("price").unwrap().get("gte").unwrap(), &json!(19.99));
-        assert_eq!(filter.get("is_active").unwrap().get("eq").unwrap(), &json!(true));
-        assert_eq!(filter.get("title").unwrap().get("eq").unwrap(), &json!("123"));
+        assert_eq!(
+            filter.get("price").unwrap().get("gte").unwrap(),
+            &json!(19.99)
+        );
+        assert_eq!(
+            filter.get("is_active").unwrap().get("eq").unwrap(),
+            &json!(true)
+        );
+        assert_eq!(
+            filter.get("title").unwrap().get("eq").unwrap(),
+            &json!("123")
+        );
     }
 
     #[test]
@@ -595,5 +793,43 @@ mod tests {
         let (insert_sql_3, insert_vals_3) = construct_insert("users", &valid_map);
         assert_eq!(insert_sql_3, "INSERT INTO users (name) VALUES (?)");
         assert_eq!(insert_vals_3, vec![json!("Alice")]);
+    }
+
+    #[test]
+    fn test_empty_in_and_nin_arrays() {
+        let mut filter = HashMap::new();
+        filter.insert("status".to_string(), json!({ "$in": [] }));
+        let (sql_in, vals_in) = build_where_clause(&filter);
+        assert_eq!(sql_in, "1 = 0");
+        assert!(vals_in.is_empty());
+
+        let mut filter_nin = HashMap::new();
+        filter_nin.insert("status".to_string(), json!({ "$nin": [] }));
+        let (sql_nin, vals_nin) = build_where_clause(&filter_nin);
+        assert_eq!(sql_nin, "1 = 1");
+        assert!(vals_nin.is_empty());
+    }
+
+    #[test]
+    fn test_dialect_quoting_and_constructors() {
+        assert_eq!(quote_ident_dialect("order", "postgres"), "\"order\"");
+        assert_eq!(quote_ident_dialect("order", "mysql"), "`order`");
+        assert_eq!(quote_ident_dialect("order", "mssql"), "[order]");
+        assert_eq!(quote_ident_dialect("order", "sqlite"), "\"order\"");
+
+        let mut update_data = HashMap::new();
+        update_data.insert("order".to_string(), json!(10));
+
+        let mut filter = HashMap::new();
+        filter.insert("group".to_string(), json!("admin"));
+
+        let (pg_sql, _) = construct_update_dialect("user", &update_data, &filter, "postgres");
+        assert!(pg_sql.starts_with("UPDATE \"user\" SET \"order\" = ? WHERE \"group\" = ?"));
+
+        let (mysql_sql, _) = construct_update_dialect("user", &update_data, &filter, "mysql");
+        assert!(mysql_sql.starts_with("UPDATE `user` SET `order` = ? WHERE `group` = ?"));
+
+        let (del_sql, _) = construct_delete_dialect("order", &filter, "mssql");
+        assert_eq!(del_sql, "DELETE FROM [order] WHERE [group] = ?");
     }
 }

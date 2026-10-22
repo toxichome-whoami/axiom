@@ -80,7 +80,10 @@ htmlcov/
 # ─────────────────────────────────────────────────────────────────────────────
 # Axiom Runtime & Local Data
 # ─────────────────────────────────────────────────────────────────────────────
-config.toml
+/config.toml
+/config_*.toml
+data_*/
+logs_*/
 data/
 logs/
 *.log
@@ -104,3 +107,7 @@ data/
 *.db
 
 planning-rn
+.tools/
+tools/zig/*.exe
+tools/zig/*.pdb
+tools/zig/*.obj

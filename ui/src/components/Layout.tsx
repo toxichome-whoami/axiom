@@ -10,6 +10,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { cn } from '../utils/cn';
 import { api } from '../api/client';
 import { getOperatorUser, clearSession } from '../api/session';
+import { MobileTabBar } from './shared/MobileTabBar';
 import {
   LayoutDashboard,
   Database,
@@ -23,6 +24,7 @@ import {
   X,
   HardDrive,
   Table,
+  Network,
 } from 'lucide-react';
 
 export type NavPath =
@@ -30,6 +32,7 @@ export type NavPath =
   | '/system/databases'
   | '/system/tables'
   | '/system/storage'
+  | '/system/cluster'
   | '/system/keys'
   | '/system/roles'
   | '/system/mcp'
@@ -64,12 +67,13 @@ export function Layout({ currentPath, onNavigate, title, children, onLogout }: L
   }, [title]);
 
   const searchItems = [
-    { label: 'Overview', path: '/system' as NavPath, icon: LayoutDashboard, category: 'Data & Access' },
-    { label: 'Database Pools', path: '/system/databases' as NavPath, icon: Database, category: 'Data & Access' },
-    { label: 'Table & Schema Editor', path: '/system/tables' as NavPath, icon: Table, category: 'Data & Access' },
-    { label: 'Blob Storage', path: '/system/storage' as NavPath, icon: HardDrive, category: 'Data & Access' },
-    { label: 'API Keys', path: '/system/keys' as NavPath, icon: Key, category: 'Data & Access' },
-    { label: 'Roles', path: '/system/roles' as NavPath, icon: Shield, category: 'Data & Access' },
+    { label: 'Overview', path: '/system' as NavPath, icon: LayoutDashboard, category: 'Overview' },
+    { label: 'Database Pools', path: '/system/databases' as NavPath, icon: Database, category: 'Data & Storage' },
+    { label: 'Table Editor', path: '/system/tables' as NavPath, icon: Table, category: 'Data & Storage' },
+    { label: 'Blob Storage', path: '/system/storage' as NavPath, icon: HardDrive, category: 'Data & Storage' },
+    { label: 'Cluster Mesh', path: '/system/cluster' as NavPath, icon: Network, category: 'Infrastructure' },
+    { label: 'API Keys', path: '/system/keys' as NavPath, icon: Key, category: 'Security & Access' },
+    { label: 'Roles', path: '/system/roles' as NavPath, icon: Shield, category: 'Security & Access' },
     { label: 'MCP Protocol', path: '/system/mcp' as NavPath, icon: Bot, category: 'Protocols & Tools' },
     { label: 'Settings', path: '/system/settings' as NavPath, icon: Settings, category: 'Configuration' },
   ];
@@ -146,13 +150,18 @@ export function Layout({ currentPath, onNavigate, title, children, onLogout }: L
 
   const navSections = [
     {
-      title: 'Data & Access',
+      title: '',
       items: [
         {
           path: '/system' as NavPath,
           label: 'Overview',
           icon: LayoutDashboard,
         },
+      ],
+    },
+    {
+      title: 'Data & Storage',
+      items: [
         {
           path: '/system/databases' as NavPath,
           label: 'Database Pools',
@@ -168,7 +177,11 @@ export function Layout({ currentPath, onNavigate, title, children, onLogout }: L
           label: 'Blob Storage',
           icon: HardDrive,
         },
-
+      ],
+    },
+    {
+      title: 'Security & Access',
+      items: [
         {
           path: '/system/keys' as NavPath,
           label: 'API Keys',
@@ -178,6 +191,16 @@ export function Layout({ currentPath, onNavigate, title, children, onLogout }: L
           path: '/system/roles' as NavPath,
           label: 'Roles',
           icon: Shield,
+        },
+      ],
+    },
+    {
+      title: 'Infrastructure',
+      items: [
+        {
+          path: '/system/cluster' as NavPath,
+          label: 'Cluster Mesh',
+          icon: Network,
         },
       ],
     },
@@ -208,7 +231,7 @@ export function Layout({ currentPath, onNavigate, title, children, onLogout }: L
 
 
   return (
-    <div className={cn('flex min-h-screen w-full bg-[#000000] text-[#f3f4f6] font-sans antialiased', isFullPage && 'h-screen overflow-hidden')}>
+    <div className={cn('flex min-h-screen min-h-dvh w-full bg-[#000000] text-[#f3f4f6] font-sans antialiased', isFullPage && 'h-screen h-dvh overflow-hidden')}>
       {/* Mobile Drawer Backdrop */}
       {isSidebarOpen && (
         <div
@@ -217,13 +240,13 @@ export function Layout({ currentPath, onNavigate, title, children, onLogout }: L
         />
       )}
 
-      {/* Cloudflare/Vercel Left Sidebar (matched exactly to binary_alive) */}
+      {/* Cloudflare/Vercel Left Sidebar */}
       <aside
         data-sidebar="sidebar"
         className={cn(
-          'flex min-h-screen shrink-0 flex-col bg-[#000000] border-r border-[#222222] transition-[width,transform] duration-200 select-none z-40',
+          'flex min-h-screen min-h-dvh shrink-0 flex-col bg-[#000000] border-r border-[#222222] transition-[width,transform] duration-200 select-none z-40',
           isCollapsed ? 'w-[58px]' : 'w-[260px]',
-          'fixed md:sticky top-0 h-screen',
+          'fixed md:sticky top-0 h-screen h-dvh',
           isSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
         )}
       >
@@ -231,12 +254,15 @@ export function Layout({ currentPath, onNavigate, title, children, onLogout }: L
         <div
           data-sidebar="header"
           className={cn(
-            'flex h-[58px] shrink-0 items-center justify-center border-b border-[#222222] transition-[padding] duration-200 select-none relative z-30',
+            'flex h-[58px] shrink-0 items-center justify-center border-b border-[#222222] transition-[padding] duration-200 select-none relative z-30 pt-safe',
             isCollapsed ? 'px-2' : 'px-4'
           )}
         >
           <button
-            onClick={() => onNavigate('/system')}
+            onClick={() => {
+              onNavigate('/system');
+              setIsSidebarOpen(false);
+            }}
             aria-label="Axiom Gateway"
             className="flex items-center justify-center gap-2 bg-transparent border-0 p-0 text-center cursor-pointer min-w-0 group"
           >
@@ -253,10 +279,10 @@ export function Layout({ currentPath, onNavigate, title, children, onLogout }: L
             )}
           </button>
 
-          {/* Mobile close button positioned absolute right */}
+          {/* Mobile close button positioned absolute right with >=44px touch target */}
           <button
             onClick={() => setIsSidebarOpen(false)}
-            className="p-1 text-[#8c8c8c] hover:text-white md:hidden absolute right-3 shrink-0 cursor-pointer"
+            className="w-11 h-11 flex items-center justify-center text-[#8c8c8c] hover:text-white md:hidden absolute right-1 shrink-0 cursor-pointer rounded-lg active:bg-[#1a1a1a]"
             aria-label="Close sidebar"
           >
             <X className="w-5 h-5" />
@@ -396,19 +422,35 @@ export function Layout({ currentPath, onNavigate, title, children, onLogout }: L
       </aside>
 
       {/* Main Workspace Frame */}
-      <div className={cn('flex-1 flex flex-col min-w-0 min-h-screen bg-[#000000]', isFullPage && 'min-h-0 h-screen overflow-hidden')}>
-        {/* Top Header Bar (matched to Cloudflare TopBar in binary_alive) */}
-        <header className="h-[58px] bg-[#000000] shrink-0 border-b border-[#222222] flex items-center px-4 sm:px-6 z-20 sticky top-0 gap-2 select-none justify-between">
-          <button
-            onClick={() => setIsSidebarOpen(true)}
-            className="p-1.5 -ml-1 text-[#8c8c8c] hover:text-white rounded-lg md:hidden hover:bg-[#161616] transition-colors cursor-pointer"
-            aria-label="Toggle navigation"
-            type="button"
-          >
-            <Menu className="w-5 h-5" />
-          </button>
+      <div className={cn('flex-1 flex flex-col min-w-0 min-h-screen min-h-dvh bg-[#000000]', isFullPage && 'min-h-0 h-screen h-dvh overflow-hidden')}>
+        {/* Top Header Bar */}
+        <header className="h-[58px] bg-[#000000] shrink-0 border-b border-[#222222] flex items-center px-3 sm:px-6 z-20 sticky top-0 gap-2 select-none justify-between pt-safe">
+          <div className="flex items-center gap-2 min-w-0">
+            <button
+              onClick={() => setIsSidebarOpen(true)}
+              className="w-11 h-11 flex items-center justify-center -ml-2 text-[#8c8c8c] hover:text-white rounded-lg md:hidden hover:bg-[#161616] active:bg-[#202020] transition-colors cursor-pointer shrink-0"
+              aria-label="Toggle navigation"
+              type="button"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+            <span className="md:hidden text-[15px] font-semibold text-white tracking-tight truncate">
+              {title || 'Axiom'}
+            </span>
+          </div>
 
-          <div className="flex items-center gap-2 sm:gap-3 ml-auto">
+          <div className="flex items-center gap-1.5 sm:gap-3 ml-auto">
+            {/* Mobile Search Button */}
+            <button
+              type="button"
+              onClick={() => setSearchModalOpen(true)}
+              className="w-9 h-9 flex items-center justify-center text-[#8c8c8c] hover:text-white rounded-lg md:hidden hover:bg-[#161616] active:bg-[#202020] transition-colors cursor-pointer"
+              aria-label="Search pages"
+              title="Search pages (Ctrl+K)"
+            >
+              <Search className="w-4 h-4" />
+            </button>
+
             {/* Cluster Status Pill */}
             <div className="hidden sm:inline-flex items-center gap-1.5 rounded-full border border-[#222222] bg-[#0c0c0c] px-2.5 py-1 text-[11px] font-medium text-[#8c8c8c]">
               <span className="size-1.5 rounded-full bg-[#30a46c]"></span>
@@ -518,8 +560,8 @@ export function Layout({ currentPath, onNavigate, title, children, onLogout }: L
         <main
           className={
             isFullPage
-              ? 'flex-1 w-full min-w-0 p-0 max-w-none h-[calc(100vh-58px)] overflow-hidden flex flex-col'
-              : 'flex-1 p-4 sm:p-6 w-full max-w-[1600px] mx-auto min-w-0'
+              ? 'flex-1 w-full min-w-0 p-0 max-w-none h-[calc(100vh-58px-54px)] max-h-[calc(100dvh-58px-54px)] md:h-[calc(100vh-58px)] md:max-h-[calc(100dvh-58px)] overflow-hidden flex flex-col pb-safe'
+              : 'flex-1 p-3 sm:p-6 w-full max-w-[1600px] mx-auto min-w-0 pb-[calc(54px+env(safe-area-inset-bottom)+16px)] md:pb-safe'
           }
         >
           {children}
@@ -587,32 +629,39 @@ export function Layout({ currentPath, onNavigate, title, children, onLogout }: L
         )}
       </div>
 
-      {/* Global Quick Search Modal (exact matching binary_alive) */}
+      {/* Global Quick Search Modal (exact matching binary_alive with mobile adaptation) */}
       {searchModalOpen && (
-        <div className="fixed inset-0 z-[100] flex items-start justify-center pt-[15vh]">
+        <div className="fixed inset-0 z-[100] flex items-start justify-center pt-16 sm:pt-[15vh] px-3 sm:px-0">
           <div
-            className="fixed inset-0 bg-black/60 backdrop-blur-xs"
+            className="fixed inset-0 bg-black/70 backdrop-blur-xs"
             onClick={() => setSearchModalOpen(false)}
           />
-          <div className="relative w-full max-w-lg bg-[#0c0c0c] border border-[#262626] rounded-[8px] shadow-2xl p-1.5 flex flex-col animate-in fade-in zoom-in-95 duration-200">
+          <div className="relative w-full max-w-lg bg-[#0c0c0c] border border-[#262626] rounded-[8px] shadow-2xl p-1.5 flex flex-col animate-in fade-in zoom-in-95 duration-150">
             <div className="bg-[#0e0e0e] border border-[#222222] rounded-[6px] overflow-hidden flex flex-col">
-              <div className="flex items-center px-4 py-3 border-b border-[#222222]">
-                <Search className="w-5 h-5 text-[#8c8c8c] mr-3 shrink-0" />
+              <div className="flex items-center px-3 sm:px-4 py-3 border-b border-[#222222]">
+                <Search className="w-4 h-4 text-[#8c8c8c] mr-2.5 shrink-0" />
                 <input
                   ref={searchInputRef}
                   type="text"
-                  className="flex-1 bg-transparent border-none outline-none text-[14px] text-white placeholder-[#8c8c8c]"
-                  placeholder="Search for pages..."
+                  className="flex-1 bg-transparent border-none outline-none text-[15px] sm:text-[14px] text-white placeholder-[#8c8c8c]"
+                  placeholder="Search pages..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   onKeyDown={handleModalKeyDown}
                 />
-                <kbd className="ml-2 font-sans text-[10px] font-semibold text-[#8c8c8c] bg-[#1a1a1a] px-2 py-1 rounded border border-[#262626] select-none">
+                <button
+                  type="button"
+                  onClick={() => setSearchModalOpen(false)}
+                  className="sm:hidden text-[12px] font-medium text-[#8c8c8c] hover:text-white px-2 py-1 rounded bg-[#1a1a1a] border border-[#262626] shrink-0"
+                >
+                  Done
+                </button>
+                <kbd className="hidden sm:inline-block ml-2 font-sans text-[10px] font-semibold text-[#8c8c8c] bg-[#1a1a1a] px-2 py-1 rounded border border-[#262626] select-none">
                   ESC
                 </kbd>
               </div>
 
-              <div className="max-h-[300px] overflow-y-auto p-2 scrollbar-thin">
+              <div className="max-h-[50vh] sm:max-h-[300px] overflow-y-auto p-1.5 sm:p-2 scrollbar-thin">
                 {filteredSearchItems.length === 0 ? (
                   <div className="px-4 py-8 text-center text-[#8c8c8c] text-sm">
                     No results found for "{searchQuery}"
@@ -626,7 +675,7 @@ export function Layout({ currentPath, onNavigate, title, children, onLogout }: L
                         type="button"
                         onClick={() => handleSearchSelect(item.path)}
                         className={cn(
-                          'w-full flex items-center px-3.5 py-2.5 rounded-lg text-sm transition-colors cursor-pointer text-left',
+                          'w-full flex items-center px-3 sm:px-3.5 py-3 sm:py-2.5 rounded-lg text-sm transition-colors cursor-pointer text-left',
                           index === searchSelectedIndex
                             ? 'bg-[#1a1a1a] text-white'
                             : 'text-[#8c8c8c] hover:bg-[#141414] hover:text-white'
@@ -638,7 +687,7 @@ export function Layout({ currentPath, onNavigate, title, children, onLogout }: L
                             index === searchSelectedIndex ? 'text-[#3b82f6] opacity-100' : 'opacity-60'
                           )}
                         />
-                        <span className="flex-1 truncate">{item.label}</span>
+                        <span className="flex-1 truncate font-medium">{item.label}</span>
                         <span className="text-[11px] text-[#666666] font-normal">{item.category}</span>
                       </button>
                     );
@@ -649,6 +698,16 @@ export function Layout({ currentPath, onNavigate, title, children, onLogout }: L
           </div>
         </div>
       )}
+
+      {/* Mobile Bottom Tab Navigation */}
+      <MobileTabBar
+        currentPath={currentPath}
+        onNavigate={(path) => {
+          onNavigate(path);
+          setIsSidebarOpen(false);
+        }}
+        onOpenMenu={() => setIsSidebarOpen(true)}
+      />
     </div>
   );
 }

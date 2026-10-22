@@ -7,7 +7,7 @@
  */
 
 import React, { useState } from 'react';
-import { Folder, X, AlertTriangle, ArrowRight } from 'lucide-react';
+import { Folder, X, AlertTriangle, ArrowRight, Copy } from 'lucide-react';
 import { NamespaceInfo } from '../../types';
 import { StorageItem } from './types';
 import { CustomSelect } from '../../components/shared/CustomSelect';
@@ -16,23 +16,32 @@ import { sanitizeFolder, isSelfOrDescendant, joinKey } from './paths';
 
 interface MoveDialogProps {
   isOpen: boolean;
-  item: StorageItem | null;
+  mode?: 'move' | 'copy';
+  item?: StorageItem | null;
+  items?: StorageItem[] | null;
   currentNamespace: string;
   namespaces: NamespaceInfo[];
   availableFolders: string[];
   onClose: () => void;
-  onMove: (destNs: string, destKey: string) => Promise<void>;
+  onMove?: (destNs: string, destKey: string) => Promise<void>;
+  onBatchMove?: (destNs: string, targetFolder: string, items: StorageItem[]) => Promise<void>;
 }
 
 export const MoveDialog: React.FC<MoveDialogProps> = ({
   isOpen,
+  mode = 'move',
   item,
+  items,
   currentNamespace,
   namespaces,
   availableFolders,
   onClose,
   onMove,
+  onBatchMove,
 }) => {
+  const isCopy = mode === 'copy';
+  const actionWord = isCopy ? 'copy' : 'move';
+  const ActionWord = isCopy ? 'Copy' : 'Move';
   const [targetNs, setTargetNs] = useState(currentNamespace);
   const [targetFolder, setTargetFolder] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -49,32 +58,71 @@ export const MoveDialog: React.FC<MoveDialogProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, isSubmitting, onClose]);
 
-  if (!isOpen || !item) return null;
+  const activeItems = items && items.length > 0 ? items : item ? [item] : [];
+  if (!isOpen || activeItems.length === 0) return null;
 
-  const isFolder = item.type === 'folder';
+  const isMultiple = activeItems.length > 1;
+  const singleItem = !isMultiple ? activeItems[0] : null;
+  const isFolder = singleItem ? singleItem.type === 'folder' : false;
   const cleanDir = sanitizeFolder(targetFolder);
-  const destKey = joinKey(cleanDir, item.name, isFolder);
+  const destKey = singleItem ? joinKey(cleanDir, singleItem.name, isFolder) : cleanDir;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
 
-    if (targetNs === currentNamespace && destKey === item.fullKey) {
+    if (isMultiple) {
+      for (const it of activeItems) {
+        const itemDestKey = joinKey(cleanDir, it.name, it.type === 'folder');
+        if (targetNs === currentNamespace && itemDestKey === it.fullKey) {
+          setError(`Item "${it.name}" is already at the target location.`);
+          return;
+        }
+        if (it.type === 'folder' && targetNs === currentNamespace && isSelfOrDescendant(it.fullKey, itemDestKey)) {
+          setError(`Cannot ${actionWord} directory "${it.name}" into itself or a child directory.`);
+          return;
+        }
+      }
+
+      setIsSubmitting(true);
+      try {
+        if (onBatchMove) {
+          await onBatchMove(targetNs, cleanDir, activeItems);
+        } else if (onMove) {
+          for (const it of activeItems) {
+            const itemDest = joinKey(cleanDir, it.name, it.type === 'folder');
+            await onMove(targetNs, itemDest);
+          }
+        }
+        onClose();
+      } catch (err: unknown) {
+        setError(err instanceof Error ? err.message : `Failed to ${actionWord} items`);
+      } finally {
+        setIsSubmitting(false);
+      }
+      return;
+    }
+
+    if (!singleItem) return;
+
+    if (targetNs === currentNamespace && destKey === singleItem.fullKey) {
       setError('Destination path is identical to the current location.');
       return;
     }
 
-    if (isFolder && targetNs === currentNamespace && isSelfOrDescendant(item.fullKey, destKey)) {
-      setError('Cannot move a directory into itself or one of its child directories.');
+    if (isFolder && targetNs === currentNamespace && isSelfOrDescendant(singleItem.fullKey, destKey)) {
+      setError(`Cannot ${actionWord} a directory into itself or one of its child directories.`);
       return;
     }
 
     setIsSubmitting(true);
     try {
-      await onMove(targetNs, destKey);
+      if (onMove) {
+        await onMove(targetNs, destKey);
+      }
       onClose();
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to move item');
+      setError(err instanceof Error ? err.message : `Failed to ${actionWord} item`);
     } finally {
       setIsSubmitting(false);
     }
@@ -82,7 +130,7 @@ export const MoveDialog: React.FC<MoveDialogProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs font-sans"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs font-sans select-none"
       onClick={(e) => {
         if (e.target === e.currentTarget && !isSubmitting) {
           onClose();
@@ -95,9 +143,15 @@ export const MoveDialog: React.FC<MoveDialogProps> = ({
       >
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Folder className="w-4 h-4 text-[#eab308]" />
-            <h3 className="text-[14px] font-medium text-white">
-              Move {isFolder ? 'Folder' : 'Object'}
+            {isCopy ? (
+              <Copy className="w-4 h-4 text-blue-400" />
+            ) : (
+              <Folder className="w-4 h-4 text-[#eab308]" />
+            )}
+            <h3 className="text-[15px] font-medium text-white tracking-tight">
+              {isMultiple
+                ? `${ActionWord} ${activeItems.length} Items`
+                : `${ActionWord} ${isFolder ? 'Folder' : 'Object'}`}
             </h3>
           </div>
           <button
@@ -110,7 +164,7 @@ export const MoveDialog: React.FC<MoveDialogProps> = ({
         </div>
 
         {error && (
-          <div className="p-2.5 rounded-[6px] bg-[#ef4444]/10 border border-[#ef4444]/30 text-[12px] text-[#ef4444] flex items-center gap-2">
+          <div className="p-2.5 rounded-md bg-[#ef4444]/10 border border-[#ef4444]/30 text-xs text-[#ef4444] flex items-center gap-2">
             <AlertTriangle className="w-4 h-4 shrink-0" />
             <span>{error}</span>
           </div>
@@ -118,7 +172,7 @@ export const MoveDialog: React.FC<MoveDialogProps> = ({
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-[12px] text-[#cccccc] font-medium mb-1.5">
+            <label className="block text-[13px] text-[#8c8c8c] font-medium mb-1.5">
               Target Namespace
             </label>
             <CustomSelect
@@ -137,14 +191,14 @@ export const MoveDialog: React.FC<MoveDialogProps> = ({
 
           <div>
             <div className="flex items-center justify-between mb-1.5">
-              <label className="text-[13px] text-[#999999] font-medium">
+              <label className="text-[13px] text-[#8c8c8c] font-medium">
                 Destination Folder Path
               </label>
               <div className="flex items-center gap-1">
                 <button
                   type="button"
                   onClick={() => setTargetFolder('')}
-                  className="text-[11.5px] text-[#8c8c8c] hover:text-white px-2 py-0.5 rounded bg-[#1c1c1c] border border-[#2a2a2a] cursor-pointer"
+                  className="text-xs text-[#8c8c8c] hover:text-white px-2 py-0.5 rounded bg-[#1c1c1c] border border-[#2a2a2a] cursor-pointer"
                 >
                   Root (/)
                 </button>
@@ -159,19 +213,19 @@ export const MoveDialog: React.FC<MoveDialogProps> = ({
                 setError(null);
               }}
               placeholder="e.g. documents/archive/ (blank for root)"
-              className="w-full h-9 px-3 rounded-[6px] bg-[#141414] border border-[#262626] focus:border-[#383838] text-white text-[13.5px] sm:text-[14px] outline-none"
+              className="w-full h-9 px-3 rounded-[8px] bg-[#141414] border border-[#262626] focus:border-[#383838] text-white text-[14px] outline-none"
             />
 
             {availableFolders.length > 0 && (
               <div className="mt-2.5 space-y-1.5">
-                <span className="text-[12px] text-[#777777] block">Quick folder picker:</span>
+                <span className="text-[12.5px] text-[#777777] block">Quick folder picker:</span>
                 <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
                   {availableFolders.map((f) => (
                     <button
                       key={f}
                       type="button"
                       onClick={() => setTargetFolder(f)}
-                      className="text-[12px] text-[#cccccc] hover:text-white px-2.5 py-1 rounded bg-[#181818] border border-[#262626] hover:border-[#383838] cursor-pointer"
+                      className="text-[12.5px] text-[#cccccc] hover:text-white px-2.5 py-1 rounded-[6px] bg-[#181818] border border-[#262626] hover:border-[#383838] cursor-pointer"
                     >
                       {f}
                     </button>
@@ -182,12 +236,16 @@ export const MoveDialog: React.FC<MoveDialogProps> = ({
           </div>
 
           {/* Destination Preview */}
-          <div className="p-3 rounded-[6px] bg-[#080808] border border-[#222222] text-[13px] space-y-1">
-            <span className="text-[#666666] block text-[11.5px]">Resulting Location:</span>
+          <div className="p-3 rounded-[8px] bg-[#080808] border border-[#222222] text-[13px] space-y-1">
+            <span className="text-[#8c8c8c] block text-[12px]">Resulting Location:</span>
             <div className="text-white flex items-center gap-1.5 truncate">
               <span className="text-[#cccccc]">{targetNs}</span>
               <span className="text-[#555555]">/</span>
-              <span className="truncate">{destKey}</span>
+              <span className="truncate">
+                {isMultiple
+                  ? `${cleanDir || '(root)'} (${activeItems.length} items)`
+                  : destKey}
+              </span>
             </div>
           </div>
 
@@ -206,8 +264,12 @@ export const MoveDialog: React.FC<MoveDialogProps> = ({
               size="md"
               isLoading={isSubmitting}
             >
-              <ArrowRight className="w-3.5 h-3.5 mr-1" />
-              Move Here
+              {isCopy ? (
+                <Copy className="w-3.5 h-3.5 mr-1" />
+              ) : (
+                <ArrowRight className="w-3.5 h-3.5 mr-1" />
+              )}
+              {isMultiple ? `${ActionWord} ${activeItems.length} Items` : `${ActionWord} Here`}
             </Button>
           </div>
         </form>
