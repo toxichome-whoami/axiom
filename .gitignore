@@ -109,3 +109,4 @@ data/
 
 planning-rn
 .tools/
+tools/zig/runner*

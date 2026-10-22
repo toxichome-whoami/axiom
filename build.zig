@@ -3,7 +3,7 @@ const builtin = @import("builtin");
 
 pub fn build(b: *std.Build) void {
     const exe_ext = if (builtin.os.tag == .windows) ".exe" else "";
-    const runner_bin = ".tools/runner" ++ exe_ext;
+    const runner_bin = "tools/zig/runner" ++ exe_ext;
 
     // Compile runner: compiles tools/zig/runner.c using zig cc
     const compile_runner = b.addSystemCommand(&.{
