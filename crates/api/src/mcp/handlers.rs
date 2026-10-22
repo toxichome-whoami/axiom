@@ -57,12 +57,16 @@ pub async fn handle_mcp(
 
     let response = match req.method.as_str() {
         "initialize" => handle_initialize(id),
-        "notifications/initialized" => JsonRpcResponse::success(id, json!({})),
         "ping" => JsonRpcResponse::success(id, json!({})),
         "tools/list" => handle_tools_list(id, &auth),
         "tools/call" => handle_tools_call(id, req.params, &auth).await,
         "resources/list" => handle_resources_list(id, &auth).await,
         "resources/read" => handle_resources_read(id, req.params, &auth).await,
+        "resources/templates/list" => JsonRpcResponse::success(id, json!({ "resourceTemplates": [] })),
+        "prompts/list" => JsonRpcResponse::success(id, json!({ "prompts": [] })),
+        "logging/setLevel" => JsonRpcResponse::success(id, json!({})),
+        "completion/complete" => JsonRpcResponse::success(id, json!({ "completion": { "values": [] } })),
+        m if m.starts_with("notifications/") => JsonRpcResponse::success(id, json!({})),
         _ => JsonRpcResponse::error(
             id,
             -32601,
@@ -392,6 +396,18 @@ async fn handle_tools_call(
     }
 }
 
+
+// ─── AI Parameter Parsing Resilience ───────────────────────────────────────
+// LLMs (Claude, GPT-4, Cursor, Windsurf) frequently serialize nested objects
+// as stringified JSON rather than native JSON objects. This helper parses both.
+fn parse_json_object(val: Option<&Value>) -> Option<HashMap<String, Value>> {
+    match val {
+        Some(Value::Object(map)) => Some(map.iter().map(|(k, v)| (k.clone(), v.clone())).collect()),
+        Some(Value::String(s)) => serde_json::from_str(s).ok(),
+        _ => None,
+    }
+}
+
 // ─── Concrete Tool Implementations ─────────────────────────────────────────
 
 async fn exec_list_services(auth: &AuthContext) -> Result<Value, String> {
@@ -506,8 +522,7 @@ async fn exec_query(
     let mut values = Vec::new();
     let mut where_clauses = Vec::new();
 
-    if let Some(filter_val) = args.get("filter").and_then(|f| f.as_object()) {
-        let filter_map: HashMap<String, Value> = filter_val.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+    if let Some(filter_map) = parse_json_object(args.get("filter")) {
         let (clause, mut vals) = filter_builder::build_where_clause(&filter_map);
         if !clause.is_empty() {
             where_clauses.push(clause);
@@ -580,6 +595,28 @@ async fn exec_insert(
         arr.iter().filter_map(|r| serde_json::from_value(r.clone()).ok()).collect()
     } else if let Some(single) = args.get("row").and_then(|v| v.as_object()) {
         vec![single.iter().map(|(k, v)| (k.clone(), v.clone())).collect()]
+    } else if let Some(data_val) = args.get("data") {
+        if let Some(arr) = data_val.as_array() {
+            arr.iter().filter_map(|r| serde_json::from_value(r.clone()).ok()).collect()
+        } else if let Some(single) = data_val.as_object() {
+            vec![single.iter().map(|(k, v)| (k.clone(), v.clone())).collect()]
+        } else if let Some(s) = data_val.as_str() {
+            if let Ok(arr) = serde_json::from_str::<Vec<HashMap<String, Value>>>(s) {
+                arr
+            } else if let Ok(single) = serde_json::from_str::<HashMap<String, Value>>(s) {
+                vec![single]
+            } else {
+                return Err("Failed to parse JSON string in 'data'".to_string());
+            }
+        } else {
+            return Err("Invalid 'data' format: expected object or array".to_string());
+        }
+    } else if let Some(s) = args.get("rows").and_then(|v| v.as_str()) {
+        serde_json::from_str(s).map_err(|e| format!("Invalid JSON string in 'rows': {}", e))?
+    } else if let Some(s) = args.get("row").and_then(|v| v.as_str()) {
+        let single: HashMap<String, Value> = serde_json::from_str(s)
+            .map_err(|e| format!("Invalid JSON string in 'row': {}", e))?;
+        vec![single]
     } else {
         return Err("Missing 'rows' array or 'row' object to insert".to_string());
     };
@@ -631,16 +668,14 @@ async fn exec_update(
     let table = args.get("table").and_then(|v| v.as_str())
         .ok_or_else(|| "Missing required parameter 'table'".to_string())?;
 
-    let filter: HashMap<String, Value> = args.get("filter")
-        .and_then(|f| serde_json::from_value(f.clone()).ok())
+    let filter = parse_json_object(args.get("filter"))
         .ok_or_else(|| "Missing required 'filter' object".to_string())?;
 
     if filter.is_empty() {
         return Err("Safety guardrail: 'filter' object must not be empty".to_string());
     }
 
-    let data: HashMap<String, Value> = args.get("data")
-        .and_then(|d| serde_json::from_value(d.clone()).ok())
+    let data = parse_json_object(args.get("data"))
         .ok_or_else(|| "Missing required 'data' object".to_string())?;
 
     if data.is_empty() {
@@ -673,8 +708,7 @@ async fn exec_delete(
     let table = args.get("table").and_then(|v| v.as_str())
         .ok_or_else(|| "Missing required parameter 'table'".to_string())?;
 
-    let filter: HashMap<String, Value> = args.get("filter")
-        .and_then(|f| serde_json::from_value(f.clone()).ok())
+    let filter = parse_json_object(args.get("filter"))
         .ok_or_else(|| "Missing required 'filter' object".to_string())?;
 
     if filter.is_empty() {
@@ -704,7 +738,7 @@ async fn exec_raw_sql(
 ) -> Result<Value, String> {
     let db = args.get("database").and_then(|v| v.as_str())
         .ok_or_else(|| "Missing required parameter 'database'".to_string())?;
-    let sql = args.get("sql").and_then(|v| v.as_str())
+    let sql = args.get("sql").or_else(|| args.get("query")).and_then(|v| v.as_str())
         .ok_or_else(|| "Missing required parameter 'sql'".to_string())?;
 
     let db_cfg = get_db_config(db, auth).await
@@ -1084,22 +1118,9 @@ async fn handle_resources_read(
             }
             Err(e) => JsonRpcResponse::error(id, -32603, format!("Failed to read blob namespaces: {}", e), None),
         }
-    } else if let Some(ns) = uri.strip_prefix("axiom://blobs/") {
-        let mut map = serde_json::Map::new();
-        map.insert("namespace".to_string(), Value::String(ns.to_string()));
-        match exec_list_blobs(auth, &map).await {
-            Ok(val) => {
-                let content = McpResourceContent {
-                    uri,
-                    mime_type: "application/json".to_string(),
-                    text: serde_json::to_string_pretty(&val).unwrap_or_default(),
-                };
-                JsonRpcResponse::success(id, serde_json::to_value(McpResourceReadResult { contents: vec![content] }).unwrap())
-            }
-            Err(e) => JsonRpcResponse::error(id, -32603, format!("Failed to read blob namespace '{}': {}", ns, e), None),
-        }
-    } else if let Some(path) = uri.strip_prefix("axiom://blob/") {
+    } else if let Some(path) = uri.strip_prefix("axiom://blobs/").or_else(|| uri.strip_prefix("axiom://blob/")) {
         if let Some((ns, key)) = path.split_once('/') {
+            // Read specific blob payload
             let mut map = serde_json::Map::new();
             map.insert("namespace".to_string(), Value::String(ns.to_string()));
             map.insert("key".to_string(), Value::String(key.to_string()));
@@ -1117,7 +1138,20 @@ async fn handle_resources_read(
                 Err(e) => JsonRpcResponse::error(id, -32603, format!("Failed to read blob '{}': {}", path, e), None),
             }
         } else {
-            JsonRpcResponse::error(id, -32602, format!("Malformed blob URI: '{}'. Expected 'axiom://blob/{{namespace}}/{{key}}'", uri), None)
+            // List namespace contents
+            let mut map = serde_json::Map::new();
+            map.insert("namespace".to_string(), Value::String(path.to_string()));
+            match exec_list_blobs(auth, &map).await {
+                Ok(val) => {
+                    let content = McpResourceContent {
+                        uri,
+                        mime_type: "application/json".to_string(),
+                        text: serde_json::to_string_pretty(&val).unwrap_or_default(),
+                    };
+                    JsonRpcResponse::success(id, serde_json::to_value(McpResourceReadResult { contents: vec![content] }).unwrap())
+                }
+                Err(e) => JsonRpcResponse::error(id, -32603, format!("Failed to read blob namespace '{}': {}", path, e), None),
+            }
         }
     } else {
         JsonRpcResponse::error(id, -32602, format!("Resource URI '{}' not found", uri), None)
@@ -1288,6 +1322,81 @@ mod tests {
         let err = exec_read_blob(&ctx, &args).await.unwrap_err();
         assert!(err.contains("Safety guardrail: requested max_bytes exceeds 20MB limit"));
     }
+
+    #[test]
+    fn test_parse_json_object_resilience() {
+        let obj = json!({ "status": "active", "age": 25 });
+        let parsed_obj = parse_json_object(Some(&obj)).unwrap();
+        assert_eq!(parsed_obj.get("status").unwrap(), "active");
+
+        // Stringified JSON from LLMs
+        let str_json = json!("{\"status\": \"active\", \"age\": 25}");
+        let parsed_str = parse_json_object(Some(&str_json)).unwrap();
+        assert_eq!(parsed_str.get("status").unwrap(), "active");
+
+        // Invalid JSON string
+        let invalid_str = json!("not valid json");
+        assert!(parse_json_object(Some(&invalid_str)).is_none());
+
+        // Null / Array
+        let arr = json!([1, 2, 3]);
+        assert!(parse_json_object(Some(&arr)).is_none());
+        assert!(parse_json_object(None).is_none());
+    }
+
+    #[tokio::test]
+    async fn test_mcp_lifecycle_and_discovery_methods() {
+        let test_methods = vec![
+            "notifications/initialized",
+            "notifications/cancelled",
+            "resources/templates/list",
+            "prompts/list",
+            "logging/setLevel",
+            "completion/complete",
+        ];
+
+        for method in test_methods {
+            let rpc = json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": method,
+                "params": {}
+            });
+
+            let resp = handle_mcp(
+                axum::extract::Extension(AuthContext {
+                    api_key_name: "test_key".to_string(),
+                    is_session: true,
+                    ..Default::default()
+                }),
+                axum::Json(rpc),
+            ).await;
+
+            let body = resp.expect("handle_mcp should succeed").0;
+            assert!(body.get("error").is_none() || body.get("error").unwrap().is_null(),
+                "Method '{}' returned error: {:?}", method, body.get("error"));
+            assert!(body.get("result").is_some(), "Method '{}' returned no result", method);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_mcp_raw_sql_accepts_query_alias() {
+        let ctx = AuthContext {
+            api_key_name: "test_key".to_string(),
+            is_session: true,
+            ..Default::default()
+        };
+
+        // Missing both sql and query
+        let mut args = serde_json::Map::new();
+        args.insert("database".to_string(), json!("main_db"));
+        let err = exec_raw_sql(&ctx, &args).await.unwrap_err();
+        assert!(err.contains("Missing required parameter 'sql'"));
+
+        // Providing 'query' instead of 'sql' succeeds parameter extraction
+        args.insert("query".to_string(), json!("SELECT 1"));
+        let err = exec_raw_sql(&ctx, &args).await.unwrap_err();
+        // Fails at db lookup, NOT at parameter extraction!
+        assert!(!err.contains("Missing required parameter 'sql'"));
+    }
 }
-
-
