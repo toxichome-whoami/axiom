@@ -934,7 +934,7 @@ impl BlobEngine {
                 *hasher_guard = crate::hash::Blake3StreamHasher::new();
             }
 
-            let mut hashing_reader = crate::hash::HashingAsyncReader::new(reader, &mut *hasher_guard);
+            let mut hashing_reader = crate::hash::HashingAsyncReader::new(reader, &mut hasher_guard);
             self.store
                 .write_resumable_stream(upload_id, offset, &mut hashing_reader, max_bytes)
                 .await?

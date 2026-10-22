@@ -789,7 +789,7 @@ async fn brute_force_api_key_bad_secrets_ban_attacker_ip_not_key() {
 #[tokio::test]
 async fn distributed_credential_stuffing_account_lockout() {
     ensure_metadata_store().await;
-    let username = "target_admin_victim";
+    let username = "target_victim_unique_lockout";
     let _ = axiom_metadata::MetadataStore::create_user(username, "ValidVictimP@ssw0rd!").await;
 
     // Simulate 5 failed login attempts from 5 distinct IP addresses

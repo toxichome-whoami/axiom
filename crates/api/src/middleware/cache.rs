@@ -136,7 +136,7 @@ impl TursoCache {
         
         // Start cleanup daemon
         let handle = tokio::spawn(async move {
-            let conn = TURSO_DB.get().unwrap();
+            let Some(conn) = TURSO_DB.get() else { return; };
             let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
             loop {
                 interval.tick().await;

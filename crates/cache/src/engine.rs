@@ -305,11 +305,18 @@ impl CacheEngine {
         }
     }
 
-    /// Clears all entries from both memory L1 and persistent L2.
-    /// CONTRACT:
-    ///  - Side effects: Wipes DashMap and truncates SQLite table.
-    ///  - Idempotent: Yes.
+    /// Clears cached data records from both memory L1 and persistent L2.
+    /// Security invariant: Preserves active rate-limiting counters (`rl:*`),
+    /// revoked capability ticket tombstones (`ticket:revoked:*`), and active bans (`ban:*`).
     pub async fn flush() {
+        L1_CACHE.retain(|k, _| k.starts_with("rl:") || k.starts_with("ticket:revoked:") || k.starts_with("ban:"));
+        if let Some(conn) = L2_CONN.get() {
+            let _ = conn.execute("DELETE FROM cache_aof WHERE key NOT LIKE 'rl:%' AND key NOT LIKE 'ticket:revoked:%' AND key NOT LIKE 'ban:%'", ()).await;
+        }
+    }
+
+    /// Hard wipe of all entries across L1 and L2 regardless of namespace.
+    pub async fn flush_all() {
         L1_CACHE.clear();
         if let Some(conn) = L2_CONN.get() {
             let _ = conn.execute("DELETE FROM cache_aof", ()).await;

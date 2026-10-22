@@ -74,13 +74,13 @@ async fn prometheus_metrics(
         return Ok(axum::response::Response::builder()
             .header(header::CONTENT_TYPE, "application/json; charset=utf-8")
             .body(axum::body::Body::from(body))
-            .unwrap());
+            .unwrap_or_else(|_| axum::response::Response::default()));
     }
 
     Ok(axum::response::Response::builder()
         .header(header::CONTENT_TYPE, "text/plain; version=0.0.4; charset=utf-8")
         .body(axum::body::Body::from(crate::metrics::MetricsEngine::render_prometheus()))
-        .unwrap())
+        .unwrap_or_else(|_| axum::response::Response::default()))
 }
 
 pub fn create_app() -> Router {

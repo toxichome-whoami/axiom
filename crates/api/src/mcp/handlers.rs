@@ -383,15 +383,15 @@ async fn handle_tools_call(
 
     match result {
         Ok(val) => {
-            let text = if val.is_string() {
-                val.as_str().unwrap().to_string()
+            let text = if let Some(s) = val.as_str() {
+                s.to_string()
             } else {
                 serde_json::to_string(&val).unwrap_or_default()
             };
-            JsonRpcResponse::success(id, serde_json::to_value(McpToolCallResult::success(text)).unwrap())
+            JsonRpcResponse::success(id, serde_json::to_value(McpToolCallResult::success(text)).unwrap_or_default())
         }
         Err(err_msg) => {
-            JsonRpcResponse::success(id, serde_json::to_value(McpToolCallResult::error(err_msg)).unwrap())
+            JsonRpcResponse::success(id, serde_json::to_value(McpToolCallResult::error(err_msg)).unwrap_or_default())
         }
     }
 }
@@ -1117,7 +1117,7 @@ async fn handle_resources_read(
                     mime_type: "application/json".to_string(),
                     text: serde_json::to_string_pretty(&val).unwrap_or_default(),
                 };
-                JsonRpcResponse::success(id, serde_json::to_value(McpResourceReadResult { contents: vec![content] }).unwrap())
+                JsonRpcResponse::success(id, serde_json::to_value(McpResourceReadResult { contents: vec![content] }).unwrap_or_default())
             }
             Err(e) => JsonRpcResponse::error(id, -32603, format!("Failed to read services: {}", e), None),
         }
@@ -1131,7 +1131,7 @@ async fn handle_resources_read(
                     mime_type: "application/json".to_string(),
                     text: serde_json::to_string_pretty(&tables_val).unwrap_or_default(),
                 };
-                JsonRpcResponse::success(id, serde_json::to_value(McpResourceReadResult { contents: vec![content] }).unwrap())
+                JsonRpcResponse::success(id, serde_json::to_value(McpResourceReadResult { contents: vec![content] }).unwrap_or_default())
             }
             Err(e) => JsonRpcResponse::error(id, -32603, format!("Failed to read schema: {}", e), None),
         }
@@ -1143,7 +1143,7 @@ async fn handle_resources_read(
                     mime_type: "application/json".to_string(),
                     text: serde_json::to_string_pretty(&val).unwrap_or_default(),
                 };
-                JsonRpcResponse::success(id, serde_json::to_value(McpResourceReadResult { contents: vec![content] }).unwrap())
+                JsonRpcResponse::success(id, serde_json::to_value(McpResourceReadResult { contents: vec![content] }).unwrap_or_default())
             }
             Err(e) => JsonRpcResponse::error(id, -32603, format!("Failed to read blob namespaces: {}", e), None),
         }
@@ -1162,7 +1162,7 @@ async fn handle_resources_read(
                         mime_type: content_type,
                         text,
                     };
-                    JsonRpcResponse::success(id, serde_json::to_value(McpResourceReadResult { contents: vec![content] }).unwrap())
+                    JsonRpcResponse::success(id, serde_json::to_value(McpResourceReadResult { contents: vec![content] }).unwrap_or_default())
                 }
                 Err(e) => JsonRpcResponse::error(id, -32603, format!("Failed to read blob '{}': {}", path, e), None),
             }
@@ -1177,7 +1177,7 @@ async fn handle_resources_read(
                         mime_type: "application/json".to_string(),
                         text: serde_json::to_string_pretty(&val).unwrap_or_default(),
                     };
-                    JsonRpcResponse::success(id, serde_json::to_value(McpResourceReadResult { contents: vec![content] }).unwrap())
+                    JsonRpcResponse::success(id, serde_json::to_value(McpResourceReadResult { contents: vec![content] }).unwrap_or_default())
                 }
                 Err(e) => JsonRpcResponse::error(id, -32603, format!("Failed to read blob namespace '{}': {}", path, e), None),
             }
