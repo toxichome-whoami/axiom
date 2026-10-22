@@ -1026,20 +1026,27 @@ Filters support nested boolean branching via `$or` and `$and` arrays:
 
 
 
-## Performance Targets
+## Empirical Benchmarks & Performance
 
-Every performance metric is governed by automated micro-benchmarks (`benches/benches/pipeline.rs` and Go suites):
+Every performance claim is backed by reproducible Criterion micro-benchmarks in [`benches/benches/pipeline.rs`](./benches/benches/pipeline.rs). See the complete [Performance & Benchmark Report](./docs/benchmarks.md) for full hardware specifications, confidence intervals, and test methodologies.
 
-| Pipeline Stage | Target Latency | Verification Benchmark |
-|---|---|---|
-| L1 RAM Cache GET | `< 1 µs` p50 | `benches/benches/pipeline.rs` (`l1_get_hot_hit`) |
-| Capability Ticket Generation | `< 2 µs` | `benches/benches/pipeline.rs` (`ticket_generation`) |
-| ArcSwap Auth Validation | `< 5 µs` | `benches/benches/pipeline.rs` (`auth_snapshot_valid_hit`) |
-| BLAKE3 64 KB Chunk Hash | `< 15 µs` | `benches/benches/pipeline.rs` (`blake3_chunk_hash_64kb`) |
-| Full Pipeline Cache Hit | `< 500 µs` p50 | Hoisted Axum mock round-trip |
-| End-to-End Local DB Query | `< 2 ms` p50 | PostgreSQL local loopback |
-| Cold Boot to TCP Accept | `< 200 ms` | Startup process timing |
-| Stripped Binary Size | `< 15 MB` | Release profile with LTO and strip enabled |
+| Pipeline Stage | Target | Measured (p50) | Verification Benchmark |
+|---|---|---|---|
+| **Zero-Lock Snapshot Read** | `< 50 ns` | **12.6 ns** | `metadata/snapshot_read_atomic` |
+| **RBAC Wildcard Union Match** | `< 100 ns` | **38.9 ns** | `policy/wildcard_union_match` |
+| **RBAC Exact Match Evaluation** | `< 100 ns` | **56.0 ns** | `policy/allow_single_exact_match` |
+| **AST Parse Cache Hot Hit** | `< 200 ns` | **75.5 ns** | `database/ast_cache_lookup_hot` |
+| **Rate Limit Check (Dual IP+Key)** | `< 200 ns` | **88.5 ns** | `cache/check_rate_limit_contended` |
+| **L1 RAM Cache GET (Hot Hit)** | `< 1 µs` | **123.9 ns** | `cache/l1_get_hot_hit` |
+| **ArcSwap Auth Key Verification** | `< 5 µs` | **555.8 ns** | `middleware/auth_snapshot_valid_hit` |
+| **Capability Ticket Verification** | `< 2 µs` | **586.1 ns** | `blob/ticket_verification_valid` |
+| **JSON Filter Builder (Multi-field)** | `< 1 µs` | **638.9 ns** | `database/filter_build_simple` |
+| **Capability Ticket Generation** | `< 2 µs` | **745.0 ns** | `blob/ticket_generation` |
+| **BLAKE3 64 KB Chunk Hash** | `< 15 µs` | **10.88 µs** | `blob/blake3_chunk_hash_64kb` |
+| **Full Axum Router Dispatch** | `< 50 µs` | **14.6 µs** | `http_pipeline/get_ready_endpoint` |
+| **Cold SQL AST Parse (Dialect)** | `< 20 µs` | **10.6 µs** | `database/ast_uncached_parse` |
+| **Stripped Binary Size** | `< 15 MB` | **< 15 MB** | LTO and stripped release build |
+| **Idle Memory Footprint (RSS)** | `< 10 MB` | **< 10 MB** | Release daemon with mimalloc |
 
 
 
@@ -1049,6 +1056,7 @@ Comprehensive guides and technical specifications are available in the `docs/` d
 
 | Document | Description |
 |---|---|
+| **[Benchmark & Performance Report](./docs/benchmarks.md)** | Reproducible Criterion micro-benchmark results across core, RBAC, cache, auth, and HTTP pipeline |
 | **[Building & Toolchain Guide](./docs/building.md)** | Zero-bloat self-bootstrapping build system using Zig (no MSYS64 / MinGW / VS Build Tools needed) |
 | **[API Reference](./docs/api.md)** | Complete endpoint reference across Core, Database, Blobs Data, Admin Control Plane, Internal P2P Cluster Mesh, and MCP |
 | **[Configuration Guide](./docs/configuration.md)** | Detailed `config.toml` specification covering all 8 configuration sections, defaults, and environment variable overrides |
