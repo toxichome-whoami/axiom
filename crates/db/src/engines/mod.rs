@@ -11,4 +11,6 @@ pub mod clickhouse;
 pub mod libsql;
 pub mod mssql;
 pub mod mysql;
+pub mod oracle;
 pub mod postgres;
+pub mod snowflake;

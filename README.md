@@ -73,6 +73,8 @@ flowchart TD
         DB3["Microsoft SQL Server (2017 - 2022)"]
         DB4["SQLite / LibSQL (Local & Turso Remote)"]
         DB5["ClickHouse (Analytical HTTP Engine)"]
+        DB6["Snowflake (Cloud Data Warehouse REST v2)"]
+        DB7["Oracle Database (19c / 21c / 23ai Thin & ORDS)"]
         DISK["Local NVMe / Disk Shards (Object Blobs)"]
         PEERS["Remote Clustered Axiom Nodes (/internal/v1/cluster/*)"]
     end
@@ -88,6 +90,8 @@ flowchart TD
     SQL --> DB3
     SQL --> DB4
     SQL --> DB5
+    SQL --> DB6
+    SQL --> DB7
     BLOB --> DISK
     CLUSTER --> PEERS
 ```
@@ -107,6 +111,8 @@ Axiom automatically introspects schemas and adapts parameterized dialects across
 | **Microsoft SQL Server** | 2017 – 2022 | `mssql://sa:password@localhost:1433/app_db` |
 | **SQLite / LibSQL** | Local & Turso Cloud | `sqlite://data/app.db` or `libsql://db.turso.io?authToken=...` |
 | **ClickHouse** | 22+ (HTTP Analytical) | `clickhouse://user:password@localhost:8123/default` |
+| **Snowflake** | Cloud Data Warehouse | `snowflake://user:pass@org-account.snowflakecomputing.com?warehouse=COMPUTE_WH&database=DB&schema=PUBLIC` |
+| **Oracle Database** | 19c, 21c, 23ai | `oracle://user:pass@localhost:1521/XEPDB1` or `ords+https://ords-host/ords/schema` |
 
 ---
 
@@ -194,7 +200,7 @@ Axiom starts immediately on `http://localhost:4500` with an empty state and unde
 #### Option A: Interactive Web UI Setup Wizard
 1. Open **`http://localhost:4500/system`** in your browser.
 2. **Step 1: Create Admin Account** — Set username and secure password (hashed via Argon2id).
-3. **Step 2: Connect Database** — Select engine (PostgreSQL, MySQL, SQL Server, SQLite, ClickHouse), provide connection URL, and click **Test Connection**.
+3. **Step 2: Connect Database** — Select engine (PostgreSQL, MySQL, SQL Server, SQLite, ClickHouse, Snowflake, Oracle), provide connection URL, and click **Test Connection**.
 4. **Step 3: Issue API Key** — Assign a role with table and operation scopes; the wizard displays a ready-to-use `curl` command.
 5. Setup permanently locks. All future management is protected behind authenticated admin sessions.
 
@@ -419,7 +425,7 @@ flowchart LR
     D -->|Yes: < 1 µs| E["Return Cached Envelope"]
     D -->|No: Miss| F["Acquire Pool Connection"]
     C -->|INSERT / UPDATE / DELETE| F
-    F --> G["Execute Parameterized SQL<br/>(PG / MySQL / MSSQL / SQLite / ClickHouse)"]
+    F --> G["Execute Parameterized SQL<br/>(PG / MySQL / MSSQL / SQLite / ClickHouse / Snowflake / Oracle)"]
     G --> H["L1 Invalidation & Idempotency Write"]
     H --> I["Uniform Response Envelope"]
 ```
@@ -1009,7 +1015,7 @@ Filters support nested boolean branching via `$or` and `$and` arrays:
 |---|---|---|---|---|---|
 | **Core Architecture** | Pure Rust (native) | Go | Haskell | Haskell / Go (v3) | Multi-container stack |
 | **Idle Memory (RSS)** | **< 10 MB** | ~ 35 MB | ~ 30 MB | > 150 MB | > 1.2 GB |
-| **Supported Databases** | PostgreSQL, MySQL, MariaDB, SQL Server, LibSQL/Turso, ClickHouse | PostgreSQL, MySQL, MariaDB, SQL Server, Oracle, Snowflake, SQLite | PostgreSQL only | PostgreSQL + Enterprise connectors | PostgreSQL only |
+| **Supported Databases** | PostgreSQL, MySQL, MariaDB, SQL Server, LibSQL/Turso, ClickHouse, Snowflake, Oracle | PostgreSQL, MySQL, MariaDB, SQL Server, Oracle, Snowflake, SQLite | PostgreSQL only | PostgreSQL + Enterprise connectors | PostgreSQL only |
 | **Native Blob Storage** | **Built-in** (BLAKE3 dedup + 2-tier Fjall LSM) | None | None | None | S3 / MinIO container |
 | **Capability Tickets** | **Built-in** (Stateless HMAC-BLAKE3) | None | None | None | S3 Presigned URLs |
 | **AI Agent MCP Server** | **Built-in** (`/mcp/v1` HTTP) | Built-in (`/mcp`) | None | None | None |

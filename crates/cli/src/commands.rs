@@ -386,7 +386,7 @@ pub enum DbCommands {
         #[arg(
             short,
             long,
-            help = "Dialect/engine (e.g. postgres, mysql, sqlite, mssql, clickhouse)"
+            help = "Dialect/engine (e.g. postgres, mysql, sqlite, mssql, clickhouse, snowflake, oracle)"
         )]
         engine: Option<String>,
         #[arg(long, help = "Minimum connection pool size")]

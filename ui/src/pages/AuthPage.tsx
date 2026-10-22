@@ -51,6 +51,8 @@ const ENGINE_OPTIONS = [
   { value: 'MSSQL', label: 'Microsoft SQL Server' },
   { value: 'ClickHouse', label: 'ClickHouse (HTTP)' },
   { value: 'LibSQL', label: 'LibSQL / SQLite (Turso)' },
+  { value: 'Snowflake', label: 'Snowflake Cloud Data Warehouse' },
+  { value: 'Oracle', label: 'Oracle Database (Thin / ORDS)' },
 ];
 
 /**
@@ -245,6 +247,8 @@ export function AuthPage({ onLoginSuccess, initialMode = 'login' }: AuthPageProp
       mssql: ['mssql://', 'sqlserver://'],
       clickhouse: ['clickhouse://', 'clickhouse+https://', 'http://', 'https://'],
       libsql: ['sqlite://', 'libsql://', 'file:', 'https://'],
+      snowflake: ['snowflake://', 'snowflake+https://', 'https://'],
+      oracle: ['oracle://', 'oracle+tcp://', 'ords://', 'ords+https://'],
     };
     const expected = schemes[normEngine];
     if (expected && !expected.some((prefix) => trimmed.startsWith(prefix))) {
@@ -536,7 +540,7 @@ export function AuthPage({ onLoginSuccess, initialMode = 'login' }: AuthPageProp
                 <div>
                   <h3 className="text-[14px] font-medium text-white">Universal Database Gateway</h3>
                   <p className="text-[12px] text-[#8c8c8c] mt-0.5">
-                    PostgreSQL, MySQL, ClickHouse, MSSQL, and LibSQL with AST security firewall.
+                    PostgreSQL, MySQL, ClickHouse, MSSQL, LibSQL, Snowflake, and Oracle with AST security firewall.
                   </p>
                 </div>
               </div>

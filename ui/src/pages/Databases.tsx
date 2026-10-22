@@ -81,6 +81,14 @@ export const ENGINE_URL_SCHEMES: Record<string, { prefixes: string[]; example: s
     prefixes: ['libsql://', 'sqlite://', 'file:', 'https://'],
     example: 'libsql://database.turso.io, https://database.turso.io, or leave blank',
   },
+  snowflake: {
+    prefixes: ['snowflake://', 'snowflake+https://', 'https://'],
+    example: 'snowflake://user:secret@account.snowflakecomputing.com?warehouse=COMPUTE_WH&database=DB&schema=PUBLIC',
+  },
+  oracle: {
+    prefixes: ['oracle://', 'oracle+tcp://', 'ords://', 'ords+https://'],
+    example: 'oracle://user:secret@host:1521/service or ords+https://host/ords/schema',
+  },
 };
 
 export type SslMode = 'prefer' | 'require' | 'disable' | 'verify-ca' | 'verify-full';
@@ -641,6 +649,8 @@ export function Databases() {
     { value: 'MSSQL', label: 'Microsoft SQL Server (tiberius TDS)' },
     { value: 'ClickHouse', label: 'ClickHouse OLAP (HTTP engine)' },
     { value: 'LibSQL', label: 'LibSQL / SQLite (Turso & local)' },
+    { value: 'Snowflake', label: 'Snowflake Cloud Data Warehouse (REST v2)' },
+    { value: 'Oracle', label: 'Oracle Database 19c / 21c / 23ai (Thin / ORDS)' },
   ];
 
   const filterFieldOptions = [
