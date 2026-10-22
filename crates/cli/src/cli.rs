@@ -123,15 +123,46 @@ pub async fn run() -> Result<bool, Box<dyn std::error::Error>> {
 
         Some(Commands::Health) => {
             let client = AdminClient::new(&cli.url, cli.key);
-            let resp = client.get_health().await?;
+            let resp = if client.auth_key().is_some() {
+                match client.get_admin_health().await {
+                    Ok(admin_health) => admin_health,
+                    Err(_) => client.get_health().await?,
+                }
+            } else {
+                client.get_health().await?
+            };
+
             if format == OutputFormat::Json {
                 println!("{}", serde_json::to_string_pretty(&resp)?);
             } else if format == OutputFormat::Jsonl {
                 println!("{}", serde_json::to_string(&resp)?);
             } else {
-                println!("Axiom Gateway Health: ONLINE");
-                if let Some(status) = resp.get("status") {
-                    println!("Status: {}", status);
+                let data = resp.get("data");
+                if let Some(d) = data {
+                    let status = d.get("status").and_then(|s| s.as_str()).unwrap_or("ONLINE");
+                    let uptime = d.get("uptime_seconds").and_then(|u| u.as_i64()).unwrap_or(0);
+                    println!("Axiom Gateway Health: {}", status.to_uppercase());
+                    println!("{:-<50}", "");
+                    println!("Uptime:       {} seconds", uptime);
+                    if let Some(sys) = d.get("system") {
+                        let cpu = sys.get("cpu_percent").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                        let mem = sys.get("memory_used_mb").and_then(|v| v.as_i64()).unwrap_or(0);
+                        println!("System:       CPU: {:.1}% | Memory: {} MB", cpu, mem);
+                    }
+                    if let Some(dbs) = d.get("databases").and_then(|v| v.as_object()) {
+                        if !dbs.is_empty() {
+                            println!("\nDatabases:");
+                            for (alias, st) in dbs {
+                                let st_str = st.as_str().unwrap_or("unknown");
+                                println!("  - {:<18}: {}", alias, st_str.to_uppercase());
+                            }
+                        }
+                    }
+                } else {
+                    println!("Axiom Gateway Health: ONLINE");
+                    if let Some(status) = resp.get("status") {
+                        println!("Status: {}", status);
+                    }
                 }
             }
             Ok(true)
@@ -2115,6 +2146,71 @@ async fn handle_blob_command(
                 println!("Signature:  {}", sig);
                 println!("Expires At: {} (UNIX)", exp);
                 println!("Ticket URL: {}", url);
+            }
+        }
+
+        BlobCommands::Tickets { namespace, key, all } => {
+            let resp = client.list_blob_tickets(namespace.as_deref(), key.as_deref(), all).await?;
+            if format == OutputFormat::Json {
+                println!("{}", serde_json::to_string_pretty(&resp)?);
+            } else if format == OutputFormat::Jsonl {
+                if let Some(tickets) = resp.get("data").and_then(|d| d.as_array()) {
+                    for t in tickets {
+                        println!("{}", serde_json::to_string(t)?);
+                    }
+                } else {
+                    println!("{}", serde_json::to_string(&resp)?);
+                }
+            } else {
+                let tickets = resp.get("data").and_then(|d| d.as_array());
+                match tickets {
+                    Some(list) if !list.is_empty() => {
+                        println!(
+                            "{:<6} {:<16} {:<24} {:<6} {:<10} {:<12}",
+                            "ID", "NAMESPACE", "KEY", "OP", "STATUS", "EXPIRES"
+                        );
+                        println!("{:-<78}", "");
+                        for t in list {
+                            let id = t.get("id").and_then(|v| v.as_i64()).unwrap_or(0);
+                            let ns = t.get("namespace").and_then(|v| v.as_str()).unwrap_or("-");
+                            let k = t.get("key").and_then(|v| v.as_str()).unwrap_or("-");
+                            let op = t.get("operation").and_then(|v| v.as_str()).unwrap_or("-");
+                            let revoked = t.get("revoked").and_then(|v| v.as_bool()).unwrap_or(false);
+                            let exp = t.get("expires_at").and_then(|v| v.as_i64()).unwrap_or(0);
+                            let now = std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap_or_default()
+                                .as_secs() as i64;
+                            let status = if revoked {
+                                "REVOKED"
+                            } else if exp < now {
+                                "EXPIRED"
+                            } else {
+                                "ACTIVE"
+                            };
+                            let exp_str = if exp > now {
+                                format!("in {}s", exp - now)
+                            } else {
+                                format!("{}s ago", now - exp)
+                            };
+                            println!("{:<6} {:<16} {:<24} {:<6} {:<10} {:<12}", id, ns, k, op, status, exp_str);
+                        }
+                    }
+                    _ => {
+                        println!("No capability tickets found.");
+                    }
+                }
+            }
+        }
+
+        BlobCommands::RevokeTicket { signature } => {
+            let resp = client.revoke_blob_ticket(&signature).await?;
+            if format == OutputFormat::Json {
+                println!("{}", serde_json::to_string_pretty(&resp)?);
+            } else if format == OutputFormat::Jsonl {
+                println!("{}", serde_json::to_string(&resp)?);
+            } else {
+                println!("Capability ticket '{}' successfully revoked.", signature);
             }
         }
     }

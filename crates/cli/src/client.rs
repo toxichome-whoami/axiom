@@ -137,6 +137,10 @@ impl AdminClient {
         self.request(reqwest::Method::GET, "/health", None).await
     }
 
+    pub async fn get_admin_health(&self) -> Result<Value, String> {
+        self.request(reqwest::Method::GET, "/admin/v1/health", None).await
+    }
+
     /// Lists registered API keys.
     pub async fn list_keys(&self) -> Result<Value, String> {
         self.request(reqwest::Method::GET, "/admin/v1/keys", None).await
@@ -864,6 +868,32 @@ impl AdminClient {
             "moniker": moniker,
         });
         self.request(reqwest::Method::PATCH, "/admin/v1/cluster/moniker", Some(body)).await
+    }
+
+    pub async fn list_blob_tickets(
+        &self,
+        namespace: Option<&str>,
+        key: Option<&str>,
+        all: bool,
+    ) -> Result<Value, String> {
+        let mut endpoint = "/admin/v1/blobs/tickets".to_string();
+        let mut params = Vec::new();
+        if let Some(ns) = namespace {
+            params.push(format!("namespace={}", urlencode(ns)));
+        }
+        if let Some(k) = key {
+            params.push(format!("key={}", urlencode(k)));
+        }
+        params.push(format!("all={}", all));
+        if !params.is_empty() {
+            endpoint = format!("{}?{}", endpoint, params.join("&"));
+        }
+        self.request(reqwest::Method::GET, &endpoint, None).await
+    }
+
+    pub async fn revoke_blob_ticket(&self, signature: &str) -> Result<Value, String> {
+        let endpoint = format!("/admin/v1/blobs/tickets/{}/revoke", urlencode(signature));
+        self.request(reqwest::Method::POST, &endpoint, None).await
     }
 
 

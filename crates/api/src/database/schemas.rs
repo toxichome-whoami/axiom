@@ -13,6 +13,7 @@ use std::collections::HashMap;
 /// Request payload for raw SQL query execution.
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct QueryRequest {
+    #[serde(alias = "query")]
     pub sql: String,
     pub params: Option<Value>,
     pub timeout: Option<i32>,

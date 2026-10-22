@@ -574,6 +574,20 @@ pub enum BlobCommands {
         #[arg(long, help = "Ticket time-to-live in seconds", default_value = "3600")]
         ttl: Option<u64>,
     },
+    /// List capability download/upload tickets (via Admin API)
+    Tickets {
+        #[arg(short, long, help = "Filter by namespace (defaults to all '*')")]
+        namespace: Option<String>,
+        #[arg(short, long, help = "Filter by object key")]
+        key: Option<String>,
+        #[arg(long, help = "Include expired and revoked tickets", default_value = "true")]
+        all: bool,
+    },
+    /// Revoke a capability ticket by signature or ID
+    RevokeTicket {
+        #[arg(help = "Capability ticket signature or ID to revoke")]
+        signature: String,
+    },
 }
 
 #[derive(Subcommand, Debug, Clone)]
@@ -913,6 +927,27 @@ mod tests {
                 assert!(prefix);
             }
             _ => panic!("Expected Blob Copy command"),
+        }
+
+        // Tickets & RevokeTicket
+        let tickets_args = ["axiom", "blob", "tickets", "-n", "assets", "-k", "report.pdf"];
+        let tickets_cli = Cli::try_parse_from(tickets_args).expect("Failed to parse blob tickets");
+        match tickets_cli.command {
+            Some(Commands::Blob { command: BlobCommands::Tickets { namespace, key, all } }) => {
+                assert_eq!(namespace, Some("assets".to_string()));
+                assert_eq!(key, Some("report.pdf".to_string()));
+                assert!(all);
+            }
+            _ => panic!("Expected Blob Tickets command"),
+        }
+
+        let revoke_args = ["axiom", "blob", "revoke-ticket", "sig_xyz_123"];
+        let revoke_cli = Cli::try_parse_from(revoke_args).expect("Failed to parse blob revoke-ticket");
+        match revoke_cli.command {
+            Some(Commands::Blob { command: BlobCommands::RevokeTicket { signature } }) => {
+                assert_eq!(signature, "sig_xyz_123");
+            }
+            _ => panic!("Expected Blob RevokeTicket command"),
         }
     }
 

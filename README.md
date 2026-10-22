@@ -727,6 +727,8 @@ BLOB STORAGE & TICKETS:
   blob scrub                   Storage-wide cryptographic integrity audit of all blobs
   blob sweep                   Manually trigger expired object cleanup (TTL sweep)
   blob ticket <NS> <KEY>       Generate pre-signed capability download ticket URL
+  blob tickets                 List active/revoked capability tickets (--namespace, --key, --all)
+  blob revoke-ticket <SIG>     Revoke a capability ticket by signature or ID
   blob ns list                 List storage namespaces and quota limits
   blob ns create <NS>          Create storage namespace (--max-bytes)
   blob ns update <NS>          Update namespace quota or rename (--max-bytes, --new-name)
