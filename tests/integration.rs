@@ -2200,6 +2200,7 @@ async fn ndjson_streaming_response() {
 
 #[tokio::test]
 async fn row_level_security_predicate_filtering() {
+    ensure_metadata_store().await;
     ensure_test_items_table().await;
     let admin_token = BASE64_STANDARD.encode("admin_key:secret_admin");
 
@@ -2225,7 +2226,7 @@ async fn row_level_security_predicate_filtering() {
     ).await.unwrap();
 
     // Create an RLS-restricted role and key for Tenant A
-    let _ = axiom_metadata::MetadataStore::create_role(
+    if let Err(e) = axiom_metadata::MetadataStore::create_role(
         "tenant_a_role",
         Some("Tenant A Isolated"),
         &[axiom_metadata::PermissionRecord {
@@ -2236,15 +2237,19 @@ async fn row_level_security_predicate_filtering() {
             operations: vec!["SELECT".to_string()],
             rls_filter: Some("name LIKE 'tenant_a_%'".to_string()),
         }],
-    ).await;
+    ).await {
+        println!("create_role tenant_a_role note: {}", e);
+    }
 
-    let _ = axiom_metadata::MetadataStore::create_key(
+    if let Err(e) = axiom_metadata::MetadataStore::create_key(
         "tenant_a_key",
         Some("tenant_a_role"),
         Some("secret_tenant_a"),
         0,
         None,
-    ).await;
+    ).await {
+        println!("create_key tenant_a_key note: {}", e);
+    }
 
     axiom_metadata::MetadataStore::sync_snapshot().await.unwrap();
 
@@ -2256,9 +2261,11 @@ async fn row_level_security_predicate_filtering() {
         .body(Body::empty())
         .unwrap();
     let res = create_app().oneshot(req).await.unwrap();
-    assert_eq!(res.status(), StatusCode::OK);
-
+    let status = res.status();
     let body_bytes = axum::body::to_bytes(res.into_body(), 65536).await.unwrap();
+    if status != StatusCode::OK {
+        panic!("row_level_security_predicate_filtering failed with status {}: {}", status, String::from_utf8_lossy(&body_bytes));
+    }
     let body_json: Value = serde_json::from_slice(&body_bytes).unwrap();
     let rows = body_json["data"]["rows"].as_array().unwrap();
 
