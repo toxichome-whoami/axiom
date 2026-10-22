@@ -5,7 +5,7 @@
 ### High-performance REST API, Content-Addressed Blob Storage, and MCP Server for SQL Databases.
 One Rust binary. Zero external daemons. Under 10 MB idle RAM.
 
-[![Version](https://img.shields.io/badge/version-0.1.11-111827.svg?style=flat-square)](https://github.com/toxichome/axiom/releases)
+[![Version](https://img.shields.io/badge/version-0.1.11%2B-111827.svg?style=flat-square)](https://github.com/toxichome/axiom/releases)
 [![Rust](https://img.shields.io/badge/rust-1.88%2B-b7410e.svg?style=flat-square&logo=rust&logoColor=white)](https://www.rust-lang.org)
 [![License: MIT](https://img.shields.io/badge/license-MIT-111827.svg?style=flat-square)](./LICENSE)
 [![Platforms](https://img.shields.io/badge/platform-linux%20%C2%B7%20macos%20%C2%B7%20windows-111827.svg?style=flat-square)](https://github.com/toxichome/axiom/releases)
@@ -23,12 +23,13 @@ One Rust binary. Zero external daemons. Under 10 MB idle RAM.
 
 ## What is Axiom?
 
-Axiom is an ultra-fast, single-binary database gateway and object store written in pure Rust. It connects to your existing SQL databases and local storage volumes, introspects schemas, and instantly exposes:
+Axiom is a single-binary database gateway and object store written in Rust. It connects to your existing SQL databases and local storage volumes, introspects schemas, and instantly exposes:
 
-1. **A production-ready CRUD REST API** with keyset cursor pagination, structured query operators, and an AST-based SQL injection firewall.
-2. **A content-addressed blob storage engine** backed by BLAKE3 deduplication, a two-tier LSM storage architecture (Fjall + direct disk shards), byte-range streaming, and pre-signed capability tickets.
+1. **A production-ready CRUD REST API** with keyset cursor pagination, structured query operators, bounded-memory NDJSON/JSON streaming, and an AST-based SQL injection firewall.
+2. **A content-addressed blob storage engine** backed by BLAKE3 deduplication, a two-tier LSM storage architecture (Fjall + direct disk shards), resumable chunked multipart uploads, byte-range streaming, and pre-signed capability tickets.
 3. **A Model Context Protocol (MCP) server** at `/mcp/v1` that gives AI agents (Claude Code, Cursor, Windsurf, VS Code Copilot) governed, audited, read/write access to your databases and blobs.
-4. **An embedded administrative Web UI** at `/system` with a first-boot setup wizard, connection test diagnostics, role builders, API key management, live audit logs, and Prometheus metrics.
+4. **A zero-database P2P Cluster Mesh** enabling secure node-to-node pairing, cryptographic HMAC-SHA256 mutual request verification, live latency telemetry, and instant cluster-wide propagation of security bans.
+5. **An embedded administrative Web UI** at `/system` with a first-boot setup wizard, connection test diagnostics, role builders with Row-Level Security (RLS) filters, API key management, cluster mesh visualization, live audit logs, and Prometheus metrics.
 
 All configuration and dynamic metadata (databases, users, roles, permissions, API keys) live in an embedded `axiom.db` file powered by LibSQL. The hot data path reads immutable snapshots via `ArcSwap`, adding zero database locks to incoming requests.
 
@@ -41,16 +42,18 @@ flowchart TD
         C2["Edge & Direct Clients (Pre-signed Capability Tickets)"]
         C3["AI Agents: Claude, Cursor, Windsurf (MCP at /mcp/v1)"]
         C4["Operators & Admins (Web UI at /system & CLI)"]
+        C5["Clustered Axiom Peer Nodes (HMAC-SHA256 Mutual Auth)"]
     end
 
     subgraph Axiom["Axiom Gateway (Single Binary, <10 MB RAM)"]
         WAF["WAF: 2048-byte Guard, 3x URL Decode, Null-byte Filter"]
-        RL["Rate Limiter: Per-IP and Per-Key Counters, Auto-Ban"]
-        AUTH["Auth & RBAC: BLAKE3 Constant-Time, ArcSwap Zero-Lock Snapshot"]
+        RL["Dual Rate Limiter: Per-IP & Per-Key Counters, Auto-Ban"]
+        AUTH["Auth & RBAC: BLAKE3 Constant-Time, ArcSwap Zero-Lock Snapshot, RLS Filter Pushdown"]
 
         subgraph Core["Execution Engines"]
-            SQL["SQL AST Engine (Single-Statement Guard, Keyset Pagination, Circuit Breaker)"]
-            BLOB["Native Blob Engine (BLAKE3 Dedup, Two-Tier LSM Storage, Range Streaming)"]
+            SQL["SQL AST Engine (Single-Statement Guard, Keyset Pagination, Streaming NDJSON/JSON, Circuit Breaker)"]
+            BLOB["Native Blob Engine (BLAKE3 Dedup, Two-Tier LSM Storage, Resumable Uploads, Range Streaming)"]
+            CLUSTER["Cluster Mesh (P2P Handshake, Gossip, Live Latency, Instant Ban Broadcast)"]
             MCP["MCP Server (Governed Tool-Based Database & Blob Access)"]
             ADMIN["Admin Engine (Embedded Web UI, CLI, LibSQL Metadata Store)"]
         end
@@ -58,23 +61,26 @@ flowchart TD
         WAF --> RL --> AUTH
         AUTH --> SQL
         AUTH --> BLOB
+        AUTH --> CLUSTER
         AUTH --> MCP
         AUTH --> ADMIN
     end
 
-    subgraph Upstream["Databases & Storage Volumes"]
+    subgraph Upstream["Databases, Storage & Peer Nodes"]
         DB1["PostgreSQL (12 - 17)"]
         DB2["MySQL / MariaDB (8.0+ / 10.4+)"]
         DB3["Microsoft SQL Server (2017 - 2022)"]
         DB4["SQLite / LibSQL (Local & Turso Remote)"]
         DB5["ClickHouse (Analytical HTTP Engine)"]
         DISK["Local NVMe / Disk Shards (Object Blobs)"]
+        PEERS["Remote Clustered Axiom Nodes (/internal/v1/cluster/*)"]
     end
 
     C1 --> WAF
     C2 --> WAF
     C3 --> WAF
     C4 --> WAF
+    C5 --> WAF
 
     SQL --> DB1
     SQL --> DB2
@@ -82,9 +88,10 @@ flowchart TD
     SQL --> DB4
     SQL --> DB5
     BLOB --> DISK
+    CLUSTER --> PEERS
 ```
 
-**Connect** any SQL database and local storage volume &rarr; Axiom **introspects** the schema and mounts the engines &rarr; Instantly generates **REST CRUD endpoints**, **content-addressed blob storage**, **MCP tools for AI agents**, and an **embedded Admin Web UI** &mdash; all secured with constant-time authentication, rate limiting, and zero-lock RBAC.
+**Connect** any SQL database and local storage volume &rarr; Axiom **introspects** the schema and mounts the engines &rarr; Exposes **REST CRUD endpoints**, **content-addressed blob storage**, **MCP tools for AI agents**, and an **embedded Admin Web UI** &mdash; secured with constant-time authentication, dual-tier rate limiting, and zero-lock RBAC.
 
 
 
@@ -285,7 +292,7 @@ In addition to callable tools, Axiom implements the MCP Resources specification 
 
 ## Database Gateway & SQL Engine
 
-Axiom transforms raw SQL databases into secure, high-throughput REST APIs protected by dialect-aware AST parsing, connection pooling, and sub-microsecond caching.
+Axiom connects to SQL databases to expose REST APIs with dialect-aware AST validation, connection pooling, and in-memory caching.
 
 ```mermaid
 flowchart LR
@@ -303,7 +310,7 @@ flowchart LR
 ### Key Architectural Invariants
 - **Dialect-Aware AST Firewall**: Incoming queries are parsed into Abstract Syntax Trees using `sqlparser-rs` according to target engine dialect. Axiom strictly blocks stacked queries (semicolon injection), unauthorized DDL, and hostile expressions before touching upstream pools.
 - **Unified Parameterized Execution**: Literal values are extracted and bound as native positional parameters (`$1`, `?`, `@P1`), guaranteeing absolute protection against SQL injection.
-- **Sub-Microsecond L1 Query Cache**: Repeated `SELECT` queries hit an in-memory DashMap LRU cache (`< 1 µs` latency). Write mutations atomically invalidate corresponding table cache entries.
+- **In-Memory L1 Query Cache**: Repeated `SELECT` queries hit an in-memory DashMap LRU cache. Write mutations invalidate corresponding table cache entries.
 - **Idempotency Replay Protection**: Supply `Idempotency-Key` headers on mutations to cache responses for 24 hours in L2 storage, preventing double-inserts during network retries.
 
 ### Core Database Operations
@@ -409,6 +416,49 @@ curl -s -H "X-Axiom-Key: $KEY" \
   }
 }
 ```
+
+#### 7. Stream Massive Result Sets (NDJSON & Chunked Array)
+For high-volume export pipelines, Axiom provides a zero-allocation streaming engine. Stream 100,000+ rows directly to clients without memory buffering:
+
+```bash
+# Stream as Newline-Delimited JSON (NDJSON) via Accept header
+curl -G "http://localhost:4500/api/v1/db/main_pg/events/rows" \
+  -H "X-Axiom-Key: $KEY" \
+  -H "Accept: application/x-ndjson" \
+  --data-urlencode 'limit=50000'
+
+# Stream arbitrary SQL query with chunked response
+curl -X POST "http://localhost:4500/api/v1/db/main_pg/query" \
+  -H "X-Axiom-Key: $KEY" \
+  -H "Accept: application/x-ndjson" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "SELECT id, payload, created_at FROM audit_log ORDER BY id ASC",
+    "stream": true
+  }'
+```
+
+Output arrives line-by-line as raw JSON objects:
+```json
+{"id":1,"payload":"login_success","created_at":"2026-10-14T10:00:00Z"}
+{"id":2,"payload":"query_executed","created_at":"2026-10-14T10:00:02Z"}
+```
+
+#### 8. Row-Level Security (RLS) Predicate Pushdown
+Axiom enforces fine-grained Row-Level Security directly at the policy evaluation layer. Define an `rls_filter` on any table permission; the AST engine automatically injects the constraint predicates into the query WHERE clause:
+
+```json
+{
+  "database": "main_pg",
+  "table_name": "orders",
+  "operations": ["SELECT", "UPDATE"],
+  "rls_filter": {
+    "tenant_id": { "eq": "tenant_42" },
+    "deleted_at": { "is_null": true }
+  }
+}
+```
+Queries issued by keys assigned to this role are guaranteed to only inspect and manipulate records matching the `rls_filter` predicates, completely preventing cross-tenant data leakage.
 
 ## Content-Addressed Blob Storage
 
@@ -536,6 +586,20 @@ curl -X POST "http://localhost:4500/api/v1/blobs/backups/uploads/$UPLOAD_ID/comp
 # curl -X DELETE -H "X-Axiom-Key: $KEY" "http://localhost:4500/api/v1/blobs/backups/uploads/$UPLOAD_ID"
 ```
 
+### Resumable Chunked Upload Protocol
+In addition to discrete multipart parts, Axiom supports single-endpoint resumable streaming uploads with range validation:
+
+```bash
+# Upload byte range slice to an active session
+curl -X PATCH "http://localhost:4500/api/v1/blobs/backups/uploads/$UPLOAD_ID" \
+  -H "X-Axiom-Key: $KEY" \
+  -H "Content-Range: bytes 0-1048575/5242880" \
+  --data-binary "@slice_0.bin"
+
+# Probe session status and verified byte ranges
+curl -s -H "X-Axiom-Key: $KEY" "http://localhost:4500/api/v1/blobs/backups/uploads/$UPLOAD_ID"
+```
+
 
 
 ### Pre-Signed Capability Tickets
@@ -568,6 +632,47 @@ curl -O "http://localhost:4500/api/v1/blobs/assets/documents/report.pdf?ticket=v
 
 
 
+## Cluster Mesh & Node Federation
+
+Axiom includes a built-in, zero-database peer-to-peer Cluster Mesh. Clustered nodes communicate directly over HTTP/HTTPS with mutual HMAC-SHA256 cryptographic signatures, eliminating Redis, ZooKeeper, or Raft cluster overhead.
+
+```mermaid
+flowchart LR
+    A["Node A (us-east)<br/>Moniker: primary-01"] <-->|HMAC-SHA256 Handshake<br/>& Heartbeat Ping| B["Node B (eu-central)<br/>Moniker: backup-01"]
+    A -.->|Instant Ban Broadcast<br/>(/internal/v1/cluster/event)| B
+    B -.->|Cluster Mesh Sync| A
+```
+
+### Key Architectural Invariants
+- **Zero External Coordination**: State is shared over authenticated peer gossip. No cluster databases or orchestrators required.
+- **Mutual HMAC-SHA256 Authentication**: Every inter-node packet (`/internal/v1/cluster/*`) is signed using the cluster's shared secret with millisecond replay protection.
+- **Instant Cluster-Wide Security Ban Propagation**: When Node A detects credential stuffing or an abusive IP, it dispatches an internal gossip event. All paired mesh nodes immediately ban the source IP in memory without polling.
+- **Live Latency & Health Telemetry**: Live round-trip latency (RTT) is tracked per peer and exposed via Web UI and CLI.
+
+### Quickstart Pairing Walkthrough
+
+#### Path A: Web UI Pairing
+1. On **Node A**, navigate to **Cluster Mesh** in the Admin Web UI (`/system`). Copy the local Node ID and Shared Secret.
+2. On **Node B**, click **Pair Remote Node**, enter Node A's URL (`http://node-a:4500`) and Shared Secret, and click **Connect**.
+3. Both nodes mutually verify credentials and form an active mesh link.
+
+#### Path B: CLI Pairing
+```bash
+# 1. View local node status and cluster secret
+axiom cluster status
+
+# 2. Connect to a remote peer node
+axiom cluster connect http://10.0.0.2:4500 <REMOTE_CLUSTER_SECRET> --moniker "us-west-1"
+
+# 3. Probe connection latency and health
+axiom cluster ping <PEER_NODE_ID>
+
+# 4. View active cluster mesh topology
+axiom cluster peers
+```
+
+---
+
 ## CLI Reference
 
 The single binary functions both as the server daemon and the full administrative toolchain:
@@ -582,7 +687,7 @@ GLOBAL OPTIONS:
       --jsonl                  Format command output as JSON Lines (JSONL stream)
 
 SERVER DAEMON:
-  server run                   Start the Axiom gateway daemon (default action)
+  server run [-c, --config <P>] Start the Axiom gateway daemon with custom config
   doctor                       Comprehensive environmental diagnostics & DB reachability check
   benchmark                    Run high-concurrency pipeline load & throughput benchmark
 
@@ -643,6 +748,15 @@ CACHE OPERATIONS:
   cache stats                  Inspect L1 RAM and L2 disk cache utilization
   cache flush                  Flush all transient cache entries
 
+CLUSTER MESH & NODE FEDERATION:
+  cluster status               Show local cluster node ID, moniker, and mesh overview
+  cluster peers                List all paired cluster peer nodes and latency status
+  cluster connect <URL> <SEC>  Pair and connect to a remote node (--moniker)
+  cluster remove <NODE_ID>     Disconnect and unregister a cluster peer
+  cluster update <NODE_ID>     Update peer configuration (--url, --secret, --moniker)
+  cluster ping <NODE_ID>       Probe peer latency with an on-demand heartbeat ping
+  cluster moniker <NAME>       Update local node cluster display moniker
+
 CONFIGURATION TOOLING:
   config init                  Initialize a new default config.toml file (--path, --to-env)
   config to-env                Convert config.toml into an environment variable .env file
@@ -687,17 +801,21 @@ All commands support `--json` and `--jsonl` flags for clean script and CI/CD pip
 ### Blob Storage Data API (`/api/v1/blobs`)
 | Method | Endpoint | Description | Auth Required |
 |---|---|---|---|
+| `GET` | `/api/v1/blobs/public/:namespace/*key` | Unauthenticated public object stream with 304 ETag caching | Public |
+| `HEAD` | `/api/v1/blobs/public/:namespace/*key` | Unauthenticated public object metadata and headers | Public |
 | `GET` | `/api/v1/blobs/:namespace` | List stored objects with optional `prefix`, `cursor`, and `limit` | API Key |
 | `PUT` | `/api/v1/blobs/:namespace/*key` | Upload an object with BLAKE3 content-addressed deduplication | API Key / Ticket |
 | `GET` | `/api/v1/blobs/:namespace/*key` | Stream an object (supports `Range: bytes=X-Y` and `?ticket=...`) | API Key / Ticket |
 | `HEAD` | `/api/v1/blobs/:namespace/*key` | Retrieve object metadata, size, MIME type, ETag, and BLAKE3 hash | API Key / Ticket |
 | `DELETE` | `/api/v1/blobs/:namespace/*key` | Delete an object from the namespace and decrement content refcount | API Key |
 | `POST` | `/api/v1/blobs/:namespace/ticket` | Generate a pre-signed capability ticket URL for direct access | API Key |
+| `POST` | `/api/v1/blobs/:namespace/delete-objects` | Batch delete up to 1,000 objects in a single atomic request | API Key |
 | `POST` | `/api/v1/blobs/:namespace/uploads` | Initialize a multipart chunked upload session | API Key |
 | `PUT` | `/api/v1/blobs/:namespace/uploads/:id/parts/:part` | Upload a discrete chunk part for an active upload session | API Key |
 | `POST` | `/api/v1/blobs/:namespace/uploads/:id/complete` | Atomically verify and assemble uploaded chunk parts | API Key |
 | `DELETE` | `/api/v1/blobs/:namespace/uploads/:id` | Abort a multipart upload session and clean up temporary parts | API Key |
-
+| `PATCH` | `/api/v1/blobs/:namespace/uploads/:id` | Resumable chunk upload with byte range validation | API Key |
+| `GET` | `/api/v1/blobs/:namespace/uploads/:id` | Probe resumable session status and uploaded byte slices | API Key |
 
 ## Filter Syntax
 
@@ -799,6 +917,15 @@ Every performance metric is governed by automated micro-benchmarks (`benches/ben
 | Stripped Binary Size | `< 15 MB` | Release profile with LTO and strip enabled |
 
 
+
+## Documentation
+
+Comprehensive guides and technical specifications are available in the `docs/` directory:
+
+| Document | Description |
+|---|---|
+| **[API Reference](./docs/api.md)** | Complete endpoint reference across Core, Database, Blobs Data, Admin Control Plane, Internal P2P Cluster Mesh, and MCP |
+| **[Configuration Guide](./docs/configuration.md)** | Detailed `config.toml` specification covering all 8 configuration sections, defaults, and environment variable overrides |
 
 ## Frequently Asked Questions
 

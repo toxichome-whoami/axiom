@@ -1,11 +1,11 @@
 <div align="center">
 
-# Axiom Configuration & Operations Guide
+# Axiom Configuration Reference (`config.toml`)
 
-### Production Configuration Reference, Security Architecture, and Deployment Manual
-**High-performance SQL Gateway · Content-Addressed Object Store · AI Agent Server**
+### Complete Reference for Startup Settings, Modules, Defaults, and Environment Overrides
+**Single Binary Gateway · Immutable Startup Configuration · Lock-Free Arc Access**
 
-[![Version](https://img.shields.io/badge/version-0.1.11-111827.svg?style=flat-square)](https://github.com/toxichome/axiom/releases)
+[![Version](https://img.shields.io/badge/version-0.1.11%2B-111827.svg?style=flat-square)](https://github.com/toxichome/axiom/releases)
 [![Rust](https://img.shields.io/badge/rust-1.88%2B-b7410e.svg?style=flat-square&logo=rust&logoColor=white)](https://www.rust-lang.org)
 [![License: MIT](https://img.shields.io/badge/license-MIT-111827.svg?style=flat-square)](../LICENSE)
 [![Platforms](https://img.shields.io/badge/platform-linux%20%C2%B7%20macos%20%C2%B7%20windows-111827.svg?style=flat-square)](https://github.com/toxichome/axiom/releases)
@@ -14,421 +14,324 @@
 
 ---
 
-## Architecture & Configuration Model
+## Configuration Model & Lifecycle
 
-Axiom maintains a strict separation between **immutable startup settings** (network bindings, thread pools, logging, memory caps) and **dynamic runtime metadata** (database connections, API keys, RBAC roles, capability tickets, and admin accounts).
+Axiom uses `config.toml` strictly for **process-level startup configuration**: network interfaces, thread workers, logging, memory caps, circuit breakers, and storage roots.
 
 ```mermaid
 flowchart TD
-    subgraph StartupConfig["1. Startup Layer (Immutable OnceLock)"]
-        A["Compiled Defaults"] --> D["Resolved AxiomConfig"]
-        B["config.toml"] --> D
-        C["Environment Variables (SERVER__PORT)"] --> D
-    end
-
-    subgraph DynamicStorage["2. Metadata Store (Hot-Reloadable)"]
-        E[("data/axiom.db (LibSQL)")<br/>Roles, Permissions, API Keys, DBs]
-        F["CLI & Web Console Mutations"] --> E
-        E -->|Every 30s or on /admin/v1/reload| G["ArcSwap<Metadata> In-Memory Snapshot"]
-    end
-
-    subgraph HotDataPlane["3. High-Throughput Request Engine"]
-        H["Client Request"] --> I["WAF & Dual Rate Limiter"]
-        I --> J["Auth & RBAC Policy Check"]
-        G -.->|Zero-Lock Constant-Time Read| J
-        J --> K["Query Pipeline / Blob Shards"]
-    end
-
-    D --> HotDataPlane
+    A["Compiled Defaults (crates/core/src/config/schema.rs)"] --> D["Figment Configuration Resolver"]
+    B["config.toml (or -c /path/to/config.toml)"] --> D
+    C["Local .env File (via dotenvy)"] --> D
+    E["Environment Variables (e.g. SERVER__PORT=4500)"] --> D
+    D --> F["OnceLock<Arc<AxiomConfig>> (Immutable Global)"]
+    F --> G["HTTP Server, Middleware & Storage Engines"]
 ```
 
-### Precedence Hierarchy
-Configuration resolves in the following order (highest to lowest priority):
-1. **CLI Flags** (e.g. `axiom server run --port 4500`)
-2. **Environment Variables** (e.g. `SERVER__PORT=4500` or `AXIOM_SERVER_PORT=4500`)
-3. **Local `.env` File** (loaded on boot if present in execution directory)
-4. **`config.toml` File** (loaded once at process launch)
-5. **Compiled Defaults** (embedded fallback values)
+### Key Invariants
+- **Immutable at Runtime**: `config.toml` is read once during process startup and frozen in an immutable `OnceLock<Arc<AxiomConfig>>`. Modifying `config.toml` requires a process restart.
+- **Zero-Lock Hot Path**: Request handlers and middleware read configuration via lock-free `Arc` clones, incurring zero mutex or lock contention.
+- **Precedence Hierarchy** (highest to lowest priority):
+  1. **CLI Flags** (e.g., `axiom server run -c /etc/axiom.toml --port 4500`)
+  2. **Environment Variables** (e.g., `SERVER__PORT=4500`)
+  3. **Local `.env` File** (automatically loaded from current working directory via `dotenvy`)
+  4. **`config.toml` File** (loaded from current directory or `-c/--config` path)
+  5. **Compiled Defaults** (hardcoded in `crates/core/src/config/schema.rs`)
 
-> [!NOTE]
-> Database connection strings and API keys are stored exclusively in `data/axiom.db`. They cannot be defined in `config.toml`. Configure them through the Web UI console (`/system`) or the Axiom CLI (`axiom db add`, `axiom key create`).
+> [!IMPORTANT]
+> **What is NOT in `config.toml`**:
+> Database connection strings, API keys, RBAC roles, and cluster mesh peers are dynamic metadata stored in the embedded LibSQL database (`data/axiom.db`). They are managed exclusively through the Admin Web UI (`/system`), CLI (`axiom db`, `axiom key`, `axiom role`, `axiom cluster`), or the Admin REST API. They cannot be defined in `config.toml`.
 
 ---
 
-## Master `config.toml` Blueprint
+## Loading & File Discovery
 
-Below is the complete reference configuration file with standard production values:
+### Default Path
+By default, `axiom server run` looks for `config.toml` in the current working directory. If `config.toml` is not present, Axiom boots immediately using compiled defaults and binds to `127.0.0.1:4500`.
+
+### Custom Configuration Path
+Pass the `-c` or `--config` flag to load configuration from an arbitrary path:
+
+```bash
+axiom server run -c /etc/axiom/production.toml
+```
+
+### Generating Configuration via CLI
+The `axiom config` subcommand provides tools to initialize and inspect configuration:
+
+```bash
+# Initialize a new config.toml with standard defaults in the current directory
+axiom config init
+
+# Output configuration as an environment variable .env template
+axiom config to-env
+
+# Validate and inspect resolved configuration values
+axiom config show
+```
+
+---
+
+## Complete `config.toml` Blueprint
+
+Below is the complete reference `config.toml` representing all available modules, keys, and production defaults:
 
 ```toml
+# ==============================================================================
+# Axiom Master Configuration (config.toml)
+# All changes require a server restart to take effect.
+# ==============================================================================
+
+# --- Server & Network Settings ---
 [server]
-host = "127.0.0.1"
-port = 4500
-workers = 4                        # Tokio worker threads (0 = auto-detect logical CPU cores)
-max_connections = 10000            # Concurrency limit for active TCP sockets
+host = "127.0.0.1"                 # TCP network interface to bind
+port = 4500                        # TCP port for incoming HTTP traffic
+workers = 0                        # Tokio worker threads (0 = auto-detect CPU cores)
+max_connections = 10000            # Concurrency ceiling for simultaneous TCP sockets
 request_timeout = 30               # Global request execution timeout in seconds
 body_limit = "10mb"                # Hard ceiling on single HTTP request payloads
-cors_origins = ["*"]               # Permitted CORS origins (restrict in production)
-trusted_proxies = ["127.0.0.1"]    # Upstream proxy IPs trusted for X-Forwarded-For headers
-allowed_ips = ["127.0.0.1"]        # Exact IPs completely exempt from rate limiting
-shutdown_timeout = 30              # Seconds to drain in-flight requests during SIGTERM
+tls_cert = ""                      # Path to TLS certificate PEM (empty for plain HTTP)
+tls_key = ""                       # Path to TLS private key PEM
+allowed_ips = ["127.0.0.1"]        # Client IPs completely exempt from rate limits
+trusted_proxies = ["127.0.0.1"]    # Upstream proxy IPs trusted for X-Forwarded-For
+cors_origins = ["*"]               # Allowed CORS origins (e.g. ["https://app.example.com"])
+shutdown_timeout = 30              # Grace period in seconds to drain in-flight requests
 
+# --- Structured Logging ---
 [logging]
-enabled = true
-level = "INFO"                     # Log verbosity: TRACE | DEBUG | INFO | WARN | ERROR
-format = "json"                    # Log output format: "json" (production) or "pretty" (dev)
+enabled = true                     # Master toggle for file and terminal log emission
+level = "INFO"                     # Log severity: "TRACE" | "DEBUG" | "INFO" | "WARN" | "ERROR"
+format = "json"                    # Serialization format: "json" (production) or "pretty" (dev)
 directory = "./logs"               # Output directory for rotating log files
-file_prefix = "axiom"              # File naming prefix: <prefix>.<timestamp>.log
-max_file_size = "50mb"             # Maximum uncompressed log segment size
-max_files = 5                      # Retained historical log files before unlinking
-stdout = true                      # Mirror structured log events to stdout/stderr
+file_prefix = "axiom"              # Prefix for log files (<prefix>.<timestamp>.log)
+max_file_size = "50mb"             # Maximum uncompressed log segment size before rotation
+max_files = 5                      # Number of historical rotated log files to retain
+stdout = true                      # Mirror structured log records directly to stdout
 
-[metadata]
-url = "file:data/axiom.db"         # Local SQLite file or remote Turso libsql URL
-token = ""                         # Authentication token for remote Turso (empty for local)
-reload_interval = 30               # Seconds between automatic snapshot refreshes
-
+# --- Rate Limiting & Abuse Defense ---
 [rate_limit]
-enabled = true
-backend = "memory"                 # Rate counter backend: "memory" (L1) or "turso"
-turso_url = "file:data/cache.db"   # Persistent storage file for distributed rate counters
-turso_token = ""
+enabled = true                     # Master toggle for dual rate limiting middleware
+backend = "memory"                 # Storage backend: "memory" (L1 RAM) or "turso"
+turso_url = "file:data/cache.db"   # Persistent storage file if backend = "turso"
+turso_token = ""                   # Remote Turso authentication token (if applicable)
 window = 60                        # Sliding rate window in seconds
 max_requests = 100                 # Maximum allowed requests per window
-burst = 20                         # Permitted burst capacity above max_requests
+burst = 20                         # Permitted short-term request burst above max_requests
 penalty_threshold = 10             # Limit violations before source IP or key is banned
 penalty_cooldown = 300             # Ban duration in seconds
 
+# --- Response & Query Caching ---
 [cache]
-enabled = true
-backend = "memory"                 # Cache storage backend: "memory" (L1) or "hybrid" (L1+L2)
-turso_url = "file:data/cache.db"   # Persistent storage file for L2 cache
-turso_token = ""
-max_memory = "100mb"               # Upper memory ceiling for L1 DashMap cache
+enabled = true                     # Master toggle for internal response and query caching
+backend = "memory"                 # Storage layer: "memory" (L1 RAM) or "hybrid" (L1 + L2 disk)
+turso_url = "file:data/cache.db"   # Persistent storage file if backend = "hybrid"
+turso_token = ""                   # Remote Turso authentication token (if applicable)
+max_memory = "100mb"               # Memory ceiling for L1 DashMap cache
 default_ttl = 60                   # Default cache lifetime in seconds
-query_cache = true                 # Enable SELECT query result caching
+query_cache = true                 # Enable SELECT query result and AST caching
 idempotency_ttl = 86400            # Cache retention for Idempotency-Key responses (24 hours)
 response_cache_ttl = 30            # Global HTTP response cache TTL in seconds
 query_results_ttl = 5              # Cache TTL in seconds for repeated SELECT statements
-negative_cache_ttl = 5             # Cache TTL in seconds for 404 / empty query results
+negative_cache_ttl = 5             # Cache TTL in seconds for 404 / empty lookups
 
+# --- Low-Level Performance Knobs ---
+[performance]
+query_cache_size = 2048            # Maximum slots for parsed SQL query ASTs
+transpiler_cache_size = 4096       # Maximum slots for SQL dialect transpilation results
+rate_limit_cache_size = 256        # Maximum slots for rate-limit metadata lookups
+
+# --- Database Circuit Breaker ---
 [circuit_breaker]
-enabled = true
-failure_threshold = 5              # Consecutive upstream errors before opening circuit
-success_threshold = 3              # Successful probes required in half-open state to close
+enabled = true                     # Upstream database fault isolation toggle
+failure_threshold = 5              # Consecutive upstream errors before tripping circuit OPEN
+success_threshold = 3              # Successful probes in HALF-OPEN required to close circuit
 timeout = 30                       # Cooldown seconds to wait before probing broken upstream
 
+# --- Metadata Store (LibSQL / SQLite) ---
+[metadata]
+url = "file:data/axiom.db"         # Local SQLite file or remote Turso libsql URL
+token = ""                         # Bearer authentication token for remote Turso connection
+reload_interval = 30               # Seconds between automatic in-memory snapshot updates
+
+# --- Content-Addressed Blob Storage ---
 [blob]
-path = "data/blobs"                # Filesystem root for LSM metadata and object shards
-inline_max = "64kb"                # Objects <= this threshold stored inline in LSM
-max_object = "5gb"                 # Maximum allowable single object upload size
-verify_reads = false               # Compute and verify BLAKE3 checksums on read operations
+path = "data/blobs"                # Directory root for LSM index and blob object shards
+inline_max = "64kb"                # Payloads <= this threshold stored inline in Fjall LSM
+max_object = "5gb"                 # Hard ceiling on single object upload size
+verify_reads = false               # Recalculate BLAKE3 hashes on every read (integrity guard)
 ```
 
 ---
 
-## Detailed Parameter Specification
+## Detailed Module Specifications
 
-### `[server]` Module
+### 1. `[server]` Module
 
-| Key | Type | Default | Choices / Range | Reloadable | Description |
-|---|---|---|---|---|---|
-| `host` | string | `"127.0.0.1"` | Valid IPv4 / IPv6 | Startup | Local network interface to bind TCP listener. |
-| `port` | integer | `4500` | 1–65535 | Startup | TCP port for incoming HTTP traffic. |
-| `workers` | integer | `4` | 0–256 | Startup | Tokio runtime worker threads (`0` = auto-detect logical CPU count). |
-| `max_connections` | integer | `10000` | 100–100000 | Startup | Maximum simultaneous active client connections. |
-| `request_timeout` | integer | `30` | 1–300 | Startup | Global request cancellation timeout in seconds. |
-| `body_limit` | string | `"10mb"` | e.g. `"2mb"`, `"50mb"` | Startup | Hard ceiling on single request payloads enforced by WAF. |
-| `cors_origins` | array | `["*"]` | Origin strings | Startup | Permitted Cross-Origin Resource Sharing domains. |
-| `trusted_proxies` | array | `["127.0.0.1"]` | IPv4 / CIDRs | Startup | Upstream proxies trusted to supply client IPs in `X-Forwarded-For`. |
-| `allowed_ips` | array | `["127.0.0.1"]` | IPv4 / CIDRs | Startup | Source IPs entirely exempt from rate limiting and bans. |
-| `shutdown_timeout` | integer | `30` | 1–120 | Startup | Grace period in seconds to finish in-flight requests on SIGTERM. |
+Tuning network bindings, worker thread counts, payload limits, and security headers.
+
+| Key | Type | Default | Accepted Values | Description |
+|---|---|---|---|---|
+| `host` | string | `"127.0.0.1"` | Valid IPv4 or IPv6 address | Network interface to bind the TCP listener. Use `"0.0.0.0"` to listen on all interfaces. |
+| `port` | integer | `4500` | `1`–`65535` | TCP port for incoming HTTP REST traffic. |
+| `workers` | integer | `0` | `0`–`256` | Number of Tokio runtime worker threads. `0` auto-detects logical CPU cores. |
+| `max_connections` | integer | `10000` | `100`–`100000` | Upper limit on concurrent active client TCP connections. |
+| `request_timeout` | integer | `30` | `1`–`300` | Global cancellation timeout in seconds for executing requests. |
+| `body_limit` | string | `"10mb"` | e.g. `"2mb"`, `"50mb"`, `"1gb"` | Maximum allowed request body size enforced by the WAF. |
+| `tls_cert` | string | `""` | File path | Path to PEM-encoded TLS certificate file. Empty disables native TLS. |
+| `tls_key` | string | `""` | File path | Path to PEM-encoded TLS private key file. |
+| `allowed_ips` | array of strings | `["127.0.0.1"]` | IPv4 / IPv6 addresses | Exact IP addresses completely exempt from rate limiting and auto-bans. |
+| `trusted_proxies` | array of strings | `["127.0.0.1"]` | IPv4 / IPv6 / CIDR blocks | Reverse proxies trusted to provide real client IP addresses in `X-Forwarded-For`. |
+| `cors_origins` | array of strings | `["*"]` | Domain origins or `"*"` | Permitted Cross-Origin Resource Sharing (CORS) origins. |
+| `shutdown_timeout` | integer | `30` | `1`–`120` | Grace period in seconds to allow in-flight requests to complete during SIGTERM/SIGINT. |
 
 > [!WARNING]
-> Never set `trusted_proxies = ["*"]` in production. Wildcard proxy trust allows untrusted clients to spoof arbitrary IP addresses via `X-Forwarded-For`, bypassing rate limiting and ban enforcement.
+> **Proxy Security**: Never configure `trusted_proxies = ["*"]` in production. Wildcard proxy trust permits any untrusted client to forge arbitrary `X-Forwarded-For` headers, bypassing IP rate limits and ban enforcement.
 
 ---
 
-### `[logging]` Module
+### 2. `[logging]` Module
 
-| Key | Type | Default | Choices / Range | Reloadable | Description |
-|---|---|---|---|---|---|
-| `enabled` | boolean | `true` | `true`, `false` | Startup | Master toggle for file and terminal log emission. |
-| `level` | string | `"INFO"` | `TRACE`, `DEBUG`, `INFO`, `WARN`, `ERROR` | Startup | Minimum log severity to capture. |
-| `format` | string | `"json"` | `"json"`, `"pretty"` | Startup | Serialization format: structured JSON or human-readable text. |
-| `directory` | string | `"./logs"` | Path | Startup | Filesystem directory where rotated logs are written. |
-| `file_prefix` | string | `"axiom"` | String | Startup | Log filename prefix. |
-| `max_file_size` | string | `"50mb"` | e.g. `"10mb"`, `"100mb"` | Startup | Maximum segment size before rotating active log file. |
-| `max_files` | integer | `5` | 1–50 | Startup | Number of historical log files to retain before unlinking. |
-| `stdout` | boolean | `true` | `true`, `false` | Startup | Mirror formatted log records directly to stdout. |
+Configuring structured JSON and human-readable logging, file rotation, and console mirroring.
 
----
-
-### `[metadata]` Module
-
-| Key | Type | Default | Choices / Range | Reloadable | Description |
-|---|---|---|---|---|---|
-| `url` | string | `"file:data/axiom.db"` | Path or LibSQL URL | Startup | Metadata database target: local SQLite file or remote Turso cluster. |
-| `token` | string | `""` | Auth token string | Startup | Bearer authentication token for remote Turso connection. |
-| `reload_interval` | integer | `30` | 5–3600 | Startup | Interval in seconds between automatic in-memory snapshot updates. |
+| Key | Type | Default | Accepted Values | Description |
+|---|---|---|---|---|
+| `enabled` | boolean | `true` | `true`, `false` | Master toggle for log event generation. |
+| `level` | string | `"INFO"` | `"TRACE"`, `"DEBUG"`, `"INFO"`, `"WARN"`, `"ERROR"` | Minimum log severity level captured. |
+| `format` | string | `"json"` | `"json"`, `"pretty"` | Log formatting. Use `"json"` for production log aggregators and `"pretty"` for local development. |
+| `directory` | string | `"./logs"` | File path | Directory where rotating log files are saved. Created automatically if missing. |
+| `file_prefix` | string | `"axiom"` | String | Naming prefix for generated log files (`<prefix>.<timestamp>.log`). |
+| `max_file_size` | string | `"50mb"` | e.g. `"10mb"`, `"100mb"` | File size threshold before rotating the active log file. |
+| `max_files` | integer | `5` | `1`–`50` | Maximum historical log file segments to keep on disk before unlinking oldest. |
+| `stdout` | boolean | `true` | `true`, `false` | When `true`, mirrors log output to standard output/standard error. |
 
 ---
 
-### `[rate_limit]` Module
+### 3. `[rate_limit]` Module
 
-| Key | Type | Default | Choices / Range | Reloadable | Description |
-|---|---|---|---|---|---|
-| `enabled` | boolean | `true` | `true`, `false` | Startup | Master toggle for dual rate limiting middleware. |
-| `backend` | string | `"memory"` | `"memory"`, `"turso"` | Startup | Storage backend for rate counters (`"memory"` runs in L1 RAM). |
-| `window` | integer | `60` | 1–3600 | Startup | Sliding rate limiting time window in seconds. |
-| `max_requests` | integer | `100` | 1–100000 | Startup | Maximum requests permitted per window per IP or API key. |
-| `burst` | integer | `20` | 0–1000 | Startup | Permitted short-term request burst above `max_requests`. |
-| `penalty_threshold`| integer | `10` | 1–100 | Startup | Rate limit violations before an automatic IP/Key ban triggers. |
-| `penalty_cooldown` | integer | `300` | 10–86400 | Startup | Duration in seconds that a banned entity remains blocked. |
+Hardened rate-limiting thresholds and automated brute-force protection.
 
----
-
-### `[cache]` Module
-
-| Key | Type | Default | Choices / Range | Reloadable | Description |
-|---|---|---|---|---|---|
-| `enabled` | boolean | `true` | `true`, `false` | Startup | Master toggle for internal response and query cache engine. |
-| `backend` | string | `"memory"` | `"memory"`, `"hybrid"` | Startup | Storage layer: volatile RAM L1 or disk-backed L1+L2 hybrid. |
-| `max_memory` | string | `"100mb"` | e.g. `"256mb"`, `"1gb"` | Startup | Memory allocation ceiling for L1 DashMap cache. |
-| `default_ttl` | integer | `60` | 1–86400 | Startup | Default cache lifetime in seconds when not specified. |
-| `query_cache` | boolean | `true` | `true`, `false` | Startup | Cache parameterized SQL `SELECT` statement results. |
-| `idempotency_ttl` | integer | `86400` | 60–604800 | Startup | Cache retention in seconds for `Idempotency-Key` write mutations. |
-| `query_results_ttl`| integer | `5` | 1–300 | Startup | Cache lifetime in seconds for hot repeated database queries. |
-| `negative_cache_ttl`| integer | `5` | 1–60 | Startup | Cache lifetime in seconds for empty responses and 404 lookups. |
+| Key | Type | Default | Accepted Values | Description |
+|---|---|---|---|---|
+| `enabled` | boolean | `true` | `true`, `false` | Master toggle for rate-limiting middleware. |
+| `backend` | string | `"memory"` | `"memory"`, `"turso"` | Counter storage. `"memory"` tracks in fast L1 RAM; `"turso"` persists in LibSQL. |
+| `turso_url` | string | `"file:data/cache.db"` | Path or LibSQL URL | Storage path or URL when `backend = "turso"`. |
+| `turso_token` | string | `""` | Auth token string | Authentication token for remote Turso rate-limiting cluster. |
+| `window` | integer | `60` | `1`–`3600` | Sliding rate limiting time window in seconds. |
+| `max_requests` | integer | `100` | `1`–`100000` | Maximum requests allowed per window per IP and per API key. |
+| `burst` | integer | `20` | `0`–`1000` | Permitted burst capacity above `max_requests`. |
+| `penalty_threshold` | integer | `10` | `1`–`100` | Number of rate limit violations before an automatic ban is triggered. |
+| `penalty_cooldown` | integer | `300` | `10`–`86400` | Duration in seconds that an IP or API key remains blocked. |
 
 ---
 
-### `[circuit_breaker]` Module
+### 4. `[cache]` Module
 
-| Key | Type | Default | Choices / Range | Reloadable | Description |
-|---|---|---|---|---|---|
-| `enabled` | boolean | `true` | `true`, `false` | Startup | Master toggle for upstream database fault isolation. |
-| `failure_threshold`| integer | `5` | 1–50 | Startup | Consecutive upstream connection errors before opening circuit. |
-| `success_threshold`| integer | `3` | 1–20 | Startup | Successful probes in half-open state required to close circuit. |
-| `timeout` | integer | `30` | 1–300 | Startup | Recovery cooldown in seconds before testing half-open probe. |
+Multi-tier caching for SQL queries, HTTP response envelopes, and idempotency protection.
+
+| Key | Type | Default | Accepted Values | Description |
+|---|---|---|---|---|
+| `enabled` | boolean | `true` | `true`, `false` | Master toggle for the caching engine. |
+| `backend` | string | `"memory"` | `"memory"`, `"hybrid"` | `"memory"` uses volatile L1 DashMap. `"hybrid"` adds L2 disk persistence. |
+| `turso_url` | string | `"file:data/cache.db"` | Path or LibSQL URL | Persistent file path or URL for L2 cache when `backend = "hybrid"`. |
+| `turso_token` | string | `""` | Auth token string | Authentication token for remote Turso L2 cache instance. |
+| `max_memory` | string | `"100mb"` | e.g. `"64mb"`, `"512mb"` | Memory limit ceiling for the in-memory L1 cache. |
+| `default_ttl` | integer | `60` | `1`–`86400` | Default time-to-live in seconds for general cache items. |
+| `query_cache` | boolean | `true` | `true`, `false` | Toggle for caching parameterized SQL query results. |
+| `idempotency_ttl` | integer | `86400` | `60`–`604800` | Duration (seconds) to retain responses for `Idempotency-Key` mutations (default: 24h). |
+| `response_cache_ttl` | integer | `30` | `1`–`3600` | Default cache TTL in seconds for cached GET endpoint responses. |
+| `query_results_ttl` | integer | `5` | `1`–`300` | Cache TTL in seconds for repeated SELECT query results. |
+| `negative_cache_ttl` | integer | `5` | `1`–`60` | Cache TTL in seconds for empty query responses and 404 lookups. |
 
 ---
 
-### `[blob]` Module
+### 5. `[performance]` Module
 
-| Key | Type | Default | Choices / Range | Reloadable | Description |
-|---|---|---|---|---|---|
-| `path` | string | `"data/blobs"` | Local filesystem path | Startup | Directory root for LSM index, shard journals, and blob objects. |
-| `inline_max` | string | `"64kb"` | `"4kb"`–`"1mb"` | Startup | Payloads `<= this size` stored directly in LSM tree. |
-| `max_object` | string | `"5gb"` | `"100mb"`–`"50gb"` | Startup | Absolute upper limit on a single object upload. |
-| `verify_reads` | boolean | `false` | `true`, `false` | Startup | Recalculate BLAKE3 hashes on every read (increases CPU load). |
+Low-level sizing parameters for internal AST parsers, dialect transpilers, and lookups.
+
+| Key | Type | Default | Accepted Values | Description |
+|---|---|---|---|---|
+| `query_cache_size` | integer | `2048` | `128`–`65536` | Maximum slots in the LRU cache for parsed SQL AST structures. |
+| `transpiler_cache_size` | integer | `4096` | `128`–`65536` | Maximum slots for SQL dialect transpilation results. |
+| `rate_limit_cache_size` | integer | `256` | `16`–`4096` | Maximum slots for rate-limiting identity metadata lookups. |
+
+---
+
+### 6. `[circuit_breaker]` Module
+
+Upstream database fault isolation preventing cascading thread starvation.
+
+| Key | Type | Default | Accepted Values | Description |
+|---|---|---|---|---|
+| `enabled` | boolean | `true` | `true`, `false` | Master toggle for database connection circuit breaker. |
+| `failure_threshold` | integer | `5` | `1`–`50` | Consecutive database connection errors before opening the circuit (fast failing). |
+| `success_threshold` | integer | `3` | `1`–`20` | Successful probe requests required in HALF-OPEN state before closing circuit. |
+| `timeout` | integer | `30` | `1`–`300` | Cooldown period in seconds before testing half-open recovery probes. |
+
+---
+
+### 7. `[metadata]` Module
+
+Configuring the identity and metadata store backing API keys, users, and database pools.
+
+| Key | Type | Default | Accepted Values | Description |
+|---|---|---|---|---|
+| `url` | string | `"file:data/axiom.db"` | Path or LibSQL URL | Target LibSQL database: local SQLite file (`file:path`) or remote Turso (`libsql://...`). |
+| `token` | string | `""` | Auth token string | Bearer authentication token for remote Turso metadata database connections. |
+| `reload_interval` | integer | `30` | `5`–`3600` | Interval in seconds between automatic in-memory `ArcSwap` snapshot refreshes. |
+
+---
+
+### 8. `[blob]` Module
+
+Embedded content-addressed object storage engine settings.
+
+| Key | Type | Default | Accepted Values | Description |
+|---|---|---|---|---|
+| `path` | string | `"data/blobs"` | File path | Directory root where the LSM tree index and disk shards are saved. |
+| `inline_max` | string | `"64kb"` | `"4kb"`–`"1mb"` | Payloads smaller than or equal to this limit are stored directly in the Fjall LSM tree. |
+| `max_object` | string | `"5gb"` | `"100mb"`–`"50gb"` | Hard upper limit on a single object or multipart upload. |
+| `verify_reads` | boolean | `false` | `true`, `false` | When `true`, recalculates BLAKE3 checksums on every read (increases CPU load). |
 
 ---
 
 ## Environment Variable Overrides
 
-Every configuration parameter can be overridden using environment variables at process launch. Delimit nested configuration sections using either a double underscore (`__`) or single underscore:
+Every setting in `config.toml` can be overridden at runtime using environment variables.
 
-```bash
-# Override server binding and worker count
-export SERVER__HOST="0.0.0.0"
-export SERVER__PORT="8080"
-export SERVER__WORKERS="8"
-
-# Override database metadata store for Turso cluster
-export METADATA__URL="libsql://primary.turso.io"
-export METADATA__TOKEN="eyJhbGciOi..."
-
-# Override cache and logging
-export LOGGING__LEVEL="WARN"
-export CACHE__MAX_MEMORY="512mb"
+### Override Syntax
+Use the uppercase section name and key separated by a **double underscore** (`__`):
+```text
+<SECTION>__<KEY>=<VALUE>
 ```
 
----
+### Common Environment Variable Overrides
 
-## Hardware Sizing & Memory Profiles
-
-Axiom compiles to a single, lightweight binary that scales predictably across different deployment tiers:
-
-| Profile | Workers | Cache Backend | L1 RAM Cap | Logging | Target Idle RSS | Target Peak Throughput | Recommended Host |
-|---|---|---|---|---|---|---|---|
-| **Minimal** | 1 | Memory | 32 MB | Off / Error | `< 10 MB` | 5,000 req/s | Shared VPS, Raspberry Pi, cPanel |
-| **Standard** | 4 | Memory | 100 MB | JSON / Info | `< 25 MB` | 25,000 req/s | 2 vCPU / 2 GB RAM Instance |
-| **Production** | 8 | Hybrid | 256 MB | JSON / Info | `< 50 MB` | 75,000 req/s | 4 vCPU / 4 GB Dedicated Server |
-| **Enterprise** | Auto | Hybrid | 1 GB+ | JSON + OTel | `< 150 MB` | 150,000+ req/s | Multi-core Bare Metal Server |
-
----
-
-## Production Deployment Recipes
-
-### Recommended Topology
-
-Axiom serves HTTP on `127.0.0.1:4500` by default. Place Axiom behind a modern reverse proxy that handles public TLS termination, HTTP/2 or HTTP/3 multiplexing, and compression:
-
-```mermaid
-flowchart LR
-    Client["Client / Agent"] -->|HTTPS / WSS| Proxy["Reverse Proxy<br/>(Caddy / Nginx / Traefik)"]
-    Proxy -->|HTTP 127.0.0.1:4500| Axiom["Axiom Gateway"]
-    Axiom --> PG[("PostgreSQL")]
-    Axiom --> MY[("MySQL")]
-    Axiom --> CH[("ClickHouse")]
-    Axiom --> FS["data/axiom.db<br/>data/blobs/"]
-```
-
----
-
-### 1. Caddyfile (Automatic Let's Encrypt HTTPS)
-
-```caddyfile
-api.example.com {
-    encode zstd gzip
-
-    # Proxy to local Axiom gateway
-    reverse_proxy 127.0.0.1:4500 {
-        header_up X-Forwarded-Proto {scheme}
-        header_up X-Real-IP {remote_host}
-    }
-}
-```
-
----
-
-### 2. Nginx Configuration
-
-```nginx
-upstream axiom_backend {
-    server 127.0.0.1:4500;
-    keepalive 64;
-}
-
-server {
-    listen 443 ssl http2;
-    server_name api.example.com;
-
-    ssl_certificate /etc/letsencrypt/live/api.example.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/api.example.com/privkey.pem;
-    ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_ciphers HIGH:!aNULL:!MD5;
-
-    # Support large blob uploads up to 5 GB
-    client_max_body_size 5G;
-
-    location / {
-        proxy_pass http://axiom_backend;
-        proxy_http_version 1.1;
-        proxy_set_header Connection "";
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-
-        # Disable buffering for chunked streaming and SSE
-        proxy_buffering off;
-        proxy_read_timeout 300s;
-    }
-}
-```
-
----
-
-### 3. Hardened Systemd Service
-
-Create `/etc/systemd/system/axiom.service`:
-
-```ini
-[Unit]
-Description=Axiom Database Gateway & Storage Engine
-After=network.target remote-fs.target
-Documentation=https://github.com/toxichome/axiom
-
-[Service]
-Type=simple
-User=axiom
-Group=axiom
-WorkingDirectory=/opt/axiom
-ExecStart=/opt/axiom/axiom server run
-Restart=always
-RestartSec=3s
-
-# Security Hardening Directives
-ProtectSystem=strict
-ProtectHome=true
-PrivateTmp=true
-NoNewPrivileges=true
-ProtectKernelTunables=true
-ProtectControlGroups=true
-ReadWritePaths=/opt/axiom/data /opt/axiom/logs
-LimitNOFILE=65536
-
-[Install]
-WantedBy=multi-user.target
-```
-
-Enable and start the service:
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable --now axiom
-sudo systemctl status axiom
-```
-
----
-
-### 4. Docker Compose Setup
-
-```yaml
-version: "3.8"
-
-services:
-  axiom:
-    image: ghcr.io/toxichome/axiom:0.1.11
-    container_name: axiom
-    restart: unless-stopped
-    ports:
-      - "127.0.0.1:4500:4500"
-    environment:
-      - SERVER__HOST=0.0.0.0
-      - SERVER__PORT=4500
-      - LOGGING__FORMAT=json
-    volumes:
-      - ./config.toml:/opt/axiom/config.toml:ro
-      - ./data:/opt/axiom/data
-      - ./logs:/opt/axiom/logs
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://127.0.0.1:4500/health"]
-      interval: 10s
-      timeout: 3s
-      retries: 3
-```
-
----
-
-## Backup & Disaster Recovery
-
-Axiom isolates all dynamic state into two physical directories:
-
-| Asset | Location | Storage Type | Backup Strategy |
+| Environment Variable | Equivalent TOML Key | Example Value | Description |
 |---|---|---|---|
-| **Metadata Store** | `data/axiom.db` | SQLite / LibSQL WAL | Hot backup via `sqlite3 data/axiom.db ".backup 'backup.db'"` or file copy |
-| **Blob Engine** | `data/blobs/` | LSM Index + Content Shards | Incremental file rsync / disk snapshot |
-| **Server Config** | `config.toml` | TOML File | Version-controlled configuration repository |
+| `SERVER__HOST` | `server.host` | `0.0.0.0` | Bind to all network interfaces |
+| `SERVER__PORT` | `server.port` | `8080` | Override HTTP port |
+| `SERVER__WORKERS` | `server.workers` | `8` | Explicit Tokio worker threads |
+| `SERVER__BODY_LIMIT` | `server.body_limit` | `50mb` | Raise request payload ceiling |
+| `LOGGING__LEVEL` | `logging.level` | `WARN` | Set log severity |
+| `LOGGING__FORMAT` | `logging.format` | `json` | Set log output format |
+| `METADATA__URL` | `metadata.url` | `libsql://db.turso.io` | Remote Turso metadata connection |
+| `METADATA__TOKEN` | `metadata.token` | `eyJhbGciOi...` | Remote Turso bearer token |
+| `CACHE__MAX_MEMORY` | `cache.max_memory` | `256mb` | Adjust L1 RAM cache cap |
+| `BLOB__PATH` | `blob.path` | `/mnt/storage/blobs` | Relocate blob storage volume |
 
-### Safe Backup Script
+### Docker & Container Usage
+When running in containerized environments, pass environment variables directly:
+
 ```bash
-#!/usr/bin/env bash
-set -euo pipefail
-
-BACKUP_DIR="/backups/axiom-$(date +%Y%m%d_%H%M%S)"
-mkdir -p "$BACKUP_DIR"
-
-# 1. Hot-backup the metadata database using SQLite WAL backup API
-sqlite3 /opt/axiom/data/axiom.db ".backup '$BACKUP_DIR/axiom.db'"
-
-# 2. Archive blob shards with preserved hardlinks and file timestamps
-rsync -a --delete /opt/axiom/data/blobs/ "$BACKUP_DIR/blobs/"
-
-# 3. Archive static configuration
-cp /opt/axiom/config.toml "$BACKUP_DIR/config.toml"
-
-echo "Axiom backup successfully created at $BACKUP_DIR"
+docker run -d \
+  -p 4500:4500 \
+  -e SERVER__HOST=0.0.0.0 \
+  -e SERVER__PORT=4500 \
+  -e LOGGING__FORMAT=json \
+  -e METADATA__URL=file:/app/data/axiom.db \
+  -v axiom_data:/app/data \
+  --name axiom \
+  ghcr.io/toxichome/axiom:0.1.11
 ```
 
 ---
