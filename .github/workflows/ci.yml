@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  check:
+    name: Workspace Check & Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Build Web UI Frontend
+        run: |
+          cd ui
+          npm ci
+          npm run build
+          cd ..
+
+      - name: Setup Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Verify Formatting
+        run: cargo fmt --check
+
+      - name: Workspace Check
+        run: cargo check --workspace
+
+      - name: Workspace Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Workspace Test
+        run: cargo test --workspace -- --test-threads=1
