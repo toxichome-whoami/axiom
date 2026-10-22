@@ -22,11 +22,10 @@ jobs:
           node-version: 20
 
       - name: Build Web UI Frontend
+        working-directory: ui
         run: |
-          cd ui
-          npm ci
+          npm install
           npm run build
-          cd ..
 
       - name: Setup Rust Toolchain
         uses: dtolnay/rust-toolchain@stable

@@ -9,7 +9,7 @@ on:
       tag_name:
         description: 'Tag name to release (e.g. v0.1.12)'
         required: false
-        default: 'manual'
+        default: 'v0.1.12'
 
 permissions:
   contents: write
@@ -27,7 +27,7 @@ jobs:
             artifact_name: axiom
             archive_format: tar.gz
 
-          # Linux ARM64 (Native GitHub ARM64 Runner)
+          # Linux ARM64
           - os: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
             artifact_name: axiom
@@ -69,11 +69,10 @@ jobs:
           node-version: 20
 
       - name: Build Web UI Frontend
+        working-directory: ui
         run: |
-          cd ui
-          npm ci
+          npm install
           npm run build
-          cd ..
 
       - name: Setup Rust Toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -89,7 +88,7 @@ jobs:
         run: |
           RELEASE_TAG="${{ github.ref_name }}"
           if [ "${RELEASE_TAG}" = "main" ] || [ -z "${RELEASE_TAG}" ]; then
-            RELEASE_TAG="${{ github.event.inputs.tag_name || 'latest' }}"
+            RELEASE_TAG="${{ github.event.inputs.tag_name || 'v0.1.12' }}"
           fi
           
           PKG_NAME="axiom-${RELEASE_TAG}-${{ matrix.target }}"
@@ -111,7 +110,7 @@ jobs:
           $RELEASE_TAG = "${{ github.ref_name }}"
           if ($RELEASE_TAG -eq "main" -or [string]::IsNullOrEmpty($RELEASE_TAG)) {
             $RELEASE_TAG = "${{ github.event.inputs.tag_name }}"
-            if ([string]::IsNullOrEmpty($RELEASE_TAG)) { $RELEASE_TAG = "latest" }
+            if ([string]::IsNullOrEmpty($RELEASE_TAG)) { $RELEASE_TAG = "v0.1.12" }
           }
           
           $PKG_NAME = "axiom-${RELEASE_TAG}-${{ matrix.target }}"
@@ -134,7 +133,7 @@ jobs:
             axiom-*.tar.gz.sha256
             axiom-*.zip
             axiom-*.zip.sha256
-          tag_name: ${{ github.ref_name }}
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || github.event.inputs.tag_name || 'v0.1.12' }}
           draft: false
           prerelease: false
           generate_release_notes: true
