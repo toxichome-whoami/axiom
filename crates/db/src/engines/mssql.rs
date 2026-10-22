@@ -277,7 +277,13 @@ impl DatabaseEngine for MssqlDatabaseEngine {
             }
         }
 
-        let mut query = Query::new(sql);
+        let formatted_sql = if sql.contains('?') {
+            format_mssql_placeholders(sql)
+        } else {
+            sql.to_string()
+        };
+
+        let mut query = Query::new(&formatted_sql);
         
         let mut str_idx = 0;
         let mut int_idx = 0;
@@ -534,5 +540,161 @@ impl DatabaseEngine for MssqlDatabaseEngine {
         query.execute(&mut *client).await.map_err(|e| EngineError::Execution(e.to_string()))?;
 
         Ok(())
+    }
+}
+
+/// Replaces unquoted '?' parameter placeholders with '@P1', '@P2', ... for T-SQL (MSSQL) grammar.
+/// Invariant: Respects single-quoted strings ('...'), square-bracketed identifiers ([...]),
+/// double-quoted identifiers ("..."), line comments (-- ...), and block comments (/* ... */)
+/// to prevent corrupting string literals containing question marks.
+pub fn format_mssql_placeholders(sql: &str) -> String {
+    use std::fmt::Write;
+    let mut out = String::with_capacity(sql.len() + 16);
+    let mut param_idx = 1;
+
+    let mut in_single_quote = false;
+    let mut in_double_quote = false;
+    let mut in_bracket = false;
+    let mut in_line_comment = false;
+    let mut in_block_comment = false;
+
+    let chars: Vec<char> = sql.chars().collect();
+    let len = chars.len();
+    let mut i = 0;
+
+    while i < len {
+        let c = chars[i];
+        let next_c = if i + 1 < len { Some(chars[i + 1]) } else { None };
+
+        if in_line_comment {
+            out.push(c);
+            if c == '\n' {
+                in_line_comment = false;
+            }
+            i += 1;
+            continue;
+        }
+
+        if in_block_comment {
+            out.push(c);
+            if c == '*' && next_c == Some('/') {
+                out.push('/');
+                i += 2;
+                in_block_comment = false;
+                continue;
+            }
+            i += 1;
+            continue;
+        }
+
+        if in_single_quote {
+            out.push(c);
+            if c == '\'' {
+                if next_c == Some('\'') {
+                    out.push('\'');
+                    i += 2;
+                    continue;
+                } else {
+                    in_single_quote = false;
+                }
+            }
+            i += 1;
+            continue;
+        }
+
+        if in_bracket {
+            out.push(c);
+            if c == ']' {
+                in_bracket = false;
+            }
+            i += 1;
+            continue;
+        }
+
+        if in_double_quote {
+            out.push(c);
+            if c == '"' {
+                in_double_quote = false;
+            }
+            i += 1;
+            continue;
+        }
+
+        if c == '-' && next_c == Some('-') {
+            out.push('-');
+            out.push('-');
+            i += 2;
+            in_line_comment = true;
+            continue;
+        }
+
+        if c == '/' && next_c == Some('*') {
+            out.push('/');
+            out.push('*');
+            i += 2;
+            in_block_comment = true;
+            continue;
+        }
+
+        if c == '\'' {
+            out.push(c);
+            in_single_quote = true;
+            i += 1;
+            continue;
+        }
+
+        if c == '[' {
+            out.push(c);
+            in_bracket = true;
+            i += 1;
+            continue;
+        }
+
+        if c == '"' {
+            out.push(c);
+            in_double_quote = true;
+            i += 1;
+            continue;
+        }
+
+        if c == '?' {
+            let _ = write!(out, "@P{}", param_idx);
+            param_idx += 1;
+            i += 1;
+            continue;
+        }
+
+        out.push(c);
+        i += 1;
+    }
+
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_format_mssql_placeholders_basic_and_quotes() {
+        let sql = "SELECT * FROM [users] WHERE id = ? AND status = ?";
+        assert_eq!(
+            format_mssql_placeholders(sql),
+            "SELECT * FROM [users] WHERE id = @P1 AND status = @P2"
+        );
+
+        // String literals containing question marks must NOT be transformed
+        let sql_with_lit = "SELECT * FROM [users] WHERE question = 'How are you?' AND id = ?";
+        assert_eq!(
+            format_mssql_placeholders(sql_with_lit),
+            "SELECT * FROM [users] WHERE question = 'How are you?' AND id = @P1"
+        );
+
+        // Comments containing question marks must NOT be transformed
+        let sql_with_comment = "-- Is this active?\nSELECT * FROM [users] WHERE id = ? /* really? */";
+        assert_eq!(
+            format_mssql_placeholders(sql_with_comment),
+            "-- Is this active?\nSELECT * FROM [users] WHERE id = @P1 /* really? */"
+        );
     }
 }
