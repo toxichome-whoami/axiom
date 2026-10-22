@@ -127,12 +127,34 @@ jobs:
           
           tar.exe -a -cf "${PKG}.zip" -C staging "${PKG}"
 
-      - name: Add Files to Release
-        uses: softprops/action-gh-release@v2
+      - name: Upload Package Artifact
+        uses: actions/upload-artifact@v4
         with:
-          files: |
+          name: package-${{ matrix.platform }}
+          path: |
             axiom_*.tar.gz
             axiom_*.zip
+          retention-days: 1
+
+  publish-release:
+    name: Publish Release
+    needs: build-release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all package artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: package-*
+          merge-multiple: true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
           tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.tag_name || github.ref_name }}
+          files: |
+            *.tar.gz
+            *.zip
           draft: false
           prerelease: false
+          generate_release_notes: false
+          body: ""
