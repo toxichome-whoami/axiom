@@ -29,14 +29,14 @@ To keep Axiom true to its design philosophy (**small, lightweight, and zero-bloa
 
 ```mermaid
 flowchart TD
-    ZIG["User runs 'zig build [target]'"] --> RUNNER["tools/zig/runner.c (compiled on-the-fly by zig cc)"]
+    ZIG["User runs 'zig build'"] --> RUNNER["tools/zig/runner.zig (compiled by zig build-exe)"]
     
     subgraph ToolchainBootstrap["Self-Bootstrapping Pipeline (.tools/bin)"]
-        RUNNER --> SHIM["tools/zig/toolchain_shim.c"]
+        RUNNER --> SHIM["tools/zig/toolchain_shim.zig"]
         SHIM --> GCC["gcc.exe / g++.exe / clang.exe"]
         SHIM --> AR["ar.exe"]
         SHIM --> DLLTOOL["dlltool.exe"]
-        RUNNER --> CP["tools/zig/cp.c -> cp.exe"]
+        RUNNER --> CP["tools/zig/cp.zig -> cp.exe"]
     end
     
     RUNNER --> ENV["Prepends .tools/bin to PATH in-memory"]
@@ -54,34 +54,39 @@ flowchart TD
 
 ### Components
 
-1. **Native Runner (`tools/zig/runner.c`)**:
-   A shell-independent C99 runner compiled automatically by `zig cc`. It configures directory structures, compiles toolchain shims, dynamically prepends `.tools/bin` to the process `PATH`, and dispatches commands to `cargo` or `npm`.
-2. **Toolchain Shims (`tools/zig/toolchain_shim.c`)**:
-   Lightweight shims that intercept calls from Rust build scripts (`build.rs`) to `gcc`, `g++`, `ar`, and `dlltool`:
+1. **Native Runner (`tools/zig/runner.zig`)**:
+   A shell-independent Zig runner compiled by `zig build-exe`. It configures directory structures, compiles toolchain shims, dynamically prepends `.tools/bin` to the process `PATH`, and dispatches commands directly to `cargo`.
+2. **Toolchain Shims (`tools/zig/toolchain_shim.zig`)**:
+   Lightweight shims written in Zig that intercept calls from Rust build scripts (`build.rs`) to `gcc`, `g++`, `ar`, and `dlltool`:
    * **Target Normalization**: Automatically converts GNU target triples (`--target=x86_64-pc-windows-gnu`) to Zig-compatible format (`-target x86_64-windows-gnu`).
    * **Warning Management**: Injects `-Wno-date-time` to prevent warnings-as-errors failures in `mimalloc`'s date/time macros.
    * **UBSan De-instrumentation**: Injects `-fno-sanitize=all` to prevent Clang from inserting unneeded debug sanitizer runtime symbols (`__ubsan_handle_*`) into C objects linked by `rust-lld`.
    * **DLLTool Architecture**: Injects `-m i386:x86-64` into `dlltool` to guarantee correct 64-bit Windows import libraries.
-3. **Windows `cp` Utility (`tools/zig/cp.c`)**:
-   A 25-line native C file copier supporting recursive copying (`-R`), eliminating the need for MSYS64 Unix coreutils during `libsql-ffi` amalgamation builds.
+3. **Windows `cp` Utility (`tools/zig/cp.zig`)**:
+   A native Zig file copy utility, eliminating the need for MSYS64 Unix coreutils during `libsql-ffi` amalgamation builds.
 
 ---
 
-## Build Targets Reference
+## Development Commands Reference
 
-Axiom's `build.zig` provides standard commands for every stage of development:
+Axiom uses a minimal 17-line `build.zig` designed exclusively to bootstrap the environment and trigger release builds. For all day-to-day development commands, simply use the native **`tools/zig/runner`** binary &mdash; it transparently injects the Zig C/C++ toolchain into process memory and passes all arguments directly to `cargo`:
 
-| Command | Underlying Action | Target Profile | Purpose |
-|---|---|---|---|
-| **`zig build`** | `cargo build --release` | `release` | Optimized production binary placed in `target/release/axiom` (<15 MB) |
-| **`zig build dev`** | `cargo build` | `dev` | Fast unoptimized debug build in `target/debug/axiom` for local testing |
-| **`zig build check`** | `cargo check --workspace` | `dev` | Sub-second workspace type check and AST syntax verification |
-| **`zig build clippy`** | `cargo clippy --workspace --all-targets` | `dev` | Strict workspace-wide linting with all warnings addressed |
-| **`zig build test`** | `cargo test --workspace -- --test-threads=1` | `test` | Executes the complete 255-test unit & integration test suite |
-| **`zig build fmt`** | `cargo fmt --check` | N/A | Verifies Rust code style compliance across all crates |
-| **`zig build run`** | `cargo run --bin axiom -- server run` | `dev` | Builds and immediately launches the Axiom server daemon |
-| **`zig build ui`** | `npm --prefix ui run build` | `production` | Typechecks and bundles the Administrative Web UI (`ui/dist/`) |
-| **`zig build setup`** | `runner setup` | N/A | Explicitly re-generates all shims in `.tools/bin` |
+| Command | Action Executed | Purpose |
+|---|---|---|
+| **`zig build`** | `cargo build --release` | Compiles `runner.c`, bootstraps shims, and produces optimized release binary in `target/release/` (<15 MB) |
+| **`tools/zig/runner`** | `cargo build --release` | Fast direct release build using existing runner binary |
+| **`tools/zig/runner check`** | `cargo check` | Sub-second workspace type check and syntax verification |
+| **`tools/zig/runner dev`** | `cargo build` | Fast unoptimized debug build in `target/debug/` |
+| **`tools/zig/runner clippy`** | `cargo clippy` | Workspace-wide linting with all warnings addressed |
+| **`tools/zig/runner test`** | `cargo test` | Runs the full workspace test suite |
+| **`tools/zig/runner test <filter>`** | `cargo test <filter>` | Runs only the specified custom tests |
+| **`tools/zig/runner run`** | `cargo run` | Builds and launches the server daemon |
+| **`tools/zig/runner cargo <...>`** | `cargo <...>` | Passes any arbitrary arguments straight to Cargo |
+| **`tools/zig/runner setup`** | `runner setup` | Explicitly re-generates all shims in `.tools/bin` |
+
+> [!NOTE]
+> On Windows use `tools\zig\runner.exe <args>`; on Linux or macOS use `./tools/zig/runner <args>`.
+> You can prefix commands with `cargo` (`tools\zig\runner.exe cargo test`) or invoke the cargo subcommand directly (`tools\zig\runner.exe test`). Both work identically.
 
 ---
 

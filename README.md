@@ -116,22 +116,18 @@ Axiom includes a **zero-bloat, self-bootstrapping build pipeline** powered by [Z
 git clone https://github.com/toxichome/axiom.git
 cd axiom
 
-# Production release build (executable placed in target/release/axiom):
+# Build production release binary in one step (compiles to target/release/axiom):
 zig build
 
-# Fast debug build for local development:
-zig build dev
-
-# Sub-second workspace typecheck:
-zig build check
-
-# Run workspace linter & tests:
-zig build clippy
-zig build test
+# Run any cargo command with the Zig toolchain automatically configured:
+tools/zig/runner check
+tools/zig/runner test
+tools/zig/runner clippy
+tools/zig/runner cargo <any-command>
 ```
 
 > [!TIP]
-> For advanced toolchain architecture, passthrough commands (`./tools/zig/runner cargo ...`), and direct Cargo usage, see the **[Building & Toolchain Guide](./docs/building.md)**.
+> For advanced toolchain architecture, custom test execution, and runner mechanics, see the **[Building & Toolchain Guide](./docs/building.md)**.
 >
 > If you prefer standard Cargo without Zig: `cargo build --release`.
 

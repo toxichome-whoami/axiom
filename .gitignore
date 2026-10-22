@@ -108,4 +108,6 @@ data/
 
 planning-rn
 .tools/
-tools/zig/runner*
+tools/zig/*.exe
+tools/zig/*.pdb
+tools/zig/*.obj
