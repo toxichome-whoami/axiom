@@ -34,11 +34,13 @@ pub struct ListTablesParams {
 pub struct InsertRequest {
     pub rows: Option<Vec<HashMap<String, Value>>>,
     pub row: Option<HashMap<String, Value>>,
+    pub data: Option<Value>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct UpdateRequest {
     pub filter: HashMap<String, Value>,
+    #[serde(alias = "data")]
     pub update: HashMap<String, Value>,
 }
 
@@ -118,5 +120,19 @@ mod tests {
         let parsed: UpdateRequest = serde_json::from_str(json).unwrap();
         assert_eq!(parsed.filter.get("id"), Some(&serde_json::json!(1)));
         assert_eq!(parsed.update.get("name"), Some(&serde_json::json!("alice")));
+
+        // Verify data alias
+        let json_data = r#"{"filter": {"id": 2}, "data": {"status": "inactive"}}"#;
+        let parsed_data: UpdateRequest = serde_json::from_str(json_data).unwrap();
+        assert_eq!(parsed_data.update.get("status"), Some(&serde_json::json!("inactive")));
+    }
+
+    #[test]
+    fn test_insert_request_data_alias() {
+        let json_data = r#"{"data": {"name": "charlie", "role": "admin"}}"#;
+        let parsed: InsertRequest = serde_json::from_str(json_data).unwrap();
+        assert!(parsed.data.is_some());
+        assert!(parsed.rows.is_none());
+        assert!(parsed.row.is_none());
     }
 }

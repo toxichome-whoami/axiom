@@ -1,4 +1,4 @@
-﻿/*
+/*
  * API key authentication and identity resolution middleware.
  * Owned by: middleware
  * Key deps: axum, base64, blake3, crate::config, axiom_metadata::snapshot, crate::security::ban_list, axiom_core::AuthContext
@@ -151,19 +151,19 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, A
         }
 
         if let Some(query) = req.uri().query() {
-            let mut ticket_sig = None;
-            let mut ticket_exp_str = None;
+            let mut ticket_sig: Option<String> = None;
+            let mut ticket_exp_str: Option<String> = None;
             for pair in query.split('&') {
                 if let Some((k, v)) = pair.split_once('=') {
                     if k == "ticket_sig" {
-                        ticket_sig = Some(v);
+                        ticket_sig = Some(urlencoding::decode(v).unwrap_or(std::borrow::Cow::Borrowed(v)).into_owned());
                     } else if k == "ticket_exp" {
-                        ticket_exp_str = Some(v);
+                        ticket_exp_str = Some(urlencoding::decode(v).unwrap_or(std::borrow::Cow::Borrowed(v)).into_owned());
                     }
                 }
             }
 
-            if let (Some(sig), Some(exp_str)) = (ticket_sig, ticket_exp_str) {
+            if let (Some(ref sig), Some(ref exp_str)) = (ticket_sig, ticket_exp_str) {
                 if let Ok(exp) = exp_str.parse::<i64>() {
                     if let Some((ns, key)) = stripped.split_once('/') {
                         let op = match *req.method() {

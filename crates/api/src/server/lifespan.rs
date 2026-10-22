@@ -102,7 +102,7 @@ pub async fn start_daemons() {
     });
 
     {
-        let mut tasks = DAEMONS.lock().unwrap();
+        let mut tasks = DAEMONS.lock().unwrap_or_else(|p| p.into_inner());
         tasks.push(cache_sweep_handle);
         tasks.push(rotator_handle);
         tasks.push(metadata_sync_handle);
@@ -133,7 +133,7 @@ pub fn register_daemon(handle: tokio::task::JoinHandle<()>) {
 
 /// Aborts all active background daemon tasks during graceful server shutdown.
 pub async fn stop_daemons() {
-    let mut tasks = DAEMONS.lock().unwrap();
+    let mut tasks = DAEMONS.lock().unwrap_or_else(|p| p.into_inner());
     for task in tasks.drain(..) {
         task.abort();
     }

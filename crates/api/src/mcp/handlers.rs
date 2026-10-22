@@ -519,11 +519,14 @@ async fn exec_query(
     let db_cfg = get_db_config(db, auth).await
         .map_err(|e| e.to_string())?;
 
+    let engine = DatabasePoolManager::get_engine(db).await;
+    let dialect = engine.as_ref().map(|e| e.dialect()).unwrap_or("postgres");
+
     let mut values = Vec::new();
     let mut where_clauses = Vec::new();
 
     if let Some(filter_map) = parse_json_object(args.get("filter")) {
-        let (clause, mut vals) = filter_builder::build_where_clause(&filter_map);
+        let (clause, mut vals) = filter_builder::build_where_clause_dialect(&filter_map, dialect);
         if !clause.is_empty() {
             where_clauses.push(clause);
             values.append(&mut vals);
@@ -543,10 +546,13 @@ async fn exec_query(
     };
     let limit = args.get("limit").and_then(|v| v.as_i64()).unwrap_or(50).clamp(1, 500);
 
+    let quoted_table = filter_builder::quote_ident_dialect(table, dialect);
+    let quoted_sort = filter_builder::quote_ident_dialect(sort_col, dialect);
+
     let mut final_where = where_sql;
     if let Some(cursor) = args.get("cursor").and_then(|v| v.as_str()) {
         let cursor_op = if order_dir == "DESC" { "<" } else { ">" };
-        let cursor_cond = format!("{} {} ?", filter_builder::sanitize_ident(sort_col), cursor_op);
+        let cursor_cond = format!("{} {} ?", quoted_sort, cursor_op);
         values.push(Value::String(cursor.to_string()));
         if final_where.trim().is_empty() {
             final_where = format!("WHERE {}", cursor_cond);
@@ -555,14 +561,26 @@ async fn exec_query(
         }
     }
 
-    let sql = format!(
-        "SELECT * FROM {} {} ORDER BY {} {} LIMIT {}",
-        filter_builder::sanitize_ident(table),
-        final_where,
-        filter_builder::sanitize_ident(sort_col),
-        order_dir,
-        limit
-    );
+    let is_mssql = dialect == "mssql" || dialect == "sqlserver";
+    let sql = if is_mssql {
+        format!(
+            "SELECT * FROM {} {} ORDER BY {} {} OFFSET 0 ROWS FETCH NEXT {} ROWS ONLY",
+            quoted_table,
+            final_where,
+            quoted_sort,
+            order_dir,
+            limit
+        )
+    } else {
+        format!(
+            "SELECT * FROM {} {} ORDER BY {} {} LIMIT {}",
+            quoted_table,
+            final_where,
+            quoted_sort,
+            order_dir,
+            limit
+        )
+    };
 
     let (result, _) = QueryExecutionPipeline::run_query(db, &sql, values, auth, &db_cfg)
         .await
@@ -625,26 +643,31 @@ async fn exec_insert(
         return Err("Rows list to insert cannot be empty".to_string());
     }
 
+    let engine = DatabasePoolManager::get_engine(db).await;
+    let dialect = engine.as_ref().map(|e| e.dialect()).unwrap_or("postgres");
+
     let first_row = &rows_to_insert[0];
-    let columns: Vec<std::borrow::Cow<'_, str>> = first_row.keys().map(|k| filter_builder::sanitize_ident(k)).collect();
-    let cols_str = columns.join(", ");
+    let column_keys: Vec<&String> = first_row.keys().collect();
+    let quoted_cols: Vec<String> = column_keys.iter().map(|k| filter_builder::quote_ident_dialect(k, dialect)).collect();
+    let cols_str = quoted_cols.join(", ");
 
     let mut all_params = Vec::new();
     let mut values_strings = Vec::new();
 
     for row in &rows_to_insert {
         let mut row_placeholders = Vec::new();
-        for col in &columns {
-            let val = row.get(col.as_ref()).unwrap_or(&Value::Null);
+        for k in &column_keys {
+            let val = row.get(*k).unwrap_or(&Value::Null);
             all_params.push(val.clone());
             row_placeholders.push("?");
         }
         values_strings.push(format!("({})", row_placeholders.join(", ")));
     }
 
+    let quoted_table = filter_builder::quote_ident_dialect(table, dialect);
     let sql = format!(
         "INSERT INTO {} ({}) VALUES {}",
-        filter_builder::sanitize_ident(table),
+        quoted_table,
         cols_str,
         values_strings.join(", ")
     );
@@ -688,7 +711,10 @@ async fn exec_update(
     let db_cfg = get_db_config(db, auth).await
         .map_err(|e| e.to_string())?;
 
-    let (sql, values) = filter_builder::construct_update(table, &data, &filter);
+    let engine = DatabasePoolManager::get_engine(db).await;
+    let dialect = engine.as_ref().map(|e| e.dialect()).unwrap_or("postgres");
+
+    let (sql, values) = filter_builder::construct_update_dialect(table, &data, &filter, dialect);
     let (result, _) = QueryExecutionPipeline::run_query(db, &sql, values, auth, &db_cfg)
         .await
         .map_err(|e| e.to_string())?;
@@ -721,7 +747,10 @@ async fn exec_delete(
     let db_cfg = get_db_config(db, auth).await
         .map_err(|e| e.to_string())?;
 
-    let (sql, values) = filter_builder::construct_delete(table, &filter);
+    let engine = DatabasePoolManager::get_engine(db).await;
+    let dialect = engine.as_ref().map(|e| e.dialect()).unwrap_or("postgres");
+
+    let (sql, values) = filter_builder::construct_delete_dialect(table, &filter, dialect);
     let (result, _) = QueryExecutionPipeline::run_query(db, &sql, values, auth, &db_cfg)
         .await
         .map_err(|e| e.to_string())?;

@@ -677,6 +677,8 @@ impl QueryExecutionPipeline {
             // ─── Row-Level Security (RLS) AST Predicate Pushdown ───────────
             // If the authenticated caller has row-level filter expressions configured
             // for any referenced table, rewrite the AST in-place to enforce row boundaries.
+            // INVARIANT (SEC-1): If an RLS predicate is defined but fails to parse or extract,
+            // the operation MUST fail closed with 403 Forbidden to prevent unauthorized row leakage.
             let mut rls_rewritten = false;
             for stmt in &mut statements {
                 match stmt {
@@ -685,25 +687,36 @@ impl QueryExecutionPipeline {
                             for twj in &select.from {
                                 let tbl = extract_table_name(&twj.relation.to_string());
                                 if let Some(rls_pred) = PolicyEngine::get_rls_predicate(auth, db_name, &tbl, "SELECT") {
-                                    if let Ok(mut rls_stmts) = parse_sql_with_dialect(
+                                    let mut rls_stmts = parse_sql_with_dialect(
                                         dialect_name,
                                         &format!("SELECT 1 WHERE ({})", rls_pred),
-                                    ) {
-                                        if let Some(sqlparser::ast::Statement::Query(rls_q)) = rls_stmts.pop() {
-                                            if let sqlparser::ast::SetExpr::Select(rls_sel) = *rls_q.body {
-                                                if let Some(rls_expr) = rls_sel.selection {
-                                                    select.selection = match select.selection.take() {
-                                                        Some(existing) => Some(sqlparser::ast::Expr::BinaryOp {
-                                                            left: Box::new(existing),
-                                                            op: sqlparser::ast::BinaryOperator::And,
-                                                            right: Box::new(rls_expr),
-                                                        }),
-                                                        None => Some(rls_expr),
-                                                    };
-                                                    rls_rewritten = true;
-                                                }
+                                    ).map_err(|e| {
+                                        AxiomError::new(
+                                            "AUTH_FORBIDDEN",
+                                            &format!("Invalid Row-Level Security predicate for table '{}': {}", tbl, e),
+                                            StatusCode::FORBIDDEN,
+                                        )
+                                    })?;
+                                    if let Some(sqlparser::ast::Statement::Query(rls_q)) = rls_stmts.pop() {
+                                        if let sqlparser::ast::SetExpr::Select(rls_sel) = *rls_q.body {
+                                            if let Some(rls_expr) = rls_sel.selection {
+                                                select.selection = match select.selection.take() {
+                                                    Some(existing) => Some(sqlparser::ast::Expr::BinaryOp {
+                                                        left: Box::new(existing),
+                                                        op: sqlparser::ast::BinaryOperator::And,
+                                                        right: Box::new(rls_expr),
+                                                    }),
+                                                    None => Some(rls_expr),
+                                                };
+                                                rls_rewritten = true;
                                             }
                                         }
+                                    } else {
+                                        return Err(AxiomError::new(
+                                            "AUTH_FORBIDDEN",
+                                            &format!("Malformed Row-Level Security predicate for table '{}'", tbl),
+                                            StatusCode::FORBIDDEN,
+                                        ));
                                     }
                                 }
                             }
@@ -712,25 +725,36 @@ impl QueryExecutionPipeline {
                     sqlparser::ast::Statement::Update(update) => {
                         let tbl = extract_table_name(&update.table.to_string());
                         if let Some(rls_pred) = PolicyEngine::get_rls_predicate(auth, db_name, &tbl, "UPDATE") {
-                            if let Ok(mut rls_stmts) = parse_sql_with_dialect(
+                            let mut rls_stmts = parse_sql_with_dialect(
                                 dialect_name,
                                 &format!("SELECT 1 WHERE ({})", rls_pred),
-                            ) {
-                                if let Some(sqlparser::ast::Statement::Query(rls_q)) = rls_stmts.pop() {
-                                    if let sqlparser::ast::SetExpr::Select(rls_sel) = *rls_q.body {
-                                        if let Some(rls_expr) = rls_sel.selection {
-                                            update.selection = match update.selection.take() {
-                                                Some(existing) => Some(sqlparser::ast::Expr::BinaryOp {
-                                                    left: Box::new(existing),
-                                                    op: sqlparser::ast::BinaryOperator::And,
-                                                    right: Box::new(rls_expr),
-                                                }),
-                                                None => Some(rls_expr),
-                                            };
-                                            rls_rewritten = true;
-                                        }
+                            ).map_err(|e| {
+                                AxiomError::new(
+                                    "AUTH_FORBIDDEN",
+                                    &format!("Invalid Row-Level Security predicate for table '{}': {}", tbl, e),
+                                    StatusCode::FORBIDDEN,
+                                )
+                            })?;
+                            if let Some(sqlparser::ast::Statement::Query(rls_q)) = rls_stmts.pop() {
+                                if let sqlparser::ast::SetExpr::Select(rls_sel) = *rls_q.body {
+                                    if let Some(rls_expr) = rls_sel.selection {
+                                        update.selection = match update.selection.take() {
+                                            Some(existing) => Some(sqlparser::ast::Expr::BinaryOp {
+                                                left: Box::new(existing),
+                                                op: sqlparser::ast::BinaryOperator::And,
+                                                right: Box::new(rls_expr),
+                                            }),
+                                            None => Some(rls_expr),
+                                        };
+                                        rls_rewritten = true;
                                     }
                                 }
+                            } else {
+                                return Err(AxiomError::new(
+                                    "AUTH_FORBIDDEN",
+                                    &format!("Malformed Row-Level Security predicate for table '{}'", tbl),
+                                    StatusCode::FORBIDDEN,
+                                ));
                             }
                         }
                     }
@@ -747,25 +771,36 @@ impl QueryExecutionPipeline {
                         }
                         for tbl in &tbls {
                             if let Some(rls_pred) = PolicyEngine::get_rls_predicate(auth, db_name, tbl, "DELETE") {
-                                if let Ok(mut rls_stmts) = parse_sql_with_dialect(
+                                let mut rls_stmts = parse_sql_with_dialect(
                                     dialect_name,
                                     &format!("SELECT 1 WHERE ({})", rls_pred),
-                                ) {
-                                    if let Some(sqlparser::ast::Statement::Query(rls_q)) = rls_stmts.pop() {
-                                        if let sqlparser::ast::SetExpr::Select(rls_sel) = *rls_q.body {
-                                            if let Some(rls_expr) = rls_sel.selection {
-                                                delete.selection = match delete.selection.take() {
-                                                    Some(existing) => Some(sqlparser::ast::Expr::BinaryOp {
-                                                        left: Box::new(existing),
-                                                        op: sqlparser::ast::BinaryOperator::And,
-                                                        right: Box::new(rls_expr),
-                                                    }),
-                                                    None => Some(rls_expr),
-                                                };
-                                                rls_rewritten = true;
-                                            }
+                                ).map_err(|e| {
+                                    AxiomError::new(
+                                        "AUTH_FORBIDDEN",
+                                        &format!("Invalid Row-Level Security predicate for table '{}': {}", tbl, e),
+                                        StatusCode::FORBIDDEN,
+                                    )
+                                })?;
+                                if let Some(sqlparser::ast::Statement::Query(rls_q)) = rls_stmts.pop() {
+                                    if let sqlparser::ast::SetExpr::Select(rls_sel) = *rls_q.body {
+                                        if let Some(rls_expr) = rls_sel.selection {
+                                            delete.selection = match delete.selection.take() {
+                                                Some(existing) => Some(sqlparser::ast::Expr::BinaryOp {
+                                                    left: Box::new(existing),
+                                                    op: sqlparser::ast::BinaryOperator::And,
+                                                    right: Box::new(rls_expr),
+                                                }),
+                                                None => Some(rls_expr),
+                                            };
+                                            rls_rewritten = true;
                                         }
                                     }
+                                } else {
+                                    return Err(AxiomError::new(
+                                        "AUTH_FORBIDDEN",
+                                        &format!("Malformed Row-Level Security predicate for table '{}'", tbl),
+                                        StatusCode::FORBIDDEN,
+                                    ));
                                 }
                             }
                         }
@@ -873,18 +908,7 @@ impl QueryExecutionPipeline {
             let mut exec_err = None;
             for (idx, stmt_str) in stmt_strs.iter().enumerate() {
                 let stmt_formatted = if (dialect_name == "postgres" || dialect_name == "any") && stmt_str.contains('?') {
-                    use std::fmt::Write;
-                    let mut s = String::with_capacity(stmt_str.len() + 16);
-                    let mut p_idx = 1;
-                    for c in stmt_str.chars() {
-                        if c == '?' {
-                            let _ = write!(s, "${}", p_idx);
-                            p_idx += 1;
-                        } else {
-                            s.push(c);
-                        }
-                    }
-                    s
+                    format_postgres_placeholders(stmt_str)
                 } else {
                     stmt_str.clone()
                 };
@@ -1105,6 +1129,21 @@ pub async fn insert_rows(
         r
     } else if let Some(single) = payload.row {
         vec![single]
+    } else if let Some(d) = payload.data {
+        if let Value::Array(arr) = d {
+            arr.into_iter().filter_map(|v| match v {
+                Value::Object(map) => Some(map.into_iter().collect()),
+                _ => None,
+            }).collect()
+        } else if let Value::Object(map) = d {
+            vec![map.into_iter().collect()]
+        } else {
+            return Err(AxiomError::new(
+                "BAD_REQUEST",
+                "Invalid 'data' format: expected object or array of objects",
+                StatusCode::BAD_REQUEST,
+            ));
+        }
     } else {
         return Err(AxiomError::new(
             "BAD_REQUEST",
@@ -1207,6 +1246,7 @@ pub async fn fetch_rows(
     } else {
         None
     };
+    let dialect = engine.as_ref().map(|e| e.dialect()).unwrap_or("postgres");
 
     let mut values = Vec::new();
     let mut where_clauses = Vec::new();
@@ -1219,11 +1259,17 @@ pub async fn fetch_rows(
                 crate::database::filter_builder::coerce_filter_values(&mut filter_json, cols);
             }
             let (clause, mut vals) =
-                crate::database::filter_builder::build_where_clause(&filter_json);
+                crate::database::filter_builder::build_where_clause_dialect(&filter_json, dialect);
             if !clause.is_empty() {
                 where_clauses.push(clause);
                 values.append(&mut vals);
             }
+        } else {
+            return Err(AxiomError::new(
+                "INVALID_FILTER",
+                "Failed to parse filter JSON",
+                StatusCode::BAD_REQUEST,
+            ));
         }
     }
 
@@ -1236,8 +1282,6 @@ pub async fn fetch_rows(
     let limit = params.limit.clamp(1, 500);
 
     let mut final_where = where_sql.clone();
-
-    let dialect = engine.as_ref().map(|e| e.dialect()).unwrap_or("postgres");
 
     let (order_by_sql, order_col_opt) = if let Some(ref sort_col) = params.sort {
         let quoted_col = crate::database::filter_builder::quote_ident_dialect(sort_col, dialect);
@@ -1336,7 +1380,21 @@ pub async fn fetch_rows(
     }
 
     let quoted_table = crate::database::filter_builder::quote_ident_dialect(&table_name, dialect);
-    let sql = if order_by_sql.is_empty() {
+    let is_mssql = dialect == "mssql" || dialect == "sqlserver";
+    let sql = if is_mssql {
+        let order = if order_by_sql.is_empty() {
+            "ORDER BY (SELECT NULL)".to_string()
+        } else {
+            order_by_sql
+        };
+        format!(
+            "SELECT * FROM {} {} {} OFFSET 0 ROWS FETCH NEXT {} ROWS ONLY",
+            quoted_table,
+            final_where,
+            order,
+            limit
+        )
+    } else if order_by_sql.is_empty() {
         format!(
             "SELECT * FROM {} {} LIMIT {}",
             quoted_table,
@@ -1474,10 +1532,12 @@ pub async fn update_rows(
         crate::database::filter_builder::coerce_record_values(&mut update_data, cols);
     }
 
-    let (mut sql, values) = crate::database::filter_builder::construct_update(
+    let dialect = engine.as_ref().map(|e| e.dialect()).unwrap_or("postgres");
+    let (mut sql, values) = crate::database::filter_builder::construct_update_dialect(
         &table_name,
         &update_data,
         &filter,
+        dialect,
     );
 
     if let Some(rls_pred) = PolicyEngine::get_rls_predicate(&auth, &db_name, &table_name, "UPDATE") {
@@ -1537,8 +1597,9 @@ pub async fn delete_rows(
         crate::database::filter_builder::coerce_filter_values(&mut filter, cols);
     }
 
+    let dialect = engine.as_ref().map(|e| e.dialect()).unwrap_or("postgres");
     let (mut sql, values) =
-        crate::database::filter_builder::construct_delete(&table_name, &filter);
+        crate::database::filter_builder::construct_delete_dialect(&table_name, &filter, dialect);
 
     if let Some(rls_pred) = PolicyEngine::get_rls_predicate(&auth, &db_name, &table_name, "DELETE") {
         if sql.contains(" WHERE ") {

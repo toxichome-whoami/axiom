@@ -83,11 +83,16 @@ fn normalize_for_sqli(s: &str) -> String {
 }
 
 fn contains_sqli(normalized: &str) -> bool {
-    // Keyword with trailing space OR keyword glued to * ( ) ; Eg select* / select( / union(select
+    // Highly specific SQL injection patterns in URL path and raw parameters.
+    // NOTE (SEC-2): Loose words like " and " or " or " without relational syntax
+    // must not be blocked, as they cause false positives on natural search phrases ("bread and butter")
+    // and legitimate string filter expressions. We check structural attack patterns instead.
     const KEYWORDS: &[&str] = &[
         "select ", "select*", "select(", "drop ", "union ", "union(", "unionselect",
-        "delete ", "insert ", "update ", " or ", " and ", "--", ";", "/*",
+        "delete ", "insert ", "update ", "--", ";", "/*",
         "information_schema", "sleep(", "benchmark(", "outfile ", "load_file(",
+        " or 1=1", " or '1'='1'", " and 1=1", " and '1'='1'",
+        "' or '", "' and '", "\" or \"", "\" and \"",
     ];
     KEYWORDS.iter().any(|k| normalized.contains(k))
 }
@@ -310,5 +315,42 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(res.status(), StatusCode::PAYLOAD_TOO_LARGE);
+    }
+    #[tokio::test]
+    async fn test_waf_natural_search_and_or_not_rejected() {
+        let app = build_waf_test_app();
+        
+        // Natural language query with "and" should be allowed
+        let res = app.clone()
+            .oneshot(
+                Request::get("/test?search=bread%20and%20butter")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+
+        // Natural language query with "or" should be allowed
+        let res2 = app.clone()
+            .oneshot(
+                Request::get("/test?filter=apples%20or%20oranges")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res2.status(), StatusCode::OK);
+
+        // Actual SQL boolean injection with 1=1 should still be blocked
+        let res_sqli = app
+            .oneshot(
+                Request::get("/test?id=1%20or%201=1")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res_sqli.status(), StatusCode::BAD_REQUEST);
     }
 }

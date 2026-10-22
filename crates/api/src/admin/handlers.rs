@@ -883,7 +883,13 @@ pub async fn delete_role(
 
     let deleted = MetadataStore::delete_role(&name)
         .await
-        .map_err(|e| AxiomError::new("ROLE_DELETION_FAILED", &e, StatusCode::INTERNAL_SERVER_ERROR))?;
+        .map_err(|e| {
+            if e.contains("active API key") {
+                AxiomError::new("ROLE_IN_USE", &e, StatusCode::CONFLICT)
+            } else {
+                AxiomError::new("ROLE_DELETION_FAILED", &e, StatusCode::INTERNAL_SERVER_ERROR)
+            }
+        })?;
 
     if !deleted {
         return Err(AxiomError::new(
@@ -1038,17 +1044,17 @@ pub async fn get_metrics(
             "error": Value::Null
         }))
         .unwrap_or_default();
-        return Ok(axum::response::Response::builder()
+        return axum::response::Response::builder()
             .header(axum::http::header::CONTENT_TYPE, "application/json; charset=utf-8")
             .body(axum::body::Body::from(body))
-            .unwrap());
+            .map_err(|e| AxiomError::new("HTTP_ERROR", &e.to_string(), StatusCode::INTERNAL_SERVER_ERROR));
     }
 
     let metrics_text = crate::metrics::MetricsEngine::render_prometheus();
-    Ok(axum::response::Response::builder()
+    axum::response::Response::builder()
         .header(axum::http::header::CONTENT_TYPE, "text/plain; version=0.0.4; charset=utf-8")
         .body(axum::body::Body::from(metrics_text))
-        .unwrap())
+        .map_err(|e| AxiomError::new("HTTP_ERROR", &e.to_string(), StatusCode::INTERNAL_SERVER_ERROR))
 }
 
 /// Detailed health check for administrators.

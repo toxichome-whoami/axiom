@@ -1633,7 +1633,10 @@ pub async fn get_public_blob_handler(
                 .header(header::ETAG, etag_val)
                 .header(header::CACHE_CONTROL, "public, max-age=31536000, immutable")
                 .body(Body::empty())
-                .unwrap();
+                .map_err(|e| {
+                    tracing::error!("Response build error: {}", e);
+                    AxiomError::new("INTERNAL_ERROR", "Failed to build response", StatusCode::INTERNAL_SERVER_ERROR)
+                })?;
             apply_cors_headers(&mut resp, &engine, &namespace);
             return Ok(resp);
         }
@@ -1724,13 +1727,17 @@ pub async fn get_public_blob_handler(
             .header(header::CONTENT_DISPOSITION, disposition);
 
         let mut resp = match data {
-            BlobData::Inline(bytes) => builder.body(Body::from(bytes)).unwrap(),
+            BlobData::Inline(bytes) => builder.body(Body::from(bytes)),
             BlobData::File(file, len) => {
                 use tokio::io::AsyncReadExt;
                 let stream = ReaderStream::new(file.take(len));
-                builder.body(Body::from_stream(stream)).unwrap()
+                builder.body(Body::from_stream(stream))
             }
-        };
+        }
+        .map_err(|e| {
+            tracing::error!("Response build error: {}", e);
+            AxiomError::new("INTERNAL_ERROR", "Failed to build response", StatusCode::INTERNAL_SERVER_ERROR)
+        })?;
 
         for (k, v) in &meta.metadata {
             if let (Ok(name), Ok(val)) = (
@@ -1756,13 +1763,17 @@ pub async fn get_public_blob_handler(
 
     let (_, data) = engine.get(&namespace, &key).await.map_err(map_blob_error)?;
     let mut resp = match data {
-        BlobData::Inline(bytes) => response_builder.body(Body::from(bytes)).unwrap(),
+        BlobData::Inline(bytes) => response_builder.body(Body::from(bytes)),
         BlobData::File(file, len) => {
             use tokio::io::AsyncReadExt;
             let stream = ReaderStream::new(file.take(len));
-            response_builder.body(Body::from_stream(stream)).unwrap()
+            response_builder.body(Body::from_stream(stream))
         }
-    };
+    }
+    .map_err(|e| {
+        tracing::error!("Response build error: {}", e);
+        AxiomError::new("INTERNAL_ERROR", "Failed to build response", StatusCode::INTERNAL_SERVER_ERROR)
+    })?;
 
     for (k, v) in &meta.metadata {
         if let (Ok(name), Ok(val)) = (
@@ -1836,10 +1847,33 @@ pub async fn batch_delete_blobs_handler(
     Extension(auth): Extension<AuthContext>,
     Json(payload): Json<axiom_blob::DeleteObjectsRequest>,
 ) -> Result<impl IntoResponse, AxiomError> {
-    PolicyEngine::evaluate_blob(&auth, &namespace, "*", "DELETE")?;
+    // S3 semantics: evaluate permissions per key. If user has wildcard '*' permission,
+    // all keys can be deleted immediately. Otherwise, partition into permitted vs unauthorized keys.
+    let (keys_to_delete, denied_errors) = if auth.is_session
+        || PolicyEngine::evaluate_blob(&auth, &namespace, "*", "DELETE").is_ok()
+    {
+        (payload.keys, Vec::new())
+    } else {
+        let mut allowed = Vec::new();
+        let mut denied = Vec::new();
+        for key in payload.keys {
+            if PolicyEngine::evaluate_blob(&auth, &namespace, &key, "DELETE").is_ok() {
+                allowed.push(key);
+            } else {
+                denied.push((key, "AccessDenied: Insufficient permissions to delete key".to_string()));
+            }
+        }
+        (allowed, denied)
+    };
 
     let engine = get_blob_engine()?;
-    let result = engine.delete_objects(&namespace, &payload.keys).await.map_err(map_blob_error)?;
+    let mut result = if !keys_to_delete.is_empty() {
+        engine.delete_objects(&namespace, &keys_to_delete).await.map_err(map_blob_error)?
+    } else {
+        axiom_blob::DeleteObjectsResult::default()
+    };
+
+    result.errors.extend(denied_errors);
 
     let actor = if auth.is_session {
         "admin"

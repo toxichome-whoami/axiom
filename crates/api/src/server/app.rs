@@ -86,31 +86,45 @@ async fn prometheus_metrics(
 pub fn create_app() -> Router {
     let config = ConfigManager::get();
 
+    // CORS Method Allowlist: PUT is essential for direct blob uploads and multipart uploads (SEC-3)
     let allowed_methods = [
         axum::http::Method::GET,
         axum::http::Method::POST,
+        axum::http::Method::PUT,
         axum::http::Method::PATCH,
         axum::http::Method::DELETE,
         axum::http::Method::HEAD,
         axum::http::Method::OPTIONS,
     ];
 
+    // CORS Request Headers: Support media streaming (Range), cache validation (If-None-Match),
+    // and resumable blob uploads (x-upload-offset)
     let allowed_headers = [
         header::CONTENT_TYPE,
         header::AUTHORIZATION,
         header::ACCEPT,
         header::ORIGIN,
+        header::RANGE,
+        header::IF_NONE_MATCH,
+        header::IF_MATCH,
         header::HeaderName::from_static("x-axiom-key"),
         header::HeaderName::from_static("x-api-key"),
         header::HeaderName::from_static("idempotency-key"),
         header::HeaderName::from_static("x-request-id"),
+        header::HeaderName::from_static("x-upload-offset"),
     ];
 
+    // CORS Exposed Response Headers: Expose ETag and Content-Range so browsers can handle media ranges and caching
     let exposed_headers = [
+        header::ETAG,
+        header::CONTENT_RANGE,
+        header::ACCEPT_RANGES,
+        header::CONTENT_LENGTH,
         header::HeaderName::from_static("x-request-id"),
         header::HeaderName::from_static("x-idempotency-hit"),
         header::HeaderName::from_static("x-ratelimit-limit"),
         header::HeaderName::from_static("x-ratelimit-remaining"),
+        header::HeaderName::from_static("x-upload-offset"),
     ];
 
     let mut cors = CorsLayer::new()

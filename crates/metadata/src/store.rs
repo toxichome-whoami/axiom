@@ -663,6 +663,21 @@ impl MetadataStore {
         let _guard = STORE_LOCK.lock().await;
         let conn = Self::get_conn().await?;
 
+        // Check referential integrity: do not delete role if active API keys are assigned to it
+        let mut key_rows = conn
+            .query("SELECT COUNT(*) FROM api_keys WHERE role_name = ?1", [name])
+            .await
+            .map_err(|e| format!("Failed to check role references: {}", e))?;
+        if let Ok(Some(row)) = key_rows.next().await {
+            let count: i64 = row.get(0).unwrap_or(0);
+            if count > 0 {
+                return Err(format!(
+                    "Cannot delete role '{}': {} active API key(s) are currently assigned to it",
+                    name, count
+                ));
+            }
+        }
+
         let _ = conn.execute("DELETE FROM permissions WHERE role_name = ?1", [name]).await;
         let affected = conn
             .execute("DELETE FROM roles WHERE name = ?1", [name])
