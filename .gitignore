@@ -54,8 +54,7 @@ ui/dist/
 .commandcode/
 .agents/
 .agent/
-.cargo/*
-!.cargo/config.toml
+.cargo/
 *.swp
 *.swo
 .DS_Store
