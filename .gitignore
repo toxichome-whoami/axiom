@@ -54,7 +54,8 @@ ui/dist/
 .commandcode/
 .agents/
 .agent/
-.cargo/
+.cargo/*
+!.cargo/config.toml
 *.swp
 *.swo
 .DS_Store
@@ -80,8 +81,8 @@ htmlcov/
 # ─────────────────────────────────────────────────────────────────────────────
 # Axiom Runtime & Local Data
 # ─────────────────────────────────────────────────────────────────────────────
-config.toml
-config_*.toml
+/config.toml
+/config_*.toml
 data_*/
 logs_*/
 data/
@@ -107,3 +108,4 @@ data/
 *.db
 
 planning-rn
+.tools/

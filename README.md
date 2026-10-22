@@ -108,10 +108,16 @@ chmod +x axiom
 ./axiom --version
 ```
 
-#### From Source (Cargo)
+#### From Source (Cargo or Zig)
 ```bash
 git clone https://github.com/toxichome/axiom.git
 cd axiom
+
+# Zero-bloat build with Zig (No MSYS64, MinGW, or heavy Visual Studio installs required):
+zig build setup     # Generates lightweight shims in .tools/bin & configures .cargo/config.toml
+zig build           # Builds Axiom in release mode
+
+# Or standard Cargo build:
 cargo build --release
 # Executable is placed in ./target/release/axiom
 ```
