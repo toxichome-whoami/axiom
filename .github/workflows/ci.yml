@@ -4,9 +4,17 @@ on:
   push:
     branches:
       - main
+    paths-ignore:
+      - 'docs/**'
+      - '**.md'
+      - 'LICENSE'
   pull_request:
     branches:
       - main
+    paths-ignore:
+      - 'docs/**'
+      - '**.md'
+      - 'LICENSE'
 
 jobs:
   check:
@@ -20,6 +28,8 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
 
       - name: Build Web UI Frontend
         working-directory: ui

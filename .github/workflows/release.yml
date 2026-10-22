@@ -7,9 +7,8 @@ on:
   workflow_dispatch:
     inputs:
       tag_name:
-        description: 'Tag name to release (e.g. v0.1.12)'
-        required: false
-        default: 'v0.1.12'
+        description: 'Tag name to release (e.g. v1.0.0)'
+        required: true
 
 permissions:
   contents: write
@@ -67,6 +66,8 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
 
       - name: Build Web UI Frontend
         working-directory: ui
@@ -87,8 +88,8 @@ jobs:
         shell: bash
         run: |
           RELEASE_TAG="${{ github.ref_name }}"
-          if [ "${RELEASE_TAG}" = "main" ] || [ -z "${RELEASE_TAG}" ]; then
-            RELEASE_TAG="${{ github.event.inputs.tag_name || 'v0.1.12' }}"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            RELEASE_TAG="${{ inputs.tag_name }}"
           fi
           
           PKG_NAME="axiom-${RELEASE_TAG}-${{ matrix.target }}"
@@ -108,9 +109,8 @@ jobs:
         shell: pwsh
         run: |
           $RELEASE_TAG = "${{ github.ref_name }}"
-          if ($RELEASE_TAG -eq "main" -or [string]::IsNullOrEmpty($RELEASE_TAG)) {
-            $RELEASE_TAG = "${{ github.event.inputs.tag_name }}"
-            if ([string]::IsNullOrEmpty($RELEASE_TAG)) { $RELEASE_TAG = "v0.1.12" }
+          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
+            $RELEASE_TAG = "${{ inputs.tag_name }}"
           }
           
           $PKG_NAME = "axiom-${RELEASE_TAG}-${{ matrix.target }}"
@@ -126,14 +126,13 @@ jobs:
 
       - name: Upload Artifacts to GitHub Release
         uses: softprops/action-gh-release@v2
-        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
         with:
           files: |
             axiom-*.tar.gz
             axiom-*.tar.gz.sha256
             axiom-*.zip
             axiom-*.zip.sha256
-          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || github.event.inputs.tag_name || 'v0.1.12' }}
+          tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.tag_name || github.ref_name }}
           draft: false
           prerelease: false
           generate_release_notes: true
