@@ -122,14 +122,36 @@ int main(int argc, char* argv[]) {
 
     if (strcmp(subcmd, "check") == 0) {
         return system("cargo check --workspace");
-    } else if (strcmp(subcmd, "test") == 0) {
-        return system("cargo test --workspace -- --test-threads=1");
+    } else if (strcmp(subcmd, "dev") == 0) {
+        return system("cargo build");
     } else if (strcmp(subcmd, "build") == 0) {
         return system("cargo build --release");
+    } else if (strcmp(subcmd, "clippy") == 0) {
+        return system("cargo clippy --workspace --all-targets");
+    } else if (strcmp(subcmd, "test") == 0) {
+        return system("cargo test --workspace -- --test-threads=1");
+    } else if (strcmp(subcmd, "fmt") == 0) {
+        return system("cargo fmt --check");
+    } else if (strcmp(subcmd, "run") == 0) {
+        return system("cargo run --bin axiom -- server run");
     } else if (strcmp(subcmd, "ui") == 0) {
         return system("npm --prefix ui run build");
+    } else if (strcmp(subcmd, "cargo") == 0) {
+        // Build full cargo command line from argv[2...]
+        char cmd[32768] = "cargo";
+        for (int i = 2; i < argc; i++) {
+            strncat(cmd, " ", sizeof(cmd) - strlen(cmd) - 1);
+            strncat(cmd, argv[i], sizeof(cmd) - strlen(cmd) - 1);
+        }
+        return system(cmd);
     } else {
-        fprintf(stderr, "Unknown command: %s (supported: setup, check, test, build, ui)\n", subcmd);
-        return 1;
+        // Fallback: pass through any unknown command to cargo directly
+        char cmd[32768] = "cargo ";
+        strncat(cmd, subcmd, sizeof(cmd) - strlen(cmd) - 1);
+        for (int i = 2; i < argc; i++) {
+            strncat(cmd, " ", sizeof(cmd) - strlen(cmd) - 1);
+            strncat(cmd, argv[i], sizeof(cmd) - strlen(cmd) - 1);
+        }
+        return system(cmd);
     }
 }
