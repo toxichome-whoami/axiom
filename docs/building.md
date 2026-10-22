@@ -5,11 +5,11 @@
 ### Zero-Bloat, Self-Bootstrapping C/C++ and Rust Toolchain with Zig
 **No MSYS64 · No MinGW · No Visual Studio Build Tools · Sub-15MB Binary**
 
-[![Version](https://img.shields.io/badge/version-0.1.12%2B-111827.svg?style=flat-square)](https://github.com/toxichome/axiom/releases)
+[![Version](https://img.shields.io/badge/version-0.1.12%2B-111827.svg?style=flat-square)](https://github.com/toxichome-whoami/axiom/releases)
 [![Rust](https://img.shields.io/badge/rust-1.88%2B-b7410e.svg?style=flat-square&logo=rust&logoColor=white)](https://www.rust-lang.org)
 [![Zig](https://img.shields.io/badge/zig-0.13%2B-f7a41d.svg?style=flat-square&logo=zig&logoColor=white)](https://ziglang.org)
 [![License: MIT](https://img.shields.io/badge/license-MIT-111827.svg?style=flat-square)](../LICENSE)
-[![Platforms](https://img.shields.io/badge/platform-linux%20%C2%B7%20macos%20%C2%B7%20windows-111827.svg?style=flat-square)](https://github.com/toxichome/axiom/releases)
+[![Platforms](https://img.shields.io/badge/platform-linux%20%C2%B7%20macos%20%C2%B7%20windows-111827.svg?style=flat-square)](https://github.com/toxichome-whoami/axiom/releases)
 
 </div>
 
@@ -99,7 +99,7 @@ Axiom uses a minimal 17-line `build.zig` designed exclusively to bootstrap the e
 
 ### 2. Clone and Build
 ```bash
-git clone https://github.com/toxichome/axiom.git
+git clone https://github.com/toxichome-whoami/axiom.git
 cd axiom
 
 # Build the release binary in one command:

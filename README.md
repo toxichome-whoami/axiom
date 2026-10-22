@@ -2,14 +2,15 @@
 
 # Axiom
 
-### High-performance REST API, Content-Addressed Blob Storage, and MCP Server for SQL Databases.
-One Rust binary. Zero external daemons. Under 10 MB idle RAM.
+### High-Performance Database Access Gateway, Written in Rust
+Put a secure REST API & MCP layer between your applications and SQL databases.  
+Centralize database access, authentication, permissions, and connection pooling without embedding a database driver in every application.
 
-[![Version](https://img.shields.io/badge/version-0.1.12%2B-111827.svg?style=flat-square)](https://github.com/toxichome/axiom/releases)
+[![Version](https://img.shields.io/badge/version-0.1.12-111827.svg?style=flat-square)](https://github.com/toxichome-whoami/axiom/releases)
 [![Rust](https://img.shields.io/badge/rust-1.88%2B-b7410e.svg?style=flat-square&logo=rust&logoColor=white)](https://www.rust-lang.org)
 [![License: MIT](https://img.shields.io/badge/license-MIT-111827.svg?style=flat-square)](./LICENSE)
-[![Platforms](https://img.shields.io/badge/platform-linux%20%C2%B7%20macos%20%C2%B7%20windows-111827.svg?style=flat-square)](https://github.com/toxichome/axiom/releases)
-[![Binary Size](https://img.shields.io/badge/binary-%3C15MB-111827.svg?style=flat-square)](https://github.com/toxichome/axiom)
+[![Platforms](https://img.shields.io/badge/platform-linux%20%C2%B7%20macos%20%C2%B7%20windows-111827.svg?style=flat-square)](https://github.com/toxichome-whoami/axiom/releases)
+[![Binary Size](https://img.shields.io/badge/binary-%3C15MB-111827.svg?style=flat-square)](https://github.com/toxichome-whoami/axiom/releases)
 [![MCP](https://img.shields.io/badge/MCP-2024--11--05-111827.svg?style=flat-square)](https://modelcontextprotocol.io)
 </div>
 
@@ -95,77 +96,109 @@ flowchart TD
 
 
 
-## 60-Second Quickstart
+## Supported Databases
 
-### 1. Installation
+Axiom automatically introspects schemas and adapts parameterized dialects across major SQL engines:
 
-#### Pre-built Binary
-Download the single binary for Linux, macOS, or Windows from [GitHub Releases](https://github.com/toxichome/axiom/releases):
+| Engine | Supported Versions | Connection String Example |
+|---|---|---|
+| **PostgreSQL** | 12 – 17 | `postgres://user:password@localhost:5432/app_db` |
+| **MySQL / MariaDB** | 8.0+ / 10.4+ | `mysql://user:password@localhost:3306/app_db` |
+| **Microsoft SQL Server** | 2017 – 2022 | `mssql://sa:password@localhost:1433/app_db` |
+| **SQLite / LibSQL** | Local & Turso Cloud | `sqlite://data/app.db` or `libsql://db.turso.io?authToken=...` |
+| **ClickHouse** | 22+ (HTTP Analytical) | `clickhouse://user:password@localhost:8123/default` |
+
+---
+
+## Why Axiom?
+
+| Feature | Direct Database Drivers (`pdo_pgsql`, `mysql2`, `psycopg2`) | FaucetDB | Axiom Gateway |
+|---|---|---|---|
+| **Deployment Model** | Embedded library in every app | Single Go binary | **Single Rust binary (<10 MB RAM)** |
+| **Connection Pooling** | Per app / serverless function instance (risks pool exhaustion) | Central gateway pool | **Central gateway pool + per-alias init locks** |
+| **Security & RBAC** | Hardcoded in application logic | Role-based in SQLite | **Zero-lock ArcSwap RBAC + RLS pushdown + AST firewall** |
+| **AI Agent Support** | Requires manual tool writing | Built-in MCP server | **Built-in MCP server (15 tools + resources)** |
+| **Object / Blob Storage** | Requires separate S3 / MinIO daemon | Not included | **Built-in BLAKE3 content-addressed blob engine** |
+| **High Availability** | External load balancer | Standalone | **Zero-external-DB P2P Cluster Mesh** |
+
+---
+
+## Installation & Downloads
+
+### 1. One-Line Install
+
+**Linux & macOS:**
 ```bash
-# Example for Linux x86_64
-curl -sSL https://github.com/toxichome/axiom/releases/latest/download/axiom-linux-amd64 -o axiom
-chmod +x axiom
-./axiom --version
+curl -fsSL https://raw.githubusercontent.com/toxichome-whoami/axiom/main/install.sh | sh
 ```
 
-#### From Source (Zig & Cargo)
-
-Axiom includes a **zero-bloat, self-bootstrapping build pipeline** powered by [Zig](https://ziglang.org). You don't need MSYS64, MinGW, or 10 GB Visual Studio C++ build tools &mdash; Zig compiles all embedded C/C++ dependencies (`libsql`, `mimalloc`, `aws-lc`, `ring`) automatically:
-
-```bash
-git clone https://github.com/toxichome/axiom.git
-cd axiom
-
-# Build production release binary in one step (compiles to target/release/axiom):
-zig build
-
-# Run any cargo command with the Zig toolchain automatically configured:
-tools/zig/runner check
-tools/zig/runner test
-tools/zig/runner clippy
-tools/zig/runner cargo <any-command>
+**Windows (PowerShell):**
+```powershell
+irm https://raw.githubusercontent.com/toxichome-whoami/axiom/main/install.ps1 | iex
 ```
 
-> [!TIP]
-> For advanced toolchain architecture, custom test execution, and runner mechanics, see the **[Building & Toolchain Guide](./docs/building.md)**.
->
-> If you prefer standard Cargo without Zig: `cargo build --release`.
+### 2. Pre-built Binaries (v0.1.12)
 
-#### Docker
+Download standalone archives directly with zero external runtime dependencies:
+
+| Platform | Architecture | Format | Download |
+|---|---|---|---|
+| **Linux** | `x86_64` (amd64) | `.tar.gz` | [axiom_v0.1.12_linux_amd64.tar.gz](https://github.com/toxichome-whoami/axiom/releases/download/v0.1.12/axiom_v0.1.12_linux_amd64.tar.gz) |
+| **Linux** | `aarch64` (arm64) | `.tar.gz` | [axiom_v0.1.12_linux_arm64.tar.gz](https://github.com/toxichome-whoami/axiom/releases/download/v0.1.12/axiom_v0.1.12_linux_arm64.tar.gz) |
+| **macOS** | Apple Silicon (`arm64`) | `.tar.gz` | [axiom_v0.1.12_darwin_arm64.tar.gz](https://github.com/toxichome-whoami/axiom/releases/download/v0.1.12/axiom_v0.1.12_darwin_arm64.tar.gz) |
+| **macOS** | Intel (`x86_64`) | `.tar.gz` | [axiom_v0.1.12_darwin_amd64.tar.gz](https://github.com/toxichome-whoami/axiom/releases/download/v0.1.12/axiom_v0.1.12_darwin_amd64.tar.gz) |
+| **Windows** | `x86_64` (amd64) | `.zip` | [axiom_v0.1.12_windows_amd64.zip](https://github.com/toxichome-whoami/axiom/releases/download/v0.1.12/axiom_v0.1.12_windows_amd64.zip) |
+| **Windows** | `aarch64` (arm64) | `.zip` | [axiom_v0.1.12_windows_arm64.zip](https://github.com/toxichome-whoami/axiom/releases/download/v0.1.12/axiom_v0.1.12_windows_arm64.zip) |
+
+### 3. Docker
+
 ```bash
 docker run -d \
   -p 4500:4500 \
   -v axiom-data:/app/data \
   --name axiom \
-  toxichome/axiom:latest
+  toxichome-whoami/axiom:latest
 ```
 
+### 4. Build From Source (Zig & Cargo)
 
+Axiom includes a **zero-bloat, self-bootstrapping build pipeline** powered by [Zig](https://ziglang.org). You don't need MSYS64, MinGW, or 10 GB Visual Studio C++ build tools &mdash; Zig compiles all embedded C/C++ dependencies (`libsql`, `mimalloc`, `aws-lc`, `ring`) automatically:
 
-### 2. Start Axiom
+```bash
+git clone https://github.com/toxichome-whoami/axiom.git
+cd axiom
+
+# Build production release binary in one step (compiles to target/release/axiom):
+zig build
+
+# Or use standard Cargo:
+cargo build --release
+```
+
+---
+
+## 60-Second Quickstart
+
+### 1. Start Axiom
 
 Run the server daemon with compiled-in defaults:
 
 ```bash
-axiom server run
+./axiom server run
 ```
 
 Axiom starts immediately on `http://localhost:4500` with an empty state and under 10 MB RAM footprint.
 
+### 2. Connect Your Database (Web UI or CLI)
 
-
-### 3. Setup Flow: Two Paths
-
-#### Path A: Interactive Web UI Setup Wizard
+#### Option A: Interactive Web UI Setup Wizard
 1. Open **`http://localhost:4500/system`** in your browser.
 2. **Step 1: Create Admin Account** — Set username and secure password (hashed via Argon2id).
 3. **Step 2: Connect Database** — Select engine (PostgreSQL, MySQL, SQL Server, SQLite, ClickHouse), provide connection URL, and click **Test Connection**.
 4. **Step 3: Issue API Key** — Assign a role with table and operation scopes; the wizard displays a ready-to-use `curl` command.
 5. Setup permanently locks. All future management is protected behind authenticated admin sessions.
 
-#### Path B: Headless 100% CLI Flow
-Manage your entire infrastructure directly through the terminal:
-
+#### Option B: Headless Terminal CLI
 ```bash
 # 1. Create the primary administrative human user
 axiom user add admin --password "s3cur3_pass!"
@@ -183,19 +216,88 @@ axiom key create --name app_service --role service_role
 # Output:
 # API Key 'app_service' created.
 # Base64 Token: YXBwX3NlcnZpY2U6YmVuY2hfc2VjcmV0X3Rva2VuXzEyMzQ1
+```
 
-# 5. Query your database through the REST API
+---
+
+## Connect Your Website (No SQL Drivers Required)
+
+Query and mutate database records directly from your application using clean HTTP requests:
+
+### cURL
+```bash
 export KEY="YXBwX3NlcnZpY2U6YmVuY2hfc2VjcmV0X3Rva2VuXzEyMzQ1"
 
+# Fetch paginated rows with filtering
 curl -H "X-Axiom-Key: $KEY" \
   "http://localhost:4500/api/v1/db/main_db/orders/rows?limit=10&sort=created_at&order=desc"
 
-# 6. Store an object in the native content-addressed blob engine
-curl -X PUT "http://localhost:4500/api/v1/blobs/assets/documents/report.pdf" \
+# Execute a parameterized query
+curl -X POST "http://localhost:4500/api/v1/db/main_db/query" \
   -H "X-Axiom-Key: $KEY" \
-  -H "Content-Type: application/pdf" \
-  --data-binary "@report.pdf"
+  -H "Content-Type: application/json" \
+  -d '{"sql": "SELECT id, email FROM users WHERE status = $1", "params": ["active"]}'
 ```
+
+### PHP
+> *No `pdo_pgsql` or `pdo_mysql` C extensions needed. Works in any standard PHP environment:*
+```php
+<?php
+$key = 'YXBwX3NlcnZpY2U6YmVuY2hfc2VjcmV0X3Rva2VuXzEyMzQ1';
+$url = 'http://localhost:4500/api/v1/db/main_db/orders/rows?limit=10';
+
+$opts = [
+    'http' => [
+        'method' => 'GET',
+        'header' => "X-Axiom-Key: {$key}\r\nContent-Type: application/json\r\n"
+    ]
+];
+$context = stream_context_create($opts);
+$response = file_get_contents($url, false, $context);
+$orders = json_decode($response, true)['data'];
+
+print_r($orders);
+?>
+```
+
+### Node.js / TypeScript
+> *Native `fetch` in Node 18+ (zero npm dependencies):*
+```typescript
+const res = await fetch("http://localhost:4500/api/v1/db/main_db/orders/rows?limit=5", {
+  headers: {
+    "X-Axiom-Key": process.env.AXIOM_KEY!,
+    "Content-Type": "application/json",
+  },
+});
+const { data } = await res.json();
+console.log("Orders:", data);
+```
+
+### Python
+> *Pure Python standard library (zero `pip` dependencies):*
+```python
+import urllib.request
+import json
+
+req = urllib.request.Request(
+    "http://localhost:4500/api/v1/db/main_db/orders/rows?limit=5",
+    headers={"X-Axiom-Key": "YXBwX3NlcnZpY2U6YmVuY2hfc2VjcmV0X3Rva2VuXzEyMzQ1"}
+)
+with urllib.request.urlopen(req) as resp:
+    orders = json.loads(resp.read().decode())["data"]
+    print("Orders:", orders)
+```
+
+### Go
+```go
+req, _ := http.NewRequest("GET", "http://localhost:4500/api/v1/db/main_db/orders/rows?limit=5", nil)
+req.Header.Set("X-Axiom-Key", "YXBwX3NlcnZpY2U6YmVuY2hfc2VjcmV0X3Rva2VuXzEyMzQ1")
+resp, _ := http.DefaultClient.Do(req)
+body, _ := io.ReadAll(resp.Body)
+fmt.Println(string(body))
+```
+
+---
 
 
 

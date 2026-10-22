@@ -5,10 +5,10 @@
 ### Complete Reference for Startup Settings, Modules, Defaults, and Environment Overrides
 **Single Binary Gateway · Immutable Startup Configuration · Lock-Free Arc Access**
 
-[![Version](https://img.shields.io/badge/version-0.1.12%2B-111827.svg?style=flat-square)](https://github.com/toxichome/axiom/releases)
+[![Version](https://img.shields.io/badge/version-0.1.12%2B-111827.svg?style=flat-square)](https://github.com/toxichome-whoami/axiom/releases)
 [![Rust](https://img.shields.io/badge/rust-1.88%2B-b7410e.svg?style=flat-square&logo=rust&logoColor=white)](https://www.rust-lang.org)
 [![License: MIT](https://img.shields.io/badge/license-MIT-111827.svg?style=flat-square)](../LICENSE)
-[![Platforms](https://img.shields.io/badge/platform-linux%20%C2%B7%20macos%20%C2%B7%20windows-111827.svg?style=flat-square)](https://github.com/toxichome/axiom/releases)
+[![Platforms](https://img.shields.io/badge/platform-linux%20%C2%B7%20macos%20%C2%B7%20windows-111827.svg?style=flat-square)](https://github.com/toxichome-whoami/axiom/releases)
 
 </div>
 
@@ -331,7 +331,7 @@ docker run -d \
   -e METADATA__URL=file:/app/data/axiom.db \
   -v axiom_data:/app/data \
   --name axiom \
-  ghcr.io/toxichome/axiom:0.1.12
+  ghcr.io/toxichome-whoami/axiom:0.1.12
 ```
 
 ---
