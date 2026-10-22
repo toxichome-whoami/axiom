@@ -93,6 +93,7 @@ jobs:
         if: matrix.archive == 'tar.gz'
         shell: bash
         run: |
+          set -e
           TAG="${{ github.ref_name }}"
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             TAG="${{ inputs.tag_name }}"
@@ -107,13 +108,12 @@ jobs:
           cd staging
           tar -czvf "../${PKG}.tar.gz" "${PKG}"
           cd ..
-          
-          sha256sum "${PKG}.tar.gz" > "${PKG}.tar.gz.sha256"
 
       - name: Package (Windows)
         if: matrix.archive == 'zip'
         shell: pwsh
         run: |
+          $ErrorActionPreference = "Stop"
           $TAG = "${{ github.ref_name }}"
           if ("${{ github.event_name }}" -eq "workflow_dispatch") {
             $TAG = "${{ inputs.tag_name }}"
@@ -125,19 +125,14 @@ jobs:
           Copy-Item "target/${{ matrix.target }}/release/${{ matrix.bin }}" "staging/${PKG}/"
           Copy-Item "README.md", "LICENSE" "staging/${PKG}/" -ErrorAction SilentlyContinue
           
-          Compress-Archive -Path "staging/${PKG}" -DestinationPath "${PKG}.zip"
-          
-          $hash = (Get-FileHash -Algorithm SHA256 "${PKG}.zip").Hash.ToLower()
-          "$hash  ${PKG}.zip" | Out-File -Encoding ascii "${PKG}.zip.sha256"
+          tar.exe -a -cf "${PKG}.zip" -C staging "${PKG}"
 
       - name: Add Files to Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
             axiom_*.tar.gz
-            axiom_*.tar.gz.sha256
             axiom_*.zip
-            axiom_*.zip.sha256
           tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.tag_name || github.ref_name }}
           draft: false
           prerelease: false
