@@ -15,6 +15,8 @@ import {
   Layers,
   Terminal,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Check,
   Trash2,
   Search,
@@ -218,7 +220,7 @@ export function TableToolbar({
   }, []);
 
   return (
-    <div className="h-[54px] shrink-0 px-4 border-b border-[#222222] bg-[#0c0c0c] flex items-center justify-between gap-3 select-none font-sans">
+    <div className="h-[54px] shrink-0 px-3 sm:px-4 border-b border-[#222222] bg-[#0c0c0c] flex items-center justify-between gap-2 sm:gap-3 select-none font-sans overflow-x-auto scrollbar-none">
       {/* Action Tools & View Mode Switcher (placed on the left) */}
       <div className="flex items-center gap-2 shrink-0">
         {/* View Mode Switcher Pills */}
@@ -835,10 +837,11 @@ export function TableToolbar({
           <button
             onClick={onPrevPage}
             disabled={!hasPrevPage || isRowsLoading}
-            className="flex items-center justify-center h-8 px-3 rounded-[6px] bg-[#141414] border border-[#262626] text-[#cccccc] disabled:opacity-40 hover:text-white hover:border-[#383838] transition-colors cursor-pointer"
+            className="flex items-center justify-center gap-1 h-8 px-2 sm:px-3 rounded-[6px] bg-[#141414] border border-[#262626] text-[#cccccc] disabled:opacity-40 hover:text-white hover:border-[#383838] transition-colors cursor-pointer"
             title="Previous page"
           >
-            <span className="text-[13px] font-sans font-medium">Previous</span>
+            <ChevronLeft className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline text-[13px] font-sans font-medium">Previous</span>
           </button>
 
           {/* Editable Page Number */}
@@ -886,10 +889,11 @@ export function TableToolbar({
           <button
             onClick={onNextPage}
             disabled={!hasNextPage || isRowsLoading}
-            className="flex items-center justify-center h-8 px-3 rounded-[6px] bg-[#141414] border border-[#262626] text-[#cccccc] disabled:opacity-40 hover:text-white hover:border-[#383838] transition-colors cursor-pointer"
+            className="flex items-center justify-center gap-1 h-8 px-2 sm:px-3 rounded-[6px] bg-[#141414] border border-[#262626] text-[#cccccc] disabled:opacity-40 hover:text-white hover:border-[#383838] transition-colors cursor-pointer"
             title="Next page"
           >
-            <span className="text-[13px] font-sans font-medium">Next</span>
+            <span className="hidden sm:inline text-[13px] font-sans font-medium">Next</span>
+            <ChevronRight className="w-3.5 h-3.5" />
           </button>
         </div>
       )}

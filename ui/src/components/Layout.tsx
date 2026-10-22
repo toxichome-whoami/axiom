@@ -10,6 +10,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { cn } from '../utils/cn';
 import { api } from '../api/client';
 import { getOperatorUser, clearSession } from '../api/session';
+import { MobileTabBar } from './shared/MobileTabBar';
 import {
   LayoutDashboard,
   Database,
@@ -424,16 +425,32 @@ export function Layout({ currentPath, onNavigate, title, children, onLogout }: L
       <div className={cn('flex-1 flex flex-col min-w-0 min-h-screen min-h-dvh bg-[#000000]', isFullPage && 'min-h-0 h-screen h-dvh overflow-hidden')}>
         {/* Top Header Bar */}
         <header className="h-[58px] bg-[#000000] shrink-0 border-b border-[#222222] flex items-center px-3 sm:px-6 z-20 sticky top-0 gap-2 select-none justify-between pt-safe">
-          <button
-            onClick={() => setIsSidebarOpen(true)}
-            className="w-11 h-11 flex items-center justify-center -ml-2 text-[#8c8c8c] hover:text-white rounded-lg md:hidden hover:bg-[#161616] active:bg-[#202020] transition-colors cursor-pointer"
-            aria-label="Toggle navigation"
-            type="button"
-          >
-            <Menu className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-2 min-w-0">
+            <button
+              onClick={() => setIsSidebarOpen(true)}
+              className="w-11 h-11 flex items-center justify-center -ml-2 text-[#8c8c8c] hover:text-white rounded-lg md:hidden hover:bg-[#161616] active:bg-[#202020] transition-colors cursor-pointer shrink-0"
+              aria-label="Toggle navigation"
+              type="button"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+            <span className="md:hidden text-[15px] font-semibold text-white tracking-tight truncate">
+              {title || 'Axiom'}
+            </span>
+          </div>
 
-          <div className="flex items-center gap-2 sm:gap-3 ml-auto">
+          <div className="flex items-center gap-1.5 sm:gap-3 ml-auto">
+            {/* Mobile Search Button */}
+            <button
+              type="button"
+              onClick={() => setSearchModalOpen(true)}
+              className="w-9 h-9 flex items-center justify-center text-[#8c8c8c] hover:text-white rounded-lg md:hidden hover:bg-[#161616] active:bg-[#202020] transition-colors cursor-pointer"
+              aria-label="Search pages"
+              title="Search pages (Ctrl+K)"
+            >
+              <Search className="w-4 h-4" />
+            </button>
+
             {/* Cluster Status Pill */}
             <div className="hidden sm:inline-flex items-center gap-1.5 rounded-full border border-[#222222] bg-[#0c0c0c] px-2.5 py-1 text-[11px] font-medium text-[#8c8c8c]">
               <span className="size-1.5 rounded-full bg-[#30a46c]"></span>
@@ -543,8 +560,8 @@ export function Layout({ currentPath, onNavigate, title, children, onLogout }: L
         <main
           className={
             isFullPage
-              ? 'flex-1 w-full min-w-0 p-0 max-w-none h-[calc(100vh-58px)] max-h-[calc(100dvh-58px)] overflow-hidden flex flex-col pb-safe'
-              : 'flex-1 p-3 sm:p-6 w-full max-w-[1600px] mx-auto min-w-0 pb-safe'
+              ? 'flex-1 w-full min-w-0 p-0 max-w-none h-[calc(100vh-58px-54px)] max-h-[calc(100dvh-58px-54px)] md:h-[calc(100vh-58px)] md:max-h-[calc(100dvh-58px)] overflow-hidden flex flex-col pb-safe'
+              : 'flex-1 p-3 sm:p-6 w-full max-w-[1600px] mx-auto min-w-0 pb-[calc(54px+env(safe-area-inset-bottom)+16px)] md:pb-safe'
           }
         >
           {children}
@@ -612,32 +629,39 @@ export function Layout({ currentPath, onNavigate, title, children, onLogout }: L
         )}
       </div>
 
-      {/* Global Quick Search Modal (exact matching binary_alive) */}
+      {/* Global Quick Search Modal (exact matching binary_alive with mobile adaptation) */}
       {searchModalOpen && (
-        <div className="fixed inset-0 z-[100] flex items-start justify-center pt-[15vh]">
+        <div className="fixed inset-0 z-[100] flex items-start justify-center pt-16 sm:pt-[15vh] px-3 sm:px-0">
           <div
-            className="fixed inset-0 bg-black/60 backdrop-blur-xs"
+            className="fixed inset-0 bg-black/70 backdrop-blur-xs"
             onClick={() => setSearchModalOpen(false)}
           />
-          <div className="relative w-full max-w-lg bg-[#0c0c0c] border border-[#262626] rounded-[8px] shadow-2xl p-1.5 flex flex-col animate-in fade-in zoom-in-95 duration-200">
+          <div className="relative w-full max-w-lg bg-[#0c0c0c] border border-[#262626] rounded-[8px] shadow-2xl p-1.5 flex flex-col animate-in fade-in zoom-in-95 duration-150">
             <div className="bg-[#0e0e0e] border border-[#222222] rounded-[6px] overflow-hidden flex flex-col">
-              <div className="flex items-center px-4 py-3 border-b border-[#222222]">
-                <Search className="w-5 h-5 text-[#8c8c8c] mr-3 shrink-0" />
+              <div className="flex items-center px-3 sm:px-4 py-3 border-b border-[#222222]">
+                <Search className="w-4 h-4 text-[#8c8c8c] mr-2.5 shrink-0" />
                 <input
                   ref={searchInputRef}
                   type="text"
-                  className="flex-1 bg-transparent border-none outline-none text-[14px] text-white placeholder-[#8c8c8c]"
-                  placeholder="Search for pages..."
+                  className="flex-1 bg-transparent border-none outline-none text-[15px] sm:text-[14px] text-white placeholder-[#8c8c8c]"
+                  placeholder="Search pages..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   onKeyDown={handleModalKeyDown}
                 />
-                <kbd className="ml-2 font-sans text-[10px] font-semibold text-[#8c8c8c] bg-[#1a1a1a] px-2 py-1 rounded border border-[#262626] select-none">
+                <button
+                  type="button"
+                  onClick={() => setSearchModalOpen(false)}
+                  className="sm:hidden text-[12px] font-medium text-[#8c8c8c] hover:text-white px-2 py-1 rounded bg-[#1a1a1a] border border-[#262626] shrink-0"
+                >
+                  Done
+                </button>
+                <kbd className="hidden sm:inline-block ml-2 font-sans text-[10px] font-semibold text-[#8c8c8c] bg-[#1a1a1a] px-2 py-1 rounded border border-[#262626] select-none">
                   ESC
                 </kbd>
               </div>
 
-              <div className="max-h-[300px] overflow-y-auto p-2 scrollbar-thin">
+              <div className="max-h-[50vh] sm:max-h-[300px] overflow-y-auto p-1.5 sm:p-2 scrollbar-thin">
                 {filteredSearchItems.length === 0 ? (
                   <div className="px-4 py-8 text-center text-[#8c8c8c] text-sm">
                     No results found for "{searchQuery}"
@@ -651,7 +675,7 @@ export function Layout({ currentPath, onNavigate, title, children, onLogout }: L
                         type="button"
                         onClick={() => handleSearchSelect(item.path)}
                         className={cn(
-                          'w-full flex items-center px-3.5 py-2.5 rounded-lg text-sm transition-colors cursor-pointer text-left',
+                          'w-full flex items-center px-3 sm:px-3.5 py-3 sm:py-2.5 rounded-lg text-sm transition-colors cursor-pointer text-left',
                           index === searchSelectedIndex
                             ? 'bg-[#1a1a1a] text-white'
                             : 'text-[#8c8c8c] hover:bg-[#141414] hover:text-white'
@@ -663,7 +687,7 @@ export function Layout({ currentPath, onNavigate, title, children, onLogout }: L
                             index === searchSelectedIndex ? 'text-[#3b82f6] opacity-100' : 'opacity-60'
                           )}
                         />
-                        <span className="flex-1 truncate">{item.label}</span>
+                        <span className="flex-1 truncate font-medium">{item.label}</span>
                         <span className="text-[11px] text-[#666666] font-normal">{item.category}</span>
                       </button>
                     );
@@ -674,6 +698,16 @@ export function Layout({ currentPath, onNavigate, title, children, onLogout }: L
           </div>
         </div>
       )}
+
+      {/* Mobile Bottom Tab Navigation */}
+      <MobileTabBar
+        currentPath={currentPath}
+        onNavigate={(path) => {
+          onNavigate(path);
+          setIsSidebarOpen(false);
+        }}
+        onOpenMenu={() => setIsSidebarOpen(true)}
+      />
     </div>
   );
 }

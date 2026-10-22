@@ -69,10 +69,10 @@ export function StorageDetailsPanel({
 
   if (!isOpen) return null;
 
-  return (
+  const panel = (
     <aside
       style={{ width: width ? `${width}px` : undefined }}
-      className="w-72 lg:w-80 shrink-0 flex flex-col bg-[#0a0a0a] border-l border-[#222222] font-sans select-none overflow-hidden relative"
+      className="w-full lg:w-80 shrink-0 flex flex-col bg-[#0a0a0a] lg:border-l border-[#222222] font-sans select-none overflow-hidden relative h-full"
     >
       {/* Draggable Resize Handle on Left Border */}
       {onResizeStart && (
@@ -404,5 +404,25 @@ export function StorageDetailsPanel({
         )}
       </div>
     </aside>
+  );
+
+  return (
+    <>
+      {/* Mobile & Tablet Drawer Modal (< lg) */}
+      <div className="lg:hidden fixed inset-0 z-50 flex justify-end">
+        <div
+          className="fixed inset-0 bg-black/70 backdrop-blur-xs transition-opacity animate-in fade-in duration-150"
+          onClick={onClose}
+        />
+        <div className="relative w-full max-w-sm sm:max-w-md h-full z-10 animate-in slide-in-from-right duration-200">
+          {panel}
+        </div>
+      </div>
+
+      {/* Desktop Inline Sidebar (>= lg) */}
+      <div className="hidden lg:flex h-full">
+        {panel}
+      </div>
+    </>
   );
 }

@@ -270,7 +270,7 @@ export function SqlConsoleView({
         {(layoutMode === 'side-by-side' || layoutMode === 'stacked' || layoutMode === 'results-only') && (
           <div className="flex-1 flex flex-col min-h-0 bg-[#0c0c0c] overflow-hidden">
             {/* Output Header */}
-            <div className="h-[54px] w-full px-4 bg-[#0c0c0c] border-b border-[#222222] flex items-center justify-between gap-3 shrink-0 select-none font-sans">
+            <div className="h-[54px] w-full px-3 sm:px-4 bg-[#0c0c0c] border-b border-[#222222] flex items-center justify-between gap-2 sm:gap-3 shrink-0 select-none font-sans overflow-x-auto scrollbar-none">
               {/* Output Sub-tabs (Matching TableToolbar design system tab switcher) */}
               <div className="flex items-center p-1 rounded-[7px] bg-[#141414] border border-[#262626] h-9">
                 <button

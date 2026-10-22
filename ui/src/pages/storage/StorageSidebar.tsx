@@ -99,8 +99,8 @@ export function StorageSidebar({
 
   return (
     <aside
-      style={{ width: isMobileOpen ? '100%' : width ? `${width}px` : undefined }}
       className="w-full lg:w-64 shrink-0 flex flex-col bg-[#0a0a0a] border-b lg:border-b-0 lg:border-r border-[#222222] overflow-hidden font-sans select-none relative"
+      style={{ width: (typeof window !== 'undefined' && window.innerWidth >= 1024 && width) ? `${width}px` : undefined }}
     >
       {/* Draggable Resize Handle on Right Border */}
       {onResizeStart && (

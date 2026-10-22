@@ -416,7 +416,7 @@ export function TableGridView({
                             className={`w-4 h-4 rounded-[4px] flex items-center justify-center text-[#666666] hover:text-white hover:bg-[#1c1c1c] transition-all cursor-pointer ${
                               selectedRowIndex === idx
                                 ? 'opacity-100'
-                                : 'opacity-0 group-hover:opacity-100'
+                                : 'opacity-70 sm:opacity-0 sm:group-hover:opacity-100'
                             }`}
                           >
                             <Maximize2 className="w-3 h-3" />

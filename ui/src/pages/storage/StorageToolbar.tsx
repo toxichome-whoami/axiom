@@ -186,15 +186,15 @@ export function StorageToolbar({
       </div>
 
       {/* ─── Right: Search, Filter, View Mode, Details Toggle, Upload ─────────────── */}
-      <div className="flex items-center gap-2 shrink-0">
+      <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
         {/* Live Search Input */}
-        <div className="relative w-48 sm:w-64">
+        <div className="relative w-28 sm:w-44 md:w-56">
           <Search className="w-3.5 h-3.5 text-[#8c8c8c] absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => onSearchChange(e.target.value)}
-            placeholder="Search files..."
+            placeholder="Search..."
             className="w-full h-8 pl-8 pr-7 rounded-[6px] bg-[#141414] border border-[#262626] focus:border-[#383838] text-[13px] text-white placeholder-[#8c8c8c] outline-none transition-colors"
           />
           {searchQuery && (
@@ -208,8 +208,8 @@ export function StorageToolbar({
           )}
         </div>
 
-        {/* Storage Tier Filter Pill (Matching TableToolbar design system, h-9 tabs, 13px font) */}
-        <div className="flex items-center p-1 rounded-[7px] bg-[#141414] border border-[#262626] h-9">
+        {/* Storage Tier Filter Pill (Hidden on narrow screens to prevent overflow) */}
+        <div className="hidden md:flex items-center p-1 rounded-[7px] bg-[#141414] border border-[#262626] h-9">
           <button
             type="button"
             onClick={() => onTierFilterChange('all')}

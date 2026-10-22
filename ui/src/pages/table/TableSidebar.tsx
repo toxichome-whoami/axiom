@@ -194,7 +194,7 @@ export function TableSidebar({
       </div>
 
       {/* Table Tree Items (collapsible on mobile) */}
-      <div className={`flex-1 overflow-y-auto p-1.5 space-y-0.5 ${isMobileOpen ? 'block' : 'hidden lg:block'}`}>
+      <div className={`flex-1 overflow-y-auto p-1.5 space-y-0.5 max-h-[45vh] lg:max-h-none ${isMobileOpen ? 'block' : 'hidden lg:block'}`}>
         {isTablesLoading && tables.length === 0 ? (
           <div className="flex items-center justify-center p-8 text-zinc-500 text-[12px] gap-2">
             <RefreshCw className="w-3.5 h-3.5 animate-spin" />
