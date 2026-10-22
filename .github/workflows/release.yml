@@ -15,46 +15,52 @@ permissions:
 
 jobs:
   build-release:
-    name: Build (${{ matrix.target }})
+    name: Build (${{ matrix.platform }})
     strategy:
       fail-fast: false
       matrix:
         include:
-          # Linux x86_64
+          # Linux amd64
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            artifact_name: axiom
-            archive_format: tar.gz
+            platform: linux_amd64
+            bin: axiom
+            archive: tar.gz
 
-          # Linux ARM64
+          # Linux arm64
           - os: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
-            artifact_name: axiom
-            archive_format: tar.gz
+            platform: linux_arm64
+            bin: axiom
+            archive: tar.gz
 
-          # macOS Intel (x86_64)
+          # Darwin amd64 (macOS Intel)
           - os: macos-13
             target: x86_64-apple-darwin
-            artifact_name: axiom
-            archive_format: tar.gz
+            platform: darwin_amd64
+            bin: axiom
+            archive: tar.gz
 
-          # macOS Apple Silicon (M-series ARM64)
+          # Darwin arm64 (macOS Apple Silicon)
           - os: macos-14
             target: aarch64-apple-darwin
-            artifact_name: axiom
-            archive_format: tar.gz
+            platform: darwin_arm64
+            bin: axiom
+            archive: tar.gz
 
-          # Windows x86_64
+          # Windows amd64
           - os: windows-latest
             target: x86_64-pc-windows-msvc
-            artifact_name: axiom.exe
-            archive_format: zip
+            platform: windows_amd64
+            bin: axiom.exe
+            archive: zip
 
-          # Windows ARM64
+          # Windows arm64
           - os: windows-latest
             target: aarch64-pc-windows-msvc
-            artifact_name: axiom.exe
-            archive_format: zip
+            platform: windows_arm64
+            bin: axiom.exe
+            archive: zip
 
     runs-on: ${{ matrix.os }}
 
@@ -69,13 +75,13 @@ jobs:
           cache: npm
           cache-dependency-path: ui/package-lock.json
 
-      - name: Build Web UI Frontend
+      - name: Build Web UI
         working-directory: ui
         run: |
           npm install
           npm run build
 
-      - name: Setup Rust Toolchain
+      - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
@@ -83,56 +89,55 @@ jobs:
       - name: Build Release Binary
         run: cargo build --release --target ${{ matrix.target }}
 
-      - name: Package Archive & Generate Checksum (Linux / macOS)
-        if: matrix.archive_format == 'tar.gz'
+      - name: Package (Linux / macOS)
+        if: matrix.archive == 'tar.gz'
         shell: bash
         run: |
-          RELEASE_TAG="${{ github.ref_name }}"
+          TAG="${{ github.ref_name }}"
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            RELEASE_TAG="${{ inputs.tag_name }}"
+            TAG="${{ inputs.tag_name }}"
           fi
           
-          PKG_NAME="axiom-${RELEASE_TAG}-${{ matrix.target }}"
-          mkdir -p "staging/${PKG_NAME}"
+          PKG="axiom_${TAG}_${{ matrix.platform }}"
+          mkdir -p "staging/${PKG}"
           
-          cp "target/${{ matrix.target }}/release/${{ matrix.artifact_name }}" "staging/${PKG_NAME}/"
-          cp README.md LICENSE "staging/${PKG_NAME}/"
+          cp "target/${{ matrix.target }}/release/${{ matrix.bin }}" "staging/${PKG}/"
+          cp README.md LICENSE "staging/${PKG}/" 2>/dev/null || true
           
           cd staging
-          tar -czvf "../${PKG_NAME}.tar.gz" "${PKG_NAME}"
+          tar -czvf "../${PKG}.tar.gz" "${PKG}"
           cd ..
           
-          sha256sum "${PKG_NAME}.tar.gz" > "${PKG_NAME}.tar.gz.sha256"
+          sha256sum "${PKG}.tar.gz" > "${PKG}.tar.gz.sha256"
 
-      - name: Package Archive & Generate Checksum (Windows)
-        if: matrix.archive_format == 'zip'
+      - name: Package (Windows)
+        if: matrix.archive == 'zip'
         shell: pwsh
         run: |
-          $RELEASE_TAG = "${{ github.ref_name }}"
+          $TAG = "${{ github.ref_name }}"
           if ("${{ github.event_name }}" -eq "workflow_dispatch") {
-            $RELEASE_TAG = "${{ inputs.tag_name }}"
+            $TAG = "${{ inputs.tag_name }}"
           }
           
-          $PKG_NAME = "axiom-${RELEASE_TAG}-${{ matrix.target }}"
-          New-Item -ItemType Directory -Force -Path "staging/${PKG_NAME}" | Out-Null
+          $PKG = "axiom_${TAG}_${{ matrix.platform }}"
+          New-Item -ItemType Directory -Force -Path "staging/${PKG}" | Out-Null
           
-          Copy-Item "target/${{ matrix.target }}/release/${{ matrix.artifact_name }}" "staging/${PKG_NAME}/"
-          Copy-Item "README.md", "LICENSE" "staging/${PKG_NAME}/"
+          Copy-Item "target/${{ matrix.target }}/release/${{ matrix.bin }}" "staging/${PKG}/"
+          Copy-Item "README.md", "LICENSE" "staging/${PKG}/" -ErrorAction SilentlyContinue
           
-          Compress-Archive -Path "staging/${PKG_NAME}" -DestinationPath "${PKG_NAME}.zip"
+          Compress-Archive -Path "staging/${PKG}" -DestinationPath "${PKG}.zip"
           
-          $hash = (Get-FileHash -Algorithm SHA256 "${PKG_NAME}.zip").Hash.ToLower()
-          "$hash  ${PKG_NAME}.zip" | Out-File -Encoding ascii "${PKG_NAME}.zip.sha256"
+          $hash = (Get-FileHash -Algorithm SHA256 "${PKG}.zip").Hash.ToLower()
+          "$hash  ${PKG}.zip" | Out-File -Encoding ascii "${PKG}.zip.sha256"
 
-      - name: Upload Artifacts to GitHub Release
+      - name: Add Files to Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            axiom-*.tar.gz
-            axiom-*.tar.gz.sha256
-            axiom-*.zip
-            axiom-*.zip.sha256
+            axiom_*.tar.gz
+            axiom_*.tar.gz.sha256
+            axiom_*.zip
+            axiom_*.zip.sha256
           tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.tag_name || github.ref_name }}
           draft: false
           prerelease: false
-          generate_release_notes: true
