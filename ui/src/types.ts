@@ -4,11 +4,15 @@ export type EngineType =
   | 'MSSQL'
   | 'ClickHouse'
   | 'LibSQL'
+  | 'Snowflake'
+  | 'Oracle'
   | 'POSTGRESQL'
   | 'MYSQL'
   | 'MSSQL'
   | 'CLICKHOUSE'
-  | 'LIBSQL';
+  | 'LIBSQL'
+  | 'SNOWFLAKE'
+  | 'ORACLE';
 
 export function formatEngine(engine: string): string {
   if (!engine) return '';
@@ -29,6 +33,11 @@ export function formatEngine(engine: string): string {
     case 'libsql':
     case 'sqlite':
       return 'LibSQL';
+    case 'snowflake':
+      return 'Snowflake';
+    case 'oracle':
+    case 'ords':
+      return 'Oracle';
     default:
       return engine.charAt(0).toUpperCase() + engine.slice(1).toLowerCase();
   }

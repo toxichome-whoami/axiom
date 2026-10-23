@@ -291,9 +291,9 @@ export function DataTable<T>({
       )}
 
       <div className="overflow-x-auto w-full touch-scroll scrollbar-thin">
-        <table role="table" aria-label={ariaLabel} className={`w-full max-md:min-w-0 ${minTableWidth} text-left border-collapse`}>
+        <table role="table" aria-label={ariaLabel} className={`w-full ${minTableWidth} text-left border-collapse`}>
           {/* Table Header */}
-          <thead className="sticky top-0 z-10 max-md:hidden">
+          <thead className="sticky top-0 z-10">
             <tr
               role="row"
               className="flex w-full items-center border-b border-[#222222] bg-[#141414] h-[40px] min-h-[40px] max-h-[40px]"
@@ -410,7 +410,7 @@ export function DataTable<T>({
                 <tr
                   key={`skeleton-${i}`}
                   role="row"
-                  className="flex max-md:flex-col max-md:p-4 max-md:gap-3 w-full md:items-center h-auto md:h-[40px] border-b border-[#1e1e1e] bg-[#0e0e0e]"
+                  className="flex w-full items-center h-[40px] border-b border-[#1e1e1e] bg-[#0e0e0e]"
                 >
                   {columns.map((col) => {
                     const widthStyle = col.isFlex
@@ -422,14 +422,11 @@ export function DataTable<T>({
                         key={col.id}
                         role="cell"
                         style={widthStyle}
-                        className={`flex max-md:w-full max-md:h-auto max-md:py-1 max-md:justify-between items-center shrink-0 md:h-[40px] ${col.isFlex ? 'md:flex-1' : ''} ${
+                        className={`flex items-center shrink-0 h-[40px] ${col.isFlex ? 'flex-1' : ''} ${
                           col.className || 'px-3'
                         }`}
                       >
-                        <span className="md:hidden text-[12px] text-[#888888] font-medium mr-4 select-none shrink-0 truncate">
-                          {col.header}
-                        </span>
-                        <div className="h-3.5 max-md:flex-1 md:w-3/4 rounded-[4px] bg-[#16171d]/80 border border-[#1e2025]/40 animate-pulse" />
+                        <div className="h-3.5 w-3/4 rounded-[4px] bg-[#16171d]/80 border border-[#1e2025]/40 animate-pulse" />
                       </td>
                     );
                   })}
@@ -453,7 +450,7 @@ export function DataTable<T>({
                     key={key}
                     role="row"
                     onClick={() => onRowClick && onRowClick(row, rowIdx)}
-                    className={`group/row flex max-md:flex-col max-md:p-3.5 max-md:gap-2.5 w-full ${allowRowExpansion ? 'md:items-start h-auto min-h-[40px] max-h-none' : 'md:items-center h-auto md:h-[40px] md:min-h-[40px] md:max-h-[40px]'} border-b border-[#1e1e1e] bg-[#0e0e0e] hover:bg-[#161616] transition-colors duration-75 ${
+                    className={`group/row flex w-full ${allowRowExpansion ? 'items-start h-auto min-h-[40px] max-h-none' : 'items-center h-[40px] min-h-[40px] max-h-[40px]'} border-b border-[#1e1e1e] bg-[#0e0e0e] hover:bg-[#161616] transition-colors duration-75 ${
                       onRowClick ? 'cursor-pointer' : ''
                     }`}
                   >
@@ -467,16 +464,11 @@ export function DataTable<T>({
                           key={col.id}
                           role="cell"
                           style={widthStyle}
-                          className={`flex max-md:w-full max-md:h-auto max-md:py-1.5 ${
-                            col.isFlex ? 'max-md:flex-col max-md:items-start max-md:gap-1' : 'max-md:justify-between max-md:items-center'
-                          } shrink-0 md:items-center ${allowRowExpansion ? 'h-auto min-h-[40px]' : 'md:h-[40px]'} overflow-hidden min-w-0 ${
-                            col.isFlex ? 'md:flex-1' : ''
+                          className={`flex items-center shrink-0 ${allowRowExpansion ? 'h-auto min-h-[40px]' : 'h-[40px]'} overflow-hidden min-w-0 ${
+                            col.isFlex ? 'flex-1' : ''
                           } ${col.className || 'px-3'}`}
                         >
-                          <span className="md:hidden text-[12px] text-[#888888] font-medium mr-4 select-none shrink-0 truncate">
-                            {col.header}
-                          </span>
-                          <div className={`flex min-w-0 max-w-full overflow-hidden whitespace-nowrap ${col.isFlex ? 'w-full max-md:justify-start' : 'items-center max-md:justify-end'}`}>
+                          <div className={`flex min-w-0 max-w-full overflow-hidden whitespace-nowrap ${col.isFlex ? 'w-full' : 'items-center'}`}>
                             {col.cell
                               ? col.cell(row, rowIdx)
                               : col.accessorKey

@@ -273,7 +273,7 @@ export function Settings() {
                   <Skeleton className="h-7 w-20" />
                 ) : (
                   <div className="text-[22px] font-semibold text-white tracking-[-0.02em] leading-tight">
-                    v{statusData?.version || '0.1.12'}
+                    v{statusData?.version || '0.1.13'}
                   </div>
                 )}
               </div>
@@ -410,7 +410,7 @@ export function Settings() {
                   <div className="space-y-1">
                     <div className="text-[13px] font-medium text-white">Multi-Dialect Connection Pooling</div>
                     <div className="text-[13px] text-[#8c8c8c] leading-relaxed">
-                      Native protocol multiplexers for PostgreSQL, MySQL, MSSQL, LibSQL, and ClickHouse.
+                      Native protocol multiplexers for PostgreSQL, MySQL, MSSQL, LibSQL, ClickHouse, Snowflake, and Oracle.
                     </div>
                   </div>
                 </div>
@@ -584,7 +584,7 @@ export function Settings() {
                 <div className="flex items-center gap-2.5 flex-wrap">
                   <h2 className="text-[16px] font-semibold text-white tracking-tight">Axiom Gateway</h2>
                   <span className="text-[11px] font-mono px-2 py-0.5 rounded-[4px] bg-[#161616] text-[#8c8c8c] border border-[#2a2a2a]">
-                    v{statusData?.version || '0.1.12'}
+                    v{statusData?.version || '0.1.13'}
                   </span>
                   <span className="inline-flex items-center gap-1 text-[11px] text-[#34d399] bg-emerald-950/40 border border-emerald-800/40 px-2 py-0.5 rounded-[4px]">
                     <CheckCircle2 className="w-3 h-3" />
@@ -614,7 +614,7 @@ export function Settings() {
 
             <div className="rounded-[8px] border border-[#262626] bg-[#0c0c0c] p-4 space-y-1.5 hover:border-[#333333] transition-colors">
               <span className="text-[12px] font-normal text-[#8c8c8c] block">Supported SQL Engines</span>
-              <div className="text-[13px] text-white font-medium">PostgreSQL, MySQL, MariaDB, MSSQL, LibSQL, ClickHouse</div>
+              <div className="text-[13px] text-white font-medium">PostgreSQL, MySQL, MariaDB, MSSQL, LibSQL, ClickHouse, Snowflake, Oracle</div>
               <p className="text-[12px] text-[#737373]">Native driver multiplexing with per-alias connection pools and circuit breakers.</p>
             </div>
 

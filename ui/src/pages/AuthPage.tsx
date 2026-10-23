@@ -10,6 +10,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Stepper, StepItem } from '../components/shared/Stepper';
 import { CustomSelect } from '../components/shared/CustomSelect';
 import { Captcha, CaptchaRef } from '../components/shared/Captcha';
+import { SslMode, SSL_MODE_OPTIONS, extractSslModeFromUrl, applySslModeToUrl } from './Databases';
 import { api } from '../api/client';
 import { getSessionToken } from '../api/session';
 import {
@@ -50,6 +51,8 @@ const ENGINE_OPTIONS = [
   { value: 'MSSQL', label: 'Microsoft SQL Server' },
   { value: 'ClickHouse', label: 'ClickHouse (HTTP)' },
   { value: 'LibSQL', label: 'LibSQL / SQLite (Turso)' },
+  { value: 'Snowflake', label: 'Snowflake Cloud Data Warehouse' },
+  { value: 'Oracle', label: 'Oracle Database (Thin / ORDS)' },
 ];
 
 /**
@@ -87,6 +90,7 @@ export function AuthPage({ onLoginSuccess, initialMode = 'login' }: AuthPageProp
   const [dbAlias, setDbAlias] = useState('main_db');
   const [dbEngine, setDbEngine] = useState('PostgreSQL');
   const [dbUrl, setDbUrl] = useState('postgresql://127.0.0.1:5432/localdb');
+  const [dbSslMode, setDbSslMode] = useState<SslMode>('prefer');
   const [dbToken, setDbToken] = useState('');
   const [showDbToken, setShowDbToken] = useState(false);
   const [dbTesting, setDbTesting] = useState(false);
@@ -243,6 +247,8 @@ export function AuthPage({ onLoginSuccess, initialMode = 'login' }: AuthPageProp
       mssql: ['mssql://', 'sqlserver://'],
       clickhouse: ['clickhouse://', 'clickhouse+https://', 'http://', 'https://'],
       libsql: ['sqlite://', 'libsql://', 'file:', 'https://'],
+      snowflake: ['snowflake://', 'snowflake+https://', 'https://'],
+      oracle: ['oracle://', 'oracle+tcp://', 'ords://', 'ords+https://'],
     };
     const expected = schemes[normEngine];
     if (expected && !expected.some((prefix) => trimmed.startsWith(prefix))) {
@@ -534,7 +540,7 @@ export function AuthPage({ onLoginSuccess, initialMode = 'login' }: AuthPageProp
                 <div>
                   <h3 className="text-[14px] font-medium text-white">Universal Database Gateway</h3>
                   <p className="text-[12px] text-[#8c8c8c] mt-0.5">
-                    PostgreSQL, MySQL, ClickHouse, MSSQL, and LibSQL with AST security firewall.
+                    PostgreSQL, MySQL, ClickHouse, MSSQL, LibSQL, Snowflake, and Oracle with AST security firewall.
                   </p>
                 </div>
               </div>
@@ -660,6 +666,9 @@ export function AuthPage({ onLoginSuccess, initialMode = 'login' }: AuthPageProp
                 options={ENGINE_OPTIONS}
                 onChange={(val) => {
                   setDbEngine(val);
+                  if (val.toLowerCase() === 'postgresql' || val.toLowerCase() === 'mysql') {
+                    setDbSslMode(extractSslModeFromUrl(dbUrl, val));
+                  }
                   setDbTestSuccess(null);
                   setErrorMessage(null);
                 }}
@@ -680,7 +689,11 @@ export function AuthPage({ onLoginSuccess, initialMode = 'login' }: AuthPageProp
                 type="text"
                 value={dbUrl}
                 onChange={(e) => {
-                  setDbUrl(e.target.value);
+                  const val = e.target.value;
+                  setDbUrl(val);
+                  if (dbEngine.toLowerCase() === 'postgresql' || dbEngine.toLowerCase() === 'mysql') {
+                    setDbSslMode(extractSslModeFromUrl(val, dbEngine));
+                  }
                   setDbTestSuccess(null);
                   setErrorMessage(null);
                 }}
@@ -692,6 +705,29 @@ export function AuthPage({ onLoginSuccess, initialMode = 'login' }: AuthPageProp
                 className="h-10 w-full rounded-[8px] bg-[#141414] border border-[#262626] focus:border-[#2563eb] focus:ring-1 focus:ring-[#2563eb] px-3 text-[14px] font-mono text-white outline-none placeholder-[#555555] transition-colors"
               />
             </div>
+
+            {(dbEngine.toLowerCase() === 'postgresql' || dbEngine.toLowerCase() === 'mysql') && (
+              <div>
+                <label className="text-[13px] font-medium text-[#cccccc] mb-1.5 block">
+                  SSL mode
+                </label>
+                <CustomSelect
+                  value={dbSslMode}
+                  options={SSL_MODE_OPTIONS}
+                  onChange={(val) => {
+                    const mode = val as SslMode;
+                    setDbSslMode(mode);
+                    setDbUrl((prev) => applySslModeToUrl(prev, dbEngine, mode));
+                    setDbTestSuccess(null);
+                    setErrorMessage(null);
+                  }}
+                  menuWidth="w-full"
+                />
+                <p className="mt-1.5 text-[12px] text-[#737373]">
+                  Use &quot;Require&quot; for hosted databases such as RDS, Supabase or Neon.
+                </p>
+              </div>
+            )}
 
             {dbEngine.toLowerCase() === 'libsql' && (
               <div>

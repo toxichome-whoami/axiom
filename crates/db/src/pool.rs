@@ -15,7 +15,9 @@ use crate::engines::clickhouse::ClickHouseDatabaseEngine;
 use crate::engines::libsql::LibsqlDatabaseEngine;
 use crate::engines::mssql::MssqlDatabaseEngine;
 use crate::engines::mysql::MysqlDatabaseEngine;
+use crate::engines::oracle::OracleDatabaseEngine;
 use crate::engines::postgres::PostgresDatabaseEngine;
+use crate::engines::snowflake::SnowflakeDatabaseEngine;
 
 // ─── Engine Registry & Per-Alias Synchronization ───────────────────────────
 // Active connected database engine singletons keyed by configuration alias name.
@@ -148,6 +150,36 @@ impl DatabasePoolManager {
                     return None;
                 }
             }
+        } else if url.starts_with("snowflake://") || url.starts_with("snowflake+https://") {
+            let mut engine = SnowflakeDatabaseEngine::new(db_config.clone());
+            match tokio::time::timeout(conn_timeout, engine.connect()).await {
+                Ok(Ok(())) => Arc::new(engine),
+                Ok(Err(e)) => {
+                    tracing::error!(database = alias, error = %e, "Failed to connect to Snowflake");
+                    return None;
+                }
+                Err(_) => {
+                    tracing::error!(database = alias, "Snowflake connection timed out");
+                    return None;
+                }
+            }
+        } else if url.starts_with("oracle://")
+            || url.starts_with("oracle+tcp://")
+            || url.starts_with("ords://")
+            || url.starts_with("ords+https://")
+        {
+            let mut engine = OracleDatabaseEngine::new(db_config.clone());
+            match tokio::time::timeout(conn_timeout, engine.connect()).await {
+                Ok(Ok(())) => Arc::new(engine),
+                Ok(Err(e)) => {
+                    tracing::error!(database = alias, error = %e, "Failed to connect to Oracle");
+                    return None;
+                }
+                Err(_) => {
+                    tracing::error!(database = alias, "Oracle connection timed out");
+                    return None;
+                }
+            }
         } else {
             tracing::error!(
                 database = alias,
@@ -221,9 +253,17 @@ impl DatabasePoolManager {
             Box::new(ClickHouseDatabaseEngine::new(db_config))
         } else if trimmed.starts_with("mysql://") || trimmed.starts_with("mariadb://") {
             Box::new(MysqlDatabaseEngine::new(db_config))
+        } else if trimmed.starts_with("snowflake://") || trimmed.starts_with("snowflake+https://") {
+            Box::new(SnowflakeDatabaseEngine::new(db_config))
+        } else if trimmed.starts_with("oracle://")
+            || trimmed.starts_with("oracle+tcp://")
+            || trimmed.starts_with("ords://")
+            || trimmed.starts_with("ords+https://")
+        {
+            Box::new(OracleDatabaseEngine::new(db_config))
         } else {
             return Err(format!(
-                    "Unsupported database URL protocol: '{}'. Expected postgres://, mysql://, sqlite://, libsql://, mssql://, or clickhouse://",
+                    "Unsupported database URL protocol: '{}'. Expected postgres://, mysql://, sqlite://, libsql://, mssql://, clickhouse://, snowflake://, or oracle://",
                     trimmed
                 ));
         };

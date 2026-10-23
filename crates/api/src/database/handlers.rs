@@ -461,6 +461,126 @@ pub fn format_postgres_placeholders(sql: &str) -> String {
     out
 }
 
+/// Converts positional '?' placeholders into Oracle-style positional bind markers (:1, :2, ...)
+/// Invariant: Respects single-quoted strings ('...'), double-quoted identifiers ("..."),
+/// line comments (-- ...), and block comments (/* ... */).
+pub fn format_oracle_placeholders(sql: &str) -> String {
+    use std::fmt::Write;
+    let mut out = String::with_capacity(sql.len() + 16);
+    let mut param_idx = 1;
+
+    let mut in_single_quote = false;
+    let mut in_double_quote = false;
+    let mut in_line_comment = false;
+    let mut in_block_comment = false;
+
+    let chars: Vec<char> = sql.chars().collect();
+    let len = chars.len();
+    let mut i = 0;
+
+    while i < len {
+        let c = chars[i];
+        let next_c = if i + 1 < len {
+            Some(chars[i + 1])
+        } else {
+            None
+        };
+
+        if in_line_comment {
+            out.push(c);
+            if c == '\n' {
+                in_line_comment = false;
+            }
+            i += 1;
+            continue;
+        }
+
+        if in_block_comment {
+            out.push(c);
+            if c == '*' && next_c == Some('/') {
+                out.push('/');
+                in_block_comment = false;
+                i += 2;
+                continue;
+            }
+            i += 1;
+            continue;
+        }
+
+        if in_single_quote {
+            out.push(c);
+            if c == '\'' {
+                if next_c == Some('\'') {
+                    out.push('\'');
+                    i += 2;
+                    continue;
+                } else {
+                    in_single_quote = false;
+                }
+            }
+            i += 1;
+            continue;
+        }
+
+        if in_double_quote {
+            out.push(c);
+            if c == '"' {
+                if next_c == Some('"') {
+                    out.push('"');
+                    i += 2;
+                    continue;
+                } else {
+                    in_double_quote = false;
+                }
+            }
+            i += 1;
+            continue;
+        }
+
+        if c == '-' && next_c == Some('-') {
+            in_line_comment = true;
+            out.push('-');
+            out.push('-');
+            i += 2;
+            continue;
+        }
+
+        if c == '/' && next_c == Some('*') {
+            in_block_comment = true;
+            out.push('/');
+            out.push('*');
+            i += 2;
+            continue;
+        }
+
+        if c == '\'' {
+            in_single_quote = true;
+            out.push(c);
+            i += 1;
+            continue;
+        }
+
+        if c == '"' {
+            in_double_quote = true;
+            out.push(c);
+            i += 1;
+            continue;
+        }
+
+        if c == '?' {
+            let _ = write!(out, ":{}", param_idx);
+            param_idx += 1;
+            i += 1;
+            continue;
+        }
+
+        out.push(c);
+        i += 1;
+    }
+
+    out
+}
+
 fn parse_sql_with_dialect(
     dialect_name: &str,
     sql: &str,
@@ -475,6 +595,8 @@ fn parse_sql_with_dialect(
         sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::MySqlDialect {}, sql)
     } else if dialect_name == "sqlite" {
         sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::SQLiteDialect {}, sql)
+    } else if dialect_name == "snowflake" {
+        sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::SnowflakeDialect {}, sql)
     } else {
         sqlparser::parser::Parser::parse_sql(&sqlparser::dialect::GenericDialect {}, sql)
     }
@@ -896,6 +1018,8 @@ impl QueryExecutionPipeline {
                 && sql_for_format.contains('?')
             {
                 Some(format_postgres_placeholders(&sql_for_format))
+            } else if dialect_name == "oracle" && sql_for_format.contains('?') {
+                Some(format_oracle_placeholders(&sql_for_format))
             } else if dialect_name == "sqlite"
                 && sql_for_format.to_ascii_uppercase().contains("PRAGMA")
             {
@@ -997,6 +1121,8 @@ impl QueryExecutionPipeline {
                     && stmt_str.contains('?')
                 {
                     format_postgres_placeholders(stmt_str)
+                } else if dialect_name == "oracle" && stmt_str.contains('?') {
+                    format_oracle_placeholders(stmt_str)
                 } else {
                     stmt_str.clone()
                 };
@@ -2166,6 +2292,46 @@ mod tests {
         // 5. Preserves PostgreSQL JSONB operators (?| and ?&)
         let jsonb = "SELECT * FROM logs WHERE data ?| array['a', 'b'] AND data ?& array['c'] AND status = ?";
         assert_eq!(format_postgres_placeholders(jsonb), "SELECT * FROM logs WHERE data ?| array['a', 'b'] AND data ?& array['c'] AND status = $1");
+    }
+
+    #[test]
+    fn test_format_oracle_placeholders_advanced() {
+        use super::format_oracle_placeholders;
+
+        // 1. Basic positional binds
+        let basic = "SELECT * FROM employees WHERE id = ? AND department_id = ?";
+        assert_eq!(
+            format_oracle_placeholders(basic),
+            "SELECT * FROM employees WHERE id = :1 AND department_id = :2"
+        );
+
+        // 2. Preserves literal quotes and comments
+        let quotes = "SELECT 'Is this ?' AS \"q?\" FROM dual WHERE x = ?";
+        assert_eq!(
+            format_oracle_placeholders(quotes),
+            "SELECT 'Is this ?' AS \"q?\" FROM dual WHERE x = :1"
+        );
+    }
+
+    #[test]
+    fn test_parse_snowflake_and_oracle_dialects() {
+        use super::parse_sql_with_dialect;
+
+        let sf_sql = "SELECT id, payload:user:name::string FROM events WHERE id > 10";
+        let sf_res = parse_sql_with_dialect("snowflake", sf_sql);
+        assert!(
+            sf_res.is_ok(),
+            "Snowflake SQL failed to parse: {:?}",
+            sf_res.err()
+        );
+
+        let ora_sql = "SELECT table_name FROM user_tables WHERE table_name = 'TEST'";
+        let ora_res = parse_sql_with_dialect("oracle", ora_sql);
+        assert!(
+            ora_res.is_ok(),
+            "Oracle SQL failed to parse: {:?}",
+            ora_res.err()
+        );
     }
 
     #[test]

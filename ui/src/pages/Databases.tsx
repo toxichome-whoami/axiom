@@ -81,7 +81,85 @@ export const ENGINE_URL_SCHEMES: Record<string, { prefixes: string[]; example: s
     prefixes: ['libsql://', 'sqlite://', 'file:', 'https://'],
     example: 'libsql://database.turso.io, https://database.turso.io, or leave blank',
   },
+  snowflake: {
+    prefixes: ['snowflake://', 'snowflake+https://', 'https://'],
+    example: 'snowflake://user:secret@account.snowflakecomputing.com?warehouse=COMPUTE_WH&database=DB&schema=PUBLIC',
+  },
+  oracle: {
+    prefixes: ['oracle://', 'oracle+tcp://', 'ords://', 'ords+https://'],
+    example: 'oracle://user:secret@host:1521/service or ords+https://host/ords/schema',
+  },
 };
+
+export type SslMode = 'prefer' | 'require' | 'disable' | 'verify-ca' | 'verify-full';
+
+export const SSL_MODE_OPTIONS: { value: SslMode; label: string }[] = [
+  { value: 'prefer', label: 'Prefer (default)' },
+  { value: 'require', label: 'Require' },
+  { value: 'disable', label: 'Disable' },
+  { value: 'verify-ca', label: 'Verify CA' },
+  { value: 'verify-full', label: 'Verify Full' },
+];
+
+/**
+ * Extracts the current SSL mode from a database connection URL.
+ */
+export function extractSslModeFromUrl(url: string, engine: string): SslMode {
+  const normEngine = (engine || '').toLowerCase();
+  if (normEngine !== 'postgresql' && normEngine !== 'mysql') {
+    return 'prefer';
+  }
+  const qIdx = url.indexOf('?');
+  if (qIdx === -1) return 'prefer';
+  const queryString = url.slice(qIdx + 1);
+  const params = new URLSearchParams(queryString);
+  const val = (params.get('sslmode') || params.get('ssl-mode') || '').toLowerCase();
+  if (val === 'require' || val === 'required') return 'require';
+  if (val === 'disable' || val === 'disabled') return 'disable';
+  if (val === 'verify-ca') return 'verify-ca';
+  if (val === 'verify-full' || val === 'verify_identity') return 'verify-full';
+  return 'prefer';
+}
+
+/**
+ * Updates or removes the SSL mode parameter in a database connection URL.
+ */
+export function applySslModeToUrl(url: string, engine: string, mode: SslMode): string {
+  const normEngine = (engine || '').toLowerCase();
+  if (normEngine !== 'postgresql' && normEngine !== 'mysql') {
+    return url;
+  }
+  const trimmed = url.trim();
+  if (!trimmed) return trimmed;
+
+  const qIdx = trimmed.indexOf('?');
+  const base = qIdx === -1 ? trimmed : trimmed.slice(0, qIdx);
+  const queryString = qIdx === -1 ? '' : trimmed.slice(qIdx + 1);
+  const params = new URLSearchParams(queryString);
+
+  // Remove existing sslmode / ssl-mode params
+  params.delete('sslmode');
+  params.delete('ssl-mode');
+
+  // If mode is not default 'prefer', set the appropriate param
+  if (mode !== 'prefer') {
+    if (normEngine === 'mysql') {
+      const mysqlModeMap: Record<SslMode, string> = {
+        prefer: 'PREFERRED',
+        require: 'REQUIRED',
+        disable: 'DISABLED',
+        'verify-ca': 'VERIFY_CA',
+        'verify-full': 'VERIFY_IDENTITY',
+      };
+      params.set('ssl-mode', mysqlModeMap[mode] || mode);
+    } else {
+      params.set('sslmode', mode);
+    }
+  }
+
+  const newQuery = params.toString();
+  return newQuery ? `${base}?${newQuery}` : base;
+}
 
 /**
  * Validates connection URI scheme against target database engine dialect.
@@ -268,6 +346,7 @@ export function Databases() {
   const [newAlias, setNewAlias] = useState('');
   const [newEngine, setNewEngine] = useState<string>('PostgreSQL');
   const [newUrl, setNewUrl] = useState('');
+  const [newSslMode, setNewSslMode] = useState<SslMode>('prefer');
   const [showNewUrl, setShowNewUrl] = useState(false);
   const [newToken, setNewToken] = useState('');
   const [showNewToken, setShowNewToken] = useState(false);
@@ -285,6 +364,7 @@ export function Databases() {
   const [editAlias, setEditAlias] = useState('');
   const [editEngine, setEditEngine] = useState<EngineType>('PostgreSQL');
   const [editUrl, setEditUrl] = useState('');
+  const [editSslMode, setEditSslMode] = useState<SslMode>('prefer');
   const [showEditUrl, setShowEditUrl] = useState(false);
   const [editToken, setEditToken] = useState('');
   const [showEditToken, setShowEditToken] = useState(false);
@@ -382,7 +462,8 @@ export function Databases() {
       editToken.trim().length > 0 ||
       editMin !== selectedPool.minConnections ||
       editMax !== selectedPool.maxConnections ||
-      editTimeout !== selectedPool.idleTimeoutSeconds
+      editTimeout !== selectedPool.idleTimeoutSeconds ||
+      editSslMode !== extractSslModeFromUrl(selectedPool.url, selectedPool.engine)
     )
   );
 
@@ -404,6 +485,7 @@ export function Databases() {
     newUrl.trim().length > 0 ||
     newToken.trim().length > 0 ||
     newEngine !== 'PostgreSQL' ||
+    newSslMode !== 'prefer' ||
     newMin !== 1 ||
     newMax !== 10 ||
     newTimeout !== 30
@@ -430,6 +512,7 @@ export function Databases() {
     setAttachOpen(false);
     setNewAlias('');
     setNewUrl('');
+    setNewSslMode('prefer');
     setNewToken('');
     setNewEngine('PostgreSQL');
     setNewMin(1);
@@ -566,6 +649,8 @@ export function Databases() {
     { value: 'MSSQL', label: 'Microsoft SQL Server (tiberius TDS)' },
     { value: 'ClickHouse', label: 'ClickHouse OLAP (HTTP engine)' },
     { value: 'LibSQL', label: 'LibSQL / SQLite (Turso & local)' },
+    { value: 'Snowflake', label: 'Snowflake Cloud Data Warehouse (REST v2)' },
+    { value: 'Oracle', label: 'Oracle Database 19c / 21c / 23ai (Thin / ORDS)' },
   ];
 
   const filterFieldOptions = [
@@ -738,6 +823,7 @@ export function Databases() {
               setEditAlias(row.alias);
               setEditEngine(row.engine);
               setEditUrl('');
+              setEditSslMode(extractSslModeFromUrl(row.url || '', row.engine));
               setEditToken('');
               setShowEditToken(false);
               setEditMin(row.minConnections);
@@ -1093,6 +1179,9 @@ export function Databases() {
               options={engineOptions}
               onChange={(val) => {
                 setNewEngine(val);
+                if (val.toLowerCase() === 'postgresql' || val.toLowerCase() === 'mysql') {
+                  setNewSslMode(extractSslModeFromUrl(newUrl, val));
+                }
                 setTestResult(null);
                 setAttachError(null);
               }}
@@ -1141,7 +1230,11 @@ export function Databases() {
                 type={showNewUrl ? 'text' : 'password'}
                 value={newUrl}
                 onChange={(e) => {
-                  setNewUrl(e.target.value);
+                  const val = e.target.value;
+                  setNewUrl(val);
+                  if (newEngine.toLowerCase() === 'postgresql' || newEngine.toLowerCase() === 'mysql') {
+                    setNewSslMode(extractSslModeFromUrl(val, newEngine));
+                  }
                   setTestResult(null);
                   setAttachError(null);
                 }}
@@ -1226,6 +1319,29 @@ export function Databases() {
               </div>
               <p className="mt-1.5 text-[12px] text-[#737373]">
                 JWT auth token required for remote Turso cloud databases. Leave blank for local files.
+              </p>
+            </div>
+          )}
+
+          {(newEngine.toLowerCase() === 'postgresql' || newEngine.toLowerCase() === 'mysql') && (
+            <div>
+              <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">
+                SSL mode
+              </label>
+              <CustomSelect
+                value={newSslMode}
+                options={SSL_MODE_OPTIONS}
+                onChange={(val) => {
+                  const mode = val as SslMode;
+                  setNewSslMode(mode);
+                  setNewUrl((prev) => applySslModeToUrl(prev, newEngine, mode));
+                  setTestResult(null);
+                  setAttachError(null);
+                }}
+                menuWidth="w-full"
+              />
+              <p className="mt-1.5 text-[12px] text-[#737373]">
+                Use &quot;Require&quot; for hosted databases such as RDS, Supabase or Neon.
               </p>
             </div>
           )}
@@ -1440,7 +1556,11 @@ export function Databases() {
                     value={editEngine}
                     options={engineOptions}
                     onChange={(val) => {
-                      setEditEngine(val as EngineType);
+                      const eng = val as EngineType;
+                      setEditEngine(eng);
+                      if (eng.toLowerCase() === 'postgresql' || eng.toLowerCase() === 'mysql') {
+                        setEditSslMode(extractSslModeFromUrl(editUrl, eng));
+                      }
                       setManageTestResult(null);
                       setManageError(null);
                     }}
@@ -1457,7 +1577,11 @@ export function Databases() {
                       type={showEditUrl ? 'text' : 'password'}
                       value={editUrl}
                       onChange={(e) => {
-                        setEditUrl(e.target.value);
+                        const val = e.target.value;
+                        setEditUrl(val);
+                        if (editEngine.toLowerCase() === 'postgresql' || editEngine.toLowerCase() === 'mysql') {
+                          setEditSslMode(extractSslModeFromUrl(val, editEngine));
+                        }
                         setManageTestResult(null);
                         setManageError(null);
                       }}
@@ -1530,6 +1654,29 @@ export function Databases() {
                     </div>
                     <p className="mt-1.5 text-[12px] text-[#737373]">
                       Update auth token for Turso. Leave empty to preserve existing credentials.
+                    </p>
+                  </div>
+                )}
+
+                {(editEngine.toLowerCase() === 'postgresql' || editEngine.toLowerCase() === 'mysql') && (
+                  <div>
+                    <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">
+                      SSL mode
+                    </label>
+                    <CustomSelect
+                      value={editSslMode}
+                      options={SSL_MODE_OPTIONS}
+                      onChange={(val) => {
+                        const mode = val as SslMode;
+                        setEditSslMode(mode);
+                        setEditUrl((prev) => applySslModeToUrl(prev, editEngine, mode));
+                        setManageTestResult(null);
+                        setManageError(null);
+                      }}
+                      menuWidth="w-full"
+                    />
+                    <p className="mt-1.5 text-[12px] text-[#737373]">
+                      Use &quot;Require&quot; for hosted databases such as RDS, Supabase or Neon.
                     </p>
                   </div>
                 )}
