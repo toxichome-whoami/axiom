@@ -98,11 +98,22 @@ Axiom uses a minimal 17-line `build.zig` designed exclusively to bootstrap the e
 * **Node.js**: `18+` (only needed if building or modifying the Web UI frontend)
 
 ### 2. Clone and Build
+
+#### Option A: Standard Cargo (Recommended)
 ```bash
 git clone https://github.com/toxichome-whoami/axiom.git
 cd axiom
 
-# Build the release binary in one command:
+# 1. Compile the administrative Web UI bundle
+npm --prefix ui run build
+
+# 2. Compile Axiom with maximum release optimizations (LTO, mimalloc, stripped)
+cargo build --release
+```
+
+#### Option B: Standalone Self-Bootstrapping Zig Build
+```bash
+# Compiles runner and produces release binary in one step:
 zig build
 ```
 
@@ -171,4 +182,4 @@ cargo test --workspace
 
 * **`.tools/`**: Contains the compiled shims (`gcc.exe`, `ar.exe`, `cp.exe`, etc.). This directory is strictly local and ignored by Git ([.gitignore](../.gitignore)).
 * **Auto-Recovery**: If `.tools/` is ever deleted or cleaned, running any `zig build` command will **automatically detect its absence and recreate it on-the-fly** without manual intervention.
-* **`.cargo/`**: Local configuration created by the setup runner mapping `linker = "rust-lld"` and `CC = "gcc.exe"`. Ignored by Git to preserve user environment isolation.
+* **`.cargo/`**: Local configuration created by the setup runner mapping `linker = "rust-lld"`, `CC = "gcc.exe"`, and compiler hygiene flags (`CFLAGS = "-fno-sanitize=all -Wno-date-time -Wno-error=date-time"`). Ignored by Git to preserve user environment isolation.

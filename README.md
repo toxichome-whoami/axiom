@@ -1035,9 +1035,9 @@ Every performance claim is backed by reproducible Criterion micro-benchmarks in 
 | **Zero-Lock Snapshot Read** | `< 50 ns` | **12.6 ns** | `metadata/snapshot_read_atomic` |
 | **RBAC Wildcard Union Match** | `< 100 ns` | **38.9 ns** | `policy/wildcard_union_match` |
 | **RBAC Exact Match Evaluation** | `< 100 ns` | **56.0 ns** | `policy/allow_single_exact_match` |
-| **AST Parse Cache Hot Hit** | `< 200 ns` | **75.5 ns** | `database/ast_cache_lookup_hot` |
-| **Rate Limit Check (Dual IP+Key)** | `< 200 ns` | **88.5 ns** | `cache/check_rate_limit_contended` |
-| **L1 RAM Cache GET (Hot Hit)** | `< 1 µs` | **123.9 ns** | `cache/l1_get_hot_hit` |
+| **AST Parse Cache Hot Hit** | `< 200 ns` | **77.9 ns** | `database/ast_cache_lookup_hot` |
+| **Rate Limit Check (Dual IP+Key)** | `< 200 ns` | **89.0 ns** | `cache/check_rate_limit_contended` |
+| **L1 RAM Cache GET (Hot Hit)** | `< 1 µs` | **126.0 ns** | `cache/l1_get_hot_hit` |
 | **ArcSwap Auth Key Verification** | `< 5 µs` | **555.8 ns** | `middleware/auth_snapshot_valid_hit` |
 | **Capability Ticket Verification** | `< 2 µs` | **586.1 ns** | `blob/ticket_verification_valid` |
 | **JSON Filter Builder (Multi-field)** | `< 1 µs` | **638.9 ns** | `database/filter_build_simple` |

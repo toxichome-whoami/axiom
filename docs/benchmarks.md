@@ -9,7 +9,7 @@ This document provides empirical, reproducible performance benchmarks for the Ax
 | Attribute | Specification |
 |---|---|
 | **CPU** | AMD Ryzen 7 5700X (8 Cores, 16 Logical Processors @ 3.4 GHz base / 4.6 GHz boost) |
-| **Memory** | 32 GB DDR4 @ 3200 MT/s |
+| **Memory** | 32 GB DDR4 @ 3600 MT/s (XMP 2.0 Profile 1, Dual-Channel Slot A2/B2) |
 | **Operating System** | Microsoft Windows 11 Pro (x86_64) |
 | **Rust Compiler** | `rustc 1.99.0 (b940084d7 2026-09-28)` |
 | **Target Toolchain** | `x86_64-pc-windows-gnu` |
@@ -71,11 +71,11 @@ Axiom uses a unified in-memory L1 cache (`DashMap` + LRU) and atomic token count
 
 | Benchmark Function | Target | Measured Time (p50) | 95% Confidence Interval | Notes |
 |---|---|---|---|---|
-| `cache/l1_get_miss` | `< 100 ns` | **69.6 ns** | `[69.23 ns ... 69.95 ns]` | Immediate non-allocating cache miss return |
-| `cache/check_rate_limit_contended` | `< 200 ns` | **88.5 ns** | `[88.39 ns ... 88.59 ns]` | Dual IP + Key window check & penalty calculation |
-| `cache/l1_get_hot_hit` | `< 1 µs` | **123.9 ns** | `[123.60 ns ... 124.32 ns]` | L1 hot query cache hit (zero disk / DB access) |
-| `cache/sweep_expired` | `< 1 µs` | **261.3 ns** | `[260.70 ns ... 262.06 ns]` | Min-heap TTL expiration cycle |
-| `cache/l1_set_memory_only` | `< 1 µs` | **404.8 ns** | `[404.67 ns ... 404.94 ns]` | Memory-only entry insert and LRU queue update |
+| `cache/l1_get_miss` | `< 100 ns` | **70.1 ns** | `[69.91 ns ... 70.34 ns]` | Immediate non-allocating cache miss return |
+| `cache/check_rate_limit_contended` | `< 200 ns` | **89.0 ns** | `[88.16 ns ... 90.39 ns]` | Dual IP + Key window check & penalty calculation |
+| `cache/l1_get_hot_hit` | `< 1 µs` | **126.0 ns** | `[125.20 ns ... 127.20 ns]` | L1 hot query cache hit (zero disk / DB access) |
+| `cache/sweep_expired` | `< 1 µs` | **266.7 ns** | `[265.25 ns ... 268.72 ns]` | Min-heap TTL expiration cycle |
+| `cache/l1_set_memory_only` | `< 1 µs` | **416.8 ns** | `[414.35 ns ... 420.36 ns]` | Memory-only entry insert and LRU queue update |
 
 ### Group D: Authentication & Middleware
 
@@ -92,10 +92,10 @@ SQL statements are validated and parsed into Abstract Syntax Trees using `sqlpar
 
 | Benchmark Function | Target | Measured Time (p50) | 95% Confidence Interval | Notes |
 |---|---|---|---|---|
-| `database/ast_cache_lookup_hot` | `< 200 ns` | **75.5 ns** | `[75.25 ns ... 75.92 ns]` | Pre-parsed AST metadata cache hit |
+| `database/ast_cache_lookup_hot` | `< 200 ns` | **77.9 ns** | `[76.54 ns ... 79.74 ns]` | Pre-parsed AST metadata cache hit |
 | `database/filter_build_simple` | `< 1 µs` | **638.9 ns** | `[617.69 ns ... 664.81 ns]` | Multi-field JSON filter to SQL parameterized clause |
 | `database/filter_build_multi_clause` | `< 2 µs` | **936.6 ns** | `[931.75 ns ... 943.57 ns]` | 5-operator mixed filter (`$eq`, `$ne`, `$gt`, `$lte`, `$like`) |
-| `database/ast_uncached_parse` | `< 20 µs` | **10.6 µs** | `[10.53 µs ... 10.74 µs]` | Cold SQL parse with dialect AST verification |
+| `database/ast_uncached_parse` | `< 20 µs` | **11.2 µs** | `[10.87 µs ... 11.71 µs]` | Cold SQL parse with dialect AST verification |
 | `database/filter_build_in_500` | `< 50 µs` | **20.7 µs** | `[20.25 µs ... 21.27 µs]` | 500-element `$in` array placeholder generation |
 
 ### Group F: Zero-Lock Metadata Snapshots
