@@ -488,6 +488,20 @@ pub fn main() !void {
         if (r_ins.status != 200) return error.InsertRowsFailed;
         logPass("POST /api/v1/db/testdb/products/rows inserted 3 rows (200 OK)");
 
+        // 4b. Create Empty Table and verify default-value row insertion
+        const create_empty_sql =
+            \\{"query":"CREATE TABLE empty_test (id INTEGER PRIMARY KEY AUTOINCREMENT, note TEXT DEFAULT 'auto_created');"}
+        ;
+        const r_cet = try executeHttp(allocator, "POST", "http://127.0.0.1:4598/api/v1/db/testdb/query", create_empty_sql, admin_hdr, null);
+        if (r_cet.status != 200) return error.CreateTableFailed;
+
+        const ins_def_payload =
+            \\{"row":{}}
+        ;
+        const r_ins_def = try executeHttp(allocator, "POST", "http://127.0.0.1:4598/api/v1/db/testdb/empty_test/rows", ins_def_payload, admin_hdr, null);
+        if (r_ins_def.status != 200) return error.InsertRowsFailed;
+        logPass("POST /api/v1/db/testdb/empty_test/rows inserted default row on empty table (200 OK)");
+
         // 5. Fetch Rows
         const r_fch = try executeHttp(allocator, "GET", "http://127.0.0.1:4598/api/v1/db/testdb/products/rows?limit=10", null, admin_hdr, null);
         if (r_fch.status != 200) return error.FetchRowsFailed;

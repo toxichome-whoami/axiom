@@ -1423,34 +1423,36 @@ pub async fn insert_rows(
         .collect::<Vec<_>>()
         .join(", ");
 
-    if column_pairs.is_empty() || cols_str.is_empty() {
-        return Err(AxiomError::new(
-            "BAD_REQUEST",
-            "No valid column fields provided for insert",
-            StatusCode::BAD_REQUEST,
-        ));
-    }
-
-    let mut all_params = Vec::new();
-    let mut values_strings = Vec::new();
-
-    for row in &rows_to_insert {
-        let mut row_placeholders = Vec::new();
-        for (raw_k, _) in &column_pairs {
-            let val = row.get(*raw_k).unwrap_or(&Value::Null);
-            all_params.push(val.clone());
-            row_placeholders.push("?");
-        }
-        values_strings.push(format!("({})", row_placeholders.join(", ")));
-    }
-
     let quoted_table = crate::database::filter_builder::quote_ident_dialect(&table_name, dialect);
-    let sql = format!(
-        "INSERT INTO {} ({}) VALUES {}",
-        quoted_table,
-        cols_str,
-        values_strings.join(", ")
-    );
+
+    let (sql, all_params) = if column_pairs.is_empty() || cols_str.is_empty() {
+        let sql = match dialect {
+            "mysql" => format!("INSERT INTO {} () VALUES ()", quoted_table),
+            _ => format!("INSERT INTO {} DEFAULT VALUES", quoted_table),
+        };
+        (sql, Vec::new())
+    } else {
+        let mut all_params = Vec::new();
+        let mut values_strings = Vec::new();
+
+        for row in &rows_to_insert {
+            let mut row_placeholders = Vec::new();
+            for (raw_k, _) in &column_pairs {
+                let val = row.get(*raw_k).unwrap_or(&Value::Null);
+                all_params.push(val.clone());
+                row_placeholders.push("?");
+            }
+            values_strings.push(format!("({})", row_placeholders.join(", ")));
+        }
+
+        let sql = format!(
+            "INSERT INTO {} ({}) VALUES {}",
+            quoted_table,
+            cols_str,
+            values_strings.join(", ")
+        );
+        (sql, all_params)
+    };
 
     let (result, _) =
         QueryExecutionPipeline::run_query(&db_name, &sql, all_params, &auth, &db_cfg).await?;
