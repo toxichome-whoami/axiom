@@ -761,9 +761,9 @@ Axiom includes a built-in, zero-database peer-to-peer Cluster Mesh. Clustered no
 
 ```mermaid
 flowchart LR
-    A["Node A (us-east)<br/>Moniker: primary-01"] <-->|HMAC-SHA256 Handshake<br/>& Heartbeat Ping| B["Node B (eu-central)<br/>Moniker: backup-01"]
-    A -.->|Instant Ban Broadcast<br/>(/internal/v1/cluster/event)| B
-    B -.->|Cluster Mesh Sync| A
+    A["Node A (us-east)<br/>Moniker: primary-01"] <-->|"HMAC-SHA256 Handshake & Heartbeat Ping"| B["Node B (eu-central)<br/>Moniker: backup-01"]
+    A -.->|"Instant Ban Broadcast (/internal/v1/cluster/event)"| B
+    B -.->|"Cluster Mesh Sync"| A
 ```
 
 ### Key Architectural Invariants
