@@ -249,7 +249,9 @@ pub async fn waf_middleware(req: Request, next: Next) -> Result<Response, AxiomE
         let is_ui_path = path.starts_with("/system") || path == "/favicon.ico";
         if !is_ui_path {
             let normalized = normalize_for_sqli(&combined);
-            if contains_sqli(&normalized) || contains_sqli(&normalize_for_sqli(&path.to_lowercase())) {
+            if contains_sqli(&normalized)
+                || contains_sqli(&normalize_for_sqli(&path.to_lowercase()))
+            {
                 return Err(AxiomError::new(
                     "WAF_SQL_INJECTION",
                     "SQL injection attempt in URL detected",
@@ -279,7 +281,11 @@ mod tests {
     async fn test_waf_asset_double_hyphen_allowed() {
         let app = build_waf_test_app();
         let res = app
-            .oneshot(Request::get("/system/assets/ConfirmDialog-B--_7dTm.js").body(Body::empty()).unwrap())
+            .oneshot(
+                Request::get("/system/assets/ConfirmDialog-B--_7dTm.js")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
             .await
             .unwrap();
         assert_eq!(res.status(), StatusCode::OK);
