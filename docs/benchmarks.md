@@ -135,10 +135,10 @@ These benchmarks measure complete HTTP request/response latency through Axum rou
 | Metric / Feature | Axiom Gateway | FaucetDB | PostgREST | Hasura v2/v3 | Supabase |
 |---|---|---|---|---|---|
 | **Language & Runtime** | Native Rust (single binary) | Go | Haskell | Haskell / Go | Multi-container Docker |
-| **Idle Memory (RSS)** | **< 10 MB** (Production) | ~ 35 MB | ~ 30 MB | > 150 MB | > 1.2 GB |
-| **L1 Cache Retrieval** | **123.9 ns** (In-Memory LRU) | ~ 2.5 µs | N/A (External cache) | In-memory query plan | Redis container |
+| **Idle Memory (RSS)** | **~21 MB** (Full daemon with all 7 engines & blob LSM) / **< 10 MB** (Core minimal) | ~ 35 MB | ~ 30 MB | > 150 MB | > 1.2 GB |
+| **L1 Cache Retrieval** | **126.0 ns** (In-Memory LRU) | ~ 2.5 µs | N/A (External cache) | In-memory query plan | Redis container |
 | **Auth Verification** | **555.8 ns** (ArcSwap + BLAKE3) | ~ 4.2 µs | JWT DB role switch | Webhook / JWT | GoTrue container |
-| **SQL Injection Defense** | **Dialect AST Parsing** (75.5 ns hot / 10.6 µs cold) | Regex pattern matching | Schema reflection | GraphQL compiler | Database RLS policies |
+| **SQL Injection Defense** | **Dialect AST Parsing** (77.9 ns hot / 11.2 µs cold) | Regex pattern matching | Schema reflection | GraphQL compiler | Database RLS policies |
 | **Blob / Object Storage** | **Built-in** (BLAKE3 dedup + LSM) | None | None | None | MinIO / S3 daemon |
 | **Pre-signed Tickets** | **Built-in** (586 ns verification) | None | None | None | S3 presigned URLs |
 | **AI Agent Support** | **Built-in MCP Server** (`/mcp/v1`) | Built-in (`/mcp`) | None | None | None |

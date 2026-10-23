@@ -1044,9 +1044,9 @@ Every performance claim is backed by reproducible Criterion micro-benchmarks in 
 | **Capability Ticket Generation** | `< 2 µs` | **745.0 ns** | `blob/ticket_generation` |
 | **BLAKE3 64 KB Chunk Hash** | `< 15 µs` | **10.88 µs** | `blob/blake3_chunk_hash_64kb` |
 | **Full Axum Router Dispatch** | `< 50 µs` | **14.6 µs** | `http_pipeline/get_ready_endpoint` |
-| **Cold SQL AST Parse (Dialect)** | `< 20 µs` | **10.6 µs** | `database/ast_uncached_parse` |
-| **Stripped Binary Size** | `< 15 MB` | **< 15 MB** | LTO and stripped release build |
-| **Idle Memory Footprint (RSS)** | `< 10 MB` | **< 10 MB** | Release daemon with mimalloc |
+| **Cold SQL AST Parse (Dialect)** | `< 20 µs` | **11.2 µs** | `database/ast_uncached_parse` |
+| **Release Archive / Binary Size** | `< 15 MB` | **9.5 MB** (archive) / **22.5 MB** (standalone exe) | Release build with embedded UI & 7 engines |
+| **Idle Memory Footprint (RSS)** | `< 30 MB` | **21.5 MB** (all 7 engines & blob active) / **< 10 MB** (core minimal) | Release daemon with mimalloc |
 
 
 
