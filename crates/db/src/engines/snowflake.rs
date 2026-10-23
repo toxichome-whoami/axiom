@@ -105,10 +105,9 @@ impl SnowflakeDatabaseEngine {
             .map_err(|e| EngineError::Execution(format!("Snowflake request failed: {}", e)))?;
 
         let status = resp.status();
-        let resp_json: Value = resp
-            .json()
-            .await
-            .map_err(|e| EngineError::Execution(format!("Invalid Snowflake response JSON: {}", e)))?;
+        let resp_json: Value = resp.json().await.map_err(|e| {
+            EngineError::Execution(format!("Invalid Snowflake response JSON: {}", e))
+        })?;
 
         if !status.is_success() {
             let message = resp_json
@@ -128,7 +127,11 @@ impl SnowflakeDatabaseEngine {
             .and_then(|rt| rt.as_array())
             .map(|arr| {
                 arr.iter()
-                    .filter_map(|col| col.get("name").and_then(|n| n.as_str()).map(|s| s.to_string()))
+                    .filter_map(|col| {
+                        col.get("name")
+                            .and_then(|n| n.as_str())
+                            .map(|s| s.to_string())
+                    })
                     .collect()
             })
             .unwrap_or_default();
@@ -195,11 +198,7 @@ impl DatabaseEngine for SnowflakeDatabaseEngine {
         }
 
         // Account is typically the first domain segment or the full host
-        self.account = host
-            .split('.')
-            .next()
-            .unwrap_or(host)
-            .to_string();
+        self.account = host.split('.').next().unwrap_or(host).to_string();
 
         self.endpoint = format!("https://{}", host);
 
@@ -429,7 +428,10 @@ impl DatabaseEngine for SnowflakeDatabaseEngine {
         let escaped_col = format!("\"{}\"", col_name_clean.replace('"', "\"\""));
         let type_def = &req.data_type;
 
-        let mut sql = format!("ALTER TABLE {} ADD COLUMN {} {}", escaped_table, escaped_col, type_def);
+        let mut sql = format!(
+            "ALTER TABLE {} ADD COLUMN {} {}",
+            escaped_table, escaped_col, type_def
+        );
         if !req.nullable {
             sql.push_str(" NOT NULL");
         }

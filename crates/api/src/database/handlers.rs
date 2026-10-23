@@ -2319,11 +2319,19 @@ mod tests {
 
         let sf_sql = "SELECT id, payload:user:name::string FROM events WHERE id > 10";
         let sf_res = parse_sql_with_dialect("snowflake", sf_sql);
-        assert!(sf_res.is_ok(), "Snowflake SQL failed to parse: {:?}", sf_res.err());
+        assert!(
+            sf_res.is_ok(),
+            "Snowflake SQL failed to parse: {:?}",
+            sf_res.err()
+        );
 
         let ora_sql = "SELECT table_name FROM user_tables WHERE table_name = 'TEST'";
         let ora_res = parse_sql_with_dialect("oracle", ora_sql);
-        assert!(ora_res.is_ok(), "Oracle SQL failed to parse: {:?}", ora_res.err());
+        assert!(
+            ora_res.is_ok(),
+            "Oracle SQL failed to parse: {:?}",
+            ora_res.err()
+        );
     }
 
     #[test]

@@ -54,21 +54,24 @@ impl OracleDatabaseEngine {
     }
 
     /// Internal execution dispatcher for ORDS / Direct queries.
-    async fn execute_query(&self, sql: &str, _params: &[Value]) -> Result<QueryResult, EngineError> {
+    async fn execute_query(
+        &self,
+        sql: &str,
+        _params: &[Value],
+    ) -> Result<QueryResult, EngineError> {
         match &self.mode {
-            Some(OracleConnectionMode::OrdsHttp { endpoint, client, .. }) => {
+            Some(OracleConnectionMode::OrdsHttp {
+                endpoint, client, ..
+            }) => {
                 let url = format!("{}/_/sql", endpoint);
                 let body = json!({
                     "statementText": sql,
                     "limit": DEFAULT_MAX_QUERY_ROWS,
                 });
 
-                let resp = client
-                    .post(&url)
-                    .json(&body)
-                    .send()
-                    .await
-                    .map_err(|e| EngineError::Execution(format!("ORDS SQL execution error: {}", e)))?;
+                let resp = client.post(&url).json(&body).send().await.map_err(|e| {
+                    EngineError::Execution(format!("ORDS SQL execution error: {}", e))
+                })?;
 
                 let status = resp.status();
                 let resp_json: Value = resp
@@ -115,8 +118,15 @@ impl OracleDatabaseEngine {
                     TcpStream::connect(&addr),
                 )
                 .await
-                .map_err(|_| EngineError::Connection(format!("Oracle connection to {} timed out", addr)))?
-                .map_err(|e| EngineError::Connection(format!("Failed to connect to Oracle at {}: {}", addr, e)))?;
+                .map_err(|_| {
+                    EngineError::Connection(format!("Oracle connection to {} timed out", addr))
+                })?
+                .map_err(|e| {
+                    EngineError::Connection(format!(
+                        "Failed to connect to Oracle at {}: {}",
+                        addr, e
+                    ))
+                })?;
 
                 // Synthetic QueryResult for schema/catalog probes when operating in TCP mode
                 let mut columns = Vec::new();
@@ -126,7 +136,8 @@ impl OracleDatabaseEngine {
                 if upper_sql.contains("USER_TABLES") || upper_sql.contains("ALL_TABLES") {
                     columns.push("TABLE_NAME".to_string());
                     columns.push("TABLE_TYPE".to_string());
-                } else if upper_sql.contains("SELECT 1 FROM DUAL") || upper_sql.contains("SELECT 1") {
+                } else if upper_sql.contains("SELECT 1 FROM DUAL") || upper_sql.contains("SELECT 1")
+                {
                     columns.push("1".to_string());
                     rows.push(json!({ "1": 1 }));
                 }
@@ -140,7 +151,9 @@ impl OracleDatabaseEngine {
                     next_cursor: None,
                 })
             }
-            None => Err(EngineError::Connection("Oracle engine is not connected".into())),
+            None => Err(EngineError::Connection(
+                "Oracle engine is not connected".into(),
+            )),
         }
     }
 }
@@ -203,7 +216,9 @@ impl DatabaseEngine for OracleDatabaseEngine {
             let client = Client::builder()
                 .default_headers(headers)
                 .tcp_nodelay(true)
-                .timeout(Duration::from_secs(self.config.connection_timeout.clamp(1, 60) as u64))
+                .timeout(Duration::from_secs(
+                    self.config.connection_timeout.clamp(1, 60) as u64,
+                ))
                 .build()
                 .map_err(|e| EngineError::Connection(e.to_string()))?;
 
@@ -220,8 +235,9 @@ impl DatabaseEngine for OracleDatabaseEngine {
                 .unwrap_or(raw_url);
 
             let normalized = format!("http://{}", stripped);
-            let parsed = Url::parse(&normalized)
-                .map_err(|e| EngineError::Connection(format!("Invalid Oracle connection string: {}", e)))?;
+            let parsed = Url::parse(&normalized).map_err(|e| {
+                EngineError::Connection(format!("Invalid Oracle connection string: {}", e))
+            })?;
 
             let host = parsed.host_str().unwrap_or("localhost").to_string();
             let port = parsed.port().unwrap_or(1521);
@@ -240,8 +256,15 @@ impl DatabaseEngine for OracleDatabaseEngine {
                 TcpStream::connect(&addr),
             )
             .await
-            .map_err(|_| EngineError::Connection(format!("Connection to Oracle listener at {} timed out", addr)))?
-            .map_err(|e| EngineError::Connection(format!("Cannot reach Oracle listener at {}: {}", addr, e)))?;
+            .map_err(|_| {
+                EngineError::Connection(format!(
+                    "Connection to Oracle listener at {} timed out",
+                    addr
+                ))
+            })?
+            .map_err(|e| {
+                EngineError::Connection(format!("Cannot reach Oracle listener at {}: {}", addr, e))
+            })?;
 
             self.mode = Some(OracleConnectionMode::DirectTcp {
                 host,
@@ -464,7 +487,10 @@ impl DatabaseEngine for OracleDatabaseEngine {
         let escaped_col = format!("\"{}\"", col_name_clean.replace('"', "\"\""));
         let type_def = &req.data_type;
 
-        let mut sql = format!("ALTER TABLE {} ADD ({} {}", escaped_table, escaped_col, type_def);
+        let mut sql = format!(
+            "ALTER TABLE {} ADD ({} {}",
+            escaped_table, escaped_col, type_def
+        );
         if let Some(default_val) = &req.default_value {
             if !default_val.trim().is_empty() {
                 sql.push_str(&format!(" DEFAULT {}", default_val));
