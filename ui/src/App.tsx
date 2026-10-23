@@ -114,12 +114,14 @@ export function App() {
     const isSetup = window.location.pathname.includes('/setup');
     return (
       <>
-        <Suspense fallback={<PageFallback />}>
-          <AuthPage
-            onLoginSuccess={handleLoginSuccess}
-            initialMode={isSetup ? 'setup' : 'login'}
-          />
-        </Suspense>
+        <ErrorBoundary>
+          <Suspense fallback={<PageFallback />}>
+            <AuthPage
+              onLoginSuccess={handleLoginSuccess}
+              initialMode={isSetup ? 'setup' : 'login'}
+            />
+          </Suspense>
+        </ErrorBoundary>
         <GlobalAlertDialog />
       </>
     );

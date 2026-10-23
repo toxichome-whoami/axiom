@@ -98,7 +98,10 @@ fn contains_sqli(normalized: &str) -> bool {
         "delete ",
         "insert ",
         "update ",
-        "--",
+        "-- ",
+        "--\t",
+        "--\n",
+        "--\r",
         ";",
         "/*",
         "information_schema",
@@ -115,7 +118,13 @@ fn contains_sqli(normalized: &str) -> bool {
         "\" or \"",
         "\" and \"",
     ];
-    KEYWORDS.iter().any(|k| normalized.contains(k))
+    if KEYWORDS.iter().any(|k| normalized.contains(k)) {
+        return true;
+    }
+    if normalized.ends_with("--") || normalized.contains("--;") {
+        return true;
+    }
+    false
 }
 
 /// Intercepts incoming HTTP requests to block protocol-level attacks before route matching.
@@ -236,13 +245,17 @@ pub async fn waf_middleware(req: Request, next: Next) -> Result<Response, AxiomE
         }
 
         // SQL injection attempt in URL path parameters (defense-in-depth; body SQL is AST firewall job)
-        let normalized = normalize_for_sqli(&combined);
-        if contains_sqli(&normalized) || contains_sqli(&normalize_for_sqli(&path.to_lowercase())) {
-            return Err(AxiomError::new(
-                "WAF_SQL_INJECTION",
-                "SQL injection attempt in URL detected",
-                axum::http::StatusCode::BAD_REQUEST,
-            ));
+        // Static assets and UI routes (/system, /favicon.ico) do not execute SQL queries
+        let is_ui_path = path.starts_with("/system") || path == "/favicon.ico";
+        if !is_ui_path {
+            let normalized = normalize_for_sqli(&combined);
+            if contains_sqli(&normalized) || contains_sqli(&normalize_for_sqli(&path.to_lowercase())) {
+                return Err(AxiomError::new(
+                    "WAF_SQL_INJECTION",
+                    "SQL injection attempt in URL detected",
+                    axum::http::StatusCode::BAD_REQUEST,
+                ));
+            }
         }
     }
 
@@ -258,7 +271,18 @@ mod tests {
     fn build_waf_test_app() -> Router {
         Router::new()
             .route("/test", get(|| async { "ok" }))
+            .route("/system/assets/*path", get(|| async { "ok" }))
             .layer(axum::middleware::from_fn(waf_middleware))
+    }
+
+    #[tokio::test]
+    async fn test_waf_asset_double_hyphen_allowed() {
+        let app = build_waf_test_app();
+        let res = app
+            .oneshot(Request::get("/system/assets/ConfirmDialog-B--_7dTm.js").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
     }
 
     #[tokio::test]
