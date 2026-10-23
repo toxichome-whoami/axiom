@@ -27,7 +27,6 @@ import {
   Database,
   HardDrive,
   Activity,
-  CheckCircle2,
 } from 'lucide-react';
 import { api, SystemStatusData, HealthData, UserRecordApi } from '../api/client';
 
@@ -585,10 +584,6 @@ export function Settings() {
                   <h2 className="text-[16px] font-semibold text-white tracking-tight">Axiom Gateway</h2>
                   <span className="text-[11px] font-mono px-2 py-0.5 rounded-[4px] bg-[#161616] text-[#8c8c8c] border border-[#2a2a2a]">
                     v{statusData?.version || '0.1.13'}
-                  </span>
-                  <span className="inline-flex items-center gap-1 text-[11px] text-[#34d399] bg-emerald-950/40 border border-emerald-800/40 px-2 py-0.5 rounded-[4px]">
-                    <CheckCircle2 className="w-3 h-3" />
-                    Production Ready
                   </span>
                 </div>
                 <p className="text-[13px] text-[#8c8c8c] font-normal leading-relaxed">
