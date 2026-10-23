@@ -6,7 +6,7 @@
 Put a secure REST API & MCP layer between your applications and SQL databases.  
 Centralize database access, authentication, permissions, and connection pooling without embedding a database driver in every application.
 
-[![Version](https://img.shields.io/badge/version-0.1.13-111827.svg?style=flat-square)](https://github.com/toxichome-whoami/axiom/releases)
+[![Version](https://img.shields.io/badge/version-0.1.14-111827.svg?style=flat-square)](https://github.com/toxichome-whoami/axiom/releases)
 [![Rust](https://img.shields.io/badge/rust-1.88%2B-b7410e.svg?style=flat-square&logo=rust&logoColor=white)](https://www.rust-lang.org)
 [![License: MIT](https://img.shields.io/badge/license-MIT-111827.svg?style=flat-square)](./LICENSE)
 [![Platforms](https://img.shields.io/badge/platform-linux%20%C2%B7%20macos%20%C2%B7%20windows-111827.svg?style=flat-square)](https://github.com/toxichome-whoami/axiom/releases)
@@ -143,18 +143,18 @@ curl -fsSL https://raw.githubusercontent.com/toxichome-whoami/axiom/main/install
 irm https://raw.githubusercontent.com/toxichome-whoami/axiom/main/install.ps1 | iex
 ```
 
-### 2. Pre-built Binaries (v0.1.13)
+### 2. Pre-built Binaries (v0.1.14)
 
 Download standalone archives directly with zero external runtime dependencies:
 
 | Platform | Architecture | Format | Download |
 |---|---|---|---|
-| **Linux** | `x86_64` (amd64) | `.tar.gz` | [axiom_v0.1.13_linux_amd64.tar.gz](https://github.com/toxichome-whoami/axiom/releases/download/v0.1.13/axiom_v0.1.13_linux_amd64.tar.gz) |
-| **Linux** | `aarch64` (arm64) | `.tar.gz` | [axiom_v0.1.13_linux_arm64.tar.gz](https://github.com/toxichome-whoami/axiom/releases/download/v0.1.13/axiom_v0.1.13_linux_arm64.tar.gz) |
-| **macOS** | Apple Silicon (`arm64`) | `.tar.gz` | [axiom_v0.1.13_darwin_arm64.tar.gz](https://github.com/toxichome-whoami/axiom/releases/download/v0.1.13/axiom_v0.1.13_darwin_arm64.tar.gz) |
-| **macOS** | Intel (`x86_64`) | `.tar.gz` | [axiom_v0.1.13_darwin_amd64.tar.gz](https://github.com/toxichome-whoami/axiom/releases/download/v0.1.13/axiom_v0.1.13_darwin_amd64.tar.gz) |
-| **Windows** | `x86_64` (amd64) | `.zip` | [axiom_v0.1.13_windows_amd64.zip](https://github.com/toxichome-whoami/axiom/releases/download/v0.1.13/axiom_v0.1.13_windows_amd64.zip) |
-| **Windows** | `aarch64` (arm64) | `.zip` | [axiom_v0.1.13_windows_arm64.zip](https://github.com/toxichome-whoami/axiom/releases/download/v0.1.13/axiom_v0.1.13_windows_arm64.zip) |
+| **Linux** | `x86_64` (amd64) | `.tar.gz` | [axiom_v0.1.14_linux_amd64.tar.gz](https://github.com/toxichome-whoami/axiom/releases/download/v0.1.14/axiom_v0.1.14_linux_amd64.tar.gz) |
+| **Linux** | `aarch64` (arm64) | `.tar.gz` | [axiom_v0.1.14_linux_arm64.tar.gz](https://github.com/toxichome-whoami/axiom/releases/download/v0.1.14/axiom_v0.1.14_linux_arm64.tar.gz) |
+| **macOS** | Apple Silicon (`arm64`) | `.tar.gz` | [axiom_v0.1.14_darwin_arm64.tar.gz](https://github.com/toxichome-whoami/axiom/releases/download/v0.1.14/axiom_v0.1.14_darwin_arm64.tar.gz) |
+| **macOS** | Intel (`x86_64`) | `.tar.gz` | [axiom_v0.1.14_darwin_amd64.tar.gz](https://github.com/toxichome-whoami/axiom/releases/download/v0.1.14/axiom_v0.1.14_darwin_amd64.tar.gz) |
+| **Windows** | `x86_64` (amd64) | `.zip` | [axiom_v0.1.14_windows_amd64.zip](https://github.com/toxichome-whoami/axiom/releases/download/v0.1.14/axiom_v0.1.14_windows_amd64.zip) |
+| **Windows** | `aarch64` (arm64) | `.zip` | [axiom_v0.1.14_windows_arm64.zip](https://github.com/toxichome-whoami/axiom/releases/download/v0.1.14/axiom_v0.1.14_windows_arm64.zip) |
 
 ### 3. Docker
 

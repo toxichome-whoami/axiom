@@ -85,7 +85,7 @@ export function TableSidebar({
   return (
     <aside className="w-full lg:w-64 shrink-0 flex flex-col bg-[#0a0a0a] border-b lg:border-b-0 lg:border-r border-[#222222] overflow-hidden font-sans">
       {/* Database Dropdown Selector Header (h-[54px] matching StoragePage) */}
-      <div className="h-[54px] shrink-0 px-3 border-b border-[#222222] flex items-center justify-between gap-2 relative">
+      <div className="h-[54px] shrink-0 px-3 border-b border-[#222222] flex items-center justify-between gap-2 relative z-30">
         <div className="relative flex-1 min-w-0" ref={dbDropdownRef}>
           <button
             type="button"

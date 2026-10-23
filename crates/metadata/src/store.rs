@@ -128,6 +128,7 @@ impl MetadataStore {
             "CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 username TEXT UNIQUE NOT NULL,
+                email TEXT UNIQUE,
                 password_hash TEXT NOT NULL,
                 created_at INTEGER NOT NULL
             );",
@@ -234,6 +235,14 @@ impl MetadataStore {
             .execute("ALTER TABLE permissions ADD COLUMN rls_filter TEXT", ())
             .await;
 
+        // Idempotently ensure email column and unique index exist for preexisting databases
+        let _ = conn
+            .execute("ALTER TABLE users ADD COLUMN email TEXT", ())
+            .await;
+        let _ = conn
+            .execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email) WHERE email IS NOT NULL", ())
+            .await;
+
         Ok(())
     }
 
@@ -321,7 +330,8 @@ impl MetadataStore {
         while let Ok(Some(row)) = key_rows.next().await {
             let name: String = row.get(0).map_err(|e| e.to_string())?;
             let hash_blob: Vec<u8> = row.get(1).map_err(|e| e.to_string())?;
-            let role_name: Option<String> = row.get(2).ok();
+            let role_name: Option<String> =
+                row.get(2).ok().filter(|s: &String| !s.trim().is_empty());
             let rate_limit: i64 = row.get(3).unwrap_or(0);
             let expires_at: Option<i64> = row.get(4).ok();
 
@@ -412,13 +422,15 @@ impl MetadataStore {
             .unwrap_or_default()
             .as_secs() as i64;
 
+        let clean_role: Option<&str> = role_name.map(|s| s.trim()).filter(|s| !s.is_empty());
+
         conn.execute(
             "INSERT INTO api_keys (name, secret_hash, role_name, rate_limit, expires_at, created_at) \
              VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             libsql::params![
                 name,
                 hash_blob,
-                role_name.unwrap_or(""),
+                clean_role,
                 rate_limit,
                 expires_at,
                 now_unix
@@ -434,7 +446,7 @@ impl MetadataStore {
                 libsql::params![
                     now_unix,
                     name,
-                    format!("role={}", role_name.unwrap_or("none"))
+                    format!("role={}", clean_role.unwrap_or("none"))
                 ],
             )
             .await;
@@ -540,7 +552,8 @@ impl MetadataStore {
         let mut keys = Vec::new();
         while let Ok(Some(row)) = rows.next().await {
             let name: String = row.get(0).map_err(|e| e.to_string())?;
-            let role_name: Option<String> = row.get(1).ok();
+            let role_name: Option<String> =
+                row.get(1).ok().filter(|s: &String| !s.trim().is_empty());
             let rate_limit: i64 = row.get(2).unwrap_or(0);
             let expires_at: Option<i64> = row.get(3).ok();
             let created_at: i64 = row.get(4).unwrap_or(0);
@@ -1024,8 +1037,21 @@ impl MetadataStore {
 
     // ─── Human User (Admin) Management ─────────────────────────────────────
 
-    /// Creates the initial admin user using Argon2id password hashing.
-    pub async fn create_user(username: &str, password: &str) -> Result<(), String> {
+    /// Creates an admin user with optional email using Argon2id password hashing.
+    pub async fn create_user(
+        username: &str,
+        email: Option<&str>,
+        password: &str,
+    ) -> Result<(), String> {
+        let clean_username = username.trim();
+        if clean_username.is_empty() {
+            return Err("Username cannot be empty".to_string());
+        }
+
+        let clean_email = email
+            .map(|e| e.trim().to_lowercase())
+            .filter(|e| !e.is_empty());
+
         let salt = SaltString::generate(&mut OsRng);
         let argon2 = Argon2::default();
         let password_hash = argon2
@@ -1040,8 +1066,8 @@ impl MetadataStore {
 
         let conn = Self::get_conn().await?;
         conn.execute(
-            "INSERT INTO users (username, password_hash, created_at) VALUES (?1, ?2, ?3)",
-            libsql::params![username, password_hash.as_str(), now_unix],
+            "INSERT INTO users (username, email, password_hash, created_at) VALUES (?1, ?2, ?3, ?4)",
+            libsql::params![clean_username, clean_email, password_hash.as_str(), now_unix],
         )
         .await
         .map_err(|e| format!("Failed to create user: {}", e))?;
@@ -1050,33 +1076,40 @@ impl MetadataStore {
     }
 
     /// Verifies an admin user's credentials using constant-time Argon2 verification.
-    /// Resists username enumeration timing side-channels by performing dummy Argon2 computation if user is absent.
-    /// Enforces a strict concurrency limit (max 3 concurrent hashes) to prevent CPU starvation under credential stuffing attacks.
-    pub async fn verify_user(username: &str, password: &str) -> Result<bool, String> {
+    /// Supports authentication using either username OR email (case-insensitive via COLLATE NOCASE).
+    /// Resists enumeration timing side-channels by performing dummy Argon2 computation if user is absent.
+    /// Concurrency bounded (max 3 concurrent hashes) with a 5000ms timeout to avoid false rejections on loaded cores.
+    /// Returns Ok(Some(canonical_username)) on success, or Ok(None) on invalid credentials.
+    pub async fn verify_user(identifier: &str, password: &str) -> Result<Option<String>, String> {
         static ARGON2_SEMAPHORE: Lazy<Arc<tokio::sync::Semaphore>> =
             Lazy::new(|| Arc::new(tokio::sync::Semaphore::new(3)));
 
-        let (user_row_exists, hash_to_verify) = {
+        let clean_id = identifier.trim();
+
+        let (canonical_username, hash_to_verify) = {
             let conn = Self::get_conn().await?;
             let mut rows = conn
                 .query(
-                    "SELECT password_hash FROM users WHERE username = ?1",
-                    [username],
+                    "SELECT username, password_hash FROM users WHERE username = ?1 COLLATE NOCASE OR (email IS NOT NULL AND email = ?1 COLLATE NOCASE) LIMIT 1",
+                    [clean_id],
                 )
                 .await
                 .map_err(|e| e.to_string())?;
 
             let user_row = rows.next().await.ok().flatten();
-            let hash = match &user_row {
-                Some(row) => row.get::<String>(0).map_err(|e| e.to_string())?,
-                None => DUMMY_HASH.clone(),
-            };
-            (user_row.is_some(), hash)
+            match user_row {
+                Some(row) => {
+                    let u: String = row.get(0).map_err(|e| e.to_string())?;
+                    let h: String = row.get(1).map_err(|e| e.to_string())?;
+                    (Some(u), h)
+                }
+                None => (None, DUMMY_HASH.clone()),
+            }
         };
 
         let password_owned = password.to_string();
         let permit = match tokio::time::timeout(
-            std::time::Duration::from_millis(500),
+            std::time::Duration::from_millis(5000),
             ARGON2_SEMAPHORE.clone().acquire_owned(),
         )
         .await
@@ -1098,7 +1131,11 @@ impl MetadataStore {
         .await
         .map_err(|e| format!("Password verification task failed: {}", e))?;
 
-        Ok(user_row_exists && is_match)
+        if is_match && canonical_username.is_some() {
+            Ok(canonical_username)
+        } else {
+            Ok(None)
+        }
     }
 
     /// Checks if any admin users exist in the system (used by setup wizard).
@@ -1124,7 +1161,7 @@ impl MetadataStore {
         let conn = Self::get_conn().await?;
         let mut rows = conn
             .query(
-                "SELECT id, username, created_at FROM users ORDER BY id ASC",
+                "SELECT id, username, email, created_at FROM users ORDER BY id ASC",
                 (),
             )
             .await
@@ -1134,11 +1171,13 @@ impl MetadataStore {
         while let Ok(Some(row)) = rows.next().await {
             let id: i64 = row.get(0).map_err(|e| e.to_string())?;
             let username: String = row.get(1).map_err(|e| e.to_string())?;
-            let created_at: i64 = row.get(2).unwrap_or(0);
+            let email: Option<String> = row.get(2).ok();
+            let created_at: i64 = row.get(3).unwrap_or(0);
 
             users.push(UserRecord {
                 id,
                 username,
+                email,
                 password_hash: String::new(),
                 created_at,
             });

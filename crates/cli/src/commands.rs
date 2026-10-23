@@ -285,19 +285,28 @@ pub enum UserCommands {
     Add {
         #[arg(help = "Admin username")]
         username: String,
+        #[arg(short, long, help = "Admin email address")]
+        email: Option<String>,
         #[arg(
             short,
             long,
             help = "Password (if omitted, interactive prompt is used)"
         )]
         password: Option<String>,
+        #[arg(short, long, help = "Path to config file")]
+        config: Option<String>,
     },
     /// List all administrative users
-    List,
+    List {
+        #[arg(short, long, help = "Path to config file")]
+        config: Option<String>,
+    },
     /// Delete an administrative user
     Delete {
         #[arg(help = "Admin username to delete")]
         username: String,
+        #[arg(short, long, help = "Path to config file")]
+        config: Option<String>,
     },
 }
 
@@ -796,13 +805,29 @@ mod tests {
 
     #[test]
     fn test_cli_parse_user_add() {
-        let args = ["axiom", "user", "add", "ops_admin", "-p", "secret123"];
+        let args = [
+            "axiom",
+            "user",
+            "add",
+            "ops_admin",
+            "-e",
+            "ops@axiom.local",
+            "-p",
+            "secret123",
+        ];
         let cli = Cli::try_parse_from(args).expect("Failed to parse user add");
         match cli.command {
             Some(Commands::User {
-                command: UserCommands::Add { username, password },
+                command:
+                    UserCommands::Add {
+                        username,
+                        email,
+                        password,
+                        ..
+                    },
             }) => {
                 assert_eq!(username, "ops_admin");
+                assert_eq!(email, Some("ops@axiom.local".to_string()));
                 assert_eq!(password, Some("secret123".to_string()));
             }
             _ => panic!("Expected User Add command"),

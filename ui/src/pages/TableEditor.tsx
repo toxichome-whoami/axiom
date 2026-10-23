@@ -636,6 +636,13 @@ export function TableEditor() {
     return expandedInlineCell.value !== originalStr;
   }, [expandedInlineCell, rows]);
 
+  const handleOpenInsertRow = () => {
+    setSelectedRowIndex(null);
+    setRowEditValues({});
+    setIsInsertModeInPanel(true);
+    setIsDetailsOpen(true);
+  };
+
   return (
     <div className="flex flex-col lg:flex-row w-full h-full min-h-0 select-none font-sans overflow-hidden bg-[#0c0c0c]">
       {/* ─── PANE 1: LEFT NAVIGATOR ─── */}
@@ -711,12 +718,7 @@ export function TableEditor() {
                 : rows;
             exportTableData(format, selectedTable, rowsToExport, columns);
           }}
-          onOpenInsertRow={() => {
-            setSelectedRowIndex(null);
-            setRowEditValues({});
-            setIsInsertModeInPanel(true);
-            setIsDetailsOpen(true);
-          }}
+          onOpenInsertRow={handleOpenInsertRow}
           onOpenAddColumn={openAddColumn}
           activeFilter={activeFilter}
           setActiveFilter={setActiveFilter}
@@ -884,6 +886,7 @@ export function TableEditor() {
             onOpenColumnMenu={(menu) => setActiveColumnMenu(menu)}
             onResizeStart={(e, colName, width) => handleResizeStart(e, colName, width)}
             onOpenAddColumn={openAddColumn}
+            onOpenInsertRow={handleOpenInsertRow}
             onOpenFkPicker={(target) => setFkPickerTarget(target)}
             onOpenFkPreview={(target) => setFkPreviewTarget(target)}
             viewMode={viewMode}

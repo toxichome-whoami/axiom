@@ -36,23 +36,32 @@ impl PolicyEngine {
         // Granular RBAC evaluation using snapshot permissions
         if !auth.permissions.is_empty() {
             let op_normalized = operation.to_ascii_uppercase();
+            let is_wildcard_table = table == "*";
 
             for perm in &auth.permissions {
                 // Database match: explicit wildcard "*" or case-insensitive alias match
                 let db_match = perm.database == "*" || perm.database.eq_ignore_ascii_case(database);
-                // Table match: explicit wildcard "*" or case-insensitive table name match
-                let table_match =
-                    perm.table_name == "*" || perm.table_name.eq_ignore_ascii_case(table);
+                if !db_match {
+                    continue;
+                }
 
-                if db_match && table_match {
-                    let op_allowed = perm
-                        .operations
-                        .iter()
-                        .any(|op| op == "*" || op.eq_ignore_ascii_case(&op_normalized));
+                let op_allowed = perm
+                    .operations
+                    .iter()
+                    .any(|op| op == "*" || op.eq_ignore_ascii_case(&op_normalized));
+                if !op_allowed {
+                    continue;
+                }
 
-                    if op_allowed {
-                        return Ok(());
-                    }
+                // Table match:
+                // If table is explicit: must match perm table or wildcard "*"
+                // If table is wildcard "*" (e.g. list_tables or table-less scalar query):
+                // caller is authorized if they have ANY permission for this operation in the database
+                if is_wildcard_table
+                    || perm.table_name == "*"
+                    || perm.table_name.eq_ignore_ascii_case(table)
+                {
+                    return Ok(());
                 }
             }
 
@@ -408,6 +417,10 @@ mod tests {
 
         // Allowed actions
         assert!(PolicyEngine::evaluate(&user_ctx, "analytics", "events", "SELECT").is_ok());
+        // Verify wildcard table query (e.g. list_tables or scalar SELECT) succeeds for table-scoped role
+        assert!(PolicyEngine::evaluate(&user_ctx, "analytics", "*", "SELECT").is_ok());
+        // Verify wildcard table query (e.g. list_tables or scalar SELECT) succeeds for table-scoped role
+        assert!(PolicyEngine::evaluate(&user_ctx, "analytics", "*", "SELECT").is_ok());
         assert!(PolicyEngine::evaluate(&user_ctx, "analytics", "events", "INSERT").is_ok());
 
         // Denied: Disallowed operation on permitted table

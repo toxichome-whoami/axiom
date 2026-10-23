@@ -83,6 +83,7 @@ export function AuthPage({ onLoginSuccess, initialMode = 'login' }: AuthPageProp
 
   // Setup Wizard Step 2: Admin Account
   const [adminUsername, setAdminUsername] = useState('admin');
+  const [adminEmail, setAdminEmail] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
   const [adminConfirmPassword, setAdminConfirmPassword] = useState('');
 
@@ -204,12 +205,21 @@ export function AuthPage({ onLoginSuccess, initialMode = 'login' }: AuthPageProp
       return;
     }
 
+    if (adminEmail.trim()) {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(adminEmail.trim())) {
+        setErrorMessage('Please enter a valid email address.');
+        return;
+      }
+    }
+
     setErrorMessage(null);
     setLoginLoading(true);
 
     try {
       const res = await api.setupAccount({
         username: adminUsername.trim(),
+        email: adminEmail.trim() || undefined,
         password: adminPassword,
       });
       const token = res.session_token || res.token || '';
@@ -423,14 +433,14 @@ export function AuthPage({ onLoginSuccess, initialMode = 'login' }: AuthPageProp
           <form onSubmit={handleLogin} className="flex flex-col space-y-4">
             <div>
               <label className="text-[13px] font-medium text-[#cccccc] mb-1.5 block">
-                Username
+                Username or Email
               </label>
               <input
                 type="text"
                 autoComplete="username"
                 value={loginUsername}
                 onChange={(e) => setLoginUsername(e.target.value)}
-                placeholder="admin"
+                placeholder="admin or admin@example.com"
                 required
                 className="h-10 w-full rounded-[8px] bg-[#141414] border border-[#262626] focus:border-[#2563eb] focus:ring-1 focus:ring-[#2563eb] px-3 text-[14px] text-white outline-none placeholder-[#555555] transition-colors"
               />
@@ -586,6 +596,25 @@ export function AuthPage({ onLoginSuccess, initialMode = 'login' }: AuthPageProp
                 placeholder="admin"
                 className="h-10 w-full rounded-[8px] bg-[#141414] border border-[#262626] focus:border-[#2563eb] focus:ring-1 focus:ring-[#2563eb] px-3 text-[14px] text-white outline-none placeholder-[#555555] transition-colors"
               />
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="text-[13px] font-medium text-[#cccccc] block">
+                  Email Address
+                </label>
+                <span className="text-[11px] text-[#777777]">Optional</span>
+              </div>
+              <input
+                type="email"
+                value={adminEmail}
+                onChange={(e) => setAdminEmail(e.target.value)}
+                placeholder="admin@example.com"
+                className="h-10 w-full rounded-[8px] bg-[#141414] border border-[#262626] focus:border-[#2563eb] focus:ring-1 focus:ring-[#2563eb] px-3 text-[14px] text-white outline-none placeholder-[#555555] transition-colors"
+              />
+              <p className="text-[11px] text-[#777777] mt-1">
+                Used for account recovery and dual authentication login.
+              </p>
             </div>
 
             <div>

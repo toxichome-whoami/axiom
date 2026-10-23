@@ -81,7 +81,7 @@ export function StorageToolbar({
   }, [isUploadMenuOpen]);
 
   return (
-    <div className="h-[54px] shrink-0 px-4 border-b border-[#222222] bg-[#0c0c0c] flex items-center justify-between gap-3 select-none font-sans">
+    <div className="h-[54px] shrink-0 px-4 border-b border-[#222222] bg-[#0c0c0c] flex items-center justify-between gap-3 select-none font-sans relative z-30">
       {/* ─── Left: Interactive Breadcrumbs Navigator ─────────────── */}
       <div className="flex items-center gap-1.5 text-sm overflow-x-auto scrollbar-none min-w-0 py-0.5">
         <button
@@ -319,7 +319,8 @@ export function StorageToolbar({
             onClick={() => setIsUploadMenuOpen((prev) => !prev)}
             disabled={!activeNamespace}
             title="Upload options (files, folders for hosting)"
-            className="flex items-center justify-center h-8 w-6.5 rounded-r-[6px] text-white bg-blue-600 hover:bg-blue-500 border-t border-b border-r border-l border-blue-500/80 border-l-blue-700/60 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+            aria-label="Upload options"
+            className="flex items-center justify-center h-8 px-2.5 rounded-r-[6px] text-white bg-blue-600 hover:bg-blue-500 border-t border-b border-r border-l border-blue-500/80 border-l-blue-700/70 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed select-none"
           >
             <ChevronDown className="w-3.5 h-3.5" />
           </button>

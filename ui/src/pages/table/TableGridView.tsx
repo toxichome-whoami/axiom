@@ -52,6 +52,7 @@ export interface TableGridViewProps {
   onOpenColumnMenu: (menu: { col: ColumnInfoApi; rect: { top: number; left: number; width: number; height: number } } | null) => void;
   onResizeStart: (e: React.MouseEvent, colName: string, startWidth: number) => void;
   onOpenAddColumn: () => void;
+  onOpenInsertRow?: () => void;
 
   // Foreign key triggers
   onOpenFkPicker: (target: {
@@ -100,6 +101,7 @@ export function TableGridView({
   onOpenColumnMenu,
   onResizeStart,
   onOpenAddColumn,
+  onOpenInsertRow,
   onOpenFkPicker,
   onOpenFkPreview,
   onOpenInSqlEditor,
@@ -354,8 +356,28 @@ export function TableGridView({
             <tbody className={`divide-y divide-[#181818] ${isRowsLoading ? 'opacity-60 transition-opacity' : ''}`}>
               {rows.length === 0 ? (
                 <tr>
-                  <td colSpan={columns.length + 2} className="p-12 text-center text-[#666666] text-[14px]">
-                    Table contains 0 rows
+                  <td colSpan={columns.length + 2} className="py-20 px-4 text-center">
+                    <div className="flex flex-col items-center justify-center max-w-sm mx-auto space-y-3">
+                      <div className="w-10 h-10 rounded-full bg-[#181818] border border-[#262626] flex items-center justify-center text-[#888888]">
+                        <TableIcon className="w-5 h-5 text-[#888888]" />
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-[14px] font-medium text-white">This table is empty</p>
+                        <p className="text-[12.5px] text-[#777777]">
+                          There are currently 0 records in <span className="font-mono text-[#aaaaaa]">{selectedTable}</span>.
+                        </p>
+                      </div>
+                      {onOpenInsertRow && (
+                        <button
+                          type="button"
+                          onClick={onOpenInsertRow}
+                          className="inline-flex items-center gap-1.5 h-8 px-3.5 rounded-[6px] text-[13px] font-medium text-white bg-blue-600 hover:bg-blue-500 shadow-xs transition-colors cursor-pointer select-none"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>Insert Row</span>
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ) : (

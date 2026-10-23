@@ -343,7 +343,7 @@ export function RowInspectorSlideOver({
             <button
               type="button"
               onClick={isInsertMode ? handleInsertRowFromPanel : handleSaveRowEdit}
-              disabled={isSavingRow || !hasRowChanges}
+              disabled={isSavingRow || (isInsertMode ? columns.length === 0 : !hasRowChanges)}
               className="group relative flex shrink-0 items-center justify-center h-9 px-4 rounded-[8px] font-medium text-white shadow-xs outline-none cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed overflow-hidden ring-1 ring-[#1d4ed8] bg-[#2563eb] font-sans"
             >
               <span
@@ -358,10 +358,10 @@ export function RowInspectorSlideOver({
                 {isSavingRow ? (
                   <>
                     <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                    <span>Saving...</span>
+                    <span>{isInsertMode ? 'Inserting...' : 'Saving...'}</span>
                   </>
                 ) : (
-                  <span>{isInsertMode ? 'Save Record' : 'Save'}</span>
+                  <span>{isInsertMode ? 'Insert Row' : 'Save'}</span>
                 )}
               </span>
             </button>

@@ -220,8 +220,12 @@ pub async fn run() -> Result<bool, Box<dyn std::error::Error>> {
 // Direct manipulation of `axiom.db`. Does NOT require a running HTTP server,
 // allowing operators to bootstrap human admins safely on headless environments.
 
-async fn init_cli_metadata() -> Result<(), String> {
-    let _ = ConfigManager::load("config.toml");
+async fn init_cli_metadata(config_path: Option<&str>) -> Result<(), String> {
+    if let Some(path) = config_path {
+        let _ = ConfigManager::load(path);
+    } else {
+        let _ = ConfigManager::load("config.toml");
+    }
     let cfg = ConfigManager::get();
     MetadataStore::init(&cfg.metadata.url, &cfg.metadata.token).await
 }
@@ -230,12 +234,22 @@ async fn handle_user_command(
     command: UserCommands,
     format: OutputFormat,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    init_cli_metadata()
+    let cfg_path = match &command {
+        UserCommands::Add { config, .. } => config.as_deref(),
+        UserCommands::List { config } => config.as_deref(),
+        UserCommands::Delete { config, .. } => config.as_deref(),
+    };
+    init_cli_metadata(cfg_path)
         .await
         .map_err(|e| format!("Failed to connect to metadata store: {}", e))?;
 
     match command {
-        UserCommands::Add { username, password } => {
+        UserCommands::Add {
+            username,
+            email,
+            password,
+            ..
+        } => {
             let pass = match password {
                 Some(p) if !p.is_empty() => p,
                 _ => {
@@ -248,7 +262,7 @@ async fn handle_user_command(
                 return Err("Password cannot be empty".into());
             }
 
-            MetadataStore::create_user(&username, &pass)
+            MetadataStore::create_user(&username, email.as_deref(), &pass)
                 .await
                 .map_err(|e| format!("User creation failed: {}", e))?;
 
@@ -266,7 +280,7 @@ async fn handle_user_command(
             }
         }
 
-        UserCommands::List => {
+        UserCommands::List { .. } => {
             let users = MetadataStore::list_users()
                 .await
                 .map_err(|e| format!("Failed to list users: {}", e))?;
@@ -283,15 +297,24 @@ async fn handle_user_command(
                     println!("{}", serde_json::to_string(u)?);
                 }
             } else {
-                println!("{:<6} {:<24} {:<20}", "ID", "USERNAME", "CREATED AT (UNIX)");
-                println!("{:-<54}", "");
+                println!(
+                    "{:<6} {:<20} {:<28} {:<20}",
+                    "ID", "USERNAME", "EMAIL", "CREATED AT (UNIX)"
+                );
+                println!("{:-<78}", "");
                 for u in users {
-                    println!("{:<6} {:<24} {:<20}", u.id, u.username, u.created_at);
+                    println!(
+                        "{:<6} {:<20} {:<28} {:<20}",
+                        u.id,
+                        u.username,
+                        u.email.as_deref().unwrap_or("-"),
+                        u.created_at
+                    );
                 }
             }
         }
 
-        UserCommands::Delete { username } => {
+        UserCommands::Delete { username, .. } => {
             let deleted = MetadataStore::delete_user(&username)
                 .await
                 .map_err(|e| format!("Failed to delete user: {}", e))?;

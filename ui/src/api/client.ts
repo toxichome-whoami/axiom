@@ -385,7 +385,7 @@ export const api = {
 
   // Setup Wizard
   checkSetup: () => request<{ setup_required: boolean }>('/admin/v1/setup/begin', { method: 'POST' }),
-  setupAccount: async (data: { username: string; password: string }) => {
+  setupAccount: async (data: { username: string; email?: string; password: string }) => {
     const res = await request<{ user?: { username: string }; username?: string; session_token?: string; token?: string; expires_at?: number }>('/admin/v1/setup/account', {
       method: 'POST',
       body: JSON.stringify(data),

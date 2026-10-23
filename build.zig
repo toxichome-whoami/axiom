@@ -35,4 +35,9 @@ pub fn build(b: *std.Build) void {
 
     const version_step = b.step("version", "Update or view project version across all repository files");
     version_step.dependOn(&version_cmd.step);
+
+    // End-to-end simulation test step: zig build test-e2e
+    const test_e2e_cmd = b.addSystemCommand(&.{ "zig", "run", "-lc", "tools/zig/simulate_e2e.zig" });
+    const test_e2e_step = b.step("test-e2e", "Run comprehensive end-to-end simulation in Zig");
+    test_e2e_step.dependOn(&test_e2e_cmd.step);
 }

@@ -4,6 +4,9 @@ import { setSession, clearSession, hasActiveSession } from './api/session';
 import { api } from './api/client';
 import { GlobalAlertDialog } from './components/ui/AlertDialog';
 import { ErrorBoundary } from './components/ui/ErrorBoundary';
+const Agentation: React.ComponentType = import.meta.env.DEV
+  ? lazy(() => import('agentation').then((m) => ({ default: m.Agentation })))
+  : () => null;
 
 const Overview = lazy(() => import('./pages/Overview').then((m) => ({ default: m.Overview })));
 const Databases = lazy(() => import('./pages/Databases').then((m) => ({ default: m.Databases })));
@@ -123,6 +126,9 @@ export function App() {
           </Suspense>
         </ErrorBoundary>
         <GlobalAlertDialog />
+        <Suspense fallback={null}>
+          <Agentation />
+        </Suspense>
       </>
     );
   }
@@ -174,6 +180,9 @@ export function App() {
         </ErrorBoundary>
       </Layout>
       <GlobalAlertDialog />
+      <Suspense fallback={null}>
+        <Agentation />
+      </Suspense>
     </>
   );
 }

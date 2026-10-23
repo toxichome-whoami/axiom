@@ -220,7 +220,7 @@ export function TableToolbar({
   }, []);
 
   return (
-    <div className="h-[54px] shrink-0 px-3 sm:px-4 border-b border-[#222222] bg-[#0c0c0c] flex items-center justify-between gap-2 sm:gap-3 select-none font-sans overflow-x-auto scrollbar-none">
+    <div className="h-[54px] shrink-0 px-3 sm:px-4 border-b border-[#222222] bg-[#0c0c0c] flex items-center justify-between gap-2 sm:gap-3 select-none font-sans relative z-30 overflow-visible">
       {/* Action Tools & View Mode Switcher (placed on the left) */}
       <div className="flex items-center gap-2 shrink-0">
         {/* View Mode Switcher Pills */}
@@ -328,16 +328,27 @@ export function TableToolbar({
 
         {viewMode === 'grid' && (
           <>
-            {/* Insert Dropdown Menu */}
-            <div className="relative" ref={insertDropdownRef}>
+            {/* Insert Action Split Button */}
+            <div className="relative inline-flex items-center" ref={insertDropdownRef}>
+              <button
+                type="button"
+                onClick={onOpenInsertRow}
+                disabled={!selectedTable}
+                title="Insert row"
+                className="flex items-center gap-1.5 h-8 px-2.5 rounded-l-[6px] bg-[#141414] hover:bg-[#1a1a1a] border border-[#242424] hover:border-[#383838] disabled:opacity-40 text-[#cccccc] hover:text-white text-[13px] font-medium transition-colors cursor-pointer select-none"
+              >
+                <Plus className="w-3.5 h-3.5 text-blue-400" />
+                <span>Insert row</span>
+              </button>
               <button
                 type="button"
                 onClick={() => setIsInsertDropdownOpen(!isInsertDropdownOpen)}
                 disabled={!selectedTable}
-                className="flex items-center gap-1.5 h-8 px-2.5 rounded-[6px] bg-[#141414] hover:bg-[#1a1a1a] border border-[#242424] hover:border-[#383838] disabled:opacity-40 text-[#cccccc] hover:text-white text-[13px] font-medium transition-colors cursor-pointer"
+                title="More insert options"
+                aria-label="More insert options"
+                className="flex items-center justify-center h-8 px-1.5 rounded-r-[6px] border-y border-r border-[#242424] hover:border-[#383838] bg-[#141414] hover:bg-[#1a1a1a] disabled:opacity-40 text-[#888888] hover:text-white transition-colors cursor-pointer select-none"
               >
-                <span>Insert</span>
-                <ChevronDown className="w-3.5 h-3.5 text-[#777777]" />
+                <ChevronDown className="w-3.5 h-3.5" />
               </button>
 
               {isInsertDropdownOpen && (
