@@ -37,14 +37,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     axiom_core::ConfigManager::load(&config_path).ok();
 
     let config = axiom_core::ConfigManager::get();
-    let workers = config.server.workers as usize;
-    let mut builder = tokio::runtime::Builder::new_multi_thread();
-    builder.enable_all();
-    if workers > 0 {
-        builder.worker_threads(workers);
+    let mut workers = config.server.workers as usize;
+    if let Ok(env_w) = std::env::var("TOKIO_WORKER_THREADS") {
+        if let Ok(w) = env_w.parse::<usize>() {
+            workers = w;
+        }
     }
-
-    let rt = builder.build()?;
+    let rt = if workers == 1 {
+        let mut builder = tokio::runtime::Builder::new_current_thread();
+        builder.enable_all();
+        builder.max_blocking_threads(1);
+        builder.build()?
+    } else {
+        let mut builder = tokio::runtime::Builder::new_multi_thread();
+        builder.enable_all();
+        if workers > 1 {
+            builder.worker_threads(workers);
+        }
+        builder.build()?
+    };
     rt.block_on(async {
         let ran_cli = axiom_cli::run().await?;
         if !ran_cli {
