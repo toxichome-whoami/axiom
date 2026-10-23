@@ -272,7 +272,7 @@ export function Settings() {
                   <Skeleton className="h-7 w-20" />
                 ) : (
                   <div className="text-[22px] font-semibold text-white tracking-[-0.02em] leading-tight">
-                    v{statusData?.version || '0.1.13'}
+                    v{statusData?.version || '0.1.14'}
                   </div>
                 )}
               </div>
@@ -583,7 +583,7 @@ export function Settings() {
                 <div className="flex items-center gap-2.5 flex-wrap">
                   <h2 className="text-[16px] font-semibold text-white tracking-tight">Axiom Gateway</h2>
                   <span className="text-[11px] font-mono px-2 py-0.5 rounded-[4px] bg-[#161616] text-[#8c8c8c] border border-[#2a2a2a]">
-                    v{statusData?.version || '0.1.13'}
+                    v{statusData?.version || '0.1.14'}
                   </span>
                 </div>
                 <p className="text-[13px] text-[#8c8c8c] font-normal leading-relaxed">
