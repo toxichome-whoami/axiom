@@ -235,7 +235,11 @@ async fn handle_user_command(
         .map_err(|e| format!("Failed to connect to metadata store: {}", e))?;
 
     match command {
-        UserCommands::Add { username, password } => {
+        UserCommands::Add {
+            username,
+            email,
+            password,
+        } => {
             let pass = match password {
                 Some(p) if !p.is_empty() => p,
                 _ => {
@@ -248,7 +252,7 @@ async fn handle_user_command(
                 return Err("Password cannot be empty".into());
             }
 
-            MetadataStore::create_user(&username, &pass)
+            MetadataStore::create_user(&username, email.as_deref(), &pass)
                 .await
                 .map_err(|e| format!("User creation failed: {}", e))?;
 
@@ -283,10 +287,19 @@ async fn handle_user_command(
                     println!("{}", serde_json::to_string(u)?);
                 }
             } else {
-                println!("{:<6} {:<24} {:<20}", "ID", "USERNAME", "CREATED AT (UNIX)");
-                println!("{:-<54}", "");
+                println!(
+                    "{:<6} {:<20} {:<28} {:<20}",
+                    "ID", "USERNAME", "EMAIL", "CREATED AT (UNIX)"
+                );
+                println!("{:-<78}", "");
                 for u in users {
-                    println!("{:<6} {:<24} {:<20}", u.id, u.username, u.created_at);
+                    println!(
+                        "{:<6} {:<20} {:<28} {:<20}",
+                        u.id,
+                        u.username,
+                        u.email.as_deref().unwrap_or("-"),
+                        u.created_at
+                    );
                 }
             }
         }

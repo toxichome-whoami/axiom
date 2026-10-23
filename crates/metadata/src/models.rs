@@ -15,6 +15,7 @@ use serde::{Deserialize, Serialize};
 pub struct UserRecord {
     pub id: i64,
     pub username: String,
+    pub email: Option<String>,
     #[serde(skip_serializing)]
     pub password_hash: String,
     pub created_at: i64,
@@ -142,6 +143,7 @@ mod tests {
         let user = UserRecord {
             id: 1,
             username: "test".to_string(),
+            email: Some("test@example.com".to_string()),
             password_hash: "secret_hash".to_string(),
             created_at: 0,
         };

@@ -823,7 +823,8 @@ async fn brute_force_api_key_bad_secrets_ban_attacker_ip_not_key() {
 async fn distributed_credential_stuffing_account_lockout() {
     ensure_metadata_store().await;
     let username = "target_victim_unique_lockout";
-    let _ = axiom_metadata::MetadataStore::create_user(username, "ValidVictimP@ssw0rd!").await;
+    let _ =
+        axiom_metadata::MetadataStore::create_user(username, None, "ValidVictimP@ssw0rd!").await;
 
     // Simulate 5 failed login attempts from 5 distinct IP addresses
     for i in 1..=5 {
@@ -2052,7 +2053,8 @@ async fn db_idempotency_key_replay_protection() {
 #[tokio::test]
 async fn admin_api_full_control_plane_lifecycle() {
     ensure_metadata_store().await;
-    let _ = axiom_metadata::MetadataStore::create_user("super_admin_ops", "SecretP@ss12345!").await;
+    let _ = axiom_metadata::MetadataStore::create_user("super_admin_ops", None, "SecretP@ss12345!")
+        .await;
 
     // 1. Admin Login
     let login_req = Request::post("/admin/v1/auth/login")

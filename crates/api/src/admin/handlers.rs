@@ -208,6 +208,7 @@ pub struct LoginRequest {
 #[derive(Debug, Deserialize)]
 pub struct SetupAccountRequest {
     pub username: String,
+    pub email: Option<String>,
     pub password: String,
 }
 
@@ -1188,7 +1189,23 @@ pub async fn setup_account(
         ));
     }
 
-    MetadataStore::create_user(&payload.username, &payload.password)
+    let clean_email = payload
+        .email
+        .as_deref()
+        .map(|e| e.trim())
+        .filter(|e| !e.is_empty());
+
+    if let Some(em) = clean_email {
+        if !em.contains('@') || !em.contains('.') || em.len() > 255 {
+            return Err(AxiomError::new(
+                "INVALID_INPUT",
+                "Email format is invalid",
+                StatusCode::BAD_REQUEST,
+            ));
+        }
+    }
+
+    MetadataStore::create_user(&payload.username, clean_email, &payload.password)
         .await
         .map_err(|e| {
             AxiomError::new(
@@ -1522,8 +1539,25 @@ pub async fn login_handler(
 
     // 4. Compute-Intensive Password Verification (Semaphore-guarded on blocking thread)
     let verify_res = MetadataStore::verify_user(username, &payload.password).await;
-    let valid = match verify_res {
-        Ok(v) => v,
+    let canonical_user = match verify_res {
+        Ok(Some(u)) => u,
+        Ok(None) => {
+            crate::metrics::MetricsEngine::record_auth_failure("invalid_admin_password");
+            let new_failures = current_failures.saturating_add(1);
+            axiom_cache::CacheEngine::set(
+                &account_key,
+                bytes::Bytes::from(new_failures.to_string()),
+                ACCOUNT_LOCKOUT_WINDOW_SECS,
+                axiom_cache::Durability::Ephemeral,
+            )
+            .await;
+
+            return Err(AxiomError::new(
+                "INVALID_CREDENTIALS",
+                "Invalid administrative username or password",
+                StatusCode::UNAUTHORIZED,
+            ));
+        }
         Err(err) if err == "SERVER_BUSY_AUTH_THROTTLED" => {
             crate::metrics::MetricsEngine::record_auth_failure("server_busy_throttled");
             return Err(AxiomError::new(
@@ -1532,26 +1566,14 @@ pub async fn login_handler(
                 StatusCode::SERVICE_UNAVAILABLE,
             ));
         }
-        Err(_) => false,
+        Err(e) => {
+            return Err(AxiomError::new(
+                "AUTH_FAILED",
+                &e,
+                StatusCode::INTERNAL_SERVER_ERROR,
+            ));
+        }
     };
-
-    if !valid {
-        crate::metrics::MetricsEngine::record_auth_failure("invalid_admin_password");
-        let new_failures = current_failures.saturating_add(1);
-        axiom_cache::CacheEngine::set(
-            &account_key,
-            bytes::Bytes::from(new_failures.to_string()),
-            ACCOUNT_LOCKOUT_WINDOW_SECS,
-            axiom_cache::Durability::Ephemeral,
-        )
-        .await;
-
-        return Err(AxiomError::new(
-            "INVALID_CREDENTIALS",
-            "Invalid administrative username or password",
-            StatusCode::UNAUTHORIZED,
-        ));
-    }
 
     // 5. Successful Login: Clear Account Failures and Issue Tokens
     axiom_cache::CacheEngine::set(
@@ -1561,8 +1583,18 @@ pub async fn login_handler(
         axiom_cache::Durability::Ephemeral,
     )
     .await;
+    let canonical_account_key = format!("rl:account:{}", canonical_user.to_lowercase());
+    if canonical_account_key != account_key {
+        axiom_cache::CacheEngine::set(
+            &canonical_account_key,
+            bytes::Bytes::from("0"),
+            ACCOUNT_LOCKOUT_WINDOW_SECS,
+            axiom_cache::Durability::Ephemeral,
+        )
+        .await;
+    }
 
-    let session_id = MetadataStore::create_session(username, LOGIN_SESSION_TTL_SECS)
+    let session_id = MetadataStore::create_session(&canonical_user, LOGIN_SESSION_TTL_SECS)
         .await
         .map_err(|e| {
             AxiomError::new(
@@ -1580,7 +1612,7 @@ pub async fn login_handler(
         .unwrap_or(false)
         || !config.server.tls_cert.is_empty();
     let secure_flag = if is_https { "; Secure" } else { "" };
-    let (trusted_token, _) = create_trusted_device_token(username, &device_secret);
+    let (trusted_token, _) = create_trusted_device_token(&canonical_user, &device_secret);
     let cookie_header = format!(
         "axiom_session={}; HttpOnly; SameSite=Strict; Path=/; Max-Age={}{}",
         session_id, LOGIN_SESSION_TTL_SECS, secure_flag
@@ -1605,7 +1637,7 @@ pub async fn login_handler(
             "data": {
                 "token": session_id,
                 "session_token": session_id,
-                "username": username
+                "username": canonical_user
             },
             "error": Value::Null
         })),
