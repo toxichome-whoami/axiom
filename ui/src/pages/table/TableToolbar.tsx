@@ -220,7 +220,7 @@ export function TableToolbar({
   }, []);
 
   return (
-    <div className="h-[54px] shrink-0 px-3 sm:px-4 border-b border-[#222222] bg-[#0c0c0c] flex items-center justify-between gap-2 sm:gap-3 select-none font-sans overflow-x-auto scrollbar-none">
+    <div className="h-[54px] shrink-0 px-3 sm:px-4 border-b border-[#222222] bg-[#0c0c0c] flex items-center justify-between gap-2 sm:gap-3 select-none font-sans relative z-30 overflow-visible">
       {/* Action Tools & View Mode Switcher (placed on the left) */}
       <div className="flex items-center gap-2 shrink-0">
         {/* View Mode Switcher Pills */}
