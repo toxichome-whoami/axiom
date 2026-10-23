@@ -18,3 +18,4 @@ tracing = { workspace = true }
 mimalloc = { workspace = true }
 axum = { workspace = true }
 socket2 = { workspace = true }
+rustls = { workspace = true }

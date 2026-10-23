@@ -293,13 +293,20 @@ pub enum UserCommands {
             help = "Password (if omitted, interactive prompt is used)"
         )]
         password: Option<String>,
+        #[arg(short, long, help = "Path to config file")]
+        config: Option<String>,
     },
     /// List all administrative users
-    List,
+    List {
+        #[arg(short, long, help = "Path to config file")]
+        config: Option<String>,
+    },
     /// Delete an administrative user
     Delete {
         #[arg(help = "Admin username to delete")]
         username: String,
+        #[arg(short, long, help = "Path to config file")]
+        config: Option<String>,
     },
 }
 
@@ -816,6 +823,7 @@ mod tests {
                         username,
                         email,
                         password,
+                        ..
                     },
             }) => {
                 assert_eq!(username, "ops_admin");

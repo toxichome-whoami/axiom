@@ -220,8 +220,12 @@ pub async fn run() -> Result<bool, Box<dyn std::error::Error>> {
 // Direct manipulation of `axiom.db`. Does NOT require a running HTTP server,
 // allowing operators to bootstrap human admins safely on headless environments.
 
-async fn init_cli_metadata() -> Result<(), String> {
-    let _ = ConfigManager::load("config.toml");
+async fn init_cli_metadata(config_path: Option<&str>) -> Result<(), String> {
+    if let Some(path) = config_path {
+        let _ = ConfigManager::load(path);
+    } else {
+        let _ = ConfigManager::load("config.toml");
+    }
     let cfg = ConfigManager::get();
     MetadataStore::init(&cfg.metadata.url, &cfg.metadata.token).await
 }
@@ -230,7 +234,12 @@ async fn handle_user_command(
     command: UserCommands,
     format: OutputFormat,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    init_cli_metadata()
+    let cfg_path = match &command {
+        UserCommands::Add { config, .. } => config.as_deref(),
+        UserCommands::List { config } => config.as_deref(),
+        UserCommands::Delete { config, .. } => config.as_deref(),
+    };
+    init_cli_metadata(cfg_path)
         .await
         .map_err(|e| format!("Failed to connect to metadata store: {}", e))?;
 
@@ -239,6 +248,7 @@ async fn handle_user_command(
             username,
             email,
             password,
+            ..
         } => {
             let pass = match password {
                 Some(p) if !p.is_empty() => p,
@@ -270,7 +280,7 @@ async fn handle_user_command(
             }
         }
 
-        UserCommands::List => {
+        UserCommands::List { .. } => {
             let users = MetadataStore::list_users()
                 .await
                 .map_err(|e| format!("Failed to list users: {}", e))?;
@@ -304,7 +314,7 @@ async fn handle_user_command(
             }
         }
 
-        UserCommands::Delete { username } => {
+        UserCommands::Delete { username, .. } => {
             let deleted = MetadataStore::delete_user(&username)
                 .await
                 .map_err(|e| format!("Failed to delete user: {}", e))?;

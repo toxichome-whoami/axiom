@@ -1,7 +1,7 @@
 /*
  * Axiom Unified Binary — Combined CLI management utility and embedded API gateway server.
  * Owned by: crates/server
- * Key deps: tokio, mimalloc, axiom-core, axiom-metadata, axiom-api, clap
+ * Key deps: tokio, mimalloc, axiom-core, axiom-metadata, axiom-api, clap, rustls
  * Invariants: Single binary dispatches to CLI subcommands if specified, or launches the full
  *             server daemon and embedded Web UI if run without subcommands or with `server`.
  * Last structural change: Unified single-binary out-of-the-box architecture (Phase 8 -> v4.0).
@@ -22,6 +22,7 @@ fn handle_version_flag(args: &[String]) -> bool {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let _ = rustls::crypto::ring::default_provider().install_default();
     let args: Vec<String> = std::env::args().collect();
     if handle_version_flag(&args) {
         return Ok(());

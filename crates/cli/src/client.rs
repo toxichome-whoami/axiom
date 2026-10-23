@@ -73,6 +73,7 @@ impl AdminClient {
             .or_else(|| std::env::var("AXIOM_TOKEN").ok())
             .or_else(get_saved_session);
 
+        let _ = rustls::crypto::ring::default_provider().install_default();
         let client = Client::builder()
             .timeout(Duration::from_secs(30))
             .build()
