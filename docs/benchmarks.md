@@ -62,8 +62,8 @@ The Policy Engine evaluates incoming requests against caller permissions. Axiom 
 |---|---|---|---|---|
 | `policy/wildcard_union_match` | `< 100 ns` | **38.9 ns** | `[38.88 ns ... 39.05 ns]` | Instant allow via `*` database & `*` table check |
 | `policy/allow_single_exact_match` | `< 100 ns` | **56.0 ns** | `[54.66 ns ... 57.60 ns]` | Direct database, table, and operation match |
-| `policy/deny_scan_10k_rules_fast_rejection` | `< 50 µs` | **12.1 µs** | `[12.07 µs ... 12.24 µs]` | Linear scan of 10,000 rules with pointer/len reject |
-| `policy/deny_scan_10k_rules_worst_case` | `< 500 µs` | **282.1 µs** | `[281.22 µs ... 283.84 µs]` | Complete string scan across 10,000 identical rules |
+| `policy/deny_scan_10k_rules_fast_rejection` | `< 50 µs` | **10.3 µs** | `[10.25 µs ... 10.39 µs]` | Linear scan of 10,000 rules with pointer/len reject |
+| `policy/deny_scan_10k_rules_worst_case` | `< 500 µs` | **341.1 µs** | `[327.36 µs ... 356.68 µs]` | Complete string scan across 10,000 identical rules |
 
 ### Group C: Cache & Rate Limiting Engine
 
@@ -71,11 +71,11 @@ Axiom uses a unified in-memory L1 cache (`DashMap` + LRU) and atomic token count
 
 | Benchmark Function | Target | Measured Time (p50) | 95% Confidence Interval | Notes |
 |---|---|---|---|---|
-| `cache/l1_get_miss` | `< 100 ns` | **70.1 ns** | `[69.91 ns ... 70.34 ns]` | Immediate non-allocating cache miss return |
-| `cache/check_rate_limit_contended` | `< 200 ns` | **89.0 ns** | `[88.16 ns ... 90.39 ns]` | Dual IP + Key window check & penalty calculation |
-| `cache/l1_get_hot_hit` | `< 1 µs` | **126.0 ns** | `[125.20 ns ... 127.20 ns]` | L1 hot query cache hit (zero disk / DB access) |
-| `cache/sweep_expired` | `< 1 µs` | **266.7 ns** | `[265.25 ns ... 268.72 ns]` | Min-heap TTL expiration cycle |
-| `cache/l1_set_memory_only` | `< 1 µs` | **416.8 ns** | `[414.35 ns ... 420.36 ns]` | Memory-only entry insert and LRU queue update |
+| `cache/l1_get_miss` | `< 100 ns` | **53.8 ns** | `[53.05 ns ... 54.66 ns]` | Immediate non-allocating cache miss return |
+| `cache/check_rate_limit_contended` | `< 200 ns` | **77.7 ns** | `[77.14 ns ... 78.72 ns]` | Dual IP + Key window check & penalty calculation |
+| `cache/l1_get_hot_hit` | `< 1 µs` | **106.6 ns** | `[105.39 ns ... 108.10 ns]` | L1 hot query cache hit (zero disk / DB access) |
+| `cache/sweep_expired` | `< 1 µs` | **250.4 ns** | `[248.79 ns ... 252.40 ns]` | Min-heap TTL expiration cycle |
+| `cache/l1_set_memory_only` | `< 1 µs` | **418.5 ns** | `[410.26 ns ... 428.78 ns]` | Memory-only entry insert and LRU queue update |
 
 ### Group D: Authentication & Middleware
 
@@ -83,8 +83,8 @@ Axiom validates the `X-Axiom-Key` header via constant-time BLAKE3 comparison aga
 
 | Benchmark Function | Target | Measured Time (p50) | 95% Confidence Interval | Notes |
 |---|---|---|---|---|
-| `middleware/auth_snapshot_wrong_secret` | `< 1 µs` | **222.9 ns** | `[210.38 ns ... 235.90 ns]` | Constant-time mismatch rejection |
-| `middleware/auth_snapshot_valid_hit` | `< 5 µs` | **555.8 ns** | `[555.08 ns ... 556.56 ns]` | Base64 decode, hash verification, role snapshot load |
+| `middleware/auth_snapshot_wrong_secret` | `< 1 µs` | **204.1 ns** | `[194.37 ns ... 214.44 ns]` | Constant-time mismatch rejection |
+| `middleware/auth_snapshot_valid_hit` | `< 5 µs` | **529.5 ns** | `[528.99 ns ... 530.22 ns]` | Base64 decode, hash verification, role snapshot load |
 
 ### Group E: Database Dialects & AST Query Engine
 
@@ -92,10 +92,10 @@ SQL statements are validated and parsed into Abstract Syntax Trees using `sqlpar
 
 | Benchmark Function | Target | Measured Time (p50) | 95% Confidence Interval | Notes |
 |---|---|---|---|---|
-| `database/ast_cache_lookup_hot` | `< 200 ns` | **77.9 ns** | `[76.54 ns ... 79.74 ns]` | Pre-parsed AST metadata cache hit |
+| `database/ast_cache_lookup_hot` | `< 200 ns` | **65.7 ns** | `[64.99 ns ... 66.62 ns]` | Pre-parsed AST metadata cache hit |
 | `database/filter_build_simple` | `< 1 µs` | **638.9 ns** | `[617.69 ns ... 664.81 ns]` | Multi-field JSON filter to SQL parameterized clause |
 | `database/filter_build_multi_clause` | `< 2 µs` | **936.6 ns** | `[931.75 ns ... 943.57 ns]` | 5-operator mixed filter (`$eq`, `$ne`, `$gt`, `$lte`, `$like`) |
-| `database/ast_uncached_parse` | `< 20 µs` | **11.2 µs** | `[10.87 µs ... 11.71 µs]` | Cold SQL parse with dialect AST verification |
+| `database/ast_uncached_parse` | `< 20 µs` | **9.10 µs** | `[9.02 µs ... 9.20 µs]` | Cold SQL parse with dialect AST verification |
 | `database/filter_build_in_500` | `< 50 µs` | **20.7 µs** | `[20.25 µs ... 21.27 µs]` | 500-element `$in` array placeholder generation |
 
 ### Group F: Zero-Lock Metadata Snapshots
@@ -113,11 +113,11 @@ These benchmarks measure complete HTTP request/response latency through Axum rou
 
 | Endpoint / Scenario | Target Latency | Measured Latency (p50) | 95% Confidence Interval |
 |---|---|---|---|
-| `http_pipeline/get_ready_endpoint` | `< 50 µs` | **14.6 µs** (0.014 ms) | `[14.59 µs ... 14.70 µs]` |
-| `http_pipeline/get_metrics_endpoint` | `< 50 µs` | **18.4 µs** (0.018 ms) | `[18.29 µs ... 18.48 µs]` |
-| `http_pipeline/unauthorized_admin_rejection` | `< 50 µs` | **22.6 µs** (0.022 ms) | `[22.16 µs ... 23.21 µs]` |
-| `http_pipeline/get_health_endpoint` | `< 50 µs` | **23.2 µs** (0.023 ms) | `[22.14 µs ... 24.39 µs]` |
-| `http_pipeline/unauthorized_blob_rejection` | `< 50 µs` | **25.4 µs** (0.025 ms) | `[25.35 µs ... 25.48 µs]` |
+| `http_pipeline/get_ready_endpoint` | `< 50 µs` | **13.4 µs** (0.013 ms) | `[13.32 µs ... 13.43 µs]` |
+| `http_pipeline/get_metrics_endpoint` | `< 50 µs` | **16.2 µs** (0.016 ms) | `[16.17 µs ... 16.24 µs]` |
+| `http_pipeline/get_health_endpoint` | `< 50 µs` | **18.0 µs** (0.018 ms) | `[17.78 µs ... 18.31 µs]` |
+| `http_pipeline/unauthorized_admin_rejection` | `< 50 µs` | **19.7 µs** (0.020 ms) | `[19.46 µs ... 20.01 µs]` |
+| `http_pipeline/unauthorized_blob_rejection` | `< 50 µs` | **22.5 µs** (0.023 ms) | `[21.87 µs ... 23.38 µs]` |
 
 ### Group H: Content-Addressed Blob Storage & Capability Tickets
 
@@ -136,9 +136,9 @@ These benchmarks measure complete HTTP request/response latency through Axum rou
 |---|---|---|---|---|---|
 | **Language & Runtime** | Native Rust (single binary) | Go | Haskell | Haskell / Go | Multi-container Docker |
 | **Idle Memory (RSS)** | **~21 MB** (Full daemon with all 7 engines & blob LSM) / **< 10 MB** (Core minimal) | ~ 35 MB | ~ 30 MB | > 150 MB | > 1.2 GB |
-| **L1 Cache Retrieval** | **126.0 ns** (In-Memory LRU) | ~ 2.5 µs | N/A (External cache) | In-memory query plan | Redis container |
-| **Auth Verification** | **555.8 ns** (ArcSwap + BLAKE3) | ~ 4.2 µs | JWT DB role switch | Webhook / JWT | GoTrue container |
-| **SQL Injection Defense** | **Dialect AST Parsing** (77.9 ns hot / 11.2 µs cold) | Regex pattern matching | Schema reflection | GraphQL compiler | Database RLS policies |
+| **L1 Cache Retrieval** | **106.6 ns** (In-Memory LRU) | ~ 2.5 µs | N/A (External cache) | In-memory query plan | Redis container |
+| **Auth Verification** | **529.5 ns** (ArcSwap + BLAKE3) | ~ 4.2 µs | JWT DB role switch | Webhook / JWT | GoTrue container |
+| **SQL Injection Defense** | **Dialect AST Parsing** (65.7 ns hot / 9.1 µs cold) | Regex pattern matching | Schema reflection | GraphQL compiler | Database RLS policies |
 | **Blob / Object Storage** | **Built-in** (BLAKE3 dedup + LSM) | None | None | None | MinIO / S3 daemon |
 | **Pre-signed Tickets** | **Built-in** (586 ns verification) | None | None | None | S3 presigned URLs |
 | **AI Agent Support** | **Built-in MCP Server** (`/mcp/v1`) | Built-in (`/mcp`) | None | None | None |

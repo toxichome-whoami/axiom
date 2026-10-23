@@ -1033,18 +1033,19 @@ Every performance claim is backed by reproducible Criterion micro-benchmarks in 
 | Pipeline Stage | Target | Measured (p50) | Verification Benchmark |
 |---|---|---|---|
 | **Zero-Lock Snapshot Read** | `< 50 ns` | **12.6 ns** | `metadata/snapshot_read_atomic` |
-| **RBAC Wildcard Union Match** | `< 100 ns` | **38.9 ns** | `policy/wildcard_union_match` |
-| **RBAC Exact Match Evaluation** | `< 100 ns` | **56.0 ns** | `policy/allow_single_exact_match` |
-| **AST Parse Cache Hot Hit** | `< 200 ns` | **77.9 ns** | `database/ast_cache_lookup_hot` |
-| **Rate Limit Check (Dual IP+Key)** | `< 200 ns` | **89.0 ns** | `cache/check_rate_limit_contended` |
-| **L1 RAM Cache GET (Hot Hit)** | `< 1 µs` | **126.0 ns** | `cache/l1_get_hot_hit` |
-| **ArcSwap Auth Key Verification** | `< 5 µs` | **555.8 ns** | `middleware/auth_snapshot_valid_hit` |
+| **RBAC Wildcard Union Match** | `< 100 ns` | **38.7 ns** | `policy/wildcard_union_match` |
+| **RBAC Exact Match Evaluation** | `< 100 ns` | **55.5 ns** | `policy/allow_single_exact_match` |
+| **AST Parse Cache Hot Hit** | `< 200 ns` | **65.7 ns** | `database/ast_cache_lookup_hot` |
+| **Rate Limit Check (Dual IP+Key)** | `< 200 ns` | **77.7 ns** | `cache/check_rate_limit_contended` |
+| **L1 RAM Cache GET (Hot Hit)** | `< 1 µs` | **106.6 ns** | `cache/l1_get_hot_hit` |
+| **Auth Key Verification (BLAKE3)** | `< 5 µs` | **529.5 ns** | `middleware/auth_snapshot_valid_hit` |
 | **Capability Ticket Verification** | `< 2 µs` | **586.1 ns** | `blob/ticket_verification_valid` |
 | **JSON Filter Builder (Multi-field)** | `< 1 µs` | **638.9 ns** | `database/filter_build_simple` |
 | **Capability Ticket Generation** | `< 2 µs` | **745.0 ns** | `blob/ticket_generation` |
 | **BLAKE3 64 KB Chunk Hash** | `< 15 µs` | **10.88 µs** | `blob/blake3_chunk_hash_64kb` |
-| **Full Axum Router Dispatch** | `< 50 µs` | **14.6 µs** | `http_pipeline/get_ready_endpoint` |
-| **Cold SQL AST Parse (Dialect)** | `< 20 µs` | **11.2 µs** | `database/ast_uncached_parse` |
+| **Cold SQL AST Parse (Dialect)** | `< 20 µs` | **9.10 µs** | `database/ast_uncached_parse` |
+| **Full Axum Router Ready Dispatch** | `< 50 µs` | **13.4 µs** | `http_pipeline/get_ready_endpoint` |
+| **Full Axum Router Metrics Dispatch** | `< 50 µs` | **16.2 µs** | `http_pipeline/get_metrics_endpoint` |
 | **Release Archive / Binary Size** | `< 15 MB` | **9.5 MB** (archive) / **22.5 MB** (standalone exe) | Release build with embedded UI & 7 engines |
 | **Idle Memory Footprint (RSS)** | `< 30 MB` | **21.5 MB** (all 7 engines & blob active) / **< 10 MB** (core minimal) | Release daemon with mimalloc |
 
