@@ -25,6 +25,7 @@ import {
   HardDrive,
   Table,
   Network,
+  History,
 } from 'lucide-react';
 
 export type NavPath =
@@ -35,6 +36,7 @@ export type NavPath =
   | '/system/cluster'
   | '/system/keys'
   | '/system/roles'
+  | '/system/audit'
   | '/system/mcp'
   | '/system/settings';
 
@@ -74,6 +76,7 @@ export function Layout({ currentPath, onNavigate, title, children, onLogout }: L
     { label: 'Cluster Mesh', path: '/system/cluster' as NavPath, icon: Network, category: 'Infrastructure' },
     { label: 'API Keys', path: '/system/keys' as NavPath, icon: Key, category: 'Security & Access' },
     { label: 'Roles', path: '/system/roles' as NavPath, icon: Shield, category: 'Security & Access' },
+    { label: 'Audit Log', path: '/system/audit' as NavPath, icon: History, category: 'Security & Access' },
     { label: 'MCP Protocol', path: '/system/mcp' as NavPath, icon: Bot, category: 'Protocols & Tools' },
     { label: 'Settings', path: '/system/settings' as NavPath, icon: Settings, category: 'Configuration' },
   ];
@@ -191,6 +194,11 @@ export function Layout({ currentPath, onNavigate, title, children, onLogout }: L
           path: '/system/roles' as NavPath,
           label: 'Roles',
           icon: Shield,
+        },
+        {
+          path: '/system/audit' as NavPath,
+          label: 'Audit Log',
+          icon: History,
         },
       ],
     },
