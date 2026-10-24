@@ -149,7 +149,21 @@ impl DatabaseEngine for LibsqlDatabaseEngine {
             if let Ok(name) = row.get_str(0) {
                 tables.push(TableInfo {
                     name: name.to_string(),
-                    row_count_estimate: 0,
+                    row_count_estimate: {
+                        let mut estimate = 0u64;
+                        if let Ok(stat_stmt) = conn.prepare("SELECT stat FROM sqlite_stat1 WHERE tbl = ?1").await {
+                            if let Ok(mut stat_rows) = stat_stmt.query([name]).await {
+                                if let Ok(Some(stat_row)) = stat_rows.next().await {
+                                    if let Ok(stat_str) = stat_row.get_str(0) {
+                                        if let Some(first_num) = stat_str.split_whitespace().next() {
+                                            estimate = first_num.parse::<u64>().unwrap_or(0);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        estimate
+                    },
                     columns: None,
                     foreign_keys: None,
                 });

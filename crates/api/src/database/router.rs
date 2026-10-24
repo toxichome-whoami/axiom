@@ -74,6 +74,13 @@ async fn list_databases(
             let engine_str = snap_db.engine.clone();
             let mode_str = "readwrite".to_string();
 
+            let cache_key = format!("meta:db_status:{}", name);
+            if let Some(cached_bytes) = axiom_cache::CacheEngine::get(&cache_key).await {
+                if let Ok(cached_val) = serde_json::from_slice::<Value>(&cached_bytes) {
+                    return Some(cached_val);
+                }
+            }
+
             let mut status = "down";
             let mut tables_count_str = "0".to_string();
             let probe_res = tokio::time::timeout(
@@ -95,13 +102,25 @@ async fn list_databases(
                 }
             }
 
-            Some(serde_json::json!({
+            let res_json = serde_json::json!({
                 "name": name,
                 "engine": engine_str,
                 "mode": mode_str,
                 "status": status,
                 "tables_count": tables_count_str
-            }))
+            });
+
+            if let Ok(serialized) = serde_json::to_vec(&res_json) {
+                axiom_cache::CacheEngine::set(
+                    &cache_key,
+                    serialized.into(),
+                    15,
+                    axiom_cache::Durability::MemoryOnly,
+                )
+                .await;
+            }
+
+            Some(res_json)
         }
     });
 

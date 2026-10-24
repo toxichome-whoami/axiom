@@ -126,7 +126,10 @@ impl DatabaseEngine for PostgresDatabaseEngine {
 
         let query_str = if cursor.is_some() {
             format!(
-                "SELECT table_name::text FROM information_schema.tables \
+                "SELECT t.table_name::text, COALESCE(GREATEST(c.reltuples::bigint, 0), 0)::bigint as row_count_estimate \
+                 FROM information_schema.tables t \
+                 LEFT JOIN pg_class c ON c.relname = t.table_name \
+                 LEFT JOIN pg_namespace n ON n.oid = c.relnamespace AND n.nspname = t.table_schema \
                  WHERE table_schema = 'public' AND table_type = 'BASE TABLE' \
                  AND table_name > $1 \
                  ORDER BY table_name ASC LIMIT {}",
@@ -134,7 +137,10 @@ impl DatabaseEngine for PostgresDatabaseEngine {
             )
         } else {
             format!(
-                "SELECT table_name::text FROM information_schema.tables \
+                "SELECT t.table_name::text, COALESCE(GREATEST(c.reltuples::bigint, 0), 0)::bigint as row_count_estimate \
+                 FROM information_schema.tables t \
+                 LEFT JOIN pg_class c ON c.relname = t.table_name \
+                 LEFT JOIN pg_namespace n ON n.oid = c.relnamespace AND n.nspname = t.table_schema \
                  WHERE table_schema = 'public' AND table_type = 'BASE TABLE' \
                  ORDER BY table_name ASC LIMIT {}",
                 limit
@@ -156,7 +162,10 @@ impl DatabaseEngine for PostgresDatabaseEngine {
             if let Ok(name) = row.try_get::<String, _>(0) {
                 tables.push(TableInfo {
                     name,
-                    row_count_estimate: 0,
+                    row_count_estimate: row
+                        .try_get::<i64, _>("row_count_estimate")
+                        .unwrap_or(0)
+                        .max(0) as u64,
                     columns: None,
                     foreign_keys: None,
                 });

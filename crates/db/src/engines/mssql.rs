@@ -139,12 +139,12 @@ impl DatabaseEngine for MssqlDatabaseEngine {
             .ok_or_else(|| EngineError::Connection("Not connected".into()))?;
         let mut client = client_arc.lock().await;
 
-        let mut query_str = "SELECT TABLE_NAME as table_name FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE = 'BASE TABLE'".to_string();
+        let mut query_str = "SELECT t.TABLE_NAME as table_name, COALESCE(SUM(p.rows), 0) as row_count_estimate FROM INFORMATION_SCHEMA.TABLES t LEFT JOIN sys.tables st ON st.name = t.TABLE_NAME LEFT JOIN sys.partitions p ON st.object_id = p.object_id AND p.index_id IN (0, 1) WHERE t.TABLE_TYPE = 'BASE TABLE'".to_string();
 
         if cursor.is_some() {
-            query_str.push_str(" AND TABLE_NAME > @P1");
+            query_str.push_str(" AND t.TABLE_NAME > @P1");
         }
-        query_str.push_str(" ORDER BY TABLE_NAME ASC");
+        query_str.push_str(" GROUP BY t.TABLE_NAME ORDER BY t.TABLE_NAME ASC");
         query_str.push_str(&format!(" OFFSET 0 ROWS FETCH NEXT {} ROWS ONLY", limit));
 
         let mut query = Query::new(&query_str);
@@ -169,7 +169,12 @@ impl DatabaseEngine for MssqlDatabaseEngine {
             {
                 tables.push(TableInfo {
                     name: name.to_string(),
-                    row_count_estimate: 0,
+                    row_count_estimate: row
+                        .try_get::<i64, _>("row_count_estimate")
+                        .ok()
+                        .flatten()
+                        .unwrap_or(0)
+                        .max(0) as u64,
                     columns: None,
                     foreign_keys: None,
                 });

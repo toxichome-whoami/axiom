@@ -123,17 +123,17 @@ impl DatabaseEngine for MysqlDatabaseEngine {
             .as_ref()
             .ok_or_else(|| EngineError::Connection("Not connected".into()))?;
 
-        // MySQL parameter binding uses '?' placeholder
+        // MySQL parameter binding uses '?' placeholder; extract live TABLE_ROWS estimate from in-memory engine dictionary
         let query_str = if cursor.is_some() {
             format!(
-                "SELECT TABLE_NAME as table_name FROM information_schema.tables \
+                "SELECT TABLE_NAME as table_name, COALESCE(TABLE_ROWS, 0) as row_count_estimate FROM information_schema.tables \
                  WHERE table_schema = DATABASE() AND TABLE_NAME > ? \
                  ORDER BY TABLE_NAME ASC LIMIT {}",
                 limit
             )
         } else {
             format!(
-                "SELECT TABLE_NAME as table_name FROM information_schema.tables \
+                "SELECT TABLE_NAME as table_name, COALESCE(TABLE_ROWS, 0) as row_count_estimate FROM information_schema.tables \
                  WHERE table_schema = DATABASE() \
                  ORDER BY TABLE_NAME ASC LIMIT {}",
                 limit
@@ -155,7 +155,11 @@ impl DatabaseEngine for MysqlDatabaseEngine {
             if let Ok(name) = row.try_get::<String, _>("table_name") {
                 tables.push(TableInfo {
                     name,
-                    row_count_estimate: 0,
+                    row_count_estimate: row
+                        .try_get::<i64, _>("row_count_estimate")
+                        .or_else(|_| row.try_get::<u64, _>("row_count_estimate").map(|v| v as i64))
+                        .unwrap_or(0)
+                        .max(0) as u64,
                     columns: None,
                     foreign_keys: None,
                 });
