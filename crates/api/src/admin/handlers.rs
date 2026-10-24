@@ -482,6 +482,55 @@ pub async fn rotate_key(
     })))
 }
 
+#[derive(Debug, Deserialize)]
+pub struct UpdateKeyRequest {
+    pub role: Option<Option<String>>,
+    pub rate_limit: Option<i64>,
+    pub expires_at: Option<Option<i64>>,
+}
+
+/// Updates an existing API key's role, rate limit, or expiration timestamp.
+pub async fn update_key(
+    Extension(auth): Extension<AuthContext>,
+    Path(name): Path<String>,
+    Json(payload): Json<UpdateKeyRequest>,
+) -> Result<impl IntoResponse, AxiomError> {
+    if !auth.is_session {
+        return Err(AxiomError::new(
+            "FORBIDDEN",
+            "Admin privileges required",
+            StatusCode::FORBIDDEN,
+        ));
+    }
+
+    let role_ref = payload.role.as_ref().map(|opt| opt.as_deref());
+    let updated = MetadataStore::update_key(
+        &name,
+        role_ref,
+        payload.rate_limit,
+        payload.expires_at,
+    )
+    .await
+    .map_err(|e| AxiomError::new("KEY_UPDATE_FAILED", &e, StatusCode::BAD_REQUEST))?;
+
+    if !updated {
+        return Err(AxiomError::new(
+            "KEY_NOT_FOUND",
+            "API key does not exist",
+            StatusCode::NOT_FOUND,
+        ));
+    }
+
+    Ok(Json(json!({
+        "success": true,
+        "data": {
+            "name": name,
+            "status": "updated"
+        },
+        "error": Value::Null
+    })))
+}
+
 // ─── Managed Database Endpoints ──────────────────────────────────────────
 // Database endpoints allow live registration and deregistration of upstream engines.
 // Passwords and raw connection strings must never leak in API response bodies.
@@ -668,6 +717,62 @@ pub async fn delete_database(
         "success": true,
         "data": {
             "message": format!("Database '{}' deleted successfully", alias)
+        },
+        "error": Value::Null
+    })))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateDatabaseRequest {
+    pub new_alias: Option<String>,
+    pub url: Option<String>,
+    pub engine: Option<String>,
+    pub pool_min: Option<i64>,
+    pub pool_max: Option<i64>,
+}
+
+/// Updates an existing database configuration (and tests connection if URL provided).
+pub async fn update_database(
+    Extension(auth): Extension<AuthContext>,
+    Path(alias): Path<String>,
+    Json(payload): Json<UpdateDatabaseRequest>,
+) -> Result<impl IntoResponse, AxiomError> {
+    if !auth.is_session {
+        return Err(AxiomError::new(
+            "FORBIDDEN",
+            "Admin privileges required",
+            StatusCode::FORBIDDEN,
+        ));
+    }
+
+    if let Some(ref new_a) = payload.new_alias {
+        validate_clean_name("Database alias", new_a)?;
+    }
+
+    // Call MetadataStore::update_database
+    MetadataStore::update_database(
+        &alias,
+        payload.new_alias.as_deref(),
+        payload.url.as_deref(),
+        payload.engine.as_deref(),
+        payload.pool_min,
+        payload.pool_max,
+    )
+    .await
+    .map_err(|e| AxiomError::new("DATABASE_UPDATE_FAILED", &e, StatusCode::BAD_REQUEST))?;
+
+    // Invalidate old connection pool so new settings take effect immediately
+    DatabasePoolManager::remove_engine(&alias).await;
+    if let Some(ref new_a) = payload.new_alias {
+        DatabasePoolManager::remove_engine(new_a).await;
+    }
+
+    let effective_alias = payload.new_alias.unwrap_or(alias);
+    Ok(Json(json!({
+        "success": true,
+        "data": {
+            "alias": effective_alias,
+            "status": "updated"
         },
         "error": Value::Null
     })))
@@ -1702,6 +1807,8 @@ pub async fn logout_handler(
 /// Lists all registered administrative accounts.
 /// CONTRACT:
 ///  - Invariant: Password hashes are redacted.
+///  - Invariant: User listing is the only HTTP administrative user endpoint.
+///    Account creation, updates, and removals must be performed directly on the host server via CLI (`axiom user`).
 pub async fn list_users_handler(
     Extension(auth): Extension<AuthContext>,
 ) -> Result<impl IntoResponse, AxiomError> {

@@ -1134,7 +1134,7 @@ All `/admin/v1/*` routes (except setup initialization and login) require an admi
 | `POST` | `/admin/v1/setup/complete` | Setup | Complete setup and permanently lock `/setup/*` |
 | `POST` | `/admin/v1/auth/login` | Public | Authenticate credentials; returns bearer session token |
 | `POST` | `/admin/v1/auth/logout` | Session | Invalidate active session token |
-| `GET` | `/admin/v1/users` | Session | Enumerate administrator accounts |
+| `GET` | `/admin/v1/users` | Session | Enumerate administrator accounts (read-only; modifications via CLI) |
 
 ---
 
@@ -1307,6 +1307,13 @@ Authorization: Bearer <SESSION_TOKEN>
 }
 ```
 
+> [!NOTE]
+> **Host-Only Admin User Lifecycle Management**
+> For maximum cluster security, after initial setup (`POST /admin/v1/setup/account`), user mutation endpoints (`POST`, `PATCH`, `DELETE`) are intentionally disabled over HTTP. Administrative user accounts can only be added, updated, or removed directly on the host server via the Axiom CLI:
+> - **Add user**: `axiom user add <username> [--email <email>] [-p <password>]`
+> - **Update user**: `axiom user update <username> [--email <email>] [-p <password>]`
+> - **Remove user**: `axiom user remove <username>`
+
 ---
 
 ### System Telemetry & Operations
@@ -1459,6 +1466,32 @@ Content-Type: application/json
     "token": "bW9iaWxlX2NsaWVudDo5YTgyY2QxNGY2MjhkMzgxNDU2NzE4OTlhYmNkZWYwMg==",
     "secret": "9a82cd14f628d38145671899abcdef02",
     "message": "Key secret successfully rolled"
+  },
+  "error": null
+}
+```
+
+#### Update Key (`PATCH /admin/v1/keys/:name`)
+**Request**:
+```http
+PATCH /admin/v1/keys/mobile_client
+Authorization: Bearer <SESSION_TOKEN>
+Content-Type: application/json
+```
+```json
+{
+  "role": "analytics_viewer",
+  "rate_limit": 500,
+  "expires_at": 1792900000
+}
+```
+**Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "data": {
+    "name": "mobile_client",
+    "status": "updated"
   },
   "error": null
 }
@@ -1655,6 +1688,32 @@ Content-Type: application/json
     "status": "connected",
     "dialect": "postgres",
     "latency_ms": 0.85
+  },
+  "error": null
+}
+```
+
+#### Update Database (`PATCH /admin/v1/databases/:alias`)
+**Request**:
+```http
+PATCH /admin/v1/databases/analytics_mysql
+Authorization: Bearer <SESSION_TOKEN>
+Content-Type: application/json
+```
+```json
+{
+  "new_alias": "warehouse_mysql",
+  "pool_min": 2,
+  "pool_max": 20
+}
+```
+**Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "data": {
+    "alias": "warehouse_mysql",
+    "status": "updated"
   },
   "error": null
 }

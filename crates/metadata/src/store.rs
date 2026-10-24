@@ -538,6 +538,81 @@ impl MetadataStore {
         Ok(affected > 0)
     }
 
+    /// Updates an existing API key's role, rate limit, or expiration timestamp.
+    pub async fn update_key(
+        name: &str,
+        role_name: Option<Option<&str>>,
+        rate_limit: Option<i64>,
+        expires_at: Option<Option<i64>>,
+    ) -> Result<bool, String> {
+        let _guard = STORE_LOCK.lock().await;
+        let conn = Self::get_conn().await?;
+
+        let mut rows = conn
+            .query(
+                "SELECT role_name, rate_limit, expires_at FROM api_keys WHERE name = ?1",
+                [name],
+            )
+            .await
+            .map_err(|e| format!("Database query error: {}", e))?;
+
+        let (existing_role, existing_rl, existing_exp) = match rows.next().await.map_err(|e| e.to_string())? {
+            Some(row) => {
+                let r: Option<String> = row.get(0).ok().filter(|s: &String| !s.trim().is_empty());
+                let rl: i64 = row.get(1).unwrap_or(0);
+                let exp: Option<i64> = row.get(2).ok();
+                (r, rl, exp)
+            }
+            None => return Ok(false),
+        };
+
+        let new_role = match role_name {
+            Some(opt) => opt.map(|s| s.trim().to_string()).filter(|s| !s.is_empty()),
+            None => existing_role,
+        };
+        let new_rl = rate_limit.unwrap_or(existing_rl);
+        let new_exp = match expires_at {
+            Some(opt) => opt,
+            None => existing_exp,
+        };
+
+        // If role specified, verify it exists
+        if let Some(ref r) = new_role {
+            let mut role_rows = conn
+                .query("SELECT name FROM roles WHERE name = ?1", [r.as_str()])
+                .await
+                .map_err(|e| format!("Database query error: {}", e))?;
+            if role_rows.next().await.map_err(|e| e.to_string())?.is_none() {
+                return Err(format!("Role '{}' does not exist", r));
+            }
+        }
+
+        conn.execute(
+            "UPDATE api_keys SET role_name = ?1, rate_limit = ?2, expires_at = ?3 WHERE name = ?4",
+            libsql::params![new_role.clone(), new_rl, new_exp, name],
+        )
+        .await
+        .map_err(|e| format!("Failed to update API key: {}", e))?;
+
+        let now_unix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+
+        let _ = conn
+            .execute(
+                "INSERT INTO audit_log (timestamp, actor, action, target, details) \
+                 VALUES (?1, 'cli', 'key.update', ?2, ?3)",
+                libsql::params![now_unix, name, format!("role={:?}, rate_limit={}", new_role, new_rl)],
+            )
+            .await;
+
+        drop(conn);
+        Self::sync_snapshot().await?;
+
+        Ok(true)
+    }
+
     /// Lists all registered API keys (without disclosing secret hashes).
     pub async fn list_keys() -> Result<Vec<ApiKeyRecord>, String> {
         let conn = Self::get_conn().await?;
@@ -966,6 +1041,28 @@ impl MetadataStore {
         Ok(())
     }
 
+    /// Updates an existing database configuration (or renames its alias).
+    pub async fn update_database(
+        alias: &str,
+        new_alias: Option<&str>,
+        url: Option<&str>,
+        engine: Option<&str>,
+        pool_min: Option<i64>,
+        pool_max: Option<i64>,
+    ) -> Result<(), String> {
+        let effective_alias = new_alias.unwrap_or(alias);
+        let effective_url = url.unwrap_or("");
+        Self::add_database(
+            effective_alias,
+            effective_url,
+            engine,
+            pool_min,
+            pool_max,
+            Some(alias),
+        )
+        .await
+    }
+
     /// Removes a registered database configuration and removes it from the snapshot.
     /// CONTRACT:
     ///  - Side effects: Deletes from `databases` table, logs audit event, updates snapshot.
@@ -1214,6 +1311,74 @@ impl MetadataStore {
         }
 
         Ok(affected > 0)
+    }
+
+    /// Updates an existing administrative user's email or password.
+    pub async fn update_user(
+        username: &str,
+        email: Option<Option<&str>>,
+        password: Option<&str>,
+    ) -> Result<bool, String> {
+        let clean_username = username.trim();
+        let _guard = STORE_LOCK.lock().await;
+        let conn = Self::get_conn().await?;
+
+        let mut rows = conn
+            .query(
+                "SELECT id, email, password_hash FROM users WHERE username = ?1",
+                [clean_username],
+            )
+            .await
+            .map_err(|e| format!("Database query error: {}", e))?;
+
+        let existing = match rows.next().await.map_err(|e| e.to_string())? {
+            Some(row) => {
+                let _id: i64 = row.get(0).map_err(|e| e.to_string())?;
+                let existing_email: Option<String> = row.get(1).ok();
+                let existing_pass: String = row.get(2).map_err(|e| e.to_string())?;
+                (_id, existing_email, existing_pass)
+            }
+            None => return Ok(false),
+        };
+
+        let new_email = match email {
+            Some(opt) => opt.map(|e| e.trim().to_lowercase()).filter(|e| !e.is_empty()),
+            None => existing.1,
+        };
+
+        let new_pass_hash = match password {
+            Some(p) if !p.trim().is_empty() => {
+                let salt = SaltString::generate(&mut OsRng);
+                let argon2 = Argon2::default();
+                argon2
+                    .hash_password(p.as_bytes(), &salt)
+                    .map_err(|e| format!("Argon2 hashing failed: {}", e))?
+                    .to_string()
+            }
+            _ => existing.2,
+        };
+
+        conn.execute(
+            "UPDATE users SET email = ?1, password_hash = ?2 WHERE username = ?3",
+            libsql::params![new_email, new_pass_hash.as_str(), clean_username],
+        )
+        .await
+        .map_err(|e| format!("Failed to update user: {}", e))?;
+
+        let now_unix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+
+        let _ = conn
+            .execute(
+                "INSERT INTO audit_log (timestamp, actor, action, target, details) \
+                 VALUES (?1, 'cli', 'user.update', ?2, NULL)",
+                libsql::params![now_unix, clean_username],
+            )
+            .await;
+
+        Ok(true)
     }
 
     // ─── Session Management ────────────────────────────────────────────────

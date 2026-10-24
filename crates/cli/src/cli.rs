@@ -236,8 +236,9 @@ async fn handle_user_command(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let cfg_path = match &command {
         UserCommands::Add { config, .. } => config.as_deref(),
+        UserCommands::Update { config, .. } => config.as_deref(),
         UserCommands::List { config } => config.as_deref(),
-        UserCommands::Delete { config, .. } => config.as_deref(),
+        UserCommands::Remove { config, .. } => config.as_deref(),
     };
     init_cli_metadata(cfg_path)
         .await
@@ -280,6 +281,49 @@ async fn handle_user_command(
             }
         }
 
+        UserCommands::Update {
+            username,
+            email,
+            password,
+            ..
+        } => {
+            let pass_input = match password {
+                Some(p) if !p.trim().is_empty() => Some(p),
+                _ if email.is_none() => {
+                    eprint!("Enter new password for admin '{}': ", username);
+                    let p = rpassword::read_password()?;
+                    if p.trim().is_empty() {
+                        None
+                    } else {
+                        Some(p)
+                    }
+                }
+                _ => None,
+            };
+
+            let email_opt = email.as_deref().map(Some);
+            let updated = MetadataStore::update_user(&username, email_opt, pass_input.as_deref())
+                .await
+                .map_err(|e| format!("User update failed: {}", e))?;
+
+            if !updated {
+                return Err(format!("User '{}' not found", username).into());
+            }
+
+            let res = json!({
+                "success": true,
+                "data": { "username": username, "message": "Admin user updated successfully" }
+            });
+
+            if format == OutputFormat::Json {
+                println!("{}", serde_json::to_string_pretty(&res)?);
+            } else if format == OutputFormat::Jsonl {
+                println!("{}", serde_json::to_string(&res)?);
+            } else {
+                println!("Admin user '{}' updated successfully.", username);
+            }
+        }
+
         UserCommands::List { .. } => {
             let users = MetadataStore::list_users()
                 .await
@@ -314,7 +358,7 @@ async fn handle_user_command(
             }
         }
 
-        UserCommands::Delete { username, .. } => {
+        UserCommands::Remove { username, .. } => {
             let deleted = MetadataStore::delete_user(&username)
                 .await
                 .map_err(|e| format!("Failed to delete user: {}", e))?;
@@ -445,7 +489,25 @@ async fn handle_key_command(
             }
         }
 
-        KeyCommands::Delete { name } => {
+        KeyCommands::Update {
+            name,
+            role,
+            rate_limit,
+            expires_at,
+        } => {
+            let resp = client
+                .update_key(&name, role.as_deref(), rate_limit, expires_at)
+                .await?;
+            if format == OutputFormat::Json {
+                println!("{}", serde_json::to_string_pretty(&resp)?);
+            } else if format == OutputFormat::Jsonl {
+                println!("{}", serde_json::to_string(&resp)?);
+            } else {
+                println!("API Key '{}' updated successfully.", name);
+            }
+        }
+
+        KeyCommands::Remove { name } => {
             let resp = client.delete_key(&name).await?;
             if format == OutputFormat::Json {
                 println!("{}", serde_json::to_string_pretty(&resp)?);
@@ -556,7 +618,7 @@ async fn handle_role_command(
             }
         }
 
-        RoleCommands::Delete { name } => {
+        RoleCommands::Remove { name } => {
             let resp = client.delete_role(&name).await?;
             if format == OutputFormat::Json {
                 println!("{}", serde_json::to_string_pretty(&resp)?);
@@ -601,6 +663,35 @@ async fn handle_db_command(
                 println!("{}", serde_json::to_string(&resp)?);
             } else {
                 println!("Database target '{}' configured successfully.", alias);
+            }
+        }
+
+        DbCommands::Update {
+            alias,
+            new_alias,
+            connection_url,
+            engine,
+            pool_min,
+            pool_max,
+        } => {
+            let resp = client
+                .update_database(
+                    &alias,
+                    new_alias.as_deref(),
+                    connection_url.as_deref(),
+                    engine.as_deref(),
+                    pool_min,
+                    pool_max,
+                )
+                .await?;
+
+            if format == OutputFormat::Json {
+                println!("{}", serde_json::to_string_pretty(&resp)?);
+            } else if format == OutputFormat::Jsonl {
+                println!("{}", serde_json::to_string(&resp)?);
+            } else {
+                let effective_alias = new_alias.unwrap_or(alias);
+                println!("Database target '{}' updated successfully.", effective_alias);
             }
         }
 
@@ -971,7 +1062,7 @@ async fn handle_db_command(
             }
         }
 
-        DbCommands::Update {
+        DbCommands::UpdateRows {
             alias,
             table,
             filter,
