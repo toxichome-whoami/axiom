@@ -103,6 +103,20 @@ pub struct CreateColumnRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModifyColumnRequest {
+    pub name: String,
+    #[serde(default)]
+    pub new_name: Option<String>,
+    #[serde(default)]
+    pub data_type: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DropColumnRequest {
+    pub name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ForeignKeyInfo {
     pub column: String,
     pub referenced_table: String,

@@ -212,7 +212,11 @@ All `/api/v1/db/*` routes require an authenticated API Key (`X-Axiom-Key: base64
 | `POST` | `/api/v1/db/:alias/:table/rows` | Insert one or more rows with `Idempotency-Key` replay protection |
 | `PATCH` | `/api/v1/db/:alias/:table/rows` | Update rows matching mandatory filter object |
 | `DELETE` | `/api/v1/db/:alias/:table/rows` | Delete rows matching mandatory filter object |
+| `GET` | `/api/v1/db/:alias/:table/columns` | Inspect table columns, datatypes, and foreign keys |
 | `POST` | `/api/v1/db/:alias/:table/columns` | Dynamic DDL: Add a column to an existing table schema |
+| `PATCH` | `/api/v1/db/:alias/:table/columns` | Dynamic DDL: Rename or alter column data type |
+| `DELETE` | `/api/v1/db/:alias/:table/columns` | Dynamic DDL: Drop a column (via `?name=` or JSON payload) |
+| `DELETE` | `/api/v1/db/:alias/:table/columns/:column_name` | Dynamic DDL: Drop a column via path parameter |
 
 ---
 
@@ -581,6 +585,62 @@ Content-Type: application/json
     "database": "main_pg",
     "table": "users",
     "column": "mfa_enabled"
+  },
+  "error": null
+}
+```
+
+---
+
+### Dynamic DDL: Modify / Rename Column (`PATCH /api/v1/db/:alias/:table/columns`)
+**Request**:
+```http
+PATCH /api/v1/db/main_pg/users/columns
+X-Axiom-Key: <TOKEN>
+Content-Type: application/json
+```
+```json
+{
+  "name": "mfa_enabled",
+  "new_name": "is_mfa_active"
+}
+```
+**Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "data": {
+    "database": "main_pg",
+    "table": "users",
+    "column": "mfa_enabled",
+    "new_name": "is_mfa_active",
+    "data_type": null
+  },
+  "error": null
+}
+```
+
+---
+
+### Dynamic DDL: Drop Column (`DELETE /api/v1/db/:alias/:table/columns` or `DELETE /api/v1/db/:alias/:table/columns/:column_name`)
+**Request**:
+```http
+DELETE /api/v1/db/main_pg/users/columns/is_mfa_active
+X-Axiom-Key: <TOKEN>
+```
+*Alternatively, query parameter or body:*
+```http
+DELETE /api/v1/db/main_pg/users/columns?name=is_mfa_active
+X-Axiom-Key: <TOKEN>
+```
+**Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "data": {
+    "database": "main_pg",
+    "table": "users",
+    "column": "is_mfa_active"
   },
   "error": null
 }

@@ -8,7 +8,7 @@
 
 use axum::{
     extract::{Extension, Path},
-    routing::{get, post},
+    routing::{delete, get, post},
     Json, Router,
 };
 use serde_json::Value;
@@ -44,7 +44,14 @@ pub fn get_router() -> Router {
         )
         .route(
             "/:db_name/:table_name/columns",
-            post(crate::database::handlers::add_column),
+            get(crate::database::handlers::describe_table)
+                .post(crate::database::handlers::add_column)
+                .patch(crate::database::handlers::modify_column)
+                .delete(crate::database::handlers::drop_column),
+        )
+        .route(
+            "/:db_name/:table_name/columns/:column_name",
+            delete(crate::database::handlers::drop_column_by_path),
         )
 }
 

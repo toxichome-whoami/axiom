@@ -2105,6 +2105,178 @@ pub async fn add_column(
     })))
 }
 
+#[derive(Debug, serde::Deserialize)]
+pub struct DropColumnParams {
+    pub name: Option<String>,
+}
+
+pub async fn drop_column(
+    axum::extract::Path((db_name, table_name)): axum::extract::Path<(String, String)>,
+    axum::extract::Extension(auth): axum::extract::Extension<AuthContext>,
+    axum::extract::Query(query): axum::extract::Query<DropColumnParams>,
+    payload: Option<axum::Json<axiom_core::DropColumnRequest>>,
+) -> Result<axum::Json<serde_json::Value>, AxiomError> {
+    let col_name = query
+        .name
+        .or_else(|| payload.map(|p| p.0.name))
+        .ok_or_else(|| {
+            AxiomError::new(
+                "MISSING_COLUMN_NAME",
+                "Column name must be provided in query ?name= or JSON body",
+                axum::http::StatusCode::BAD_REQUEST,
+            )
+        })?;
+
+    drop_column_internal(&db_name, &table_name, &col_name, &auth).await
+}
+
+pub async fn drop_column_by_path(
+    axum::extract::Path((db_name, table_name, column_name)): axum::extract::Path<(
+        String,
+        String,
+        String,
+    )>,
+    axum::extract::Extension(auth): axum::extract::Extension<AuthContext>,
+) -> Result<axum::Json<serde_json::Value>, AxiomError> {
+    drop_column_internal(&db_name, &table_name, &column_name, &auth).await
+}
+
+async fn drop_column_internal(
+    db_name: &str,
+    table_name: &str,
+    column_name: &str,
+    auth: &AuthContext,
+) -> Result<axum::Json<serde_json::Value>, AxiomError> {
+    PolicyEngine::evaluate(auth, db_name, table_name, "DDL")?;
+
+    let clean: String = column_name
+        .chars()
+        .filter(|c| c.is_alphanumeric() || *c == '_')
+        .collect();
+    if clean.is_empty() || clean != column_name {
+        return Err(AxiomError::new(
+            "INVALID_COLUMN_NAME",
+            "Column name must contain only alphanumeric characters and underscores",
+            axum::http::StatusCode::BAD_REQUEST,
+        ));
+    }
+
+    let _db_cfg = get_db_config(db_name, auth).await?;
+    let engine = DatabasePoolManager::get_engine(db_name)
+        .await
+        .ok_or_else(|| {
+            AxiomError::new(
+                "DB_NOT_FOUND",
+                "Database not found",
+                axum::http::StatusCode::NOT_FOUND,
+            )
+        })?;
+
+    engine
+        .drop_column(table_name, &clean)
+        .await
+        .map_err(|e| {
+            tracing::error!("Drop column failed: {}", e);
+            AxiomError::new(
+                "DROP_COLUMN_FAILED",
+                "Failed to drop column",
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            )
+        })?;
+
+    invalidate_table_schema(db_name, table_name);
+
+    Ok(axum::Json(serde_json::json!({
+        "success": true,
+        "data": {
+            "database": db_name,
+            "table": table_name,
+            "column": clean
+        },
+        "error": serde_json::Value::Null
+    })))
+}
+
+pub async fn modify_column(
+    axum::extract::Path((db_name, table_name)): axum::extract::Path<(String, String)>,
+    axum::extract::Extension(auth): axum::extract::Extension<AuthContext>,
+    axum::Json(payload): axum::Json<axiom_core::ModifyColumnRequest>,
+) -> Result<axum::Json<serde_json::Value>, AxiomError> {
+    PolicyEngine::evaluate(&auth, &db_name, &table_name, "DDL")?;
+
+    let clean_name: String = payload
+        .name
+        .chars()
+        .filter(|c| c.is_alphanumeric() || *c == '_')
+        .collect();
+    if clean_name.is_empty() || clean_name != payload.name {
+        return Err(AxiomError::new(
+            "INVALID_COLUMN_NAME",
+            "Column name must contain only alphanumeric characters and underscores",
+            axum::http::StatusCode::BAD_REQUEST,
+        ));
+    }
+
+    if let Some(ref new_name) = payload.new_name {
+        let clean_new: String = new_name
+            .chars()
+            .filter(|c| c.is_alphanumeric() || *c == '_')
+            .collect();
+        if clean_new.is_empty() || clean_new != *new_name {
+            return Err(AxiomError::new(
+                "INVALID_COLUMN_NAME",
+                "New column name must contain only alphanumeric characters and underscores",
+                axum::http::StatusCode::BAD_REQUEST,
+            ));
+        }
+    }
+
+    if payload.new_name.is_none() && payload.data_type.is_none() {
+        return Err(AxiomError::new(
+            "INVALID_PAYLOAD",
+            "Either new_name or data_type must be specified to modify a column",
+            axum::http::StatusCode::BAD_REQUEST,
+        ));
+    }
+
+    let _db_cfg = get_db_config(&db_name, &auth).await?;
+    let engine = DatabasePoolManager::get_engine(&db_name)
+        .await
+        .ok_or_else(|| {
+            AxiomError::new(
+                "DB_NOT_FOUND",
+                "Database not found",
+                axum::http::StatusCode::NOT_FOUND,
+            )
+        })?;
+
+    engine
+        .modify_column(&table_name, &payload)
+        .await
+        .map_err(|e| {
+            tracing::error!("Modify column failed: {}", e);
+            AxiomError::new(
+                "MODIFY_COLUMN_FAILED",
+                "Failed to modify column",
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            )
+        })?;
+
+    invalidate_table_schema(&db_name, &table_name);
+
+    Ok(axum::Json(serde_json::json!({
+        "success": true,
+        "data": {
+            "database": db_name,
+            "table": table_name,
+            "column": payload.name,
+            "new_name": payload.new_name,
+            "data_type": payload.data_type
+        },
+        "error": serde_json::Value::Null
+    })))
+}
+
 #[cfg(test)]
 mod tests {
 
@@ -2353,5 +2525,18 @@ mod tests {
         } else {
             panic!("Expected query");
         }
+    }
+
+    #[test]
+    fn test_drop_column_params_deserialization() {
+        use super::DropColumnParams;
+
+        let json = r#"{"name": "status_code"}"#;
+        let params: DropColumnParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.name.as_deref(), Some("status_code"));
+
+        let empty_json = "{}";
+        let empty_params: DropColumnParams = serde_json::from_str(empty_json).unwrap();
+        assert!(empty_params.name.is_none());
     }
 }

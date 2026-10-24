@@ -10,8 +10,9 @@ use async_trait::async_trait;
 use serde_json::Value;
 
 pub use axiom_core::{
-    extract_next_cursor, ColumnInfo, CreateColumnRequest, EngineError, ForeignKeyDef,
-    ForeignKeyInfo, QueryResult, TableInfo, DEFAULT_MAX_QUERY_ROWS,
+    extract_next_cursor, ColumnInfo, CreateColumnRequest, DropColumnRequest, EngineError,
+    ForeignKeyDef, ForeignKeyInfo, ModifyColumnRequest, QueryResult, TableInfo,
+    DEFAULT_MAX_QUERY_ROWS,
 };
 
 // ─── Database Engine Trait ─────────────────────────────────────────────────
@@ -90,6 +91,151 @@ pub trait DatabaseEngine: Send + Sync {
     ///  - Precondition: Table exists and column name is valid.
     ///  - Side effects: Modifies table schema in target database.
     async fn add_column(&self, table: &str, req: &CreateColumnRequest) -> Result<(), EngineError>;
+
+    /// Drops an existing column from a table with dialect-safe DDL generation.
+    /// CONTRACT:
+    ///  - Precondition: Table and column exist in target database.
+    ///  - Side effects: Modifies table schema by removing the specified column.
+    async fn drop_column(&self, table: &str, column: &str) -> Result<(), EngineError> {
+        let col_clean: String = column
+            .chars()
+            .filter(|c| c.is_alphanumeric() || *c == '_')
+            .collect();
+        if col_clean.is_empty() {
+            return Err(EngineError::Schema("Invalid column name".into()));
+        }
+
+        let (q_open, q_close) = match self.dialect() {
+            "mysql" | "clickhouse" => ("`", "`"),
+            "mssql" => ("[", "]"),
+            _ => ("\"", "\""),
+        };
+        let escaped_table = format!(
+            "{}{}{}",
+            q_open,
+            table.replace(q_close, &format!("{}{}", q_close, q_close)),
+            q_close
+        );
+        let escaped_col = format!(
+            "{}{}{}",
+            q_open,
+            col_clean.replace(q_close, &format!("{}{}", q_close, q_close)),
+            q_close
+        );
+        let sql = format!("ALTER TABLE {} DROP COLUMN {}", escaped_table, escaped_col);
+
+        self.execute(&sql, &[]).await?;
+        Ok(())
+    }
+
+    /// Modifies or renames an existing column with dialect-safe DDL generation.
+    /// CONTRACT:
+    ///  - Precondition: Table and source column exist in target database.
+    ///  - Side effects: Renames column or changes column data type.
+    async fn modify_column(&self, table: &str, req: &ModifyColumnRequest) -> Result<(), EngineError> {
+        let col_clean: String = req
+            .name
+            .chars()
+            .filter(|c| c.is_alphanumeric() || *c == '_')
+            .collect();
+        if col_clean.is_empty() {
+            return Err(EngineError::Schema("Invalid column name".into()));
+        }
+
+        let (q_open, q_close) = match self.dialect() {
+            "mysql" | "clickhouse" => ("`", "`"),
+            "mssql" => ("[", "]"),
+            _ => ("\"", "\""),
+        };
+        let escaped_table = format!(
+            "{}{}{}",
+            q_open,
+            table.replace(q_close, &format!("{}{}", q_close, q_close)),
+            q_close
+        );
+        let escaped_col = format!(
+            "{}{}{}",
+            q_open,
+            col_clean.replace(q_close, &format!("{}{}", q_close, q_close)),
+            q_close
+        );
+
+        // Handle rename if new_name is supplied
+        if let Some(ref new_name) = req.new_name {
+            let new_col_clean: String = new_name
+                .chars()
+                .filter(|c| c.is_alphanumeric() || *c == '_')
+                .collect();
+            if new_col_clean.is_empty() {
+                return Err(EngineError::Schema("Invalid new column name".into()));
+            }
+            let escaped_new_col = format!(
+                "{}{}{}",
+                q_open,
+                new_col_clean.replace(q_close, &format!("{}{}", q_close, q_close)),
+                q_close
+            );
+
+            let sql = if self.dialect() == "mssql" {
+                format!(
+                    "EXEC sp_rename '{}.{}', '{}', 'COLUMN'",
+                    table.replace('\'', "''"),
+                    col_clean.replace('\'', "''"),
+                    new_col_clean.replace('\'', "''")
+                )
+            } else {
+                format!(
+                    "ALTER TABLE {} RENAME COLUMN {} TO {}",
+                    escaped_table, escaped_col, escaped_new_col
+                )
+            };
+            self.execute(&sql, &[]).await?;
+        }
+
+        // Handle type modification if data_type is supplied
+        if let Some(ref data_type) = req.data_type {
+            let target_col = if let Some(ref new_name) = req.new_name {
+                let n: String = new_name
+                    .chars()
+                    .filter(|c| c.is_alphanumeric() || *c == '_')
+                    .collect();
+                format!(
+                    "{}{}{}",
+                    q_open,
+                    n.replace(q_close, &format!("{}{}", q_close, q_close)),
+                    q_close
+                )
+            } else {
+                escaped_col
+            };
+
+            let sql = match self.dialect() {
+                "mysql" | "clickhouse" => {
+                    format!("ALTER TABLE {} MODIFY COLUMN {} {}", escaped_table, target_col, data_type)
+                }
+                "postgres" => {
+                    format!("ALTER TABLE {} ALTER COLUMN {} TYPE {}", escaped_table, target_col, data_type)
+                }
+                "mssql" => {
+                    format!("ALTER TABLE {} ALTER COLUMN {} {}", escaped_table, target_col, data_type)
+                }
+                "oracle" => {
+                    format!("ALTER TABLE {} MODIFY ({} {})", escaped_table, target_col, data_type)
+                }
+                "sqlite" => {
+                    return Err(EngineError::Execution(
+                        "SQLite does not support altering column types via ALTER TABLE".into(),
+                    ))
+                }
+                _ => {
+                    format!("ALTER TABLE {} ALTER COLUMN {} TYPE {}", escaped_table, target_col, data_type)
+                }
+            };
+            self.execute(&sql, &[]).await?;
+        }
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -120,5 +266,22 @@ mod tests {
         assert_eq!(fk.column, "org_id");
         assert_eq!(fk.referenced_table, "organizations");
         assert_eq!(fk.referenced_column, "id");
+    }
+
+    #[test]
+    fn test_modify_and_drop_column_requests() {
+        let req = ModifyColumnRequest {
+            name: "email".to_string(),
+            new_name: Some("user_email".to_string()),
+            data_type: Some("VARCHAR(255)".to_string()),
+        };
+        assert_eq!(req.name, "email");
+        assert_eq!(req.new_name.as_deref(), Some("user_email"));
+        assert_eq!(req.data_type.as_deref(), Some("VARCHAR(255)"));
+
+        let drop_req = DropColumnRequest {
+            name: "legacy_field".to_string(),
+        };
+        assert_eq!(drop_req.name, "legacy_field");
     }
 }
