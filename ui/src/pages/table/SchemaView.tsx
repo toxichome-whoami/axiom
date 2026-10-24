@@ -117,10 +117,10 @@ export function SchemaView({
         setActiveColumnMenu(null);
       }
     };
-    document.addEventListener('mousedown', handleOutside, true);
+    document.addEventListener('pointerdown', handleOutside, true);
     window.addEventListener('keydown', handleKey);
     return () => {
-      document.removeEventListener('mousedown', handleOutside, true);
+      document.removeEventListener('pointerdown', handleOutside, true);
       window.removeEventListener('keydown', handleKey);
     };
   }, [activeTableMenu, activeColumnMenu]);
@@ -128,6 +128,16 @@ export function SchemaView({
   // Canvas Viewport transform: pan state
   const [isPanning, setIsPanning] = useState(false);
   const panStartRef = useRef<{ x: number; y: number; startTx: number; startTy: number } | null>(null);
+
+  // Multi-touch tracking for canvas panning & pinch-to-zoom on mobile/tablet touch screens
+  const activeCanvasPointersRef = useRef<Map<number, { x: number; y: number }>>(new Map());
+  const pinchStateRef = useRef<{
+    initialDistance: number;
+    initialScale: number;
+    initialMidpoint: { x: number; y: number };
+    initialTx: number;
+    initialTy: number;
+  } | null>(null);
 
   // Click-and-hold inspection state: animates dashed lines flowing along path only while mouse is pressed
   const [holdingTable, setHoldingTable] = useState<string | null>(null);
@@ -434,6 +444,7 @@ export function SchemaView({
     startX: number;
     startY: number;
     initialPos: TablePosition;
+    pointerId?: number;
   } | null>(null);
 
   const hasDraggedNodeRef = useRef(false);
@@ -444,18 +455,23 @@ export function SchemaView({
   const onSelectTableRef = useRef(onSelectTable);
   onSelectTableRef.current = onSelectTable;
 
-  // Global window mousemove & mouseup listeners throttled with requestAnimationFrame for 60/120fps efficiency
+  // Global window pointermove & pointerup listeners throttled with requestAnimationFrame for 60/120fps efficiency
   useEffect(() => {
     let rafId: number | null = null;
-    let pendingMousePos: { clientX: number; clientY: number } | null = null;
+    let pendingPointerPos: { clientX: number; clientY: number; pointerId?: number } | null = null;
 
     const flushMove = () => {
       rafId = null;
-      if (!pendingMousePos) return;
-      const { clientX, clientY } = pendingMousePos;
-      pendingMousePos = null;
+      if (!pendingPointerPos) return;
+      const { clientX, clientY, pointerId } = pendingPointerPos;
+      pendingPointerPos = null;
 
-      if (draggingNodeRef.current) {
+      // 1. Table node dragging
+      if (
+        draggingNodeRef.current &&
+        (draggingNodeRef.current.pointerId === undefined ||
+          draggingNodeRef.current.pointerId === pointerId)
+      ) {
         const dx = clientX - draggingNodeRef.current.startX;
         const dy = clientY - draggingNodeRef.current.startY;
         if (Math.hypot(dx, dy) > 3) {
@@ -479,6 +495,35 @@ export function SchemaView({
         return;
       }
 
+      // 2. Multi-touch canvas pinch zoom & pan (2 fingers on mobile)
+      if (activeCanvasPointersRef.current.size >= 2 && pinchStateRef.current) {
+        const pts = Array.from(activeCanvasPointersRef.current.values());
+        const currentDist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+        const currentMid = { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
+
+        const factor = currentDist / pinchStateRef.current.initialDistance;
+        const newScale = Math.min(
+          Math.max(0.3, Number((pinchStateRef.current.initialScale * factor).toFixed(3))),
+          2.2
+        );
+
+        const rect = containerRef.current?.getBoundingClientRect() || { left: 0, top: 0 };
+        const midX = pinchStateRef.current.initialMidpoint.x - rect.left;
+        const midY = pinchStateRef.current.initialMidpoint.y - rect.top;
+        const dMidX = currentMid.x - pinchStateRef.current.initialMidpoint.x;
+        const dMidY = currentMid.y - pinchStateRef.current.initialMidpoint.y;
+        const scaleRatio = newScale / pinchStateRef.current.initialScale;
+
+        panMovedRef.current = true;
+        setTransform({
+          scale: newScale,
+          x: Math.round(midX - (midX - pinchStateRef.current.initialTx) * scaleRatio + dMidX),
+          y: Math.round(midY - (midY - pinchStateRef.current.initialTy) * scaleRatio + dMidY),
+        });
+        return;
+      }
+
+      // 3. Single pointer canvas panning (1 finger or mouse drag)
       if (isPanningRef.current && panStartRef.current) {
         const dx = clientX - panStartRef.current.x;
         const dy = clientY - panStartRef.current.y;
@@ -493,40 +538,57 @@ export function SchemaView({
       }
     };
 
-    const onWindowMouseMove = (e: MouseEvent) => {
-      // If no mouse button is pressed, immediately cancel any active drag or pan
-      if (e.buttons === 0) {
+    const onWindowPointerMove = (e: PointerEvent) => {
+      // If mouse and no buttons pressed, cancel active drag or pan
+      if (e.pointerType === 'mouse' && e.buttons === 0) {
         if (draggingNodeRef.current || isPanningRef.current) {
-          onWindowMouseUp();
+          onWindowPointerUp(e);
         }
         return;
       }
 
       // Early exit if user is not actively dragging or panning
       if (!draggingNodeRef.current && !isPanningRef.current) return;
-      pendingMousePos = { clientX: e.clientX, clientY: e.clientY };
+
+      // Update tracked pointer coordinates
+      if (activeCanvasPointersRef.current.has(e.pointerId)) {
+        activeCanvasPointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      }
+
+      pendingPointerPos = { clientX: e.clientX, clientY: e.clientY, pointerId: e.pointerId };
       if (!rafId) {
         rafId = requestAnimationFrame(flushMove);
       }
     };
 
-    const onWindowMouseUp = () => {
+    const onWindowPointerUp = (e?: PointerEvent) => {
       if (rafId) {
         cancelAnimationFrame(rafId);
         rafId = null;
       }
-      if (pendingMousePos) {
+      if (pendingPointerPos) {
         flushMove();
       }
-      pendingMousePos = null;
+      pendingPointerPos = null;
 
       // Clear click-and-hold line animation
       setHoldingTable(null);
       setHoldingLineId(null);
 
-      if (draggingNodeRef.current) {
+      if (e?.pointerId !== undefined) {
+        activeCanvasPointersRef.current.delete(e.pointerId);
+      } else {
+        activeCanvasPointersRef.current.clear();
+      }
+
+      if (
+        draggingNodeRef.current &&
+        (e?.pointerId === undefined ||
+          draggingNodeRef.current.pointerId === undefined ||
+          draggingNodeRef.current.pointerId === e.pointerId)
+      ) {
         if (!hasDraggedNodeRef.current) {
-          // Clean click without dragging toggles table selection
+          // Clean tap/click without dragging toggles table selection
           onSelectTableRef.current(draggingNodeRef.current.tableName);
         }
         draggingNodeRef.current = null;
@@ -534,45 +596,82 @@ export function SchemaView({
         setIsDraggingNode(false);
       }
 
-      if (isPanningRef.current) {
-        if (!panMovedRef.current) {
-          // Clean click on background deselects table
-          onSelectTableRef.current('');
+      if (activeCanvasPointersRef.current.size === 1) {
+        const remaining = activeCanvasPointersRef.current.values().next().value;
+        if (remaining) {
+          panStartRef.current = {
+            x: remaining.x,
+            y: remaining.y,
+            startTx: transformRef.current.x,
+            startTy: transformRef.current.y,
+          };
+          panMovedRef.current = true;
         }
-        isPanningRef.current = false;
-        panStartRef.current = null;
-        setIsPanning(false);
+        pinchStateRef.current = null;
+      } else if (activeCanvasPointersRef.current.size === 0) {
+        if (isPanningRef.current) {
+          if (!panMovedRef.current) {
+            // Clean tap on background deselects table
+            onSelectTableRef.current('');
+          }
+          isPanningRef.current = false;
+          panStartRef.current = null;
+          pinchStateRef.current = null;
+          setIsPanning(false);
+        }
       }
     };
 
-    window.addEventListener('mousemove', onWindowMouseMove, { passive: true });
-    window.addEventListener('mouseup', onWindowMouseUp);
-    window.addEventListener('blur', onWindowMouseUp);
+    const handleBlur = () => {
+      onWindowPointerUp();
+    };
+
+    window.addEventListener('pointermove', onWindowPointerMove, { passive: true });
+    window.addEventListener('pointerup', onWindowPointerUp);
+    window.addEventListener('pointercancel', onWindowPointerUp);
+    window.addEventListener('blur', handleBlur);
 
     return () => {
       if (rafId) {
         cancelAnimationFrame(rafId);
       }
-      window.removeEventListener('mousemove', onWindowMouseMove);
-      window.removeEventListener('mouseup', onWindowMouseUp);
-      window.removeEventListener('blur', onWindowMouseUp);
+      window.removeEventListener('pointermove', onWindowPointerMove);
+      window.removeEventListener('pointerup', onWindowPointerUp);
+      window.removeEventListener('pointercancel', onWindowPointerUp);
+      window.removeEventListener('blur', handleBlur);
     };
   }, [setTransform]);
 
-  // Canvas Panning Handlers
-  const handleCanvasMouseDown = (e: React.MouseEvent) => {
+  // Canvas Panning & Multi-Touch Handlers (Mouse, Finger Touch, Stylus)
+  const handleCanvasPointerDown = (e: React.PointerEvent) => {
     // Only pan if left click on canvas background (not on a card or button)
-    if (e.button !== 0) return;
-    e.preventDefault();
-    setIsPanning(true);
-    isPanningRef.current = true;
-    panMovedRef.current = false;
-    panStartRef.current = {
-      x: e.clientX,
-      y: e.clientY,
-      startTx: transform.x,
-      startTy: transform.y,
-    };
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+
+    activeCanvasPointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+    if (activeCanvasPointersRef.current.size === 1) {
+      setIsPanning(true);
+      isPanningRef.current = true;
+      panMovedRef.current = false;
+      panStartRef.current = {
+        x: e.clientX,
+        y: e.clientY,
+        startTx: transform.x,
+        startTy: transform.y,
+      };
+      pinchStateRef.current = null;
+    } else if (activeCanvasPointersRef.current.size === 2) {
+      const pts = Array.from(activeCanvasPointersRef.current.values());
+      const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+      const mid = { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
+      pinchStateRef.current = {
+        initialDistance: Math.max(10, dist),
+        initialScale: transform.scale,
+        initialMidpoint: mid,
+        initialTx: transform.x,
+        initialTy: transform.y,
+      };
+    }
   };
 
   // Zoom on wheel (clamped to prevent NaN or extreme scales)
@@ -704,12 +803,12 @@ export function SchemaView({
 
   return (
     <div className="flex-1 flex flex-col min-h-0 overflow-hidden select-none bg-[#09090b] font-sans">
-      {/* ─── Interactive Canvas Viewport (Pannable & Zoomable) ─── */}
+      {/* ─── Interactive Canvas Viewport (Pannable & Zoomable with touch & pointer support) ─── */}
       <div
         ref={containerRef}
-        onMouseDown={handleCanvasMouseDown}
+        onPointerDown={handleCanvasPointerDown}
         onWheel={handleWheel}
-        className={`flex-1 relative min-h-0 overflow-hidden ${
+        className={`flex-1 relative min-h-0 overflow-hidden touch-none ${
           isDraggingNode || isPanning ? 'cursor-grabbing select-none' : 'cursor-default'
         }`}
       >
@@ -849,9 +948,9 @@ export function SchemaView({
                 width: `${CARD_WIDTH}px`,
                 willChange: isDraggingNode ? 'transform' : 'auto',
               }}
-              onMouseDown={(e) => {
+              onPointerDown={(e) => {
                 e.stopPropagation();
-                if (e.button === 0) {
+                if (e.pointerType !== 'mouse' || e.button === 0) {
                   setHoldingTable(t.name);
                 }
               }}
@@ -869,10 +968,9 @@ export function SchemaView({
             >
               {/* Card Header (Drag handle & Click-and-Hold trigger) */}
               <div
-                onMouseDown={(e) => {
-                  if (e.button !== 0) return;
+                onPointerDown={(e) => {
+                  if (e.pointerType === 'mouse' && e.button !== 0) return;
                   e.stopPropagation();
-                  e.preventDefault();
 
                   hasDraggedNodeRef.current = false;
                   setIsDraggingNode(true);
@@ -884,10 +982,11 @@ export function SchemaView({
                     startX: e.clientX,
                     startY: e.clientY,
                     initialPos: currentPos,
+                    pointerId: e.pointerId,
                   };
                   draggingNodeRef.current = dragPayload;
                 }}
-                className={`h-10 px-2.5 flex items-center justify-between gap-2.5 select-none mb-2 ${
+                className={`h-10 px-2.5 flex items-center justify-between gap-2.5 select-none mb-2 touch-none ${
                   isDraggingNode ? 'cursor-grabbing' : 'cursor-grab active:cursor-grabbing'
                 }`}
               >
@@ -913,6 +1012,7 @@ export function SchemaView({
                           }
                     );
                   }}
+                  onPointerDown={(e) => e.stopPropagation()}
                   onMouseDown={(e) => e.stopPropagation()}
                   title={`${t.name} actions`}
                   className="w-6 h-6 flex items-center justify-center text-[#71717a] hover:text-white rounded-[5px] hover:bg-[#1f1f23] transition-colors cursor-pointer"
@@ -1015,6 +1115,7 @@ export function SchemaView({
                                   }
                             );
                           }}
+                          onPointerDown={(e) => e.stopPropagation()}
                           onMouseDown={(e) => e.stopPropagation()}
                           title={`Column actions`}
                           className={`w-6 h-6 flex items-center justify-center text-[#8e8e93] hover:text-white rounded-[4px] hover:bg-[#232328] transition-colors cursor-pointer ${
@@ -1133,6 +1234,7 @@ export function SchemaView({
             ref={tableMenuRef}
             style={{ top: `${top}px`, left: `${left}px`, width: `${menuWidth}px` }}
             className="fixed z-50 rounded-[8px] border border-[#26262a] bg-[#141416] shadow-[0_16px_36px_rgba(0,0,0,0.95)] p-1 flex flex-col font-sans select-none animate-in fade-in zoom-in-95 duration-75 text-[13px]"
+            onPointerDown={(e) => e.stopPropagation()}
             onMouseDown={(e) => e.stopPropagation()}
           >
             {/* 1. Edit table */}
@@ -1253,6 +1355,7 @@ export function SchemaView({
             ref={columnMenuRef}
             style={{ top: `${top}px`, left: `${left}px`, width: `${menuWidth}px` }}
             className="fixed z-50 rounded-[8px] border border-[#26262a] bg-[#141416] shadow-[0_16px_36px_rgba(0,0,0,0.95)] p-1 flex flex-col font-sans select-none animate-in fade-in zoom-in-95 duration-75 text-[13px]"
+            onPointerDown={(e) => e.stopPropagation()}
             onMouseDown={(e) => e.stopPropagation()}
           >
             {/* 1. Edit column */}
