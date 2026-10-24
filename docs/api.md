@@ -655,12 +655,16 @@ Content-addressed object storage with automatic BLAKE3 deduplication, byte-range
 ### Endpoints Summary
 | Method | Endpoint | Auth | Description |
 |---|---|---|---|
+| `GET` | `/api/v1/blobs/namespaces` | API Key / Session | List storage namespaces accessible by caller's role |
 | `GET`, `HEAD` | `/api/v1/blobs/public/:namespace/*key` | Public | Unauthenticated direct media CDN fetch with 304 ETag caching |
 | `GET` | `/api/v1/blobs/:namespace` | API Key | List stored objects with `prefix`, `cursor`, `limit` |
-| `PUT` | `/api/v1/blobs/:namespace/*key` | API Key / Ticket | Upload object with BLAKE3 deduplication and optional `?ttl=...` |
+| `PUT` | `/api/v1/blobs/:namespace/*key` | API Key / Ticket | Upload object / create directory marker (ending with `/`) |
 | `GET`, `HEAD` | `/api/v1/blobs/:namespace/*key` | API Key / Ticket | Stream object (supports `Range: bytes=X-Y` and `?ticket=...`) |
 | `DELETE` | `/api/v1/blobs/:namespace/*key` | API Key | Delete single object and decrement content refcount |
 | `POST` | `/api/v1/blobs/:namespace/delete-objects` | API Key | Batch delete up to 1,000 objects in a single atomic request |
+| `POST` | `/api/v1/blobs/:namespace/delete-prefix` | API Key | Delete an entire folder / prefix and all objects inside |
+| `POST` | `/api/v1/blobs/:namespace/move` | API Key | Atomically move or rename file/folder within namespace (or cross-namespace) |
+| `POST` | `/api/v1/blobs/:namespace/copy` | API Key | Copy file/folder without disk duplication (BLAKE3 pointer clone) |
 | `POST` | `/api/v1/blobs/:namespace/ticket` | API Key | Mint a pre-signed capability ticket URL |
 | `POST` | `/api/v1/blobs/:namespace/uploads` | API Key | Initialize multipart / resumable upload session |
 | `PUT` | `/api/v1/blobs/:namespace/uploads/:upload_id/parts/:part` | API Key | Upload discrete part chunk in multipart workflow |
@@ -668,6 +672,168 @@ Content-addressed object storage with automatic BLAKE3 deduplication, byte-range
 | `PUT`, `PATCH`| `/api/v1/blobs/:namespace/uploads/:upload_id` | API Key | Resumable chunk upload with `Content-Range` header |
 | `GET` | `/api/v1/blobs/:namespace/uploads/:upload_id` | API Key | Probe resumable session status and uploaded byte slices |
 | `DELETE` | `/api/v1/blobs/:namespace/uploads/:upload_id` | API Key | Abort multipart/resumable upload session and reclaim storage |
+
+---
+
+### List Storage Namespaces (`GET /api/v1/blobs/namespaces`)
+Returns storage namespaces authorized for the caller's role. Admin sessions receive all namespaces; scoped API keys receive authorized namespaces.
+
+**Request**:
+```http
+GET /api/v1/blobs/namespaces
+X-Axiom-Key: <TOKEN>
+```
+**Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "name": "media",
+      "public": true,
+      "max_size_mb": 5000,
+      "default_ttl_seconds": null
+    },
+    {
+      "name": "invoices",
+      "public": false,
+      "max_size_mb": 10000,
+      "default_ttl_seconds": 2592000
+    }
+  ],
+  "error": null
+}
+```
+
+---
+
+### Move / Rename File or Folder (`POST /api/v1/blobs/:namespace/move`)
+Atomically renames or moves a file or directory prefix. Because Axiom uses BLAKE3 content-addressable storage, this operation updates key pointers in milliseconds with zero byte duplication.
+
+**Request (Within Namespace)**:
+```http
+POST /api/v1/blobs/invoices/move
+X-Axiom-Key: <TOKEN>
+Content-Type: application/json
+```
+```json
+{
+  "src_key": "drafts/january.pdf",
+  "dest_key": "final/january_2026.pdf"
+}
+```
+
+**Request (Cross-Namespace Move / Folder Prefix)**:
+```http
+POST /api/v1/blobs/invoices/move
+X-Axiom-Key: <TOKEN>
+Content-Type: application/json
+```
+```json
+{
+  "src_key": "v1/",
+  "dest_namespace": "archive",
+  "dest_key": "v1_legacy/",
+  "is_prefix": true
+}
+```
+**Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "data": {
+    "key": "final/january_2026.pdf",
+    "namespace": "invoices",
+    "size": 1048576,
+    "content_type": "application/pdf"
+  },
+  "error": null
+}
+```
+
+---
+
+### Copy File or Folder (`POST /api/v1/blobs/:namespace/copy`)
+Creates a new file or directory pointer without physical disk copying (BLAKE3 pointer clone). Cross-namespace copying is also supported by specifying optional `dest_namespace`.
+
+**Request**:
+```http
+POST /api/v1/blobs/media/copy
+X-Axiom-Key: <TOKEN>
+Content-Type: application/json
+```
+```json
+{
+  "src_key": "logos/main.png",
+  "dest_key": "logos/backup.png"
+}
+```
+**Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "data": {
+    "key": "logos/backup.png",
+    "namespace": "media",
+    "size": 45012,
+    "content_type": "image/png"
+  },
+  "error": null
+}
+```
+
+---
+
+### Delete Folder / Key Prefix (`POST /api/v1/blobs/:namespace/delete-prefix`)
+Recursively deletes all objects matching a path prefix (e.g. deleting an entire directory).
+
+**Request**:
+```http
+POST /api/v1/blobs/media/delete-prefix
+X-Axiom-Key: <TOKEN>
+Content-Type: application/json
+```
+```json
+{
+  "prefix": "temp/cache/"
+}
+```
+**Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "data": {
+    "deleted_objects": 42
+  },
+  "error": null
+}
+```
+
+---
+
+### Folder Creation / Directory Markers (`PUT /api/v1/blobs/:namespace/*key`)
+In object storage, directories are represented by keys ending in `/`. To create an empty folder marker:
+
+**Request**:
+```http
+PUT /api/v1/blobs/media/uploads/documents/
+X-Axiom-Key: <TOKEN>
+Content-Type: application/x-directory
+Content-Length: 0
+```
+**Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "data": {
+    "key": "uploads/documents/",
+    "namespace": "media",
+    "size": 0,
+    "content_type": "application/x-directory"
+  },
+  "error": null
+}
+```
 
 ---
 
@@ -1454,6 +1620,31 @@ Content-Type: application/json
 }
 ```
 
+#### Test Raw Database URL (`POST /admin/v1/databases/test-url`)
+**Request**:
+```http
+POST /admin/v1/databases/test-url
+Authorization: Bearer <SESSION_TOKEN>
+Content-Type: application/json
+```
+```json
+{
+  "engine": "postgres",
+  "url": "postgres://user:secret@127.0.0.1:5432/testdb"
+}
+```
+**Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "data": {
+    "status": "connected",
+    "latency_ms": 1.45
+  },
+  "error": null
+}
+```
+
 #### Test Database Alias Connectivity (`GET /admin/v1/databases/:alias/test`)
 **Response (`200 OK`)**:
 ```json
@@ -1600,6 +1791,65 @@ Content-Type: application/json
 }
 ```
 
+#### Update Peer Node (`PATCH /admin/v1/cluster/peers/:node_id`)
+**Request**:
+```http
+PATCH /admin/v1/cluster/peers/node_8a2b3c4d5e6f
+Authorization: Bearer <SESSION_TOKEN>
+Content-Type: application/json
+```
+```json
+{
+  "moniker": "eu-central-backup-01"
+}
+```
+**Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "data": {
+    "node_id": "node_8a2b3c4d5e6f",
+    "status": "updated"
+  },
+  "error": null
+}
+```
+
+#### Remove Peer Node (`DELETE /admin/v1/cluster/peers/:node_id`)
+**Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "data": {
+    "deleted": "node_8a2b3c4d5e6f"
+  },
+  "error": null
+}
+```
+
+#### Update Local Cluster Moniker (`PATCH /admin/v1/cluster/moniker`)
+**Request**:
+```http
+PATCH /admin/v1/cluster/moniker
+Authorization: Bearer <SESSION_TOKEN>
+Content-Type: application/json
+```
+```json
+{
+  "moniker": "us-east-core-01"
+}
+```
+**Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "data": {
+    "moniker": "us-east-core-01"
+  },
+  "error": null
+}
+```
+
 ---
 
 ### Blob Storage Administration (`/admin/v1/blobs`)
@@ -1692,6 +1942,198 @@ Content-Type: application/json
     "name": "invoices",
     "max_bytes": 10737418240,
     "public_read": false
+  },
+  "error": null
+}
+```
+
+---
+
+### Copy Object / Prefix (`POST /admin/v1/blobs/copy`)
+**Request**:
+```http
+POST /admin/v1/blobs/copy
+Authorization: Bearer <SESSION_TOKEN>
+Content-Type: application/json
+```
+```json
+{
+  "src_namespace": "invoices",
+  "src_key": "2026/inv_001.pdf",
+  "dest_namespace": "invoices",
+  "dest_key": "archive/2026/inv_001.pdf",
+  "is_prefix": false
+}
+```
+**Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "data": {
+    "key": "archive/2026/inv_001.pdf",
+    "namespace": "invoices",
+    "size": 1048576,
+    "content_type": "application/pdf"
+  },
+  "error": null
+}
+```
+
+---
+
+### Move / Rename Object (`POST /admin/v1/blobs/move`)
+**Request**:
+```http
+POST /admin/v1/blobs/move
+Authorization: Bearer <SESSION_TOKEN>
+Content-Type: application/json
+```
+```json
+{
+  "src_namespace": "invoices",
+  "src_key": "draft_inv.pdf",
+  "dest_key": "final_inv_001.pdf"
+}
+```
+**Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "data": {
+    "key": "final_inv_001.pdf",
+    "namespace": "invoices",
+    "size": 1048576,
+    "content_type": "application/pdf"
+  },
+  "error": null
+}
+```
+
+---
+
+### Update Storage Namespace (`PATCH /admin/v1/blobs/namespaces/:namespace`)
+**Request**:
+```http
+PATCH /admin/v1/blobs/namespaces/invoices
+Authorization: Bearer <SESSION_TOKEN>
+Content-Type: application/json
+```
+```json
+{
+  "max_bytes": 21474836480,
+  "public_read": false
+}
+```
+**Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "data": {
+    "namespace": "invoices",
+    "status": "updated"
+  },
+  "error": null
+}
+```
+
+---
+
+### Delete Storage Namespace (`DELETE /admin/v1/blobs/namespaces/:namespace`)
+**Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "data": {
+    "deleted": "invoices"
+  },
+  "error": null
+}
+```
+
+---
+
+### Admin Delete Prefix (`POST /admin/v1/blobs/delete-prefix`)
+**Request**:
+```http
+POST /admin/v1/blobs/delete-prefix
+Authorization: Bearer <SESSION_TOKEN>
+Content-Type: application/json
+```
+```json
+{
+  "namespace": "invoices",
+  "prefix": "temp/"
+}
+```
+**Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "data": {
+    "deleted_objects": 18
+  },
+  "error": null
+}
+```
+
+---
+
+### Verify Object Hash Integrity (`POST /admin/v1/blobs/verify/:namespace/*key`)
+**Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "data": {
+    "valid": true
+  },
+  "error": null
+}
+```
+
+---
+
+### Enumerate Capability Tickets (`GET /admin/v1/blobs/tickets`)
+**Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "signature": "sig_abc123def456",
+      "namespace": "invoices",
+      "key": "2026/inv_001.pdf",
+      "operation": "READ",
+      "expires_at": 1792800000
+    }
+  ],
+  "error": null
+}
+```
+
+---
+
+### Revoke Capability Ticket (`POST /admin/v1/blobs/tickets/:signature/revoke`)
+**Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "data": {
+    "signature": "sig_abc123def456",
+    "status": "revoked"
+  },
+  "error": null
+}
+```
+
+---
+
+### Delete Capability Ticket (`DELETE /admin/v1/blobs/tickets/:signature`)
+**Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "data": {
+    "deleted": "sig_abc123def456"
   },
   "error": null
 }

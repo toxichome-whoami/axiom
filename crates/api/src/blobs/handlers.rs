@@ -516,24 +516,28 @@ pub struct UpdateNamespaceRequest {
     pub cors_origins: Option<Vec<String>>,
 }
 
-/// Administrative handler returning all configured storage namespaces with usage metrics.
+/// Lists storage namespaces with usage metrics. Admin sees all namespaces; API keys see authorized namespaces.
 pub async fn list_namespaces_handler(
     Extension(auth): Extension<AuthContext>,
 ) -> Result<impl IntoResponse, AxiomError> {
-    if !auth.is_session && auth.role.as_deref() != Some("admin") {
-        return Err(AxiomError::new(
-            "FORBIDDEN",
-            "Admin privileges required to list storage namespaces",
-            StatusCode::FORBIDDEN,
-        ));
-    }
-
     let engine = get_blob_engine()?;
     let namespaces = engine.list_namespaces_info().map_err(map_blob_error)?;
 
+    let filtered = if auth.is_session || auth.role.as_deref() == Some("admin") {
+        namespaces
+    } else {
+        namespaces
+            .into_iter()
+            .filter(|ns| {
+                PolicyEngine::evaluate_blob(&auth, &ns.name, "*", "READ").is_ok()
+                    || PolicyEngine::evaluate_blob(&auth, &ns.name, "*", "WRITE").is_ok()
+            })
+            .collect()
+    };
+
     Ok(Json(json!({
         "success": true,
-        "data": namespaces,
+        "data": filtered,
         "error": serde_json::Value::Null
     })))
 }
@@ -656,7 +660,7 @@ pub async fn verify_blob_handler(
 
 #[derive(Debug, Deserialize)]
 pub struct CopyBlobRequest {
-    pub src_namespace: String,
+    pub src_namespace: Option<String>,
     pub src_key: String,
     pub dest_namespace: Option<String>,
     pub dest_key: String,
@@ -665,7 +669,7 @@ pub struct CopyBlobRequest {
 
 #[derive(Debug, Deserialize)]
 pub struct MoveBlobRequest {
-    pub src_namespace: String,
+    pub src_namespace: Option<String>,
     pub src_key: String,
     pub dest_namespace: Option<String>,
     pub dest_key: String,
@@ -674,22 +678,29 @@ pub struct MoveBlobRequest {
 
 #[derive(Debug, Deserialize)]
 pub struct DeletePrefixRequest {
-    pub namespace: String,
+    pub namespace: Option<String>,
     pub prefix: String,
 }
 
-/// Administrative handler copying an object or folder prefix.
+/// Handler copying an object or folder prefix.
 pub async fn copy_blob_handler(
     Extension(auth): Extension<AuthContext>,
     Json(payload): Json<CopyBlobRequest>,
 ) -> Result<impl IntoResponse, AxiomError> {
+    let src_ns = payload.src_namespace.as_deref().ok_or_else(|| {
+        AxiomError::new(
+            "MISSING_NAMESPACE",
+            "src_namespace must be provided in request payload or route path",
+            StatusCode::BAD_REQUEST,
+        )
+    })?;
     let dest_ns = payload
         .dest_namespace
         .as_deref()
-        .unwrap_or(&payload.src_namespace);
+        .unwrap_or(src_ns);
 
     if !auth.is_session {
-        PolicyEngine::evaluate_blob(&auth, &payload.src_namespace, &payload.src_key, "READ")?;
+        PolicyEngine::evaluate_blob(&auth, src_ns, &payload.src_key, "READ")?;
         PolicyEngine::evaluate_blob(&auth, dest_ns, &payload.dest_key, "WRITE")?;
     }
 
@@ -698,7 +709,7 @@ pub async fn copy_blob_handler(
     if payload.is_prefix.unwrap_or(false) {
         let count = engine
             .copy_prefix(
-                &payload.src_namespace,
+                src_ns,
                 &payload.src_key,
                 dest_ns,
                 &payload.dest_key,
@@ -716,7 +727,7 @@ pub async fn copy_blob_handler(
             "blob.copy_prefix",
             &format!(
                 "{}/{} -> {}/{}",
-                payload.src_namespace, payload.src_key, dest_ns, payload.dest_key
+                src_ns, payload.src_key, dest_ns, payload.dest_key
             ),
             Some(&format!("copied_count={}", count)),
         )
@@ -733,7 +744,7 @@ pub async fn copy_blob_handler(
     } else {
         let meta = engine
             .copy_blob(
-                &payload.src_namespace,
+                src_ns,
                 &payload.src_key,
                 dest_ns,
                 &payload.dest_key,
@@ -751,7 +762,7 @@ pub async fn copy_blob_handler(
             "blob.copy",
             &format!(
                 "{}/{} -> {}/{}",
-                payload.src_namespace, payload.src_key, dest_ns, payload.dest_key
+                src_ns, payload.src_key, dest_ns, payload.dest_key
             ),
             Some(&format!("hash={}, size={}", meta.hash, meta.size)),
         )
@@ -768,18 +779,36 @@ pub async fn copy_blob_handler(
     }
 }
 
-/// Administrative handler moving or renaming an object or folder prefix.
+pub async fn copy_blob_scoped_handler(
+    axum::extract::Path(namespace): axum::extract::Path<String>,
+    Extension(auth): Extension<AuthContext>,
+    Json(mut payload): Json<CopyBlobRequest>,
+) -> Result<impl IntoResponse, AxiomError> {
+    if payload.src_namespace.is_none() {
+        payload.src_namespace = Some(namespace);
+    }
+    copy_blob_handler(Extension(auth), Json(payload)).await
+}
+
+/// Handler moving or renaming an object or folder prefix.
 pub async fn move_blob_handler(
     Extension(auth): Extension<AuthContext>,
     Json(payload): Json<MoveBlobRequest>,
 ) -> Result<impl IntoResponse, AxiomError> {
+    let src_ns = payload.src_namespace.as_deref().ok_or_else(|| {
+        AxiomError::new(
+            "MISSING_NAMESPACE",
+            "src_namespace must be provided in request payload or route path",
+            StatusCode::BAD_REQUEST,
+        )
+    })?;
     let dest_ns = payload
         .dest_namespace
         .as_deref()
-        .unwrap_or(&payload.src_namespace);
+        .unwrap_or(src_ns);
 
     if !auth.is_session {
-        PolicyEngine::evaluate_blob(&auth, &payload.src_namespace, &payload.src_key, "WRITE")?;
+        PolicyEngine::evaluate_blob(&auth, src_ns, &payload.src_key, "WRITE")?;
         PolicyEngine::evaluate_blob(&auth, dest_ns, &payload.dest_key, "WRITE")?;
     }
 
@@ -788,7 +817,7 @@ pub async fn move_blob_handler(
     if payload.is_prefix.unwrap_or(false) {
         let count = engine
             .move_prefix(
-                &payload.src_namespace,
+                src_ns,
                 &payload.src_key,
                 dest_ns,
                 &payload.dest_key,
@@ -806,7 +835,7 @@ pub async fn move_blob_handler(
             "blob.move_prefix",
             &format!(
                 "{}/{} -> {}/{}",
-                payload.src_namespace, payload.src_key, dest_ns, payload.dest_key
+                src_ns, payload.src_key, dest_ns, payload.dest_key
             ),
             Some(&format!("moved_count={}", count)),
         )
@@ -823,7 +852,7 @@ pub async fn move_blob_handler(
     } else {
         let meta = engine
             .move_blob(
-                &payload.src_namespace,
+                src_ns,
                 &payload.src_key,
                 dest_ns,
                 &payload.dest_key,
@@ -841,7 +870,7 @@ pub async fn move_blob_handler(
             "blob.move",
             &format!(
                 "{}/{} -> {}/{}",
-                payload.src_namespace, payload.src_key, dest_ns, payload.dest_key
+                src_ns, payload.src_key, dest_ns, payload.dest_key
             ),
             Some(&format!("hash={}, size={}", meta.hash, meta.size)),
         )
@@ -858,18 +887,37 @@ pub async fn move_blob_handler(
     }
 }
 
-/// Administrative handler deleting an entire directory/prefix.
+pub async fn move_blob_scoped_handler(
+    axum::extract::Path(namespace): axum::extract::Path<String>,
+    Extension(auth): Extension<AuthContext>,
+    Json(mut payload): Json<MoveBlobRequest>,
+) -> Result<impl IntoResponse, AxiomError> {
+    if payload.src_namespace.is_none() {
+        payload.src_namespace = Some(namespace);
+    }
+    move_blob_handler(Extension(auth), Json(payload)).await
+}
+
+/// Handler deleting an entire directory/prefix.
 pub async fn delete_prefix_handler(
     Extension(auth): Extension<AuthContext>,
     Json(payload): Json<DeletePrefixRequest>,
 ) -> Result<impl IntoResponse, AxiomError> {
+    let ns = payload.namespace.as_deref().ok_or_else(|| {
+        AxiomError::new(
+            "MISSING_NAMESPACE",
+            "namespace must be provided in request payload or route path",
+            StatusCode::BAD_REQUEST,
+        )
+    })?;
+
     if !auth.is_session {
-        PolicyEngine::evaluate_blob(&auth, &payload.namespace, &payload.prefix, "WRITE")?;
+        PolicyEngine::evaluate_blob(&auth, ns, &payload.prefix, "WRITE")?;
     }
 
     let engine = get_blob_engine()?;
     let count = engine
-        .delete_prefix(&payload.namespace, &payload.prefix)
+        .delete_prefix(ns, &payload.prefix)
         .await
         .map_err(map_blob_error)?;
 
@@ -881,7 +929,7 @@ pub async fn delete_prefix_handler(
     let _ = MetadataStore::record_audit(
         actor,
         "blob.delete_prefix",
-        &format!("{}/{}", payload.namespace, payload.prefix),
+        &format!("{}/{}", ns, payload.prefix),
         Some(&format!("deleted_count={}", count)),
     )
     .await;
@@ -891,6 +939,17 @@ pub async fn delete_prefix_handler(
         "data": { "deleted_objects": count },
         "error": serde_json::Value::Null
     })))
+}
+
+pub async fn delete_prefix_scoped_handler(
+    axum::extract::Path(namespace): axum::extract::Path<String>,
+    Extension(auth): Extension<AuthContext>,
+    Json(mut payload): Json<DeletePrefixRequest>,
+) -> Result<impl IntoResponse, AxiomError> {
+    if payload.namespace.is_none() {
+        payload.namespace = Some(namespace);
+    }
+    delete_prefix_handler(Extension(auth), Json(payload)).await
 }
 
 #[derive(Debug, Deserialize)]
@@ -2239,4 +2298,28 @@ pub async fn batch_delete_blobs_handler(
         "data": result,
         "error": serde_json::Value::Null
     })))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_copy_and_move_requests_deserialization() {
+        let copy_json = r#"{"src_key": "img.png", "dest_key": "new.png"}"#;
+        let copy_req: CopyBlobRequest = serde_json::from_str(copy_json).unwrap();
+        assert!(copy_req.src_namespace.is_none());
+        assert_eq!(copy_req.src_key, "img.png");
+        assert_eq!(copy_req.dest_key, "new.png");
+
+        let move_json = r#"{"src_namespace": "bucket1", "src_key": "a.txt", "dest_key": "b.txt", "is_prefix": true}"#;
+        let move_req: MoveBlobRequest = serde_json::from_str(move_json).unwrap();
+        assert_eq!(move_req.src_namespace.as_deref(), Some("bucket1"));
+        assert_eq!(move_req.is_prefix, Some(true));
+
+        let del_json = r#"{"prefix": "folder/"}"#;
+        let del_req: DeletePrefixRequest = serde_json::from_str(del_json).unwrap();
+        assert!(del_req.namespace.is_none());
+        assert_eq!(del_req.prefix, "folder/");
+    }
 }
