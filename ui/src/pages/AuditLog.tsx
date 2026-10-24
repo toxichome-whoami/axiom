@@ -21,13 +21,9 @@ import {
   Eye,
 } from 'lucide-react';
 import { api, AuditRecordApi } from '../api/client';
+import { FilterRule, matchesRule } from '../utils/filters';
 
-export interface FilterRule {
-  id: string;
-  field: string;
-  operator: 'contains' | 'equals' | 'starts_with';
-  value: string;
-}
+export type { FilterRule };
 
 const FILTER_FIELD_OPTIONS = [
   { value: 'action', label: 'Action' },
@@ -44,15 +40,6 @@ const DISPLAY_COLUMN_OPTIONS = [
   { id: 'target', label: 'Target' },
   { id: 'details', label: 'Details' },
 ];
-
-function matchesRule(val: string, operator: 'contains' | 'equals' | 'starts_with', target: string): boolean {
-  const v = val.toLowerCase();
-  const t = target.toLowerCase();
-  if (operator === 'contains') return v.includes(t);
-  if (operator === 'equals') return v === t;
-  if (operator === 'starts_with') return v.startsWith(t);
-  return true;
-}
 
 function formatTimestamp(unixSec: number): string {
   if (!unixSec) return '—';

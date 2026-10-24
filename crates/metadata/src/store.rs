@@ -25,7 +25,6 @@ use crate::snapshot::{
 
 // ─── Connection Registry ───────────────────────────────────────────────────
 static METADATA_CONN: OnceCell<Arc<Mutex<Connection>>> = OnceCell::const_new();
-static STORE_LOCK: Lazy<tokio::sync::Mutex<()>> = Lazy::new(|| tokio::sync::Mutex::new(()));
 static AUDIT_CHANNEL: OnceCell<tokio::sync::mpsc::Sender<AuditTask>> = OnceCell::const_new();
 
 struct AuditTask {
@@ -406,7 +405,6 @@ impl MetadataStore {
         rate_limit: i64,
         expires_at: Option<i64>,
     ) -> Result<String, String> {
-        let _guard = STORE_LOCK.lock().await;
         let conn = Self::get_conn().await?;
 
         let secret = match custom_secret {
@@ -464,7 +462,6 @@ impl MetadataStore {
     ///  - Side effects: Modifies `api_keys` row, appends to `audit_log`, and triggers `sync_snapshot`.
     ///  - Idempotent: No (generates a new unique secret on each call).
     pub async fn rotate_key(name: &str) -> Result<String, String> {
-        let _guard = STORE_LOCK.lock().await;
         let conn = Self::get_conn().await?;
 
         // Verify key exists
@@ -509,7 +506,6 @@ impl MetadataStore {
 
     /// Deletes an API key by name and refreshes the in-memory snapshot.
     pub async fn delete_key(name: &str) -> Result<bool, String> {
-        let _guard = STORE_LOCK.lock().await;
         let conn = Self::get_conn().await?;
 
         let affected = conn
@@ -545,7 +541,6 @@ impl MetadataStore {
         rate_limit: Option<i64>,
         expires_at: Option<Option<i64>>,
     ) -> Result<bool, String> {
-        let _guard = STORE_LOCK.lock().await;
         let conn = Self::get_conn().await?;
 
         let mut rows = conn
@@ -659,7 +654,6 @@ impl MetadataStore {
         description: Option<&str>,
         permissions: &[PermissionRecord],
     ) -> Result<(), String> {
-        let _guard = STORE_LOCK.lock().await;
         let conn = Self::get_conn().await?;
 
         let now_unix = SystemTime::now()
@@ -715,7 +709,6 @@ impl MetadataStore {
         description: Option<&str>,
         permissions: Option<Vec<PermissionRecord>>,
     ) -> Result<bool, String> {
-        let _guard = STORE_LOCK.lock().await;
         let conn = Self::get_conn().await?;
 
         let now_unix = SystemTime::now()
@@ -770,7 +763,6 @@ impl MetadataStore {
     ///  - Side effects: Deletes from `roles` and `permissions` tables, writes audit log, updates snapshot.
     ///  - Idempotent: Yes.
     pub async fn delete_role(name: &str) -> Result<bool, String> {
-        let _guard = STORE_LOCK.lock().await;
         let conn = Self::get_conn().await?;
 
         // Check referential integrity: do not delete role if active API keys are assigned to it
@@ -935,7 +927,6 @@ impl MetadataStore {
         pool_max: Option<i64>,
         old_alias: Option<&str>,
     ) -> Result<(), String> {
-        let _guard = STORE_LOCK.lock().await;
         let conn = Self::get_conn().await?;
 
         let lookup_alias = old_alias.unwrap_or(alias);
@@ -1068,7 +1059,6 @@ impl MetadataStore {
     ///  - Side effects: Deletes from `databases` table, logs audit event, updates snapshot.
     ///  - Idempotent: Yes.
     pub async fn delete_database(alias: &str) -> Result<bool, String> {
-        let _guard = STORE_LOCK.lock().await;
         let conn = Self::get_conn().await?;
 
         let affected = conn
@@ -1168,6 +1158,14 @@ impl MetadataStore {
         )
         .await
         .map_err(|e| format!("Failed to create user: {}", e))?;
+
+        let _ = conn
+            .execute(
+                "INSERT INTO audit_log (timestamp, actor, action, target, details) \
+                 VALUES (?1, 'cli', 'user.create', ?2, NULL)",
+                libsql::params![now_unix, clean_username],
+            )
+            .await;
 
         Ok(())
     }
@@ -1287,7 +1285,6 @@ impl MetadataStore {
     ///  - Side effects: Removes row from SQLite `users` table and writes audit log.
     ///  - Idempotent: Yes.
     pub async fn delete_user(username: &str) -> Result<bool, String> {
-        let _guard = STORE_LOCK.lock().await;
         let conn = Self::get_conn().await?;
 
         let affected = conn
@@ -1320,7 +1317,6 @@ impl MetadataStore {
         password: Option<&str>,
     ) -> Result<bool, String> {
         let clean_username = username.trim();
-        let _guard = STORE_LOCK.lock().await;
         let conn = Self::get_conn().await?;
 
         let mut rows = conn
@@ -1391,7 +1387,6 @@ impl MetadataStore {
     ///  - Side effects: Inserts session row into SQLite `sessions` table.
     ///  - Idempotent: No (generates a new unique session).
     pub async fn create_session(username: &str, ttl_secs: i64) -> Result<String, String> {
-        let _guard = STORE_LOCK.lock().await;
         let conn = Self::get_conn().await?;
 
         // SECURITY (M-4): Generate raw cryptographically-random session token, but store only
@@ -1463,7 +1458,6 @@ impl MetadataStore {
     ///  - Side effects: Deletes row from `sessions` table.
     ///  - Idempotent: Yes.
     pub async fn delete_session(session_id: &str) -> Result<bool, String> {
-        let _guard = STORE_LOCK.lock().await;
         let conn = Self::get_conn().await?;
 
         let token_hash = blake3::hash(session_id.as_bytes()).to_hex().to_string();
@@ -1484,7 +1478,6 @@ impl MetadataStore {
 
     /// Persists or updates an IP ban record in SQLite.
     pub async fn save_ip_ban(ip: &str, reason: &str, expires_at: i64) -> Result<(), String> {
-        let _guard = STORE_LOCK.lock().await;
         let conn = Self::get_conn().await?;
         let now_unix = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -1504,7 +1497,6 @@ impl MetadataStore {
 
     /// Removes an IP ban record from SQLite.
     pub async fn remove_ip_ban(ip: &str) -> Result<bool, String> {
-        let _guard = STORE_LOCK.lock().await;
         let conn = Self::get_conn().await?;
         let affected = conn
             .execute("DELETE FROM ip_bans WHERE ip = ?1", [ip])
@@ -1542,7 +1534,6 @@ impl MetadataStore {
 
     /// Persists or updates an API key suspension record in SQLite.
     pub async fn save_key_ban(key_name: &str, reason: &str, expires_at: i64) -> Result<(), String> {
-        let _guard = STORE_LOCK.lock().await;
         let conn = Self::get_conn().await?;
         let now_unix = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -1562,7 +1553,6 @@ impl MetadataStore {
 
     /// Removes an API key suspension record from SQLite.
     pub async fn remove_key_ban(key_name: &str) -> Result<bool, String> {
-        let _guard = STORE_LOCK.lock().await;
         let conn = Self::get_conn().await?;
         let affected = conn
             .execute("DELETE FROM key_bans WHERE key_name = ?1", [key_name])
@@ -1600,7 +1590,6 @@ impl MetadataStore {
 
     /// Purges expired IP and key bans from SQLite.
     pub async fn cleanup_expired_bans() -> Result<(), String> {
-        let _guard = STORE_LOCK.lock().await;
         let conn = Self::get_conn().await?;
         let now_unix = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -1659,9 +1648,7 @@ impl MetadataStore {
         signature: &str,
         created_by: &str,
     ) -> Result<(), String> {
-        let _guard = STORE_LOCK.lock().await;
         let conn = Self::get_conn().await?;
-        let _ = Self::ensure_blob_tickets_table(&conn).await;
 
         let now_unix = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -1686,7 +1673,6 @@ impl MetadataStore {
         include_expired: bool,
     ) -> Result<Vec<BlobTicketRecord>, String> {
         let conn = Self::get_conn().await?;
-        let _ = Self::ensure_blob_tickets_table(&conn).await;
 
         let now_unix = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -1772,9 +1758,7 @@ impl MetadataStore {
 
     /// Revokes a blob capability ticket by signature or id, immediately invalidating it.
     pub async fn revoke_blob_ticket(signature_or_id: &str) -> Result<bool, String> {
-        let _guard = STORE_LOCK.lock().await;
         let conn = Self::get_conn().await?;
-        let _ = Self::ensure_blob_tickets_table(&conn).await;
 
         let affected = conn
             .execute(
@@ -1789,9 +1773,7 @@ impl MetadataStore {
 
     /// Permanently deletes a blob capability ticket from SQLite.
     pub async fn delete_blob_ticket(signature_or_id: &str) -> Result<bool, String> {
-        let _guard = STORE_LOCK.lock().await;
         let conn = Self::get_conn().await?;
-        let _ = Self::ensure_blob_tickets_table(&conn).await;
 
         let affected = conn
             .execute(
@@ -1830,7 +1812,6 @@ impl MetadataStore {
 
     /// Purges expired blob tickets older than 7 days from SQLite.
     pub async fn cleanup_expired_tickets() -> Result<u64, String> {
-        let _guard = STORE_LOCK.lock().await;
         let conn = Self::get_conn().await?;
         let now_unix = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -1874,9 +1855,7 @@ impl MetadataStore {
     ///  - Side effects: Inserts a new 64-character hex-encoded cryptographic secret if none exists.
     ///  - Idempotency: Yes (subsequent calls with the same key return the identical stored secret).
     pub async fn get_or_create_system_secret(key: &str) -> Result<String, String> {
-        let _guard = STORE_LOCK.lock().await;
         let conn = Self::get_conn().await?;
-        let _ = Self::ensure_system_secrets_table(&conn).await;
 
         let mut rows = conn
             .query("SELECT value FROM system_secrets WHERE key = ?1", [key])
@@ -1982,19 +1961,40 @@ impl MetadataStore {
     ///  - Returns: `Result<Vec<AuditRecord>, String>` containing historical audit rows.
     ///  - Side effects: None (read-only SQLite query).
     ///  - Idempotency: Yes.
-    pub async fn query_audit_log(limit: usize, offset: usize) -> Result<Vec<AuditRecord>, String> {
+    /// Retrieves paginated audit log entries documenting system administrative actions.
+    /// CONTRACT:
+    ///  - Precondition: `limit` capped at 500 rows maximum.
+    ///  - Keyset cursor: If `before_id` is provided, executes an O(1) B-tree seek (`WHERE id < ?1 ORDER BY id DESC LIMIT ?2`).
+    ///    Otherwise falls back to standard offset pagination (`LIMIT ?1 OFFSET ?2`).
+    ///  - Returns: `Result<Vec<AuditRecord>, String>` containing historical audit rows.
+    ///  - Side effects: None (read-only SQLite query).
+    ///  - Idempotency: Yes.
+    pub async fn query_audit_log_cursor(
+        limit: usize,
+        offset: usize,
+        before_id: Option<i64>,
+    ) -> Result<Vec<AuditRecord>, String> {
         let conn = Self::get_conn().await?;
         let safe_limit = limit.min(500) as i64;
-        let safe_offset = offset as i64;
 
-        let mut rows = conn
-            .query(
+        let mut rows = if let Some(cursor_id) = before_id {
+            conn.query(
+                "SELECT id, timestamp, actor, action, target, details \
+                 FROM audit_log WHERE id < ?1 ORDER BY id DESC LIMIT ?2",
+                libsql::params![cursor_id, safe_limit],
+            )
+            .await
+            .map_err(|e| format!("Query audit_log failed: {}", e))?
+        } else {
+            let safe_offset = offset as i64;
+            conn.query(
                 "SELECT id, timestamp, actor, action, target, details \
                  FROM audit_log ORDER BY id DESC LIMIT ?1 OFFSET ?2",
                 libsql::params![safe_limit, safe_offset],
             )
             .await
-            .map_err(|e| format!("Query audit_log failed: {}", e))?;
+            .map_err(|e| format!("Query audit_log failed: {}", e))?
+        };
 
         let mut records = Vec::new();
         while let Ok(Some(row)) = rows.next().await {
@@ -2018,6 +2018,11 @@ impl MetadataStore {
         Ok(records)
     }
 
+    /// Legacy offset-based query wrapper for audit logs.
+    pub async fn query_audit_log(limit: usize, offset: usize) -> Result<Vec<AuditRecord>, String> {
+        Self::query_audit_log_cursor(limit, offset, None).await
+    }
+
     // ─── Cluster P2P Mesh Management ──────────────────────────────────────────
     // Coordinates zero-config peer-to-peer discovery, mutual TLS/HMAC pairings, and state synchronization.
 
@@ -2027,9 +2032,7 @@ impl MetadataStore {
     ///  - Side effects: Persists missing identity tokens into `system_secrets`.
     ///  - Idempotency: Yes.
     pub async fn get_or_create_cluster_identity() -> Result<(String, String, String), String> {
-        let _guard = STORE_LOCK.lock().await;
         let conn = Self::get_conn().await?;
-        let _ = Self::ensure_system_secrets_table(&conn).await;
 
         let now_unix = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -2114,9 +2117,7 @@ impl MetadataStore {
 
     /// Sets or updates the human-readable moniker for the local cluster node.
     pub async fn set_cluster_moniker(moniker: &str) -> Result<(), String> {
-        let _guard = STORE_LOCK.lock().await;
         let conn = Self::get_conn().await?;
-        let _ = Self::ensure_system_secrets_table(&conn).await;
 
         let now_unix = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -2211,7 +2212,6 @@ impl MetadataStore {
 
     /// Inserts or updates a peer record in the cluster registry.
     pub async fn upsert_peer(peer: &PeerNodeRecord) -> Result<(), String> {
-        let _guard = STORE_LOCK.lock().await;
         let conn = Self::get_conn().await?;
 
         conn.execute(
@@ -2237,7 +2237,6 @@ impl MetadataStore {
 
     /// Removes a peer from the cluster mesh.
     pub async fn remove_peer(node_id: &str) -> Result<(), String> {
-        let _guard = STORE_LOCK.lock().await;
         let conn = Self::get_conn().await?;
 
         conn.execute("DELETE FROM cluster_nodes WHERE node_id = ?1", [node_id])

@@ -779,17 +779,6 @@ pub async fn copy_blob_handler(
     }
 }
 
-pub async fn copy_blob_scoped_handler(
-    axum::extract::Path(namespace): axum::extract::Path<String>,
-    Extension(auth): Extension<AuthContext>,
-    Json(mut payload): Json<CopyBlobRequest>,
-) -> Result<impl IntoResponse, AxiomError> {
-    if payload.src_namespace.is_none() {
-        payload.src_namespace = Some(namespace);
-    }
-    copy_blob_handler(Extension(auth), Json(payload)).await
-}
-
 /// Handler moving or renaming an object or folder prefix.
 pub async fn move_blob_handler(
     Extension(auth): Extension<AuthContext>,
@@ -887,17 +876,6 @@ pub async fn move_blob_handler(
     }
 }
 
-pub async fn move_blob_scoped_handler(
-    axum::extract::Path(namespace): axum::extract::Path<String>,
-    Extension(auth): Extension<AuthContext>,
-    Json(mut payload): Json<MoveBlobRequest>,
-) -> Result<impl IntoResponse, AxiomError> {
-    if payload.src_namespace.is_none() {
-        payload.src_namespace = Some(namespace);
-    }
-    move_blob_handler(Extension(auth), Json(payload)).await
-}
-
 /// Handler deleting an entire directory/prefix.
 pub async fn delete_prefix_handler(
     Extension(auth): Extension<AuthContext>,
@@ -941,17 +919,6 @@ pub async fn delete_prefix_handler(
     })))
 }
 
-pub async fn delete_prefix_scoped_handler(
-    axum::extract::Path(namespace): axum::extract::Path<String>,
-    Extension(auth): Extension<AuthContext>,
-    Json(mut payload): Json<DeletePrefixRequest>,
-) -> Result<impl IntoResponse, AxiomError> {
-    if payload.namespace.is_none() {
-        payload.namespace = Some(namespace);
-    }
-    delete_prefix_handler(Extension(auth), Json(payload)).await
-}
-
 #[derive(Debug, Deserialize)]
 pub struct CreateTicketRequest {
     pub key: String,
@@ -983,7 +950,11 @@ pub async fn create_ticket_handler(
 
     let ticket_id = axiom_core::uuid7();
     let creator = if auth.is_session {
-        "admin"
+        if !auth.api_key_name.is_empty() {
+            &auth.api_key_name
+        } else {
+            "admin"
+        }
     } else {
         &auth.api_key_name
     };
@@ -1005,6 +976,14 @@ pub async fn create_ticket_handler(
             StatusCode::INTERNAL_SERVER_ERROR,
         ));
     }
+
+    let _ = MetadataStore::record_audit(
+        creator,
+        "blob.ticket_created",
+        &format!("{}/{}", namespace, payload.key),
+        Some(&format!("op={}, expires_at={}", op, ticket.expires_at)),
+    )
+    .await;
 
     let url = format!(
         "/api/v1/blobs/{}/{}?ticket_sig={}&ticket_exp={}",

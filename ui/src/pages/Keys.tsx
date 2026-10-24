@@ -30,14 +30,10 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 import { api, ApiKeyRecordApi, RoleRecordApi } from '../api/client';
-import { validateCleanName } from './Databases';
+import { validateCleanName } from '../utils/validation';
+import { FilterRule, matchesRule } from '../utils/filters';
 
-export interface FilterRule {
-  id: string;
-  field: string;
-  operator: 'contains' | 'equals' | 'starts_with';
-  value: string;
-}
+export type { FilterRule };
 
 const STATUS_OPTIONS: { value: 'Active' | 'Revoked'; label: string; icon: React.ReactNode }[] = [
   {
@@ -169,14 +165,6 @@ export function Keys() {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [showFilters, showDisplayOptions]);
-
-  function matchesRule(itemVal: string, operator: string, ruleVal: string): boolean {
-    const i = (itemVal || '').toLowerCase();
-    const r = (ruleVal || '').toLowerCase();
-    if (operator === 'equals') return i === r;
-    if (operator === 'starts_with') return i.startsWith(r);
-    return i.includes(r);
-  }
 
   const filterFieldOptions = [
     { value: 'name', label: 'Key Identifier' },

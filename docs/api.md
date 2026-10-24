@@ -662,9 +662,6 @@ Content-addressed object storage with automatic BLAKE3 deduplication, byte-range
 | `GET`, `HEAD` | `/api/v1/blobs/:namespace/*key` | API Key / Ticket | Stream object (supports `Range: bytes=X-Y` and `?ticket=...`) |
 | `DELETE` | `/api/v1/blobs/:namespace/*key` | API Key | Delete single object and decrement content refcount |
 | `POST` | `/api/v1/blobs/:namespace/delete-objects` | API Key | Batch delete up to 1,000 objects in a single atomic request |
-| `POST` | `/api/v1/blobs/:namespace/delete-prefix` | API Key | Delete an entire folder / prefix and all objects inside |
-| `POST` | `/api/v1/blobs/:namespace/move` | API Key | Atomically move or rename file/folder within namespace (or cross-namespace) |
-| `POST` | `/api/v1/blobs/:namespace/copy` | API Key | Copy file/folder without disk duplication (BLAKE3 pointer clone) |
 | `POST` | `/api/v1/blobs/:namespace/ticket` | API Key | Mint a pre-signed capability ticket URL |
 | `POST` | `/api/v1/blobs/:namespace/uploads` | API Key | Initialize multipart / resumable upload session |
 | `PUT` | `/api/v1/blobs/:namespace/uploads/:upload_id/parts/:part` | API Key | Upload discrete part chunk in multipart workflow |
@@ -707,80 +704,9 @@ X-Axiom-Key: <TOKEN>
 
 ---
 
-### Move / Rename File or Folder (`POST /api/v1/blobs/:namespace/move`)
-Atomically renames or moves a file or directory prefix. Because Axiom uses BLAKE3 content-addressable storage, this operation updates key pointers in milliseconds with zero byte duplication.
-
-**Request (Within Namespace)**:
-```http
-POST /api/v1/blobs/invoices/move
-X-Axiom-Key: <TOKEN>
-Content-Type: application/json
-```
-```json
-{
-  "src_key": "drafts/january.pdf",
-  "dest_key": "final/january_2026.pdf"
-}
-```
-
-**Request (Cross-Namespace Move / Folder Prefix)**:
-```http
-POST /api/v1/blobs/invoices/move
-X-Axiom-Key: <TOKEN>
-Content-Type: application/json
-```
-```json
-{
-  "src_key": "v1/",
-  "dest_namespace": "archive",
-  "dest_key": "v1_legacy/",
-  "is_prefix": true
-}
-```
-**Response (`200 OK`)**:
-```json
-{
-  "success": true,
-  "data": {
-    "key": "final/january_2026.pdf",
-    "namespace": "invoices",
-    "size": 1048576,
-    "content_type": "application/pdf"
-  },
-  "error": null
-}
-```
-
----
-
-### Copy File or Folder (`POST /api/v1/blobs/:namespace/copy`)
-Creates a new file or directory pointer without physical disk copying (BLAKE3 pointer clone). Cross-namespace copying is also supported by specifying optional `dest_namespace`.
-
-**Request**:
-```http
-POST /api/v1/blobs/media/copy
-X-Axiom-Key: <TOKEN>
-Content-Type: application/json
-```
-```json
-{
-  "src_key": "logos/main.png",
-  "dest_key": "logos/backup.png"
-}
-```
-**Response (`200 OK`)**:
-```json
-{
-  "success": true,
-  "data": {
-    "key": "logos/backup.png",
-    "namespace": "media",
-    "size": 45012,
-    "content_type": "image/png"
-  },
-  "error": null
-}
-```
+### Moving, Copying, and Prefix Deletion
+> [!NOTE]
+> Moving, copying, and recursive directory prefix deletions are administrative operations guarded by session authentication and audit logging. Refer to [Blob Storage Administration (`/admin/v1/blobs`)](#blob-storage-administration-adminv1blobs) below (`POST /admin/v1/blobs/move`, `POST /admin/v1/blobs/copy`, and `POST /admin/v1/blobs/delete-prefix`).
 
 ---
 
@@ -2063,6 +1989,33 @@ Content-Type: application/json
     "namespace": "invoices",
     "size": 1048576,
     "content_type": "application/pdf"
+  },
+  "error": null
+}
+```
+
+---
+
+### Delete Prefix Tree (`POST /admin/v1/blobs/delete-prefix`)
+Recursively deletes an entire directory tree or key prefix within a namespace.
+**Request**:
+```http
+POST /admin/v1/blobs/delete-prefix
+Authorization: Bearer <SESSION_TOKEN>
+Content-Type: application/json
+```
+```json
+{
+  "namespace": "invoices",
+  "prefix": "2024/temporary/"
+}
+```
+**Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "data": {
+    "deleted_objects": 42
   },
   "error": null
 }

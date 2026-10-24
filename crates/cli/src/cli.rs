@@ -26,6 +26,35 @@ pub enum OutputFormat {
     Jsonl,
 }
 
+/// Helper to format data according to requested output format.
+/// Returns serialized String for Json/Jsonl or None if Table format is active.
+pub fn format_output<T: serde::Serialize>(
+    format: OutputFormat,
+    data: &T,
+) -> Result<Option<String>, serde_json::Error> {
+    match format {
+        OutputFormat::Json => Ok(Some(serde_json::to_string_pretty(data)?)),
+        OutputFormat::Jsonl => Ok(Some(serde_json::to_string(data)?)),
+        OutputFormat::Table => Ok(None),
+    }
+}
+
+/// Helper to print output according to requested format.
+/// For Json and Jsonl, prints the serialized payload.
+/// For Table, executes the provided render closure.
+pub fn render_output<T: serde::Serialize>(
+    format: OutputFormat,
+    data: &T,
+    table_fn: impl FnOnce(&T),
+) -> Result<(), Box<dyn std::error::Error>> {
+    if let Some(formatted) = format_output(format, data)? {
+        println!("{}", formatted);
+    } else {
+        table_fn(data);
+    }
+    Ok(())
+}
+
 /// Dispatches CLI commands provided via command-line arguments.
 /// CONTRACT:
 ///  - Returns `Ok(false)` if the server daemon should start.
@@ -132,12 +161,8 @@ pub async fn run() -> Result<bool, Box<dyn std::error::Error>> {
                 client.get_health().await?
             };
 
-            if format == OutputFormat::Json {
-                println!("{}", serde_json::to_string_pretty(&resp)?);
-            } else if format == OutputFormat::Jsonl {
-                println!("{}", serde_json::to_string(&resp)?);
-            } else {
-                let data = resp.get("data");
+            render_output(format, &resp, |r| {
+                let data = r.get("data");
                 if let Some(d) = data {
                     let status = d.get("status").and_then(|s| s.as_str()).unwrap_or("ONLINE");
                     let uptime = d
@@ -173,20 +198,17 @@ pub async fn run() -> Result<bool, Box<dyn std::error::Error>> {
                         println!("Status: {}", status);
                     }
                 }
-            }
+            })?;
             Ok(true)
         }
 
         Some(Commands::Metrics) => {
             let client = AdminClient::new(&cli.url, cli.key);
             let metrics = client.get_metrics().await?;
-            if format == OutputFormat::Json {
-                println!("{}", json!({ "metrics": metrics }));
-            } else if format == OutputFormat::Jsonl {
-                println!("{}", serde_json::to_string(&json!({ "metrics": metrics }))?);
-            } else {
+            let payload = json!({ "metrics": metrics });
+            render_output(format, &payload, |_| {
                 print!("{}", metrics);
-            }
+            })?;
             Ok(true)
         }
 
@@ -272,13 +294,9 @@ async fn handle_user_command(
                 "data": { "username": username, "message": "Admin user created successfully" }
             });
 
-            if format == OutputFormat::Json {
-                println!("{}", serde_json::to_string_pretty(&res)?);
-            } else if format == OutputFormat::Jsonl {
-                println!("{}", serde_json::to_string(&res)?);
-            } else {
+            render_output(format, &res, |_| {
                 println!("Admin user '{}' created successfully.", username);
-            }
+            })?;
         }
 
         UserCommands::Update {
@@ -315,13 +333,9 @@ async fn handle_user_command(
                 "data": { "username": username, "message": "Admin user updated successfully" }
             });
 
-            if format == OutputFormat::Json {
-                println!("{}", serde_json::to_string_pretty(&res)?);
-            } else if format == OutputFormat::Jsonl {
-                println!("{}", serde_json::to_string(&res)?);
-            } else {
+            render_output(format, &res, |_| {
                 println!("Admin user '{}' updated successfully.", username);
-            }
+            })?;
         }
 
         UserCommands::List { .. } => {
@@ -372,13 +386,9 @@ async fn handle_user_command(
                 "data": { "username": username, "message": "User deleted successfully" }
             });
 
-            if format == OutputFormat::Json {
-                println!("{}", serde_json::to_string_pretty(&res)?);
-            } else if format == OutputFormat::Jsonl {
-                println!("{}", serde_json::to_string(&res)?);
-            } else {
+            render_output(format, &res, |_| {
                 println!("User '{}' deleted successfully.", username);
-            }
+            })?;
         }
     }
 
@@ -410,11 +420,7 @@ async fn handle_key_command(
                 )
                 .await?;
 
-            if format == OutputFormat::Json {
-                println!("{}", serde_json::to_string_pretty(&resp)?);
-            } else if format == OutputFormat::Jsonl {
-                println!("{}", serde_json::to_string(&resp)?);
-            } else {
+            render_output(format, &resp, |_| {
                 println!("API Key '{}' created successfully!\n", name);
                 if let Some(data) = resp.get("data") {
                     if let Some(token) = data.get("token").and_then(|t| t.as_str()) {
@@ -425,7 +431,7 @@ async fn handle_key_command(
                     }
                     println!("\nKeep this token secure; the secret is hashed with BLAKE3 and cannot be recovered.");
                 }
-            }
+            })?;
         }
 
         KeyCommands::List => {
@@ -498,24 +504,16 @@ async fn handle_key_command(
             let resp = client
                 .update_key(&name, role.as_deref(), rate_limit, expires_at)
                 .await?;
-            if format == OutputFormat::Json {
-                println!("{}", serde_json::to_string_pretty(&resp)?);
-            } else if format == OutputFormat::Jsonl {
-                println!("{}", serde_json::to_string(&resp)?);
-            } else {
+            render_output(format, &resp, |_| {
                 println!("API Key '{}' updated successfully.", name);
-            }
+            })?;
         }
 
         KeyCommands::Remove { name } => {
             let resp = client.delete_key(&name).await?;
-            if format == OutputFormat::Json {
-                println!("{}", serde_json::to_string_pretty(&resp)?);
-            } else if format == OutputFormat::Jsonl {
-                println!("{}", serde_json::to_string(&resp)?);
-            } else {
+            render_output(format, &resp, |_| {
                 println!("API Key '{}' deleted successfully.", name);
-            }
+            })?;
         }
     }
     Ok(())
@@ -3225,5 +3223,40 @@ description = "Axiom Gateway = Prod #1"
 "#;
         let env_str = toml_to_env_string(toml_sample).expect("Should convert to env string");
         assert!(env_str.contains("SERVER__DESCRIPTION=\"Axiom Gateway = Prod #1\""));
+    }
+
+    #[test]
+    fn test_format_output_json_jsonl_table() {
+        let payload = serde_json::json!({
+            "status": "ok",
+            "count": 42
+        });
+
+        // Test Json formatting
+        let json_out = format_output(OutputFormat::Json, &payload)
+            .expect("should format json")
+            .expect("should be Some");
+        assert!(json_out.contains("\"status\": \"ok\""));
+        assert!(json_out.contains('\n'));
+
+        // Test Jsonl formatting
+        let jsonl_out = format_output(OutputFormat::Jsonl, &payload)
+            .expect("should format jsonl")
+            .expect("should be Some");
+        assert!(jsonl_out.contains("\"status\":\"ok\""));
+        assert!(!jsonl_out.contains('\n'));
+
+        // Test Table formatting
+        let table_out = format_output(OutputFormat::Table, &payload)
+            .expect("should handle table format");
+        assert!(table_out.is_none());
+
+        // Test render_output with closure execution
+        let mut executed = false;
+        render_output(OutputFormat::Table, &payload, |_| {
+            executed = true;
+        })
+        .expect("render_output table should succeed");
+        assert!(executed);
     }
 }

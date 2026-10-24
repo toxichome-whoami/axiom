@@ -215,6 +215,7 @@ impl DatabasePoolManager {
             );
             let _ = engine.disconnect().await;
         }
+        INIT_LOCKS.remove(alias);
     }
 
     /// Tests connectivity to a raw database URL by creating a temporary engine and executing health_check.

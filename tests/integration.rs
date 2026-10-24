@@ -1553,16 +1553,11 @@ async fn blob_storage_integrity_scrub_and_ttl() {
     setup_test_metadata();
     ensure_blob_engine().await;
 
-    // Login admin session to access admin endpoints via CacheEngine session cache
-    let session_token = "admin_session_token_32_bytes_xyz";
+    // Create authentic admin session in metadata store
+    let session_token = axiom_metadata::MetadataStore::create_session("admin_user", 3600)
+        .await
+        .unwrap();
     let cookie_header = format!("axiom_session={}", session_token);
-    axiom_cache::CacheEngine::set(
-        &format!("sess:{}", session_token),
-        bytes::Bytes::from("admin_user"),
-        60,
-        axiom_cache::Durability::MemoryOnly,
-    )
-    .await;
 
     // 1. Upload temporary blob with TTL 0
     let admin_token = BASE64_STANDARD.encode("admin_key:secret_admin");

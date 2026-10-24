@@ -197,6 +197,8 @@ pub fn resolve_and_sanitize_db_url(
 pub struct AuditQuery {
     pub limit: Option<usize>,
     pub offset: Option<usize>,
+    pub cursor: Option<i64>,
+    pub before_id: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -317,6 +319,15 @@ pub async fn reload_metadata(
             StatusCode::INTERNAL_SERVER_ERROR,
         )
     })?;
+
+    let actor = if !auth.api_key_name.is_empty() { &auth.api_key_name } else { "admin" };
+    let _ = MetadataStore::record_audit(
+        actor,
+        "metadata.reload",
+        "all",
+        Some("Metadata snapshot reloaded from database"),
+    )
+    .await;
 
     let snapshot = axiom_metadata::snapshot::get_snapshot();
     Ok(Json(json!({
@@ -1064,6 +1075,16 @@ pub async fn flush_cache(
     }
 
     axiom_cache::CacheEngine::flush().await;
+
+    let actor = if !auth.api_key_name.is_empty() { &auth.api_key_name } else { "admin" };
+    let _ = MetadataStore::record_audit(
+        actor,
+        "cache.flush",
+        "all",
+        Some("All L1 and L2 cache entries invalidated"),
+    )
+    .await;
+
     Ok(Json(json!({
         "success": true,
         "data": {
@@ -1093,8 +1114,9 @@ pub async fn get_audit_log(
 
     let limit = query.limit.unwrap_or(50).clamp(1, 500);
     let offset = query.offset.unwrap_or(0);
+    let before_id = query.cursor.or(query.before_id);
 
-    let logs = MetadataStore::query_audit_log(limit, offset)
+    let logs = MetadataStore::query_audit_log_cursor(limit, offset, before_id)
         .await
         .map_err(|e| {
             AxiomError::new("AUDIT_QUERY_FAILED", &e, StatusCode::INTERNAL_SERVER_ERROR)
@@ -1102,7 +1124,7 @@ pub async fn get_audit_log(
 
     let has_more = logs.len() == limit;
     let next_cursor = if has_more {
-        logs.last().map(|r| r.id.to_string())
+        logs.last().map(|r| r.id)
     } else {
         None
     };
@@ -1213,18 +1235,24 @@ pub async fn get_admin_health(
     let mut db_status = serde_json::Map::new();
     let mut all_dbs_up = true;
 
-    for alias in snapshot.databases.keys() {
-        if db_status.contains_key(alias) {
-            continue;
-        }
-        if let Some(engine) = DatabasePoolManager::get_engine(alias).await {
-            let is_up = engine.health_check().await;
-            db_status.insert(alias.clone(), json!(if is_up { "up" } else { "down" }));
-            if !is_up {
-                all_dbs_up = false;
-            }
+    // Parallelize engine health probes with a strict 3-second timeout per target
+    // to prevent worker thread starvation and slow response degradation when upstreams hang.
+    let aliases: Vec<String> = snapshot.databases.keys().cloned().collect();
+    let probe_results = futures::future::join_all(aliases.into_iter().map(|alias| async move {
+        let is_up = if let Some(engine) = DatabasePoolManager::get_engine(&alias).await {
+            tokio::time::timeout(std::time::Duration::from_secs(3), engine.health_check())
+                .await
+                .unwrap_or(false)
         } else {
-            db_status.insert(alias.clone(), json!("down"));
+            false
+        };
+        (alias, is_up)
+    }))
+    .await;
+
+    for (alias, is_up) in probe_results {
+        db_status.insert(alias, json!(if is_up { "up" } else { "down" }));
+        if !is_up {
             all_dbs_up = false;
         }
     }
@@ -1437,6 +1465,8 @@ pub async fn setup_database(
         ));
     }
 
+    validate_clean_name("Database alias", &payload.alias)?;
+
     let effective_url = resolve_and_sanitize_db_url(
         &payload.alias,
         &payload.url,
@@ -1488,6 +1518,9 @@ pub async fn setup_database(
             StatusCode::INTERNAL_SERVER_ERROR,
         )
     })?;
+
+    let actor = if !auth.api_key_name.is_empty() { &auth.api_key_name } else { "admin" };
+    let _ = MetadataStore::record_audit(actor, "database.add", &payload.alias, None).await;
 
     Ok(Json(json!({
         "success": true,
@@ -2224,6 +2257,15 @@ pub async fn update_cluster_moniker(
     MetadataStore::set_cluster_moniker(moniker)
         .await
         .map_err(|e| AxiomError::new("METADATA_ERROR", &e, StatusCode::INTERNAL_SERVER_ERROR))?;
+
+    let actor = if !auth.api_key_name.is_empty() { &auth.api_key_name } else { "admin" };
+    let _ = MetadataStore::record_audit(
+        actor,
+        "cluster.moniker_update",
+        moniker,
+        None,
+    )
+    .await;
 
     Ok(Json(json!({
         "success": true,

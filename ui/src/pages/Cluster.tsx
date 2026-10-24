@@ -42,20 +42,9 @@ function formatLastSeen(timestampSecs: number) {
   return `${Math.floor(diff / 3600)}h ago`;
 }
 
-export interface FilterRule {
-  id: string;
-  field: string;
-  operator: 'contains' | 'equals' | 'starts_with';
-  value: string;
-}
+import { FilterRule, matchesRule } from '../utils/filters';
 
-function matchesRule(itemVal: string, operator: string, ruleVal: string): boolean {
-  const i = (itemVal || '').toLowerCase();
-  const r = (ruleVal || '').toLowerCase();
-  if (operator === 'equals') return i === r;
-  if (operator === 'starts_with') return i.startsWith(r);
-  return i.includes(r);
-}
+export type { FilterRule };
 
 export function Cluster() {
   const [status, setStatus] = useState<ClusterStatusData | null>(null);

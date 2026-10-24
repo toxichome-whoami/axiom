@@ -24,9 +24,6 @@ pub fn get_router() -> Router {
             "/:namespace/delete-objects",
             post(batch_delete_blobs_handler),
         )
-        .route("/:namespace/delete-prefix", post(delete_prefix_scoped_handler))
-        .route("/:namespace/copy", post(copy_blob_scoped_handler))
-        .route("/:namespace/move", post(move_blob_scoped_handler))
         .route("/:namespace", get(list_blobs_handler))
         .route("/:namespace/ticket", post(create_ticket_handler))
         .route("/:namespace/uploads", post(init_upload_handler))
