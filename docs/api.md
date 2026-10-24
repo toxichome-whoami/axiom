@@ -1298,7 +1298,14 @@ Authorization: Bearer <SESSION_TOKEN>
 }
 ```
 
-#### Control Plane Audit Log (`GET /admin/v1/audit?limit=2&offset=0`)
+#### Control Plane Audit Log (`GET /admin/v1/audit`)
+Retrieves immutable chronological audit records for control-plane events (key rotation, role modifications, database connections, schema updates, cache flushes, and administrative logins).
+
+**Query Parameters**:
+- `limit` *(integer, optional, default: 50, range: 1..500)*: Maximum number of audit records to return.
+- `offset` *(integer, optional, default: 0)*: Number of records to skip for standard offset pagination.
+- `cursor` or `before_id` *(integer, optional)*: Fetch records with `id < cursor` for efficient keyset cursor-based backward pagination without performance degradation on large audit logs.
+
 **Response (`200 OK`)**:
 ```json
 {
@@ -1306,23 +1313,27 @@ Authorization: Bearer <SESSION_TOKEN>
   "data": [
     {
       "id": 104,
-      "user": "admin",
+      "timestamp": 1761402200,
+      "actor": "admin",
       "action": "CREATE_API_KEY",
-      "details": "Created key 'billing_service' with role 'service_role'",
-      "timestamp": 1761402200
+      "target": "billing_service",
+      "details": "Created key 'billing_service' with role 'service_role'"
     },
     {
       "id": 103,
-      "user": "admin",
-      "action": "REGISTER_DATABASE",
-      "details": "Registered database alias 'warehouse_ch'",
-      "timestamp": 1761401800
+      "timestamp": 1761401800,
+      "actor": "admin",
+      "action": "database.add",
+      "target": "warehouse_ch",
+      "details": "Registered database alias 'warehouse_ch'"
     }
   ],
   "pagination": {
     "limit": 2,
     "offset": 0,
-    "count": 2
+    "has_more": true,
+    "next_offset": 2,
+    "next_cursor": 103
   },
   "error": null
 }
@@ -1840,43 +1851,49 @@ Content-Type: application/json
 ### Blob Storage Administration (`/admin/v1/blobs`)
 
 #### Storage-Wide Telemetry (`GET /admin/v1/blobs/stats`)
+Retrieves aggregated storage metrics across all namespaces, including logical volume, physical disk volume, and deduplication savings.
+
 **Response (`200 OK`)**:
 ```json
 {
   "success": true,
   "data": {
     "total_objects": 28420,
-    "logical_bytes": 142857142857,
-    "physical_bytes": 42857142857,
-    "deduplication_ratio": 3.33,
-    "deduplication_savings_bytes": 100000000000
+    "unique_blobs": 12150,
+    "total_logical_bytes": 142857142857,
+    "total_physical_bytes": 42857142857,
+    "dedup_saved_bytes": 100000000000,
+    "inline_objects": 24100,
+    "file_objects": 4320
   },
   "error": null
 }
 ```
 
 #### Storage Integrity Scrub (`POST /admin/v1/blobs/scrub`)
+Triggers an asynchronous background verification of all stored objects, checking cryptographic BLAKE3 content-hashes against recorded index metadata.
+
 **Response (`200 OK`)**:
 ```json
 {
   "success": true,
   "data": {
-    "scrubbed_objects": 28420,
-    "corrupt_objects": 0,
-    "duration_ms": 1420.5
+    "verified_blobs": 28420,
+    "corrupted_blobs": 0
   },
   "error": null
 }
 ```
 
 #### Expired Object TTL Cleanup (`POST /admin/v1/blobs/sweep`)
+Sweeps the storage engine partition and eagerly reclaims disk space occupied by objects whose `expires_at` TTL timestamp has elapsed.
+
 **Response (`200 OK`)**:
 ```json
 {
   "success": true,
   "data": {
-    "purged_expired_objects": 14,
-    "reclaimed_bytes": 15829104
+    "swept_objects": 14
   },
   "error": null
 }
