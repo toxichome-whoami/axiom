@@ -198,10 +198,10 @@ export function TableGridView({
   }, [selectedTable, columns, foreignKeys]);
 
   return (
-    <div className="flex-1 flex flex-col min-h-0 overflow-hidden relative font-sans">
+    <div className="flex-1 flex flex-col min-h-0 min-w-0 w-full overflow-hidden relative font-sans">
       {/* Tab 1: Data View (Spreadsheet Grid) */}
       {activeTab === 'data' && (
-        <div className="flex-1 overflow-auto">
+        <div className="flex-1 min-h-0 min-w-0 w-full overflow-auto">
           {isSchemaLoading || (isRowsLoading && rows.length === 0 && !rowsError) ? (
             <TableSkeleton columns={columns} foreignKeys={foreignKeys} columnWidths={columnWidths} />
           ) : !selectedTable ? (
@@ -465,8 +465,18 @@ export function TableGridView({
                             data-cell-col={col.name}
                             onClick={(e) => {
                               e.stopPropagation();
+                              const wasAlreadySelected = selectedCell?.rowIndex === idx && selectedCell?.colName === col.name;
                               onSelectCell({ rowIndex: idx, colName: col.name });
                               onSelectRow(idx, false);
+                              const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+                              if (fk && (isMobile || wasAlreadySelected)) {
+                                onOpenFkPicker({
+                                  rowIndex: idx,
+                                  column: col.name,
+                                  fk,
+                                  currentValue: val,
+                                });
+                              }
                             }}
                             onDoubleClick={(e) => {
                               e.stopPropagation();
@@ -631,11 +641,11 @@ export function TableGridView({
   )}
 
       {/* Pagination & Status Footer */}
-      <div className={`h-12 shrink-0 px-4 bg-[#0a0a0a] border-t border-[#222222] flex items-center gap-3 text-[13px] text-[#8c8c8c] select-none font-sans ${
+      <div className={`h-12 shrink-0 px-4 bg-[#0a0a0a] border-t border-[#222222] flex items-center gap-3 text-[13px] text-[#8c8c8c] select-none font-sans overflow-x-auto scrollbar-none whitespace-nowrap ${
         activeTab === 'data' ? 'justify-between' : 'justify-end'
       }`}>
         {activeTab === 'data' && (
-          <span>
+          <span className="shrink-0 whitespace-nowrap">
             Showing <span className="text-white font-medium">{rows.length}</span> rows
             {selectedTable && (
               <> in <span className="text-white font-mono">{selectedTable}</span></>
@@ -644,7 +654,7 @@ export function TableGridView({
         )}
 
         {/* Bottom Right Mode Switcher Tabs */}
-        <div className="flex items-center p-0.5 rounded-[6px] bg-[#141414] border border-[#262626]">
+        <div className="flex items-center p-0.5 rounded-[6px] bg-[#141414] border border-[#262626] shrink-0 whitespace-nowrap">
           <button
             type="button"
             onClick={() => setActiveTab('data')}

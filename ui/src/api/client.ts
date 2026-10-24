@@ -265,7 +265,7 @@ async function executeRequest<T>(
       credentials: 'include',
     });
 
-    if (res.status === 401) {
+    if (res.status === 401 && !targetUrl.includes('/auth/logout')) {
       clearSession();
       window.dispatchEvent(new CustomEvent('axiom:unauthorized', { detail: { status: res.status } }));
     } else if (res.status === 429) {

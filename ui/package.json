@@ -1,11 +1,12 @@
 {
   "name": "axiom-ui",
   "private": true,
-  "version": "0.1.14",
+  "version": "0.1.15",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "build:release": "tsc && vite build --mode release",
     "preview": "vite preview"
   },
   "dependencies": {

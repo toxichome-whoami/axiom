@@ -93,13 +93,20 @@ export function StorageSidebar({
         setIsNsDropdownOpen(false);
       }
     };
+    const handleClose = () => setIsNsDropdownOpen(false);
     document.addEventListener('mousedown', handleOutside);
-    return () => document.removeEventListener('mousedown', handleOutside);
+    window.addEventListener('resize', handleClose);
+    window.addEventListener('scroll', handleClose, true);
+    return () => {
+      document.removeEventListener('mousedown', handleOutside);
+      window.removeEventListener('resize', handleClose);
+      window.removeEventListener('scroll', handleClose, true);
+    };
   }, []);
 
   return (
     <aside
-      className="w-full lg:w-64 shrink-0 flex flex-col bg-[#0a0a0a] border-b lg:border-b-0 lg:border-r border-[#222222] overflow-hidden font-sans select-none relative"
+      className={`w-full lg:w-64 shrink-0 flex flex-col bg-[#0a0a0a] border-b lg:border-b-0 lg:border-r border-[#222222] font-sans select-none relative ${isNsDropdownOpen ? 'z-50' : 'z-30'}`}
       style={{ width: (typeof window !== 'undefined' && window.innerWidth >= 1024 && width) ? `${width}px` : undefined }}
     >
       {/* Draggable Resize Handle on Right Border */}
@@ -113,7 +120,7 @@ export function StorageSidebar({
         </div>
       )}
       {/* ─── Header: Namespace Selector (h-[54px] aligned with StorageToolbar & TableSidebar) ─────────────── */}
-      <div className="h-[54px] shrink-0 px-3 border-b border-[#222222] flex items-center justify-between gap-2 relative">
+      <div className={`h-[54px] shrink-0 px-3 border-b border-[#222222] flex items-center justify-between gap-2 relative ${isNsDropdownOpen ? 'z-50' : 'z-30'}`}>
         <div className="relative flex-1 min-w-0" ref={nsDropdownRef}>
           <button
             type="button"
@@ -141,52 +148,61 @@ export function StorageSidebar({
           </button>
 
           {/* Namespace Dropdown Popup */}
-          {isNsDropdownOpen && (
-            <div className="absolute left-0 top-full mt-1.5 w-60 bg-[#111111] border border-[#262626] rounded-[8px] shadow-2xl p-1 z-50 animate-in fade-in zoom-in-95 duration-100 font-sans">
-              <div className="px-3 py-2 text-[13px] font-medium text-[#888888] select-none flex items-center justify-between">
-                <span>Storage Namespaces</span>
-                <span className="text-[12px] font-mono text-[#666666]">{namespaces.length}</span>
-              </div>
+          {isNsDropdownOpen && (() => {
+            const rect = nsDropdownRef.current?.getBoundingClientRect();
+            const top = (rect?.bottom ?? 0) + 6;
+            const popoverWidth = Math.min(240, window.innerWidth - 32);
+            const left = Math.max(16, Math.min(window.innerWidth - popoverWidth - 16, rect?.left ?? 16));
+            return (
+              <div
+                style={{ top: `${top}px`, left: `${left}px`, width: `${popoverWidth}px` }}
+                className="fixed bg-[#111111] border border-[#262626] rounded-[8px] shadow-2xl p-1 z-50 animate-in fade-in zoom-in-95 duration-100 font-sans"
+              >
+                <div className="px-3 py-2 text-[13px] font-medium text-[#888888] select-none flex items-center justify-between">
+                  <span>Storage Namespaces</span>
+                  <span className="text-[12px] font-mono text-[#666666]">{namespaces.length}</span>
+                </div>
 
-              <div className="max-h-52 overflow-y-auto space-y-0.5 py-0.5">
-                {namespaces.length === 0 ? (
-                  <div className="px-2.5 py-2 text-xs text-[#777777]">No namespaces found</div>
-                ) : (
-                  namespaces.map((ns) => {
-                    const isActive = ns.name === activeNamespace;
-                    return (
-                      <button
-                        key={ns.name}
-                        type="button"
-                        onClick={() => {
-                          onSelectNamespace(ns.name);
-                          setIsNsDropdownOpen(false);
-                        }}
-                        className={`w-full flex items-center justify-between px-3 py-2 rounded-[6px] text-[13px] transition-colors cursor-pointer text-left ${
-                          isActive
-                            ? 'bg-[#1a1a1a] text-white font-medium'
-                            : 'text-[#cccccc] hover:bg-[#161616] hover:text-white'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2 truncate min-w-0">
-                          <HardDrive className={`w-3.5 h-3.5 shrink-0 ${isActive ? 'text-blue-400' : 'text-[#777777]'}`} />
-                          <span className="truncate">{ns.name}</span>
-                        </div>
-                        <div className="flex items-center gap-1.5 shrink-0 ml-2">
-                          {ns.is_public && (
-                            <span className="px-1 py-0.2 rounded text-[10px] bg-[#30a46c]/15 text-[#30a46c]">
-                              pub
-                            </span>
-                          )}
-                          {isActive && <Check className="w-3.5 h-3.5 text-white shrink-0" />}
-                        </div>
-                      </button>
-                    );
-                  })
-                )}
+                <div className="max-h-52 overflow-y-auto space-y-0.5 py-0.5">
+                  {namespaces.length === 0 ? (
+                    <div className="px-2.5 py-2 text-xs text-[#777777]">No namespaces found</div>
+                  ) : (
+                    namespaces.map((ns) => {
+                      const isActive = ns.name === activeNamespace;
+                      return (
+                        <button
+                          key={ns.name}
+                          type="button"
+                          onClick={() => {
+                            onSelectNamespace(ns.name);
+                            setIsNsDropdownOpen(false);
+                          }}
+                          className={`w-full flex items-center justify-between px-3 py-2 rounded-[6px] text-[13px] transition-colors cursor-pointer text-left ${
+                            isActive
+                              ? 'bg-[#1a1a1a] text-white font-medium'
+                              : 'text-[#cccccc] hover:bg-[#161616] hover:text-white'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2 truncate min-w-0">
+                            <HardDrive className={`w-3.5 h-3.5 shrink-0 ${isActive ? 'text-blue-400' : 'text-[#777777]'}`} />
+                            <span className="truncate">{ns.name}</span>
+                          </div>
+                          <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                            {ns.is_public && (
+                              <span className="px-1 py-0.2 rounded text-[10px] bg-[#30a46c]/15 text-[#30a46c]">
+                                pub
+                              </span>
+                            )}
+                            {isActive && <Check className="w-3.5 h-3.5 text-white shrink-0" />}
+                          </div>
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
         </div>
 
         {/* Action icons: Settings & Create Namespace + Mobile Collapse Toggle */}

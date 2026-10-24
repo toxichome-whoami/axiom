@@ -4,7 +4,8 @@ import { setSession, clearSession, hasActiveSession } from './api/session';
 import { api } from './api/client';
 import { GlobalAlertDialog } from './components/ui/AlertDialog';
 import { ErrorBoundary } from './components/ui/ErrorBoundary';
-const Agentation: React.ComponentType = import.meta.env.DEV
+const isRelease = import.meta.env.MODE === 'release' || import.meta.env.VITE_RELEASE === 'true';
+const Agentation: React.ComponentType = !isRelease
   ? lazy(() => import('agentation').then((m) => ({ default: m.Agentation })))
   : () => null;
 
@@ -99,7 +100,7 @@ export function App() {
   }, [isAuthenticated]);
 
   function handleNavigate(path: NavPath) {
-    if (path !== currentPath) {
+    if (path !== currentPath || window.location.pathname !== path) {
       window.history.pushState(null, '', path);
       setCurrentPath(path);
       window.scrollTo(0, 0);
@@ -109,11 +110,13 @@ export function App() {
   function handleLoginSuccess(token: string, username: string, expiresAt?: number) {
     setSession(token, expiresAt, username);
     setIsAuthenticated(true);
-    handleNavigate('/system');
+    window.history.pushState(null, '', '/system');
+    setCurrentPath('/system');
+    window.scrollTo(0, 0);
   }
 
-  // If user visits /system/login or is unauthenticated, render AuthPage with Stepper
-  if (!isAuthenticated || window.location.pathname.includes('/login') || window.location.pathname.includes('/setup')) {
+  // If user is unauthenticated, render AuthPage
+  if (!isAuthenticated) {
     const isSetup = window.location.pathname.includes('/setup');
     return (
       <>
@@ -159,12 +162,17 @@ export function App() {
   }
 
   async function handleLogout() {
-    clearSession();
-    setIsAuthenticated(false);
+    // Revoke server session BEFORE clearing local state so the Bearer token
+    // is still present in the request for the logout endpoint.
     try {
       await api.logout();
     } catch {
       // Best-effort server session revocation
+    } finally {
+      clearSession();
+      setIsAuthenticated(false);
+      window.history.pushState(null, '', '/system/login');
+      setCurrentPath('/system');
     }
   }
 

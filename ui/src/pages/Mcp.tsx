@@ -931,7 +931,7 @@ export function Mcp() {
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <h3 className="text-[13px] font-medium text-white flex items-center gap-1.5 font-sans">
-                <span className="text-[#3b82f6] font-semibold">JSON-RPC</span>
+                <span className="text-white font-medium">JSON-RPC</span>
                 <span>Example</span>
               </h3>
               <button

@@ -76,14 +76,21 @@ export function StorageToolbar({
         setIsUploadMenuOpen(false);
       }
     };
+    const handleClose = () => setIsUploadMenuOpen(false);
     document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    window.addEventListener('resize', handleClose);
+    window.addEventListener('scroll', handleClose, true);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      window.removeEventListener('resize', handleClose);
+      window.removeEventListener('scroll', handleClose, true);
+    };
   }, [isUploadMenuOpen]);
 
   return (
-    <div className="h-[54px] shrink-0 px-4 border-b border-[#222222] bg-[#0c0c0c] flex items-center justify-between gap-3 select-none font-sans relative z-30">
+    <div className="h-[54px] shrink-0 px-4 border-b border-[#222222] bg-[#0c0c0c] flex items-center justify-between gap-3 select-none font-sans relative z-30 overflow-x-auto scrollbar-none whitespace-nowrap">
       {/* ─── Left: Interactive Breadcrumbs Navigator ─────────────── */}
-      <div className="flex items-center gap-1.5 text-sm overflow-x-auto scrollbar-none min-w-0 py-0.5">
+      <div className="flex items-center gap-1.5 text-sm overflow-x-auto scrollbar-none min-w-0 py-0.5 shrink-0">
         <button
           type="button"
           onClick={() => onNavigateToPrefix('')}
@@ -326,33 +333,41 @@ export function StorageToolbar({
           </button>
 
           {/* Upload Dropdown Menu */}
-          {isUploadMenuOpen && (
-            <div className="absolute right-0 top-full mt-1.5 w-44 bg-[#111111] border border-[#262626] rounded-[8px] shadow-2xl p-1 z-50 animate-in fade-in zoom-in-95 duration-100 font-sans">
-              <button
-                type="button"
-                onClick={() => {
-                  setIsUploadMenuOpen(false);
-                  onUploadClick();
-                }}
-                className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-[6px] text-[13px] text-[#cccccc] hover:text-white hover:bg-[#1a1a1a] transition-colors cursor-pointer text-left"
+          {isUploadMenuOpen && (() => {
+            const rect = uploadMenuRef.current?.getBoundingClientRect();
+            const top = (rect?.bottom ?? 0) + 4;
+            const left = Math.max(8, Math.min(window.innerWidth - 176 - 8, (rect?.right ?? 0) - 176));
+            return (
+              <div
+                style={{ top: `${top}px`, left: `${left}px` }}
+                className="fixed w-44 bg-[#111111] border border-[#262626] rounded-[8px] shadow-2xl p-1 z-50 animate-in fade-in zoom-in-95 duration-100 font-sans"
               >
-                <Files className="w-3.5 h-3.5 text-blue-400 shrink-0" />
-                <span>Upload files</span>
-              </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsUploadMenuOpen(false);
+                    onUploadClick();
+                  }}
+                  className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-[6px] text-[13px] text-[#cccccc] hover:text-white hover:bg-[#1a1a1a] transition-colors cursor-pointer text-left"
+                >
+                  <Files className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                  <span>Upload files</span>
+                </button>
 
-              <button
-                type="button"
-                onClick={() => {
-                  setIsUploadMenuOpen(false);
-                  onUploadFolderClick ? onUploadFolderClick() : onUploadClick();
-                }}
-                className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-[6px] text-[13px] text-[#cccccc] hover:text-white hover:bg-[#1a1a1a] transition-colors cursor-pointer text-left"
-              >
-                <FolderPlus className="w-3.5 h-3.5 text-[#eab308] shrink-0" />
-                <span>Upload folder</span>
-              </button>
-            </div>
-          )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsUploadMenuOpen(false);
+                    onUploadFolderClick ? onUploadFolderClick() : onUploadClick();
+                  }}
+                  className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-[6px] text-[13px] text-[#cccccc] hover:text-white hover:bg-[#1a1a1a] transition-colors cursor-pointer text-left"
+                >
+                  <FolderPlus className="w-3.5 h-3.5 text-[#eab308] shrink-0" />
+                  <span>Upload folder</span>
+                </button>
+              </div>
+            );
+          })()}
         </div>
       </div>
     </div>

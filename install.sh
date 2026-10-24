@@ -48,7 +48,7 @@ echo "==> Detecting latest release of Axiom..."
 LATEST_TAG=$(curl -s "https://api.github.com/repos/${REPO}/releases/latest" | grep '"tag_name":' | head -n 1 | sed -E 's/.*"([^"]+)".*/\1/')
 
 if [ -z "${LATEST_TAG}" ]; then
-  LATEST_TAG="v0.1.14"
+  LATEST_TAG="v0.1.15"
 fi
 
 # Check for existing installation
