@@ -132,7 +132,11 @@ pub trait DatabaseEngine: Send + Sync {
     /// CONTRACT:
     ///  - Precondition: Table and source column exist in target database.
     ///  - Side effects: Renames column or changes column data type.
-    async fn modify_column(&self, table: &str, req: &ModifyColumnRequest) -> Result<(), EngineError> {
+    async fn modify_column(
+        &self,
+        table: &str,
+        req: &ModifyColumnRequest,
+    ) -> Result<(), EngineError> {
         let col_clean: String = req
             .name
             .chars()
@@ -211,16 +215,28 @@ pub trait DatabaseEngine: Send + Sync {
 
             let sql = match self.dialect() {
                 "mysql" | "clickhouse" => {
-                    format!("ALTER TABLE {} MODIFY COLUMN {} {}", escaped_table, target_col, data_type)
+                    format!(
+                        "ALTER TABLE {} MODIFY COLUMN {} {}",
+                        escaped_table, target_col, data_type
+                    )
                 }
                 "postgres" => {
-                    format!("ALTER TABLE {} ALTER COLUMN {} TYPE {}", escaped_table, target_col, data_type)
+                    format!(
+                        "ALTER TABLE {} ALTER COLUMN {} TYPE {}",
+                        escaped_table, target_col, data_type
+                    )
                 }
                 "mssql" => {
-                    format!("ALTER TABLE {} ALTER COLUMN {} {}", escaped_table, target_col, data_type)
+                    format!(
+                        "ALTER TABLE {} ALTER COLUMN {} {}",
+                        escaped_table, target_col, data_type
+                    )
                 }
                 "oracle" => {
-                    format!("ALTER TABLE {} MODIFY ({} {})", escaped_table, target_col, data_type)
+                    format!(
+                        "ALTER TABLE {} MODIFY ({} {})",
+                        escaped_table, target_col, data_type
+                    )
                 }
                 "sqlite" => {
                     return Err(EngineError::Execution(
@@ -228,7 +244,10 @@ pub trait DatabaseEngine: Send + Sync {
                     ))
                 }
                 _ => {
-                    format!("ALTER TABLE {} ALTER COLUMN {} TYPE {}", escaped_table, target_col, data_type)
+                    format!(
+                        "ALTER TABLE {} ALTER COLUMN {} TYPE {}",
+                        escaped_table, target_col, data_type
+                    )
                 }
             };
             self.execute(&sql, &[]).await?;

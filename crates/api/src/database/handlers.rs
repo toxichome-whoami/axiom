@@ -336,7 +336,11 @@ pub fn format_postgres_placeholders(sql: &str) -> String {
     let mut i = 0;
     while i < len {
         let b = bytes[i];
-        let next_b = if i + 1 < len { Some(bytes[i + 1]) } else { None };
+        let next_b = if i + 1 < len {
+            Some(bytes[i + 1])
+        } else {
+            None
+        };
 
         if in_line_comment {
             out.push(b as char);
@@ -484,7 +488,11 @@ pub fn format_oracle_placeholders(sql: &str) -> String {
     let mut i = 0;
     while i < len {
         let b = bytes[i];
-        let next_b = if i + 1 < len { Some(bytes[i + 1]) } else { None };
+        let next_b = if i + 1 < len {
+            Some(bytes[i + 1])
+        } else {
+            None
+        };
 
         if in_line_comment {
             out.push(b as char);
@@ -2182,17 +2190,14 @@ async fn drop_column_internal(
             )
         })?;
 
-    engine
-        .drop_column(table_name, &clean)
-        .await
-        .map_err(|e| {
-            tracing::error!("Drop column failed: {}", e);
-            AxiomError::new(
-                "DROP_COLUMN_FAILED",
-                "Failed to drop column",
-                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-            )
-        })?;
+    engine.drop_column(table_name, &clean).await.map_err(|e| {
+        tracing::error!("Drop column failed: {}", e);
+        AxiomError::new(
+            "DROP_COLUMN_FAILED",
+            "Failed to drop column",
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+        )
+    })?;
 
     invalidate_table_schema(db_name, table_name);
 

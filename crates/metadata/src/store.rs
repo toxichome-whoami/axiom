@@ -551,15 +551,17 @@ impl MetadataStore {
             .await
             .map_err(|e| format!("Database query error: {}", e))?;
 
-        let (existing_role, existing_rl, existing_exp) = match rows.next().await.map_err(|e| e.to_string())? {
-            Some(row) => {
-                let r: Option<String> = row.get(0).ok().filter(|s: &String| !s.trim().is_empty());
-                let rl: i64 = row.get(1).unwrap_or(0);
-                let exp: Option<i64> = row.get(2).ok();
-                (r, rl, exp)
-            }
-            None => return Ok(false),
-        };
+        let (existing_role, existing_rl, existing_exp) =
+            match rows.next().await.map_err(|e| e.to_string())? {
+                Some(row) => {
+                    let r: Option<String> =
+                        row.get(0).ok().filter(|s: &String| !s.trim().is_empty());
+                    let rl: i64 = row.get(1).unwrap_or(0);
+                    let exp: Option<i64> = row.get(2).ok();
+                    (r, rl, exp)
+                }
+                None => return Ok(false),
+            };
 
         let new_role = match role_name {
             Some(opt) => opt.map(|s| s.trim().to_string()).filter(|s| !s.is_empty()),
@@ -598,7 +600,11 @@ impl MetadataStore {
             .execute(
                 "INSERT INTO audit_log (timestamp, actor, action, target, details) \
                  VALUES (?1, 'cli', 'key.update', ?2, ?3)",
-                libsql::params![now_unix, name, format!("role={:?}, rate_limit={}", new_role, new_rl)],
+                libsql::params![
+                    now_unix,
+                    name,
+                    format!("role={:?}, rate_limit={}", new_role, new_rl)
+                ],
             )
             .await;
 
@@ -1338,7 +1344,9 @@ impl MetadataStore {
         };
 
         let new_email = match email {
-            Some(opt) => opt.map(|e| e.trim().to_lowercase()).filter(|e| !e.is_empty()),
+            Some(opt) => opt
+                .map(|e| e.trim().to_lowercase())
+                .filter(|e| !e.is_empty()),
             None => existing.1,
         };
 

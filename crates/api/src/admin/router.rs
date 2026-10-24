@@ -34,7 +34,10 @@ pub fn get_router() -> Router {
         .route("/databases/test-url", post(test_database_url))
         .route("/setup/database/test", post(test_database_url))
         .route("/databases/:alias/test", get(test_database))
-        .route("/databases/:alias", delete(delete_database).patch(update_database))
+        .route(
+            "/databases/:alias",
+            delete(delete_database).patch(update_database),
+        )
         .route("/cache/stats", get(get_cache_stats))
         .route("/cache/flush", post(flush_cache))
         .route("/audit", get(get_audit_log))

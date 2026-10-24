@@ -320,7 +320,11 @@ pub async fn reload_metadata(
         )
     })?;
 
-    let actor = if !auth.api_key_name.is_empty() { &auth.api_key_name } else { "admin" };
+    let actor = if !auth.api_key_name.is_empty() {
+        &auth.api_key_name
+    } else {
+        "admin"
+    };
     let _ = MetadataStore::record_audit(
         actor,
         "metadata.reload",
@@ -515,14 +519,10 @@ pub async fn update_key(
     }
 
     let role_ref = payload.role.as_ref().map(|opt| opt.as_deref());
-    let updated = MetadataStore::update_key(
-        &name,
-        role_ref,
-        payload.rate_limit,
-        payload.expires_at,
-    )
-    .await
-    .map_err(|e| AxiomError::new("KEY_UPDATE_FAILED", &e, StatusCode::BAD_REQUEST))?;
+    let updated =
+        MetadataStore::update_key(&name, role_ref, payload.rate_limit, payload.expires_at)
+            .await
+            .map_err(|e| AxiomError::new("KEY_UPDATE_FAILED", &e, StatusCode::BAD_REQUEST))?;
 
     if !updated {
         return Err(AxiomError::new(
@@ -1076,7 +1076,11 @@ pub async fn flush_cache(
 
     axiom_cache::CacheEngine::flush().await;
 
-    let actor = if !auth.api_key_name.is_empty() { &auth.api_key_name } else { "admin" };
+    let actor = if !auth.api_key_name.is_empty() {
+        &auth.api_key_name
+    } else {
+        "admin"
+    };
     let _ = MetadataStore::record_audit(
         actor,
         "cache.flush",
@@ -1519,7 +1523,11 @@ pub async fn setup_database(
         )
     })?;
 
-    let actor = if !auth.api_key_name.is_empty() { &auth.api_key_name } else { "admin" };
+    let actor = if !auth.api_key_name.is_empty() {
+        &auth.api_key_name
+    } else {
+        "admin"
+    };
     let _ = MetadataStore::record_audit(actor, "database.add", &payload.alias, None).await;
 
     Ok(Json(json!({
@@ -2258,14 +2266,12 @@ pub async fn update_cluster_moniker(
         .await
         .map_err(|e| AxiomError::new("METADATA_ERROR", &e, StatusCode::INTERNAL_SERVER_ERROR))?;
 
-    let actor = if !auth.api_key_name.is_empty() { &auth.api_key_name } else { "admin" };
-    let _ = MetadataStore::record_audit(
-        actor,
-        "cluster.moniker_update",
-        moniker,
-        None,
-    )
-    .await;
+    let actor = if !auth.api_key_name.is_empty() {
+        &auth.api_key_name
+    } else {
+        "admin"
+    };
+    let _ = MetadataStore::record_audit(actor, "cluster.moniker_update", moniker, None).await;
 
     Ok(Json(json!({
         "success": true,

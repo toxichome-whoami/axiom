@@ -252,7 +252,8 @@ impl AdminClient {
             "expires_at": expires_at,
         });
         let endpoint = format!("/admin/v1/keys/{}", name);
-        self.request(reqwest::Method::PATCH, &endpoint, Some(body)).await
+        self.request(reqwest::Method::PATCH, &endpoint, Some(body))
+            .await
     }
 
     /// Lists configured RBAC roles.
@@ -358,7 +359,8 @@ impl AdminClient {
             "pool_max": pool_max,
         });
         let endpoint = format!("/admin/v1/databases/{}", alias);
-        self.request(reqwest::Method::PATCH, &endpoint, Some(body)).await
+        self.request(reqwest::Method::PATCH, &endpoint, Some(body))
+            .await
     }
 
     /// Fetches cache performance metrics and memory usage.

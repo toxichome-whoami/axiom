@@ -694,10 +694,7 @@ pub async fn copy_blob_handler(
             StatusCode::BAD_REQUEST,
         )
     })?;
-    let dest_ns = payload
-        .dest_namespace
-        .as_deref()
-        .unwrap_or(src_ns);
+    let dest_ns = payload.dest_namespace.as_deref().unwrap_or(src_ns);
 
     if !auth.is_session {
         PolicyEngine::evaluate_blob(&auth, src_ns, &payload.src_key, "READ")?;
@@ -708,12 +705,7 @@ pub async fn copy_blob_handler(
 
     if payload.is_prefix.unwrap_or(false) {
         let count = engine
-            .copy_prefix(
-                src_ns,
-                &payload.src_key,
-                dest_ns,
-                &payload.dest_key,
-            )
+            .copy_prefix(src_ns, &payload.src_key, dest_ns, &payload.dest_key)
             .await
             .map_err(map_blob_error)?;
 
@@ -743,12 +735,7 @@ pub async fn copy_blob_handler(
         ))
     } else {
         let meta = engine
-            .copy_blob(
-                src_ns,
-                &payload.src_key,
-                dest_ns,
-                &payload.dest_key,
-            )
+            .copy_blob(src_ns, &payload.src_key, dest_ns, &payload.dest_key)
             .await
             .map_err(map_blob_error)?;
 
@@ -791,10 +778,7 @@ pub async fn move_blob_handler(
             StatusCode::BAD_REQUEST,
         )
     })?;
-    let dest_ns = payload
-        .dest_namespace
-        .as_deref()
-        .unwrap_or(src_ns);
+    let dest_ns = payload.dest_namespace.as_deref().unwrap_or(src_ns);
 
     if !auth.is_session {
         PolicyEngine::evaluate_blob(&auth, src_ns, &payload.src_key, "WRITE")?;
@@ -805,12 +789,7 @@ pub async fn move_blob_handler(
 
     if payload.is_prefix.unwrap_or(false) {
         let count = engine
-            .move_prefix(
-                src_ns,
-                &payload.src_key,
-                dest_ns,
-                &payload.dest_key,
-            )
+            .move_prefix(src_ns, &payload.src_key, dest_ns, &payload.dest_key)
             .await
             .map_err(map_blob_error)?;
 
@@ -840,12 +819,7 @@ pub async fn move_blob_handler(
         ))
     } else {
         let meta = engine
-            .move_blob(
-                src_ns,
-                &payload.src_key,
-                dest_ns,
-                &payload.dest_key,
-            )
+            .move_blob(src_ns, &payload.src_key, dest_ns, &payload.dest_key)
             .await
             .map_err(map_blob_error)?;
 

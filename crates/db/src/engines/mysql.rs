@@ -157,7 +157,10 @@ impl DatabaseEngine for MysqlDatabaseEngine {
                     name,
                     row_count_estimate: row
                         .try_get::<i64, _>("row_count_estimate")
-                        .or_else(|_| row.try_get::<u64, _>("row_count_estimate").map(|v| v as i64))
+                        .or_else(|_| {
+                            row.try_get::<u64, _>("row_count_estimate")
+                                .map(|v| v as i64)
+                        })
                         .unwrap_or(0)
                         .max(0) as u64,
                     columns: None,

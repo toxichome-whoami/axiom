@@ -689,7 +689,10 @@ async fn handle_db_command(
                 println!("{}", serde_json::to_string(&resp)?);
             } else {
                 let effective_alias = new_alias.unwrap_or(alias);
-                println!("Database target '{}' updated successfully.", effective_alias);
+                println!(
+                    "Database target '{}' updated successfully.",
+                    effective_alias
+                );
             }
         }
 
@@ -3247,8 +3250,8 @@ description = "Axiom Gateway = Prod #1"
         assert!(!jsonl_out.contains('\n'));
 
         // Test Table formatting
-        let table_out = format_output(OutputFormat::Table, &payload)
-            .expect("should handle table format");
+        let table_out =
+            format_output(OutputFormat::Table, &payload).expect("should handle table format");
         assert!(table_out.is_none());
 
         // Test render_output with closure execution

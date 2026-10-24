@@ -449,11 +449,7 @@ pub enum DbCommands {
             help = "Updated database connection URL"
         )]
         connection_url: Option<String>,
-        #[arg(
-            short,
-            long,
-            help = "Updated dialect/engine"
-        )]
+        #[arg(short, long, help = "Updated dialect/engine")]
         engine: Option<String>,
         #[arg(long, help = "Updated minimum connection pool size")]
         pool_min: Option<i64>,
@@ -1477,7 +1473,14 @@ mod tests {
         }
 
         // Add alias for connect
-        let args = ["axiom", "cluster", "add", "http://10.0.0.4:4500", "-s", "sec123"];
+        let args = [
+            "axiom",
+            "cluster",
+            "add",
+            "http://10.0.0.4:4500",
+            "-s",
+            "sec123",
+        ];
         let cli = Cli::try_parse_from(args).expect("Failed to parse cluster add alias");
         assert!(matches!(
             cli.command,
@@ -1489,7 +1492,14 @@ mod tests {
 
     #[test]
     fn test_cli_parse_user_crud_and_aliases() {
-        let args = ["axiom", "user", "create", "alice", "--email", "alice@example.com"];
+        let args = [
+            "axiom",
+            "user",
+            "create",
+            "alice",
+            "--email",
+            "alice@example.com",
+        ];
         let cli = Cli::try_parse_from(args).expect("Failed to parse user create alias");
         assert!(matches!(
             cli.command,
@@ -1498,11 +1508,26 @@ mod tests {
             })
         ));
 
-        let args = ["axiom", "user", "update", "alice", "--email", "new_alice@example.com", "-p", "newpass123"];
+        let args = [
+            "axiom",
+            "user",
+            "update",
+            "alice",
+            "--email",
+            "new_alice@example.com",
+            "-p",
+            "newpass123",
+        ];
         let cli = Cli::try_parse_from(args).expect("Failed to parse user update");
         match cli.command {
             Some(Commands::User {
-                command: UserCommands::Update { username, email, password, .. },
+                command:
+                    UserCommands::Update {
+                        username,
+                        email,
+                        password,
+                        ..
+                    },
             }) => {
                 assert_eq!(username, "alice");
                 assert_eq!(email, Some("new_alice@example.com".to_string()));
@@ -1541,11 +1566,26 @@ mod tests {
             })
         ));
 
-        let args = ["axiom", "key", "update", "agent_key", "-r", "editor", "--rate-limit", "500"];
+        let args = [
+            "axiom",
+            "key",
+            "update",
+            "agent_key",
+            "-r",
+            "editor",
+            "--rate-limit",
+            "500",
+        ];
         let cli = Cli::try_parse_from(args).expect("Failed to parse key update");
         match cli.command {
             Some(Commands::Key {
-                command: KeyCommands::Update { name, role, rate_limit, .. },
+                command:
+                    KeyCommands::Update {
+                        name,
+                        role,
+                        rate_limit,
+                        ..
+                    },
             }) => {
                 assert_eq!(name, "agent_key");
                 assert_eq!(role, Some("editor".to_string()));
@@ -1566,7 +1606,15 @@ mod tests {
 
     #[test]
     fn test_cli_parse_db_update_and_aliases() {
-        let args = ["axiom", "db", "create", "-a", "analytics", "--conn", "sqlite://data/analytics.db"];
+        let args = [
+            "axiom",
+            "db",
+            "create",
+            "-a",
+            "analytics",
+            "--conn",
+            "sqlite://data/analytics.db",
+        ];
         let cli = Cli::try_parse_from(args).expect("Failed to parse db create alias");
         assert!(matches!(
             cli.command,
@@ -1575,11 +1623,26 @@ mod tests {
             })
         ));
 
-        let args = ["axiom", "db", "update", "analytics", "-n", "warehouse", "--pool-max", "25"];
+        let args = [
+            "axiom",
+            "db",
+            "update",
+            "analytics",
+            "-n",
+            "warehouse",
+            "--pool-max",
+            "25",
+        ];
         let cli = Cli::try_parse_from(args).expect("Failed to parse db update");
         match cli.command {
             Some(Commands::Db {
-                command: DbCommands::Update { alias, new_alias, pool_max, .. },
+                command:
+                    DbCommands::Update {
+                        alias,
+                        new_alias,
+                        pool_max,
+                        ..
+                    },
             }) => {
                 assert_eq!(alias, "analytics");
                 assert_eq!(new_alias, Some("warehouse".to_string()));
@@ -1597,7 +1660,15 @@ mod tests {
             })
         ));
 
-        let args = ["axiom", "db", "update-rows", "main", "users", "{\"id\":1}", "{\"active\":false}"];
+        let args = [
+            "axiom",
+            "db",
+            "update-rows",
+            "main",
+            "users",
+            "{\"id\":1}",
+            "{\"active\":false}",
+        ];
         let cli = Cli::try_parse_from(args).expect("Failed to parse db update-rows");
         assert!(matches!(
             cli.command,
@@ -1609,7 +1680,15 @@ mod tests {
 
     #[test]
     fn test_cli_parse_role_aliases() {
-        let args = ["axiom", "role", "add", "-n", "data_scientist", "-d", "Read only data"];
+        let args = [
+            "axiom",
+            "role",
+            "add",
+            "-n",
+            "data_scientist",
+            "-d",
+            "Read only data",
+        ];
         let cli = Cli::try_parse_from(args).expect("Failed to parse role add alias");
         assert!(matches!(
             cli.command,

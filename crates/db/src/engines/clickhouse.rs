@@ -127,7 +127,9 @@ impl DatabaseEngine for ClickHouseDatabaseEngine {
                         name: name.to_string(),
                         row_count_estimate: row
                             .get("row_count_estimate")
-                            .and_then(|v| v.as_u64().or_else(|| v.as_i64().map(|i| i.max(0) as u64)))
+                            .and_then(|v| {
+                                v.as_u64().or_else(|| v.as_i64().map(|i| i.max(0) as u64))
+                            })
                             .unwrap_or(0),
                         columns: None,
                         foreign_keys: None,
