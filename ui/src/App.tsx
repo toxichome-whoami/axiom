@@ -4,7 +4,8 @@ import { setSession, clearSession, hasActiveSession } from './api/session';
 import { api } from './api/client';
 import { GlobalAlertDialog } from './components/ui/AlertDialog';
 import { ErrorBoundary } from './components/ui/ErrorBoundary';
-const Agentation: React.ComponentType = import.meta.env.DEV
+const isRelease = import.meta.env.MODE === 'release' || import.meta.env.VITE_RELEASE === 'true';
+const Agentation: React.ComponentType = !isRelease
   ? lazy(() => import('agentation').then((m) => ({ default: m.Agentation })))
   : () => null;
 

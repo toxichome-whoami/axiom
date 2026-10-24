@@ -77,9 +77,11 @@ jobs:
 
       - name: Build Web UI
         working-directory: ui
+        env:
+          VITE_RELEASE: "true"
         run: |
           npm install
-          npm run build
+          npm run build:release
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable

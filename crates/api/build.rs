@@ -44,6 +44,12 @@ fn main() {
             c
         };
 
+        let profile = std::env::var("PROFILE").unwrap_or_else(|_| "debug".to_string());
+        let is_release = profile == "release" || std::env::var("AXIOM_RELEASE").is_ok();
+        if is_release {
+            cmd.env("VITE_RELEASE", "true");
+        }
+
         cmd.current_dir(ui_dir);
 
         match cmd.status() {
