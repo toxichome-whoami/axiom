@@ -159,12 +159,15 @@ export function App() {
   }
 
   async function handleLogout() {
-    clearSession();
-    setIsAuthenticated(false);
+    // Revoke server session BEFORE clearing local state so the Bearer token
+    // is still present in the request for the logout endpoint.
     try {
       await api.logout();
     } catch {
       // Best-effort server session revocation
+    } finally {
+      clearSession();
+      setIsAuthenticated(false);
     }
   }
 

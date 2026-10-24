@@ -1630,6 +1630,12 @@ pub async fn login_handler(
         headers_map.append(axum::http::header::SET_COOKIE, val);
     }
 
+    let expires_at = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64
+        + LOGIN_SESSION_TTL_SECS;
+
     Ok((
         headers_map,
         Json(json!({
@@ -1637,7 +1643,8 @@ pub async fn login_handler(
             "data": {
                 "token": session_id,
                 "session_token": session_id,
-                "username": canonical_user
+                "username": canonical_user,
+                "expires_at": expires_at
             },
             "error": Value::Null
         })),
