@@ -89,12 +89,26 @@ export function SchemaView({
   useEffect(() => {
     if (!activeTableMenu && !activeColumnMenu) return;
     const handleOutside = (e: MouseEvent) => {
-      const target = e.target as Node;
-      if (tableMenuRef.current && !tableMenuRef.current.contains(target)) {
-        setActiveTableMenu(null);
+      const target = e.target as HTMLElement | null;
+      if (!target) return;
+
+      // Handle table menu dismissal
+      if (activeTableMenu) {
+        const isInsideMenu = !!tableMenuRef.current?.contains(target);
+        const isOwnTrigger = !!target.closest(`[data-table-menu-trigger="${activeTableMenu.tableName}"]`);
+        if (!isInsideMenu && !isOwnTrigger) {
+          setActiveTableMenu(null);
+        }
       }
-      if (columnMenuRef.current && !columnMenuRef.current.contains(target)) {
-        setActiveColumnMenu(null);
+
+      // Handle column menu dismissal
+      if (activeColumnMenu) {
+        const isInsideMenu = !!columnMenuRef.current?.contains(target);
+        const ownTriggerSelector = `[data-column-menu-trigger="${activeColumnMenu.tableName}:${activeColumnMenu.column.name}"]`;
+        const isOwnTrigger = !!target.closest(ownTriggerSelector);
+        if (!isInsideMenu && !isOwnTrigger) {
+          setActiveColumnMenu(null);
+        }
       }
     };
     const handleKey = (e: KeyboardEvent) => {
@@ -103,10 +117,10 @@ export function SchemaView({
         setActiveColumnMenu(null);
       }
     };
-    document.addEventListener('mousedown', handleOutside);
+    document.addEventListener('mousedown', handleOutside, true);
     window.addEventListener('keydown', handleKey);
     return () => {
-      document.removeEventListener('mousedown', handleOutside);
+      document.removeEventListener('mousedown', handleOutside, true);
       window.removeEventListener('keydown', handleKey);
     };
   }, [activeTableMenu, activeColumnMenu]);
@@ -885,8 +899,10 @@ export function SchemaView({
                 </div>
                 <button
                   type="button"
+                  data-table-menu-trigger={t.name}
                   onClick={(e) => {
                     e.stopPropagation();
+                    setActiveColumnMenu(null);
                     const r = e.currentTarget.getBoundingClientRect();
                     setActiveTableMenu((prev) =>
                       prev?.tableName === t.name
@@ -984,8 +1000,10 @@ export function SchemaView({
                         {/* 3-dots button - Revealed on hover or when this column's menu is active */}
                         <button
                           type="button"
+                          data-column-menu-trigger={`${t.name}:${col.name}`}
                           onClick={(e) => {
                             e.stopPropagation();
+                            setActiveTableMenu(null);
                             const r = e.currentTarget.getBoundingClientRect();
                             setActiveColumnMenu((prev) =>
                               prev?.tableName === t.name && prev?.column.name === col.name
