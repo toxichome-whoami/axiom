@@ -1056,47 +1056,47 @@ export function SchemaView({
 
       {/* ─── Bottom Footer Bar: Symbol Legend & Schema Stats ─── */}
       <div
-        className="h-12 shrink-0 px-4 bg-[#0a0a0a] border-t border-[#222222] flex items-center justify-between gap-4 text-[13px] text-[#8c8c8c] z-30 select-none font-sans"
+        className="h-12 shrink-0 px-4 bg-[#0a0a0a] border-t border-[#222222] flex items-center justify-between gap-4 text-[13px] text-[#8c8c8c] z-30 select-none font-sans overflow-x-auto scrollbar-none whitespace-nowrap"
         onMouseDown={(e) => e.stopPropagation()}
       >
         {/* Legend Symbols */}
-        <div className="flex items-center gap-5 text-[13px] font-sans">
-          <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-4 sm:gap-5 text-[13px] font-sans shrink-0 whitespace-nowrap">
+          <div className="flex items-center gap-1.5 shrink-0 whitespace-nowrap">
             <Key className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-            <span className="text-[#a1a1aa] font-sans">Primary key</span>
+            <span className="text-[#a1a1aa] font-sans whitespace-nowrap">Primary key</span>
           </div>
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5 shrink-0 whitespace-nowrap">
             <Hash className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
-            <span className="text-[#a1a1aa] font-sans">Identity</span>
+            <span className="text-[#a1a1aa] font-sans whitespace-nowrap">Identity</span>
           </div>
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5 shrink-0 whitespace-nowrap">
             <Sparkles className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
-            <span className="text-[#a1a1aa] font-sans">Unique</span>
+            <span className="text-[#a1a1aa] font-sans whitespace-nowrap">Unique</span>
           </div>
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5 shrink-0 whitespace-nowrap">
             <svg className="w-3 h-3 text-zinc-400 shrink-0" viewBox="0 0 12 12" fill="none">
               <path d="M6 1.5L10.5 6L6 10.5L1.5 6Z" stroke="currentColor" strokeWidth="1.3" />
             </svg>
-            <span className="text-[#a1a1aa] font-sans">Nullable</span>
+            <span className="text-[#a1a1aa] font-sans whitespace-nowrap">Nullable</span>
           </div>
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5 shrink-0 whitespace-nowrap">
             <svg className="w-3 h-3 text-zinc-300 shrink-0" viewBox="0 0 12 12" fill="currentColor">
               <path d="M6 1.5L10.5 6L6 10.5L1.5 6Z" />
             </svg>
-            <span className="text-[#a1a1aa] font-sans">Non-Nullable</span>
+            <span className="text-[#a1a1aa] font-sans whitespace-nowrap">Non-Nullable</span>
           </div>
         </div>
 
         {/* Right Info */}
-        <div className="text-[13px] text-[#8c8c8c] font-sans flex items-center gap-1.5">
-          <span>
+        <div className="text-[13px] text-[#8c8c8c] font-sans flex items-center gap-1.5 shrink-0 whitespace-nowrap">
+          <span className="whitespace-nowrap">
             Showing <span className="text-white font-medium">{tables.length}</span> tables
             {selectedDb && (
               <> in <span className="text-white font-mono">{selectedDb}</span></>
             )}
           </span>
           <span className="text-[#555555]">·</span>
-          <span>
+          <span className="whitespace-nowrap">
             <span className="text-white font-medium">{relations.length}</span> relations
           </span>
         </div>

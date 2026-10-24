@@ -641,11 +641,11 @@ export function TableGridView({
   )}
 
       {/* Pagination & Status Footer */}
-      <div className={`h-12 shrink-0 px-4 bg-[#0a0a0a] border-t border-[#222222] flex items-center gap-3 text-[13px] text-[#8c8c8c] select-none font-sans ${
+      <div className={`h-12 shrink-0 px-4 bg-[#0a0a0a] border-t border-[#222222] flex items-center gap-3 text-[13px] text-[#8c8c8c] select-none font-sans overflow-x-auto scrollbar-none whitespace-nowrap ${
         activeTab === 'data' ? 'justify-between' : 'justify-end'
       }`}>
         {activeTab === 'data' && (
-          <span>
+          <span className="shrink-0 whitespace-nowrap">
             Showing <span className="text-white font-medium">{rows.length}</span> rows
             {selectedTable && (
               <> in <span className="text-white font-mono">{selectedTable}</span></>
@@ -654,7 +654,7 @@ export function TableGridView({
         )}
 
         {/* Bottom Right Mode Switcher Tabs */}
-        <div className="flex items-center p-0.5 rounded-[6px] bg-[#141414] border border-[#262626]">
+        <div className="flex items-center p-0.5 rounded-[6px] bg-[#141414] border border-[#262626] shrink-0 whitespace-nowrap">
           <button
             type="button"
             onClick={() => setActiveTab('data')}
