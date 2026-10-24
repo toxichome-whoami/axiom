@@ -1235,7 +1235,7 @@ pub async fn setup_account(
     let secure_flag = if is_https { "; Secure" } else { "" };
 
     let cookie_header = format!(
-        "axiom_session={}; HttpOnly; SameSite=Strict; Path=/; Max-Age={}{}",
+        "axiom_session={}; HttpOnly; SameSite=Lax; Path=/; Max-Age={}{}",
         session_id, SETUP_SESSION_TTL_SECS, secure_flag
     );
 
@@ -1614,11 +1614,11 @@ pub async fn login_handler(
     let secure_flag = if is_https { "; Secure" } else { "" };
     let (trusted_token, _) = create_trusted_device_token(&canonical_user, &device_secret);
     let cookie_header = format!(
-        "axiom_session={}; HttpOnly; SameSite=Strict; Path=/; Max-Age={}{}",
+        "axiom_session={}; HttpOnly; SameSite=Lax; Path=/; Max-Age={}{}",
         session_id, LOGIN_SESSION_TTL_SECS, secure_flag
     );
     let trusted_cookie_header = format!(
-        "axiom_trusted_device={}; HttpOnly; SameSite=Strict; Path=/; Max-Age={}{}",
+        "axiom_trusted_device={}; HttpOnly; SameSite=Lax; Path=/; Max-Age={}{}",
         trusted_token, TRUSTED_DEVICE_TTL_SECS, secure_flag
     );
 
@@ -1686,7 +1686,7 @@ pub async fn logout_handler(
         axiom_cache::CacheEngine::delete(&format!("sess:{}", t)).await;
     }
 
-    let clear_cookie = "axiom_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0";
+    let clear_cookie = "axiom_session=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0";
     Ok((
         [(axum::http::header::SET_COOKIE, clear_cookie)],
         Json(json!({

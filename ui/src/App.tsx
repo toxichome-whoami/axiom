@@ -100,7 +100,7 @@ export function App() {
   }, [isAuthenticated]);
 
   function handleNavigate(path: NavPath) {
-    if (path !== currentPath) {
+    if (path !== currentPath || window.location.pathname !== path) {
       window.history.pushState(null, '', path);
       setCurrentPath(path);
       window.scrollTo(0, 0);
@@ -110,11 +110,13 @@ export function App() {
   function handleLoginSuccess(token: string, username: string, expiresAt?: number) {
     setSession(token, expiresAt, username);
     setIsAuthenticated(true);
-    handleNavigate('/system');
+    window.history.pushState(null, '', '/system');
+    setCurrentPath('/system');
+    window.scrollTo(0, 0);
   }
 
-  // If user visits /system/login or is unauthenticated, render AuthPage with Stepper
-  if (!isAuthenticated || window.location.pathname.includes('/login') || window.location.pathname.includes('/setup')) {
+  // If user is unauthenticated, render AuthPage
+  if (!isAuthenticated) {
     const isSetup = window.location.pathname.includes('/setup');
     return (
       <>
@@ -169,6 +171,8 @@ export function App() {
     } finally {
       clearSession();
       setIsAuthenticated(false);
+      window.history.pushState(null, '', '/system/login');
+      setCurrentPath('/system');
     }
   }
 

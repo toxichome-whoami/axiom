@@ -20,6 +20,9 @@ let memorySessionToken: string | null = null;
  */
 export function setSession(token: string, expiresAt?: number, username?: string): void {
   memorySessionToken = token;
+  if (token) {
+    localStorage.setItem('axiom_session_token', token);
+  }
   if (expiresAt && expiresAt > 0) {
     // Standardize to seconds (detecting if backend sent ms)
     const normalizedExp = expiresAt > 1e11 ? Math.floor(expiresAt / 1000) : expiresAt;

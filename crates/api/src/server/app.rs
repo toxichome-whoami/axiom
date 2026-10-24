@@ -141,13 +141,21 @@ pub fn create_app() -> Router {
         tracing::warn!("SECURITY WARNING: cors_origins contains '*' — any website can read API responses. Pin explicit origins in production.");
         cors = cors.allow_origin(Any);
     } else {
-        let origins: Vec<axum::http::HeaderValue> = config
-            .server
-            .cors_origins
+        let mut configured_origins = config.server.cors_origins.clone();
+        // In local development or if unspecified, allow standard local Vite frontend origins
+        if configured_origins.is_empty() {
+            configured_origins.push("http://localhost:5173".to_string());
+            configured_origins.push("http://127.0.0.1:5173".to_string());
+            configured_origins.push("http://localhost:3000".to_string());
+            configured_origins.push("http://127.0.0.1:3000".to_string());
+        }
+        let origins: Vec<axum::http::HeaderValue> = configured_origins
             .iter()
             .filter_map(|o| o.parse().ok())
             .collect();
-        cors = cors.allow_origin(tower_http::cors::AllowOrigin::list(origins));
+        cors = cors
+            .allow_origin(tower_http::cors::AllowOrigin::list(origins))
+            .allow_credentials(true);
     }
     // Core Routes
     let core_routes = crate::core::health::get_router();
