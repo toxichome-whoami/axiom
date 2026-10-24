@@ -105,13 +105,95 @@ When `Accept: application/x-ndjson` or `stream: true` is requested on query or r
 
 | Method | Endpoint | Auth | Description |
 |---|---|---|---|
-| `GET` | `/` | Public | Root welcome & liveness probe: `{"status":"ok","name":"axiom"}` |
-| `GET` | `/ready` | Public | Upstream database readiness probe (returns `200 OK` or `503 Service Unavailable`) |
-| `GET` | `/health` | API Key / Session | System telemetry: server uptime, process memory, database pool statuses |
+| `GET` | `/` | Public | Root welcome & liveness probe |
+| `GET` | `/ready` | Public | Upstream database readiness probe |
+| `GET` | `/health` | API Key / Session | System telemetry: server uptime, process memory, pool statuses |
 | `GET` | `/api/v1/health` | Public | Liveness probe mounted under `/api/v1` prefix |
 | `GET` | `/metrics` | API Key / Session | Prometheus metrics exposition (`?format=json` for JSON) |
 | `GET` | `/system` | Public / Session | Embedded Admin Web UI single-page application |
 | `GET` | `/favicon.ico` | Public | Gateway browser favicon |
+
+### `GET /`
+**Response (`200 OK`)**:
+```json
+{
+  "name": "Axiom",
+  "status": "online"
+}
+```
+
+### `GET /ready`
+**Success Response (`200 OK`)**:
+```json
+{
+  "ready": true
+}
+```
+**Failure Response (`503 Service Unavailable`)**:
+```json
+{
+  "ready": false,
+  "error": "One or more database connection pools are unready"
+}
+```
+
+### `GET /health`
+Requires API Key or Session token to prevent infrastructure reconnaissance.
+
+**Response (`200 OK`)**:
+```json
+{
+  "status": "healthy",
+  "uptime_seconds": 84120
+}
+```
+*(When accessed with an Admin Session, comprehensive system and pool telemetry is returned)*:
+```json
+{
+  "status": "healthy",
+  "uptime_seconds": 84120,
+  "system": {
+    "cpu_percent": 2.4,
+    "memory_used_mb": 68
+  },
+  "databases": {
+    "main_pg": "up",
+    "warehouse_ch": "up"
+  }
+}
+```
+
+### `GET /api/v1/health`
+**Response (`200 OK`)**:
+```json
+{
+  "status": "ok"
+}
+```
+
+### `GET /metrics`
+**Default Response (`200 OK`, `text/plain; version=0.0.4`)**:
+```text
+# HELP axiom_http_requests_total Total number of HTTP requests processed
+# TYPE axiom_http_requests_total counter
+axiom_http_requests_total{method="GET",path="/api/v1/db/main_pg/users/rows",status="200"} 14820
+axiom_http_requests_total{method="POST",path="/api/v1/db/main_pg/query",status="200"} 5312
+# HELP axiom_http_request_duration_seconds Histogram of HTTP request latencies
+# TYPE axiom_http_request_duration_seconds histogram
+axiom_http_request_duration_seconds_bucket{le="0.005"} 18402
+axiom_http_request_duration_seconds_count 20132
+```
+
+**JSON Telemetry (`GET /metrics?format=json`) (`200 OK`)**:
+```json
+{
+  "uptime_seconds": 84120,
+  "requests_total": 20132,
+  "active_connections": 14,
+  "cache_hit_rate": 0.942,
+  "memory_resident_mb": 68
+}
+```
 
 ---
 
@@ -132,7 +214,42 @@ All `/api/v1/db/*` routes require an authenticated API Key (`X-Axiom-Key: base64
 | `DELETE` | `/api/v1/db/:alias/:table/rows` | Delete rows matching mandatory filter object |
 | `POST` | `/api/v1/db/:alias/:table/columns` | Dynamic DDL: Add a column to an existing table schema |
 
+---
+
+### List Accessible Databases (`GET /api/v1/db/databases`)
+**Request**:
+```http
+GET /api/v1/db/databases
+X-Axiom-Key: <TOKEN>
+```
+**Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "name": "main_pg",
+      "engine": "postgres",
+      "mode": "readwrite",
+      "status": "connected",
+      "tables_count": "24"
+    },
+    {
+      "name": "warehouse_ch",
+      "engine": "clickhouse",
+      "mode": "readonly",
+      "status": "connected",
+      "tables_count": "112"
+    }
+  ],
+  "error": null
+}
+```
+
+---
+
 ### Querying Data (`POST /api/v1/db/:alias/query`)
+**Request**:
 ```http
 POST /api/v1/db/main_pg/query
 X-Axiom-Key: <TOKEN>
@@ -140,7 +257,7 @@ Content-Type: application/json
 ```
 ```json
 {
-  "query": "SELECT id, email, created_at FROM users WHERE status = $1 ORDER BY id DESC LIMIT 20",
+  "query": "SELECT id, email, role, status FROM users WHERE status = $1 ORDER BY id DESC LIMIT 2",
   "params": ["active"],
   "timeout": 10,
   "stream": false
@@ -149,12 +266,120 @@ Content-Type: application/json
 * **Parameters**:
   * `query` (string, required): Dialect SQL query with positional placeholders (`$1`, `?`, `@P1`).
   * `params` (array, optional): Parameter bindings matching placeholders.
-  * `timeout` (integer, optional): Query execution timeout in seconds (default: 30).
+  * `timeout` (integer, optional): Execution timeout in seconds (1–300, default: 30).
   * `stream` (boolean, optional): Stream results line-by-line as `application/x-ndjson`.
 
-### Keyset Row Queries (`GET /api/v1/db/:alias/:table/rows`)
+**Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "data": {
+    "columns": ["id", "email", "role", "status"],
+    "rows": [
+      {
+        "id": 102,
+        "email": "sarah.connor@cyberdyne.io",
+        "role": "admin",
+        "status": "active"
+      },
+      {
+        "id": 101,
+        "email": "john.doe@example.com",
+        "role": "user",
+        "status": "active"
+      }
+    ],
+    "affected_rows": 2,
+    "duration_ms": 1.15
+  },
+  "error": null
+}
+```
+
+---
+
+### List Tables (`GET /api/v1/db/:alias/tables`)
+**Request**:
 ```http
-GET /api/v1/db/main_pg/users/rows?limit=25&sort=id&order=desc&filter={"status":{"eq":"active"}}
+GET /api/v1/db/main_pg/tables?limit=50
+X-Axiom-Key: <TOKEN>
+```
+**Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "data": {
+    "database": "main_pg",
+    "tables": [
+      "audit_logs",
+      "customers",
+      "order_items",
+      "orders",
+      "products",
+      "users"
+    ]
+  },
+  "error": null
+}
+```
+
+---
+
+### Inspect Table Schema (`GET /api/v1/db/:alias/:table/schema`)
+**Request**:
+```http
+GET /api/v1/db/main_pg/users/schema
+X-Axiom-Key: <TOKEN>
+```
+**Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "data": {
+    "database": "main_pg",
+    "table": "users",
+    "columns": [
+      {
+        "name": "id",
+        "data_type": "BIGINT",
+        "nullable": false,
+        "primary_key": true,
+        "default_value": "nextval('users_id_seq'::regclass)"
+      },
+      {
+        "name": "email",
+        "data_type": "VARCHAR(255)",
+        "nullable": false,
+        "primary_key": false,
+        "default_value": null
+      },
+      {
+        "name": "status",
+        "data_type": "VARCHAR(32)",
+        "nullable": false,
+        "primary_key": false,
+        "default_value": "'active'"
+      },
+      {
+        "name": "created_at",
+        "data_type": "TIMESTAMPTZ",
+        "nullable": false,
+        "primary_key": false,
+        "default_value": "CURRENT_TIMESTAMP"
+      }
+    ],
+    "foreign_keys": []
+  },
+  "error": null
+}
+```
+
+---
+
+### Keyset Row Queries (`GET /api/v1/db/:alias/:table/rows`)
+**Request**:
+```http
+GET /api/v1/db/main_pg/users/rows?limit=2&sort=id&order=asc&filter={"status":{"eq":"active"}}
 X-Axiom-Key: <TOKEN>
 ```
 * **Query Parameters**:
@@ -164,6 +389,35 @@ X-Axiom-Key: <TOKEN>
   * `limit` (integer, optional): Maximum rows to return (1–10,000, default: 100).
   * `cursor` (integer, optional): Offset cursor for pagination.
   * `stream` (boolean, optional): Return continuous NDJSON stream instead of JSON array.
+
+**Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "data": {
+    "rows": [
+      {
+        "id": 1,
+        "email": "alice@corp.internal",
+        "status": "active"
+      },
+      {
+        "id": 2,
+        "email": "bob@corp.internal",
+        "status": "active"
+      }
+    ],
+    "pagination": {
+      "limit": 2,
+      "has_more": true,
+      "next_cursor": 2
+    }
+  },
+  "error": null
+}
+```
+
+---
 
 ### Filter Operators Reference
 Filters are specified as JSON objects mapping column names to constraint operators:
@@ -191,6 +445,8 @@ Logical compound expressions support branching with `$or` and `$and`:
 }
 ```
 
+---
+
 ### Row-Level Security (RLS)
 Roles can define an `rls_filter` on any table permission. The AST engine automatically rewrites queries to inject the constraint predicates into the SQL `WHERE` clause:
 ```json
@@ -205,11 +461,130 @@ Roles can define an `rls_filter` on any table permission. The AST engine automat
 }
 ```
 
-### Mutations (`POST`, `PATCH`, `DELETE`)
-* **Insert Rows**: `POST /api/v1/db/:alias/:table/rows` with body `{"rows": [{ "col": "val" }]}`. Accepts `Idempotency-Key` header to prevent duplicate execution on network retry.
-* **Update Rows**: `PATCH /api/v1/db/:alias/:table/rows` with body `{"data": { "status": "active" }, "filter": { "id": { "eq": 42 } }}`. Unbounded updates lacking a `filter` are rejected (`400 BAD_REQUEST`).
-* **Delete Rows**: `DELETE /api/v1/db/:alias/:table/rows` with body `{"filter": { "status": { "eq": "expired" } }}`. Unbounded deletes lacking a `filter` are rejected (`400 BAD_REQUEST`).
-* **Add Column**: `POST /api/v1/db/:alias/:table/columns` with body `{"name": "mfa", "data_type": "BOOLEAN", "nullable": false, "default_value": "false"}`.
+---
+
+### Insert Rows (`POST /api/v1/db/:alias/:table/rows`)
+**Request**:
+```http
+POST /api/v1/db/main_pg/users/rows
+X-Axiom-Key: <TOKEN>
+Idempotency-Key: 7b84cf2a-9e12-4f88-8120-c23a7e93012a
+Content-Type: application/json
+```
+```json
+{
+  "rows": [
+    {
+      "email": "carol@corp.internal",
+      "status": "active"
+    }
+  ]
+}
+```
+**Response (`201 Created`)**:
+```json
+{
+  "success": true,
+  "affected_rows": 1,
+  "data": {
+    "affected_rows": 1
+  },
+  "error": null
+}
+```
+
+---
+
+### Update Rows (`PATCH /api/v1/db/:alias/:table/rows`)
+*Requires explicit filter object to prevent unbounded accidental full-table overwrites.*
+
+**Request**:
+```http
+PATCH /api/v1/db/main_pg/users/rows
+X-Axiom-Key: <TOKEN>
+Content-Type: application/json
+```
+```json
+{
+  "filter": {
+    "id": { "eq": 42 }
+  },
+  "data": {
+    "status": "suspended"
+  }
+}
+```
+**Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "affected_rows": 1,
+  "data": {
+    "affected_rows": 1
+  },
+  "error": null
+}
+```
+
+---
+
+### Delete Rows (`DELETE /api/v1/db/:alias/:table/rows`)
+*Requires explicit filter object to prevent unbounded accidental full-table purges.*
+
+**Request**:
+```http
+DELETE /api/v1/db/main_pg/users/rows
+X-Axiom-Key: <TOKEN>
+Content-Type: application/json
+```
+```json
+{
+  "filter": {
+    "status": { "eq": "expired" }
+  }
+}
+```
+**Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "affected_rows": 12,
+  "data": {
+    "affected_rows": 12
+  },
+  "error": null
+}
+```
+
+---
+
+### Dynamic DDL: Add Column (`POST /api/v1/db/:alias/:table/columns`)
+**Request**:
+```http
+POST /api/v1/db/main_pg/users/columns
+X-Axiom-Key: <TOKEN>
+Content-Type: application/json
+```
+```json
+{
+  "name": "mfa_enabled",
+  "data_type": "BOOLEAN",
+  "nullable": false,
+  "default_value": "false"
+}
+```
+**Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "data": {
+    "database": "main_pg",
+    "table": "users",
+    "column": "mfa_enabled"
+  },
+  "error": null
+}
+```
 
 ---
 
@@ -234,34 +609,285 @@ Content-addressed object storage with automatic BLAKE3 deduplication, byte-range
 | `GET` | `/api/v1/blobs/:namespace/uploads/:upload_id` | API Key | Probe resumable session status and uploaded byte slices |
 | `DELETE` | `/api/v1/blobs/:namespace/uploads/:upload_id` | API Key | Abort multipart/resumable upload session and reclaim storage |
 
-### Direct Upload & Download
-```bash
-# Upload object
-curl -X PUT "http://127.0.0.1:4500/api/v1/blobs/media/avatars/user_101.png"   -H "X-Axiom-Key: $KEY"   -H "Content-Type: image/png"   --data-binary "@avatar.png"
+---
 
-# Stream object with byte range seeking (first 1 MB slice)
-curl -i "http://127.0.0.1:4500/api/v1/blobs/media/videos/demo.mp4"   -H "X-Axiom-Key: $KEY"   -H "Range: bytes=0-1048575"
+### Upload Object (`PUT /api/v1/blobs/:namespace/*key`)
+**Request**:
+```http
+PUT /api/v1/blobs/media/avatars/user_101.png?ttl=604800
+X-Axiom-Key: <TOKEN>
+Content-Type: image/png
+
+<binary body>
+```
+**Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "data": {
+    "namespace": "media",
+    "key": "avatars/user_101.png",
+    "size": 42100,
+    "content_type": "image/png",
+    "etag": "a7b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f8091",
+    "deduplicated": false,
+    "created_at": 1761400000,
+    "expires_at": 1762004800
+  },
+  "error": null
+}
 ```
 
-### Pre-Signed Capability Tickets
-Mint a time-bounded signed URL allowing third parties to upload or download without API keys:
-```bash
-curl -X POST "http://127.0.0.1:4500/api/v1/blobs/media/ticket"   -H "X-Axiom-Key: $KEY"   -H "Content-Type: application/json"   -d '{"key": "reports/q3.pdf", "operation": "READ", "ttl_seconds": 3600}'
+---
+
+### Stream & Range Requests (`GET /api/v1/blobs/:namespace/*key`)
+**Request**:
+```http
+GET /api/v1/blobs/media/videos/demo.mp4
+X-Axiom-Key: <TOKEN>
+Range: bytes=0-1048575
 ```
-Response returns signed ticket URL:
-`http://127.0.0.1:4500/api/v1/blobs/media/reports/q3.pdf?ticket=v1.media.reports_q3_pdf.READ.1760492800...`
+**Response (`206 Partial Content`)**:
+```http
+HTTP/1.1 206 Partial Content
+Content-Type: video/mp4
+Content-Length: 1048576
+Content-Range: bytes 0-1048575/5242880
+Accept-Ranges: bytes
+ETag: "9f82c...b1"
+Cache-Control: public, max-age=86400
+
+<1 MB binary slice>
+```
+
+---
+
+### List Stored Objects (`GET /api/v1/blobs/:namespace`)
+**Request**:
+```http
+GET /api/v1/blobs/media?prefix=avatars/&limit=50
+X-Axiom-Key: <TOKEN>
+```
+**Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "data": {
+    "items": [
+      {
+        "key": "avatars/user_101.png",
+        "size": 42100,
+        "content_type": "image/png",
+        "etag": "a7b3c4d5e6f7...091",
+        "created_at": 1761400000
+      },
+      {
+        "key": "avatars/user_102.png",
+        "size": 38920,
+        "content_type": "image/png",
+        "etag": "b8c4d5e6f7a8...102",
+        "created_at": 1761401200
+      }
+    ],
+    "truncated": false,
+    "next_cursor": null
+  },
+  "error": null
+}
+```
+
+---
+
+### Delete Single Object (`DELETE /api/v1/blobs/:namespace/*key`)
+**Request**:
+```http
+DELETE /api/v1/blobs/media/avatars/user_101.png
+X-Axiom-Key: <TOKEN>
+```
+**Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "data": {
+    "deleted": true,
+    "namespace": "media",
+    "key": "avatars/user_101.png"
+  },
+  "error": null
+}
+```
+
+---
+
+### Batch Delete Objects (`POST /api/v1/blobs/:namespace/delete-objects`)
+**Request**:
+```http
+POST /api/v1/blobs/media/delete-objects
+X-Axiom-Key: <TOKEN>
+Content-Type: application/json
+```
+```json
+{
+  "keys": [
+    "avatars/old_01.png",
+    "avatars/old_02.png"
+  ]
+}
+```
+**Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "data": {
+    "deleted_objects": 2
+  },
+  "error": null
+}
+```
+
+---
+
+### Mint Pre-Signed Capability Tickets (`POST /api/v1/blobs/:namespace/ticket`)
+**Request**:
+```http
+POST /api/v1/blobs/media/ticket
+X-Axiom-Key: <TOKEN>
+Content-Type: application/json
+```
+```json
+{
+  "key": "reports/q3_earnings.pdf",
+  "operation": "READ",
+  "ttl_seconds": 3600
+}
+```
+**Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "data": {
+    "ticket": "v1.media.reports_q3_earnings_pdf.READ.1761403600.f7a8b9c0d1e2...",
+    "ticket_url": "http://127.0.0.1:4500/api/v1/blobs/media/reports/q3_earnings.pdf?ticket=v1.media.reports_q3_earnings_pdf.READ.1761403600.f7a8b9c0d1e2...",
+    "signature": "f7a8b9c0d1e2...",
+    "operation": "READ",
+    "expires_at": 1761403600
+  },
+  "error": null
+}
+```
+
+---
 
 ### Resumable Chunked Upload Protocol
-For large uploads, initialize a session and stream byte chunks with `Content-Range`:
-```bash
-# 1. Initialize session
-UPLOAD_ID=$(curl -s -X POST "http://127.0.0.1:4500/api/v1/blobs/media/uploads"   -H "X-Axiom-Key: $KEY"   -H "Content-Type: application/json"   -d '{"key": "backup.tar.gz", "content_type": "application/gzip"}' | jq -r '.data.upload_id')
 
-# 2. Upload chunk slice with Content-Range
-curl -X PATCH "http://127.0.0.1:4500/api/v1/blobs/media/uploads/$UPLOAD_ID"   -H "X-Axiom-Key: $KEY"   -H "Content-Range: bytes 0-1048575/5242880"   --data-binary "@slice_0.bin"
+#### 1. Initialize Resumable Session (`POST /api/v1/blobs/:namespace/uploads`)
+**Request**:
+```http
+POST /api/v1/blobs/media/uploads
+X-Axiom-Key: <TOKEN>
+Content-Type: application/json
+```
+```json
+{
+  "key": "backups/database_dump.tar.gz",
+  "content_type": "application/gzip",
+  "total_bytes": 5242880
+}
+```
+**Response (`201 Created`)**:
+```json
+{
+  "success": true,
+  "data": {
+    "upload_id": "up_7f10a82b9c3e4d5f",
+    "namespace": "media",
+    "key": "backups/database_dump.tar.gz"
+  },
+  "error": null
+}
+```
 
-# 3. Probe session progress
-curl -s -H "X-Axiom-Key: $KEY" "http://127.0.0.1:4500/api/v1/blobs/media/uploads/$UPLOAD_ID"
+#### 2. Upload Chunk Slice with Content-Range (`PATCH /api/v1/blobs/:namespace/uploads/:upload_id`)
+**Request**:
+```http
+PATCH /api/v1/blobs/media/uploads/up_7f10a82b9c3e4d5f
+X-Axiom-Key: <TOKEN>
+Content-Range: bytes 0-1048575/5242880
+Content-Type: application/octet-stream
+
+<1 MB chunk binary>
+```
+**Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "data": {
+    "upload_id": "up_7f10a82b9c3e4d5f",
+    "namespace": "media",
+    "key": "backups/database_dump.tar.gz",
+    "current_bytes": 1048576,
+    "total_bytes": 5242880
+  },
+  "error": null
+}
+```
+
+#### 3. Probe Session Progress (`GET /api/v1/blobs/:namespace/uploads/:upload_id`)
+**Request**:
+```http
+GET /api/v1/blobs/media/uploads/up_7f10a82b9c3e4d5f
+X-Axiom-Key: <TOKEN>
+```
+**Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "data": {
+    "upload_id": "up_7f10a82b9c3e4d5f",
+    "namespace": "media",
+    "key": "backups/database_dump.tar.gz",
+    "uploaded_slices": [
+      [0, 1048575]
+    ],
+    "status": "in_progress"
+  },
+  "error": null
+}
+```
+
+#### 4. Complete and Assemble Upload (`POST /api/v1/blobs/:namespace/uploads/:upload_id/complete`)
+**Request**:
+```http
+POST /api/v1/blobs/media/uploads/up_7f10a82b9c3e4d5f/complete
+X-Axiom-Key: <TOKEN>
+```
+**Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "data": {
+    "namespace": "media",
+    "key": "backups/database_dump.tar.gz",
+    "size": 5242880,
+    "content_type": "application/gzip",
+    "etag": "d41d8cd98f00b204e9800998ecf8427e",
+    "deduplicated": false,
+    "created_at": 1761400200
+  },
+  "error": null
+}
+```
+
+#### 5. Abort Upload Session (`DELETE /api/v1/blobs/:namespace/uploads/:upload_id`)
+**Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "data": {
+    "aborted": true
+  },
+  "error": null
+}
 ```
 
 ---
@@ -272,85 +898,744 @@ All `/admin/v1/*` routes (except setup initialization and login) require an admi
 `Authorization: Bearer <32-char-session-token>`.
 
 ### Setup & Authentication
-| Method | Endpoint | Auth | Request Body / Params | Description |
-|---|---|---|---|---|
-| `GET`, `POST` | `/admin/v1/setup/begin` | Public | _none_ | Probe if setup is pending; start setup session |
-| `POST` | `/admin/v1/setup/account` | Setup | `{"username":"...", "password":"..."}` | Create primary administrative user |
-| `POST` | `/admin/v1/setup/database/test` | Setup | `{"engine":"...", "url":"..."}` | Test database URL during setup |
-| `POST` | `/admin/v1/setup/database` | Setup | `{"alias":"...", "url":"...", "engine":"..."}` | Add initial database connection |
-| `POST` | `/admin/v1/setup/complete` | Setup | _none_ | Complete setup and permanently lock `/setup/*` |
-| `POST` | `/admin/v1/auth/login` | Public | `{"username":"...", "password":"..."}` | Authenticate credentials; returns bearer session token |
-| `POST` | `/admin/v1/auth/logout` | Session | _none_ | Invalidate active session token |
-| `GET` | `/admin/v1/users` | Session | _none_ | Enumerate administrator accounts |
 
-### System & Audit Operations
 | Method | Endpoint | Auth | Description |
 |---|---|---|---|
-| `GET` | `/admin/v1/status` | Session | Gateway overview: connected pools, uptime, cache metrics |
-| `POST` | `/admin/v1/reload` | Session | Force instant refresh of in-memory `ArcSwap<Metadata>` snapshot |
-| `GET` | `/admin/v1/health` | Session | Administrative health check with storage and pool details |
-| `GET` | `/admin/v1/metrics` | Session | System performance metrics in JSON format |
-| `GET` | `/admin/v1/audit` | Session | Query control plane mutation audit log (`limit`, `offset`) |
+| `GET`, `POST` | `/admin/v1/setup/begin` | Public | Check if setup wizard is required |
+| `POST` | `/admin/v1/setup/account` | Setup | Create primary administrative user |
+| `POST` | `/admin/v1/setup/database/test` | Setup | Test database URL during setup |
+| `POST` | `/admin/v1/setup/database` | Setup | Add initial database connection |
+| `POST` | `/admin/v1/setup/complete` | Setup | Complete setup and permanently lock `/setup/*` |
+| `POST` | `/admin/v1/auth/login` | Public | Authenticate credentials; returns bearer session token |
+| `POST` | `/admin/v1/auth/logout` | Session | Invalidate active session token |
+| `GET` | `/admin/v1/users` | Session | Enumerate administrator accounts |
+
+---
+
+### Setup Begin (`GET /admin/v1/setup/begin`)
+**Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "data": {
+    "setup_required": false
+  },
+  "error": null
+}
+```
+
+### Setup Account (`POST /admin/v1/setup/account`)
+**Request**:
+```http
+POST /admin/v1/setup/account
+Content-Type: application/json
+```
+```json
+{
+  "username": "admin",
+  "email": "admin@company.com",
+  "password": "CorrectHorseBatteryStaple123!"
+}
+```
+**Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "data": {
+    "username": "admin",
+    "token": "a1b2c3d4e5f6789012345678abcdef01",
+    "session_token": "a1b2c3d4e5f6789012345678abcdef01"
+  },
+  "error": null
+}
+```
+
+### Setup Test Database (`POST /admin/v1/setup/database/test`)
+**Request**:
+```http
+POST /admin/v1/setup/database/test
+Content-Type: application/json
+```
+```json
+{
+  "engine": "postgres",
+  "url": "postgres://user:secret@127.0.0.1:5432/mydb"
+}
+```
+**Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "data": {
+    "status": "connected",
+    "dialect": "postgres",
+    "resolved_url": "postgres://user:****@127.0.0.1:5432/mydb"
+  },
+  "error": null
+}
+```
+
+### Setup Register Database (`POST /admin/v1/setup/database`)
+**Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "data": {
+    "message": "Database 'main_pg' registered and verified",
+    "dialect": "postgres"
+  },
+  "error": null
+}
+```
+
+### Setup Complete (`POST /admin/v1/setup/complete`)
+**Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "data": {
+    "message": "Setup completed successfully"
+  },
+  "error": null
+}
+```
+
+---
+
+### Admin Login (`POST /admin/v1/auth/login`)
+**Request**:
+```http
+POST /admin/v1/auth/login
+Content-Type: application/json
+```
+```json
+{
+  "username": "admin",
+  "password": "CorrectHorseBatteryStaple123!"
+}
+```
+**Response (`200 OK`)**:
+```http
+HTTP/1.1 200 OK
+Set-Cookie: axiom_session=a1b2c3d4e5f6789012345678abcdef01; Path=/; HttpOnly; SameSite=Lax
+Set-Cookie: axiom_trusted_device=dev_7a8b9c...; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000
+Content-Type: application/json
+```
+```json
+{
+  "success": true,
+  "data": {
+    "token": "a1b2c3d4e5f6789012345678abcdef01",
+    "session_token": "a1b2c3d4e5f6789012345678abcdef01",
+    "username": "admin"
+  },
+  "error": null
+}
+```
+
+---
+
+### Admin Logout (`POST /admin/v1/auth/logout`)
+**Request**:
+```http
+POST /admin/v1/auth/logout
+Authorization: Bearer <SESSION_TOKEN>
+```
+**Response (`200 OK`)**:
+```http
+HTTP/1.1 200 OK
+Set-Cookie: axiom_session=; Path=/; Max-Age=0
+Content-Type: application/json
+```
+```json
+{
+  "success": true,
+  "data": {
+    "message": "Logged out successfully"
+  },
+  "error": null
+}
+```
+
+---
+
+### Enumerate Users (`GET /admin/v1/users`)
+**Request**:
+```http
+GET /admin/v1/users
+Authorization: Bearer <SESSION_TOKEN>
+```
+**Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": 1,
+      "username": "admin",
+      "email": "admin@company.com",
+      "created_at": 1761400000
+    }
+  ],
+  "error": null
+}
+```
+
+---
+
+### System Telemetry & Operations
+
+#### System Status (`GET /admin/v1/status`)
+**Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "data": {
+    "version": "0.1.15",
+    "status": "healthy",
+    "uptime_seconds": 84120,
+    "active_keys": 3,
+    "active_databases": 2,
+    "active_roles": 4,
+    "cache_entries": 1420
+  },
+  "error": null
+}
+```
+
+#### Synchronize Metadata Snapshot (`POST /admin/v1/reload`)
+**Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "data": {
+    "message": "Metadata snapshot successfully synchronized",
+    "active_keys": 3,
+    "active_databases": 2,
+    "active_roles": 4
+  },
+  "error": null
+}
+```
+
+#### Admin Health Overview (`GET /admin/v1/health`)
+**Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "data": {
+    "status": "healthy",
+    "uptime_seconds": 84120,
+    "system": {
+      "cpu_percent": 1.8,
+      "memory_used_mb": 68
+    },
+    "databases": {
+      "main_pg": "up",
+      "warehouse_ch": "up"
+    }
+  },
+  "error": null
+}
+```
+
+#### Control Plane Audit Log (`GET /admin/v1/audit?limit=2&offset=0`)
+**Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": 104,
+      "user": "admin",
+      "action": "CREATE_API_KEY",
+      "details": "Created key 'billing_service' with role 'service_role'",
+      "timestamp": 1761402200
+    },
+    {
+      "id": 103,
+      "user": "admin",
+      "action": "REGISTER_DATABASE",
+      "details": "Registered database alias 'warehouse_ch'",
+      "timestamp": 1761401800
+    }
+  ],
+  "pagination": {
+    "limit": 2,
+    "offset": 0,
+    "count": 2
+  },
+  "error": null
+}
+```
+
+---
 
 ### API Key Management
-| Method | Endpoint | Auth | Request Body / Params | Description |
-|---|---|---|---|---|
-| `GET` | `/admin/v1/keys` | Session | _none_ | Enumerate API keys, assigned roles, and expiration |
-| `POST` | `/admin/v1/keys` | Session | `{"name":"...", "role":"...", "secret":"...", "rate_limit":0}` | Generate new API key; returns base64 token |
-| `POST` | `/admin/v1/keys/:name/rotate` | Session | _none_ | Atomically roll cryptographic secret for an existing key |
-| `DELETE` | `/admin/v1/keys/:name` | Session | _none_ | Revoke and delete API machine key |
+
+#### Enumerate Keys (`GET /admin/v1/keys`)
+**Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "data": {
+    "keys": [
+      {
+        "id": "key_01",
+        "name": "backend_app",
+        "role": "admin",
+        "rate_limit": 1000,
+        "created_at": 1761400000,
+        "expires_at": null
+      }
+    ]
+  },
+  "error": null
+}
+```
+
+#### Create Key (`POST /admin/v1/keys`)
+**Request**:
+```http
+POST /admin/v1/keys
+Authorization: Bearer <SESSION_TOKEN>
+Content-Type: application/json
+```
+```json
+{
+  "name": "mobile_client",
+  "role": "readonly",
+  "rate_limit": 500
+}
+```
+**Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "data": {
+    "name": "mobile_client",
+    "role": "readonly",
+    "token": "bW9iaWxlX2NsaWVudDpkNGVjMmExZjYyODllMjgxNDU2NzE4OTlhYmNkZWYwMQ==",
+    "secret": "d4ec2a1f6289e28145671899abcdef01",
+    "message": "Save this token now. It will not be shown again."
+  },
+  "error": null
+}
+```
+
+#### Rotate Key (`POST /admin/v1/keys/:name/rotate`)
+**Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "data": {
+    "name": "mobile_client",
+    "token": "bW9iaWxlX2NsaWVudDo5YTgyY2QxNGY2MjhkMzgxNDU2NzE4OTlhYmNkZWYwMg==",
+    "secret": "9a82cd14f628d38145671899abcdef02",
+    "message": "Key secret successfully rolled"
+  },
+  "error": null
+}
+```
+
+#### Delete Key (`DELETE /admin/v1/keys/:name`)
+**Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "data": {
+    "message": "API key 'mobile_client' deleted successfully"
+  },
+  "error": null
+}
+```
+
+---
 
 ### RBAC Role Management
-| Method | Endpoint | Auth | Request Body / Params | Description |
-|---|---|---|---|---|
-| `GET` | `/admin/v1/roles` | Session | _none_ | List all roles and attached permission matrices |
-| `POST` | `/admin/v1/roles` | Session | `{"name":"...", "description":"...", "permissions":[...]}` | Create new RBAC role |
-| `PATCH` | `/admin/v1/roles/:name` | Session | `{"description":"...", "permissions":[...]}` | Update role permissions or description |
-| `DELETE` | `/admin/v1/roles/:name` | Session | _none_ | Delete an RBAC role |
+
+#### Enumerate Roles (`GET /admin/v1/roles`)
+**Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "data": {
+    "roles": [
+      {
+        "name": "readonly",
+        "description": "Read-only access across all tables",
+        "permissions": [
+          {
+            "database": "*",
+            "table_name": "*",
+            "operations": ["SELECT"],
+            "rls_filter": null
+          }
+        ]
+      }
+    ]
+  },
+  "error": null
+}
+```
+
+#### Create Role (`POST /admin/v1/roles`)
+**Request**:
+```http
+POST /admin/v1/roles
+Authorization: Bearer <SESSION_TOKEN>
+Content-Type: application/json
+```
+```json
+{
+  "name": "order_manager",
+  "description": "Manage orders and view products",
+  "permissions": [
+    {
+      "database": "main_pg",
+      "table_name": "orders",
+      "operations": ["SELECT", "INSERT", "UPDATE"],
+      "rls_filter": null
+    },
+    {
+      "database": "main_pg",
+      "table_name": "products",
+      "operations": ["SELECT"],
+      "rls_filter": null
+    }
+  ]
+}
+```
+**Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "data": {
+    "name": "order_manager",
+    "message": "Role 'order_manager' created successfully"
+  },
+  "error": null
+}
+```
+
+#### Update Role (`PATCH /admin/v1/roles/:name`)
+**Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "data": {
+    "message": "Role 'order_manager' updated successfully"
+  },
+  "error": null
+}
+```
+
+#### Delete Role (`DELETE /admin/v1/roles/:name`)
+**Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "data": {
+    "message": "Role 'order_manager' deleted successfully"
+  },
+  "error": null
+}
+```
+
+---
 
 ### Database Connection Management
-| Method | Endpoint | Auth | Request Body / Params | Description |
-|---|---|---|---|---|
-| `GET` | `/admin/v1/databases` | Session | _none_ | List configured database connections and pool status |
-| `POST` | `/admin/v1/databases` | Session | `{"alias":"...", "url":"...", "engine":"...", "mode":"..."}` | Register new upstream database connection |
-| `POST` | `/admin/v1/databases/test-url` | Session | `{"engine":"...", "url":"..."}` | Test connectivity to raw URL before saving |
-| `GET` | `/admin/v1/databases/:alias/test` | Session | _none_ | Probe connection and measure ping latency for an alias |
-| `DELETE` | `/admin/v1/databases/:alias` | Session | _none_ | Deregister and remove database connection |
+
+#### Enumerate Databases (`GET /admin/v1/databases`)
+**Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "data": {
+    "databases": [
+      {
+        "alias": "main_pg",
+        "dialect": "postgres",
+        "engine": "postgres",
+        "url": "postgres://user:****@127.0.0.1:5432/mydb",
+        "status": "connected"
+      }
+    ]
+  },
+  "error": null
+}
+```
+
+#### Register Database (`POST /admin/v1/databases`)
+**Request**:
+```http
+POST /admin/v1/databases
+Authorization: Bearer <SESSION_TOKEN>
+Content-Type: application/json
+```
+```json
+{
+  "alias": "analytics_mysql",
+  "engine": "mysql",
+  "url": "mysql://root:secret@127.0.0.1:3306/dw"
+}
+```
+**Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "data": {
+    "alias": "analytics_mysql",
+    "dialect": "mysql",
+    "engine": "mysql",
+    "message": "Database 'analytics_mysql' registered successfully"
+  },
+  "error": null
+}
+```
+
+#### Test Database Alias Connectivity (`GET /admin/v1/databases/:alias/test`)
+**Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "data": {
+    "alias": "main_pg",
+    "status": "connected",
+    "dialect": "postgres",
+    "latency_ms": 0.85
+  },
+  "error": null
+}
+```
+
+#### Delete Database (`DELETE /admin/v1/databases/:alias`)
+**Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "data": {
+    "message": "Database 'analytics_mysql' deleted successfully"
+  },
+  "error": null
+}
+```
+
+---
 
 ### Cache Management
-| Method | Endpoint | Auth | Description |
-|---|---|---|---|
-| `GET` | `/admin/v1/cache/stats` | Session | Inspect L1 RAM and L2 cache memory, entries, and hit ratio |
-| `POST` | `/admin/v1/cache/flush` | Session | Atomically flush all volatile cache entries |
+
+#### Inspect Cache Telemetry (`GET /admin/v1/cache/stats`)
+**Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "data": {
+    "l1_ram": {
+      "entries": 1420,
+      "bytes_used": 12582912,
+      "hits": 38410,
+      "misses": 2340,
+      "hit_ratio": 0.9426
+    },
+    "l2_storage": {
+      "enabled": true,
+      "entries": 9840,
+      "bytes_used": 89128960
+    }
+  },
+  "error": null
+}
+```
+
+#### Flush Cache (`POST /admin/v1/cache/flush`)
+**Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "data": {
+    "message": "All cache entries flushed successfully"
+  },
+  "error": null
+}
+```
+
+---
 
 ### Cluster Mesh Control Plane
-| Method | Endpoint | Auth | Request Body / Params | Description |
-|---|---|---|---|---|
-| `GET` | `/admin/v1/cluster/status` | Session | _none_ | Get local node ID, moniker, cluster secret, and peer counts |
-| `GET` | `/admin/v1/cluster/peers` | Session | _none_ | List registered cluster peers, latency RTT, and health status |
-| `POST` | `/admin/v1/cluster/peers` | Session | `{"url":"...", "secret":"...", "moniker":"..."}` | Connect and pair remote peer node |
-| `PATCH` | `/admin/v1/cluster/peers/:node_id` | Session | `{"moniker":"...", "url":"...", "secret":"..."}` | Update peer connection configuration |
-| `DELETE` | `/admin/v1/cluster/peers/:node_id` | Session | _none_ | Disconnect and remove peer from cluster |
-| `POST` | `/admin/v1/cluster/peers/:node_id/ping` | Session | _none_ | Dispatch on-demand heartbeat latency probe to peer |
-| `PATCH` | `/admin/v1/cluster/moniker` | Session | `{"moniker":"..."}` | Update local node display moniker |
+
+#### Cluster Node Status (`GET /admin/v1/cluster/status`)
+**Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "data": {
+    "node_id": "node_7f1a3b8c9d0e",
+    "moniker": "us-east-gateway-01",
+    "cluster_secret_configured": true,
+    "peer_count": 2,
+    "cluster_events_received": 184
+  },
+  "error": null
+}
+```
+
+#### List Cluster Peers (`GET /admin/v1/cluster/peers`)
+**Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "node_id": "node_8a2b3c4d5e6f",
+      "moniker": "eu-central-gateway-01",
+      "url": "https://eu-gw.internal:4500",
+      "status": "online",
+      "last_ping_ms": 32,
+      "last_seen_at": 1761403200
+    }
+  ],
+  "error": null
+}
+```
+
+#### Connect & Pair Peer (`POST /admin/v1/cluster/peers`)
+**Request**:
+```http
+POST /admin/v1/cluster/peers
+Authorization: Bearer <SESSION_TOKEN>
+Content-Type: application/json
+```
+```json
+{
+  "moniker": "eu-central-gateway-01",
+  "url": "https://eu-gw.internal:4500",
+  "secret": "ClusterSharedSecretKey"
+}
+```
+**Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "data": {
+    "node_id": "node_8a2b3c4d5e6f",
+    "moniker": "eu-central-gateway-01",
+    "status": "connected"
+  },
+  "error": null
+}
+```
+
+#### Ping Peer Heartbeat (`POST /admin/v1/cluster/peers/:node_id/ping`)
+**Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "data": {
+    "node_id": "node_8a2b3c4d5e6f",
+    "status": "online",
+    "latency_ms": 31.4
+  },
+  "error": null
+}
+```
+
+---
 
 ### Blob Storage Administration (`/admin/v1/blobs`)
-| Method | Endpoint | Auth | Request Body / Params | Description |
-|---|---|---|---|---|
-| `GET` | `/admin/v1/blobs/stats` | Session | _none_ | Storage-wide telemetry: bytes used, dedup savings, objects |
-| `POST` | `/admin/v1/blobs/scrub` | Session | _none_ | Background storage-wide BLAKE3 integrity check |
-| `POST` | `/admin/v1/blobs/sweep` | Session | _none_ | Manually trigger expired object TTL cleanup |
-| `GET` | `/admin/v1/blobs/namespaces` | Session | _none_ | Enumerate storage namespaces, quotas, and public read state |
-| `POST` | `/admin/v1/blobs/namespaces` | Session | `{"name":"...", "max_bytes":0, "public_read":false}` | Create storage namespace with quota ceiling |
-| `PATCH` | `/admin/v1/blobs/namespaces/:ns` | Session | `{"max_bytes":0, "public_read":true}` | Update namespace quota or toggle public access |
-| `DELETE` | `/admin/v1/blobs/namespaces/:ns` | Session | _none_ | Delete namespace and purge stored objects |
-| `POST` | `/admin/v1/blobs/copy` | Session | `{"src_namespace":"..", "src_key":"..", "dest_namespace":"..", "dest_key":".."}` | Copy object or prefix |
-| `POST` | `/admin/v1/blobs/move` | Session | `{"src_namespace":"..", "src_key":"..", "dest_namespace":"..", "dest_key":".."}` | Move/rename object or prefix |
-| `POST` | `/admin/v1/blobs/delete-prefix` | Session | `{"namespace":"...", "prefix":"..."}` | Bulk delete all objects matching prefix |
-| `POST` | `/admin/v1/blobs/verify/:ns/*key` | Session | _none_ | Verify on-disk checksum integrity for single blob |
-| `GET` | `/admin/v1/blobs/tickets` | Session | _none_ | Enumerate active capability tickets |
-| `POST` | `/admin/v1/blobs/tickets/:sig/revoke` | Session | _none_ | Revoke capability ticket before expiration |
-| `DELETE` | `/admin/v1/blobs/tickets/:sig` | Session | _none_ | Delete capability ticket |
+
+#### Storage-Wide Telemetry (`GET /admin/v1/blobs/stats`)
+**Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "data": {
+    "total_objects": 28420,
+    "logical_bytes": 142857142857,
+    "physical_bytes": 42857142857,
+    "deduplication_ratio": 3.33,
+    "deduplication_savings_bytes": 100000000000
+  },
+  "error": null
+}
+```
+
+#### Storage Integrity Scrub (`POST /admin/v1/blobs/scrub`)
+**Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "data": {
+    "scrubbed_objects": 28420,
+    "corrupt_objects": 0,
+    "duration_ms": 1420.5
+  },
+  "error": null
+}
+```
+
+#### Expired Object TTL Cleanup (`POST /admin/v1/blobs/sweep`)
+**Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "data": {
+    "purged_expired_objects": 14,
+    "reclaimed_bytes": 15829104
+  },
+  "error": null
+}
+```
+
+#### List Storage Namespaces (`GET /admin/v1/blobs/namespaces`)
+**Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "name": "media",
+      "max_bytes": 107374182400,
+      "current_bytes": 42857142857,
+      "public_read": true
+    },
+    {
+      "name": "backups",
+      "max_bytes": 536870912000,
+      "current_bytes": 104857600000,
+      "public_read": false
+    }
+  ],
+  "error": null
+}
+```
+
+#### Create Storage Namespace (`POST /admin/v1/blobs/namespaces`)
+**Request**:
+```http
+POST /admin/v1/blobs/namespaces
+Authorization: Bearer <SESSION_TOKEN>
+Content-Type: application/json
+```
+```json
+{
+  "name": "invoices",
+  "max_bytes": 10737418240,
+  "public_read": false
+}
+```
+**Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "data": {
+    "name": "invoices",
+    "max_bytes": 10737418240,
+    "public_read": false
+  },
+  "error": null
+}
+```
 
 ---
 
@@ -363,15 +1648,57 @@ Internal inter-node coordination endpoints protected by mutual HMAC-SHA256 authe
 * `X-Axiom-Timestamp`: Unix millisecond timestamp (rejected if clock drift exceeds ±30s).
 * `X-Axiom-Signature`: Hex-encoded `HMAC-SHA256(cluster_secret, timestamp + body)`.
 
-### Endpoints
-| Method | Endpoint | Description |
-|---|---|---|
-| `POST` | `/internal/v1/cluster/handshake` | P2P mutual authentication and public URL/moniker verification |
-| `GET` | `/internal/v1/cluster/ping` | Inter-node heartbeat latency probe |
-| `POST` | `/internal/v1/cluster/event` | Gossip event broadcast (instant security auto-ban propagation) |
-| `GET` | `/internal/v1/cluster/sync` | Full cluster mesh peer state synchronization |
+---
 
-#### Auto-Ban Gossip Payload (`POST /internal/v1/cluster/event`)
+### P2P Handshake (`POST /internal/v1/cluster/handshake`)
+**Request**:
+```http
+POST /internal/v1/cluster/handshake
+X-Axiom-Node-ID: node_7f1a3b8c9d0e
+X-Axiom-Timestamp: 1761400000000
+X-Axiom-Signature: <HMAC_HEX>
+Content-Type: application/json
+```
+```json
+{
+  "node_id": "node_7f1a3b8c9d0e",
+  "moniker": "us-east-gateway-01",
+  "url": "https://us-east.internal:4500"
+}
+```
+**Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "node_id": "node_8a2b3c4d5e6f",
+  "moniker": "eu-central-gateway-01",
+  "url": "https://eu-central.internal:4500",
+  "cluster_version": "0.1.15"
+}
+```
+
+---
+
+### Heartbeat Latency Probe (`GET /internal/v1/cluster/ping`)
+**Response (`200 OK`)**:
+```json
+{
+  "pong": true,
+  "timestamp": 1761400000120
+}
+```
+
+---
+
+### Gossip Event Broadcast (`POST /internal/v1/cluster/event`)
+**Request**:
+```http
+POST /internal/v1/cluster/event
+X-Axiom-Node-ID: node_7f1a3b8c9d0e
+X-Axiom-Timestamp: 1761400000000
+X-Axiom-Signature: <HMAC_HEX>
+Content-Type: application/json
+```
 ```json
 {
   "event_type": "security_ban",
@@ -383,6 +1710,38 @@ Internal inter-node coordination endpoints protected by mutual HMAC-SHA256 authe
   }
 }
 ```
+**Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "accepted": true
+}
+```
+
+---
+
+### State Sync (`GET /internal/v1/cluster/sync`)
+**Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "nodes": [
+    {
+      "node_id": "node_7f1a3b8c9d0e",
+      "moniker": "us-east-gateway-01",
+      "url": "https://us-east.internal:4500",
+      "status": "online"
+    },
+    {
+      "node_id": "node_8a2b3c4d5e6f",
+      "moniker": "eu-central-gateway-01",
+      "url": "https://eu-central.internal:4500",
+      "status": "online"
+    }
+  ],
+  "synced_at": 1761400000
+}
+```
 
 ---
 
@@ -390,57 +1749,227 @@ Internal inter-node coordination endpoints protected by mutual HMAC-SHA256 authe
 
 JSON-RPC 2.0 Model Context Protocol endpoint for AI coding assistants (Claude Code, Cursor, Copilot, Windsurf). Requires API key or session token.
 
-### 15 Native Tools
-| Category | Tool Name | Parameters | Description |
-|---|---|---|---|
-| **Database** | `axiom_list_services` | _none_ | List accessible database aliases |
-| | `axiom_list_tables` | `service` | List tables in target database |
-| | `axiom_describe_table` | `service`, `table` | Return columns, datatypes, and foreign keys |
-| | `axiom_query` | `service`, `table`, `filter`, `limit` | Query rows via structured filter object |
-| | `axiom_insert` | `service`, `table`, `rows` | Insert rows into table |
-| | `axiom_update` | `service`, `table`, `filter`, `data` | Update rows matching mandatory filter |
-| | `axiom_delete` | `service`, `table`, `filter` | Delete rows matching mandatory filter |
-| | `axiom_raw_sql` | `service`, `query`, `params` | Execute single SQL statement via AST firewall |
-| **Blob** | `axiom_list_blob_namespaces` | _none_ | List configured blob storage namespaces |
-| | `axiom_list_blobs` | `namespace`, `prefix`, `limit` | Enumerate objects with prefix filtering |
-| | `axiom_get_blob_metadata` | `namespace`, `key` | Retrieve object size, MIME type, and BLAKE3 hash |
-| | `axiom_read_blob` | `namespace`, `key` | Read blob text or base64 binary (5 MB cap) |
-| | `axiom_write_blob` | `namespace`, `key`, `content`, `content_type` | Write blob payload directly from agent context |
-| | `axiom_delete_blob` | `namespace`, `key` | Delete object from namespace |
-| | `axiom_create_download_ticket` | `namespace`, `key`, `ttl_seconds` | Mint pre-signed URL for client download |
+### 1. Protocol Handshake (`initialize`)
+**Request**:
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "initialize",
+  "params": {
+    "protocolVersion": "2024-11-05",
+    "capabilities": {},
+    "clientInfo": {
+      "name": "claude-code",
+      "version": "1.0.0"
+    }
+  }
+}
+```
+**Response (`200 OK`)**:
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "protocolVersion": "2024-11-05",
+    "capabilities": {
+      "tools": {
+        "listChanged": false
+      },
+      "resources": {
+        "subscribe": false,
+        "listChanged": false
+      }
+    },
+    "serverInfo": {
+      "name": "axiom",
+      "version": "0.1.15"
+    }
+  }
+}
+```
 
-### 5 Context Resources
-| Resource URI | Description | MIME Type |
-|---|---|---|
-| `axiom://schema/{alias}` | DDL schema dump for a database | `application/json` |
-| `axiom://telemetry` | Connection pool health and status | `application/json` |
-| `axiom://cache/stats` | L1 RAM cache hit/miss and memory utilization | `application/json` |
-| `axiom://blobs/{namespace}` | Summary of namespace objects | `application/json` |
-| `axiom://blobs/{namespace}/stats` | Storage utilization and deduplication ratio | `application/json` |
+---
+
+### 2. Discover Tools (`tools/list`)
+**Request**:
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "method": "tools/list"
+}
+```
+**Response (`200 OK`)**:
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "result": {
+    "tools": [
+      {
+        "name": "axiom_list_services",
+        "description": "List all configured and active database aliases accessible by caller",
+        "inputSchema": {
+          "type": "object",
+          "properties": {}
+        }
+      },
+      {
+        "name": "axiom_describe_table",
+        "description": "Return columns, datatypes, and foreign keys for a table",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "service": { "type": "string" },
+            "table": { "type": "string" }
+          },
+          "required": ["service", "table"]
+        }
+      },
+      {
+        "name": "axiom_query",
+        "description": "Query table rows with structured filter constraints",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "service": { "type": "string" },
+            "table": { "type": "string" },
+            "filter": { "type": "object" },
+            "limit": { "type": "integer" }
+          },
+          "required": ["service", "table"]
+        }
+      },
+      {
+        "name": "axiom_raw_sql",
+        "description": "Execute single parameterized SQL query through AST validation firewall",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "service": { "type": "string" },
+            "query": { "type": "string" },
+            "params": { "type": "array" }
+          },
+          "required": ["service", "query"]
+        }
+      }
+    ]
+  }
+}
+```
+
+---
+
+### 3. Tool Execution (`tools/call`)
+**Request**:
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 3,
+  "method": "tools/call",
+  "params": {
+    "name": "axiom_query",
+    "arguments": {
+      "service": "main_pg",
+      "table": "users",
+      "filter": {
+        "status": { "eq": "active" }
+      },
+      "limit": 1
+    }
+  }
+}
+```
+**Response (`200 OK`)**:
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 3,
+  "result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "{\"rows\":[{\"id\":1,\"email\":\"alice@corp.internal\",\"status\":\"active\"}],\"count\":1}"
+      }
+    ],
+    "isError": false
+  }
+}
+```
+
+---
+
+### 4. Context Resources (`resources/list` & `resources/read`)
+**Request**:
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 4,
+  "method": "resources/read",
+  "params": {
+    "uri": "axiom://schema/main_pg"
+  }
+}
+```
+**Response (`200 OK`)**:
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 4,
+  "result": {
+    "contents": [
+      {
+        "uri": "axiom://schema/main_pg",
+        "mimeType": "application/json",
+        "text": "{\"database\":\"main_pg\",\"tables\":[\"customers\",\"orders\",\"products\",\"users\"]}"
+      }
+    ]
+  }
+}
+```
 
 ---
 
 ## 7. Error Codes & HTTP Status Mapping
 
-| Error Code | HTTP Status | Root Cause | Remediation |
+All errors conform to the standardized error envelope format:
+```json
+{
+  "success": false,
+  "data": null,
+  "meta": {
+    "request_id": "9b12a84c-3e21-4f10-91a0-c1e48f09d12a"
+  },
+  "error": {
+    "code": "<ERROR_CODE>",
+    "message": "<HUMAN_READABLE_DIAGNOSTIC>"
+  }
+}
+```
+
+### Reference Table
+
+| Error Code | HTTP Status | Root Cause | Example Error Message |
 |---|---|---|---|
-| `WAF_URI_TOO_LONG` | 414 | Request URI exceeds 2,048 bytes | Move complex filter expressions from query string to `POST` body |
-| `WAF_NULL_BYTE` | 400 | Null byte (`%00`) detected in path or query | Strip null byte character sequences from input |
-| `WAF_PATH_TRAVERSAL` | 400 | Path traversal sequence (`..`) detected after 3-pass decode | Provide normalized, clean keys without relative directory components |
-| `WAF_BODY_TOO_LARGE` | 413 | Payload exceeds configured `body_limit` | Stream using multipart upload API or raise `body_limit` in `config.toml` |
-| `RATE_LIMIT_EXCEEDED` | 429 | Exceeded requests-per-minute quota on IP or Key | Throttle request rate; inspect `X-RateLimit-Reset` header |
-| `BANNED` | 403 | IP or Key auto-banned after consecutive auth failures | Wait for penalty cooldown (default: 300s) or rotate key |
-| `AUTH_INVALID` | 401 | Missing, malformed, or invalid credentials | Supply valid `base64(name:secret)` or active bearer session token |
-| `AUTH_FORBIDDEN` | 403 | Caller lacks permission for `(database, table, operation)` | Update role permissions via Admin Web UI or CLI (`axiom role update`) |
-| `RLS_VIOLATION` | 403 | Operation violates Row-Level Security predicate filter | Verify caller role permissions and assigned `rls_filter` constraints |
-| `STORAGE_QUOTA_EXCEEDED` | 413 | Target blob namespace reached `max_bytes` capacity | Increase namespace quota via `axiom blob ns update` or delete objects |
-| `MULTI_STATEMENT_DENIED` | 400 | SQL query contains semicolons or stacked statements | Send exactly one SQL statement per request |
-| `RANGE_NOT_SATISFIABLE` | 416 | Byte range offset exceeds file size or 256 MB slice | Request a valid single byte range slice (`Range: bytes=0-1048575`) |
-| `DB_NOT_FOUND` | 404 | Database alias does not exist | Verify alias spelling or register connection via `axiom db add` |
-| `SQL_PARSE_ERROR` | 400 | SQL statement rejected by AST parser | Verify query matches target dialect and parameter syntax (`$1`, `?`, `@P1`) |
-| `CLUSTER_PEER_UNREACHABLE` | 502 | Target cluster mesh node is offline or unreachable | Verify peer URL, firewall settings, and target port reachability |
-| `CLUSTER_AUTH_FAILED` | 401 | Inter-node HMAC-SHA256 signature mismatch or drift | Ensure system clocks are synchronized and cluster secrets match |
-| `CLUSTER_HANDSHAKE_ERROR` | 400 | Remote node rejected cluster pairing handshake | Confirm remote node is running compatible Axiom version and secret |
+| `WAF_URI_TOO_LONG` | 414 | Request URI exceeds 2,048 bytes | `"Request URI exceeds maximum allowable length of 2048 characters"` |
+| `WAF_NULL_BYTE` | 400 | Null byte (`%00`) in path or query | `"Null byte detected in request path or query parameters"` |
+| `WAF_PATH_TRAVERSAL` | 400 | Relative `..` traversal detected | `"Path traversal detected after multi-pass decode"` |
+| `WAF_BODY_TOO_LARGE` | 413 | Payload exceeds `body_limit` | `"Request body exceeds maximum allowable limit of 10485760 bytes"` |
+| `RATE_LIMIT_EXCEEDED` | 429 | Rate quota ceiling reached | `"Too many requests. Quota exceeded for this client window."` |
+| `BANNED` | 403 | IP or key banned for violations | `"Access denied. This client IP has been banned due to repeated security anomalies."` |
+| `AUTH_INVALID` | 401 | Missing or bad credentials | `"Missing or invalid API key or administrative session."` |
+| `AUTH_FORBIDDEN` | 403 | RBAC role lacks permission | `"Role 'analyst' lacks INSERT permission on 'main_pg.users'"` |
+| `RLS_VIOLATION` | 403 | Operation violates RLS predicate | `"Operation restricted by row-level security policy on target table"` |
+| `STORAGE_QUOTA_EXCEEDED` | 413 | Storage namespace quota full | `"Target blob namespace 'media' has exceeded its 100 GB capacity ceiling"` |
+| `MULTI_STATEMENT_DENIED` | 400 | Query contains stacked statements | `"Stacked queries with semicolons are blocked by AST firewall"` |
+| `RANGE_NOT_SATISFIABLE` | 416 | Byte range offset exceeds file | `"Requested range cannot be satisfied: start offset beyond file boundary"` |
+| `DB_NOT_FOUND` | 404 | Database alias not configured | `"Database alias 'analytics_pg' not found"` |
+| `SQL_PARSE_ERROR` | 400 | SQL AST parsing error | `"Syntax error at or near 'FORM': Expected FROM clause"` |
+| `CLUSTER_PEER_UNREACHABLE` | 502 | Peer node offline | `"Connection failed: cluster peer node 'node_8a' timed out after 3000ms"` |
+| `CLUSTER_AUTH_FAILED` | 401 | HMAC-SHA256 signature mismatch | `"Inter-node cluster HMAC signature verification failed or timestamp drift exceeded"` |
+| `CLUSTER_HANDSHAKE_ERROR` | 400 | Handshake rejected | `"Peer node handshake failed: cluster shared secret mismatch"` |
 
 ---
 
