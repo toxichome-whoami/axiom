@@ -81,9 +81,9 @@ export function StorageToolbar({
   }, [isUploadMenuOpen]);
 
   return (
-    <div className="h-[54px] shrink-0 px-4 border-b border-[#222222] bg-[#0c0c0c] flex items-center justify-between gap-3 select-none font-sans relative z-30">
+    <div className="h-[54px] shrink-0 px-4 border-b border-[#222222] bg-[#0c0c0c] flex items-center justify-between gap-3 select-none font-sans relative z-30 overflow-x-auto scrollbar-none whitespace-nowrap">
       {/* ─── Left: Interactive Breadcrumbs Navigator ─────────────── */}
-      <div className="flex items-center gap-1.5 text-sm overflow-x-auto scrollbar-none min-w-0 py-0.5">
+      <div className="flex items-center gap-1.5 text-sm overflow-x-auto scrollbar-none min-w-0 py-0.5 shrink-0">
         <button
           type="button"
           onClick={() => onNavigateToPrefix('')}

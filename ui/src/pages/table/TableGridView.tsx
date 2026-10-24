@@ -198,10 +198,10 @@ export function TableGridView({
   }, [selectedTable, columns, foreignKeys]);
 
   return (
-    <div className="flex-1 flex flex-col min-h-0 overflow-hidden relative font-sans">
+    <div className="flex-1 flex flex-col min-h-0 min-w-0 w-full overflow-hidden relative font-sans">
       {/* Tab 1: Data View (Spreadsheet Grid) */}
       {activeTab === 'data' && (
-        <div className="flex-1 overflow-auto">
+        <div className="flex-1 min-h-0 min-w-0 w-full overflow-auto">
           {isSchemaLoading || (isRowsLoading && rows.length === 0 && !rowsError) ? (
             <TableSkeleton columns={columns} foreignKeys={foreignKeys} columnWidths={columnWidths} />
           ) : !selectedTable ? (
@@ -465,8 +465,18 @@ export function TableGridView({
                             data-cell-col={col.name}
                             onClick={(e) => {
                               e.stopPropagation();
+                              const wasAlreadySelected = selectedCell?.rowIndex === idx && selectedCell?.colName === col.name;
                               onSelectCell({ rowIndex: idx, colName: col.name });
                               onSelectRow(idx, false);
+                              const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+                              if (fk && (isMobile || wasAlreadySelected)) {
+                                onOpenFkPicker({
+                                  rowIndex: idx,
+                                  column: col.name,
+                                  fk,
+                                  currentValue: val,
+                                });
+                              }
                             }}
                             onDoubleClick={(e) => {
                               e.stopPropagation();

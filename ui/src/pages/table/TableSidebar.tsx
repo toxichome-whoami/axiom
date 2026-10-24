@@ -83,7 +83,7 @@ export function TableSidebar({
   );
 
   return (
-    <aside className="w-full lg:w-64 shrink-0 flex flex-col bg-[#0a0a0a] border-b lg:border-b-0 lg:border-r border-[#222222] overflow-hidden font-sans">
+    <aside className="relative z-30 w-full lg:w-64 shrink-0 flex flex-col bg-[#0a0a0a] border-b lg:border-b-0 lg:border-r border-[#222222] font-sans">
       {/* Database Dropdown Selector Header (h-[54px] matching StoragePage) */}
       <div className="h-[54px] shrink-0 px-3 border-b border-[#222222] flex items-center justify-between gap-2 relative z-30">
         <div className="relative flex-1 min-w-0" ref={dbDropdownRef}>
@@ -103,7 +103,7 @@ export function TableSidebar({
 
           {/* Dropdown Popup */}
           {isDbDropdownOpen && (
-            <div className="absolute left-0 top-full mt-1.5 w-60 bg-[#111111] border border-[#262626] rounded-[8px] shadow-2xl p-1 z-50 animate-in fade-in zoom-in-95 duration-100 font-sans">
+            <div className="absolute left-0 top-full mt-1.5 w-full sm:w-60 max-w-[calc(100vw-32px)] bg-[#111111] border border-[#262626] rounded-[8px] shadow-2xl p-1 z-50 animate-in fade-in zoom-in-95 duration-100 font-sans">
               <div className="px-2.5 py-1.5 text-[12px] font-medium text-[#888888] select-none">
                 Database Connections
               </div>

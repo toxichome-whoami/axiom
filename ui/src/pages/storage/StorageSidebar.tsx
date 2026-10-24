@@ -99,7 +99,7 @@ export function StorageSidebar({
 
   return (
     <aside
-      className="w-full lg:w-64 shrink-0 flex flex-col bg-[#0a0a0a] border-b lg:border-b-0 lg:border-r border-[#222222] overflow-hidden font-sans select-none relative"
+      className="relative z-30 w-full lg:w-64 shrink-0 flex flex-col bg-[#0a0a0a] border-b lg:border-b-0 lg:border-r border-[#222222] font-sans select-none"
       style={{ width: (typeof window !== 'undefined' && window.innerWidth >= 1024 && width) ? `${width}px` : undefined }}
     >
       {/* Draggable Resize Handle on Right Border */}
@@ -142,7 +142,7 @@ export function StorageSidebar({
 
           {/* Namespace Dropdown Popup */}
           {isNsDropdownOpen && (
-            <div className="absolute left-0 top-full mt-1.5 w-60 bg-[#111111] border border-[#262626] rounded-[8px] shadow-2xl p-1 z-50 animate-in fade-in zoom-in-95 duration-100 font-sans">
+            <div className="absolute left-0 top-full mt-1.5 w-full sm:w-60 max-w-[calc(100vw-32px)] bg-[#111111] border border-[#262626] rounded-[8px] shadow-2xl p-1 z-50 animate-in fade-in zoom-in-95 duration-100 font-sans">
               <div className="px-3 py-2 text-[13px] font-medium text-[#888888] select-none flex items-center justify-between">
                 <span>Storage Namespaces</span>
                 <span className="text-[12px] font-mono text-[#666666]">{namespaces.length}</span>

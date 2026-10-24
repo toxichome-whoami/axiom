@@ -10,7 +10,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { cn } from '../utils/cn';
 import { api } from '../api/client';
 import { getOperatorUser, clearSession } from '../api/session';
-import { MobileTabBar } from './shared/MobileTabBar';
+// MobileTabBar removed
 import {
   LayoutDashboard,
   Database,
@@ -560,8 +560,8 @@ export function Layout({ currentPath, onNavigate, title, children, onLogout }: L
         <main
           className={
             isFullPage
-              ? 'flex-1 w-full min-w-0 p-0 max-w-none h-[calc(100vh-58px-54px)] max-h-[calc(100dvh-58px-54px)] md:h-[calc(100vh-58px)] md:max-h-[calc(100dvh-58px)] overflow-hidden flex flex-col pb-safe'
-              : 'flex-1 p-3 sm:p-6 w-full max-w-[1600px] mx-auto min-w-0 pb-[calc(54px+env(safe-area-inset-bottom)+16px)] md:pb-safe'
+              ? 'flex-1 w-full min-w-0 p-0 max-w-none h-[calc(100vh-58px)] max-h-[calc(100dvh-58px)] overflow-hidden flex flex-col pb-safe'
+              : 'flex-1 p-3 sm:p-6 w-full max-w-[1600px] mx-auto min-w-0 pb-safe'
           }
         >
           {children}
@@ -699,15 +699,7 @@ export function Layout({ currentPath, onNavigate, title, children, onLogout }: L
         </div>
       )}
 
-      {/* Mobile Bottom Tab Navigation */}
-      <MobileTabBar
-        currentPath={currentPath}
-        onNavigate={(path) => {
-          onNavigate(path);
-          setIsSidebarOpen(false);
-        }}
-        onOpenMenu={() => setIsSidebarOpen(true)}
-      />
+      {/* Mobile nav bar removed */}
     </div>
   );
 }

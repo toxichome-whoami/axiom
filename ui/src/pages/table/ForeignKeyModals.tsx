@@ -117,7 +117,7 @@ export function ForeignKeyRecordPreviewPopover({
     };
   }, [onClose]);
 
-  const popoverWidth = 440;
+  const popoverWidth = Math.min(440, typeof window !== 'undefined' ? window.innerWidth - 32 : 440);
   const anchorBottom = anchorRect.top + anchorRect.height;
   const spaceBelow = window.innerHeight - anchorBottom;
   const openUpward = spaceBelow < 220 && anchorRect.top > 220;
@@ -136,7 +136,7 @@ export function ForeignKeyRecordPreviewPopover({
         left: `${left}px`,
         width: `${popoverWidth}px`,
       }}
-      className="fixed z-50 rounded-[10px] border border-[#222222] bg-[#111111] shadow-[0_20px_50px_rgba(0,0,0,0.95)] px-[6px] py-3.5 flex flex-col font-sans overflow-hidden animate-in fade-in zoom-in-95 duration-100 select-text"
+      className="fixed z-50 rounded-[10px] border border-[#222222] bg-[#111111] shadow-[0_20px_50px_rgba(0,0,0,0.95)] px-[6px] py-3.5 flex flex-col font-sans overflow-hidden animate-in fade-in zoom-in-95 duration-100 select-text max-w-[calc(100vw-32px)]"
     >
       <div className="text-[13px] text-[#a1a1a1] font-sans flex items-center gap-1.5 pb-1">
         <span>Referencing record from</span>
