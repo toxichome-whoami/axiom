@@ -1653,7 +1653,7 @@ export function StoragePage() {
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
-        className="flex-1 flex flex-col bg-[#0c0c0c] min-w-0 overflow-hidden relative"
+        className="flex-1 flex flex-col bg-[#0c0c0c] min-w-0 overflow-hidden relative z-10"
       >
         {/* Drag and Drop Active Overlay */}
         {isDraggingOver && (

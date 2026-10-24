@@ -695,7 +695,7 @@ export function TableEditor() {
       />
 
       {/* ─── PANE 2: MAIN WORKSPACE CANVAS ─── */}
-      <main className="flex-1 flex flex-col min-w-0 overflow-hidden bg-[#0c0c0c]">
+      <main className="flex-1 flex flex-col min-w-0 overflow-hidden bg-[#0c0c0c] relative z-10">
         {/* Workspace Top Toolbar */}
         <TableToolbar
           viewMode={viewMode}
