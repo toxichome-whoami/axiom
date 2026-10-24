@@ -56,8 +56,15 @@ export function TableSidebar({
         setIsDbDropdownOpen(false);
       }
     };
+    const handleClose = () => setIsDbDropdownOpen(false);
     document.addEventListener('mousedown', handleOutside);
-    return () => document.removeEventListener('mousedown', handleOutside);
+    window.addEventListener('resize', handleClose);
+    window.addEventListener('scroll', handleClose, true);
+    return () => {
+      document.removeEventListener('mousedown', handleOutside);
+      window.removeEventListener('resize', handleClose);
+      window.removeEventListener('scroll', handleClose, true);
+    };
   }, []);
 
   useEffect(() => {
@@ -102,47 +109,56 @@ export function TableSidebar({
           </button>
 
           {/* Dropdown Popup */}
-          {isDbDropdownOpen && (
-            <div className="absolute left-0 top-full mt-1.5 w-full sm:w-60 max-w-[calc(100vw-32px)] bg-[#111111] border border-[#262626] rounded-[8px] shadow-2xl p-1 z-50 animate-in fade-in zoom-in-95 duration-100 font-sans">
-              <div className="px-2.5 py-1.5 text-[12px] font-medium text-[#888888] select-none">
-                Database Connections
-              </div>
+          {isDbDropdownOpen && (() => {
+            const rect = dbDropdownRef.current?.getBoundingClientRect();
+            const top = (rect?.bottom ?? 0) + 6;
+            const popoverWidth = Math.min(240, window.innerWidth - 32);
+            const left = Math.max(16, Math.min(window.innerWidth - popoverWidth - 16, rect?.left ?? 16));
+            return (
+              <div
+                style={{ top: `${top}px`, left: `${left}px`, width: `${popoverWidth}px` }}
+                className="fixed bg-[#111111] border border-[#262626] rounded-[8px] shadow-2xl p-1 z-50 animate-in fade-in zoom-in-95 duration-100 font-sans"
+              >
+                <div className="px-2.5 py-1.5 text-[12px] font-medium text-[#888888] select-none">
+                  Database Connections
+                </div>
 
-              <div className="max-h-52 overflow-y-auto space-y-0.5 py-0.5">
-                {databases.length === 0 ? (
-                  <div className="px-2.5 py-2 text-[12px] text-[#777777]">No databases found</div>
-                ) : (
-                  databases.map((db) => {
-                    const isActive = db.alias === selectedDb;
-                    return (
-                      <button
-                        key={db.alias}
-                        type="button"
-                        onClick={() => {
-                          onSelectDb(db.alias);
-                          setIsDbDropdownOpen(false);
-                        }}
-                        className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-[6px] text-[13px] transition-colors cursor-pointer text-left ${
-                          isActive
-                            ? 'bg-[#1c1c1c] text-white font-medium'
-                            : 'text-[#d4d4d4] hover:text-white hover:bg-[#161616]'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2 truncate min-w-0">
-                          <Database className={`w-3.5 h-3.5 shrink-0 ${isActive ? 'text-blue-400' : 'text-[#777777]'}`} />
-                          <span className="truncate">{db.alias}</span>
-                        </div>
-                        <div className="flex items-center gap-1.5 shrink-0 text-[11px] text-[#777777]">
-                          <span className="font-mono">{db.engine}</span>
-                          {isActive && <Check className="w-3.5 h-3.5 text-white shrink-0" />}
-                        </div>
-                      </button>
-                    );
-                  })
-                )}
+                <div className="max-h-52 overflow-y-auto space-y-0.5 py-0.5">
+                  {databases.length === 0 ? (
+                    <div className="px-2.5 py-2 text-[12px] text-[#777777]">No databases found</div>
+                  ) : (
+                    databases.map((db) => {
+                      const isActive = db.alias === selectedDb;
+                      return (
+                        <button
+                          key={db.alias}
+                          type="button"
+                          onClick={() => {
+                            onSelectDb(db.alias);
+                            setIsDbDropdownOpen(false);
+                          }}
+                          className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-[6px] text-[13px] transition-colors cursor-pointer text-left ${
+                            isActive
+                              ? 'bg-[#1c1c1c] text-white font-medium'
+                              : 'text-[#d4d4d4] hover:text-white hover:bg-[#161616]'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2 truncate min-w-0">
+                            <Database className={`w-3.5 h-3.5 shrink-0 ${isActive ? 'text-blue-400' : 'text-[#777777]'}`} />
+                            <span className="truncate">{db.alias}</span>
+                          </div>
+                          <div className="flex items-center gap-1.5 shrink-0 text-[11px] text-[#777777]">
+                            <span className="font-mono">{db.engine}</span>
+                            {isActive && <Check className="w-3.5 h-3.5 text-white shrink-0" />}
+                          </div>
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
         </div>
 
         {/* Quick Reload Tables button */}
