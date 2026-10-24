@@ -1963,15 +1963,10 @@ impl MetadataStore {
         Ok(())
     }
 
-    /// Queries paginated audit log entries ordered chronologically descending (newest first).
-    /// CONTRACT:
-    ///  - Precondition: `limit` clamped to safe bounds (max 500) to prevent memory exhaustion.
-    ///  - Returns: `Result<Vec<AuditRecord>, String>` containing historical audit rows.
-    ///  - Side effects: None (read-only SQLite query).
-    ///  - Idempotency: Yes.
     /// Retrieves paginated audit log entries documenting system administrative actions.
+    ///
     /// CONTRACT:
-    ///  - Precondition: `limit` capped at 500 rows maximum.
+    ///  - Precondition: `limit` capped at 500 rows maximum to prevent memory exhaustion.
     ///  - Keyset cursor: If `before_id` is provided, executes an O(1) B-tree seek (`WHERE id < ?1 ORDER BY id DESC LIMIT ?2`).
     ///    Otherwise falls back to standard offset pagination (`LIMIT ?1 OFFSET ?2`).
     ///  - Returns: `Result<Vec<AuditRecord>, String>` containing historical audit rows.
