@@ -361,10 +361,11 @@ export const api = {
 
   // Metrics & Observability
   getMetricsSnapshot: () => request<MetricsSnapshotApi>('/admin/v1/metrics?format=json'),
-  getAuditLog: (limit = 50, offset = 0) => {
-    const safeLimit = Math.max(1, Math.min(200, Math.floor(limit) || 50));
+  getAuditLog: (limit = 50, offset = 0, cursor?: number) => {
+    const safeLimit = Math.max(1, Math.min(500, Math.floor(limit) || 50));
     const safeOffset = Math.max(0, Math.floor(offset) || 0);
-    return request<AuditRecordApi[]>(`/admin/v1/audit?limit=${safeLimit}&offset=${safeOffset}`);
+    const cursorParam = cursor != null ? `&cursor=${cursor}` : '';
+    return request<AuditRecordApi[]>(`/admin/v1/audit?limit=${safeLimit}&offset=${safeOffset}${cursorParam}`);
   },
 
   // Users & Authentication

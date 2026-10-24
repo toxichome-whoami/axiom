@@ -91,6 +91,23 @@ impl AdminClient {
         self.auth_key.as_deref()
     }
 
+    /// Automatically mints or acquires a local administrator session token from the local SQLite store.
+    pub async fn resolve_local_auth_token() -> Option<String> {
+        let cfg = axiom_core::ConfigManager::get();
+        if axiom_metadata::MetadataStore::init(&cfg.metadata.url, &cfg.metadata.token)
+            .await
+            .is_ok()
+        {
+            if let Ok(token) =
+                axiom_metadata::MetadataStore::create_session("cli_root", 86400 * 30).await
+            {
+                let _ = save_session(&token);
+                return Some(token);
+            }
+        }
+        None
+    }
+
     /// Sends an HTTP request and parses the JSON response envelope.
     async fn request(
         &self,
@@ -98,28 +115,57 @@ impl AdminClient {
         endpoint: &str,
         body: Option<Value>,
     ) -> Result<Value, String> {
-        let url = format!("{}{}", self.base_url, endpoint);
-        let mut req = self.client.request(method, &url);
+        let is_local = self.base_url.contains("127.0.0.1")
+            || self.base_url.contains("localhost")
+            || self.base_url.contains("::1");
 
-        if let Some(ref key) = self.auth_key {
+        let mut current_token = self.auth_key.clone();
+        if current_token.is_none() && is_local {
+            current_token = Self::resolve_local_auth_token().await;
+        }
+
+        let url = format!("{}{}", self.base_url, endpoint);
+        let mut req = self.client.request(method.clone(), &url);
+
+        if let Some(ref key) = current_token {
             req = req.header("X-Axiom-Key", key);
             req = req.header("Authorization", format!("Bearer {}", key));
         }
 
-        if let Some(b) = body {
-            req = req.json(&b);
+        if let Some(ref b) = body {
+            req = req.json(b);
         }
 
-        let res = req
-            .send()
-            .await
-            .map_err(|e| format!("Network request to '{}' failed: {}", url, e))?;
+        let res = match req.send().await {
+            Ok(r) => r,
+            Err(e) => {
+                return Err(format!("Network request to '{}' failed: {}", url, e));
+            }
+        };
 
-        let status = res.status();
-        let json_resp: Value = res
+        let mut status = res.status();
+        let mut json_resp: Value = res
             .json()
             .await
-            .map_err(|e| format!("Failed to parse response from '{}': {}", url, e))?;
+            .unwrap_or(json!({ "error": { "message": "Failed to parse JSON response" } }));
+
+        // If local session expired or was rejected, auto-regenerate local admin session and retry once
+        if status == reqwest::StatusCode::UNAUTHORIZED && is_local {
+            if let Some(fresh_token) = Self::resolve_local_auth_token().await {
+                let mut retry_req = self.client.request(method, &url);
+                retry_req = retry_req.header("X-Axiom-Key", &fresh_token);
+                retry_req = retry_req.header("Authorization", format!("Bearer {}", fresh_token));
+                if let Some(ref b) = body {
+                    retry_req = retry_req.json(b);
+                }
+                if let Ok(retry_res) = retry_req.send().await {
+                    status = retry_res.status();
+                    if let Ok(val) = retry_res.json::<Value>().await {
+                        json_resp = val;
+                    }
+                }
+            }
+        }
 
         if !status.is_success() {
             let error_msg = json_resp
@@ -190,6 +236,24 @@ impl AdminClient {
     pub async fn delete_key(&self, name: &str) -> Result<Value, String> {
         let endpoint = format!("/admin/v1/keys/{}", name);
         self.request(reqwest::Method::DELETE, &endpoint, None).await
+    }
+
+    /// Updates an existing API key's role, rate limit, or expiration timestamp.
+    pub async fn update_key(
+        &self,
+        name: &str,
+        role: Option<&str>,
+        rate_limit: Option<i64>,
+        expires_at: Option<i64>,
+    ) -> Result<Value, String> {
+        let body = json!({
+            "role": role,
+            "rate_limit": rate_limit,
+            "expires_at": expires_at,
+        });
+        let endpoint = format!("/admin/v1/keys/{}", name);
+        self.request(reqwest::Method::PATCH, &endpoint, Some(body))
+            .await
     }
 
     /// Lists configured RBAC roles.
@@ -275,6 +339,28 @@ impl AdminClient {
     pub async fn delete_database(&self, alias: &str) -> Result<Value, String> {
         let endpoint = format!("/admin/v1/databases/{}", alias);
         self.request(reqwest::Method::DELETE, &endpoint, None).await
+    }
+
+    /// Updates an existing upstream database connection configuration.
+    pub async fn update_database(
+        &self,
+        alias: &str,
+        new_alias: Option<&str>,
+        conn_url: Option<&str>,
+        engine: Option<&str>,
+        pool_min: Option<i64>,
+        pool_max: Option<i64>,
+    ) -> Result<Value, String> {
+        let body = json!({
+            "new_alias": new_alias,
+            "url": conn_url,
+            "engine": engine,
+            "pool_min": pool_min,
+            "pool_max": pool_max,
+        });
+        let endpoint = format!("/admin/v1/databases/{}", alias);
+        self.request(reqwest::Method::PATCH, &endpoint, Some(body))
+            .await
     }
 
     /// Fetches cache performance metrics and memory usage.

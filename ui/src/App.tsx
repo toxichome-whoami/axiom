@@ -16,6 +16,7 @@ const Storage = lazy(() => import('./pages/Storage').then((m) => ({ default: m.S
 const Cluster = lazy(() => import('./pages/Cluster').then((m) => ({ default: m.Cluster })));
 const Keys = lazy(() => import('./pages/Keys').then((m) => ({ default: m.Keys })));
 const Roles = lazy(() => import('./pages/Roles').then((m) => ({ default: m.Roles })));
+const AuditLog = lazy(() => import('./pages/AuditLog').then((m) => ({ default: m.AuditLog })));
 const Mcp = lazy(() => import('./pages/Mcp').then((m) => ({ default: m.Mcp })));
 const Settings = lazy(() => import('./pages/Settings').then((m) => ({ default: m.Settings })));
 const AuthPage = lazy(() => import('./pages/AuthPage').then((m) => ({ default: m.AuthPage })));
@@ -44,6 +45,7 @@ export function App() {
     if (p === '/cluster' || p === '/mesh' || p === '/nodes') p = '/system/cluster';
     if (p === '/keys') p = '/system/keys';
     if (p === '/roles') p = '/system/roles';
+    if (p === '/audit' || p === '/logs' || p === '/audit-log') p = '/system/audit';
     if (p === '/mcp') p = '/system/mcp';
 
     const validPaths: NavPath[] = [
@@ -54,6 +56,7 @@ export function App() {
       '/system/cluster',
       '/system/keys',
       '/system/roles',
+      '/system/audit',
       '/system/mcp',
       '/system/settings',
     ];
@@ -151,6 +154,8 @@ export function App() {
         return { title: 'API Keys', component: <Keys /> };
       case '/system/roles':
         return { title: 'Roles & RBAC', component: <Roles /> };
+      case '/system/audit':
+        return { title: 'Audit Trail', component: <AuditLog /> };
       case '/system/mcp':
         return { title: 'MCP Protocol', component: <Mcp /> };
       case '/system/settings':

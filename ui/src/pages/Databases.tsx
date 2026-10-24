@@ -15,46 +15,11 @@ import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { CustomSelect } from '../components/shared/CustomSelect';
 import { Database, Plus, CheckCircle2, Search, Trash2, RefreshCw, AlertTriangle, AlertCircle, Check, Eye, EyeOff, Table } from 'lucide-react';
 import { api, DatabaseRecordApi } from '../api/client';
+import { validateCleanName } from '../utils/validation';
+import { FilterRule, matchesRule } from '../utils/filters';
 
-export function validateCleanName(name: string): { valid: boolean; error?: string } {
-  const trimmed = name.trim();
-  if (!trimmed) {
-    return { valid: false, error: 'Name cannot be empty.' };
-  }
-  if (trimmed.length > 64) {
-    return { valid: false, error: 'Name must not exceed 64 characters.' };
-  }
-  if (/[A-Z]/.test(trimmed)) {
-    return { valid: false, error: 'Uppercase letters not allowed. Use lowercase only.' };
-  }
-  if (/\s/.test(trimmed)) {
-    return { valid: false, error: 'Spaces not allowed. Use hyphens or underscores.' };
-  }
-  if (/[^a-z0-9_-]/.test(trimmed)) {
-    return { valid: false, error: 'Only lowercase letters, numbers, hyphens, and underscores allowed.' };
-  }
-  if (trimmed.startsWith('_') || trimmed.startsWith('-')) {
-    return { valid: false, error: 'Cannot start with a hyphen or underscore.' };
-  }
-  if (trimmed.endsWith('_') || trimmed.endsWith('-')) {
-    return { valid: false, error: 'Cannot end with a trailing hyphen or underscore.' };
-  }
-  if (trimmed.length === 1 && !/^[a-z0-9]$/.test(trimmed)) {
-    return { valid: false, error: 'Must be a lowercase letter or number.' };
-  }
-  if (!/^[a-z0-9][a-z0-9_-]*[a-z0-9]$/.test(trimmed)) {
-    return { valid: false, error: 'Must be lowercase alphanumeric with hyphens or underscores.' };
-  }
-  return { valid: true };
-}
-
-
-export interface FilterRule {
-  id: string;
-  field: string;
-  operator: 'contains' | 'equals' | 'starts_with';
-  value: string;
-}
+export { validateCleanName };
+export type { FilterRule };
 
 /**
  * Expected URL prefix mappings and examples per database engine dialect.
@@ -633,14 +598,6 @@ export function Databases() {
     } finally {
       setIsSaving(false);
     }
-  }
-
-  function matchesRule(itemVal: string, operator: string, ruleVal: string): boolean {
-    const i = (itemVal || '').toLowerCase();
-    const r = (ruleVal || '').toLowerCase();
-    if (operator === 'equals') return i === r;
-    if (operator === 'starts_with') return i.startsWith(r);
-    return i.includes(r);
   }
 
   const engineOptions: { value: EngineType; label: string }[] = [

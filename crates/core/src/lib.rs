@@ -17,8 +17,9 @@ pub mod uuid_util;
 pub use config::loader::ConfigManager;
 pub use config::schema::{AxiomConfig, BlobConfig};
 pub use db_types::{
-    extract_next_cursor, ColumnInfo, CreateColumnRequest, EngineError, ForeignKeyDef,
-    ForeignKeyInfo, QueryResult, TableInfo, DEFAULT_MAX_QUERY_ROWS,
+    extract_next_cursor, ColumnInfo, CreateColumnRequest, DropColumnRequest, EngineError,
+    ForeignKeyDef, ForeignKeyInfo, ModifyColumnRequest, QueryResult, TableInfo,
+    DEFAULT_MAX_QUERY_ROWS,
 };
 pub use error::AxiomError;
 pub use size_parser::{format_size, normalize_size, parse_size};

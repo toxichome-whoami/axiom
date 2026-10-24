@@ -101,6 +101,18 @@ pub async fn get_cached_table_columns(
     }
 
     if let Ok(cols) = engine.describe_table(table_name).await {
+        const MAX_SCHEMA_ENTRIES: usize = 1024;
+        if SCHEMA_CATALOG.len() >= MAX_SCHEMA_ENTRIES {
+            let stale_keys: Vec<String> = SCHEMA_CATALOG
+                .iter()
+                .filter(|entry| entry.value().1 <= now)
+                .take(128)
+                .map(|e| e.key().clone())
+                .collect();
+            for k in stale_keys {
+                SCHEMA_CATALOG.remove(&k);
+            }
+        }
         SCHEMA_CATALOG.insert(key, (cols.clone(), now + SCHEMA_CACHE_TTL_SECS));
         Some(cols)
     } else {
@@ -306,31 +318,33 @@ fn sanitize_db_error(raw_err: &str) -> String {
 /// dollar-quoted strings ($$...$$, $tag$...$tag$), line comments (-- ...), block comments (/* ... */),
 /// and PostgreSQL JSONB operators (?|, ?&) to prevent corrupting literal text and operators.
 pub fn format_postgres_placeholders(sql: &str) -> String {
+    if !sql.contains('?') {
+        return sql.to_string();
+    }
     use std::fmt::Write;
-    let mut out = String::with_capacity(sql.len() + 16);
+    let bytes = sql.as_bytes();
+    let len = bytes.len();
+    let mut out = String::with_capacity(len + 16);
     let mut param_idx = 1;
 
     let mut in_single_quote = false;
     let mut in_double_quote = false;
     let mut in_line_comment = false;
     let mut in_block_comment = false;
-    let mut dollar_quote_tag: Option<String> = None;
+    let mut dollar_quote_tag: Option<&[u8]> = None;
 
-    let chars: Vec<char> = sql.chars().collect();
-    let len = chars.len();
     let mut i = 0;
-
     while i < len {
-        let c = chars[i];
-        let next_c = if i + 1 < len {
-            Some(chars[i + 1])
+        let b = bytes[i];
+        let next_b = if i + 1 < len {
+            Some(bytes[i + 1])
         } else {
             None
         };
 
         if in_line_comment {
-            out.push(c);
-            if c == '\n' {
+            out.push(b as char);
+            if b == b'\n' {
                 in_line_comment = false;
             }
             i += 1;
@@ -338,8 +352,8 @@ pub fn format_postgres_placeholders(sql: &str) -> String {
         }
 
         if in_block_comment {
-            out.push(c);
-            if c == '*' && next_c == Some('/') {
+            out.push(b as char);
+            if b == b'*' && next_b == Some(b'/') {
                 out.push('/');
                 in_block_comment = false;
                 i += 2;
@@ -349,25 +363,23 @@ pub fn format_postgres_placeholders(sql: &str) -> String {
             continue;
         }
 
-        if let Some(ref tag) = dollar_quote_tag {
-            let tag_chars: Vec<char> = tag.chars().collect();
-            let tag_len = tag_chars.len();
-            if i + tag_len <= len && chars[i..i + tag_len] == tag_chars[..] {
-                out.push_str(tag);
+        if let Some(tag) = dollar_quote_tag {
+            let tag_len = tag.len();
+            if i + tag_len <= len && &bytes[i..i + tag_len] == tag {
+                out.push_str(unsafe { std::str::from_utf8_unchecked(tag) });
                 dollar_quote_tag = None;
                 i += tag_len;
             } else {
-                out.push(c);
+                out.push(b as char);
                 i += 1;
             }
             continue;
         }
 
         if in_single_quote {
-            out.push(c);
-            if c == '\'' {
-                if next_c == Some('\'') {
-                    // Escaped single quote ('') inside SQL literal
+            out.push(b as char);
+            if b == b'\'' {
+                if next_b == Some(b'\'') {
                     out.push('\'');
                     i += 2;
                     continue;
@@ -380,10 +392,9 @@ pub fn format_postgres_placeholders(sql: &str) -> String {
         }
 
         if in_double_quote {
-            out.push(c);
-            if c == '"' {
-                if next_c == Some('"') {
-                    // Escaped double quote ("") inside SQL identifier
+            out.push(b as char);
+            if b == b'"' {
+                if next_b == Some(b'"') {
                     out.push('"');
                     i += 2;
                     continue;
@@ -395,56 +406,51 @@ pub fn format_postgres_placeholders(sql: &str) -> String {
             continue;
         }
 
-        // Outside quotes and comments:
-        if c == '-' && next_c == Some('-') {
+        if b == b'-' && next_b == Some(b'-') {
             in_line_comment = true;
-            out.push('-');
-            out.push('-');
+            out.push_str("--");
             i += 2;
             continue;
         }
 
-        if c == '/' && next_c == Some('*') {
+        if b == b'/' && next_b == Some(b'*') {
             in_block_comment = true;
-            out.push('/');
-            out.push('*');
+            out.push_str("/*");
             i += 2;
             continue;
         }
 
-        // Check for start of dollar quote ($tag$ or $$)
-        if c == '$' {
+        if b == b'$' {
             let mut j = i + 1;
-            while j < len && (chars[j].is_alphanumeric() || chars[j] == '_') {
+            while j < len && (bytes[j].is_ascii_alphanumeric() || bytes[j] == b'_') {
                 j += 1;
             }
-            if j < len && chars[j] == '$' {
-                let tag: String = chars[i..=j].iter().collect();
-                out.push_str(&tag);
+            if j < len && bytes[j] == b'$' {
+                let tag = &bytes[i..=j];
+                out.push_str(unsafe { std::str::from_utf8_unchecked(tag) });
                 dollar_quote_tag = Some(tag);
                 i = j + 1;
                 continue;
             }
         }
 
-        if c == '\'' {
+        if b == b'\'' {
             in_single_quote = true;
-            out.push(c);
+            out.push('\'');
             i += 1;
             continue;
         }
 
-        if c == '"' {
+        if b == b'"' {
             in_double_quote = true;
-            out.push(c);
+            out.push('"');
             i += 1;
             continue;
         }
 
-        if c == '?' {
-            // Respect PostgreSQL JSONB operators (?| and ?&)
-            if next_c == Some('|') || next_c == Some('&') {
-                out.push(c);
+        if b == b'?' {
+            if next_b == Some(b'|') || next_b == Some(b'&') {
+                out.push('?');
                 i += 1;
                 continue;
             }
@@ -454,7 +460,7 @@ pub fn format_postgres_placeholders(sql: &str) -> String {
             continue;
         }
 
-        out.push(c);
+        out.push(b as char);
         i += 1;
     }
 
@@ -465,8 +471,13 @@ pub fn format_postgres_placeholders(sql: &str) -> String {
 /// Invariant: Respects single-quoted strings ('...'), double-quoted identifiers ("..."),
 /// line comments (-- ...), and block comments (/* ... */).
 pub fn format_oracle_placeholders(sql: &str) -> String {
+    if !sql.contains('?') {
+        return sql.to_string();
+    }
     use std::fmt::Write;
-    let mut out = String::with_capacity(sql.len() + 16);
+    let bytes = sql.as_bytes();
+    let len = bytes.len();
+    let mut out = String::with_capacity(len + 16);
     let mut param_idx = 1;
 
     let mut in_single_quote = false;
@@ -474,21 +485,18 @@ pub fn format_oracle_placeholders(sql: &str) -> String {
     let mut in_line_comment = false;
     let mut in_block_comment = false;
 
-    let chars: Vec<char> = sql.chars().collect();
-    let len = chars.len();
     let mut i = 0;
-
     while i < len {
-        let c = chars[i];
-        let next_c = if i + 1 < len {
-            Some(chars[i + 1])
+        let b = bytes[i];
+        let next_b = if i + 1 < len {
+            Some(bytes[i + 1])
         } else {
             None
         };
 
         if in_line_comment {
-            out.push(c);
-            if c == '\n' {
+            out.push(b as char);
+            if b == b'\n' {
                 in_line_comment = false;
             }
             i += 1;
@@ -496,8 +504,8 @@ pub fn format_oracle_placeholders(sql: &str) -> String {
         }
 
         if in_block_comment {
-            out.push(c);
-            if c == '*' && next_c == Some('/') {
+            out.push(b as char);
+            if b == b'*' && next_b == Some(b'/') {
                 out.push('/');
                 in_block_comment = false;
                 i += 2;
@@ -508,9 +516,9 @@ pub fn format_oracle_placeholders(sql: &str) -> String {
         }
 
         if in_single_quote {
-            out.push(c);
-            if c == '\'' {
-                if next_c == Some('\'') {
+            out.push(b as char);
+            if b == b'\'' {
+                if next_b == Some(b'\'') {
                     out.push('\'');
                     i += 2;
                     continue;
@@ -523,9 +531,9 @@ pub fn format_oracle_placeholders(sql: &str) -> String {
         }
 
         if in_double_quote {
-            out.push(c);
-            if c == '"' {
-                if next_c == Some('"') {
+            out.push(b as char);
+            if b == b'"' {
+                if next_b == Some(b'"') {
                     out.push('"');
                     i += 2;
                     continue;
@@ -537,44 +545,42 @@ pub fn format_oracle_placeholders(sql: &str) -> String {
             continue;
         }
 
-        if c == '-' && next_c == Some('-') {
+        if b == b'-' && next_b == Some(b'-') {
             in_line_comment = true;
-            out.push('-');
-            out.push('-');
+            out.push_str("--");
             i += 2;
             continue;
         }
 
-        if c == '/' && next_c == Some('*') {
+        if b == b'/' && next_b == Some(b'*') {
             in_block_comment = true;
-            out.push('/');
-            out.push('*');
+            out.push_str("/*");
             i += 2;
             continue;
         }
 
-        if c == '\'' {
+        if b == b'\'' {
             in_single_quote = true;
-            out.push(c);
+            out.push('\'');
             i += 1;
             continue;
         }
 
-        if c == '"' {
+        if b == b'"' {
             in_double_quote = true;
-            out.push(c);
+            out.push('"');
             i += 1;
             continue;
         }
 
-        if c == '?' {
+        if b == b'?' {
             let _ = write!(out, ":{}", param_idx);
             param_idx += 1;
             i += 1;
             continue;
         }
 
-        out.push(c);
+        out.push(b as char);
         i += 1;
     }
 
@@ -1046,7 +1052,19 @@ impl QueryExecutionPipeline {
             };
 
             // Only cache in global AST cache if not rewritten with caller-specific RLS predicates
-            if !rls_rewritten && AST_CACHE.len() < max_ast_entries {
+            if !rls_rewritten {
+                if AST_CACHE.len() >= max_ast_entries {
+                    // Prevent permanent cache freeze: when capacity is reached, prune the oldest 25% of entries
+                    let prune_count = (max_ast_entries / 4).max(1);
+                    let to_remove: Vec<String> = AST_CACHE
+                        .iter()
+                        .take(prune_count)
+                        .map(|entry| entry.key().clone())
+                        .collect();
+                    for k in to_remove {
+                        AST_CACHE.remove(&k);
+                    }
+                }
                 AST_CACHE.insert(
                     ast_cache_key,
                     Arc::new(CachedAstInfo {
@@ -2105,6 +2123,175 @@ pub async fn add_column(
     })))
 }
 
+#[derive(Debug, serde::Deserialize)]
+pub struct DropColumnParams {
+    pub name: Option<String>,
+}
+
+pub async fn drop_column(
+    axum::extract::Path((db_name, table_name)): axum::extract::Path<(String, String)>,
+    axum::extract::Extension(auth): axum::extract::Extension<AuthContext>,
+    axum::extract::Query(query): axum::extract::Query<DropColumnParams>,
+    payload: Option<axum::Json<axiom_core::DropColumnRequest>>,
+) -> Result<axum::Json<serde_json::Value>, AxiomError> {
+    let col_name = query
+        .name
+        .or_else(|| payload.map(|p| p.0.name))
+        .ok_or_else(|| {
+            AxiomError::new(
+                "MISSING_COLUMN_NAME",
+                "Column name must be provided in query ?name= or JSON body",
+                axum::http::StatusCode::BAD_REQUEST,
+            )
+        })?;
+
+    drop_column_internal(&db_name, &table_name, &col_name, &auth).await
+}
+
+pub async fn drop_column_by_path(
+    axum::extract::Path((db_name, table_name, column_name)): axum::extract::Path<(
+        String,
+        String,
+        String,
+    )>,
+    axum::extract::Extension(auth): axum::extract::Extension<AuthContext>,
+) -> Result<axum::Json<serde_json::Value>, AxiomError> {
+    drop_column_internal(&db_name, &table_name, &column_name, &auth).await
+}
+
+async fn drop_column_internal(
+    db_name: &str,
+    table_name: &str,
+    column_name: &str,
+    auth: &AuthContext,
+) -> Result<axum::Json<serde_json::Value>, AxiomError> {
+    PolicyEngine::evaluate(auth, db_name, table_name, "DDL")?;
+
+    let clean: String = column_name
+        .chars()
+        .filter(|c| c.is_alphanumeric() || *c == '_')
+        .collect();
+    if clean.is_empty() || clean != column_name {
+        return Err(AxiomError::new(
+            "INVALID_COLUMN_NAME",
+            "Column name must contain only alphanumeric characters and underscores",
+            axum::http::StatusCode::BAD_REQUEST,
+        ));
+    }
+
+    let _db_cfg = get_db_config(db_name, auth).await?;
+    let engine = DatabasePoolManager::get_engine(db_name)
+        .await
+        .ok_or_else(|| {
+            AxiomError::new(
+                "DB_NOT_FOUND",
+                "Database not found",
+                axum::http::StatusCode::NOT_FOUND,
+            )
+        })?;
+
+    engine.drop_column(table_name, &clean).await.map_err(|e| {
+        tracing::error!("Drop column failed: {}", e);
+        AxiomError::new(
+            "DROP_COLUMN_FAILED",
+            "Failed to drop column",
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+        )
+    })?;
+
+    invalidate_table_schema(db_name, table_name);
+
+    Ok(axum::Json(serde_json::json!({
+        "success": true,
+        "data": {
+            "database": db_name,
+            "table": table_name,
+            "column": clean
+        },
+        "error": serde_json::Value::Null
+    })))
+}
+
+pub async fn modify_column(
+    axum::extract::Path((db_name, table_name)): axum::extract::Path<(String, String)>,
+    axum::extract::Extension(auth): axum::extract::Extension<AuthContext>,
+    axum::Json(payload): axum::Json<axiom_core::ModifyColumnRequest>,
+) -> Result<axum::Json<serde_json::Value>, AxiomError> {
+    PolicyEngine::evaluate(&auth, &db_name, &table_name, "DDL")?;
+
+    let clean_name: String = payload
+        .name
+        .chars()
+        .filter(|c| c.is_alphanumeric() || *c == '_')
+        .collect();
+    if clean_name.is_empty() || clean_name != payload.name {
+        return Err(AxiomError::new(
+            "INVALID_COLUMN_NAME",
+            "Column name must contain only alphanumeric characters and underscores",
+            axum::http::StatusCode::BAD_REQUEST,
+        ));
+    }
+
+    if let Some(ref new_name) = payload.new_name {
+        let clean_new: String = new_name
+            .chars()
+            .filter(|c| c.is_alphanumeric() || *c == '_')
+            .collect();
+        if clean_new.is_empty() || clean_new != *new_name {
+            return Err(AxiomError::new(
+                "INVALID_COLUMN_NAME",
+                "New column name must contain only alphanumeric characters and underscores",
+                axum::http::StatusCode::BAD_REQUEST,
+            ));
+        }
+    }
+
+    if payload.new_name.is_none() && payload.data_type.is_none() {
+        return Err(AxiomError::new(
+            "INVALID_PAYLOAD",
+            "Either new_name or data_type must be specified to modify a column",
+            axum::http::StatusCode::BAD_REQUEST,
+        ));
+    }
+
+    let _db_cfg = get_db_config(&db_name, &auth).await?;
+    let engine = DatabasePoolManager::get_engine(&db_name)
+        .await
+        .ok_or_else(|| {
+            AxiomError::new(
+                "DB_NOT_FOUND",
+                "Database not found",
+                axum::http::StatusCode::NOT_FOUND,
+            )
+        })?;
+
+    engine
+        .modify_column(&table_name, &payload)
+        .await
+        .map_err(|e| {
+            tracing::error!("Modify column failed: {}", e);
+            AxiomError::new(
+                "MODIFY_COLUMN_FAILED",
+                "Failed to modify column",
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            )
+        })?;
+
+    invalidate_table_schema(&db_name, &table_name);
+
+    Ok(axum::Json(serde_json::json!({
+        "success": true,
+        "data": {
+            "database": db_name,
+            "table": table_name,
+            "column": payload.name,
+            "new_name": payload.new_name,
+            "data_type": payload.data_type
+        },
+        "error": serde_json::Value::Null
+    })))
+}
+
 #[cfg(test)]
 mod tests {
 
@@ -2353,5 +2540,18 @@ mod tests {
         } else {
             panic!("Expected query");
         }
+    }
+
+    #[test]
+    fn test_drop_column_params_deserialization() {
+        use super::DropColumnParams;
+
+        let json = r#"{"name": "status_code"}"#;
+        let params: DropColumnParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.name.as_deref(), Some("status_code"));
+
+        let empty_json = "{}";
+        let empty_params: DropColumnParams = serde_json::from_str(empty_json).unwrap();
+        assert!(empty_params.name.is_none());
     }
 }

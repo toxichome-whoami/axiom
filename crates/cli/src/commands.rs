@@ -221,7 +221,8 @@ pub enum ClusterCommands {
     #[command(alias = "list")]
     Peers,
 
-    /// Connect and pair with a remote cluster peer node
+    /// Connect/add a remote cluster peer node
+    #[command(alias = "add")]
     Connect {
         #[arg(help = "Remote peer URL (e.g. http://10.0.0.2:4500)")]
         target_url: String,
@@ -231,7 +232,7 @@ pub enum ClusterCommands {
     },
 
     /// Disconnect and unregister a peer node from the cluster mesh
-    #[command(alias = "disconnect")]
+    #[command(alias = "disconnect", alias = "delete")]
     Remove {
         #[arg(help = "Node ID of the peer to remove")]
         node_id: String,
@@ -282,6 +283,7 @@ pub struct ServerArgs {
 #[derive(Subcommand, Debug, Clone)]
 pub enum UserCommands {
     /// Create a new administrative human user
+    #[command(alias = "create")]
     Add {
         #[arg(help = "Admin username")]
         username: String,
@@ -296,13 +298,29 @@ pub enum UserCommands {
         #[arg(short, long, help = "Path to config file")]
         config: Option<String>,
     },
+    /// Update an administrative user's email or password
+    Update {
+        #[arg(help = "Admin username to update")]
+        username: String,
+        #[arg(short, long, help = "Updated admin email address")]
+        email: Option<String>,
+        #[arg(
+            short,
+            long,
+            help = "Updated password (if omitted and --email is omitted, prompt is shown)"
+        )]
+        password: Option<String>,
+        #[arg(short, long, help = "Path to config file")]
+        config: Option<String>,
+    },
     /// List all administrative users
     List {
         #[arg(short, long, help = "Path to config file")]
         config: Option<String>,
     },
-    /// Delete an administrative user
-    Delete {
+    /// Delete/remove an administrative user
+    #[command(alias = "delete")]
+    Remove {
         #[arg(help = "Admin username to delete")]
         username: String,
         #[arg(short, long, help = "Path to config file")]
@@ -313,6 +331,7 @@ pub enum UserCommands {
 #[derive(Subcommand, Debug, Clone)]
 pub enum KeyCommands {
     /// Create a new API key
+    #[command(alias = "add")]
     Create {
         #[arg(short, long, help = "Key name")]
         name: String,
@@ -329,6 +348,17 @@ pub enum KeyCommands {
         #[arg(long, help = "Expiration Unix timestamp")]
         expires_at: Option<i64>,
     },
+    /// Update an existing API key's role, rate limit, or expiration
+    Update {
+        #[arg(help = "Key name")]
+        name: String,
+        #[arg(short, long, help = "Updated role name")]
+        role: Option<String>,
+        #[arg(long, help = "Updated rate limit per minute (0 = unconstrained)")]
+        rate_limit: Option<i64>,
+        #[arg(long, help = "Updated expiration Unix timestamp")]
+        expires_at: Option<i64>,
+    },
     /// Rotate the secret for an existing API key
     Rotate {
         #[arg(help = "Key name")]
@@ -336,8 +366,9 @@ pub enum KeyCommands {
     },
     /// List all API keys
     List,
-    /// Delete an API key
-    Delete {
+    /// Delete/remove an API key
+    #[command(alias = "delete")]
+    Remove {
         #[arg(help = "Key name")]
         name: String,
     },
@@ -346,6 +377,7 @@ pub enum KeyCommands {
 #[derive(Subcommand, Debug, Clone)]
 pub enum RoleCommands {
     /// Create a new RBAC role with permissions JSON
+    #[command(alias = "add")]
     Create {
         #[arg(short, long, help = "Role name")]
         name: String,
@@ -373,8 +405,9 @@ pub enum RoleCommands {
     },
     /// List all RBAC roles and their permissions
     List,
-    /// Delete an RBAC role
-    Delete {
+    /// Delete/remove an RBAC role
+    #[command(alias = "delete")]
+    Remove {
         #[arg(help = "Role name")]
         name: String,
     },
@@ -383,6 +416,7 @@ pub enum RoleCommands {
 #[derive(Subcommand, Debug, Clone)]
 pub enum DbCommands {
     /// Register a new upstream database connection
+    #[command(alias = "create")]
     Add {
         #[arg(short, long, help = "Database alias")]
         alias: String,
@@ -401,6 +435,25 @@ pub enum DbCommands {
         #[arg(long, help = "Minimum connection pool size")]
         pool_min: Option<i64>,
         #[arg(long, help = "Maximum connection pool size")]
+        pool_max: Option<i64>,
+    },
+    /// Update an existing upstream database connection configuration
+    Update {
+        #[arg(help = "Database alias to update")]
+        alias: String,
+        #[arg(short = 'n', long = "new-alias", help = "Rename database alias")]
+        new_alias: Option<String>,
+        #[arg(
+            long = "conn",
+            alias = "connection-url",
+            help = "Updated database connection URL"
+        )]
+        connection_url: Option<String>,
+        #[arg(short, long, help = "Updated dialect/engine")]
+        engine: Option<String>,
+        #[arg(long, help = "Updated minimum connection pool size")]
+        pool_min: Option<i64>,
+        #[arg(long, help = "Updated maximum connection pool size")]
         pool_max: Option<i64>,
     },
     /// Test connection to an upstream database
@@ -422,6 +475,7 @@ pub enum DbCommands {
     /// List all registered database connections
     List,
     /// Remove an upstream database connection
+    #[command(alias = "delete")]
     Remove {
         #[arg(help = "Database alias")]
         alias: String,
@@ -497,7 +551,8 @@ pub enum DbCommands {
         rows: Option<String>,
     },
     /// Update row(s) matching filter in a database table
-    Update {
+    #[command(name = "update-rows", alias = "update_rows")]
+    UpdateRows {
         #[arg(help = "Database alias")]
         alias: String,
         #[arg(help = "Table name")]
@@ -1416,5 +1471,239 @@ mod tests {
             }
             _ => panic!("Expected Cluster Moniker command"),
         }
+
+        // Add alias for connect
+        let args = [
+            "axiom",
+            "cluster",
+            "add",
+            "http://10.0.0.4:4500",
+            "-s",
+            "sec123",
+        ];
+        let cli = Cli::try_parse_from(args).expect("Failed to parse cluster add alias");
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Cluster {
+                command: ClusterCommands::Connect { .. }
+            })
+        ));
+    }
+
+    #[test]
+    fn test_cli_parse_user_crud_and_aliases() {
+        let args = [
+            "axiom",
+            "user",
+            "create",
+            "alice",
+            "--email",
+            "alice@example.com",
+        ];
+        let cli = Cli::try_parse_from(args).expect("Failed to parse user create alias");
+        assert!(matches!(
+            cli.command,
+            Some(Commands::User {
+                command: UserCommands::Add { .. }
+            })
+        ));
+
+        let args = [
+            "axiom",
+            "user",
+            "update",
+            "alice",
+            "--email",
+            "new_alice@example.com",
+            "-p",
+            "newpass123",
+        ];
+        let cli = Cli::try_parse_from(args).expect("Failed to parse user update");
+        match cli.command {
+            Some(Commands::User {
+                command:
+                    UserCommands::Update {
+                        username,
+                        email,
+                        password,
+                        ..
+                    },
+            }) => {
+                assert_eq!(username, "alice");
+                assert_eq!(email, Some("new_alice@example.com".to_string()));
+                assert_eq!(password, Some("newpass123".to_string()));
+            }
+            _ => panic!("Expected User Update command"),
+        }
+
+        let args = ["axiom", "user", "remove", "alice"];
+        let cli = Cli::try_parse_from(args).expect("Failed to parse user remove");
+        assert!(matches!(
+            cli.command,
+            Some(Commands::User {
+                command: UserCommands::Remove { .. }
+            })
+        ));
+
+        let args = ["axiom", "user", "delete", "alice"];
+        let cli = Cli::try_parse_from(args).expect("Failed to parse user delete alias");
+        assert!(matches!(
+            cli.command,
+            Some(Commands::User {
+                command: UserCommands::Remove { .. }
+            })
+        ));
+    }
+
+    #[test]
+    fn test_cli_parse_key_update_and_aliases() {
+        let args = ["axiom", "key", "add", "-n", "agent_key", "-r", "viewer"];
+        let cli = Cli::try_parse_from(args).expect("Failed to parse key add alias");
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Key {
+                command: KeyCommands::Create { .. }
+            })
+        ));
+
+        let args = [
+            "axiom",
+            "key",
+            "update",
+            "agent_key",
+            "-r",
+            "editor",
+            "--rate-limit",
+            "500",
+        ];
+        let cli = Cli::try_parse_from(args).expect("Failed to parse key update");
+        match cli.command {
+            Some(Commands::Key {
+                command:
+                    KeyCommands::Update {
+                        name,
+                        role,
+                        rate_limit,
+                        ..
+                    },
+            }) => {
+                assert_eq!(name, "agent_key");
+                assert_eq!(role, Some("editor".to_string()));
+                assert_eq!(rate_limit, Some(500));
+            }
+            _ => panic!("Expected Key Update command"),
+        }
+
+        let args = ["axiom", "key", "remove", "agent_key"];
+        let cli = Cli::try_parse_from(args).expect("Failed to parse key remove");
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Key {
+                command: KeyCommands::Remove { .. }
+            })
+        ));
+    }
+
+    #[test]
+    fn test_cli_parse_db_update_and_aliases() {
+        let args = [
+            "axiom",
+            "db",
+            "create",
+            "-a",
+            "analytics",
+            "--conn",
+            "sqlite://data/analytics.db",
+        ];
+        let cli = Cli::try_parse_from(args).expect("Failed to parse db create alias");
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Db {
+                command: DbCommands::Add { .. }
+            })
+        ));
+
+        let args = [
+            "axiom",
+            "db",
+            "update",
+            "analytics",
+            "-n",
+            "warehouse",
+            "--pool-max",
+            "25",
+        ];
+        let cli = Cli::try_parse_from(args).expect("Failed to parse db update");
+        match cli.command {
+            Some(Commands::Db {
+                command:
+                    DbCommands::Update {
+                        alias,
+                        new_alias,
+                        pool_max,
+                        ..
+                    },
+            }) => {
+                assert_eq!(alias, "analytics");
+                assert_eq!(new_alias, Some("warehouse".to_string()));
+                assert_eq!(pool_max, Some(25));
+            }
+            _ => panic!("Expected Db Update command"),
+        }
+
+        let args = ["axiom", "db", "delete", "warehouse"];
+        let cli = Cli::try_parse_from(args).expect("Failed to parse db delete alias");
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Db {
+                command: DbCommands::Remove { .. }
+            })
+        ));
+
+        let args = [
+            "axiom",
+            "db",
+            "update-rows",
+            "main",
+            "users",
+            "{\"id\":1}",
+            "{\"active\":false}",
+        ];
+        let cli = Cli::try_parse_from(args).expect("Failed to parse db update-rows");
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Db {
+                command: DbCommands::UpdateRows { .. }
+            })
+        ));
+    }
+
+    #[test]
+    fn test_cli_parse_role_aliases() {
+        let args = [
+            "axiom",
+            "role",
+            "add",
+            "-n",
+            "data_scientist",
+            "-d",
+            "Read only data",
+        ];
+        let cli = Cli::try_parse_from(args).expect("Failed to parse role add alias");
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Role {
+                command: RoleCommands::Create { .. }
+            })
+        ));
+
+        let args = ["axiom", "role", "remove", "data_scientist"];
+        let cli = Cli::try_parse_from(args).expect("Failed to parse role remove");
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Role {
+                command: RoleCommands::Remove { .. }
+            })
+        ));
     }
 }

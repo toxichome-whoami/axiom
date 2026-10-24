@@ -43,12 +43,9 @@ interface KeyRow {
   created: string;
 }
 
-export interface FilterRule {
-  id: string;
-  field: string;
-  operator: 'contains' | 'equals' | 'starts_with';
-  value: string;
-}
+import { FilterRule, matchesRule } from '../utils/filters';
+
+export type { FilterRule };
 
 export function Overview({ onNavigate }: OverviewProps) {
   const [activeTab, setActiveTab] = useState<'databases' | 'keys'>('databases');
@@ -181,14 +178,6 @@ export function Overview({ onNavigate }: OverviewProps) {
   const handleRefresh = () => {
     loadData();
   };
-
-  function matchesRule(itemVal: string, operator: string, ruleVal: string): boolean {
-    const i = (itemVal || '').toLowerCase();
-    const r = (ruleVal || '').toLowerCase();
-    if (operator === 'equals') return i === r;
-    if (operator === 'starts_with') return i.startsWith(r);
-    return i.includes(r);
-  }
 
   const currentFilterFieldOptions = useMemo(() => {
     if (activeTab === 'databases') {

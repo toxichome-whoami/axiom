@@ -109,7 +109,7 @@ impl DatabaseEngine for ClickHouseDatabaseEngine {
         cursor: Option<String>,
         limit: usize,
     ) -> Result<Vec<TableInfo>, EngineError> {
-        let mut sql = "SELECT name as table_name FROM system.tables WHERE database = ?".to_string();
+        let mut sql = "SELECT name as table_name, total_rows as row_count_estimate FROM system.tables WHERE database = ?".to_string();
         let mut params = vec![Value::String(self.database.clone())];
         if let Some(c) = cursor {
             sql.push_str(" AND name > ?");
@@ -125,7 +125,12 @@ impl DatabaseEngine for ClickHouseDatabaseEngine {
                 if let Some(Value::String(name)) = row.get("table_name") {
                     tables.push(TableInfo {
                         name: name.to_string(),
-                        row_count_estimate: 0,
+                        row_count_estimate: row
+                            .get("row_count_estimate")
+                            .and_then(|v| {
+                                v.as_u64().or_else(|| v.as_i64().map(|i| i.max(0) as u64))
+                            })
+                            .unwrap_or(0),
                         columns: None,
                         foreign_keys: None,
                     });

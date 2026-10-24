@@ -197,6 +197,8 @@ pub fn resolve_and_sanitize_db_url(
 pub struct AuditQuery {
     pub limit: Option<usize>,
     pub offset: Option<usize>,
+    pub cursor: Option<i64>,
+    pub before_id: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -317,6 +319,19 @@ pub async fn reload_metadata(
             StatusCode::INTERNAL_SERVER_ERROR,
         )
     })?;
+
+    let actor = if !auth.api_key_name.is_empty() {
+        &auth.api_key_name
+    } else {
+        "admin"
+    };
+    let _ = MetadataStore::record_audit(
+        actor,
+        "metadata.reload",
+        "all",
+        Some("Metadata snapshot reloaded from database"),
+    )
+    .await;
 
     let snapshot = axiom_metadata::snapshot::get_snapshot();
     Ok(Json(json!({
@@ -477,6 +492,51 @@ pub async fn rotate_key(
             "token": encoded_token,
             "secret": secret,
             "note": "Save this token now; the plaintext secret cannot be recovered."
+        },
+        "error": Value::Null
+    })))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateKeyRequest {
+    pub role: Option<Option<String>>,
+    pub rate_limit: Option<i64>,
+    pub expires_at: Option<Option<i64>>,
+}
+
+/// Updates an existing API key's role, rate limit, or expiration timestamp.
+pub async fn update_key(
+    Extension(auth): Extension<AuthContext>,
+    Path(name): Path<String>,
+    Json(payload): Json<UpdateKeyRequest>,
+) -> Result<impl IntoResponse, AxiomError> {
+    if !auth.is_session {
+        return Err(AxiomError::new(
+            "FORBIDDEN",
+            "Admin privileges required",
+            StatusCode::FORBIDDEN,
+        ));
+    }
+
+    let role_ref = payload.role.as_ref().map(|opt| opt.as_deref());
+    let updated =
+        MetadataStore::update_key(&name, role_ref, payload.rate_limit, payload.expires_at)
+            .await
+            .map_err(|e| AxiomError::new("KEY_UPDATE_FAILED", &e, StatusCode::BAD_REQUEST))?;
+
+    if !updated {
+        return Err(AxiomError::new(
+            "KEY_NOT_FOUND",
+            "API key does not exist",
+            StatusCode::NOT_FOUND,
+        ));
+    }
+
+    Ok(Json(json!({
+        "success": true,
+        "data": {
+            "name": name,
+            "status": "updated"
         },
         "error": Value::Null
     })))
@@ -668,6 +728,62 @@ pub async fn delete_database(
         "success": true,
         "data": {
             "message": format!("Database '{}' deleted successfully", alias)
+        },
+        "error": Value::Null
+    })))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateDatabaseRequest {
+    pub new_alias: Option<String>,
+    pub url: Option<String>,
+    pub engine: Option<String>,
+    pub pool_min: Option<i64>,
+    pub pool_max: Option<i64>,
+}
+
+/// Updates an existing database configuration (and tests connection if URL provided).
+pub async fn update_database(
+    Extension(auth): Extension<AuthContext>,
+    Path(alias): Path<String>,
+    Json(payload): Json<UpdateDatabaseRequest>,
+) -> Result<impl IntoResponse, AxiomError> {
+    if !auth.is_session {
+        return Err(AxiomError::new(
+            "FORBIDDEN",
+            "Admin privileges required",
+            StatusCode::FORBIDDEN,
+        ));
+    }
+
+    if let Some(ref new_a) = payload.new_alias {
+        validate_clean_name("Database alias", new_a)?;
+    }
+
+    // Call MetadataStore::update_database
+    MetadataStore::update_database(
+        &alias,
+        payload.new_alias.as_deref(),
+        payload.url.as_deref(),
+        payload.engine.as_deref(),
+        payload.pool_min,
+        payload.pool_max,
+    )
+    .await
+    .map_err(|e| AxiomError::new("DATABASE_UPDATE_FAILED", &e, StatusCode::BAD_REQUEST))?;
+
+    // Invalidate old connection pool so new settings take effect immediately
+    DatabasePoolManager::remove_engine(&alias).await;
+    if let Some(ref new_a) = payload.new_alias {
+        DatabasePoolManager::remove_engine(new_a).await;
+    }
+
+    let effective_alias = payload.new_alias.unwrap_or(alias);
+    Ok(Json(json!({
+        "success": true,
+        "data": {
+            "alias": effective_alias,
+            "status": "updated"
         },
         "error": Value::Null
     })))
@@ -959,6 +1075,20 @@ pub async fn flush_cache(
     }
 
     axiom_cache::CacheEngine::flush().await;
+
+    let actor = if !auth.api_key_name.is_empty() {
+        &auth.api_key_name
+    } else {
+        "admin"
+    };
+    let _ = MetadataStore::record_audit(
+        actor,
+        "cache.flush",
+        "all",
+        Some("All L1 and L2 cache entries invalidated"),
+    )
+    .await;
+
     Ok(Json(json!({
         "success": true,
         "data": {
@@ -988,8 +1118,9 @@ pub async fn get_audit_log(
 
     let limit = query.limit.unwrap_or(50).clamp(1, 500);
     let offset = query.offset.unwrap_or(0);
+    let before_id = query.cursor.or(query.before_id);
 
-    let logs = MetadataStore::query_audit_log(limit, offset)
+    let logs = MetadataStore::query_audit_log_cursor(limit, offset, before_id)
         .await
         .map_err(|e| {
             AxiomError::new("AUDIT_QUERY_FAILED", &e, StatusCode::INTERNAL_SERVER_ERROR)
@@ -997,7 +1128,7 @@ pub async fn get_audit_log(
 
     let has_more = logs.len() == limit;
     let next_cursor = if has_more {
-        logs.last().map(|r| r.id.to_string())
+        logs.last().map(|r| r.id)
     } else {
         None
     };
@@ -1108,18 +1239,24 @@ pub async fn get_admin_health(
     let mut db_status = serde_json::Map::new();
     let mut all_dbs_up = true;
 
-    for alias in snapshot.databases.keys() {
-        if db_status.contains_key(alias) {
-            continue;
-        }
-        if let Some(engine) = DatabasePoolManager::get_engine(alias).await {
-            let is_up = engine.health_check().await;
-            db_status.insert(alias.clone(), json!(if is_up { "up" } else { "down" }));
-            if !is_up {
-                all_dbs_up = false;
-            }
+    // Parallelize engine health probes with a strict 3-second timeout per target
+    // to prevent worker thread starvation and slow response degradation when upstreams hang.
+    let aliases: Vec<String> = snapshot.databases.keys().cloned().collect();
+    let probe_results = futures::future::join_all(aliases.into_iter().map(|alias| async move {
+        let is_up = if let Some(engine) = DatabasePoolManager::get_engine(&alias).await {
+            tokio::time::timeout(std::time::Duration::from_secs(3), engine.health_check())
+                .await
+                .unwrap_or(false)
         } else {
-            db_status.insert(alias.clone(), json!("down"));
+            false
+        };
+        (alias, is_up)
+    }))
+    .await;
+
+    for (alias, is_up) in probe_results {
+        db_status.insert(alias, json!(if is_up { "up" } else { "down" }));
+        if !is_up {
             all_dbs_up = false;
         }
     }
@@ -1332,6 +1469,8 @@ pub async fn setup_database(
         ));
     }
 
+    validate_clean_name("Database alias", &payload.alias)?;
+
     let effective_url = resolve_and_sanitize_db_url(
         &payload.alias,
         &payload.url,
@@ -1383,6 +1522,13 @@ pub async fn setup_database(
             StatusCode::INTERNAL_SERVER_ERROR,
         )
     })?;
+
+    let actor = if !auth.api_key_name.is_empty() {
+        &auth.api_key_name
+    } else {
+        "admin"
+    };
+    let _ = MetadataStore::record_audit(actor, "database.add", &payload.alias, None).await;
 
     Ok(Json(json!({
         "success": true,
@@ -1702,6 +1848,8 @@ pub async fn logout_handler(
 /// Lists all registered administrative accounts.
 /// CONTRACT:
 ///  - Invariant: Password hashes are redacted.
+///  - Invariant: User listing is the only HTTP administrative user endpoint.
+///    Account creation, updates, and removals must be performed directly on the host server via CLI (`axiom user`).
 pub async fn list_users_handler(
     Extension(auth): Extension<AuthContext>,
 ) -> Result<impl IntoResponse, AxiomError> {
@@ -2117,6 +2265,13 @@ pub async fn update_cluster_moniker(
     MetadataStore::set_cluster_moniker(moniker)
         .await
         .map_err(|e| AxiomError::new("METADATA_ERROR", &e, StatusCode::INTERNAL_SERVER_ERROR))?;
+
+    let actor = if !auth.api_key_name.is_empty() {
+        &auth.api_key_name
+    } else {
+        "admin"
+    };
+    let _ = MetadataStore::record_audit(actor, "cluster.moniker_update", moniker, None).await;
 
     Ok(Json(json!({
         "success": true,

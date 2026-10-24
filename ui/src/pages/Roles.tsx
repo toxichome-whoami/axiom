@@ -26,14 +26,10 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { api, RoleRecordApi, PermissionRecordApi } from '../api/client';
-import { validateCleanName } from './Databases';
+import { validateCleanName } from '../utils/validation';
+import { FilterRule, matchesRule } from '../utils/filters';
 
-export interface FilterRule {
-  id: string;
-  field: string;
-  operator: 'contains' | 'equals' | 'starts_with';
-  value: string;
-}
+export type { FilterRule };
 
 const READONLY_RULES: DbPermissionRule[] = [
   { database: '', table: '', operations: ['SELECT'], resourceType: 'database' },
@@ -371,14 +367,6 @@ export function Roles() {
     } finally {
       setIsCreatingRole(false);
     }
-  }
-
-  function matchesRule(itemVal: string, operator: string, ruleVal: string): boolean {
-    const i = (itemVal || '').toLowerCase();
-    const r = (ruleVal || '').toLowerCase();
-    if (operator === 'equals') return i === r;
-    if (operator === 'starts_with') return i.startsWith(r);
-    return i.includes(r);
   }
 
   const filterFieldOptions = [
