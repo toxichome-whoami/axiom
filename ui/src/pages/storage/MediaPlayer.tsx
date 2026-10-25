@@ -817,7 +817,7 @@ export function MediaPlayer({
         <button
           type="button"
           onClick={onDownload}
-          className="inline-flex items-center justify-center gap-2 h-9 px-4 rounded-[6px] bg-white text-black font-semibold text-[13.5px] hover:bg-[#e0e0e0] transition-colors cursor-pointer w-full shadow-xs"
+          className="inline-flex items-center justify-center gap-2 h-8 px-4 rounded-[6px] bg-white text-black font-sans font-medium text-[13px] hover:bg-[#e0e0e0] transition-colors cursor-pointer w-full shadow-xs"
         >
           <Download className="w-4 h-4 stroke-[2.5]" /> Download File
         </button>

@@ -442,7 +442,7 @@ export function ShareTicketModal({
                     <button
                       type="button"
                       onClick={() => copyToClipboard(publicCdnUrl, 'public-url')}
-                      className="h-7.5 px-3 rounded-[5px] bg-[#222222] hover:bg-[#2c2c2c] text-white border border-[#333333] flex items-center gap-1.5 text-[12.5px] font-sans font-medium transition-colors cursor-pointer shrink-0"
+                      className="h-7 px-2.5 rounded-[5px] bg-[#222222] hover:bg-[#2c2c2c] text-white border border-[#333333] flex items-center gap-1.5 text-[12px] font-sans font-medium transition-colors cursor-pointer shrink-0"
                     >
                       {copiedKey === 'public-url' ? (
                         <>
@@ -504,7 +504,7 @@ export function ShareTicketModal({
                     <button
                       type="button"
                       onClick={() => copyToClipboard(publicCurlSnippet, 'public-curl')}
-                      className="h-7.5 px-3 rounded-[5px] bg-[#222222] hover:bg-[#2c2c2c] text-white border border-[#333333] flex items-center gap-1.5 text-[12.5px] font-sans font-medium transition-colors cursor-pointer shrink-0"
+                      className="h-7 px-2.5 rounded-[5px] bg-[#222222] hover:bg-[#2c2c2c] text-white border border-[#333333] flex items-center gap-1.5 text-[12px] font-sans font-medium transition-colors cursor-pointer shrink-0"
                     >
                       {copiedKey === 'public-curl' ? (
                         <>
@@ -550,7 +550,7 @@ export function ShareTicketModal({
                 <button
                   type="button"
                   onClick={onClose}
-                  className="h-8.5 px-4 rounded-[6px] bg-[#1a1a1a] hover:bg-[#222222] border border-[#2e2e2e] text-[13px] font-sans font-medium text-white transition-colors cursor-pointer"
+                  className="h-8 px-4 rounded-[6px] bg-[#1a1a1a] hover:bg-[#222222] border border-[#2e2e2e] text-[13px] font-sans font-medium text-white transition-colors cursor-pointer"
                 >
                   Close
                 </button>
@@ -687,7 +687,7 @@ export function ShareTicketModal({
                         <button
                           type="button"
                           onClick={() => copyToClipboard(primaryShareUrl, 'primary-url')}
-                          className="h-7.5 px-3 rounded-[5px] bg-[#222222] hover:bg-[#2c2c2c] text-white border border-[#333333] flex items-center gap-1.5 text-[12.5px] font-sans font-medium transition-colors cursor-pointer shrink-0"
+                          className="h-7 px-2.5 rounded-[5px] bg-[#222222] hover:bg-[#2c2c2c] text-white border border-[#333333] flex items-center gap-1.5 text-[12px] font-sans font-medium transition-colors cursor-pointer shrink-0"
                         >
                           {copiedKey === 'primary-url' ? (
                             <>
@@ -730,7 +730,7 @@ export function ShareTicketModal({
                         <button
                           type="button"
                           onClick={() => copyToClipboard(directStreamUrl, 'direct-stream')}
-                          className="h-7.5 px-3 rounded-[5px] bg-[#222222] hover:bg-[#2c2c2c] text-white border border-[#333333] flex items-center gap-1.5 text-[12.5px] font-sans font-medium transition-colors cursor-pointer shrink-0"
+                          className="h-7 px-2.5 rounded-[5px] bg-[#222222] hover:bg-[#2c2c2c] text-white border border-[#333333] flex items-center gap-1.5 text-[12px] font-sans font-medium transition-colors cursor-pointer shrink-0"
                         >
                           {copiedKey === 'direct-stream' ? (
                             <>
@@ -793,7 +793,7 @@ export function ShareTicketModal({
                         <button
                           type="button"
                           onClick={() => copyToClipboard(signedCurlSnippet, 'signed-curl')}
-                          className="h-7.5 px-3 rounded-[5px] bg-[#222222] hover:bg-[#2c2c2c] text-white border border-[#333333] flex items-center gap-1.5 text-[12.5px] font-sans font-medium transition-colors cursor-pointer shrink-0"
+                          className="h-7 px-2.5 rounded-[5px] bg-[#222222] hover:bg-[#2c2c2c] text-white border border-[#333333] flex items-center gap-1.5 text-[12px] font-sans font-medium transition-colors cursor-pointer shrink-0"
                         >
                           {copiedKey === 'signed-curl' ? (
                             <>
@@ -871,7 +871,7 @@ export function ShareTicketModal({
                       <button
                         type="button"
                         onClick={onClose}
-                        className="h-8.5 px-4 rounded-[6px] bg-[#1a1a1a] hover:bg-[#222222] border border-[#2e2e2e] text-[13px] font-sans font-medium text-white transition-colors cursor-pointer"
+                        className="h-8 px-4 rounded-[6px] bg-[#1a1a1a] hover:bg-[#222222] border border-[#2e2e2e] text-[13px] font-sans font-medium text-white transition-colors cursor-pointer"
                       >
                         Done
                       </button>
@@ -972,14 +972,14 @@ export function ShareTicketModal({
                     <button
                       type="button"
                       onClick={onClose}
-                      className="h-8.5 px-3.5 rounded-[6px] text-[13px] font-sans text-[#888888] hover:text-white hover:bg-[#181818] transition-colors cursor-pointer"
+                      className="h-8 px-3.5 rounded-[6px] text-[13px] font-sans font-medium text-[#888888] hover:text-white hover:bg-[#181818] transition-colors cursor-pointer"
                     >
                       Cancel
                     </button>
                     <button
                       type="submit"
                       disabled={isCreating}
-                      className="h-8.5 px-4 rounded-[6px] bg-blue-600 hover:bg-blue-500 text-white font-sans font-medium text-[13px] transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
+                      className="h-8 px-4 rounded-[6px] bg-blue-600 hover:bg-blue-500 text-white font-sans font-medium text-[13px] transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
                     >
                       {isCreating ? (
                         <>
@@ -1077,7 +1077,7 @@ export function ShareTicketModal({
                             type="button"
                             onClick={() => copyToClipboard(fullUrl, `copy-${t.signature}`)}
                             title="Copy link"
-                            className="h-7.5 px-2.5 rounded-[5px] text-[12px] font-sans font-medium text-[#cccccc] hover:text-white bg-[#181818] hover:bg-[#202020] border border-[#282828] flex items-center gap-1 transition-colors cursor-pointer"
+                            className="h-7 px-2.5 rounded-[5px] text-[12px] font-sans font-medium text-[#cccccc] hover:text-white bg-[#181818] hover:bg-[#202020] border border-[#282828] flex items-center gap-1 transition-colors cursor-pointer"
                           >
                             {copiedKey === `copy-${t.signature}` ? (
                               <Check className="w-3.5 h-3.5 text-emerald-400" />
@@ -1093,7 +1093,7 @@ export function ShareTicketModal({
                               onClick={() => handleRevoke(t.signature)}
                               disabled={isRevoking}
                               title="Revoke access immediately"
-                              className="h-7.5 px-2.5 rounded-[5px] text-[12px] font-sans font-medium text-amber-300 hover:text-amber-200 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-40"
+                              className="h-7 px-2.5 rounded-[5px] text-[12px] font-sans font-medium text-amber-300 hover:text-amber-200 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-40"
                             >
                               <Ban className="w-3.5 h-3.5" />
                               <span>Revoke</span>
@@ -1105,7 +1105,7 @@ export function ShareTicketModal({
                             onClick={() => handleDelete(t.signature)}
                             disabled={isDeleting}
                             title="Delete ticket"
-                            className="w-7.5 h-7.5 rounded-[5px] text-[#888888] hover:text-rose-400 hover:bg-rose-500/10 border border-[#282828] flex items-center justify-center transition-colors cursor-pointer disabled:opacity-40"
+                            className="w-7 h-7 rounded-[5px] text-[#888888] hover:text-rose-400 hover:bg-rose-500/10 border border-[#282828] flex items-center justify-center transition-colors cursor-pointer disabled:opacity-40"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
@@ -1120,7 +1120,7 @@ export function ShareTicketModal({
                 <button
                   type="button"
                   onClick={onClose}
-                  className="h-8.5 px-4 rounded-[6px] bg-[#1a1a1a] hover:bg-[#222222] border border-[#2e2e2e] text-[13px] font-sans font-medium text-white transition-colors cursor-pointer"
+                  className="h-8 px-4 rounded-[6px] bg-[#1a1a1a] hover:bg-[#222222] border border-[#2e2e2e] text-[13px] font-sans font-medium text-white transition-colors cursor-pointer"
                 >
                   Close
                 </button>

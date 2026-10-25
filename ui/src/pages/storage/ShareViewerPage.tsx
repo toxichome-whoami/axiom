@@ -268,7 +268,7 @@ export function ShareViewerPage() {
             target="_blank"
             rel="noreferrer"
             title="Open raw stream directly"
-            className="inline-flex items-center gap-1.5 h-8.5 px-3 rounded-[6px] text-[13.5px] font-sans font-medium text-[#cccccc] hover:text-white bg-[#141414] hover:bg-[#1c1c1c] border border-[#262626] transition-colors cursor-pointer"
+            className="inline-flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[13px] font-sans font-medium text-[#cccccc] hover:text-white bg-[#141414] hover:bg-[#1c1c1c] border border-[#262626] transition-colors cursor-pointer"
           >
             <ExternalLink className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">Open Raw</span>
@@ -278,7 +278,7 @@ export function ShareViewerPage() {
             type="button"
             onClick={handleCopyLink}
             title="Copy share link"
-            className="inline-flex items-center gap-1.5 h-8.5 px-3 rounded-[6px] text-[13.5px] font-sans font-medium text-[#cccccc] hover:text-white bg-[#141414] hover:bg-[#1c1c1c] border border-[#262626] transition-colors cursor-pointer"
+            className="inline-flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[13px] font-sans font-medium text-[#cccccc] hover:text-white bg-[#141414] hover:bg-[#1c1c1c] border border-[#262626] transition-colors cursor-pointer"
           >
             {isCopied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
             <span className="hidden sm:inline">{isCopied ? 'Copied' : 'Copy Link'}</span>
@@ -287,7 +287,7 @@ export function ShareViewerPage() {
           <button
             type="button"
             onClick={handleDownload}
-            className="inline-flex items-center gap-1.5 h-8.5 px-4 rounded-[6px] text-[13.5px] font-sans font-medium text-black bg-white hover:bg-neutral-200 shadow-xs transition-colors cursor-pointer"
+            className="inline-flex items-center gap-1.5 h-8 px-3.5 rounded-[6px] text-[13px] font-sans font-semibold text-black bg-white hover:bg-neutral-200 shadow-xs transition-colors cursor-pointer"
           >
             <Download className="w-3.5 h-3.5 stroke-[2.5]" />
             <span>Download</span>
