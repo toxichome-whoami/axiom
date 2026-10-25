@@ -325,7 +325,7 @@ export function Settings() {
         >
           <Users className="w-3.5 h-3.5 shrink-0" />
           <span>Admins</span>
-          <span className="ml-1 text-[11px] font-mono tabular-nums px-1.5 py-0.5 rounded bg-[#1a1a1a] text-[#8c8c8c]">
+          <span className="ml-1 text-[11px] font-sans px-1.5 py-0.5 rounded bg-[#1a1a1a] text-[#8c8c8c]">
             {admins.length}
           </span>
         </button>
@@ -341,7 +341,7 @@ export function Settings() {
         >
           <Code2 className="w-3.5 h-3.5 shrink-0" />
           <span>API Routes</span>
-          <span className="ml-1 text-[11px] font-mono tabular-nums px-1.5 py-0.5 rounded bg-[#1a1a1a] text-[#8c8c8c]">
+          <span className="ml-1 text-[11px] font-sans px-1.5 py-0.5 rounded bg-[#1a1a1a] text-[#8c8c8c]">
             {allEndpoints.length}
           </span>
         </button>
@@ -587,11 +587,11 @@ export function Settings() {
               </div>
 
               {/* Segmented Category Switcher */}
-              <div className="inline-flex items-center p-0.5 rounded-[6px] bg-[#141414] border border-[#262626] shrink-0 self-start sm:self-auto flex-wrap gap-0.5">
+              <div className="inline-flex items-center p-0.5 rounded-[6px] bg-[#141414] border border-[#262626] shrink-0 self-start sm:self-auto flex-wrap gap-0.5 font-sans">
                 <button
                   type="button"
                   onClick={() => setEndpointCategory('all')}
-                  className={`h-7 px-2.5 text-[12px] rounded-[5px] transition-colors cursor-pointer flex items-center gap-1.5 ${
+                  className={`h-7 px-2.5 text-[12px] font-sans rounded-[5px] transition-colors cursor-pointer flex items-center gap-1.5 ${
                     endpointCategory === 'all'
                       ? 'bg-[#1e1e1e] text-white shadow-xs font-medium border border-[#333333]'
                       : 'text-[#8c8c8c] hover:text-white font-normal border border-transparent'
@@ -599,14 +599,14 @@ export function Settings() {
                 >
                   <Layers className="w-3.5 h-3.5 text-[#a1a1aa]" />
                   <span>All</span>
-                  <span className="text-[11px] font-mono tabular-nums text-[#737373]">
+                  <span className="text-[11px] font-sans text-[#737373]">
                     {allEndpoints.length}
                   </span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setEndpointCategory('database')}
-                  className={`h-7 px-2.5 text-[12px] rounded-[5px] transition-colors cursor-pointer flex items-center gap-1.5 ${
+                  className={`h-7 px-2.5 text-[12px] font-sans rounded-[5px] transition-colors cursor-pointer flex items-center gap-1.5 ${
                     endpointCategory === 'database'
                       ? 'bg-[#1e1e1e] text-white shadow-xs font-medium border border-[#333333]'
                       : 'text-[#8c8c8c] hover:text-white font-normal border border-transparent'
@@ -614,14 +614,14 @@ export function Settings() {
                 >
                   <Database className="w-3.5 h-3.5 text-[#3b82f6]" />
                   <span>Database</span>
-                  <span className="text-[11px] font-mono tabular-nums text-[#737373]">
+                  <span className="text-[11px] font-sans text-[#737373]">
                     {databaseEndpoints.length}
                   </span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setEndpointCategory('storage')}
-                  className={`h-7 px-2.5 text-[12px] rounded-[5px] transition-colors cursor-pointer flex items-center gap-1.5 ${
+                  className={`h-7 px-2.5 text-[12px] font-sans rounded-[5px] transition-colors cursor-pointer flex items-center gap-1.5 ${
                     endpointCategory === 'storage'
                       ? 'bg-[#1e1e1e] text-white shadow-xs font-medium border border-[#333333]'
                       : 'text-[#8c8c8c] hover:text-white font-normal border border-transparent'
@@ -629,14 +629,14 @@ export function Settings() {
                 >
                   <HardDrive className="w-3.5 h-3.5 text-[#eab308]" />
                   <span>Storage</span>
-                  <span className="text-[11px] font-mono tabular-nums text-[#737373]">
+                  <span className="text-[11px] font-sans text-[#737373]">
                     {storageEndpoints.length}
                   </span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setEndpointCategory('admin')}
-                  className={`h-7 px-2.5 text-[12px] rounded-[5px] transition-colors cursor-pointer flex items-center gap-1.5 ${
+                  className={`h-7 px-2.5 text-[12px] font-sans rounded-[5px] transition-colors cursor-pointer flex items-center gap-1.5 ${
                     endpointCategory === 'admin'
                       ? 'bg-[#1e1e1e] text-white shadow-xs font-medium border border-[#333333]'
                       : 'text-[#8c8c8c] hover:text-white font-normal border border-transparent'
@@ -644,14 +644,14 @@ export function Settings() {
                 >
                   <Shield className="w-3.5 h-3.5 text-[#10b981]" />
                   <span>Admin</span>
-                  <span className="text-[11px] font-mono tabular-nums text-[#737373]">
+                  <span className="text-[11px] font-sans text-[#737373]">
                     {adminEndpoints.length}
                   </span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setEndpointCategory('cluster')}
-                  className={`h-7 px-2.5 text-[12px] rounded-[5px] transition-colors cursor-pointer flex items-center gap-1.5 ${
+                  className={`h-7 px-2.5 text-[12px] font-sans rounded-[5px] transition-colors cursor-pointer flex items-center gap-1.5 ${
                     endpointCategory === 'cluster'
                       ? 'bg-[#1e1e1e] text-white shadow-xs font-medium border border-[#333333]'
                       : 'text-[#8c8c8c] hover:text-white font-normal border border-transparent'
@@ -659,14 +659,14 @@ export function Settings() {
                 >
                   <Network className="w-3.5 h-3.5 text-[#06b6d4]" />
                   <span>Cluster</span>
-                  <span className="text-[11px] font-mono tabular-nums text-[#737373]">
+                  <span className="text-[11px] font-sans text-[#737373]">
                     {clusterEndpoints.length}
                   </span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setEndpointCategory('mcp')}
-                  className={`h-7 px-2.5 text-[12px] rounded-[5px] transition-colors cursor-pointer flex items-center gap-1.5 ${
+                  className={`h-7 px-2.5 text-[12px] font-sans rounded-[5px] transition-colors cursor-pointer flex items-center gap-1.5 ${
                     endpointCategory === 'mcp'
                       ? 'bg-[#1e1e1e] text-white shadow-xs font-medium border border-[#333333]'
                       : 'text-[#8c8c8c] hover:text-white font-normal border border-transparent'
@@ -674,7 +674,7 @@ export function Settings() {
                 >
                   <Cpu className="w-3.5 h-3.5 text-[#a855f7]" />
                   <span>MCP & Core</span>
-                  <span className="text-[11px] font-mono tabular-nums text-[#737373]">
+                  <span className="text-[11px] font-sans text-[#737373]">
                     {mcpEndpoints.length}
                   </span>
                 </button>
@@ -683,14 +683,14 @@ export function Settings() {
 
             {/* Filter Search Input */}
             <div className="px-5 py-2.5 border-b border-[#222222] bg-[#0e0e0e]">
-              <div className="relative">
+              <div className="relative font-sans">
                 <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-[#666666]" />
                 <input
                   type="text"
                   value={searchRoutes}
                   onChange={(e) => setSearchRoutes(e.target.value)}
                   placeholder="Search endpoints by path, description, or method..."
-                  className="w-full h-8 pl-8.5 pr-8 rounded-[6px] bg-[#141414] border border-[#262626] hover:border-[#383838] focus:border-[#3b82f6] text-[13px] text-white placeholder-[#666666] outline-none transition-colors"
+                  className="w-full h-8 pl-8.5 pr-8 rounded-[6px] bg-[#141414] border border-[#262626] hover:border-[#383838] focus:border-[#3b82f6] text-[13px] font-sans text-white placeholder-[#666666] outline-none transition-colors"
                 />
                 {searchRoutes && (
                   <button
@@ -704,9 +704,9 @@ export function Settings() {
               </div>
             </div>
 
-            <div className="divide-y divide-[#1e1e1e]">
+            <div className="divide-y divide-[#1e1e1e] font-sans">
               {filteredEndpoints.length === 0 ? (
-                <div className="p-8 text-center text-[#8c8c8c] text-[13px]">
+                <div className="p-8 text-center text-[#8c8c8c] text-[13px] font-sans">
                   No endpoints matched "{searchRoutes}"
                 </div>
               ) : (
@@ -717,7 +717,7 @@ export function Settings() {
                   >
                     <div className="flex items-center gap-3 min-w-0 flex-1">
                       <span
-                        className={`w-14 text-center py-0.5 rounded-[4px] text-[11px] font-mono font-medium shrink-0 ${
+                        className={`w-14 text-center py-0.5 rounded-[4px] text-[11px] font-sans font-semibold tracking-wide shrink-0 ${
                           ep.method === 'GET'
                             ? 'bg-emerald-950/40 text-emerald-400 border border-emerald-800/40'
                             : ep.method === 'POST'
@@ -734,7 +734,7 @@ export function Settings() {
                         {ep.method}
                       </span>
                       {endpointCategory === 'all' && (
-                        <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-[#161616] text-[#737373] border border-[#262626] shrink-0">
+                        <span className="text-[10px] uppercase font-sans font-medium px-1.5 py-0.5 rounded bg-[#161616] text-[#737373] border border-[#262626] shrink-0">
                           {ep.category === 'mcp' ? 'mcp/core' : ep.category}
                         </span>
                       )}
@@ -755,7 +755,7 @@ export function Settings() {
                       </div>
                     </div>
                     <div className="shrink-0">
-                      <span className="text-[13px] text-[#8c8c8c] hidden md:block font-normal">{ep.desc}</span>
+                      <span className="text-[13px] text-[#8c8c8c] hidden md:block font-normal font-sans">{ep.desc}</span>
                     </div>
                   </div>
                 ))
