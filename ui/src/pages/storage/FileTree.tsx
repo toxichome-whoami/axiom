@@ -393,7 +393,6 @@ export function FileTree({
                 onToggleSelectItem(item, e);
               } else {
                 onSelectFile(item);
-                onPreviewFile?.(item);
               }
             }
           }}
