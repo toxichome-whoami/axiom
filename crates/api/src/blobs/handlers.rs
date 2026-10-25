@@ -1175,6 +1175,74 @@ pub async fn revoke_ticket_handler(
     })))
 }
 
+/// Administrative handler re-enabling a revoked capability ticket.
+pub async fn enable_ticket_handler(
+    Path(signature_or_id): Path<String>,
+    Extension(auth): Extension<AuthContext>,
+) -> Result<impl IntoResponse, AxiomError> {
+    if !auth.is_session && auth.role.as_deref() != Some("admin") {
+        return Err(AxiomError::new(
+            "AUTH_FORBIDDEN",
+            "Enabling capability tickets requires administrative access",
+            StatusCode::FORBIDDEN,
+        ));
+    }
+
+    // Find the exact ticket signature before enabling in SQLite
+    let ticket_sig = MetadataStore::find_blob_ticket_signature(&signature_or_id)
+        .await
+        .unwrap_or(None);
+
+    let found = MetadataStore::enable_blob_ticket(&signature_or_id)
+        .await
+        .map_err(|e| {
+            AxiomError::new(
+                "TICKET_ENABLE_FAILED",
+                &e,
+                StatusCode::INTERNAL_SERVER_ERROR,
+            )
+        })?;
+
+    if !found {
+        return Err(AxiomError::new(
+            "NOT_FOUND",
+            "Capability ticket not found or already active",
+            StatusCode::NOT_FOUND,
+        ));
+    }
+
+    // Clear revocation tombstone from CacheEngine L1 RAM for both ID and cryptographic signature
+    let mut sigs_to_clear = vec![signature_or_id.clone()];
+    if let Some(ref s) = ticket_sig {
+        if s != &signature_or_id {
+            sigs_to_clear.push(s.clone());
+        }
+    }
+    for s in &sigs_to_clear {
+        axiom_cache::CacheEngine::delete(&format!("ticket:revoked:{}", s)).await;
+        axiom_cache::CacheEngine::delete(&format!("ticket:valid:{}", s)).await;
+    }
+
+    let actor = if auth.is_session {
+        "admin"
+    } else {
+        &auth.api_key_name
+    };
+    let _ = MetadataStore::record_audit(
+        actor,
+        "blob.ticket_enabled",
+        &signature_or_id,
+        Some("Capability ticket re-enabled"),
+    )
+    .await;
+
+    Ok(Json(json!({
+        "success": true,
+        "data": { "revoked": false },
+        "error": serde_json::Value::Null
+    })))
+}
+
 /// Administrative handler permanently deleting a capability ticket.
 pub async fn delete_ticket_handler(
     Path(signature_or_id): Path<String>,

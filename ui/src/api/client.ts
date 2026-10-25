@@ -689,6 +689,13 @@ export const api = {
         method: 'POST',
       }
     ),
+  enableBlobTicket: (signature: string) =>
+    request<{ revoked: boolean; signature: string }>(
+      `/admin/v1/blobs/tickets/${encodeURIComponent(signature)}/enable`,
+      {
+        method: 'POST',
+      }
+    ),
   deleteBlobTicket: (signature: string) =>
     request<{ deleted: boolean }>(
       `/admin/v1/blobs/tickets/${encodeURIComponent(signature)}`,

@@ -1801,6 +1801,21 @@ impl MetadataStore {
         Ok(affected > 0)
     }
 
+    /// Re-enables / restores a revoked blob capability ticket by signature or id.
+    pub async fn enable_blob_ticket(signature_or_id: &str) -> Result<bool, String> {
+        let conn = Self::get_conn().await?;
+
+        let affected = conn
+            .execute(
+                "UPDATE blob_tickets SET revoked = 0 WHERE (signature = ?1 OR id = ?1) AND revoked = 1",
+                libsql::params![signature_or_id],
+            )
+            .await
+            .map_err(|e| format!("Failed to enable blob ticket: {}", e))?;
+
+        Ok(affected > 0)
+    }
+
     /// Permanently deletes a blob capability ticket from SQLite.
     pub async fn delete_blob_ticket(signature_or_id: &str) -> Result<bool, String> {
         let conn = Self::get_conn().await?;

@@ -71,6 +71,7 @@ pub fn get_admin_router() -> Router {
         .route("/verify/:namespace/*key", post(verify_blob_handler))
         .route("/tickets", get(list_tickets_handler))
         .route("/tickets/:signature/revoke", post(revoke_ticket_handler))
+        .route("/tickets/:signature/enable", post(enable_ticket_handler))
         .route(
             "/tickets/:signature",
             axum::routing::delete(delete_ticket_handler),
