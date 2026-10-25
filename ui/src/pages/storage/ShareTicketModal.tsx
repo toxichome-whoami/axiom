@@ -267,7 +267,7 @@ export function ShareTicketModal({
         )}
 
         {/* Segmented Tabs Toolbar */}
-        <div className="px-5 pt-3.5 pb-0.5">
+        <div className="px-5 py-3 border-b border-[#222222]">
           <div className="inline-flex items-center p-0.5 rounded-[8px] bg-transparent border border-[#262626]">
             <button
               type="button"
