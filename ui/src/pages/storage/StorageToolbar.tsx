@@ -18,6 +18,7 @@ import {
   FolderPlus,
   Files,
   Link as LinkIcon,
+  Filter,
 } from 'lucide-react';
 import { StorageViewMode, StorageTierFilter, StorageTypeFilter, StorageItem } from './types';
 import { NamespaceUsage } from '../../types';
@@ -278,32 +279,23 @@ export function StorageToolbar({
           )}
         </div>
 
-        {/* Filters dropdown button & popover (Matches Databases page architecture) */}
+        {/* Filters dropdown button & popover (Matches tools container design & edge-to-edge layout) */}
         {onTypeFilterChange && (
           <div className="relative" ref={filterMenuRef}>
             <button
               type="button"
               onClick={() => setIsFilterMenuOpen((prev) => !prev)}
-              className={`flex items-center gap-1.5 h-8 px-2.5 rounded-[8px] bg-transparent border text-[13px] font-medium transition-colors cursor-pointer shrink-0 font-sans ${
+              className={`flex items-center gap-1.5 h-8 px-2.5 rounded-[6px] border text-[13px] font-medium transition-colors cursor-pointer shrink-0 font-sans ${
                 isFilterMenuOpen || activeFilterCount > 0
-                  ? 'border-[#444444] text-white bg-[#141414]'
-                  : 'border-[#262626] text-white hover:bg-[#141414] hover:border-[#383838]'
+                  ? 'bg-[#1c1c1c] text-white border-[#383838]'
+                  : 'bg-[#141414] text-[#cccccc] hover:text-white hover:bg-[#1c1c1c] border-[#262626] hover:border-[#383838]'
               }`}
               title="Filter storage files"
             >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width="14"
-                height="14"
-                fill="currentColor"
-                viewBox="0 0 256 256"
-                className="text-[#8c8c8c] shrink-0"
-              >
-                <path d="M230.6,49.53A15.81,15.81,0,0,0,216,40H40A16,16,0,0,0,28.19,66.76l.08.09L96,139.17V216a16,16,0,0,0,24.87,13.32l32-21.34A16,16,0,0,0,160,194.66V139.17l67.74-72.32.08-.09A15.8,15.8,0,0,0,230.6,49.53ZM40,56h0Zm106.18,74.58A8,8,0,0,0,144,136v58.66L112,216V136a8,8,0,0,0-2.16-5.47L40,56H216Z" />
-              </svg>
+              <Filter className={`w-3.5 h-3.5 ${activeFilterCount > 0 ? 'text-blue-400' : 'text-[#8c8c8c]'}`} />
               <span>Filters</span>
               {activeFilterCount > 0 && (
-                <span className="text-[12px] text-[#8c8c8c] font-normal">
+                <span className="text-[12px] text-blue-400 font-medium">
                   ({activeFilterCount})
                 </span>
               )}
@@ -322,8 +314,8 @@ export function StorageToolbar({
                   }}
                   className="fixed rounded-[8px] bg-[#0c0c0c] border border-[#262626] shadow-2xl p-4 z-50 select-none animate-in fade-in font-sans"
                 >
-                  {/* Header */}
-                  <div className="flex items-center justify-between pb-3 border-b border-[#1f1f1f]">
+                  {/* Header (Edge-to-edge dividing line) */}
+                  <div className="flex items-center justify-between pb-3 -mx-4 px-4 -mt-1 border-b border-[#1f1f1f]">
                     <div className="flex items-center gap-2">
                       <span className="text-[14px] font-medium text-white font-sans">Storage Filters</span>
                       {activeFilterCount > 0 && (
@@ -342,8 +334,8 @@ export function StorageToolbar({
                     </button>
                   </div>
 
-                  {/* Filter Fields */}
-                  <div className="py-3.5 space-y-3.5 border-b border-[#1f1f1f]">
+                  {/* Filter Fields (Edge-to-edge dividing line) */}
+                  <div className="py-3.5 space-y-3.5 -mx-4 px-4 border-b border-[#1f1f1f]">
                     <div>
                       <label className="block text-[12px] font-medium text-[#8c8c8c] mb-1.5 font-sans">
                         File Type
@@ -383,7 +375,7 @@ export function StorageToolbar({
                   </div>
 
                   {/* Footer Controls */}
-                  <div className="flex items-center justify-between pt-3 font-sans">
+                  <div className="flex items-center justify-between pt-3 -mb-1 font-sans">
                     <div>
                       {(draftType !== 'all' || draftTier !== 'all' || (typeFilter && typeFilter !== 'all') || tierFilter !== 'all') && (
                         <button
@@ -399,14 +391,14 @@ export function StorageToolbar({
                       <button
                         type="button"
                         onClick={() => setIsFilterMenuOpen(false)}
-                        className="h-8 px-3 rounded-[8px] text-[13px] text-[#8c8c8c] hover:text-white hover:bg-[#141414] transition-colors cursor-pointer font-sans"
+                        className="h-8 px-3 rounded-[6px] text-[13px] text-[#8c8c8c] hover:text-white hover:bg-[#141414] transition-colors cursor-pointer font-sans"
                       >
                         Cancel
                       </button>
                       <button
                         type="button"
                         onClick={handleApplyFilters}
-                        className="group relative flex shrink-0 items-center justify-center h-8 px-3.5 rounded-[8px] font-medium text-white shadow-xs outline-none cursor-pointer disabled:opacity-50 overflow-hidden ring-1 ring-[#1d4ed8] bg-[#2563eb] font-sans"
+                        className="group relative flex shrink-0 items-center justify-center h-8 px-3.5 rounded-[6px] font-medium text-white shadow-xs outline-none cursor-pointer disabled:opacity-50 overflow-hidden ring-1 ring-[#1d4ed8] bg-[#2563eb] font-sans"
                       >
                         <span aria-hidden="true" className="pointer-events-none absolute inset-0 rounded-[inherit] bg-gradient-to-b from-[#3b82f6] to-[#2563eb] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2)]" />
                         <span aria-hidden="true" className="pointer-events-none absolute inset-0 rounded-[inherit] bg-black opacity-0 group-hover:opacity-15 transition-opacity duration-200" />
