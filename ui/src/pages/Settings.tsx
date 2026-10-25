@@ -27,8 +27,18 @@ import {
   Database,
   HardDrive,
   Activity,
+  Network,
+  Search,
+  X,
 } from 'lucide-react';
 import { api, SystemStatusData, HealthData, UserRecordApi } from '../api/client';
+
+export interface ApiRouteItem {
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD';
+  path: string;
+  desc: string;
+  category: 'database' | 'storage' | 'admin' | 'cluster' | 'mcp';
+}
 
 export function Settings() {
   const [activeTab, setActiveTab] = useState<'server' | 'admins' | 'routes' | 'about'>('server');
@@ -38,9 +48,20 @@ export function Settings() {
   const [isReloading, setIsReloading] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [copiedCli, setCopiedCli] = useState(false);
-  const [endpointCategory, setEndpointCategory] = useState<'database' | 'storage'>('database');
+  const [copiedPath, setCopiedPath] = useState<string | null>(null);
+  const [endpointCategory, setEndpointCategory] = useState<'all' | 'database' | 'storage' | 'admin' | 'cluster' | 'mcp'>('database');
   const [searchRoutes, setSearchRoutes] = useState('');
   const fetchGenRef = React.useRef(0);
+
+  const handleCopyPath = async (path: string) => {
+    try {
+      await navigator.clipboard.writeText(path);
+      setCopiedPath(path);
+      setTimeout(() => setCopiedPath(null), 1800);
+    } catch {
+      // Clipboard access error
+    }
+  };
 
   const loadLiveSettings = async () => {
     const curGen = ++fetchGenRef.current;
@@ -127,27 +148,101 @@ export function Settings() {
     },
   ];
 
-  const databaseEndpoints = [
-    { method: 'GET', path: '/api/v1/db/{alias}/tables', desc: 'List tables in target database service' },
-    { method: 'GET', path: '/api/v1/db/{alias}/{table}/columns', desc: 'Describe table columns, types, and foreign keys' },
-    { method: 'GET', path: '/api/v1/db/{alias}/{table}/rows', desc: 'Query table records with cursor pagination and filters' },
-    { method: 'POST', path: '/api/v1/db/{alias}/{table}/rows', desc: 'Insert single or batch records' },
-    { method: 'PATCH', path: '/api/v1/db/{alias}/{table}/rows', desc: 'Update records matching filter criteria' },
-    { method: 'DELETE', path: '/api/v1/db/{alias}/{table}/rows', desc: 'Delete records matching filter criteria' },
-    { method: 'POST', path: '/api/v1/db/{alias}/query', desc: 'Execute raw SQL query with AST firewall validation' },
+  const databaseEndpoints: ApiRouteItem[] = [
+    { method: 'GET', path: '/api/v1/db/databases', desc: 'List authorized databases with connectivity health', category: 'database' },
+    { method: 'GET', path: '/api/v1/db/{alias}/tables', desc: 'List tables in target database service', category: 'database' },
+    { method: 'GET', path: '/api/v1/db/{alias}/{table}/columns', desc: 'Describe table columns, data types, and foreign keys', category: 'database' },
+    { method: 'POST', path: '/api/v1/db/{alias}/{table}/columns', desc: 'Add new column to table schema', category: 'database' },
+    { method: 'PATCH', path: '/api/v1/db/{alias}/{table}/columns/{column}', desc: 'Modify existing column definition or rename', category: 'database' },
+    { method: 'DELETE', path: '/api/v1/db/{alias}/{table}/columns/{column}', desc: 'Drop column from table schema', category: 'database' },
+    { method: 'GET', path: '/api/v1/db/{alias}/{table}/rows', desc: 'Query table records with cursor pagination and filters', category: 'database' },
+    { method: 'POST', path: '/api/v1/db/{alias}/{table}/rows', desc: 'Insert single or batch records', category: 'database' },
+    { method: 'PATCH', path: '/api/v1/db/{alias}/{table}/rows', desc: 'Update records matching filter criteria', category: 'database' },
+    { method: 'DELETE', path: '/api/v1/db/{alias}/{table}/rows', desc: 'Delete records matching filter criteria', category: 'database' },
+    { method: 'POST', path: '/api/v1/db/{alias}/query', desc: 'Execute raw SQL query with AST firewall validation', category: 'database' },
   ];
 
-  const storageEndpoints = [
-    { method: 'GET', path: '/api/v1/blobs/objects/{namespace}', desc: 'List stored objects and virtual folders' },
-    { method: 'GET', path: '/api/v1/blobs/objects/{namespace}/{key}', desc: 'Download object content' },
-    { method: 'GET', path: '/api/v1/blobs/public/{namespace}/{key}', desc: 'Direct static CDN media with 304 caching' },
-    { method: 'PUT', path: '/api/v1/blobs/objects/{namespace}/{key}', desc: 'Upload or overwrite object' },
-    { method: 'DELETE', path: '/api/v1/blobs/objects/{namespace}/{key}', desc: 'Delete stored object' },
-    { method: 'POST', path: '/api/v1/blobs/objects/{namespace}/batch-delete', desc: 'Batch delete multiple objects or prefix' },
-    { method: 'POST', path: '/api/v1/blobs/objects/copy', desc: 'Copy object or prefix tree' },
-    { method: 'POST', path: '/api/v1/blobs/objects/move', desc: 'Move or rename object' },
-    { method: 'POST', path: '/api/v1/blobs/objects/{namespace}/verify/{key}', desc: 'Verify BLAKE3 cryptographic checksum' },
-    { method: 'GET', path: '/admin/v1/blobs/namespaces', desc: 'List storage namespaces with quota telemetry' },
+  const storageEndpoints: ApiRouteItem[] = [
+    { method: 'GET', path: '/api/v1/blobs/namespaces', desc: 'List storage namespaces with usage headroom and quota', category: 'storage' },
+    { method: 'GET', path: '/api/v1/blobs/namespaces/{namespace}', desc: 'Inspect namespace settings and quota limits', category: 'storage' },
+    { method: 'GET', path: '/api/v1/blobs/namespaces/{namespace}/usage', desc: 'Query real-time storage telemetry and object counts', category: 'storage' },
+    { method: 'GET', path: '/api/v1/blobs/objects/{namespace}', desc: 'List stored objects, virtual folders, and metadata', category: 'storage' },
+    { method: 'GET', path: '/api/v1/blobs/objects/{namespace}/{key}', desc: 'Download object content (supports HTTP Range streaming)', category: 'storage' },
+    { method: 'HEAD', path: '/api/v1/blobs/objects/{namespace}/{key}', desc: 'Check object existence, size, and metadata headers', category: 'storage' },
+    { method: 'PUT', path: '/api/v1/blobs/objects/{namespace}/{key}', desc: 'Upload or overwrite object with automatic MIME detection', category: 'storage' },
+    { method: 'DELETE', path: '/api/v1/blobs/objects/{namespace}/{key}', desc: 'Delete stored object', category: 'storage' },
+    { method: 'POST', path: '/api/v1/blobs/objects/{namespace}/batch-delete', desc: 'Batch delete multiple objects or prefix tree', category: 'storage' },
+    { method: 'POST', path: '/api/v1/blobs/objects/copy', desc: 'Copy object or prefix tree across namespaces', category: 'storage' },
+    { method: 'POST', path: '/api/v1/blobs/objects/move', desc: 'Move or rename object across namespaces', category: 'storage' },
+    { method: 'POST', path: '/api/v1/blobs/objects/{namespace}/verify/{key}', desc: 'Verify BLAKE3 cryptographic checksum', category: 'storage' },
+    { method: 'GET', path: '/api/v1/blobs/public/{namespace}/{key}', desc: 'Direct static CDN media streaming with 304 ETag caching', category: 'storage' },
+    { method: 'POST', path: '/api/v1/blobs/uploads/{namespace}', desc: 'Initialize chunked/resumable upload session', category: 'storage' },
+    { method: 'POST', path: '/api/v1/blobs/uploads/{namespace}/sign', desc: 'Generate presigned direct upload URL', category: 'storage' },
+    { method: 'GET', path: '/api/v1/blobs/uploads/{namespace}/{upload_id}', desc: 'Check upload session status and received bytes', category: 'storage' },
+    { method: 'PUT', path: '/api/v1/blobs/uploads/{namespace}/{upload_id}', desc: 'Upload chunk via Content-Range or x-upload-offset', category: 'storage' },
+    { method: 'DELETE', path: '/api/v1/blobs/uploads/{namespace}/{upload_id}', desc: 'Abort upload session and discard chunk parts', category: 'storage' },
+    { method: 'POST', path: '/api/v1/blobs/uploads/{namespace}/{upload_id}/complete', desc: 'Assemble chunks and finalize object', category: 'storage' },
+    { method: 'POST', path: '/api/v1/blobs/tickets/{namespace}', desc: 'Generate time-bounded signed capability ticket', category: 'storage' },
+    { method: 'GET', path: '/api/v1/blobs/tickets/{namespace}', desc: 'List active capability tickets for namespace', category: 'storage' },
+    { method: 'POST', path: '/api/v1/blobs/tickets/{namespace}/{signature}/revoke', desc: 'Revoke capability ticket immediately', category: 'storage' },
+    { method: 'DELETE', path: '/api/v1/blobs/tickets/{namespace}/{signature}', desc: 'Delete capability ticket record', category: 'storage' },
+  ];
+
+  const adminEndpoints: ApiRouteItem[] = [
+    { method: 'GET', path: '/admin/v1/status', desc: 'Runtime status, engine health, and system telemetry', category: 'admin' },
+    { method: 'POST', path: '/admin/v1/reload', desc: 'Hot reload metadata snapshot from disk', category: 'admin' },
+    { method: 'GET', path: '/admin/v1/keys', desc: 'List provisioned API access keys', category: 'admin' },
+    { method: 'POST', path: '/admin/v1/keys', desc: 'Create new scoped API key', category: 'admin' },
+    { method: 'PATCH', path: '/admin/v1/keys/{name}', desc: 'Update API key permissions or expiration', category: 'admin' },
+    { method: 'DELETE', path: '/admin/v1/keys/{name}', desc: 'Revoke and delete API key', category: 'admin' },
+    { method: 'POST', path: '/admin/v1/keys/{name}/rotate', desc: 'Rotate API key secret', category: 'admin' },
+    { method: 'GET', path: '/admin/v1/roles', desc: 'List RBAC roles and permission matrices', category: 'admin' },
+    { method: 'POST', path: '/admin/v1/roles', desc: 'Create new RBAC role definition', category: 'admin' },
+    { method: 'PATCH', path: '/admin/v1/roles/{name}', desc: 'Update RBAC role permissions', category: 'admin' },
+    { method: 'DELETE', path: '/admin/v1/roles/{name}', desc: 'Delete custom RBAC role', category: 'admin' },
+    { method: 'GET', path: '/admin/v1/databases', desc: 'List managed database configurations', category: 'admin' },
+    { method: 'POST', path: '/admin/v1/databases', desc: 'Register new database connection', category: 'admin' },
+    { method: 'PATCH', path: '/admin/v1/databases/{alias}', desc: 'Update database configuration', category: 'admin' },
+    { method: 'DELETE', path: '/admin/v1/databases/{alias}', desc: 'Unregister database service', category: 'admin' },
+    { method: 'GET', path: '/admin/v1/databases/{alias}/test', desc: 'Test database connectivity and latency', category: 'admin' },
+    { method: 'POST', path: '/admin/v1/databases/test-url', desc: 'Test candidate database connection string', category: 'admin' },
+    { method: 'GET', path: '/admin/v1/cache/stats', desc: 'Query query-cache hit rates and memory usage', category: 'admin' },
+    { method: 'POST', path: '/admin/v1/cache/flush', desc: 'Invalidate and flush memory query cache', category: 'admin' },
+    { method: 'GET', path: '/admin/v1/audit', desc: 'Query audit logs with cursor pagination and filters', category: 'admin' },
+    { method: 'GET', path: '/admin/v1/metrics', desc: 'Query Prometheus metrics snapshot', category: 'admin' },
+    { method: 'GET', path: '/admin/v1/health', desc: 'Diagnostic health check of internal subsystems', category: 'admin' },
+    { method: 'GET', path: '/admin/v1/users', desc: 'List administrative users configured in gateway', category: 'admin' },
+    { method: 'GET', path: '/admin/v1/blobs/stats', desc: 'Global storage analytics and capacity telemetry', category: 'admin' },
+    { method: 'POST', path: '/admin/v1/blobs/scrub', desc: 'Trigger background consistency scrub', category: 'admin' },
+    { method: 'POST', path: '/admin/v1/blobs/sweep', desc: 'Sweep expired capability tickets and orphan uploads', category: 'admin' },
+    { method: 'POST', path: '/admin/v1/blobs/namespaces', desc: 'Create new storage namespace with quota', category: 'admin' },
+    { method: 'PATCH', path: '/admin/v1/blobs/namespaces/{namespace}', desc: 'Update namespace quota, retention, or ACL', category: 'admin' },
+    { method: 'DELETE', path: '/admin/v1/blobs/namespaces/{namespace}', desc: 'Delete empty storage namespace', category: 'admin' },
+    { method: 'GET', path: '/admin/v1/blobs/tickets', desc: 'Global audit of all capability tickets across namespaces', category: 'admin' },
+  ];
+
+  const clusterEndpoints: ApiRouteItem[] = [
+    { method: 'GET', path: '/admin/v1/cluster/status', desc: 'Raft cluster topology, term, and leader status', category: 'cluster' },
+    { method: 'GET', path: '/admin/v1/cluster/peers', desc: 'List cluster peer nodes and health', category: 'cluster' },
+    { method: 'POST', path: '/admin/v1/cluster/peers', desc: 'Join new peer node to cluster', category: 'cluster' },
+    { method: 'PATCH', path: '/admin/v1/cluster/peers/{node_id}', desc: 'Update peer node address or priority', category: 'cluster' },
+    { method: 'DELETE', path: '/admin/v1/cluster/peers/{node_id}', desc: 'Evict peer node from cluster', category: 'cluster' },
+    { method: 'POST', path: '/admin/v1/cluster/peers/{node_id}/ping', desc: 'Probe peer node round-trip latency', category: 'cluster' },
+    { method: 'PATCH', path: '/admin/v1/cluster/moniker', desc: 'Update node display name / moniker', category: 'cluster' },
+  ];
+
+  const mcpEndpoints: ApiRouteItem[] = [
+    { method: 'POST', path: '/mcp/v1', desc: 'Model Context Protocol JSON-RPC stream endpoint', category: 'mcp' },
+    { method: 'GET', path: '/api/v1/health', desc: 'Gateway service liveness and readiness probe', category: 'mcp' },
+    { method: 'GET', path: '/metrics', desc: 'Prometheus metrics export endpoint', category: 'mcp' },
+  ];
+
+  const allEndpoints: ApiRouteItem[] = [
+    ...databaseEndpoints,
+    ...storageEndpoints,
+    ...adminEndpoints,
+    ...clusterEndpoints,
+    ...mcpEndpoints,
   ];
 
   const renderPathWithParams = (path: string) => {
@@ -167,12 +262,17 @@ export function Settings() {
     );
   };
 
-  const currentEndpoints = endpointCategory === 'database' ? databaseEndpoints : storageEndpoints;
+  const currentEndpoints =
+    endpointCategory === 'all'
+      ? allEndpoints
+      : allEndpoints.filter((ep) => ep.category === endpointCategory);
+
   const filteredEndpoints = currentEndpoints.filter(
     (ep) =>
       ep.path.toLowerCase().includes(searchRoutes.toLowerCase()) ||
       ep.desc.toLowerCase().includes(searchRoutes.toLowerCase()) ||
-      ep.method.toLowerCase().includes(searchRoutes.toLowerCase())
+      ep.method.toLowerCase().includes(searchRoutes.toLowerCase()) ||
+      ep.category.toLowerCase().includes(searchRoutes.toLowerCase())
   );
 
   return (
@@ -242,7 +342,7 @@ export function Settings() {
           <Code2 className="w-3.5 h-3.5 shrink-0" />
           <span>API Routes</span>
           <span className="ml-1 text-[11px] font-mono tabular-nums px-1.5 py-0.5 rounded bg-[#1a1a1a] text-[#8c8c8c]">
-            {databaseEndpoints.length + storageEndpoints.length}
+            {allEndpoints.length}
           </span>
         </button>
 
@@ -487,11 +587,26 @@ export function Settings() {
               </div>
 
               {/* Segmented Category Switcher */}
-              <div className="inline-flex items-center p-0.5 rounded-[6px] bg-[#141414] border border-[#262626] shrink-0 self-start sm:self-auto">
+              <div className="inline-flex items-center p-0.5 rounded-[6px] bg-[#141414] border border-[#262626] shrink-0 self-start sm:self-auto flex-wrap gap-0.5">
+                <button
+                  type="button"
+                  onClick={() => setEndpointCategory('all')}
+                  className={`h-7 px-2.5 text-[12px] rounded-[5px] transition-colors cursor-pointer flex items-center gap-1.5 ${
+                    endpointCategory === 'all'
+                      ? 'bg-[#1e1e1e] text-white shadow-xs font-medium border border-[#333333]'
+                      : 'text-[#8c8c8c] hover:text-white font-normal border border-transparent'
+                  }`}
+                >
+                  <Layers className="w-3.5 h-3.5 text-[#a1a1aa]" />
+                  <span>All</span>
+                  <span className="text-[11px] font-mono tabular-nums text-[#737373]">
+                    {allEndpoints.length}
+                  </span>
+                </button>
                 <button
                   type="button"
                   onClick={() => setEndpointCategory('database')}
-                  className={`h-7 px-3 text-[12px] rounded-[5px] transition-colors cursor-pointer flex items-center gap-1.5 ${
+                  className={`h-7 px-2.5 text-[12px] rounded-[5px] transition-colors cursor-pointer flex items-center gap-1.5 ${
                     endpointCategory === 'database'
                       ? 'bg-[#1e1e1e] text-white shadow-xs font-medium border border-[#333333]'
                       : 'text-[#8c8c8c] hover:text-white font-normal border border-transparent'
@@ -506,7 +621,7 @@ export function Settings() {
                 <button
                   type="button"
                   onClick={() => setEndpointCategory('storage')}
-                  className={`h-7 px-3 text-[12px] rounded-[5px] transition-colors cursor-pointer flex items-center gap-1.5 ${
+                  className={`h-7 px-2.5 text-[12px] rounded-[5px] transition-colors cursor-pointer flex items-center gap-1.5 ${
                     endpointCategory === 'storage'
                       ? 'bg-[#1e1e1e] text-white shadow-xs font-medium border border-[#333333]'
                       : 'text-[#8c8c8c] hover:text-white font-normal border border-transparent'
@@ -518,18 +633,75 @@ export function Settings() {
                     {storageEndpoints.length}
                   </span>
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setEndpointCategory('admin')}
+                  className={`h-7 px-2.5 text-[12px] rounded-[5px] transition-colors cursor-pointer flex items-center gap-1.5 ${
+                    endpointCategory === 'admin'
+                      ? 'bg-[#1e1e1e] text-white shadow-xs font-medium border border-[#333333]'
+                      : 'text-[#8c8c8c] hover:text-white font-normal border border-transparent'
+                  }`}
+                >
+                  <Shield className="w-3.5 h-3.5 text-[#10b981]" />
+                  <span>Admin</span>
+                  <span className="text-[11px] font-mono tabular-nums text-[#737373]">
+                    {adminEndpoints.length}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEndpointCategory('cluster')}
+                  className={`h-7 px-2.5 text-[12px] rounded-[5px] transition-colors cursor-pointer flex items-center gap-1.5 ${
+                    endpointCategory === 'cluster'
+                      ? 'bg-[#1e1e1e] text-white shadow-xs font-medium border border-[#333333]'
+                      : 'text-[#8c8c8c] hover:text-white font-normal border border-transparent'
+                  }`}
+                >
+                  <Network className="w-3.5 h-3.5 text-[#06b6d4]" />
+                  <span>Cluster</span>
+                  <span className="text-[11px] font-mono tabular-nums text-[#737373]">
+                    {clusterEndpoints.length}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEndpointCategory('mcp')}
+                  className={`h-7 px-2.5 text-[12px] rounded-[5px] transition-colors cursor-pointer flex items-center gap-1.5 ${
+                    endpointCategory === 'mcp'
+                      ? 'bg-[#1e1e1e] text-white shadow-xs font-medium border border-[#333333]'
+                      : 'text-[#8c8c8c] hover:text-white font-normal border border-transparent'
+                  }`}
+                >
+                  <Cpu className="w-3.5 h-3.5 text-[#a855f7]" />
+                  <span>MCP & Core</span>
+                  <span className="text-[11px] font-mono tabular-nums text-[#737373]">
+                    {mcpEndpoints.length}
+                  </span>
+                </button>
               </div>
             </div>
 
             {/* Filter Search Input */}
-            <div className="px-5 py-3 border-b border-[#222222] bg-[#0e0e0e]">
-              <input
-                type="text"
-                value={searchRoutes}
-                onChange={(e) => setSearchRoutes(e.target.value)}
-                placeholder="Search endpoints by path or description..."
-                className="w-full h-8 px-3 rounded-[6px] bg-[#141414] border border-[#262626] hover:border-[#383838] focus:border-[#3b82f6] text-[13px] text-white placeholder-[#666666] outline-none transition-colors"
-              />
+            <div className="px-5 py-2.5 border-b border-[#222222] bg-[#0e0e0e]">
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-[#666666]" />
+                <input
+                  type="text"
+                  value={searchRoutes}
+                  onChange={(e) => setSearchRoutes(e.target.value)}
+                  placeholder="Search endpoints by path, description, or method..."
+                  className="w-full h-8 pl-8.5 pr-8 rounded-[6px] bg-[#141414] border border-[#262626] hover:border-[#383838] focus:border-[#3b82f6] text-[13px] text-white placeholder-[#666666] outline-none transition-colors"
+                />
+                {searchRoutes && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchRoutes('')}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#666666] hover:text-white cursor-pointer"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
             </div>
 
             <div className="divide-y divide-[#1e1e1e]">
@@ -541,23 +713,46 @@ export function Settings() {
                 filteredEndpoints.map((ep) => (
                   <div
                     key={`${ep.method}-${ep.path}`}
-                    className="px-5 py-3 flex items-center justify-between gap-3 hover:bg-[#121212] transition-colors"
+                    className="group px-5 py-2.5 flex items-center justify-between gap-3 hover:bg-[#121212] transition-colors"
                   >
                     <div className="flex items-center gap-3 min-w-0 flex-1">
                       <span
                         className={`w-14 text-center py-0.5 rounded-[4px] text-[11px] font-mono font-medium shrink-0 ${
                           ep.method === 'GET'
                             ? 'bg-emerald-950/40 text-emerald-400 border border-emerald-800/40'
-                            : ep.method === 'POST' || ep.method === 'PUT'
+                            : ep.method === 'POST'
                             ? 'bg-blue-950/40 text-blue-400 border border-blue-800/40'
+                            : ep.method === 'PUT'
+                            ? 'bg-sky-950/40 text-sky-400 border border-sky-800/40'
                             : ep.method === 'PATCH'
                             ? 'bg-amber-950/40 text-amber-400 border border-amber-800/40'
-                            : 'bg-rose-950/40 text-rose-400 border border-rose-800/40'
+                            : ep.method === 'DELETE'
+                            ? 'bg-rose-950/40 text-rose-400 border border-rose-800/40'
+                            : 'bg-purple-950/40 text-purple-400 border border-purple-800/40'
                         }`}
                       >
                         {ep.method}
                       </span>
-                      {renderPathWithParams(ep.path)}
+                      {endpointCategory === 'all' && (
+                        <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-[#161616] text-[#737373] border border-[#262626] shrink-0">
+                          {ep.category === 'mcp' ? 'mcp/core' : ep.category}
+                        </span>
+                      )}
+                      <div className="flex items-center gap-2 truncate">
+                        {renderPathWithParams(ep.path)}
+                        <button
+                          type="button"
+                          onClick={() => handleCopyPath(ep.path)}
+                          title="Copy path"
+                          className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-[#222222] text-[#8c8c8c] hover:text-white cursor-pointer"
+                        >
+                          {copiedPath === ep.path ? (
+                            <Check className="w-3.5 h-3.5 text-emerald-400" />
+                          ) : (
+                            <Copy className="w-3.5 h-3.5" />
+                          )}
+                        </button>
+                      </div>
                     </div>
                     <div className="shrink-0">
                       <span className="text-[13px] text-[#8c8c8c] hidden md:block font-normal">{ep.desc}</span>
