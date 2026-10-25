@@ -13,26 +13,65 @@
 
 ---
 
-## 1. Quick Start & Authentication
+## Contents
 
-* **Base URL**: `http://127.0.0.1:4500`
+1. [Quick Start](#1-quick-start)
+2. [Authentication](#2-authentication)
+3. [Conventions](#3-conventions)
+4. [Endpoint Index](#4-endpoint-index)
+5. [Database Data API](#5-database-data-api-apiv1db)
+6. [Blob Storage API](#6-blob-storage-api-apiv1blobs)
+7. [Model Context Protocol (MCP)](#7-model-context-protocol-mcp)
+8. [Errors](#8-errors)
 
-### Authentication Schemes
-| Scope | Header Syntax | Description |
-|---|---|---|
-| **Data Plane (`/api/v1/*`)** | `X-Axiom-Key: <base64(name:secret)>` | Machine-to-machine scoped API key |
-| **Control Plane (`/admin/v1/*`)** | `Authorization: Bearer <session-token>` | 32-char token from `POST /admin/v1/auth/login` |
-| **Cluster Mesh (`/internal/v1/*`)** | `X-Axiom-Signature: <hex(HMAC-SHA256)>` | Inter-node P2P peer authentication |
-| **Capability Ticket (Blob)** | `?ticket=v1.<ns>.<key>.<op>.<exp>.<sig>` | Pre-signed delegated URL parameter |
+---
 
-### Standard Response Envelopes
-All API responses return a unified JSON envelope:
+## 1. Quick Start
+
+**Base URL:** `http://127.0.0.1:4500`
+
+Three steps to your first query:
+
+```bash
+# 1. Build your API key header value: base64(name:secret)
+export AXIOM_KEY=$(echo -n 'my-key:my-secret' | base64)
+
+# 2. Check the data plane is up
+curl http://127.0.0.1:4500/api/v1/health -H "X-Axiom-Key: $AXIOM_KEY"
+
+# 3. Discover which databases your role can access
+curl http://127.0.0.1:4500/api/v1/db/databases -H "X-Axiom-Key: $AXIOM_KEY"
+```
+
+> Examples below use `<TOKEN>` as a placeholder for the value of `$AXIOM_KEY`.
+
+---
+
+## 2. Authentication
+
+Axiom has four planes, each with its own credential.
+
+| Plane | Path prefix | Credential | Notes |
+|---|---|---|---|
+| **Data** | `/api/v1/*` | `X-Axiom-Key: <base64(name:secret)>` | Machine-to-machine, scoped API key |
+| **Control** | `/admin/v1/*` | `Authorization: Bearer <session-token>` | 32-character token from `POST /admin/v1/auth/login` |
+| **Cluster mesh** | `/internal/v1/*` | `X-Axiom-Signature: <hex(HMAC-SHA256)>` | Node-to-node only; not for application use |
+| **Capability ticket** | blob URLs | `?ticket=v1.<ns>.<key>.<op>.<exp>.<sig>` | Pre-signed, time-limited, delegated access |
+
+---
+
+## 3. Conventions
+
+### Response envelope
+
+Every response uses the same JSON envelope.
+
+**Success** (`200` / `201`)
 
 ```json
-// Success Response (HTTP 200 / 201)
 {
   "success": true,
-  "data": { ... },
+  "data": { },
   "meta": {
     "request_id": "8fa921be-4972-4d2c-8cb4-3010b91e9f1a",
     "duration_ms": 1.42,
@@ -40,8 +79,11 @@ All API responses return a unified JSON envelope:
   },
   "error": null
 }
+```
 
-// Error Response (HTTP 4xx / 5xx)
+**Error** (`4xx` / `5xx`)
+
+```json
 {
   "success": false,
   "data": null,
@@ -56,182 +98,130 @@ All API responses return a unified JSON envelope:
 }
 ```
 
----
+Include `meta.request_id` when reporting issues.
 
-## 2. API Architecture Trees
+### Pagination
 
-### Data Plane (`/api/v1`)
-High-throughput application data access, parameterized SQL queries, row CRUD, keyset pagination, and byte-range blob streaming.
+List endpoints use **keyset (cursor) pagination**: pass `limit` and `cursor`; responses include `next_cursor` and `has_more`. Treat cursors as opaque strings.
 
-```text
-/api/v1
-│
-├── health                                         GET     Data plane health check probe
-│
-├── db/                                            [Database Data Plane & Query Engine]
-│   ├── databases                                  GET     Discover accessible databases for caller's role (engine, status, tables)
-│   │
-│   └── :db_name/
-│       ├── tables                                 GET     List tables in database (filtered by role permissions, supports limit/cursor)
-│       ├── query                                  POST    Execute parameterized SQL statement (AST safety firewall + Idempotency-Key)
-│       │
-│       └── :table_name/
-│           ├── rows/
-│           │   ├── /                              GET     Query table records (keyset pagination, JSON filters, sorting)
-│           │   ├── /                              POST    Insert records (single or batch with Idempotency-Key replay protection)
-│           │   ├── /                              PATCH   Update records (requires mandatory filter predicate)
-│           │   └── /                              DELETE  Delete records (requires mandatory filter predicate)
-│           │
-│           └── columns/
-│               ├── /                              GET     Inspect table columns & schema (types, nullability, PKs, FKs)
-│               ├── /                              POST    Dynamic DDL: Add new column to table (name, data_type, nullable, default)
-│               └── :column_name/
-│                   ├── /                          PATCH   Dynamic DDL: Modify column type or rename column (:column_name)
-│                   └── /                          DELETE  Dynamic DDL: Drop column via canonical RESTful path parameter
-│
-└── blobs/                                         [Native Blob Storage & Object Engine]
-    ├── public/:namespace/*key                     GET     Unauthenticated edge CDN streaming (ETags, conditional 304, Range headers)
-    ├── public/:namespace/*key                     HEAD    Probe object metadata, Content-Length, and ETag without streaming body
-    │
-    ├── namespaces/                                [Namespace & Quota Telemetry (Read-Only Discovery)]
-    │   ├── /                                      GET     List storage namespaces authorized for caller's role
-    │   └── :namespace/
-    │       ├── /                                  GET     Inspect namespace configuration details and public read status
-    │       └── usage                              GET     Live quota inspection (used bytes, remaining headroom, object count)
-    │
-    ├── objects/                                   [Content-Addressed Storage (CAS) Object Operations]
-    │   ├── copy                                   POST    Cross-namespace zero-copy CAS clone (src_namespace, dest_namespace)
-    │   ├── move                                   POST    Cross-namespace atomic relocate (src_namespace, dest_namespace)
-    │   │
-    │   └── :namespace/
-    │       ├── /                                  GET     List objects in namespace (prefix filter, cursor pagination, limit)
-    │       ├── copy                               POST    Namespace-scoped zero-copy CAS clone (src_key, dest_key)
-    │       ├── move                               POST    Namespace-scoped atomic relocate (src_key, dest_key)
-    │       ├── batch-delete                       POST    Unified batch delete by explicit key list or directory prefix
-    │       ├── verify/*key                        POST    Verify cryptographic BLAKE3 integrity of on-disk blob shard
-    │       └── *key/
-    │           ├── /                              PUT     Upload object / create directory marker (automatic BLAKE3 deduplication)
-    │           ├── /                              GET     Stream object binary (supports Range: bytes=X-Y, ETags, capability tickets)
-    │           ├── /                              HEAD    Probe object headers (size, content-type, ETag, last-modified)
-    │           └── /                              DELETE  Delete object and decrement CAS reference count
-    │
-    ├── uploads/                                   [Resumable & Multipart Upload Protocol]
-    │   └── :namespace/
-    │       ├── /                                  POST    Initialize resumable session (key, content_type, total_bytes)
-    │       ├── sign                               POST    Generate pre-signed direct upload capability URL
-    │       └── :upload_id/
-    │           ├── /                              GET     Probe upload progress and inspect received byte ranges
-    │           ├── /                              PUT     Upload chunk slice with Content-Range (bytes 0-1048575/5242880)
-    │           ├── /                              PATCH   Append chunk slice with Content-Range
-    │           ├── /                              DELETE  Abort upload session and clean up staged chunk artifacts
-    │           ├── parts/:part                    PUT     Upload numbered part slice (S3-compatible multipart pattern)
-    │           └── complete                       POST    Finalize and atomically assemble multipart session into CAS store
-    │
-    └── tickets/                                   [Namespace-Scoped Capability Ticket Plane]
-        └── :namespace/
-            ├── /                                  GET     List capability tickets in namespace (cursor keyset pagination)
-            ├── /                                  POST    Mint pre-signed capability ticket URL (key, operation, ttl_seconds)
-            └── :signature/
-                ├── revoke                         POST    Revoke capability ticket immediately in RAM and SQLite store
-                ├── enable                         POST    Restore previously revoked capability ticket
-                └── /                              DELETE  Permanently purge capability ticket record
-```
+### Idempotency
+
+`POST /db/:db/query` and `POST /db/:db/:table/rows` accept an `Idempotency-Key` header. Retrying with the same key replays the original result instead of re-executing, so it is safe to retry on network failure.
+
+### Safety guards
+
+* `PATCH` and `DELETE` on `/rows` **require a filter**, which prevents accidental full-table writes.
+* SQL sent to `/query` passes through an AST safety firewall; rejected statements return `AST_VALIDATION_ERROR`.
+* Always use `$1, $2, ...` placeholders with `params`; never interpolate values into `sql`.
 
 ---
 
-### Control Plane (`/admin/v1`)
-Infrastructure management, connection pool topology, security secrets, inter-node gossip mesh, and storage quotas.
+## 4. Endpoint Index
 
-```text
-/admin/v1
-│
-├── auth/                                          [Session & Authentication Lifecycle]
-│   ├── login                                      POST    Authenticate administrator credentials & issue session token
-│   └── logout                                     POST    Revoke active session token & clear session cookie
-│
-├── setup/                                         [First-Run Installation & Provisioning Wizard]
-│   ├── begin                                      GET     Check installation wizard status and initialized state
-│   ├── begin                                      POST    Initialize first-run setup state
-│   ├── account                                    POST    Provision initial root administrator credentials
-│   ├── database                                   POST    Provision initial primary database connection
-│   ├── database/test                              POST    Test primary database connectivity during setup wizard
-│   └── complete                                   POST    Seal setup wizard and transition instance to production mode
-│
-├── status                                         GET     System telemetry (version, uptime, memory, CPU, engine status)
-├── health                                         GET     Administrative health check probe
-├── metrics                                        GET     Prometheus & JSON metrics snapshot (QPS, error rates, latencies)
-├── audit                                          GET     Query tamper-evident audit log ledger (filtered by user/action/date)
-├── reload                                         POST    Hot-reload metadata configuration snapshot from disk
-├── users                                          GET     List administrator accounts (mutations restricted to local CLI)
-│
-├── keys/                                          [API Key Lifecycle & Secret Provisioning]
-│   ├── /                                          GET     List all active API keys (associated roles, rate limits, expiry)
-│   ├── /                                          POST    Mint new API key (name, role, rate_limit, optional TTL)
-│   └── :name/
-│       ├── /                                      PATCH   Update API key role, rate limit, or expiration timestamp
-│       ├── /                                      DELETE  Immediately revoke and delete API key
-│       └── rotate                                 POST    Atomic zero-downtime key secret rotation (issues new secret)
-│
-├── roles/                                         [Fine-Grained RBAC Policy Matrix]
-│   ├── /                                          GET     List all RBAC roles and permission matrices
-│   ├── /                                          POST    Create custom RBAC role with database/table/storage grants
-│   └── :name/
-│       ├── /                                      PATCH   Update role permissions and resource policy rules
-│       └── /                                      DELETE  Delete custom role (protected system roles immutable)
-│
-├── databases/                                     [Database Connection Pools & Topology]
-│   ├── /                                          GET     List all registered database connection pools (credentials masked)
-│   ├── /                                          POST    Register new database connection pool (alias, URL, pool size)
-│   ├── test-url                                   POST    Test connection & latency for uncommitted DSN / connection string
-│   └── :alias/
-│       ├── /                                      PATCH   Update connection pool parameters (pool size, mode, URL, timeout)
-│       ├── /                                      DELETE  Unregister database pool and remove metadata record
-│       └── test                                   GET     Probe live health & latency of an existing database alias
-│
-├── cache/                                         [Distributed L1 / L2 Query Cache Control]
-│   ├── stats                                      GET     Inspect cache metrics (hit ratios, cached ASTs, memory footprint)
-│   └── flush                                      POST    Invalidate and evict all query, schema, and policy caches
-│
-├── cluster/                                       [Inter-Node P2P Mesh Governance]
-│   ├── status                                     GET     Cluster health, local Node ID, moniker, and active peer count
-│   ├── moniker                                    PATCH   Update local node's human-friendly display moniker
-│   └── peers/
-│       ├── /                                      GET     List all connected mesh peers, addresses, and sync states
-│       ├── /                                      POST    Initiate mutual handshake and register remote peer node
-│       └── :node_id/
-│           ├── /                                  PATCH   Update peer address, port, or connection configuration
-│           ├── /                                  DELETE  Disconnect and unregister peer node from mesh
-│           └── ping                               POST    Measure roundtrip P2P latency to target peer node
-│
-└── blobs/                                         [Storage Control Plane & Governance]
-    ├── stats                                      GET     Cluster-wide storage stats (CAS objects, disk used, deduplication ratio)
-    ├── scrub                                      POST    Trigger cluster-wide cryptographic BLAKE3 bit-rot verification
-    ├── sweep                                      POST    Trigger immediate garbage collection sweep of expired TTL blobs
-    │
-    ├── namespaces/                                [Storage Namespace Provisioning & Quotas]
-    │   ├── /                                      GET     List all storage namespaces, byte quotas, and access policies
-    │   ├── /                                      POST    Provision new storage namespace (quota bytes, public read toggle)
-    │   └── :namespace/
-    │       ├── /                                  GET     Inspect namespace quota allocation and configuration details
-    │       ├── /                                  PATCH   Update namespace byte quota or public read access policy
-    │       └── /                                  DELETE  Delete storage namespace and unregister its object index
-    │
-    └── tickets/                                   [Cluster-Wide Security Audit & Emergency Control]
-        ├── /                                      GET     Audit all capability tickets cluster-wide (cursor pagination)
-        └── :signature/
-            ├── revoke                             POST    Cluster-wide emergency revocation of capability ticket
-            ├── enable                             POST    Cluster-wide restoration of revoked capability ticket
-            └── /                                  DELETE  Permanently purge capability ticket record from cluster
-```
+### Data plane: `/api/v1`
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/health` | Data plane health probe |
+| **Database** | | |
+| GET | `/db/databases` | Databases accessible to the caller's role (engine, status, tables) |
+| GET | `/db/:db/tables` | List tables (role-filtered; `limit` / `cursor`) |
+| POST | `/db/:db/query` | Execute parameterized SQL (AST firewall, `Idempotency-Key`) |
+| GET | `/db/:db/:table/rows` | Query rows (keyset pagination, JSON filters, sorting) |
+| POST | `/db/:db/:table/rows` | Insert one or many rows (`Idempotency-Key` supported) |
+| PATCH | `/db/:db/:table/rows` | Update rows (filter required) |
+| DELETE | `/db/:db/:table/rows` | Delete rows (filter required) |
+| GET | `/db/:db/:table/columns` | Inspect schema (types, nullability, PKs, FKs) |
+| POST | `/db/:db/:table/columns` | Add a column (DDL) |
+| PATCH | `/db/:db/:table/columns/:column` | Modify type or rename a column (DDL) |
+| DELETE | `/db/:db/:table/columns/:column` | Drop a column (DDL) |
+| **Blob: public** | | |
+| GET | `/blobs/public/:ns/*key` | Unauthenticated streaming (ETag, conditional `304`, `Range`) |
+| HEAD | `/blobs/public/:ns/*key` | Metadata only: `Content-Length`, `ETag` |
+| **Blob: namespaces** (read-only) | | |
+| GET | `/blobs/namespaces` | Namespaces authorized for the caller's role |
+| GET | `/blobs/namespaces/:ns` | Namespace configuration and public-read status |
+| GET | `/blobs/namespaces/:ns/usage` | Live quota: used bytes, headroom, object count |
+| **Blob: objects** | | |
+| POST | `/blobs/objects/copy` | Cross-namespace zero-copy clone (`src_namespace`, `dest_namespace`) |
+| POST | `/blobs/objects/move` | Cross-namespace atomic relocate |
+| GET | `/blobs/objects/:ns` | List objects (`prefix`, `cursor`, `limit`) |
+| POST | `/blobs/objects/:ns/copy` | In-namespace zero-copy clone (`src_key`, `dest_key`) |
+| POST | `/blobs/objects/:ns/move` | In-namespace atomic relocate (`src_key`, `dest_key`) |
+| POST | `/blobs/objects/:ns/batch-delete` | Delete by explicit key list or directory prefix |
+| POST | `/blobs/objects/:ns/verify/*key` | Verify BLAKE3 integrity of the on-disk blob |
+| PUT | `/blobs/objects/:ns/*key` | Upload object or create directory marker (auto-dedup) |
+| GET | `/blobs/objects/:ns/*key` | Stream object (`Range`, ETag, tickets) |
+| HEAD | `/blobs/objects/:ns/*key` | Size, content-type, ETag, last-modified |
+| DELETE | `/blobs/objects/:ns/*key` | Delete object; decrements CAS reference count |
+| **Blob: uploads** | | |
+| POST | `/blobs/uploads/:ns` | Start resumable session (`key`, `content_type`, `total_bytes`) |
+| POST | `/blobs/uploads/:ns/sign` | Generate a pre-signed direct-upload URL |
+| GET | `/blobs/uploads/:ns/:upload_id` | Upload progress and received byte ranges |
+| PUT / PATCH | `/blobs/uploads/:ns/:upload_id` | Send a chunk with `Content-Range` |
+| PUT | `/blobs/uploads/:ns/:upload_id/parts/:part` | Upload a numbered part (S3-style multipart) |
+| POST | `/blobs/uploads/:ns/:upload_id/complete` | Finalize and assemble into the CAS store |
+| DELETE | `/blobs/uploads/:ns/:upload_id` | Abort and clean up staged chunks |
+| **Blob: tickets** | | |
+| GET | `/blobs/tickets/:ns` | List tickets (cursor pagination) |
+| POST | `/blobs/tickets/:ns` | Mint a ticket (`key`, `operation`, `ttl_seconds`) |
+| POST | `/blobs/tickets/:ns/:signature/revoke` | Revoke immediately (RAM and SQLite) |
+| POST | `/blobs/tickets/:ns/:signature/enable` | Restore a revoked ticket |
+| DELETE | `/blobs/tickets/:ns/:signature` | Permanently purge the ticket record |
+
+### Control plane: `/admin/v1`
+
+| Area | Method | Path | Description |
+|---|---|---|---|
+| **Auth** | POST | `/auth/login` | Authenticate and issue a session token |
+| | POST | `/auth/logout` | Revoke the session token and clear the cookie |
+| **Setup** | GET / POST | `/setup/begin` | Check / initialize the first-run wizard |
+| | POST | `/setup/account` | Create the initial root administrator |
+| | POST | `/setup/database` | Provision the initial primary database |
+| | POST | `/setup/database/test` | Test connectivity during setup |
+| | POST | `/setup/complete` | Seal setup and switch to production mode |
+| **System** | GET | `/status` | Version, uptime, memory, CPU, engine status |
+| | GET | `/health` | Administrative health probe |
+| | GET | `/metrics` | Prometheus and JSON metrics (QPS, errors, latency) |
+| | GET | `/audit` | Tamper-evident audit log (filter by user / action / date) |
+| | POST | `/reload` | Hot-reload metadata configuration from disk |
+| | GET | `/users` | List administrators (mutations are local-CLI only) |
+| **API keys** | GET / POST | `/keys` | List keys / mint a key (`name`, `role`, `rate_limit`, optional TTL) |
+| | PATCH / DELETE | `/keys/:name` | Update role, rate limit, or expiry / revoke immediately |
+| | POST | `/keys/:name/rotate` | Zero-downtime secret rotation (issues a new secret) |
+| **Roles** | GET / POST | `/roles` | List RBAC roles / create a custom role |
+| | PATCH / DELETE | `/roles/:name` | Update permissions / delete (system roles are immutable) |
+| **Databases** | GET / POST | `/databases` | List pools (credentials masked) / register a pool |
+| | POST | `/databases/test-url` | Test an uncommitted connection string |
+| | PATCH / DELETE | `/databases/:alias` | Update pool parameters / unregister |
+| | GET | `/databases/:alias/test` | Probe health and latency of an existing alias |
+| **Cache** | GET | `/cache/stats` | Hit ratios, cached ASTs, memory footprint |
+| | POST | `/cache/flush` | Evict all query, schema, and policy caches |
+| **Cluster** | GET | `/cluster/status` | Node ID, moniker, active peer count |
+| | PATCH | `/cluster/moniker` | Rename the local node |
+| | GET / POST | `/cluster/peers` | List peers / handshake and register a peer |
+| | PATCH / DELETE | `/cluster/peers/:node_id` | Update peer address / disconnect |
+| | POST | `/cluster/peers/:node_id/ping` | Measure round-trip latency |
+| **Storage** | GET | `/blobs/stats` | CAS objects, disk used, deduplication ratio |
+| | POST | `/blobs/scrub` | Cluster-wide BLAKE3 bit-rot verification |
+| | POST | `/blobs/sweep` | Garbage-collect expired TTL blobs now |
+| | GET / POST | `/blobs/namespaces` | List / provision namespaces (quota bytes, public-read toggle) |
+| | GET / PATCH / DELETE | `/blobs/namespaces/:ns` | Inspect / update quota or policy / delete |
+| | GET | `/blobs/tickets` | Audit all tickets cluster-wide |
+| | POST | `/blobs/tickets/:signature/revoke` | Emergency cluster-wide revoke |
+| | POST | `/blobs/tickets/:signature/enable` | Cluster-wide restore |
+| | DELETE | `/blobs/tickets/:signature` | Purge the ticket record from the cluster |
 
 ---
 
-## 3. Database Data API (`/api/v1/db`)
+## 5. Database Data API (`/api/v1/db`)
 
-### Parameterized SQL Query
+### Parameterized SQL
+
 ```http
 POST /api/v1/db/main_pg/query
 X-Axiom-Key: <TOKEN>
+Idempotency-Key: req_9001
 Content-Type: application/json
 
 {
@@ -239,7 +229,9 @@ Content-Type: application/json
   "params": ["active"]
 }
 ```
-*Response*:
+
+Response: `columns` plus `rows` as positional arrays.
+
 ```json
 {
   "success": true,
@@ -254,14 +246,18 @@ Content-Type: application/json
 }
 ```
 
----
+### Reading rows
 
-### Row Queries & Keyset Pagination
 ```http
 GET /api/v1/db/main_pg/users/rows?limit=2&sort=id&order=asc&filter={"status":{"eq":"active"}}
 X-Axiom-Key: <TOKEN>
 ```
-*Response*:
+
+> The `filter` value is JSON and must be **URL-encoded** in real requests.
+> With curl, use `--get --data-urlencode 'filter={"status":{"eq":"active"}}'`.
+
+Response: `rows` as objects, plus pagination fields. Pass `next_cursor` back as `cursor` for the next page.
+
 ```json
 {
   "success": true,
@@ -277,235 +273,199 @@ X-Axiom-Key: <TOKEN>
 }
 ```
 
----
+### Filter operators
 
-### Filter Operators Reference
-Passed via the URL parameter `filter={...}` on `GET|PATCH|DELETE /rows`:
-
-| Operator | Syntax Example | Meaning |
+| Operator | Example | SQL equivalent |
 |---|---|---|
-| `eq` | `{"status": {"eq": "active"}}` | Equals (`=`) |
-| `neq` | `{"status": {"neq": "banned"}}` | Not equals (`!=`) |
-| `gt` / `gte` | `{"age": {"gte": 18}}` | Greater than / or equal (`>` / `>=`) |
-| `lt` / `lte` | `{"price": {"lte": 99.99}}` | Less than / or equal (`<` / `<=`) |
-| `like` | `{"email": {"like": "%@gmail.com"}}` | Case-sensitive pattern match (`LIKE`) |
-| `ilike` | `{"name": {"ilike": "%smith%"}}` | Case-insensitive pattern match (`ILIKE`) |
-| `in` | `{"role": {"in": ["admin", "editor"]}}` | Match any item in array (`IN (...)`) |
-| `nin` | `{"status": {"nin": ["archived", "deleted"]}}` | Match none in array (`NOT IN (...)`) |
-| `is_null` | `{"deleted_at": {"is_null": true}}` | Nullity check (`IS NULL` / `IS NOT NULL`) |
-| `and` | `{"and": [{"age": {"gte": 18}}, {"verified": {"eq": true}}]}` | Logical conjunction (`AND`) |
-| `or` | `{"or": [{"tier": {"eq": "pro"}}, {"credits": {"gt": 0}}]}` | Logical disjunction (`OR`) |
+| `eq` | `{"status": {"eq": "active"}}` | `=` |
+| `neq` | `{"status": {"neq": "banned"}}` | `!=` |
+| `gt` / `gte` | `{"age": {"gte": 18}}` | `>` / `>=` |
+| `lt` / `lte` | `{"price": {"lte": 99.99}}` | `<` / `<=` |
+| `like` | `{"email": {"like": "%@gmail.com"}}` | `LIKE` (case-sensitive) |
+| `ilike` | `{"name": {"ilike": "%smith%"}}` | `ILIKE` (case-insensitive) |
+| `in` | `{"role": {"in": ["admin", "editor"]}}` | `IN (...)` |
+| `nin` | `{"status": {"nin": ["archived", "deleted"]}}` | `NOT IN (...)` |
+| `is_null` | `{"deleted_at": {"is_null": true}}` | `IS NULL` / `IS NOT NULL` |
+| `and` | `{"and": [{"age": {"gte": 18}}, {"verified": {"eq": true}}]}` | `AND` |
+| `or` | `{"or": [{"tier": {"eq": "pro"}}, {"credits": {"gt": 0}}]}` | `OR` |
+
+Operators nest: `and` / `or` accept arrays of any other filter expressions.
+
+### Writing rows
+
+**Insert** (single or batch; safe to retry with `Idempotency-Key`)
+
+```http
+POST /api/v1/db/main_pg/users/rows
+X-Axiom-Key: <TOKEN>
+Idempotency-Key: req_12345
+Content-Type: application/json
+
+{ "data": [ { "email": "charlie@example.com", "status": "active" } ] }
+```
+
+**Update** (filter required)
+
+```http
+PATCH /api/v1/db/main_pg/users/rows
+X-Axiom-Key: <TOKEN>
+Content-Type: application/json
+
+{ "filter": { "id": { "eq": 42 } }, "data": { "status": "suspended" } }
+```
+
+**Delete** (filter required)
+
+```http
+DELETE /api/v1/db/main_pg/users/rows
+X-Axiom-Key: <TOKEN>
+Content-Type: application/json
+
+{ "filter": { "status": { "eq": "expired" } } }
+```
+
+### Schema inspection and DDL
+
+**Inspect columns**
+
+```http
+GET /api/v1/db/main_pg/users/columns
+X-Axiom-Key: <TOKEN>
+```
+
+```json
+{
+  "success": true,
+  "data": {
+    "database": "main_pg",
+    "table": "users",
+    "columns": [
+      { "name": "id", "data_type": "BIGINT", "nullable": false, "primary_key": true },
+      { "name": "email", "data_type": "VARCHAR(255)", "nullable": false }
+    ],
+    "foreign_keys": []
+  }
+}
+```
+
+**Add column**
+
+```http
+POST /api/v1/db/main_pg/users/columns
+X-Axiom-Key: <TOKEN>
+Content-Type: application/json
+
+{ "name": "is_mfa_active", "data_type": "BOOLEAN", "nullable": false, "default_value": "false" }
+```
+
+**Modify / rename column**
+
+```http
+PATCH /api/v1/db/main_pg/users/columns/is_mfa_active
+X-Axiom-Key: <TOKEN>
+Content-Type: application/json
+
+{ "new_name": "mfa_enabled" }
+```
+*(Accepts `new_name`, `data_type`, or both)*
+
+**Drop column**
+
+```http
+DELETE /api/v1/db/main_pg/users/columns/mfa_enabled
+X-Axiom-Key: <TOKEN>
+```
+
+> DDL is destructive and immediate. Restrict these routes to trusted roles via RBAC.
 
 ---
 
-### Row Mutations (Insert, Update, Delete)
+## 6. Blob Storage API (`/api/v1/blobs`)
 
-* **Insert Rows**:
-  ```http
-  POST /api/v1/db/main_pg/users/rows
-  X-Axiom-Key: <TOKEN>
-  Idempotency-Key: req_12345
-  Content-Type: application/json
+Storage is **content-addressed (CAS)**: identical bytes are stored once (BLAKE3 hash), copies are zero-copy, and deleting an object only decrements a reference count.
 
-  {
-    "data": [
-      { "email": "charlie@example.com", "status": "active" }
-    ]
-  }
-  ```
+### Direct upload, download, delete
 
-* **Update Rows** (*filter is mandatory to prevent accidental full-table overwrites*):
-  ```http
-  PATCH /api/v1/db/main_pg/users/rows
-  X-Axiom-Key: <TOKEN>
-  Content-Type: application/json
+```http
+PUT /api/v1/blobs/objects/media/reports/q3.pdf
+X-Axiom-Key: <TOKEN>
+Content-Type: application/pdf
 
-  {
-    "filter": { "id": { "eq": 42 } },
-    "data": { "status": "suspended" }
-  }
-  ```
+<binary file bytes>
+```
 
-* **Delete Rows** (*filter is mandatory*):
-  ```http
-  DELETE /api/v1/db/main_pg/users/rows
-  X-Axiom-Key: <TOKEN>
-  Content-Type: application/json
+```http
+GET /api/v1/blobs/objects/media/reports/q3.pdf
+X-Axiom-Key: <TOKEN>
+Range: bytes=0-1048575
+```
 
-  {
-    "filter": { "status": { "eq": "expired" } }
-  }
-  ```
+```http
+DELETE /api/v1/blobs/objects/media/reports/q3.pdf
+X-Axiom-Key: <TOKEN>
+```
 
----
+**Batch delete** by explicit keys, by prefix, or both:
 
-### Column Inspection & Dynamic DDL
+```http
+POST /api/v1/blobs/objects/media/batch-delete
+X-Axiom-Key: <TOKEN>
+Content-Type: application/json
 
-* **Inspect Table Columns & Schema**:
-  ```http
-  GET /api/v1/db/main_pg/users/columns
-  X-Axiom-Key: <TOKEN>
-  ```
-  *Response*:
-  ```json
-  {
-    "success": true,
-    "data": {
-      "database": "main_pg",
-      "table": "users",
-      "columns": [
-        { "name": "id", "data_type": "BIGINT", "nullable": false, "primary_key": true },
-        { "name": "email", "data_type": "VARCHAR(255)", "nullable": false }
-      ],
-      "foreign_keys": []
-    }
-  }
-  ```
+{ "keys": ["old_file1.txt", "old_file2.txt"], "prefix": "temp/cache/" }
+```
 
-* **Add Column**:
-  ```http
-  POST /api/v1/db/main_pg/users/columns
-  X-Axiom-Key: <TOKEN>
-  Content-Type: application/json
+### Resumable chunked uploads
 
-  {
-    "name": "is_mfa_active",
-    "data_type": "BOOLEAN",
-    "nullable": false,
-    "default_value": "false"
-  }
-  ```
+Use for large files or unreliable networks.
 
-* **Modify / Rename Column**:
-  ```http
-  PATCH /api/v1/db/main_pg/users/columns/is_mfa_active
-  X-Axiom-Key: <TOKEN>
-  Content-Type: application/json
+| Step | Request | Notes |
+|---|---|---|
+| 1. Initialize | `POST /api/v1/blobs/uploads/media` with `{ "key": "backups/dump.tar.gz", "total_bytes": 52428800 }` | Response contains `upload_id`, e.g. `up_abc123` |
+| 2. Send chunks | `PUT /api/v1/blobs/uploads/media/up_abc123` with `Content-Range: bytes 0-10485759/52428800` | Repeat per slice; `GET` the session to see what was received |
+| 3. Complete | `POST /api/v1/blobs/uploads/media/up_abc123/complete` | Atomically assembles the object |
 
-  {
-    "new_name": "mfa_enabled"
-  }
-  ```
+To cancel, `DELETE /api/v1/blobs/uploads/media/up_abc123`. For S3-style clients, send numbered parts to `.../up_abc123/parts/:part` instead of using `Content-Range`.
 
-* **Drop Column**:
-  ```http
-  DELETE /api/v1/db/main_pg/users/columns/mfa_enabled
-  X-Axiom-Key: <TOKEN>
-  ```
+### Capability tickets (pre-signed URLs)
 
----
+Tickets delegate read or write access to a single key without sharing an API key.
 
-## 4. Blob Storage Data API (`/api/v1/blobs`)
+**Mint**
 
-### Direct Upload & Download
-* **Upload Object** (Automatic BLAKE3 deduplication):
-  ```http
-  PUT /api/v1/blobs/objects/media/reports/q3.pdf
-  X-Axiom-Key: <TOKEN>
-  Content-Type: application/pdf
+```http
+POST /api/v1/blobs/tickets/media
+X-Axiom-Key: <TOKEN>
+Content-Type: application/json
 
-  <binary file bytes>
-  ```
+{ "key": "reports/q3.pdf", "operation": "READ", "ttl_seconds": 3600 }
+```
 
-* **Download / Stream Object** (Supports byte ranges):
-  ```http
-  GET /api/v1/blobs/objects/media/reports/q3.pdf
-  X-Axiom-Key: <TOKEN>
-  Range: bytes=0-1048575
-  ```
-
-* **Delete Object**:
-  ```http
-  DELETE /api/v1/blobs/objects/media/reports/q3.pdf
-  X-Axiom-Key: <TOKEN>
-  ```
-
-* **Batch Delete Objects**:
-  ```http
-  POST /api/v1/blobs/objects/media/batch-delete
-  X-Axiom-Key: <TOKEN>
-  Content-Type: application/json
-
-  {
-    "keys": ["old_file1.txt", "old_file2.txt"],
-    "prefix": "temp/cache/"
-  }
-  ```
-
----
-
-### Resumable Chunked Uploads
-1. **Initialize Session**:
-   ```http
-   POST /api/v1/blobs/uploads/media
-   X-Axiom-Key: <TOKEN>
-   Content-Type: application/json
-
-   { "key": "backups/dump.tar.gz", "total_bytes": 52428800 }
-   ```
-   *Response provides `"upload_id": "up_abc123"`*.
-
-2. **Upload Chunk**:
-   ```http
-   PUT /api/v1/blobs/uploads/media/up_abc123
-   X-Axiom-Key: <TOKEN>
-   Content-Range: bytes 0-10485759/52428800
-
-   <10 MB slice>
-   ```
-
-3. **Complete Upload**:
-   ```http
-   POST /api/v1/blobs/uploads/media/up_abc123/complete
-   X-Axiom-Key: <TOKEN>
-   ```
-
----
-
-### Capability Tickets (Time-Limited Pre-Signed URLs)
-Delegates read/write access to clients without sharing master API keys:
-
-* **Mint Ticket**:
-  ```http
-  POST /api/v1/blobs/tickets/media
-  X-Axiom-Key: <TOKEN>
-  Content-Type: application/json
-
-  {
-    "key": "reports/q3.pdf",
+```json
+{
+  "success": true,
+  "data": {
+    "url": "/api/v1/blobs/objects/media/reports/q3.pdf?ticket_sig=sig_abc123def456&ticket_exp=1792800000",
+    "signature": "sig_abc123def456",
     "operation": "READ",
-    "ttl_seconds": 3600
+    "expires_at": 1792800000
   }
-  ```
-  *Response*:
-  ```json
-  {
-    "success": true,
-    "data": {
-      "ticket_url": "http://127.0.0.1:4500/api/v1/blobs/objects/media/reports/q3.pdf?ticket=v1.media...",
-      "signature": "sig_abc123def456",
-      "expires_at": 1792800000
-    }
-  }
-  ```
+}
+```
 
-* **List Tickets** (Keyset cursor pagination):
-  ```http
-  GET /api/v1/blobs/tickets/media?limit=25&cursor=1761400000_42
-  X-Axiom-Key: <TOKEN>
-  ```
+`expires_at` is a Unix timestamp (seconds).
 
-* **Revoke Ticket**:
-  ```http
-  POST /api/v1/blobs/tickets/media/sig_abc123def456/revoke
-  X-Axiom-Key: <TOKEN>
-  ```
+**List** (keyset pagination): `GET /api/v1/blobs/tickets/media?limit=25&cursor=1761400000_42`
+
+**Revoke**: `POST /api/v1/blobs/tickets/media/sig_abc123def456/revoke`
+
+Lifecycle: **active → revoked** (`/revoke`) → **active** again (`/enable`), or permanently removed (`DELETE`). Administrators can do the same cluster-wide under `/admin/v1/blobs/tickets`.
 
 ---
 
-## 5. Model Context Protocol (MCP) (`POST /mcp/v1`)
+## 7. Model Context Protocol (MCP)
 
-Axiom exposes full database and storage capabilities to AI coding agents via standard JSON-RPC 2.0:
+Axiom exposes database and storage capabilities to AI agents over JSON-RPC 2.0 at `POST /mcp/v1`, authenticated with `X-Axiom-Key`. Protocol version: `2024-11-05`.
 
 ```http
 POST /mcp/v1
@@ -517,27 +477,38 @@ Content-Type: application/json
   "id": 1,
   "method": "tools/call",
   "params": {
-    "name": "db_query",
-    "arguments": {
-      "database": "main_pg",
-      "sql": "SELECT COUNT(*) FROM users;"
-    }
+    "name": "axiom_raw_sql",
+    "arguments": { "database": "main_pg", "sql": "SELECT COUNT(*) FROM users;" }
   }
 }
 ```
 
-*Built-in AI Tools*: `db_list`, `db_schema`, `db_query`, `db_rows_read`, `db_rows_insert`, `db_rows_update`, `db_rows_delete`, `db_column_add`, `db_column_modify`, `db_column_drop`, `blob_list`, `blob_read`, `blob_write`, `blob_delete`, `blob_ticket_mint`.
+**Built-in tools**
+
+| Category | Tools |
+|---|---|
+| Database & Tables | `axiom_list_services`, `axiom_list_tables`, `axiom_describe_table` |
+| Query & Mutations | `axiom_query`, `axiom_raw_sql`, `axiom_insert`, `axiom_update`, `axiom_delete` |
+| Blob Storage | `axiom_list_blob_namespaces`, `axiom_list_blobs`, `axiom_get_blob_metadata`, `axiom_read_blob`, `axiom_write_blob`, `axiom_delete_blob`, `axiom_create_download_ticket` |
+
+MCP calls run under the key's role, so RBAC applies exactly as for REST. Give agents a dedicated, least-privilege key.
 
 ---
 
-## 6. Error Reference & Codes
+## 8. Errors
 
-| HTTP Status | Error Code | Common Trigger |
+| HTTP | Code | Typical cause |
 |---|---|---|
-| `400 Bad Request` | `BAD_REQUEST` / `INVALID_PAYLOAD` | Missing required fields or malformed JSON |
-| `400 Bad Request` | `AST_VALIDATION_ERROR` | SQL rejected by AST parser or disallowed keyword |
-| `401 Unauthorized` | `UNAUTHORIZED` | Missing, malformed, or expired `X-Axiom-Key` |
-| `403 Forbidden` | `FORBIDDEN` | Caller role lacks required privilege on database/table |
-| `404 Not Found` | `NOT_FOUND` / `DB_NOT_FOUND` | Database alias, table, or blob key does not exist |
-| `429 Too Many Requests` | `RATE_LIMITED` | IP or API key exceeded sliding-window rate limit |
-| `500 Internal Error` | `INTERNAL_SERVER_ERROR` | Upstream database error or unexpected server failure |
+| `400` | `BAD_REQUEST`, `INVALID_PAYLOAD` | Missing required fields or malformed JSON |
+| `400` | `AST_VALIDATION_ERROR` | SQL rejected by the AST parser or contains a disallowed keyword |
+| `401` | `UNAUTHORIZED` | `X-Axiom-Key` missing, malformed, or expired |
+| `403` | `FORBIDDEN` | Role lacks the required privilege on the database or table |
+| `404` | `NOT_FOUND`, `DB_NOT_FOUND` | Database alias, table, or blob key does not exist |
+| `429` | `RATE_LIMITED` | IP or API key exceeded its sliding-window rate limit |
+| `500` | `INTERNAL_SERVER_ERROR` | Upstream database error or unexpected server failure |
+
+**Handling tips**
+
+* `429`: back off and retry; the limit is per IP and per key.
+* `5xx` on writes: retry with the same `Idempotency-Key`.
+* Always log `meta.request_id`.
