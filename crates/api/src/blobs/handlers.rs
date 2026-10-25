@@ -1075,6 +1075,11 @@ pub async fn revoke_ticket_handler(
         ));
     }
 
+    // Find the exact ticket signature before revoking in SQLite
+    let ticket_sig = MetadataStore::find_blob_ticket_signature(&signature_or_id)
+        .await
+        .unwrap_or(None);
+
     let found = MetadataStore::revoke_blob_ticket(&signature_or_id)
         .await
         .map_err(|e| {
@@ -1093,15 +1098,23 @@ pub async fn revoke_ticket_handler(
         ));
     }
 
-    // Write instant revocation key to CacheEngine L1 RAM
-    let cache_key = format!("ticket:revoked:{}", signature_or_id);
-    axiom_cache::CacheEngine::set(
-        &cache_key,
-        bytes::Bytes::from_static(b"1"),
-        86_400,
-        axiom_cache::Durability::MemoryOnly,
-    )
-    .await;
+    // Write instant revocation key to CacheEngine L1 RAM for both ID and cryptographic signature
+    let mut sigs_to_invalidate = vec![signature_or_id.clone()];
+    if let Some(ref s) = ticket_sig {
+        if s != &signature_or_id {
+            sigs_to_invalidate.push(s.clone());
+        }
+    }
+    for s in &sigs_to_invalidate {
+        axiom_cache::CacheEngine::delete(&format!("ticket:valid:{}", s)).await;
+        axiom_cache::CacheEngine::set(
+            &format!("ticket:revoked:{}", s),
+            bytes::Bytes::from_static(b"1"),
+            86_400,
+            axiom_cache::Durability::MemoryOnly,
+        )
+        .await;
+    }
 
     let actor = if auth.is_session {
         "admin"
@@ -1136,15 +1149,28 @@ pub async fn delete_ticket_handler(
         ));
     }
 
-    // Always invalidate in CacheEngine L1 RAM before deleting from SQLite
-    let cache_key = format!("ticket:revoked:{}", signature_or_id);
-    axiom_cache::CacheEngine::set(
-        &cache_key,
-        bytes::Bytes::from_static(b"1"),
-        86_400,
-        axiom_cache::Durability::MemoryOnly,
-    )
-    .await;
+    // Find the exact ticket signature before deleting from SQLite
+    let ticket_sig = MetadataStore::find_blob_ticket_signature(&signature_or_id)
+        .await
+        .unwrap_or(None);
+
+    // Invalidate in CacheEngine L1 RAM for both ID and cryptographic signature
+    let mut sigs_to_invalidate = vec![signature_or_id.clone()];
+    if let Some(ref s) = ticket_sig {
+        if s != &signature_or_id {
+            sigs_to_invalidate.push(s.clone());
+        }
+    }
+    for s in &sigs_to_invalidate {
+        axiom_cache::CacheEngine::delete(&format!("ticket:valid:{}", s)).await;
+        axiom_cache::CacheEngine::set(
+            &format!("ticket:revoked:{}", s),
+            bytes::Bytes::from_static(b"1"),
+            86_400,
+            axiom_cache::Durability::MemoryOnly,
+        )
+        .await;
+    }
 
     let found = MetadataStore::delete_blob_ticket(&signature_or_id)
         .await

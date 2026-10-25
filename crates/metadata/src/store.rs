@@ -1764,6 +1764,28 @@ impl MetadataStore {
         Ok(tickets)
     }
 
+    /// Finds the underlying cryptographic signature of a ticket given either its ID or signature.
+    pub async fn find_blob_ticket_signature(signature_or_id: &str) -> Result<Option<String>, String> {
+        let conn = Self::get_conn().await?;
+        let mut rows = match conn
+            .query(
+                "SELECT signature FROM blob_tickets WHERE signature = ?1 OR id = ?1 LIMIT 1",
+                libsql::params![signature_or_id],
+            )
+            .await
+        {
+            Ok(r) => r,
+            Err(_) => return Ok(None),
+        };
+
+        if let Ok(Some(row)) = rows.next().await {
+            let sig: String = row.get(0).unwrap_or_default();
+            Ok(Some(sig))
+        } else {
+            Ok(None)
+        }
+    }
+
     /// Revokes a blob capability ticket by signature or id, immediately invalidating it.
     pub async fn revoke_blob_ticket(signature_or_id: &str) -> Result<bool, String> {
         let conn = Self::get_conn().await?;
@@ -1794,13 +1816,13 @@ impl MetadataStore {
         Ok(affected > 0)
     }
 
-    /// Checks if a ticket signature has been explicitly revoked.
-    pub async fn is_blob_ticket_revoked(signature: &str) -> Result<bool, String> {
+    /// Validates whether a capability ticket signature is actively registered, unrevoked, and unexpired.
+    /// CONTRACT: Returns Ok(true) only if the ticket exists in the registry, revoked == 0, and expires_at > now.
+    pub async fn is_blob_ticket_active(signature: &str) -> Result<bool, String> {
         let conn = Self::get_conn().await?;
-
         let mut rows = match conn
             .query(
-                "SELECT revoked FROM blob_tickets WHERE signature = ?1",
+                "SELECT revoked, expires_at FROM blob_tickets WHERE signature = ?1 LIMIT 1",
                 libsql::params![signature],
             )
             .await
@@ -1810,12 +1832,22 @@ impl MetadataStore {
         };
 
         if let Ok(Some(row)) = rows.next().await {
-            let revoked_int: i64 = row.get(0).unwrap_or(0);
-            Ok(revoked_int != 0)
+            let revoked_int: i64 = row.get(0).unwrap_or(1);
+            let expires_at: i64 = row.get(1).unwrap_or(0);
+            let now_unix = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs() as i64;
+            Ok(revoked_int == 0 && expires_at > now_unix)
         } else {
-            // Not in registry (or generated prior to persistence); not revoked
+            // Deleted from registry or never issued -> immediately invalid
             Ok(false)
         }
+    }
+
+    /// Checks if a ticket signature has been explicitly revoked or deleted from registry.
+    pub async fn is_blob_ticket_revoked(signature: &str) -> Result<bool, String> {
+        Self::is_blob_ticket_active(signature).await.map(|active| !active)
     }
 
     /// Purges expired blob tickets older than 7 days from SQLite.
@@ -2655,6 +2687,23 @@ mod tests {
         let check_row = check_rows.next().await.unwrap().unwrap();
         let check_revoked: i64 = check_row.get(0).unwrap();
         assert_eq!(check_revoked, 1);
+
+        // 4. Delete ticket
+        conn.execute(
+            "DELETE FROM blob_tickets WHERE signature = 'sig_abc_123'",
+            (),
+        )
+        .await
+        .unwrap();
+
+        let mut deleted_rows = conn
+            .query(
+                "SELECT revoked FROM blob_tickets WHERE signature = 'sig_abc_123'",
+                (),
+            )
+            .await
+            .unwrap();
+        assert!(deleted_rows.next().await.unwrap().is_none());
 
         let _ = std::fs::remove_file(db_path.replace("file:", ""));
     }

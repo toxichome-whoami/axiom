@@ -79,6 +79,142 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, A
         }
     }
 
+    // Check for explicit Capability Ticket invocation on native blob endpoints (/api/v1/blobs/*).
+    // MUST execute before session check: capability URLs carrying ticket_sig MUST be validated against
+    // the capability ticket registry and signature, and CANNOT bypass ticket revocation/deletion via ambient session cookies.
+    let path = req.uri().path();
+    let stripped_blob_path = path
+        .strip_prefix("/api/v1/blobs/")
+        .or_else(|| path.strip_prefix("/blobs/"));
+
+    let has_ticket_sig = stripped_blob_path.is_some()
+        && req.uri().query().map(|q| q.contains("ticket_sig=")).unwrap_or(false);
+
+    if let (Some(stripped), true) = (stripped_blob_path, has_ticket_sig) {
+        if let Some(query) = req.uri().query() {
+            let mut ticket_sig: Option<String> = None;
+            let mut ticket_exp_str: Option<String> = None;
+            for pair in query.split('&') {
+                if let Some((k, v)) = pair.split_once('=') {
+                    if k == "ticket_sig" {
+                        ticket_sig = Some(
+                            urlencoding::decode(v)
+                                .unwrap_or(std::borrow::Cow::Borrowed(v))
+                                .into_owned(),
+                        );
+                    } else if k == "ticket_exp" {
+                        ticket_exp_str = Some(
+                            urlencoding::decode(v)
+                                .unwrap_or(std::borrow::Cow::Borrowed(v))
+                                .into_owned(),
+                        );
+                    }
+                }
+            }
+
+            if let Some(sig) = ticket_sig {
+                let exp = ticket_exp_str
+                    .and_then(|s| s.parse::<i64>().ok())
+                    .unwrap_or(0);
+
+                let (ns, key) = match stripped.split_once('/') {
+                    Some((n, k)) => (n, k),
+                    None => {
+                        return Err(AxiomError::new(
+                            "BAD_REQUEST",
+                            "Invalid blob path structure",
+                            axum::http::StatusCode::BAD_REQUEST,
+                        ));
+                    }
+                };
+
+                let op = match *req.method() {
+                    axum::http::Method::GET | axum::http::Method::HEAD => "READ",
+                    axum::http::Method::PUT => "WRITE",
+                    _ => "UNKNOWN",
+                };
+
+                let secret = axiom_blob::tickets::get_ticket_secret();
+
+                // 1. Verify cryptographic HMAC signature
+                if let Err(e) = axiom_blob::tickets::verify_ticket(secret, ns, key, op, exp, &sig) {
+                    return Err(AxiomError::new(
+                        "AUTH_TICKET_INVALID",
+                        &format!("Capability ticket verification failed: {}", e),
+                        axum::http::StatusCode::FORBIDDEN,
+                    ));
+                }
+
+                // 2. Instant cache check: if marked revoked or deleted in RAM, reject immediately
+                let cache_revoked_key = format!("ticket:revoked:{}", sig);
+                if axiom_cache::CacheEngine::get(&cache_revoked_key).await.is_some() {
+                    return Err(AxiomError::new(
+                        "AUTH_TICKET_REVOKED",
+                        "Capability ticket has been revoked or deleted by an administrator",
+                        axum::http::StatusCode::FORBIDDEN,
+                    ));
+                }
+
+                // 3. Check active validity cache or SQLite registry
+                let cache_valid_key = format!("ticket:valid:{}", sig);
+                let is_cached_valid = axiom_cache::CacheEngine::get(&cache_valid_key).await.is_some();
+
+                if !is_cached_valid {
+                    let is_active = axiom_metadata::MetadataStore::is_blob_ticket_active(&sig)
+                        .await
+                        .unwrap_or(false);
+
+                    if !is_active {
+                        // Immediately register tombstone in RAM cache so repeated checks are instant
+                        axiom_cache::CacheEngine::set(
+                            &cache_revoked_key,
+                            bytes::Bytes::from_static(b"1"),
+                            86_400,
+                            axiom_cache::Durability::MemoryOnly,
+                        )
+                        .await;
+
+                        return Err(AxiomError::new(
+                            "AUTH_TICKET_REVOKED",
+                            "Capability ticket has been revoked or deleted by an administrator",
+                            axum::http::StatusCode::FORBIDDEN,
+                        ));
+                    }
+
+                    // Positive cache active status for min(remaining TTL, 300) seconds
+                    let now_unix = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs() as i64;
+                    let ttl = (exp - now_unix).clamp(5, 300) as u64;
+                    axiom_cache::CacheEngine::set(
+                        &cache_valid_key,
+                        bytes::Bytes::from_static(b"1"),
+                        ttl,
+                        axiom_cache::Durability::MemoryOnly,
+                    )
+                    .await;
+                }
+
+                // Inject ticket identity context; role is set to "ticket" which PolicyEngine
+                // strictly restricts from executing DELETE mutations.
+                let ctx = AuthContext {
+                    api_key_name: format!("ticket:{}:{}", ns, key),
+                    role: Some("ticket".to_string()),
+                    mode: if op == "READ" {
+                        axiom_core::ServerMode::Readonly
+                    } else {
+                        axiom_core::ServerMode::Readwrite
+                    },
+                    db_scope: vec![ns.to_string()],
+                    ..Default::default()
+                };
+                req.extensions_mut().insert(ctx);
+                return Ok(next.run(req).await);
+            }
+        }
+    }
+
     // Check for administrative session token (via Bearer header or Cookie).
     // Session tokens have the "axm_sess_" prefix. Match on prefix, not fixed length,
     // so the check stays correct even if the UUID representation changes.
@@ -139,16 +275,9 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, A
         }
     }
 
-    // ─── Capability Ticket Authentication ───────────────────────────────────
-    // Validates pre-signed URLs on native blob endpoints (/api/v1/blobs/*)
-    // using keyed BLAKE3 HMAC signatures and sub-microsecond cache revocation.
-    let path = req.uri().path();
-    let stripped_blob_path = path
-        .strip_prefix("/api/v1/blobs/")
-        .or_else(|| path.strip_prefix("/blobs/"));
+    // Fast-path: Unauthenticated public blob reads (/api/v1/blobs/public/:namespace/*key)
+    // Handler validates that target namespace has is_public == true.
     if let Some(stripped) = stripped_blob_path {
-        // Fast-path: Unauthenticated public blob reads (/api/v1/blobs/public/:namespace/*key)
-        // Handler validates that target namespace has is_public == true.
         if stripped.starts_with("public/")
             && (*req.method() == axum::http::Method::GET
                 || *req.method() == axum::http::Method::HEAD)
@@ -160,77 +289,6 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, A
             };
             req.extensions_mut().insert(ctx);
             return Ok(next.run(req).await);
-        }
-
-        if let Some(query) = req.uri().query() {
-            let mut ticket_sig: Option<String> = None;
-            let mut ticket_exp_str: Option<String> = None;
-            for pair in query.split('&') {
-                if let Some((k, v)) = pair.split_once('=') {
-                    if k == "ticket_sig" {
-                        ticket_sig = Some(
-                            urlencoding::decode(v)
-                                .unwrap_or(std::borrow::Cow::Borrowed(v))
-                                .into_owned(),
-                        );
-                    } else if k == "ticket_exp" {
-                        ticket_exp_str = Some(
-                            urlencoding::decode(v)
-                                .unwrap_or(std::borrow::Cow::Borrowed(v))
-                                .into_owned(),
-                        );
-                    }
-                }
-            }
-
-            if let (Some(ref sig), Some(ref exp_str)) = (ticket_sig, ticket_exp_str) {
-                if let Ok(exp) = exp_str.parse::<i64>() {
-                    if let Some((ns, key)) = stripped.split_once('/') {
-                        let op = match *req.method() {
-                            axum::http::Method::GET | axum::http::Method::HEAD => "READ",
-                            axum::http::Method::PUT => "WRITE",
-                            _ => "UNKNOWN",
-                        };
-
-                        let secret = axiom_blob::tickets::get_ticket_secret();
-
-                        if axiom_blob::tickets::verify_ticket(secret, ns, key, op, exp, sig).is_ok()
-                        {
-                            // Instant revocation check: fast in-memory L1 cache check, falling back to SQLite metadata
-                            let cache_key = format!("ticket:revoked:{}", sig);
-                            let is_revoked =
-                                axiom_cache::CacheEngine::get(&cache_key).await.is_some()
-                                    || axiom_metadata::MetadataStore::is_blob_ticket_revoked(sig)
-                                        .await
-                                        .unwrap_or(false);
-
-                            if is_revoked {
-                                return Err(AxiomError::new(
-                                    "AUTH_TICKET_REVOKED",
-                                    "Capability ticket has been revoked by an administrator",
-                                    axum::http::StatusCode::FORBIDDEN,
-                                ));
-                            }
-
-                            // Inject ticket identity context; role is set to "ticket" which PolicyEngine
-                            // strictly restricts from executing DELETE mutations.
-                            let ctx = AuthContext {
-                                api_key_name: format!("ticket:{}:{}", ns, key),
-                                role: Some("ticket".to_string()),
-                                mode: if op == "READ" {
-                                    axiom_core::ServerMode::Readonly
-                                } else {
-                                    axiom_core::ServerMode::Readwrite
-                                },
-                                db_scope: vec![ns.to_string()],
-                                ..Default::default()
-                            };
-                            req.extensions_mut().insert(ctx);
-                            return Ok(next.run(req).await);
-                        }
-                    }
-                }
-            }
         }
     }
 
