@@ -3,6 +3,7 @@
 # Axiom Configuration Reference (`config.toml`)
 
 ### Startup Settings, Modules, Defaults, and Environment Overrides
+
 **Single Binary Gateway · Immutable Startup Configuration · Lock-Free Arc Access**
 
 [![Version](https://img.shields.io/badge/version-0.1.17%2B-111827.svg?style=flat-square)](https://github.com/toxichome-whoami/axiom/releases)
@@ -31,23 +32,23 @@
 
 `config.toml` holds **process-level startup configuration only**: network binding, worker threads, logging, caches, circuit breakers, and storage roots.
 
-| Lives in `config.toml` | Lives in the metadata database (`data/axiom.db`) |
-|---|---|
-| Host, port, TLS, timeouts | Database connection pools |
-| Logging, rate-limit, cache tuning | API keys |
-| Circuit breaker, blob storage paths | RBAC roles |
-| Metadata store location | Cluster mesh peers |
+| Lives in `config.toml`              | Lives in the metadata database (`data/axiom.db`) |
+| ----------------------------------- | ------------------------------------------------ |
+| Host, port, TLS, timeouts           | Database connection pools                        |
+| Logging, rate-limit, cache tuning   | API keys                                         |
+| Circuit breaker, blob storage paths | RBAC roles                                       |
+| Metadata store location             | Cluster mesh peers                               |
 
 > [!IMPORTANT]
 > Database connections, API keys, roles, and cluster peers **cannot** be set in `config.toml`. Manage them with the Admin Web UI (`/system`), the CLI (`axiom db`, `axiom key`, `axiom role`, `axiom cluster`), or the [Admin REST API](./api.md).
 
 **Value formats used throughout this document**
 
-| Kind | Format | Examples |
-|---|---|---|
-| Durations | Integer **seconds** | `30`, `86400` |
-| Sizes | String with unit | `"10mb"`, `"5gb"`, `"64kb"` |
-| Toggles | Boolean | `true`, `false` |
+| Kind      | Format              | Examples                    |
+| --------- | ------------------- | --------------------------- |
+| Durations | Integer **seconds** | `30`, `86400`               |
+| Sizes     | String with unit    | `"10mb"`, `"5gb"`, `"64kb"` |
+| Toggles   | Boolean             | `true`, `false`             |
 
 ---
 
@@ -86,18 +87,18 @@ flowchart TD
 
 ### Precedence (highest wins)
 
-| Priority | Source | Example |
-|---|---|---|
-| 1 | Environment variables | `SERVER__PORT=4500` |
-| 2 | `.env` file in the working directory | `SERVER__PORT=4500` |
-| 3 | `config.toml` (or custom path via `-c`) | `[server] port = 4500` |
-| 4 | Compiled defaults | `port = 4500` |
+| Priority | Source                                  | Example                |
+| -------- | --------------------------------------- | ---------------------- |
+| 1        | Environment variables                   | `SERVER__PORT=4500`    |
+| 2        | `.env` file in the working directory    | `SERVER__PORT=4500`    |
+| 3        | `config.toml` (or custom path via `-c`) | `[server] port = 4500` |
+| 4        | Compiled defaults                       | `port = 4500`          |
 
 ### Runtime guarantees
 
-* **Immutable.** Configuration is read once at startup and frozen. **Changing it requires a restart.**
-* **Lock-free.** Handlers read config through `Arc` clones with no mutex contention.
-* **Not the same as `/admin/v1/reload`.** That endpoint refreshes the *metadata* snapshot (keys, roles, pools) from disk. It never re-reads `config.toml`.
+- **Immutable.** Configuration is read once at startup and frozen. **Changing it requires a restart.**
+- **Lock-free.** Handlers read config through `Arc` clones with no mutex contention.
+- **Not the same as `/admin/v1/reload`.** That endpoint refreshes the _metadata_ snapshot (keys, roles, pools) from disk. It never re-reads `config.toml`.
 
 ---
 
@@ -113,11 +114,11 @@ axiom server run -c /etc/axiom/production.toml
 
 **`axiom config` subcommands**
 
-| Command | Purpose |
-|---|---|
-| `axiom config init` | Create `config.toml` with standard defaults (`-p` path, `-f` force, `--to-env`) |
+| Command               | Purpose                                                                                    |
+| --------------------- | ------------------------------------------------------------------------------------------ |
+| `axiom config init`   | Create `config.toml` with standard defaults (`-p` path, `-f` force, `--to-env`)            |
 | `axiom config to-env` | Convert `config.toml` into a `.env` environment file (`-i` input, `-o` output, `-f` force) |
-| `axiom config show` | Validate and inspect configuration values from `config.toml` (`-c` path) |
+| `axiom config show`   | Validate and inspect configuration values from `config.toml` (`-c` path)                   |
 
 > Run `axiom config show` to validate syntax and inspect active TOML configuration values.
 
@@ -218,20 +219,20 @@ verify_reads = false               # Recompute BLAKE3 on every read
 
 ### 6.1 `[server]`: network, limits, TLS, CORS
 
-| Key | Type | Default | Range / values | Description |
-|---|---|---|---|---|
-| `host` | string | `"127.0.0.1"` | IPv4 or IPv6 | Interface to bind. `"0.0.0.0"` listens on all interfaces. |
-| `port` | integer | `4500` | `1`–`65535` | HTTP listen port. |
-| `workers` | integer | `0` | `0`–`256` | Tokio worker threads. `0` = one per logical CPU. |
-| `max_connections` | integer | `10000` | `100`–`100000` | Concurrent TCP connection ceiling. |
-| `request_timeout` | integer (s) | `30` | `1`–`300` | Cancels requests that run longer than this. |
-| `body_limit` | size | `"10mb"` | e.g. `"2mb"`, `"1gb"` | Max request body, enforced by the WAF. |
-| `tls_cert` | path | `""` | PEM file | Certificate for native TLS. Empty disables TLS. |
-| `tls_key` | path | `""` | PEM file | Private key matching `tls_cert`. |
-| `allowed_ips` | string[] | `[]` / `["127.0.0.1"]` | Exact IPs or CIDR | Exempt from rate limiting and auto-bans (`[]` compiled default; `init` template uses `["127.0.0.1"]`). |
-| `trusted_proxies` | string[] | `["127.0.0.1"]` | IPs or CIDR | Proxies whose `X-Forwarded-For` is believed. |
-| `cors_origins` | string[] | `[]` / `["*"]` | Origins or `"*"` | Allowed CORS origins (`[]` compiled default allows local dev ports; `init` template uses `["*"]`). |
-| `shutdown_timeout` | integer (s) | `30` | `1`–`120` | Drain period on SIGTERM / SIGINT. |
+| Key                | Type        | Default                | Range / values        | Description                                                                                            |
+| ------------------ | ----------- | ---------------------- | --------------------- | ------------------------------------------------------------------------------------------------------ |
+| `host`             | string      | `"127.0.0.1"`          | IPv4 or IPv6          | Interface to bind. `"0.0.0.0"` listens on all interfaces.                                              |
+| `port`             | integer     | `4500`                 | `1`–`65535`           | HTTP listen port.                                                                                      |
+| `workers`          | integer     | `0`                    | `0`–`256`             | Tokio worker threads. `0` = one per logical CPU.                                                       |
+| `max_connections`  | integer     | `10000`                | `100`–`100000`        | Concurrent TCP connection ceiling.                                                                     |
+| `request_timeout`  | integer (s) | `30`                   | `1`–`300`             | Cancels requests that run longer than this.                                                            |
+| `body_limit`       | size        | `"10mb"`               | e.g. `"2mb"`, `"1gb"` | Max request body, enforced by the WAF.                                                                 |
+| `tls_cert`         | path        | `""`                   | PEM file              | Certificate for native TLS. Empty disables TLS.                                                        |
+| `tls_key`          | path        | `""`                   | PEM file              | Private key matching `tls_cert`.                                                                       |
+| `allowed_ips`      | string[]    | `[]` / `["127.0.0.1"]` | Exact IPs or CIDR     | Exempt from rate limiting and auto-bans (`[]` compiled default; `init` template uses `["127.0.0.1"]`). |
+| `trusted_proxies`  | string[]    | `["127.0.0.1"]`        | IPs or CIDR           | Proxies whose `X-Forwarded-For` is believed.                                                           |
+| `cors_origins`     | string[]    | `[]` / `["*"]`         | Origins or `"*"`      | Allowed CORS origins (`[]` compiled default allows local dev ports; `init` template uses `["*"]`).     |
+| `shutdown_timeout` | integer (s) | `30`                   | `1`–`120`             | Drain period on SIGTERM / SIGINT.                                                                      |
 
 > [!WARNING]
 > **Never set `trusted_proxies = ["*"]` in production.** It lets any client forge `X-Forwarded-For`, bypassing IP rate limits and bans. List only your real proxy or load-balancer addresses.
@@ -243,16 +244,16 @@ verify_reads = false               # Recompute BLAKE3 on every read
 
 ### 6.2 `[logging]`
 
-| Key | Type | Default | Range / values | Description |
-|---|---|---|---|---|
-| `enabled` | bool | `true` | | Master toggle for log output. |
-| `level` | string | `"INFO"` | `TRACE` `DEBUG` `INFO` `WARN` `ERROR` | Minimum severity captured. |
-| `format` | string | `"json"` | `json`, `pretty` | `json` for log aggregators, `pretty` for local dev. |
-| `directory` | path | `"./logs"` | | Log directory (created if missing). |
-| `file_prefix` | string | `"axiom"` | | Files named `<prefix>.<timestamp>.log`. |
-| `max_file_size` | size | `"50mb"` | e.g. `"10mb"` | Rotate when the active file reaches this size. |
-| `max_files` | integer | `5` | `1`–`50` | Rotated segments kept; the oldest is deleted first. |
-| `stdout` | bool | `true` | | Also write logs to stdout/stderr. |
+| Key             | Type    | Default    | Range / values                        | Description                                         |
+| --------------- | ------- | ---------- | ------------------------------------- | --------------------------------------------------- |
+| `enabled`       | bool    | `true`     |                                       | Master toggle for log output.                       |
+| `level`         | string  | `"INFO"`   | `TRACE` `DEBUG` `INFO` `WARN` `ERROR` | Minimum severity captured.                          |
+| `format`        | string  | `"json"`   | `json`, `pretty`                      | `json` for log aggregators, `pretty` for local dev. |
+| `directory`     | path    | `"./logs"` |                                       | Log directory (created if missing).                 |
+| `file_prefix`   | string  | `"axiom"`  |                                       | Files named `<prefix>.<timestamp>.log`.             |
+| `max_file_size` | size    | `"50mb"`   | e.g. `"10mb"`                         | Rotate when the active file reaches this size.      |
+| `max_files`     | integer | `5`        | `1`–`50`                              | Rotated segments kept; the oldest is deleted first. |
+| `stdout`        | bool    | `true`     |                                       | Also write logs to stdout/stderr.                   |
 
 > In containers, keep `stdout = true` and `format = "json"` so your runtime's log collector picks up records.
 
@@ -262,17 +263,17 @@ verify_reads = false               # Recompute BLAKE3 on every read
 
 Limits apply **per IP and per API key**. IPs in `server.allowed_ips` are exempt.
 
-| Key | Type | Default | Range / values | Description |
-|---|---|---|---|---|
-| `enabled` | bool | `true` | | Master toggle. |
-| `backend` | string | `"memory"` | `memory`, `turso` | `memory` is fast but resets on restart; `turso` persists counters. |
-| `turso_url` | string | `"file:data/cache.db"` | path or LibSQL URL | Used only when `backend = "turso"`. |
-| `turso_token` | string | `""` | | Auth token for a remote Turso instance. |
-| `window` | integer (s) | `60` | `1`–`3600` | Sliding window length. |
-| `max_requests` | integer | `100` | `1`–`100000` | Requests per window. |
-| `burst` | integer | `20` | `0`–`1000` | Extra capacity above `max_requests` for short spikes. |
-| `penalty_threshold` | integer | `10` | `1`–`100` | Violations before an automatic ban. |
-| `penalty_cooldown` | integer (s) | `300` | `10`–`86400` | How long a ban lasts. |
+| Key                 | Type        | Default                | Range / values     | Description                                                        |
+| ------------------- | ----------- | ---------------------- | ------------------ | ------------------------------------------------------------------ |
+| `enabled`           | bool        | `true`                 |                    | Master toggle.                                                     |
+| `backend`           | string      | `"memory"`             | `memory`, `turso`  | `memory` is fast but resets on restart; `turso` persists counters. |
+| `turso_url`         | string      | `"file:data/cache.db"` | path or LibSQL URL | Used only when `backend = "turso"`.                                |
+| `turso_token`       | string      | `""`                   |                    | Auth token for a remote Turso instance.                            |
+| `window`            | integer (s) | `60`                   | `1`–`3600`         | Sliding window length.                                             |
+| `max_requests`      | integer     | `100`                  | `1`–`100000`       | Requests per window.                                               |
+| `burst`             | integer     | `20`                   | `0`–`1000`         | Extra capacity above `max_requests` for short spikes.              |
+| `penalty_threshold` | integer     | `10`                   | `1`–`100`          | Violations before an automatic ban.                                |
+| `penalty_cooldown`  | integer (s) | `300`                  | `10`–`86400`       | How long a ban lasts.                                              |
 
 **How it behaves with defaults:** a client may make 100 requests per 60 s (plus a burst of 20). After 10 violations it is blocked for 5 minutes. Exceeding limits returns `429 RATE_LIMITED`.
 
@@ -280,19 +281,19 @@ Limits apply **per IP and per API key**. IPs in `server.allowed_ips` are exempt.
 
 ### 6.4 `[cache]`
 
-| Key | Type | Default | Range / values | Description |
-|---|---|---|---|---|
-| `enabled` | bool | `true` | | Master toggle. |
-| `backend` | string | `"memory"` | `memory`, `hybrid` | `hybrid` adds an L2 disk tier behind the L1 RAM cache. |
-| `turso_url` | string | `"file:data/cache.db"` | path or LibSQL URL | L2 location when `backend = "hybrid"`. |
-| `turso_token` | string | `""` | | Auth token for a remote L2 instance. |
-| `max_memory` | size | `"100mb"` | e.g. `"512mb"` | L1 memory ceiling. |
-| `default_ttl` | integer (s) | `60` | `1`–`86400` | Default lifetime for general items. |
-| `query_cache` | bool | `true` | | Cache SELECT results and parsed ASTs. |
-| `idempotency_ttl` | integer (s) | `86400` | `60`–`604800` | How long `Idempotency-Key` responses are replayable. |
-| `response_cache_ttl` | integer (s) | `30` | `1`–`3600` | TTL for cached GET responses. |
-| `query_results_ttl` | integer (s) | `5` | `1`–`300` | TTL for repeated SELECT results. |
-| `negative_cache_ttl` | integer (s) | `5` | `1`–`60` | TTL for 404 and empty lookups. |
+| Key                  | Type        | Default                | Range / values     | Description                                            |
+| -------------------- | ----------- | ---------------------- | ------------------ | ------------------------------------------------------ |
+| `enabled`            | bool        | `true`                 |                    | Master toggle.                                         |
+| `backend`            | string      | `"memory"`             | `memory`, `hybrid` | `hybrid` adds an L2 disk tier behind the L1 RAM cache. |
+| `turso_url`          | string      | `"file:data/cache.db"` | path or LibSQL URL | L2 location when `backend = "hybrid"`.                 |
+| `turso_token`        | string      | `""`                   |                    | Auth token for a remote L2 instance.                   |
+| `max_memory`         | size        | `"100mb"`              | e.g. `"512mb"`     | L1 memory ceiling.                                     |
+| `default_ttl`        | integer (s) | `60`                   | `1`–`86400`        | Default lifetime for general items.                    |
+| `query_cache`        | bool        | `true`                 |                    | Cache SELECT results and parsed ASTs.                  |
+| `idempotency_ttl`    | integer (s) | `86400`                | `60`–`604800`      | How long `Idempotency-Key` responses are replayable.   |
+| `response_cache_ttl` | integer (s) | `30`                   | `1`–`3600`         | TTL for cached GET responses.                          |
+| `query_results_ttl`  | integer (s) | `5`                    | `1`–`300`          | TTL for repeated SELECT results.                       |
+| `negative_cache_ttl` | integer (s) | `5`                    | `1`–`60`           | TTL for 404 and empty lookups.                         |
 
 > [!TIP]
 > Cached responses report `"cached": true` in the response `meta`. Flush all caches at runtime with `POST /admin/v1/cache/flush`; no restart is needed.
@@ -301,11 +302,11 @@ Limits apply **per IP and per API key**. IPs in `server.allowed_ips` are exempt.
 
 ### 6.5 `[performance]`
 
-| Key | Type | Default | Range | Description |
-|---|---|---|---|---|
-| `query_cache_size` | integer | `2048` | `128`–`65536` | LRU slots for parsed SQL ASTs. |
-| `transpiler_cache_size` | integer | `4096` | `128`–`65536` | Slots for dialect transpilation results. |
-| `rate_limit_cache_size` | integer | `256` | `16`–`4096` | Slots for rate-limit identity lookups. |
+| Key                     | Type    | Default | Range         | Description                              |
+| ----------------------- | ------- | ------- | ------------- | ---------------------------------------- |
+| `query_cache_size`      | integer | `2048`  | `128`–`65536` | LRU slots for parsed SQL ASTs.           |
+| `transpiler_cache_size` | integer | `4096`  | `128`–`65536` | Slots for dialect transpilation results. |
+| `rate_limit_cache_size` | integer | `256`   | `16`–`4096`   | Slots for rate-limit identity lookups.   |
 
 Defaults suit most deployments. Raise the first two only if you run a very large variety of distinct queries.
 
@@ -322,12 +323,12 @@ HALF-OPEN ──(success_threshold successes)──▶ CLOSED
 HALF-OPEN ──(any failure)──▶ OPEN
 ```
 
-| Key | Type | Default | Range | Description |
-|---|---|---|---|---|
-| `enabled` | bool | `true` | | Master toggle. |
-| `failure_threshold` | integer | `5` | `1`–`50` | Consecutive errors before the circuit opens (requests fail fast). |
-| `success_threshold` | integer | `3` | `1`–`20` | Successful probes needed in HALF-OPEN to close. |
-| `timeout` | integer (s) | `30` | `1`–`300` | Cooldown before probing recovery. |
+| Key                 | Type        | Default | Range     | Description                                                       |
+| ------------------- | ----------- | ------- | --------- | ----------------------------------------------------------------- |
+| `enabled`           | bool        | `true`  |           | Master toggle.                                                    |
+| `failure_threshold` | integer     | `5`     | `1`–`50`  | Consecutive errors before the circuit opens (requests fail fast). |
+| `success_threshold` | integer     | `3`     | `1`–`20`  | Successful probes needed in HALF-OPEN to close.                   |
+| `timeout`           | integer (s) | `30`    | `1`–`300` | Cooldown before probing recovery.                                 |
 
 ---
 
@@ -335,11 +336,11 @@ HALF-OPEN ──(any failure)──▶ OPEN
 
 The store behind API keys, users, roles, and database pools.
 
-| Key | Type | Default | Range / values | Description |
-|---|---|---|---|---|
-| `url` | string | `"file:data/axiom.db"` | `file:path` or `libsql://...` | Local SQLite file or remote Turso. |
-| `token` | string | `""` | | Bearer token for remote Turso. |
-| `reload_interval` | integer (s) | `30` | `5`–`3600` | Interval between automatic in-memory snapshot refreshes. |
+| Key               | Type        | Default                | Range / values                | Description                                              |
+| ----------------- | ----------- | ---------------------- | ----------------------------- | -------------------------------------------------------- |
+| `url`             | string      | `"file:data/axiom.db"` | `file:path` or `libsql://...` | Local SQLite file or remote Turso.                       |
+| `token`           | string      | `""`                   |                               | Bearer token for remote Turso.                           |
+| `reload_interval` | integer (s) | `30`                   | `5`–`3600`                    | Interval between automatic in-memory snapshot refreshes. |
 
 > Changes made through the CLI or Admin API reach running request handlers within `reload_interval` seconds, or immediately via `POST /admin/v1/reload`.
 
@@ -347,12 +348,12 @@ The store behind API keys, users, roles, and database pools.
 
 ### 6.8 `[blob]`
 
-| Key | Type | Default | Range / values | Description |
-|---|---|---|---|---|
-| `path` | path | `"data/blobs"` | | Root for the LSM index and disk shards. |
-| `inline_max` | size | `"64kb"` | `"4kb"`–`"1mb"` | Payloads at or below this size live inside the Fjall LSM. |
-| `max_object` | size | `"5gb"` | `"100mb"`–`"50gb"` | Max single object or multipart upload. |
-| `verify_reads` | bool | `false` | | Recompute BLAKE3 on every read. Safer, but costs CPU. |
+| Key            | Type | Default        | Range / values     | Description                                               |
+| -------------- | ---- | -------------- | ------------------ | --------------------------------------------------------- |
+| `path`         | path | `"data/blobs"` |                    | Root for the LSM index and disk shards.                   |
+| `inline_max`   | size | `"64kb"`       | `"4kb"`–`"1mb"`    | Payloads at or below this size live inside the Fjall LSM. |
+| `max_object`   | size | `"5gb"`        | `"100mb"`–`"50gb"` | Max single object or multipart upload.                    |
+| `verify_reads` | bool | `false`        |                    | Recompute BLAKE3 on every read. Safer, but costs CPU.     |
 
 > [!NOTE]
 > Without `verify_reads`, integrity is checked on demand via `POST /api/v1/blobs/objects/:ns/verify/*key` (single object) or `POST /admin/v1/blobs/scrub` (cluster-wide).
@@ -367,18 +368,18 @@ Every key can be overridden with:
 <SECTION>__<KEY>=<VALUE>        # uppercase, double underscore
 ```
 
-| Variable | TOML key | Example |
-|---|---|---|
-| `SERVER__HOST` | `server.host` | `0.0.0.0` |
-| `SERVER__PORT` | `server.port` | `8080` |
-| `SERVER__WORKERS` | `server.workers` | `8` |
-| `SERVER__BODY_LIMIT` | `server.body_limit` | `50mb` |
-| `LOGGING__LEVEL` | `logging.level` | `WARN` |
-| `LOGGING__FORMAT` | `logging.format` | `json` |
-| `METADATA__URL` | `metadata.url` | `libsql://db.turso.io` |
-| `METADATA__TOKEN` | `metadata.token` | `eyJhbGciOi...` |
-| `CACHE__MAX_MEMORY` | `cache.max_memory` | `256mb` |
-| `BLOB__PATH` | `blob.path` | `/mnt/storage/blobs` |
+| Variable             | TOML key            | Example                |
+| -------------------- | ------------------- | ---------------------- |
+| `SERVER__HOST`       | `server.host`       | `0.0.0.0`              |
+| `SERVER__PORT`       | `server.port`       | `8080`                 |
+| `SERVER__WORKERS`    | `server.workers`    | `8`                    |
+| `SERVER__BODY_LIMIT` | `server.body_limit` | `50mb`                 |
+| `LOGGING__LEVEL`     | `logging.level`     | `WARN`                 |
+| `LOGGING__FORMAT`    | `logging.format`    | `json`                 |
+| `METADATA__URL`      | `metadata.url`      | `libsql://db.turso.io` |
+| `METADATA__TOKEN`    | `metadata.token`    | `eyJhbGciOi...`        |
+| `CACHE__MAX_MEMORY`  | `cache.max_memory`  | `256mb`                |
+| `BLOB__PATH`         | `blob.path`         | `/mnt/storage/blobs`   |
 
 These are examples; the same pattern works for all keys. Run `axiom config to-env` for the complete list.
 
@@ -426,18 +427,18 @@ volumes:
 
 ## 8. Production Checklist
 
-| Done | Setting | Why |
-|---|---|---|
-| [ ] | `server.host` set deliberately (`0.0.0.0` only behind a firewall or proxy) | Avoid unintended exposure |
-| [ ] | TLS enabled (`tls_cert` / `tls_key`) or terminated at a proxy | Protect API keys in transit |
-| [ ] | `cors_origins` limited to your app origins (not `["*"]`) | Block unwanted browser origins |
-| [ ] | `trusted_proxies` lists only your real proxies | Prevent `X-Forwarded-For` spoofing |
-| [ ] | `allowed_ips` kept minimal | Exempt IPs bypass rate limits and bans |
-| [ ] | `logging.format = "json"`, `level = "INFO"` or `"WARN"` | Machine-readable, low noise |
-| [ ] | `metadata.url`, `blob.path`, and `data/` on persistent storage | Survive restarts and redeploys |
-| [ ] | `body_limit` and `blob.max_object` sized for your workloads | Reject oversize uploads early |
-| [ ] | Tokens supplied via environment or secrets | Keep credentials out of version control |
-| [ ] | `axiom config show` reviewed after deploy | Confirm the effective values |
+| Done | Setting                                                                    | Why                                     |
+| ---- | -------------------------------------------------------------------------- | --------------------------------------- |
+| [ ]  | `server.host` set deliberately (`0.0.0.0` only behind a firewall or proxy) | Avoid unintended exposure               |
+| [ ]  | TLS enabled (`tls_cert` / `tls_key`) or terminated at a proxy              | Protect API keys in transit             |
+| [ ]  | `cors_origins` limited to your app origins (not `["*"]`)                   | Block unwanted browser origins          |
+| [ ]  | `trusted_proxies` lists only your real proxies                             | Prevent `X-Forwarded-For` spoofing      |
+| [ ]  | `allowed_ips` kept minimal                                                 | Exempt IPs bypass rate limits and bans  |
+| [ ]  | `logging.format = "json"`, `level = "INFO"` or `"WARN"`                    | Machine-readable, low noise             |
+| [ ]  | `metadata.url`, `blob.path`, and `data/` on persistent storage             | Survive restarts and redeploys          |
+| [ ]  | `body_limit` and `blob.max_object` sized for your workloads                | Reject oversize uploads early           |
+| [ ]  | Tokens supplied via environment or secrets                                 | Keep credentials out of version control |
+| [ ]  | `axiom config show` reviewed after deploy                                  | Confirm the effective values            |
 
 **Minimal production example**
 
