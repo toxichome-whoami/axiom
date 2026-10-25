@@ -269,7 +269,7 @@ export function CreateUploadLinkModal({
               <Clock className="w-3.5 h-3.5 shrink-0" />
               <span>Active Links</span>
               {activeTicketCount > 0 && (
-                <span className="px-1.5 py-0.5 rounded-[4px] bg-[#222222] border border-[#333333] text-[#cccccc] text-[11px] font-mono leading-none">
+                <span className="px-2 py-0.5 rounded-[4px] bg-[#222222] border border-[#333333] text-[#cccccc] text-[12px] font-sans font-medium leading-none">
                   {activeTicketCount}
                 </span>
               )}
@@ -513,15 +513,15 @@ export function CreateUploadLinkModal({
                             </span>
 
                             {t.revoked ? (
-                              <span className="px-1.5 py-0.5 rounded-[4px] bg-[#ef4444]/15 border border-[#ef4444]/30 text-[#ef4444] text-[11px] font-sans font-medium">
+                              <span className="px-2 py-0.5 rounded-[4px] bg-[#ef4444]/15 border border-[#ef4444]/30 text-[#ef4444] text-[12px] font-sans font-medium">
                                 Revoked
                               </span>
                             ) : timeRem.isExpired ? (
-                              <span className="px-1.5 py-0.5 rounded-[4px] bg-[#f59e0b]/15 border border-[#f59e0b]/30 text-[#f59e0b] text-[11px] font-sans font-medium">
+                              <span className="px-2 py-0.5 rounded-[4px] bg-[#f59e0b]/15 border border-[#f59e0b]/30 text-[#f59e0b] text-[12px] font-sans font-medium">
                                 Expired
                               </span>
                             ) : (
-                              <span className="px-1.5 py-0.5 rounded-[4px] bg-[#30a46c]/15 border border-[#30a46c]/30 text-[#30a46c] text-[11px] font-sans font-medium">
+                              <span className="px-2 py-0.5 rounded-[4px] bg-[#30a46c]/15 border border-[#30a46c]/30 text-[#30a46c] text-[12px] font-sans font-medium">
                                 Active
                               </span>
                             )}

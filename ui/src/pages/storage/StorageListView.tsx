@@ -154,10 +154,10 @@ export function StorageListView({
                 </button>
               </div>
             </th>
-            <th className="h-[44px] px-3.5 py-2 font-medium border-b border-[#222222] border-r border-[#1f1f1f] text-[13.5px] text-left bg-[#0a0a0a]">Name</th>
-            <th className="h-[44px] px-3.5 py-2 font-medium w-36 border-b border-[#222222] border-r border-[#1f1f1f] text-[13.5px] text-left bg-[#0a0a0a]">Storage Tier</th>
-            <th className="h-[44px] px-3.5 py-2 font-medium w-36 text-right border-b border-[#222222] border-r border-[#1f1f1f] text-[13.5px] bg-[#0a0a0a]">Size</th>
-            <th className="h-[44px] px-4 py-2 font-medium w-44 text-right hidden sm:table-cell text-[13.5px] border-b border-[#222222] border-r border-[#1f1f1f] bg-[#0a0a0a]">Uploaded</th>
+            <th className="h-[44px] px-3.5 py-2 font-sans font-semibold border-b border-[#222222] border-r border-[#1f1f1f] text-[14px] text-[#cccccc] text-left bg-[#0a0a0a]">Name</th>
+            <th className="h-[44px] px-3.5 py-2 font-sans font-semibold w-36 border-b border-[#222222] border-r border-[#1f1f1f] text-[14px] text-[#cccccc] text-left bg-[#0a0a0a]">Storage Tier</th>
+            <th className="h-[44px] px-3.5 py-2 font-sans font-semibold w-36 text-right border-b border-[#222222] border-r border-[#1f1f1f] text-[14px] text-[#cccccc] bg-[#0a0a0a]">Size</th>
+            <th className="h-[44px] px-4 py-2 font-sans font-semibold w-44 text-right hidden sm:table-cell text-[14px] text-[#cccccc] border-b border-[#222222] border-r border-[#1f1f1f] bg-[#0a0a0a]">Uploaded</th>
             <th className="h-[44px] px-3 py-2 w-16 text-right border-b border-[#222222] bg-[#0a0a0a]"><span className="sr-only">Actions</span></th>
           </tr>
         </thead>
@@ -293,10 +293,10 @@ export function StorageListView({
                 {/* Column 2: Storage Tier */}
                 <td className="px-3.5 py-2 border-b border-[#1a1a1a] border-r border-[#151515]">
                   {isFolder ? (
-                    <span className="text-[13.5px] text-[#8c8c8c] font-sans font-normal">dir</span>
+                    <span className="text-[14px] text-[#8c8c8c] font-sans font-normal">dir</span>
                   ) : (
                     <span
-                      className={`inline-flex items-center px-1.5 py-0.5 rounded-[4px] text-[12px] font-medium font-sans ${
+                      className={`inline-flex items-center px-2 py-0.5 rounded-[4px] text-[12.5px] font-medium font-sans ${
                         item.inline
                           ? 'bg-amber-950/30 text-amber-400 border border-amber-900/40'
                           : 'bg-zinc-900 text-zinc-400 border border-zinc-800'
@@ -308,14 +308,14 @@ export function StorageListView({
                 </td>
 
                 {/* Column 3: Payload Size */}
-                <td className="px-3.5 py-2 text-right tabular-nums text-[13.5px] text-[#8c8c8c] font-sans font-normal border-b border-[#1a1a1a] border-r border-[#151515]">
+                <td className="px-3.5 py-2 text-right tabular-nums text-[14px] text-[#8c8c8c] font-sans font-normal border-b border-[#1a1a1a] border-r border-[#151515]">
                   {isFolder
                     ? `${item.itemCount || 0} items`
                     : formatBytes(item.size || 0)}
                 </td>
 
                 {/* Column 4: Uploaded / Created Date */}
-                <td className="px-4 py-2 text-right tabular-nums text-[13.5px] text-[#8c8c8c] font-sans font-normal hidden sm:table-cell border-b border-[#1a1a1a] border-r border-[#151515]">
+                <td className="px-4 py-2 text-right tabular-nums text-[14px] text-[#8c8c8c] font-sans font-normal hidden sm:table-cell border-b border-[#1a1a1a] border-r border-[#151515]">
                   {item.created_at
                     ? new Date(item.created_at * 1000).toLocaleDateString()
                     : '—'}

@@ -1954,7 +1954,7 @@ export function StoragePage() {
               onClick={handleBatchDownload}
               disabled={selectedItemsList.every((it) => it.type === 'folder')}
               title="Download selected files"
-              className="flex items-center gap-1.5 h-7 px-2.5 rounded-[6px] text-[13px] font-sans font-medium text-[#cccccc] hover:text-white bg-[#141414] hover:bg-[#1a1a1a] border border-[#242424] hover:border-[#333333] transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+              className="flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[13px] font-sans font-medium text-[#cccccc] hover:text-white bg-[#141414] hover:bg-[#1a1a1a] border border-[#242424] hover:border-[#333333] transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <Download className="w-3.5 h-3.5 text-[#8c8c8c]" />
               <span>Download</span>
@@ -1965,7 +1965,7 @@ export function StoragePage() {
               type="button"
               onClick={() => setIsBatchMoveOpen(true)}
               title="Move selected items"
-              className="flex items-center gap-1.5 h-7 px-2.5 rounded-[6px] text-[13px] font-sans font-medium text-[#cccccc] hover:text-white bg-[#141414] hover:bg-[#1a1a1a] border border-[#242424] hover:border-[#333333] transition-colors cursor-pointer"
+              className="flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[13px] font-sans font-medium text-[#cccccc] hover:text-white bg-[#141414] hover:bg-[#1a1a1a] border border-[#242424] hover:border-[#333333] transition-colors cursor-pointer"
             >
               <ArrowRight className="w-3.5 h-3.5 text-[#8c8c8c]" />
               <span>Move</span>
@@ -1976,7 +1976,7 @@ export function StoragePage() {
               type="button"
               onClick={() => setIsBatchCopyOpen(true)}
               title="Copy selected items"
-              className="flex items-center gap-1.5 h-7 px-2.5 rounded-[6px] text-[13px] font-sans font-medium text-[#cccccc] hover:text-white bg-[#141414] hover:bg-[#1a1a1a] border border-[#242424] hover:border-[#333333] transition-colors cursor-pointer"
+              className="flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[13px] font-sans font-medium text-[#cccccc] hover:text-white bg-[#141414] hover:bg-[#1a1a1a] border border-[#242424] hover:border-[#333333] transition-colors cursor-pointer"
             >
               <Copy className="w-3.5 h-3.5 text-[#8c8c8c]" />
               <span>Copy</span>
@@ -1987,7 +1987,7 @@ export function StoragePage() {
               type="button"
               onClick={() => setIsBatchDeleteOpen(true)}
               title="Delete selected items"
-              className="flex items-center gap-1.5 h-7 px-2.5 rounded-[6px] text-[13px] font-sans font-medium text-[#e5484d] hover:text-white bg-red-950/20 hover:bg-red-900/40 border border-red-900/40 hover:border-red-700/60 transition-colors cursor-pointer"
+              className="flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[13px] font-sans font-medium text-[#e5484d] hover:text-white bg-red-950/20 hover:bg-red-900/40 border border-red-900/40 hover:border-red-700/60 transition-colors cursor-pointer"
             >
               <Trash2 className="w-3.5 h-3.5" />
               <span>Delete</span>
@@ -1998,7 +1998,7 @@ export function StoragePage() {
               type="button"
               onClick={handleClearSelection}
               title="Clear selection (Esc)"
-              className="h-7 w-7 rounded-[6px] text-[#8c8c8c] hover:text-white hover:bg-[#181818] border border-transparent hover:border-[#262626] transition-colors cursor-pointer flex items-center justify-center ml-0.5"
+              className="h-8 w-8 rounded-[6px] text-[#8c8c8c] hover:text-white hover:bg-[#181818] border border-transparent hover:border-[#262626] transition-colors cursor-pointer flex items-center justify-center ml-0.5"
             >
               <X className="w-3.5 h-3.5" />
             </button>
@@ -2412,7 +2412,7 @@ export function StoragePage() {
             <div className="flex items-center justify-between pb-0.5">
               <div className="flex items-center gap-2">
                 <h3 className="text-[15px] font-medium text-white tracking-tight">Manage Namespace</h3>
-                <span className="px-1.5 py-0.5 rounded bg-[#161616] border border-[#262626] text-xs font-mono text-[#8c8c8c]">
+                <span className="px-2 py-0.5 rounded-[4px] bg-[#161616] border border-[#262626] text-[12px] font-sans font-medium text-[#cccccc]">
                   {currentNsInfo.name}
                 </span>
               </div>

@@ -229,22 +229,22 @@ export function ShareViewerPage() {
               {getFileIcon(fileName, 'w-4 h-4')}
             </div>
 
-            <div className="flex items-center gap-2 min-w-0">
+            <div className="flex items-center gap-2.5 min-w-0">
               <span
-                className="text-[14px] font-sans font-medium text-white tracking-tight truncate max-w-[180px] sm:max-w-xs md:max-w-md lg:max-w-lg"
+                className="text-[15px] font-sans font-semibold text-white tracking-tight truncate max-w-[180px] sm:max-w-xs md:max-w-md lg:max-w-lg"
                 title={fileName}
               >
                 {fileName}
               </span>
-              <span className="text-[11px] font-mono px-1.5 py-0.5 rounded-[4px] bg-[#161616] border border-[#262626] text-[#8c8c8c] shrink-0 hidden sm:inline">
+              <span className="text-[12px] font-sans font-medium px-2 py-0.5 rounded-[5px] bg-[#161616] border border-[#282828] text-[#999999] shrink-0 hidden sm:inline">
                 {getFileExtension(fileName)}
               </span>
               {params.isPublic ? (
-                <span className="px-1.5 py-0.5 rounded-[4px] text-[11px] font-sans font-medium bg-[#161616] border border-[#2e2e2e] text-[#cccccc] leading-none shrink-0 hidden sm:inline">
+                <span className="px-2 py-0.5 rounded-[5px] text-[12px] font-sans font-medium bg-[#161616] border border-[#2e2e2e] text-[#cccccc] leading-none shrink-0 hidden sm:inline">
                   Public CDN
                 </span>
               ) : (
-                <span className="px-1.5 py-0.5 rounded-[4px] text-[11px] font-sans font-medium bg-[#161616] border border-[#2e2e2e] text-[#cccccc] leading-none shrink-0 hidden sm:inline">
+                <span className="px-2 py-0.5 rounded-[5px] text-[12px] font-sans font-medium bg-[#161616] border border-[#2e2e2e] text-[#cccccc] leading-none shrink-0 hidden sm:inline">
                   Shared
                 </span>
               )}
@@ -255,8 +255,8 @@ export function ShareViewerPage() {
         {/* Right Actions: Expiration (if ticket), Open Raw, Copy Link, White Download */}
         <div className="flex items-center gap-2 shrink-0">
           {!params.isPublic && params.ticket_exp && params.ticket_exp > 0 && (
-            <div className="hidden lg:flex items-center gap-1.5 px-2.5 py-1 rounded-[6px] bg-[#141414] border border-[#242424] text-[11px] font-mono text-[#8c8c8c]">
-              <Clock className="w-3.5 h-3.5 text-amber-400" />
+            <div className="hidden lg:flex items-center gap-1.5 px-3 py-1 rounded-[6px] bg-[#141414] border border-[#242424] text-[12.5px] font-sans font-medium text-[#cccccc]">
+              <Clock className="w-3.5 h-3.5 text-amber-400 shrink-0" />
               <span>
                 Expires in {remainingHours}h {remainingMins}m
               </span>
@@ -268,7 +268,7 @@ export function ShareViewerPage() {
             target="_blank"
             rel="noreferrer"
             title="Open raw stream directly"
-            className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-[6px] text-[13px] font-sans font-medium text-[#cccccc] hover:text-white bg-[#141414] hover:bg-[#1c1c1c] border border-[#262626] transition-colors cursor-pointer"
+            className="inline-flex items-center gap-1.5 h-8.5 px-3 rounded-[6px] text-[13.5px] font-sans font-medium text-[#cccccc] hover:text-white bg-[#141414] hover:bg-[#1c1c1c] border border-[#262626] transition-colors cursor-pointer"
           >
             <ExternalLink className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">Open Raw</span>
@@ -278,7 +278,7 @@ export function ShareViewerPage() {
             type="button"
             onClick={handleCopyLink}
             title="Copy share link"
-            className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-[6px] text-[13px] font-sans font-medium text-[#cccccc] hover:text-white bg-[#141414] hover:bg-[#1c1c1c] border border-[#262626] transition-colors cursor-pointer"
+            className="inline-flex items-center gap-1.5 h-8.5 px-3 rounded-[6px] text-[13.5px] font-sans font-medium text-[#cccccc] hover:text-white bg-[#141414] hover:bg-[#1c1c1c] border border-[#262626] transition-colors cursor-pointer"
           >
             {isCopied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
             <span className="hidden sm:inline">{isCopied ? 'Copied' : 'Copy Link'}</span>
@@ -287,7 +287,7 @@ export function ShareViewerPage() {
           <button
             type="button"
             onClick={handleDownload}
-            className="inline-flex items-center gap-1.5 h-8 px-3.5 rounded-[6px] text-[13px] font-sans font-medium text-black bg-white hover:bg-neutral-200 shadow-xs transition-colors cursor-pointer"
+            className="inline-flex items-center gap-1.5 h-8.5 px-4 rounded-[6px] text-[13.5px] font-sans font-medium text-black bg-white hover:bg-neutral-200 shadow-xs transition-colors cursor-pointer"
           >
             <Download className="w-3.5 h-3.5 stroke-[2.5]" />
             <span>Download</span>
@@ -311,29 +311,29 @@ export function ShareViewerPage() {
       </main>
 
       {/* ─── Footer: Minimal Google Drive / Axiom Telemetry ─── */}
-      <footer className="h-9 border-t border-[#1a1a1a] bg-[#0c0c0c] px-4 md:px-6 text-[12px] text-[#737373] font-sans flex items-center justify-between shrink-0 select-none">
+      <footer className="h-10 border-t border-[#1a1a1a] bg-[#0c0c0c] px-4 md:px-6 text-[13px] text-[#8c8c8c] font-sans flex items-center justify-between shrink-0 select-none">
         <div className="flex items-center gap-2">
           {params.isPublic ? (
             <>
-              <Globe className="w-3.5 h-3.5 text-emerald-400" />
+              <Globe className="w-4 h-4 text-emerald-400" />
               <span>Public CDN Object &bull; Zero Ticket Overhead</span>
             </>
           ) : (
             <>
-              <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+              <ShieldCheck className="w-4 h-4 text-emerald-400" />
               <span>Cryptographically signed capability ticket</span>
             </>
           )}
         </div>
 
-        <div className="flex items-center gap-3">
-          <span>Namespace: <span className="font-mono text-[#a3a3a3]">{params.namespace}</span></span>
+        <div className="flex items-center gap-3 text-[13px]">
+          <span>Namespace: <span className="font-sans font-medium text-white">{params.namespace}</span></span>
           <span>&bull;</span>
-          <span className="font-mono text-[#a3a3a3]">{formatBytes(fileSize)}</span>
+          <span className="font-sans font-medium text-white">{formatBytes(fileSize)}</span>
           {contentType && (
             <>
               <span className="hidden sm:inline">&bull;</span>
-              <span className="font-mono text-[#8c8c8c] hidden sm:inline">{contentType}</span>
+              <span className="font-sans text-[#8c8c8c] hidden sm:inline">{contentType}</span>
             </>
           )}
         </div>

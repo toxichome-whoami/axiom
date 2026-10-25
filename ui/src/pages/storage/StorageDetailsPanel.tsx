@@ -224,7 +224,7 @@ export function StorageDetailsPanel({
                   <div className="flex items-center gap-1.5">
                     <span className="text-white font-medium">{activeNamespace}</span>
                     {currentNsInfo?.is_public && (
-                      <span className="px-1.5 py-0.5 rounded-[4px] text-[11px] bg-[#161616] border border-[#2e2e2e] font-medium text-[#cccccc] leading-none">
+                      <span className="px-2 py-0.5 rounded-[4px] text-[12px] bg-[#161616] border border-[#2e2e2e] font-medium font-sans text-[#cccccc] leading-none">
                         Public
                       </span>
                     )}

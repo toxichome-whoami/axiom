@@ -140,7 +140,7 @@ export function StorageSidebar({
                     {activeNamespace || 'Select Namespace'}
                   </span>
                   {currentNsInfo?.is_public && (
-                    <span className="px-1.5 py-0.5 rounded-[4px] text-[11px] font-medium bg-[#161616] border border-[#2e2e2e] text-[#cccccc] shrink-0 leading-none">
+                    <span className="px-2 py-0.5 rounded-[4px] text-[12px] font-sans font-medium bg-[#161616] border border-[#2e2e2e] text-[#cccccc] shrink-0 leading-none">
                       Public
                     </span>
                   )}
@@ -192,7 +192,7 @@ export function StorageSidebar({
                           </div>
                           <div className="flex items-center gap-1.5 shrink-0 ml-2">
                             {ns.is_public && (
-                              <span className="px-1.5 py-0.5 rounded-[4px] text-[11px] font-sans font-medium bg-[#161616] border border-[#2e2e2e] text-[#cccccc] leading-none">
+                              <span className="px-2 py-0.5 rounded-[4px] text-[12px] font-sans font-medium bg-[#161616] border border-[#2e2e2e] text-[#cccccc] leading-none">
                                 public
                               </span>
                             )}

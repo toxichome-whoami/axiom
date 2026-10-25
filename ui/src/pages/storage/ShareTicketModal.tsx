@@ -287,19 +287,19 @@ export function ShareTicketModal({
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-[480px] rounded-[10px] bg-[#0e0e0e] border border-[#242424] shadow-2xl overflow-hidden font-sans flex flex-col"
+        className="w-full max-w-[500px] rounded-[10px] bg-[#0e0e0e] border border-[#242424] shadow-2xl overflow-hidden font-sans flex flex-col"
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-[#1e1e1e]">
-          <div className="flex items-center gap-2.5 min-w-0 pr-2">
-            <div className="w-7 h-7 rounded-[6px] bg-[#161616] border border-[#282828] flex items-center justify-center text-white shrink-0">
-              <Share2 className="w-3.5 h-3.5 text-white" />
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-[#1e1e1e]">
+          <div className="flex items-center gap-3 min-w-0 pr-2">
+            <div className="w-8 h-8 rounded-[7px] bg-[#161616] border border-[#282828] flex items-center justify-center text-white shrink-0">
+              <Share2 className="w-4 h-4 text-white" />
             </div>
             <div className="min-w-0">
-              <h3 className="text-[13.5px] font-medium text-white tracking-tight leading-tight">
+              <h3 className="text-[15px] font-sans font-semibold text-white tracking-tight leading-tight">
                 {isPublicNamespace ? 'Share Public Object' : 'Share Object'}
               </h3>
-              <p className="text-[11.5px] text-[#777777] font-mono truncate max-w-[340px] mt-0.5" title={`${namespace}/${item.fullKey}`}>
+              <p className="text-[13px] text-[#8c8c8c] font-sans truncate max-w-[360px] mt-0.5" title={`${namespace}/${item.fullKey}`}>
                 {item.name}
               </p>
             </div>
@@ -308,7 +308,7 @@ export function ShareTicketModal({
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="w-7 h-7 rounded-[6px] text-[#777777] hover:text-white hover:bg-[#181818] flex items-center justify-center transition-colors cursor-pointer"
+            className="w-8 h-8 rounded-[6px] text-[#777777] hover:text-white hover:bg-[#181818] flex items-center justify-center transition-colors cursor-pointer"
           >
             <X className="w-4 h-4" />
           </button>
@@ -316,20 +316,20 @@ export function ShareTicketModal({
 
         {/* Tab Navigation - Only rendered for private namespaces when no ticket was just generated */}
         {!isPublicNamespace && (
-          <div className="px-4 py-2 border-b border-[#1c1c1c] bg-[#0c0c0c] flex items-center justify-between">
-            <div className="inline-flex items-center p-0.5 rounded-[6px] bg-[#141414] border border-[#222222]">
+          <div className="px-5 py-2.5 border-b border-[#1c1c1c] bg-[#0c0c0c] flex items-center justify-between">
+            <div className="inline-flex items-center p-0.5 rounded-[7px] bg-[#141414] border border-[#222222]">
               <button
                 type="button"
                 onClick={() => {
                   setActiveTab('create');
                 }}
-                className={`flex items-center gap-1.5 h-7 px-3 rounded-[4px] text-[12px] font-medium transition-colors cursor-pointer ${
+                className={`flex items-center gap-1.5 h-8 px-3.5 rounded-[5px] text-[13px] font-sans font-medium transition-colors cursor-pointer ${
                   activeTab === 'create'
                     ? 'bg-[#222222] text-white shadow-xs'
-                    : 'text-[#777777] hover:text-[#cccccc]'
+                    : 'text-[#8c8c8c] hover:text-[#cccccc]'
                 }`}
               >
-                <LinkIcon className="w-3 h-3 shrink-0" />
+                <LinkIcon className="w-3.5 h-3.5 shrink-0" />
                 <span>Create Link</span>
               </button>
 
@@ -339,16 +339,16 @@ export function ShareTicketModal({
                   setActiveTab('manage');
                   loadTickets();
                 }}
-                className={`flex items-center gap-1.5 h-7 px-3 rounded-[4px] text-[12px] font-medium transition-colors cursor-pointer ${
+                className={`flex items-center gap-1.5 h-8 px-3.5 rounded-[5px] text-[13px] font-sans font-medium transition-colors cursor-pointer ${
                   activeTab === 'manage'
                     ? 'bg-[#222222] text-white shadow-xs'
-                    : 'text-[#777777] hover:text-[#cccccc]'
+                    : 'text-[#8c8c8c] hover:text-[#cccccc]'
                 }`}
               >
-                <Clock className="w-3 h-3 shrink-0" />
+                <Clock className="w-3.5 h-3.5 shrink-0" />
                 <span>Active Links</span>
                 {activeTicketCount > 0 && (
-                  <span className="px-1.5 py-0.2 rounded-[3px] bg-[#2a2a2a] text-[#cccccc] text-[10.5px] font-mono leading-tight">
+                  <span className="px-2 py-0.5 rounded-[4px] bg-[#2a2a2a] text-[#cccccc] text-[11.5px] font-sans leading-tight">
                     {activeTicketCount}
                   </span>
                 )}
@@ -357,7 +357,7 @@ export function ShareTicketModal({
 
             {/* Quick status indicator */}
             {generatedTicket && activeTab === 'create' && (
-              <span className="flex items-center gap-1.5 text-[11px] text-emerald-400 font-medium">
+              <span className="flex items-center gap-1.5 text-[12px] font-sans text-emerald-400 font-medium">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                 Active Link Ready
               </span>
@@ -366,26 +366,26 @@ export function ShareTicketModal({
         )}
 
         {/* Body Content */}
-        <div className="p-4 space-y-3.5">
+        <div className="p-5 space-y-4">
           {activeTab === 'public' ? (
             /* ─── PUBLIC NAMESPACE CDN VIEW ─────────────────── */
-            <div className="space-y-3.5 animate-in fade-in duration-100">
+            <div className="space-y-4 animate-in fade-in duration-100">
               {/* Public CDN Notice Badge */}
-              <div className="flex items-center justify-between px-3 py-2 rounded-[6px] bg-[#141414] border border-[#222222]">
+              <div className="flex items-center justify-between px-3.5 py-2.5 rounded-[7px] bg-[#141414] border border-[#222222]">
                 <div className="flex items-center gap-2 min-w-0">
-                  <Globe className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                  <span className="text-[12.5px] font-medium text-white truncate">Permanent CDN URL</span>
+                  <Globe className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <span className="text-[13.5px] font-sans font-medium text-white truncate">Permanent CDN URL</span>
                   <span className="text-[12px] text-[#777777]">•</span>
-                  <span className="text-[12px] text-[#888888] truncate">No expiration needed</span>
+                  <span className="text-[13px] font-sans text-[#888888] truncate">No expiration needed</span>
                 </div>
               </div>
 
               {/* Segmented Format Selector */}
-              <div className="flex items-center gap-1 p-0.5 rounded-[6px] bg-[#121212] border border-[#202020]">
+              <div className="flex items-center gap-1 p-0.5 rounded-[7px] bg-[#121212] border border-[#202020]">
                 <button
                   type="button"
                   onClick={() => setPublicFormat('url')}
-                  className={`flex-1 h-7 rounded-[4px] text-[12px] font-medium transition-colors cursor-pointer flex items-center justify-center gap-1.5 ${
+                  className={`flex-1 h-8 rounded-[5px] text-[13px] font-sans font-medium transition-colors cursor-pointer flex items-center justify-center gap-1.5 ${
                     publicFormat === 'url' ? 'bg-[#222222] text-white shadow-xs' : 'text-[#888888] hover:text-[#cccccc]'
                   }`}
                 >
@@ -396,7 +396,7 @@ export function ShareTicketModal({
                   <button
                     type="button"
                     onClick={() => setPublicFormat('embed')}
-                    className={`flex-1 h-7 rounded-[4px] text-[12px] font-medium transition-colors cursor-pointer flex items-center justify-center gap-1.5 ${
+                    className={`flex-1 h-8 rounded-[5px] text-[13px] font-sans font-medium transition-colors cursor-pointer flex items-center justify-center gap-1.5 ${
                       publicFormat === 'embed' ? 'bg-[#222222] text-white shadow-xs' : 'text-[#888888] hover:text-[#cccccc]'
                     }`}
                   >
@@ -407,7 +407,7 @@ export function ShareTicketModal({
                 <button
                   type="button"
                   onClick={() => setPublicFormat('curl')}
-                  className={`flex-1 h-7 rounded-[4px] text-[12px] font-medium transition-colors cursor-pointer flex items-center justify-center gap-1.5 ${
+                  className={`flex-1 h-8 rounded-[5px] text-[13px] font-sans font-medium transition-colors cursor-pointer flex items-center justify-center gap-1.5 ${
                     publicFormat === 'curl' ? 'bg-[#222222] text-white shadow-xs' : 'text-[#888888] hover:text-[#cccccc]'
                   }`}
                 >
@@ -419,39 +419,39 @@ export function ShareTicketModal({
               {/* Format Content */}
               {publicFormat === 'url' && (
                 <div className="space-y-1.5">
-                  <div className="flex items-center justify-between text-[12px] text-[#888888]">
+                  <div className="flex items-center justify-between text-[13px] font-sans text-[#cccccc] font-medium">
                     <span>Direct CDN Endpoint</span>
                     <a
                       href={publicCdnUrl}
                       target="_blank"
                       rel="noreferrer"
-                      className="flex items-center gap-1 text-[#888888] hover:text-white transition-colors"
+                      className="flex items-center gap-1 text-[13px] font-sans text-[#8c8c8c] hover:text-white transition-colors"
                     >
                       <span>Open in tab</span>
-                      <ExternalLink className="w-3 h-3" />
+                      <ExternalLink className="w-3.5 h-3.5" />
                     </a>
                   </div>
-                  <div className="flex items-center gap-2 h-9 px-3 rounded-[6px] bg-[#141414] border border-[#262626] focus-within:border-[#383838]">
-                    <Globe className="w-3.5 h-3.5 text-[#666666] shrink-0" />
+                  <div className="flex items-center gap-2.5 h-10 px-3.5 rounded-[7px] bg-[#141414] border border-[#262626] focus-within:border-[#383838]">
+                    <Globe className="w-4 h-4 text-[#777777] shrink-0" />
                     <input
                       type="text"
                       readOnly
                       value={publicCdnUrl}
-                      className="flex-1 bg-transparent text-white font-mono text-[12px] outline-none truncate select-all"
+                      className="flex-1 bg-transparent text-white font-mono text-[13px] outline-none truncate select-all"
                     />
                     <button
                       type="button"
                       onClick={() => copyToClipboard(publicCdnUrl, 'public-url')}
-                      className="h-6 px-2.5 rounded-[4px] bg-[#222222] hover:bg-[#2c2c2c] text-white border border-[#333333] flex items-center gap-1.5 text-[11.5px] font-medium transition-colors cursor-pointer shrink-0"
+                      className="h-7.5 px-3 rounded-[5px] bg-[#222222] hover:bg-[#2c2c2c] text-white border border-[#333333] flex items-center gap-1.5 text-[12.5px] font-sans font-medium transition-colors cursor-pointer shrink-0"
                     >
                       {copiedKey === 'public-url' ? (
                         <>
-                          <Check className="w-3 h-3 text-emerald-400" />
+                          <Check className="w-3.5 h-3.5 text-emerald-400" />
                           <span className="text-emerald-400">Copied</span>
                         </>
                       ) : (
                         <>
-                          <Copy className="w-3 h-3 text-[#888888]" />
+                          <Copy className="w-3.5 h-3.5 text-[#888888]" />
                           <span>Copy</span>
                         </>
                       )}
@@ -462,26 +462,26 @@ export function ShareTicketModal({
 
               {publicFormat === 'embed' && (
                 <div className="space-y-1.5">
-                  <div className="flex items-center justify-between text-[12px] text-[#888888]">
+                  <div className="flex items-center justify-between text-[13px] font-sans text-[#cccccc] font-medium">
                     <span>HTML Media Tag</span>
                     <button
                       type="button"
                       onClick={() => copyToClipboard(publicEmbedSnippet, 'public-embed')}
-                      className="flex items-center gap-1 text-[#888888] hover:text-white transition-colors cursor-pointer text-[12px]"
+                      className="flex items-center gap-1 text-[#8c8c8c] hover:text-white transition-colors cursor-pointer text-[12.5px] font-sans"
                     >
                       {copiedKey === 'public-embed' ? (
                         <span className="text-emerald-400 flex items-center gap-1">
-                          <Check className="w-3 h-3" /> Copied snippet
+                          <Check className="w-3.5 h-3.5" /> Copied snippet
                         </span>
                       ) : (
                         <span className="flex items-center gap-1">
-                          <Copy className="w-3 h-3" /> Copy snippet
+                          <Copy className="w-3.5 h-3.5" /> Copy snippet
                         </span>
                       )}
                     </button>
                   </div>
-                  <div className="rounded-[6px] bg-[#141414] border border-[#262626] p-2.5">
-                    <pre className="font-mono text-[11.5px] text-[#cccccc] whitespace-pre-wrap break-all select-all leading-relaxed">
+                  <div className="rounded-[7px] bg-[#141414] border border-[#262626] p-3">
+                    <pre className="font-mono text-[12.5px] text-[#cccccc] whitespace-pre-wrap break-all select-all leading-relaxed">
                       {publicEmbedSnippet}
                     </pre>
                   </div>
@@ -490,30 +490,30 @@ export function ShareTicketModal({
 
               {publicFormat === 'curl' && (
                 <div className="space-y-1.5">
-                  <div className="flex items-center justify-between text-[12px] text-[#888888]">
+                  <div className="flex items-center justify-between text-[13px] font-sans text-[#cccccc] font-medium">
                     <span>cURL Terminal Command</span>
                   </div>
-                  <div className="flex items-center gap-2 h-9 px-3 rounded-[6px] bg-[#141414] border border-[#262626] focus-within:border-[#383838]">
-                    <Terminal className="w-3.5 h-3.5 text-[#666666] shrink-0" />
+                  <div className="flex items-center gap-2.5 h-10 px-3.5 rounded-[7px] bg-[#141414] border border-[#262626] focus-within:border-[#383838]">
+                    <Terminal className="w-4 h-4 text-[#777777] shrink-0" />
                     <input
                       type="text"
                       readOnly
                       value={publicCurlSnippet}
-                      className="flex-1 bg-transparent text-white font-mono text-[12px] outline-none truncate select-all"
+                      className="flex-1 bg-transparent text-white font-mono text-[13px] outline-none truncate select-all"
                     />
                     <button
                       type="button"
                       onClick={() => copyToClipboard(publicCurlSnippet, 'public-curl')}
-                      className="h-6 px-2.5 rounded-[4px] bg-[#222222] hover:bg-[#2c2c2c] text-white border border-[#333333] flex items-center gap-1.5 text-[11.5px] font-medium transition-colors cursor-pointer shrink-0"
+                      className="h-7.5 px-3 rounded-[5px] bg-[#222222] hover:bg-[#2c2c2c] text-white border border-[#333333] flex items-center gap-1.5 text-[12.5px] font-sans font-medium transition-colors cursor-pointer shrink-0"
                     >
                       {copiedKey === 'public-curl' ? (
                         <>
-                          <Check className="w-3 h-3 text-emerald-400" />
+                          <Check className="w-3.5 h-3.5 text-emerald-400" />
                           <span className="text-emerald-400">Copied</span>
                         </>
                       ) : (
                         <>
-                          <Copy className="w-3 h-3 text-[#888888]" />
+                          <Copy className="w-3.5 h-3.5 text-[#888888]" />
                           <span>Copy</span>
                         </>
                       )}
@@ -524,12 +524,12 @@ export function ShareTicketModal({
 
               {/* Quick Copy Helper Chips */}
               {isMedia && publicFormat === 'url' && (
-                <div className="flex items-center gap-1.5 text-[11.5px] text-[#666666] pt-1">
+                <div className="flex items-center gap-2 text-[12.5px] font-sans text-[#777777] pt-1">
                   <span>Quick copy:</span>
                   <button
                     type="button"
                     onClick={() => copyToClipboard(publicEmbedSnippet, 'quick-pub-embed')}
-                    className="px-2 py-0.5 rounded-[4px] bg-[#141414] hover:bg-[#1e1e1e] border border-[#262626] text-[#aaaaaa] hover:text-white transition-colors cursor-pointer flex items-center gap-1"
+                    className="px-2.5 py-1 rounded-[5px] bg-[#141414] hover:bg-[#1e1e1e] border border-[#262626] text-[#cccccc] hover:text-white transition-colors cursor-pointer flex items-center gap-1 text-[12px] font-sans font-medium"
                   >
                     {copiedKey === 'quick-pub-embed' ? <Check className="w-3 h-3 text-emerald-400" /> : null}
                     HTML Tag
@@ -537,7 +537,7 @@ export function ShareTicketModal({
                   <button
                     type="button"
                     onClick={() => copyToClipboard(publicCurlSnippet, 'quick-pub-curl')}
-                    className="px-2 py-0.5 rounded-[4px] bg-[#141414] hover:bg-[#1e1e1e] border border-[#262626] text-[#aaaaaa] hover:text-white transition-colors cursor-pointer flex items-center gap-1"
+                    className="px-2.5 py-1 rounded-[5px] bg-[#141414] hover:bg-[#1e1e1e] border border-[#262626] text-[#cccccc] hover:text-white transition-colors cursor-pointer flex items-center gap-1 text-[12px] font-sans font-medium"
                   >
                     {copiedKey === 'quick-pub-curl' ? <Check className="w-3 h-3 text-emerald-400" /> : null}
                     cURL
@@ -546,11 +546,11 @@ export function ShareTicketModal({
               )}
 
               {/* Footer */}
-              <div className="-mx-4 px-4 pt-3 border-t border-[#1e1e1e] flex items-center justify-end">
+              <div className="-mx-5 px-5 pt-3.5 border-t border-[#1e1e1e] flex items-center justify-end">
                 <button
                   type="button"
                   onClick={onClose}
-                  className="h-8 px-4 rounded-[6px] bg-[#1a1a1a] hover:bg-[#222222] border border-[#2e2e2e] text-[12.5px] font-medium text-white transition-colors cursor-pointer"
+                  className="h-8.5 px-4 rounded-[6px] bg-[#1a1a1a] hover:bg-[#222222] border border-[#2e2e2e] text-[13px] font-sans font-medium text-white transition-colors cursor-pointer"
                 >
                   Close
                 </button>
@@ -561,31 +561,31 @@ export function ShareTicketModal({
             <>
               {generatedTicket ? (
                 /* ─── Compact Sleek Result View (Single Viewport, No Bloat) ─────── */
-                <div className="space-y-3.5 animate-in fade-in duration-100">
+                <div className="space-y-4 animate-in fade-in duration-100">
                   {/* Expiration & Signature Status Header */}
-                  <div className="flex items-center justify-between px-3 py-2 rounded-[6px] bg-[#141414] border border-[#222222]">
+                  <div className="flex items-center justify-between px-3.5 py-2.5 rounded-[7px] bg-[#141414] border border-[#222222]">
                     <div className="flex items-center gap-2 min-w-0">
                       <div className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
-                      <span className="text-[12.5px] font-medium text-white truncate">Link Ready</span>
+                      <span className="text-[13.5px] font-sans font-medium text-white truncate">Link Ready</span>
                       <span className="text-[12px] text-[#777777]">•</span>
-                      <span className="text-[12px] text-[#888888] flex items-center gap-1 truncate font-mono">
-                        <Clock className="w-3 h-3 text-[#666666] shrink-0" />
+                      <span className="text-[13px] font-sans text-[#888888] flex items-center gap-1.5 truncate">
+                        <Clock className="w-3.5 h-3.5 text-[#666666] shrink-0" />
                         {formatTimeRemaining(generatedTicket.expires_at).text}
                       </span>
                     </div>
-                    <span className="text-[11px] font-mono text-[#555555] shrink-0">
+                    <span className="text-[12px] font-mono text-[#666666] shrink-0">
                       sig:{(generatedTicket.signature || '').slice(0, 8)}
                     </span>
                   </div>
 
                   {/* Segmented Format Switcher */}
-                  <div className="flex items-center gap-1 p-0.5 rounded-[6px] bg-[#121212] border border-[#202020]">
+                  <div className="flex items-center gap-1 p-0.5 rounded-[7px] bg-[#121212] border border-[#202020]">
                     {isMedia ? (
                       <>
                         <button
                           type="button"
                           onClick={() => setResultFormat('viewer')}
-                          className={`flex-1 h-7 rounded-[4px] text-[12px] font-medium transition-colors cursor-pointer flex items-center justify-center gap-1.5 ${
+                          className={`flex-1 h-8 rounded-[5px] text-[13px] font-sans font-medium transition-colors cursor-pointer flex items-center justify-center gap-1.5 ${
                             resultFormat === 'viewer'
                               ? 'bg-[#222222] text-white shadow-xs'
                               : 'text-[#888888] hover:text-[#cccccc]'
@@ -597,7 +597,7 @@ export function ShareTicketModal({
                         <button
                           type="button"
                           onClick={() => setResultFormat('stream')}
-                          className={`flex-1 h-7 rounded-[4px] text-[12px] font-medium transition-colors cursor-pointer flex items-center justify-center gap-1.5 ${
+                          className={`flex-1 h-8 rounded-[5px] text-[13px] font-sans font-medium transition-colors cursor-pointer flex items-center justify-center gap-1.5 ${
                             resultFormat === 'stream'
                               ? 'bg-[#222222] text-white shadow-xs'
                               : 'text-[#888888] hover:text-[#cccccc]'
@@ -609,7 +609,7 @@ export function ShareTicketModal({
                         <button
                           type="button"
                           onClick={() => setResultFormat('embed')}
-                          className={`flex-1 h-7 rounded-[4px] text-[12px] font-medium transition-colors cursor-pointer flex items-center justify-center gap-1.5 ${
+                          className={`flex-1 h-8 rounded-[5px] text-[13px] font-sans font-medium transition-colors cursor-pointer flex items-center justify-center gap-1.5 ${
                             resultFormat === 'embed'
                               ? 'bg-[#222222] text-white shadow-xs'
                               : 'text-[#888888] hover:text-[#cccccc]'
@@ -621,7 +621,7 @@ export function ShareTicketModal({
                         <button
                           type="button"
                           onClick={() => setResultFormat('curl')}
-                          className={`flex-1 h-7 rounded-[4px] text-[12px] font-medium transition-colors cursor-pointer flex items-center justify-center gap-1.5 ${
+                          className={`flex-1 h-8 rounded-[5px] text-[13px] font-sans font-medium transition-colors cursor-pointer flex items-center justify-center gap-1.5 ${
                             resultFormat === 'curl'
                               ? 'bg-[#222222] text-white shadow-xs'
                               : 'text-[#888888] hover:text-[#cccccc]'
@@ -636,7 +636,7 @@ export function ShareTicketModal({
                         <button
                           type="button"
                           onClick={() => setResultFormat('viewer')}
-                          className={`flex-1 h-7 rounded-[4px] text-[12px] font-medium transition-colors cursor-pointer flex items-center justify-center gap-1.5 ${
+                          className={`flex-1 h-8 rounded-[5px] text-[13px] font-sans font-medium transition-colors cursor-pointer flex items-center justify-center gap-1.5 ${
                             resultFormat === 'viewer'
                               ? 'bg-[#222222] text-white shadow-xs'
                               : 'text-[#888888] hover:text-[#cccccc]'
@@ -648,7 +648,7 @@ export function ShareTicketModal({
                         <button
                           type="button"
                           onClick={() => setResultFormat('curl')}
-                          className={`flex-1 h-7 rounded-[4px] text-[12px] font-medium transition-colors cursor-pointer flex items-center justify-center gap-1.5 ${
+                          className={`flex-1 h-8 rounded-[5px] text-[13px] font-sans font-medium transition-colors cursor-pointer flex items-center justify-center gap-1.5 ${
                             resultFormat === 'curl'
                               ? 'bg-[#222222] text-white shadow-xs'
                               : 'text-[#888888] hover:text-[#cccccc]'
@@ -664,39 +664,39 @@ export function ShareTicketModal({
                   {/* Active Result Format Output */}
                   {resultFormat === 'viewer' && (
                     <div className="space-y-1.5">
-                      <div className="flex items-center justify-between text-[12px] text-[#888888]">
+                      <div className="flex items-center justify-between text-[13px] font-sans text-[#cccccc] font-medium">
                         <span>{linkMode === 'stream' ? 'Interactive Web Viewer' : 'Direct Download Link'}</span>
                         <a
                           href={primaryShareUrl}
                           target="_blank"
                           rel="noreferrer"
-                          className="flex items-center gap-1 text-[#888888] hover:text-white transition-colors"
+                          className="flex items-center gap-1 text-[13px] font-sans text-[#8c8c8c] hover:text-white transition-colors"
                         >
                           <span>{linkMode === 'stream' ? 'Open in tab' : 'Test download'}</span>
-                          <ExternalLink className="w-3 h-3" />
+                          <ExternalLink className="w-3.5 h-3.5" />
                         </a>
                       </div>
-                      <div className="flex items-center gap-2 h-9 px-3 rounded-[6px] bg-[#141414] border border-[#262626] focus-within:border-[#383838]">
-                        <Globe className="w-3.5 h-3.5 text-[#666666] shrink-0" />
+                      <div className="flex items-center gap-2.5 h-10 px-3.5 rounded-[7px] bg-[#141414] border border-[#262626] focus-within:border-[#383838]">
+                        <Globe className="w-4 h-4 text-[#777777] shrink-0" />
                         <input
                           type="text"
                           readOnly
                           value={primaryShareUrl}
-                          className="flex-1 bg-transparent text-white font-mono text-[12px] outline-none truncate select-all"
+                          className="flex-1 bg-transparent text-white font-mono text-[13px] outline-none truncate select-all"
                         />
                         <button
                           type="button"
                           onClick={() => copyToClipboard(primaryShareUrl, 'primary-url')}
-                          className="h-6 px-2.5 rounded-[4px] bg-[#222222] hover:bg-[#2c2c2c] text-white border border-[#333333] flex items-center gap-1.5 text-[11.5px] font-medium transition-colors cursor-pointer shrink-0"
+                          className="h-7.5 px-3 rounded-[5px] bg-[#222222] hover:bg-[#2c2c2c] text-white border border-[#333333] flex items-center gap-1.5 text-[12.5px] font-sans font-medium transition-colors cursor-pointer shrink-0"
                         >
                           {copiedKey === 'primary-url' ? (
                             <>
-                              <Check className="w-3 h-3 text-emerald-400" />
+                              <Check className="w-3.5 h-3.5 text-emerald-400" />
                               <span className="text-emerald-400">Copied</span>
                             </>
                           ) : (
                             <>
-                              <Copy className="w-3 h-3 text-[#888888]" />
+                              <Copy className="w-3.5 h-3.5 text-[#888888]" />
                               <span>Copy</span>
                             </>
                           )}
@@ -707,39 +707,39 @@ export function ShareTicketModal({
 
                   {resultFormat === 'stream' && (
                     <div className="space-y-1.5">
-                      <div className="flex items-center justify-between text-[12px] text-[#888888]">
+                      <div className="flex items-center justify-between text-[13px] font-sans text-[#cccccc] font-medium">
                         <span>Direct Streaming URL (HTTP Range / VLC / curl)</span>
                         <a
                           href={directStreamUrl}
                           target="_blank"
                           rel="noreferrer"
-                          className="flex items-center gap-1 text-[#888888] hover:text-white transition-colors"
+                          className="flex items-center gap-1 text-[13px] font-sans text-[#8c8c8c] hover:text-white transition-colors"
                         >
                           <span>Test stream</span>
-                          <ExternalLink className="w-3 h-3" />
+                          <ExternalLink className="w-3.5 h-3.5" />
                         </a>
                       </div>
-                      <div className="flex items-center gap-2 h-9 px-3 rounded-[6px] bg-[#141414] border border-[#262626] focus-within:border-[#383838]">
-                        <Play className="w-3.5 h-3.5 text-[#666666] shrink-0" />
+                      <div className="flex items-center gap-2.5 h-10 px-3.5 rounded-[7px] bg-[#141414] border border-[#262626] focus-within:border-[#383838]">
+                        <Play className="w-4 h-4 text-[#777777] shrink-0" />
                         <input
                           type="text"
                           readOnly
                           value={directStreamUrl}
-                          className="flex-1 bg-transparent text-white font-mono text-[12px] outline-none truncate select-all"
+                          className="flex-1 bg-transparent text-white font-mono text-[13px] outline-none truncate select-all"
                         />
                         <button
                           type="button"
                           onClick={() => copyToClipboard(directStreamUrl, 'direct-stream')}
-                          className="h-6 px-2.5 rounded-[4px] bg-[#222222] hover:bg-[#2c2c2c] text-white border border-[#333333] flex items-center gap-1.5 text-[11.5px] font-medium transition-colors cursor-pointer shrink-0"
+                          className="h-7.5 px-3 rounded-[5px] bg-[#222222] hover:bg-[#2c2c2c] text-white border border-[#333333] flex items-center gap-1.5 text-[12.5px] font-sans font-medium transition-colors cursor-pointer shrink-0"
                         >
                           {copiedKey === 'direct-stream' ? (
                             <>
-                              <Check className="w-3 h-3 text-emerald-400" />
+                              <Check className="w-3.5 h-3.5 text-emerald-400" />
                               <span className="text-emerald-400">Copied</span>
                             </>
                           ) : (
                             <>
-                              <Copy className="w-3 h-3 text-[#888888]" />
+                              <Copy className="w-3.5 h-3.5 text-[#888888]" />
                               <span>Copy</span>
                             </>
                           )}
@@ -750,26 +750,26 @@ export function ShareTicketModal({
 
                   {resultFormat === 'embed' && (
                     <div className="space-y-1.5">
-                      <div className="flex items-center justify-between text-[12px] text-[#888888]">
+                      <div className="flex items-center justify-between text-[13px] font-sans text-[#cccccc] font-medium">
                         <span>HTML Media Tag</span>
                         <button
                           type="button"
                           onClick={() => copyToClipboard(signedEmbedSnippet, 'signed-embed')}
-                          className="flex items-center gap-1 text-[#888888] hover:text-white transition-colors cursor-pointer text-[12px]"
+                          className="flex items-center gap-1 text-[#8c8c8c] hover:text-white transition-colors cursor-pointer text-[12.5px] font-sans"
                         >
                           {copiedKey === 'signed-embed' ? (
                             <span className="text-emerald-400 flex items-center gap-1">
-                              <Check className="w-3 h-3" /> Copied snippet
+                              <Check className="w-3.5 h-3.5" /> Copied snippet
                             </span>
                           ) : (
                             <span className="flex items-center gap-1">
-                              <Copy className="w-3 h-3" /> Copy snippet
+                              <Copy className="w-3.5 h-3.5" /> Copy snippet
                             </span>
                           )}
                         </button>
                       </div>
-                      <div className="rounded-[6px] bg-[#141414] border border-[#262626] p-2.5">
-                        <pre className="font-mono text-[11.5px] text-[#cccccc] whitespace-pre-wrap break-all select-all leading-relaxed">
+                      <div className="rounded-[7px] bg-[#141414] border border-[#262626] p-3">
+                        <pre className="font-mono text-[12.5px] text-[#cccccc] whitespace-pre-wrap break-all select-all leading-relaxed">
                           {signedEmbedSnippet}
                         </pre>
                       </div>
@@ -778,31 +778,31 @@ export function ShareTicketModal({
 
                   {resultFormat === 'curl' && (
                     <div className="space-y-1.5">
-                      <div className="flex items-center justify-between text-[12px] text-[#888888]">
+                      <div className="flex items-center justify-between text-[13px] font-sans text-[#cccccc] font-medium">
                         <span>cURL Terminal Command</span>
-                        <span className="text-[11px] text-[#666666]">Runs in terminal or scripts</span>
+                        <span className="text-[12px] font-sans text-[#666666]">Runs in terminal or scripts</span>
                       </div>
-                      <div className="flex items-center gap-2 h-9 px-3 rounded-[6px] bg-[#141414] border border-[#262626] focus-within:border-[#383838]">
-                        <Terminal className="w-3.5 h-3.5 text-[#666666] shrink-0" />
+                      <div className="flex items-center gap-2.5 h-10 px-3.5 rounded-[7px] bg-[#141414] border border-[#262626] focus-within:border-[#383838]">
+                        <Terminal className="w-4 h-4 text-[#777777] shrink-0" />
                         <input
                           type="text"
                           readOnly
                           value={signedCurlSnippet}
-                          className="flex-1 bg-transparent text-white font-mono text-[12px] outline-none truncate select-all"
+                          className="flex-1 bg-transparent text-white font-mono text-[13px] outline-none truncate select-all"
                         />
                         <button
                           type="button"
                           onClick={() => copyToClipboard(signedCurlSnippet, 'signed-curl')}
-                          className="h-6 px-2.5 rounded-[4px] bg-[#222222] hover:bg-[#2c2c2c] text-white border border-[#333333] flex items-center gap-1.5 text-[11.5px] font-medium transition-colors cursor-pointer shrink-0"
+                          className="h-7.5 px-3 rounded-[5px] bg-[#222222] hover:bg-[#2c2c2c] text-white border border-[#333333] flex items-center gap-1.5 text-[12.5px] font-sans font-medium transition-colors cursor-pointer shrink-0"
                         >
                           {copiedKey === 'signed-curl' ? (
                             <>
-                              <Check className="w-3 h-3 text-emerald-400" />
+                              <Check className="w-3.5 h-3.5 text-emerald-400" />
                               <span className="text-emerald-400">Copied</span>
                             </>
                           ) : (
                             <>
-                              <Copy className="w-3 h-3 text-[#888888]" />
+                              <Copy className="w-3.5 h-3.5 text-[#888888]" />
                               <span>Copy</span>
                             </>
                           )}
@@ -813,12 +813,12 @@ export function ShareTicketModal({
 
                   {/* Quick Copy Helper Chips (one-click copy for other formats without navigating) */}
                   {isMedia && resultFormat === 'viewer' && (
-                    <div className="flex items-center gap-1.5 text-[11.5px] text-[#666666] pt-1 flex-wrap">
+                    <div className="flex items-center gap-2 text-[12.5px] font-sans text-[#777777] pt-1 flex-wrap">
                       <span>Quick copy:</span>
                       <button
                         type="button"
                         onClick={() => copyToClipboard(directStreamUrl, 'quick-stream')}
-                        className="px-2 py-0.5 rounded-[4px] bg-[#141414] hover:bg-[#1e1e1e] border border-[#262626] text-[#aaaaaa] hover:text-white transition-colors cursor-pointer flex items-center gap-1"
+                        className="px-2.5 py-1 rounded-[5px] bg-[#141414] hover:bg-[#1e1e1e] border border-[#262626] text-[#cccccc] hover:text-white transition-colors cursor-pointer flex items-center gap-1 text-[12px] font-sans font-medium"
                       >
                         {copiedKey === 'quick-stream' ? <Check className="w-3 h-3 text-emerald-400" /> : null}
                         Direct Stream URL
@@ -826,7 +826,7 @@ export function ShareTicketModal({
                       <button
                         type="button"
                         onClick={() => copyToClipboard(signedEmbedSnippet, 'quick-embed')}
-                        className="px-2 py-0.5 rounded-[4px] bg-[#141414] hover:bg-[#1e1e1e] border border-[#262626] text-[#aaaaaa] hover:text-white transition-colors cursor-pointer flex items-center gap-1"
+                        className="px-2.5 py-1 rounded-[5px] bg-[#141414] hover:bg-[#1e1e1e] border border-[#262626] text-[#cccccc] hover:text-white transition-colors cursor-pointer flex items-center gap-1 text-[12px] font-sans font-medium"
                       >
                         {copiedKey === 'quick-embed' ? <Check className="w-3 h-3 text-emerald-400" /> : null}
                         HTML Tag
@@ -834,7 +834,7 @@ export function ShareTicketModal({
                       <button
                         type="button"
                         onClick={() => copyToClipboard(signedCurlSnippet, 'quick-curl')}
-                        className="px-2 py-0.5 rounded-[4px] bg-[#141414] hover:bg-[#1e1e1e] border border-[#262626] text-[#aaaaaa] hover:text-white transition-colors cursor-pointer flex items-center gap-1"
+                        className="px-2.5 py-1 rounded-[5px] bg-[#141414] hover:bg-[#1e1e1e] border border-[#262626] text-[#cccccc] hover:text-white transition-colors cursor-pointer flex items-center gap-1 text-[12px] font-sans font-medium"
                       >
                         {copiedKey === 'quick-curl' ? <Check className="w-3 h-3 text-emerald-400" /> : null}
                         cURL
@@ -843,14 +843,14 @@ export function ShareTicketModal({
                   )}
 
                   {/* Clean Footer */}
-                  <div className="-mx-4 px-4 pt-3 border-t border-[#1e1e1e] flex items-center justify-between">
+                  <div className="-mx-5 px-5 pt-3.5 border-t border-[#1e1e1e] flex items-center justify-between">
                     <button
                       type="button"
                       onClick={() => {
                         setGeneratedTicket(null);
                         setResultFormat('viewer');
                       }}
-                      className="text-[12.5px] font-sans text-[#777777] hover:text-white transition-colors cursor-pointer"
+                      className="text-[13px] font-sans text-[#8c8c8c] hover:text-white transition-colors cursor-pointer"
                     >
                       ← Create another
                     </button>
@@ -862,7 +862,7 @@ export function ShareTicketModal({
                             setActiveTab('manage');
                             setGeneratedTicket(null);
                           }}
-                          className="text-[12.5px] font-sans text-[#888888] hover:text-white transition-colors cursor-pointer flex items-center gap-1 px-2 py-1 rounded-[5px] hover:bg-[#161616]"
+                          className="text-[13px] font-sans text-[#8c8c8c] hover:text-white transition-colors cursor-pointer flex items-center gap-1.5 px-2.5 py-1 rounded-[5px] hover:bg-[#161616]"
                         >
                           <Clock className="w-3.5 h-3.5 text-[#666666]" />
                           <span>Active Links ({activeTicketCount})</span>
@@ -871,7 +871,7 @@ export function ShareTicketModal({
                       <button
                         type="button"
                         onClick={onClose}
-                        className="h-8 px-4 rounded-[6px] bg-[#1a1a1a] hover:bg-[#222222] border border-[#2e2e2e] text-[12.5px] font-medium text-white transition-colors cursor-pointer"
+                        className="h-8.5 px-4 rounded-[6px] bg-[#1a1a1a] hover:bg-[#222222] border border-[#2e2e2e] text-[13px] font-sans font-medium text-white transition-colors cursor-pointer"
                       >
                         Done
                       </button>
@@ -880,9 +880,9 @@ export function ShareTicketModal({
                 </div>
               ) : (
                 /* ─── Compact Creation Form ────────────────────────────────────────── */
-                <form onSubmit={handleCreate} className="space-y-3.5">
+                <form onSubmit={handleCreate} className="space-y-4">
                   {createError && (
-                    <div className="p-2.5 rounded-[6px] bg-[#ef4444]/10 border border-[#ef4444]/25 text-[12.5px] font-sans text-[#ef4444] flex items-center gap-2">
+                    <div className="p-3 rounded-[6px] bg-[#ef4444]/10 border border-[#ef4444]/25 text-[13px] font-sans text-[#ef4444] flex items-center gap-2">
                       <AlertTriangle className="w-4 h-4 shrink-0" />
                       <span>{createError}</span>
                     </div>
@@ -891,39 +891,39 @@ export function ShareTicketModal({
                   {/* Link Mode Selector for Media */}
                   {isMedia && (
                     <div className="space-y-1.5">
-                      <label className="block text-[12px] font-medium text-[#888888]">
+                      <label className="block text-[13px] font-sans font-medium text-[#cccccc]">
                         Link Behavior
                       </label>
                       <div className="grid grid-cols-2 gap-2">
                         <button
                           type="button"
                           onClick={() => setLinkMode('stream')}
-                          className={`h-12 px-3 rounded-[6px] border text-left transition-colors cursor-pointer flex items-center gap-2.5 ${
+                          className={`h-14 px-3.5 rounded-[7px] border text-left transition-colors cursor-pointer flex items-center gap-3 ${
                             linkMode === 'stream'
                               ? 'bg-[#181818] border-[#383838] text-white'
-                              : 'bg-[#121212] border-[#202020] text-[#777777] hover:text-[#cccccc] hover:border-[#2a2a2a]'
+                              : 'bg-[#121212] border-[#202020] text-[#888888] hover:text-[#cccccc] hover:border-[#2a2a2a]'
                           }`}
                         >
                           <Play className={`w-4 h-4 shrink-0 ${linkMode === 'stream' ? 'text-blue-400' : 'text-[#666666]'}`} />
                           <div className="min-w-0">
-                            <div className="text-[12.5px] font-medium leading-none">Interactive Player</div>
-                            <div className="text-[11px] text-[#666666] truncate mt-1">Player with scrub & speed</div>
+                            <div className="text-[13.5px] font-sans font-medium leading-none">Interactive Player</div>
+                            <div className="text-[12px] font-sans text-[#777777] truncate mt-1">Player with scrub & speed</div>
                           </div>
                         </button>
 
                         <button
                           type="button"
                           onClick={() => setLinkMode('download')}
-                          className={`h-12 px-3 rounded-[6px] border text-left transition-colors cursor-pointer flex items-center gap-2.5 ${
+                          className={`h-14 px-3.5 rounded-[7px] border text-left transition-colors cursor-pointer flex items-center gap-3 ${
                             linkMode === 'download'
                               ? 'bg-[#181818] border-[#383838] text-white'
-                              : 'bg-[#121212] border-[#202020] text-[#777777] hover:text-[#cccccc] hover:border-[#2a2a2a]'
+                              : 'bg-[#121212] border-[#202020] text-[#888888] hover:text-[#cccccc] hover:border-[#2a2a2a]'
                           }`}
                         >
                           <Download className={`w-4 h-4 shrink-0 ${linkMode === 'download' ? 'text-blue-400' : 'text-[#666666]'}`} />
                           <div className="min-w-0">
-                            <div className="text-[12.5px] font-medium leading-none">Direct Download</div>
-                            <div className="text-[11px] text-[#666666] truncate mt-1">Forces file attachment</div>
+                            <div className="text-[13.5px] font-sans font-medium leading-none">Direct Download</div>
+                            <div className="text-[12px] font-sans text-[#777777] truncate mt-1">Forces file attachment</div>
                           </div>
                         </button>
                       </div>
@@ -932,19 +932,19 @@ export function ShareTicketModal({
 
                   {/* Expiration Segmented Control */}
                   <div className="space-y-1.5">
-                    <label className="block text-[12px] font-medium text-[#888888]">
+                    <label className="block text-[13px] font-sans font-medium text-[#cccccc]">
                       Duration
                     </label>
-                    <div className="grid grid-cols-5 gap-1 p-0.5 bg-[#121212] border border-[#202020] rounded-[6px]">
+                    <div className="grid grid-cols-5 gap-1 p-0.5 bg-[#121212] border border-[#202020] rounded-[7px]">
                       {TTL_PRESETS.map((preset) => (
                         <button
                           key={preset.label}
                           type="button"
                           onClick={() => setSelectedTtl(preset.seconds)}
-                          className={`h-7 rounded-[4px] text-[12px] font-medium transition-colors cursor-pointer flex items-center justify-center ${
+                          className={`h-8 rounded-[5px] text-[13px] font-sans font-medium transition-colors cursor-pointer flex items-center justify-center ${
                             selectedTtl === preset.seconds
                               ? 'bg-[#222222] text-white shadow-xs'
-                              : 'text-[#777777] hover:text-white'
+                              : 'text-[#888888] hover:text-white'
                           }`}
                         >
                           {preset.label}
@@ -952,7 +952,7 @@ export function ShareTicketModal({
                       ))}
                     </div>
                     {selectedTtl === 0 && (
-                      <div className="pt-1 flex items-center gap-2">
+                      <div className="pt-1.5 flex items-center gap-2">
                         <input
                           type="number"
                           min="0.5"
@@ -960,26 +960,26 @@ export function ShareTicketModal({
                           value={customHours}
                           onChange={(e) => setCustomHours(e.target.value)}
                           placeholder="12"
-                          className="w-20 h-7 px-2.5 rounded-[5px] bg-[#141414] border border-[#262626] focus:border-[#3b82f6] text-white text-[12.5px] font-sans outline-none"
+                          className="w-24 h-8 px-3 rounded-[6px] bg-[#141414] border border-[#262626] focus:border-[#3b82f6] text-white text-[13px] font-sans outline-none"
                         />
-                        <span className="text-[12px] font-sans text-[#777777]">hours (up to 720)</span>
+                        <span className="text-[13px] font-sans text-[#888888]">hours (up to 720)</span>
                       </div>
                     )}
                   </div>
 
                   {/* Action buttons */}
-                  <div className="-mx-4 px-4 pt-3 border-t border-[#1e1e1e] flex items-center justify-end gap-2">
+                  <div className="-mx-5 px-5 pt-3.5 border-t border-[#1e1e1e] flex items-center justify-end gap-2">
                     <button
                       type="button"
                       onClick={onClose}
-                      className="h-8 px-3 rounded-[6px] text-[12.5px] text-[#777777] hover:text-white hover:bg-[#181818] transition-colors cursor-pointer"
+                      className="h-8.5 px-3.5 rounded-[6px] text-[13px] font-sans text-[#888888] hover:text-white hover:bg-[#181818] transition-colors cursor-pointer"
                     >
                       Cancel
                     </button>
                     <button
                       type="submit"
                       disabled={isCreating}
-                      className="h-8 px-4 rounded-[6px] bg-blue-600 hover:bg-blue-500 text-white font-medium text-[12.5px] transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
+                      className="h-8.5 px-4 rounded-[6px] bg-blue-600 hover:bg-blue-500 text-white font-sans font-medium text-[13px] transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
                     >
                       {isCreating ? (
                         <>
@@ -999,37 +999,37 @@ export function ShareTicketModal({
             </>
           ) : (
             /* ─── ACTIVE TICKETS MANAGEMENT TAB ─────────────────────────── */
-            <div className="space-y-3">
-              <div className="flex items-center justify-between text-[12px] text-[#888888]">
+            <div className="space-y-3.5">
+              <div className="flex items-center justify-between text-[13px] font-sans text-[#cccccc] font-medium">
                 <span>Active Capability Tickets ({tickets.length})</span>
                 <button
                   type="button"
                   onClick={loadTickets}
                   disabled={isLoadingTickets}
-                  className="flex items-center gap-1 text-[11.5px] text-[#777777] hover:text-white transition-colors cursor-pointer disabled:opacity-40"
+                  className="flex items-center gap-1.5 text-[12.5px] font-sans text-[#8c8c8c] hover:text-white transition-colors cursor-pointer disabled:opacity-40"
                 >
-                  <RefreshCw className={`w-3 h-3 ${isLoadingTickets ? 'animate-spin' : ''}`} />
+                  <RefreshCw className={`w-3.5 h-3.5 ${isLoadingTickets ? 'animate-spin' : ''}`} />
                   <span>Refresh</span>
                 </button>
               </div>
 
               {manageError && (
-                <div className="p-2.5 rounded-[6px] bg-[#ef4444]/10 border border-[#ef4444]/25 text-[12px] text-[#ef4444] flex items-center gap-2">
-                  <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                <div className="p-3 rounded-[6px] bg-[#ef4444]/10 border border-[#ef4444]/25 text-[13px] font-sans text-[#ef4444] flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
                   <span>{manageError}</span>
                 </div>
               )}
 
               {isLoadingTickets && tickets.length === 0 ? (
-                <div className="py-6 text-center text-[12px] text-[#777777]">
+                <div className="py-8 text-center text-[13px] font-sans text-[#888888]">
                   Loading tickets...
                 </div>
               ) : tickets.length === 0 ? (
-                <div className="py-6 text-center rounded-[6px] bg-[#121212] border border-[#202020] p-4 text-[12px] text-[#777777]">
+                <div className="py-8 text-center rounded-[7px] bg-[#121212] border border-[#202020] p-4 text-[13px] font-sans text-[#888888]">
                   No active capability links found for this object.
                 </div>
               ) : (
-                <div className="max-h-60 overflow-y-auto space-y-1.5 pr-0.5">
+                <div className="max-h-64 overflow-y-auto space-y-2 pr-0.5">
                   {tickets.map((t) => {
                     const timeRem = formatTimeRemaining(t.expires_at);
                     const isRevoking = revokingSigs.has(t.signature);
@@ -1039,50 +1039,50 @@ export function ShareTicketModal({
                     return (
                       <div
                         key={t.signature}
-                        className="p-2.5 rounded-[6px] bg-[#121212] border border-[#202020] hover:border-[#2a2a2a] flex items-center justify-between gap-2.5 transition-colors"
+                        className="p-3 rounded-[7px] bg-[#121212] border border-[#202020] hover:border-[#2a2a2a] flex items-center justify-between gap-3 transition-colors"
                       >
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-[12px] font-medium text-white">
+                            <span className="text-[13px] font-sans font-medium text-white">
                               {t.operation === 'WRITE' ? 'Upload Ticket' : 'Read Ticket'}
                             </span>
 
                             {t.revoked ? (
-                              <span className="px-1.5 py-0.2 rounded-[3px] bg-[#ef4444]/15 border border-[#ef4444]/30 text-[#ef4444] text-[10.5px] font-medium leading-normal">
+                              <span className="px-2 py-0.5 rounded-[4px] bg-[#ef4444]/15 border border-[#ef4444]/30 text-[#ef4444] text-[11.5px] font-sans font-medium leading-normal">
                                 Revoked
                               </span>
                             ) : timeRem.isExpired ? (
-                              <span className="px-1.5 py-0.2 rounded-[3px] bg-[#f59e0b]/15 border border-[#f59e0b]/30 text-[#f59e0b] text-[10.5px] font-medium leading-normal">
+                              <span className="px-2 py-0.5 rounded-[4px] bg-[#f59e0b]/15 border border-[#f59e0b]/30 text-[#f59e0b] text-[11.5px] font-sans font-medium leading-normal">
                                 Expired
                               </span>
                             ) : (
-                              <span className="px-1.5 py-0.2 rounded-[3px] bg-[#30a46c]/15 border border-[#30a46c]/30 text-[#30a46c] text-[10.5px] font-medium leading-normal">
+                              <span className="px-2 py-0.5 rounded-[4px] bg-[#30a46c]/15 border border-[#30a46c]/30 text-[#30a46c] text-[11.5px] font-sans font-medium leading-normal">
                                 Active
                               </span>
                             )}
 
-                            <span className="text-[11.5px] text-[#777777]">
+                            <span className="text-[12.5px] font-sans text-[#8c8c8c]">
                               {timeRem.text}
                             </span>
                           </div>
 
-                          <div className="mt-0.5 font-mono text-[11px] text-[#555555] truncate">
-                            {t.signature.slice(0, 16)}...
+                          <div className="mt-1 font-mono text-[11.5px] text-[#666666] truncate">
+                            sig:{t.signature.slice(0, 16)}...
                           </div>
                         </div>
 
                         {/* Actions */}
-                        <div className="flex items-center gap-1 shrink-0">
+                        <div className="flex items-center gap-1.5 shrink-0">
                           <button
                             type="button"
                             onClick={() => copyToClipboard(fullUrl, `copy-${t.signature}`)}
                             title="Copy link"
-                            className="h-6 px-2 rounded-[4px] text-[11.5px] text-[#cccccc] hover:text-white bg-[#181818] hover:bg-[#202020] border border-[#282828] flex items-center gap-1 transition-colors cursor-pointer"
+                            className="h-7.5 px-2.5 rounded-[5px] text-[12px] font-sans font-medium text-[#cccccc] hover:text-white bg-[#181818] hover:bg-[#202020] border border-[#282828] flex items-center gap-1 transition-colors cursor-pointer"
                           >
                             {copiedKey === `copy-${t.signature}` ? (
-                              <Check className="w-3 h-3 text-emerald-400" />
+                              <Check className="w-3.5 h-3.5 text-emerald-400" />
                             ) : (
-                              <Copy className="w-3 h-3 text-[#777777]" />
+                              <Copy className="w-3.5 h-3.5 text-[#888888]" />
                             )}
                             <span>Copy</span>
                           </button>
@@ -1093,9 +1093,9 @@ export function ShareTicketModal({
                               onClick={() => handleRevoke(t.signature)}
                               disabled={isRevoking}
                               title="Revoke access immediately"
-                              className="h-6 px-2 rounded-[4px] text-[11.5px] text-amber-300 hover:text-amber-200 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-40"
+                              className="h-7.5 px-2.5 rounded-[5px] text-[12px] font-sans font-medium text-amber-300 hover:text-amber-200 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-40"
                             >
-                              <Ban className="w-3 h-3" />
+                              <Ban className="w-3.5 h-3.5" />
                               <span>Revoke</span>
                             </button>
                           )}
@@ -1105,9 +1105,9 @@ export function ShareTicketModal({
                             onClick={() => handleDelete(t.signature)}
                             disabled={isDeleting}
                             title="Delete ticket"
-                            className="w-6 h-6 rounded-[4px] text-[#777777] hover:text-rose-400 hover:bg-rose-500/10 border border-[#282828] flex items-center justify-center transition-colors cursor-pointer disabled:opacity-40"
+                            className="w-7.5 h-7.5 rounded-[5px] text-[#888888] hover:text-rose-400 hover:bg-rose-500/10 border border-[#282828] flex items-center justify-center transition-colors cursor-pointer disabled:opacity-40"
                           >
-                            <Trash2 className="w-3 h-3" />
+                            <Trash2 className="w-3.5 h-3.5" />
                           </button>
                         </div>
                       </div>
@@ -1116,11 +1116,11 @@ export function ShareTicketModal({
                 </div>
               )}
 
-              <div className="-mx-4 px-4 pt-3 border-t border-[#1e1e1e] flex items-center justify-end">
+              <div className="-mx-5 px-5 pt-3.5 border-t border-[#1e1e1e] flex items-center justify-end">
                 <button
                   type="button"
                   onClick={onClose}
-                  className="h-8 px-4 rounded-[6px] bg-[#1a1a1a] hover:bg-[#222222] border border-[#2e2e2e] text-[12.5px] text-white transition-colors cursor-pointer"
+                  className="h-8.5 px-4 rounded-[6px] bg-[#1a1a1a] hover:bg-[#222222] border border-[#2e2e2e] text-[13px] font-sans font-medium text-white transition-colors cursor-pointer"
                 >
                   Close
                 </button>

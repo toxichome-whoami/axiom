@@ -397,10 +397,10 @@ export function MediaPlayer({
                   </button>
 
                   {/* Time Counter */}
-                  <div className="text-[13px] font-sans font-medium text-[#a3a3a3] tabular-nums">
+                  <div className="text-[13.5px] font-sans font-medium text-[#cccccc] tabular-nums">
                     <span>{formatDuration(currentTime)}</span>
                     <span className="text-[#555555] mx-1">/</span>
-                    <span className="text-[#737373]">{formatDuration(duration)}</span>
+                    <span className="text-[#888888]">{formatDuration(duration)}</span>
                   </div>
 
                   {/* Volume Slider */}
@@ -434,7 +434,7 @@ export function MediaPlayer({
                       type="button"
                       onClick={() => setShowSpeedMenu((prev) => !prev)}
                       title="Playback Speed"
-                      className="h-7 px-2 rounded-[4px] hover:bg-[#222222] transition-colors text-[13px] font-sans font-medium text-[#cccccc] hover:text-white flex items-center gap-1 cursor-pointer"
+                      className="h-7 px-2.5 rounded-[4px] hover:bg-[#222222] transition-colors text-[13.5px] font-sans font-medium text-[#cccccc] hover:text-white flex items-center gap-1 cursor-pointer"
                     >
                       <span>{playbackRate}x</span>
                     </button>
@@ -515,8 +515,8 @@ export function MediaPlayer({
           </div>
         </div>
 
-        <h3 className="text-white text-[15px] font-sans font-medium truncate max-w-full text-center">{name}</h3>
-        <p className="text-[13px] text-[#8c8c8c] font-sans font-normal mt-0.5 mb-4">
+        <h3 className="text-white text-[16px] font-sans font-semibold truncate max-w-full text-center">{name}</h3>
+        <p className="text-[13.5px] text-[#8c8c8c] font-sans font-normal mt-1 mb-4">
           {getFileExtension(name)} &bull; {formatBytes(size || 0)}
         </p>
 
@@ -808,8 +808,8 @@ export function MediaPlayer({
       <div className="w-12 h-12 rounded-[8px] bg-[#141414] border border-[#262626] flex items-center justify-center mb-3 text-[#cccccc]">
         {getFileIcon(name, 'w-6 h-6')}
       </div>
-      <h3 className="text-white text-[15px] font-sans font-medium truncate max-w-full leading-snug">{name}</h3>
-      <p className="text-[13px] text-[#8c8c8c] mt-1 mb-5 font-sans font-normal">
+      <h3 className="text-white text-[16px] font-sans font-semibold truncate max-w-full leading-snug">{name}</h3>
+      <p className="text-[13.5px] text-[#8c8c8c] mt-1 mb-5 font-sans font-normal">
         {contentType || 'application/octet-stream'} &bull; {formatBytes(size || 0)}
       </p>
 
@@ -817,7 +817,7 @@ export function MediaPlayer({
         <button
           type="button"
           onClick={onDownload}
-          className="inline-flex items-center justify-center gap-2 h-8 px-4 rounded-[6px] bg-white text-black font-medium text-[13px] hover:bg-[#e0e0e0] transition-colors cursor-pointer w-full shadow-xs"
+          className="inline-flex items-center justify-center gap-2 h-9 px-4 rounded-[6px] bg-white text-black font-semibold text-[13.5px] hover:bg-[#e0e0e0] transition-colors cursor-pointer w-full shadow-xs"
         >
           <Download className="w-4 h-4 stroke-[2.5]" /> Download File
         </button>
