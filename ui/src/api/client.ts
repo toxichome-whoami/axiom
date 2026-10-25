@@ -820,6 +820,20 @@ export const api = {
       }
     ),
 
+  modifyTableColumn: (
+    db: string,
+    table: string,
+    column: string,
+    payload: { new_name?: string; data_type?: string }
+  ) =>
+    request<{ database: string; table: string; column: string; new_name?: string; data_type?: string }>(
+      `/api/v1/db/${encodeURIComponent(db)}/${encodeURIComponent(table)}/columns/${encodeURIComponent(column)}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify(payload),
+      }
+    ),
+
   executeSqlQuery: (db: string, sql: string, params: unknown[] = [], timeout = 60) =>
     request<QueryResultApi>(`/api/v1/db/${encodeURIComponent(db)}/query`, {
       method: 'POST',

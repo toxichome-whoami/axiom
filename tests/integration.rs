@@ -1917,6 +1917,46 @@ async fn db_data_api_full_crud_pagination_and_column_lifecycle() {
     let legacy_schema_res = create_app().oneshot(legacy_schema_req).await.unwrap();
     assert_eq!(legacy_schema_res.status(), StatusCode::NOT_FOUND);
 
+    // Verify PATCH on collection root /columns without path parameter is rejected (405 Method Not Allowed)
+    let invalid_patch_req = Request::patch("/api/v1/db/testdb/items_crud/columns")
+        .header("X-Axiom-Key", &admin_token)
+        .header("Content-Type", "application/json")
+        .body(Body::from(r#"{"new_name":"barcode_code"}"#))
+        .unwrap();
+    let invalid_patch_res = create_app().oneshot(invalid_patch_req).await.unwrap();
+    assert_eq!(invalid_patch_res.status(), StatusCode::METHOD_NOT_ALLOWED);
+
+    // Modify/Rename Column via Canonical RESTful Path Parameter: PATCH /columns/:column_name
+    let modify_col_req = Request::patch("/api/v1/db/testdb/items_crud/columns/barcode")
+        .header("X-Axiom-Key", &admin_token)
+        .header("Content-Type", "application/json")
+        .body(Body::from(
+            serde_json::to_vec(&serde_json::json!({
+                "new_name": "barcode_code"
+            }))
+            .unwrap(),
+        ))
+        .unwrap();
+    let modify_col_res = create_app().oneshot(modify_col_req).await.unwrap();
+    assert_eq!(modify_col_res.status(), StatusCode::OK);
+
+    // Verify column was renamed to barcode_code
+    let check_renamed_req = Request::get("/api/v1/db/testdb/items_crud/columns")
+        .header("X-Axiom-Key", &admin_token)
+        .body(Body::empty())
+        .unwrap();
+    let check_renamed_res = create_app().oneshot(check_renamed_req).await.unwrap();
+    assert_eq!(check_renamed_res.status(), StatusCode::OK);
+    let check_renamed_json: Value = serde_json::from_slice(
+        &axum::body::to_bytes(check_renamed_res.into_body(), 65536)
+            .await
+            .unwrap(),
+    )
+    .unwrap();
+    let cols_renamed = check_renamed_json["data"]["columns"].as_array().unwrap();
+    assert!(cols_renamed.iter().any(|c| c["name"] == "barcode_code"));
+    assert!(!cols_renamed.iter().any(|c| c["name"] == "barcode"));
+
     // Verify DELETE on collection root /columns without path parameter is rejected (405 Method Not Allowed)
     let invalid_del_req = Request::delete("/api/v1/db/testdb/items_crud/columns")
         .header("X-Axiom-Key", &admin_token)
@@ -1926,7 +1966,7 @@ async fn db_data_api_full_crud_pagination_and_column_lifecycle() {
     assert_eq!(invalid_del_res.status(), StatusCode::METHOD_NOT_ALLOWED);
 
     // Dynamic Column Drop via Canonical RESTful Path Parameter
-    let drop_col_req = Request::delete("/api/v1/db/testdb/items_crud/columns/barcode")
+    let drop_col_req = Request::delete("/api/v1/db/testdb/items_crud/columns/barcode_code")
         .header("X-Axiom-Key", &admin_token)
         .body(Body::empty())
         .unwrap();
@@ -1947,7 +1987,7 @@ async fn db_data_api_full_crud_pagination_and_column_lifecycle() {
     )
     .unwrap();
     let cols_after = check_cols_json["data"]["columns"].as_array().unwrap();
-    assert!(!cols_after.iter().any(|c| c["name"] == "barcode"));
+    assert!(!cols_after.iter().any(|c| c["name"] == "barcode_code"));
 
     // 9. List databases
     let list_dbs_req = Request::get("/api/v1/db/databases")

@@ -213,7 +213,7 @@ All `/api/v1/db/*` routes require an authenticated API Key (`X-Axiom-Key: base64
 | `DELETE` | `/api/v1/db/:alias/:table/rows` | Delete rows matching mandatory filter object |
 | `GET` | `/api/v1/db/:alias/:table/columns` | Inspect table columns, datatypes, nullability, and foreign keys |
 | `POST` | `/api/v1/db/:alias/:table/columns` | Dynamic DDL: Add a column to an existing table schema |
-| `PATCH` | `/api/v1/db/:alias/:table/columns` | Dynamic DDL: Rename or alter column data type |
+| `PATCH` | `/api/v1/db/:alias/:table/columns/:column_name` | Dynamic DDL: Rename or alter column data type |
 | `DELETE` | `/api/v1/db/:alias/:table/columns/:column_name` | Dynamic DDL: Drop a column via path parameter |
 
 ---
@@ -590,16 +590,15 @@ Content-Type: application/json
 
 ---
 
-### Dynamic DDL: Modify / Rename Column (`PATCH /api/v1/db/:alias/:table/columns`)
+### Dynamic DDL: Modify / Rename Column (`PATCH /api/v1/db/:alias/:table/columns/:column_name`)
 **Request**:
 ```http
-PATCH /api/v1/db/main_pg/users/columns
+PATCH /api/v1/db/main_pg/users/columns/mfa_enabled
 X-Axiom-Key: <TOKEN>
 Content-Type: application/json
 ```
 ```json
 {
-  "name": "mfa_enabled",
   "new_name": "is_mfa_active"
 }
 ```

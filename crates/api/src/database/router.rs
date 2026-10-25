@@ -41,12 +41,12 @@ pub fn get_router() -> Router {
         .route(
             "/:db_name/:table_name/columns",
             get(crate::database::handlers::describe_table)
-                .post(crate::database::handlers::add_column)
-                .patch(crate::database::handlers::modify_column),
+                .post(crate::database::handlers::add_column),
         )
         .route(
             "/:db_name/:table_name/columns/:column_name",
-            delete(crate::database::handlers::drop_column),
+            delete(crate::database::handlers::drop_column)
+                .patch(crate::database::handlers::modify_column),
         )
 }
 
