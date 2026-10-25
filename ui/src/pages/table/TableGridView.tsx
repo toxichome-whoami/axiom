@@ -111,6 +111,7 @@ export function TableGridView({
   const [internalTab, setInternalTab] = React.useState<'data' | 'definition'>('data');
   const activeTab = externalTab ?? internalTab;
   const setActiveTab = setExternalTab ?? setInternalTab;
+  const lastTapRef = React.useRef<{ rowIndex: number; colName: string; time: number } | null>(null);
 
   // Generate realistic formatted SQL DDL for Definition tab
   const { ddl, lines } = React.useMemo(() => {
@@ -465,21 +466,40 @@ export function TableGridView({
                             data-cell-col={col.name}
                             onClick={(e) => {
                               e.stopPropagation();
-                              const wasAlreadySelected = selectedCell?.rowIndex === idx && selectedCell?.colName === col.name;
+                              const now = Date.now();
+                              const lastTap = lastTapRef.current;
+                              const isDoubleTap = Boolean(
+                                lastTap &&
+                                lastTap.rowIndex === idx &&
+                                lastTap.colName === col.name &&
+                                now - lastTap.time < 350
+                              );
+
+                              if (isDoubleTap) {
+                                lastTapRef.current = null;
+                              } else {
+                                lastTapRef.current = { rowIndex: idx, colName: col.name, time: now };
+                              }
+
                               onSelectCell({ rowIndex: idx, colName: col.name });
                               onSelectRow(idx, false);
-                              const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
-                              if (fk && (isMobile || wasAlreadySelected)) {
-                                onOpenFkPicker({
-                                  rowIndex: idx,
-                                  column: col.name,
-                                  fk,
-                                  currentValue: val,
-                                });
+
+                              if (isDoubleTap) {
+                                if (fk) {
+                                  onOpenFkPicker({
+                                    rowIndex: idx,
+                                    column: col.name,
+                                    fk,
+                                    currentValue: val,
+                                  });
+                                } else if (!isReadOnly) {
+                                  onStartCellEdit(idx, col.name, e.currentTarget);
+                                }
                               }
                             }}
                             onDoubleClick={(e) => {
                               e.stopPropagation();
+                              lastTapRef.current = null;
                               onSelectCell({ rowIndex: idx, colName: col.name });
                               onSelectRow(idx, false);
                               if (fk) {
