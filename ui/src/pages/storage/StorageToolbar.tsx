@@ -17,6 +17,7 @@ import {
   Share2,
   FolderPlus,
   Files,
+  Link as LinkIcon,
 } from 'lucide-react';
 import { StorageViewMode, StorageTierFilter, StorageItem } from './types';
 
@@ -40,6 +41,7 @@ export interface StorageToolbarProps {
   onDropOnFolder: (targetFolderKey: string, item?: StorageItem) => void;
   selectedFileItem?: StorageItem | null;
   onShareClick?: (item: StorageItem) => void;
+  onCreateUploadLink?: () => void;
   isPublic?: boolean;
 }
 
@@ -63,6 +65,7 @@ export function StorageToolbar({
   onDropOnFolder,
   selectedFileItem,
   onShareClick,
+  onCreateUploadLink,
   isPublic,
 }: StorageToolbarProps) {
   const [dragOverTargetKey, setDragOverTargetKey] = useState<string | null>(null);
@@ -365,6 +368,23 @@ export function StorageToolbar({
                   <FolderPlus className="w-3.5 h-3.5 text-[#eab308] shrink-0" />
                   <span>Upload folder</span>
                 </button>
+
+                {onCreateUploadLink && (
+                  <>
+                    <div className="my-1 border-t border-[#1f1f1f]" />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsUploadMenuOpen(false);
+                        onCreateUploadLink();
+                      }}
+                      className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-[6px] text-[13px] text-[#cccccc] hover:text-white hover:bg-[#1a1a1a] transition-colors cursor-pointer text-left"
+                    >
+                      <LinkIcon className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                      <span>Create upload link</span>
+                    </button>
+                  </>
+                )}
               </div>
             );
           })()}

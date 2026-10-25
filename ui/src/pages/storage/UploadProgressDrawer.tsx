@@ -69,21 +69,21 @@ export function UploadProgressDrawer({
 
   return (
     <div
-      className="fixed bottom-4 right-4 z-50 w-80 sm:w-96 rounded-[10px] border border-[#2b2b2b] bg-[#141414] shadow-2xl overflow-hidden font-sans select-none animate-in fade-in slide-in-from-bottom-2 duration-150 ring-1 ring-blue-500/20"
+      className="fixed bottom-4 right-4 z-50 w-80 sm:w-96 rounded-[8px] border border-[#262626] bg-[#0c0c0c] shadow-2xl overflow-hidden font-sans select-none animate-in fade-in slide-in-from-bottom-2 duration-150"
       role="region"
       aria-label="Upload progress"
     >
       {/* ─── Top Header Bar ────────────────────────────────────────────── */}
-      <div className="h-10 px-3.5 bg-[#181818] border-b border-[#242424] flex items-center justify-between gap-2">
+      <div className="h-10 px-3.5 bg-[#111111] border-b border-[#1f1f1f] flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
-          <span className="text-[13.5px] font-medium text-white truncate">{title}</span>
+          <span className="text-[13px] font-sans font-medium text-white truncate">{title}</span>
         </div>
 
         <div className="flex items-center gap-1 shrink-0">
           <button
             type="button"
             onClick={() => setIsMinimized(!isMinimized)}
-            className="w-7 h-7 flex items-center justify-center rounded-md text-[#8c8c8c] hover:text-white hover:bg-[#242424] transition-colors cursor-pointer"
+            className="w-7 h-7 flex items-center justify-center rounded-[6px] text-[#8c8c8c] hover:text-white hover:bg-[#1a1a1a] transition-colors cursor-pointer"
             title={isMinimized ? 'Expand' : 'Collapse'}
             aria-label={isMinimized ? 'Expand upload drawer' : 'Collapse upload drawer'}
           >
@@ -92,7 +92,7 @@ export function UploadProgressDrawer({
           <button
             type="button"
             onClick={onDismiss}
-            className="w-7 h-7 flex items-center justify-center rounded-md text-[#8c8c8c] hover:text-white hover:bg-[#242424] transition-colors cursor-pointer"
+            className="w-7 h-7 flex items-center justify-center rounded-[6px] text-[#8c8c8c] hover:text-white hover:bg-[#1a1a1a] transition-colors cursor-pointer"
             title="Dismiss"
             aria-label="Dismiss upload drawer"
           >
@@ -105,7 +105,7 @@ export function UploadProgressDrawer({
       {!isMinimized && (
         <>
           {/* Subheader status bar */}
-          <div className="h-9 px-3.5 bg-[#151515] border-b border-[#222222] flex items-center justify-between text-[12.5px]">
+          <div className="h-9 px-3.5 bg-[#0e0e0e] border-b border-[#1c1c1c] flex items-center justify-between text-[12px] font-sans">
             <span className="text-[#8c8c8c] truncate">
               {uploadingCount > 0
                 ? completedCount > 0
@@ -119,7 +119,7 @@ export function UploadProgressDrawer({
               <button
                 type="button"
                 onClick={onCancelAll}
-                className="text-blue-400 hover:text-blue-300 hover:underline font-medium text-xs cursor-pointer transition-colors shrink-0 ml-2"
+                className="text-blue-400 hover:text-blue-300 font-medium text-[11px] cursor-pointer transition-colors shrink-0 ml-2"
               >
                 Cancel
               </button>
@@ -127,7 +127,7 @@ export function UploadProgressDrawer({
               <button
                 type="button"
                 onClick={onDismiss}
-                className="text-[#8c8c8c] hover:text-white text-xs cursor-pointer transition-colors shrink-0 ml-2"
+                className="text-[#8c8c8c] hover:text-white text-[11px] cursor-pointer transition-colors shrink-0 ml-2"
               >
                 Clear
               </button>
@@ -135,7 +135,7 @@ export function UploadProgressDrawer({
           </div>
 
           {/* Upload Queue Item List */}
-          <div className="max-h-56 overflow-y-auto divide-y divide-[#1c1c1c] bg-[#141414]">
+          <div className="max-h-56 overflow-y-auto divide-y divide-[#1a1a1a] bg-[#0c0c0c]">
             {tasks.map((task) => {
               const fileIcon = getFileIcon(task.name);
 

@@ -1,8 +1,8 @@
 /*
- * Modal for creating, sharing, and revoking Blob capability tickets (signed links).
+ * Modal for creating, sharing, and revoking Blob capability download/stream tickets (signed links).
  * Owned by: ui/pages/storage
  * Key deps: ../../types, ../../api/client, ../../components/ui/Button
- * Invariants: Revoking instantly invalidates capability signatures in both L1 RAM cache and SQLite.
+ * Invariants: Single-item Share is strictly scoped to READ capability links (streaming & downloading).
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -15,11 +15,13 @@ import {
   RefreshCw,
   AlertTriangle,
   Download,
-  Upload,
   Trash2,
   Ban,
   Link as LinkIcon,
   Globe,
+  Play,
+  Code2,
+  ExternalLink,
 } from 'lucide-react';
 import { StorageItem } from './types';
 import { BlobTicket, CreateBlobTicketResponse } from '../../types';
@@ -72,9 +74,9 @@ export function ShareTicketModal({
   isPublicNamespace,
 }: ShareTicketModalProps) {
   const [activeTab, setActiveTab] = useState<'create' | 'manage'>('create');
-  const [operation, setOperation] = useState<'READ' | 'WRITE'>('READ');
   const [selectedTtl, setSelectedTtl] = useState<number>(3600);
   const [customHours, setCustomHours] = useState<string>('12');
+  const [linkMode, setLinkMode] = useState<'stream' | 'download'>('stream');
 
   const [isCreating, setIsCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
@@ -87,6 +89,16 @@ export function ShareTicketModal({
   const [deletingSigs, setDeletingSigs] = useState<Set<string>>(new Set());
 
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+
+  const isVideo = item ? /\.(mp4|webm|mov|m4v|mkv)$/i.test(item.name) : false;
+  const isAudio = item ? /\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(item.name) : false;
+  const isImage = item ? /\.(png|jpe?g|gif|webp|svg|bmp|ico)$/i.test(item.name) : false;
+  const isMedia = isVideo || isAudio || isImage;
+
+  // Default link mode: stream/preview for media, download for other documents
+  useEffect(() => {
+    setLinkMode(isMedia ? 'stream' : 'download');
+  }, [isMedia]);
 
   const copyToClipboard = (text: string, id: string) => {
     navigator.clipboard.writeText(text);
@@ -101,58 +113,53 @@ export function ShareTicketModal({
     setIsLoadingTickets(true);
     setManageError(null);
     try {
-      const data = await api.listBlobTickets(namespace, item.fullKey, true);
-      setTickets(Array.isArray(data) ? data : []);
+      const resp = await api.listBlobTickets(namespace, item.fullKey, true);
+      setTickets(Array.isArray(resp) ? resp : (resp as any).tickets || []);
     } catch (err: unknown) {
-      setManageError(err instanceof Error ? err.message : 'Failed to fetch tickets');
+      setManageError(err instanceof Error ? err.message : 'Failed to load tickets');
     } finally {
       setIsLoadingTickets(false);
     }
-  }, [item, namespace]);
+  }, [namespace, item]);
 
   useEffect(() => {
-    if (isOpen && item) {
-      loadTickets();
+    if (isOpen) {
       setGeneratedTicket(null);
       setCreateError(null);
+      setActiveTab('create');
+      loadTickets();
     }
-  }, [isOpen, item, loadTickets]);
-
-  useEffect(() => {
-    if (!isOpen) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose]);
-
-  if (!isOpen || !item) return null;
+  }, [isOpen, loadTickets]);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
-    setCreateError(null);
-    setIsCreating(true);
+    if (!item || !namespace) return;
 
-    let ttlSeconds = selectedTtl;
-    if (selectedTtl === 0) {
-      const hoursNum = parseFloat(customHours);
-      if (isNaN(hoursNum) || hoursNum <= 0) {
-        setCreateError('Please specify a positive number of hours for custom lifetime.');
-        setIsCreating(false);
+    let ttl = selectedTtl;
+    if (ttl === 0) {
+      const parsed = parseFloat(customHours);
+      if (isNaN(parsed) || parsed <= 0) {
+        setCreateError('Please enter a valid duration in hours');
         return;
       }
-      ttlSeconds = Math.round(hoursNum * 3600);
+      ttl = Math.round(parsed * 3600);
     }
 
+    if (ttl < 60 || ttl > 86400 * 30) {
+      setCreateError('Duration must be between 1 minute and 30 days');
+      return;
+    }
+
+    setIsCreating(true);
+    setCreateError(null);
+
     try {
-      const resp = await api.createBlobTicket(namespace, item.fullKey, operation, ttlSeconds);
-      setGeneratedTicket(resp);
-      loadTickets();
+      // Single-file share is strictly READ (capability download or stream)
+      const res = await api.createBlobTicket(namespace, item.fullKey, 'READ', ttl);
+      setGeneratedTicket(res);
+      await loadTickets();
     } catch (err: unknown) {
-      setCreateError(err instanceof Error ? err.message : 'Failed to create share link');
+      setCreateError(err instanceof Error ? err.message : 'Failed to generate capability ticket');
     } finally {
       setIsCreating(false);
     }
@@ -162,11 +169,9 @@ export function ShareTicketModal({
     setRevokingSigs((prev) => new Set(prev).add(signature));
     try {
       await api.revokeBlobTicket(signature);
-      setTickets((prev) =>
-        prev.map((t) => (t.signature === signature ? { ...t, revoked: true } : t))
-      );
+      await loadTickets();
     } catch (err: unknown) {
-      setManageError(err instanceof Error ? err.message : 'Failed to revoke ticket');
+      alert(err instanceof Error ? err.message : 'Failed to revoke ticket');
     } finally {
       setRevokingSigs((prev) => {
         const next = new Set(prev);
@@ -177,12 +182,13 @@ export function ShareTicketModal({
   };
 
   const handleDelete = async (signature: string) => {
+    if (!confirm('Permanently delete this capability ticket record?')) return;
     setDeletingSigs((prev) => new Set(prev).add(signature));
     try {
       await api.deleteBlobTicket(signature);
-      setTickets((prev) => prev.filter((t) => t.signature !== signature && t.id !== signature));
+      await loadTickets();
     } catch (err: unknown) {
-      setManageError(err instanceof Error ? err.message : 'Failed to delete ticket');
+      alert(err instanceof Error ? err.message : 'Failed to delete ticket');
     } finally {
       setDeletingSigs((prev) => {
         const next = new Set(prev);
@@ -192,28 +198,37 @@ export function ShareTicketModal({
     }
   };
 
-  const activeTicketCount = tickets.filter(
-    (t) => Boolean(t && !t.revoked && typeof t.expires_at === 'number' && t.expires_at > Math.floor(Date.now() / 1000))
-  ).length;
+  if (!isOpen || !item) return null;
 
-  const ticketExp =
-    generatedTicket?.expires_at ||
-    (typeof generatedTicket?.ticket === 'object' && generatedTicket?.ticket ? generatedTicket.ticket.expires_at : 0) ||
-    0;
-  const ticketOp =
-    generatedTicket?.operation ||
-    (typeof generatedTicket?.ticket === 'object' && generatedTicket?.ticket ? generatedTicket.ticket.operation : operation) ||
-    operation;
-  const rawTicketUrl = generatedTicket?.url || '';
-  const fullTicketUrl = rawTicketUrl
-    ? rawTicketUrl.startsWith('http')
-      ? rawTicketUrl
-      : `${window.location.origin}${rawTicketUrl}`
+  // Build effective capability URL
+  const rawTicketUrl = generatedTicket
+    ? `${window.location.origin}${generatedTicket.url || ''}`
     : '';
+  const fullTicketUrl =
+    linkMode === 'stream' && rawTicketUrl
+      ? `${rawTicketUrl}&inline=1`
+      : rawTicketUrl;
+
+  const ticketExp = generatedTicket?.expires_at || 0;
+
+  // Embed Snippets
+  const videoSnippet = fullTicketUrl
+    ? `<video controls preload="metadata" src="${fullTicketUrl}"></video>`
+    : '';
+  const audioSnippet = fullTicketUrl
+    ? `<audio controls preload="metadata" src="${fullTicketUrl}"></audio>`
+    : '';
+  const imageSnippet = fullTicketUrl
+    ? `<img src="${fullTicketUrl}" alt="${item.name}" />`
+    : '';
+  const curlSnippet = fullTicketUrl ? `curl -O "${fullTicketUrl}"` : '';
+
+  const activeTickets = tickets.filter((t) => !t.revoked && !formatTimeRemaining(t.expires_at).isExpired);
+  const activeTicketCount = activeTickets.length;
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs font-sans select-none"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs animate-in fade-in duration-150"
       onClick={(e) => {
         if (e.target === e.currentTarget) {
           onClose();
@@ -222,7 +237,7 @@ export function ShareTicketModal({
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-[520px] rounded-[8px] bg-[#0c0c0c] border border-[#262626] shadow-2xl overflow-hidden font-sans flex flex-col"
+        className="w-full max-w-[540px] rounded-[8px] bg-[#0c0c0c] border border-[#262626] shadow-2xl overflow-hidden font-sans flex flex-col"
       >
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-[#1f1f1f]">
@@ -244,13 +259,14 @@ export function ShareTicketModal({
           </button>
         </div>
 
+        {/* Public Namespace Banner */}
         {isPublicNamespace && (
-          <div className="mx-5 mt-3.5 p-3.5 rounded-[8px] bg-[#30a46c]/10 border border-[#30a46c]/30 text-[13px] text-[#30a46c] flex items-center justify-between gap-3">
+          <div className="mx-5 mt-3.5 p-3 rounded-[8px] bg-[#30a46c]/10 border border-[#30a46c]/30 text-[13px] text-[#30a46c] flex items-center justify-between gap-3">
             <div className="flex items-center gap-2 min-w-0">
               <Globe className="w-4 h-4 text-[#30a46c] shrink-0" />
               <div className="truncate">
-                <span className="font-sans font-medium text-[#30a46c]">Public Namespace:</span>
-                <span className="text-[#a3a3a3] ml-1">Direct static CDN URLs work without expiration.</span>
+                <span className="font-sans font-medium text-[#30a46c]">Public CDN:</span>
+                <span className="text-[#a3a3a3] ml-1">Permanent static URL (never expires).</span>
               </div>
             </div>
             <button
@@ -261,7 +277,7 @@ export function ShareTicketModal({
               }}
               className="px-2.5 py-1 rounded-[6px] bg-[#30a46c]/20 hover:bg-[#30a46c]/30 border border-[#30a46c]/40 text-[12px] font-sans font-medium text-[#30a46c] transition-colors shrink-0 cursor-pointer"
             >
-              {copiedKey === 'public-cdn-url' ? 'Copied!' : 'Copy CDN Link'}
+              {copiedKey === 'public-cdn-url' ? 'Copied' : 'Copy CDN Link'}
             </button>
           </div>
         )}
@@ -309,24 +325,36 @@ export function ShareTicketModal({
           {activeTab === 'create' ? (
             <>
               {generatedTicket ? (
-                /* Link Created View */
-                <div className="space-y-4">
+                /* ─── Link Generated Success View ────────────────────────────── */
+                <div className="space-y-4 animate-in fade-in duration-100">
                   <div>
-                    <label className="block text-[13px] font-sans font-medium text-[#8c8c8c] mb-1.5">
-                      Capability Link
-                    </label>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="block text-[13px] font-sans font-medium text-[#8c8c8c]">
+                        Pre-Signed Link
+                      </label>
+                      <a
+                        href={fullTicketUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="flex items-center gap-1 text-[12px] font-sans text-blue-400 hover:text-blue-300 transition-colors"
+                      >
+                        <span>Open</span>
+                        <ExternalLink className="w-3 h-3" />
+                      </a>
+                    </div>
                     <div className="flex items-center gap-2">
                       <input
                         type="text"
                         readOnly
                         value={fullTicketUrl}
-                        className="flex-1 h-9 px-3 rounded-[6px] bg-[#141414] border border-[#262626] text-white font-mono text-[13px] select-all outline-none"
+                        className="flex-1 h-8 px-3 rounded-[6px] bg-[#141414] border border-[#262626] text-white font-mono text-[12px] select-all outline-none"
                       />
                       <Button
                         type="button"
                         variant="primary"
-                        size="md"
+                        size="sm"
                         onClick={() => copyToClipboard(fullTicketUrl, 'generated-url')}
+                        className="h-8 px-3"
                       >
                         {copiedKey === 'generated-url' ? (
                           <>
@@ -346,14 +374,83 @@ export function ShareTicketModal({
                   {/* Summary row */}
                   <div className="flex items-center justify-between p-3 rounded-[6px] bg-[#121212] border border-[#222222] text-[13px] font-sans">
                     <div className="flex items-center gap-2">
-                      <span className="text-[#8c8c8c]">Access:</span>
-                      <span className="font-mono text-[#cccccc] text-[11px] font-medium px-2 py-0.5 rounded-[4px] bg-[#1a1a1a] border border-[#2a2a2a]">
-                        {ticketOp}
+                      <span className="text-[#8c8c8c]">Mode:</span>
+                      <span className="font-sans text-[#cccccc] text-[12px] font-medium px-2 py-0.5 rounded-[4px] bg-[#1a1a1a] border border-[#2a2a2a]">
+                        {linkMode === 'stream' ? 'Browser Stream & Preview' : 'Force Download'}
                       </span>
                     </div>
                     <div className="flex items-center gap-1.5 text-[#8c8c8c] text-[12px]">
                       <Clock className="w-3.5 h-3.5 text-[#666666]" />
                       <span>Expires in {formatTimeRemaining(ticketExp).text}</span>
+                    </div>
+                  </div>
+
+                  {/* Quick Embed Snippets */}
+                  <div className="space-y-2 pt-1">
+                    <span className="text-[12px] font-sans font-medium text-[#8c8c8c] block">
+                      Quick Snippets
+                    </span>
+
+                    {isVideo && (
+                      <div className="flex items-center justify-between p-2.5 rounded-[6px] bg-[#121212] border border-[#222222]">
+                        <div className="flex items-center gap-2 min-w-0 pr-2">
+                          <Code2 className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                          <span className="text-[12px] font-sans text-[#cccccc]">HTML Video Embed</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => copyToClipboard(videoSnippet, 'video-embed')}
+                          className="h-6.5 px-2 rounded-[4px] bg-[#181818] hover:bg-[#222222] border border-[#2a2a2a] text-[11px] font-sans font-medium text-[#cccccc] hover:text-white transition-colors cursor-pointer shrink-0"
+                        >
+                          {copiedKey === 'video-embed' ? 'Copied' : 'Copy HTML'}
+                        </button>
+                      </div>
+                    )}
+
+                    {isAudio && (
+                      <div className="flex items-center justify-between p-2.5 rounded-[6px] bg-[#121212] border border-[#222222]">
+                        <div className="flex items-center gap-2 min-w-0 pr-2">
+                          <Code2 className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                          <span className="text-[12px] font-sans text-[#cccccc]">HTML Audio Embed</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => copyToClipboard(audioSnippet, 'audio-embed')}
+                          className="h-6.5 px-2 rounded-[4px] bg-[#181818] hover:bg-[#222222] border border-[#2a2a2a] text-[11px] font-sans font-medium text-[#cccccc] hover:text-white transition-colors cursor-pointer shrink-0"
+                        >
+                          {copiedKey === 'audio-embed' ? 'Copied' : 'Copy HTML'}
+                        </button>
+                      </div>
+                    )}
+
+                    {isImage && (
+                      <div className="flex items-center justify-between p-2.5 rounded-[6px] bg-[#121212] border border-[#222222]">
+                        <div className="flex items-center gap-2 min-w-0 pr-2">
+                          <Code2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                          <span className="text-[12px] font-sans text-[#cccccc]">HTML Image Tag</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => copyToClipboard(imageSnippet, 'img-embed')}
+                          className="h-6.5 px-2 rounded-[4px] bg-[#181818] hover:bg-[#222222] border border-[#2a2a2a] text-[11px] font-sans font-medium text-[#cccccc] hover:text-white transition-colors cursor-pointer shrink-0"
+                        >
+                          {copiedKey === 'img-embed' ? 'Copied' : 'Copy HTML'}
+                        </button>
+                      </div>
+                    )}
+
+                    <div className="flex items-center justify-between p-2.5 rounded-[6px] bg-[#121212] border border-[#222222]">
+                      <div className="flex items-center gap-2 min-w-0 pr-2">
+                        <Download className="w-3.5 h-3.5 text-[#8c8c8c] shrink-0" />
+                        <span className="text-[12px] font-sans text-[#cccccc]">cURL Download Command</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => copyToClipboard(curlSnippet, 'curl-cmd')}
+                        className="h-6.5 px-2 rounded-[4px] bg-[#181818] hover:bg-[#222222] border border-[#2a2a2a] text-[11px] font-sans font-medium text-[#cccccc] hover:text-white transition-colors cursor-pointer shrink-0"
+                      >
+                        {copiedKey === 'curl-cmd' ? 'Copied' : 'Copy cURL'}
+                      </button>
                     </div>
                   </div>
 
@@ -365,13 +462,13 @@ export function ShareTicketModal({
                     >
                       ← Create another link
                     </button>
-                    <Button type="button" variant="secondary" size="md" onClick={onClose}>
+                    <Button type="button" variant="secondary" size="sm" onClick={onClose} className="h-8 px-3">
                       Done
                     </Button>
                   </div>
                 </div>
               ) : (
-                /* Create Form */
+                /* ─── Create Form ────────────────────────────────────────────── */
                 <form id="share-create-form" onSubmit={handleCreate} className="space-y-4">
                   {createError && (
                     <div className="p-2.5 rounded-[6px] bg-[#ef4444]/10 border border-[#ef4444]/30 text-[13px] font-sans text-[#ef4444] flex items-center gap-2">
@@ -380,37 +477,42 @@ export function ShareTicketModal({
                     </div>
                   )}
 
-                  {/* Permission Segmented Toggle */}
+                  {/* Link Mode: Stream / Preview vs Force Download */}
                   <div>
                     <label className="block text-[13px] font-sans font-medium text-[#8c8c8c] mb-1.5">
-                      Permission
+                      Link Behavior
                     </label>
                     <div className="grid grid-cols-2 gap-1 p-1 bg-[#141414] border border-[#262626] rounded-[6px]">
                       <button
                         type="button"
-                        onClick={() => setOperation('READ')}
+                        onClick={() => setLinkMode('stream')}
                         className={`h-8 rounded-[5px] text-[13px] font-sans font-medium transition-colors cursor-pointer flex items-center justify-center gap-1.5 ${
-                          operation === 'READ'
-                            ? 'bg-[#222222] text-white shadow-sm'
+                          linkMode === 'stream'
+                            ? 'bg-[#222222] text-white shadow-xs'
+                            : 'text-[#8c8c8c] hover:text-white'
+                        }`}
+                      >
+                        <Play className="w-3.5 h-3.5" />
+                        <span>Stream & Preview</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setLinkMode('download')}
+                        className={`h-8 rounded-[5px] text-[13px] font-sans font-medium transition-colors cursor-pointer flex items-center justify-center gap-1.5 ${
+                          linkMode === 'download'
+                            ? 'bg-[#222222] text-white shadow-xs'
                             : 'text-[#8c8c8c] hover:text-white'
                         }`}
                       >
                         <Download className="w-3.5 h-3.5" />
-                        <span>Read (Download)</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setOperation('WRITE')}
-                        className={`h-8 rounded-[5px] text-[13px] font-sans font-medium transition-colors cursor-pointer flex items-center justify-center gap-1.5 ${
-                          operation === 'WRITE'
-                            ? 'bg-[#222222] text-white shadow-sm'
-                            : 'text-[#8c8c8c] hover:text-white'
-                        }`}
-                      >
-                        <Upload className="w-3.5 h-3.5" />
-                        <span>Write (Upload)</span>
+                        <span>Force Download</span>
                       </button>
                     </div>
+                    <p className="text-[12px] font-sans text-[#666666] mt-1.5">
+                      {linkMode === 'stream'
+                        ? 'Recipients stream videos, audio, or preview files directly in their browser tab.'
+                        : 'Recipients immediately receive a file download prompt to save the object.'}
+                    </p>
                   </div>
 
                   {/* Expiration Segmented Control */}
@@ -426,7 +528,7 @@ export function ShareTicketModal({
                           onClick={() => setSelectedTtl(preset.seconds)}
                           className={`h-8 rounded-[5px] text-[13px] font-sans font-medium transition-colors cursor-pointer flex items-center justify-center ${
                             selectedTtl === preset.seconds
-                              ? 'bg-[#222222] text-white shadow-sm'
+                              ? 'bg-[#222222] text-white shadow-xs'
                               : 'text-[#8c8c8c] hover:text-white'
                           }`}
                         >
@@ -449,25 +551,40 @@ export function ShareTicketModal({
                       </div>
                     )}
                   </div>
+
+                  {/* Action buttons */}
+                  <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#1a1a1a]">
+                    <Button type="button" variant="secondary" size="sm" onClick={onClose} className="h-8 px-3">
+                      Cancel
+                    </Button>
+                    <Button
+                      type="submit"
+                      variant="primary"
+                      size="sm"
+                      isLoading={isCreating}
+                      disabled={isCreating}
+                      className="h-8 px-4"
+                    >
+                      Generate Link
+                    </Button>
+                  </div>
                 </form>
               )}
             </>
           ) : (
-            /* Manage Links Tab */
-            <div className="space-y-3 max-h-72 overflow-y-auto">
-              <div className="flex items-center justify-between pb-1">
+            /* ─── Active Tickets Management Tab ─────────────────────────── */
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
                 <span className="text-[13px] font-sans font-medium text-[#8c8c8c]">
-                  Existing Links ({tickets.length})
+                  Active Capability Links ({tickets.length})
                 </span>
                 <button
                   type="button"
                   onClick={loadTickets}
                   disabled={isLoadingTickets}
-                  className="flex items-center gap-1.5 h-7 px-2 rounded-[6px] text-[12px] font-sans text-[#8c8c8c] hover:text-white hover:bg-[#141414] border border-transparent hover:border-[#262626] transition-colors cursor-pointer"
+                  className="flex items-center gap-1 text-[12px] font-sans text-[#8c8c8c] hover:text-white transition-colors cursor-pointer disabled:opacity-40"
                 >
-                  <RefreshCw
-                    className={`w-3.5 h-3.5 ${isLoadingTickets ? 'animate-spin' : ''}`}
-                  />
+                  <RefreshCw className={`w-3 h-3 ${isLoadingTickets ? 'animate-spin' : ''}`} />
                   <span>Refresh</span>
                 </button>
               </div>
@@ -480,125 +597,95 @@ export function ShareTicketModal({
               )}
 
               {isLoadingTickets && tickets.length === 0 ? (
-                <div className="py-8 text-center text-[#8c8c8c] text-[13px] font-sans">
+                <div className="py-8 text-center text-[13px] font-sans text-[#8c8c8c]">
                   Loading links...
                 </div>
               ) : tickets.length === 0 ? (
-                <div className="py-8 rounded-[8px] bg-[#0c0c0c] border border-[#222222] text-center space-y-2">
-                  <LinkIcon className="w-5 h-5 text-[#555555] mx-auto" />
-                  <p className="text-[13px] font-sans text-[#8c8c8c]">
-                    No capability links created yet.
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('create')}
-                    className="text-[13px] font-sans text-blue-400 hover:text-blue-300 transition-colors cursor-pointer"
-                  >
-                    Create a share link
-                  </button>
+                <div className="py-8 text-center rounded-[6px] bg-[#111111] border border-[#222222] p-4 text-[13px] font-sans text-[#8c8c8c]">
+                  No active capability links found for this object.
                 </div>
               ) : (
-                <div className="divide-y divide-[#1e1e1e] border border-[#222222] rounded-[8px] bg-[#0c0c0c] overflow-hidden">
+                <div className="max-h-64 overflow-y-auto rounded-[6px] border border-[#222222] divide-y divide-[#1e1e1e] bg-[#0e0e0e]">
                   {tickets.map((t) => {
-                    const sig = t?.signature || '';
-                    const exp = t?.expires_at || 0;
-                    const remaining = formatTimeRemaining(exp);
-                    const isRevoking = sig ? revokingSigs.has(sig) : false;
-                    const isDeleting = sig ? deletingSigs.has(sig) : false;
-                    const isRevoked = Boolean(t?.revoked);
-                    const isActive = !isRevoked && !remaining.isExpired;
-                    const rawUrl = t?.url || '';
-                    const fullUrl = rawUrl
-                      ? rawUrl.startsWith('http')
-                        ? rawUrl
-                        : `${window.location.origin}${rawUrl}`
-                      : '';
+                    const timeRem = formatTimeRemaining(t.expires_at);
+                    const isRevoking = revokingSigs.has(t.signature);
+                    const isDeleting = deletingSigs.has(t.signature);
+                    const fullUrl = `${window.location.origin}${t.url || ''}`;
 
                     return (
                       <div
-                        key={t.id || sig}
-                        className={`p-3.5 space-y-2 transition-colors ${
-                          isRevoked ? 'opacity-50' : 'hover:bg-[#111111]'
-                        }`}
+                        key={t.signature}
+                        className="p-3 flex items-center justify-between gap-3 font-sans hover:bg-[#121212] transition-colors"
                       >
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="flex items-center gap-2">
-                            <span className="px-2 py-0.5 rounded-[4px] text-[11px] font-mono font-medium text-[#cccccc] bg-[#161616] border border-[#262626]">
-                              {t.operation || 'READ'}
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-sans text-[12px] font-medium text-white">
+                              Download Link
                             </span>
 
-                            {isRevoked ? (
-                              <span className="text-[12px] font-sans text-[#e5484d] font-medium flex items-center gap-1.5">
-                                <Ban className="w-3.5 h-3.5" />
-                                <span>Revoked</span>
+                            {t.revoked ? (
+                              <span className="px-1.5 py-0.5 rounded-[4px] bg-[#ef4444]/15 border border-[#ef4444]/30 text-[#ef4444] text-[11px] font-sans font-medium">
+                                Revoked
                               </span>
-                            ) : remaining.isExpired ? (
-                              <span className="text-[12px] font-sans text-[#8c8c8c] flex items-center gap-1.5">
-                                <Clock className="w-3.5 h-3.5 text-[#666666]" />
-                                <span>Expired</span>
+                            ) : timeRem.isExpired ? (
+                              <span className="px-1.5 py-0.5 rounded-[4px] bg-[#f59e0b]/15 border border-[#f59e0b]/30 text-[#f59e0b] text-[11px] font-sans font-medium">
+                                Expired
                               </span>
                             ) : (
-                              <span className="text-[12px] font-sans text-emerald-400 font-medium flex items-center gap-1.5">
-                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                                <span>{remaining.text}</span>
+                              <span className="px-1.5 py-0.5 rounded-[4px] bg-[#30a46c]/15 border border-[#30a46c]/30 text-[#30a46c] text-[11px] font-sans font-medium">
+                                Active
                               </span>
                             )}
+
+                            <span className="text-[12px] font-sans text-[#8c8c8c]">
+                              {timeRem.text}
+                            </span>
                           </div>
 
-                          {/* Actions with proper standard button size h-7 */}
-                          <div className="flex items-center gap-1.5">
-                            {isActive && fullUrl && (
-                              <button
-                                type="button"
-                                onClick={() => copyToClipboard(fullUrl, `url-${sig}`)}
-                                className="h-7 px-2.5 rounded-[6px] text-[12px] font-sans font-medium text-[#cccccc] hover:text-white bg-[#141414] hover:bg-[#1a1a1a] border border-[#262626] hover:border-[#383838] transition-colors cursor-pointer flex items-center gap-1.5"
-                                title="Copy link"
-                              >
-                                {copiedKey === `url-${sig}` ? (
-                                  <>
-                                    <Check className="w-3.5 h-3.5 text-emerald-400" />
-                                    <span className="text-emerald-400">Copied</span>
-                                  </>
-                                ) : (
-                                  <>
-                                    <Copy className="w-3.5 h-3.5 text-[#8c8c8c]" />
-                                    <span>Copy</span>
-                                  </>
-                                )}
-                              </button>
-                            )}
-                            {isActive && sig && (
-                              <button
-                                type="button"
-                                onClick={() => handleRevoke(sig)}
-                                disabled={isRevoking}
-                                className="h-7 px-2.5 rounded-[6px] text-[12px] font-sans font-medium text-amber-400 hover:text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 transition-colors cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
-                                title="Revoke link immediately"
-                              >
-                                <Ban className="w-3.5 h-3.5" />
-                                <span>{isRevoking ? 'Revoking...' : 'Revoke'}</span>
-                              </button>
-                            )}
-                            {sig && (
-                              <button
-                                type="button"
-                                onClick={() => handleDelete(sig)}
-                                disabled={isDeleting}
-                                className="h-7 w-7 rounded-[6px] text-[#8c8c8c] hover:text-[#e5484d] hover:bg-red-950/20 border border-transparent hover:border-red-900/40 transition-colors cursor-pointer flex items-center justify-center disabled:opacity-50"
-                                title="Delete link record"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            )}
+                          <div className="mt-1 font-mono text-[11px] text-[#666666] truncate">
+                            sig: {t.signature.slice(0, 16)}...
                           </div>
                         </div>
 
-                        {/* Direct link text */}
-                        {fullUrl && (
-                          <div className="p-2 rounded-[6px] bg-[#070707] border border-[#1f1f1f] text-[12px] text-[#8c8c8c] font-mono truncate select-all">
-                            {fullUrl}
-                          </div>
-                        )}
+                        {/* Actions */}
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => copyToClipboard(fullUrl, `copy-${t.signature}`)}
+                            title="Copy link"
+                            className="flex items-center gap-1 h-7 px-2.5 rounded-[6px] text-[12px] font-sans font-medium text-[#cccccc] hover:text-white bg-[#141414] hover:bg-[#1c1c1c] border border-[#262626] transition-colors cursor-pointer"
+                          >
+                            {copiedKey === `copy-${t.signature}` ? (
+                              <Check className="w-3.5 h-3.5 text-emerald-400" />
+                            ) : (
+                              <Copy className="w-3.5 h-3.5 text-[#8c8c8c]" />
+                            )}
+                            <span className="hidden sm:inline">Copy</span>
+                          </button>
+
+                          {!t.revoked && !timeRem.isExpired && (
+                            <button
+                              type="button"
+                              onClick={() => handleRevoke(t.signature)}
+                              disabled={isRevoking}
+                              title="Revoke access immediately"
+                              className="flex items-center gap-1 h-7 px-2.5 rounded-[6px] text-[12px] font-sans font-medium text-[#f5a623] hover:text-[#f7b955] bg-[#2a1b0a] hover:bg-[#3d270f] border border-[#593814] transition-colors cursor-pointer disabled:opacity-40"
+                            >
+                              <Ban className="w-3.5 h-3.5" />
+                              <span className="hidden sm:inline">Revoke</span>
+                            </button>
+                          )}
+
+                          <button
+                            type="button"
+                            onClick={() => handleDelete(t.signature)}
+                            disabled={isDeleting}
+                            title="Delete ticket record"
+                            className="flex items-center justify-center h-7 w-7 rounded-[6px] text-[#8c8c8c] hover:text-rose-400 bg-[#141414] hover:bg-[#1c1c1c] border border-[#262626] hover:border-rose-900/40 transition-colors cursor-pointer disabled:opacity-40"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </div>
                     );
                   })}
@@ -607,24 +694,6 @@ export function ShareTicketModal({
             </div>
           )}
         </div>
-
-        {/* Dedicated Fixed Footer (only shown on Create tab when link not yet generated) */}
-        {activeTab === 'create' && !generatedTicket && (
-          <div className="px-5 py-3.5 bg-[#0e0e0e] border-t border-[#1f1f1f] flex items-center justify-end gap-2 shrink-0">
-            <Button type="button" variant="secondary" size="md" onClick={onClose}>
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              form="share-create-form"
-              variant="primary"
-              size="md"
-              isLoading={isCreating}
-            >
-              Generate link
-            </Button>
-          </div>
-        )}
       </div>
     </div>
   );

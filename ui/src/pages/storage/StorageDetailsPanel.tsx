@@ -123,12 +123,12 @@ export function StorageDetailsPanel({
               </p>
 
               {/* Quick Action Buttons */}
-              <div className="-mx-3.5 px-3.5 w-[calc(100%+1.75rem)] mt-3 pt-3 border-t border-[#1e1e1e] grid grid-cols-2 gap-1.5">
+              <div className="-mx-3.5 px-3.5 w-[calc(100%+1.75rem)] mt-3 pt-3 border-t border-[#1f1f1f] grid grid-cols-2 gap-1.5 font-sans">
                 {selectedItem.type === 'file' && (
                   <button
                     type="button"
                     onClick={() => onDownload(selectedItem.fullKey)}
-                    className="inline-flex items-center justify-center gap-1.5 h-8 px-2.5 rounded-[6px] text-[13px] font-medium text-[#cccccc] hover:text-white bg-[#161616] hover:bg-[#202020] border border-[#262626] transition-colors cursor-pointer"
+                    className="inline-flex items-center justify-center gap-1.5 h-7 px-2.5 rounded-[6px] text-[12px] font-sans font-medium text-[#cccccc] hover:text-white bg-[#141414] hover:bg-[#1a1a1a] border border-[#242424] hover:border-[#333333] transition-colors cursor-pointer"
                   >
                     <Download className="w-3.5 h-3.5 text-[#8c8c8c]" />
                     <span>Download</span>
@@ -139,7 +139,7 @@ export function StorageDetailsPanel({
                   <button
                     type="button"
                     onClick={() => onShare(selectedItem)}
-                    className="inline-flex items-center justify-center gap-1.5 h-8 px-2.5 rounded-[6px] text-[13px] font-medium text-[#cccccc] hover:text-white bg-[#161616] hover:bg-[#202020] border border-[#262626] transition-colors cursor-pointer"
+                    className="inline-flex items-center justify-center gap-1.5 h-7 px-2.5 rounded-[6px] text-[12px] font-sans font-medium text-[#cccccc] hover:text-white bg-[#141414] hover:bg-[#1a1a1a] border border-[#242424] hover:border-[#333333] transition-colors cursor-pointer"
                   >
                     <Share2 className="w-3.5 h-3.5 text-[#8c8c8c]" />
                     <span>Share</span>
@@ -150,7 +150,7 @@ export function StorageDetailsPanel({
                   <button
                     type="button"
                     onClick={() => onCopyPublicUrl(selectedItem)}
-                    className="inline-flex items-center justify-center gap-1.5 h-8 px-2.5 rounded-[6px] text-[13px] font-medium text-emerald-400 hover:text-emerald-300 bg-emerald-950/20 hover:bg-emerald-950/40 border border-emerald-900/30 transition-colors cursor-pointer"
+                    className="inline-flex items-center justify-center gap-1.5 h-7 px-2.5 rounded-[6px] text-[12px] font-sans font-medium text-[#30a46c] hover:text-white bg-[#30a46c]/15 hover:bg-[#30a46c]/25 border border-[#30a46c]/30 transition-colors cursor-pointer"
                   >
                     <Globe className="w-3.5 h-3.5" />
                     <span>Public URL</span>
@@ -160,7 +160,7 @@ export function StorageDetailsPanel({
                 <button
                   type="button"
                   onClick={() => onOpenMove(selectedItem)}
-                  className="inline-flex items-center justify-center gap-1.5 h-8 px-2.5 rounded-[6px] text-[13px] font-medium text-[#cccccc] hover:text-white bg-[#161616] hover:bg-[#202020] border border-[#262626] transition-colors cursor-pointer"
+                  className="inline-flex items-center justify-center gap-1.5 h-7 px-2.5 rounded-[6px] text-[12px] font-sans font-medium text-[#cccccc] hover:text-white bg-[#141414] hover:bg-[#1a1a1a] border border-[#242424] hover:border-[#333333] transition-colors cursor-pointer"
                 >
                   <ArrowRight className="w-3.5 h-3.5 text-[#8c8c8c]" />
                   <span>Move</span>
@@ -170,7 +170,7 @@ export function StorageDetailsPanel({
                   <button
                     type="button"
                     onClick={() => onOpenCopy(selectedItem)}
-                    className="inline-flex items-center justify-center gap-1.5 h-8 px-2.5 rounded-[6px] text-[13px] font-medium text-[#cccccc] hover:text-white bg-[#161616] hover:bg-[#202020] border border-[#262626] transition-colors cursor-pointer"
+                    className="inline-flex items-center justify-center gap-1.5 h-7 px-2.5 rounded-[6px] text-[12px] font-sans font-medium text-[#cccccc] hover:text-white bg-[#141414] hover:bg-[#1a1a1a] border border-[#242424] hover:border-[#333333] transition-colors cursor-pointer"
                   >
                     <Copy className="w-3.5 h-3.5 text-[#8c8c8c]" />
                     <span>Copy</span>
@@ -180,7 +180,7 @@ export function StorageDetailsPanel({
                 <button
                   type="button"
                   onClick={() => onDelete(selectedItem)}
-                  className="inline-flex items-center justify-center gap-1.5 h-8 px-2.5 rounded-[6px] text-[13px] font-medium text-rose-400 hover:text-rose-300 bg-rose-950/20 hover:bg-rose-950/40 border border-rose-900/30 transition-colors cursor-pointer"
+                  className="inline-flex items-center justify-center gap-1.5 h-7 px-2.5 rounded-[6px] text-[12px] font-sans font-medium text-[#e5484d] hover:text-white bg-red-950/20 hover:bg-red-900/40 border border-red-900/40 hover:border-red-700/60 transition-colors cursor-pointer"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                   <span>Delete</span>

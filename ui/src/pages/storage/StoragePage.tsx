@@ -42,6 +42,8 @@ import { StorageListView } from './StorageListView';
 import { StorageDetailsPanel } from './StorageDetailsPanel';
 import { StorageEmptyState } from './StorageEmptyState';
 import { ShareTicketModal } from './ShareTicketModal';
+import { CreateUploadLinkModal } from './CreateUploadLinkModal';
+import { FileConflictModal, ConflictingFile, ConflictResolution } from './FileConflictModal';
 
 /**
  * Recovers persisted storage navigation parameters from URL or localStorage.
@@ -290,6 +292,15 @@ export function StoragePage() {
 
   const [isShareOpen, setIsShareOpen] = useState(false);
   const [itemToShare, setItemToShare] = useState<StorageItem | null>(null);
+
+  // Dedicated Pre-signed Upload Link Modal
+  const [isUploadLinkOpen, setIsUploadLinkOpen] = useState(false);
+
+  // File Upload Collision & Conflict Protection
+  const [conflicts, setConflicts] = useState<ConflictingFile[]>([]);
+  const [pendingUploadEntries, setPendingUploadEntries] = useState<UploadFileEntry[]>([]);
+  const [pendingTargetPrefix, setPendingTargetPrefix] = useState<string>('');
+  const [isConflictModalOpen, setIsConflictModalOpen] = useState(false);
 
   // Namespace Management Modals
   const [isNewNsOpen, setIsNewNsOpen] = useState(false);
@@ -907,48 +918,28 @@ export function StoragePage() {
     );
   }, []);
 
-  // Direct upload handler supporting multi-files, whole directories (webkitRelativePath), and nested folder entries
-  const handleUploadFiles = async (
-    files: FileList | File[] | UploadFileEntry[],
-    destinationPrefix?: string
+  // Helper: Enqueues and starts upload tasks sequentially
+  const enqueueAndStartUploads = async (
+    entriesToUpload: Array<{ file: File; key: string }>,
   ) => {
-    if (!files || (Array.isArray(files) ? files.length === 0 : files.length === 0) || !activeNamespace) return;
+    if (entriesToUpload.length === 0 || !activeNamespace) return;
 
-    const targetPrefix = destinationPrefix !== undefined ? sanitizeFolder(destinationPrefix) : currentPrefix;
-
-    // Normalize input to UploadFileEntry with preserved relative paths
-    const rawList = Array.from(files as any[]);
-    const entries: UploadFileEntry[] = rawList.map((item) => {
-      if (item && 'file' in item && item.file instanceof File) {
-        return item as UploadFileEntry;
-      }
-      const file = item as File;
-      return {
-        file,
-        relativePath: (file as any).webkitRelativePath || file.name,
-      };
-    });
-
-    const newTasks: UploadTask[] = entries.map((entry, idx) => {
-      const cleanRel = (entry.relativePath || entry.file.name).replace(/^[/\\]+/, '');
-      const key = `${targetPrefix}${cleanRel}`;
-      return {
-        id: `task-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 7)}`,
-        name: entry.file.name,
-        size: entry.file.size,
-        key,
-        namespace: activeNamespace,
-        status: 'pending' as const,
-        abortController: new AbortController(),
-      };
-    });
+    const newTasks: UploadTask[] = entriesToUpload.map((item, idx) => ({
+      id: `task-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 7)}`,
+      name: item.file.name,
+      size: item.file.size,
+      key: item.key,
+      namespace: activeNamespace,
+      status: 'pending' as const,
+      abortController: new AbortController(),
+    }));
 
     setUploadTasks((prev) => [...prev, ...newTasks]);
     setIsUploadDrawerVisible(true);
 
     for (let i = 0; i < newTasks.length; i++) {
       const task = newTasks[i];
-      const entry = entries[i];
+      const entry = entriesToUpload[i];
 
       if (task.abortController?.signal.aborted) {
         continue;
@@ -992,6 +983,104 @@ export function StoragePage() {
         );
       }
     }
+  };
+
+  // Direct upload handler supporting collision detection, multi-files, and directories
+  const handleUploadFiles = async (
+    files: FileList | File[] | UploadFileEntry[],
+    destinationPrefix?: string
+  ) => {
+    if (!files || (Array.isArray(files) ? files.length === 0 : files.length === 0) || !activeNamespace) return;
+
+    const targetPrefix = destinationPrefix !== undefined ? sanitizeFolder(destinationPrefix) : currentPrefix;
+
+    // Normalize input to UploadFileEntry with preserved relative paths
+    const rawList = Array.from(files as any[]);
+    const entries: UploadFileEntry[] = rawList.map((item) => {
+      if (item && 'file' in item && item.file instanceof File) {
+        return item as UploadFileEntry;
+      }
+      const file = item as File;
+      return {
+        file,
+        relativePath: (file as any).webkitRelativePath || file.name,
+      };
+    });
+
+    // Detect file collisions against existing items in current folder
+    const existingKeyMap = new Map<string, StorageItem>();
+    for (const it of fileItems) {
+      existingKeyMap.set(it.fullKey, it);
+    }
+
+    const detectedConflicts: ConflictingFile[] = [];
+    for (const entry of entries) {
+      const cleanRel = (entry.relativePath || entry.file.name).replace(/^[/\\]+/, '');
+      const fullKey = `${targetPrefix}${cleanRel}`;
+      const existing = existingKeyMap.get(fullKey);
+      if (existing) {
+        detectedConflicts.push({
+          entry,
+          name: entry.file.name,
+          incomingSize: entry.file.size,
+          existingSize: existing.size,
+          existingModified: existing.created_at,
+        });
+      }
+    }
+
+    if (detectedConflicts.length > 0) {
+      setConflicts(detectedConflicts);
+      setPendingUploadEntries(entries);
+      setPendingTargetPrefix(targetPrefix);
+      setIsConflictModalOpen(true);
+      return;
+    }
+
+    // No collisions: proceed directly
+    const uploadList = entries.map((e) => {
+      const cleanRel = (e.relativePath || e.file.name).replace(/^[/\\]+/, '');
+      return { file: e.file, key: `${targetPrefix}${cleanRel}` };
+    });
+    await enqueueAndStartUploads(uploadList);
+  };
+
+  // Conflict resolution handler
+  const handleResolveConflicts = async (resolutions: Map<string, ConflictResolution>) => {
+    setIsConflictModalOpen(false);
+
+    const existingKeySet = new Set<string>(fileItems.map((f) => f.fullKey));
+    const finalUploadList: Array<{ file: File; key: string }> = [];
+
+    for (const entry of pendingUploadEntries) {
+      const decision = resolutions.get(entry.file.name) || 'replace';
+      if (decision === 'skip') {
+        continue;
+      }
+
+      const cleanRel = (entry.relativePath || entry.file.name).replace(/^[/\\]+/, '');
+      let destKey = `${pendingTargetPrefix}${cleanRel}`;
+
+      if (decision === 'keep_both') {
+        const dotIdx = cleanRel.lastIndexOf('.');
+        const base = dotIdx !== -1 ? cleanRel.slice(0, dotIdx) : cleanRel;
+        const ext = dotIdx !== -1 ? cleanRel.slice(dotIdx) : '';
+        let counter = 1;
+        let candidate = `${pendingTargetPrefix}${base} (${counter})${ext}`;
+        while (existingKeySet.has(candidate)) {
+          counter++;
+          candidate = `${pendingTargetPrefix}${base} (${counter})${ext}`;
+        }
+        destKey = candidate;
+        existingKeySet.add(candidate);
+      }
+
+      finalUploadList.push({ file: entry.file, key: destKey });
+    }
+
+    setConflicts([]);
+    setPendingUploadEntries([]);
+    await enqueueAndStartUploads(finalUploadList);
   };
 
   // Check if an item (or batch of items) can legally be dropped onto target folder
@@ -1687,6 +1776,7 @@ export function StoragePage() {
           onDropOnFolder={handleDropOnFolder}
           selectedFileItem={selectedItem && selectedItem.type === 'file' ? selectedItem : null}
           onShareClick={handleOpenShare}
+          onCreateUploadLink={() => setIsUploadLinkOpen(true)}
           isPublic={Boolean(currentNsInfo?.is_public)}
         />
 
@@ -2557,6 +2647,26 @@ export function StoragePage() {
         item={itemToShare}
         namespace={activeNamespace}
         isPublicNamespace={Boolean(currentNsInfo?.is_public)}
+      />
+
+      {/* Pre-signed Upload Link Modal */}
+      <CreateUploadLinkModal
+        isOpen={isUploadLinkOpen}
+        onClose={() => setIsUploadLinkOpen(false)}
+        namespace={activeNamespace}
+        currentPrefix={currentPrefix}
+      />
+
+      {/* File Upload Collision / Conflict Modal */}
+      <FileConflictModal
+        isOpen={isConflictModalOpen}
+        conflicts={conflicts}
+        onResolve={handleResolveConflicts}
+        onCancel={() => {
+          setIsConflictModalOpen(false);
+          setConflicts([]);
+          setPendingUploadEntries([]);
+        }}
       />
 
       {/* Floating Asynchronous Upload Progress Drawer */}

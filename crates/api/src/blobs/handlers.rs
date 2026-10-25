@@ -13,7 +13,7 @@ use axiom_metadata::MetadataStore;
 use axiom_policy::PolicyEngine;
 use axum::{
     body::Body,
-    extract::{Extension, Path, Query},
+    extract::{Extension, Path, Query, RawQuery},
     http::{header, HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     Json,
@@ -188,9 +188,10 @@ pub async fn put_blob_handler(
 /// CONTRACT:
 ///  - Precondition: Caller must be authorized for `READ` on `namespace/key`.
 ///  - Supports: HTTP 206 Partial Content via `Range: bytes=start-end`.
-///  - Enforces: `nosniff`, `attachment` disposition (stored XSS defense), ETag calculation.
+///  - Enforces: `nosniff`, `attachment` disposition by default (or `inline` when requested via `inline=1`), ETag calculation.
 pub async fn get_blob_handler(
     Path((namespace, key)): Path<(String, String)>,
+    RawQuery(raw_query): RawQuery,
     Extension(auth): Extension<AuthContext>,
     headers: HeaderMap,
 ) -> Result<Response, AxiomError> {
@@ -204,7 +205,18 @@ pub async fn get_blob_handler(
         .chars()
         .filter(|c| c.is_ascii_alphanumeric() || *c == '.' || *c == '-' || *c == '_')
         .collect();
-    let disposition = format!("attachment; filename=\"{}\"", safe_filename);
+
+    // Check if inline disposition is explicitly requested (e.g. video/audio streaming or preview)
+    let is_inline = raw_query
+        .as_deref()
+        .map(|q| q.contains("inline=1") || q.contains("inline=true"))
+        .unwrap_or(false);
+
+    let disposition = if is_inline {
+        format!("inline; filename=\"{}\"", safe_filename)
+    } else {
+        format!("attachment; filename=\"{}\"", safe_filename)
+    };
 
     // Check for HTTP Range header. Max single range: 256 MB (bandwidth/DoS cap, L-fix).
     // Malformed or multi-range headers fail closed with 416 (was: silent full 200).

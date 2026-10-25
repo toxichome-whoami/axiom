@@ -209,7 +209,10 @@ impl BlobEngine {
             metadata: metadata.unwrap_or_default(),
         };
 
-        self.index.commit_put(namespace, key, &meta)?;
+        let (_ref, orphaned) = self.index.commit_put(namespace, key, &meta)?;
+        if let Some(old_hash) = orphaned {
+            let _ = self.store.remove(&old_hash).await;
+        }
         Ok(meta)
     }
 
@@ -301,7 +304,10 @@ impl BlobEngine {
             metadata: metadata.unwrap_or_default(),
         };
 
-        self.index.commit_put(namespace, key, &meta)?;
+        let (_ref, orphaned) = self.index.commit_put(namespace, key, &meta)?;
+        if let Some(old_hash) = orphaned {
+            let _ = self.store.remove(&old_hash).await;
+        }
         Ok(meta)
     }
 
@@ -648,7 +654,10 @@ impl BlobEngine {
             metadata: src_meta.metadata.clone(),
         };
 
-        self.index.commit_put(dest_ns, dest_key, &dest_meta)?;
+        let (_ref, orphaned) = self.index.commit_put(dest_ns, dest_key, &dest_meta)?;
+        if let Some(old_hash) = orphaned {
+            let _ = self.store.remove(&old_hash).await;
+        }
         Ok(dest_meta)
     }
 
@@ -1153,8 +1162,12 @@ impl BlobEngine {
             metadata: std::collections::HashMap::new(),
         };
 
-        self.index
+        let (_ref, orphaned) = self
+            .index
             .commit_put(&session.namespace, &session.key, &meta)?;
+        if let Some(old_hash) = orphaned {
+            let _ = self.store.remove(&old_hash).await;
+        }
         let _ = self.index.delete_upload_session(upload_id);
         self.session_locks.remove(upload_id);
         self.session_hashers.remove(upload_id);
