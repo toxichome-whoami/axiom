@@ -1079,16 +1079,25 @@ impl AdminClient {
         namespace: Option<&str>,
         key: Option<&str>,
         all: bool,
+        cursor: Option<&str>,
+        limit: Option<usize>,
     ) -> Result<Value, String> {
-        let mut endpoint = "/admin/v1/blobs/tickets".to_string();
+        let mut endpoint = if let Some(ns) = namespace {
+            format!("/api/v1/blobs/tickets/{}", urlencode(ns))
+        } else {
+            "/admin/v1/blobs/tickets".to_string()
+        };
         let mut params = Vec::new();
-        if let Some(ns) = namespace {
-            params.push(format!("namespace={}", urlencode(ns)));
-        }
         if let Some(k) = key {
             params.push(format!("key={}", urlencode(k)));
         }
         params.push(format!("all={}", all));
+        if let Some(c) = cursor {
+            params.push(format!("cursor={}", urlencode(c)));
+        }
+        if let Some(l) = limit {
+            params.push(format!("limit={}", l));
+        }
         if !params.is_empty() {
             endpoint = format!("{}?{}", endpoint, params.join("&"));
         }

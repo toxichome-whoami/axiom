@@ -3081,6 +3081,53 @@ async fn test_first_class_blob_hierarchy_and_quota_usage() {
         .unwrap();
     let res = create_app().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
+    let body_bytes = axum::body::to_bytes(res.into_body(), 65536).await.unwrap();
+    let list_json: Value = serde_json::from_slice(&body_bytes).unwrap();
+    assert_eq!(list_json["success"], true);
+    let items = list_json["data"]["items"].as_array().unwrap();
+    assert_eq!(items.len(), 2);
+    assert!(items.iter().any(|t| t["signature"] == sig));
+
+    // Test Keyset Cursor Pagination: mint a third ticket
+    let req = Request::post(format!("/api/v1/blobs/tickets/{}", ns_name))
+        .header("X-Axiom-Key", &admin_token)
+        .header("Content-Type", "application/json")
+        .body(Body::from(
+            serde_json::to_vec(&serde_json::json!({
+                "key": "report_v2.pdf",
+                "operation": "READ",
+                "ttl_seconds": 3600
+            }))
+            .unwrap(),
+        ))
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::CREATED);
+
+    // Fetch page 1 with limit=2: expect 2 items and a next_cursor
+    let req = Request::get(format!("/api/v1/blobs/tickets/{}?limit=2", ns_name))
+        .header("X-Axiom-Key", &admin_token)
+        .body(Body::empty())
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let body_bytes = axum::body::to_bytes(res.into_body(), 65536).await.unwrap();
+    let page1_json: Value = serde_json::from_slice(&body_bytes).unwrap();
+    assert_eq!(page1_json["data"]["items"].as_array().unwrap().len(), 2);
+    let next_cur = page1_json["data"]["next_cursor"].as_str().unwrap().to_string();
+    assert!(!next_cur.is_empty());
+
+    // Fetch page 2 with limit=2 and cursor: expect the remaining 1 item and next_cursor=null
+    let req = Request::get(format!("/api/v1/blobs/tickets/{}?limit=2&cursor={}", ns_name, next_cur))
+        .header("X-Axiom-Key", &admin_token)
+        .body(Body::empty())
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let body_bytes = axum::body::to_bytes(res.into_body(), 65536).await.unwrap();
+    let page2_json: Value = serde_json::from_slice(&body_bytes).unwrap();
+    assert_eq!(page2_json["data"]["items"].as_array().unwrap().len(), 1);
+    assert!(page2_json["data"]["next_cursor"].is_null());
 
     // Cross-tenant protection: attempting to revoke with wrong namespace must return 404
     let req = Request::post(format!("/api/v1/blobs/tickets/wrong-ns/{}/revoke", sig))

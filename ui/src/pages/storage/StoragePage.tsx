@@ -640,7 +640,7 @@ export function StoragePage() {
     }
     try {
       const resp = await api.listBlobTickets(activeNamespace, undefined, true);
-      const all: BlobTicket[] = Array.isArray(resp) ? resp : (resp as any)?.tickets || [];
+      const all: BlobTicket[] = Array.isArray(resp) ? resp : (resp as any)?.items || (resp as any)?.tickets || [];
       const now = Math.floor(Date.now() / 1000);
       const active = all.filter((t) => !t.revoked && t.expires_at > now && t.operation === 'READ');
       setActiveTickets(active);

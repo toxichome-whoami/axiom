@@ -199,6 +199,7 @@ impl MetadataStore {
             );",
             "CREATE INDEX IF NOT EXISTS idx_blob_tickets_lookup ON blob_tickets(namespace, key, revoked);",
             "CREATE INDEX IF NOT EXISTS idx_blob_tickets_sig ON blob_tickets(signature);",
+            "CREATE INDEX IF NOT EXISTS idx_blob_tickets_created ON blob_tickets(namespace, created_at, id);",
             "CREATE TABLE IF NOT EXISTS system_secrets (
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL,
@@ -1639,6 +1640,7 @@ impl MetadataStore {
             );",
             "CREATE INDEX IF NOT EXISTS idx_blob_tickets_lookup ON blob_tickets(namespace, key, revoked);",
             "CREATE INDEX IF NOT EXISTS idx_blob_tickets_sig ON blob_tickets(signature);",
+            "CREATE INDEX IF NOT EXISTS idx_blob_tickets_created ON blob_tickets(namespace, created_at, id);",
         ];
         for stmt in statements {
             let _ = conn.execute(stmt, ()).await;
@@ -1674,12 +1676,14 @@ impl MetadataStore {
         Ok(())
     }
 
-    /// Queries blob capability tickets matching an optional namespace and optional key filter.
+    /// Queries blob capability tickets matching an optional namespace and optional key filter with keyset cursor pagination.
     pub async fn list_blob_tickets(
         namespace: &str,
         key: Option<&str>,
         include_expired: bool,
-    ) -> Result<Vec<BlobTicketRecord>, String> {
+        cursor: Option<&str>,
+        limit: Option<usize>,
+    ) -> Result<(Vec<BlobTicketRecord>, Option<String>), String> {
         let conn = Self::get_conn().await?;
 
         let now_unix = SystemTime::now()
@@ -1687,49 +1691,107 @@ impl MetadataStore {
             .unwrap_or_default()
             .as_secs() as i64;
 
+        let safe_limit = limit.unwrap_or(100).clamp(1, 500) as i64;
+        let query_limit = safe_limit + 1;
+
+        // Parse cursor: "<created_at>_<id>"
+        let parsed_cursor = cursor.and_then(|c| {
+            c.split_once('_').and_then(|(ts_str, id_str)| {
+                ts_str.parse::<i64>().ok().map(|ts| (ts, id_str.to_string()))
+            })
+        });
+
         let clean_key = key.map(|k| k.trim_start_matches('/'));
-        let mut rows = match (key, clean_key, include_expired) {
-            (Some(raw_k), Some(clean_k), false) => {
+        let mut rows = match (key, clean_key, include_expired, parsed_cursor) {
+            (Some(raw_k), Some(clean_k), false, Some((cur_ts, cur_id))) => {
                 conn.query(
                     "SELECT id, namespace, key, operation, expires_at, signature, created_by, created_at, revoked \
                      FROM blob_tickets \
                      WHERE (?1 = '*' OR ?1 = '' OR namespace = ?1) \
                        AND (key = ?2 OR key = ?3 OR key = '/' || ?3) \
                        AND expires_at > ?4 \
-                     ORDER BY created_at DESC",
-                    libsql::params![namespace, raw_k, clean_k, now_unix],
+                       AND (created_at < ?5 OR (created_at = ?5 AND id < ?6)) \
+                     ORDER BY created_at DESC, id DESC LIMIT ?7",
+                    libsql::params![namespace, raw_k, clean_k, now_unix, cur_ts, cur_id, query_limit],
                 )
                 .await
             }
-            (Some(raw_k), Some(clean_k), true) => {
+            (Some(raw_k), Some(clean_k), false, None) => {
                 conn.query(
                     "SELECT id, namespace, key, operation, expires_at, signature, created_by, created_at, revoked \
                      FROM blob_tickets \
                      WHERE (?1 = '*' OR ?1 = '' OR namespace = ?1) \
                        AND (key = ?2 OR key = ?3 OR key = '/' || ?3) \
-                     ORDER BY created_at DESC",
-                    libsql::params![namespace, raw_k, clean_k],
+                       AND expires_at > ?4 \
+                     ORDER BY created_at DESC, id DESC LIMIT ?5",
+                    libsql::params![namespace, raw_k, clean_k, now_unix, query_limit],
                 )
                 .await
             }
-            _ if !include_expired => {
+            (Some(raw_k), Some(clean_k), true, Some((cur_ts, cur_id))) => {
+                conn.query(
+                    "SELECT id, namespace, key, operation, expires_at, signature, created_by, created_at, revoked \
+                     FROM blob_tickets \
+                     WHERE (?1 = '*' OR ?1 = '' OR namespace = ?1) \
+                       AND (key = ?2 OR key = ?3 OR key = '/' || ?3) \
+                       AND (created_at < ?4 OR (created_at = ?4 AND id < ?5)) \
+                     ORDER BY created_at DESC, id DESC LIMIT ?6",
+                    libsql::params![namespace, raw_k, clean_k, cur_ts, cur_id, query_limit],
+                )
+                .await
+            }
+            (Some(raw_k), Some(clean_k), true, None) => {
+                conn.query(
+                    "SELECT id, namespace, key, operation, expires_at, signature, created_by, created_at, revoked \
+                     FROM blob_tickets \
+                     WHERE (?1 = '*' OR ?1 = '' OR namespace = ?1) \
+                       AND (key = ?2 OR key = ?3 OR key = '/' || ?3) \
+                     ORDER BY created_at DESC, id DESC LIMIT ?4",
+                    libsql::params![namespace, raw_k, clean_k, query_limit],
+                )
+                .await
+            }
+            (_, _, false, Some((cur_ts, cur_id))) => {
                 conn.query(
                     "SELECT id, namespace, key, operation, expires_at, signature, created_by, created_at, revoked \
                      FROM blob_tickets \
                      WHERE (?1 = '*' OR ?1 = '' OR namespace = ?1) \
                        AND expires_at > ?2 \
-                     ORDER BY created_at DESC",
-                    libsql::params![namespace, now_unix],
+                       AND (created_at < ?3 OR (created_at = ?3 AND id < ?4)) \
+                     ORDER BY created_at DESC, id DESC LIMIT ?5",
+                    libsql::params![namespace, now_unix, cur_ts, cur_id, query_limit],
                 )
                 .await
             }
-            _ => {
+            (_, _, false, None) => {
                 conn.query(
                     "SELECT id, namespace, key, operation, expires_at, signature, created_by, created_at, revoked \
                      FROM blob_tickets \
                      WHERE (?1 = '*' OR ?1 = '' OR namespace = ?1) \
-                     ORDER BY created_at DESC",
-                    libsql::params![namespace],
+                       AND expires_at > ?2 \
+                     ORDER BY created_at DESC, id DESC LIMIT ?3",
+                    libsql::params![namespace, now_unix, query_limit],
+                )
+                .await
+            }
+            (_, _, true, Some((cur_ts, cur_id))) => {
+                conn.query(
+                    "SELECT id, namespace, key, operation, expires_at, signature, created_by, created_at, revoked \
+                     FROM blob_tickets \
+                     WHERE (?1 = '*' OR ?1 = '' OR namespace = ?1) \
+                       AND (created_at < ?2 OR (created_at = ?2 AND id < ?3)) \
+                     ORDER BY created_at DESC, id DESC LIMIT ?4",
+                    libsql::params![namespace, cur_ts, cur_id, query_limit],
+                )
+                .await
+            }
+            (_, _, true, None) => {
+                conn.query(
+                    "SELECT id, namespace, key, operation, expires_at, signature, created_by, created_at, revoked \
+                     FROM blob_tickets \
+                     WHERE (?1 = '*' OR ?1 = '' OR namespace = ?1) \
+                     ORDER BY created_at DESC, id DESC LIMIT ?2",
+                    libsql::params![namespace, query_limit],
                 )
                 .await
             }
@@ -1761,7 +1823,14 @@ impl MetadataStore {
             });
         }
 
-        Ok(tickets)
+        let next_cursor = if tickets.len() > safe_limit as usize {
+            tickets.truncate(safe_limit as usize);
+            tickets.last().map(|last| format!("{}_{}", last.created_at, last.id))
+        } else {
+            None
+        };
+
+        Ok((tickets, next_cursor))
     }
 
     /// Finds the underlying cryptographic signature of a ticket given either its ID or signature.

@@ -1235,9 +1235,11 @@ pub struct ListTicketsQuery {
     pub namespace: Option<String>,
     pub key: Option<String>,
     pub all: Option<bool>,
+    pub cursor: Option<String>,
+    pub limit: Option<usize>,
 }
 
-/// Administrative handler listing active or all capability tickets.
+/// Administrative handler listing active or all capability tickets across the cluster with keyset pagination.
 pub async fn list_tickets_handler(
     Extension(auth): Extension<AuthContext>,
     Query(query): Query<ListTicketsQuery>,
@@ -1254,8 +1256,10 @@ pub async fn list_tickets_handler(
     let key = query.key.as_deref();
     // Default to true so active, revoked, and recently expired tickets are all returned to the dashboard
     let include_expired = query.all.unwrap_or(true);
+    let cursor = query.cursor.as_deref();
+    let limit = query.limit;
 
-    let tickets = MetadataStore::list_blob_tickets(ns, key, include_expired)
+    let (tickets, next_cursor) = MetadataStore::list_blob_tickets(ns, key, include_expired, cursor, limit)
         .await
         .map_err(|e| {
             AxiomError::new("TICKET_LIST_FAILED", &e, StatusCode::INTERNAL_SERVER_ERROR)
@@ -1288,12 +1292,15 @@ pub async fn list_tickets_handler(
 
     Ok(Json(json!({
         "success": true,
-        "data": formatted,
+        "data": {
+            "items": formatted,
+            "next_cursor": next_cursor
+        },
         "error": serde_json::Value::Null
     })))
 }
 
-/// Handler listing capability tickets scoped to a specific namespace.
+/// Handler listing capability tickets scoped to a specific namespace with keyset pagination.
 pub async fn list_namespace_tickets_handler(
     Path(namespace): Path<String>,
     Query(query): Query<ListTicketsQuery>,
@@ -1305,8 +1312,10 @@ pub async fn list_namespace_tickets_handler(
 
     let key = query.key.as_deref();
     let include_expired = query.all.unwrap_or(true);
+    let cursor = query.cursor.as_deref();
+    let limit = query.limit;
 
-    let tickets = MetadataStore::list_blob_tickets(&namespace, key, include_expired)
+    let (tickets, next_cursor) = MetadataStore::list_blob_tickets(&namespace, key, include_expired, cursor, limit)
         .await
         .map_err(|e| {
             AxiomError::new("TICKET_LIST_FAILED", &e, StatusCode::INTERNAL_SERVER_ERROR)
@@ -1339,7 +1348,10 @@ pub async fn list_namespace_tickets_handler(
 
     Ok(Json(json!({
         "success": true,
-        "data": formatted,
+        "data": {
+            "items": formatted,
+            "next_cursor": next_cursor
+        },
         "error": serde_json::Value::Null
     })))
 }

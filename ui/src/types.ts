@@ -153,6 +153,11 @@ export interface BlobStats {
   file_objects: number;
 }
 
+export interface ListBlobTicketsResult {
+  items: BlobTicket[];
+  next_cursor: string | null;
+}
+
 export interface ListBlobsResult {
   items: BlobEntry[];
   next_cursor: string | null;

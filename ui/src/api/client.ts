@@ -156,6 +156,7 @@ import type {
   BlobMetadata,
   BlobStats,
   BlobTicket,
+  ListBlobTicketsResult,
   CreateBlobTicketResponse,
   ListBlobsResult,
   NamespaceInfo,
@@ -698,12 +699,20 @@ export const api = {
         ttl_seconds: ttl_seconds ?? 3600,
       }),
     }),
-  listBlobTickets: (namespace: string, key?: string, all = true) => {
+  listBlobTickets: (
+    namespace: string,
+    key?: string,
+    all = true,
+    cursor?: string,
+    limit?: number
+  ) => {
     const params = new URLSearchParams();
     if (key) params.set('key', key);
     if (all) params.set('all', 'true');
+    if (cursor) params.set('cursor', cursor);
+    if (limit) params.set('limit', String(limit));
     const q = params.toString();
-    return request<BlobTicket[]>(
+    return request<ListBlobTicketsResult | BlobTicket[]>(
       `/api/v1/blobs/tickets/${encodeURIComponent(namespace)}${q ? `?${q}` : ''}`
     );
   },

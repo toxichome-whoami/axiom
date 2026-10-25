@@ -87,7 +87,7 @@ export function CreateUploadLinkModal({
     setManageError(null);
     try {
       const resp = await api.listBlobTickets(namespace, undefined, true);
-      const allTickets: BlobTicket[] = Array.isArray(resp) ? resp : (resp as unknown as { tickets?: BlobTicket[] }).tickets || [];
+      const allTickets: BlobTicket[] = Array.isArray(resp) ? resp : (resp as unknown as { items?: BlobTicket[]; tickets?: BlobTicket[] }).items || (resp as any).tickets || [];
       // Filter strictly for WRITE operation capability links
       setTickets(allTickets.filter((t) => t.operation === 'WRITE'));
     } catch (err: unknown) {

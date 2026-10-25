@@ -1009,6 +1009,67 @@ Content-Type: application/json
 
 ---
 
+### List Capability Tickets Scoped to Namespace (`GET /api/v1/blobs/tickets/:namespace`)
+Enumerate active or all capability tickets minted within a specific namespace, using high-performance cursor-based keyset pagination.
+
+**Query Parameters**:
+* `limit` *(optional)*: Maximum number of tickets to return (default: `100`, max: `500`).
+* `cursor` *(optional)*: Keyset cursor from a previous response (`next_cursor`) to fetch subsequent pages.
+* `key` *(optional)*: Filter tickets for an exact object key.
+* `all` *(optional)*: Boolean flag (`true`/`false`) to include expired tickets. Defaults to active tickets only.
+
+**Request**:
+```http
+GET /api/v1/blobs/tickets/media?limit=25
+X-Axiom-Key: <TOKEN>
+```
+**Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "data": {
+    "items": [
+      {
+        "id": 42,
+        "signature": "sig_abc123def456",
+        "namespace": "media",
+        "key": "reports/q3_earnings.pdf",
+        "operation": "READ",
+        "expires_at": 1792800000,
+        "created_at": 1761400000,
+        "revoked": false
+      }
+    ],
+    "next_cursor": "1761400000_42"
+  },
+  "error": null
+}
+```
+
+---
+
+### Revoke Scoped Capability Ticket (`POST /api/v1/blobs/tickets/:namespace/:signature/revoke`)
+Immediately revoke a capability ticket in RAM cache and persistent SQLite store within a namespace.
+
+**Request**:
+```http
+POST /api/v1/blobs/tickets/media/sig_abc123def456/revoke
+X-Axiom-Key: <TOKEN>
+```
+**Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "data": {
+    "signature": "sig_abc123def456",
+    "status": "revoked"
+  },
+  "error": null
+}
+```
+
+---
+
 ### Resumable Chunked Upload Protocol
 
 #### 1. Initialize Resumable Session (`POST /api/v1/blobs/:namespace/uploads`)
@@ -2072,19 +2133,34 @@ Content-Type: application/json
 ---
 
 ### Enumerate Capability Tickets (`GET /admin/v1/blobs/tickets`)
+Enumerate capability tickets cluster-wide across all namespaces with high-performance cursor-based keyset pagination.
+
+**Query Parameters**:
+* `limit` *(optional)*: Maximum number of tickets to return (default: `100`, max: `500`).
+* `cursor` *(optional)*: Keyset cursor from a previous response (`next_cursor`) to fetch subsequent pages.
+* `namespace` *(optional)*: Filter tickets for a specific namespace.
+* `key` *(optional)*: Filter tickets for an exact object key.
+* `all` *(optional)*: Boolean flag (`true`/`false`) to include expired tickets. Defaults to active tickets only.
+
 **Response (`200 OK`)**:
 ```json
 {
   "success": true,
-  "data": [
-    {
-      "signature": "sig_abc123def456",
-      "namespace": "invoices",
-      "key": "2026/inv_001.pdf",
-      "operation": "READ",
-      "expires_at": 1792800000
-    }
-  ],
+  "data": {
+    "items": [
+      {
+        "id": 1,
+        "signature": "sig_abc123def456",
+        "namespace": "invoices",
+        "key": "2026/inv_001.pdf",
+        "operation": "READ",
+        "expires_at": 1792800000,
+        "created_at": 1761400000,
+        "revoked": false
+      }
+    ],
+    "next_cursor": "1761400000_1"
+  },
   "error": null
 }
 ```

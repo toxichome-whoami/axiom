@@ -129,7 +129,7 @@ export function ShareTicketModal({
       const resp = await api.listBlobTickets(namespace, item.fullKey, true);
       const allTickets: BlobTicket[] = Array.isArray(resp)
         ? resp
-        : (resp as unknown as { tickets?: BlobTicket[] }).tickets || [];
+        : (resp as unknown as { items?: BlobTicket[]; tickets?: BlobTicket[] }).items || (resp as any).tickets || [];
       // Filter for READ operation tickets
       setTickets(allTickets.filter((t) => t.operation === 'READ'));
     } catch (err: unknown) {
