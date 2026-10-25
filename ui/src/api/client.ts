@@ -765,7 +765,7 @@ export const api = {
 
   getTableSchema: (db: string, table: string) =>
     request<{ database: string; table: string; columns: ColumnInfoApi[]; foreign_keys: ForeignKeyInfoApi[] }>(
-      `/api/v1/db/${encodeURIComponent(db)}/${encodeURIComponent(table)}/schema`
+      `/api/v1/db/${encodeURIComponent(db)}/${encodeURIComponent(table)}/columns`
     ),
 
   getTableRows: (
@@ -809,6 +809,14 @@ export const api = {
       {
         method: 'POST',
         body: JSON.stringify(payload),
+      }
+    ),
+
+  deleteTableColumn: (db: string, table: string, column: string) =>
+    request<{ database: string; table: string; column: string }>(
+      `/api/v1/db/${encodeURIComponent(db)}/${encodeURIComponent(table)}/columns/${encodeURIComponent(column)}`,
+      {
+        method: 'DELETE',
       }
     ),
 

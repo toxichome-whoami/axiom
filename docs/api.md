@@ -207,15 +207,13 @@ All `/api/v1/db/*` routes require an authenticated API Key (`X-Axiom-Key: base64
 | `GET` | `/api/v1/db/databases` | List database connections accessible by the caller's role |
 | `POST` | `/api/v1/db/:alias/query` | Execute parameterized SQL statement via dialect AST firewall |
 | `GET` | `/api/v1/db/:alias/tables` | List accessible tables with pagination (`cursor`, `limit`) |
-| `GET` | `/api/v1/db/:alias/:table/schema` | Inspect table columns, datatypes, nullability, and foreign keys |
 | `GET` | `/api/v1/db/:alias/:table/rows` | Query table rows with keyset pagination, JSON filters, and sorting |
 | `POST` | `/api/v1/db/:alias/:table/rows` | Insert one or more rows with `Idempotency-Key` replay protection |
 | `PATCH` | `/api/v1/db/:alias/:table/rows` | Update rows matching mandatory filter object |
 | `DELETE` | `/api/v1/db/:alias/:table/rows` | Delete rows matching mandatory filter object |
-| `GET` | `/api/v1/db/:alias/:table/columns` | Inspect table columns, datatypes, and foreign keys |
+| `GET` | `/api/v1/db/:alias/:table/columns` | Inspect table columns, datatypes, nullability, and foreign keys |
 | `POST` | `/api/v1/db/:alias/:table/columns` | Dynamic DDL: Add a column to an existing table schema |
 | `PATCH` | `/api/v1/db/:alias/:table/columns` | Dynamic DDL: Rename or alter column data type |
-| `DELETE` | `/api/v1/db/:alias/:table/columns` | Dynamic DDL: Drop a column (via `?name=` or JSON payload) |
 | `DELETE` | `/api/v1/db/:alias/:table/columns/:column_name` | Dynamic DDL: Drop a column via path parameter |
 
 ---
@@ -329,10 +327,10 @@ X-Axiom-Key: <TOKEN>
 
 ---
 
-### Inspect Table Schema (`GET /api/v1/db/:alias/:table/schema`)
+### Inspect Table Columns & Schema (`GET /api/v1/db/:alias/:table/columns`)
 **Request**:
 ```http
-GET /api/v1/db/main_pg/users/schema
+GET /api/v1/db/main_pg/users/columns
 X-Axiom-Key: <TOKEN>
 ```
 **Response (`200 OK`)**:
@@ -622,15 +620,10 @@ Content-Type: application/json
 
 ---
 
-### Dynamic DDL: Drop Column (`DELETE /api/v1/db/:alias/:table/columns` or `DELETE /api/v1/db/:alias/:table/columns/:column_name`)
+### Dynamic DDL: Drop Column (`DELETE /api/v1/db/:alias/:table/columns/:column_name`)
 **Request**:
 ```http
 DELETE /api/v1/db/main_pg/users/columns/is_mfa_active
-X-Axiom-Key: <TOKEN>
-```
-*Alternatively, query parameter or body:*
-```http
-DELETE /api/v1/db/main_pg/users/columns?name=is_mfa_active
 X-Axiom-Key: <TOKEN>
 ```
 **Response (`200 OK`)**:

@@ -30,10 +30,6 @@ pub fn get_router() -> Router {
             "/:db_name/tables",
             get(crate::database::handlers::list_tables),
         )
-        .route(
-            "/:db_name/:table_name/schema",
-            get(crate::database::handlers::describe_table),
-        )
         .route("/:db_name/query", post(execute_query))
         .route(
             "/:db_name/:table_name/rows",
@@ -46,12 +42,11 @@ pub fn get_router() -> Router {
             "/:db_name/:table_name/columns",
             get(crate::database::handlers::describe_table)
                 .post(crate::database::handlers::add_column)
-                .patch(crate::database::handlers::modify_column)
-                .delete(crate::database::handlers::drop_column),
+                .patch(crate::database::handlers::modify_column),
         )
         .route(
             "/:db_name/:table_name/columns/:column_name",
-            delete(crate::database::handlers::drop_column_by_path),
+            delete(crate::database::handlers::drop_column),
         )
 }
 

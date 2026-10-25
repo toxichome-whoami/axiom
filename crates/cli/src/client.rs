@@ -479,7 +479,7 @@ impl AdminClient {
 
     /// Fetches schema and foreign key definitions for a table.
     pub async fn get_table_schema(&self, alias: &str, table: &str) -> Result<Value, String> {
-        let endpoint = format!("/api/v1/db/{}/{}/schema", alias, table);
+        let endpoint = format!("/api/v1/db/{}/{}/columns", alias, table);
         self.request(reqwest::Method::GET, &endpoint, None).await
     }
 

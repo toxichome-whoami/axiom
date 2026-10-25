@@ -129,7 +129,7 @@ export function Settings() {
 
   const databaseEndpoints = [
     { method: 'GET', path: '/api/v1/db/{alias}/tables', desc: 'List tables in target database service' },
-    { method: 'GET', path: '/api/v1/db/{alias}/{table}/schema', desc: 'Describe table columns, types, and foreign keys' },
+    { method: 'GET', path: '/api/v1/db/{alias}/{table}/columns', desc: 'Describe table columns, types, and foreign keys' },
     { method: 'GET', path: '/api/v1/db/{alias}/{table}/rows', desc: 'Query table records with cursor pagination and filters' },
     { method: 'POST', path: '/api/v1/db/{alias}/{table}/rows', desc: 'Insert single or batch records' },
     { method: 'PATCH', path: '/api/v1/db/{alias}/{table}/rows', desc: 'Update records matching filter criteria' },

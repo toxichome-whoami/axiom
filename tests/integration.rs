@@ -1893,8 +1893,8 @@ async fn db_data_api_full_crud_pagination_and_column_lifecycle() {
     let add_col_res = create_app().oneshot(add_col_req).await.unwrap();
     assert_eq!(add_col_res.status(), StatusCode::OK);
 
-    // 8. Describe Table Schema
-    let schema_req = Request::get("/api/v1/db/testdb/items_crud/schema")
+    // 8. Describe Table Schema via Canonical /columns Endpoint
+    let schema_req = Request::get("/api/v1/db/testdb/items_crud/columns")
         .header("X-Axiom-Key", &admin_token)
         .body(Body::empty())
         .unwrap();
@@ -1908,6 +1908,46 @@ async fn db_data_api_full_crud_pagination_and_column_lifecycle() {
     .unwrap();
     let cols = schema_json["data"]["columns"].as_array().unwrap();
     assert!(cols.iter().any(|c| c["name"] == "barcode"));
+
+    // Verify deprecated /schema endpoint is completely removed (404 Not Found)
+    let legacy_schema_req = Request::get("/api/v1/db/testdb/items_crud/schema")
+        .header("X-Axiom-Key", &admin_token)
+        .body(Body::empty())
+        .unwrap();
+    let legacy_schema_res = create_app().oneshot(legacy_schema_req).await.unwrap();
+    assert_eq!(legacy_schema_res.status(), StatusCode::NOT_FOUND);
+
+    // Verify DELETE on collection root /columns without path parameter is rejected (405 Method Not Allowed)
+    let invalid_del_req = Request::delete("/api/v1/db/testdb/items_crud/columns")
+        .header("X-Axiom-Key", &admin_token)
+        .body(Body::empty())
+        .unwrap();
+    let invalid_del_res = create_app().oneshot(invalid_del_req).await.unwrap();
+    assert_eq!(invalid_del_res.status(), StatusCode::METHOD_NOT_ALLOWED);
+
+    // Dynamic Column Drop via Canonical RESTful Path Parameter
+    let drop_col_req = Request::delete("/api/v1/db/testdb/items_crud/columns/barcode")
+        .header("X-Axiom-Key", &admin_token)
+        .body(Body::empty())
+        .unwrap();
+    let drop_col_res = create_app().oneshot(drop_col_req).await.unwrap();
+    assert_eq!(drop_col_res.status(), StatusCode::OK);
+
+    // Verify column was dropped
+    let check_cols_req = Request::get("/api/v1/db/testdb/items_crud/columns")
+        .header("X-Axiom-Key", &admin_token)
+        .body(Body::empty())
+        .unwrap();
+    let check_cols_res = create_app().oneshot(check_cols_req).await.unwrap();
+    assert_eq!(check_cols_res.status(), StatusCode::OK);
+    let check_cols_json: Value = serde_json::from_slice(
+        &axum::body::to_bytes(check_cols_res.into_body(), 65536)
+            .await
+            .unwrap(),
+    )
+    .unwrap();
+    let cols_after = check_cols_json["data"]["columns"].as_array().unwrap();
+    assert!(!cols_after.iter().any(|c| c["name"] == "barcode"));
 
     // 9. List databases
     let list_dbs_req = Request::get("/api/v1/db/databases")

@@ -2123,32 +2123,12 @@ pub async fn add_column(
     })))
 }
 
-#[derive(Debug, serde::Deserialize)]
-pub struct DropColumnParams {
-    pub name: Option<String>,
-}
-
+/// Drops a column from a table using a RESTful path parameter.
+/// CONTRACT:
+///  - Precondition: Valid AuthContext with DDL permission; valid database, table, and column names.
+///  - Sanitizes column name to [a-zA-Z0-9_].
+///  - Side effects: Invalidates cached schema for the table.
 pub async fn drop_column(
-    axum::extract::Path((db_name, table_name)): axum::extract::Path<(String, String)>,
-    axum::extract::Extension(auth): axum::extract::Extension<AuthContext>,
-    axum::extract::Query(query): axum::extract::Query<DropColumnParams>,
-    payload: Option<axum::Json<axiom_core::DropColumnRequest>>,
-) -> Result<axum::Json<serde_json::Value>, AxiomError> {
-    let col_name = query
-        .name
-        .or_else(|| payload.map(|p| p.0.name))
-        .ok_or_else(|| {
-            AxiomError::new(
-                "MISSING_COLUMN_NAME",
-                "Column name must be provided in query ?name= or JSON body",
-                axum::http::StatusCode::BAD_REQUEST,
-            )
-        })?;
-
-    drop_column_internal(&db_name, &table_name, &col_name, &auth).await
-}
-
-pub async fn drop_column_by_path(
     axum::extract::Path((db_name, table_name, column_name)): axum::extract::Path<(
         String,
         String,
@@ -2156,16 +2136,7 @@ pub async fn drop_column_by_path(
     )>,
     axum::extract::Extension(auth): axum::extract::Extension<AuthContext>,
 ) -> Result<axum::Json<serde_json::Value>, AxiomError> {
-    drop_column_internal(&db_name, &table_name, &column_name, &auth).await
-}
-
-async fn drop_column_internal(
-    db_name: &str,
-    table_name: &str,
-    column_name: &str,
-    auth: &AuthContext,
-) -> Result<axum::Json<serde_json::Value>, AxiomError> {
-    PolicyEngine::evaluate(auth, db_name, table_name, "DDL")?;
+    PolicyEngine::evaluate(&auth, &db_name, &table_name, "DDL")?;
 
     let clean: String = column_name
         .chars()
@@ -2179,8 +2150,8 @@ async fn drop_column_internal(
         ));
     }
 
-    let _db_cfg = get_db_config(db_name, auth).await?;
-    let engine = DatabasePoolManager::get_engine(db_name)
+    let _db_cfg = get_db_config(&db_name, &auth).await?;
+    let engine = DatabasePoolManager::get_engine(&db_name)
         .await
         .ok_or_else(|| {
             AxiomError::new(
@@ -2190,7 +2161,7 @@ async fn drop_column_internal(
             )
         })?;
 
-    engine.drop_column(table_name, &clean).await.map_err(|e| {
+    engine.drop_column(&table_name, &clean).await.map_err(|e| {
         tracing::error!("Drop column failed: {}", e);
         AxiomError::new(
             "DROP_COLUMN_FAILED",
@@ -2199,7 +2170,7 @@ async fn drop_column_internal(
         )
     })?;
 
-    invalidate_table_schema(db_name, table_name);
+    invalidate_table_schema(&db_name, &table_name);
 
     Ok(axum::Json(serde_json::json!({
         "success": true,
@@ -2540,18 +2511,5 @@ mod tests {
         } else {
             panic!("Expected query");
         }
-    }
-
-    #[test]
-    fn test_drop_column_params_deserialization() {
-        use super::DropColumnParams;
-
-        let json = r#"{"name": "status_code"}"#;
-        let params: DropColumnParams = serde_json::from_str(json).unwrap();
-        assert_eq!(params.name.as_deref(), Some("status_code"));
-
-        let empty_json = "{}";
-        let empty_params: DropColumnParams = serde_json::from_str(empty_json).unwrap();
-        assert!(empty_params.name.is_none());
     }
 }
