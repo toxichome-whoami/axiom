@@ -119,7 +119,7 @@ export function StorageListView({
     >
       <table className="w-full text-left border-collapse">
         <thead>
-          <tr className="sticky top-0 z-10 h-10 bg-[#0a0a0a] border-b border-[#1f1f1f] text-[13px] font-medium text-[#8c8c8c]">
+          <tr className="sticky top-0 z-10 h-11 bg-[#0a0a0a] border-b border-[#1f1f1f] text-[13.5px] font-medium text-[#8c8c8c]">
             <th
               className="w-12 px-3 py-2 text-center select-none cursor-pointer"
               onClick={(e) => {
@@ -232,7 +232,7 @@ export function StorageListView({
                   }
                 }}
                 onContextMenu={(e) => onContextMenu(e, item)}
-                className={`group transition-colors cursor-pointer select-none h-10 ${
+                className={`group transition-colors cursor-pointer select-none h-11 ${
                   isSelfDragged ? 'opacity-40' : ''
                 } ${
                   isDropTarget
@@ -293,7 +293,7 @@ export function StorageListView({
                 {/* Column 2: Storage Tier */}
                 <td className="px-3">
                   {isFolder ? (
-                    <span className="text-[13px] text-[#8c8c8c] font-sans font-normal">dir</span>
+                    <span className="text-[13.5px] text-[#8c8c8c] font-sans font-normal">dir</span>
                   ) : (
                     <span
                       className={`inline-flex items-center px-1.5 py-0.5 rounded-[4px] text-[12px] font-medium font-sans ${
@@ -308,14 +308,14 @@ export function StorageListView({
                 </td>
 
                 {/* Column 3: Payload Size */}
-                <td className="px-3 text-right tabular-nums text-[13px] text-[#8c8c8c] font-sans font-normal">
+                <td className="px-3 text-right tabular-nums text-[13.5px] text-[#8c8c8c] font-sans font-normal">
                   {isFolder
                     ? `${item.itemCount || 0} items`
                     : formatBytes(item.size || 0)}
                 </td>
 
                 {/* Column 4: Uploaded / Created Date */}
-                <td className="px-4 text-right tabular-nums text-[13px] text-[#8c8c8c] font-sans font-normal hidden sm:table-cell">
+                <td className="px-4 text-right tabular-nums text-[13.5px] text-[#8c8c8c] font-sans font-normal hidden sm:table-cell">
                   {item.created_at
                     ? new Date(item.created_at * 1000).toLocaleDateString()
                     : '—'}

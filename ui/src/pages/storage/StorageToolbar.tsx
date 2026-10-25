@@ -91,9 +91,9 @@ export function StorageToolbar({
   }, [isUploadMenuOpen]);
 
   return (
-    <div className="h-12 shrink-0 px-3.5 border-b border-[#222222] bg-[#0c0c0c] flex items-center justify-between gap-3 select-none font-sans relative z-30 overflow-x-auto scrollbar-none whitespace-nowrap">
+    <div className="h-[54px] shrink-0 px-3.5 border-b border-[#222222] bg-[#0c0c0c] flex items-center justify-between gap-3 select-none font-sans relative z-30 overflow-x-auto scrollbar-none whitespace-nowrap">
       {/* ─── Left: Interactive Breadcrumbs Navigator ─────────────── */}
-      <div className="flex items-center gap-1.5 text-[13px] overflow-x-auto scrollbar-none min-w-0 py-0.5 shrink-0">
+      <div className="flex items-center gap-1.5 text-[13.5px] overflow-x-auto scrollbar-none min-w-0 py-0.5 shrink-0">
         <button
           type="button"
           onClick={() => onNavigateToPrefix('')}
@@ -123,7 +123,7 @@ export function StorageToolbar({
               await onDropOnFolder('', draggedItemRef.current);
             }
           }}
-          className={`hover:text-white transition-colors cursor-pointer font-medium shrink-0 h-8 px-2.5 flex items-center gap-2 rounded-[6px] text-[13px] ${
+          className={`hover:text-white transition-colors cursor-pointer font-medium shrink-0 h-9 px-3 flex items-center gap-2 rounded-[6px] text-[13.5px] ${
             dragOverTargetKey === ''
               ? 'bg-blue-600/30 text-blue-300 ring-1 ring-blue-500/60'
               : currentPrefix === ''
@@ -180,7 +180,7 @@ export function StorageToolbar({
                     await onDropOnFolder(seg.prefix, draggedItemRef.current);
                   }
                 }}
-                className={`hover:text-white transition-colors cursor-pointer font-medium truncate max-w-[180px] shrink-0 h-8 px-2.5 flex items-center rounded-[6px] text-[13px] ${
+                className={`hover:text-white transition-colors cursor-pointer font-medium truncate max-w-[180px] shrink-0 h-9 px-3 flex items-center rounded-[6px] text-[13.5px] ${
                   isDropTarget
                     ? 'bg-blue-600/30 text-blue-300 ring-1 ring-blue-500/60'
                     : isLast
@@ -198,14 +198,14 @@ export function StorageToolbar({
       {/* ─── Right: Search, Filter, View Mode, Details Toggle, Upload ─────────────── */}
       <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
         {/* Live Search Input */}
-        <div className="relative w-28 sm:w-44 md:w-56">
-          <Search className="w-3.5 h-3.5 text-[#8c8c8c] absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+        <div className="relative w-32 sm:w-48 md:w-60">
+          <Search className="w-4 h-4 text-[#8c8c8c] absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => onSearchChange(e.target.value)}
             placeholder="Search..."
-            className="w-full h-8 pl-8 pr-7 rounded-[6px] bg-[#141414] border border-[#262626] focus:border-[#383838] text-[13px] text-white placeholder-[#8c8c8c] outline-none transition-colors"
+            className="w-full h-9 pl-9 pr-8 rounded-[6px] bg-[#141414] border border-[#262626] focus:border-[#383838] text-[13.5px] text-white placeholder-[#8c8c8c] outline-none transition-colors"
           />
           {searchQuery && (
             <button
@@ -213,20 +213,20 @@ export function StorageToolbar({
               onClick={() => onSearchChange('')}
               className="absolute right-2 top-1/2 -translate-y-1/2 text-[#8c8c8c] hover:text-white p-0.5 cursor-pointer"
             >
-              <X className="w-3.5 h-3.5" />
+              <X className="w-4 h-4" />
             </button>
           )}
         </div>
 
         {/* Storage Tier Filter Pill */}
-        <div className="hidden md:flex items-center p-0.5 rounded-md bg-[#111111] border border-[#222222] h-8">
+        <div className="hidden md:flex items-center p-1 rounded-[7px] bg-[#141414] border border-[#262626] h-9">
           <button
             type="button"
             onClick={() => onTierFilterChange('all')}
-            className={`px-2.5 py-1 rounded-[4px] text-[13px] font-medium transition-colors cursor-pointer ${
+            className={`px-3 py-1 rounded-[5px] text-[13px] font-medium transition-colors cursor-pointer ${
               tierFilter === 'all'
-                ? 'bg-[#1f1f1f] text-white shadow-xs'
-                : 'text-[#888888] hover:text-[#cccccc]'
+                ? 'bg-[#222222] text-white shadow-sm'
+                : 'text-[#8c8c8c] hover:text-white'
             }`}
           >
             All
@@ -234,10 +234,10 @@ export function StorageToolbar({
           <button
             type="button"
             onClick={() => onTierFilterChange('inline')}
-            className={`px-2.5 py-1 rounded-[4px] text-[13px] font-medium transition-colors cursor-pointer ${
+            className={`px-3 py-1 rounded-[5px] text-[13px] font-medium transition-colors cursor-pointer ${
               tierFilter === 'inline'
-                ? 'bg-[#1f1f1f] text-white shadow-xs'
-                : 'text-[#888888] hover:text-[#cccccc]'
+                ? 'bg-[#222222] text-white shadow-sm'
+                : 'text-[#8c8c8c] hover:text-white'
             }`}
           >
             LSM
@@ -245,10 +245,10 @@ export function StorageToolbar({
           <button
             type="button"
             onClick={() => onTierFilterChange('disk')}
-            className={`px-2.5 py-1 rounded-[4px] text-[13px] font-medium transition-colors cursor-pointer ${
+            className={`px-3 py-1 rounded-[5px] text-[13px] font-medium transition-colors cursor-pointer ${
               tierFilter === 'disk'
-                ? 'bg-[#1f1f1f] text-white shadow-xs'
-                : 'text-[#888888] hover:text-[#cccccc]'
+                ? 'bg-[#222222] text-white shadow-sm'
+                : 'text-[#8c8c8c] hover:text-white'
             }`}
           >
             Disk
@@ -256,15 +256,15 @@ export function StorageToolbar({
         </div>
 
         {/* View Mode Switcher Pills */}
-        <div className="flex items-center p-0.5 rounded-md bg-[#111111] border border-[#222222] h-8">
+        <div className="flex items-center p-1 rounded-[7px] bg-[#141414] border border-[#262626] h-9">
           <button
             type="button"
             onClick={() => onViewModeChange('grid')}
             title="Grid View"
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-[4px] text-[13px] font-medium transition-colors cursor-pointer ${
+            className={`flex items-center gap-1.5 px-3 py-1 rounded-[5px] text-[13px] font-medium transition-colors cursor-pointer ${
               viewMode === 'grid'
-                ? 'bg-[#1f1f1f] text-white shadow-xs'
-                : 'text-[#888888] hover:text-[#cccccc]'
+                ? 'bg-[#222222] text-white shadow-sm'
+                : 'text-[#8c8c8c] hover:text-white'
             }`}
           >
             <LayoutGrid className="w-3.5 h-3.5" />
@@ -274,10 +274,10 @@ export function StorageToolbar({
             type="button"
             onClick={() => onViewModeChange('list')}
             title="Table View"
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-[4px] text-[13px] font-medium transition-colors cursor-pointer ${
+            className={`flex items-center gap-1.5 px-3 py-1 rounded-[5px] text-[13px] font-medium transition-colors cursor-pointer ${
               viewMode === 'list'
-                ? 'bg-[#1f1f1f] text-white shadow-xs'
-                : 'text-[#888888] hover:text-[#cccccc]'
+                ? 'bg-[#222222] text-white shadow-sm'
+                : 'text-[#8c8c8c] hover:text-white'
             }`}
           >
             <ListIcon className="w-3.5 h-3.5" />
@@ -290,13 +290,13 @@ export function StorageToolbar({
           type="button"
           onClick={onToggleDetails}
           title={isDetailsOpen ? 'Hide Details Panel' : 'Show Details Panel'}
-          className={`flex items-center justify-center w-8 h-8 rounded-[6px] border transition-colors cursor-pointer ${
+          className={`flex items-center justify-center w-9 h-9 rounded-[7px] border transition-colors cursor-pointer ${
             isDetailsOpen
               ? 'bg-[#1c1c1c] text-white border-[#383838]'
               : 'bg-[#141414] text-[#8c8c8c] hover:text-white border-[#262626] hover:border-[#383838]'
           }`}
         >
-          <PanelRight className="w-3.5 h-3.5" />
+          <PanelRight className="w-4 h-4" />
         </button>
 
         {/* Quick Share Link CTA Button */}
@@ -305,9 +305,9 @@ export function StorageToolbar({
             type="button"
             onClick={() => onShareClick(selectedFileItem)}
             title={`Share link for ${selectedFileItem.name}`}
-            className="flex items-center gap-1.5 h-8 px-2.5 rounded-[6px] text-[13px] font-medium text-white bg-[#141414] hover:bg-[#1c1c1c] border border-[#262626] hover:border-[#383838] transition-colors cursor-pointer shrink-0"
+            className="flex items-center gap-1.5 h-9 px-3 rounded-[7px] text-[13px] font-medium text-white bg-[#141414] hover:bg-[#1c1c1c] border border-[#262626] hover:border-[#383838] transition-colors cursor-pointer shrink-0"
           >
-            <Share2 className="w-3.5 h-3.5 text-white" />
+            <Share2 className="w-4 h-4 text-white" />
             <span className="hidden sm:inline">Share</span>
           </button>
         )}
@@ -319,9 +319,9 @@ export function StorageToolbar({
             onClick={onUploadClick}
             disabled={!activeNamespace}
             title="Upload files into current directory"
-            className="flex items-center gap-1.5 h-8 px-3 rounded-l-[6px] text-[13px] font-medium text-white bg-blue-600 hover:bg-blue-500 border border-blue-500/80 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+            className="flex items-center gap-1.5 h-9 px-3.5 rounded-l-[7px] text-[13px] font-medium text-white bg-blue-600 hover:bg-blue-500 border border-blue-500/80 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            <Upload className="w-3.5 h-3.5" />
+            <Upload className="w-4 h-4" />
             <span className="hidden sm:inline">Upload</span>
           </button>
           <button
@@ -330,9 +330,9 @@ export function StorageToolbar({
             disabled={!activeNamespace}
             title="Upload options (files, folders for hosting)"
             aria-label="Upload options"
-            className="flex items-center justify-center h-8 px-2.5 rounded-r-[6px] text-white bg-blue-600 hover:bg-blue-500 border-t border-b border-r border-l border-blue-500/80 border-l-blue-700/70 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed select-none"
+            className="flex items-center justify-center h-9 px-2.5 rounded-r-[7px] text-white bg-blue-600 hover:bg-blue-500 border-t border-b border-r border-l border-blue-500/80 border-l-blue-700/70 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed select-none"
           >
-            <ChevronDown className="w-3.5 h-3.5" />
+            <ChevronDown className="w-4 h-4" />
           </button>
 
           {/* Upload Dropdown Menu */}

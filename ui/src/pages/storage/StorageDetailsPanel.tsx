@@ -87,16 +87,16 @@ export function StorageDetailsPanel({
           <div className="w-full h-full" />
         </div>
       )}
-      {/* ─── Header: Fixed h-12 (aligned with StorageToolbar & StorageSidebar) ─────────────── */}
-      <div className="h-12 shrink-0 px-4 border-b border-[#222222] bg-[#0c0c0c] flex items-center justify-between">
-        <h3 className="text-[14px] font-medium text-white font-sans truncate">
+      {/* ─── Header: Fixed h-[54px] (aligned with StorageToolbar & StorageSidebar) ─────────────── */}
+      <div className="h-[54px] shrink-0 px-4 border-b border-[#222222] bg-[#0c0c0c] flex items-center justify-between">
+        <h3 className="text-[15px] font-medium text-white font-sans truncate">
           {selectedItem ? (selectedItem.type === 'folder' ? 'Folder Details' : 'Object Details') : 'Namespace Overview'}
         </h3>
         <button
           type="button"
           onClick={onClose}
           title="Close details inspector"
-          className="w-8 h-8 flex items-center justify-center rounded-[6px] text-[#777777] hover:text-white hover:bg-[#1a1a1a] transition-colors cursor-pointer"
+          className="w-9 h-9 flex items-center justify-center rounded-[7px] text-[#777777] hover:text-white hover:bg-[#1a1a1a] transition-colors cursor-pointer"
         >
           <X className="w-4 h-4" />
         </button>

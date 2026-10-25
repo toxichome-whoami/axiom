@@ -120,20 +120,20 @@ export function StorageSidebar({
         </div>
       )}
       {/* ─── Header: Namespace Selector (h-12 aligned with StorageToolbar) ─────────────── */}
-      <div className={`h-12 shrink-0 px-3 border-b border-[#222222] flex items-center justify-between gap-2 relative ${isNsDropdownOpen ? 'z-50' : 'z-30'}`}>
+      <div className={`h-[54px] shrink-0 px-3 border-b border-[#222222] flex items-center justify-between gap-2 relative ${isNsDropdownOpen ? 'z-50' : 'z-30'}`}>
         <div className="relative flex-1 min-w-0" ref={nsDropdownRef}>
           <button
             type="button"
             onClick={() => setIsNsDropdownOpen(!isNsDropdownOpen)}
-            className="w-full h-8 px-2.5 rounded-[6px] bg-[#141414] hover:bg-[#1a1a1a] border border-[#242424] hover:border-[#383838] flex items-center justify-between gap-2 text-left transition-colors cursor-pointer"
+            className="w-full h-9 px-3 rounded-[7px] bg-[#141414] hover:bg-[#1a1a1a] border border-[#242424] hover:border-[#383838] flex items-center justify-between gap-2 text-left transition-colors cursor-pointer"
           >
             <div className="flex items-center gap-1.5 truncate min-w-0">
-              <HardDrive className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+              <HardDrive className="w-4 h-4 text-blue-400 shrink-0" />
               {isLoading && !activeNamespace ? (
                 <Skeleton className="w-24 h-3.5" />
               ) : (
                 <>
-                  <span className="text-[13px] font-medium text-white truncate">
+                  <span className="text-[13.5px] font-medium text-white truncate">
                     {activeNamespace || 'Select Namespace'}
                   </span>
                   {currentNsInfo?.is_public && (
@@ -144,7 +144,7 @@ export function StorageSidebar({
                 </>
               )}
             </div>
-            <ChevronDown className="w-3.5 h-3.5 text-[#777777] shrink-0" />
+            <ChevronDown className="w-4 h-4 text-[#777777] shrink-0" />
           </button>
 
           {/* Namespace Dropdown Popup */}
@@ -212,9 +212,9 @@ export function StorageSidebar({
               type="button"
               onClick={onOpenManageNamespace}
               title="Manage Namespace Quota & Settings"
-              className="w-8 h-8 flex items-center justify-center rounded-[6px] text-[#8c8c8c] hover:text-white hover:bg-[#161616] transition-colors cursor-pointer shrink-0"
+              className="w-9 h-9 flex items-center justify-center rounded-[7px] text-[#8c8c8c] hover:text-white hover:bg-[#161616] transition-colors cursor-pointer shrink-0"
             >
-              <Settings className="w-3.5 h-3.5" />
+              <Settings className="w-4 h-4" />
             </button>
           )}
 
@@ -222,9 +222,9 @@ export function StorageSidebar({
             type="button"
             onClick={onOpenNewNamespace}
             title="Create new namespace"
-            className="w-8 h-8 flex items-center justify-center rounded-[6px] text-[#8c8c8c] hover:text-white hover:bg-[#161616] transition-colors cursor-pointer shrink-0"
+            className="w-9 h-9 flex items-center justify-center rounded-[7px] text-[#8c8c8c] hover:text-white hover:bg-[#161616] transition-colors cursor-pointer shrink-0"
           >
-            <Plus className="w-3.5 h-3.5" />
+            <Plus className="w-4 h-4" />
           </button>
 
           {/* Mobile expand/collapse toggle for tree view */}
@@ -233,9 +233,9 @@ export function StorageSidebar({
             onClick={() => setIsMobileOpen(!isMobileOpen)}
             title={isMobileOpen ? 'Collapse Explorer Tree' : 'Expand Explorer Tree'}
             aria-label={isMobileOpen ? 'Collapse Explorer Tree' : 'Expand Explorer Tree'}
-            className="w-8 h-8 flex items-center justify-center rounded-[6px] text-[#8c8c8c] hover:text-white hover:bg-[#161616] lg:hidden transition-colors cursor-pointer shrink-0"
+            className="w-9 h-9 flex items-center justify-center rounded-[7px] text-[#8c8c8c] hover:text-white hover:bg-[#161616] lg:hidden transition-colors cursor-pointer shrink-0"
           >
-            <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${isMobileOpen ? 'rotate-180' : ''}`} />
+            <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${isMobileOpen ? 'rotate-180' : ''}`} />
           </button>
         </div>
       </div>
@@ -272,20 +272,20 @@ export function StorageSidebar({
       </div>
 
       {/* ─── Footer: Storage Statistics & Quota ─────────────── */}
-      <div className={`h-12 shrink-0 px-3.5 border-t border-[#222222] items-center justify-between text-[12px] text-[#8c8c8c] select-none font-sans ${isMobileOpen ? 'flex' : 'hidden lg:flex'}`}>
+      <div className={`h-12 shrink-0 px-3.5 border-t border-[#222222] items-center justify-between text-[13px] text-[#8c8c8c] select-none font-sans ${isMobileOpen ? 'flex' : 'hidden lg:flex'}`}>
         <span className="tabular-nums">
           {realObjectsCount}{hasMore ? '+' : ''} {realObjectsCount === 1 ? 'object' : 'objects'}
         </span>
 
         {currentNsInfo && (
           <div className="flex items-center gap-1.5">
-            <span className="tabular-nums text-[12px] text-[#8c8c8c]">
+            <span className="tabular-nums text-[13px] text-[#8c8c8c]">
               {formatBytes(currentNsInfo.total_bytes)}
               {currentNsInfo.max_bytes ? ` / ${formatBytes(currentNsInfo.max_bytes)}` : ''}
             </span>
             {quotaUsedPercent !== null && (
               <span
-                className={`text-[12px] tabular-nums font-medium ${
+                className={`text-[13px] tabular-nums font-medium ${
                   quotaUsedPercent > 90 ? 'text-rose-400' : 'text-[#8c8c8c]'
                 }`}
               >
