@@ -16,6 +16,8 @@ import {
   AlertTriangle,
   HardDrive,
   Globe,
+  ArrowLeft,
+  ExternalLink,
 } from 'lucide-react';
 import { MediaPlayer } from './MediaPlayer';
 import { formatBytes } from './format';
@@ -200,50 +202,83 @@ export function ShareViewerPage() {
   const remainingMins = Math.floor((remainingSecs % 3600) / 60);
 
   return (
-    <div className="min-h-screen bg-[#09090b] text-white flex flex-col font-sans selection:bg-blue-600 selection:text-white">
-      {/* ─── Header: Navigation Bar ─────────────── */}
-      <header className="h-12 border-b border-[#1f1f1f] bg-[#0c0c0c] sticky top-0 z-40 px-4 md:px-6 flex items-center justify-between">
-        {/* Brand & File Information */}
-        <div className="flex items-center gap-2.5 min-w-0">
-          <div className="flex items-center gap-2 pr-2.5 border-r border-[#222222]">
-            <div className="w-6 h-6 rounded-[5px] bg-[#141414] border border-[#262626] flex items-center justify-center text-white">
-              <HardDrive className="w-3.5 h-3.5" />
-            </div>
-            <span className="text-[13px] font-sans font-medium text-white tracking-tight hidden sm:inline">Axiom</span>
-          </div>
+    <div className="min-h-screen bg-[#09090b] text-white flex flex-col font-sans selection:bg-neutral-700 selection:text-white">
+      {/* ─── Header: Navigation Bar (Google Drive dark previewer style) ─── */}
+      <header className="h-14 border-b border-[#1f1f1f] bg-[#0c0c0c]/95 backdrop-blur-md sticky top-0 z-40 px-3 sm:px-5 flex items-center justify-between shrink-0">
+        {/* Left: Back button + File icon + Title + Extension/Public Pill */}
+        <div className="flex items-center gap-3 min-w-0">
+          <button
+            type="button"
+            onClick={() => {
+              if (window.history.length > 1) {
+                window.history.back();
+              } else {
+                window.location.href = `/system/storage?ns=${encodeURIComponent(params.namespace)}`;
+              }
+            }}
+            title="Back to Storage"
+            className="w-8 h-8 rounded-full flex items-center justify-center text-[#a3a3a3] hover:text-white hover:bg-[#1a1a1a] transition-colors cursor-pointer shrink-0"
+          >
+            <ArrowLeft className="w-4 h-4" />
+          </button>
 
-          <div className="flex items-center gap-2 min-w-0">
-            {getFileIcon(fileName, 'w-3.5 h-3.5')}
-            <span className="text-[13px] font-sans font-medium text-white truncate max-w-[200px] sm:max-w-xs md:max-w-md" title={fileName}>
-              {fileName}
-            </span>
-            <span className="text-[11px] font-mono px-1.5 py-0.5 rounded-[4px] bg-[#141414] border border-[#262626] text-[#8c8c8c] hidden md:inline">
-              {getFileExtension(fileName)}
-            </span>
-            {params.isPublic && (
-              <span className="px-1.5 py-0.5 rounded-[4px] text-[11px] font-medium bg-[#161616] border border-[#2e2e2e] text-[#cccccc] leading-none hidden sm:inline">
-                Public CDN
+          <div className="w-px h-5 bg-[#222222] shrink-0" />
+
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="shrink-0 text-[#cccccc]">
+              {getFileIcon(fileName, 'w-4 h-4')}
+            </div>
+
+            <div className="flex items-center gap-2 min-w-0">
+              <span
+                className="text-[14px] font-sans font-medium text-white tracking-tight truncate max-w-[180px] sm:max-w-xs md:max-w-md lg:max-w-lg"
+                title={fileName}
+              >
+                {fileName}
               </span>
-            )}
+              <span className="text-[11px] font-mono px-1.5 py-0.5 rounded-[4px] bg-[#161616] border border-[#262626] text-[#8c8c8c] shrink-0 hidden sm:inline">
+                {getFileExtension(fileName)}
+              </span>
+              {params.isPublic ? (
+                <span className="px-1.5 py-0.5 rounded-[4px] text-[11px] font-sans font-medium bg-[#161616] border border-[#2e2e2e] text-[#cccccc] leading-none shrink-0 hidden sm:inline">
+                  Public CDN
+                </span>
+              ) : (
+                <span className="px-1.5 py-0.5 rounded-[4px] text-[11px] font-sans font-medium bg-[#161616] border border-[#2e2e2e] text-[#cccccc] leading-none shrink-0 hidden sm:inline">
+                  Shared
+                </span>
+              )}
+            </div>
           </div>
         </div>
 
-        {/* Right Actions */}
-        <div className="flex items-center gap-2">
+        {/* Right Actions: Expiration (if ticket), Open Raw, Copy Link, White Download */}
+        <div className="flex items-center gap-2 shrink-0">
           {!params.isPublic && params.ticket_exp && params.ticket_exp > 0 && (
             <div className="hidden lg:flex items-center gap-1.5 px-2.5 py-1 rounded-[6px] bg-[#141414] border border-[#242424] text-[11px] font-mono text-[#8c8c8c]">
-              <Clock className="w-3 h-3 text-amber-400" />
+              <Clock className="w-3.5 h-3.5 text-amber-400" />
               <span>
                 Expires in {remainingHours}h {remainingMins}m
               </span>
             </div>
           )}
 
+          <a
+            href={streamUrl}
+            target="_blank"
+            rel="noreferrer"
+            title="Open raw stream directly"
+            className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-[6px] text-[13px] font-sans font-medium text-[#cccccc] hover:text-white bg-[#141414] hover:bg-[#1c1c1c] border border-[#262626] transition-colors cursor-pointer"
+          >
+            <ExternalLink className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Open Raw</span>
+          </a>
+
           <button
             type="button"
             onClick={handleCopyLink}
             title="Copy share link"
-            className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-[6px] text-[12px] font-sans text-[#cccccc] hover:text-white bg-[#141414] hover:bg-[#1a1a1a] border border-[#262626] transition-colors cursor-pointer"
+            className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-[6px] text-[13px] font-sans font-medium text-[#cccccc] hover:text-white bg-[#141414] hover:bg-[#1c1c1c] border border-[#262626] transition-colors cursor-pointer"
           >
             {isCopied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
             <span className="hidden sm:inline">{isCopied ? 'Copied' : 'Copy Link'}</span>
@@ -252,7 +287,7 @@ export function ShareViewerPage() {
           <button
             type="button"
             onClick={handleDownload}
-            className="inline-flex items-center gap-1.5 h-7 px-3 rounded-[6px] text-[12px] font-sans font-medium text-black bg-white hover:bg-[#e0e0e0] shadow-xs transition-colors cursor-pointer"
+            className="inline-flex items-center gap-1.5 h-8 px-3.5 rounded-[6px] text-[13px] font-sans font-medium text-black bg-white hover:bg-neutral-200 shadow-xs transition-colors cursor-pointer"
           >
             <Download className="w-3.5 h-3.5 stroke-[2.5]" />
             <span>Download</span>
@@ -260,9 +295,9 @@ export function ShareViewerPage() {
         </div>
       </header>
 
-      {/* ─── Main Viewport Canvas ─────────────── */}
-      <main className="flex-1 flex flex-col items-center justify-center p-4 sm:p-6 max-w-6xl w-full mx-auto">
-        <div className="w-full">
+      {/* ─── Main Viewport Canvas (Centered immersive preview) ─── */}
+      <main className="flex-1 min-h-0 w-full flex items-center justify-center p-3 sm:p-6 md:p-8 bg-[#09090b] overflow-auto">
+        <div className="w-full max-w-5xl h-full flex flex-col items-center justify-center min-h-0">
           <MediaPlayer
             url={streamUrl}
             name={fileName}
@@ -275,13 +310,13 @@ export function ShareViewerPage() {
         </div>
       </main>
 
-      {/* ─── Footer: Telemetry ─────────────── */}
-      <footer className="border-t border-[#1f1f1f] bg-[#0c0c0c] py-2.5 px-4 md:px-6 text-[12px] text-[#737373] font-mono flex flex-col sm:flex-row items-center justify-between gap-2">
+      {/* ─── Footer: Minimal Google Drive / Axiom Telemetry ─── */}
+      <footer className="h-9 border-t border-[#1a1a1a] bg-[#0c0c0c] px-4 md:px-6 text-[12px] text-[#737373] font-sans flex items-center justify-between shrink-0 select-none">
         <div className="flex items-center gap-2">
           {params.isPublic ? (
             <>
               <Globe className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Permanent Public CDN Object &bull; Zero Ticket Overhead</span>
+              <span>Public CDN Object &bull; Zero Ticket Overhead</span>
             </>
           ) : (
             <>
@@ -292,9 +327,15 @@ export function ShareViewerPage() {
         </div>
 
         <div className="flex items-center gap-3">
-          <span>Namespace: {params.namespace}</span>
+          <span>Namespace: <span className="font-mono text-[#a3a3a3]">{params.namespace}</span></span>
           <span>&bull;</span>
-          <span>{formatBytes(fileSize)}</span>
+          <span className="font-mono text-[#a3a3a3]">{formatBytes(fileSize)}</span>
+          {contentType && (
+            <>
+              <span className="hidden sm:inline">&bull;</span>
+              <span className="font-mono text-[#8c8c8c] hidden sm:inline">{contentType}</span>
+            </>
+          )}
         </div>
       </footer>
     </div>

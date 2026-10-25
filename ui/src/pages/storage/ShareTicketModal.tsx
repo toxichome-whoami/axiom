@@ -348,13 +348,13 @@ export function ShareTicketModal({
                     Public CDN URL
                   </label>
                   <a
-                    href={publicCdnUrl}
+                    href={`/system/preview?ns=${encodeURIComponent(namespace)}&key=${encodeURIComponent(item.fullKey)}`}
                     target="_blank"
                     rel="noreferrer"
-                    className="flex items-center gap-1 text-[12px] font-sans text-blue-400 hover:text-blue-300 transition-colors"
+                    className="flex items-center gap-1.5 text-[13px] font-sans text-neutral-400 hover:text-white transition-colors"
                   >
                     <span>Open in Browser</span>
-                    <ExternalLink className="w-3 h-3" />
+                    <ExternalLink className="w-3.5 h-3.5" />
                   </a>
                 </div>
                 <div className="flex items-center gap-2">
