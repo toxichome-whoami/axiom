@@ -5,7 +5,7 @@
  * Invariants: Recursively renders virtual folders and blobs with collapsible hierarchy.
  */
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   ChevronRight,
   ChevronDown,
@@ -15,6 +15,7 @@ import {
   Upload,
   RefreshCw,
   FolderTree as TreeIcon,
+  Loader2,
 } from 'lucide-react';
 import { BlobEntry } from '../../types';
 import { StorageItem } from './types';
@@ -210,6 +211,9 @@ export interface FileTreeProps {
   isLoading?: boolean;
   onClearSelection?: () => void;
   onPreviewFile?: (fileItem: StorageItem) => void;
+  hasMore?: boolean;
+  isLoadingMore?: boolean;
+  onLoadMore?: () => void;
 }
 
 export function FileTree({
@@ -233,6 +237,9 @@ export function FileTree({
   canDropOnFolder,
   isLoading = false,
   onClearSelection,
+  hasMore = false,
+  isLoadingMore = false,
+  onLoadMore,
 }: FileTreeProps) {
   const treeNodes = useMemo(() => buildFileTree(blobs), [blobs]);
 
@@ -265,6 +272,27 @@ export function FileTree({
       // Ignore storage errors
     }
   }, [expandedPaths, activeNamespace]);
+
+  // Infinite scroll sentinel observer for loading more files in large trees
+  const treeSentinelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!hasMore || isLoadingMore || !onLoadMore) return;
+    const sentinel = treeSentinelRef.current;
+    if (!sentinel) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) {
+          onLoadMore();
+        }
+      },
+      { rootMargin: '200px' }
+    );
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [hasMore, isLoadingMore, onLoadMore]);
 
   // Automatically expand parent path when currentPrefix changes
   useEffect(() => {
@@ -542,6 +570,13 @@ export function FileTree({
             onClearSelection?.();
           }
         }}
+        onScroll={(e) => {
+          if (!hasMore || isLoadingMore || !onLoadMore) return;
+          const target = e.currentTarget;
+          if (target.scrollHeight - target.scrollTop - target.clientHeight < 200) {
+            onLoadMore();
+          }
+        }}
         className="flex-1 overflow-auto divide-y divide-[#141414] select-none font-sans scrollbar-thin scrollbar-thumb-[#262626] scrollbar-track-transparent"
       >
         <div className="min-w-full inline-block align-top">
@@ -569,7 +604,24 @@ export function FileTree({
               No files or folders yet.
             </div>
           ) : (
-            treeNodes.map((node) => renderNode(node, 0))
+            <>
+              {treeNodes.map((node) => renderNode(node, 0))}
+              {hasMore && (
+                <div
+                  ref={treeSentinelRef}
+                  className="py-2 px-3 flex items-center justify-center gap-2 text-[12px] text-[#8c8c8c] font-sans border-t border-[#141414]"
+                >
+                  {isLoadingMore ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-400" />
+                      <span>Loading more items...</span>
+                    </>
+                  ) : (
+                    <span className="opacity-0 pointer-events-none">Load more</span>
+                  )}
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>

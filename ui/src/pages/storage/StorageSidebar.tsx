@@ -51,6 +51,8 @@ export interface StorageSidebarProps {
   onDropOnFolder: (targetFolderKey: string) => void;
   canDropOnFolder: (dragged: StorageItem | null, targetFolderKey: string) => boolean;
   onClearSelection?: () => void;
+  isLoadingMore?: boolean;
+  onLoadMore?: () => void;
 }
 
 export function StorageSidebar({
@@ -67,6 +69,8 @@ export function StorageSidebar({
   quotaUsedPercent,
   realObjectsCount,
   hasMore,
+  isLoadingMore,
+  onLoadMore,
   blobs,
   currentPrefix,
   selectedItem,
@@ -274,6 +278,9 @@ export function StorageSidebar({
           canDropOnFolder={canDropOnFolder}
           isLoading={isLoading}
           onClearSelection={onClearSelection}
+          hasMore={hasMore}
+          isLoadingMore={isLoadingMore}
+          onLoadMore={onLoadMore}
         />
       </div>
 

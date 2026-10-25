@@ -1838,6 +1838,8 @@ export function StoragePage() {
         quotaUsedPercent={quotaUsedPercent}
         realObjectsCount={realObjectsCount}
         hasMore={Boolean(nextCursor)}
+        isLoadingMore={isLoadingMore}
+        onLoadMore={handleLoadMore}
         blobs={blobs}
         currentPrefix={currentPrefix}
         selectedItem={selectedItem}
