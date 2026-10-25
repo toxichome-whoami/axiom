@@ -293,10 +293,10 @@ export function StorageListView({
                 {/* Column 2: Storage Tier */}
                 <td className="px-3">
                   {isFolder ? (
-                    <span className="text-[13px] text-[#888888] font-mono">dir</span>
+                    <span className="text-[13px] text-[#888888] font-sans">dir</span>
                   ) : (
                     <span
-                      className={`inline-flex items-center px-1.5 py-0.5 rounded-[4px] text-[12px] font-medium font-mono ${
+                      className={`inline-flex items-center px-1.5 py-0.5 rounded-[4px] text-[12px] font-medium font-sans ${
                         item.inline
                           ? 'bg-amber-950/30 text-amber-400 border border-amber-900/40'
                           : 'bg-zinc-900 text-zinc-400 border border-zinc-800'
@@ -308,14 +308,14 @@ export function StorageListView({
                 </td>
 
                 {/* Column 3: Payload Size */}
-                <td className="px-3 text-right tabular-nums text-[13px] text-[#888888] font-mono">
+                <td className="px-3 text-right tabular-nums text-[13px] text-[#888888] font-sans">
                   {isFolder
                     ? `${item.itemCount || 0} items`
                     : formatBytes(item.size || 0)}
                 </td>
 
                 {/* Column 4: Uploaded / Created Date */}
-                <td className="px-4 text-right tabular-nums text-[13px] text-[#888888] font-mono hidden sm:table-cell">
+                <td className="px-4 text-right tabular-nums text-[13px] text-[#888888] font-sans hidden sm:table-cell">
                   {item.created_at
                     ? new Date(item.created_at * 1000).toLocaleDateString()
                     : '—'}

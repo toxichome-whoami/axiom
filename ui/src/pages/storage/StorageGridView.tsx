@@ -112,7 +112,7 @@ export function StorageGridView({
             <span className="text-[15px] font-medium text-white">
               Folders
             </span>
-            <span className="text-[12px] font-mono px-2 py-0.5 rounded-[4px] bg-[#141414] border border-[#242424] text-[#888888] tabular-nums">
+            <span className="text-[12px] font-sans px-2 py-0.5 rounded-[4px] bg-[#141414] border border-[#242424] text-[#888888] tabular-nums">
               {folderItems.length}
             </span>
           </div>
@@ -265,7 +265,7 @@ export function StorageGridView({
             <span className="text-[15px] font-medium text-white">
               Files
             </span>
-            <span className="text-[12px] font-mono px-2 py-0.5 rounded-[4px] bg-[#141414] border border-[#242424] text-[#888888] tabular-nums">
+            <span className="text-[12px] font-sans px-2 py-0.5 rounded-[4px] bg-[#141414] border border-[#242424] text-[#888888] tabular-nums">
               {fileItems.length}
             </span>
           </div>
@@ -372,11 +372,11 @@ export function StorageGridView({
                   </div>
 
                   {/* Bottom row: Size & Storage Tier pill (edge-to-edge card line) */}
-                  <div className="-mx-3.5 px-3.5 pt-2.5 border-t border-[#1e1e1e] flex items-center justify-between text-xs text-[#888888] tabular-nums font-mono">
+                  <div className="-mx-3.5 px-3.5 pt-2.5 border-t border-[#1e1e1e] flex items-center justify-between text-xs text-[#888888] tabular-nums font-sans">
                     <span>{formatBytes(item.size || 0)}</span>
 
                     <span
-                      className={`inline-flex items-center px-1.5 py-0.5 rounded-[4px] text-[11px] font-medium font-mono ${
+                      className={`inline-flex items-center px-1.5 py-0.5 rounded-[4px] text-[11px] font-medium font-sans ${
                         item.inline
                           ? 'bg-amber-950/30 text-amber-400 border border-amber-900/40'
                           : 'bg-zinc-900 text-zinc-400 border border-zinc-800'
