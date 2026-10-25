@@ -48,53 +48,6 @@ sequenceDiagram
 
 Axiom enforces a strict separation of concerns between its **Data Plane** (`/api/v1`) and its **Admin Control Plane** (`/admin/v1`):
 
-```mermaid
-flowchart TD
-    subgraph ClientLayer["Clients & Workloads"]
-        AppClient["Application Clients & SDKs"]
-        AgentClient["AI Agents & MCP Tool Callers"]
-        AdminUser["DevOps, Site Reliability & Web UI"]
-    end
-
-    subgraph AxiomGateway["Axiom Unified Gateway (Port 4500)"]
-        subgraph DataPlane["Data Plane (/api/v1)"]
-            direction TB
-            DBData["Database Data Plane (/api/v1/db)
-• AST-Validated Parameterized Queries
-• Keyset Row Pagination & JSON Filters
-• Dynamic Column DDL (:column_name)"]
-            BlobData["Blob Storage Engine (/api/v1/blobs)
-• Content-Addressed Storage (CAS)
-• Byte-Range CDN & Streaming (304 ETag)
-• Resumable Chunked & S3-Style Uploads
-• Scoped Capability Tickets & Quota Headroom"]
-        end
-
-        subgraph ControlPlane["Admin Control Plane (/admin/v1)"]
-            direction TB
-            AdminAuth["Lifecycle & Setup
-• First-Run Provisioning Wizard (/setup)
-• Session Auth & Cookie Minting (/auth)"]
-            SecurityRBAC["Security & Audit
-• API Key Lifecycle & Rotation (/keys)
-• Fine-Grained RBAC Policies (/roles)
-• Tamper-Evident Ledger (/audit)"]
-            PoolsTopology["Infrastructure & Mesh
-• Connection Pool Topology (/databases)
-• L1/L2 Query Cache Flushing (/cache)
-• Inter-Node P2P Gossip Mesh (/cluster)"]
-            StorageGov["Storage Governance
-• Quotas & Namespaces (/blobs/namespaces)
-• Global Bit-Rot Scrub & Garbage Sweep (/blobs)
-• Emergency Ticket Revocation (/blobs/tickets)"]
-        end
-    end
-
-    AppClient -->|"API Key (X-Axiom-Key)"| DataPlane
-    AgentClient -->|"API Key / MCP Session"| DataPlane
-    AdminUser -->|"Admin Session Token"| ControlPlane
-```
-
 ### Data Plane URL Architecture (`/api/v1`)
 * **Authentication**: Scoped API Key (`X-Axiom-Key`), Compatibility Key (`X-Api-Key`), or User Session.
 * **Scope**: Serves high-throughput application queries, row mutations, byte-range media streaming, and resumable uploads.
