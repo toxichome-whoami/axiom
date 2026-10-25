@@ -780,9 +780,12 @@ Content-Type: application/json
 
 ---
 
-### Moving, Copying, and Prefix Deletion
+### Moving, Copying, and Batch Deletion
 > [!NOTE]
-> Moving, copying, and recursive directory prefix deletions are administrative operations guarded by session authentication and audit logging. Refer to [Blob Storage Administration (`/admin/v1/blobs`)](#blob-storage-administration-adminv1blobs) below (`POST /admin/v1/blobs/move`, `POST /admin/v1/blobs/copy`, and `POST /admin/v1/blobs/delete-prefix`).
+> Moving, copying, and recursive directory prefix deletions are first-class Data Plane operations guarded by policy evaluation and audit logging:
+> - `POST /api/v1/blobs/objects/copy` (or scoped `/api/v1/blobs/objects/:namespace/copy`)
+> - `POST /api/v1/blobs/objects/move` (or scoped `/api/v1/blobs/objects/:namespace/move`)
+> - `POST /api/v1/blobs/objects/:namespace/batch-delete` (supports key lists and recursive directory prefixes)
 
 ---
 
@@ -2027,95 +2030,6 @@ Content-Type: application/json
 
 ---
 
-### Copy Object / Prefix (`POST /admin/v1/blobs/copy`)
-**Request**:
-```http
-POST /admin/v1/blobs/copy
-Authorization: Bearer <SESSION_TOKEN>
-Content-Type: application/json
-```
-```json
-{
-  "src_namespace": "invoices",
-  "src_key": "2026/inv_001.pdf",
-  "dest_namespace": "invoices",
-  "dest_key": "archive/2026/inv_001.pdf",
-  "is_prefix": false
-}
-```
-**Response (`200 OK`)**:
-```json
-{
-  "success": true,
-  "data": {
-    "key": "archive/2026/inv_001.pdf",
-    "namespace": "invoices",
-    "size": 1048576,
-    "content_type": "application/pdf"
-  },
-  "error": null
-}
-```
-
----
-
-### Move / Rename Object (`POST /admin/v1/blobs/move`)
-**Request**:
-```http
-POST /admin/v1/blobs/move
-Authorization: Bearer <SESSION_TOKEN>
-Content-Type: application/json
-```
-```json
-{
-  "src_namespace": "invoices",
-  "src_key": "draft_inv.pdf",
-  "dest_key": "final_inv_001.pdf"
-}
-```
-**Response (`200 OK`)**:
-```json
-{
-  "success": true,
-  "data": {
-    "key": "final_inv_001.pdf",
-    "namespace": "invoices",
-    "size": 1048576,
-    "content_type": "application/pdf"
-  },
-  "error": null
-}
-```
-
----
-
-### Delete Prefix Tree (`POST /admin/v1/blobs/delete-prefix`)
-Recursively deletes an entire directory tree or key prefix within a namespace.
-**Request**:
-```http
-POST /admin/v1/blobs/delete-prefix
-Authorization: Bearer <SESSION_TOKEN>
-Content-Type: application/json
-```
-```json
-{
-  "namespace": "invoices",
-  "prefix": "2024/temporary/"
-}
-```
-**Response (`200 OK`)**:
-```json
-{
-  "success": true,
-  "data": {
-    "deleted_objects": 42
-  },
-  "error": null
-}
-```
-
----
-
 ### Update Storage Namespace (`PATCH /admin/v1/blobs/namespaces/:namespace`)
 **Request**:
 ```http
@@ -2150,46 +2064,6 @@ Content-Type: application/json
   "success": true,
   "data": {
     "deleted": "invoices"
-  },
-  "error": null
-}
-```
-
----
-
-### Admin Delete Prefix (`POST /admin/v1/blobs/delete-prefix`)
-**Request**:
-```http
-POST /admin/v1/blobs/delete-prefix
-Authorization: Bearer <SESSION_TOKEN>
-Content-Type: application/json
-```
-```json
-{
-  "namespace": "invoices",
-  "prefix": "temp/"
-}
-```
-**Response (`200 OK`)**:
-```json
-{
-  "success": true,
-  "data": {
-    "deleted_objects": 18
-  },
-  "error": null
-}
-```
-
----
-
-### Verify Object Hash Integrity (`POST /admin/v1/blobs/verify/:namespace/*key`)
-**Response (`200 OK`)**:
-```json
-{
-  "success": true,
-  "data": {
-    "valid": true
   },
   "error": null
 }

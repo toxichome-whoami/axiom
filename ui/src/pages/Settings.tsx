@@ -138,16 +138,16 @@ export function Settings() {
   ];
 
   const storageEndpoints = [
-    { method: 'GET', path: '/api/v1/blobs/{namespace}', desc: 'List stored objects and virtual folders' },
-    { method: 'GET', path: '/api/v1/blobs/{namespace}/{key}', desc: 'Download object content' },
+    { method: 'GET', path: '/api/v1/blobs/objects/{namespace}', desc: 'List stored objects and virtual folders' },
+    { method: 'GET', path: '/api/v1/blobs/objects/{namespace}/{key}', desc: 'Download object content' },
     { method: 'GET', path: '/api/v1/blobs/public/{namespace}/{key}', desc: 'Direct static CDN media with 304 caching' },
-    { method: 'PUT', path: '/api/v1/blobs/{namespace}/{key}', desc: 'Upload or overwrite object' },
-    { method: 'DELETE', path: '/api/v1/blobs/{namespace}/{key}', desc: 'Delete stored object' },
-    { method: 'POST', path: '/api/v1/blobs/{namespace}/delete-objects', desc: 'Batch delete multiple objects' },
+    { method: 'PUT', path: '/api/v1/blobs/objects/{namespace}/{key}', desc: 'Upload or overwrite object' },
+    { method: 'DELETE', path: '/api/v1/blobs/objects/{namespace}/{key}', desc: 'Delete stored object' },
+    { method: 'POST', path: '/api/v1/blobs/objects/{namespace}/batch-delete', desc: 'Batch delete multiple objects or prefix' },
+    { method: 'POST', path: '/api/v1/blobs/objects/copy', desc: 'Copy object or prefix tree' },
+    { method: 'POST', path: '/api/v1/blobs/objects/move', desc: 'Move or rename object' },
+    { method: 'POST', path: '/api/v1/blobs/objects/{namespace}/verify/{key}', desc: 'Verify BLAKE3 cryptographic checksum' },
     { method: 'GET', path: '/admin/v1/blobs/namespaces', desc: 'List storage namespaces with quota telemetry' },
-    { method: 'POST', path: '/admin/v1/blobs/copy', desc: 'Copy object or prefix tree' },
-    { method: 'POST', path: '/admin/v1/blobs/move', desc: 'Move or rename object' },
-    { method: 'POST', path: '/admin/v1/blobs/verify/{namespace}/{key}', desc: 'Verify BLAKE3 cryptographic checksum' },
   ];
 
   const renderPathWithParams = (path: string) => {
