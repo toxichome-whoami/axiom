@@ -240,14 +240,23 @@ export function MediaPlayer({
   };
 
   // ─────────────────────────────────────────────────────────────
-  // 3. IMAGE VIEWER STATE & WHEEL ZOOM
+  // 3. IMAGE VIEWER STATE, WHEEL ZOOM & PAN/DRAG
   // ─────────────────────────────────────────────────────────────
   const [zoomLevel, setZoomLevel] = useState(1);
+  const [panPosition, setPanPosition] = useState({ x: 0, y: 0 });
+  const [isDraggingImage, setIsDraggingImage] = useState(false);
   const [imgNaturalSize, setImgNaturalSize] = useState<{ width: number; height: number } | null>(null);
   const imgViewportRef = useRef<HTMLDivElement | null>(null);
-  const isDraggingRef = useRef(false);
-  const dragStartRef = useRef({ x: 0, y: 0, scrollLeft: 0, scrollTop: 0 });
+  const dragStartPosRef = useRef({ x: 0, y: 0, startPanX: 0, startPanY: 0 });
 
+  // Reset zoom & pan when image url changes
+  useEffect(() => {
+    setZoomLevel(1);
+    setPanPosition({ x: 0, y: 0 });
+    setIsDraggingImage(false);
+  }, [url]);
+
+  // Wheel zoom
   useEffect(() => {
     const el = imgViewportRef.current;
     if (!el || !isImage) return;
@@ -257,7 +266,7 @@ export function MediaPlayer({
       const delta = e.deltaY < 0 ? 0.2 : -0.2;
       setZoomLevel((prev) => {
         const next = Math.round((prev + delta) * 100) / 100;
-        return Math.min(Math.max(0.25, next), 5.0);
+        return Math.min(Math.max(0.25, next), 6.0);
       });
     };
 
@@ -266,6 +275,44 @@ export function MediaPlayer({
       el.removeEventListener('wheel', onWheel);
     };
   }, [isImage]);
+
+  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return; // Only primary mouse button
+    if ((e.target as HTMLElement).closest('button')) return; // Ignore toolbar buttons
+    e.preventDefault();
+    setIsDraggingImage(true);
+    dragStartPosRef.current = {
+      x: e.clientX,
+      y: e.clientY,
+      startPanX: panPosition.x,
+      startPanY: panPosition.y,
+    };
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      // Ignored
+    }
+  };
+
+  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isDraggingImage) return;
+    const dx = e.clientX - dragStartPosRef.current.x;
+    const dy = e.clientY - dragStartPosRef.current.y;
+    setPanPosition({
+      x: Math.round(dragStartPosRef.current.startPanX + dx),
+      y: Math.round(dragStartPosRef.current.startPanY + dy),
+    });
+  };
+
+  const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isDraggingImage) return;
+    setIsDraggingImage(false);
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch {
+      // Ignored
+    }
+  };
 
   // ─────────────────────────────────────────────────────────────
   // 4. CODE & TEXT PREVIEW
@@ -673,8 +720,11 @@ export function MediaPlayer({
           <div className="w-px h-4 bg-[#262626] mx-0.5" />
           <button
             type="button"
-            onClick={() => setZoomLevel(1)}
-            title="Fit to Screen"
+            onClick={() => {
+              setZoomLevel(1);
+              setPanPosition({ x: 0, y: 0 });
+            }}
+            title="Fit to Screen (Reset pan and zoom)"
             className="px-2 h-7 flex items-center justify-center rounded-[4px] hover:bg-[#222222] text-[12px] font-medium text-[#cccccc] hover:text-white transition-colors cursor-pointer"
           >
             Fit
@@ -694,34 +744,23 @@ export function MediaPlayer({
           )}
         </div>
 
-        {/* Image viewport with checkerboard pattern for alpha transparency & wheel zoom */}
+        {/* Image viewport with checkerboard pattern for alpha transparency, wheel zoom & drag to move */}
         <div
           ref={imgViewportRef}
-          onMouseDown={(e) => {
-            if (!imgViewportRef.current) return;
-            isDraggingRef.current = true;
-            dragStartRef.current = {
-              x: e.clientX,
-              y: e.clientY,
-              scrollLeft: imgViewportRef.current.scrollLeft,
-              scrollTop: imgViewportRef.current.scrollTop,
-            };
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={handlePointerUp}
+          onDoubleClick={() => {
+            if (zoomLevel !== 1 || panPosition.x !== 0 || panPosition.y !== 0) {
+              setZoomLevel(1);
+              setPanPosition({ x: 0, y: 0 });
+            } else {
+              setZoomLevel(2);
+            }
           }}
-          onMouseMove={(e) => {
-            if (!isDraggingRef.current || !imgViewportRef.current) return;
-            const dx = e.clientX - dragStartRef.current.x;
-            const dy = e.clientY - dragStartRef.current.y;
-            imgViewportRef.current.scrollLeft = dragStartRef.current.scrollLeft - dx;
-            imgViewportRef.current.scrollTop = dragStartRef.current.scrollTop - dy;
-          }}
-          onMouseUp={() => {
-            isDraggingRef.current = false;
-          }}
-          onMouseLeave={() => {
-            isDraggingRef.current = false;
-          }}
-          className={`w-full flex-1 flex items-center justify-center p-6 overflow-auto max-h-[72vh] select-none ${
-            zoomLevel > 1 ? 'cursor-grab active:cursor-grabbing' : 'cursor-default'
+          className={`w-full flex-1 flex items-center justify-center p-6 overflow-hidden max-h-[72vh] select-none touch-none ${
+            isDraggingImage ? 'cursor-grabbing' : 'cursor-grab'
           }`}
           style={{
             backgroundImage:
@@ -733,13 +772,17 @@ export function MediaPlayer({
           <img
             src={url}
             alt={name}
-            style={{ transform: `scale(${zoomLevel})`, transformOrigin: 'center center' }}
+            style={{
+              transform: `translate3d(${panPosition.x}px, ${panPosition.y}px, 0px) scale(${zoomLevel})`,
+              transformOrigin: 'center center',
+              transition: isDraggingImage ? 'none' : 'transform 100ms ease-out',
+            }}
             draggable={false}
             onLoad={(e) => {
               const img = e.currentTarget;
               setImgNaturalSize({ width: img.naturalWidth, height: img.naturalHeight });
             }}
-            className="max-h-[65vh] w-auto max-w-full object-contain transition-transform duration-100 select-none shadow-2xl rounded-[4px]"
+            className="max-h-[65vh] w-auto max-w-full object-contain select-none shadow-2xl rounded-[4px] pointer-events-none"
           />
         </div>
 
