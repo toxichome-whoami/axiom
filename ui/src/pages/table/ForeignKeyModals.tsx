@@ -25,6 +25,7 @@ import {
 import { api } from '../../api/client';
 import { ColumnInfoApi, ForeignKeyInfoApi } from '../../types';
 import { SlideOver } from '../../components/ui/SlideOver';
+import { CustomSelect } from '../../components/shared/CustomSelect';
 import { getDefaultColumnWidth } from './format';
 
 export interface ForeignKeyRecordPreviewPopoverProps {
@@ -389,29 +390,28 @@ export function ForeignKeyPickerModal({
                   ref={sortPopoverRef}
                   className="absolute left-0 top-full mt-1.5 w-64 bg-[#111111] border border-[#262626] rounded-[8px] shadow-2xl p-3 z-50 font-sans"
                 >
-                  <div className="text-[13px] font-semibold text-white mb-2">Sort Records</div>
-                  <div className="space-y-2">
-                    <select
+                  <div className="text-[13px] font-semibold text-white mb-2.5">Sort Records</div>
+                  <div className="space-y-2.5">
+                    <CustomSelect
+                      size="sm"
                       value={sortCol || ''}
-                      onChange={(e) => setSortCol(e.target.value || null)}
-                      className="w-full h-8 px-2 bg-[#161616] border border-[#2c2c2c] rounded text-[13px] text-white outline-none cursor-pointer"
-                    >
-                      <option value="">Select column...</option>
-                      {refColumns.map((c) => (
-                        <option key={c.name} value={c.name}>
-                          {c.name}
-                        </option>
-                      ))}
-                    </select>
+                      onChange={(val) => setSortCol(val || null)}
+                      placeholder="Select column..."
+                      options={[
+                        { value: '', label: 'Select column...' },
+                        ...refColumns.map((c) => ({ value: c.name, label: c.name })),
+                      ]}
+                      menuWidth="w-full"
+                    />
 
                     <div className="flex gap-2">
                       <button
                         type="button"
                         onClick={() => setSortOrder('asc')}
-                        className={`flex-1 h-7 rounded text-[12px] font-medium border cursor-pointer ${
+                        className={`flex-1 h-8 rounded-[6px] text-[12px] font-medium border transition-colors cursor-pointer ${
                           sortOrder === 'asc'
-                            ? 'bg-blue-600/20 border-blue-500 text-blue-400'
-                            : 'bg-[#161616] border-[#2c2c2c] text-[#8c8c8c]'
+                            ? 'bg-[#1d4ed8]/20 border-[#3b82f6]/50 text-[#60a5fa]'
+                            : 'bg-[#141414] border-[#2c2c2c] text-[#8c8c8c] hover:border-[#383838] hover:text-white'
                         }`}
                       >
                         ASC
@@ -419,24 +419,25 @@ export function ForeignKeyPickerModal({
                       <button
                         type="button"
                         onClick={() => setSortOrder('desc')}
-                        className={`flex-1 h-7 rounded text-[12px] font-medium border cursor-pointer ${
+                        className={`flex-1 h-8 rounded-[6px] text-[12px] font-medium border transition-colors cursor-pointer ${
                           sortOrder === 'desc'
-                            ? 'bg-blue-600/20 border-blue-500 text-blue-400'
-                            : 'bg-[#161616] border-[#2c2c2c] text-[#8c8c8c]'
+                            ? 'bg-[#1d4ed8]/20 border-[#3b82f6]/50 text-[#60a5fa]'
+                            : 'bg-[#141414] border-[#2c2c2c] text-[#8c8c8c] hover:border-[#383838] hover:text-white'
                         }`}
                       >
                         DESC
                       </button>
                     </div>
 
-                    <div className="flex items-center justify-between pt-1">
+                    <div className="flex items-center justify-between pt-1.5">
                       <button
                         type="button"
                         onClick={() => {
                           setSortCol(null);
                           setShowSortPopover(false);
+                          loadData(null);
                         }}
-                        className="text-[12px] text-[#8c8c8c] hover:text-white cursor-pointer"
+                        className="text-[12px] font-medium text-[#8c8c8c] hover:text-white transition-colors cursor-pointer"
                       >
                         Reset
                       </button>
@@ -446,7 +447,7 @@ export function ForeignKeyPickerModal({
                           setShowSortPopover(false);
                           loadData(null);
                         }}
-                        className="px-2.5 py-1 bg-[#222222] hover:bg-[#2a2a2a] border border-[#333333] rounded text-[12px] font-medium text-white transition-colors cursor-pointer"
+                        className="px-2.5 py-1 bg-[#222222] hover:bg-[#2a2a2a] border border-[#333333] rounded-[6px] text-[12px] font-medium text-white transition-colors cursor-pointer"
                       >
                         Apply
                       </button>
