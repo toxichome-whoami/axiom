@@ -2167,18 +2167,10 @@ impl MetadataStore {
         Ok(())
     }
 
-    /// Queries paginated audit log entries ordered chronologically descending (newest first).
+    /// Returns the total count of audit log entries, optionally matching a search query.
     /// CONTRACT:
-    ///  - Precondition: `limit` clamped to safe bounds (max 500) to prevent memory exhaustion.
-    ///  - Returns: `Result<Vec<AuditRecord>, String>` containing historical audit rows.
-    ///  - Side effects: None (read-only SQLite query).
-    ///  - Idempotency: Yes.
-    /// Retrieves paginated audit log entries documenting system administrative actions.
-    /// CONTRACT:
-    ///  - Precondition: `limit` capped at 500 rows maximum.
-    ///  - Keyset cursor: If `before_id` is provided, executes an O(1) B-tree seek (`WHERE id < ?1 ORDER BY id DESC LIMIT ?2`).
-    ///    Otherwise falls back to standard offset pagination (`LIMIT ?1 OFFSET ?2`).
-    ///  - Returns: `Result<Vec<AuditRecord>, String>` containing historical audit rows.
+    ///  - Precondition: None.
+    ///  - Returns: `Result<i64, String>` total count of matching audit rows.
     ///  - Side effects: None (read-only SQLite query).
     ///  - Idempotency: Yes.
     pub async fn count_audit_log(search: Option<&str>) -> Result<i64, String> {
@@ -2211,6 +2203,14 @@ impl MetadataStore {
         Ok(count)
     }
 
+    /// Retrieves paginated audit log entries documenting system administrative actions.
+    /// CONTRACT:
+    ///  - Precondition: `limit` capped at 500 rows maximum.
+    ///  - Keyset cursor: If `before_id` is provided, executes an O(1) B-tree seek (`WHERE id < ?1 ORDER BY id DESC LIMIT ?2`).
+    ///    Otherwise falls back to standard offset pagination (`LIMIT ?1 OFFSET ?2`).
+    ///  - Returns: `Result<Vec<AuditRecord>, String>` containing historical audit rows.
+    ///  - Side effects: None (read-only SQLite query).
+    ///  - Idempotency: Yes.
     pub async fn query_audit_log_cursor(
         limit: usize,
         offset: usize,
