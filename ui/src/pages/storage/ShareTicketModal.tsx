@@ -221,13 +221,6 @@ export function ShareTicketModal({
   // Public CDN URL constructions
   const sanitizedKeyPath = item.fullKey.split('/').map(encodeURIComponent).join('/');
   const publicCdnUrl = `${window.location.origin}/api/v1/blobs/public/${encodeURIComponent(namespace)}/${sanitizedKeyPath}`;
-  const publicViewerUrl = `${window.location.origin}/system/preview?ns=${encodeURIComponent(namespace)}&key=${encodeURIComponent(item.fullKey)}`;
-
-  // Embed Snippets for Public Objects
-  const publicVideoSnippet = `<video controls preload="metadata" src="${publicCdnUrl}"></video>`;
-  const publicAudioSnippet = `<audio controls preload="metadata" src="${publicCdnUrl}"></audio>`;
-  const publicImageSnippet = `<img src="${publicCdnUrl}" alt="${item.name}" />`;
-  const publicCurlSnippet = `curl -O "${publicCdnUrl}"`;
 
   // Signed Capability URLs (for private namespaces or advanced expiring links)
   const rawTicketUrl = generatedTicket
@@ -391,79 +384,6 @@ export function ShareTicketModal({
                     )}
                   </Button>
                 </div>
-              </div>
-
-              {/* In-App Branded Public Preview Link */}
-              <div>
-                <label className="block text-[13px] font-sans font-medium text-[#cccccc] mb-1.5">
-                  Interactive Viewer URL
-                </label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="text"
-                    readOnly
-                    value={publicViewerUrl}
-                    className="flex-1 h-8 px-3 rounded-[6px] bg-[#141414] border border-[#262626] text-white font-mono text-[12px] select-all outline-none"
-                  />
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => copyToClipboard(publicViewerUrl, 'public-viewer-url')}
-                    className="h-8 px-3"
-                  >
-                    {copiedKey === 'public-viewer-url' ? (
-                      <>
-                        <Check className="w-3.5 h-3.5 text-emerald-400" />
-                        <span>Copied</span>
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="w-3.5 h-3.5" />
-                        <span>Copy</span>
-                      </>
-                    )}
-                  </Button>
-                </div>
-              </div>
-
-              {/* HTML Embed Snippet */}
-              <div className="p-3 rounded-[6px] bg-[#121212] border border-[#222222] space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-1.5 text-[12px] font-sans font-medium text-[#cccccc]">
-                    <Code2 className="w-3.5 h-3.5 text-blue-400" />
-                    <span>
-                      {isVideo ? 'HTML5 Video Embed' : isAudio ? 'HTML5 Audio Embed' : isImage ? 'HTML Image Tag' : 'cURL Download Command'}
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      copyToClipboard(
-                        isVideo
-                          ? publicVideoSnippet
-                          : isAudio
-                          ? publicAudioSnippet
-                          : isImage
-                          ? publicImageSnippet
-                          : publicCurlSnippet,
-                        'public-embed'
-                      )
-                    }
-                    className="h-6 px-2 rounded-[4px] bg-[#181818] hover:bg-[#222222] border border-[#2a2a2a] text-[11px] font-sans font-medium text-[#cccccc] hover:text-white transition-colors cursor-pointer"
-                  >
-                    {copiedKey === 'public-embed' ? 'Copied' : 'Copy'}
-                  </button>
-                </div>
-                <pre className="p-2 rounded-[4px] bg-[#0a0a0a] border border-[#1e1e1e] text-[11px] font-mono text-[#a3a3a3] overflow-x-auto whitespace-pre-wrap break-all select-all">
-                  {isVideo
-                    ? publicVideoSnippet
-                    : isAudio
-                    ? publicAudioSnippet
-                    : isImage
-                    ? publicImageSnippet
-                    : publicCurlSnippet}
-                </pre>
               </div>
 
               <div className="-mx-5 px-5 pt-3.5 border-t border-[#1f1f1f] flex items-center justify-end">
