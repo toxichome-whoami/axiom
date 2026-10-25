@@ -8,7 +8,7 @@ import React from 'react';
 import { HardDrive, FolderOpen, Search, Plus, Upload } from 'lucide-react';
 
 interface StorageEmptyStateProps {
-  type: 'no-namespaces' | 'no-namespace-selected' | 'empty-folder' | 'no-search-results';
+  type: 'no-namespaces' | 'no-namespace-selected' | 'empty-folder' | 'no-search-results' | 'no-active-links';
   searchQuery?: string;
   onCreateNamespace?: () => void;
   onUpload?: () => void;
@@ -56,6 +56,29 @@ export function StorageEmptyState({
         <p className="text-[13px] text-[#8c8c8c] max-w-xs leading-relaxed">
           Choose a storage namespace from the left sidebar to explore and manage objects.
         </p>
+      </div>
+    );
+  }
+
+  if (type === 'no-active-links') {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center p-12 text-center select-none font-sans">
+        <div className="w-12 h-12 rounded-[10px] bg-[#141414] border border-[#242424] flex items-center justify-center mb-3.5">
+          <Search className="w-6 h-6 text-[#8c8c8c]" />
+        </div>
+        <h4 className="text-[15px] font-medium text-white mb-1.5">No Active Share Links</h4>
+        <p className="text-[13px] text-[#8c8c8c] max-w-xs mb-5 leading-relaxed">
+          No objects in this view currently have active capability share links.
+        </p>
+        {onClearSearch && (
+          <button
+            type="button"
+            onClick={onClearSearch}
+            className="inline-flex items-center gap-2 h-8 px-3.5 rounded-[6px] text-[13px] font-medium text-[#cccccc] hover:text-white bg-[#141414] hover:bg-[#1c1c1c] border border-[#242424] hover:border-[#383838] transition-colors cursor-pointer"
+          >
+            Clear Filter
+          </button>
+        )}
       </div>
     );
   }

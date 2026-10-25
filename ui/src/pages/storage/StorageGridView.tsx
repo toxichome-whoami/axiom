@@ -15,6 +15,7 @@ import {
   HardDrive,
   Check,
   Loader2,
+  Link as LinkIcon,
 } from 'lucide-react';
 import { StorageItem } from './types';
 import { getFileIcon } from './fileIcon';
@@ -32,6 +33,8 @@ export interface StorageGridViewProps {
   onOpenMove: (item: StorageItem) => void;
   onDownload: (key: string) => void;
   onPreviewItem?: (item: StorageItem) => void;
+  onOpenShare?: (item: StorageItem, initialTab?: 'public' | 'create' | 'manage') => void;
+  activeTicketCounts?: Record<string, number>;
   onDelete: (item: StorageItem) => void;
 
   // Drag and drop
@@ -62,6 +65,8 @@ export function StorageGridView({
   onOpenMove,
   onDownload,
   onPreviewItem,
+  onOpenShare,
+  activeTicketCounts,
   onDelete,
   draggedItem,
   draggedItemRef,
@@ -373,7 +378,25 @@ export function StorageGridView({
 
                   {/* Bottom row: Size & Storage Tier pill (edge-to-edge card line) */}
                   <div className="-mx-3.5 px-3.5 pt-2.5 border-t border-[#1e1e1e] flex items-center justify-between text-[12px] text-[#8c8c8c] tabular-nums font-sans font-normal">
-                    <span>{formatBytes(item.size || 0)}</span>
+                    <div className="flex items-center gap-1.5">
+                      <span>{formatBytes(item.size || 0)}</span>
+                      {activeTicketCounts && (activeTicketCounts[item.fullKey] || 0) > 0 && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onOpenShare?.(item, 'manage');
+                          }}
+                          title={`${activeTicketCounts[item.fullKey]} active share link${
+                            activeTicketCounts[item.fullKey] > 1 ? 's' : ''
+                          }. Click to manage.`}
+                          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-[4px] bg-sky-500/10 hover:bg-sky-500/20 border border-sky-500/25 text-sky-400 text-[10.5px] font-sans font-medium transition-colors cursor-pointer"
+                        >
+                          <LinkIcon className="w-2.5 h-2.5" />
+                          <span>{activeTicketCounts[item.fullKey]}</span>
+                        </button>
+                      )}
+                    </div>
 
                     <span
                       className={`inline-flex items-center px-1.5 py-0.5 rounded-[4px] text-[11px] font-medium font-sans ${

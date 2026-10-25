@@ -35,6 +35,8 @@ export interface ShareTicketModalProps {
   item: StorageItem | null;
   namespace: string;
   isPublicNamespace?: boolean;
+  initialTab?: 'public' | 'create' | 'manage';
+  onTicketChanged?: () => void;
 }
 
 const TTL_PRESETS = [
@@ -73,10 +75,12 @@ export function ShareTicketModal({
   item,
   namespace,
   isPublicNamespace = false,
+  initialTab,
+  onTicketChanged,
 }: ShareTicketModalProps) {
-  // If public namespace, default tab is 'public', otherwise 'create'
+  // If public namespace, default tab is 'public', otherwise initialTab or 'create'
   const [activeTab, setActiveTab] = useState<'public' | 'create' | 'manage'>(
-    isPublicNamespace ? 'public' : 'create'
+    initialTab || (isPublicNamespace ? 'public' : 'create')
   );
   const [selectedTtl, setSelectedTtl] = useState<number>(3600);
   const [customHours, setCustomHours] = useState<string>('12');
@@ -140,12 +144,12 @@ export function ShareTicketModal({
       setTicketToDelete(null);
       setResultFormat('viewer');
       setPublicFormat('url');
-      setActiveTab(isPublicNamespace ? 'public' : 'create');
+      setActiveTab(initialTab || (isPublicNamespace ? 'public' : 'create'));
       if (!isPublicNamespace) {
         loadTickets();
       }
     }
-  }, [isOpen, isPublicNamespace, loadTickets]);
+  }, [isOpen, isPublicNamespace, initialTab, loadTickets]);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -179,6 +183,7 @@ export function ShareTicketModal({
       setGeneratedTicket(res);
       setResultFormat('viewer');
       loadTickets();
+      onTicketChanged?.();
     } catch (err: unknown) {
       setCreateError(err instanceof Error ? err.message : 'Failed to create share link');
     } finally {
@@ -191,6 +196,7 @@ export function ShareTicketModal({
     try {
       await api.revokeBlobTicket(signature);
       await loadTickets();
+      onTicketChanged?.();
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : 'Failed to revoke ticket');
     } finally {
@@ -209,6 +215,7 @@ export function ShareTicketModal({
     try {
       await api.deleteBlobTicket(sig);
       await loadTickets();
+      onTicketChanged?.();
       setTicketToDelete(null);
     } catch (err: unknown) {
       setManageError(err instanceof Error ? err.message : 'Failed to delete ticket');

@@ -43,6 +43,9 @@ export interface StorageToolbarProps {
   onShareClick?: (item: StorageItem) => void;
   onCreateUploadLink?: () => void;
   isPublic?: boolean;
+  totalActiveTickets?: number;
+  filterActiveLinksOnly?: boolean;
+  onToggleFilterActiveLinks?: () => void;
 }
 
 export function StorageToolbar({
@@ -67,6 +70,9 @@ export function StorageToolbar({
   onShareClick,
   onCreateUploadLink,
   isPublic,
+  totalActiveTickets,
+  filterActiveLinksOnly,
+  onToggleFilterActiveLinks,
 }: StorageToolbarProps) {
   const [dragOverTargetKey, setDragOverTargetKey] = useState<string | null>(null);
   const [isUploadMenuOpen, setIsUploadMenuOpen] = useState(false);
@@ -298,6 +304,31 @@ export function StorageToolbar({
         >
           <PanelRight className="w-4 h-4" />
         </button>
+
+        {/* Active Capability Links Notification / Filter Pill */}
+        {totalActiveTickets !== undefined && totalActiveTickets > 0 && onToggleFilterActiveLinks && (
+          <button
+            type="button"
+            onClick={onToggleFilterActiveLinks}
+            title={
+              filterActiveLinksOnly
+                ? 'Showing only objects with active share links. Click to show all.'
+                : 'Filter to show objects with active capability share links'
+            }
+            className={`flex items-center gap-1.5 h-8 px-2.5 rounded-[6px] text-[12.5px] font-sans font-medium transition-colors cursor-pointer shrink-0 border ${
+              filterActiveLinksOnly
+                ? 'bg-blue-600 text-white border-blue-500 shadow-xs'
+                : 'bg-blue-500/15 hover:bg-blue-500/25 text-blue-400 hover:text-blue-300 border-blue-500/30'
+            }`}
+          >
+            <LinkIcon className="w-3.5 h-3.5 shrink-0" />
+            <span className="hidden sm:inline">
+              {totalActiveTickets} Active {totalActiveTickets === 1 ? 'Link' : 'Links'}
+            </span>
+            <span className="sm:hidden font-mono text-[12px]">{totalActiveTickets}</span>
+            {filterActiveLinksOnly && <X className="w-3.5 h-3.5 ml-0.5 shrink-0" />}
+          </button>
+        )}
 
         {/* Quick Share Link CTA Button */}
         {selectedFileItem && selectedFileItem.type === 'file' && onShareClick && (

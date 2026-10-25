@@ -38,6 +38,7 @@ export interface StorageDetailsPanelProps {
   onPreview?: (item: StorageItem) => void;
   onDownload: (key: string) => void;
   onShare?: (item: StorageItem) => void;
+  activeTicketCount?: number;
   onCopyPublicUrl?: (item: StorageItem) => void;
   onOpenMove: (item: StorageItem) => void;
   onOpenCopy?: (item: StorageItem) => void;
@@ -59,6 +60,7 @@ export function StorageDetailsPanel({
   onPreview,
   onDownload,
   onShare,
+  activeTicketCount,
   onCopyPublicUrl,
   onOpenMove,
   onOpenCopy,
@@ -241,6 +243,26 @@ export function StorageDetailsPanel({
                     {currentNsInfo?.is_public ? 'Public Direct (CDN)' : 'Private (Signed Ticket Only)'}
                   </span>
                 </div>
+
+                {selectedItem.type === 'file' && !currentNsInfo?.is_public && (
+                  <div className="flex items-center justify-between px-3 py-2">
+                    <span className="text-[#8c8c8c]">Active Share Links</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-white font-medium">
+                        {activeTicketCount || 0} active
+                      </span>
+                      {onShare && (
+                        <button
+                          type="button"
+                          onClick={() => onShare(selectedItem)}
+                          className="text-[12px] text-sky-400 hover:text-sky-300 font-sans hover:underline cursor-pointer"
+                        >
+                          {(activeTicketCount || 0) > 0 ? 'Manage' : 'Create'}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
 
                 {selectedItem.type === 'file' && currentNsInfo?.is_public && (
                   <div className="flex items-center justify-between px-3 py-2 gap-2">

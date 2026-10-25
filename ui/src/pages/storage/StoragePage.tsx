@@ -24,7 +24,7 @@ import {
   Copy,
 } from 'lucide-react';
 import { api } from '../../api/client';
-import { BlobEntry, BlobStats, NamespaceInfo } from '../../types';
+import { BlobEntry, BlobStats, NamespaceInfo, BlobTicket } from '../../types';
 import { StorageItem, StorageViewMode, ClipboardState, StorageTierFilter, UploadFileEntry } from './types';
 import { formatBytes, QUOTA_OPTIONS } from './format';
 import { sanitizeFolder, parentOf, joinKey, validateName } from './paths';
@@ -293,6 +293,9 @@ export function StoragePage() {
 
   const [isShareOpen, setIsShareOpen] = useState(false);
   const [itemToShare, setItemToShare] = useState<StorageItem | null>(null);
+  const [shareInitialTab, setShareInitialTab] = useState<'public' | 'create' | 'manage'>('manage');
+  const [activeTickets, setActiveTickets] = useState<BlobTicket[]>([]);
+  const [filterActiveLinksOnly, setFilterActiveLinksOnly] = useState(false);
 
   // Dedicated File Preview Modal
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
@@ -590,6 +593,27 @@ export function StoragePage() {
     return namespaces.find((n) => n.name === activeNamespace) || null;
   }, [namespaces, activeNamespace]);
 
+  // Load active capability tickets for the namespace
+  const loadActiveTickets = useCallback(async () => {
+    if (!activeNamespace || currentNsInfo?.is_public) {
+      setActiveTickets([]);
+      return;
+    }
+    try {
+      const resp = await api.listBlobTickets(activeNamespace, undefined, true);
+      const all: BlobTicket[] = Array.isArray(resp) ? resp : (resp as any)?.tickets || [];
+      const now = Math.floor(Date.now() / 1000);
+      const active = all.filter((t) => !t.revoked && t.expires_at > now && t.operation === 'READ');
+      setActiveTickets(active);
+    } catch {
+      setActiveTickets([]);
+    }
+  }, [activeNamespace, currentNsInfo?.is_public]);
+
+  useEffect(() => {
+    loadActiveTickets();
+  }, [loadActiveTickets]);
+
   // Derive interactive breadcrumbs
   const breadcrumbSegments = useMemo(() => {
     if (!currentPrefix) return [];
@@ -690,6 +714,28 @@ export function StoragePage() {
     return { folderItems: folders, fileItems: files };
   }, [blobs, currentPrefix, searchQuery, tierFilter]);
 
+  // Map of active ticket counts per object key
+  const activeTicketCountsByKey = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const t of activeTickets) {
+      counts[t.key] = (counts[t.key] || 0) + 1;
+    }
+    return counts;
+  }, [activeTickets]);
+
+  const totalActiveTickets = useMemo(() => activeTickets.length, [activeTickets]);
+
+  // Filtered views when active links only filter is toggled
+  const displayedFileItems = useMemo(() => {
+    if (!filterActiveLinksOnly) return fileItems;
+    return fileItems.filter((f) => (activeTicketCountsByKey[f.fullKey] || 0) > 0);
+  }, [fileItems, filterActiveLinksOnly, activeTicketCountsByKey]);
+
+  const displayedFolderItems = useMemo(() => {
+    if (!filterActiveLinksOnly) return folderItems;
+    return [];
+  }, [folderItems, filterActiveLinksOnly]);
+
   // Inspector item: use selectedItem if explicitly selected; otherwise, if user is inside a folder, derive folder item
   const inspectorItem = useMemo<StorageItem | null>(() => {
     if (selectedItem) return selectedItem;
@@ -708,7 +754,7 @@ export function StoragePage() {
   }, [selectedItem, currentPrefix, folderItems.length, fileItems]);
 
   // Flattened list of all items currently rendered in explorer
-  const allVisibleItems = useMemo(() => [...folderItems, ...fileItems], [folderItems, fileItems]);
+  const allVisibleItems = useMemo(() => [...displayedFolderItems, ...displayedFileItems], [displayedFolderItems, displayedFileItems]);
 
   // List of full StorageItems corresponding to selectedKeys
   const selectedItemsList = useMemo(() => {
@@ -1487,8 +1533,9 @@ export function StoragePage() {
   };
 
   // Open Capability Link Share modal
-  const handleOpenShare = useCallback((item: StorageItem) => {
+  const handleOpenShare = useCallback((item: StorageItem, initialTab: 'public' | 'create' | 'manage' = 'manage') => {
     setItemToShare(item);
+    setShareInitialTab(initialTab);
     setIsShareOpen(true);
   }, []);
 
@@ -1788,6 +1835,9 @@ export function StoragePage() {
           onShareClick={handleOpenShare}
           onCreateUploadLink={() => setIsUploadLinkOpen(true)}
           isPublic={Boolean(currentNsInfo?.is_public)}
+          totalActiveTickets={totalActiveTickets}
+          filterActiveLinksOnly={filterActiveLinksOnly}
+          onToggleFilterActiveLinks={() => setFilterActiveLinksOnly((prev) => !prev)}
         />
 
         {/* Main Files/Folders View Area */}
@@ -1857,6 +1907,7 @@ export function StoragePage() {
           {!isLoading &&
             activeNamespace &&
             searchQuery.trim() === '' &&
+            !filterActiveLinksOnly &&
             folderItems.length === 0 &&
             fileItems.length === 0 && (
               <StorageEmptyState
@@ -1865,12 +1916,23 @@ export function StoragePage() {
               />
             )}
 
+          {/* Empty State: Active links filter has no matches */}
+          {!isLoading &&
+            activeNamespace &&
+            filterActiveLinksOnly &&
+            displayedFileItems.length === 0 && (
+              <StorageEmptyState
+                type="no-active-links"
+                onClearSearch={() => setFilterActiveLinksOnly(false)}
+              />
+            )}
+
           {/* Real Content View */}
-          {!isLoading && activeNamespace && (folderItems.length > 0 || fileItems.length > 0) && (
+          {!isLoading && activeNamespace && (displayedFolderItems.length > 0 || displayedFileItems.length > 0) && (
             viewMode === 'grid' ? (
               <StorageGridView
-                folderItems={folderItems}
-                fileItems={fileItems}
+                folderItems={displayedFolderItems}
+                fileItems={displayedFileItems}
                 selectedItem={selectedItem}
                 selectedKeys={selectedKeys}
                 onSelectItem={handleSelectItem}
@@ -1883,6 +1945,8 @@ export function StoragePage() {
                 }}
                 onDownload={handleDownload}
                 onPreviewItem={handleOpenPreview}
+                onOpenShare={handleOpenShare}
+                activeTicketCounts={activeTicketCountsByKey}
                 onDelete={(item) => setItemToDelete(item)}
                 draggedItem={draggedItem}
                 draggedItemRef={draggedItemRef}
@@ -1898,8 +1962,8 @@ export function StoragePage() {
               />
             ) : (
               <StorageListView
-                folderItems={folderItems}
-                fileItems={fileItems}
+                folderItems={displayedFolderItems}
+                fileItems={displayedFileItems}
                 selectedItem={selectedItem}
                 selectedKeys={selectedKeys}
                 onSelectItem={handleSelectItem}
@@ -1909,6 +1973,8 @@ export function StoragePage() {
                 onContextMenu={handleContextMenu}
                 onDownload={handleDownload}
                 onPreviewItem={handleOpenPreview}
+                onOpenShare={handleOpenShare}
+                activeTicketCounts={activeTicketCountsByKey}
                 onOpenMove={(item) => {
                   setItemToMove(item);
                   setIsMoveOpen(true);
@@ -2018,6 +2084,7 @@ export function StoragePage() {
         onPreview={handleOpenPreview}
         onDownload={handleDownload}
         onShare={handleOpenShare}
+        activeTicketCount={inspectorItem && inspectorItem.type === 'file' ? (activeTicketCountsByKey[inspectorItem.fullKey] || 0) : 0}
         onCopyPublicUrl={handleCopyPublicUrl}
         onOpenMove={(item) => {
           setItemToMove(item);
@@ -2675,6 +2742,8 @@ export function StoragePage() {
         item={itemToShare}
         namespace={activeNamespace}
         isPublicNamespace={Boolean(currentNsInfo?.is_public)}
+        initialTab={shareInitialTab}
+        onTicketChanged={loadActiveTickets}
       />
 
       {/* Pre-signed Upload Link Modal */}

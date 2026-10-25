@@ -14,6 +14,7 @@ import {
   Check,
   Minus,
   Loader2,
+  Link as LinkIcon,
 } from 'lucide-react';
 import { StorageItem } from './types';
 import { getFileIcon } from './fileIcon';
@@ -48,6 +49,8 @@ export interface StorageListViewProps {
   hasMore?: boolean;
   isLoadingMore?: boolean;
   onLoadMore?: () => void;
+  activeTicketCounts?: Record<string, number>;
+  onOpenShare?: (item: StorageItem, initialTab?: 'public' | 'create' | 'manage') => void;
 }
 
 export function StorageListView({
@@ -75,6 +78,8 @@ export function StorageListView({
   hasMore = false,
   isLoadingMore = false,
   onLoadMore,
+  activeTicketCounts,
+  onOpenShare,
 }: StorageListViewProps) {
   const [dragOverTargetKey, setDragOverTargetKey] = useState<string | null>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
@@ -287,6 +292,24 @@ export function StorageListView({
                       )}
                     </div>
                     <span className="truncate font-medium text-[14px] text-white font-sans">{item.name}</span>
+                    {!isFolder && activeTicketCounts && (activeTicketCounts[item.fullKey] || 0) > 0 && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onOpenShare?.(item, 'manage');
+                        }}
+                        title={`${activeTicketCounts[item.fullKey]} active capability share link${
+                          activeTicketCounts[item.fullKey] > 1 ? 's' : ''
+                        }. Click to manage.`}
+                        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-[4px] bg-sky-500/10 hover:bg-sky-500/20 border border-sky-500/25 text-sky-400 text-[11px] font-sans font-medium transition-colors cursor-pointer shrink-0"
+                      >
+                        <LinkIcon className="w-2.5 h-2.5" />
+                        <span>
+                          {activeTicketCounts[item.fullKey]} {activeTicketCounts[item.fullKey] === 1 ? 'active link' : 'active links'}
+                        </span>
+                      </button>
+                    )}
                   </div>
                 </td>
 
