@@ -64,9 +64,21 @@ function getInitialStorageState(): {
     const savedPrefix = localStorage.getItem('axiom_storage_prefix') || '';
     const savedView = (localStorage.getItem('axiom_storage_view_mode') as StorageViewMode) || 'grid';
 
+    const resolvedNs = urlNs !== null ? urlNs : savedNs;
+    let resolvedPrefix = '';
+    if (urlPrefix !== null) {
+      resolvedPrefix = urlPrefix;
+    } else if (urlNs === null) {
+      // Direct navigation without any URL query parameters -> restore persisted location
+      resolvedPrefix = savedPrefix;
+    } else {
+      // URL has ?ns=... but no prefix parameter -> user is at root
+      resolvedPrefix = '';
+    }
+
     return {
-      ns: urlNs !== null ? urlNs : savedNs,
-      prefix: urlPrefix !== null ? urlPrefix : savedPrefix,
+      ns: resolvedNs,
+      prefix: resolvedPrefix,
       view: urlView === 'grid' || urlView === 'list' ? urlView : savedView,
     };
   } catch {
@@ -381,9 +393,9 @@ export function StoragePage() {
       if (queryStr !== currentSearch) {
         const newUrl = queryStr ? `${window.location.pathname}?${queryStr}` : window.location.pathname;
         if (pushHistory) {
-          window.history.pushState(null, '', newUrl);
+          window.history.pushState({ ns, prefix }, '', newUrl);
         } else {
-          window.history.replaceState(null, '', newUrl);
+          window.history.replaceState({ ns, prefix }, '', newUrl);
         }
       }
     } catch {
@@ -411,11 +423,31 @@ export function StoragePage() {
 
   // Listen for browser Back and Forward navigation (popstate)
   useEffect(() => {
-    const handlePopState = () => {
+    const handlePopState = (event: PopStateEvent) => {
       try {
         const params = new URLSearchParams(window.location.search);
-        const urlNs = params.get('ns') || localStorage.getItem('axiom_storage_namespace') || '';
-        const urlPrefix = params.get('prefix') || '';
+        const stateNs = event.state && typeof event.state.ns === 'string' ? event.state.ns : null;
+        const statePrefix = event.state && typeof event.state.prefix === 'string' ? event.state.prefix : null;
+
+        const urlNs = stateNs || params.get('ns') || localStorage.getItem('axiom_storage_namespace') || '';
+        let urlPrefix = '';
+        if (statePrefix !== null) {
+          urlPrefix = statePrefix;
+        } else if (params.has('prefix')) {
+          urlPrefix = params.get('prefix') || '';
+        } else if (params.has('ns') || stateNs) {
+          // Explicit namespace in history without prefix -> root
+          urlPrefix = '';
+        } else {
+          urlPrefix = localStorage.getItem('axiom_storage_prefix') || '';
+        }
+
+        if (urlNs) {
+          localStorage.setItem('axiom_storage_namespace', urlNs);
+        }
+        localStorage.setItem('axiom_storage_prefix', urlPrefix);
+        currentPrefixRef.current = urlPrefix;
+
         if (urlNs && urlNs !== activeNsRef.current) {
           setActiveNamespace(urlNs);
           api
@@ -509,15 +541,6 @@ export function StoragePage() {
             const items = listRes.items || [];
             setBlobs(items);
             setNextCursor(listRes.next_cursor || null);
-            if (
-              currentPrefixRef.current &&
-              items.length > 0 &&
-              !items.some((b) => b.key.startsWith(currentPrefixRef.current))
-            ) {
-              const parent = parentOf(currentPrefixRef.current);
-              setCurrentPrefix(parent);
-              syncLocation(activeNs, parent, false);
-            }
           }
         } catch {
           if (curGen === fetchGenRef.current) {
