@@ -6,13 +6,13 @@
  * Last structural change: Initial modularization for Drive-style storage architecture.
  */
 
-import { BlobEntry, BlobStats, NamespaceInfo } from '../../types';
+import { BlobEntry, BlobStats, NamespaceInfo } from "../../types";
 
-export type StorageViewMode = 'list' | 'grid';
+export type StorageViewMode = "list" | "grid";
 
 export interface StorageItem {
   id: string;
-  type: 'folder' | 'file';
+  type: "folder" | "file";
   name: string;
   fullKey: string;
   size?: number;
@@ -26,15 +26,16 @@ export interface StorageItem {
 }
 
 export interface ClipboardState {
-  mode: 'copy' | 'cut';
+  mode: "copy" | "cut";
   namespace: string;
   key: string;
   name: string;
   isFolder: boolean;
 }
 
-export type StorageTierFilter = 'all' | 'inline' | 'disk';
-export type StorageTypeFilter = 'all' | 'image' | 'video' | 'audio' | 'document' | 'code';
+export type StorageTierFilter = "all" | "inline" | "disk";
+export type StorageTypeFilter =
+  "all" | "image" | "video" | "audio" | "document" | "code";
 
 export interface UploadFileEntry {
   file: File;

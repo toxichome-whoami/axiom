@@ -4,10 +4,10 @@
  * Key deps: react, ../../api/client, ../../types
  */
 
-import { useState, useEffect } from 'react';
-import { api } from '../../api/client';
-import { ColumnInfoApi, ForeignKeyInfoApi } from '../../types';
-import { showAlertDialog } from '../../components/ui/AlertDialog';
+import { useState, useEffect } from "react";
+import { api } from "../../api/client";
+import { ColumnInfoApi, ForeignKeyInfoApi } from "../../types";
+import { showAlertDialog } from "../../components/ui/AlertDialog";
 
 export interface UseCellEditorProps {
   selectedDb: string;
@@ -18,7 +18,9 @@ export interface UseCellEditorProps {
   foreignKeys: ForeignKeyInfoApi[];
   selectedRowIndex: number | null;
   setSelectedRowIndex: React.Dispatch<React.SetStateAction<number | null>>;
-  setRowEditValues: React.Dispatch<React.SetStateAction<Record<string, unknown>>>;
+  setRowEditValues: React.Dispatch<
+    React.SetStateAction<Record<string, unknown>>
+  >;
   isColReadOnly: (col: ColumnInfoApi) => boolean;
   isDetailsOpen: boolean;
 }
@@ -36,7 +38,10 @@ export function useCellEditor({
   isColReadOnly,
   isDetailsOpen,
 }: UseCellEditorProps) {
-  const [selectedCell, setSelectedCell] = useState<{ rowIndex: number; colName: string } | null>(null);
+  const [selectedCell, setSelectedCell] = useState<{
+    rowIndex: number;
+    colName: string;
+  } | null>(null);
   const [editingCell, setEditingCell] = useState<{
     rowIndex: number;
     colName: string;
@@ -64,13 +69,22 @@ export function useCellEditor({
     rect: { top: number; left: number; width: number; height: number };
   } | null>(null);
 
-  const handleStartCellEdit = (rowIndex: number, colName: string, cellEl: HTMLElement) => {
+  const handleStartCellEdit = (
+    rowIndex: number,
+    colName: string,
+    cellEl: HTMLElement,
+  ) => {
     const col = columns.find((c) => c.name === colName);
     if (col && isColReadOnly(col)) return;
     const row = rows[rowIndex];
     if (!row) return;
     const val = row[colName];
-    const strVal = val === null || val === undefined ? '' : typeof val === 'object' ? JSON.stringify(val) : String(val);
+    const strVal =
+      val === null || val === undefined
+        ? ""
+        : typeof val === "object"
+          ? JSON.stringify(val)
+          : String(val);
     const r = cellEl.getBoundingClientRect();
     setEditingCell({
       rowIndex,
@@ -87,7 +101,11 @@ export function useCellEditor({
     });
   };
 
-  const handleSaveCellEdit = async (rowIndex: number, colName: string, rawValue: unknown) => {
+  const handleSaveCellEdit = async (
+    rowIndex: number,
+    colName: string,
+    rawValue: unknown,
+  ) => {
     if (!selectedDb || !selectedTable) return;
     const originalRow = rows[rowIndex];
     if (!originalRow) return;
@@ -95,27 +113,27 @@ export function useCellEditor({
     const col = columns.find((c) => c.name === colName);
     let newValue: unknown = rawValue;
 
-    if (typeof rawValue === 'string') {
-      if (rawValue === '') {
-        newValue = col?.nullable ? null : '';
+    if (typeof rawValue === "string") {
+      if (rawValue === "") {
+        newValue = col?.nullable ? null : "";
       } else if (col) {
         const normType = col.type.toLowerCase();
-        if (normType.includes('int')) {
+        if (normType.includes("int")) {
           const parsed = parseInt(rawValue, 10);
           if (!isNaN(parsed)) newValue = parsed;
         } else if (
-          normType.includes('float') ||
-          normType.includes('double') ||
-          normType.includes('numeric') ||
-          normType.includes('decimal') ||
-          normType.includes('real')
+          normType.includes("float") ||
+          normType.includes("double") ||
+          normType.includes("numeric") ||
+          normType.includes("decimal") ||
+          normType.includes("real")
         ) {
           const parsed = parseFloat(rawValue);
           if (!isNaN(parsed)) newValue = parsed;
-        } else if (normType.includes('bool') || normType === 'bit') {
-          if (rawValue.toLowerCase() === 'true') newValue = true;
-          else if (rawValue.toLowerCase() === 'false') newValue = false;
-        } else if (normType.includes('json')) {
+        } else if (normType.includes("bool") || normType === "bit") {
+          if (rawValue.toLowerCase() === "true") newValue = true;
+          else if (rawValue.toLowerCase() === "false") newValue = false;
+        } else if (normType.includes("json")) {
           try {
             newValue = JSON.parse(rawValue);
           } catch {
@@ -152,7 +170,9 @@ export function useCellEditor({
         });
       }
 
-      await api.updateTableRow(selectedDb, selectedTable, filter, { [colName]: newValue });
+      await api.updateTableRow(selectedDb, selectedTable, filter, {
+        [colName]: newValue,
+      });
     } catch (err) {
       // Revert on failure
       const revertedRows = [...rows];
@@ -161,7 +181,10 @@ export function useCellEditor({
       if (selectedRowIndex === rowIndex) {
         setRowEditValues(originalRow);
       }
-      showAlertDialog(err instanceof Error ? err.message : 'Failed to update cell', 'Failed to Update Cell');
+      showAlertDialog(
+        err instanceof Error ? err.message : "Failed to update cell",
+        "Failed to Update Cell",
+      );
     }
   };
 
@@ -188,14 +211,21 @@ export function useCellEditor({
   // Keyboard navigation for selected cells (Arrows, Tab, Enter to edit)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (editingCell || expandedInlineCell || isDetailsOpen || fkPickerTarget || fkPreviewTarget) return;
+      if (
+        editingCell ||
+        expandedInlineCell ||
+        isDetailsOpen ||
+        fkPickerTarget ||
+        fkPreviewTarget
+      )
+        return;
       if (!selectedCell) return;
 
       const { rowIndex, colName } = selectedCell;
       const colIdx = columns.findIndex((c) => c.name === colName);
       if (colIdx === -1) return;
 
-      if (e.key === 'ArrowRight' || (e.key === 'Tab' && !e.shiftKey)) {
+      if (e.key === "ArrowRight" || (e.key === "Tab" && !e.shiftKey)) {
         e.preventDefault();
         if (colIdx < columns.length - 1) {
           setSelectedCell({ rowIndex, colName: columns[colIdx + 1].name });
@@ -203,27 +233,30 @@ export function useCellEditor({
           setSelectedCell({ rowIndex: rowIndex + 1, colName: columns[0].name });
           setSelectedRowIndex(rowIndex + 1);
         }
-      } else if (e.key === 'ArrowLeft' || (e.key === 'Tab' && e.shiftKey)) {
+      } else if (e.key === "ArrowLeft" || (e.key === "Tab" && e.shiftKey)) {
         e.preventDefault();
         if (colIdx > 0) {
           setSelectedCell({ rowIndex, colName: columns[colIdx - 1].name });
         } else if (rowIndex > 0) {
-          setSelectedCell({ rowIndex: rowIndex - 1, colName: columns[columns.length - 1].name });
+          setSelectedCell({
+            rowIndex: rowIndex - 1,
+            colName: columns[columns.length - 1].name,
+          });
           setSelectedRowIndex(rowIndex - 1);
         }
-      } else if (e.key === 'ArrowDown') {
+      } else if (e.key === "ArrowDown") {
         e.preventDefault();
         if (rowIndex < rows.length - 1) {
           setSelectedCell({ rowIndex: rowIndex + 1, colName });
           setSelectedRowIndex(rowIndex + 1);
         }
-      } else if (e.key === 'ArrowUp') {
+      } else if (e.key === "ArrowUp") {
         e.preventDefault();
         if (rowIndex > 0) {
           setSelectedCell({ rowIndex: rowIndex - 1, colName });
           setSelectedRowIndex(rowIndex - 1);
         }
-      } else if (e.key === 'Enter') {
+      } else if (e.key === "Enter") {
         e.preventDefault();
         const fk = foreignKeys.find((f) => f.column === colName);
         if (fk) {
@@ -236,20 +269,31 @@ export function useCellEditor({
           });
         } else {
           const cellEl = document.querySelector(
-            `[data-cell-row="${rowIndex}"][data-cell-col="${colName}"]`
+            `[data-cell-row="${rowIndex}"][data-cell-col="${colName}"]`,
           ) as HTMLElement;
           if (cellEl) {
             handleStartCellEdit(rowIndex, colName, cellEl);
           }
         }
-      } else if (e.key === 'Escape') {
+      } else if (e.key === "Escape") {
         setSelectedCell(null);
       }
     };
 
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedCell, editingCell, expandedInlineCell, isDetailsOpen, fkPickerTarget, fkPreviewTarget, columns, rows, foreignKeys, setSelectedRowIndex]);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [
+    selectedCell,
+    editingCell,
+    expandedInlineCell,
+    isDetailsOpen,
+    fkPickerTarget,
+    fkPreviewTarget,
+    columns,
+    rows,
+    foreignKeys,
+    setSelectedRowIndex,
+  ]);
 
   // Click outside cell listener to deselect selectedCell
   useEffect(() => {
@@ -259,8 +303,8 @@ export function useCellEditor({
       if (!target) return;
       // Do not deselect if interacting with cell editor popovers, modals, slide-overs, context menu, or cells
       if (
-        target.closest('[data-cell-row]') ||
-        target.closest('.fixed') ||
+        target.closest("[data-cell-row]") ||
+        target.closest(".fixed") ||
         target.closest('[role="dialog"]')
       ) {
         return;
@@ -268,8 +312,8 @@ export function useCellEditor({
       setSelectedCell(null);
     };
 
-    document.addEventListener('mousedown', handleOutsideClick);
-    return () => document.removeEventListener('mousedown', handleOutsideClick);
+    document.addEventListener("mousedown", handleOutsideClick);
+    return () => document.removeEventListener("mousedown", handleOutsideClick);
   }, [selectedCell]);
 
   return {

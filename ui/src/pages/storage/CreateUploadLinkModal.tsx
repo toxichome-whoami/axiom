@@ -4,7 +4,7 @@
  * Key deps: ../../types, ../../api/client, ../../components/ui/Button
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from "react";
 import {
   X,
   Upload,
@@ -16,11 +16,11 @@ import {
   RefreshCw,
   Trash2,
   Ban,
-} from 'lucide-react';
-import { BlobTicket, CreateBlobTicketResponse } from '../../types';
-import { api } from '../../api/client';
-import { Button } from '../../components/ui/Button';
-import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
+} from "lucide-react";
+import { BlobTicket, CreateBlobTicketResponse } from "../../types";
+import { api } from "../../api/client";
+import { Button } from "../../components/ui/Button";
+import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 
 export interface CreateUploadLinkModalProps {
   isOpen: boolean;
@@ -30,21 +30,24 @@ export interface CreateUploadLinkModalProps {
 }
 
 const TTL_PRESETS = [
-  { label: '1 hour', seconds: 3600 },
-  { label: '6 hours', seconds: 21600 },
-  { label: '24 hours', seconds: 86400 },
-  { label: '7 days', seconds: 604800 },
-  { label: 'Custom', seconds: 0 },
+  { label: "1 hour", seconds: 3600 },
+  { label: "6 hours", seconds: 21600 },
+  { label: "24 hours", seconds: 86400 },
+  { label: "7 days", seconds: 604800 },
+  { label: "Custom", seconds: 0 },
 ];
 
-function formatTimeRemaining(expiresAtSeconds?: number | null): { text: string; isExpired: boolean } {
+function formatTimeRemaining(expiresAtSeconds?: number | null): {
+  text: string;
+  isExpired: boolean;
+} {
   if (!expiresAtSeconds || isNaN(expiresAtSeconds) || expiresAtSeconds <= 0) {
-    return { text: 'Unknown', isExpired: false };
+    return { text: "Unknown", isExpired: false };
   }
   const now = Math.floor(Date.now() / 1000);
   const diff = expiresAtSeconds - now;
   if (diff <= 0) {
-    return { text: 'Expired', isExpired: true };
+    return { text: "Expired", isExpired: true };
   }
   const hours = Math.floor(diff / 3600);
   const minutes = Math.floor((diff % 3600) / 60);
@@ -65,14 +68,15 @@ export function CreateUploadLinkModal({
   namespace,
   currentPrefix,
 }: CreateUploadLinkModalProps) {
-  const [activeTab, setActiveTab] = useState<'create' | 'manage'>('create');
-  const [fileName, setFileName] = useState('');
+  const [activeTab, setActiveTab] = useState<"create" | "manage">("create");
+  const [fileName, setFileName] = useState("");
   const [selectedTtl, setSelectedTtl] = useState<number>(3600);
-  const [customHours, setCustomHours] = useState<string>('12');
+  const [customHours, setCustomHours] = useState<string>("12");
 
   const [isCreating, setIsCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
-  const [generatedTicket, setGeneratedTicket] = useState<CreateBlobTicketResponse | null>(null);
+  const [generatedTicket, setGeneratedTicket] =
+    useState<CreateBlobTicketResponse | null>(null);
 
   const [tickets, setTickets] = useState<BlobTicket[]>([]);
   const [isLoadingTickets, setIsLoadingTickets] = useState(false);
@@ -89,11 +93,18 @@ export function CreateUploadLinkModal({
     setManageError(null);
     try {
       const resp = await api.listBlobTickets(namespace, undefined, true);
-      const allTickets: BlobTicket[] = Array.isArray(resp) ? resp : (resp as unknown as { items?: BlobTicket[]; tickets?: BlobTicket[] }).items || (resp as any).tickets || [];
+      const allTickets: BlobTicket[] = Array.isArray(resp)
+        ? resp
+        : (resp as unknown as { items?: BlobTicket[]; tickets?: BlobTicket[] })
+            .items ||
+          (resp as any).tickets ||
+          [];
       // Filter strictly for WRITE operation capability links
-      setTickets(allTickets.filter((t) => t.operation === 'WRITE'));
+      setTickets(allTickets.filter((t) => t.operation === "WRITE"));
     } catch (err: unknown) {
-      setManageError(err instanceof Error ? err.message : 'Failed to load upload links');
+      setManageError(
+        err instanceof Error ? err.message : "Failed to load upload links",
+      );
     } finally {
       setIsLoadingTickets(false);
     }
@@ -101,12 +112,12 @@ export function CreateUploadLinkModal({
 
   useEffect(() => {
     if (isOpen) {
-      setFileName('');
+      setFileName("");
       setCreateError(null);
       setGeneratedTicket(null);
       setSelectedTtl(3600);
-      setCustomHours('12');
-      setActiveTab('create');
+      setCustomHours("12");
+      setActiveTab("create");
       loadTickets();
     }
   }, [isOpen, loadTickets]);
@@ -121,9 +132,9 @@ export function CreateUploadLinkModal({
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
-    const cleanName = fileName.trim().replace(/^[/\\]+/, '');
+    const cleanName = fileName.trim().replace(/^[/\\]+/, "");
     if (!cleanName) {
-      setCreateError('Please enter a destination file name');
+      setCreateError("Please enter a destination file name");
       return;
     }
 
@@ -131,14 +142,14 @@ export function CreateUploadLinkModal({
     if (ttl === 0) {
       const parsed = parseFloat(customHours);
       if (isNaN(parsed) || parsed <= 0) {
-        setCreateError('Please enter a valid duration in hours');
+        setCreateError("Please enter a valid duration in hours");
         return;
       }
       ttl = Math.round(parsed * 3600);
     }
 
     if (ttl < 60 || ttl > 86400 * 30) {
-      setCreateError('Duration must be between 1 minute and 30 days');
+      setCreateError("Duration must be between 1 minute and 30 days");
       return;
     }
 
@@ -148,11 +159,13 @@ export function CreateUploadLinkModal({
     setCreateError(null);
 
     try {
-      const res = await api.createBlobTicket(namespace, fullKey, 'WRITE', ttl);
+      const res = await api.createBlobTicket(namespace, fullKey, "WRITE", ttl);
       setGeneratedTicket(res);
       loadTickets();
     } catch (err: unknown) {
-      setCreateError(err instanceof Error ? err.message : 'Failed to generate upload link');
+      setCreateError(
+        err instanceof Error ? err.message : "Failed to generate upload link",
+      );
     } finally {
       setIsCreating(false);
     }
@@ -164,7 +177,9 @@ export function CreateUploadLinkModal({
       await api.revokeBlobTicket(namespace, signature);
       await loadTickets();
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : 'Failed to revoke upload link');
+      alert(
+        err instanceof Error ? err.message : "Failed to revoke upload link",
+      );
     } finally {
       setRevokingSigs((prev) => {
         const next = new Set(prev);
@@ -183,7 +198,9 @@ export function CreateUploadLinkModal({
       await loadTickets();
       setTicketToDelete(null);
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : 'Failed to delete upload link');
+      alert(
+        err instanceof Error ? err.message : "Failed to delete upload link",
+      );
     } finally {
       setDeletingSigs((prev) => {
         const next = new Set(prev);
@@ -196,15 +213,18 @@ export function CreateUploadLinkModal({
   if (!isOpen) return null;
 
   const fullUploadUrl = generatedTicket
-    ? `${window.location.origin}${generatedTicket.url || ''}`
-    : '';
+    ? `${window.location.origin}${generatedTicket.url || ""}`
+    : "";
 
-  const cleanTargetName = fileName.trim().replace(/^[/\\]+/, '') || 'my-file.bin';
+  const cleanTargetName =
+    fileName.trim().replace(/^[/\\]+/, "") || "my-file.bin";
   const curlUploadSnippet = fullUploadUrl
     ? `curl -X PUT --upload-file "${cleanTargetName}" "${fullUploadUrl}"`
-    : '';
+    : "";
 
-  const activeTickets = tickets.filter((t) => !t.revoked && !formatTimeRemaining(t.expires_at).isExpired);
+  const activeTickets = tickets.filter(
+    (t) => !t.revoked && !formatTimeRemaining(t.expires_at).isExpired,
+  );
   const activeTicketCount = activeTickets.length;
 
   return (
@@ -242,11 +262,11 @@ export function CreateUploadLinkModal({
           <div className="inline-flex items-center p-0.5 rounded-[8px] bg-transparent border border-[#262626]">
             <button
               type="button"
-              onClick={() => setActiveTab('create')}
+              onClick={() => setActiveTab("create")}
               className={`flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[13px] font-sans font-medium transition-colors cursor-pointer outline-none border ${
-                activeTab === 'create'
-                  ? 'bg-[#161616] text-white border-[#333333]'
-                  : 'text-[#8c8c8c] hover:text-white hover:bg-[#141414] border-transparent'
+                activeTab === "create"
+                  ? "bg-[#161616] text-white border-[#333333]"
+                  : "text-[#8c8c8c] hover:text-white hover:bg-[#141414] border-transparent"
               }`}
             >
               <Upload className="w-3.5 h-3.5 shrink-0" />
@@ -255,13 +275,13 @@ export function CreateUploadLinkModal({
             <button
               type="button"
               onClick={() => {
-                setActiveTab('manage');
+                setActiveTab("manage");
                 loadTickets();
               }}
               className={`flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[13px] font-sans font-medium transition-colors cursor-pointer outline-none border ${
-                activeTab === 'manage'
-                  ? 'bg-[#161616] text-white border-[#333333]'
-                  : 'text-[#8c8c8c] hover:text-white hover:bg-[#141414] border-transparent'
+                activeTab === "manage"
+                  ? "bg-[#161616] text-white border-[#333333]"
+                  : "text-[#8c8c8c] hover:text-white hover:bg-[#141414] border-transparent"
               }`}
             >
               <Clock className="w-3.5 h-3.5 shrink-0" />
@@ -277,7 +297,7 @@ export function CreateUploadLinkModal({
 
         {/* Body */}
         <div className="p-5 space-y-4">
-          {activeTab === 'create' ? (
+          {activeTab === "create" ? (
             <>
               {generatedTicket ? (
                 /* ─── Success Generated View ───────────────────────────────── */
@@ -297,10 +317,12 @@ export function CreateUploadLinkModal({
                         type="button"
                         variant="primary"
                         size="sm"
-                        onClick={() => copyToClipboard(fullUploadUrl, 'upload-url')}
+                        onClick={() =>
+                          copyToClipboard(fullUploadUrl, "upload-url")
+                        }
                         className="h-8 px-3"
                       >
-                        {copiedKey === 'upload-url' ? (
+                        {copiedKey === "upload-url" ? (
                           <>
                             <Check className="w-3.5 h-3.5" />
                             <span>Copied</span>
@@ -314,7 +336,8 @@ export function CreateUploadLinkModal({
                       </Button>
                     </div>
                     <p className="text-[12px] font-sans text-[#666666] mt-1.5">
-                      External clients or scripts can upload this file directly via HTTP PUT without an API key.
+                      External clients or scripts can upload this file directly
+                      via HTTP PUT without an API key.
                     </p>
                   </div>
 
@@ -327,10 +350,12 @@ export function CreateUploadLinkModal({
                       </div>
                       <button
                         type="button"
-                        onClick={() => copyToClipboard(curlUploadSnippet, 'curl-upload')}
+                        onClick={() =>
+                          copyToClipboard(curlUploadSnippet, "curl-upload")
+                        }
                         className="h-6 px-2 rounded-[4px] bg-[#181818] hover:bg-[#222222] border border-[#2a2a2a] text-[11px] font-sans font-medium text-[#cccccc] hover:text-white transition-colors cursor-pointer"
                       >
-                        {copiedKey === 'curl-upload' ? 'Copied' : 'Copy'}
+                        {copiedKey === "curl-upload" ? "Copied" : "Copy"}
                       </button>
                     </div>
                     <pre className="p-2 rounded-[4px] bg-[#0a0a0a] border border-[#1e1e1e] text-[11px] font-mono text-[#a3a3a3] overflow-x-auto whitespace-pre-wrap break-all select-all">
@@ -350,7 +375,7 @@ export function CreateUploadLinkModal({
                       <button
                         type="button"
                         onClick={() => {
-                          setActiveTab('manage');
+                          setActiveTab("manage");
                           setGeneratedTicket(null);
                         }}
                         className="text-[13px] font-sans text-blue-400 hover:text-blue-300 transition-colors cursor-pointer flex items-center gap-1"
@@ -358,7 +383,13 @@ export function CreateUploadLinkModal({
                         <Clock className="w-3.5 h-3.5" />
                         <span>View Active Links</span>
                       </button>
-                      <Button type="button" variant="secondary" size="sm" onClick={onClose} className="h-8 px-3">
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        onClick={onClose}
+                        className="h-8 px-3"
+                      >
                         Done
                       </Button>
                     </div>
@@ -395,8 +426,12 @@ export function CreateUploadLinkModal({
                       />
                     </div>
                     <p className="text-[12px] font-sans text-[#666666] mt-1.5">
-                      The upload link will be cryptographically locked to this exact file name in{' '}
-                      <span className="font-mono text-[#8c8c8c]">{namespace}</span>.
+                      The upload link will be cryptographically locked to this
+                      exact file name in{" "}
+                      <span className="font-mono text-[#8c8c8c]">
+                        {namespace}
+                      </span>
+                      .
                     </p>
                   </div>
 
@@ -413,8 +448,8 @@ export function CreateUploadLinkModal({
                           onClick={() => setSelectedTtl(preset.seconds)}
                           className={`h-8 rounded-[5px] text-[13px] font-sans font-medium transition-colors cursor-pointer flex items-center justify-center ${
                             selectedTtl === preset.seconds
-                              ? 'bg-[#222222] text-white shadow-xs'
-                              : 'text-[#8c8c8c] hover:text-white'
+                              ? "bg-[#222222] text-white shadow-xs"
+                              : "text-[#8c8c8c] hover:text-white"
                           }`}
                         >
                           {preset.label}
@@ -432,14 +467,22 @@ export function CreateUploadLinkModal({
                           placeholder="12"
                           className="w-24 h-8 px-2.5 rounded-[6px] bg-[#141414] border border-[#262626] focus:border-[#3b82f6] text-white text-[13px] font-sans outline-none"
                         />
-                        <span className="text-[13px] font-sans text-[#8c8c8c]">hours</span>
+                        <span className="text-[13px] font-sans text-[#8c8c8c]">
+                          hours
+                        </span>
                       </div>
                     )}
                   </div>
 
                   {/* Action buttons */}
                   <div className="-mx-5 px-5 pt-3.5 border-t border-[#1f1f1f] flex items-center justify-end gap-2">
-                    <Button type="button" variant="secondary" size="sm" onClick={onClose} className="h-8 px-3">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      onClick={onClose}
+                      className="h-8 px-3"
+                    >
                       Cancel
                     </Button>
                     <Button
@@ -469,7 +512,9 @@ export function CreateUploadLinkModal({
                   disabled={isLoadingTickets}
                   className="flex items-center gap-1 text-[12px] font-sans text-[#8c8c8c] hover:text-white transition-colors cursor-pointer disabled:opacity-40"
                 >
-                  <RefreshCw className={`w-3 h-3 ${isLoadingTickets ? 'animate-spin' : ''}`} />
+                  <RefreshCw
+                    className={`w-3 h-3 ${isLoadingTickets ? "animate-spin" : ""}`}
+                  />
                   <span>Refresh</span>
                 </button>
               </div>
@@ -495,8 +540,8 @@ export function CreateUploadLinkModal({
                     const timeRem = formatTimeRemaining(t.expires_at);
                     const isRevoking = revokingSigs.has(t.signature);
                     const isDeleting = deletingSigs.has(t.signature);
-                    const fullUrl = `${window.location.origin}${t.url || ''}`;
-                    const targetFile = t.key.split('/').pop() || 'file';
+                    const fullUrl = `${window.location.origin}${t.url || ""}`;
+                    const targetFile = t.key.split("/").pop() || "file";
                     const curlCmd = `curl -X PUT --upload-file "${targetFile}" "${fullUrl}"`;
 
                     return (
@@ -506,7 +551,10 @@ export function CreateUploadLinkModal({
                       >
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-mono text-[12px] font-medium text-white truncate max-w-[200px]" title={t.key}>
+                            <span
+                              className="font-mono text-[12px] font-medium text-white truncate max-w-[200px]"
+                              title={t.key}
+                            >
                               {t.key}
                             </span>
 
@@ -538,7 +586,9 @@ export function CreateUploadLinkModal({
                         <div className="flex items-center gap-1.5 shrink-0">
                           <button
                             type="button"
-                            onClick={() => copyToClipboard(fullUrl, `url-${t.signature}`)}
+                            onClick={() =>
+                              copyToClipboard(fullUrl, `url-${t.signature}`)
+                            }
                             title="Copy upload URL"
                             className="flex items-center gap-1 h-7 px-2.5 rounded-[6px] text-[12px] font-sans font-medium text-[#cccccc] hover:text-white bg-[#141414] hover:bg-[#1c1c1c] border border-[#262626] transition-colors cursor-pointer"
                           >
@@ -552,7 +602,9 @@ export function CreateUploadLinkModal({
 
                           <button
                             type="button"
-                            onClick={() => copyToClipboard(curlCmd, `curl-${t.signature}`)}
+                            onClick={() =>
+                              copyToClipboard(curlCmd, `curl-${t.signature}`)
+                            }
                             title="Copy cURL snippet"
                             className="flex items-center gap-1 h-7 px-2 rounded-[6px] text-[12px] font-sans font-medium text-[#cccccc] hover:text-white bg-[#141414] hover:bg-[#1c1c1c] border border-[#262626] transition-colors cursor-pointer"
                           >
@@ -594,7 +646,13 @@ export function CreateUploadLinkModal({
               )}
 
               <div className="-mx-5 px-5 pt-3.5 border-t border-[#1f1f1f] flex items-center justify-end">
-                <Button type="button" variant="secondary" size="sm" onClick={onClose} className="h-8 px-4 text-[13px]">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={onClose}
+                  className="h-8 px-4 text-[13px]"
+                >
                   Close
                 </Button>
               </div>
@@ -612,17 +670,22 @@ export function CreateUploadLinkModal({
         description={
           ticketToDelete ? (
             <span>
-              Are you sure you want to permanently delete this upload link? Any client attempting to upload using signature{' '}
+              Are you sure you want to permanently delete this upload link? Any
+              client attempting to upload using signature{" "}
               <strong className="text-white font-mono text-[12px] bg-[#1a1a1a] px-1 py-0.5 rounded">
                 {ticketToDelete.signature.slice(0, 16)}...
-              </strong>{' '}
+              </strong>{" "}
               will be rejected immediately.
             </span>
           ) : (
-            'Are you sure you want to delete this upload link?'
+            "Are you sure you want to delete this upload link?"
           )
         }
-        confirmLabel={ticketToDelete && deletingSigs.has(ticketToDelete.signature) ? 'Deleting...' : 'Delete'}
+        confirmLabel={
+          ticketToDelete && deletingSigs.has(ticketToDelete.signature)
+            ? "Deleting..."
+            : "Delete"
+        }
         variant="danger"
       />
     </div>

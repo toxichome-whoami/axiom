@@ -4,11 +4,11 @@
  * Design reference: Google Drive / macOS Finder collision resolver
  */
 
-import React, { useState } from 'react';
-import { AlertCircle, FileWarning, ArrowRight, X } from 'lucide-react';
-import { Button } from '../../components/ui/Button';
-import { formatBytes } from './format';
-import { getFileIcon } from './fileIcon';
+import React, { useState } from "react";
+import { AlertCircle, FileWarning, ArrowRight, X } from "lucide-react";
+import { Button } from "../../components/ui/Button";
+import { formatBytes } from "./format";
+import { getFileIcon } from "./fileIcon";
 
 export interface ConflictingFile {
   entry: any; // incoming upload file entry
@@ -18,7 +18,7 @@ export interface ConflictingFile {
   existingModified?: string | number;
 }
 
-export type ConflictResolution = 'replace' | 'keep_both' | 'skip';
+export type ConflictResolution = "replace" | "keep_both" | "skip";
 
 export interface FileConflictModalProps {
   isOpen: boolean;
@@ -35,7 +35,9 @@ export function FileConflictModal({
 }: FileConflictModalProps) {
   const [applyToAll, setApplyToAll] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [decisions, setDecisions] = useState<Map<string, ConflictResolution>>(new Map());
+  const [decisions, setDecisions] = useState<Map<string, ConflictResolution>>(
+    new Map(),
+  );
 
   if (!isOpen || conflicts.length === 0) return null;
 
@@ -80,7 +82,9 @@ export function FileConflictModal({
           <div className="flex items-center gap-2">
             <AlertCircle className="w-4 h-4 text-[#f5a623]" />
             <h3 className="text-[15px] font-sans font-medium text-white tracking-tight">
-              File Already Exists {conflicts.length > 1 && `(${currentIndex + 1} of ${conflicts.length})`}
+              File Already Exists{" "}
+              {conflicts.length > 1 &&
+                `(${currentIndex + 1} of ${conflicts.length})`}
             </h3>
           </div>
           <button
@@ -95,7 +99,11 @@ export function FileConflictModal({
         {/* Content */}
         <div className="p-5 space-y-4">
           <p className="text-[13px] font-sans text-[#cccccc] leading-relaxed">
-            A file named <span className="font-mono text-white font-medium">{currentConflict.name}</span> already exists in this folder. What would you like to do?
+            A file named{" "}
+            <span className="font-mono text-white font-medium">
+              {currentConflict.name}
+            </span>{" "}
+            already exists in this folder. What would you like to do?
           </p>
 
           {/* Comparison Card */}
@@ -106,11 +114,16 @@ export function FileConflictModal({
                 Existing File
               </span>
               <div className="flex items-center gap-2">
-                {getFileIcon(currentConflict.name, 'w-4 h-4 shrink-0')}
-                <span className="text-[13px] font-sans text-[#cccccc] truncate font-medium">{currentConflict.name}</span>
+                {getFileIcon(currentConflict.name, "w-4 h-4 shrink-0")}
+                <span className="text-[13px] font-sans text-[#cccccc] truncate font-medium">
+                  {currentConflict.name}
+                </span>
               </div>
               <div className="text-[12px] font-sans text-[#8c8c8c]">
-                Size: {currentConflict.existingSize !== undefined ? formatBytes(currentConflict.existingSize) : 'Unknown'}
+                Size:{" "}
+                {currentConflict.existingSize !== undefined
+                  ? formatBytes(currentConflict.existingSize)
+                  : "Unknown"}
               </div>
             </div>
 
@@ -120,8 +133,13 @@ export function FileConflictModal({
                 Incoming File
               </span>
               <div className="flex items-center gap-2">
-                {getFileIcon(currentConflict.name, 'w-4 h-4 shrink-0 text-blue-400')}
-                <span className="text-[13px] font-sans text-white truncate font-medium">{currentConflict.name}</span>
+                {getFileIcon(
+                  currentConflict.name,
+                  "w-4 h-4 shrink-0 text-blue-400",
+                )}
+                <span className="text-[13px] font-sans text-white truncate font-medium">
+                  {currentConflict.name}
+                </span>
               </div>
               <div className="text-[12px] font-sans text-[#8c8c8c]">
                 Size: {formatBytes(currentConflict.incomingSize)}
@@ -138,7 +156,10 @@ export function FileConflictModal({
                 onChange={(e) => setApplyToAll(e.target.checked)}
                 className="w-4 h-4 rounded-[4px] bg-[#1a1a1a] border border-[#333333] accent-blue-600 cursor-pointer"
               />
-              <span>Apply to all remaining conflicts ({conflicts.length - currentIndex})</span>
+              <span>
+                Apply to all remaining conflicts (
+                {conflicts.length - currentIndex})
+              </span>
             </label>
           )}
 
@@ -148,7 +169,7 @@ export function FileConflictModal({
               type="button"
               variant="secondary"
               size="sm"
-              onClick={() => handleChoice('skip')}
+              onClick={() => handleChoice("skip")}
               className="h-8 px-3"
             >
               Skip
@@ -157,7 +178,7 @@ export function FileConflictModal({
               type="button"
               variant="secondary"
               size="sm"
-              onClick={() => handleChoice('keep_both')}
+              onClick={() => handleChoice("keep_both")}
               className="h-8 px-3"
             >
               Keep Both (Rename)
@@ -166,7 +187,7 @@ export function FileConflictModal({
               type="button"
               variant="primary"
               size="sm"
-              onClick={() => handleChoice('replace')}
+              onClick={() => handleChoice("replace")}
               className="h-8 px-3.5 bg-red-600 hover:bg-red-500 text-white"
             >
               Replace

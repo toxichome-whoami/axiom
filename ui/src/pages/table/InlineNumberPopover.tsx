@@ -10,10 +10,10 @@
  * Key deps: react, lucide-react
  */
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { ChevronUp, ChevronDown, Check, Maximize2 } from 'lucide-react';
-import { ColumnInfoApi } from '../../types';
-import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
+import React, { useState, useEffect, useRef, useCallback } from "react";
+import { ChevronUp, ChevronDown, Check, Maximize2 } from "lucide-react";
+import { ColumnInfoApi } from "../../types";
+import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 
 export interface InlineNumberPopoverProps {
   editingCell: {
@@ -40,13 +40,13 @@ export function InlineNumberPopover({
   const popoverRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const normType = editingCell.column?.type?.toLowerCase() || '';
+  const normType = editingCell.column?.type?.toLowerCase() || "";
   const isFloat =
-    normType.includes('float') ||
-    normType.includes('double') ||
-    normType.includes('decimal') ||
-    normType.includes('numeric') ||
-    normType.includes('real');
+    normType.includes("float") ||
+    normType.includes("double") ||
+    normType.includes("decimal") ||
+    normType.includes("numeric") ||
+    normType.includes("real");
 
   const step = isFloat ? 0.1 : 1;
   const isNullable = editingCell.column?.nullable ?? true;
@@ -55,16 +55,16 @@ export function InlineNumberPopover({
   const isInitialNull =
     editingCell.initialValue === null ||
     editingCell.initialValue === undefined ||
-    editingCell.currentValue === 'null' ||
-    editingCell.currentValue === '';
+    editingCell.currentValue === "null" ||
+    editingCell.currentValue === "";
 
   const [inputVal, setInputVal] = useState<string>(() => {
-    if (isInitialNull && editingCell.initialValue === null) return '';
+    if (isInitialNull && editingCell.initialValue === null) return "";
     return editingCell.currentValue;
   });
 
   const [isNull, setIsNull] = useState<boolean>(
-    editingCell.initialValue === null && editingCell.currentValue === ''
+    editingCell.initialValue === null && editingCell.currentValue === "",
   );
 
   useEffect(() => {
@@ -77,7 +77,9 @@ export function InlineNumberPopover({
   // Baseline snapshot at mount to prevent false-positive dirty warnings
   const baselineValRef = useRef<string>(inputVal);
   const baselineNullRef = useRef<boolean>(isNull);
-  const isDirty = isNull !== baselineNullRef.current || (!isNull && inputVal.trim() !== baselineValRef.current.trim());
+  const isDirty =
+    isNull !== baselineNullRef.current ||
+    (!isNull && inputVal.trim() !== baselineValRef.current.trim());
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
 
   const handleCommit = useCallback(
@@ -88,7 +90,7 @@ export function InlineNumberPopover({
       }
       const raw = customVal !== undefined ? customVal : inputVal;
       const trimmed = raw.trim();
-      if (trimmed === '' || trimmed.toLowerCase() === 'null') {
+      if (trimmed === "" || trimmed.toLowerCase() === "null") {
         if (isNullable) {
           onSave(null);
         } else {
@@ -105,7 +107,7 @@ export function InlineNumberPopover({
         onSave(trimmed);
       }
     },
-    [inputVal, isNull, isNullable, isFloat, onSave]
+    [inputVal, isNull, isNullable, isFloat, onSave],
   );
 
   const handleAttemptClose = useCallback(() => {
@@ -121,14 +123,18 @@ export function InlineNumberPopover({
     const handleMouseDown = (e: MouseEvent) => {
       if (showDiscardConfirm) return;
       const target = e.target as HTMLElement | null;
-      if (target?.closest('[role="dialog"]') || target?.closest('.fixed.z-50.ConfirmDialog')) return;
+      if (
+        target?.closest('[role="dialog"]') ||
+        target?.closest(".fixed.z-50.ConfirmDialog")
+      )
+        return;
 
       if (popoverRef.current && !popoverRef.current.contains(target as Node)) {
         handleAttemptClose();
       }
     };
-    document.addEventListener('mousedown', handleMouseDown);
-    return () => document.removeEventListener('mousedown', handleMouseDown);
+    document.addEventListener("mousedown", handleMouseDown);
+    return () => document.removeEventListener("mousedown", handleMouseDown);
   }, [handleAttemptClose, showDiscardConfirm]);
 
   // Scroll outside prompts for discard if dirty
@@ -140,33 +146,35 @@ export function InlineNumberPopover({
         handleAttemptClose();
       }
     };
-    window.addEventListener('scroll', handleScroll, true);
-    return () => window.removeEventListener('scroll', handleScroll, true);
+    window.addEventListener("scroll", handleScroll, true);
+    return () => window.removeEventListener("scroll", handleScroll, true);
   }, [handleAttemptClose, showDiscardConfirm]);
 
   const stepValue = (direction: 1 | -1) => {
     setIsNull(false);
     const curNum = Number(inputVal);
     const base = isNaN(curNum) ? 0 : curNum;
-    const nextNum = isFloat ? Math.round((base + direction * step) * 100) / 100 : base + direction * step;
+    const nextNum = isFloat
+      ? Math.round((base + direction * step) * 100) / 100
+      : base + direction * step;
     const nextStr = String(nextNum);
     setInputVal(nextStr);
     onChange(nextStr);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') {
+    if (e.key === "Enter") {
       e.preventDefault();
       e.stopPropagation();
       handleCommit();
-    } else if (e.key === 'Escape') {
+    } else if (e.key === "Escape") {
       e.preventDefault();
       e.stopPropagation();
       handleAttemptClose();
-    } else if (e.key === 'ArrowUp') {
+    } else if (e.key === "ArrowUp") {
       e.preventDefault();
       stepValue(1);
-    } else if (e.key === 'ArrowDown') {
+    } else if (e.key === "ArrowDown") {
       e.preventDefault();
       stepValue(-1);
     }
@@ -176,19 +184,28 @@ export function InlineNumberPopover({
     if (!isNullable) return;
     if (!isNull) {
       setIsNull(true);
-      setInputVal('');
-      onChange('');
+      setInputVal("");
+      onChange("");
     } else {
       setIsNull(false);
-      setInputVal('0');
-      onChange('0');
+      setInputVal("0");
+      onChange("0");
     }
   };
 
   // Safe popover positioning within viewport
-  const popoverWidth = Math.max(380, Math.min(500, editingCell.rect.width + 120));
-  const left = Math.max(8, Math.min(window.innerWidth - popoverWidth - 16, editingCell.rect.left));
-  const top = Math.max(8, Math.min(window.innerHeight - 150 - 16, editingCell.rect.top));
+  const popoverWidth = Math.max(
+    380,
+    Math.min(500, editingCell.rect.width + 120),
+  );
+  const left = Math.max(
+    8,
+    Math.min(window.innerWidth - popoverWidth - 16, editingCell.rect.left),
+  );
+  const top = Math.max(
+    8,
+    Math.min(window.innerHeight - 150 - 16, editingCell.rect.top),
+  );
 
   return (
     <div
@@ -203,7 +220,10 @@ export function InlineNumberPopover({
       {/* Top Header Bar */}
       <div className="flex items-center justify-between pb-2 px-1 select-none">
         <div className="flex items-center gap-1.5 min-w-0">
-          <span className="text-[13.5px] font-sans font-medium text-[#e0e0e0] truncate" title={editingCell.colName}>
+          <span
+            className="text-[13.5px] font-sans font-medium text-[#e0e0e0] truncate"
+            title={editingCell.colName}
+          >
             {editingCell.colName}
           </span>
         </div>
@@ -218,8 +238,8 @@ export function InlineNumberPopover({
               onClick={toggleNull}
               className={`px-2 py-0.5 rounded-[4px] text-[12px] font-sans font-medium border transition-colors cursor-pointer ${
                 isNull
-                  ? 'bg-[#1e1e1e] text-white border-[#333333] hover:bg-[#262626]'
-                  : 'bg-transparent text-[#888888] border-[#222222] hover:text-white hover:bg-[#181818]'
+                  ? "bg-[#1e1e1e] text-white border-[#333333] hover:bg-[#262626]"
+                  : "bg-transparent text-[#888888] border-[#222222] hover:text-white hover:bg-[#181818]"
               }`}
             >
               NULL
@@ -238,7 +258,7 @@ export function InlineNumberPopover({
           <input
             ref={inputRef}
             type="text"
-            inputMode={isFloat ? 'decimal' : 'numeric'}
+            inputMode={isFloat ? "decimal" : "numeric"}
             value={inputVal}
             onChange={(e) => {
               setIsNull(false);

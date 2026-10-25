@@ -5,18 +5,20 @@
  * Invariants: Monikers and secrets conform to cryptographic pairing specifications; peer removal requires confirmation.
  */
 
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import {
-  api,
-  ClusterStatusData,
-  PeerNodeRecordApi,
-} from '../api/client';
-import { DataTable, Column } from '../components/shared/DataTable';
-import { SlideOver } from '../components/ui/SlideOver';
-import { Button } from '../components/ui/Button';
-import { ConfirmDialog } from '../components/ui/ConfirmDialog';
-import { CustomSelect } from '../components/shared/CustomSelect';
-import { validateCleanName } from './Databases';
+import React, {
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+  useRef,
+} from "react";
+import { api, ClusterStatusData, PeerNodeRecordApi } from "../api/client";
+import { DataTable, Column } from "../components/shared/DataTable";
+import { SlideOver } from "../components/ui/SlideOver";
+import { Button } from "../components/ui/Button";
+import { ConfirmDialog } from "../components/ui/ConfirmDialog";
+import { CustomSelect } from "../components/shared/CustomSelect";
+import { validateCleanName } from "./Databases";
 import {
   Plus,
   RefreshCw,
@@ -30,19 +32,19 @@ import {
   Network,
   CheckCircle2,
   AlertCircle,
-} from 'lucide-react';
+} from "lucide-react";
 
 function formatLastSeen(timestampSecs: number) {
-  if (!timestampSecs) return 'Never';
+  if (!timestampSecs) return "Never";
   const nowSecs = Math.floor(Date.now() / 1000);
   const diff = nowSecs - timestampSecs;
-  if (diff < 5) return 'Just now';
+  if (diff < 5) return "Just now";
   if (diff < 60) return `${diff}s ago`;
   if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
   return `${Math.floor(diff / 3600)}h ago`;
 }
 
-import { FilterRule, matchesRule } from '../utils/filters';
+import { FilterRule, matchesRule } from "../utils/filters";
 
 export type { FilterRule };
 
@@ -58,16 +60,18 @@ export function Cluster() {
   const [pageSize, setPageSize] = useState(10);
 
   // Toolbar & Filtering State
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState("");
   const [showFilters, setShowFilters] = useState(false);
   const filtersRef = useRef<HTMLDivElement | null>(null);
 
   const [showDisplayOptions, setShowDisplayOptions] = useState(false);
   const displayOptionsRef = useRef<HTMLDivElement | null>(null);
 
-  const [matchMode, setMatchMode] = useState<'all' | 'any'>('all');
+  const [matchMode, setMatchMode] = useState<"all" | "any">("all");
   const [filterRules, setFilterRules] = useState<FilterRule[]>([]);
-  const [appliedFilterRules, setAppliedFilterRules] = useState<FilterRule[]>([]);
+  const [appliedFilterRules, setAppliedFilterRules] = useState<FilterRule[]>(
+    [],
+  );
 
   // Visible columns map
   const [visibleCols, setVisibleCols] = useState<Record<string, boolean>>({
@@ -85,31 +89,37 @@ export function Cluster() {
   const [copiedNodeId, setCopiedNodeId] = useState(false);
 
   const [isEditingMoniker, setIsEditingMoniker] = useState(false);
-  const [editMonikerValue, setEditMonikerValue] = useState('');
+  const [editMonikerValue, setEditMonikerValue] = useState("");
   const [isSavingMoniker, setIsSavingMoniker] = useState(false);
 
   // Connect Peer SlideOver state
   const [isConnectOpen, setIsConnectOpen] = useState(false);
-  const [peerUrl, setPeerUrl] = useState('');
-  const [peerSecret, setPeerSecret] = useState('');
-  const [peerMoniker, setPeerMoniker] = useState('');
+  const [peerUrl, setPeerUrl] = useState("");
+  const [peerSecret, setPeerSecret] = useState("");
+  const [peerMoniker, setPeerMoniker] = useState("");
   const [showPeerSecret, setShowPeerSecret] = useState(false);
   const [connectError, setConnectError] = useState<string | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
-  const [confirmDiscardConnectOpen, setConfirmDiscardConnectOpen] = useState(false);
-  const [confirmDiscardManagePeerOpen, setConfirmDiscardManagePeerOpen] = useState(false);
+  const [confirmDiscardConnectOpen, setConfirmDiscardConnectOpen] =
+    useState(false);
+  const [confirmDiscardManagePeerOpen, setConfirmDiscardManagePeerOpen] =
+    useState(false);
 
   // Deletion confirmation state
-  const [peerToDelete, setPeerToDelete] = useState<PeerNodeRecordApi | null>(null);
+  const [peerToDelete, setPeerToDelete] = useState<PeerNodeRecordApi | null>(
+    null,
+  );
   const [isDeleting, setIsDeleting] = useState(false);
 
   // Manage Peer SlideOver state (matches Databases.tsx & Keys.tsx manage panel)
-  const [selectedPeer, setSelectedPeer] = useState<PeerNodeRecordApi | null>(null);
+  const [selectedPeer, setSelectedPeer] = useState<PeerNodeRecordApi | null>(
+    null,
+  );
   const [isPeerPanelOpen, setIsPeerPanelOpen] = useState(false);
-  const [peerTab, setPeerTab] = useState<'connection' | 'danger'>('connection');
-  const [peerEditMoniker, setPeerEditMoniker] = useState('');
-  const [peerEditUrl, setPeerEditUrl] = useState('');
-  const [peerEditSecret, setPeerEditSecret] = useState('');
+  const [peerTab, setPeerTab] = useState<"connection" | "danger">("connection");
+  const [peerEditMoniker, setPeerEditMoniker] = useState("");
+  const [peerEditUrl, setPeerEditUrl] = useState("");
+  const [peerEditSecret, setPeerEditSecret] = useState("");
   const [showPeerEditSecret, setShowPeerEditSecret] = useState(false);
   const [isSavingPeer, setIsSavingPeer] = useState(false);
   const [isPingingPeer, setIsPingingPeer] = useState(false);
@@ -122,15 +132,23 @@ export function Cluster() {
     if (!showFilters && !showDisplayOptions) return;
     const handleClickOutside = (e: MouseEvent) => {
       const target = e.target as Node;
-      if (showFilters && filtersRef.current && !filtersRef.current.contains(target)) {
+      if (
+        showFilters &&
+        filtersRef.current &&
+        !filtersRef.current.contains(target)
+      ) {
         setShowFilters(false);
       }
-      if (showDisplayOptions && displayOptionsRef.current && !displayOptionsRef.current.contains(target)) {
+      if (
+        showDisplayOptions &&
+        displayOptionsRef.current &&
+        !displayOptionsRef.current.contains(target)
+      ) {
         setShowDisplayOptions(false);
       }
     };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [showFilters, showDisplayOptions]);
 
   // Reset pagination on search query or filter changes (F-06)
@@ -148,7 +166,8 @@ export function Cluster() {
       setStatus(statusRes);
       setPeers(peersRes.peers || []);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Failed to query cluster status';
+      const msg =
+        err instanceof Error ? err.message : "Failed to query cluster status";
       setErrorMessage(msg);
     } finally {
       setIsLoading(false);
@@ -182,38 +201,43 @@ export function Cluster() {
   };
 
   const editMonikerValidation = validateCleanName(editMonikerValue);
-  const peerMonikerValidation = peerMoniker.trim().length > 0 ? validateCleanName(peerMoniker) : { valid: true };
+  const peerMonikerValidation =
+    peerMoniker.trim().length > 0
+      ? validateCleanName(peerMoniker)
+      : { valid: true };
   const peerEditMonikerValidation = validateCleanName(peerEditMoniker);
 
   const isPeerChanged = Boolean(
     selectedPeer &&
-      (peerEditMoniker.trim() !== selectedPeer.moniker ||
-        peerEditUrl.trim() !== selectedPeer.url ||
-        peerEditSecret.trim().length > 0)
+    (peerEditMoniker.trim() !== selectedPeer.moniker ||
+      peerEditUrl.trim() !== selectedPeer.url ||
+      peerEditSecret.trim().length > 0),
   );
 
   const isPeerEditUrlValid = Boolean(
     peerEditUrl.trim().length > 0 &&
-      (peerEditUrl.trim().startsWith('http://') || peerEditUrl.trim().startsWith('https://'))
+    (peerEditUrl.trim().startsWith("http://") ||
+      peerEditUrl.trim().startsWith("https://")),
   );
 
   const canSavePeer = Boolean(
     isPeerChanged &&
-      peerEditMoniker.trim().length > 0 &&
-      peerEditMonikerValidation.valid &&
-      isPeerEditUrlValid &&
-      !isSavingPeer
+    peerEditMoniker.trim().length > 0 &&
+    peerEditMonikerValidation.valid &&
+    isPeerEditUrlValid &&
+    !isSavingPeer,
   );
 
   const isPeerUrlValid = Boolean(
     peerUrl.trim().length > 0 &&
-      (peerUrl.trim().startsWith('http://') || peerUrl.trim().startsWith('https://'))
+    (peerUrl.trim().startsWith("http://") ||
+      peerUrl.trim().startsWith("https://")),
   );
 
   const isConnectDirty = Boolean(
     peerUrl.trim().length > 0 ||
     peerSecret.trim().length > 0 ||
-    peerMoniker.trim().length > 0
+    peerMoniker.trim().length > 0,
   );
 
   const canConnectPeer = Boolean(
@@ -221,7 +245,7 @@ export function Cluster() {
     peerUrl.trim().length > 0 &&
     isPeerUrlValid &&
     peerSecret.trim().length > 0 &&
-    (peerMoniker.trim().length === 0 || peerMonikerValidation.valid)
+    (peerMoniker.trim().length === 0 || peerMonikerValidation.valid),
   );
 
   function requestCloseConnect() {
@@ -235,14 +259,14 @@ export function Cluster() {
   function forceCloseConnect() {
     setConfirmDiscardConnectOpen(false);
     setIsConnectOpen(false);
-    setPeerUrl('');
-    setPeerSecret('');
-    setPeerMoniker('');
+    setPeerUrl("");
+    setPeerSecret("");
+    setPeerMoniker("");
     setConnectError(null);
   }
 
   function requestCloseManagePeer() {
-    if (peerTab === 'connection' && isPeerChanged) {
+    if (peerTab === "connection" && isPeerChanged) {
       setConfirmDiscardManagePeerOpen(true);
     } else {
       forceCloseManagePeer();
@@ -252,7 +276,7 @@ export function Cluster() {
   function forceCloseManagePeer() {
     setConfirmDiscardManagePeerOpen(false);
     setIsPeerPanelOpen(false);
-    setPeerTab('connection');
+    setPeerTab("connection");
     setPeerPanelError(null);
     setPeerPanelSuccess(null);
   }
@@ -266,7 +290,7 @@ export function Cluster() {
       setStatus((prev) => (prev ? { ...prev, moniker: trimmed } : null));
       setIsEditingMoniker(false);
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : 'Failed to update moniker');
+      alert(err instanceof Error ? err.message : "Failed to update moniker");
     } finally {
       setIsSavingMoniker(false);
     }
@@ -280,19 +304,22 @@ export function Cluster() {
     const trimmedSecret = peerSecret.trim();
 
     if (!trimmedUrl) {
-      setConnectError('Peer advertise URL is required.');
+      setConnectError("Peer advertise URL is required.");
       return;
     }
-    if (!trimmedUrl.startsWith('http://') && !trimmedUrl.startsWith('https://')) {
-      setConnectError('URL must start with http:// or https://');
+    if (
+      !trimmedUrl.startsWith("http://") &&
+      !trimmedUrl.startsWith("https://")
+    ) {
+      setConnectError("URL must start with http:// or https://");
       return;
     }
     if (!trimmedSecret) {
-      setConnectError('Cluster secret or pairing token is required.');
+      setConnectError("Cluster secret or pairing token is required.");
       return;
     }
     if (peerMoniker.trim().length > 0 && !peerMonikerValidation.valid) {
-      setConnectError(peerMonikerValidation.error || 'Invalid moniker format.');
+      setConnectError(peerMonikerValidation.error || "Invalid moniker format.");
       return;
     }
 
@@ -304,12 +331,12 @@ export function Cluster() {
         moniker: peerMoniker.trim() || undefined,
       });
       setIsConnectOpen(false);
-      setPeerUrl('');
-      setPeerSecret('');
-      setPeerMoniker('');
+      setPeerUrl("");
+      setPeerSecret("");
+      setPeerMoniker("");
       fetchClusterData();
     } catch (err: unknown) {
-      setConnectError(err instanceof Error ? err.message : 'Connection failed');
+      setConnectError(err instanceof Error ? err.message : "Connection failed");
     } finally {
       setIsConnecting(false);
     }
@@ -324,7 +351,7 @@ export function Cluster() {
       setIsPeerPanelOpen(false);
       fetchClusterData();
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : 'Failed to remove peer');
+      alert(err instanceof Error ? err.message : "Failed to remove peer");
     } finally {
       setIsDeleting(false);
     }
@@ -334,12 +361,12 @@ export function Cluster() {
     setSelectedPeer(peer);
     setPeerEditMoniker(peer.moniker);
     setPeerEditUrl(peer.url);
-    setPeerEditSecret('');
+    setPeerEditSecret("");
     setShowPeerEditSecret(false);
     setPeerPanelError(null);
     setPeerPanelSuccess(null);
     setCopiedPeerNodeId(false);
-    setPeerTab('connection');
+    setPeerTab("connection");
     setIsPeerPanelOpen(true);
   };
 
@@ -357,15 +384,20 @@ export function Cluster() {
     const trimmedUrl = peerEditUrl.trim();
 
     if (!trimmedMoniker || !peerEditMonikerValidation.valid) {
-      setPeerPanelError(peerEditMonikerValidation.error || 'Invalid moniker format.');
+      setPeerPanelError(
+        peerEditMonikerValidation.error || "Invalid moniker format.",
+      );
       return;
     }
     if (!trimmedUrl) {
-      setPeerPanelError('Advertise URL cannot be empty.');
+      setPeerPanelError("Advertise URL cannot be empty.");
       return;
     }
-    if (!trimmedUrl.startsWith('http://') && !trimmedUrl.startsWith('https://')) {
-      setPeerPanelError('URL must start with http:// or https://');
+    if (
+      !trimmedUrl.startsWith("http://") &&
+      !trimmedUrl.startsWith("https://")
+    ) {
+      setPeerPanelError("URL must start with http:// or https://");
       return;
     }
 
@@ -373,24 +405,30 @@ export function Cluster() {
       setIsSavingPeer(true);
       setPeerPanelError(null);
       setPeerPanelSuccess(null);
-      const payload: { moniker: string; url: string; cluster_secret?: string } = {
-        moniker: trimmedMoniker,
-        url: trimmedUrl,
-      };
+      const payload: { moniker: string; url: string; cluster_secret?: string } =
+        {
+          moniker: trimmedMoniker,
+          url: trimmedUrl,
+        };
       if (peerEditSecret.trim()) {
         payload.cluster_secret = peerEditSecret.trim();
       }
-      const updated = await api.updateClusterPeer(selectedPeer.node_id, payload);
-      setPeers((prev) =>
-        prev.map((p) => (p.node_id === updated.node_id ? updated : p))
+      const updated = await api.updateClusterPeer(
+        selectedPeer.node_id,
+        payload,
       );
-      setPeerEditSecret('');
+      setPeers((prev) =>
+        prev.map((p) => (p.node_id === updated.node_id ? updated : p)),
+      );
+      setPeerEditSecret("");
       setShowPeerEditSecret(false);
       setIsPeerPanelOpen(false);
       setSelectedPeer(null);
       fetchClusterData();
     } catch (err: unknown) {
-      setPeerPanelError(err instanceof Error ? err.message : 'Failed to update peer');
+      setPeerPanelError(
+        err instanceof Error ? err.message : "Failed to update peer",
+      );
     } finally {
       setIsSavingPeer(false);
     }
@@ -405,9 +443,9 @@ export function Cluster() {
       const updated = await api.pingClusterPeer(selectedPeer.node_id);
       setSelectedPeer(updated);
       setPeers((prev) =>
-        prev.map((p) => (p.node_id === updated.node_id ? updated : p))
+        prev.map((p) => (p.node_id === updated.node_id ? updated : p)),
       );
-      if (updated.status === 'connected') {
+      if (updated.status === "connected") {
         setPeerPanelSuccess(`Ping responded in ${updated.last_ping_ms} ms`);
       } else {
         setPeerPanelError(`Peer unreachable (${updated.last_ping_ms} ms)`);
@@ -416,24 +454,29 @@ export function Cluster() {
         setPeerPanelSuccess(null);
       }, 3500);
     } catch (err: unknown) {
-      setPeerPanelError(err instanceof Error ? err.message : 'Ping failed');
+      setPeerPanelError(err instanceof Error ? err.message : "Ping failed");
     } finally {
       setIsPingingPeer(false);
     }
   };
 
   const filterFieldOptions = [
-    { value: 'moniker', label: 'Peer Moniker' },
-    { value: 'status', label: 'Status' },
-    { value: 'url', label: 'Advertise URL' },
-    { value: 'node_id', label: 'Node ID' },
+    { value: "moniker", label: "Peer Moniker" },
+    { value: "status", label: "Status" },
+    { value: "url", label: "Advertise URL" },
+    { value: "node_id", label: "Node ID" },
   ];
 
   const handleAddRule = () => {
     const newId = String(Date.now());
     setFilterRules((prev) => [
       ...prev,
-      { id: newId, field: filterFieldOptions[0].value, operator: 'contains', value: '' },
+      {
+        id: newId,
+        field: filterFieldOptions[0].value,
+        operator: "contains",
+        value: "",
+      },
     ]);
   };
 
@@ -443,12 +486,12 @@ export function Cluster() {
 
   const handleUpdateRule = (id: string, updates: Partial<FilterRule>) => {
     setFilterRules((prev) =>
-      prev.map((r) => (r.id === id ? { ...r, ...updates } : r))
+      prev.map((r) => (r.id === id ? { ...r, ...updates } : r)),
     );
   };
 
   const handleApplyFilters = () => {
-    setAppliedFilterRules(filterRules.filter((r) => r.value.trim() !== ''));
+    setAppliedFilterRules(filterRules.filter((r) => r.value.trim() !== ""));
     setShowFilters(false);
   };
 
@@ -459,12 +502,12 @@ export function Cluster() {
   };
 
   const displayColumnOptions = [
-    { id: 'status', label: 'Status' },
-    { id: 'moniker', label: 'Moniker' },
-    { id: 'latency', label: 'Ping Latency' },
-    { id: 'lastSeen', label: 'Last Seen' },
-    { id: 'nodeId', label: 'Node ID' },
-    { id: 'url', label: 'Advertise URL' },
+    { id: "status", label: "Status" },
+    { id: "moniker", label: "Moniker" },
+    { id: "latency", label: "Ping Latency" },
+    { id: "lastSeen", label: "Last Seen" },
+    { id: "nodeId", label: "Node ID" },
+    { id: "url", label: "Advertise URL" },
   ];
 
   const toggleColVisibility = (colId: string) => {
@@ -492,16 +535,18 @@ export function Cluster() {
           p.moniker.toLowerCase().includes(q) ||
           p.url.toLowerCase().includes(q) ||
           p.node_id.toLowerCase().includes(q) ||
-          p.status.toLowerCase().includes(q)
+          p.status.toLowerCase().includes(q),
       );
     }
     if (appliedFilterRules.length > 0) {
       list = list.filter((p) => {
         const tests = appliedFilterRules.map((rule) => {
-          const val = String((p as unknown as Record<string, unknown>)[rule.field] ?? '');
+          const val = String(
+            (p as unknown as Record<string, unknown>)[rule.field] ?? "",
+          );
           return matchesRule(val, rule.operator, rule.value);
         });
-        return matchMode === 'any' ? tests.some(Boolean) : tests.every(Boolean);
+        return matchMode === "any" ? tests.some(Boolean) : tests.every(Boolean);
       });
     }
     return list;
@@ -511,27 +556,30 @@ export function Cluster() {
   const columns: Column<PeerNodeRecordApi>[] = useMemo(
     () => [
       {
-        id: 'status',
-        header: 'Status',
-        accessorKey: 'status',
+        id: "status",
+        header: "Status",
+        accessorKey: "status",
         width: 125,
         isResizable: true,
-        className: 'pl-4 pr-3',
+        className: "pl-4 pr-3",
         cell: (peer) => {
           const label =
-            peer.status === 'connected'
-              ? 'Connected'
-              : peer.status === 'unreachable'
-              ? 'Unreachable'
-              : 'Pending';
+            peer.status === "connected"
+              ? "Connected"
+              : peer.status === "unreachable"
+                ? "Unreachable"
+                : "Pending";
           const dot =
-            peer.status === 'connected'
-              ? 'bg-[#30a46c]'
-              : peer.status === 'unreachable'
-              ? 'bg-[#e5484d]'
-              : 'bg-[#f59e0b]';
+            peer.status === "connected"
+              ? "bg-[#30a46c]"
+              : peer.status === "unreachable"
+                ? "bg-[#e5484d]"
+                : "bg-[#f59e0b]";
           return (
-            <div className="flex items-center gap-2 text-[14px] text-white font-normal truncate whitespace-nowrap" title={label}>
+            <div
+              className="flex items-center gap-2 text-[14px] text-white font-normal truncate whitespace-nowrap"
+              title={label}
+            >
               <span className={`size-1.5 rounded-full shrink-0 ${dot}`} />
               <span className="truncate whitespace-nowrap">{label}</span>
             </div>
@@ -539,13 +587,13 @@ export function Cluster() {
         },
       },
       {
-        id: 'moniker',
-        header: 'Moniker',
-        accessorKey: 'moniker',
+        id: "moniker",
+        header: "Moniker",
+        accessorKey: "moniker",
         isSortable: true,
         isResizable: true,
         width: 190,
-        className: 'px-3',
+        className: "px-3",
         cell: (peer) => (
           <div className="flex items-center gap-2.5 min-w-0">
             <Network className="w-4 h-4 text-[#8c8c8c] shrink-0" />
@@ -559,33 +607,35 @@ export function Cluster() {
         ),
       },
       {
-        id: 'latency',
-        header: 'Ping Latency',
-        accessorKey: 'last_ping_ms',
+        id: "latency",
+        header: "Ping Latency",
+        accessorKey: "last_ping_ms",
         width: 125,
         isResizable: true,
-        className: 'px-3',
+        className: "px-3",
         cell: (peer) =>
-          peer.status === 'connected' ? (
+          peer.status === "connected" ? (
             <span
               className={`tabular-nums text-[13px] font-normal truncate whitespace-nowrap block ${
-                peer.last_ping_ms < 50 ? 'text-[#30a46c]' : 'text-[#f59e0b]'
+                peer.last_ping_ms < 50 ? "text-[#30a46c]" : "text-[#f59e0b]"
               }`}
               title={`${peer.last_ping_ms} ms`}
             >
               {peer.last_ping_ms} ms
             </span>
           ) : (
-            <span className="text-[13px] text-[#666666] font-normal truncate whitespace-nowrap block">—</span>
+            <span className="text-[13px] text-[#666666] font-normal truncate whitespace-nowrap block">
+              —
+            </span>
           ),
       },
       {
-        id: 'lastSeen',
-        header: 'Last Seen',
-        accessorKey: 'last_seen_at',
+        id: "lastSeen",
+        header: "Last Seen",
+        accessorKey: "last_seen_at",
         width: 125,
         isResizable: true,
-        className: 'px-3',
+        className: "px-3",
         cell: (peer) => (
           <span
             className="tabular-nums text-[13px] text-[#8c8c8c] font-normal truncate whitespace-nowrap block"
@@ -596,12 +646,12 @@ export function Cluster() {
         ),
       },
       {
-        id: 'nodeId',
-        header: 'Node ID',
-        accessorKey: 'node_id',
+        id: "nodeId",
+        header: "Node ID",
+        accessorKey: "node_id",
         width: 190,
         isResizable: true,
-        className: 'px-3',
+        className: "px-3",
         cell: (peer) => (
           <span
             className="text-[13px] text-[#cccccc] truncate whitespace-nowrap block font-sans"
@@ -612,12 +662,12 @@ export function Cluster() {
         ),
       },
       {
-        id: 'url',
-        header: 'Advertise URL',
-        accessorKey: 'url',
+        id: "url",
+        header: "Advertise URL",
+        accessorKey: "url",
         width: 250,
         isResizable: true,
-        className: 'px-3',
+        className: "px-3",
         cell: (peer) => (
           <span
             className="text-[13px] text-[#8c8c8c] truncate whitespace-nowrap block font-sans"
@@ -628,11 +678,11 @@ export function Cluster() {
         ),
       },
       {
-        id: 'actions',
+        id: "actions",
         header: <span className="sr-only">Actions</span>,
         isFlex: true,
-        headerClassName: 'justify-end pr-4 text-right',
-        className: 'pl-3 pr-4 justify-end',
+        headerClassName: "justify-end pr-4 text-right",
+        className: "pl-3 pr-4 justify-end",
         cell: (peer) => (
           <div className="flex items-center justify-end w-full">
             <button
@@ -646,15 +696,22 @@ export function Cluster() {
         ),
       },
     ],
-    []
+    [],
   );
 
   const activeColumns = useMemo(() => {
-    const visible = columns.filter((col) => col.id === 'actions' || visibleCols[col.id] !== false);
-    const lastDataId = [...visible].reverse().find((c) => c.id !== 'actions')?.id;
+    const visible = columns.filter(
+      (col) => col.id === "actions" || visibleCols[col.id] !== false,
+    );
+    const lastDataId = [...visible]
+      .reverse()
+      .find((c) => c.id !== "actions")?.id;
     return visible.map((col) => ({
       ...col,
-      isResizable: col.id !== 'actions' && col.id !== lastDataId && Boolean(col.isResizable),
+      isResizable:
+        col.id !== "actions" &&
+        col.id !== lastDataId &&
+        Boolean(col.isResizable),
     }));
   }, [columns, visibleCols]);
 
@@ -663,7 +720,9 @@ export function Cluster() {
       {/* Top Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-[16px] font-medium text-white tracking-tight">Cluster Mesh</h1>
+          <h1 className="text-[16px] font-medium text-white tracking-tight">
+            Cluster Mesh
+          </h1>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -674,7 +733,9 @@ export function Cluster() {
             aria-label="Refresh cluster status"
             className="flex items-center justify-center h-8 w-8 text-[#8c8c8c] hover:text-white rounded-[8px] bg-[#0c0c0c] hover:bg-[#141414] border border-[#262626] hover:border-[#383838] transition-colors cursor-pointer shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin opacity-50' : ''}`} />
+            <RefreshCw
+              className={`w-3.5 h-3.5 ${isRefreshing ? "animate-spin opacity-50" : ""}`}
+            />
           </button>
           <Button
             variant="primary"
@@ -701,24 +762,35 @@ export function Cluster() {
       <div className="rounded-lg border border-[#262626] bg-[#0e0e0e]">
         <div className="grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-[#222222]">
           <div className="px-4 py-3.5 min-w-0">
-            <span className="block text-[12px] text-[#8c8c8c] font-medium mb-1.5">Node Moniker</span>
+            <span className="block text-[12px] text-[#8c8c8c] font-medium mb-1.5">
+              Node Moniker
+            </span>
             {isEditingMoniker ? (
               <div className="space-y-1.5">
                 <div className="flex items-center gap-2">
                   <input
                     type="text"
                     value={editMonikerValue}
-                    onChange={(e) => setEditMonikerValue(e.target.value.toLowerCase().replace(/\s+/g, '_'))}
+                    onChange={(e) =>
+                      setEditMonikerValue(
+                        e.target.value.toLowerCase().replace(/\s+/g, "_"),
+                      )
+                    }
                     onKeyDown={(e) => {
-                      if (e.key === 'Enter' && editMonikerValidation.valid && !isSavingMoniker) {
+                      if (
+                        e.key === "Enter" &&
+                        editMonikerValidation.valid &&
+                        !isSavingMoniker
+                      ) {
                         handleSaveMoniker();
                       }
                     }}
                     placeholder="e.g. axiom_node_01"
                     className={`h-8 min-w-0 flex-1 rounded-[6px] border px-2.5 text-[13px] text-white focus:outline-none lowercase transition-colors font-sans ${
-                      editMonikerValue.trim().length > 0 && !editMonikerValidation.valid
-                        ? 'border-[#e5484d] bg-[#1a0f0f] focus:border-[#e5484d] focus:ring-1 focus:ring-[#e5484d]/40'
-                        : 'border-[#262626] bg-[#121212] focus:border-[#3b82f6]'
+                      editMonikerValue.trim().length > 0 &&
+                      !editMonikerValidation.valid
+                        ? "border-[#e5484d] bg-[#1a0f0f] focus:border-[#e5484d] focus:ring-1 focus:ring-[#e5484d]/40"
+                        : "border-[#262626] bg-[#121212] focus:border-[#3b82f6]"
                     }`}
                     autoFocus
                   />
@@ -743,12 +815,13 @@ export function Cluster() {
                     Cancel
                   </button>
                 </div>
-                {editMonikerValue.trim().length > 0 && !editMonikerValidation.valid && (
-                  <div className="flex items-center gap-1.5 text-[11px] text-[#e5484d]">
-                    <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                    <span>{editMonikerValidation.error}</span>
-                  </div>
-                )}
+                {editMonikerValue.trim().length > 0 &&
+                  !editMonikerValidation.valid && (
+                    <div className="flex items-center gap-1.5 text-[11px] text-[#e5484d]">
+                      <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                      <span>{editMonikerValidation.error}</span>
+                    </div>
+                  )}
               </div>
             ) : (
               <div className="flex items-center gap-1.5 min-w-0">
@@ -756,12 +829,12 @@ export function Cluster() {
                   className="text-[14px] font-medium text-white truncate"
                   title={status?.moniker || undefined}
                 >
-                  {status?.moniker || '—'}
+                  {status?.moniker || "—"}
                 </span>
                 <button
                   type="button"
                   onClick={() => {
-                    setEditMonikerValue(status?.moniker || '');
+                    setEditMonikerValue(status?.moniker || "");
                     setIsEditingMoniker(true);
                   }}
                   className="flex items-center justify-center h-6 w-6 rounded-[6px] text-[#8c8c8c] hover:text-white hover:bg-[#1a1a1a] transition-colors cursor-pointer shrink-0"
@@ -775,13 +848,15 @@ export function Cluster() {
           </div>
 
           <div className="px-4 py-3.5 min-w-0">
-            <span className="block text-[12px] text-[#8c8c8c] font-medium mb-1.5">Node ID</span>
+            <span className="block text-[12px] text-[#8c8c8c] font-medium mb-1.5">
+              Node ID
+            </span>
             <div className="flex items-center gap-1.5 min-w-0">
               <span
                 className="text-[13px] text-[#cccccc] truncate font-sans"
                 title={status?.node_id || undefined}
               >
-                {status?.node_id || '—'}
+                {status?.node_id || "—"}
               </span>
               <button
                 type="button"
@@ -800,7 +875,9 @@ export function Cluster() {
           </div>
 
           <div className="px-4 py-3.5 min-w-0">
-            <span className="block text-[12px] text-[#8c8c8c] font-medium mb-1.5">Connected Peers</span>
+            <span className="block text-[12px] text-[#8c8c8c] font-medium mb-1.5">
+              Connected Peers
+            </span>
             <div className="flex items-baseline gap-1.5">
               <span className="tabular-nums text-[14px] font-medium text-white">
                 {status?.connected_peers ?? 0}
@@ -814,23 +891,33 @@ export function Cluster() {
 
         <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 border-t border-[#222222] px-4 py-3">
           <div className="sm:w-[200px] shrink-0">
-            <span className="block text-[12px] text-[#8c8c8c] font-medium">Cluster Secret</span>
-            <span className="block text-[12px] text-[#666666]">Required to pair a remote node</span>
+            <span className="block text-[12px] text-[#8c8c8c] font-medium">
+              Cluster Secret
+            </span>
+            <span className="block text-[12px] text-[#666666]">
+              Required to pair a remote node
+            </span>
           </div>
           <div className="flex items-center gap-2 min-w-0 flex-1">
             <div className="flex items-center h-8 flex-1 min-w-0 rounded-[6px] border border-[#262626] bg-[#121212] px-2.5 font-mono text-[12px] text-[#cccccc] truncate select-all">
               {showSecret
-                ? status?.cluster_secret || '—'
-                : '••••••••••••••••••••••••••••••••••••••••'}
+                ? status?.cluster_secret || "—"
+                : "••••••••••••••••••••••••••••••••••••••••"}
             </div>
             <button
               type="button"
               onClick={() => setShowSecret(!showSecret)}
               className="flex items-center justify-center h-8 w-8 rounded-[6px] border border-[#262626] bg-[#0c0c0c] text-[#8c8c8c] hover:text-white hover:border-[#383838] transition-colors cursor-pointer shrink-0"
-              title={showSecret ? 'Hide secret' : 'Show secret'}
-              aria-label={showSecret ? 'Hide cluster secret' : 'Show cluster secret'}
+              title={showSecret ? "Hide secret" : "Show secret"}
+              aria-label={
+                showSecret ? "Hide cluster secret" : "Show cluster secret"
+              }
             >
-              {showSecret ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+              {showSecret ? (
+                <EyeOff className="w-3.5 h-3.5" />
+              ) : (
+                <Eye className="w-3.5 h-3.5" />
+              )}
             </button>
             <button
               type="button"
@@ -866,7 +953,7 @@ export function Cluster() {
           {searchQuery && (
             <button
               type="button"
-              onClick={() => setSearchQuery('')}
+              onClick={() => setSearchQuery("")}
               className="flex items-center justify-center w-5 h-5 rounded hover:bg-[#222222] text-[#8c8c8c] hover:text-white transition-colors cursor-pointer shrink-0 font-sans"
               title="Clear search"
             >
@@ -889,7 +976,12 @@ export function Cluster() {
                       setFilterRules(appliedFilterRules.map((r) => ({ ...r })));
                     } else if (filterRules.length === 0) {
                       setFilterRules([
-                        { id: '1', field: filterFieldOptions[0].value, operator: 'contains', value: '' },
+                        {
+                          id: "1",
+                          field: filterFieldOptions[0].value,
+                          operator: "contains",
+                          value: "",
+                        },
                       ]);
                     }
                   }
@@ -898,8 +990,8 @@ export function Cluster() {
               }}
               className={`flex items-center gap-1.5 h-9 px-3 rounded-[8px] bg-transparent border text-[14px] font-medium transition-colors cursor-pointer shrink-0 font-sans ${
                 showFilters || appliedFilterRules.length > 0
-                  ? 'border-[#444444] text-white bg-[#141414]'
-                  : 'border-[#262626] text-white hover:bg-[#141414] hover:border-[#383838]'
+                  ? "border-[#444444] text-white bg-[#141414]"
+                  : "border-[#262626] text-white hover:bg-[#141414] hover:border-[#383838]"
               }`}
               title="Filter cluster peers"
             >
@@ -926,14 +1018,20 @@ export function Cluster() {
                 {/* Header */}
                 <div className="flex items-center justify-between pb-3">
                   <div className="flex items-center gap-2">
-                    <span className="text-[14px] font-medium text-white font-sans">Peer Node Filters</span>
+                    <span className="text-[14px] font-medium text-white font-sans">
+                      Peer Node Filters
+                    </span>
                     {filterRules.length >= 2 && (
                       <button
                         type="button"
-                        onClick={() => setMatchMode((prev) => (prev === 'any' ? 'all' : 'any'))}
+                        onClick={() =>
+                          setMatchMode((prev) =>
+                            prev === "any" ? "all" : "any",
+                          )
+                        }
                         className="px-2.5 py-0.5 rounded text-[13px] text-[#cccccc] hover:text-white bg-[#141414] border border-[#2e2e2e] hover:border-[#444444] transition-colors cursor-pointer font-sans"
                       >
-                        Match {matchMode === 'any' ? 'any (OR)' : 'all (AND)'}
+                        Match {matchMode === "any" ? "any (OR)" : "all (AND)"}
                       </button>
                     )}
                   </div>
@@ -948,13 +1046,17 @@ export function Cluster() {
                 </div>
 
                 {/* Rules List */}
-                <div className={`space-y-2.5 ${filterRules.length > 3 ? 'max-h-[320px] overflow-y-auto pr-0.5' : ''}`}>
+                <div
+                  className={`space-y-2.5 ${filterRules.length > 3 ? "max-h-[320px] overflow-y-auto pr-0.5" : ""}`}
+                >
                   {filterRules.map((rule) => (
                     <div key={rule.id} className="flex items-center gap-2">
                       <CustomSelect
                         value={rule.field}
                         options={filterFieldOptions}
-                        onChange={(val) => handleUpdateRule(rule.id, { field: val })}
+                        onChange={(val) =>
+                          handleUpdateRule(rule.id, { field: val })
+                        }
                         className="w-32 sm:w-36 shrink-0"
                         menuWidth="w-40"
                       />
@@ -962,11 +1064,16 @@ export function Cluster() {
                       <CustomSelect
                         value={rule.operator}
                         options={[
-                          { value: 'contains', label: 'contains' },
-                          { value: 'equals', label: 'equals' },
-                          { value: 'starts_with', label: 'starts with' },
+                          { value: "contains", label: "contains" },
+                          { value: "equals", label: "equals" },
+                          { value: "starts_with", label: "starts with" },
                         ]}
-                        onChange={(val) => handleUpdateRule(rule.id, { operator: val as 'contains' | 'equals' | 'starts_with' })}
+                        onChange={(val) =>
+                          handleUpdateRule(rule.id, {
+                            operator: val as
+                              "contains" | "equals" | "starts_with",
+                          })
+                        }
                         className="w-32 sm:w-36 shrink-0"
                         menuWidth="w-44"
                       />
@@ -974,9 +1081,11 @@ export function Cluster() {
                       <input
                         type="text"
                         value={rule.value}
-                        onChange={(e) => handleUpdateRule(rule.id, { value: e.target.value })}
+                        onChange={(e) =>
+                          handleUpdateRule(rule.id, { value: e.target.value })
+                        }
                         onKeyDown={(e) => {
-                          if (e.key === 'Enter') handleApplyFilters();
+                          if (e.key === "Enter") handleApplyFilters();
                         }}
                         placeholder="Filter value..."
                         className="flex-1 min-w-0 h-9 px-3 rounded-[8px] bg-[#141414] border border-[#262626] hover:border-[#383838] focus:border-[#2f80ed] text-[14px] text-white placeholder-[#555555] outline-none transition-colors font-sans"
@@ -988,7 +1097,13 @@ export function Cluster() {
                         className="w-8 h-8 flex items-center justify-center text-[#777777] hover:text-white cursor-pointer transition-colors shrink-0"
                         title="Delete filter rule"
                       >
-                        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="currentColor" viewBox="0 0 256 256">
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          width="15"
+                          height="15"
+                          fill="currentColor"
+                          viewBox="0 0 256 256"
+                        >
                           <path d="M216,48H176V40a24,24,0,0,0-24-24H104A24,24,0,0,0,80,40v8H40a8,8,0,0,0,0,16h8V208a16,16,0,0,0,16,16H192a16,16,0,0,0,16-16V64h8a8,8,0,0,0,0-16ZM96,40a8,8,0,0,1,8-8h48a8,8,0,0,1,8,8v8H96Zm96,168H64V64H192ZM112,104v64a8,8,0,0,1-16,0V104a8,8,0,0,1,16,0Zm48,0v64a8,8,0,0,1-16,0V104a8,8,0,0,1,16,0Z" />
                         </svg>
                       </button>
@@ -1006,7 +1121,9 @@ export function Cluster() {
                     <span>+ Add filter</span>
                   </button>
                   <div className="flex items-center gap-3">
-                    <span className="text-[12px] text-[#666666] font-sans">Press Enter to apply</span>
+                    <span className="text-[12px] text-[#666666] font-sans">
+                      Press Enter to apply
+                    </span>
                     {appliedFilterRules.length > 0 && (
                       <button
                         type="button"
@@ -1021,8 +1138,14 @@ export function Cluster() {
                       onClick={handleApplyFilters}
                       className="group relative flex shrink-0 items-center justify-center h-8 px-3.5 rounded-[8px] font-medium text-white shadow-xs outline-none cursor-pointer disabled:opacity-50 overflow-hidden ring-1 ring-[#1d4ed8] bg-[#2563eb] font-sans"
                     >
-                      <span aria-hidden="true" className="pointer-events-none absolute inset-0 rounded-[inherit] bg-gradient-to-b from-[#3b82f6] to-[#2563eb] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2)]" />
-                      <span aria-hidden="true" className="pointer-events-none absolute inset-0 rounded-[inherit] bg-black opacity-0 group-hover:opacity-15 transition-opacity duration-200" />
+                      <span
+                        aria-hidden="true"
+                        className="pointer-events-none absolute inset-0 rounded-[inherit] bg-gradient-to-b from-[#3b82f6] to-[#2563eb] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2)]"
+                      />
+                      <span
+                        aria-hidden="true"
+                        className="pointer-events-none absolute inset-0 rounded-[inherit] bg-black opacity-0 group-hover:opacity-15 transition-opacity duration-200"
+                      />
                       <span className="relative flex items-center gap-1.5 text-[14px] font-sans">
                         Apply filters
                       </span>
@@ -1046,12 +1169,19 @@ export function Cluster() {
               }}
               className={`flex items-center gap-1.5 h-9 px-3 rounded-[8px] bg-transparent border text-[14px] font-medium transition-colors cursor-pointer shrink-0 font-sans ${
                 showDisplayOptions
-                  ? 'border-[#444444] text-white bg-[#141414]'
-                  : 'border-[#262626] text-white hover:bg-[#141414] hover:border-[#383838]'
+                  ? "border-[#444444] text-white bg-[#141414]"
+                  : "border-[#262626] text-white hover:bg-[#141414] hover:border-[#383838]"
               }`}
               title="Toggle visible table columns"
             >
-              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 256 256" className="text-[#8c8c8c] shrink-0">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="14"
+                height="14"
+                fill="currentColor"
+                viewBox="0 0 256 256"
+                className="text-[#8c8c8c] shrink-0"
+              >
                 <path d="M222.87,74.56,134.87,23.75a16,16,0,0,0-15.74,0L31.13,74.56A16,16,0,0,0,23.26,88.4v101.6a16,16,0,0,0,7.87,13.84l88,50.81a16,16,0,0,0,15.74,0l88-50.81a16,16,0,0,0,7.87-13.84V88.4A16,16,0,0,0,222.87,74.56ZM127,160a32,32,0,1,1,32-32A32,32,0,0,1,127,160Z" />
               </svg>
               <span>Display options</span>
@@ -1068,7 +1198,13 @@ export function Cluster() {
                       onClick={() => toggleColVisibility(col.id)}
                       className="w-full flex items-center justify-between px-3 py-2 rounded-[6px] text-[14px] text-[#cccccc] hover:text-white hover:bg-[#141414] transition-colors cursor-pointer font-sans"
                     >
-                      <span className={isVisible ? 'text-white font-medium' : 'text-[#8c8c8c]'}>
+                      <span
+                        className={
+                          isVisible
+                            ? "text-white font-medium"
+                            : "text-[#8c8c8c]"
+                        }
+                      >
                         {col.label}
                       </span>
                       {isVisible && (
@@ -1119,12 +1255,18 @@ export function Cluster() {
         title="Connect Peer"
         subtitle="Pair with another Axiom node using its advertise URL and cluster secret"
       >
-        <form onSubmit={handleConnectPeerSubmit} className="flex flex-col flex-1 min-h-0">
+        <form
+          onSubmit={handleConnectPeerSubmit}
+          className="flex flex-col flex-1 min-h-0"
+        >
           <div className="flex-1 p-5 overflow-y-auto space-y-4">
             <div>
-              <h3 className="text-[16px] font-medium text-white tracking-tight">Peer Configuration</h3>
+              <h3 className="text-[16px] font-medium text-white tracking-tight">
+                Peer Configuration
+              </h3>
               <p className="text-[13px] text-[#8c8c8c] mt-0.5">
-                Provide the remote endpoint URL, secret key, and optional moniker.
+                Provide the remote endpoint URL, secret key, and optional
+                moniker.
               </p>
             </div>
 
@@ -1148,7 +1290,8 @@ export function Cluster() {
                 required
               />
               <span className="block text-[12px] text-[#666666] mt-1">
-                Reachable HTTP or HTTPS base address of the remote Axiom instance.
+                Reachable HTTP or HTTPS base address of the remote Axiom
+                instance.
               </span>
             </div>
 
@@ -1160,7 +1303,7 @@ export function Cluster() {
               </div>
               <div className="relative">
                 <input
-                  type={showPeerSecret ? 'text' : 'password'}
+                  type={showPeerSecret ? "text" : "password"}
                   placeholder="Paste the remote node's cluster secret"
                   value={peerSecret}
                   onChange={(e) => setPeerSecret(e.target.value)}
@@ -1172,9 +1315,13 @@ export function Cluster() {
                   onClick={() => setShowPeerSecret(!showPeerSecret)}
                   className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#777777] hover:text-[#cccccc] transition-colors cursor-pointer"
                   tabIndex={-1}
-                  aria-label={showPeerSecret ? 'Hide secret' : 'Show secret'}
+                  aria-label={showPeerSecret ? "Hide secret" : "Show secret"}
                 >
-                  {showPeerSecret ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                  {showPeerSecret ? (
+                    <EyeOff className="w-3.5 h-3.5" />
+                  ) : (
+                    <Eye className="w-3.5 h-3.5" />
+                  )}
                 </button>
               </div>
               <span className="block text-[12px] text-[#666666] mt-1">
@@ -1184,17 +1331,22 @@ export function Cluster() {
 
             <div>
               <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">
-                Custom Moniker <span className="text-[#666666] font-normal">(optional)</span>
+                Custom Moniker{" "}
+                <span className="text-[#666666] font-normal">(optional)</span>
               </label>
               <input
                 type="text"
                 placeholder="e.g. london_edge_01"
                 value={peerMoniker}
-                onChange={(e) => setPeerMoniker(e.target.value.toLowerCase().replace(/\s+/g, '_'))}
+                onChange={(e) =>
+                  setPeerMoniker(
+                    e.target.value.toLowerCase().replace(/\s+/g, "_"),
+                  )
+                }
                 className={`h-9 w-full rounded-[6px] border px-3 text-[14px] text-white placeholder-[#555555] focus:outline-none font-sans lowercase transition-colors ${
                   peerMoniker.trim().length > 0 && !peerMonikerValidation.valid
-                    ? 'border-[#e5484d] bg-[#1a0f0f] focus:border-[#e5484d] focus:ring-1 focus:ring-[#e5484d]/40'
-                    : 'border-[#262626] bg-[#121212] focus:border-[#3b82f6]'
+                    ? "border-[#e5484d] bg-[#1a0f0f] focus:border-[#e5484d] focus:ring-1 focus:ring-[#e5484d]/40"
+                    : "border-[#262626] bg-[#121212] focus:border-[#3b82f6]"
                 }`}
               />
               {peerMoniker.trim().length > 0 && !peerMonikerValidation.valid ? (
@@ -1204,7 +1356,8 @@ export function Cluster() {
                 </div>
               ) : (
                 <span className="block text-[12px] text-[#666666] mt-1">
-                  Leave blank to automatically inherit the peer&apos;s advertised node name.
+                  Leave blank to automatically inherit the peer&apos;s
+                  advertised node name.
                 </span>
               )}
             </div>
@@ -1223,8 +1376,14 @@ export function Cluster() {
               disabled={!canConnectPeer}
               className="group relative flex shrink-0 items-center justify-center h-9 px-4 rounded-[8px] font-medium text-white shadow-xs outline-none cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed overflow-hidden ring-1 ring-[#1d4ed8] bg-[#2563eb] font-sans text-[14px]"
             >
-              <span aria-hidden="true" className="pointer-events-none absolute inset-0 rounded-[inherit] bg-gradient-to-b from-[#3b82f6] to-[#2563eb] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2)]" />
-              <span aria-hidden="true" className="pointer-events-none absolute inset-0 rounded-[inherit] bg-black opacity-0 group-hover:opacity-15 transition-opacity duration-200" />
+              <span
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-0 rounded-[inherit] bg-gradient-to-b from-[#3b82f6] to-[#2563eb] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2)]"
+              />
+              <span
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-0 rounded-[inherit] bg-black opacity-0 group-hover:opacity-15 transition-opacity duration-200"
+              />
               <span className="relative flex items-center gap-1.5 font-sans">
                 {isConnecting ? (
                   <>
@@ -1244,30 +1403,32 @@ export function Cluster() {
       <SlideOver
         isOpen={isPeerPanelOpen}
         onClose={requestCloseManagePeer}
-        title={selectedPeer?.moniker ?? 'Peer Node'}
-        subtitle={selectedPeer ? `${selectedPeer.url} · ${selectedPeer.status}` : ''}
+        title={selectedPeer?.moniker ?? "Peer Node"}
+        subtitle={
+          selectedPeer ? `${selectedPeer.url} · ${selectedPeer.status}` : ""
+        }
       >
         {/* Tab bar (Segmented control matching Databases & Keys dashboard) */}
         <div className="px-5 py-3 border-b border-[#222222] bg-[#0e0e0e]">
           <div className="inline-flex items-center p-0.5 rounded-[8px] bg-transparent border border-[#262626]">
             <button
               type="button"
-              onClick={() => setPeerTab('connection')}
+              onClick={() => setPeerTab("connection")}
               className={`flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[14px] font-medium transition-colors duration-75 cursor-pointer font-sans outline-none focus:outline-none border ${
-                peerTab === 'connection'
-                  ? 'bg-[#161616] text-white border-[#333333]'
-                  : 'text-[#8c8c8c] hover:text-white hover:bg-[#141414] border-transparent'
+                peerTab === "connection"
+                  ? "bg-[#161616] text-white border-[#333333]"
+                  : "text-[#8c8c8c] hover:text-white hover:bg-[#141414] border-transparent"
               }`}
             >
               <span>Connection</span>
             </button>
             <button
               type="button"
-              onClick={() => setPeerTab('danger')}
+              onClick={() => setPeerTab("danger")}
               className={`flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[14px] font-medium transition-colors duration-75 cursor-pointer font-sans outline-none focus:outline-none border ${
-                peerTab === 'danger'
-                  ? 'bg-[#161616] text-white border-[#333333]'
-                  : 'text-[#8c8c8c] hover:text-white hover:bg-[#141414] border-transparent'
+                peerTab === "danger"
+                  ? "bg-[#161616] text-white border-[#333333]"
+                  : "text-[#8c8c8c] hover:text-white hover:bg-[#141414] border-transparent"
               }`}
             >
               <span>Danger</span>
@@ -1275,14 +1436,20 @@ export function Cluster() {
           </div>
         </div>
 
-        {selectedPeer && peerTab === 'connection' && (
-          <form onSubmit={handleSavePeerUpdates} className="flex flex-col flex-1 min-h-0">
+        {selectedPeer && peerTab === "connection" && (
+          <form
+            onSubmit={handleSavePeerUpdates}
+            className="flex flex-col flex-1 min-h-0"
+          >
             <div className="flex-1 p-5 overflow-y-auto space-y-5">
               {/* Header Description */}
               <div>
-                <h3 className="text-[16px] font-medium text-white tracking-tight">Peer Configuration</h3>
+                <h3 className="text-[16px] font-medium text-white tracking-tight">
+                  Peer Configuration
+                </h3>
                 <p className="text-[13px] text-[#8c8c8c] mt-0.5">
-                  Manage node moniker, advertise endpoint, and live connection health.
+                  Manage node moniker, advertise endpoint, and live connection
+                  health.
                 </p>
               </div>
 
@@ -1306,19 +1473,19 @@ export function Cluster() {
                   <div className="flex items-center gap-2.5">
                     <span
                       className={`size-2 rounded-full shrink-0 ${
-                        selectedPeer.status === 'connected'
-                          ? 'bg-[#30a46c]'
-                          : selectedPeer.status === 'unreachable'
-                          ? 'bg-[#e5484d]'
-                          : 'bg-[#f59e0b]'
+                        selectedPeer.status === "connected"
+                          ? "bg-[#30a46c]"
+                          : selectedPeer.status === "unreachable"
+                            ? "bg-[#e5484d]"
+                            : "bg-[#f59e0b]"
                       }`}
                     />
                     <span className="text-[13px] font-medium text-white">
-                      {selectedPeer.status === 'connected'
-                        ? 'Connected'
-                        : selectedPeer.status === 'unreachable'
-                        ? 'Unreachable'
-                        : 'Pending'}
+                      {selectedPeer.status === "connected"
+                        ? "Connected"
+                        : selectedPeer.status === "unreachable"
+                          ? "Unreachable"
+                          : "Pending"}
                     </span>
                   </div>
 
@@ -1328,8 +1495,14 @@ export function Cluster() {
                     disabled={isPingingPeer}
                     className="h-8 px-3 rounded-[6px] text-[13px] font-medium border border-[#262626] bg-[#161616] text-[#cccccc] hover:text-white hover:border-[#383838] transition-colors inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50 font-sans"
                   >
-                    <RefreshCw className={`w-3.5 h-3.5 ${isPingingPeer ? 'animate-spin text-[#3b82f6]' : ''}`} />
-                    <span>{isPingingPeer ? 'Testing Ping...' : 'Test Connection Ping'}</span>
+                    <RefreshCw
+                      className={`w-3.5 h-3.5 ${isPingingPeer ? "animate-spin text-[#3b82f6]" : ""}`}
+                    />
+                    <span>
+                      {isPingingPeer
+                        ? "Testing Ping..."
+                        : "Test Connection Ping"}
+                    </span>
                   </button>
                 </div>
 
@@ -1340,16 +1513,18 @@ export function Cluster() {
                     </span>
                     <span
                       className={`tabular-nums text-[13px] font-medium ${
-                        selectedPeer.status === 'connected'
+                        selectedPeer.status === "connected"
                           ? selectedPeer.last_ping_ms < 50
-                            ? 'text-[#30a46c]'
+                            ? "text-[#30a46c]"
                             : selectedPeer.last_ping_ms < 200
-                            ? 'text-[#f59e0b]'
-                            : 'text-[#ef4444]'
-                          : 'text-[#666666]'
+                              ? "text-[#f59e0b]"
+                              : "text-[#ef4444]"
+                          : "text-[#666666]"
                       }`}
                     >
-                      {selectedPeer.status === 'connected' ? `${selectedPeer.last_ping_ms} ms` : '—'}
+                      {selectedPeer.status === "connected"
+                        ? `${selectedPeer.last_ping_ms} ms`
+                        : "—"}
                     </span>
                   </div>
                   <div>
@@ -1391,9 +1566,15 @@ export function Cluster() {
                     </div>
                   </div>
                   <div className="flex items-center justify-between p-3">
-                    <span className="text-[13px] text-[#8c8c8c]">Pairing Date</span>
+                    <span className="text-[13px] text-[#8c8c8c]">
+                      Pairing Date
+                    </span>
                     <span className="text-[13px] text-[#cccccc] tabular-nums font-sans">
-                      {selectedPeer.created_at ? new Date(selectedPeer.created_at * 1000).toLocaleString() : '—'}
+                      {selectedPeer.created_at
+                        ? new Date(
+                            selectedPeer.created_at * 1000,
+                          ).toLocaleString()
+                        : "—"}
                     </span>
                   </div>
                 </div>
@@ -1403,28 +1584,36 @@ export function Cluster() {
               <div className="space-y-3.5">
                 <div>
                   <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">
-                    Peer Moniker (Alias) <span className="text-[#e5484d]">*</span>
+                    Peer Moniker (Alias){" "}
+                    <span className="text-[#e5484d]">*</span>
                   </label>
                   <input
                     type="text"
                     value={peerEditMoniker}
-                    onChange={(e) => setPeerEditMoniker(e.target.value.toLowerCase().replace(/\s+/g, '_'))}
+                    onChange={(e) =>
+                      setPeerEditMoniker(
+                        e.target.value.toLowerCase().replace(/\s+/g, "_"),
+                      )
+                    }
                     placeholder="e.g. london_edge_01"
                     className={`h-9 w-full rounded-[6px] border px-3 text-[14px] text-white focus:outline-none font-sans lowercase transition-colors ${
-                      peerEditMoniker.trim().length > 0 && !peerEditMonikerValidation.valid
-                        ? 'border-[#e5484d] bg-[#1a0f0f] focus:border-[#e5484d] focus:ring-1 focus:ring-[#e5484d]/40'
-                        : 'border-[#262626] bg-[#121212] focus:border-[#3b82f6]'
+                      peerEditMoniker.trim().length > 0 &&
+                      !peerEditMonikerValidation.valid
+                        ? "border-[#e5484d] bg-[#1a0f0f] focus:border-[#e5484d] focus:ring-1 focus:ring-[#e5484d]/40"
+                        : "border-[#262626] bg-[#121212] focus:border-[#3b82f6]"
                     }`}
                     required
                   />
-                  {peerEditMoniker.trim().length > 0 && !peerEditMonikerValidation.valid ? (
+                  {peerEditMoniker.trim().length > 0 &&
+                  !peerEditMonikerValidation.valid ? (
                     <div className="mt-1.5 flex items-center gap-1.5 text-[12px] text-[#e5484d]">
                       <AlertCircle className="w-3.5 h-3.5 shrink-0" />
                       <span>{peerEditMonikerValidation.error}</span>
                     </div>
                   ) : (
                     <p className="mt-1.5 text-[12px] text-[#737373]">
-                      Lowercase alphanumeric with hyphens or underscores (e.g. <span className="text-[#a3a3a3]">london_edge_01</span>).
+                      Lowercase alphanumeric with hyphens or underscores (e.g.{" "}
+                      <span className="text-[#a3a3a3]">london_edge_01</span>).
                     </p>
                   )}
                 </div>
@@ -1441,20 +1630,24 @@ export function Cluster() {
                     required
                   />
                   <p className="mt-1.5 text-[12px] text-[#737373]">
-                    Direct HTTP/HTTPS address used by other nodes to dispatch heartbeats and security events.
+                    Direct HTTP/HTTPS address used by other nodes to dispatch
+                    heartbeats and security events.
                   </p>
                 </div>
 
                 <div>
                   <div className="flex items-center justify-between mb-1.5">
                     <label className="block text-[13px] font-medium text-[#cccccc]">
-                      Cluster Secret <span className="text-[11px] font-normal text-[#888888]">(Authentication)</span>
+                      Cluster Secret{" "}
+                      <span className="text-[11px] font-normal text-[#888888]">
+                        (Authentication)
+                      </span>
                     </label>
                     <span className="text-[11px] text-[#666666]">Optional</span>
                   </div>
                   <div className="relative">
                     <input
-                      type={showPeerEditSecret ? 'text' : 'password'}
+                      type={showPeerEditSecret ? "text" : "password"}
                       placeholder="Leave blank to keep existing secret"
                       value={peerEditSecret}
                       onChange={(e) => setPeerEditSecret(e.target.value)}
@@ -1465,13 +1658,20 @@ export function Cluster() {
                       onClick={() => setShowPeerEditSecret(!showPeerEditSecret)}
                       className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#777777] hover:text-[#cccccc] transition-colors cursor-pointer"
                       tabIndex={-1}
-                      aria-label={showPeerEditSecret ? 'Hide secret' : 'Show secret'}
+                      aria-label={
+                        showPeerEditSecret ? "Hide secret" : "Show secret"
+                      }
                     >
-                      {showPeerEditSecret ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                      {showPeerEditSecret ? (
+                        <EyeOff className="w-3.5 h-3.5" />
+                      ) : (
+                        <Eye className="w-3.5 h-3.5" />
+                      )}
                     </button>
                   </div>
                   <p className="mt-1.5 text-[12px] text-[#737373]">
-                    Leave blank to keep existing paired credentials. Enter a new secret if the remote node was re-keyed or rotated.
+                    Leave blank to keep existing paired credentials. Enter a new
+                    secret if the remote node was re-keyed or rotated.
                   </p>
                 </div>
               </div>
@@ -1491,8 +1691,14 @@ export function Cluster() {
                 disabled={!canSavePeer || isSavingPeer}
                 className="group relative flex shrink-0 items-center justify-center h-9 px-4 rounded-[8px] font-medium text-white shadow-xs outline-none cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed overflow-hidden ring-1 ring-[#1d4ed8] bg-[#2563eb] font-sans text-[14px]"
               >
-                <span aria-hidden="true" className="pointer-events-none absolute inset-0 rounded-[inherit] bg-gradient-to-b from-[#3b82f6] to-[#2563eb] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2)]" />
-                <span aria-hidden="true" className="pointer-events-none absolute inset-0 rounded-[inherit] bg-black opacity-0 group-hover:opacity-15 transition-opacity duration-200" />
+                <span
+                  aria-hidden="true"
+                  className="pointer-events-none absolute inset-0 rounded-[inherit] bg-gradient-to-b from-[#3b82f6] to-[#2563eb] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2)]"
+                />
+                <span
+                  aria-hidden="true"
+                  className="pointer-events-none absolute inset-0 rounded-[inherit] bg-black opacity-0 group-hover:opacity-15 transition-opacity duration-200"
+                />
                 <span className="relative flex items-center gap-1.5 font-sans">
                   {isSavingPeer ? (
                     <>
@@ -1508,12 +1714,19 @@ export function Cluster() {
           </form>
         )}
 
-        {selectedPeer && peerTab === 'danger' && (
+        {selectedPeer && peerTab === "danger" && (
           <div className="flex-1 p-5 overflow-y-auto">
             <div className="rounded-[8px] border border-[#3a1515] bg-[#0e0404] p-4">
-              <h3 className="text-[16px] font-medium text-[#e5484d] mb-1">Disconnect Peer</h3>
+              <h3 className="text-[16px] font-medium text-[#e5484d] mb-1">
+                Disconnect Peer
+              </h3>
               <p className="text-[13px] text-[#8c8c8c] mb-4">
-                Permanently remove <span className="text-white font-medium text-[13px]">{selectedPeer.moniker}</span> from the cluster mesh. All cross-node synchronizations and heartbeats will be terminated.
+                Permanently remove{" "}
+                <span className="text-white font-medium text-[13px]">
+                  {selectedPeer.moniker}
+                </span>{" "}
+                from the cluster mesh. All cross-node synchronizations and
+                heartbeats will be terminated.
               </p>
               <button
                 type="button"
@@ -1547,12 +1760,15 @@ export function Cluster() {
         title="Disconnect Peer Node"
         description={
           <>
-            Permanently remove peer node{' '}
-            <span className="text-white font-medium">{peerToDelete?.moniker}</span>{' '}
-            from this cluster mesh? All cross-node synchronizations and heartbeats will be terminated.
+            Permanently remove peer node{" "}
+            <span className="text-white font-medium">
+              {peerToDelete?.moniker}
+            </span>{" "}
+            from this cluster mesh? All cross-node synchronizations and
+            heartbeats will be terminated.
           </>
         }
-        confirmLabel={isDeleting ? 'Disconnecting…' : 'Disconnect Peer'}
+        confirmLabel={isDeleting ? "Disconnecting…" : "Disconnect Peer"}
         cancelLabel="Cancel"
         variant="danger"
       />

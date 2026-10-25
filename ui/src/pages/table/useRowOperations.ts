@@ -4,10 +4,10 @@
  * Key deps: react, ../../api/client, ../../types
  */
 
-import { useState } from 'react';
-import { api } from '../../api/client';
-import { ColumnInfoApi } from '../../types';
-import { showAlertDialog } from '../../components/ui/AlertDialog';
+import { useState } from "react";
+import { api } from "../../api/client";
+import { ColumnInfoApi } from "../../types";
+import { showAlertDialog } from "../../components/ui/AlertDialog";
 
 export interface UseRowOperationsProps {
   selectedDb: string;
@@ -15,7 +15,10 @@ export interface UseRowOperationsProps {
   columns: ColumnInfoApi[];
   rows: Record<string, unknown>[];
   cursor: string | null;
-  loadTableData: (options?: { targetCursor?: string | null; reloadSchema?: boolean }) => Promise<void>;
+  loadTableData: (options?: {
+    targetCursor?: string | null;
+    reloadSchema?: boolean;
+  }) => Promise<void>;
 }
 
 export function useRowOperations({
@@ -27,15 +30,24 @@ export function useRowOperations({
   loadTableData,
 }: UseRowOperationsProps) {
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
-  const [inspectorTab, setInspectorTab] = useState<'details' | 'danger'>('details');
+  const [inspectorTab, setInspectorTab] = useState<"details" | "danger">(
+    "details",
+  );
   const [selectedRowIndex, setSelectedRowIndex] = useState<number | null>(null);
-  const [selectedRowIndices, setSelectedRowIndices] = useState<Set<number>>(new Set());
-  const [rowEditValues, setRowEditValues] = useState<Record<string, unknown>>({});
+  const [selectedRowIndices, setSelectedRowIndices] = useState<Set<number>>(
+    new Set(),
+  );
+  const [rowEditValues, setRowEditValues] = useState<Record<string, unknown>>(
+    {},
+  );
   const [isSavingRow, setIsSavingRow] = useState(false);
   const [isInsertModeInPanel, setIsInsertModeInPanel] = useState(false);
 
   // Delete Row State
-  const [deleteRowTarget, setDeleteRowTarget] = useState<Record<string, unknown> | null>(null);
+  const [deleteRowTarget, setDeleteRowTarget] = useState<Record<
+    string,
+    unknown
+  > | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
   const handleSelectRow = (index: number, openDrawer = false) => {
@@ -74,18 +86,18 @@ export function useRowOperations({
   function coerceColumnValue(val: unknown, colType: string): unknown {
     if (val === null || val === undefined) return null;
     const ty = colType.toLowerCase();
-    const isInt = ty.includes('int') || ty.includes('serial');
+    const isInt = ty.includes("int") || ty.includes("serial");
     const isFloat =
-      ty.includes('float') ||
-      ty.includes('double') ||
-      ty.includes('real') ||
-      ty.includes('numeric') ||
-      ty.includes('decimal');
-    const isBool = ty.includes('bool');
+      ty.includes("float") ||
+      ty.includes("double") ||
+      ty.includes("real") ||
+      ty.includes("numeric") ||
+      ty.includes("decimal");
+    const isBool = ty.includes("bool");
 
-    if (typeof val === 'string') {
+    if (typeof val === "string") {
       const trimmed = val.trim();
-      if (trimmed === '') return null;
+      if (trimmed === "") return null;
       if (isInt) {
         const num = Number(trimmed);
         if (!isNaN(num) && Number.isInteger(num)) return num;
@@ -93,8 +105,8 @@ export function useRowOperations({
         const num = Number(trimmed);
         if (!isNaN(num)) return num;
       } else if (isBool) {
-        if (trimmed.toLowerCase() === 'true') return true;
-        if (trimmed.toLowerCase() === 'false') return false;
+        if (trimmed.toLowerCase() === "true") return true;
+        if (trimmed.toLowerCase() === "false") return false;
       }
     }
     return val;
@@ -111,7 +123,9 @@ export function useRowOperations({
       const filter: Record<string, unknown> = {};
 
       if (pkCol && originalRow[pkCol.name] !== undefined) {
-        filter[pkCol.name] = { eq: coerceColumnValue(originalRow[pkCol.name], pkCol.type) };
+        filter[pkCol.name] = {
+          eq: coerceColumnValue(originalRow[pkCol.name], pkCol.type),
+        };
       } else {
         let count = 0;
         Object.entries(originalRow).forEach(([k, v]) => {
@@ -145,7 +159,10 @@ export function useRowOperations({
         setRowEditValues({});
       }
     } catch (err) {
-      showAlertDialog(err instanceof Error ? err.message : 'Failed to update row', 'Failed to Update Row');
+      showAlertDialog(
+        err instanceof Error ? err.message : "Failed to update row",
+        "Failed to Update Row",
+      );
     } finally {
       setIsSavingRow(false);
     }
@@ -159,7 +176,7 @@ export function useRowOperations({
       const payload: Record<string, unknown> = {};
       columns.forEach((col) => {
         const val = rowEditValues[col.name];
-        if (val !== undefined && val !== '' && val !== null) {
+        if (val !== undefined && val !== "" && val !== null) {
           payload[col.name] = coerceColumnValue(val, col.type);
         }
       });
@@ -171,7 +188,10 @@ export function useRowOperations({
       setRowEditValues({});
       await loadTableData({ reloadSchema: false });
     } catch (err) {
-      showAlertDialog(err instanceof Error ? err.message : 'Failed to insert row', 'Failed to Insert Row');
+      showAlertDialog(
+        err instanceof Error ? err.message : "Failed to insert row",
+        "Failed to Insert Row",
+      );
     } finally {
       setIsSavingRow(false);
     }
@@ -186,7 +206,9 @@ export function useRowOperations({
       const filter: Record<string, unknown> = {};
 
       if (pkCol && deleteRowTarget[pkCol.name] !== undefined) {
-        filter[pkCol.name] = { eq: coerceColumnValue(deleteRowTarget[pkCol.name], pkCol.type) };
+        filter[pkCol.name] = {
+          eq: coerceColumnValue(deleteRowTarget[pkCol.name], pkCol.type),
+        };
       } else {
         let count = 0;
         Object.entries(deleteRowTarget).forEach(([k, v]) => {
@@ -203,17 +225,21 @@ export function useRowOperations({
       setSelectedRowIndex(null);
       setIsDetailsOpen(false);
       setRowEditValues({});
-      setInspectorTab('details');
+      setInspectorTab("details");
       await loadTableData({ targetCursor: cursor, reloadSchema: false });
     } catch (err) {
-      showAlertDialog(err instanceof Error ? err.message : 'Failed to delete row', 'Failed to Delete Row');
+      showAlertDialog(
+        err instanceof Error ? err.message : "Failed to delete row",
+        "Failed to Delete Row",
+      );
     } finally {
       setIsDeleting(false);
     }
   };
 
   // Delete Selected Rows (Batch delete)
-  const [isDeleteBatchConfirmOpen, setIsDeleteBatchConfirmOpen] = useState(false);
+  const [isDeleteBatchConfirmOpen, setIsDeleteBatchConfirmOpen] =
+    useState(false);
   const [isBatchDeleting, setIsBatchDeleting] = useState(false);
 
   const handleDeleteSelectedRows = async () => {
@@ -259,8 +285,8 @@ export function useRowOperations({
       await loadTableData({ targetCursor: cursor, reloadSchema: false });
     } catch (err) {
       showAlertDialog(
-        err instanceof Error ? err.message : 'Failed to delete selected rows',
-        'Failed to Delete Selected Rows'
+        err instanceof Error ? err.message : "Failed to delete selected rows",
+        "Failed to Delete Selected Rows",
       );
     } finally {
       setIsBatchDeleting(false);

@@ -5,10 +5,16 @@
  * Invariants: Touch targets >= 44px; safe-area bottom inset (pb-safe); zero layout shift.
  */
 
-import React from 'react';
-import { LayoutDashboard, Database, Table, HardDrive, Menu } from 'lucide-react';
-import { NavPath } from '../Layout';
-import { cn } from '../../utils/cn';
+import React from "react";
+import {
+  LayoutDashboard,
+  Database,
+  Table,
+  HardDrive,
+  Menu,
+} from "lucide-react";
+import { NavPath } from "../Layout";
+import { cn } from "../../utils/cn";
 
 interface MobileTabBarProps {
   currentPath: NavPath;
@@ -16,31 +22,35 @@ interface MobileTabBarProps {
   onOpenMenu: () => void;
 }
 
-export function MobileTabBar({ currentPath, onNavigate, onOpenMenu }: MobileTabBarProps) {
+export function MobileTabBar({
+  currentPath,
+  onNavigate,
+  onOpenMenu,
+}: MobileTabBarProps) {
   const tabs = [
     {
-      label: 'Overview',
-      path: '/system' as NavPath,
+      label: "Overview",
+      path: "/system" as NavPath,
       icon: LayoutDashboard,
-      isActive: currentPath === '/system',
+      isActive: currentPath === "/system",
     },
     {
-      label: 'Databases',
-      path: '/system/databases' as NavPath,
+      label: "Databases",
+      path: "/system/databases" as NavPath,
       icon: Database,
-      isActive: currentPath === '/system/databases',
+      isActive: currentPath === "/system/databases",
     },
     {
-      label: 'Tables',
-      path: '/system/tables' as NavPath,
+      label: "Tables",
+      path: "/system/tables" as NavPath,
       icon: Table,
-      isActive: currentPath === '/system/tables',
+      isActive: currentPath === "/system/tables",
     },
     {
-      label: 'Storage',
-      path: '/system/storage' as NavPath,
+      label: "Storage",
+      path: "/system/storage" as NavPath,
       icon: HardDrive,
-      isActive: currentPath === '/system/storage',
+      isActive: currentPath === "/system/storage",
     },
   ];
 
@@ -58,13 +68,18 @@ export function MobileTabBar({ currentPath, onNavigate, onOpenMenu }: MobileTabB
               type="button"
               onClick={() => onNavigate(tab.path)}
               className={cn(
-                'flex flex-col items-center justify-center flex-1 h-full min-h-[44px] py-1 gap-1 text-[10px] font-medium transition-colors cursor-pointer active:scale-95 touch-manipulation',
+                "flex flex-col items-center justify-center flex-1 h-full min-h-[44px] py-1 gap-1 text-[10px] font-medium transition-colors cursor-pointer active:scale-95 touch-manipulation",
                 tab.isActive
-                  ? 'text-[#3b82f6]'
-                  : 'text-[#8c8c8c] hover:text-[#cccccc]'
+                  ? "text-[#3b82f6]"
+                  : "text-[#8c8c8c] hover:text-[#cccccc]",
               )}
             >
-              <Icon className={cn('w-4 h-4 shrink-0 transition-transform', tab.isActive && 'scale-110')} />
+              <Icon
+                className={cn(
+                  "w-4 h-4 shrink-0 transition-transform",
+                  tab.isActive && "scale-110",
+                )}
+              />
               <span className="truncate max-w-[64px]">{tab.label}</span>
             </button>
           );

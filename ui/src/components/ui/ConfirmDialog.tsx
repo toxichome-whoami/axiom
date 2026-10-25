@@ -5,16 +5,16 @@
  * locks body scroll with ref-counting, traps focus, and wires danger/warning variants.
  */
 
-import React, { useEffect, useRef, useState } from 'react';
-import { AlertTriangle, AlertCircle, X, Loader2 } from 'lucide-react';
+import React, { useEffect, useRef, useState } from "react";
+import { AlertTriangle, AlertCircle, X, Loader2 } from "lucide-react";
 
 let scrollLockCount = 0;
-let originalOverflow = '';
+let originalOverflow = "";
 
 function lockScroll() {
   if (scrollLockCount === 0) {
     originalOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
+    document.body.style.overflow = "hidden";
   }
   scrollLockCount++;
 }
@@ -22,7 +22,7 @@ function lockScroll() {
 function unlockScroll() {
   scrollLockCount = Math.max(0, scrollLockCount - 1);
   if (scrollLockCount === 0) {
-    document.body.style.overflow = originalOverflow || '';
+    document.body.style.overflow = originalOverflow || "";
   }
 }
 
@@ -34,7 +34,7 @@ export interface ConfirmDialogProps {
   description: React.ReactNode;
   confirmLabel?: string;
   cancelLabel?: string;
-  variant?: 'danger' | 'warning';
+  variant?: "danger" | "warning";
 }
 
 /**
@@ -46,9 +46,9 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
   onConfirm,
   title,
   description,
-  confirmLabel = 'Confirm',
-  cancelLabel = 'Cancel',
-  variant = 'danger',
+  confirmLabel = "Confirm",
+  cancelLabel = "Cancel",
+  variant = "danger",
 }) => {
   const [isPending, setIsPending] = useState(false);
   const confirmButtonRef = useRef<HTMLButtonElement>(null);
@@ -79,7 +79,7 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
     if (!isOpen) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !isPending) {
+      if (e.key === "Escape" && !isPending) {
         e.stopPropagation();
         e.stopImmediatePropagation();
         onClose();
@@ -87,9 +87,9 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
       }
 
       // Focus trap
-      if (e.key === 'Tab' && dialogRef.current) {
+      if (e.key === "Tab" && dialogRef.current) {
         const focusable = dialogRef.current.querySelectorAll<HTMLElement>(
-          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
         );
         if (focusable.length === 0) return;
 
@@ -106,8 +106,8 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
       }
     };
 
-    window.addEventListener('keydown', handleKeyDown, true);
-    return () => window.removeEventListener('keydown', handleKeyDown, true);
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => window.removeEventListener("keydown", handleKeyDown, true);
   }, [isOpen, isPending, onClose]);
 
   if (!isOpen) return null;
@@ -122,7 +122,7 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
     }
   };
 
-  const isWarning = variant === 'warning';
+  const isWarning = variant === "warning";
 
   return (
     <div
@@ -147,11 +147,15 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
             <div
               className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 ${
                 isWarning
-                  ? 'bg-[#2a1708] border border-[#59300e] text-[#f5a623]'
-                  : 'bg-[#2a0e0e] border border-[#4a1919] text-[#e5484d]'
+                  ? "bg-[#2a1708] border border-[#59300e] text-[#f5a623]"
+                  : "bg-[#2a0e0e] border border-[#4a1919] text-[#e5484d]"
               }`}
             >
-              {isWarning ? <AlertCircle className="w-4 h-4" /> : <AlertTriangle className="w-4 h-4" />}
+              {isWarning ? (
+                <AlertCircle className="w-4 h-4" />
+              ) : (
+                <AlertTriangle className="w-4 h-4" />
+              )}
             </div>
             <button
               type="button"
@@ -195,16 +199,16 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
             onClick={handleConfirm}
             className={`group relative flex shrink-0 items-center justify-center h-8 px-3.5 rounded-[8px] font-medium text-white shadow-xs outline-none cursor-pointer overflow-hidden font-sans text-[13px] disabled:opacity-50 disabled:cursor-not-allowed ${
               isWarning
-                ? 'ring-1 ring-[#d97706] bg-[#b45309]'
-                : 'ring-1 ring-[#be123c] bg-[#e11d48]'
+                ? "ring-1 ring-[#d97706] bg-[#b45309]"
+                : "ring-1 ring-[#be123c] bg-[#e11d48]"
             }`}
           >
             <span
               aria-hidden="true"
               className={`pointer-events-none absolute inset-0 rounded-[inherit] ${
                 isWarning
-                  ? 'bg-gradient-to-b from-[#f59e0b] to-[#b45309]'
-                  : 'bg-gradient-to-b from-[#f43f5e] to-[#e11d48]'
+                  ? "bg-gradient-to-b from-[#f59e0b] to-[#b45309]"
+                  : "bg-gradient-to-b from-[#f43f5e] to-[#e11d48]"
               } shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2)]`}
             />
             <span
@@ -213,7 +217,7 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
             />
             <span className="relative flex items-center gap-1.5 font-sans">
               {isPending && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-              <span>{isPending ? 'Working...' : confirmLabel}</span>
+              <span>{isPending ? "Working..." : confirmLabel}</span>
             </span>
           </button>
         </div>

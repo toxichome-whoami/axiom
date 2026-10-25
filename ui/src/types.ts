@@ -1,43 +1,43 @@
 export type EngineType =
-  | 'PostgreSQL'
-  | 'MySQL'
-  | 'MSSQL'
-  | 'ClickHouse'
-  | 'LibSQL'
-  | 'Snowflake'
-  | 'Oracle'
-  | 'POSTGRESQL'
-  | 'MYSQL'
-  | 'MSSQL'
-  | 'CLICKHOUSE'
-  | 'LIBSQL'
-  | 'SNOWFLAKE'
-  | 'ORACLE';
+  | "PostgreSQL"
+  | "MySQL"
+  | "MSSQL"
+  | "ClickHouse"
+  | "LibSQL"
+  | "Snowflake"
+  | "Oracle"
+  | "POSTGRESQL"
+  | "MYSQL"
+  | "MSSQL"
+  | "CLICKHOUSE"
+  | "LIBSQL"
+  | "SNOWFLAKE"
+  | "ORACLE";
 
 export function formatEngine(engine: string): string {
-  if (!engine) return '';
+  if (!engine) return "";
   const norm = engine.trim().toLowerCase();
   switch (norm) {
-    case 'postgresql':
-    case 'postgres':
-      return 'PostgreSQL';
-    case 'mysql':
-      return 'MySQL';
-    case 'mariadb':
-      return 'MariaDB';
-    case 'mssql':
-    case 'sqlserver':
-      return 'MSSQL';
-    case 'clickhouse':
-      return 'ClickHouse';
-    case 'libsql':
-    case 'sqlite':
-      return 'LibSQL';
-    case 'snowflake':
-      return 'Snowflake';
-    case 'oracle':
-    case 'ords':
-      return 'Oracle';
+    case "postgresql":
+    case "postgres":
+      return "PostgreSQL";
+    case "mysql":
+      return "MySQL";
+    case "mariadb":
+      return "MariaDB";
+    case "mssql":
+    case "sqlserver":
+      return "MSSQL";
+    case "clickhouse":
+      return "ClickHouse";
+    case "libsql":
+    case "sqlite":
+      return "LibSQL";
+    case "snowflake":
+      return "Snowflake";
+    case "oracle":
+    case "ords":
+      return "Oracle";
     default:
       return engine.charAt(0).toUpperCase() + engine.slice(1).toLowerCase();
   }
@@ -52,7 +52,7 @@ export interface DatabasePool {
   maxConnections: number;
   idleTimeoutSeconds: number;
   readonly: boolean;
-  status: 'Ready' | 'Degraded' | 'Offline';
+  status: "Ready" | "Degraded" | "Offline";
   latencyMs: number;
 }
 
@@ -67,22 +67,22 @@ export interface ApiKey {
   name: string;
   role: string;
   rateLimit: number;
-  status: 'Active' | 'Revoked' | 'Expired';
+  status: "Active" | "Revoked" | "Expired";
   expiresAt: string | null;
   createdAt: string;
   currentSecretMasked?: string;
   retiringSecret?: RetiringSecret | null;
 }
 
-export type DbOperation = 'SELECT' | 'INSERT' | 'UPDATE' | 'DELETE';
-export type BlobOperation = 'READ' | 'WRITE' | 'DELETE';
-export type PermissionOperation = DbOperation | BlobOperation | '*';
+export type DbOperation = "SELECT" | "INSERT" | "UPDATE" | "DELETE";
+export type BlobOperation = "READ" | "WRITE" | "DELETE";
+export type PermissionOperation = DbOperation | BlobOperation | "*";
 
 export interface PermissionRule {
   database: string;
   table: string;
   operations: (PermissionOperation | string)[];
-  resourceType?: 'database' | 'blob';
+  resourceType?: "database" | "blob";
   rls_filter?: string | null;
 }
 
@@ -118,7 +118,7 @@ export interface AdminUser {
 export interface ApiRoutePreset {
   id: string;
   name: string;
-  method: 'GET' | 'POST' | 'PATCH' | 'DELETE';
+  method: "GET" | "POST" | "PATCH" | "DELETE";
   path: string;
   description: string;
   defaultBody: string;
@@ -167,7 +167,7 @@ export interface BlobTicket {
   id: string;
   namespace: string;
   key: string;
-  operation: 'READ' | 'WRITE';
+  operation: "READ" | "WRITE";
   expires_at: number;
   signature: string;
   created_by: string;
@@ -187,7 +187,7 @@ export interface CreateBlobTicketResponse {
       }
     | string;
   signature?: string;
-  operation?: 'READ' | 'WRITE' | string;
+  operation?: "READ" | "WRITE" | string;
   expires_at?: number;
   url: string;
 }
@@ -286,4 +286,3 @@ export interface QueryResultApi {
   next_cursor?: string;
   duration_ms?: number;
 }
-

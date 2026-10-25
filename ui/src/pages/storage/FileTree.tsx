@@ -5,7 +5,7 @@
  * Invariants: Recursively renders virtual folders and blobs with collapsible hierarchy.
  */
 
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from "react";
 import {
   ChevronRight,
   ChevronDown,
@@ -16,16 +16,16 @@ import {
   RefreshCw,
   FolderTree as TreeIcon,
   Loader2,
-} from 'lucide-react';
-import { BlobEntry } from '../../types';
-import { StorageItem } from './types';
-import { getFileIcon } from './fileIcon';
+} from "lucide-react";
+import { BlobEntry } from "../../types";
+import { StorageItem } from "./types";
+import { getFileIcon } from "./fileIcon";
 
 export interface FileTreeNode {
   id: string;
   name: string;
   path: string; // for folders: ends with '/', for files: fullKey
-  type: 'folder' | 'file';
+  type: "folder" | "file";
   size?: number;
   inline?: boolean;
   content_type?: string;
@@ -43,7 +43,7 @@ export function buildFileTree(blobs: BlobEntry[]): FileTreeNode[] {
     id: string;
     name: string;
     path: string;
-    type: 'folder' | 'file';
+    type: "folder" | "file";
     size?: number;
     inline?: boolean;
     content_type?: string;
@@ -57,20 +57,20 @@ export function buildFileTree(blobs: BlobEntry[]): FileTreeNode[] {
   const rootFiles: MutableNode[] = [];
 
   for (const blob of blobs) {
-    if (blob.key === '.axiom_dir') continue;
+    if (blob.key === ".axiom_dir") continue;
 
     // Detect virtual folder placeholder: e.g. "components/ui/.axiom_dir"
-    const isFolderMarker = blob.key.endsWith('/.axiom_dir');
+    const isFolderMarker = blob.key.endsWith("/.axiom_dir");
     const cleanKey = isFolderMarker
-      ? blob.key.slice(0, -'.axiom_dir'.length)
+      ? blob.key.slice(0, -".axiom_dir".length)
       : blob.key;
 
-    const parts = cleanKey.split('/').filter(Boolean);
+    const parts = cleanKey.split("/").filter(Boolean);
     if (parts.length === 0) continue;
 
     if (isFolderMarker) {
       let currentMap = rootFolders;
-      let accPath = '';
+      let accPath = "";
       for (let i = 0; i < parts.length; i++) {
         const seg = parts[i];
         accPath += `${seg}/`;
@@ -80,7 +80,7 @@ export function buildFileTree(blobs: BlobEntry[]): FileTreeNode[] {
             id: accPath,
             name: seg,
             path: accPath,
-            type: 'folder',
+            type: "folder",
             children: new Map(),
           };
           currentMap.set(seg, folderNode);
@@ -93,7 +93,7 @@ export function buildFileTree(blobs: BlobEntry[]): FileTreeNode[] {
           id: blob.key,
           name: parts[0],
           path: blob.key,
-          type: 'file',
+          type: "file",
           size: blob.size,
           inline: blob.inline,
           content_type: blob.content_type,
@@ -104,7 +104,7 @@ export function buildFileTree(blobs: BlobEntry[]): FileTreeNode[] {
         });
       } else {
         let currentMap = rootFolders;
-        let accPath = '';
+        let accPath = "";
         for (let i = 0; i < parts.length - 1; i++) {
           const seg = parts[i];
           accPath += `${seg}/`;
@@ -114,7 +114,7 @@ export function buildFileTree(blobs: BlobEntry[]): FileTreeNode[] {
               id: accPath,
               name: seg,
               path: accPath,
-              type: 'folder',
+              type: "folder",
               children: new Map(),
             };
             currentMap.set(seg, folderNode);
@@ -127,7 +127,7 @@ export function buildFileTree(blobs: BlobEntry[]): FileTreeNode[] {
           id: blob.key,
           name: fileName,
           path: blob.key,
-          type: 'file',
+          type: "file",
           size: blob.size,
           inline: blob.inline,
           content_type: blob.content_type,
@@ -145,7 +145,7 @@ export function buildFileTree(blobs: BlobEntry[]): FileTreeNode[] {
     const entries = Array.from(folderMap.values());
 
     entries.sort((a, b) => {
-      if (a.type !== b.type) return a.type === 'folder' ? -1 : 1;
+      if (a.type !== b.type) return a.type === "folder" ? -1 : 1;
       return a.name.localeCompare(b.name);
     });
 
@@ -175,7 +175,7 @@ export function buildFileTree(blobs: BlobEntry[]): FileTreeNode[] {
       id: f.id,
       name: f.name,
       path: f.path,
-      type: 'file',
+      type: "file",
       size: f.size,
       inline: f.inline,
       content_type: f.content_type,
@@ -206,8 +206,14 @@ export interface FileTreeProps {
   draggedItem?: StorageItem | null;
   onItemDragStart?: (e: React.DragEvent, item: StorageItem) => void;
   onItemDragEnd?: (e: React.DragEvent) => void;
-  onDropOnFolder?: (targetFolderPath: string, droppedItem?: StorageItem) => void;
-  canDropOnFolder?: (dragged: StorageItem | null, targetFolderKey: string) => boolean;
+  onDropOnFolder?: (
+    targetFolderPath: string,
+    droppedItem?: StorageItem,
+  ) => void;
+  canDropOnFolder?: (
+    dragged: StorageItem | null,
+    targetFolderKey: string,
+  ) => boolean;
   isLoading?: boolean;
   onClearSelection?: () => void;
   onPreviewFile?: (fileItem: StorageItem) => void;
@@ -249,7 +255,9 @@ export function FileTree({
   // Set of expanded folder paths restored from session storage
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(() => {
     try {
-      const key = activeNamespace ? `axiom_tree_expanded_${activeNamespace}` : 'axiom_tree_expanded';
+      const key = activeNamespace
+        ? `axiom_tree_expanded_${activeNamespace}`
+        : "axiom_tree_expanded";
       const saved = sessionStorage.getItem(key);
       if (saved) {
         const arr = JSON.parse(saved);
@@ -266,7 +274,9 @@ export function FileTree({
   // Persist expanded folder paths whenever they change
   useEffect(() => {
     try {
-      const key = activeNamespace ? `axiom_tree_expanded_${activeNamespace}` : 'axiom_tree_expanded';
+      const key = activeNamespace
+        ? `axiom_tree_expanded_${activeNamespace}`
+        : "axiom_tree_expanded";
       sessionStorage.setItem(key, JSON.stringify(Array.from(expandedPaths)));
     } catch {
       // Ignore storage errors
@@ -287,7 +297,7 @@ export function FileTree({
           onLoadMore();
         }
       },
-      { rootMargin: '200px' }
+      { rootMargin: "200px" },
     );
 
     observer.observe(sentinel);
@@ -297,8 +307,8 @@ export function FileTree({
   // Automatically expand parent path when currentPrefix changes
   useEffect(() => {
     if (currentPrefix) {
-      const parts = currentPrefix.split('/').filter(Boolean);
-      let acc = '';
+      const parts = currentPrefix.split("/").filter(Boolean);
+      let acc = "";
       setExpandedPaths((prev) => {
         const next = new Set(prev);
         for (const p of parts) {
@@ -324,10 +334,10 @@ export function FileTree({
   };
 
   const toStorageItem = (node: FileTreeNode): StorageItem => {
-    if (node.type === 'folder') {
+    if (node.type === "folder") {
       return {
         id: `folder-${node.path}`,
-        type: 'folder',
+        type: "folder",
         name: node.name,
         fullKey: node.path,
         itemCount: node.children.length,
@@ -335,7 +345,7 @@ export function FileTree({
     }
     return {
       id: `file-${node.path}`,
-      type: 'file',
+      type: "file",
       name: node.name,
       fullKey: node.path,
       size: node.size,
@@ -348,20 +358,24 @@ export function FileTree({
   };
 
   const renderNode = (node: FileTreeNode, depth = 0) => {
-    const isFolder = node.type === 'folder';
+    const isFolder = node.type === "folder";
     const isExpanded = expandedPaths.has(node.path);
     const isCurrentFolder = isFolder && currentPrefix === node.path;
     const isSelected = Boolean(
-      (selectedKeys && (
-        selectedKeys.has(node.path) ||
-        selectedKeys.has(node.id) ||
-        (isFolder && selectedKeys.has(node.path.endsWith('/') ? node.path.slice(0, -1) : `${node.path}/`))
-      )) ||
+      (selectedKeys &&
+        (selectedKeys.has(node.path) ||
+          selectedKeys.has(node.id) ||
+          (isFolder &&
+            selectedKeys.has(
+              node.path.endsWith("/")
+                ? node.path.slice(0, -1)
+                : `${node.path}/`,
+            )))) ||
       (selectedItem &&
         (selectedItem.fullKey === node.path ||
           selectedItem.id === node.id ||
           selectedItem.id === `file-${node.path}` ||
-          selectedItem.id === `folder-${node.path}`))
+          selectedItem.id === `folder-${node.path}`)),
     );
 
     const isTreeDropTarget = isFolder && treeDragTarget === node.path;
@@ -378,10 +392,14 @@ export function FileTree({
             onItemDragEnd?.(e);
           }}
           onDragOver={(e) => {
-            if (isFolder && canDropOnFolder && canDropOnFolder(draggedItem || null, node.path)) {
+            if (
+              isFolder &&
+              canDropOnFolder &&
+              canDropOnFolder(draggedItem || null, node.path)
+            ) {
               e.preventDefault();
               e.stopPropagation();
-              e.dataTransfer.dropEffect = 'move';
+              e.dataTransfer.dropEffect = "move";
               if (treeDragTarget !== node.path) {
                 setTreeDragTarget(node.path);
               }
@@ -407,7 +425,10 @@ export function FileTree({
             e.stopPropagation();
             if (isFolder) {
               const item = toStorageItem(node);
-              if ((e.ctrlKey || e.metaKey || e.shiftKey) && onToggleSelectItem) {
+              if (
+                (e.ctrlKey || e.metaKey || e.shiftKey) &&
+                onToggleSelectItem
+              ) {
                 onToggleSelectItem(item, e);
               } else {
                 onSelectFolder(node.path, item);
@@ -417,7 +438,10 @@ export function FileTree({
               }
             } else {
               const item = toStorageItem(node);
-              if ((e.ctrlKey || e.metaKey || e.shiftKey) && onToggleSelectItem) {
+              if (
+                (e.ctrlKey || e.metaKey || e.shiftKey) &&
+                onToggleSelectItem
+              ) {
                 onToggleSelectItem(item, e);
               } else {
                 onSelectFile(item);
@@ -434,15 +458,15 @@ export function FileTree({
           onContextMenu={(e) => onContextMenu(e, toStorageItem(node))}
           style={{ paddingLeft: `${depth * 18 + 12}px` }}
           className={`group flex items-center gap-2.5 py-2 pr-4 w-full text-[14px] font-sans transition-colors cursor-pointer whitespace-nowrap border-b border-[#141414] select-none ${
-            isSelfDragged ? 'opacity-40' : ''
+            isSelfDragged ? "opacity-40" : ""
           } ${
             isTreeDropTarget
-              ? 'bg-blue-600/20 text-white font-medium'
+              ? "bg-blue-600/20 text-white font-medium"
               : isSelected
-              ? 'bg-[#1e1e1e] text-white font-medium'
-              : isCurrentFolder
-              ? 'bg-[#141414] text-white font-medium'
-              : 'text-[#a1a1aa] hover:text-white hover:bg-[#101010]'
+                ? "bg-[#1e1e1e] text-white font-medium"
+                : isCurrentFolder
+                  ? "bg-[#141414] text-white font-medium"
+                  : "text-[#a1a1aa] hover:text-white hover:bg-[#101010]"
           }`}
         >
           {isFolder ? (
@@ -467,11 +491,14 @@ export function FileTree({
           ) : (
             <>
               <span className="w-4 h-4 shrink-0" />
-              {getFileIcon(node.name, 'w-4 h-4 shrink-0')}
+              {getFileIcon(node.name, "w-4 h-4 shrink-0")}
             </>
           )}
 
-          <span className={`whitespace-nowrap pr-2 font-normal text-[14px] font-sans ${isSelected ? 'text-white font-medium' : ''}`} title={node.name}>
+          <span
+            className={`whitespace-nowrap pr-2 font-normal text-[14px] font-sans ${isSelected ? "text-white font-medium" : ""}`}
+            title={node.name}
+          >
             {node.name}
           </span>
         </div>
@@ -495,21 +522,21 @@ export function FileTree({
       {/* Explorer Tree Header Bar (h-9 matches StorageListView table header) */}
       <div className="h-[44px] shrink-0 px-3 border-b border-[#222222] flex items-center justify-between text-[13.5px] font-medium text-[#888888] bg-[#0a0a0a]">
         <div
-          onClick={() => onSelectFolder('', null)}
+          onClick={() => onSelectFolder("", null)}
           onDragOver={(e) => {
-            if (canDropOnFolder && canDropOnFolder(draggedItem || null, '')) {
+            if (canDropOnFolder && canDropOnFolder(draggedItem || null, "")) {
               e.preventDefault();
               e.stopPropagation();
-              e.dataTransfer.dropEffect = 'move';
-              if (treeDragTarget !== '__root__') {
-                setTreeDragTarget('__root__');
+              e.dataTransfer.dropEffect = "move";
+              if (treeDragTarget !== "__root__") {
+                setTreeDragTarget("__root__");
               }
             }
           }}
           onDragLeave={(e) => {
             e.stopPropagation();
             if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-              if (treeDragTarget === '__root__') {
+              if (treeDragTarget === "__root__") {
                 setTreeDragTarget(null);
               }
             }
@@ -518,14 +545,14 @@ export function FileTree({
             e.preventDefault();
             e.stopPropagation();
             setTreeDragTarget(null);
-            onDropOnFolder?.('', draggedItem || undefined);
+            onDropOnFolder?.("", draggedItem || undefined);
           }}
           className={`flex items-center gap-1.5 cursor-default transition-colors px-1.5 py-0.5 rounded ${
-            treeDragTarget === '__root__'
-              ? 'bg-blue-600/30 text-blue-300 ring-1 ring-blue-500/60'
-              : currentPrefix === ''
-              ? 'text-white bg-[#1a1a1a]'
-              : 'hover:text-white'
+            treeDragTarget === "__root__"
+              ? "bg-blue-600/30 text-blue-300 ring-1 ring-blue-500/60"
+              : currentPrefix === ""
+                ? "text-white bg-[#1a1a1a]"
+                : "hover:text-white"
           }`}
           title="Root directory"
         >
@@ -566,14 +593,19 @@ export function FileTree({
       {/* Tree View Scrolling List with Horizontal & Vertical Scroll, Edge-to-Edge Grid Style */}
       <div
         onClick={(e) => {
-          if (!(e.target as HTMLElement).closest('[data-storage-item="true"]')) {
+          if (
+            !(e.target as HTMLElement).closest('[data-storage-item="true"]')
+          ) {
             onClearSelection?.();
           }
         }}
         onScroll={(e) => {
           if (!hasMore || isLoadingMore || !onLoadMore) return;
           const target = e.currentTarget;
-          if (target.scrollHeight - target.scrollTop - target.clientHeight < 200) {
+          if (
+            target.scrollHeight - target.scrollTop - target.clientHeight <
+            200
+          ) {
             onLoadMore();
           }
         }}
@@ -617,7 +649,9 @@ export function FileTree({
                       <span>Loading more items...</span>
                     </>
                   ) : (
-                    <span className="opacity-0 pointer-events-none">Load more</span>
+                    <span className="opacity-0 pointer-events-none">
+                      Load more
+                    </span>
                   )}
                 </div>
               )}

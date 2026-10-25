@@ -5,16 +5,25 @@
  * Key deps: react, lucide-react, ../../types
  */
 
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { Table as TableIcon, Columns, Hash, Code } from 'lucide-react';
-import { ColumnInfoApi, TableInfoApi } from '../../types';
+import React, {
+  useState,
+  useEffect,
+  useRef,
+  useMemo,
+  useCallback,
+} from "react";
+import { Table as TableIcon, Columns, Hash, Code } from "lucide-react";
+import { ColumnInfoApi, TableInfoApi } from "../../types";
 
 export interface SqlCodeEditorProps {
   value: string;
   onChange: (value: string) => void;
   onExecute: () => void;
   tables?: TableInfoApi[];
-  allDbTablesSchema?: Record<string, { columns: ColumnInfoApi[]; foreign_keys?: unknown[] }>;
+  allDbTablesSchema?: Record<
+    string,
+    { columns: ColumnInfoApi[]; foreign_keys?: unknown[] }
+  >;
   selectedDb?: string;
   selectedTable?: string;
   isExecuting?: boolean;
@@ -22,30 +31,128 @@ export interface SqlCodeEditorProps {
 
 // SQL Keywords for syntax highlighting & autocomplete
 export const SQL_KEYWORDS = [
-  'SELECT', 'FROM', 'WHERE', 'AND', 'OR', 'NOT', 'IN', 'IS', 'NULL', 'LIKE', 'ILIKE',
-  'BETWEEN', 'EXISTS', 'AS', 'JOIN', 'LEFT', 'RIGHT', 'INNER', 'OUTER', 'CROSS', 'FULL',
-  'ON', 'GROUP BY', 'ORDER BY', 'HAVING', 'LIMIT', 'OFFSET', 'ASC', 'DESC', 'INSERT INTO',
-  'VALUES', 'UPDATE', 'SET', 'DELETE FROM', 'CREATE TABLE', 'ALTER TABLE', 'DROP TABLE',
-  'CREATE INDEX', 'DROP INDEX', 'TRUNCATE TABLE', 'PRIMARY KEY', 'FOREIGN KEY', 'REFERENCES',
-  'DEFAULT', 'CHECK', 'UNIQUE', 'CONSTRAINT', 'CASCADE', 'RESTRICT', 'UNION', 'UNION ALL',
-  'DISTINCT', 'CASE', 'WHEN', 'THEN', 'ELSE', 'END', 'WITH', 'RECURSIVE', 'TRUE', 'FALSE',
+  "SELECT",
+  "FROM",
+  "WHERE",
+  "AND",
+  "OR",
+  "NOT",
+  "IN",
+  "IS",
+  "NULL",
+  "LIKE",
+  "ILIKE",
+  "BETWEEN",
+  "EXISTS",
+  "AS",
+  "JOIN",
+  "LEFT",
+  "RIGHT",
+  "INNER",
+  "OUTER",
+  "CROSS",
+  "FULL",
+  "ON",
+  "GROUP BY",
+  "ORDER BY",
+  "HAVING",
+  "LIMIT",
+  "OFFSET",
+  "ASC",
+  "DESC",
+  "INSERT INTO",
+  "VALUES",
+  "UPDATE",
+  "SET",
+  "DELETE FROM",
+  "CREATE TABLE",
+  "ALTER TABLE",
+  "DROP TABLE",
+  "CREATE INDEX",
+  "DROP INDEX",
+  "TRUNCATE TABLE",
+  "PRIMARY KEY",
+  "FOREIGN KEY",
+  "REFERENCES",
+  "DEFAULT",
+  "CHECK",
+  "UNIQUE",
+  "CONSTRAINT",
+  "CASCADE",
+  "RESTRICT",
+  "UNION",
+  "UNION ALL",
+  "DISTINCT",
+  "CASE",
+  "WHEN",
+  "THEN",
+  "ELSE",
+  "END",
+  "WITH",
+  "RECURSIVE",
+  "TRUE",
+  "FALSE",
 ];
 
 const SQL_FUNCTIONS = [
-  'COUNT', 'SUM', 'AVG', 'MIN', 'MAX', 'COALESCE', 'NULLIF', 'CONCAT', 'SUBSTRING',
-  'LOWER', 'UPPER', 'TRIM', 'LENGTH', 'NOW', 'CURRENT_TIMESTAMP', 'CURRENT_DATE',
-  'CURRENT_TIME', 'DATE', 'ROUND', 'FLOOR', 'CEIL', 'ABS', 'CAST', 'JSON_AGG', 'JSON_BUILD_OBJECT',
+  "COUNT",
+  "SUM",
+  "AVG",
+  "MIN",
+  "MAX",
+  "COALESCE",
+  "NULLIF",
+  "CONCAT",
+  "SUBSTRING",
+  "LOWER",
+  "UPPER",
+  "TRIM",
+  "LENGTH",
+  "NOW",
+  "CURRENT_TIMESTAMP",
+  "CURRENT_DATE",
+  "CURRENT_TIME",
+  "DATE",
+  "ROUND",
+  "FLOOR",
+  "CEIL",
+  "ABS",
+  "CAST",
+  "JSON_AGG",
+  "JSON_BUILD_OBJECT",
 ];
 
 const SQL_TYPES = [
-  'INT', 'INTEGER', 'BIGINT', 'SMALLINT', 'SERIAL', 'BIGSERIAL', 'VARCHAR', 'CHAR',
-  'TEXT', 'BOOLEAN', 'BOOL', 'DATE', 'TIME', 'TIMESTAMP', 'TIMESTAMPTZ', 'NUMERIC',
-  'DECIMAL', 'REAL', 'FLOAT', 'DOUBLE', 'JSON', 'JSONB', 'UUID', 'BYTEA', 'BLOB',
+  "INT",
+  "INTEGER",
+  "BIGINT",
+  "SMALLINT",
+  "SERIAL",
+  "BIGSERIAL",
+  "VARCHAR",
+  "CHAR",
+  "TEXT",
+  "BOOLEAN",
+  "BOOL",
+  "DATE",
+  "TIME",
+  "TIMESTAMP",
+  "TIMESTAMPTZ",
+  "NUMERIC",
+  "DECIMAL",
+  "REAL",
+  "FLOAT",
+  "DOUBLE",
+  "JSON",
+  "JSONB",
+  "UUID",
+  "BYTEA",
+  "BLOB",
 ];
 
 interface CompletionItem {
   label: string;
-  kind: 'keyword' | 'function' | 'table' | 'column' | 'type';
+  kind: "keyword" | "function" | "table" | "column" | "type";
   detail: string;
 }
 
@@ -55,8 +162,8 @@ export function SqlCodeEditor({
   onExecute,
   tables = [],
   allDbTablesSchema = {},
-  selectedDb = 'default',
-  selectedTable = '',
+  selectedDb = "default",
+  selectedTable = "",
   isExecuting = false,
 }: SqlCodeEditorProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -77,20 +184,25 @@ export function SqlCodeEditor({
   // Dismiss suggestions when clicking outside
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      if (textareaRef.current && !textareaRef.current.contains(e.target as Node)) {
+      if (
+        textareaRef.current &&
+        !textareaRef.current.contains(e.target as Node)
+      ) {
         setShowSuggestions(false);
       }
     };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
   // Auto-scroll selected suggestion into view
   useEffect(() => {
     if (showSuggestions && listRef.current) {
-      const selectedEl = listRef.current.children[selectedSuggestionIndex] as HTMLElement;
+      const selectedEl = listRef.current.children[
+        selectedSuggestionIndex
+      ] as HTMLElement;
       if (selectedEl) {
-        selectedEl.scrollIntoView({ block: 'nearest' });
+        selectedEl.scrollIntoView({ block: "nearest" });
       }
     }
   }, [selectedSuggestionIndex, showSuggestions]);
@@ -105,7 +217,7 @@ export function SqlCodeEditor({
       allDbTablesSchema[selectedTable].columns.forEach((c) => {
         activeCols.push({
           label: c.name,
-          kind: 'column' as const,
+          kind: "column" as const,
           detail: `${selectedTable}.${c.name} (${c.type})`,
         });
       });
@@ -121,11 +233,13 @@ export function SqlCodeEditor({
       });
     });
 
-    const otherList: CompletionItem[] = Array.from(otherCols.entries()).map(([name, detail]) => ({
-      label: name,
-      kind: 'column' as const,
-      detail,
-    }));
+    const otherList: CompletionItem[] = Array.from(otherCols.entries()).map(
+      ([name, detail]) => ({
+        label: name,
+        kind: "column" as const,
+        detail,
+      }),
+    );
 
     return [...activeCols, ...otherList];
   }, [allDbTablesSchema, selectedTable]);
@@ -134,29 +248,44 @@ export function SqlCodeEditor({
   const tableSuggestions = useMemo(() => {
     return tables.map((t) => ({
       label: t.name,
-      kind: 'table' as const,
-      detail: 'Table',
+      kind: "table" as const,
+      detail: "Table",
     }));
   }, [tables]);
 
   // Base suggestions (keywords + functions + types)
   const baseSuggestions = useMemo<CompletionItem[]>(() => {
     return [
-      ...SQL_KEYWORDS.map((k) => ({ label: k, kind: 'keyword' as const, detail: 'Keyword' })),
-      ...SQL_FUNCTIONS.map((f) => ({ label: f, kind: 'function' as const, detail: 'Function' })),
-      ...SQL_TYPES.map((t) => ({ label: t, kind: 'type' as const, detail: 'Type' })),
+      ...SQL_KEYWORDS.map((k) => ({
+        label: k,
+        kind: "keyword" as const,
+        detail: "Keyword",
+      })),
+      ...SQL_FUNCTIONS.map((f) => ({
+        label: f,
+        kind: "function" as const,
+        detail: "Function",
+      })),
+      ...SQL_TYPES.map((t) => ({
+        label: t,
+        kind: "type" as const,
+        detail: "Type",
+      })),
     ];
   }, []);
 
   // Update active line for gutter highlighting
-  const updateCursorInfo = useCallback((currentVal?: string, currentPos?: number) => {
-    if (!textareaRef.current) return;
-    const val = currentVal ?? textareaRef.current.value;
-    const pos = currentPos ?? textareaRef.current.selectionStart ?? 0;
-    const textBefore = val.slice(0, pos);
-    const lines = textBefore.split('\n');
-    setActiveLine(lines.length);
-  }, []);
+  const updateCursorInfo = useCallback(
+    (currentVal?: string, currentPos?: number) => {
+      if (!textareaRef.current) return;
+      const val = currentVal ?? textareaRef.current.value;
+      const pos = currentPos ?? textareaRef.current.selectionStart ?? 0;
+      const textBefore = val.slice(0, pos);
+      const lines = textBefore.split("\n");
+      setActiveLine(lines.length);
+    },
+    [],
+  );
 
   // Sync scrolling between textarea, highlight overlay, and line numbers gutter
   const handleScroll = () => {
@@ -179,8 +308,8 @@ export function SqlCodeEditor({
       const textBefore = currentVal.slice(0, cursorPos);
 
       // Don't trigger inside comments (-- ...) or strings ('...')
-      const lastLine = textBefore.split('\n').pop() || '';
-      if (lastLine.includes('--')) {
+      const lastLine = textBefore.split("\n").pop() || "";
+      if (lastLine.includes("--")) {
         setShowSuggestions(false);
         return;
       }
@@ -192,7 +321,7 @@ export function SqlCodeEditor({
 
       // 1. Check for dot completion: "tableName.col"
       const dotMatch = textBefore.match(/([a-zA-Z0-9_]+)\.([a-zA-Z0-9_]*)$/);
-      let query = '';
+      let query = "";
       let candidates: CompletionItem[] = [];
 
       if (dotMatch) {
@@ -203,13 +332,13 @@ export function SqlCodeEditor({
 
         // Find table columns in schema
         const targetTable = Object.entries(allDbTablesSchema).find(
-          ([t]) => t.toLowerCase() === tblName
+          ([t]) => t.toLowerCase() === tblName,
         );
         if (targetTable && targetTable[1].columns) {
           candidates = targetTable[1].columns.map((c) => ({
             label: c.name,
-            kind: 'column' as const,
-            detail: `${c.type}${c.primary_key ? ' • PK' : ''}`,
+            kind: "column" as const,
+            detail: `${c.type}${c.primary_key ? " • PK" : ""}`,
           }));
         }
       } else {
@@ -256,9 +385,9 @@ export function SqlCodeEditor({
         setUserHasNavigated(false);
 
         // Calculate bounded cursor coordinates
-        const textLines = textBefore.split('\n');
+        const textLines = textBefore.split("\n");
         const lineIdx = textLines.length - 1;
-        const colIdx = (textLines[lineIdx] || '').length;
+        const colIdx = (textLines[lineIdx] || "").length;
 
         const lineHeight = 20;
         const charWidth = 7.8;
@@ -280,7 +409,10 @@ export function SqlCodeEditor({
           top = Math.max(8, cursorTop - popupHeight - 4);
         }
 
-        const left = Math.max(8, Math.min(cursorLeft, containerWidth - popupWidth - 12));
+        const left = Math.max(
+          8,
+          Math.min(cursorLeft, containerWidth - popupWidth - 12),
+        );
 
         setCompletionCoords({ top, left });
         setShowSuggestions(true);
@@ -288,7 +420,7 @@ export function SqlCodeEditor({
         setShowSuggestions(false);
       }
     },
-    [allDbTablesSchema, tableSuggestions, allKnownColumns, baseSuggestions]
+    [allDbTablesSchema, tableSuggestions, allKnownColumns, baseSuggestions],
   );
 
   // Bulletproof suggestion application: replaces exact prefix in DOM value
@@ -302,20 +434,26 @@ export function SqlCodeEditor({
 
     // Check if replacing after dot
     const dotMatch = textBefore.match(/([a-zA-Z0-9_]+)\.([a-zA-Z0-9_]*)$/);
-    let replacedBefore = '';
+    let replacedBefore = "";
 
-    if (dotMatch && suggestion.kind === 'column') {
+    if (dotMatch && suggestion.kind === "column") {
       const colPrefix = dotMatch[2];
-      replacedBefore = textBefore.slice(0, textBefore.length - colPrefix.length) + suggestion.label;
+      replacedBefore =
+        textBefore.slice(0, textBefore.length - colPrefix.length) +
+        suggestion.label;
     } else {
       const wordMatch = textBefore.match(/([a-zA-Z0-9_]+)$/);
-      const prefix = wordMatch ? wordMatch[1] : '';
-      replacedBefore = textBefore.slice(0, textBefore.length - prefix.length) + suggestion.label;
+      const prefix = wordMatch ? wordMatch[1] : "";
+      replacedBefore =
+        textBefore.slice(0, textBefore.length - prefix.length) +
+        suggestion.label;
     }
 
     // Strip any trailing word characters right after cursor so word isn't duplicated
     const matchAfter = textAfter.match(/^[a-zA-Z0-9_]+/);
-    const remainderAfter = matchAfter ? textAfter.slice(matchAfter[0].length) : textAfter;
+    const remainderAfter = matchAfter
+      ? textAfter.slice(matchAfter[0].length)
+      : textAfter;
 
     const newVal = replacedBefore + remainderAfter;
     onChange(newVal);
@@ -335,7 +473,7 @@ export function SqlCodeEditor({
   // Keyboard controls: Autocomplete navigation, indentation, execution
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     // 0. Ctrl+Enter or Cmd+Enter to execute query (always highest priority)
-    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+    if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
       e.preventDefault();
       setShowSuggestions(false);
       onExecute();
@@ -343,34 +481,40 @@ export function SqlCodeEditor({
     }
 
     // 1. Manual autocomplete trigger: Ctrl+Space or Cmd+Space
-    if ((e.ctrlKey || e.metaKey) && e.code === 'Space') {
+    if ((e.ctrlKey || e.metaKey) && e.code === "Space") {
       e.preventDefault();
       if (textareaRef.current) {
-        triggerAutocomplete(textareaRef.current.value, textareaRef.current.selectionStart, true);
+        triggerAutocomplete(
+          textareaRef.current.value,
+          textareaRef.current.selectionStart,
+          true,
+        );
       }
       return;
     }
 
     // 2. If suggestions open, navigate or accept
     if (showSuggestions && suggestions.length > 0) {
-      if (e.key === 'ArrowDown') {
+      if (e.key === "ArrowDown") {
         e.preventDefault();
         setSelectedSuggestionIndex((prev) => (prev + 1) % suggestions.length);
         setUserHasNavigated(true);
         return;
       }
-      if (e.key === 'ArrowUp') {
+      if (e.key === "ArrowUp") {
         e.preventDefault();
-        setSelectedSuggestionIndex((prev) => (prev - 1 + suggestions.length) % suggestions.length);
+        setSelectedSuggestionIndex(
+          (prev) => (prev - 1 + suggestions.length) % suggestions.length,
+        );
         setUserHasNavigated(true);
         return;
       }
-      if (e.key === 'Tab') {
+      if (e.key === "Tab") {
         e.preventDefault();
         applySuggestion(suggestions[selectedSuggestionIndex]);
         return;
       }
-      if (e.key === 'Enter') {
+      if (e.key === "Enter") {
         // Accept on Enter ONLY if user actively navigated candidates
         if (userHasNavigated) {
           e.preventDefault();
@@ -381,7 +525,7 @@ export function SqlCodeEditor({
           setShowSuggestions(false);
         }
       }
-      if (e.key === 'Escape') {
+      if (e.key === "Escape") {
         e.preventDefault();
         setShowSuggestions(false);
         return;
@@ -389,18 +533,19 @@ export function SqlCodeEditor({
     }
 
     // 3. Tab key indents with 2 spaces (when suggestions closed)
-    if (e.key === 'Tab') {
+    if (e.key === "Tab") {
       e.preventDefault();
       if (!textareaRef.current) return;
       const start = textareaRef.current.selectionStart;
       const end = textareaRef.current.selectionEnd;
 
-      const newValue = value.substring(0, start) + '  ' + value.substring(end);
+      const newValue = value.substring(0, start) + "  " + value.substring(end);
       onChange(newValue);
 
       setTimeout(() => {
         if (textareaRef.current) {
-          textareaRef.current.selectionStart = textareaRef.current.selectionEnd = start + 2;
+          textareaRef.current.selectionStart =
+            textareaRef.current.selectionEnd = start + 2;
           updateCursorInfo(newValue, start + 2);
         }
       }, 0);
@@ -408,11 +553,11 @@ export function SqlCodeEditor({
     }
 
     // 4. Ctrl+/ to toggle comment
-    if ((e.ctrlKey || e.metaKey) && e.key === '/') {
+    if ((e.ctrlKey || e.metaKey) && e.key === "/") {
       e.preventDefault();
       if (!textareaRef.current) return;
       const pos = textareaRef.current.selectionStart;
-      const lines = value.split('\n');
+      const lines = value.split("\n");
       let count = 0;
       let targetIdx = 0;
       for (let i = 0; i < lines.length; i++) {
@@ -423,12 +568,12 @@ export function SqlCodeEditor({
         }
       }
 
-      if (lines[targetIdx].trimStart().startsWith('--')) {
-        lines[targetIdx] = lines[targetIdx].replace(/^(\s*)--\s?/, '$1');
+      if (lines[targetIdx].trimStart().startsWith("--")) {
+        lines[targetIdx] = lines[targetIdx].replace(/^(\s*)--\s?/, "$1");
       } else {
-        lines[targetIdx] = '-- ' + lines[targetIdx];
+        lines[targetIdx] = "-- " + lines[targetIdx];
       }
-      const updated = lines.join('\n');
+      const updated = lines.join("\n");
       onChange(updated);
       return;
     }
@@ -436,23 +581,26 @@ export function SqlCodeEditor({
 
   // Syntax Highlighting Tokenizer
   const highlightedCode = useMemo(() => {
-    if (!value) return '';
+    if (!value) return "";
 
     // Regex tokens
-    const tokenRegex = /(--[^\n]*|\/\*[\s\S]*?\*\/|'(?:''|[^'])*'|\b\d+(?:\.\d+)?\b|\b[a-zA-Z_][a-zA-Z0-9_]*\b|[^\s\w])/g;
+    const tokenRegex =
+      /(--[^\n]*|\/\*[\s\S]*?\*\/|'(?:''|[^'])*'|\b\d+(?:\.\d+)?\b|\b[a-zA-Z_][a-zA-Z0-9_]*\b|[^\s\w])/g;
 
     const knownTableSet = new Set(tables.map((t) => t.name.toLowerCase()));
-    const knownColSet = new Set(allKnownColumns.map((c) => c.label.toLowerCase()));
+    const knownColSet = new Set(
+      allKnownColumns.map((c) => c.label.toLowerCase()),
+    );
     const kwSet = new Set(SQL_KEYWORDS.map((k) => k.toLowerCase()));
     const fnSet = new Set(SQL_FUNCTIONS.map((f) => f.toLowerCase()));
     const typeSet = new Set(SQL_TYPES.map((t) => t.toLowerCase()));
 
     const escapeHtml = (str: string) =>
-      str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
     return value.replace(tokenRegex, (match) => {
       // 1. Comments (text-[#888888] italic like definition tab)
-      if (match.startsWith('--') || match.startsWith('/*')) {
+      if (match.startsWith("--") || match.startsWith("/*")) {
         return `<span style="color: #888888; font-style: italic;">${escapeHtml(match)}</span>`;
       }
       // 2. String literals (text-amber-300 like definition values)
@@ -496,7 +644,7 @@ export function SqlCodeEditor({
   }, [value, tables, allKnownColumns]);
 
   const totalLines = useMemo(() => {
-    return Math.max(1, value.split('\n').length);
+    return Math.max(1, value.split("\n").length);
   }, [value]);
 
   return (
@@ -516,7 +664,7 @@ export function SqlCodeEditor({
               <div
                 key={lineNum}
                 className={`transition-colors ${
-                  isCurrent ? 'text-white font-medium' : 'text-[#555555]'
+                  isCurrent ? "text-white font-medium" : "text-[#555555]"
                 }`}
               >
                 {lineNum}
@@ -531,7 +679,7 @@ export function SqlCodeEditor({
           <pre
             ref={highlightRef}
             aria-hidden="true"
-            dangerouslySetInnerHTML={{ __html: highlightedCode + '\n' }}
+            dangerouslySetInnerHTML={{ __html: highlightedCode + "\n" }}
             className="absolute inset-0 m-0 py-3 px-3.5 bg-transparent font-mono text-[13px] leading-[20px] text-white pointer-events-none whitespace-pre overflow-hidden select-none"
             style={{
               tabSize: 2,
@@ -553,13 +701,19 @@ export function SqlCodeEditor({
             onScroll={handleScroll}
             onClick={(e) => {
               setShowSuggestions(false);
-              updateCursorInfo(e.currentTarget.value, e.currentTarget.selectionStart);
+              updateCursorInfo(
+                e.currentTarget.value,
+                e.currentTarget.selectionStart,
+              );
             }}
             onKeyUp={(e) => {
-              if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) {
+              if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) {
                 setShowSuggestions(false);
               }
-              updateCursorInfo(e.currentTarget.value, e.currentTarget.selectionStart);
+              updateCursorInfo(
+                e.currentTarget.value,
+                e.currentTarget.selectionStart,
+              );
             }}
             onKeyDown={handleKeyDown}
             spellCheck={false}
@@ -586,7 +740,10 @@ export function SqlCodeEditor({
               }}
               className="absolute z-50 min-w-[240px] max-w-[340px] bg-[#141414] border border-[#262626] rounded-[6px] shadow-2xl p-0.5 text-[12.5px] font-mono select-none animate-in fade-in duration-75 overflow-hidden font-sans"
             >
-              <div ref={listRef} className="max-h-52 overflow-y-auto space-y-0.5 py-0.5">
+              <div
+                ref={listRef}
+                className="max-h-52 overflow-y-auto space-y-0.5 py-0.5"
+              >
                 {suggestions.map((item, idx) => {
                   const isSelected = idx === selectedSuggestionIndex;
                   return (
@@ -598,25 +755,27 @@ export function SqlCodeEditor({
                       }}
                       className={`flex items-center justify-between px-2.5 py-1 rounded-[4px] cursor-pointer transition-colors ${
                         isSelected
-                          ? 'bg-[#222222] text-white'
-                          : 'text-[#cccccc] hover:bg-[#1a1a1a]'
+                          ? "bg-[#222222] text-white"
+                          : "text-[#cccccc] hover:bg-[#1a1a1a]"
                       }`}
                     >
                       <div className="flex items-center gap-2 min-w-0 flex-1 pr-2">
-                        {item.kind === 'table' ? (
+                        {item.kind === "table" ? (
                           <TableIcon className="w-3.5 h-3.5 text-[#38bdf8] shrink-0" />
-                        ) : item.kind === 'column' ? (
+                        ) : item.kind === "column" ? (
                           <Columns className="w-3.5 h-3.5 text-white shrink-0" />
-                        ) : item.kind === 'function' ? (
+                        ) : item.kind === "function" ? (
                           <Hash className="w-3.5 h-3.5 text-[#fcd34d] shrink-0" />
-                        ) : item.kind === 'type' ? (
+                        ) : item.kind === "type" ? (
                           <Code className="w-3.5 h-3.5 text-[#a371f7] shrink-0" />
                         ) : (
                           <Code className="w-3.5 h-3.5 text-[#60a5fa] shrink-0" />
                         )}
                         <span className="truncate">{item.label}</span>
                       </div>
-                      <span className="text-[10.5px] text-[#777777] shrink-0 font-mono">{item.detail}</span>
+                      <span className="text-[10.5px] text-[#777777] shrink-0 font-mono">
+                        {item.detail}
+                      </span>
                     </div>
                   );
                 })}

@@ -1,33 +1,73 @@
-import React, { useState, useEffect, Suspense, lazy } from 'react';
-import { Layout, NavPath } from './components/Layout';
-import { setSession, clearSession, hasActiveSession } from './api/session';
-import { api } from './api/client';
-import { GlobalAlertDialog } from './components/ui/AlertDialog';
-import { ErrorBoundary } from './components/ui/ErrorBoundary';
-const isRelease = import.meta.env.MODE === 'release' || import.meta.env.VITE_RELEASE === 'true';
+import React, { useState, useEffect, Suspense, lazy } from "react";
+import { Layout, NavPath } from "./components/Layout";
+import { setSession, clearSession, hasActiveSession } from "./api/session";
+import { api } from "./api/client";
+import { GlobalAlertDialog } from "./components/ui/AlertDialog";
+import { ErrorBoundary } from "./components/ui/ErrorBoundary";
+const isRelease =
+  import.meta.env.MODE === "release" || import.meta.env.VITE_RELEASE === "true";
 const Agentation: React.ComponentType = !isRelease
-  ? lazy(() => import('agentation').then((m) => ({ default: m.Agentation })))
+  ? lazy(() => import("agentation").then((m) => ({ default: m.Agentation })))
   : () => null;
 
-const Overview = lazy(() => import('./pages/Overview').then((m) => ({ default: m.Overview })));
-const Databases = lazy(() => import('./pages/Databases').then((m) => ({ default: m.Databases })));
-const TableEditor = lazy(() => import('./pages/TableEditor').then((m) => ({ default: m.TableEditor })));
-const Storage = lazy(() => import('./pages/Storage').then((m) => ({ default: m.Storage })));
-const Cluster = lazy(() => import('./pages/Cluster').then((m) => ({ default: m.Cluster })));
-const Keys = lazy(() => import('./pages/Keys').then((m) => ({ default: m.Keys })));
-const Roles = lazy(() => import('./pages/Roles').then((m) => ({ default: m.Roles })));
-const AuditLog = lazy(() => import('./pages/AuditLog').then((m) => ({ default: m.AuditLog })));
-const Mcp = lazy(() => import('./pages/Mcp').then((m) => ({ default: m.Mcp })));
-const Settings = lazy(() => import('./pages/Settings').then((m) => ({ default: m.Settings })));
-const AuthPage = lazy(() => import('./pages/AuthPage').then((m) => ({ default: m.AuthPage })));
-const ShareViewerPage = lazy(() => import('./pages/storage/ShareViewerPage').then((m) => ({ default: m.ShareViewerPage })));
+const Overview = lazy(() =>
+  import("./pages/Overview").then((m) => ({ default: m.Overview })),
+);
+const Databases = lazy(() =>
+  import("./pages/Databases").then((m) => ({ default: m.Databases })),
+);
+const TableEditor = lazy(() =>
+  import("./pages/TableEditor").then((m) => ({ default: m.TableEditor })),
+);
+const Storage = lazy(() =>
+  import("./pages/Storage").then((m) => ({ default: m.Storage })),
+);
+const Cluster = lazy(() =>
+  import("./pages/Cluster").then((m) => ({ default: m.Cluster })),
+);
+const Keys = lazy(() =>
+  import("./pages/Keys").then((m) => ({ default: m.Keys })),
+);
+const Roles = lazy(() =>
+  import("./pages/Roles").then((m) => ({ default: m.Roles })),
+);
+const AuditLog = lazy(() =>
+  import("./pages/AuditLog").then((m) => ({ default: m.AuditLog })),
+);
+const Mcp = lazy(() => import("./pages/Mcp").then((m) => ({ default: m.Mcp })));
+const Settings = lazy(() =>
+  import("./pages/Settings").then((m) => ({ default: m.Settings })),
+);
+const AuthPage = lazy(() =>
+  import("./pages/AuthPage").then((m) => ({ default: m.AuthPage })),
+);
+const ShareViewerPage = lazy(() =>
+  import("./pages/storage/ShareViewerPage").then((m) => ({
+    default: m.ShareViewerPage,
+  })),
+);
 
 function PageFallback() {
   return (
     <div className="flex-1 flex items-center justify-center p-12 min-h-[300px]">
-      <svg className="animate-spin h-6 w-6 text-[#2563eb]" fill="none" viewBox="0 0 24 24">
-        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+      <svg
+        className="animate-spin h-6 w-6 text-[#2563eb]"
+        fill="none"
+        viewBox="0 0 24 24"
+      >
+        <circle
+          className="opacity-25"
+          cx="12"
+          cy="12"
+          r="10"
+          stroke="currentColor"
+          strokeWidth="4"
+        />
+        <path
+          className="opacity-75"
+          fill="currentColor"
+          d="M4 12a8 8 0 018-8v8H4z"
+        />
       </svg>
     </div>
   );
@@ -35,35 +75,37 @@ function PageFallback() {
 
 export function App() {
   function normalizePath(path: string): NavPath {
-    let p = path.replace(/\/$/, '');
-    if (!p || p === '/') return '/system';
+    let p = path.replace(/\/$/, "");
+    if (!p || p === "/") return "/system";
 
     // Convenience aliases
-    if (p === '/settings') p = '/system/settings';
-    if (p === '/databases') p = '/system/databases';
-    if (p === '/tables' || p === '/editor' || p === '/table-editor') p = '/system/tables';
-    if (p === '/storage' || p === '/blobs') p = '/system/storage';
-    if (p === '/cluster' || p === '/mesh' || p === '/nodes') p = '/system/cluster';
-    if (p === '/keys') p = '/system/keys';
-    if (p === '/roles') p = '/system/roles';
-    if (p === '/audit' || p === '/logs' || p === '/audit-log') p = '/system/audit';
-    if (p === '/mcp') p = '/system/mcp';
+    if (p === "/settings") p = "/system/settings";
+    if (p === "/databases") p = "/system/databases";
+    if (p === "/tables" || p === "/editor" || p === "/table-editor")
+      p = "/system/tables";
+    if (p === "/storage" || p === "/blobs") p = "/system/storage";
+    if (p === "/cluster" || p === "/mesh" || p === "/nodes")
+      p = "/system/cluster";
+    if (p === "/keys") p = "/system/keys";
+    if (p === "/roles") p = "/system/roles";
+    if (p === "/audit" || p === "/logs" || p === "/audit-log")
+      p = "/system/audit";
+    if (p === "/mcp") p = "/system/mcp";
 
     const validPaths: NavPath[] = [
-      '/system',
-      '/system/databases',
-      '/system/tables',
-      '/system/storage',
-      '/system/cluster',
-      '/system/keys',
-      '/system/roles',
-      '/system/audit',
-      '/system/mcp',
-      '/system/settings',
+      "/system",
+      "/system/databases",
+      "/system/tables",
+      "/system/storage",
+      "/system/cluster",
+      "/system/keys",
+      "/system/roles",
+      "/system/audit",
+      "/system/mcp",
+      "/system/settings",
     ];
-    return validPaths.includes(p as NavPath) ? (p as NavPath) : '/system';
+    return validPaths.includes(p as NavPath) ? (p as NavPath) : "/system";
   }
-
 
   const [currentPath, setCurrentPath] = useState<NavPath>(() => {
     return normalizePath(window.location.pathname);
@@ -77,9 +119,9 @@ export function App() {
     function handlePopState() {
       setCurrentPath(normalizePath(window.location.pathname));
     }
-    window.addEventListener('popstate', handlePopState);
+    window.addEventListener("popstate", handlePopState);
     return () => {
-      window.removeEventListener('popstate', handlePopState);
+      window.removeEventListener("popstate", handlePopState);
     };
   }, []);
 
@@ -88,9 +130,9 @@ export function App() {
     function onUnauthorized() {
       handleLogout();
     }
-    window.addEventListener('axiom:unauthorized', onUnauthorized);
+    window.addEventListener("axiom:unauthorized", onUnauthorized);
     return () => {
-      window.removeEventListener('axiom:unauthorized', onUnauthorized);
+      window.removeEventListener("axiom:unauthorized", onUnauthorized);
     };
   }, []);
 
@@ -105,28 +147,32 @@ export function App() {
 
   function handleNavigate(path: NavPath) {
     if (path !== currentPath || window.location.pathname !== path) {
-      window.history.pushState(null, '', path);
+      window.history.pushState(null, "", path);
       setCurrentPath(path);
       window.scrollTo(0, 0);
     }
   }
 
-  function handleLoginSuccess(token: string, username: string, expiresAt?: number) {
+  function handleLoginSuccess(
+    token: string,
+    username: string,
+    expiresAt?: number,
+  ) {
     setSession(token, expiresAt, username);
     setIsAuthenticated(true);
-    window.history.pushState(null, '', '/system');
-    setCurrentPath('/system');
+    window.history.pushState(null, "", "/system");
+    setCurrentPath("/system");
     window.scrollTo(0, 0);
   }
 
   // Check for public capability share/preview viewer
   const isShareViewer =
-    window.location.pathname === '/system/preview' ||
-    window.location.pathname === '/system/share' ||
-    window.location.pathname === '/system/storage/share' ||
-    window.location.pathname === '/preview' ||
-    window.location.pathname === '/share' ||
-    window.location.pathname === '/view';
+    window.location.pathname === "/system/preview" ||
+    window.location.pathname === "/system/share" ||
+    window.location.pathname === "/system/storage/share" ||
+    window.location.pathname === "/preview" ||
+    window.location.pathname === "/share" ||
+    window.location.pathname === "/view";
 
   if (isShareViewer) {
     return (
@@ -143,14 +189,14 @@ export function App() {
 
   // If user is unauthenticated, render AuthPage
   if (!isAuthenticated) {
-    const isSetup = window.location.pathname.includes('/setup');
+    const isSetup = window.location.pathname.includes("/setup");
     return (
       <>
         <ErrorBoundary>
           <Suspense fallback={<PageFallback />}>
             <AuthPage
               onLoginSuccess={handleLoginSuccess}
-              initialMode={isSetup ? 'setup' : 'login'}
+              initialMode={isSetup ? "setup" : "login"}
             />
           </Suspense>
         </ErrorBoundary>
@@ -164,28 +210,31 @@ export function App() {
 
   function getPageDetails(): { title: string; component: React.ReactNode } {
     switch (currentPath) {
-      case '/system/databases':
-        return { title: 'Database Pools', component: <Databases /> };
-      case '/system/tables':
-        return { title: 'Table & Schema Editor', component: <TableEditor /> };
-      case '/system/storage':
-        return { title: 'Native Blob Storage', component: <Storage /> };
-      case '/system/cluster':
-        return { title: 'Cluster Mesh', component: <Cluster /> };
+      case "/system/databases":
+        return { title: "Database Pools", component: <Databases /> };
+      case "/system/tables":
+        return { title: "Table & Schema Editor", component: <TableEditor /> };
+      case "/system/storage":
+        return { title: "Native Blob Storage", component: <Storage /> };
+      case "/system/cluster":
+        return { title: "Cluster Mesh", component: <Cluster /> };
 
-      case '/system/keys':
-        return { title: 'API Keys', component: <Keys /> };
-      case '/system/roles':
-        return { title: 'Roles & RBAC', component: <Roles /> };
-      case '/system/audit':
-        return { title: 'Audit Trail', component: <AuditLog /> };
-      case '/system/mcp':
-        return { title: 'MCP Protocol', component: <Mcp /> };
-      case '/system/settings':
-        return { title: 'Settings', component: <Settings /> };
-      case '/system':
+      case "/system/keys":
+        return { title: "API Keys", component: <Keys /> };
+      case "/system/roles":
+        return { title: "Roles & RBAC", component: <Roles /> };
+      case "/system/audit":
+        return { title: "Audit Trail", component: <AuditLog /> };
+      case "/system/mcp":
+        return { title: "MCP Protocol", component: <Mcp /> };
+      case "/system/settings":
+        return { title: "Settings", component: <Settings /> };
+      case "/system":
       default:
-        return { title: 'Overview', component: <Overview onNavigate={handleNavigate} /> };
+        return {
+          title: "Overview",
+          component: <Overview onNavigate={handleNavigate} />,
+        };
     }
   }
 
@@ -199,8 +248,8 @@ export function App() {
     } finally {
       clearSession();
       setIsAuthenticated(false);
-      window.history.pushState(null, '', '/system/login');
-      setCurrentPath('/system');
+      window.history.pushState(null, "", "/system/login");
+      setCurrentPath("/system");
     }
   }
 
@@ -208,11 +257,14 @@ export function App() {
 
   return (
     <>
-      <Layout currentPath={currentPath} onNavigate={handleNavigate} title={title} onLogout={handleLogout}>
+      <Layout
+        currentPath={currentPath}
+        onNavigate={handleNavigate}
+        title={title}
+        onLogout={handleLogout}
+      >
         <ErrorBoundary>
-          <Suspense fallback={<PageFallback />}>
-            {component}
-          </Suspense>
+          <Suspense fallback={<PageFallback />}>{component}</Suspense>
         </ErrorBoundary>
       </Layout>
       <GlobalAlertDialog />

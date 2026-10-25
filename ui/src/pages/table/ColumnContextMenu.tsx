@@ -4,20 +4,30 @@
  * Key deps: react, lucide-react, ../../types, ./format
  */
 
-import React, { useEffect, useRef } from 'react';
-import { ArrowUp, ArrowDown, Check, Copy, Edit3, ArrowUpDown } from 'lucide-react';
-import { ColumnInfoApi, ForeignKeyInfoApi } from '../../types';
-import { mapSqlTypeToFormValue } from './format';
+import React, { useEffect, useRef } from "react";
+import {
+  ArrowUp,
+  ArrowDown,
+  Check,
+  Copy,
+  Edit3,
+  ArrowUpDown,
+} from "lucide-react";
+import { ColumnInfoApi, ForeignKeyInfoApi } from "../../types";
+import { mapSqlTypeToFormValue } from "./format";
 
 export interface ColumnContextMenuProps {
-  activeColumnMenu: { col: ColumnInfoApi; rect: { top: number; left: number; width: number; height: number } };
-  activeSort: { col: string; order: 'asc' | 'desc' } | null;
+  activeColumnMenu: {
+    col: ColumnInfoApi;
+    rect: { top: number; left: number; width: number; height: number };
+  };
+  activeSort: { col: string; order: "asc" | "desc" } | null;
   foreignKeys: ForeignKeyInfoApi[];
   copiedKey: string | null;
   selectedDb: string;
   selectedTable: string;
   onClose: () => void;
-  onSetSort: (sort: { col: string; order: 'asc' | 'desc' }) => void;
+  onSetSort: (sort: { col: string; order: "asc" | "desc" }) => void;
   onCopyName: (name: string) => void;
   onOpenEditColumn: (col: ColumnInfoApi) => void;
   onResetWidth: (colName: string) => void;
@@ -47,16 +57,22 @@ export function ColumnContextMenu({
         onClose();
       }
     };
-    document.addEventListener('mousedown', handleOutsideClick);
-    return () => document.removeEventListener('mousedown', handleOutsideClick);
+    document.addEventListener("mousedown", handleOutsideClick);
+    return () => document.removeEventListener("mousedown", handleOutsideClick);
   }, [onClose]);
 
   const menuWidth = 190;
   const top = Math.min(window.innerHeight - 280, rect.top + rect.height + 4);
-  const left = Math.max(8, Math.min(window.innerWidth - menuWidth - 8, rect.left - menuWidth + rect.width));
+  const left = Math.max(
+    8,
+    Math.min(
+      window.innerWidth - menuWidth - 8,
+      rect.left - menuWidth + rect.width,
+    ),
+  );
 
-  const isAsc = activeSort?.col === col.name && activeSort?.order === 'asc';
-  const isDesc = activeSort?.col === col.name && activeSort?.order === 'desc';
+  const isAsc = activeSort?.col === col.name && activeSort?.order === "asc";
+  const isDesc = activeSort?.col === col.name && activeSort?.order === "desc";
 
   return (
     <div
@@ -72,13 +88,13 @@ export function ColumnContextMenu({
       <button
         type="button"
         onClick={() => {
-          onSetSort({ col: col.name, order: 'asc' });
+          onSetSort({ col: col.name, order: "asc" });
           onClose();
         }}
         className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-[5px] text-[13px] font-sans transition-colors cursor-pointer text-left ${
           isAsc
-            ? 'bg-blue-600/15 text-blue-400 font-medium'
-            : 'text-[#cccccc] hover:text-white hover:bg-[#202020]'
+            ? "bg-blue-600/15 text-blue-400 font-medium"
+            : "text-[#cccccc] hover:text-white hover:bg-[#202020]"
         }`}
       >
         <ArrowUp className="w-3.5 h-3.5 shrink-0 opacity-80" />
@@ -90,13 +106,13 @@ export function ColumnContextMenu({
       <button
         type="button"
         onClick={() => {
-          onSetSort({ col: col.name, order: 'desc' });
+          onSetSort({ col: col.name, order: "desc" });
           onClose();
         }}
         className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-[5px] text-[13px] font-sans transition-colors cursor-pointer text-left ${
           isDesc
-            ? 'bg-blue-600/15 text-blue-400 font-medium'
-            : 'text-[#cccccc] hover:text-white hover:bg-[#202020]'
+            ? "bg-blue-600/15 text-blue-400 font-medium"
+            : "text-[#cccccc] hover:text-white hover:bg-[#202020]"
         }`}
       >
         <ArrowDown className="w-3.5 h-3.5 shrink-0 opacity-80" />
@@ -117,7 +133,7 @@ export function ColumnContextMenu({
         className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-[5px] text-[13px] font-sans text-[#cccccc] hover:text-white hover:bg-[#202020] transition-colors cursor-pointer text-left"
       >
         <Copy className="w-3.5 h-3.5 shrink-0 opacity-80" />
-        <span>{copiedKey === col.name ? 'Copied!' : 'Copy name'}</span>
+        <span>{copiedKey === col.name ? "Copied!" : "Copy name"}</span>
       </button>
 
       {/* 4. Edit column */}

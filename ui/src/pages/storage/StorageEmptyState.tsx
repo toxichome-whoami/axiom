@@ -4,11 +4,16 @@
  * Design reference: TableEditor empty state & Vercel minimal void dark
  */
 
-import React from 'react';
-import { HardDrive, FolderOpen, Search, Plus, Upload } from 'lucide-react';
+import React from "react";
+import { HardDrive, FolderOpen, Search, Plus, Upload } from "lucide-react";
 
 interface StorageEmptyStateProps {
-  type: 'no-namespaces' | 'no-namespace-selected' | 'empty-folder' | 'no-search-results' | 'no-active-links';
+  type:
+    | "no-namespaces"
+    | "no-namespace-selected"
+    | "empty-folder"
+    | "no-search-results"
+    | "no-active-links";
   searchQuery?: string;
   onCreateNamespace?: () => void;
   onUpload?: () => void;
@@ -22,15 +27,18 @@ export function StorageEmptyState({
   onUpload,
   onClearSearch,
 }: StorageEmptyStateProps) {
-  if (type === 'no-namespaces') {
+  if (type === "no-namespaces") {
     return (
       <div className="flex-1 flex flex-col items-center justify-center p-12 text-center select-none font-sans">
         <div className="w-12 h-12 rounded-[10px] bg-[#141414] border border-[#242424] flex items-center justify-center mb-3.5">
           <HardDrive className="w-6 h-6 text-[#8c8c8c]" />
         </div>
-        <h4 className="text-[15px] font-medium text-white mb-1.5">No Storage Namespaces</h4>
+        <h4 className="text-[15px] font-medium text-white mb-1.5">
+          No Storage Namespaces
+        </h4>
         <p className="text-[13px] text-[#8c8c8c] max-w-sm mb-5 leading-relaxed">
-          Namespaces isolate content-addressed blobs and enforce dedicated byte quotas.
+          Namespaces isolate content-addressed blobs and enforce dedicated byte
+          quotas.
         </p>
         {onCreateNamespace && (
           <button
@@ -46,27 +54,32 @@ export function StorageEmptyState({
     );
   }
 
-  if (type === 'no-namespace-selected') {
+  if (type === "no-namespace-selected") {
     return (
       <div className="flex-1 flex flex-col items-center justify-center p-12 text-center select-none font-sans">
         <div className="w-12 h-12 rounded-[10px] bg-[#141414] border border-[#242424] flex items-center justify-center mb-3.5">
           <HardDrive className="w-6 h-6 text-[#8c8c8c]" />
         </div>
-        <h4 className="text-[15px] font-medium text-white mb-1.5">Select a Namespace</h4>
+        <h4 className="text-[15px] font-medium text-white mb-1.5">
+          Select a Namespace
+        </h4>
         <p className="text-[13px] text-[#8c8c8c] max-w-xs leading-relaxed">
-          Choose a storage namespace from the left sidebar to explore and manage objects.
+          Choose a storage namespace from the left sidebar to explore and manage
+          objects.
         </p>
       </div>
     );
   }
 
-  if (type === 'no-active-links') {
+  if (type === "no-active-links") {
     return (
       <div className="flex-1 flex flex-col items-center justify-center p-12 text-center select-none font-sans">
         <div className="w-12 h-12 rounded-[10px] bg-[#141414] border border-[#242424] flex items-center justify-center mb-3.5">
           <Search className="w-6 h-6 text-[#8c8c8c]" />
         </div>
-        <h4 className="text-[15px] font-medium text-white mb-1.5">No Active Share Links</h4>
+        <h4 className="text-[15px] font-medium text-white mb-1.5">
+          No Active Share Links
+        </h4>
         <p className="text-[13px] text-[#8c8c8c] max-w-xs mb-5 leading-relaxed">
           No objects in this view currently have active capability share links.
         </p>
@@ -83,15 +96,18 @@ export function StorageEmptyState({
     );
   }
 
-  if (type === 'no-search-results') {
+  if (type === "no-search-results") {
     return (
       <div className="flex-1 flex flex-col items-center justify-center p-12 text-center select-none font-sans">
         <div className="w-12 h-12 rounded-[10px] bg-[#141414] border border-[#242424] flex items-center justify-center mb-3.5">
           <Search className="w-6 h-6 text-[#8c8c8c]" />
         </div>
-        <h4 className="text-[15px] font-medium text-white mb-1.5">No Matching Files</h4>
+        <h4 className="text-[15px] font-medium text-white mb-1.5">
+          No Matching Files
+        </h4>
         <p className="text-[13px] text-[#8c8c8c] max-w-xs mb-5 leading-relaxed">
-          No objects matched "{searchQuery}". Try adjusting your keywords or filters.
+          No objects matched "{searchQuery}". Try adjusting your keywords or
+          filters.
         </p>
         {onClearSearch && (
           <button
@@ -111,9 +127,12 @@ export function StorageEmptyState({
       <div className="w-12 h-12 rounded-[10px] bg-[#141414] border border-[#242424] flex items-center justify-center mb-3.5">
         <FolderOpen className="w-6 h-6 text-[#8c8c8c]" />
       </div>
-      <h4 className="text-[15px] font-medium text-white mb-1.5">This directory is empty</h4>
+      <h4 className="text-[15px] font-medium text-white mb-1.5">
+        This directory is empty
+      </h4>
       <p className="text-[13px] text-[#8c8c8c] max-w-xs mb-5 leading-relaxed">
-        Drop files here to upload, or use the Upload button to store content-addressed blobs.
+        Drop files here to upload, or use the Upload button to store
+        content-addressed blobs.
       </p>
       {onUpload && (
         <button

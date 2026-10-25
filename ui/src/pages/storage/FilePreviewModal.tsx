@@ -6,7 +6,7 @@
  * Dependencies: lucide-react, ./MediaPlayer, ./format, ./fileIcon, ../../api/client
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from "react";
 import {
   X,
   Download,
@@ -15,11 +15,11 @@ import {
   Copy,
   Check,
   Globe,
-} from 'lucide-react';
-import { StorageItem } from './types';
-import { MediaPlayer } from './MediaPlayer';
-import { formatBytes } from './format';
-import { getFileIcon, getFileExtension } from './fileIcon';
+} from "lucide-react";
+import { StorageItem } from "./types";
+import { MediaPlayer } from "./MediaPlayer";
+import { formatBytes } from "./format";
+import { getFileIcon, getFileExtension } from "./fileIcon";
 
 export interface FilePreviewModalProps {
   isOpen: boolean;
@@ -46,14 +46,17 @@ export function FilePreviewModal({
   const [copiedLink, setCopiedLink] = useState(false);
 
   useEffect(() => {
-    if (!isOpen || !item || item.type !== 'file') {
+    if (!isOpen || !item || item.type !== "file") {
       setStreamUrl(null);
       setStreamError(null);
       setIsLoadingStream(false);
       return;
     }
 
-    const sanitizedKeyPath = item.fullKey.split('/').map(encodeURIComponent).join('/');
+    const sanitizedKeyPath = item.fullKey
+      .split("/")
+      .map(encodeURIComponent)
+      .join("/");
 
     // Stream directly via ambient authentication (zero tickets created on preview)
     const url = isPublic
@@ -69,19 +72,19 @@ export function FilePreviewModal({
   useEffect(() => {
     if (!isOpen) return;
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
+      if (e.key === "Escape") {
         onClose();
       }
     };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
   }, [isOpen, onClose]);
 
   if (!isOpen || !item) return null;
 
   const previewShareUrl = isPublic
     ? `${window.location.origin}/system/preview?ns=${encodeURIComponent(namespace)}&key=${encodeURIComponent(item.fullKey)}`
-    : '';
+    : "";
 
   const handleCopyLink = () => {
     if (!previewShareUrl) return;
@@ -105,11 +108,14 @@ export function FilePreviewModal({
           {/* File Name & Format Badge */}
           <div className="flex items-center gap-2.5 min-w-0 pr-4">
             <div className="w-8 h-8 rounded-[7px] bg-[#141414] border border-[#242424] flex items-center justify-center shrink-0">
-              {getFileIcon(item.name, 'w-4 h-4')}
+              {getFileIcon(item.name, "w-4 h-4")}
             </div>
 
             <div className="min-w-0 flex items-center gap-2">
-              <h3 className="text-[15px] font-sans font-medium text-white tracking-tight truncate" title={item.name}>
+              <h3
+                className="text-[15px] font-sans font-medium text-white tracking-tight truncate"
+                title={item.name}
+              >
                 {item.name}
               </h3>
               <span className="text-[12px] font-sans font-medium px-2 py-0.5 rounded-[5px] bg-[#141414] border border-[#262626] text-[#8c8c8c] shrink-0">
@@ -148,8 +154,12 @@ export function FilePreviewModal({
                 title="Copy preview link"
                 className="hidden md:inline-flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[13px] font-sans font-medium text-[#cccccc] hover:text-white bg-[#141414] hover:bg-[#1c1c1c] border border-[#262626] transition-colors cursor-pointer"
               >
-                {copiedLink ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                <span>{copiedLink ? 'Copied' : 'Copy Link'}</span>
+                {copiedLink ? (
+                  <Check className="w-3.5 h-3.5 text-emerald-400" />
+                ) : (
+                  <Copy className="w-3.5 h-3.5" />
+                )}
+                <span>{copiedLink ? "Copied" : "Copy Link"}</span>
               </button>
             )}
 
@@ -160,10 +170,18 @@ export function FilePreviewModal({
                   onClose();
                   onShare(item);
                 }}
-                title={isPublic ? 'Share public object' : 'Create capability share link'}
+                title={
+                  isPublic
+                    ? "Share public object"
+                    : "Create capability share link"
+                }
                 className="inline-flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[13px] font-sans font-medium text-[#cccccc] hover:text-white bg-[#141414] hover:bg-[#1c1c1c] border border-[#262626] transition-colors cursor-pointer"
               >
-                {isPublic ? <Globe className="w-3.5 h-3.5 text-emerald-400" /> : <Share2 className="w-3.5 h-3.5" />}
+                {isPublic ? (
+                  <Globe className="w-3.5 h-3.5 text-emerald-400" />
+                ) : (
+                  <Share2 className="w-3.5 h-3.5" />
+                )}
                 <span className="hidden sm:inline">Share</span>
               </button>
             )}
@@ -195,9 +213,24 @@ export function FilePreviewModal({
         <div className="flex-1 overflow-auto p-4 sm:p-5 bg-[#09090b] flex items-center justify-center min-h-[300px]">
           {isLoadingStream ? (
             <div className="flex items-center gap-3 text-[#8c8c8c] text-[13px] py-16">
-              <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+              <svg
+                className="animate-spin h-4 w-4 text-white"
+                fill="none"
+                viewBox="0 0 24 24"
+              >
+                <circle
+                  className="opacity-25"
+                  cx="12"
+                  cy="12"
+                  r="10"
+                  stroke="currentColor"
+                  strokeWidth="4"
+                />
+                <path
+                  className="opacity-75"
+                  fill="currentColor"
+                  d="M4 12a8 8 0 018-8v8H4z"
+                />
               </svg>
               <span>Loading media stream...</span>
             </div>

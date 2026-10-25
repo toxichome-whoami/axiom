@@ -10,9 +10,9 @@
  * Key deps: react, ../../api/client, ../../types
  */
 
-import { useState, useRef } from 'react';
-import { api } from '../../api/client';
-import { QueryResultApi } from '../../types';
+import { useState, useRef } from "react";
+import { api } from "../../api/client";
+import { QueryResultApi } from "../../types";
 
 export interface ChunkProgress {
   total: number;
@@ -41,7 +41,10 @@ export interface BatchSummary {
 
 export interface UseSqlConsoleProps {
   selectedDb: string;
-  onExecutionComplete?: (executedStatements: string[], isSuccess: boolean) => Promise<void> | void;
+  onExecutionComplete?: (
+    executedStatements: string[],
+    isSuccess: boolean,
+  ) => Promise<void> | void;
 }
 
 /**
@@ -54,7 +57,7 @@ export interface UseSqlConsoleProps {
  */
 export function splitSqlStatements(sql: string): string[] {
   const statements: string[] = [];
-  let current = '';
+  let current = "";
   let inSingleQuote = false;
   let inDoubleQuote = false;
   let inLineComment = false;
@@ -66,12 +69,12 @@ export function splitSqlStatements(sql: string): string[] {
 
   while (i < len) {
     const char = sql[i];
-    const nextChar = i + 1 < len ? sql[i + 1] : '';
+    const nextChar = i + 1 < len ? sql[i + 1] : "";
 
     // Handle line comments
     if (inLineComment) {
       current += char;
-      if (char === '\n') {
+      if (char === "\n") {
         inLineComment = false;
       }
       i++;
@@ -81,7 +84,7 @@ export function splitSqlStatements(sql: string): string[] {
     // Handle block comments
     if (inBlockComment) {
       current += char;
-      if (char === '*' && nextChar === '/') {
+      if (char === "*" && nextChar === "/") {
         current += nextChar;
         inBlockComment = false;
         i += 2;
@@ -94,7 +97,7 @@ export function splitSqlStatements(sql: string): string[] {
     // Handle dollar quotes (Postgres functions/triggers: $$ or $tag$)
     if (dollarQuoteTag !== null) {
       current += char;
-      if (char === '$' && sql.startsWith(dollarQuoteTag, i)) {
+      if (char === "$" && sql.startsWith(dollarQuoteTag, i)) {
         current += dollarQuoteTag.slice(1);
         i += dollarQuoteTag.length;
         dollarQuoteTag = null;
@@ -131,14 +134,14 @@ export function splitSqlStatements(sql: string): string[] {
     }
 
     // Check for comment starts
-    if (char === '-' && nextChar === '-') {
+    if (char === "-" && nextChar === "-") {
       inLineComment = true;
       current += char + nextChar;
       i += 2;
       continue;
     }
 
-    if (char === '/' && nextChar === '*') {
+    if (char === "/" && nextChar === "*") {
       inBlockComment = true;
       current += char + nextChar;
       i += 2;
@@ -146,7 +149,7 @@ export function splitSqlStatements(sql: string): string[] {
     }
 
     // Check for dollar quote start in Postgres ($tag$ or $$)
-    if (char === '$') {
+    if (char === "$") {
       const match = sql.slice(i).match(/^(\$[a-zA-Z0-9_]*\$)/);
       if (match) {
         dollarQuoteTag = match[1];
@@ -172,12 +175,12 @@ export function splitSqlStatements(sql: string): string[] {
     }
 
     // Semicolon statement boundary
-    if (char === ';') {
+    if (char === ";") {
       const trimmed = current.trim();
       if (trimmed) {
         statements.push(trimmed);
       }
-      current = '';
+      current = "";
       i++;
       continue;
     }
@@ -196,15 +199,15 @@ export function splitSqlStatements(sql: string): string[] {
   for (const stmt of statements) {
     const withoutComments = stripComments(stmt);
     if (!withoutComments) continue;
-    const upper = withoutComments.replace(/\s+/g, ' ').toUpperCase();
+    const upper = withoutComments.replace(/\s+/g, " ").toUpperCase();
     if (
-      upper === 'BEGIN' ||
-      upper === 'BEGIN;' ||
-      upper === 'BEGIN TRANSACTION' ||
-      upper === 'COMMIT' ||
-      upper === 'COMMIT;' ||
-      upper === 'END' ||
-      upper === 'END;'
+      upper === "BEGIN" ||
+      upper === "BEGIN;" ||
+      upper === "BEGIN TRANSACTION" ||
+      upper === "COMMIT" ||
+      upper === "COMMIT;" ||
+      upper === "END" ||
+      upper === "END;"
     ) {
       continue;
     }
@@ -215,18 +218,23 @@ export function splitSqlStatements(sql: string): string[] {
 
 export function stripComments(sql: string): string {
   return sql
-    .replace(/--.*$/gm, '')
-    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/--.*$/gm, "")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
     .trim();
 }
 
-export function useSqlConsole({ selectedDb, onExecutionComplete }: UseSqlConsoleProps) {
-  const [sqlQuery, setSqlQuery] = useState('');
+export function useSqlConsole({
+  selectedDb,
+  onExecutionComplete,
+}: UseSqlConsoleProps) {
+  const [sqlQuery, setSqlQuery] = useState("");
   const [isExecutingSql, setIsExecutingSql] = useState(false);
   const [sqlResult, setSqlResult] = useState<QueryResultApi | null>(null);
   const [sqlError, setSqlError] = useState<string | null>(null);
   const [sqlDuration, setSqlDuration] = useState<number | null>(null);
-  const [chunkProgress, setChunkProgress] = useState<ChunkProgress | null>(null);
+  const [chunkProgress, setChunkProgress] = useState<ChunkProgress | null>(
+    null,
+  );
   const [batchSummary, setBatchSummary] = useState<BatchSummary | null>(null);
   const [continueOnError, setContinueOnError] = useState<boolean>(true);
 
@@ -261,10 +269,12 @@ export function useSqlConsole({ selectedDb, onExecutionComplete }: UseSqlConsole
         try {
           await onExecutionComplete?.([queryToRun], true);
         } catch (cbErr) {
-          console.error('onExecutionComplete error:', cbErr);
+          console.error("onExecutionComplete error:", cbErr);
         }
       } catch (err) {
-        setSqlError(err instanceof Error ? err.message : 'SQL Execution failed');
+        setSqlError(
+          err instanceof Error ? err.message : "SQL Execution failed",
+        );
       } finally {
         setIsExecutingSql(false);
       }
@@ -279,12 +289,14 @@ export function useSqlConsole({ selectedDb, onExecutionComplete }: UseSqlConsole
 
     for (let idx = 0; idx < statements.length; idx++) {
       if (abortControllerRef.current) {
-        setSqlError(`Execution stopped by user after ${executedCount} of ${statements.length} statements.`);
+        setSqlError(
+          `Execution stopped by user after ${executedCount} of ${statements.length} statements.`,
+        );
         break;
       }
 
       const stmt = statements[idx];
-      const previewSnippet = stmt.replace(/\s+/g, ' ').slice(0, 60);
+      const previewSnippet = stmt.replace(/\s+/g, " ").slice(0, 60);
 
       setChunkProgress({
         total: statements.length,
@@ -292,7 +304,7 @@ export function useSqlConsole({ selectedDb, onExecutionComplete }: UseSqlConsole
         snippet: previewSnippet,
         completedCount: executedCount,
         totalAffectedRows: totalAffected,
-        percent: Math.round(((idx) / statements.length) * 100),
+        percent: Math.round((idx / statements.length) * 100),
       });
 
       try {
@@ -303,8 +315,11 @@ export function useSqlConsole({ selectedDb, onExecutionComplete }: UseSqlConsole
         }
         lastResult = res;
       } catch (err) {
-        const errMsg = err instanceof Error ? err.message : 'Unknown error';
-        const isDuplicate = /duplicate (key|column|name)|already exists|1061|1050|1060/i.test(errMsg);
+        const errMsg = err instanceof Error ? err.message : "Unknown error";
+        const isDuplicate =
+          /duplicate (key|column|name)|already exists|1061|1050|1060/i.test(
+            errMsg,
+          );
 
         batchErrors.push({
           index: idx + 1,
@@ -315,7 +330,7 @@ export function useSqlConsole({ selectedDb, onExecutionComplete }: UseSqlConsole
 
         if (!continueOnError) {
           setSqlError(
-            `Failed at statement ${idx + 1} of ${statements.length}:\n${errMsg}\n\nStatement:\n${stmt.slice(0, 300)}`
+            `Failed at statement ${idx + 1} of ${statements.length}:\n${errMsg}\n\nStatement:\n${stmt.slice(0, 300)}`,
           );
           break;
         }
@@ -350,7 +365,7 @@ export function useSqlConsole({ selectedDb, onExecutionComplete }: UseSqlConsole
       } else if (executedCount === 0) {
         // All statements failed
         setSqlError(
-          `All ${statements.length} statements failed.\n\nFirst error (statement ${batchErrors[0]?.index}):\n${batchErrors[0]?.error}\n\nStatement:\n${batchErrors[0]?.statement.slice(0, 300)}`
+          `All ${statements.length} statements failed.\n\nFirst error (statement ${batchErrors[0]?.index}):\n${batchErrors[0]?.error}\n\nStatement:\n${batchErrors[0]?.statement.slice(0, 300)}`,
         );
       } else {
         // Some statements succeeded! Clear fatal sqlError so user inspects results & batch summary
@@ -362,10 +377,10 @@ export function useSqlConsole({ selectedDb, onExecutionComplete }: UseSqlConsole
       try {
         await onExecutionComplete?.(
           statements.slice(0, executedCount + batchErrors.length),
-          batchErrors.length === 0
+          batchErrors.length === 0,
         );
       } catch (cbErr) {
-        console.error('onExecutionComplete error:', cbErr);
+        console.error("onExecutionComplete error:", cbErr);
       }
     }
 

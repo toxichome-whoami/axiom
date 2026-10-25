@@ -5,7 +5,7 @@
  * Invariants: Clamped inside viewport bounds; dismisses on outside-click, scroll, or Escape.
  */
 
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef } from "react";
 import {
   Folder,
   Download,
@@ -20,8 +20,8 @@ import {
   Copy,
   Share2,
   Eye,
-} from 'lucide-react';
-import { StorageItem, ClipboardState } from './types';
+} from "lucide-react";
+import { StorageItem, ClipboardState } from "./types";
 
 export interface ContextMenuPosition {
   x: number;
@@ -80,7 +80,7 @@ export function ContextMenu({
       }
     }
     function handleKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape') {
+      if (e.key === "Escape") {
         onClose();
       }
     }
@@ -89,17 +89,17 @@ export function ContextMenu({
     }
 
     if (position) {
-      document.addEventListener('mousedown', handleClickOutside);
-      document.addEventListener('keydown', handleKeyDown);
-      window.addEventListener('resize', handleScrollOrResize);
-      window.addEventListener('scroll', handleScrollOrResize, true);
+      document.addEventListener("mousedown", handleClickOutside);
+      document.addEventListener("keydown", handleKeyDown);
+      window.addEventListener("resize", handleScrollOrResize);
+      window.addEventListener("scroll", handleScrollOrResize, true);
     }
 
     return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-      document.removeEventListener('keydown', handleKeyDown);
-      window.removeEventListener('resize', handleScrollOrResize);
-      window.removeEventListener('scroll', handleScrollOrResize, true);
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("resize", handleScrollOrResize);
+      window.removeEventListener("scroll", handleScrollOrResize, true);
     };
   }, [position, onClose]);
 
@@ -114,7 +114,10 @@ export function ContextMenu({
   return (
     <div
       ref={menuRef}
-      style={{ top: `${Math.max(10, clampedY)}px`, left: `${Math.max(10, clampedX)}px` }}
+      style={{
+        top: `${Math.max(10, clampedY)}px`,
+        left: `${Math.max(10, clampedX)}px`,
+      }}
       className="fixed z-50 w-52 bg-[#111111] border border-[#262626] rounded-md shadow-2xl p-1 font-sans select-none animate-in fade-in zoom-in-95 duration-100"
       onClick={(e) => e.stopPropagation()}
     >
@@ -125,7 +128,7 @@ export function ContextMenu({
             {item.name}
           </div>
 
-          {item.type === 'folder' && onOpenFolder && (
+          {item.type === "folder" && onOpenFolder && (
             <button
               type="button"
               onClick={() => {
@@ -139,7 +142,7 @@ export function ContextMenu({
             </button>
           )}
 
-          {item.type === 'file' && onPreview && (
+          {item.type === "file" && onPreview && (
             <button
               type="button"
               onClick={() => {
@@ -153,7 +156,7 @@ export function ContextMenu({
             </button>
           )}
 
-          {item.type === 'file' && onDownload && (
+          {item.type === "file" && onDownload && (
             <button
               type="button"
               onClick={() => {
@@ -167,7 +170,7 @@ export function ContextMenu({
             </button>
           )}
 
-          {item.type === 'file' && onShare && (
+          {item.type === "file" && onShare && (
             <button
               type="button"
               onClick={() => {

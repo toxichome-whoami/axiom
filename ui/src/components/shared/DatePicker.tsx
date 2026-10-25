@@ -6,10 +6,10 @@
  * Last structural change: Form controls hardening per UI audit component F6.
  */
 
-import React, { useState, useRef, useEffect } from 'react';
-import { DayPicker } from '@daypicker/react';
-import '@daypicker/react/dist/style.css';
-import { Calendar as CalendarIcon, X, ChevronDown } from 'lucide-react';
+import React, { useState, useRef, useEffect } from "react";
+import { DayPicker } from "@daypicker/react";
+import "@daypicker/react/dist/style.css";
+import { Calendar as CalendarIcon, X, ChevronDown } from "lucide-react";
 
 interface DatePickerProps {
   value: string | null;
@@ -26,8 +26,8 @@ interface DatePickerProps {
 export const DatePicker: React.FC<DatePickerProps> = ({
   value,
   onChange,
-  placeholder = 'No expiry (Never)',
-  className = '',
+  placeholder = "No expiry (Never)",
+  className = "",
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -38,7 +38,7 @@ export const DatePicker: React.FC<DatePickerProps> = ({
   // Convert 'YYYY-MM-DD' string to local Date object safely guarding against NaN
   const selectedDate = value
     ? (() => {
-        const parts = value.split('-').map(Number);
+        const parts = value.split("-").map(Number);
         if (parts.length === 3 && parts.every((p) => !isNaN(p))) {
           const d = new Date(parts[0], parts[1] - 1, parts[2]);
           return isNaN(d.getTime()) ? undefined : d;
@@ -60,12 +60,15 @@ export const DatePicker: React.FC<DatePickerProps> = ({
   useEffect(() => {
     if (!isOpen) return;
     const handleClickOutside = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(e.target as Node)
+      ) {
         setIsOpen(false);
       }
     };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [isOpen]);
 
   const handleSelect = (date: Date | undefined) => {
@@ -81,8 +84,8 @@ export const DatePicker: React.FC<DatePickerProps> = ({
       return;
     }
     const year = date.getFullYear();
-    const monthStr = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
+    const monthStr = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
     onChange(`${year}-${monthStr}-${day}`);
     setIsOpen(false);
   };
@@ -95,8 +98,8 @@ export const DatePicker: React.FC<DatePickerProps> = ({
       const d = new Date();
       d.setDate(d.getDate() + days);
       const year = d.getFullYear();
-      const monthStr = String(d.getMonth() + 1).padStart(2, '0');
-      const day = String(d.getDate()).padStart(2, '0');
+      const monthStr = String(d.getMonth() + 1).padStart(2, "0");
+      const day = String(d.getDate()).padStart(2, "0");
       onChange(`${year}-${monthStr}-${day}`);
       setMonth(d);
     }
@@ -106,14 +109,14 @@ export const DatePicker: React.FC<DatePickerProps> = ({
   const formatDisplay = (dateStr: string | null) => {
     if (!dateStr) return null;
     try {
-      const parts = dateStr.split('-').map(Number);
+      const parts = dateStr.split("-").map(Number);
       if (parts.length === 3 && parts.every((p) => !isNaN(p))) {
         const d = new Date(parts[0], parts[1] - 1, parts[2]);
         if (!isNaN(d.getTime())) {
-          return d.toLocaleDateString('en-US', {
-            month: 'short',
-            day: 'numeric',
-            year: 'numeric',
+          return d.toLocaleDateString("en-US", {
+            month: "short",
+            day: "numeric",
+            year: "numeric",
           });
         }
       }
@@ -134,30 +137,36 @@ export const DatePicker: React.FC<DatePickerProps> = ({
         aria-label="Expiration date selector"
         onClick={() => setIsOpen((prev) => !prev)}
         onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
+          if (e.key === "Enter" || e.key === " ") {
             e.preventDefault();
             setIsOpen((prev) => !prev);
           }
         }}
         className={`h-9 w-full rounded-[6px] border bg-[#121212] px-3 text-[14px] flex items-center justify-between cursor-pointer transition-colors outline-none font-sans select-none ${
           isOpen
-            ? 'border-[#3b82f6] ring-1 ring-[#3b82f6]/20'
+            ? "border-[#3b82f6] ring-1 ring-[#3b82f6]/20"
             : isPastDate
-            ? 'border-[#3a1515] bg-[#140a0a] hover:border-[#4a1c1c]'
-            : 'border-[#262626] hover:border-[#383838] focus:border-[#3b82f6]'
+              ? "border-[#3a1515] bg-[#140a0a] hover:border-[#4a1c1c]"
+              : "border-[#262626] hover:border-[#383838] focus:border-[#3b82f6]"
         }`}
       >
         <div className="flex items-center gap-2 truncate">
           <CalendarIcon
             className={`w-4 h-4 shrink-0 transition-colors ${
-              isPastDate ? 'text-[#e5484d]' : value ? 'text-[#3b82f6]' : 'text-[#8c8c8c]'
+              isPastDate
+                ? "text-[#e5484d]"
+                : value
+                  ? "text-[#3b82f6]"
+                  : "text-[#8c8c8c]"
             }`}
           />
           {value ? (
             <div className="flex items-center gap-2 truncate">
               <span
                 className={`text-[14px] font-medium truncate ${
-                  isPastDate ? 'text-[#e5484d] line-through opacity-85' : 'text-white'
+                  isPastDate
+                    ? "text-[#e5484d] line-through opacity-85"
+                    : "text-white"
                 }`}
               >
                 {formatDisplay(value)}
@@ -192,7 +201,7 @@ export const DatePicker: React.FC<DatePickerProps> = ({
           )}
           <ChevronDown
             className={`w-3.5 h-3.5 text-[#8c8c8c] transition-transform duration-150 ${
-              isOpen ? 'rotate-180 text-white' : ''
+              isOpen ? "rotate-180 text-white" : ""
             }`}
           />
         </div>
@@ -208,8 +217,8 @@ export const DatePicker: React.FC<DatePickerProps> = ({
               onClick={() => handlePreset(null)}
               className={`h-6 px-1 text-[11px] font-medium rounded-[4px] border transition-colors cursor-pointer flex items-center justify-center ${
                 value === null
-                  ? 'bg-[#2563eb]/20 text-[#3b82f6] border-[#2563eb]/50 font-semibold'
-                  : 'bg-[#141414] text-[#cccccc] hover:text-white border-[#262626] hover:border-[#383838]'
+                  ? "bg-[#2563eb]/20 text-[#3b82f6] border-[#2563eb]/50 font-semibold"
+                  : "bg-[#141414] text-[#cccccc] hover:text-white border-[#262626] hover:border-[#383838]"
               }`}
             >
               Never
@@ -273,8 +282,10 @@ export const DatePicker: React.FC<DatePickerProps> = ({
                   </span>
                 ) : (
                   <span>
-                    Expires at 12:00 AM after{' '}
-                    <span className="text-white font-medium">{formatDisplay(value)}</span>
+                    Expires at 12:00 AM after{" "}
+                    <span className="text-white font-medium">
+                      {formatDisplay(value)}
+                    </span>
                   </span>
                 )}
               </span>

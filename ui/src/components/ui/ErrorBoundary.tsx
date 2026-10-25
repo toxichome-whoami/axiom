@@ -1,5 +1,5 @@
-import React, { Component, ErrorInfo, ReactNode } from 'react';
-import { AlertTriangle, RefreshCw } from 'lucide-react';
+import React, { Component, ErrorInfo, ReactNode } from "react";
+import { AlertTriangle, RefreshCw } from "lucide-react";
 
 interface Props {
   children: ReactNode;
@@ -24,7 +24,11 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error('Uncaught error inside React component tree:', error, errorInfo);
+    console.error(
+      "Uncaught error inside React component tree:",
+      error,
+      errorInfo,
+    );
     this.setState({ errorInfo });
   }
 
@@ -50,7 +54,8 @@ export class ErrorBoundary extends Component<Props, State> {
           </h3>
 
           <p className="text-[13px] text-[#8c8c8c] max-w-md mb-4 leading-relaxed">
-            {this.state.error?.message || 'An unexpected rendering error occurred.'}
+            {this.state.error?.message ||
+              "An unexpected rendering error occurred."}
           </p>
 
           {this.state.errorInfo?.componentStack && (

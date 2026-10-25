@@ -1,5 +1,5 @@
-import React from 'react';
-import { cn } from '../../utils/cn';
+import React from "react";
+import { cn } from "../../utils/cn";
 
 export interface SkeletonProps extends React.HTMLAttributes<HTMLDivElement> {
   className?: string;
@@ -14,7 +14,10 @@ export function Skeleton({ className, ...props }: SkeletonProps) {
     <div
       role="status"
       aria-label="Loading..."
-      className={cn('animate-pulse rounded-[4px] bg-[#16171d]/80 border border-[#1e2025]/40', className)}
+      className={cn(
+        "animate-pulse rounded-[4px] bg-[#16171d]/80 border border-[#1e2025]/40",
+        className,
+      )}
       {...props}
     />
   );

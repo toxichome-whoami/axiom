@@ -6,8 +6,8 @@
  * Last structural change: Form controls hardening per UI audit component F6.
  */
 
-import React, { useState, useEffect, useRef } from 'react';
-import { Check, ChevronDown } from 'lucide-react';
+import React, { useState, useEffect, useRef } from "react";
+import { Check, ChevronDown } from "lucide-react";
 
 export interface SelectOption<T extends string> {
   value: T;
@@ -21,10 +21,10 @@ export interface CustomSelectProps<T extends string> {
   onChange: (val: T) => void;
   className?: string;
   menuWidth?: string;
-  size?: 'sm' | 'md';
+  size?: "sm" | "md";
   placeholder?: string;
   disabled?: boolean;
-  variant?: 'default' | 'neutral';
+  variant?: "default" | "neutral";
 }
 
 /**
@@ -34,23 +34,23 @@ export const CustomSelect = <T extends string>({
   value,
   options = [],
   onChange,
-  className = '',
-  menuWidth = 'w-full min-w-[140px]',
-  size = 'md',
-  placeholder = 'Select option...',
+  className = "",
+  menuWidth = "w-full min-w-[140px]",
+  size = "md",
+  placeholder = "Select option...",
   disabled = false,
-  direction = 'auto',
-  variant = 'default',
-}: CustomSelectProps<T> & { direction?: 'down' | 'up' | 'auto' }) => {
+  direction = "auto",
+  variant = "default",
+}: CustomSelectProps<T> & { direction?: "down" | "up" | "auto" }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [openUpward, setOpenUpward] = useState(false);
   const [highlightedIndex, setHighlightedIndex] = useState(0);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const calculateDirection = () => {
-    if (direction === 'up') {
+    if (direction === "up") {
       setOpenUpward(true);
-    } else if (direction === 'down') {
+    } else if (direction === "down") {
       setOpenUpward(false);
     } else if (dropdownRef.current) {
       const rect = dropdownRef.current.getBoundingClientRect();
@@ -59,18 +59,21 @@ export const CustomSelect = <T extends string>({
       while (parent && parent !== document.body) {
         const style = window.getComputedStyle(parent);
         if (
-          style.overflowY === 'auto' ||
-          style.overflowY === 'scroll' ||
-          style.overflow === 'hidden' ||
-          parent.getAttribute('role') === 'dialog'
+          style.overflowY === "auto" ||
+          style.overflowY === "scroll" ||
+          style.overflow === "hidden" ||
+          parent.getAttribute("role") === "dialog"
         ) {
-          containerBottom = Math.min(containerBottom, parent.getBoundingClientRect().bottom);
+          containerBottom = Math.min(
+            containerBottom,
+            parent.getBoundingClientRect().bottom,
+          );
           break;
         }
         parent = parent.parentElement;
       }
       const spaceBelow = containerBottom - rect.bottom;
-      if (spaceBelow < 220 && (rect.top - 60) > spaceBelow) {
+      if (spaceBelow < 220 && rect.top - 60 > spaceBelow) {
         setOpenUpward(true);
       } else {
         const winSpaceBelow = window.innerHeight - rect.bottom;
@@ -87,12 +90,15 @@ export const CustomSelect = <T extends string>({
   useEffect(() => {
     if (!isOpen) return;
     const handleClickOutside = (e: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+      if (
+        dropdownRef.current &&
+        !dropdownRef.current.contains(e.target as Node)
+      ) {
         setIsOpen(false);
       }
     };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [isOpen]);
 
   // Keep highlighted index in sync when opening
@@ -104,13 +110,18 @@ export const CustomSelect = <T extends string>({
   }, [isOpen, value, options]);
 
   const currentOption = options.find((o) => o.value === value);
-  const heightClass = size === 'sm' ? 'h-8 text-[13px]' : 'h-9 text-[13px]';
+  const heightClass = size === "sm" ? "h-8 text-[13px]" : "h-9 text-[13px]";
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (disabled || options.length === 0) return;
 
     if (!isOpen) {
-      if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Enter' || e.key === ' ') {
+      if (
+        e.key === "ArrowDown" ||
+        e.key === "ArrowUp" ||
+        e.key === "Enter" ||
+        e.key === " "
+      ) {
         e.preventDefault();
         calculateDirection();
         setIsOpen(true);
@@ -118,16 +129,18 @@ export const CustomSelect = <T extends string>({
       return;
     }
 
-    if (e.key === 'Escape') {
+    if (e.key === "Escape") {
       e.preventDefault();
       setIsOpen(false);
-    } else if (e.key === 'ArrowDown') {
+    } else if (e.key === "ArrowDown") {
       e.preventDefault();
       setHighlightedIndex((prev) => (prev + 1) % options.length);
-    } else if (e.key === 'ArrowUp') {
+    } else if (e.key === "ArrowUp") {
       e.preventDefault();
-      setHighlightedIndex((prev) => (prev - 1 + options.length) % options.length);
-    } else if (e.key === 'Enter' || e.key === ' ') {
+      setHighlightedIndex(
+        (prev) => (prev - 1 + options.length) % options.length,
+      );
+    } else if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
       if (options[highlightedIndex]) {
         onChange(options[highlightedIndex].value);
@@ -137,7 +150,11 @@ export const CustomSelect = <T extends string>({
   };
 
   return (
-    <div className={`relative ${className}`} ref={dropdownRef} onKeyDown={handleKeyDown}>
+    <div
+      className={`relative ${className}`}
+      ref={dropdownRef}
+      onKeyDown={handleKeyDown}
+    >
       <button
         type="button"
         role="combobox"
@@ -152,17 +169,19 @@ export const CustomSelect = <T extends string>({
         }}
         className={`w-full ${heightClass} px-3 rounded-[6px] bg-[#121212] border flex items-center justify-between cursor-pointer transition-all outline-none font-sans select-none disabled:opacity-50 disabled:cursor-not-allowed ${
           isOpen
-            ? 'border-[#383838] bg-[#141414] text-white ring-1 ring-white/10'
-            : 'border-[#262626] hover:border-[#333333] focus:border-[#383838] text-white'
+            ? "border-[#383838] bg-[#141414] text-white ring-1 ring-white/10"
+            : "border-[#262626] hover:border-[#333333] focus:border-[#383838] text-white"
         }`}
       >
         <div className="flex items-center gap-2 truncate">
           {currentOption?.icon}
-          <span className="truncate font-medium">{currentOption?.label || placeholder}</span>
+          <span className="truncate font-medium">
+            {currentOption?.label || placeholder}
+          </span>
         </div>
         <ChevronDown
           className={`w-3.5 h-3.5 text-[#8c8c8c] shrink-0 ml-2 transition-transform duration-150 ${
-            isOpen ? 'rotate-180 text-white' : ''
+            isOpen ? "rotate-180 text-white" : ""
           }`}
         />
       </button>
@@ -171,7 +190,7 @@ export const CustomSelect = <T extends string>({
         <div
           role="listbox"
           className={`absolute left-0 ${
-            openUpward ? 'bottom-[calc(100%+4px)]' : 'top-[calc(100%+4px)]'
+            openUpward ? "bottom-[calc(100%+4px)]" : "top-[calc(100%+4px)]"
           } rounded-[8px] bg-[#0e0e0e] border border-[#262626] shadow-2xl p-1 z-50 select-none animate-in fade-in duration-100 font-sans max-h-60 overflow-y-auto ${menuWidth}`}
         >
           {options.length === 0 ? (
@@ -195,10 +214,10 @@ export const CustomSelect = <T extends string>({
                   onMouseEnter={() => setHighlightedIndex(idx)}
                   className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-[5px] text-[13px] transition-colors cursor-pointer text-left font-sans ${
                     isSelected
-                      ? 'bg-[#181818] text-white font-medium'
+                      ? "bg-[#181818] text-white font-medium"
                       : isHighlighted
-                      ? 'bg-[#141414] text-white'
-                      : 'text-[#cccccc] hover:bg-[#141414] hover:text-white'
+                        ? "bg-[#141414] text-white"
+                        : "text-[#cccccc] hover:bg-[#141414] hover:text-white"
                   }`}
                 >
                   <div className="flex items-center gap-2 truncate">
@@ -206,9 +225,7 @@ export const CustomSelect = <T extends string>({
                     <span className="truncate">{opt.label}</span>
                   </div>
                   {isSelected && (
-                    <Check
-                      className="w-3.5 h-3.5 shrink-0 ml-2 text-white"
-                    />
+                    <Check className="w-3.5 h-3.5 shrink-0 ml-2 text-white" />
                   )}
                 </button>
               );

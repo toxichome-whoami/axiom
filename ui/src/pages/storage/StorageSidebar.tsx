@@ -4,19 +4,13 @@
  * Design reference: TableSidebar in TableEditor (exact design tokens & sizing)
  */
 
-import React, { useRef, useState, useEffect } from 'react';
-import {
-  HardDrive,
-  ChevronDown,
-  Check,
-  Plus,
-  Settings,
-} from 'lucide-react';
-import { NamespaceInfo, BlobEntry } from '../../types';
-import { StorageItem } from './types';
-import { FileTree } from './FileTree';
-import { formatBytes } from './format';
-import { Skeleton } from '../../components/ui/Skeleton';
+import React, { useRef, useState, useEffect } from "react";
+import { HardDrive, ChevronDown, Check, Plus, Settings } from "lucide-react";
+import { NamespaceInfo, BlobEntry } from "../../types";
+import { StorageItem } from "./types";
+import { FileTree } from "./FileTree";
+import { formatBytes } from "./format";
+import { Skeleton } from "../../components/ui/Skeleton";
 
 export interface StorageSidebarProps {
   width?: number;
@@ -49,7 +43,10 @@ export interface StorageSidebarProps {
   onItemDragStart: (e: React.DragEvent, item: StorageItem) => void;
   onItemDragEnd: () => void;
   onDropOnFolder: (targetFolderKey: string) => void;
-  canDropOnFolder: (dragged: StorageItem | null, targetFolderKey: string) => boolean;
+  canDropOnFolder: (
+    dragged: StorageItem | null,
+    targetFolderKey: string,
+  ) => boolean;
   onClearSelection?: () => void;
   isLoadingMore?: boolean;
   onLoadMore?: () => void;
@@ -95,27 +92,36 @@ export function StorageSidebar({
 
   useEffect(() => {
     const handleOutside = (e: MouseEvent) => {
-      if (nsDropdownRef.current && !nsDropdownRef.current.contains(e.target as Node)) {
+      if (
+        nsDropdownRef.current &&
+        !nsDropdownRef.current.contains(e.target as Node)
+      ) {
         setIsNsDropdownOpen(false);
       }
     };
     const handleClose = () => setIsNsDropdownOpen(false);
-    document.addEventListener('mousedown', handleOutside);
-    window.addEventListener('resize', handleClose);
-    window.addEventListener('scroll', handleClose, true);
+    document.addEventListener("mousedown", handleOutside);
+    window.addEventListener("resize", handleClose);
+    window.addEventListener("scroll", handleClose, true);
     return () => {
-      document.removeEventListener('mousedown', handleOutside);
-      window.removeEventListener('resize', handleClose);
-      window.removeEventListener('scroll', handleClose, true);
+      document.removeEventListener("mousedown", handleOutside);
+      window.removeEventListener("resize", handleClose);
+      window.removeEventListener("scroll", handleClose, true);
     };
   }, []);
 
   return (
     <aside
-      className={`w-full lg:w-64 min-w-[260px] shrink-0 flex flex-col bg-[#0a0a0a] border-b lg:border-b-0 lg:border-r border-[#222222] font-sans select-none relative ${isNsDropdownOpen ? 'z-50' : 'z-30'}`}
+      className={`w-full lg:w-64 min-w-[260px] shrink-0 flex flex-col bg-[#0a0a0a] border-b lg:border-b-0 lg:border-r border-[#222222] font-sans select-none relative ${isNsDropdownOpen ? "z-50" : "z-30"}`}
       style={{
-        width: (typeof window !== 'undefined' && window.innerWidth >= 1024 && width) ? `${Math.max(260, width)}px` : undefined,
-        minWidth: typeof window !== 'undefined' && window.innerWidth >= 1024 ? '260px' : undefined,
+        width:
+          typeof window !== "undefined" && window.innerWidth >= 1024 && width
+            ? `${Math.max(260, width)}px`
+            : undefined,
+        minWidth:
+          typeof window !== "undefined" && window.innerWidth >= 1024
+            ? "260px"
+            : undefined,
       }}
     >
       {/* Draggable Resize Handle on Right Border */}
@@ -129,7 +135,9 @@ export function StorageSidebar({
         </div>
       )}
       {/* ─── Header: Namespace Selector (h-12 aligned with StorageToolbar) ─────────────── */}
-      <div className={`h-[54px] shrink-0 px-3 border-b border-[#222222] flex items-center justify-between gap-2 relative ${isNsDropdownOpen ? 'z-50' : 'z-30'}`}>
+      <div
+        className={`h-[54px] shrink-0 px-3 border-b border-[#222222] flex items-center justify-between gap-2 relative ${isNsDropdownOpen ? "z-50" : "z-30"}`}
+      >
         <div className="relative flex-1 min-w-0" ref={nsDropdownRef}>
           <button
             type="button"
@@ -143,7 +151,7 @@ export function StorageSidebar({
               ) : (
                 <>
                   <span className="text-[13px] font-medium text-white truncate">
-                    {activeNamespace || 'Select Namespace'}
+                    {activeNamespace || "Select Namespace"}
                   </span>
                   {currentNsInfo?.is_public && (
                     <span className="px-2 py-0.5 rounded-[4px] text-[12px] font-sans font-medium bg-[#161616] border border-[#2e2e2e] text-[#cccccc] shrink-0 leading-none">
@@ -157,61 +165,80 @@ export function StorageSidebar({
           </button>
 
           {/* Namespace Dropdown Popup */}
-          {isNsDropdownOpen && (() => {
-            const rect = nsDropdownRef.current?.getBoundingClientRect();
-            const top = (rect?.bottom ?? 0) + 6;
-            const popoverWidth = Math.min(240, window.innerWidth - 32);
-            const left = Math.max(16, Math.min(window.innerWidth - popoverWidth - 16, rect?.left ?? 16));
-            return (
-              <div
-                style={{ top: `${top}px`, left: `${left}px`, width: `${popoverWidth}px` }}
-                className="fixed bg-[#111111] border border-[#262626] rounded-[8px] shadow-2xl p-1 z-50 animate-in fade-in zoom-in-95 duration-100 font-sans"
-              >
-                <div className="px-3 py-2 text-[13px] font-medium text-[#8c8c8c] select-none flex items-center justify-between">
-                  <span>Storage Namespaces</span>
-                  <span className="text-[12px] font-mono text-[#666666]">{namespaces.length}</span>
-                </div>
+          {isNsDropdownOpen &&
+            (() => {
+              const rect = nsDropdownRef.current?.getBoundingClientRect();
+              const top = (rect?.bottom ?? 0) + 6;
+              const popoverWidth = Math.min(240, window.innerWidth - 32);
+              const left = Math.max(
+                16,
+                Math.min(
+                  window.innerWidth - popoverWidth - 16,
+                  rect?.left ?? 16,
+                ),
+              );
+              return (
+                <div
+                  style={{
+                    top: `${top}px`,
+                    left: `${left}px`,
+                    width: `${popoverWidth}px`,
+                  }}
+                  className="fixed bg-[#111111] border border-[#262626] rounded-[8px] shadow-2xl p-1 z-50 animate-in fade-in zoom-in-95 duration-100 font-sans"
+                >
+                  <div className="px-3 py-2 text-[13px] font-medium text-[#8c8c8c] select-none flex items-center justify-between">
+                    <span>Storage Namespaces</span>
+                    <span className="text-[12px] font-mono text-[#666666]">
+                      {namespaces.length}
+                    </span>
+                  </div>
 
-                <div className="max-h-52 overflow-y-auto space-y-0.5 py-0.5">
-                  {namespaces.length === 0 ? (
-                    <div className="px-2.5 py-2 text-xs text-[#777777]">No namespaces found</div>
-                  ) : (
-                    namespaces.map((ns) => {
-                      const isActive = ns.name === activeNamespace;
-                      return (
-                        <button
-                          key={ns.name}
-                          type="button"
-                          onClick={() => {
-                            onSelectNamespace(ns.name);
-                            setIsNsDropdownOpen(false);
-                          }}
-                          className={`w-full flex items-center justify-between px-3 py-2 rounded-[6px] text-[13px] transition-colors cursor-pointer text-left ${
-                            isActive
-                              ? 'bg-[#1a1a1a] text-white font-medium'
-                              : 'text-[#cccccc] hover:bg-[#161616] hover:text-white'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2 truncate min-w-0">
-                            <HardDrive className={`w-3.5 h-3.5 shrink-0 ${isActive ? 'text-blue-400' : 'text-[#777777]'}`} />
-                            <span className="truncate">{ns.name}</span>
-                          </div>
-                          <div className="flex items-center gap-1.5 shrink-0 ml-2">
-                            {ns.is_public && (
-                              <span className="px-2 py-0.5 rounded-[4px] text-[12px] font-sans font-medium bg-[#161616] border border-[#2e2e2e] text-[#cccccc] leading-none">
-                                public
-                              </span>
-                            )}
-                            {isActive && <Check className="w-3.5 h-3.5 text-white shrink-0" />}
-                          </div>
-                        </button>
-                      );
-                    })
-                  )}
+                  <div className="max-h-52 overflow-y-auto space-y-0.5 py-0.5">
+                    {namespaces.length === 0 ? (
+                      <div className="px-2.5 py-2 text-xs text-[#777777]">
+                        No namespaces found
+                      </div>
+                    ) : (
+                      namespaces.map((ns) => {
+                        const isActive = ns.name === activeNamespace;
+                        return (
+                          <button
+                            key={ns.name}
+                            type="button"
+                            onClick={() => {
+                              onSelectNamespace(ns.name);
+                              setIsNsDropdownOpen(false);
+                            }}
+                            className={`w-full flex items-center justify-between px-3 py-2 rounded-[6px] text-[13px] transition-colors cursor-pointer text-left ${
+                              isActive
+                                ? "bg-[#1a1a1a] text-white font-medium"
+                                : "text-[#cccccc] hover:bg-[#161616] hover:text-white"
+                            }`}
+                          >
+                            <div className="flex items-center gap-2 truncate min-w-0">
+                              <HardDrive
+                                className={`w-3.5 h-3.5 shrink-0 ${isActive ? "text-blue-400" : "text-[#777777]"}`}
+                              />
+                              <span className="truncate">{ns.name}</span>
+                            </div>
+                            <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                              {ns.is_public && (
+                                <span className="px-2 py-0.5 rounded-[4px] text-[12px] font-sans font-medium bg-[#161616] border border-[#2e2e2e] text-[#cccccc] leading-none">
+                                  public
+                                </span>
+                              )}
+                              {isActive && (
+                                <Check className="w-3.5 h-3.5 text-white shrink-0" />
+                              )}
+                            </div>
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
                 </div>
-              </div>
-            );
-          })()}
+              );
+            })()}
         </div>
 
         {/* Action icons: Settings & Create Namespace + Mobile Collapse Toggle */}
@@ -240,17 +267,25 @@ export function StorageSidebar({
           <button
             type="button"
             onClick={() => setIsMobileOpen(!isMobileOpen)}
-            title={isMobileOpen ? 'Collapse Explorer Tree' : 'Expand Explorer Tree'}
-            aria-label={isMobileOpen ? 'Collapse Explorer Tree' : 'Expand Explorer Tree'}
+            title={
+              isMobileOpen ? "Collapse Explorer Tree" : "Expand Explorer Tree"
+            }
+            aria-label={
+              isMobileOpen ? "Collapse Explorer Tree" : "Expand Explorer Tree"
+            }
             className="w-8 h-8 flex items-center justify-center rounded-[6px] text-[#8c8c8c] hover:text-white hover:bg-[#161616] lg:hidden transition-colors cursor-pointer shrink-0"
           >
-            <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${isMobileOpen ? 'rotate-180' : ''}`} />
+            <ChevronDown
+              className={`w-4 h-4 transition-transform duration-200 ${isMobileOpen ? "rotate-180" : ""}`}
+            />
           </button>
         </div>
       </div>
 
       {/* ─── Directory & File Tree (collapsible on mobile, always visible on lg+) ─────────────── */}
-      <div className={`flex-1 overflow-hidden min-h-0 flex-col ${isMobileOpen ? 'flex' : 'hidden lg:flex'}`}>
+      <div
+        className={`flex-1 overflow-hidden min-h-0 flex-col ${isMobileOpen ? "flex" : "hidden lg:flex"}`}
+      >
         <FileTree
           blobs={blobs}
           currentPrefix={currentPrefix}
@@ -285,21 +320,26 @@ export function StorageSidebar({
       </div>
 
       {/* ─── Footer: Storage Statistics & Quota ─────────────── */}
-      <div className={`h-12 shrink-0 px-3.5 border-t border-[#222222] items-center justify-between text-[13px] text-[#8c8c8c] select-none font-sans ${isMobileOpen ? 'flex' : 'hidden lg:flex'}`}>
+      <div
+        className={`h-12 shrink-0 px-3.5 border-t border-[#222222] items-center justify-between text-[13px] text-[#8c8c8c] select-none font-sans ${isMobileOpen ? "flex" : "hidden lg:flex"}`}
+      >
         <span className="tabular-nums">
-          {realObjectsCount}{hasMore ? '+' : ''} {realObjectsCount === 1 ? 'object' : 'objects'}
+          {realObjectsCount}
+          {hasMore ? "+" : ""} {realObjectsCount === 1 ? "object" : "objects"}
         </span>
 
         {currentNsInfo && (
           <div className="flex items-center gap-1.5">
             <span className="tabular-nums text-[13px] text-[#8c8c8c]">
               {formatBytes(currentNsInfo.total_bytes)}
-              {currentNsInfo.max_bytes ? ` / ${formatBytes(currentNsInfo.max_bytes)}` : ''}
+              {currentNsInfo.max_bytes
+                ? ` / ${formatBytes(currentNsInfo.max_bytes)}`
+                : ""}
             </span>
             {quotaUsedPercent !== null && (
               <span
                 className={`text-[13px] tabular-nums font-medium ${
-                  quotaUsedPercent > 90 ? 'text-rose-400' : 'text-[#8c8c8c]'
+                  quotaUsedPercent > 90 ? "text-rose-400" : "text-[#8c8c8c]"
                 }`}
               >
                 ({quotaUsedPercent}%)

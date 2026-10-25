@@ -8,10 +8,16 @@
  * Owned by: ui/pages/table
  * Key deps: react, lucide-react
  */
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Maximize2, Check } from 'lucide-react';
-import { ColumnInfoApi } from '../../types';
-import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
+import React, {
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+  useMemo,
+} from "react";
+import { Maximize2, Check } from "lucide-react";
+import { ColumnInfoApi } from "../../types";
+import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 
 export interface InlineJsonPopoverProps {
   editingCell: {
@@ -42,14 +48,18 @@ export function InlineJsonPopover({
 
   const [isNull, setIsNull] = useState<boolean>(() => {
     return (
-      (editingCell.initialValue === null || editingCell.initialValue === undefined) &&
-      (editingCell.currentValue === '' || editingCell.currentValue === 'null')
+      (editingCell.initialValue === null ||
+        editingCell.initialValue === undefined) &&
+      (editingCell.currentValue === "" || editingCell.currentValue === "null")
     );
   });
 
   const [localValue, setLocalValue] = useState<string>(() => {
-    if (editingCell.initialValue === null && (editingCell.currentValue === '' || editingCell.currentValue === 'null')) {
-      return '';
+    if (
+      editingCell.initialValue === null &&
+      (editingCell.currentValue === "" || editingCell.currentValue === "null")
+    ) {
+      return "";
     }
     const raw = editingCell.currentValue;
     // Attempt pretty-print on initial load if valid JSON
@@ -65,14 +75,17 @@ export function InlineJsonPopover({
   const validation = useMemo<{ isValid: boolean; error?: string }>(() => {
     if (isNull) return { isValid: true };
     const trimmed = localValue.trim();
-    if (trimmed === '') {
-      return { isValid: isNullable, error: isNullable ? undefined : 'JSON cannot be empty' };
+    if (trimmed === "") {
+      return {
+        isValid: isNullable,
+        error: isNullable ? undefined : "JSON cannot be empty",
+      };
     }
     try {
       JSON.parse(trimmed);
       return { isValid: true };
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : 'Invalid JSON syntax';
+      const msg = e instanceof Error ? e.message : "Invalid JSON syntax";
       return { isValid: false, error: msg };
     }
   }, [localValue, isNull, isNullable]);
@@ -90,7 +103,9 @@ export function InlineJsonPopover({
   const baselineNullRef = useRef<boolean>(isNull);
 
   // Check if modified compared to initial mount value
-  const isDirty = isNull !== baselineNullRef.current || (!isNull && localValue !== baselineValueRef.current);
+  const isDirty =
+    isNull !== baselineNullRef.current ||
+    (!isNull && localValue !== baselineValueRef.current);
 
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
 
@@ -100,13 +115,18 @@ export function InlineJsonPopover({
         onSave(null);
         return;
       }
-      const raw = customVal !== undefined ? customVal : (textareaRef.current ? textareaRef.current.value : localValue);
+      const raw =
+        customVal !== undefined
+          ? customVal
+          : textareaRef.current
+            ? textareaRef.current.value
+            : localValue;
       const trimmed = raw.trim();
-      if (trimmed === '' || trimmed.toLowerCase() === 'null') {
+      if (trimmed === "" || trimmed.toLowerCase() === "null") {
         if (isNullable) {
           onSave(null);
         } else {
-          onSave('{}');
+          onSave("{}");
         }
         return;
       }
@@ -119,7 +139,7 @@ export function InlineJsonPopover({
         onSave(trimmed);
       }
     },
-    [isNull, localValue, isNullable, onSave]
+    [isNull, localValue, isNullable, onSave],
   );
 
   const handleAttemptClose = useCallback(() => {
@@ -134,27 +154,37 @@ export function InlineJsonPopover({
   useEffect(() => {
     const handleMouseDown = (e: MouseEvent) => {
       if (showDiscardConfirm) return;
-      if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
+      if (
+        popoverRef.current &&
+        !popoverRef.current.contains(e.target as Node)
+      ) {
         const target = e.target as HTMLElement | null;
-        if (target?.closest('[role="dialog"]') || target?.closest('.fixed.z-50')) return;
+        if (
+          target?.closest('[role="dialog"]') ||
+          target?.closest(".fixed.z-50")
+        )
+          return;
 
         handleAttemptClose();
       }
     };
-    document.addEventListener('mousedown', handleMouseDown);
-    return () => document.removeEventListener('mousedown', handleMouseDown);
+    document.addEventListener("mousedown", handleMouseDown);
+    return () => document.removeEventListener("mousedown", handleMouseDown);
   }, [handleAttemptClose, showDiscardConfirm]);
 
   // Scroll outside prompts for discard if dirty
   useEffect(() => {
     const handleScroll = (e: Event) => {
       if (showDiscardConfirm) return;
-      if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
+      if (
+        popoverRef.current &&
+        !popoverRef.current.contains(e.target as Node)
+      ) {
         handleAttemptClose();
       }
     };
-    window.addEventListener('scroll', handleScroll, true);
-    return () => window.removeEventListener('scroll', handleScroll, true);
+    window.addEventListener("scroll", handleScroll, true);
+    return () => window.removeEventListener("scroll", handleScroll, true);
   }, [handleAttemptClose, showDiscardConfirm]);
 
   // Prettify / Format JSON action
@@ -172,23 +202,23 @@ export function InlineJsonPopover({
 
   // Keyboard navigation & indentation
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Tab') {
+    if (e.key === "Tab") {
       e.preventDefault();
       const el = e.currentTarget;
       const start = el.selectionStart;
       const end = el.selectionEnd;
       const val = el.value;
-      const newVal = val.substring(0, start) + '  ' + val.substring(end);
+      const newVal = val.substring(0, start) + "  " + val.substring(end);
       setLocalValue(newVal);
       onChange(newVal);
       requestAnimationFrame(() => {
         el.selectionStart = el.selectionEnd = start + 2;
       });
-    } else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+    } else if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
       e.preventDefault();
       e.stopPropagation();
       handleCommit();
-    } else if (e.key === 'Escape') {
+    } else if (e.key === "Escape") {
       e.preventDefault();
       e.stopPropagation();
       handleAttemptClose();
@@ -196,10 +226,19 @@ export function InlineJsonPopover({
   };
 
   // Safe popover positioning within viewport
-  const popoverWidth = Math.max(380, Math.min(540, editingCell.rect.width + 140));
+  const popoverWidth = Math.max(
+    380,
+    Math.min(540, editingCell.rect.width + 140),
+  );
   const popoverHeight = 270;
-  const left = Math.max(8, Math.min(window.innerWidth - popoverWidth - 16, editingCell.rect.left));
-  const top = Math.max(8, Math.min(window.innerHeight - popoverHeight - 16, editingCell.rect.top));
+  const left = Math.max(
+    8,
+    Math.min(window.innerWidth - popoverWidth - 16, editingCell.rect.left),
+  );
+  const top = Math.max(
+    8,
+    Math.min(window.innerHeight - popoverHeight - 16, editingCell.rect.top),
+  );
 
   return (
     <div
@@ -214,7 +253,10 @@ export function InlineJsonPopover({
       {/* Top Header Bar */}
       <div className="flex items-center justify-between pb-1.5 px-1 select-none">
         <div className="flex items-center gap-1.5 min-w-0">
-          <span className="text-[12.5px] font-sans font-medium text-[#cccccc] truncate" title={editingCell.colName}>
+          <span
+            className="text-[12.5px] font-sans font-medium text-[#cccccc] truncate"
+            title={editingCell.colName}
+          >
             {editingCell.colName}
           </span>
         </div>
@@ -255,9 +297,11 @@ export function InlineJsonPopover({
               onKeyDown={handleKeyDown}
               spellCheck={false}
               className={`w-full flex-1 bg-transparent text-[12.5px] font-mono text-[#e5e5e5] resize-none outline-none leading-relaxed placeholder-[#444444] transition-all pl-1 ${
-                !validation.isValid ? 'border-l-2 border-rose-900/60' : 'border-l-2 border-transparent'
+                !validation.isValid
+                  ? "border-l-2 border-rose-900/60"
+                  : "border-l-2 border-transparent"
               }`}
-              placeholder="{\n  &quot;key&quot;: &quot;value&quot;\n}"
+              placeholder='{\n  "key": "value"\n}'
             />
             {!validation.isValid && validation.error && (
               <div className="text-[10.5px] text-[#666666] font-mono pt-1 truncate select-none">
