@@ -14,7 +14,6 @@ import {
   Check,
   Minus,
   Loader2,
-  Link as LinkIcon,
 } from 'lucide-react';
 import { StorageItem } from './types';
 import { getFileIcon } from './fileIcon';
@@ -283,33 +282,30 @@ export function StorageListView({
 
                 {/* Column 1: Icon and Name */}
                 <td className="px-3.5 py-2 min-w-[200px] border-b border-[#1a1a1a] border-r border-[#151515]">
-                  <div className="flex items-center gap-2.5 truncate">
-                    <div className="w-4 h-4 flex items-center justify-center shrink-0">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="relative w-4 h-4 flex items-center justify-center shrink-0">
                       {isFolder ? (
                         <Folder className="w-4 h-4 text-[#8c8c8c]" />
                       ) : (
                         getFileIcon(item.name, 'w-4 h-4')
                       )}
+                      {!isFolder && activeTicketCounts && (activeTicketCounts[item.fullKey] || 0) > 0 && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onOpenShare?.(item, 'manage');
+                          }}
+                          title={`${activeTicketCounts[item.fullKey]} active capability share link${
+                            activeTicketCounts[item.fullKey] > 1 ? 's' : ''
+                          }. Click to manage.`}
+                          className="absolute -top-1.5 -right-2 min-w-[14px] h-[14px] px-0.5 rounded-full bg-red-600 hover:bg-red-500 text-white text-[9px] font-bold font-sans flex items-center justify-center border border-[#0c0c0c] shadow-xs cursor-pointer leading-none z-10 transition-transform hover:scale-110"
+                        >
+                          {activeTicketCounts[item.fullKey]}
+                        </button>
+                      )}
                     </div>
                     <span className="truncate font-medium text-[14px] text-white font-sans">{item.name}</span>
-                    {!isFolder && activeTicketCounts && (activeTicketCounts[item.fullKey] || 0) > 0 && (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onOpenShare?.(item, 'manage');
-                        }}
-                        title={`${activeTicketCounts[item.fullKey]} active capability share link${
-                          activeTicketCounts[item.fullKey] > 1 ? 's' : ''
-                        }. Click to manage.`}
-                        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-[4px] bg-sky-500/10 hover:bg-sky-500/20 border border-sky-500/25 text-sky-400 text-[11px] font-sans font-medium transition-colors cursor-pointer shrink-0"
-                      >
-                        <LinkIcon className="w-2.5 h-2.5" />
-                        <span>
-                          {activeTicketCounts[item.fullKey]} {activeTicketCounts[item.fullKey] === 1 ? 'active link' : 'active links'}
-                        </span>
-                      </button>
-                    )}
                   </div>
                 </td>
 

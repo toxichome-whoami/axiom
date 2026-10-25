@@ -15,7 +15,6 @@ import {
   HardDrive,
   Check,
   Loader2,
-  Link as LinkIcon,
 } from 'lucide-react';
 import { StorageItem } from './types';
 import { getFileIcon } from './fileIcon';
@@ -346,8 +345,23 @@ export function StorageGridView({
 
                   {/* Top row: Icon, Name, and Actions */}
                   <div className="flex items-start justify-between gap-2">
-                    <div className="w-9 h-9 rounded-[8px] bg-[#181818] border border-[#262626] flex items-center justify-center shrink-0">
+                    <div className="relative w-9 h-9 rounded-[8px] bg-[#181818] border border-[#262626] flex items-center justify-center shrink-0">
                       {getFileIcon(item.name, 'w-4 h-4')}
+                      {activeTicketCounts && (activeTicketCounts[item.fullKey] || 0) > 0 && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onOpenShare?.(item, 'manage');
+                          }}
+                          title={`${activeTicketCounts[item.fullKey]} active capability share link${
+                            activeTicketCounts[item.fullKey] > 1 ? 's' : ''
+                          }. Click to manage.`}
+                          className="absolute -top-1.5 -right-1.5 min-w-[16px] h-[16px] px-1 rounded-full bg-red-600 hover:bg-red-500 text-white text-[10px] font-bold font-sans flex items-center justify-center border-2 border-[#121212] shadow-xs cursor-pointer leading-none z-10 transition-transform hover:scale-110"
+                        >
+                          {activeTicketCounts[item.fullKey]}
+                        </button>
+                      )}
                     </div>
 
                     <div className="min-w-0 flex-1 pt-0.5">
@@ -378,25 +392,7 @@ export function StorageGridView({
 
                   {/* Bottom row: Size & Storage Tier pill (edge-to-edge card line) */}
                   <div className="-mx-3.5 px-3.5 pt-2.5 border-t border-[#1e1e1e] flex items-center justify-between text-[12px] text-[#8c8c8c] tabular-nums font-sans font-normal">
-                    <div className="flex items-center gap-1.5">
-                      <span>{formatBytes(item.size || 0)}</span>
-                      {activeTicketCounts && (activeTicketCounts[item.fullKey] || 0) > 0 && (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onOpenShare?.(item, 'manage');
-                          }}
-                          title={`${activeTicketCounts[item.fullKey]} active share link${
-                            activeTicketCounts[item.fullKey] > 1 ? 's' : ''
-                          }. Click to manage.`}
-                          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-[4px] bg-sky-500/10 hover:bg-sky-500/20 border border-sky-500/25 text-sky-400 text-[10.5px] font-sans font-medium transition-colors cursor-pointer"
-                        >
-                          <LinkIcon className="w-2.5 h-2.5" />
-                          <span>{activeTicketCounts[item.fullKey]}</span>
-                        </button>
-                      )}
-                    </div>
+                    <span>{formatBytes(item.size || 0)}</span>
 
                     <span
                       className={`inline-flex items-center px-1.5 py-0.5 rounded-[4px] text-[11px] font-medium font-sans ${
