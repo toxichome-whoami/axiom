@@ -230,6 +230,14 @@ impl BanList {
         crate::cluster::ClusterBroadcaster::broadcast_unban_key(key_name);
     }
 
+    /// Clears all in-memory ban and brute-force tracking state.
+    pub fn clear() {
+        IP_BANS.clear();
+        KEY_BANS.clear();
+        FAILED_AUTH_BY_KEY.clear();
+        FAILED_AUTH_BY_IP_KEY.clear();
+    }
+
     /// Lifts an API key suspension locally without triggering peer cluster fanout.
     pub fn unban_key_local(key_name: &str) {
         KEY_BANS.remove(key_name);

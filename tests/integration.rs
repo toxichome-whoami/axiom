@@ -36,6 +36,8 @@ use axiom_policy::PolicyEngine;
 /// Seeds an in-memory ArcSwap metadata snapshot with deterministic test identities.
 /// Idempotent — safe to call from every test without ordering concerns.
 fn setup_test_metadata() {
+    axiom_cache::CacheEngine::reset_ip_rate_limit("127.0.0.1");
+    BanList::unban_ip_local("127.0.0.1");
     let mut keys = HashMap::new();
     let mut roles = HashMap::new();
     let mut databases = HashMap::new();
@@ -1464,14 +1466,14 @@ async fn blob_storage_presigned_capability_ticket_download() {
         .unwrap();
     assert_eq!(&dl_bytes[..], b"Top secret capability test");
 
-    // 4. Download with tampered signature fails with 401 Unauthorized
+    // 4. Download with tampered signature fails with 403 Forbidden
     let bad_dl_url = format!(
         "/api/v1/blobs/secure/secret_doc.txt?ticket_sig=0000000000000000&ticket_exp={}",
         ticket_exp
     );
     let bad_dl_req = Request::get(&bad_dl_url).body(Body::empty()).unwrap();
     let bad_dl_res = create_app().oneshot(bad_dl_req).await.unwrap();
-    assert_eq!(bad_dl_res.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(bad_dl_res.status(), StatusCode::FORBIDDEN);
 }
 
 #[tokio::test]
@@ -2559,6 +2561,7 @@ async fn ndjson_streaming_response() {
 
 #[tokio::test]
 async fn row_level_security_predicate_filtering() {
+    setup_test_metadata();
     ensure_metadata_store().await;
     ensure_test_items_table().await;
     let admin_token = BASE64_STANDARD.encode("admin_key:secret_admin");
