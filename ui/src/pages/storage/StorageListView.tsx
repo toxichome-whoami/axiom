@@ -299,7 +299,7 @@ export function StorageListView({
                           title={`${activeTicketCounts[item.fullKey]} active capability share link${
                             activeTicketCounts[item.fullKey] > 1 ? 's' : ''
                           }. Click to manage.`}
-                          className="absolute -top-1.5 -right-2 min-w-[14px] h-[14px] px-0.5 rounded-full bg-red-600 hover:bg-red-500 text-white text-[9px] font-bold font-sans flex items-center justify-center border border-[#0c0c0c] shadow-xs cursor-pointer leading-none z-10 transition-transform hover:scale-110"
+                          className="absolute -top-2 -right-2.5 min-w-[16px] h-[16px] px-0.5 rounded-full bg-red-600 text-white text-[10px] font-semibold font-sans flex items-center justify-center border border-[#0c0c0c] shadow-xs cursor-pointer leading-none z-10 select-none"
                         >
                           {activeTicketCounts[item.fullKey]}
                         </button>
