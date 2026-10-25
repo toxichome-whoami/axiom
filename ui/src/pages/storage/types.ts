@@ -34,6 +34,7 @@ export interface ClipboardState {
 }
 
 export type StorageTierFilter = 'all' | 'inline' | 'disk';
+export type StorageTypeFilter = 'all' | 'image' | 'video' | 'audio' | 'document' | 'code';
 
 export interface UploadFileEntry {
   file: File;

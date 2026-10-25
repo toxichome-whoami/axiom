@@ -25,7 +25,7 @@ import {
 } from 'lucide-react';
 import { api } from '../../api/client';
 import { BlobEntry, BlobStats, NamespaceInfo, BlobTicket, NamespaceUsage } from '../../types';
-import { StorageItem, StorageViewMode, ClipboardState, StorageTierFilter, UploadFileEntry } from './types';
+import { StorageItem, StorageViewMode, ClipboardState, StorageTierFilter, StorageTypeFilter, UploadFileEntry } from './types';
 import { formatBytes, QUOTA_OPTIONS } from './format';
 import { sanitizeFolder, parentOf, joinKey, validateName } from './paths';
 import { MoveDialog } from './MoveDialog';
@@ -150,6 +150,44 @@ async function scanFilesFromDataTransfer(items: DataTransferItemList): Promise<U
   return entries;
 }
 
+function matchesTypeCategory(key: string, contentType: string | undefined, typeFilter: StorageTypeFilter): boolean {
+  if (typeFilter === 'all') return true;
+  const ext = key.split('.').pop()?.toLowerCase() || '';
+
+  if (typeFilter === 'image') {
+    return (
+      ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'ico', 'avif'].includes(ext) ||
+      Boolean(contentType?.startsWith('image/'))
+    );
+  }
+  if (typeFilter === 'video') {
+    return (
+      ['mp4', 'webm', 'mov', 'mkv', 'm4v', 'ogv'].includes(ext) ||
+      Boolean(contentType?.startsWith('video/'))
+    );
+  }
+  if (typeFilter === 'audio') {
+    return (
+      ['mp3', 'wav', 'ogg', 'flac', 'aac', 'm4a', 'opus'].includes(ext) ||
+      Boolean(contentType?.startsWith('audio/'))
+    );
+  }
+  if (typeFilter === 'document') {
+    return (
+      ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'rtf', 'odt', 'ods', 'odp'].includes(ext) ||
+      contentType === 'application/pdf'
+    );
+  }
+  if (typeFilter === 'code') {
+    return (
+      ['txt', 'json', 'csv', 'tsv', 'log', 'md', 'rs', 'ts', 'tsx', 'js', 'jsx', 'py', 'sql', 'toml', 'yaml', 'yml', 'xml', 'html', 'css', 'sh', 'env', 'diff', 'patch'].includes(ext) ||
+      Boolean(contentType?.startsWith('text/')) ||
+      contentType === 'application/json'
+    );
+  }
+  return true;
+}
+
 export function StoragePage() {
   const initialStorage = useMemo(() => getInitialStorageState(), []);
 
@@ -171,6 +209,7 @@ export function StoragePage() {
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [tierFilter, setTierFilter] = useState<StorageTierFilter>('all');
+  const [typeFilter, setTypeFilter] = useState<StorageTypeFilter>('all');
   const [selectedItem, setSelectedItem] = useState<StorageItem | null>(null);
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
   const lastFocusedKeyRef = useRef<string | null>(null);
@@ -678,7 +717,8 @@ export function StoragePage() {
             tierFilter === 'all' ||
             (tierFilter === 'inline' && item.inline) ||
             (tierFilter === 'disk' && !item.inline);
-          return matchesSearch && matchesTier && !item.key.endsWith('/.axiom_dir');
+          const matchesType = matchesTypeCategory(item.key, item.content_type, typeFilter);
+          return matchesSearch && matchesTier && matchesType && !item.key.endsWith('/.axiom_dir');
         })
         .map((item) => ({
           id: `file-${item.key}`,
@@ -718,8 +758,9 @@ export function StoragePage() {
             tierFilter === 'all' ||
             (tierFilter === 'inline' && b.inline) ||
             (tierFilter === 'disk' && !b.inline);
+          const matchesType = matchesTypeCategory(b.key, b.content_type, typeFilter);
 
-          if (matchesTier) {
+          if (matchesTier && matchesType) {
             files.push({
               id: `file-${b.key}`,
               type: 'file',
@@ -750,8 +791,8 @@ export function StoragePage() {
 
     files.sort((a, b) => a.name.localeCompare(b.name));
 
-    return { folderItems: folders, fileItems: files };
-  }, [blobs, currentPrefix, searchQuery, tierFilter]);
+    return { folderItems: typeFilter !== 'all' ? [] : folders, fileItems: files };
+  }, [blobs, currentPrefix, searchQuery, tierFilter, typeFilter]);
 
   // Map of active ticket counts per object key
   const activeTicketCountsByKey = useMemo(() => {
@@ -1818,6 +1859,7 @@ export function StoragePage() {
             lastFocusedKeyRef.current = fileItem.fullKey;
           }
         }}
+        onPreviewFile={handleOpenPreview}
         onContextMenu={handleContextMenu}
         onNewFolder={() => {
           setNewFolderName('');
@@ -1861,6 +1903,8 @@ export function StoragePage() {
           onViewModeChange={handleViewModeChange}
           tierFilter={tierFilter}
           onTierFilterChange={setTierFilter}
+          typeFilter={typeFilter}
+          onTypeFilterChange={setTypeFilter}
           searchQuery={searchQuery}
           onSearchChange={setSearchQuery}
           onUploadClick={() => fileInputRef.current?.click()}

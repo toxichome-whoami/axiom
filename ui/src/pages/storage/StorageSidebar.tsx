@@ -41,6 +41,7 @@ export interface StorageSidebarProps {
   onToggleSelectItem?: (item: StorageItem, e: React.MouseEvent) => void;
   onSelectFolder: (path: string, item?: StorageItem | null) => void;
   onSelectFile: (fileItem: StorageItem) => void;
+  onPreviewFile?: (fileItem: StorageItem) => void;
   onContextMenu: (e: React.MouseEvent, item: StorageItem | null) => void;
   onNewFolder: () => void;
   onUpload: () => void;
@@ -73,6 +74,7 @@ export function StorageSidebar({
   onToggleSelectItem,
   onSelectFolder,
   onSelectFile,
+  onPreviewFile,
   onContextMenu,
   onNewFolder,
   onUpload,
@@ -259,6 +261,7 @@ export function StorageSidebar({
             onSelectFile(fileItem);
             setIsMobileOpen(false);
           }}
+          onPreviewFile={onPreviewFile}
           onToggleSelectItem={onToggleSelectItem}
           onContextMenu={onContextMenu}
           onNewFolder={onNewFolder}

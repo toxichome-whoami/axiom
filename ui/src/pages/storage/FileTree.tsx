@@ -209,6 +209,7 @@ export interface FileTreeProps {
   canDropOnFolder?: (dragged: StorageItem | null, targetFolderKey: string) => boolean;
   isLoading?: boolean;
   onClearSelection?: () => void;
+  onPreviewFile?: (fileItem: StorageItem) => void;
 }
 
 export function FileTree({
@@ -219,6 +220,7 @@ export function FileTree({
   activeNamespace,
   onSelectFolder,
   onSelectFile,
+  onPreviewFile,
   onToggleSelectItem,
   onContextMenu,
   onNewFolder,
@@ -391,7 +393,15 @@ export function FileTree({
                 onToggleSelectItem(item, e);
               } else {
                 onSelectFile(item);
+                onPreviewFile?.(item);
               }
+            }
+          }}
+          onDoubleClick={(e) => {
+            e.stopPropagation();
+            if (!isFolder) {
+              const item = toStorageItem(node);
+              onPreviewFile?.(item);
             }
           }}
           onContextMenu={(e) => onContextMenu(e, toStorageItem(node))}

@@ -4,7 +4,7 @@
  * Design reference: TableGridView in TableEditor (exact row height, border colors, tabular fonts, custom checkbox buttons)
  */
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import {
   Folder,
   ArrowRight,
@@ -14,10 +14,16 @@ import {
   Check,
   Minus,
   Loader2,
+  ArrowUp,
+  ArrowDown,
+  ArrowUpDown,
 } from 'lucide-react';
 import { StorageItem } from './types';
 import { getFileIcon } from './fileIcon';
 import { formatBytes } from './format';
+
+export type StorageSortField = 'name' | 'tier' | 'size' | 'updated';
+export type StorageSortDirection = 'asc' | 'desc';
 
 export interface StorageListViewProps {
   folderItems: StorageItem[];
@@ -81,7 +87,18 @@ export function StorageListView({
   onOpenShare,
 }: StorageListViewProps) {
   const [dragOverTargetKey, setDragOverTargetKey] = useState<string | null>(null);
+  const [sortField, setSortField] = useState<StorageSortField>('name');
+  const [sortDirection, setSortDirection] = useState<StorageSortDirection>('asc');
   const sentinelRef = useRef<HTMLDivElement>(null);
+
+  const handleSort = (field: StorageSortField) => {
+    if (sortField === field) {
+      setSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortField(field);
+      setSortDirection(field === 'size' || field === 'updated' ? 'desc' : 'asc');
+    }
+  };
 
   useEffect(() => {
     if (!hasMore || isLoadingMore || !onLoadMore) return;
@@ -101,7 +118,45 @@ export function StorageListView({
     return () => observer.disconnect();
   }, [hasMore, isLoadingMore, onLoadMore]);
 
-  const allItems = [...folderItems, ...fileItems];
+  const sortedFolderItems = useMemo(() => {
+    return [...folderItems].sort((a, b) => {
+      let cmp = 0;
+      if (sortField === 'name') {
+        cmp = a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
+      } else if (sortField === 'size') {
+        cmp = (a.size || a.itemCount || 0) - (b.size || b.itemCount || 0);
+      } else if (sortField === 'updated') {
+        const aTime = a.created_at ? a.created_at * 1000 : 0;
+        const bTime = b.created_at ? b.created_at * 1000 : 0;
+        cmp = aTime - bTime;
+      } else {
+        cmp = a.name.localeCompare(b.name);
+      }
+      return sortDirection === 'asc' ? cmp : -cmp;
+    });
+  }, [folderItems, sortField, sortDirection]);
+
+  const sortedFileItems = useMemo(() => {
+    return [...fileItems].sort((a, b) => {
+      let cmp = 0;
+      if (sortField === 'name') {
+        cmp = a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
+      } else if (sortField === 'tier') {
+        const tierA = a.inline ? 'LSM' : 'Disk';
+        const tierB = b.inline ? 'LSM' : 'Disk';
+        cmp = tierA.localeCompare(tierB);
+      } else if (sortField === 'size') {
+        cmp = (a.size || 0) - (b.size || 0);
+      } else if (sortField === 'updated') {
+        const aTime = a.created_at ? a.created_at * 1000 : 0;
+        const bTime = b.created_at ? b.created_at * 1000 : 0;
+        cmp = aTime - bTime;
+      }
+      return sortDirection === 'asc' ? cmp : -cmp;
+    });
+  }, [fileItems, sortField, sortDirection]);
+
+  const allItems = [...sortedFolderItems, ...sortedFileItems];
   const allSelected = allItems.length > 0 && allItems.every((it) => selectedKeys?.has(it.fullKey));
   const someSelected = allItems.some((it) => selectedKeys?.has(it.fullKey));
 
@@ -158,10 +213,73 @@ export function StorageListView({
                 </button>
               </div>
             </th>
-            <th className="h-[44px] px-3.5 py-2 font-sans font-semibold border-b border-[#222222] border-r border-[#1f1f1f] text-[14px] text-[#cccccc] text-left bg-[#0a0a0a]">Name</th>
-            <th className="h-[44px] px-3.5 py-2 font-sans font-semibold w-36 border-b border-[#222222] border-r border-[#1f1f1f] text-[14px] text-[#cccccc] text-left bg-[#0a0a0a]">Storage Tier</th>
-            <th className="h-[44px] px-3.5 py-2 font-sans font-semibold w-36 text-right border-b border-[#222222] border-r border-[#1f1f1f] text-[14px] text-[#cccccc] bg-[#0a0a0a]">Size</th>
-            <th className="h-[44px] px-4 py-2 font-sans font-semibold w-44 text-right hidden sm:table-cell text-[14px] text-[#cccccc] border-b border-[#222222] border-r border-[#1f1f1f] bg-[#0a0a0a]">Uploaded</th>
+            {/* Column: Name */}
+            <th
+              onClick={() => handleSort('name')}
+              className="h-[44px] px-3.5 py-2 font-sans font-semibold border-b border-[#222222] border-r border-[#1f1f1f] text-[14px] text-[#cccccc] text-left bg-[#0a0a0a] cursor-pointer hover:bg-[#141414] transition-colors select-none group"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span>Name</span>
+                <span className={`transition-colors shrink-0 ${sortField === 'name' ? 'text-white' : 'text-[#555555] group-hover:text-[#aaaaaa]'}`}>
+                  {sortField === 'name' ? (
+                    sortDirection === 'asc' ? <ArrowUp className="w-3.5 h-3.5 stroke-[2.5]" /> : <ArrowDown className="w-3.5 h-3.5 stroke-[2.5]" />
+                  ) : (
+                    <ArrowUpDown className="w-3.5 h-3.5" />
+                  )}
+                </span>
+              </div>
+            </th>
+
+            {/* Column: Storage Tier */}
+            <th
+              onClick={() => handleSort('tier')}
+              className="h-[44px] px-3.5 py-2 font-sans font-semibold w-36 border-b border-[#222222] border-r border-[#1f1f1f] text-[14px] text-[#cccccc] text-left bg-[#0a0a0a] cursor-pointer hover:bg-[#141414] transition-colors select-none group"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span>Storage Tier</span>
+                <span className={`transition-colors shrink-0 ${sortField === 'tier' ? 'text-white' : 'text-[#555555] group-hover:text-[#aaaaaa]'}`}>
+                  {sortField === 'tier' ? (
+                    sortDirection === 'asc' ? <ArrowUp className="w-3.5 h-3.5 stroke-[2.5]" /> : <ArrowDown className="w-3.5 h-3.5 stroke-[2.5]" />
+                  ) : (
+                    <ArrowUpDown className="w-3.5 h-3.5" />
+                  )}
+                </span>
+              </div>
+            </th>
+
+            {/* Column: Size */}
+            <th
+              onClick={() => handleSort('size')}
+              className="h-[44px] px-3.5 py-2 font-sans font-semibold w-36 text-right border-b border-[#222222] border-r border-[#1f1f1f] text-[14px] text-[#cccccc] bg-[#0a0a0a] cursor-pointer hover:bg-[#141414] transition-colors select-none group"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span>Size</span>
+                <span className={`transition-colors shrink-0 ${sortField === 'size' ? 'text-white' : 'text-[#555555] group-hover:text-[#aaaaaa]'}`}>
+                  {sortField === 'size' ? (
+                    sortDirection === 'asc' ? <ArrowUp className="w-3.5 h-3.5 stroke-[2.5]" /> : <ArrowDown className="w-3.5 h-3.5 stroke-[2.5]" />
+                  ) : (
+                    <ArrowUpDown className="w-3.5 h-3.5" />
+                  )}
+                </span>
+              </div>
+            </th>
+
+            {/* Column: Uploaded */}
+            <th
+              onClick={() => handleSort('updated')}
+              className="h-[44px] px-4 py-2 font-sans font-semibold w-44 text-right hidden sm:table-cell text-[14px] text-[#cccccc] border-b border-[#222222] border-r border-[#1f1f1f] bg-[#0a0a0a] cursor-pointer hover:bg-[#141414] transition-colors select-none group"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span>Uploaded</span>
+                <span className={`transition-colors shrink-0 ${sortField === 'updated' ? 'text-white' : 'text-[#555555] group-hover:text-[#aaaaaa]'}`}>
+                  {sortField === 'updated' ? (
+                    sortDirection === 'asc' ? <ArrowUp className="w-3.5 h-3.5 stroke-[2.5]" /> : <ArrowDown className="w-3.5 h-3.5 stroke-[2.5]" />
+                  ) : (
+                    <ArrowUpDown className="w-3.5 h-3.5" />
+                  )}
+                </span>
+              </div>
+            </th>
             <th className="h-[44px] px-3 py-2 w-16 text-right border-b border-[#222222] bg-[#0a0a0a]"><span className="sr-only">Actions</span></th>
           </tr>
         </thead>

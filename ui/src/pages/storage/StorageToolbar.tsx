@@ -4,7 +4,7 @@
  * Design reference: TableToolbar in TableEditor (exact h-[54px] height, pill switcher, and clean dark borders)
  */
 
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   ChevronRight,
   ChevronDown,
@@ -18,8 +18,16 @@ import {
   FolderPlus,
   Files,
   Link as LinkIcon,
+  Filter,
+  Image as ImageIcon,
+  Film,
+  Music,
+  FileText,
+  Code2,
+  Layers,
+  Check,
 } from 'lucide-react';
-import { StorageViewMode, StorageTierFilter, StorageItem } from './types';
+import { StorageViewMode, StorageTierFilter, StorageTypeFilter, StorageItem } from './types';
 import { NamespaceUsage } from '../../types';
 import { formatBytes } from './format';
 
@@ -32,6 +40,8 @@ export interface StorageToolbarProps {
   onViewModeChange: (mode: StorageViewMode) => void;
   tierFilter: StorageTierFilter;
   onTierFilterChange: (tier: StorageTierFilter) => void;
+  typeFilter?: StorageTypeFilter;
+  onTypeFilterChange?: (type: StorageTypeFilter) => void;
   searchQuery: string;
   onSearchChange: (query: string) => void;
   onUploadClick: () => void;
@@ -60,6 +70,8 @@ export function StorageToolbar({
   onViewModeChange,
   tierFilter,
   onTierFilterChange,
+  typeFilter = 'all',
+  onTypeFilterChange,
   searchQuery,
   onSearchChange,
   onUploadClick,
@@ -80,9 +92,22 @@ export function StorageToolbar({
 }: StorageToolbarProps) {
   const [dragOverTargetKey, setDragOverTargetKey] = useState<string | null>(null);
   const [isUploadMenuOpen, setIsUploadMenuOpen] = useState(false);
-  const uploadMenuRef = React.useRef<HTMLDivElement>(null);
+  const [isFilterMenuOpen, setIsFilterMenuOpen] = useState(false);
+  const uploadMenuRef = useRef<HTMLDivElement>(null);
+  const filterMenuRef = useRef<HTMLDivElement>(null);
 
-  React.useEffect(() => {
+  useEffect(() => {
+    if (!isFilterMenuOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (filterMenuRef.current && !filterMenuRef.current.contains(e.target as Node)) {
+        setIsFilterMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isFilterMenuOpen]);
+
+  useEffect(() => {
     if (!isUploadMenuOpen) return;
     const handleClickOutside = (e: MouseEvent) => {
       if (uploadMenuRef.current && !uploadMenuRef.current.contains(e.target as Node)) {
@@ -227,6 +252,96 @@ export function StorageToolbar({
             </button>
           )}
         </div>
+
+        {/* Search & Type Filter Dropdown */}
+        {onTypeFilterChange && (
+          <div className="relative" ref={filterMenuRef}>
+            <button
+              type="button"
+              onClick={() => setIsFilterMenuOpen((prev) => !prev)}
+              title="Filter by file type"
+              className={`flex items-center gap-1.5 h-8 px-2.5 rounded-[6px] text-[13px] font-sans font-medium border transition-colors cursor-pointer select-none ${
+                typeFilter !== 'all'
+                  ? 'bg-blue-600/20 text-blue-400 border-blue-500/40 shadow-xs'
+                  : 'bg-[#141414] text-[#8c8c8c] hover:text-white border-[#262626] hover:border-[#383838]'
+              }`}
+            >
+              <Filter className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">
+                {typeFilter !== 'all'
+                  ? typeFilter === 'code'
+                    ? 'Code'
+                    : typeFilter.charAt(0).toUpperCase() + typeFilter.slice(1)
+                  : 'Filter'}
+              </span>
+              {typeFilter !== 'all' && (
+                <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+              )}
+              <ChevronDown className="w-3 h-3 text-[#666666]" />
+            </button>
+
+            {isFilterMenuOpen && (
+              <div
+                className="absolute right-0 top-full mt-1.5 w-52 bg-[#111111] border border-[#262626] rounded-[8px] shadow-2xl p-1.5 z-50 animate-in fade-in zoom-in-95 duration-100 font-sans divide-y divide-[#1f1f1f]"
+              >
+                {/* Type Category Filter */}
+                <div className="pb-1.5 space-y-0.5">
+                  <div className="px-2 py-1 text-[11px] font-semibold text-[#666666] uppercase tracking-wider">
+                    File Type
+                  </div>
+                  {[
+                    { id: 'all', label: 'All Files', icon: Layers },
+                    { id: 'image', label: 'Images', icon: ImageIcon },
+                    { id: 'video', label: 'Videos', icon: Film },
+                    { id: 'audio', label: 'Audio', icon: Music },
+                    { id: 'document', label: 'Documents', icon: FileText },
+                    { id: 'code', label: 'Code & Text', icon: Code2 },
+                  ].map((cat) => {
+                    const Icon = cat.icon;
+                    const isSelected = typeFilter === cat.id;
+                    return (
+                      <button
+                        key={cat.id}
+                        type="button"
+                        onClick={() => {
+                          onTypeFilterChange(cat.id as StorageTypeFilter);
+                          setIsFilterMenuOpen(false);
+                        }}
+                        className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-[5px] text-[12.5px] transition-colors cursor-pointer ${
+                          isSelected
+                            ? 'bg-[#1f1f1f] text-white font-medium'
+                            : 'text-[#8c8c8c] hover:text-white hover:bg-[#161616]'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <Icon className="w-3.5 h-3.5 text-[#888888]" />
+                          <span>{cat.label}</span>
+                        </div>
+                        {isSelected && <Check className="w-3.5 h-3.5 text-blue-400 stroke-[3]" />}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Reset Action */}
+                {typeFilter !== 'all' && (
+                  <div className="pt-1.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onTypeFilterChange('all');
+                        setIsFilterMenuOpen(false);
+                      }}
+                      className="w-full text-center py-1 rounded text-[12px] text-rose-400 hover:text-rose-300 hover:bg-rose-950/20 transition-colors cursor-pointer"
+                    >
+                      Reset Filter
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Storage Tier Filter Pill */}
         <div className="hidden md:flex items-center p-1 rounded-[7px] bg-[#141414] border border-[#262626] h-[35.99px]">
