@@ -128,7 +128,7 @@ export function StorageSidebar({
           <button
             type="button"
             onClick={() => setIsNsDropdownOpen(!isNsDropdownOpen)}
-            className="w-full h-9 px-3 rounded-[7px] bg-[#141414] hover:bg-[#1a1a1a] border border-[#242424] hover:border-[#383838] flex items-center justify-between gap-2 text-left transition-colors cursor-pointer"
+            className="w-full h-8 px-2.5 rounded-[6px] bg-[#141414] hover:bg-[#1a1a1a] border border-[#242424] hover:border-[#383838] flex items-center justify-between gap-2 text-left transition-colors cursor-pointer text-[13px]"
           >
             <div className="flex items-center gap-1.5 truncate min-w-0">
               <HardDrive className="w-4 h-4 text-blue-400 shrink-0" />
@@ -136,7 +136,7 @@ export function StorageSidebar({
                 <Skeleton className="w-24 h-3.5" />
               ) : (
                 <>
-                  <span className="text-[13.5px] font-medium text-white truncate">
+                  <span className="text-[13px] font-medium text-white truncate">
                     {activeNamespace || 'Select Namespace'}
                   </span>
                   {currentNsInfo?.is_public && (
@@ -215,7 +215,7 @@ export function StorageSidebar({
               type="button"
               onClick={onOpenManageNamespace}
               title="Manage Namespace Quota & Settings"
-              className="w-9 h-9 flex items-center justify-center rounded-[7px] text-[#8c8c8c] hover:text-white hover:bg-[#161616] transition-colors cursor-pointer shrink-0"
+              className="w-8 h-8 flex items-center justify-center rounded-[6px] text-[#8c8c8c] hover:text-white hover:bg-[#161616] transition-colors cursor-pointer shrink-0"
             >
               <Settings className="w-4 h-4" />
             </button>
@@ -225,7 +225,7 @@ export function StorageSidebar({
             type="button"
             onClick={onOpenNewNamespace}
             title="Create new namespace"
-            className="w-9 h-9 flex items-center justify-center rounded-[7px] text-[#8c8c8c] hover:text-white hover:bg-[#161616] transition-colors cursor-pointer shrink-0"
+            className="w-8 h-8 flex items-center justify-center rounded-[6px] text-[#8c8c8c] hover:text-white hover:bg-[#161616] transition-colors cursor-pointer shrink-0"
           >
             <Plus className="w-4 h-4" />
           </button>
@@ -236,7 +236,7 @@ export function StorageSidebar({
             onClick={() => setIsMobileOpen(!isMobileOpen)}
             title={isMobileOpen ? 'Collapse Explorer Tree' : 'Expand Explorer Tree'}
             aria-label={isMobileOpen ? 'Collapse Explorer Tree' : 'Expand Explorer Tree'}
-            className="w-9 h-9 flex items-center justify-center rounded-[7px] text-[#8c8c8c] hover:text-white hover:bg-[#161616] lg:hidden transition-colors cursor-pointer shrink-0"
+            className="w-8 h-8 flex items-center justify-center rounded-[6px] text-[#8c8c8c] hover:text-white hover:bg-[#161616] lg:hidden transition-colors cursor-pointer shrink-0"
           >
             <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${isMobileOpen ? 'rotate-180' : ''}`} />
           </button>
