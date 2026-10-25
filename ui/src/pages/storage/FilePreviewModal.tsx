@@ -1,6 +1,7 @@
 /*
  * In-App File Preview Modal for Native Blob Storage.
- * Provides rich instant playback and inspection for Video, Audio, Image, PDF, and Code.
+ * Provides instant playback and inspection for Video, Audio, Image, PDF, and Code.
+ * Zero-ticket direct stream for Public namespaces; capability ticket for Private namespaces.
  * Owned by: ui/pages/storage
  * Dependencies: lucide-react, ./MediaPlayer, ./format, ./fileIcon, ../../api/client
  */
@@ -11,9 +12,9 @@ import {
   Download,
   Share2,
   ExternalLink,
-  HardDrive,
   Copy,
   Check,
+  Globe,
 } from 'lucide-react';
 import { StorageItem } from './types';
 import { MediaPlayer } from './MediaPlayer';
@@ -26,6 +27,7 @@ export interface FilePreviewModalProps {
   onClose: () => void;
   item: StorageItem | null;
   namespace: string;
+  isPublic?: boolean;
   onDownload: (key: string) => void;
   onShare?: (item: StorageItem) => void;
 }
@@ -35,31 +37,42 @@ export function FilePreviewModal({
   onClose,
   item,
   namespace,
+  isPublic = false,
   onDownload,
   onShare,
 }: FilePreviewModalProps) {
   const [streamUrl, setStreamUrl] = useState<string | null>(null);
   const [ticketSig, setTicketSig] = useState<string | null>(null);
   const [ticketExp, setTicketExp] = useState<number | null>(null);
-  const [isLoadingTicket, setIsLoadingTicket] = useState(false);
-  const [ticketError, setTicketError] = useState<string | null>(null);
+  const [isLoadingStream, setIsLoadingStream] = useState(false);
+  const [streamError, setStreamError] = useState<string | null>(null);
   const [copiedLink, setCopiedLink] = useState(false);
 
-  // When modal opens with a file item, generate a temporary capability ticket for streaming
   useEffect(() => {
     if (!isOpen || !item || item.type !== 'file') {
       setStreamUrl(null);
       setTicketSig(null);
       setTicketExp(null);
-      setTicketError(null);
+      setStreamError(null);
       return;
     }
 
-    let isSubscribed = true;
-    setIsLoadingTicket(true);
-    setTicketError(null);
+    const sanitizedKeyPath = item.fullKey.split('/').map(encodeURIComponent).join('/');
 
-    // Request a 1-hour read ticket for media playback and streaming
+    // If namespace is public: stream directly from public CDN without ticket overhead
+    if (isPublic) {
+      setStreamUrl(`/api/v1/blobs/public/${encodeURIComponent(namespace)}/${sanitizedKeyPath}?inline=1`);
+      setTicketSig(null);
+      setTicketExp(null);
+      setIsLoadingStream(false);
+      return;
+    }
+
+    // If private: request 1-hour signed capability ticket for streaming
+    let isSubscribed = true;
+    setIsLoadingStream(true);
+    setStreamError(null);
+
     api
       .createBlobTicket(namespace, item.fullKey, 'READ', 3600)
       .then((res) => {
@@ -72,18 +85,18 @@ export function FilePreviewModal({
       })
       .catch((err) => {
         if (!isSubscribed) return;
-        setTicketError(err instanceof Error ? err.message : 'Failed to authorize media stream');
+        setStreamError(err instanceof Error ? err.message : 'Failed to authorize media stream');
       })
       .finally(() => {
-        if (isSubscribed) setIsLoadingTicket(false);
+        if (isSubscribed) setIsLoadingStream(false);
       });
 
     return () => {
       isSubscribed = false;
     };
-  }, [isOpen, item, namespace]);
+  }, [isOpen, item, namespace, isPublic]);
 
-  // Handle Escape key to close modal
+  // Handle Escape key
   useEffect(() => {
     if (!isOpen) return;
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -97,72 +110,76 @@ export function FilePreviewModal({
 
   if (!isOpen || !item) return null;
 
-  const publicPreviewUrl =
-    ticketSig && ticketExp
-      ? `${window.location.origin}/system/preview?ns=${encodeURIComponent(namespace)}&key=${encodeURIComponent(item.fullKey)}&ticket_sig=${encodeURIComponent(ticketSig)}&ticket_exp=${encodeURIComponent(ticketExp)}`
-      : '';
+  const previewShareUrl = isPublic
+    ? `${window.location.origin}/system/preview?ns=${encodeURIComponent(namespace)}&key=${encodeURIComponent(item.fullKey)}`
+    : ticketSig && ticketExp
+    ? `${window.location.origin}/system/preview?ns=${encodeURIComponent(namespace)}&key=${encodeURIComponent(item.fullKey)}&ticket_sig=${encodeURIComponent(ticketSig)}&ticket_exp=${encodeURIComponent(ticketExp)}`
+    : '';
 
   const handleCopyLink = () => {
-    if (!publicPreviewUrl) return;
-    navigator.clipboard.writeText(publicPreviewUrl);
+    if (!previewShareUrl) return;
+    navigator.clipboard.writeText(previewShareUrl);
     setCopiedLink(true);
     setTimeout(() => setCopiedLink(false), 2000);
   };
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-black/85 backdrop-blur-xs animate-in fade-in duration-150 font-sans"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-black/80 backdrop-blur-xs animate-in fade-in duration-150 font-sans"
       onClick={(e) => {
         if (e.target === e.currentTarget) {
           onClose();
         }
       }}
     >
-      <div className="relative w-full max-w-5xl max-h-[92vh] flex flex-col bg-[#0a0a0a] border border-[#222222] rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-150">
+      <div className="relative w-full max-w-5xl max-h-[92vh] flex flex-col bg-[#0c0c0c] border border-[#262626] rounded-[8px] shadow-2xl overflow-hidden font-sans">
         {/* ─── Modal Header Bar ─────────────── */}
-        <div className="h-14 px-4 sm:px-6 bg-[#0f0f0f] border-b border-[#202020] flex items-center justify-between shrink-0">
+        <div className="h-12 px-4 bg-[#0e0e0e] border-b border-[#1f1f1f] flex items-center justify-between shrink-0">
           {/* File Name & Format Badge */}
-          <div className="flex items-center gap-3 min-w-0 pr-4">
-            <div className="w-8 h-8 rounded-lg bg-[#161616] border border-[#262626] flex items-center justify-center shrink-0">
-              {getFileIcon(item.name, 'w-4 h-4')}
+          <div className="flex items-center gap-2.5 min-w-0 pr-4">
+            <div className="w-7 h-7 rounded-[6px] bg-[#141414] border border-[#262626] flex items-center justify-center shrink-0">
+              {getFileIcon(item.name, 'w-3.5 h-3.5')}
             </div>
 
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <h3 className="text-[14px] font-medium text-white truncate leading-snug" title={item.name}>
-                  {item.name}
-                </h3>
-                <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-[#181818] border border-[#262626] text-[#8c8c8c] shrink-0">
-                  {getFileExtension(item.name)}
+            <div className="min-w-0 flex items-center gap-2">
+              <h3 className="text-[14px] font-sans font-medium text-white tracking-tight truncate" title={item.name}>
+                {item.name}
+              </h3>
+              <span className="text-[11px] font-mono px-1.5 py-0.5 rounded-[4px] bg-[#141414] border border-[#262626] text-[#8c8c8c] shrink-0">
+                {getFileExtension(item.name)}
+              </span>
+              {isPublic && (
+                <span className="px-1.5 py-0.5 rounded-[4px] text-[11px] font-medium bg-[#30a46c]/15 border border-[#30a46c]/30 text-[#30a46c] shrink-0">
+                  Public
                 </span>
-              </div>
-              <p className="text-[12px] text-[#777777] font-mono truncate">
-                {formatBytes(item.size || 0)} &bull; {item.content_type || 'binary'}
-              </p>
+              )}
+              <span className="text-[12px] text-[#666666] font-mono shrink-0 hidden sm:inline">
+                &bull; {formatBytes(item.size || 0)}
+              </span>
             </div>
           </div>
 
           {/* Action Toolbar */}
-          <div className="flex items-center gap-2">
-            {publicPreviewUrl && (
+          <div className="flex items-center gap-1.5 shrink-0">
+            {previewShareUrl && (
               <a
-                href={publicPreviewUrl}
+                href={previewShareUrl}
                 target="_blank"
                 rel="noreferrer"
                 title="Open viewer in new window"
-                className="hidden sm:inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-[12px] text-[#cccccc] hover:text-white bg-[#161616] hover:bg-[#202020] border border-[#262626] transition-colors cursor-pointer"
+                className="hidden sm:inline-flex items-center gap-1.5 h-7 px-2.5 rounded-[6px] text-[12px] text-[#cccccc] hover:text-white bg-[#141414] hover:bg-[#1c1c1c] border border-[#262626] transition-colors cursor-pointer"
               >
                 <ExternalLink className="w-3.5 h-3.5" />
                 <span>Open in Tab</span>
               </a>
             )}
 
-            {publicPreviewUrl && (
+            {previewShareUrl && (
               <button
                 type="button"
                 onClick={handleCopyLink}
-                title="Copy capability link"
-                className="hidden md:inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-[12px] text-[#cccccc] hover:text-white bg-[#161616] hover:bg-[#202020] border border-[#262626] transition-colors cursor-pointer"
+                title="Copy preview link"
+                className="hidden md:inline-flex items-center gap-1.5 h-7 px-2.5 rounded-[6px] text-[12px] text-[#cccccc] hover:text-white bg-[#141414] hover:bg-[#1c1c1c] border border-[#262626] transition-colors cursor-pointer"
               >
                 {copiedLink ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
                 <span>{copiedLink ? 'Copied' : 'Copy Link'}</span>
@@ -176,10 +193,10 @@ export function FilePreviewModal({
                   onClose();
                   onShare(item);
                 }}
-                title="Create capability share link"
-                className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-[12px] text-[#cccccc] hover:text-white bg-[#161616] hover:bg-[#202020] border border-[#262626] transition-colors cursor-pointer"
+                title={isPublic ? 'Share public object' : 'Create capability share link'}
+                className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-[6px] text-[12px] text-[#cccccc] hover:text-white bg-[#141414] hover:bg-[#1c1c1c] border border-[#262626] transition-colors cursor-pointer"
               >
-                <Share2 className="w-3.5 h-3.5" />
+                {isPublic ? <Globe className="w-3.5 h-3.5 text-emerald-400" /> : <Share2 className="w-3.5 h-3.5" />}
                 <span className="hidden sm:inline">Share</span>
               </button>
             )}
@@ -188,19 +205,19 @@ export function FilePreviewModal({
               type="button"
               onClick={() => onDownload(item.fullKey)}
               title="Download object"
-              className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg text-[12px] font-medium text-black bg-white hover:bg-[#e0e0e0] transition-colors cursor-pointer shadow-sm"
+              className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-[6px] text-[12px] font-sans font-medium text-black bg-white hover:bg-[#e0e0e0] transition-colors cursor-pointer shadow-xs"
             >
               <Download className="w-3.5 h-3.5 stroke-[2.5]" />
               <span>Download</span>
             </button>
 
-            <div className="w-px h-5 bg-[#262626] mx-1" />
+            <div className="w-px h-4 bg-[#262626] mx-0.5" />
 
             <button
               type="button"
               onClick={onClose}
               title="Close (Esc)"
-              className="w-8 h-8 rounded-lg flex items-center justify-center text-[#777777] hover:text-white hover:bg-[#1f1f1f] transition-colors cursor-pointer"
+              className="w-7 h-7 rounded-[6px] flex items-center justify-center text-[#777777] hover:text-white hover:bg-[#1a1a1a] transition-colors cursor-pointer"
             >
               <X className="w-4 h-4" />
             </button>
@@ -208,22 +225,22 @@ export function FilePreviewModal({
         </div>
 
         {/* ─── Modal Viewport Body ─────────────── */}
-        <div className="flex-1 overflow-auto p-4 sm:p-6 bg-[#070707] flex items-center justify-center">
-          {isLoadingTicket ? (
+        <div className="flex-1 overflow-auto p-4 sm:p-5 bg-[#09090b] flex items-center justify-center min-h-[300px]">
+          {isLoadingStream ? (
             <div className="flex items-center gap-3 text-[#8c8c8c] text-[13px] py-16">
-              <svg className="animate-spin h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
+              <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
               </svg>
-              <span>Initializing secure media stream...</span>
+              <span>Loading media stream...</span>
             </div>
-          ) : ticketError ? (
-            <div className="text-center p-8 max-w-sm space-y-3">
-              <div className="text-red-400 text-[14px]">{ticketError}</div>
+          ) : streamError ? (
+            <div className="text-center p-8 max-w-sm space-y-3 font-sans">
+              <div className="text-[#e5484d] text-[13px]">{streamError}</div>
               <button
                 type="button"
                 onClick={() => onDownload(item.fullKey)}
-                className="px-4 py-2 rounded-lg bg-white text-black text-[13px] font-medium cursor-pointer"
+                className="px-3 py-1.5 rounded-[6px] bg-white text-black text-[13px] font-sans font-medium hover:bg-[#e0e0e0] transition-colors cursor-pointer"
               >
                 Download Object Directly
               </button>

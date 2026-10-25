@@ -422,9 +422,9 @@ export function FileTree({
                 )}
               </button>
               {isExpanded ? (
-                <FolderOpen className="w-4 h-4 text-[#eab308] shrink-0" />
+                <FolderOpen className="w-4 h-4 text-[#8c8c8c] shrink-0" />
               ) : (
-                <Folder className="w-4 h-4 text-[#eab308] shrink-0" />
+                <Folder className="w-4 h-4 text-[#8c8c8c] shrink-0" />
               )}
             </>
           ) : (

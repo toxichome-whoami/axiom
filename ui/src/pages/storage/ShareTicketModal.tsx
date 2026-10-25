@@ -1,8 +1,8 @@
 /*
- * Modal for creating, sharing, and revoking Blob capability download/stream tickets (signed links).
+ * Modal for sharing Blob objects: Permanent CDN Links for Public namespaces,
+ * and signed capability tickets (download/stream links) for Private namespaces.
  * Owned by: ui/pages/storage
  * Key deps: ../../types, ../../api/client, ../../components/ui/Button
- * Invariants: Single-item Share is strictly scoped to READ capability links (streaming & downloading).
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -71,9 +71,12 @@ export function ShareTicketModal({
   onClose,
   item,
   namespace,
-  isPublicNamespace,
+  isPublicNamespace = false,
 }: ShareTicketModalProps) {
-  const [activeTab, setActiveTab] = useState<'create' | 'manage'>('create');
+  // If public namespace, default tab is 'public', otherwise 'create'
+  const [activeTab, setActiveTab] = useState<'public' | 'create' | 'manage'>(
+    isPublicNamespace ? 'public' : 'create'
+  );
   const [selectedTtl, setSelectedTtl] = useState<number>(3600);
   const [customHours, setCustomHours] = useState<string>('12');
   const [linkMode, setLinkMode] = useState<'stream' | 'download'>('stream');
@@ -95,7 +98,6 @@ export function ShareTicketModal({
   const isImage = item ? /\.(png|jpe?g|gif|webp|svg|bmp|ico)$/i.test(item.name) : false;
   const isMedia = isVideo || isAudio || isImage;
 
-  // Default link mode: stream/preview for media, download for other documents
   useEffect(() => {
     setLinkMode(isMedia ? 'stream' : 'download');
   }, [isMedia]);
@@ -114,7 +116,11 @@ export function ShareTicketModal({
     setManageError(null);
     try {
       const resp = await api.listBlobTickets(namespace, item.fullKey, true);
-      setTickets(Array.isArray(resp) ? resp : (resp as any).tickets || []);
+      const allTickets: BlobTicket[] = Array.isArray(resp)
+        ? resp
+        : (resp as unknown as { tickets?: BlobTicket[] }).tickets || [];
+      // Filter for READ operation tickets
+      setTickets(allTickets.filter((t) => t.operation === 'READ'));
     } catch (err: unknown) {
       setManageError(err instanceof Error ? err.message : 'Failed to load tickets');
     } finally {
@@ -126,10 +132,10 @@ export function ShareTicketModal({
     if (isOpen) {
       setGeneratedTicket(null);
       setCreateError(null);
-      setActiveTab('create');
+      setActiveTab(isPublicNamespace ? 'public' : 'create');
       loadTickets();
     }
-  }, [isOpen, loadTickets]);
+  }, [isOpen, isPublicNamespace, loadTickets]);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -154,12 +160,11 @@ export function ShareTicketModal({
     setCreateError(null);
 
     try {
-      // Single-file share is strictly READ (capability download or stream)
       const res = await api.createBlobTicket(namespace, item.fullKey, 'READ', ttl);
       setGeneratedTicket(res);
-      await loadTickets();
+      loadTickets();
     } catch (err: unknown) {
-      setCreateError(err instanceof Error ? err.message : 'Failed to generate capability ticket');
+      setCreateError(err instanceof Error ? err.message : 'Failed to create share link');
     } finally {
       setIsCreating(false);
     }
@@ -182,7 +187,13 @@ export function ShareTicketModal({
   };
 
   const handleDelete = async (signature: string) => {
-    if (!confirm('Permanently delete this capability ticket record?')) return;
+    if (
+      !window.confirm(
+        'Are you sure you want to delete this capability ticket? Once deleted, any link using it will stop working immediately.'
+      )
+    ) {
+      return;
+    }
     setDeletingSigs((prev) => new Set(prev).add(signature));
     try {
       await api.deleteBlobTicket(signature);
@@ -200,7 +211,18 @@ export function ShareTicketModal({
 
   if (!isOpen || !item) return null;
 
-  // Build effective capability URLs
+  // Public CDN URL constructions
+  const sanitizedKeyPath = item.fullKey.split('/').map(encodeURIComponent).join('/');
+  const publicCdnUrl = `${window.location.origin}/api/v1/blobs/public/${encodeURIComponent(namespace)}/${sanitizedKeyPath}`;
+  const publicViewerUrl = `${window.location.origin}/system/preview?ns=${encodeURIComponent(namespace)}&key=${encodeURIComponent(item.fullKey)}`;
+
+  // Embed Snippets for Public Objects
+  const publicVideoSnippet = `<video controls preload="metadata" src="${publicCdnUrl}"></video>`;
+  const publicAudioSnippet = `<audio controls preload="metadata" src="${publicCdnUrl}"></audio>`;
+  const publicImageSnippet = `<img src="${publicCdnUrl}" alt="${item.name}" />`;
+  const publicCurlSnippet = `curl -O "${publicCdnUrl}"`;
+
+  // Signed Capability URLs (for private namespaces or advanced expiring links)
   const rawTicketUrl = generatedTicket
     ? `${window.location.origin}${generatedTicket.url || ''}`
     : '';
@@ -209,22 +231,19 @@ export function ShareTicketModal({
     ? `${window.location.origin}/system/preview?ns=${encodeURIComponent(namespace)}&key=${encodeURIComponent(item.fullKey)}&ticket_sig=${encodeURIComponent(generatedTicket.signature || '')}&ticket_exp=${encodeURIComponent(String(generatedTicket.expires_at || 0))}`
     : '';
 
-  // In stream mode, use the branded Axiom Viewer Link as the primary link
   const primaryShareUrl = linkMode === 'stream' ? viewerUrl : rawTicketUrl;
-
   const ticketExp = generatedTicket?.expires_at || 0;
 
-  // Embed Snippets (using direct API stream URL)
-  const videoSnippet = directStreamUrl
+  const signedVideoSnippet = directStreamUrl
     ? `<video controls preload="metadata" src="${directStreamUrl}"></video>`
     : '';
-  const audioSnippet = directStreamUrl
+  const signedAudioSnippet = directStreamUrl
     ? `<audio controls preload="metadata" src="${directStreamUrl}"></audio>`
     : '';
-  const imageSnippet = directStreamUrl
+  const signedImageSnippet = directStreamUrl
     ? `<img src="${directStreamUrl}" alt="${item.name}" />`
     : '';
-  const curlSnippet = directStreamUrl ? `curl -O "${directStreamUrl}"` : '';
+  const signedCurlSnippet = directStreamUrl ? `curl -O "${directStreamUrl}"` : '';
 
   const activeTickets = tickets.filter((t) => !t.revoked && !formatTimeRemaining(t.expires_at).isExpired);
   const activeTicketCount = activeTickets.length;
@@ -247,7 +266,9 @@ export function ShareTicketModal({
           <div className="min-w-0 pr-3">
             <div className="flex items-center gap-2">
               <Share2 className="w-4 h-4 text-white" />
-              <h3 className="text-[15px] font-sans font-medium text-white tracking-tight">Share Object</h3>
+              <h3 className="text-[15px] font-sans font-medium text-white tracking-tight">
+                {isPublicNamespace ? 'Share Public Object' : 'Share Object'}
+              </h3>
             </div>
             <p className="text-[13px] text-[#8c8c8c] font-mono truncate mt-0.5" title={`${namespace}/${item.fullKey}`}>
               {item.name}
@@ -262,32 +283,24 @@ export function ShareTicketModal({
           </button>
         </div>
 
-        {/* Public Namespace Banner */}
-        {isPublicNamespace && (
-          <div className="mx-5 mt-3.5 p-3 rounded-[8px] bg-[#30a46c]/10 border border-[#30a46c]/30 text-[13px] text-[#30a46c] flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2 min-w-0">
-              <Globe className="w-4 h-4 text-[#30a46c] shrink-0" />
-              <div className="truncate">
-                <span className="font-sans font-medium text-[#30a46c]">Public CDN:</span>
-                <span className="text-[#a3a3a3] ml-1">Permanent static URL (never expires).</span>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                const url = `${window.location.origin}/api/v1/blobs/public/${namespace}/${item.fullKey}`;
-                copyToClipboard(url, 'public-cdn-url');
-              }}
-              className="px-2.5 py-1 rounded-[6px] bg-[#30a46c]/20 hover:bg-[#30a46c]/30 border border-[#30a46c]/40 text-[12px] font-sans font-medium text-[#30a46c] transition-colors shrink-0 cursor-pointer"
-            >
-              {copiedKey === 'public-cdn-url' ? 'Copied' : 'Copy CDN Link'}
-            </button>
-          </div>
-        )}
-
-        {/* Segmented Tabs Toolbar */}
+        {/* Tab Navigation */}
         <div className="px-5 py-3 border-b border-[#222222]">
           <div className="inline-flex items-center p-0.5 rounded-[8px] bg-transparent border border-[#262626]">
+            {isPublicNamespace && (
+              <button
+                type="button"
+                onClick={() => setActiveTab('public')}
+                className={`flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[13px] font-sans font-medium transition-colors cursor-pointer outline-none border ${
+                  activeTab === 'public'
+                    ? 'bg-[#161616] text-white border-[#333333]'
+                    : 'text-[#8c8c8c] hover:text-white hover:bg-[#141414] border-transparent'
+                }`}
+              >
+                <Globe className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                <span>Public CDN Link</span>
+              </button>
+            )}
+
             <button
               type="button"
               onClick={() => setActiveTab('create')}
@@ -298,8 +311,9 @@ export function ShareTicketModal({
               }`}
             >
               <LinkIcon className="w-3.5 h-3.5 shrink-0" />
-              <span>Create link</span>
+              <span>{isPublicNamespace ? 'Expiring Link' : 'Create Link'}</span>
             </button>
+
             <button
               type="button"
               onClick={() => {
@@ -313,7 +327,7 @@ export function ShareTicketModal({
               }`}
             >
               <Clock className="w-3.5 h-3.5 shrink-0" />
-              <span>Active links</span>
+              <span>Active Links</span>
               {activeTicketCount > 0 && (
                 <span className="px-1.5 py-0.5 rounded-[4px] bg-[#222222] border border-[#333333] text-[#cccccc] text-[11px] font-mono leading-none">
                   {activeTicketCount}
@@ -325,12 +339,158 @@ export function ShareTicketModal({
 
         {/* Body Content */}
         <div className="p-5 space-y-4">
-          {activeTab === 'create' ? (
+          {activeTab === 'public' ? (
+            /* ─── PUBLIC NAMESPACE CDN VIEW (Zero Tickets Needed!) ─────────────────── */
+            <div className="space-y-4 animate-in fade-in duration-100">
+              <div className="p-3 rounded-[6px] bg-[#121212] border border-[#222222] flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2 min-w-0">
+                  <Globe className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <div className="truncate">
+                    <span className="text-[13px] font-sans font-medium text-white">Permanent CDN Link</span>
+                    <p className="text-[12px] text-[#8c8c8c] mt-0.5">
+                      This namespace is Public. Objects are permanently accessible worldwide with no expiration.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Direct Public CDN URL */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-[13px] font-sans font-medium text-[#cccccc]">
+                    Public CDN URL
+                  </label>
+                  <a
+                    href={publicCdnUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex items-center gap-1 text-[12px] font-sans text-blue-400 hover:text-blue-300 transition-colors"
+                  >
+                    <span>Open in Browser</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    readOnly
+                    value={publicCdnUrl}
+                    className="flex-1 h-8 px-3 rounded-[6px] bg-[#141414] border border-[#262626] text-white font-mono text-[12px] select-all outline-none"
+                  />
+                  <Button
+                    type="button"
+                    variant="primary"
+                    size="sm"
+                    onClick={() => copyToClipboard(publicCdnUrl, 'public-cdn-url')}
+                    className="h-8 px-3"
+                  >
+                    {copiedKey === 'public-cdn-url' ? (
+                      <>
+                        <Check className="w-3.5 h-3.5" />
+                        <span>Copied</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3.5 h-3.5" />
+                        <span>Copy URL</span>
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </div>
+
+              {/* In-App Branded Public Preview Link */}
+              <div>
+                <label className="block text-[13px] font-sans font-medium text-[#cccccc] mb-1.5">
+                  Interactive Viewer URL
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    readOnly
+                    value={publicViewerUrl}
+                    className="flex-1 h-8 px-3 rounded-[6px] bg-[#141414] border border-[#262626] text-white font-mono text-[12px] select-all outline-none"
+                  />
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => copyToClipboard(publicViewerUrl, 'public-viewer-url')}
+                    className="h-8 px-3"
+                  >
+                    {copiedKey === 'public-viewer-url' ? (
+                      <>
+                        <Check className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>Copied</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3.5 h-3.5" />
+                        <span>Copy</span>
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </div>
+
+              {/* HTML Embed Snippet */}
+              <div className="p-3 rounded-[6px] bg-[#121212] border border-[#222222] space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 text-[12px] font-sans font-medium text-[#cccccc]">
+                    <Code2 className="w-3.5 h-3.5 text-blue-400" />
+                    <span>
+                      {isVideo ? 'HTML5 Video Embed' : isAudio ? 'HTML5 Audio Embed' : isImage ? 'HTML Image Tag' : 'cURL Download Command'}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      copyToClipboard(
+                        isVideo
+                          ? publicVideoSnippet
+                          : isAudio
+                          ? publicAudioSnippet
+                          : isImage
+                          ? publicImageSnippet
+                          : publicCurlSnippet,
+                        'public-embed'
+                      )
+                    }
+                    className="h-6 px-2 rounded-[4px] bg-[#181818] hover:bg-[#222222] border border-[#2a2a2a] text-[11px] font-sans font-medium text-[#cccccc] hover:text-white transition-colors cursor-pointer"
+                  >
+                    {copiedKey === 'public-embed' ? 'Copied' : 'Copy'}
+                  </button>
+                </div>
+                <pre className="p-2 rounded-[4px] bg-[#0a0a0a] border border-[#1e1e1e] text-[11px] font-mono text-[#a3a3a3] overflow-x-auto whitespace-pre-wrap break-all select-all">
+                  {isVideo
+                    ? publicVideoSnippet
+                    : isAudio
+                    ? publicAudioSnippet
+                    : isImage
+                    ? publicImageSnippet
+                    : publicCurlSnippet}
+                </pre>
+              </div>
+
+              <div className="flex items-center justify-between pt-2 border-t border-[#1a1a1a]">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('create')}
+                  className="text-[12px] font-sans text-[#8c8c8c] hover:text-white transition-colors cursor-pointer"
+                >
+                  Need a temporary expiring link instead?
+                </button>
+                <Button type="button" variant="secondary" size="sm" onClick={onClose} className="h-8 px-3">
+                  Done
+                </Button>
+              </div>
+            </div>
+          ) : activeTab === 'create' ? (
+            /* ─── CAPABILITY LINK CREATION (Private or Expiring) ─────────────────── */
             <>
               {generatedTicket ? (
-                /* ─── Link Generated Success View ────────────────────────────── */
+                /* ─── Success View ─────────────────────────────────────────── */
                 <div className="space-y-4 animate-in fade-in duration-100">
-                  {/* Primary Link: Interactive Branded Viewer (or Direct Download) */}
                   <div>
                     <div className="flex items-center justify-between mb-1.5">
                       <label className="block text-[13px] font-sans font-medium text-white">
@@ -373,120 +533,72 @@ export function ShareTicketModal({
                         )}
                       </Button>
                     </div>
-                    <p className="text-[11px] text-[#777777] mt-1">
-                      {linkMode === 'stream'
-                        ? 'Recipient opens a branded, responsive media player with playback controls and download option.'
-                        : 'Link prompts browser to download the file directly.'}
-                    </p>
                   </div>
 
-                  {/* Secondary Link: Direct API Stream URL */}
-                  {linkMode === 'stream' && directStreamUrl && (
-                    <div className="p-2.5 rounded-[6px] bg-[#121212] border border-[#222222] space-y-1.5">
-                      <div className="flex items-center justify-between">
-                        <label className="block text-[12px] font-sans text-[#8c8c8c]">
-                          Direct API Stream URL
-                        </label>
+                  {/* Direct API Link */}
+                  {linkMode === 'stream' && (
+                    <div>
+                      <label className="block text-[12px] font-sans font-medium text-[#8c8c8c] mb-1">
+                        Direct API Stream URL (HTTP Range / VLC / curl)
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          readOnly
+                          value={directStreamUrl}
+                          className="flex-1 h-7 px-2.5 rounded-[6px] bg-[#121212] border border-[#242424] text-[#a3a3a3] font-mono text-[11px] select-all outline-none"
+                        />
                         <button
                           type="button"
                           onClick={() => copyToClipboard(directStreamUrl, 'direct-stream-url')}
-                          className="text-[11px] font-sans text-blue-400 hover:text-blue-300 transition-colors cursor-pointer"
+                          className="h-7 px-2 rounded-[6px] bg-[#181818] hover:bg-[#222222] border border-[#2a2a2a] text-[11px] font-sans font-medium text-[#cccccc] hover:text-white transition-colors cursor-pointer"
                         >
-                          {copiedKey === 'direct-stream-url' ? 'Copied' : 'Copy Direct URL'}
+                          {copiedKey === 'direct-stream-url' ? 'Copied' : 'Copy'}
                         </button>
                       </div>
-                      <input
-                        type="text"
-                        readOnly
-                        value={directStreamUrl}
-                        className="w-full h-7 px-2.5 rounded-[4px] bg-[#161616] border border-[#262626] text-[#aaaaaa] font-mono text-[11px] select-all outline-none"
-                      />
                     </div>
                   )}
 
-                  {/* Summary row */}
-                  <div className="flex items-center justify-between p-3 rounded-[6px] bg-[#121212] border border-[#222222] text-[13px] font-sans">
-                    <div className="flex items-center gap-2">
-                      <span className="text-[#8c8c8c]">Mode:</span>
-                      <span className="font-sans text-[#cccccc] text-[12px] font-medium px-2 py-0.5 rounded-[4px] bg-[#1a1a1a] border border-[#2a2a2a]">
-                        {linkMode === 'stream' ? 'Browser Stream & Preview' : 'Force Download'}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-1.5 text-[#8c8c8c] text-[12px]">
-                      <Clock className="w-3.5 h-3.5 text-[#666666]" />
-                      <span>Expires in {formatTimeRemaining(ticketExp).text}</span>
-                    </div>
-                  </div>
-
-                  {/* Quick Embed Snippets */}
-                  <div className="space-y-2 pt-1">
-                    <span className="text-[12px] font-sans font-medium text-[#8c8c8c] block">
-                      Quick Snippets
-                    </span>
-
-                    {isVideo && (
-                      <div className="flex items-center justify-between p-2.5 rounded-[6px] bg-[#121212] border border-[#222222]">
-                        <div className="flex items-center gap-2 min-w-0 pr-2">
-                          <Code2 className="w-3.5 h-3.5 text-blue-400 shrink-0" />
-                          <span className="text-[12px] font-sans text-[#cccccc]">HTML Video Embed</span>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => copyToClipboard(videoSnippet, 'video-embed')}
-                          className="h-6.5 px-2 rounded-[4px] bg-[#181818] hover:bg-[#222222] border border-[#2a2a2a] text-[11px] font-sans font-medium text-[#cccccc] hover:text-white transition-colors cursor-pointer shrink-0"
-                        >
-                          {copiedKey === 'video-embed' ? 'Copied' : 'Copy HTML'}
-                        </button>
-                      </div>
-                    )}
-
-                    {isAudio && (
-                      <div className="flex items-center justify-between p-2.5 rounded-[6px] bg-[#121212] border border-[#222222]">
-                        <div className="flex items-center gap-2 min-w-0 pr-2">
-                          <Code2 className="w-3.5 h-3.5 text-blue-400 shrink-0" />
-                          <span className="text-[12px] font-sans text-[#cccccc]">HTML Audio Embed</span>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => copyToClipboard(audioSnippet, 'audio-embed')}
-                          className="h-6.5 px-2 rounded-[4px] bg-[#181818] hover:bg-[#222222] border border-[#2a2a2a] text-[11px] font-sans font-medium text-[#cccccc] hover:text-white transition-colors cursor-pointer shrink-0"
-                        >
-                          {copiedKey === 'audio-embed' ? 'Copied' : 'Copy HTML'}
-                        </button>
-                      </div>
-                    )}
-
-                    {isImage && (
-                      <div className="flex items-center justify-between p-2.5 rounded-[6px] bg-[#121212] border border-[#222222]">
-                        <div className="flex items-center gap-2 min-w-0 pr-2">
-                          <Code2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                          <span className="text-[12px] font-sans text-[#cccccc]">HTML Image Tag</span>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => copyToClipboard(imageSnippet, 'img-embed')}
-                          className="h-6.5 px-2 rounded-[4px] bg-[#181818] hover:bg-[#222222] border border-[#2a2a2a] text-[11px] font-sans font-medium text-[#cccccc] hover:text-white transition-colors cursor-pointer shrink-0"
-                        >
-                          {copiedKey === 'img-embed' ? 'Copied' : 'Copy HTML'}
-                        </button>
-                      </div>
-                    )}
-
-                    <div className="flex items-center justify-between p-2.5 rounded-[6px] bg-[#121212] border border-[#222222]">
-                      <div className="flex items-center gap-2 min-w-0 pr-2">
-                        <Download className="w-3.5 h-3.5 text-[#8c8c8c] shrink-0" />
-                        <span className="text-[12px] font-sans text-[#cccccc]">cURL Download Command</span>
+                  {/* Embed Snippet Card */}
+                  <div className="p-3 rounded-[6px] bg-[#121212] border border-[#222222] space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5 text-[12px] font-sans font-medium text-[#cccccc]">
+                        <Code2 className="w-3.5 h-3.5 text-blue-400" />
+                        <span>
+                          {isVideo ? 'HTML5 Video Embed' : isAudio ? 'HTML5 Audio Embed' : isImage ? 'HTML Image Tag' : 'cURL Download Command'}
+                        </span>
                       </div>
                       <button
                         type="button"
-                        onClick={() => copyToClipboard(curlSnippet, 'curl-cmd')}
-                        className="h-6.5 px-2 rounded-[4px] bg-[#181818] hover:bg-[#222222] border border-[#2a2a2a] text-[11px] font-sans font-medium text-[#cccccc] hover:text-white transition-colors cursor-pointer shrink-0"
+                        onClick={() =>
+                          copyToClipboard(
+                            isVideo
+                              ? signedVideoSnippet
+                              : isAudio
+                              ? signedAudioSnippet
+                              : isImage
+                              ? signedImageSnippet
+                              : signedCurlSnippet,
+                            'signed-embed'
+                          )
+                        }
+                        className="h-6 px-2 rounded-[4px] bg-[#181818] hover:bg-[#222222] border border-[#2a2a2a] text-[11px] font-sans font-medium text-[#cccccc] hover:text-white transition-colors cursor-pointer"
                       >
-                        {copiedKey === 'curl-cmd' ? 'Copied' : 'Copy cURL'}
+                        {copiedKey === 'signed-embed' ? 'Copied' : 'Copy'}
                       </button>
                     </div>
+                    <pre className="p-2 rounded-[4px] bg-[#0a0a0a] border border-[#1e1e1e] text-[11px] font-mono text-[#a3a3a3] overflow-x-auto whitespace-pre-wrap break-all select-all">
+                      {isVideo
+                        ? signedVideoSnippet
+                        : isAudio
+                        ? signedAudioSnippet
+                        : isImage
+                        ? signedImageSnippet
+                        : signedCurlSnippet}
+                    </pre>
                   </div>
 
+                  {/* Footer Action */}
                   <div className="flex items-center justify-between pt-2">
                     <button
                       type="button"
@@ -495,14 +607,27 @@ export function ShareTicketModal({
                     >
                       ← Create another link
                     </button>
-                    <Button type="button" variant="secondary" size="sm" onClick={onClose} className="h-8 px-3">
-                      Done
-                    </Button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveTab('manage');
+                          setGeneratedTicket(null);
+                        }}
+                        className="text-[13px] font-sans text-blue-400 hover:text-blue-300 transition-colors cursor-pointer flex items-center gap-1"
+                      >
+                        <Clock className="w-3.5 h-3.5" />
+                        <span>View Active Links</span>
+                      </button>
+                      <Button type="button" variant="secondary" size="sm" onClick={onClose} className="h-8 px-3">
+                        Done
+                      </Button>
+                    </div>
                   </div>
                 </div>
               ) : (
-                /* ─── Create Form ────────────────────────────────────────────── */
-                <form id="share-create-form" onSubmit={handleCreate} className="space-y-4">
+                /* ─── Creation Form ────────────────────────────────────────── */
+                <form onSubmit={handleCreate} className="space-y-4">
                   {createError && (
                     <div className="p-2.5 rounded-[6px] bg-[#ef4444]/10 border border-[#ef4444]/30 text-[13px] font-sans text-[#ef4444] flex items-center gap-2">
                       <AlertTriangle className="w-4 h-4 shrink-0" />
@@ -510,48 +635,52 @@ export function ShareTicketModal({
                     </div>
                   )}
 
-                  {/* Link Mode: Stream / Preview vs Force Download */}
-                  <div>
-                    <label className="block text-[13px] font-sans font-medium text-[#8c8c8c] mb-1.5">
-                      Link Behavior
-                    </label>
-                    <div className="grid grid-cols-2 gap-1 p-1 bg-[#141414] border border-[#262626] rounded-[6px]">
-                      <button
-                        type="button"
-                        onClick={() => setLinkMode('stream')}
-                        className={`h-8 rounded-[5px] text-[13px] font-sans font-medium transition-colors cursor-pointer flex items-center justify-center gap-1.5 ${
-                          linkMode === 'stream'
-                            ? 'bg-[#222222] text-white shadow-xs'
-                            : 'text-[#8c8c8c] hover:text-white'
-                        }`}
-                      >
-                        <Play className="w-3.5 h-3.5" />
-                        <span>Stream & Preview</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setLinkMode('download')}
-                        className={`h-8 rounded-[5px] text-[13px] font-sans font-medium transition-colors cursor-pointer flex items-center justify-center gap-1.5 ${
-                          linkMode === 'download'
-                            ? 'bg-[#222222] text-white shadow-xs'
-                            : 'text-[#8c8c8c] hover:text-white'
-                        }`}
-                      >
-                        <Download className="w-3.5 h-3.5" />
-                        <span>Force Download</span>
-                      </button>
+                  {/* Link Mode Selector for Media */}
+                  {isMedia && (
+                    <div>
+                      <label className="block text-[13px] font-sans font-medium text-[#8c8c8c] mb-1.5">
+                        Link Type
+                      </label>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setLinkMode('stream')}
+                          className={`p-2.5 rounded-[6px] border text-left transition-colors cursor-pointer flex items-start gap-2.5 ${
+                            linkMode === 'stream'
+                              ? 'bg-[#161616] border-[#383838] text-white'
+                              : 'bg-[#121212] border-[#222222] text-[#8c8c8c] hover:text-[#cccccc]'
+                          }`}
+                        >
+                          <Play className={`w-4 h-4 mt-0.5 shrink-0 ${linkMode === 'stream' ? 'text-blue-400' : 'text-[#666666]'}`} />
+                          <div>
+                            <div className="text-[13px] font-medium leading-tight">Interactive Stream</div>
+                            <div className="text-[11px] text-[#666666] mt-0.5">Player with scrub bar & speed control</div>
+                          </div>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setLinkMode('download')}
+                          className={`p-2.5 rounded-[6px] border text-left transition-colors cursor-pointer flex items-start gap-2.5 ${
+                            linkMode === 'download'
+                              ? 'bg-[#161616] border-[#383838] text-white'
+                              : 'bg-[#121212] border-[#222222] text-[#8c8c8c] hover:text-[#cccccc]'
+                          }`}
+                        >
+                          <Download className={`w-4 h-4 mt-0.5 shrink-0 ${linkMode === 'download' ? 'text-blue-400' : 'text-[#666666]'}`} />
+                          <div>
+                            <div className="text-[13px] font-medium leading-tight">Direct Download</div>
+                            <div className="text-[11px] text-[#666666] mt-0.5">Attachment force-download</div>
+                          </div>
+                        </button>
+                      </div>
                     </div>
-                    <p className="text-[12px] font-sans text-[#666666] mt-1.5">
-                      {linkMode === 'stream'
-                        ? 'Recipients stream videos, audio, or preview files directly in their browser tab.'
-                        : 'Recipients immediately receive a file download prompt to save the object.'}
-                    </p>
-                  </div>
+                  )}
 
                   {/* Expiration Segmented Control */}
                   <div>
                     <label className="block text-[13px] font-sans font-medium text-[#8c8c8c] mb-1.5">
-                      Expiration
+                      Link Expiration
                     </label>
                     <div className="grid grid-cols-5 gap-1 p-1 bg-[#141414] border border-[#262626] rounded-[6px]">
                       {TTL_PRESETS.map((preset) => (
@@ -605,7 +734,7 @@ export function ShareTicketModal({
               )}
             </>
           ) : (
-            /* ─── Active Tickets Management Tab ─────────────────────────── */
+            /* ─── ACTIVE TICKETS MANAGEMENT TAB ─────────────────────────── */
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-[13px] font-sans font-medium text-[#8c8c8c]">

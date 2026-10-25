@@ -176,14 +176,14 @@ export function StorageGridView({
                     onNavigateToPrefix(f.fullKey);
                   }}
                   onContextMenu={(e) => onContextMenu(e, f)}
-                  className={`group p-3.5 rounded-[10px] border transition-colors cursor-pointer flex items-center justify-between gap-3 min-h-[56px] relative ${
+                  className={`group p-3 rounded-[8px] border transition-colors cursor-pointer flex items-center justify-between gap-3 min-h-[52px] relative ${
                     isSelfDragged ? 'opacity-40 border-dashed border-[#555555]' : ''
                   } ${
                     isDropTarget
                       ? 'bg-blue-950/40 border-blue-500/80 ring-1 ring-blue-500/50'
                       : isSelected
-                      ? 'bg-[#1c1c1c] border-blue-500/70 ring-1 ring-blue-500/30'
-                      : 'bg-[#141414] hover:bg-[#1a1a1a] border-[#222222] hover:border-[#2e2e2e]'
+                      ? 'bg-[#181818] border-blue-500/70 ring-1 ring-blue-500/30'
+                      : 'bg-[#0d0d0d] hover:bg-[#141414] border-[#1f1f1f] hover:border-[#2a2a2a]'
                   }`}
                 >
                   <div className="flex items-center gap-2.5 min-w-0 flex-1">
@@ -215,13 +215,13 @@ export function StorageGridView({
                       </button>
                     </div>
                     <div className="w-9 h-9 rounded-[8px] bg-[#161616] border border-[#262626] flex items-center justify-center shrink-0">
-                      <Folder className={`w-4 h-4 ${isDropTarget ? 'text-blue-400 animate-pulse' : 'text-[#eab308]'}`} />
+                      <Folder className={`w-4 h-4 ${isDropTarget ? 'text-blue-400 animate-pulse' : 'text-[#a3a3a3]'}`} />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <div className="text-[14px] font-medium text-white truncate" title={f.name}>
+                      <div className="text-sm font-medium text-white truncate" title={f.name}>
                         {f.name}
                       </div>
-                      <div className="text-[12.5px] text-[#8c8c8c] tabular-nums truncate">
+                      <div className="text-xs text-[#888888] tabular-nums truncate">
                         {isDropTarget ? (
                           <span className="text-blue-400 font-medium">Drop here</span>
                         ) : (
@@ -302,12 +302,12 @@ export function StorageGridView({
                     }
                   }}
                   onContextMenu={(e) => onContextMenu(e, item)}
-                  className={`group p-3.5 rounded-[10px] border transition-colors cursor-pointer flex flex-col justify-between min-h-[128px] relative ${
+                  className={`group p-3 rounded-[8px] border transition-colors cursor-pointer flex flex-col justify-between min-h-[124px] relative ${
                     isSelfDragged ? 'opacity-40 border-dashed border-[#555555]' : ''
                   } ${
                     isSelected
-                      ? 'bg-[#1c1c1c] border-blue-500/70 ring-1 ring-blue-500/30'
-                      : 'bg-[#141414] hover:bg-[#1a1a1a] border-[#222222] hover:border-[#2e2e2e]'
+                      ? 'bg-[#181818] border-blue-500/70 ring-1 ring-blue-500/30'
+                      : 'bg-[#0d0d0d] hover:bg-[#141414] border-[#1f1f1f] hover:border-[#2a2a2a]'
                   }`}
                 >
                   {/* Checkbox overlay matching TableGridView button checkbox */}
@@ -346,10 +346,10 @@ export function StorageGridView({
                     </div>
 
                     <div className="min-w-0 flex-1 pt-0.5">
-                      <div className="text-[14px] font-medium text-white truncate leading-snug" title={item.name}>
+                      <div className="text-sm font-medium text-white truncate leading-snug" title={item.name}>
                         {item.name}
                       </div>
-                      <div className="text-[12px] text-[#8c8c8c] truncate" title={item.content_type || 'application/octet-stream'}>
+                      <div className="text-xs text-[#888888] truncate" title={item.content_type || 'application/octet-stream'}>
                         {item.content_type?.split('/')[1] || 'binary'}
                       </div>
                     </div>
@@ -372,11 +372,11 @@ export function StorageGridView({
                   </div>
 
                   {/* Bottom row: Size & Storage Tier pill (edge-to-edge card line) */}
-                  <div className="-mx-3.5 px-3.5 pt-2.5 border-t border-[#1e1e1e] flex items-center justify-between text-[13px] text-[#8c8c8c] tabular-nums">
+                  <div className="-mx-3.5 px-3.5 pt-2.5 border-t border-[#1e1e1e] flex items-center justify-between text-xs text-[#888888] tabular-nums font-mono">
                     <span>{formatBytes(item.size || 0)}</span>
 
                     <span
-                      className={`inline-flex items-center px-2 py-0.5 rounded-[4px] text-[12px] font-medium ${
+                      className={`inline-flex items-center px-1.5 py-0.5 rounded-[4px] text-[11px] font-medium font-mono ${
                         item.inline
                           ? 'bg-amber-950/30 text-amber-400 border border-amber-900/40'
                           : 'bg-zinc-900 text-zinc-400 border border-zinc-800'

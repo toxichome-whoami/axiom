@@ -146,7 +146,7 @@ export const MoveDialog: React.FC<MoveDialogProps> = ({
             {isCopy ? (
               <Copy className="w-4 h-4 text-blue-400" />
             ) : (
-              <Folder className="w-4 h-4 text-[#eab308]" />
+              <Folder className="w-4 h-4 text-[#8c8c8c]" />
             )}
             <h3 className="text-[15px] font-medium text-white tracking-tight">
               {isMultiple

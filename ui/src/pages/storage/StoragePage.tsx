@@ -2048,7 +2048,7 @@ export function StoragePage() {
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-sm rounded-[10px] bg-[#0e0e0e] border border-[#262626] p-5 shadow-2xl space-y-4"
+            className="w-full max-w-sm rounded-[8px] bg-[#0c0c0c] border border-[#262626] p-5 shadow-2xl space-y-4"
           >
             <div className="flex items-center justify-between">
               <h3 className="text-[15px] font-medium text-white tracking-tight">New Folder</h3>
@@ -2113,7 +2113,7 @@ export function StoragePage() {
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-sm rounded-[10px] bg-[#0e0e0e] border border-[#262626] p-5 shadow-2xl space-y-4"
+            className="w-full max-w-sm rounded-[8px] bg-[#0c0c0c] border border-[#262626] p-5 shadow-2xl space-y-4"
           >
             <div className="flex items-center justify-between">
               <h3 className="text-[15px] font-medium text-white tracking-tight">Rename Item</h3>
@@ -2277,7 +2277,7 @@ export function StoragePage() {
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-sm rounded-[10px] bg-[#0e0e0e] border border-[#262626] p-5 shadow-2xl space-y-4"
+            className="w-full max-w-sm rounded-[8px] bg-[#0c0c0c] border border-[#262626] p-5 shadow-2xl space-y-4"
           >
             <div className="flex items-center justify-between">
               <h3 className="text-[15px] font-medium text-white tracking-tight">Create Namespace</h3>
@@ -2407,7 +2407,7 @@ export function StoragePage() {
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-md rounded-[10px] bg-[#0e0e0e] border border-[#262626] p-5 shadow-2xl space-y-4"
+            className="w-full max-w-md rounded-[8px] bg-[#0c0c0c] border border-[#262626] p-5 shadow-2xl space-y-4"
           >
             <div className="flex items-center justify-between pb-0.5">
               <div className="flex items-center gap-2">
@@ -2660,6 +2660,7 @@ export function StoragePage() {
         }}
         item={previewItem}
         namespace={activeNamespace}
+        isPublic={Boolean(currentNsInfo?.is_public)}
         onDownload={handleDownload}
         onShare={handleOpenShare}
       />

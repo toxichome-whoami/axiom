@@ -119,8 +119,8 @@ export function StorageSidebar({
           <div className="w-full h-full" />
         </div>
       )}
-      {/* ─── Header: Namespace Selector (h-[54px] aligned with StorageToolbar & TableSidebar) ─────────────── */}
-      <div className={`h-[54px] shrink-0 px-3 border-b border-[#222222] flex items-center justify-between gap-2 relative ${isNsDropdownOpen ? 'z-50' : 'z-30'}`}>
+      {/* ─── Header: Namespace Selector (h-12 aligned with StorageToolbar) ─────────────── */}
+      <div className={`h-12 shrink-0 px-3 border-b border-[#222222] flex items-center justify-between gap-2 relative ${isNsDropdownOpen ? 'z-50' : 'z-30'}`}>
         <div className="relative flex-1 min-w-0" ref={nsDropdownRef}>
           <button
             type="button"

@@ -88,7 +88,7 @@ export function StorageDetailsPanel({
         </div>
       )}
       {/* ─── Header: Fixed h-12 (aligned with StorageToolbar & StorageSidebar) ─────────────── */}
-      <div className="h-[54px] shrink-0 px-4 border-b border-[#222222] bg-[#0c0c0c] flex items-center justify-between">
+      <div className="h-12 shrink-0 px-4 border-b border-[#222222] bg-[#0c0c0c] flex items-center justify-between">
         <h3 className="text-[15px] font-medium text-white tracking-tight truncate">
           {selectedItem ? (selectedItem.type === 'folder' ? 'Folder Details' : 'Object Details') : 'Namespace Overview'}
         </h3>
@@ -110,7 +110,7 @@ export function StorageDetailsPanel({
             <div className="p-3.5 rounded-lg bg-[#111111] border border-[#222222] flex flex-col items-center text-center">
               <div className="w-12 h-12 rounded-[10px] bg-[#161616] border border-[#242424] flex items-center justify-center mb-2.5">
                 {selectedItem.type === 'folder' ? (
-                  <Folder className="w-6 h-6 text-[#eab308]" />
+                  <Folder className="w-6 h-6 text-[#8c8c8c]" />
                 ) : (
                   getFileIcon(selectedItem.name, 'w-6 h-6')
                 )}

@@ -119,7 +119,7 @@ export function StorageListView({
     >
       <table className="w-full text-left border-collapse">
         <thead>
-          <tr className="sticky top-0 z-10 h-10 bg-[#0a0a0a] border-b border-[#222222] text-[13px] font-medium text-[#888888]">
+          <tr className="sticky top-0 z-10 h-9 bg-[#0a0a0a] border-b border-[#1f1f1f] text-[12px] font-medium text-[#737373] tracking-wide">
             <th
               className="w-12 px-3 py-2 text-center select-none cursor-pointer"
               onClick={(e) => {
@@ -281,22 +281,22 @@ export function StorageListView({
                   <div className="flex items-center gap-2 truncate">
                     <div className="w-4 h-4 flex items-center justify-center shrink-0">
                       {isFolder ? (
-                        <Folder className="w-4 h-4 text-[#eab308]" />
+                        <Folder className="w-4 h-4 text-[#8c8c8c]" />
                       ) : (
                         getFileIcon(item.name, 'w-4 h-4')
                       )}
                     </div>
-                    <span className="truncate font-medium text-[14px] text-white">{item.name}</span>
+                    <span className="truncate font-medium text-sm text-white">{item.name}</span>
                   </div>
                 </td>
 
                 {/* Column 2: Storage Tier */}
                 <td className="px-3">
                   {isFolder ? (
-                    <span className="text-[13px] text-[#8c8c8c]">Directory</span>
+                    <span className="text-xs text-[#888888] font-mono">dir</span>
                   ) : (
                     <span
-                      className={`inline-flex items-center px-2.5 py-0.5 rounded-[4px] text-[12px] font-medium ${
+                      className={`inline-flex items-center px-1.5 py-0.5 rounded-[4px] text-[11px] font-medium font-mono ${
                         item.inline
                           ? 'bg-amber-950/30 text-amber-400 border border-amber-900/40'
                           : 'bg-zinc-900 text-zinc-400 border border-zinc-800'
@@ -308,14 +308,14 @@ export function StorageListView({
                 </td>
 
                 {/* Column 3: Payload Size */}
-                <td className="px-3 text-right tabular-nums text-[14px] text-[#8c8c8c] font-normal">
+                <td className="px-3 text-right tabular-nums text-xs text-[#888888] font-mono">
                   {isFolder
                     ? `${item.itemCount || 0} items`
                     : formatBytes(item.size || 0)}
                 </td>
 
                 {/* Column 4: Uploaded / Created Date */}
-                <td className="px-4 text-right tabular-nums text-[14px] text-[#8c8c8c] font-normal hidden sm:table-cell">
+                <td className="px-4 text-right tabular-nums text-xs text-[#888888] font-mono hidden sm:table-cell">
                   {item.created_at
                     ? new Date(item.created_at * 1000).toLocaleDateString()
                     : '—'}

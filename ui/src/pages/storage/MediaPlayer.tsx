@@ -1,6 +1,7 @@
 /*
  * Axiom High-Performance Universal Media Player & Preview Engine.
  * Supports: Video (streaming, seek, speed, PiP, fullscreen), Audio, Image (zoom/pan), PDF, Code/Text, and Binary.
+ * Clean, high-performance industrial design (zero AI slop, no cartoonish colors).
  * Owned by: ui/pages/storage
  * Dependencies: lucide-react, ./format, ./fileIcon
  */
@@ -20,12 +21,8 @@ import {
   Check,
   Download,
   AlertCircle,
-  ExternalLink,
-  Sliders,
-  Music,
   FileCode,
   FileText,
-  File,
 } from 'lucide-react';
 import { formatBytes } from './format';
 import { getFileIcon, getFileExtension } from './fileIcon';
@@ -141,27 +138,20 @@ export function MediaPlayer({
   const handleLoadedMetadata = () => {
     if (!videoRef.current) return;
     setDuration(videoRef.current.duration || 0);
-    setVideoError(null);
   };
 
   const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = parseFloat(e.target.value);
+    const time = parseFloat(e.target.value);
     if (videoRef.current) {
-      videoRef.current.currentTime = val;
-      setCurrentTime(val);
+      videoRef.current.currentTime = time;
+      setCurrentTime(time);
     }
   };
 
   const toggleMute = () => {
     if (!videoRef.current) return;
-    if (isMuted) {
-      videoRef.current.muted = false;
-      setIsMuted(false);
-      videoRef.current.volume = volume || 1;
-    } else {
-      videoRef.current.muted = true;
-      setIsMuted(true);
-    }
+    videoRef.current.muted = !isMuted;
+    setIsMuted(!isMuted);
   };
 
   const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -169,86 +159,64 @@ export function MediaPlayer({
     setVolume(val);
     if (videoRef.current) {
       videoRef.current.volume = val;
-      if (val === 0) {
-        videoRef.current.muted = true;
-        setIsMuted(true);
-      } else if (isMuted) {
-        videoRef.current.muted = false;
-        setIsMuted(false);
-      }
+      videoRef.current.muted = val === 0;
+      setIsMuted(val === 0);
     }
   };
 
   const handleSpeedSelect = (rate: number) => {
-    setPlaybackRate(rate);
     if (videoRef.current) {
       videoRef.current.playbackRate = rate;
+      setPlaybackRate(rate);
+      setShowSpeedMenu(false);
     }
-    setShowSpeedMenu(false);
   };
 
   const toggleFullscreen = () => {
     if (!videoContainerRef.current) return;
     if (!document.fullscreenElement) {
       videoContainerRef.current.requestFullscreen().catch((err) => {
-        console.warn('Fullscreen request failed:', err);
+        console.warn('Fullscreen error:', err);
       });
+      setIsFullscreen(true);
     } else {
-      document.exitFullscreen().catch(() => {});
+      document.exitFullscreen().catch((err) => {
+        console.warn('Exit fullscreen error:', err);
+      });
+      setIsFullscreen(false);
     }
   };
 
-  useEffect(() => {
-    const onFsChange = () => {
-      setIsFullscreen(Boolean(document.fullscreenElement));
-    };
-    document.addEventListener('fullscreenchange', onFsChange);
-    return () => {
-      document.removeEventListener('fullscreenchange', onFsChange);
-      if (controlsTimeoutRef.current) {
-        window.clearTimeout(controlsTimeoutRef.current);
-      }
-    };
-  }, []);
-
-  // Keyboard controls for video
+  // Keyboard Shortcuts for video
   useEffect(() => {
     if (!isVideo) return;
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Don't intercept if typing in an input
-      const target = e.target as HTMLElement;
-      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
+      if (['input', 'textarea'].includes((e.target as HTMLElement).tagName.toLowerCase())) {
         return;
       }
-
       if (e.code === 'Space') {
         e.preventDefault();
         togglePlay();
-      } else if (e.code === 'ArrowRight') {
-        e.preventDefault();
-        if (videoRef.current) {
-          videoRef.current.currentTime = Math.min(videoRef.current.duration || 0, videoRef.current.currentTime + 5);
-        }
-      } else if (e.code === 'ArrowLeft') {
-        e.preventDefault();
-        if (videoRef.current) {
-          videoRef.current.currentTime = Math.max(0, videoRef.current.currentTime - 5);
-        }
       } else if (e.code === 'KeyF') {
         e.preventDefault();
         toggleFullscreen();
       } else if (e.code === 'KeyM') {
         e.preventDefault();
         toggleMute();
+      } else if (e.code === 'ArrowRight') {
+        e.preventDefault();
+        if (videoRef.current) videoRef.current.currentTime += 5;
+      } else if (e.code === 'ArrowLeft') {
+        e.preventDefault();
+        if (videoRef.current) videoRef.current.currentTime -= 5;
       }
     };
-
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isVideo, togglePlay]);
 
   // ─────────────────────────────────────────────────────────────
-  // 2. AUDIO PLAYER STATE
+  // 2. AUDIO PLAYER STATE & HANDLERS
   // ─────────────────────────────────────────────────────────────
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [isAudioPlaying, setIsAudioPlaying] = useState(false);
@@ -276,7 +244,7 @@ export function MediaPlayer({
   const [imgNaturalSize, setImgNaturalSize] = useState<{ width: number; height: number } | null>(null);
 
   // ─────────────────────────────────────────────────────────────
-  // 4. CODE / TEXT VIEWER STATE
+  // 4. CODE & TEXT PREVIEW
   // ─────────────────────────────────────────────────────────────
   const [textContent, setTextContent] = useState<string | null>(null);
   const [isLoadingText, setIsLoadingText] = useState(false);
@@ -289,13 +257,12 @@ export function MediaPlayer({
       setTextError(null);
       fetch(url)
         .then((res) => {
-          if (!res.ok) throw new Error(`HTTP ${res.status} failed to fetch text`);
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
           return res.text();
         })
         .then((txt) => {
-          // Cap display to 500 KB to prevent browser lockup on giant dumps
-          if (txt.length > 500000) {
-            setTextContent(txt.slice(0, 500000) + '\n\n... [Content truncated due to size. Download for full file] ...');
+          if (txt.length > 500_000) {
+            setTextContent(txt.slice(0, 500_000) + '\n\n... [Truncated for browser performance]');
           } else {
             setTextContent(txt);
           }
@@ -328,13 +295,13 @@ export function MediaPlayer({
         ref={videoContainerRef}
         onMouseMove={handleMouseMove}
         onMouseLeave={() => isPlaying && setShowControls(false)}
-        className={`relative flex flex-col items-center justify-center bg-[#070707] rounded-xl overflow-hidden border border-[#222222] group select-none shadow-2xl ${className} ${
+        className={`relative flex flex-col items-center justify-center bg-[#09090b] rounded-[8px] overflow-hidden border border-[#222222] group select-none ${className} ${
           isFullscreen ? 'w-screen h-screen rounded-none border-none' : 'w-full'
         }`}
       >
         {videoError ? (
-          <div className="p-8 text-center max-w-md space-y-3">
-            <AlertCircle className="w-10 h-10 text-amber-400 mx-auto" />
+          <div className="p-8 text-center max-w-md space-y-3 font-sans">
+            <AlertCircle className="w-8 h-8 text-amber-400 mx-auto" />
             <h4 className="text-white text-[15px] font-medium">Unable to decode video in browser</h4>
             <p className="text-[13px] text-[#8c8c8c] leading-relaxed">
               This video container or codec may not be natively supported by your web browser. You can download the file directly to play it locally.
@@ -343,7 +310,7 @@ export function MediaPlayer({
               <button
                 type="button"
                 onClick={onDownload}
-                className="mt-2 inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-white text-black font-medium text-[13px] hover:bg-[#e0e0e0] transition-colors cursor-pointer"
+                className="mt-2 inline-flex items-center gap-2 h-8 px-3 rounded-[6px] bg-white text-black font-medium text-[13px] hover:bg-[#e0e0e0] transition-colors cursor-pointer"
               >
                 <Download className="w-4 h-4" /> Download Video ({formatBytes(size || 0)})
               </button>
@@ -373,28 +340,28 @@ export function MediaPlayer({
                 style={{ maxHeight: isFullscreen ? '100vh' : '72vh' }}
               />
 
-              {/* Big Play/Pause Center Overlay (when paused or hover) */}
+              {/* Minimal Center Play Indicator when paused */}
               {!isPlaying && (
-                <div className="absolute inset-0 flex items-center justify-center pointer-events-none bg-black/30 backdrop-blur-[1px]">
-                  <div className="w-16 h-16 rounded-full bg-white/10 border border-white/20 backdrop-blur-md flex items-center justify-center text-white shadow-2xl transition-transform transform hover:scale-110">
-                    <Play className="w-7 h-7 fill-white translate-x-0.5" />
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none bg-black/20">
+                  <div className="w-12 h-12 rounded-full bg-white/10 border border-white/20 backdrop-blur-xs flex items-center justify-center text-white shadow-xl">
+                    <Play className="w-5 h-5 fill-white translate-x-0.5" />
                   </div>
                 </div>
               )}
             </div>
 
-            {/* Custom Sleek Floating Control Bar */}
+            {/* Custom Control Bar */}
             <div
-              className={`absolute bottom-0 left-0 right-0 p-3 pt-6 bg-gradient-to-t from-black/90 via-black/60 to-transparent transition-opacity duration-300 font-sans z-20 ${
+              className={`absolute bottom-0 left-0 right-0 p-3 pt-4 bg-[#0a0a0a]/90 backdrop-blur-xs border-t border-[#1f1f1f] transition-opacity duration-200 font-sans z-20 ${
                 showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'
               }`}
             >
               {/* Timeline Scrubber */}
-              <div className="relative group/seeker w-full h-2 mb-2.5 flex items-center cursor-pointer">
-                <div className="w-full h-1 bg-white/20 rounded-full overflow-hidden relative">
+              <div className="relative group/seeker w-full h-1.5 mb-2.5 flex items-center cursor-pointer">
+                <div className="w-full h-1 bg-[#262626] rounded-full overflow-hidden relative">
                   {/* Buffer bar */}
                   <div
-                    className="absolute top-0 bottom-0 left-0 bg-white/25 rounded-full"
+                    className="absolute top-0 bottom-0 left-0 bg-[#383838] rounded-full"
                     style={{ width: `${bufferedPercent}%` }}
                   />
                   {/* Progress bar */}
@@ -419,32 +386,32 @@ export function MediaPlayer({
               {/* Controls Row */}
               <div className="flex items-center justify-between text-white text-[13px]">
                 {/* Left Controls: Play, Time, Volume */}
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2.5">
                   <button
                     type="button"
                     onClick={togglePlay}
                     title={isPlaying ? 'Pause (Space)' : 'Play (Space)'}
-                    className="w-8 h-8 rounded-md flex items-center justify-center hover:bg-white/15 transition-colors cursor-pointer text-white"
+                    className="w-7 h-7 rounded-[4px] flex items-center justify-center hover:bg-[#222222] transition-colors cursor-pointer text-white"
                   >
-                    {isPlaying ? <Pause className="w-4 h-4 fill-white" /> : <Play className="w-4 h-4 fill-white translate-x-0.5" />}
+                    {isPlaying ? <Pause className="w-3.5 h-3.5 fill-white" /> : <Play className="w-3.5 h-3.5 fill-white translate-x-0.5" />}
                   </button>
 
                   {/* Time Counter */}
-                  <div className="text-[12px] font-mono text-[#d4d4d4] tabular-nums">
+                  <div className="text-[12px] font-mono text-[#a3a3a3] tabular-nums">
                     <span>{formatDuration(currentTime)}</span>
-                    <span className="text-[#666666] mx-1">/</span>
-                    <span className="text-[#8c8c8c]">{formatDuration(duration)}</span>
+                    <span className="text-[#555555] mx-1">/</span>
+                    <span className="text-[#737373]">{formatDuration(duration)}</span>
                   </div>
 
                   {/* Volume Slider */}
-                  <div className="flex items-center gap-1.5 group/vol">
+                  <div className="flex items-center gap-1.5">
                     <button
                       type="button"
                       onClick={toggleMute}
                       title={isMuted ? 'Unmute (M)' : 'Mute (M)'}
-                      className="w-7 h-7 rounded-md flex items-center justify-center hover:bg-white/15 transition-colors cursor-pointer text-white"
+                      className="w-7 h-7 rounded-[4px] flex items-center justify-center hover:bg-[#222222] transition-colors cursor-pointer text-[#cccccc] hover:text-white"
                     >
-                      {isMuted || volume === 0 ? <VolumeX className="w-4 h-4 text-red-400" /> : <Volume2 className="w-4 h-4" />}
+                      {isMuted || volume === 0 ? <VolumeX className="w-3.5 h-3.5 text-rose-400" /> : <Volume2 className="w-3.5 h-3.5" />}
                     </button>
                     <input
                       type="range"
@@ -454,12 +421,12 @@ export function MediaPlayer({
                       value={isMuted ? 0 : volume}
                       onChange={handleVolumeChange}
                       aria-label="Adjust volume"
-                      className="w-16 h-1 bg-white/20 rounded-full appearance-none accent-white cursor-pointer transition-all"
+                      className="w-16 h-1 bg-[#262626] rounded-full appearance-none accent-white cursor-pointer transition-all"
                     />
                   </div>
                 </div>
 
-                {/* Right Controls: Speed, PiP, Fullscreen, Download */}
+                {/* Right Controls: Speed, Fullscreen, Download */}
                 <div className="flex items-center gap-1.5 relative">
                   {/* Speed Selector */}
                   <div className="relative">
@@ -467,20 +434,20 @@ export function MediaPlayer({
                       type="button"
                       onClick={() => setShowSpeedMenu((prev) => !prev)}
                       title="Playback Speed"
-                      className="h-7 px-2 rounded-md hover:bg-white/15 transition-colors text-[12px] font-mono font-medium text-[#cccccc] hover:text-white flex items-center gap-1 cursor-pointer"
+                      className="h-7 px-2 rounded-[4px] hover:bg-[#222222] transition-colors text-[12px] font-mono font-medium text-[#cccccc] hover:text-white flex items-center gap-1 cursor-pointer"
                     >
                       <span>{playbackRate}x</span>
                     </button>
 
                     {showSpeedMenu && (
-                      <div className="absolute bottom-9 right-0 bg-[#161616] border border-[#2a2a2a] rounded-lg shadow-2xl p-1 w-24 z-30 font-sans space-y-0.5">
+                      <div className="absolute bottom-8 right-0 bg-[#141414] border border-[#262626] rounded-[6px] shadow-2xl p-1 w-20 z-30 font-sans space-y-0.5">
                         {[0.5, 0.75, 1, 1.25, 1.5, 2].map((rate) => (
                           <button
                             key={rate}
                             type="button"
                             onClick={() => handleSpeedSelect(rate)}
-                            className={`w-full text-left px-2 py-1 rounded text-[12px] font-mono transition-colors cursor-pointer flex items-center justify-between ${
-                              playbackRate === rate ? 'bg-white text-black font-semibold' : 'text-[#cccccc] hover:bg-[#242424]'
+                            className={`w-full text-left px-2 py-1 rounded-[4px] text-[12px] font-mono transition-colors cursor-pointer flex items-center justify-between ${
+                              playbackRate === rate ? 'bg-white text-black font-semibold' : 'text-[#cccccc] hover:bg-[#222222]'
                             }`}
                           >
                             <span>{rate}x</span>
@@ -491,26 +458,24 @@ export function MediaPlayer({
                     )}
                   </div>
 
-                  {/* Download button if provided */}
                   {onDownload && (
                     <button
                       type="button"
                       onClick={onDownload}
                       title="Download file"
-                      className="w-8 h-8 rounded-md flex items-center justify-center hover:bg-white/15 transition-colors cursor-pointer text-[#cccccc] hover:text-white"
+                      className="w-7 h-7 rounded-[4px] flex items-center justify-center hover:bg-[#222222] transition-colors cursor-pointer text-[#cccccc] hover:text-white"
                     >
-                      <Download className="w-4 h-4" />
+                      <Download className="w-3.5 h-3.5" />
                     </button>
                   )}
 
-                  {/* Fullscreen Toggle */}
                   <button
                     type="button"
                     onClick={toggleFullscreen}
                     title={isFullscreen ? 'Exit Fullscreen (F)' : 'Fullscreen (F)'}
-                    className="w-8 h-8 rounded-md flex items-center justify-center hover:bg-white/15 transition-colors cursor-pointer text-[#cccccc] hover:text-white"
+                    className="w-7 h-7 rounded-[4px] flex items-center justify-center hover:bg-[#222222] transition-colors cursor-pointer text-[#cccccc] hover:text-white"
                   >
-                    {isFullscreen ? <Minimize className="w-4 h-4" /> : <Maximize className="w-4 h-4" />}
+                    {isFullscreen ? <Minimize className="w-3.5 h-3.5" /> : <Maximize className="w-3.5 h-3.5" />}
                   </button>
                 </div>
               </div>
@@ -522,13 +487,13 @@ export function MediaPlayer({
   }
 
   // ─────────────────────────────────────────────────────────────
-  // RENDER: AUDIO
+  // RENDER: AUDIO (Clean Monochrome, No Cartoonish Colors)
   // ─────────────────────────────────────────────────────────────
   if (isAudio) {
     const audioProgress = audioDuration > 0 ? (audioCurrentTime / audioDuration) * 100 : 0;
 
     return (
-      <div className={`p-6 bg-[#0c0c0c] border border-[#222222] rounded-xl flex flex-col items-center max-w-xl mx-auto shadow-2xl font-sans ${className}`}>
+      <div className={`p-6 bg-[#0c0c0c] border border-[#222222] rounded-[8px] flex flex-col items-center max-w-xl mx-auto shadow-2xl font-sans ${className}`}>
         <audio
           ref={audioRef}
           src={url}
@@ -540,24 +505,23 @@ export function MediaPlayer({
           onPause={() => setIsAudioPlaying(false)}
         />
 
-        {/* Visualizer Hero Card */}
-        <div className="w-20 h-20 rounded-2xl bg-[#141414] border border-[#262626] flex items-center justify-center mb-4 text-[#ec4899] shadow-inner relative overflow-hidden">
-          {/* Animated Waveform Bars */}
-          <div className="flex items-center gap-1 h-8">
-            <span className={`w-1 bg-[#ec4899] rounded-full transition-all duration-300 ${isAudioPlaying ? 'h-6 animate-pulse' : 'h-2'}`} />
-            <span className={`w-1 bg-[#ec4899] rounded-full transition-all duration-200 ${isAudioPlaying ? 'h-8 animate-bounce' : 'h-4'}`} />
-            <span className={`w-1 bg-[#ec4899] rounded-full transition-all duration-300 ${isAudioPlaying ? 'h-5 animate-pulse' : 'h-3'}`} />
-            <span className={`w-1 bg-[#ec4899] rounded-full transition-all duration-150 ${isAudioPlaying ? 'h-7 animate-bounce' : 'h-2'}`} />
+        {/* Clean Monochrome Audio Card */}
+        <div className="w-16 h-16 rounded-[8px] bg-[#141414] border border-[#262626] flex items-center justify-center mb-3 text-white">
+          <div className="flex items-center gap-1 h-6">
+            <span className={`w-1 bg-[#8c8c8c] rounded-full transition-all duration-300 ${isAudioPlaying ? 'h-5' : 'h-2'}`} />
+            <span className={`w-1 bg-white rounded-full transition-all duration-200 ${isAudioPlaying ? 'h-6' : 'h-3'}`} />
+            <span className={`w-1 bg-[#cccccc] rounded-full transition-all duration-300 ${isAudioPlaying ? 'h-4' : 'h-2'}`} />
+            <span className={`w-1 bg-white rounded-full transition-all duration-150 ${isAudioPlaying ? 'h-5' : 'h-3'}`} />
           </div>
         </div>
 
-        <h3 className="text-white text-[16px] font-medium truncate max-w-full text-center mb-0.5">{name}</h3>
-        <p className="text-[13px] text-[#8c8c8c] font-mono mb-5">
+        <h3 className="text-white text-[15px] font-sans font-medium truncate max-w-full text-center">{name}</h3>
+        <p className="text-[12px] text-[#8c8c8c] font-mono mt-0.5 mb-4">
           {getFileExtension(name)} &bull; {formatBytes(size || 0)}
         </p>
 
         {/* Timeline */}
-        <div className="w-full space-y-1.5 mb-4">
+        <div className="w-full space-y-1 mb-4">
           <div className="relative group w-full h-2 flex items-center cursor-pointer">
             <div className="w-full h-1 bg-[#222222] rounded-full overflow-hidden">
               <div className="h-full bg-white rounded-full transition-all" style={{ width: `${audioProgress}%` }} />
@@ -596,9 +560,9 @@ export function MediaPlayer({
                 audioRef.current.muted = !isAudioMuted;
                 setIsAudioMuted(!isAudioMuted);
               }}
-              className="text-[#8c8c8c] hover:text-white p-1.5 rounded-md hover:bg-[#1f1f1f] transition-colors cursor-pointer"
+              className="text-[#8c8c8c] hover:text-white p-1 rounded-[4px] hover:bg-[#1a1a1a] transition-colors cursor-pointer"
             >
-              {isAudioMuted ? <VolumeX className="w-4 h-4 text-red-400" /> : <Volume2 className="w-4 h-4" />}
+              {isAudioMuted ? <VolumeX className="w-4 h-4 text-rose-400" /> : <Volume2 className="w-4 h-4" />}
             </button>
             <input
               type="range"
@@ -619,13 +583,12 @@ export function MediaPlayer({
             />
           </div>
 
-          {/* Large circular play button */}
           <button
             type="button"
             onClick={toggleAudioPlay}
-            className="w-12 h-12 rounded-full bg-white text-black flex items-center justify-center hover:bg-[#e6e6e6] transition-all transform active:scale-95 shadow-lg cursor-pointer"
+            className="w-10 h-10 rounded-full bg-white text-black flex items-center justify-center hover:bg-[#e0e0e0] transition-colors cursor-pointer shadow-xs"
           >
-            {isAudioPlaying ? <Pause className="w-5 h-5 fill-black" /> : <Play className="w-5 h-5 fill-black translate-x-0.5" />}
+            {isAudioPlaying ? <Pause className="w-4 h-4 fill-black" /> : <Play className="w-4 h-4 fill-black translate-x-0.5" />}
           </button>
 
           <div className="flex items-center gap-1.5">
@@ -633,11 +596,11 @@ export function MediaPlayer({
               type="button"
               onClick={() => setIsAudioLoop((prev) => !prev)}
               title={isAudioLoop ? 'Loop Enabled' : 'Loop Disabled'}
-              className={`p-1.5 rounded-md transition-colors cursor-pointer ${
+              className={`p-1.5 rounded-[4px] transition-colors cursor-pointer ${
                 isAudioLoop ? 'text-white bg-[#222222]' : 'text-[#8c8c8c] hover:text-white hover:bg-[#1a1a1a]'
               }`}
             >
-              <RotateCcw className="w-4 h-4" />
+              <RotateCcw className="w-3.5 h-3.5" />
             </button>
 
             {onDownload && (
@@ -645,9 +608,9 @@ export function MediaPlayer({
                 type="button"
                 onClick={onDownload}
                 title="Download Audio"
-                className="text-[#8c8c8c] hover:text-white p-1.5 rounded-md hover:bg-[#1a1a1a] transition-colors cursor-pointer"
+                className="text-[#8c8c8c] hover:text-white p-1.5 rounded-[4px] hover:bg-[#1a1a1a] transition-colors cursor-pointer"
               >
-                <Download className="w-4 h-4" />
+                <Download className="w-3.5 h-3.5" />
               </button>
             )}
           </div>
@@ -661,45 +624,45 @@ export function MediaPlayer({
   // ─────────────────────────────────────────────────────────────
   if (isImage) {
     return (
-      <div className={`relative flex flex-col items-center justify-center bg-[#070707] rounded-xl overflow-hidden border border-[#222222] min-h-[350px] shadow-2xl font-sans ${className}`}>
+      <div className={`relative flex flex-col items-center justify-center bg-[#09090b] rounded-[8px] overflow-hidden border border-[#222222] min-h-[350px] font-sans ${className}`}>
         {/* Floating Zoom Toolbar */}
-        <div className="absolute top-3 right-3 z-20 flex items-center gap-1 bg-[#141414]/90 backdrop-blur-md border border-[#2a2a2a] p-1 rounded-lg text-white shadow-xl">
+        <div className="absolute top-3 right-3 z-20 flex items-center gap-1 bg-[#141414]/90 backdrop-blur-xs border border-[#262626] p-1 rounded-[6px] text-white shadow-xl">
           <button
             type="button"
             onClick={() => setZoomLevel((z) => Math.max(0.25, z - 0.25))}
             title="Zoom Out"
-            className="w-7 h-7 flex items-center justify-center rounded hover:bg-[#262626] text-[#cccccc] hover:text-white transition-colors cursor-pointer"
+            className="w-7 h-7 flex items-center justify-center rounded-[4px] hover:bg-[#222222] text-[#cccccc] hover:text-white transition-colors cursor-pointer"
           >
             <ZoomOut className="w-3.5 h-3.5" />
           </button>
-          <span className="text-[12px] font-mono px-1.5 text-[#aaaaaa] select-none min-w-[42px] text-center">
+          <span className="text-[12px] font-mono px-1.5 text-[#a3a3a3] select-none min-w-[42px] text-center">
             {Math.round(zoomLevel * 100)}%
           </span>
           <button
             type="button"
             onClick={() => setZoomLevel((z) => Math.min(4, z + 0.25))}
             title="Zoom In"
-            className="w-7 h-7 flex items-center justify-center rounded hover:bg-[#262626] text-[#cccccc] hover:text-white transition-colors cursor-pointer"
+            className="w-7 h-7 flex items-center justify-center rounded-[4px] hover:bg-[#222222] text-[#cccccc] hover:text-white transition-colors cursor-pointer"
           >
             <ZoomIn className="w-3.5 h-3.5" />
           </button>
-          <div className="w-px h-4 bg-[#2e2e2e] mx-0.5" />
+          <div className="w-px h-4 bg-[#262626] mx-0.5" />
           <button
             type="button"
             onClick={() => setZoomLevel(1)}
             title="Fit to Screen"
-            className="px-2 h-7 flex items-center justify-center rounded hover:bg-[#262626] text-[12px] font-medium text-[#cccccc] hover:text-white transition-colors cursor-pointer"
+            className="px-2 h-7 flex items-center justify-center rounded-[4px] hover:bg-[#222222] text-[12px] font-medium text-[#cccccc] hover:text-white transition-colors cursor-pointer"
           >
             Fit
           </button>
           {onDownload && (
             <>
-              <div className="w-px h-4 bg-[#2e2e2e] mx-0.5" />
+              <div className="w-px h-4 bg-[#262626] mx-0.5" />
               <button
                 type="button"
                 onClick={onDownload}
                 title="Download image"
-                className="w-7 h-7 flex items-center justify-center rounded hover:bg-[#262626] text-[#cccccc] hover:text-white transition-colors cursor-pointer"
+                className="w-7 h-7 flex items-center justify-center rounded-[4px] hover:bg-[#222222] text-[#cccccc] hover:text-white transition-colors cursor-pointer"
               >
                 <Download className="w-3.5 h-3.5" />
               </button>
@@ -725,13 +688,13 @@ export function MediaPlayer({
               const img = e.currentTarget;
               setImgNaturalSize({ width: img.naturalWidth, height: img.naturalHeight });
             }}
-            className="max-h-[65vh] w-auto max-w-full object-contain transition-transform duration-150 select-none shadow-2xl rounded"
+            className="max-h-[65vh] w-auto max-w-full object-contain transition-transform duration-150 select-none shadow-2xl rounded-[4px]"
           />
         </div>
 
         {/* Footer Info */}
         {imgNaturalSize && (
-          <div className="w-full px-4 py-2 bg-[#0d0d0d] border-t border-[#1c1c1c] flex items-center justify-between text-[12px] font-mono text-[#8c8c8c]">
+          <div className="w-full px-4 py-2 bg-[#0c0c0c] border-t border-[#1f1f1f] flex items-center justify-between text-[12px] font-mono text-[#8c8c8c]">
             <span>
               {imgNaturalSize.width} &times; {imgNaturalSize.height} px
             </span>
@@ -747,17 +710,17 @@ export function MediaPlayer({
   // ─────────────────────────────────────────────────────────────
   if (isPdf) {
     return (
-      <div className={`w-full flex flex-col bg-[#0c0c0c] border border-[#222222] rounded-xl overflow-hidden shadow-2xl ${className}`}>
-        <div className="h-10 px-4 bg-[#141414] border-b border-[#222222] flex items-center justify-between">
+      <div className={`w-full flex flex-col bg-[#09090b] border border-[#222222] rounded-[8px] overflow-hidden font-sans ${className}`}>
+        <div className="h-10 px-4 bg-[#0c0c0c] border-b border-[#1f1f1f] flex items-center justify-between">
           <div className="flex items-center gap-2 text-[13px] text-white font-medium truncate">
-            <FileText className="w-4 h-4 text-[#fb7185]" />
+            <FileText className="w-4 h-4 text-[#8c8c8c]" />
             <span className="truncate">{name}</span>
           </div>
           {onDownload && (
             <button
               type="button"
               onClick={onDownload}
-              className="inline-flex items-center gap-1.5 text-[12px] text-[#cccccc] hover:text-white px-2.5 py-1 rounded bg-[#1e1e1e] hover:bg-[#282828] transition-colors cursor-pointer"
+              className="inline-flex items-center gap-1.5 text-[12px] text-[#cccccc] hover:text-white px-2.5 py-1 rounded-[6px] bg-[#141414] hover:bg-[#1a1a1a] border border-[#262626] transition-colors cursor-pointer"
             >
               <Download className="w-3.5 h-3.5" /> Download PDF
             </button>
@@ -777,13 +740,13 @@ export function MediaPlayer({
   // ─────────────────────────────────────────────────────────────
   if (isCodeOrText) {
     return (
-      <div className={`w-full flex flex-col bg-[#080808] border border-[#222222] rounded-xl overflow-hidden shadow-2xl font-sans ${className}`}>
+      <div className={`w-full flex flex-col bg-[#09090b] border border-[#222222] rounded-[8px] overflow-hidden font-sans ${className}`}>
         {/* Header bar */}
-        <div className="h-10 px-4 bg-[#121212] border-b border-[#202020] flex items-center justify-between">
+        <div className="h-10 px-4 bg-[#0c0c0c] border-b border-[#1f1f1f] flex items-center justify-between">
           <div className="flex items-center gap-2 text-[13px] text-white font-medium truncate">
-            <FileCode className="w-4 h-4 text-[#fbbf24]" />
+            <FileCode className="w-4 h-4 text-[#8c8c8c]" />
             <span className="truncate">{name}</span>
-            <span className="text-[11px] font-mono text-[#8c8c8c] bg-[#1a1a1a] px-2 py-0.5 rounded border border-[#282828]">
+            <span className="text-[11px] font-mono text-[#8c8c8c] bg-[#141414] px-1.5 py-0.5 rounded-[4px] border border-[#262626]">
               {formatBytes(size || textContent?.length || 0)}
             </span>
           </div>
@@ -793,7 +756,7 @@ export function MediaPlayer({
               type="button"
               onClick={handleCopyText}
               disabled={!textContent}
-              className="inline-flex items-center gap-1.5 text-[12px] text-[#cccccc] hover:text-white px-2.5 py-1 rounded bg-[#1c1c1c] hover:bg-[#262626] border border-[#2b2b2b] transition-colors cursor-pointer disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 text-[12px] text-[#cccccc] hover:text-white px-2.5 py-1 rounded-[6px] bg-[#141414] hover:bg-[#1a1a1a] border border-[#262626] transition-colors cursor-pointer disabled:opacity-50"
             >
               {copiedCode ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
               <span>{copiedCode ? 'Copied' : 'Copy Text'}</span>
@@ -803,7 +766,7 @@ export function MediaPlayer({
               <button
                 type="button"
                 onClick={onDownload}
-                className="inline-flex items-center gap-1.5 text-[12px] text-[#cccccc] hover:text-white px-2.5 py-1 rounded bg-[#1c1c1c] hover:bg-[#262626] border border-[#2b2b2b] transition-colors cursor-pointer"
+                className="inline-flex items-center gap-1.5 text-[12px] text-[#cccccc] hover:text-white px-2.5 py-1 rounded-[6px] bg-[#141414] hover:bg-[#1a1a1a] border border-[#262626] transition-colors cursor-pointer"
               >
                 <Download className="w-3.5 h-3.5" />
                 <span>Download</span>
@@ -813,17 +776,17 @@ export function MediaPlayer({
         </div>
 
         {/* Content Area */}
-        <div className="p-4 overflow-auto max-h-[68vh] font-mono text-[13px] leading-relaxed text-[#d4d4d4] bg-[#090909]">
+        <div className="p-4 overflow-auto max-h-[68vh] font-mono text-[13px] leading-relaxed text-[#d4d4d4] bg-[#09090b]">
           {isLoadingText ? (
             <div className="py-12 text-center text-[#8c8c8c]">Loading file content...</div>
           ) : textError ? (
-            <div className="py-8 text-center text-red-400 space-y-2">
+            <div className="py-8 text-center text-[#e5484d] space-y-2">
               <p>{textError}</p>
               {onDownload && (
                 <button
                   type="button"
                   onClick={onDownload}
-                  className="px-3 py-1.5 rounded bg-white text-black font-medium text-[12px] cursor-pointer"
+                  className="px-3 py-1.5 rounded-[6px] bg-white text-black font-medium text-[12px] cursor-pointer"
                 >
                   Download File
                 </button>
@@ -841,12 +804,12 @@ export function MediaPlayer({
   // RENDER: GENERIC BINARY / OTHER
   // ─────────────────────────────────────────────────────────────
   return (
-    <div className={`p-8 bg-[#0c0c0c] border border-[#222222] rounded-xl flex flex-col items-center justify-center max-w-md mx-auto shadow-2xl text-center font-sans ${className}`}>
-      <div className="w-16 h-16 rounded-2xl bg-[#141414] border border-[#242424] flex items-center justify-center mb-4 text-white shadow-inner">
-        {getFileIcon(name, 'w-8 h-8')}
+    <div className={`p-8 bg-[#0c0c0c] border border-[#222222] rounded-[8px] flex flex-col items-center justify-center max-w-md mx-auto text-center font-sans ${className}`}>
+      <div className="w-12 h-12 rounded-[8px] bg-[#141414] border border-[#262626] flex items-center justify-center mb-3 text-[#cccccc]">
+        {getFileIcon(name, 'w-6 h-6')}
       </div>
-      <h3 className="text-white text-[16px] font-medium truncate max-w-full leading-snug">{name}</h3>
-      <p className="text-[13px] text-[#8c8c8c] mt-1 mb-6 font-mono">
+      <h3 className="text-white text-[15px] font-sans font-medium truncate max-w-full leading-snug">{name}</h3>
+      <p className="text-[12px] text-[#8c8c8c] mt-1 mb-5 font-mono">
         {contentType || 'application/octet-stream'} &bull; {formatBytes(size || 0)}
       </p>
 
@@ -854,9 +817,9 @@ export function MediaPlayer({
         <button
           type="button"
           onClick={onDownload}
-          className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-lg bg-white text-black font-medium text-[14px] hover:bg-[#e0e0e0] transition-colors cursor-pointer w-full shadow-lg"
+          className="inline-flex items-center justify-center gap-2 h-8 px-4 rounded-[6px] bg-white text-black font-medium text-[13px] hover:bg-[#e0e0e0] transition-colors cursor-pointer w-full shadow-xs"
         >
-          <Download className="w-4 h-4" /> Download File
+          <Download className="w-4 h-4 stroke-[2.5]" /> Download File
         </button>
       )}
     </div>

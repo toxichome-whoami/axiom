@@ -91,7 +91,7 @@ export function StorageToolbar({
   }, [isUploadMenuOpen]);
 
   return (
-    <div className="h-[54px] shrink-0 px-4 border-b border-[#222222] bg-[#0c0c0c] flex items-center justify-between gap-3 select-none font-sans relative z-30 overflow-x-auto scrollbar-none whitespace-nowrap">
+    <div className="h-12 shrink-0 px-3.5 border-b border-[#222222] bg-[#0c0c0c] flex items-center justify-between gap-3 select-none font-sans relative z-30 overflow-x-auto scrollbar-none whitespace-nowrap">
       {/* ─── Left: Interactive Breadcrumbs Navigator ─────────────── */}
       <div className="flex items-center gap-1.5 text-sm overflow-x-auto scrollbar-none min-w-0 py-0.5 shrink-0">
         <button
@@ -218,15 +218,15 @@ export function StorageToolbar({
           )}
         </div>
 
-        {/* Storage Tier Filter Pill (Hidden on narrow screens to prevent overflow) */}
-        <div className="hidden md:flex items-center p-1 rounded-[7px] bg-[#141414] border border-[#262626] h-9">
+        {/* Storage Tier Filter Pill */}
+        <div className="hidden md:flex items-center p-0.5 rounded-md bg-[#111111] border border-[#222222] h-8">
           <button
             type="button"
             onClick={() => onTierFilterChange('all')}
-            className={`px-3 py-1 rounded-[5px] text-[13px] font-medium transition-colors cursor-pointer ${
+            className={`px-2.5 py-1 rounded-[4px] text-xs font-medium transition-colors cursor-pointer ${
               tierFilter === 'all'
-                ? 'bg-[#222222] text-white shadow-sm'
-                : 'text-[#8c8c8c] hover:text-white'
+                ? 'bg-[#1f1f1f] text-white shadow-xs'
+                : 'text-[#888888] hover:text-[#cccccc]'
             }`}
           >
             All
@@ -234,10 +234,10 @@ export function StorageToolbar({
           <button
             type="button"
             onClick={() => onTierFilterChange('inline')}
-            className={`px-3 py-1 rounded-[5px] text-[13px] font-medium transition-colors cursor-pointer ${
+            className={`px-2.5 py-1 rounded-[4px] text-xs font-medium transition-colors cursor-pointer ${
               tierFilter === 'inline'
-                ? 'bg-[#222222] text-white shadow-sm'
-                : 'text-[#8c8c8c] hover:text-white'
+                ? 'bg-[#1f1f1f] text-white shadow-xs'
+                : 'text-[#888888] hover:text-[#cccccc]'
             }`}
           >
             LSM
@@ -245,26 +245,26 @@ export function StorageToolbar({
           <button
             type="button"
             onClick={() => onTierFilterChange('disk')}
-            className={`px-3 py-1 rounded-[5px] text-[13px] font-medium transition-colors cursor-pointer ${
+            className={`px-2.5 py-1 rounded-[4px] text-xs font-medium transition-colors cursor-pointer ${
               tierFilter === 'disk'
-                ? 'bg-[#222222] text-white shadow-sm'
-                : 'text-[#8c8c8c] hover:text-white'
+                ? 'bg-[#1f1f1f] text-white shadow-xs'
+                : 'text-[#888888] hover:text-[#cccccc]'
             }`}
           >
             Disk
           </button>
         </div>
 
-        {/* View Mode Switcher Pills (Matching TableToolbar design system, h-9 tabs, 13px font) */}
-        <div className="flex items-center p-1 rounded-[7px] bg-[#141414] border border-[#262626] h-9">
+        {/* View Mode Switcher Pills */}
+        <div className="flex items-center p-0.5 rounded-md bg-[#111111] border border-[#222222] h-8">
           <button
             type="button"
             onClick={() => onViewModeChange('grid')}
             title="Grid View"
-            className={`flex items-center gap-1.5 px-3 py-1 rounded-[5px] text-[13px] font-medium transition-colors cursor-pointer ${
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-[4px] text-xs font-medium transition-colors cursor-pointer ${
               viewMode === 'grid'
-                ? 'bg-[#222222] text-white shadow-sm'
-                : 'text-[#8c8c8c] hover:text-white'
+                ? 'bg-[#1f1f1f] text-white shadow-xs'
+                : 'text-[#888888] hover:text-[#cccccc]'
             }`}
           >
             <LayoutGrid className="w-3.5 h-3.5" />
@@ -274,10 +274,10 @@ export function StorageToolbar({
             type="button"
             onClick={() => onViewModeChange('list')}
             title="Table View"
-            className={`flex items-center gap-1.5 px-3 py-1 rounded-[5px] text-[13px] font-medium transition-colors cursor-pointer ${
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-[4px] text-xs font-medium transition-colors cursor-pointer ${
               viewMode === 'list'
-                ? 'bg-[#222222] text-white shadow-sm'
-                : 'text-[#8c8c8c] hover:text-white'
+                ? 'bg-[#1f1f1f] text-white shadow-xs'
+                : 'text-[#888888] hover:text-[#cccccc]'
             }`}
           >
             <ListIcon className="w-3.5 h-3.5" />
@@ -365,7 +365,7 @@ export function StorageToolbar({
                   }}
                   className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-[6px] text-[13px] text-[#cccccc] hover:text-white hover:bg-[#1a1a1a] transition-colors cursor-pointer text-left"
                 >
-                  <FolderPlus className="w-3.5 h-3.5 text-[#eab308] shrink-0" />
+                  <FolderPlus className="w-3.5 h-3.5 text-[#8c8c8c] shrink-0" />
                   <span>Upload folder</span>
                 </button>
 
