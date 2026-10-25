@@ -117,11 +117,11 @@ export function StorageListView({
       }}
       className="flex-1 w-full overflow-auto select-none font-sans bg-[#0a0a0a]"
     >
-      <table className="w-full text-left border-collapse">
+      <table className="w-full text-left border-separate border-spacing-0">
         <thead>
-          <tr className="sticky top-0 z-10 h-11 bg-[#0a0a0a] border-b border-[#222222] text-[13.5px] font-medium text-[#8c8c8c]">
+          <tr className="sticky top-0 z-10 h-[44px] bg-[#0a0a0a] text-[13.5px] font-medium text-[#8c8c8c]">
             <th
-              className="w-12 px-3 py-2.5 text-center select-none cursor-pointer border-r border-[#1f1f1f]"
+              className="w-12 h-[44px] px-3 py-2 text-center select-none cursor-pointer border-b border-[#222222] border-r border-[#1f1f1f] bg-[#0a0a0a]"
               onClick={(e) => {
                 e.stopPropagation();
                 onSelectAll?.();
@@ -154,14 +154,14 @@ export function StorageListView({
                 </button>
               </div>
             </th>
-            <th className="px-3.5 py-2.5 font-medium border-r border-[#1f1f1f] text-[13.5px] text-left">Name</th>
-            <th className="px-3.5 py-2.5 font-medium w-36 border-r border-[#1f1f1f] text-[13.5px] text-left">Storage Tier</th>
-            <th className="px-3.5 py-2.5 font-medium w-36 text-right border-r border-[#1f1f1f] text-[13.5px]">Size</th>
-            <th className="px-4 py-2.5 font-medium w-44 text-right hidden sm:table-cell text-[13.5px]">Uploaded</th>
-            <th className="px-3 py-2.5 w-16 text-right"><span className="sr-only">Actions</span></th>
+            <th className="h-[44px] px-3.5 py-2 font-medium border-b border-[#222222] border-r border-[#1f1f1f] text-[13.5px] text-left bg-[#0a0a0a]">Name</th>
+            <th className="h-[44px] px-3.5 py-2 font-medium w-36 border-b border-[#222222] border-r border-[#1f1f1f] text-[13.5px] text-left bg-[#0a0a0a]">Storage Tier</th>
+            <th className="h-[44px] px-3.5 py-2 font-medium w-36 text-right border-b border-[#222222] border-r border-[#1f1f1f] text-[13.5px] bg-[#0a0a0a]">Size</th>
+            <th className="h-[44px] px-4 py-2 font-medium w-44 text-right hidden sm:table-cell text-[13.5px] border-b border-[#222222] border-r border-[#1f1f1f] bg-[#0a0a0a]">Uploaded</th>
+            <th className="h-[44px] px-3 py-2 w-16 text-right border-b border-[#222222] bg-[#0a0a0a]"><span className="sr-only">Actions</span></th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-[#1a1a1a]">
+        <tbody>
           {allItems.map((item) => {
             const isFolder = item.type === 'folder';
             const isSelected = selectedKeys
@@ -244,7 +244,7 @@ export function StorageListView({
               >
                 {/* Custom Checkbox Button (Matching TableGridView.tsx) */}
                 <td
-                  className="w-12 px-3 py-2 text-center select-none cursor-pointer border-r border-[#151515]"
+                  className="w-12 px-3 py-2 text-center select-none cursor-pointer border-b border-[#1a1a1a] border-r border-[#151515]"
                   onClick={(e) => {
                     e.stopPropagation();
                     if (onToggleSelectItem) {
@@ -277,7 +277,7 @@ export function StorageListView({
                 </td>
 
                 {/* Column 1: Icon and Name */}
-                <td className="px-3.5 py-2 min-w-[200px] border-r border-[#151515]">
+                <td className="px-3.5 py-2 min-w-[200px] border-b border-[#1a1a1a] border-r border-[#151515]">
                   <div className="flex items-center gap-2.5 truncate">
                     <div className="w-4 h-4 flex items-center justify-center shrink-0">
                       {isFolder ? (
@@ -291,7 +291,7 @@ export function StorageListView({
                 </td>
 
                 {/* Column 2: Storage Tier */}
-                <td className="px-3.5 py-2 border-r border-[#151515]">
+                <td className="px-3.5 py-2 border-b border-[#1a1a1a] border-r border-[#151515]">
                   {isFolder ? (
                     <span className="text-[13.5px] text-[#8c8c8c] font-sans font-normal">dir</span>
                   ) : (
@@ -308,14 +308,14 @@ export function StorageListView({
                 </td>
 
                 {/* Column 3: Payload Size */}
-                <td className="px-3.5 py-2 text-right tabular-nums text-[13.5px] text-[#8c8c8c] font-sans font-normal border-r border-[#151515]">
+                <td className="px-3.5 py-2 text-right tabular-nums text-[13.5px] text-[#8c8c8c] font-sans font-normal border-b border-[#1a1a1a] border-r border-[#151515]">
                   {isFolder
                     ? `${item.itemCount || 0} items`
                     : formatBytes(item.size || 0)}
                 </td>
 
                 {/* Column 4: Uploaded / Created Date */}
-                <td className="px-4 py-2 text-right tabular-nums text-[13.5px] text-[#8c8c8c] font-sans font-normal hidden sm:table-cell">
+                <td className="px-4 py-2 text-right tabular-nums text-[13.5px] text-[#8c8c8c] font-sans font-normal hidden sm:table-cell border-b border-[#1a1a1a] border-r border-[#151515]">
                   {item.created_at
                     ? new Date(item.created_at * 1000).toLocaleDateString()
                     : '—'}
@@ -323,7 +323,7 @@ export function StorageListView({
 
                 {/* Column 5: Actions */}
                 <td
-                  className="px-3 text-right"
+                  className="px-3 text-right border-b border-[#1a1a1a]"
                   onClick={(e) => e.stopPropagation()}
                   onDoubleClick={(e) => {
                     e.stopPropagation();

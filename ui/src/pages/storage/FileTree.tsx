@@ -456,7 +456,7 @@ export function FileTree({
   return (
     <div className="flex flex-col h-full overflow-hidden font-sans">
       {/* Explorer Tree Header Bar (h-9 matches StorageListView table header) */}
-      <div className="h-11 shrink-0 px-3 border-b border-[#222222] flex items-center justify-between text-[13.5px] font-medium text-[#888888] bg-[#0a0a0a]">
+      <div className="h-[44px] shrink-0 px-3 border-b border-[#222222] flex items-center justify-between text-[13.5px] font-medium text-[#888888] bg-[#0a0a0a]">
         <div
           onClick={() => onSelectFolder('', null)}
           onDragOver={(e) => {
