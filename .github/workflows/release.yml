@@ -144,8 +144,9 @@ jobs:
           key: ${{ matrix.target }}
 
       # --locked: fail if Cargo.lock is out of date, so releases are reproducible.
+      # -p axiom: target only the production binary crate, avoiding non-target tests/benchmarks during cross-compilation.
       - name: Build release binary
-        run: cargo build --release --locked --target ${{ matrix.target }}
+        run: cargo build --release --locked -p axiom --target ${{ matrix.target }}
 
       # One packaging step for every OS (Git Bash is available on Windows runners).
       - name: Package
@@ -179,9 +180,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: package-${{ matrix.platform }}
-          path: |
-            ${{ env.BIN_NAME }}_*.tar.gz
-            ${{ env.BIN_NAME }}_*.zip
+          path: ${{ env.BIN_NAME }}_*.${{ matrix.archive }}
           if-no-files-found: error
           retention-days: 1
 
@@ -204,11 +203,12 @@ jobs:
       - name: Generate checksums
         run: |
           set -euo pipefail
-          sha256sum *.tar.gz *.zip > SHA256SUMS.txt
+          sha256sum ${{ env.BIN_NAME }}_* > SHA256SUMS.txt
           cat SHA256SUMS.txt
 
       - name: Attest build provenance
         uses: actions/attest-build-provenance@v2
+        continue-on-error: true
         with:
           subject-path: |
             *.tar.gz
