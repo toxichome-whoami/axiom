@@ -28,6 +28,7 @@ import {
 import { StorageItem } from './types';
 import { BlobTicket, CreateBlobTicketResponse } from '../../types';
 import { api } from '../../api/client';
+import { Button } from '../../components/ui/Button';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 
 export interface ShareTicketModalProps {
@@ -573,13 +574,15 @@ export function ShareTicketModal({
 
               {/* Footer */}
               <div className="-mx-5 px-5 pt-3.5 border-t border-[#1e1e1e] flex items-center justify-end">
-                <button
+                <Button
                   type="button"
+                  variant="secondary"
+                  size="sm"
                   onClick={onClose}
-                  className="h-8 px-4 rounded-[6px] bg-[#1a1a1a] hover:bg-[#222222] border border-[#2e2e2e] text-[13px] font-sans font-medium text-white transition-colors cursor-pointer"
+                  className="h-8 px-4 text-[13px]"
                 >
                   Close
-                </button>
+                </Button>
               </div>
             </div>
           ) : activeTab === 'create' ? (
@@ -894,13 +897,15 @@ export function ShareTicketModal({
                           <span>Active Links ({activeTicketCount})</span>
                         </button>
                       )}
-                      <button
+                      <Button
                         type="button"
+                        variant="secondary"
+                        size="sm"
                         onClick={onClose}
-                        className="h-8 px-4 rounded-[6px] bg-[#1a1a1a] hover:bg-[#222222] border border-[#2e2e2e] text-[13px] font-sans font-medium text-white transition-colors cursor-pointer"
+                        className="h-8 px-4 text-[13px]"
                       >
                         Done
-                      </button>
+                      </Button>
                     </div>
                   </div>
                 </div>
@@ -995,30 +1000,26 @@ export function ShareTicketModal({
 
                   {/* Action buttons */}
                   <div className="-mx-5 px-5 pt-3.5 border-t border-[#1e1e1e] flex items-center justify-end gap-2">
-                    <button
+                    <Button
                       type="button"
+                      variant="secondary"
+                      size="sm"
                       onClick={onClose}
-                      className="h-8 px-3.5 rounded-[6px] text-[13px] font-sans font-medium text-[#888888] hover:text-white hover:bg-[#181818] transition-colors cursor-pointer"
+                      className="h-8 px-3.5"
                     >
                       Cancel
-                    </button>
-                    <button
+                    </Button>
+                    <Button
                       type="submit"
+                      variant="primary"
+                      size="sm"
+                      isLoading={isCreating}
                       disabled={isCreating}
-                      className="h-8 px-4 rounded-[6px] bg-blue-600 hover:bg-blue-500 text-white font-sans font-medium text-[13px] transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
+                      className="h-8 px-4"
                     >
-                      {isCreating ? (
-                        <>
-                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                          <span>Generating...</span>
-                        </>
-                      ) : (
-                        <>
-                          <LinkIcon className="w-3.5 h-3.5" />
-                          <span>Generate Link</span>
-                        </>
-                      )}
-                    </button>
+                      <LinkIcon className="w-3.5 h-3.5" />
+                      <span>Generate Link</span>
+                    </Button>
                   </div>
                 </form>
               )}
@@ -1160,13 +1161,15 @@ export function ShareTicketModal({
               )}
 
               <div className="-mx-5 px-5 pt-3.5 border-t border-[#1e1e1e] flex items-center justify-end">
-                <button
+                <Button
                   type="button"
+                  variant="secondary"
+                  size="sm"
                   onClick={onClose}
-                  className="h-8 px-4 rounded-[6px] bg-[#1a1a1a] hover:bg-[#222222] border border-[#2e2e2e] text-[13px] font-sans font-medium text-white transition-colors cursor-pointer"
+                  className="h-8 px-4 text-[13px]"
                 >
                   Close
-                </button>
+                </Button>
               </div>
             </div>
           )}

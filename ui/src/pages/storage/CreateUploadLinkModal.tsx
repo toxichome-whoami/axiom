@@ -20,6 +20,7 @@ import {
 import { BlobTicket, CreateBlobTicketResponse } from '../../types';
 import { api } from '../../api/client';
 import { Button } from '../../components/ui/Button';
+import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 
 export interface CreateUploadLinkModalProps {
   isOpen: boolean;
@@ -78,6 +79,7 @@ export function CreateUploadLinkModal({
   const [manageError, setManageError] = useState<string | null>(null);
   const [revokingSigs, setRevokingSigs] = useState<Set<string>>(new Set());
   const [deletingSigs, setDeletingSigs] = useState<Set<string>>(new Set());
+  const [ticketToDelete, setTicketToDelete] = useState<BlobTicket | null>(null);
 
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
@@ -172,18 +174,14 @@ export function CreateUploadLinkModal({
     }
   };
 
-  const handleDelete = async (signature: string) => {
-    if (
-      !window.confirm(
-        'Are you sure you want to delete this upload link? Once deleted, any client attempting to upload with it will be rejected.'
-      )
-    ) {
-      return;
-    }
+  const handleConfirmDelete = async () => {
+    if (!ticketToDelete) return;
+    const signature = ticketToDelete.signature;
     setDeletingSigs((prev) => new Set(prev).add(signature));
     try {
       await api.deleteBlobTicket(namespace, signature);
       await loadTickets();
+      setTicketToDelete(null);
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : 'Failed to delete upload link');
     } finally {
@@ -581,7 +579,7 @@ export function CreateUploadLinkModal({
 
                           <button
                             type="button"
-                            onClick={() => handleDelete(t.signature)}
+                            onClick={() => setTicketToDelete(t)}
                             disabled={isDeleting}
                             title="Delete ticket record"
                             className="flex items-center justify-center h-7 w-7 rounded-[6px] text-[#8c8c8c] hover:text-rose-400 bg-[#141414] hover:bg-[#1c1c1c] border border-[#262626] hover:border-rose-900/40 transition-colors cursor-pointer disabled:opacity-40"
@@ -604,6 +602,29 @@ export function CreateUploadLinkModal({
           )}
         </div>
       </div>
+
+      {/* Delete Upload Link Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={ticketToDelete !== null}
+        onClose={() => setTicketToDelete(null)}
+        onConfirm={handleConfirmDelete}
+        title="Delete Upload Link"
+        description={
+          ticketToDelete ? (
+            <span>
+              Are you sure you want to permanently delete this upload link? Any client attempting to upload using signature{' '}
+              <strong className="text-white font-mono text-[12px] bg-[#1a1a1a] px-1 py-0.5 rounded">
+                {ticketToDelete.signature.slice(0, 16)}...
+              </strong>{' '}
+              will be rejected immediately.
+            </span>
+          ) : (
+            'Are you sure you want to delete this upload link?'
+          )
+        }
+        confirmLabel={ticketToDelete && deletingSigs.has(ticketToDelete.signature) ? 'Deleting...' : 'Delete'}
+        variant="danger"
+      />
     </div>
   );
 }

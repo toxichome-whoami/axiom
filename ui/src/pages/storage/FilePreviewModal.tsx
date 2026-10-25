@@ -221,6 +221,7 @@ export function FilePreviewModal({
                 size={item.size}
                 onDownload={() => onDownload(item.fullKey)}
                 autoPlay={false}
+                hideHeader={true}
               />
             </div>
           ) : null}

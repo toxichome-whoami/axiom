@@ -36,6 +36,7 @@ export interface MediaPlayerProps {
   onDownload?: () => void;
   className?: string;
   autoPlay?: boolean;
+  hideHeader?: boolean;
 }
 
 function formatDuration(seconds: number): string {
@@ -59,6 +60,7 @@ export function MediaPlayer({
   onDownload,
   className = '',
   autoPlay = false,
+  hideHeader = false,
 }: MediaPlayerProps) {
   const ext = name.split('.').pop()?.toLowerCase() || '';
 
@@ -238,10 +240,32 @@ export function MediaPlayer({
   };
 
   // ─────────────────────────────────────────────────────────────
-  // 3. IMAGE VIEWER STATE
+  // 3. IMAGE VIEWER STATE & WHEEL ZOOM
   // ─────────────────────────────────────────────────────────────
   const [zoomLevel, setZoomLevel] = useState(1);
   const [imgNaturalSize, setImgNaturalSize] = useState<{ width: number; height: number } | null>(null);
+  const imgViewportRef = useRef<HTMLDivElement | null>(null);
+  const isDraggingRef = useRef(false);
+  const dragStartRef = useRef({ x: 0, y: 0, scrollLeft: 0, scrollTop: 0 });
+
+  useEffect(() => {
+    const el = imgViewportRef.current;
+    if (!el || !isImage) return;
+
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const delta = e.deltaY < 0 ? 0.2 : -0.2;
+      setZoomLevel((prev) => {
+        const next = Math.round((prev + delta) * 100) / 100;
+        return Math.min(Math.max(0.25, next), 5.0);
+      });
+    };
+
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => {
+      el.removeEventListener('wheel', onWheel);
+    };
+  }, [isImage]);
 
   // ─────────────────────────────────────────────────────────────
   // 4. CODE & TEXT PREVIEW
@@ -670,9 +694,35 @@ export function MediaPlayer({
           )}
         </div>
 
-        {/* Image viewport with checkerboard pattern for alpha transparency */}
+        {/* Image viewport with checkerboard pattern for alpha transparency & wheel zoom */}
         <div
-          className="w-full flex-1 flex items-center justify-center p-6 overflow-auto max-h-[72vh]"
+          ref={imgViewportRef}
+          onMouseDown={(e) => {
+            if (!imgViewportRef.current) return;
+            isDraggingRef.current = true;
+            dragStartRef.current = {
+              x: e.clientX,
+              y: e.clientY,
+              scrollLeft: imgViewportRef.current.scrollLeft,
+              scrollTop: imgViewportRef.current.scrollTop,
+            };
+          }}
+          onMouseMove={(e) => {
+            if (!isDraggingRef.current || !imgViewportRef.current) return;
+            const dx = e.clientX - dragStartRef.current.x;
+            const dy = e.clientY - dragStartRef.current.y;
+            imgViewportRef.current.scrollLeft = dragStartRef.current.scrollLeft - dx;
+            imgViewportRef.current.scrollTop = dragStartRef.current.scrollTop - dy;
+          }}
+          onMouseUp={() => {
+            isDraggingRef.current = false;
+          }}
+          onMouseLeave={() => {
+            isDraggingRef.current = false;
+          }}
+          className={`w-full flex-1 flex items-center justify-center p-6 overflow-auto max-h-[72vh] select-none ${
+            zoomLevel > 1 ? 'cursor-grab active:cursor-grabbing' : 'cursor-default'
+          }`}
           style={{
             backgroundImage:
               'linear-gradient(45deg, #111 25%, transparent 25%), linear-gradient(-45deg, #111 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #111 75%), linear-gradient(-45deg, transparent 75%, #111 75%)',
@@ -684,11 +734,12 @@ export function MediaPlayer({
             src={url}
             alt={name}
             style={{ transform: `scale(${zoomLevel})`, transformOrigin: 'center center' }}
+            draggable={false}
             onLoad={(e) => {
               const img = e.currentTarget;
               setImgNaturalSize({ width: img.naturalWidth, height: img.naturalHeight });
             }}
-            className="max-h-[65vh] w-auto max-w-full object-contain transition-transform duration-150 select-none shadow-2xl rounded-[4px]"
+            className="max-h-[65vh] w-auto max-w-full object-contain transition-transform duration-100 select-none shadow-2xl rounded-[4px]"
           />
         </div>
 
@@ -711,21 +762,23 @@ export function MediaPlayer({
   if (isPdf) {
     return (
       <div className={`w-full flex flex-col bg-[#09090b] border border-[#222222] rounded-[8px] overflow-hidden font-sans ${className}`}>
-        <div className="h-10 px-4 bg-[#0c0c0c] border-b border-[#1f1f1f] flex items-center justify-between">
-          <div className="flex items-center gap-2 text-[13px] text-white font-medium truncate">
-            <FileText className="w-4 h-4 text-[#8c8c8c]" />
-            <span className="truncate">{name}</span>
+        {!hideHeader && (
+          <div className="h-10 px-4 bg-[#0c0c0c] border-b border-[#1f1f1f] flex items-center justify-between">
+            <div className="flex items-center gap-2 text-[13px] text-white font-medium truncate">
+              <FileText className="w-4 h-4 text-[#8c8c8c]" />
+              <span className="truncate">{name}</span>
+            </div>
+            {onDownload && (
+              <button
+                type="button"
+                onClick={onDownload}
+                className="inline-flex items-center gap-1.5 text-[12px] text-[#cccccc] hover:text-white px-2.5 py-1 rounded-[6px] bg-[#141414] hover:bg-[#1a1a1a] border border-[#262626] transition-colors cursor-pointer"
+              >
+                <Download className="w-3.5 h-3.5" /> Download PDF
+              </button>
+            )}
           </div>
-          {onDownload && (
-            <button
-              type="button"
-              onClick={onDownload}
-              className="inline-flex items-center gap-1.5 text-[12px] text-[#cccccc] hover:text-white px-2.5 py-1 rounded-[6px] bg-[#141414] hover:bg-[#1a1a1a] border border-[#262626] transition-colors cursor-pointer"
-            >
-              <Download className="w-3.5 h-3.5" /> Download PDF
-            </button>
-          )}
-        </div>
+        )}
         <iframe
           src={url}
           title={name}
@@ -740,40 +793,55 @@ export function MediaPlayer({
   // ─────────────────────────────────────────────────────────────
   if (isCodeOrText) {
     return (
-      <div className={`w-full flex flex-col bg-[#09090b] border border-[#222222] rounded-[8px] overflow-hidden font-sans ${className}`}>
-        {/* Header bar */}
-        <div className="h-10 px-4 bg-[#0c0c0c] border-b border-[#1f1f1f] flex items-center justify-between">
-          <div className="flex items-center gap-2 text-[13px] text-white font-medium truncate">
-            <FileCode className="w-4 h-4 text-[#8c8c8c]" />
-            <span className="truncate">{name}</span>
-            <span className="text-[12px] font-sans font-medium text-[#8c8c8c] bg-[#141414] px-2 py-0.5 rounded-[4px] border border-[#262626]">
-              {formatBytes(size || textContent?.length || 0)}
-            </span>
-          </div>
+      <div className={`relative w-full flex flex-col bg-[#09090b] border border-[#222222] rounded-[8px] overflow-hidden font-sans ${className}`}>
+        {/* Header bar - only show when not hidden by modal */}
+        {!hideHeader ? (
+          <div className="h-10 px-4 bg-[#0c0c0c] border-b border-[#1f1f1f] flex items-center justify-between">
+            <div className="flex items-center gap-2 text-[13px] text-white font-medium truncate">
+              <FileCode className="w-4 h-4 text-[#8c8c8c]" />
+              <span className="truncate">{name}</span>
+              <span className="text-[12px] font-sans font-medium text-[#8c8c8c] bg-[#141414] px-2 py-0.5 rounded-[4px] border border-[#262626]">
+                {formatBytes(size || textContent?.length || 0)}
+              </span>
+            </div>
 
-          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleCopyText}
+                disabled={!textContent}
+                className="inline-flex items-center gap-1.5 text-[12px] text-[#cccccc] hover:text-white px-2.5 py-1 rounded-[6px] bg-[#141414] hover:bg-[#1a1a1a] border border-[#262626] transition-colors cursor-pointer disabled:opacity-50"
+              >
+                {copiedCode ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                <span>{copiedCode ? 'Copied' : 'Copy Text'}</span>
+              </button>
+
+              {onDownload && (
+                <button
+                  type="button"
+                  onClick={onDownload}
+                  className="inline-flex items-center gap-1.5 text-[12px] text-[#cccccc] hover:text-white px-2.5 py-1 rounded-[6px] bg-[#141414] hover:bg-[#1a1a1a] border border-[#262626] transition-colors cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Download</span>
+                </button>
+              )}
+            </div>
+          </div>
+        ) : (
+          /* Floating copy button for modal view */
+          <div className="absolute top-2.5 right-2.5 z-10">
             <button
               type="button"
               onClick={handleCopyText}
               disabled={!textContent}
-              className="inline-flex items-center gap-1.5 text-[12px] text-[#cccccc] hover:text-white px-2.5 py-1 rounded-[6px] bg-[#141414] hover:bg-[#1a1a1a] border border-[#262626] transition-colors cursor-pointer disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 text-[12px] text-[#cccccc] hover:text-white px-2.5 py-1 rounded-[5px] bg-[#141414]/90 hover:bg-[#1c1c1c] border border-[#282828] backdrop-blur-xs transition-colors cursor-pointer shadow-md disabled:opacity-50"
             >
               {copiedCode ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
               <span>{copiedCode ? 'Copied' : 'Copy Text'}</span>
             </button>
-
-            {onDownload && (
-              <button
-                type="button"
-                onClick={onDownload}
-                className="inline-flex items-center gap-1.5 text-[12px] text-[#cccccc] hover:text-white px-2.5 py-1 rounded-[6px] bg-[#141414] hover:bg-[#1a1a1a] border border-[#262626] transition-colors cursor-pointer"
-              >
-                <Download className="w-3.5 h-3.5" />
-                <span>Download</span>
-              </button>
-            )}
           </div>
-        </div>
+        )}
 
         {/* Content Area */}
         <div className="p-4 overflow-auto max-h-[68vh] font-mono text-[13px] leading-relaxed text-[#d4d4d4] bg-[#09090b]">
