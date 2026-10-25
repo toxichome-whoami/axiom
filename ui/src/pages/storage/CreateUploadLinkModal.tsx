@@ -340,7 +340,7 @@ export function CreateUploadLinkModal({
                     </pre>
                   </div>
 
-                  <div className="flex items-center justify-between pt-2">
+                  <div className="-mx-5 px-5 pt-3.5 border-t border-[#1f1f1f] flex items-center justify-between">
                     <button
                       type="button"
                       onClick={() => setGeneratedTicket(null)}
@@ -440,7 +440,7 @@ export function CreateUploadLinkModal({
                   </div>
 
                   {/* Action buttons */}
-                  <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#1a1a1a]">
+                  <div className="-mx-5 px-5 pt-3.5 border-t border-[#1f1f1f] flex items-center justify-end gap-2">
                     <Button type="button" variant="secondary" size="sm" onClick={onClose} className="h-8 px-3">
                       Cancel
                     </Button>
@@ -594,6 +594,12 @@ export function CreateUploadLinkModal({
                   })}
                 </div>
               )}
+
+              <div className="-mx-5 px-5 pt-3.5 border-t border-[#1f1f1f] flex items-center justify-end">
+                <Button type="button" variant="secondary" size="sm" onClick={onClose} className="h-8 px-4 text-[13px]">
+                  Close
+                </Button>
+              </div>
             </div>
           )}
         </div>
