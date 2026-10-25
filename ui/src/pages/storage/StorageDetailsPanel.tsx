@@ -214,7 +214,7 @@ export function StorageDetailsPanel({
                   <div className="flex items-center gap-1.5">
                     <span className="text-white font-medium">{activeNamespace}</span>
                     {currentNsInfo?.is_public && (
-                      <span className="px-2 py-0.5 rounded-[4px] text-[12px] bg-[#30a46c]/15 border border-[#30a46c]/30 font-medium text-[#30a46c]">
+                      <span className="px-1.5 py-0.5 rounded-[4px] text-[11px] bg-[#161616] border border-[#2e2e2e] font-medium text-[#cccccc] leading-none">
                         Public
                       </span>
                     )}
@@ -225,7 +225,7 @@ export function StorageDetailsPanel({
                   <span className="text-[#8c8c8c]">Access Policy</span>
                   <span
                     className={`font-medium ${
-                      currentNsInfo?.is_public ? 'text-[#30a46c]' : 'text-[#8c8c8c]'
+                      currentNsInfo?.is_public ? 'text-[#cccccc]' : 'text-[#8c8c8c]'
                     }`}
                   >
                     {currentNsInfo?.is_public ? 'Public Direct (CDN)' : 'Private (Signed Ticket Only)'}

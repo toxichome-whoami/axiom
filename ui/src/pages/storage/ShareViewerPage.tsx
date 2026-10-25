@@ -221,7 +221,7 @@ export function ShareViewerPage() {
               {getFileExtension(fileName)}
             </span>
             {params.isPublic && (
-              <span className="px-1.5 py-0.5 rounded-[4px] text-[11px] font-medium bg-[#30a46c]/15 border border-[#30a46c]/30 text-[#30a46c] hidden sm:inline">
+              <span className="px-1.5 py-0.5 rounded-[4px] text-[11px] font-medium bg-[#161616] border border-[#2e2e2e] text-[#cccccc] leading-none hidden sm:inline">
                 Public CDN
               </span>
             )}

@@ -134,9 +134,9 @@ export function StorageToolbar({
           <span>{activeNamespace || 'Root'}</span>
           {activeNamespace && (
             <span
-              className={`px-1.5 py-0.5 rounded-[4px] text-[13px] font-medium leading-tight ${
+              className={`px-1.5 py-0.5 rounded-[4px] text-[11px] font-medium leading-none ${
                 isPublic
-                  ? 'bg-[#30a46c]/15 border border-[#30a46c]/30 text-[#30a46c]'
+                  ? 'bg-[#161616] border border-[#2e2e2e] text-[#cccccc]'
                   : 'bg-[#161616] border border-[#262626] text-[#8c8c8c]'
               }`}
             >
