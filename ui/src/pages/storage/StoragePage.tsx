@@ -1830,16 +1830,16 @@ export function StoragePage() {
 
         {/* Floating Bulk Action Bar */}
         {selectedItemsList.length > 0 && (
-          <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-30 bg-[#121212]/95 border border-[#2b2b2b] shadow-2xl rounded-full px-4 py-2 flex items-center gap-2.5 backdrop-blur-md animate-in slide-in-from-bottom-3 duration-150 font-sans text-[13px]">
-            <div className="flex items-center gap-2 pr-2 border-r border-[#2a2a2a]">
-              <span className="inline-flex items-center justify-center px-2.5 py-0.5 rounded-full bg-blue-950/80 text-blue-400 border border-blue-800/60 font-medium tabular-nums text-[12px]">
+          <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-30 bg-[#0c0c0c] border border-[#262626] shadow-2xl rounded-[8px] px-2.5 py-1.5 flex items-center gap-2 font-sans text-[13px] animate-in slide-in-from-bottom-2 duration-150">
+            <div className="flex items-center gap-2 pr-2 border-r border-[#222222]">
+              <span className="inline-flex items-center justify-center px-2 py-0.5 rounded-[4px] bg-[#161616] text-[#cccccc] border border-[#2a2a2a] font-medium tabular-nums text-[12px] font-sans">
                 {selectedItemsList.length} selected
               </span>
               {selectedKeys.size < allVisibleItems.length && (
                 <button
                   type="button"
                   onClick={handleSelectAll}
-                  className="text-[#999999] hover:text-white transition-colors cursor-pointer text-[12.5px]"
+                  className="text-[#8c8c8c] hover:text-white transition-colors cursor-pointer text-[12px] font-sans"
                 >
                   Select all ({allVisibleItems.length})
                 </button>
@@ -1852,9 +1852,9 @@ export function StoragePage() {
               onClick={handleBatchDownload}
               disabled={selectedItemsList.every((it) => it.type === 'folder')}
               title="Download selected files"
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[13px] font-medium text-[#cccccc] hover:text-white hover:bg-[#202020] transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+              className="flex items-center gap-1.5 h-7 px-2.5 rounded-[6px] text-[13px] font-sans font-medium text-[#cccccc] hover:text-white bg-[#141414] hover:bg-[#1a1a1a] border border-[#242424] hover:border-[#333333] transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
             >
-              <Download className="w-3.5 h-3.5" />
+              <Download className="w-3.5 h-3.5 text-[#8c8c8c]" />
               <span>Download</span>
             </button>
 
@@ -1863,9 +1863,9 @@ export function StoragePage() {
               type="button"
               onClick={() => setIsBatchMoveOpen(true)}
               title="Move selected items"
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[13px] font-medium text-[#cccccc] hover:text-white hover:bg-[#202020] transition-colors cursor-pointer"
+              className="flex items-center gap-1.5 h-7 px-2.5 rounded-[6px] text-[13px] font-sans font-medium text-[#cccccc] hover:text-white bg-[#141414] hover:bg-[#1a1a1a] border border-[#242424] hover:border-[#333333] transition-colors cursor-pointer"
             >
-              <ArrowRight className="w-3.5 h-3.5" />
+              <ArrowRight className="w-3.5 h-3.5 text-[#8c8c8c]" />
               <span>Move</span>
             </button>
 
@@ -1874,9 +1874,9 @@ export function StoragePage() {
               type="button"
               onClick={() => setIsBatchCopyOpen(true)}
               title="Copy selected items"
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[13px] font-medium text-[#cccccc] hover:text-white hover:bg-[#202020] transition-colors cursor-pointer"
+              className="flex items-center gap-1.5 h-7 px-2.5 rounded-[6px] text-[13px] font-sans font-medium text-[#cccccc] hover:text-white bg-[#141414] hover:bg-[#1a1a1a] border border-[#242424] hover:border-[#333333] transition-colors cursor-pointer"
             >
-              <Copy className="w-3.5 h-3.5" />
+              <Copy className="w-3.5 h-3.5 text-[#8c8c8c]" />
               <span>Copy</span>
             </button>
 
@@ -1885,7 +1885,7 @@ export function StoragePage() {
               type="button"
               onClick={() => setIsBatchDeleteOpen(true)}
               title="Delete selected items"
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[13px] font-medium text-red-400 hover:text-red-300 hover:bg-red-950/40 border border-red-900/30 transition-colors cursor-pointer"
+              className="flex items-center gap-1.5 h-7 px-2.5 rounded-[6px] text-[13px] font-sans font-medium text-[#e5484d] hover:text-white bg-red-950/20 hover:bg-red-900/40 border border-red-900/40 hover:border-red-700/60 transition-colors cursor-pointer"
             >
               <Trash2 className="w-3.5 h-3.5" />
               <span>Delete</span>
@@ -1896,7 +1896,7 @@ export function StoragePage() {
               type="button"
               onClick={handleClearSelection}
               title="Clear selection (Esc)"
-              className="p-1 rounded-full text-[#888888] hover:text-white hover:bg-[#202020] transition-colors cursor-pointer ml-1"
+              className="h-7 w-7 rounded-[6px] text-[#8c8c8c] hover:text-white hover:bg-[#181818] border border-transparent hover:border-[#262626] transition-colors cursor-pointer flex items-center justify-center ml-0.5"
             >
               <X className="w-3.5 h-3.5" />
             </button>
