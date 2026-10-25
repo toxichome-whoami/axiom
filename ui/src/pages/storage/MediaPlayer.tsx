@@ -397,7 +397,7 @@ export function MediaPlayer({
                   </button>
 
                   {/* Time Counter */}
-                  <div className="text-[12px] font-mono text-[#a3a3a3] tabular-nums">
+                  <div className="text-[13px] font-sans font-medium text-[#a3a3a3] tabular-nums">
                     <span>{formatDuration(currentTime)}</span>
                     <span className="text-[#555555] mx-1">/</span>
                     <span className="text-[#737373]">{formatDuration(duration)}</span>
@@ -434,7 +434,7 @@ export function MediaPlayer({
                       type="button"
                       onClick={() => setShowSpeedMenu((prev) => !prev)}
                       title="Playback Speed"
-                      className="h-7 px-2 rounded-[4px] hover:bg-[#222222] transition-colors text-[12px] font-mono font-medium text-[#cccccc] hover:text-white flex items-center gap-1 cursor-pointer"
+                      className="h-7 px-2 rounded-[4px] hover:bg-[#222222] transition-colors text-[13px] font-sans font-medium text-[#cccccc] hover:text-white flex items-center gap-1 cursor-pointer"
                     >
                       <span>{playbackRate}x</span>
                     </button>
@@ -446,7 +446,7 @@ export function MediaPlayer({
                             key={rate}
                             type="button"
                             onClick={() => handleSpeedSelect(rate)}
-                            className={`w-full text-left px-2 py-1 rounded-[4px] text-[12px] font-mono transition-colors cursor-pointer flex items-center justify-between ${
+                            className={`w-full text-left px-2 py-1 rounded-[4px] text-[13px] font-sans font-medium transition-colors cursor-pointer flex items-center justify-between ${
                               playbackRate === rate ? 'bg-white text-black font-semibold' : 'text-[#cccccc] hover:bg-[#222222]'
                             }`}
                           >
@@ -516,7 +516,7 @@ export function MediaPlayer({
         </div>
 
         <h3 className="text-white text-[15px] font-sans font-medium truncate max-w-full text-center">{name}</h3>
-        <p className="text-[12px] text-[#8c8c8c] font-mono mt-0.5 mb-4">
+        <p className="text-[13px] text-[#8c8c8c] font-sans font-normal mt-0.5 mb-4">
           {getFileExtension(name)} &bull; {formatBytes(size || 0)}
         </p>
 
@@ -544,7 +544,7 @@ export function MediaPlayer({
             />
           </div>
 
-          <div className="flex items-center justify-between text-[11px] font-mono text-[#8c8c8c]">
+          <div className="flex items-center justify-between text-[12px] font-sans font-medium tabular-nums text-[#8c8c8c]">
             <span>{formatDuration(audioCurrentTime)}</span>
             <span>{formatDuration(audioDuration)}</span>
           </div>
@@ -635,7 +635,7 @@ export function MediaPlayer({
           >
             <ZoomOut className="w-3.5 h-3.5" />
           </button>
-          <span className="text-[12px] font-mono px-1.5 text-[#a3a3a3] select-none min-w-[42px] text-center">
+          <span className="text-[13px] font-sans font-medium tabular-nums px-1.5 text-[#a3a3a3] select-none min-w-[42px] text-center">
             {Math.round(zoomLevel * 100)}%
           </span>
           <button
@@ -694,7 +694,7 @@ export function MediaPlayer({
 
         {/* Footer Info */}
         {imgNaturalSize && (
-          <div className="w-full px-4 py-2 bg-[#0c0c0c] border-t border-[#1f1f1f] flex items-center justify-between text-[12px] font-mono text-[#8c8c8c]">
+          <div className="w-full px-4 py-2 bg-[#0c0c0c] border-t border-[#1f1f1f] flex items-center justify-between text-[13px] font-sans font-medium text-[#8c8c8c]">
             <span>
               {imgNaturalSize.width} &times; {imgNaturalSize.height} px
             </span>
@@ -746,7 +746,7 @@ export function MediaPlayer({
           <div className="flex items-center gap-2 text-[13px] text-white font-medium truncate">
             <FileCode className="w-4 h-4 text-[#8c8c8c]" />
             <span className="truncate">{name}</span>
-            <span className="text-[11px] font-mono text-[#8c8c8c] bg-[#141414] px-1.5 py-0.5 rounded-[4px] border border-[#262626]">
+            <span className="text-[12px] font-sans font-medium text-[#8c8c8c] bg-[#141414] px-2 py-0.5 rounded-[4px] border border-[#262626]">
               {formatBytes(size || textContent?.length || 0)}
             </span>
           </div>
@@ -809,7 +809,7 @@ export function MediaPlayer({
         {getFileIcon(name, 'w-6 h-6')}
       </div>
       <h3 className="text-white text-[15px] font-sans font-medium truncate max-w-full leading-snug">{name}</h3>
-      <p className="text-[12px] text-[#8c8c8c] mt-1 mb-5 font-mono">
+      <p className="text-[13px] text-[#8c8c8c] mt-1 mb-5 font-sans font-normal">
         {contentType || 'application/octet-stream'} &bull; {formatBytes(size || 0)}
       </p>
 
