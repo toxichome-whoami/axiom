@@ -494,7 +494,7 @@ export function AuditLog() {
                   return next;
                 });
               }}
-              className={`flex items-center gap-1.5 h-9 px-3 rounded-[8px] bg-transparent border text-[14px] font-medium transition-colors cursor-pointer shrink-0 ${
+              className={`flex items-center gap-1.5 h-9 px-3 rounded-[8px] bg-transparent border text-[14px] font-medium transition-colors cursor-pointer shrink-0 font-sans ${
                 showFilters || appliedFilterRules.length > 0
                   ? 'border-[#444444] text-white bg-[#141414]'
                   : 'border-[#262626] text-white hover:bg-[#141414] hover:border-[#383838]'
@@ -641,7 +641,7 @@ export function AuditLog() {
                 setShowDisplayOptions((prev) => !prev);
                 setShowFilters(false);
               }}
-              className={`flex items-center gap-1.5 h-9 px-3 rounded-[8px] bg-transparent border text-[14px] font-medium transition-colors cursor-pointer shrink-0 ${
+              className={`flex items-center gap-1.5 h-9 px-3 rounded-[8px] bg-transparent border text-[14px] font-medium transition-colors cursor-pointer shrink-0 font-sans ${
                 showDisplayOptions
                   ? 'border-[#444444] text-white bg-[#141414]'
                   : 'border-[#262626] text-white hover:bg-[#141414] hover:border-[#383838]'
@@ -649,13 +649,13 @@ export function AuditLog() {
               title="Toggle visible table columns"
             >
               <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 256 256" className="text-[#8c8c8c] shrink-0">
-                <path d="M222.87,74.56,134.87,23.75a16,16,0,0,0-15.74,0L31.13,74.56A16,16,0,0,0,28.19,66.76l.08.09L96,139.17V216a16,16,0,0,0,24.87,13.32l32-21.34A16,16,0,0,0,160,194.66V139.17l67.74-72.32.08-.09A15.8,15.8,0,0,0,230.6,49.53ZM127,160a32,32,0,1,1,32-32A32,32,0,0,1,127,160Z" />
+                <path d="M222.87,74.56,134.87,23.75a16,16,0,0,0-15.74,0L31.13,74.56A16,16,0,0,0,23.26,88.4v101.6a16,16,0,0,0,7.87,13.84l88,50.81a16,16,0,0,0,15.74,0l88-50.81a16,16,0,0,0,7.87-13.84V88.4A16,16,0,0,0,222.87,74.56ZM127,160a32,32,0,1,1,32-32A32,32,0,0,1,127,160Z" />
               </svg>
               <span>Display options</span>
             </button>
 
             {showDisplayOptions && (
-              <div className="absolute right-0 top-[calc(100%+4px)] w-52 rounded-[8px] bg-[#0c0c0c] border border-[#262626] shadow-2xl p-1 z-50 select-none animate-in fade-in duration-100">
+              <div className="absolute right-0 top-[calc(100%+4px)] w-52 rounded-[8px] bg-[#0c0c0c] border border-[#262626] shadow-2xl p-1 z-50 select-none font-sans animate-in fade-in duration-100">
                 {DISPLAY_COLUMN_OPTIONS.map((col) => {
                   const isVisible = visibleCols[col.id] !== false;
                   return (
