@@ -20,6 +20,7 @@ import {
   Copy,
   Share2,
   Globe,
+  Eye,
 } from 'lucide-react';
 import { StorageItem, ClipboardState } from './types';
 
@@ -33,6 +34,7 @@ export interface ContextMenuProps {
   item: StorageItem | null;
   clipboard: ClipboardState | null;
   onClose: () => void;
+  onPreview?: (item: StorageItem) => void;
   onOpenFolder?: (item: StorageItem) => void;
   onDownload?: (item: StorageItem) => void;
   onShare?: (item: StorageItem) => void;
@@ -54,6 +56,7 @@ export function ContextMenu({
   item,
   clipboard,
   onClose,
+  onPreview,
   onOpenFolder,
   onDownload,
   onShare,
@@ -134,6 +137,20 @@ export function ContextMenu({
             >
               <Folder className="w-4 h-4 text-[#eab308] shrink-0" />
               <span>Open Folder</span>
+            </button>
+          )}
+
+          {item.type === 'file' && onPreview && (
+            <button
+              type="button"
+              onClick={() => {
+                onPreview(item);
+                onClose();
+              }}
+              className="w-full flex items-center gap-2.5 px-2.5 py-1.5 text-[13px] text-white hover:bg-[#1a1a1a] rounded-md transition-colors cursor-pointer text-left"
+            >
+              <Eye className="w-4 h-4 text-blue-400 shrink-0" />
+              <span>Preview</span>
             </button>
           )}
 

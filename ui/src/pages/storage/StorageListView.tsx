@@ -30,6 +30,7 @@ export interface StorageListViewProps {
   onNavigateToPrefix: (prefix: string) => void;
   onContextMenu: (e: React.MouseEvent, item: StorageItem) => void;
   onDownload: (key: string) => void;
+  onPreviewItem?: (item: StorageItem) => void;
   onOpenMove: (item: StorageItem) => void;
   onDelete: (item: StorageItem) => void;
 
@@ -60,6 +61,7 @@ export function StorageListView({
   onNavigateToPrefix,
   onContextMenu,
   onDownload,
+  onPreviewItem,
   onOpenMove,
   onDelete,
   draggedItem,
@@ -223,6 +225,8 @@ export function StorageListView({
                   }
                   if (isFolder) {
                     onNavigateToPrefix(item.fullKey);
+                  } else if (onPreviewItem) {
+                    onPreviewItem(item);
                   } else {
                     onDownload(item.fullKey);
                   }

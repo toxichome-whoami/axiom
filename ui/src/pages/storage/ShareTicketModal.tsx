@@ -200,28 +200,31 @@ export function ShareTicketModal({
 
   if (!isOpen || !item) return null;
 
-  // Build effective capability URL
+  // Build effective capability URLs
   const rawTicketUrl = generatedTicket
     ? `${window.location.origin}${generatedTicket.url || ''}`
     : '';
-  const fullTicketUrl =
-    linkMode === 'stream' && rawTicketUrl
-      ? `${rawTicketUrl}&inline=1`
-      : rawTicketUrl;
+  const directStreamUrl = rawTicketUrl ? `${rawTicketUrl}&inline=1` : '';
+  const viewerUrl = generatedTicket
+    ? `${window.location.origin}/system/preview?ns=${encodeURIComponent(namespace)}&key=${encodeURIComponent(item.fullKey)}&ticket_sig=${encodeURIComponent(generatedTicket.signature || '')}&ticket_exp=${encodeURIComponent(String(generatedTicket.expires_at || 0))}`
+    : '';
+
+  // In stream mode, use the branded Axiom Viewer Link as the primary link
+  const primaryShareUrl = linkMode === 'stream' ? viewerUrl : rawTicketUrl;
 
   const ticketExp = generatedTicket?.expires_at || 0;
 
-  // Embed Snippets
-  const videoSnippet = fullTicketUrl
-    ? `<video controls preload="metadata" src="${fullTicketUrl}"></video>`
+  // Embed Snippets (using direct API stream URL)
+  const videoSnippet = directStreamUrl
+    ? `<video controls preload="metadata" src="${directStreamUrl}"></video>`
     : '';
-  const audioSnippet = fullTicketUrl
-    ? `<audio controls preload="metadata" src="${fullTicketUrl}"></audio>`
+  const audioSnippet = directStreamUrl
+    ? `<audio controls preload="metadata" src="${directStreamUrl}"></audio>`
     : '';
-  const imageSnippet = fullTicketUrl
-    ? `<img src="${fullTicketUrl}" alt="${item.name}" />`
+  const imageSnippet = directStreamUrl
+    ? `<img src="${directStreamUrl}" alt="${item.name}" />`
     : '';
-  const curlSnippet = fullTicketUrl ? `curl -O "${fullTicketUrl}"` : '';
+  const curlSnippet = directStreamUrl ? `curl -O "${directStreamUrl}"` : '';
 
   const activeTickets = tickets.filter((t) => !t.revoked && !formatTimeRemaining(t.expires_at).isExpired);
   const activeTicketCount = activeTickets.length;
@@ -327,18 +330,19 @@ export function ShareTicketModal({
               {generatedTicket ? (
                 /* ─── Link Generated Success View ────────────────────────────── */
                 <div className="space-y-4 animate-in fade-in duration-100">
+                  {/* Primary Link: Interactive Branded Viewer (or Direct Download) */}
                   <div>
                     <div className="flex items-center justify-between mb-1.5">
-                      <label className="block text-[13px] font-sans font-medium text-[#8c8c8c]">
-                        Pre-Signed Link
+                      <label className="block text-[13px] font-sans font-medium text-white">
+                        {linkMode === 'stream' ? 'Interactive Web Viewer Link' : 'Direct Download Link'}
                       </label>
                       <a
-                        href={fullTicketUrl}
+                        href={primaryShareUrl}
                         target="_blank"
                         rel="noreferrer"
                         className="flex items-center gap-1 text-[12px] font-sans text-blue-400 hover:text-blue-300 transition-colors"
                       >
-                        <span>Open</span>
+                        <span>{linkMode === 'stream' ? 'Open Viewer' : 'Test Download'}</span>
                         <ExternalLink className="w-3 h-3" />
                       </a>
                     </div>
@@ -346,17 +350,17 @@ export function ShareTicketModal({
                       <input
                         type="text"
                         readOnly
-                        value={fullTicketUrl}
+                        value={primaryShareUrl}
                         className="flex-1 h-8 px-3 rounded-[6px] bg-[#141414] border border-[#262626] text-white font-mono text-[12px] select-all outline-none"
                       />
                       <Button
                         type="button"
                         variant="primary"
                         size="sm"
-                        onClick={() => copyToClipboard(fullTicketUrl, 'generated-url')}
+                        onClick={() => copyToClipboard(primaryShareUrl, 'primary-url')}
                         className="h-8 px-3"
                       >
-                        {copiedKey === 'generated-url' ? (
+                        {copiedKey === 'primary-url' ? (
                           <>
                             <Check className="w-3.5 h-3.5" />
                             <span>Copied</span>
@@ -369,7 +373,36 @@ export function ShareTicketModal({
                         )}
                       </Button>
                     </div>
+                    <p className="text-[11px] text-[#777777] mt-1">
+                      {linkMode === 'stream'
+                        ? 'Recipient opens a branded, responsive media player with playback controls and download option.'
+                        : 'Link prompts browser to download the file directly.'}
+                    </p>
                   </div>
+
+                  {/* Secondary Link: Direct API Stream URL */}
+                  {linkMode === 'stream' && directStreamUrl && (
+                    <div className="p-2.5 rounded-[6px] bg-[#121212] border border-[#222222] space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <label className="block text-[12px] font-sans text-[#8c8c8c]">
+                          Direct API Stream URL
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => copyToClipboard(directStreamUrl, 'direct-stream-url')}
+                          className="text-[11px] font-sans text-blue-400 hover:text-blue-300 transition-colors cursor-pointer"
+                        >
+                          {copiedKey === 'direct-stream-url' ? 'Copied' : 'Copy Direct URL'}
+                        </button>
+                      </div>
+                      <input
+                        type="text"
+                        readOnly
+                        value={directStreamUrl}
+                        className="w-full h-7 px-2.5 rounded-[4px] bg-[#161616] border border-[#262626] text-[#aaaaaa] font-mono text-[11px] select-all outline-none"
+                      />
+                    </div>
+                  )}
 
                   {/* Summary row */}
                   <div className="flex items-center justify-between p-3 rounded-[6px] bg-[#121212] border border-[#222222] text-[13px] font-sans">

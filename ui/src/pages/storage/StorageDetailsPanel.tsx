@@ -20,6 +20,7 @@ import {
   HardDrive,
   Share2,
   Globe,
+  Eye,
 } from 'lucide-react';
 import { StorageItem } from './types';
 import { NamespaceInfo } from '../../types';
@@ -34,6 +35,7 @@ export interface StorageDetailsPanelProps {
   selectedItem: StorageItem | null;
   activeNamespace: string;
   currentNsInfo: NamespaceInfo | null;
+  onPreview?: (item: StorageItem) => void;
   onDownload: (key: string) => void;
   onShare?: (item: StorageItem) => void;
   onCopyPublicUrl?: (item: StorageItem) => void;
@@ -54,6 +56,7 @@ export function StorageDetailsPanel({
   selectedItem,
   activeNamespace,
   currentNsInfo,
+  onPreview,
   onDownload,
   onShare,
   onCopyPublicUrl,
@@ -123,12 +126,23 @@ export function StorageDetailsPanel({
               </p>
 
               {/* Quick Action Buttons */}
-              <div className="-mx-3.5 px-3.5 w-[calc(100%+1.75rem)] mt-3 pt-3 border-t border-[#1f1f1f] grid grid-cols-2 gap-1.5 font-sans">
+              <div className="-mx-3.5 px-3.5 w-[calc(100%+1.75rem)] mt-3 pt-3 border-t border-[#1f1f1f] grid grid-cols-3 gap-1.5 font-sans">
+                {selectedItem.type === 'file' && onPreview && (
+                  <button
+                    type="button"
+                    onClick={() => onPreview(selectedItem)}
+                    className="inline-flex items-center justify-center gap-1.5 h-7 px-2 rounded-[6px] text-[12px] font-sans font-medium text-white bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 transition-colors cursor-pointer"
+                  >
+                    <Eye className="w-3.5 h-3.5 text-blue-400" />
+                    <span>Preview</span>
+                  </button>
+                )}
+
                 {selectedItem.type === 'file' && (
                   <button
                     type="button"
                     onClick={() => onDownload(selectedItem.fullKey)}
-                    className="inline-flex items-center justify-center gap-1.5 h-7 px-2.5 rounded-[6px] text-[12px] font-sans font-medium text-[#cccccc] hover:text-white bg-[#141414] hover:bg-[#1a1a1a] border border-[#242424] hover:border-[#333333] transition-colors cursor-pointer"
+                    className="inline-flex items-center justify-center gap-1.5 h-7 px-2 rounded-[6px] text-[12px] font-sans font-medium text-[#cccccc] hover:text-white bg-[#141414] hover:bg-[#1a1a1a] border border-[#242424] hover:border-[#333333] transition-colors cursor-pointer"
                   >
                     <Download className="w-3.5 h-3.5 text-[#8c8c8c]" />
                     <span>Download</span>
@@ -139,7 +153,7 @@ export function StorageDetailsPanel({
                   <button
                     type="button"
                     onClick={() => onShare(selectedItem)}
-                    className="inline-flex items-center justify-center gap-1.5 h-7 px-2.5 rounded-[6px] text-[12px] font-sans font-medium text-[#cccccc] hover:text-white bg-[#141414] hover:bg-[#1a1a1a] border border-[#242424] hover:border-[#333333] transition-colors cursor-pointer"
+                    className="inline-flex items-center justify-center gap-1.5 h-7 px-2 rounded-[6px] text-[12px] font-sans font-medium text-[#cccccc] hover:text-white bg-[#141414] hover:bg-[#1a1a1a] border border-[#242424] hover:border-[#333333] transition-colors cursor-pointer"
                   >
                     <Share2 className="w-3.5 h-3.5 text-[#8c8c8c]" />
                     <span>Share</span>

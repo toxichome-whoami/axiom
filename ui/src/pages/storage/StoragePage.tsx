@@ -42,6 +42,7 @@ import { StorageListView } from './StorageListView';
 import { StorageDetailsPanel } from './StorageDetailsPanel';
 import { StorageEmptyState } from './StorageEmptyState';
 import { ShareTicketModal } from './ShareTicketModal';
+import { FilePreviewModal } from './FilePreviewModal';
 import { CreateUploadLinkModal } from './CreateUploadLinkModal';
 import { FileConflictModal, ConflictingFile, ConflictResolution } from './FileConflictModal';
 
@@ -292,6 +293,15 @@ export function StoragePage() {
 
   const [isShareOpen, setIsShareOpen] = useState(false);
   const [itemToShare, setItemToShare] = useState<StorageItem | null>(null);
+
+  // Dedicated File Preview Modal
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+  const [previewItem, setPreviewItem] = useState<StorageItem | null>(null);
+
+  const handleOpenPreview = useCallback((item: StorageItem) => {
+    setPreviewItem(item);
+    setIsPreviewOpen(true);
+  }, []);
 
   // Dedicated Pre-signed Upload Link Modal
   const [isUploadLinkOpen, setIsUploadLinkOpen] = useState(false);
@@ -1872,6 +1882,7 @@ export function StoragePage() {
                   setIsMoveOpen(true);
                 }}
                 onDownload={handleDownload}
+                onPreviewItem={handleOpenPreview}
                 onDelete={(item) => setItemToDelete(item)}
                 draggedItem={draggedItem}
                 draggedItemRef={draggedItemRef}
@@ -1897,6 +1908,7 @@ export function StoragePage() {
                 onNavigateToPrefix={(p) => navigateToPrefix(p, true)}
                 onContextMenu={handleContextMenu}
                 onDownload={handleDownload}
+                onPreviewItem={handleOpenPreview}
                 onOpenMove={(item) => {
                   setItemToMove(item);
                   setIsMoveOpen(true);
@@ -2003,6 +2015,7 @@ export function StoragePage() {
         selectedItem={inspectorItem}
         activeNamespace={activeNamespace}
         currentNsInfo={currentNsInfo}
+        onPreview={handleOpenPreview}
         onDownload={handleDownload}
         onShare={handleOpenShare}
         onCopyPublicUrl={handleCopyPublicUrl}
@@ -2601,6 +2614,7 @@ export function StoragePage() {
         onOpenFolder={(item) => {
           navigateToPrefix(item.fullKey, true);
         }}
+        onPreview={handleOpenPreview}
         onDownload={(item) => handleDownload(item.fullKey)}
         onShare={handleOpenShare}
         onCopyPublicUrl={handleCopyPublicUrl}
@@ -2635,6 +2649,19 @@ export function StoragePage() {
         onUpload={() => fileInputRef.current?.click()}
         onPaste={handlePaste}
         onRefresh={loadData}
+      />
+
+      {/* Dedicated In-App File Preview Modal */}
+      <FilePreviewModal
+        isOpen={isPreviewOpen}
+        onClose={() => {
+          setIsPreviewOpen(false);
+          setPreviewItem(null);
+        }}
+        item={previewItem}
+        namespace={activeNamespace}
+        onDownload={handleDownload}
+        onShare={handleOpenShare}
       />
 
       {/* Capability Ticket / Share Link Modal */}

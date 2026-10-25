@@ -31,6 +31,7 @@ export interface StorageGridViewProps {
   onContextMenu: (e: React.MouseEvent, item: StorageItem) => void;
   onOpenMove: (item: StorageItem) => void;
   onDownload: (key: string) => void;
+  onPreviewItem?: (item: StorageItem) => void;
   onDelete: (item: StorageItem) => void;
 
   // Drag and drop
@@ -60,6 +61,7 @@ export function StorageGridView({
   onContextMenu,
   onOpenMove,
   onDownload,
+  onPreviewItem,
   onDelete,
   draggedItem,
   draggedItemRef,
@@ -288,6 +290,15 @@ export function StorageGridView({
                       onToggleSelectItem ? onToggleSelectItem(item, e) : onSelectItem(item);
                     } else {
                       onSelectItem(item);
+                    }
+                  }}
+                  onDoubleClick={(e) => {
+                    const target = e.target as HTMLElement;
+                    if (target.closest('button, input, [role="button"]')) {
+                      return;
+                    }
+                    if (onPreviewItem) {
+                      onPreviewItem(item);
                     }
                   }}
                   onContextMenu={(e) => onContextMenu(e, item)}

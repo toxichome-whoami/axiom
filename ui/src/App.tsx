@@ -20,6 +20,7 @@ const AuditLog = lazy(() => import('./pages/AuditLog').then((m) => ({ default: m
 const Mcp = lazy(() => import('./pages/Mcp').then((m) => ({ default: m.Mcp })));
 const Settings = lazy(() => import('./pages/Settings').then((m) => ({ default: m.Settings })));
 const AuthPage = lazy(() => import('./pages/AuthPage').then((m) => ({ default: m.AuthPage })));
+const ShareViewerPage = lazy(() => import('./pages/storage/ShareViewerPage').then((m) => ({ default: m.ShareViewerPage })));
 
 function PageFallback() {
   return (
@@ -116,6 +117,28 @@ export function App() {
     window.history.pushState(null, '', '/system');
     setCurrentPath('/system');
     window.scrollTo(0, 0);
+  }
+
+  // Check for public capability share/preview viewer
+  const isShareViewer =
+    window.location.pathname === '/system/preview' ||
+    window.location.pathname === '/system/share' ||
+    window.location.pathname === '/system/storage/share' ||
+    window.location.pathname === '/preview' ||
+    window.location.pathname === '/share' ||
+    window.location.pathname === '/view';
+
+  if (isShareViewer) {
+    return (
+      <>
+        <ErrorBoundary>
+          <Suspense fallback={<PageFallback />}>
+            <ShareViewerPage />
+          </Suspense>
+        </ErrorBoundary>
+        <GlobalAlertDialog />
+      </>
+    );
   }
 
   // If user is unauthenticated, render AuthPage
