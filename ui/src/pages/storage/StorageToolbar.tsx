@@ -18,18 +18,11 @@ import {
   FolderPlus,
   Files,
   Link as LinkIcon,
-  Filter,
-  Image as ImageIcon,
-  Film,
-  Music,
-  FileText,
-  Code2,
-  Layers,
-  Check,
 } from 'lucide-react';
 import { StorageViewMode, StorageTierFilter, StorageTypeFilter, StorageItem } from './types';
 import { NamespaceUsage } from '../../types';
 import { formatBytes } from './format';
+import { CustomSelect } from '../../components/shared/CustomSelect';
 
 export interface StorageToolbarProps {
   activeNamespace: string;
@@ -93,8 +86,33 @@ export function StorageToolbar({
   const [dragOverTargetKey, setDragOverTargetKey] = useState<string | null>(null);
   const [isUploadMenuOpen, setIsUploadMenuOpen] = useState(false);
   const [isFilterMenuOpen, setIsFilterMenuOpen] = useState(false);
+  const [draftType, setDraftType] = useState<StorageTypeFilter>(typeFilter || 'all');
+  const [draftTier, setDraftTier] = useState<StorageTierFilter>(tierFilter);
   const uploadMenuRef = useRef<HTMLDivElement>(null);
   const filterMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (isFilterMenuOpen) {
+      setDraftType(typeFilter || 'all');
+      setDraftTier(tierFilter);
+    }
+  }, [isFilterMenuOpen, typeFilter, tierFilter]);
+
+  const activeFilterCount = (typeFilter && typeFilter !== 'all' ? 1 : 0) + (tierFilter !== 'all' ? 1 : 0);
+
+  const handleApplyFilters = () => {
+    onTypeFilterChange?.(draftType);
+    onTierFilterChange(draftTier);
+    setIsFilterMenuOpen(false);
+  };
+
+  const handleClearFilters = () => {
+    setDraftType('all');
+    setDraftTier('all');
+    onTypeFilterChange?.('all');
+    onTierFilterChange('all');
+    setIsFilterMenuOpen(false);
+  };
 
   useEffect(() => {
     if (!isFilterMenuOpen) return;
@@ -260,96 +278,144 @@ export function StorageToolbar({
           )}
         </div>
 
-        {/* Search & Type Filter Dropdown */}
+        {/* Filters dropdown button & popover (Matches Databases page architecture) */}
         {onTypeFilterChange && (
           <div className="relative" ref={filterMenuRef}>
             <button
               type="button"
               onClick={() => setIsFilterMenuOpen((prev) => !prev)}
-              title="Filter by file type"
-              className={`flex items-center gap-1.5 h-8 px-2.5 rounded-[6px] text-[13px] font-sans font-medium border transition-colors cursor-pointer select-none ${
-                typeFilter !== 'all'
-                  ? 'bg-blue-600/20 text-blue-400 border-blue-500/40 shadow-xs'
-                  : 'bg-[#141414] text-[#8c8c8c] hover:text-white border-[#262626] hover:border-[#383838]'
+              className={`flex items-center gap-1.5 h-8 px-2.5 rounded-[8px] bg-transparent border text-[13px] font-medium transition-colors cursor-pointer shrink-0 font-sans ${
+                isFilterMenuOpen || activeFilterCount > 0
+                  ? 'border-[#444444] text-white bg-[#141414]'
+                  : 'border-[#262626] text-white hover:bg-[#141414] hover:border-[#383838]'
               }`}
+              title="Filter storage files"
             >
-              <Filter className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">
-                {typeFilter !== 'all'
-                  ? typeFilter === 'code'
-                    ? 'Code'
-                    : typeFilter.charAt(0).toUpperCase() + typeFilter.slice(1)
-                  : 'Filter'}
-              </span>
-              {typeFilter !== 'all' && (
-                <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="14"
+                height="14"
+                fill="currentColor"
+                viewBox="0 0 256 256"
+                className="text-[#8c8c8c] shrink-0"
+              >
+                <path d="M230.6,49.53A15.81,15.81,0,0,0,216,40H40A16,16,0,0,0,28.19,66.76l.08.09L96,139.17V216a16,16,0,0,0,24.87,13.32l32-21.34A16,16,0,0,0,160,194.66V139.17l67.74-72.32.08-.09A15.8,15.8,0,0,0,230.6,49.53ZM40,56h0Zm106.18,74.58A8,8,0,0,0,144,136v58.66L112,216V136a8,8,0,0,0-2.16-5.47L40,56H216Z" />
+              </svg>
+              <span>Filters</span>
+              {activeFilterCount > 0 && (
+                <span className="text-[12px] text-[#8c8c8c] font-normal">
+                  ({activeFilterCount})
+                </span>
               )}
-              <ChevronDown className="w-3 h-3 text-[#666666]" />
             </button>
 
             {isFilterMenuOpen && (() => {
               const rect = filterMenuRef.current?.getBoundingClientRect();
-              const top = (rect?.bottom ?? 0) + 4;
-              const left = Math.max(8, Math.min(window.innerWidth - 208 - 8, (rect?.right ?? 0) - 208));
+              const popoverWidth = Math.min(340, window.innerWidth - 24);
+              const top = (rect?.bottom ?? 0) + 6;
+              const left = Math.max(12, Math.min(window.innerWidth - popoverWidth - 12, (rect?.right ?? 0) - popoverWidth));
               return (
                 <div
-                  style={{ top: `${top}px`, left: `${left}px` }}
-                  className="fixed w-52 bg-[#111111] border border-[#262626] rounded-[8px] shadow-2xl p-1.5 z-50 animate-in fade-in zoom-in-95 duration-100 font-sans divide-y divide-[#1f1f1f]"
+                  style={{ top: `${top}px`, left: `${left}px`, width: `${popoverWidth}px` }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleApplyFilters();
+                  }}
+                  className="fixed rounded-[8px] bg-[#0c0c0c] border border-[#262626] shadow-2xl p-4 z-50 select-none animate-in fade-in font-sans"
                 >
-                  {/* Type Category Filter */}
-                  <div className="pb-1.5 space-y-0.5">
-                    <div className="px-2 py-1 text-[11px] font-semibold text-[#666666] uppercase tracking-wider">
-                      File Type
+                  {/* Header */}
+                  <div className="flex items-center justify-between pb-3 border-b border-[#1f1f1f]">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[14px] font-medium text-white font-sans">Storage Filters</span>
+                      {activeFilterCount > 0 && (
+                        <span className="text-[12px] text-[#8c8c8c] font-normal">
+                          ({activeFilterCount} active)
+                        </span>
+                      )}
                     </div>
-                    {[
-                      { id: 'all', label: 'All Files', icon: Layers },
-                      { id: 'image', label: 'Images', icon: ImageIcon },
-                      { id: 'video', label: 'Videos', icon: Film },
-                      { id: 'audio', label: 'Audio', icon: Music },
-                      { id: 'document', label: 'Documents', icon: FileText },
-                      { id: 'code', label: 'Code & Text', icon: Code2 },
-                    ].map((cat) => {
-                      const Icon = cat.icon;
-                      const isSelected = typeFilter === cat.id;
-                      return (
-                        <button
-                          key={cat.id}
-                          type="button"
-                          onClick={() => {
-                            onTypeFilterChange(cat.id as StorageTypeFilter);
-                            setIsFilterMenuOpen(false);
-                          }}
-                          className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-[5px] text-[12.5px] transition-colors cursor-pointer ${
-                            isSelected
-                              ? 'bg-[#1f1f1f] text-white font-medium'
-                              : 'text-[#8c8c8c] hover:text-white hover:bg-[#161616]'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2">
-                            <Icon className="w-3.5 h-3.5 text-[#888888]" />
-                            <span>{cat.label}</span>
-                          </div>
-                          {isSelected && <Check className="w-3.5 h-3.5 text-blue-400 stroke-[3]" />}
-                        </button>
-                      );
-                    })}
+                    <button
+                      type="button"
+                      onClick={() => setIsFilterMenuOpen(false)}
+                      className="text-[#888888] hover:text-white transition-colors cursor-pointer text-[14px] p-1 leading-none"
+                      title="Close filters"
+                    >
+                      ✕
+                    </button>
                   </div>
 
-                  {/* Reset Action */}
-                  {typeFilter !== 'all' && (
-                    <div className="pt-1.5">
+                  {/* Filter Fields */}
+                  <div className="py-3.5 space-y-3.5 border-b border-[#1f1f1f]">
+                    <div>
+                      <label className="block text-[12px] font-medium text-[#8c8c8c] mb-1.5 font-sans">
+                        File Type
+                      </label>
+                      <CustomSelect
+                        size="sm"
+                        value={draftType}
+                        onChange={(val) => setDraftType(val as StorageTypeFilter)}
+                        options={[
+                          { value: 'all', label: 'All Files' },
+                          { value: 'image', label: 'Images (PNG, JPG, WebP, SVG...)' },
+                          { value: 'video', label: 'Videos (MP4, WebM, MOV...)' },
+                          { value: 'audio', label: 'Audio (MP3, WAV, FLAC...)' },
+                          { value: 'document', label: 'Documents (PDF, Office...)' },
+                          { value: 'code', label: 'Code & Text (TS, Rust, JSON, SQL...)' },
+                        ]}
+                        menuWidth="w-full"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[12px] font-medium text-[#8c8c8c] mb-1.5 font-sans">
+                        Storage Tier
+                      </label>
+                      <CustomSelect
+                        size="sm"
+                        value={draftTier}
+                        onChange={(val) => setDraftTier(val as StorageTierFilter)}
+                        options={[
+                          { value: 'all', label: 'All Storage Tiers' },
+                          { value: 'inline', label: 'LSM Tree (Inline Blobs)' },
+                          { value: 'disk', label: 'Disk Storage' },
+                        ]}
+                        menuWidth="w-full"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Footer Controls */}
+                  <div className="flex items-center justify-between pt-3 font-sans">
+                    <div>
+                      {(draftType !== 'all' || draftTier !== 'all' || (typeFilter && typeFilter !== 'all') || tierFilter !== 'all') && (
+                        <button
+                          type="button"
+                          onClick={handleClearFilters}
+                          className="text-[13px] text-[#888888] hover:text-white transition-colors cursor-pointer font-sans"
+                        >
+                          Clear
+                        </button>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
                       <button
                         type="button"
-                        onClick={() => {
-                          onTypeFilterChange('all');
-                          setIsFilterMenuOpen(false);
-                        }}
-                        className="w-full text-center py-1 rounded text-[12px] text-rose-400 hover:text-rose-300 hover:bg-rose-950/20 transition-colors cursor-pointer"
+                        onClick={() => setIsFilterMenuOpen(false)}
+                        className="h-8 px-3 rounded-[8px] text-[13px] text-[#8c8c8c] hover:text-white hover:bg-[#141414] transition-colors cursor-pointer font-sans"
                       >
-                        Reset Filter
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleApplyFilters}
+                        className="group relative flex shrink-0 items-center justify-center h-8 px-3.5 rounded-[8px] font-medium text-white shadow-xs outline-none cursor-pointer disabled:opacity-50 overflow-hidden ring-1 ring-[#1d4ed8] bg-[#2563eb] font-sans"
+                      >
+                        <span aria-hidden="true" className="pointer-events-none absolute inset-0 rounded-[inherit] bg-gradient-to-b from-[#3b82f6] to-[#2563eb] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2)]" />
+                        <span aria-hidden="true" className="pointer-events-none absolute inset-0 rounded-[inherit] bg-black opacity-0 group-hover:opacity-15 transition-opacity duration-200" />
+                        <span className="relative flex items-center gap-1.5 text-[13px] font-sans">
+                          Apply filters
+                        </span>
                       </button>
                     </div>
-                  )}
+                  </div>
                 </div>
               );
             })()}
