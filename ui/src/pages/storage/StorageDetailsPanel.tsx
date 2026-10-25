@@ -89,7 +89,7 @@ export function StorageDetailsPanel({
       )}
       {/* ─── Header: Fixed h-12 (aligned with StorageToolbar & StorageSidebar) ─────────────── */}
       <div className="h-12 shrink-0 px-4 border-b border-[#222222] bg-[#0c0c0c] flex items-center justify-between">
-        <h3 className="text-[15px] font-medium text-white tracking-tight truncate">
+        <h3 className="text-[14px] font-medium text-white font-sans truncate">
           {selectedItem ? (selectedItem.type === 'folder' ? 'Folder Details' : 'Object Details') : 'Namespace Overview'}
         </h3>
         <button
@@ -116,10 +116,10 @@ export function StorageDetailsPanel({
                 )}
               </div>
 
-              <h4 className="text-[15px] font-medium text-white break-all max-w-full leading-snug">
+              <h4 className="text-[14px] font-medium text-white font-sans break-all max-w-full leading-snug">
                 {selectedItem.name}
               </h4>
-              <p className="text-[13px] text-[#8c8c8c] mt-0.5 truncate max-w-full">
+              <p className="text-[12px] text-[#8c8c8c] font-sans mt-0.5 truncate max-w-full">
                 {selectedItem.type === 'folder'
                   ? 'Virtual Directory'
                   : selectedItem.content_type || 'application/octet-stream'}
@@ -218,7 +218,7 @@ export function StorageDetailsPanel({
                 Properties
               </span>
 
-              <div className="rounded-lg bg-[#111111] border border-[#222222] divide-y divide-[#1a1a1a] text-[13.5px]">
+              <div className="rounded-lg bg-[#111111] border border-[#222222] divide-y divide-[#1a1a1a] text-[13px] font-sans">
                 <div className="flex items-center justify-between px-3 py-2">
                   <span className="text-[#8c8c8c]">Namespace</span>
                   <div className="flex items-center gap-1.5">
@@ -247,7 +247,7 @@ export function StorageDetailsPanel({
                     <span className="text-[#8c8c8c] shrink-0">Direct CDN URL</span>
                     <div className="flex items-center gap-1.5 min-w-0">
                       <span
-                        className="text-[#30a46c] text-xs truncate max-w-[140px] font-mono"
+                        className="text-neutral-300 text-[12px] truncate max-w-[140px] font-mono"
                         title={`${window.location.origin}/api/v1/blobs/public/${activeNamespace}/${selectedItem.fullKey}`}
                       >
                         /api/v1/blobs/public/{activeNamespace}/{selectedItem.fullKey}
@@ -264,7 +264,7 @@ export function StorageDetailsPanel({
                         className="text-[#777777] hover:text-white p-0.5 cursor-pointer shrink-0"
                       >
                         {copiedKey === 'public-url' ? (
-                          <Check className="w-3.5 h-3.5 text-[#30a46c]" />
+                          <Check className="w-3.5 h-3.5 text-emerald-400" />
                         ) : (
                           <Copy className="w-3.5 h-3.5" />
                         )}
@@ -286,7 +286,7 @@ export function StorageDetailsPanel({
                       className="text-[#777777] hover:text-white p-0.5 cursor-pointer shrink-0"
                     >
                       {copiedKey === 'path-key' ? (
-                        <Check className="w-3.5 h-3.5 text-[#30a46c]" />
+                        <Check className="w-3.5 h-3.5 text-emerald-400" />
                       ) : (
                         <Copy className="w-3.5 h-3.5" />
                       )}
@@ -341,8 +341,8 @@ export function StorageDetailsPanel({
                   >
                     {copiedKey === 'blake3-hash' ? (
                       <>
-                        <Check className="w-3 h-3 text-[#30a46c]" />
-                        <span className="text-[#30a46c] font-medium">Copied!</span>
+                        <Check className="w-3 h-3 text-emerald-400" />
+                        <span className="text-emerald-400 font-medium">Copied</span>
                       </>
                     ) : (
                       <>
@@ -407,7 +407,7 @@ export function StorageDetailsPanel({
             </div>
 
             {currentNsInfo && (
-              <div className="rounded-lg bg-[#111111] border border-[#222222] divide-y divide-[#1a1a1a] text-[13.5px]">
+              <div className="rounded-lg bg-[#111111] border border-[#222222] divide-y divide-[#1a1a1a] text-[13px] font-sans">
                 <div className="flex items-center justify-between px-3 py-2">
                   <span className="text-[#8c8c8c]">Total Objects</span>
                   <span className="text-white tabular-nums">{currentNsInfo.total_objects}</span>

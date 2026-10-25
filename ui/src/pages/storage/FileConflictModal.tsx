@@ -102,28 +102,28 @@ export function FileConflictModal({
           <div className="grid grid-cols-2 gap-3 p-3.5 rounded-[8px] bg-[#111111] border border-[#222222] font-sans">
             {/* Existing file */}
             <div className="space-y-1.5 p-2 rounded-[6px] bg-[#161616] border border-[#262626]">
-              <span className="text-[11px] font-sans font-medium text-[#8c8c8c] uppercase tracking-wider block">
+              <span className="text-[12px] font-sans font-medium text-[#8c8c8c] block">
                 Existing File
               </span>
               <div className="flex items-center gap-2">
                 {getFileIcon(currentConflict.name, 'w-4 h-4 shrink-0')}
-                <span className="text-[12px] text-[#cccccc] truncate font-medium">{currentConflict.name}</span>
+                <span className="text-[13px] font-sans text-[#cccccc] truncate font-medium">{currentConflict.name}</span>
               </div>
-              <div className="text-[11px] text-[#8c8c8c]">
+              <div className="text-[12px] font-sans text-[#8c8c8c]">
                 Size: {currentConflict.existingSize !== undefined ? formatBytes(currentConflict.existingSize) : 'Unknown'}
               </div>
             </div>
 
             {/* Incoming file */}
             <div className="space-y-1.5 p-2 rounded-[6px] bg-[#161616] border border-[#262626]">
-              <span className="text-[11px] font-sans font-medium text-blue-400 uppercase tracking-wider block">
+              <span className="text-[12px] font-sans font-medium text-blue-400 block">
                 Incoming File
               </span>
               <div className="flex items-center gap-2">
                 {getFileIcon(currentConflict.name, 'w-4 h-4 shrink-0 text-blue-400')}
-                <span className="text-[12px] text-white truncate font-medium">{currentConflict.name}</span>
+                <span className="text-[13px] font-sans text-white truncate font-medium">{currentConflict.name}</span>
               </div>
-              <div className="text-[11px] text-[#8c8c8c]">
+              <div className="text-[12px] font-sans text-[#8c8c8c]">
                 Size: {formatBytes(currentConflict.incomingSize)}
               </div>
             </div>

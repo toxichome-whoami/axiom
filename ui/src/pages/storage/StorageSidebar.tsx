@@ -158,7 +158,7 @@ export function StorageSidebar({
                 style={{ top: `${top}px`, left: `${left}px`, width: `${popoverWidth}px` }}
                 className="fixed bg-[#111111] border border-[#262626] rounded-[8px] shadow-2xl p-1 z-50 animate-in fade-in zoom-in-95 duration-100 font-sans"
               >
-                <div className="px-3 py-2 text-[13px] font-medium text-[#888888] select-none flex items-center justify-between">
+                <div className="px-3 py-2 text-[13px] font-medium text-[#8c8c8c] select-none flex items-center justify-between">
                   <span>Storage Namespaces</span>
                   <span className="text-[12px] font-mono text-[#666666]">{namespaces.length}</span>
                 </div>
@@ -189,8 +189,8 @@ export function StorageSidebar({
                           </div>
                           <div className="flex items-center gap-1.5 shrink-0 ml-2">
                             {ns.is_public && (
-                              <span className="px-1 py-0.5 rounded text-[10px] bg-[#161616] border border-[#2e2e2e] text-[#cccccc] leading-none">
-                                pub
+                              <span className="px-1.5 py-0.5 rounded-[4px] text-[11px] font-sans font-medium bg-[#161616] border border-[#2e2e2e] text-[#cccccc] leading-none">
+                                public
                               </span>
                             )}
                             {isActive && <Check className="w-3.5 h-3.5 text-white shrink-0" />}

@@ -396,7 +396,7 @@ export function FileTree({
           }}
           onContextMenu={(e) => onContextMenu(e, toStorageItem(node))}
           style={{ paddingLeft: `${depth * 18 + 12}px` }}
-          className={`group flex items-center gap-2.5 py-2 pr-4 w-full text-[13.5px] transition-colors cursor-pointer whitespace-nowrap border-b border-[#141414] select-none ${
+          className={`group flex items-center gap-2.5 py-2 pr-4 w-full text-[13px] font-sans transition-colors cursor-pointer whitespace-nowrap border-b border-[#141414] select-none ${
             isSelfDragged ? 'opacity-40' : ''
           } ${
             isTreeDropTarget
@@ -434,7 +434,7 @@ export function FileTree({
             </>
           )}
 
-          <span className={`whitespace-nowrap pr-2 font-normal ${isSelected ? 'text-white font-medium' : ''}`} title={node.name}>
+          <span className={`whitespace-nowrap pr-2 font-normal text-[13px] font-sans ${isSelected ? 'text-white font-medium' : ''}`} title={node.name}>
             {node.name}
           </span>
         </div>

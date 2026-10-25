@@ -109,10 +109,10 @@ export function StorageGridView({
       {folderItems.length > 0 && (
         <div className="space-y-3">
           <div className="flex items-center justify-between px-0.5">
-            <span className="text-[15px] font-medium text-white">
+            <span className="text-[14px] font-medium text-white font-sans">
               Folders
             </span>
-            <span className="text-[12px] font-sans px-2 py-0.5 rounded-[4px] bg-[#141414] border border-[#242424] text-[#888888] tabular-nums">
+            <span className="text-[12px] font-sans px-2 py-0.5 rounded-[4px] bg-[#141414] border border-[#242424] text-[#8c8c8c] tabular-nums font-normal">
               {folderItems.length}
             </span>
           </div>
@@ -218,10 +218,10 @@ export function StorageGridView({
                       <Folder className={`w-4 h-4 ${isDropTarget ? 'text-blue-400 animate-pulse' : 'text-[#a3a3a3]'}`} />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <div className="text-sm font-medium text-white truncate" title={f.name}>
+                      <div className="text-[14px] font-medium text-white truncate font-sans" title={f.name}>
                         {f.name}
                       </div>
-                      <div className="text-xs text-[#888888] tabular-nums truncate">
+                      <div className="text-[12px] text-[#8c8c8c] tabular-nums truncate font-sans font-normal">
                         {isDropTarget ? (
                           <span className="text-blue-400 font-medium">Drop here</span>
                         ) : (
@@ -262,10 +262,10 @@ export function StorageGridView({
       {fileItems.length > 0 && (
         <div className="space-y-3">
           <div className="flex items-center justify-between px-0.5">
-            <span className="text-[15px] font-medium text-white">
+            <span className="text-[14px] font-medium text-white font-sans">
               Files
             </span>
-            <span className="text-[12px] font-sans px-2 py-0.5 rounded-[4px] bg-[#141414] border border-[#242424] text-[#888888] tabular-nums">
+            <span className="text-[12px] font-sans px-2 py-0.5 rounded-[4px] bg-[#141414] border border-[#242424] text-[#8c8c8c] tabular-nums font-normal">
               {fileItems.length}
             </span>
           </div>
@@ -346,10 +346,10 @@ export function StorageGridView({
                     </div>
 
                     <div className="min-w-0 flex-1 pt-0.5">
-                      <div className="text-sm font-medium text-white truncate leading-snug" title={item.name}>
+                      <div className="text-[14px] font-medium text-white truncate leading-snug font-sans" title={item.name}>
                         {item.name}
                       </div>
-                      <div className="text-xs text-[#888888] truncate" title={item.content_type || 'application/octet-stream'}>
+                      <div className="text-[12px] text-[#8c8c8c] truncate font-sans font-normal" title={item.content_type || 'application/octet-stream'}>
                         {item.content_type?.split('/')[1] || 'binary'}
                       </div>
                     </div>
@@ -372,7 +372,7 @@ export function StorageGridView({
                   </div>
 
                   {/* Bottom row: Size & Storage Tier pill (edge-to-edge card line) */}
-                  <div className="-mx-3.5 px-3.5 pt-2.5 border-t border-[#1e1e1e] flex items-center justify-between text-xs text-[#888888] tabular-nums font-sans">
+                  <div className="-mx-3.5 px-3.5 pt-2.5 border-t border-[#1e1e1e] flex items-center justify-between text-[12px] text-[#8c8c8c] tabular-nums font-sans font-normal">
                     <span>{formatBytes(item.size || 0)}</span>
 
                     <span

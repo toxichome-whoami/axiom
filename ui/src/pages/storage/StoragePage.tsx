@@ -2346,7 +2346,7 @@ export function StoragePage() {
                     <label htmlFor="new-ns-public-switch" className="text-[13px] font-medium text-white block cursor-pointer">
                       Enable Public Read Access
                     </label>
-                    <span className="text-[12.5px] text-[#777777] leading-relaxed block mt-0.5">
+                    <span className="text-[12px] text-[#8c8c8c] font-sans leading-relaxed block mt-0.5">
                       Direct static URLs (<code className="text-[#a3a3a3]">/api/v1/blobs/public/:namespace/*key</code>) with HTTP 304 browser caching for websites. Writes remain strictly authenticated.
                     </span>
                   </div>
@@ -2508,7 +2508,7 @@ export function StoragePage() {
                       <label htmlFor="edit-ns-public-switch" className="text-[13px] font-medium text-white block cursor-pointer">
                         Enable Public Read Access
                       </label>
-                      <span className="text-[12.5px] text-[#777777] leading-relaxed block mt-0.5">
+                      <span className="text-[12px] text-[#8c8c8c] font-sans leading-relaxed block mt-0.5">
                         Direct static URLs (<code className="text-[#a3a3a3]">/api/v1/blobs/public/:namespace/*key</code>) with HTTP 304 browser caching for websites.
                       </span>
                     </div>
