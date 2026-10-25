@@ -27,6 +27,7 @@ import {
 import { StorageItem } from './types';
 import { BlobTicket, CreateBlobTicketResponse } from '../../types';
 import { api } from '../../api/client';
+import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 
 export interface ShareTicketModalProps {
   isOpen: boolean;
@@ -92,6 +93,7 @@ export function ShareTicketModal({
   const [manageError, setManageError] = useState<string | null>(null);
   const [revokingSigs, setRevokingSigs] = useState<Set<string>>(new Set());
   const [deletingSigs, setDeletingSigs] = useState<Set<string>>(new Set());
+  const [ticketToDelete, setTicketToDelete] = useState<BlobTicket | null>(null);
 
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
@@ -135,6 +137,7 @@ export function ShareTicketModal({
     if (isOpen) {
       setGeneratedTicket(null);
       setCreateError(null);
+      setTicketToDelete(null);
       setResultFormat('viewer');
       setPublicFormat('url');
       setActiveTab(isPublicNamespace ? 'public' : 'create');
@@ -199,24 +202,20 @@ export function ShareTicketModal({
     }
   };
 
-  const handleDelete = async (signature: string) => {
-    if (
-      !window.confirm(
-        'Are you sure you want to delete this capability ticket? Once deleted, any link using it will stop working immediately.'
-      )
-    ) {
-      return;
-    }
-    setDeletingSigs((prev) => new Set(prev).add(signature));
+  const handleConfirmDelete = async () => {
+    if (!ticketToDelete) return;
+    const sig = ticketToDelete.signature;
+    setDeletingSigs((prev) => new Set(prev).add(sig));
     try {
-      await api.deleteBlobTicket(signature);
+      await api.deleteBlobTicket(sig);
       await loadTickets();
+      setTicketToDelete(null);
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : 'Failed to delete ticket');
+      setManageError(err instanceof Error ? err.message : 'Failed to delete ticket');
     } finally {
       setDeletingSigs((prev) => {
         const next = new Set(prev);
-        next.delete(signature);
+        next.delete(sig);
         return next;
       });
     }
@@ -277,8 +276,9 @@ export function ShareTicketModal({
   const activeTicketCount = activeTickets.length;
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs animate-in fade-in duration-150 font-sans"
+    <>
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs animate-in fade-in duration-150 font-sans"
       onClick={(e) => {
         if (e.target === e.currentTarget) {
           onClose();
@@ -1102,7 +1102,7 @@ export function ShareTicketModal({
 
                           <button
                             type="button"
-                            onClick={() => handleDelete(t.signature)}
+                            onClick={() => setTicketToDelete(t)}
                             disabled={isDeleting}
                             title="Delete ticket"
                             className="w-7 h-7 rounded-[5px] text-[#888888] hover:text-rose-400 hover:bg-rose-500/10 border border-[#282828] flex items-center justify-center transition-colors cursor-pointer disabled:opacity-40"
@@ -1130,5 +1130,29 @@ export function ShareTicketModal({
         </div>
       </div>
     </div>
+
+      {/* Delete Ticket Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={ticketToDelete !== null}
+        onClose={() => setTicketToDelete(null)}
+        onConfirm={handleConfirmDelete}
+        title="Delete Capability Ticket"
+        description={
+          ticketToDelete ? (
+            <span>
+              Are you sure you want to permanently delete this capability ticket? Any link using signature{' '}
+              <strong className="text-white font-mono text-[12px] bg-[#1a1a1a] px-1 py-0.5 rounded">
+                {ticketToDelete.signature.slice(0, 16)}...
+              </strong>{' '}
+              will stop working immediately.
+            </span>
+          ) : (
+            'Are you sure you want to delete this capability ticket?'
+          )
+        }
+        confirmLabel={ticketToDelete && deletingSigs.has(ticketToDelete.signature) ? 'Deleting...' : 'Delete'}
+        variant="danger"
+      />
+    </>
   );
 }
