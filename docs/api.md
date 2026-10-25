@@ -44,6 +44,224 @@ sequenceDiagram
 
 ---
 
+## Plane Architecture & URL Topology
+
+Axiom enforces a strict separation of concerns between its **Data Plane** (`/api/v1`) and its **Admin Control Plane** (`/admin/v1`):
+
+```mermaid
+flowchart TD
+    subgraph ClientLayer["Clients & Workloads"]
+        AppClient["Application Clients & SDKs"]
+        AgentClient["AI Agents & MCP Tool Callers"]
+        AdminUser["DevOps, Site Reliability & Web UI"]
+    end
+
+    subgraph AxiomGateway["Axiom Unified Gateway (Port 4500)"]
+        subgraph DataPlane["Data Plane (/api/v1)"]
+            direction TB
+            DBData["Database Data Plane (/api/v1/db)
+• AST-Validated Parameterized Queries
+• Keyset Row Pagination & JSON Filters
+• Dynamic Column DDL (:column_name)"]
+            BlobData["Blob Storage Engine (/api/v1/blobs)
+• Content-Addressed Storage (CAS)
+• Byte-Range CDN & Streaming (304 ETag)
+• Resumable Chunked & S3-Style Uploads
+• Scoped Capability Tickets & Quota Headroom"]
+        end
+
+        subgraph ControlPlane["Admin Control Plane (/admin/v1)"]
+            direction TB
+            AdminAuth["Lifecycle & Setup
+• First-Run Provisioning Wizard (/setup)
+• Session Auth & Cookie Minting (/auth)"]
+            SecurityRBAC["Security & Audit
+• API Key Lifecycle & Rotation (/keys)
+• Fine-Grained RBAC Policies (/roles)
+• Tamper-Evident Ledger (/audit)"]
+            PoolsTopology["Infrastructure & Mesh
+• Connection Pool Topology (/databases)
+• L1/L2 Query Cache Flushing (/cache)
+• Inter-Node P2P Gossip Mesh (/cluster)"]
+            StorageGov["Storage Governance
+• Quotas & Namespaces (/blobs/namespaces)
+• Global Bit-Rot Scrub & Garbage Sweep (/blobs)
+• Emergency Ticket Revocation (/blobs/tickets)"]
+        end
+    end
+
+    AppClient -->|"API Key (X-Axiom-Key)"| DataPlane
+    AgentClient -->|"API Key / MCP Session"| DataPlane
+    AdminUser -->|"Admin Session Token"| ControlPlane
+```
+
+### Data Plane URL Architecture (`/api/v1`)
+* **Authentication**: Scoped API Key (`X-Axiom-Key`), Compatibility Key (`X-Api-Key`), or User Session.
+* **Scope**: Serves high-throughput application queries, row mutations, byte-range media streaming, and resumable uploads.
+
+```text
+/api/v1
+│
+├── health                                         GET     Data plane health check probe
+│
+├── db/                                            [Database Data Plane & Query Engine]
+│   ├── databases                                  GET     Discover accessible databases for caller's role (engine, status, tables)
+│   │
+│   └── :db_name/
+│       ├── tables                                 GET     List tables in database (filtered by role permissions, supports limit/cursor)
+│       ├── query                                  POST    Execute parameterized SQL statement (AST safety firewall + Idempotency-Key)
+│       │
+│       └── :table_name/
+│           ├── rows/
+│           │   ├── /                              GET     Query table records (keyset pagination, JSON filters, sorting)
+│           │   ├── /                              POST    Insert records (single or batch with Idempotency-Key replay protection)
+│           │   ├── /                              PATCH   Update records (requires mandatory filter predicate)
+│           │   └── /                              DELETE  Delete records (requires mandatory filter predicate)
+│           │
+│           └── columns/
+│               ├── /                              GET     Inspect table columns & schema (types, nullability, PKs, FKs)
+│               ├── /                              POST    Dynamic DDL: Add new column to table (name, data_type, nullable, default)
+│               └── :column_name/
+│                   ├── /                          PATCH   Dynamic DDL: Modify column type or rename column (:column_name)
+│                   └── /                          DELETE  Dynamic DDL: Drop column via canonical RESTful path parameter
+│
+└── blobs/                                         [Native Blob Storage & Object Engine]
+    ├── public/:namespace/*key                     GET     Unauthenticated edge CDN streaming (ETags, conditional 304, Range headers)
+    ├── public/:namespace/*key                     HEAD    Probe object metadata, Content-Length, and ETag without streaming body
+    │
+    ├── namespaces/                                [Namespace & Quota Telemetry (Read-Only Discovery)]
+    │   ├── /                                      GET     List storage namespaces authorized for caller's role
+    │   └── :namespace/
+    │       ├── /                                  GET     Inspect namespace configuration details and public read status
+    │       └── usage                              GET     Live quota inspection (used bytes, remaining headroom, object count)
+    │
+    ├── objects/                                   [Content-Addressed Storage (CAS) Object Operations]
+    │   ├── copy                                   POST    Cross-namespace zero-copy CAS clone (src_namespace, dest_namespace)
+    │   ├── move                                   POST    Cross-namespace atomic relocate (src_namespace, dest_namespace)
+    │   │
+    │   └── :namespace/
+    │       ├── /                                  GET     List objects in namespace (prefix filter, cursor pagination, limit)
+    │       ├── copy                               POST    Namespace-scoped zero-copy CAS clone (src_key, dest_key)
+    │       ├── move                               POST    Namespace-scoped atomic relocate (src_key, dest_key)
+    │       ├── batch-delete                       POST    Unified batch delete by explicit key list or directory prefix
+    │       ├── verify/*key                        POST    Verify cryptographic BLAKE3 integrity of on-disk blob shard
+    │       └── *key/
+    │           ├── /                              PUT     Upload object / create directory marker (automatic BLAKE3 deduplication)
+    │           ├── /                              GET     Stream object binary (supports Range: bytes=X-Y, ETags, capability tickets)
+    │           ├── /                              HEAD    Probe object headers (size, content-type, ETag, last-modified)
+    │           └── /                              DELETE  Delete object and decrement CAS reference count
+    │
+    ├── uploads/                                   [Resumable & Multipart Upload Protocol]
+    │   └── :namespace/
+    │       ├── /                                  POST    Initialize resumable session (key, content_type, total_bytes)
+    │       ├── sign                               POST    Generate pre-signed direct upload capability URL
+    │       └── :upload_id/
+    │           ├── /                              GET     Probe upload progress and inspect received byte ranges
+    │           ├── /                              PUT     Upload chunk slice with Content-Range (bytes 0-1048575/5242880)
+    │           ├── /                              PATCH   Append chunk slice with Content-Range
+    │           ├── /                              DELETE  Abort upload session and clean up staged chunk artifacts
+    │           ├── parts/:part                    PUT     Upload numbered part slice (S3-compatible multipart pattern)
+    │           └── complete                       POST    Finalize and atomically assemble multipart session into CAS store
+    │
+    └── tickets/                                   [Namespace-Scoped Capability Ticket Plane]
+        └── :namespace/
+            ├── /                                  GET     List capability tickets in namespace (cursor keyset pagination)
+            ├── /                                  POST    Mint pre-signed capability ticket URL (key, operation, ttl_seconds)
+            └── :signature/
+                ├── revoke                         POST    Revoke capability ticket immediately in RAM and SQLite store
+                ├── enable                         POST    Restore previously revoked capability ticket
+                └── /                              DELETE  Permanently purge capability ticket record
+```
+
+---
+
+### Control Plane URL Architecture (`/admin/v1`)
+* **Authentication**: Administrator Session Token (`Authorization: Bearer <32-char-session-token>` or Cookie).
+* **Scope**: Governs cluster lifecycle, security topology, inter-node mesh, and RBAC governance.
+
+```text
+/admin/v1
+│
+├── auth/                                          [Session & Authentication Lifecycle]
+│   ├── login                                      POST    Authenticate administrator credentials & issue session token
+│   └── logout                                     POST    Revoke active session token & clear session cookie
+│
+├── setup/                                         [First-Run Installation & Provisioning Wizard]
+│   ├── begin                                      GET     Check installation wizard status and initialized state
+│   ├── begin                                      POST    Initialize first-run setup state
+│   ├── account                                    POST    Provision initial root administrator credentials
+│   ├── database                                   POST    Provision initial primary database connection
+│   ├── database/test                              POST    Test primary database connectivity during setup wizard
+│   └── complete                                   POST    Seal setup wizard and transition instance to production mode
+│
+├── status                                         GET     System telemetry (version, uptime, memory, CPU, engine status)
+├── health                                         GET     Administrative health check probe
+├── metrics                                        GET     Prometheus & JSON metrics snapshot (QPS, error rates, latencies)
+├── audit                                          GET     Query tamper-evident audit log ledger (filtered by user/action/date)
+├── reload                                         POST    Hot-reload metadata configuration snapshot from disk
+├── users                                          GET     List administrator accounts (mutations restricted to local CLI)
+│
+├── keys/                                          [API Key Lifecycle & Secret Provisioning]
+│   ├── /                                          GET     List all active API keys (associated roles, rate limits, expiry)
+│   ├── /                                          POST    Mint new API key (name, role, rate_limit, optional TTL)
+│   └── :name/
+│       ├── /                                      PATCH   Update API key role, rate limit, or expiration timestamp
+│       ├── /                                      DELETE  Immediately revoke and delete API key
+│       └── rotate                                 POST    Atomic zero-downtime key secret rotation (issues new secret)
+│
+├── roles/                                         [Fine-Grained RBAC Policy Matrix]
+│   ├── /                                          GET     List all RBAC roles and permission matrices
+│   ├── /                                          POST    Create custom RBAC role with database/table/storage grants
+│   └── :name/
+│       ├── /                                      PATCH   Update role permissions and resource policy rules
+│       └── /                                      DELETE  Delete custom role (protected system roles immutable)
+│
+├── databases/                                     [Database Connection Pools & Topology]
+│   ├── /                                          GET     List all registered database connection pools (credentials masked)
+│   ├── /                                          POST    Register new database connection pool (alias, URL, pool size)
+│   ├── test-url                                   POST    Test connection & latency for uncommitted DSN / connection string
+│   └── :alias/
+│       ├── /                                      PATCH   Update connection pool parameters (pool size, mode, URL, timeout)
+│       ├── /                                      DELETE  Unregister database pool and remove metadata record
+│       └── test                                   GET     Probe live health & latency of an existing database alias
+│
+├── cache/                                         [Distributed L1 / L2 Query Cache Control]
+│   ├── stats                                      GET     Inspect cache metrics (hit ratios, cached ASTs, memory footprint)
+│   └── flush                                      POST    Invalidate and evict all query, schema, and policy caches
+│
+├── cluster/                                       [Inter-Node P2P Mesh Governance]
+│   ├── status                                     GET     Cluster health, local Node ID, moniker, and active peer count
+│   ├── moniker                                    PATCH   Update local node's human-friendly display moniker
+│   └── peers/
+│       ├── /                                      GET     List all connected mesh peers, addresses, and sync states
+│       ├── /                                      POST    Initiate mutual handshake and register remote peer node
+│       └── :node_id/
+│           ├── /                                  PATCH   Update peer address, port, or connection configuration
+│           ├── /                                  DELETE  Disconnect and unregister peer node from mesh
+│           └── ping                               POST    Measure roundtrip P2P latency to target peer node
+│
+└── blobs/                                         [Storage Control Plane & Governance]
+    ├── stats                                      GET     Cluster-wide storage stats (CAS objects, disk used, deduplication ratio)
+    ├── scrub                                      POST    Trigger cluster-wide cryptographic BLAKE3 bit-rot verification
+    ├── sweep                                      POST    Trigger immediate garbage collection sweep of expired TTL blobs
+    │
+    ├── namespaces/                                [Storage Namespace Provisioning & Quotas]
+    │   ├── /                                      GET     List all storage namespaces, byte quotas, and access policies
+    │   ├── /                                      POST    Provision new storage namespace (quota bytes, public read toggle)
+    │   └── :namespace/
+    │       ├── /                                  GET     Inspect namespace quota allocation and configuration details
+    │       ├── /                                  PATCH   Update namespace byte quota or public read access policy
+    │       └── /                                  DELETE  Delete storage namespace and unregister its object index
+    │
+    └── tickets/                                   [Cluster-Wide Security Audit & Emergency Control]
+        ├── /                                      GET     Audit all capability tickets cluster-wide (cursor pagination)
+        └── :signature/
+            ├── revoke                             POST    Cluster-wide emergency revocation of capability ticket
+            ├── enable                             POST    Cluster-wide restoration of revoked capability ticket
+            └── /                                  DELETE  Permanently purge capability ticket record from cluster
+
+---
+
 ## Conventions & Envelopes
 
 ### Base URL
