@@ -3046,17 +3046,23 @@ async fn test_first_class_blob_hierarchy_and_quota_usage() {
     assert_eq!(res.status(), StatusCode::OK);
 
     // Verify source moved is gone and target exists
-    let req = Request::get(format!("/api/v1/blobs/objects/{}/data/sample_copied.txt", ns_name))
-        .header("X-Axiom-Key", &admin_token)
-        .body(Body::empty())
-        .unwrap();
+    let req = Request::get(format!(
+        "/api/v1/blobs/objects/{}/data/sample_copied.txt",
+        ns_name
+    ))
+    .header("X-Axiom-Key", &admin_token)
+    .body(Body::empty())
+    .unwrap();
     let res = create_app().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::NOT_FOUND);
 
-    let req = Request::get(format!("/api/v1/blobs/objects/{}/data/sample_moved.txt", ns_name))
-        .header("X-Axiom-Key", &admin_token)
-        .body(Body::empty())
-        .unwrap();
+    let req = Request::get(format!(
+        "/api/v1/blobs/objects/{}/data/sample_moved.txt",
+        ns_name
+    ))
+    .header("X-Axiom-Key", &admin_token)
+    .body(Body::empty())
+    .unwrap();
     let res = create_app().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
 
@@ -3152,7 +3158,10 @@ async fn test_first_class_blob_hierarchy_and_quota_usage() {
     assert_eq!(res.status(), StatusCode::CREATED);
     let body_bytes = axum::body::to_bytes(res.into_body(), 65536).await.unwrap();
     let ticket_json: Value = serde_json::from_slice(&body_bytes).unwrap();
-    let sig = ticket_json["data"]["signature"].as_str().unwrap().to_string();
+    let sig = ticket_json["data"]["signature"]
+        .as_str()
+        .unwrap()
+        .to_string();
 
     // List scoped tickets via GET /api/v1/blobs/tickets/:namespace
     let req = Request::get(format!("/api/v1/blobs/tickets/{}", ns_name))
@@ -3194,14 +3203,20 @@ async fn test_first_class_blob_hierarchy_and_quota_usage() {
     let body_bytes = axum::body::to_bytes(res.into_body(), 65536).await.unwrap();
     let page1_json: Value = serde_json::from_slice(&body_bytes).unwrap();
     assert_eq!(page1_json["data"]["items"].as_array().unwrap().len(), 2);
-    let next_cur = page1_json["data"]["next_cursor"].as_str().unwrap().to_string();
+    let next_cur = page1_json["data"]["next_cursor"]
+        .as_str()
+        .unwrap()
+        .to_string();
     assert!(!next_cur.is_empty());
 
     // Fetch page 2 with limit=2 and cursor: expect the remaining 1 item and next_cursor=null
-    let req = Request::get(format!("/api/v1/blobs/tickets/{}?limit=2&cursor={}", ns_name, next_cur))
-        .header("X-Axiom-Key", &admin_token)
-        .body(Body::empty())
-        .unwrap();
+    let req = Request::get(format!(
+        "/api/v1/blobs/tickets/{}?limit=2&cursor={}",
+        ns_name, next_cur
+    ))
+    .header("X-Axiom-Key", &admin_token)
+    .body(Body::empty())
+    .unwrap();
     let res = create_app().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
     let body_bytes = axum::body::to_bytes(res.into_body(), 65536).await.unwrap();

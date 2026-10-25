@@ -859,8 +859,12 @@ impl AdminClient {
             "dest_key": dest_key,
             "is_prefix": is_prefix,
         });
-        self.request(reqwest::Method::POST, "/api/v1/blobs/objects/copy", Some(body))
-            .await
+        self.request(
+            reqwest::Method::POST,
+            "/api/v1/blobs/objects/copy",
+            Some(body),
+        )
+        .await
     }
 
     /// Moves or renames an object or directory prefix.
@@ -879,8 +883,12 @@ impl AdminClient {
             "dest_key": dest_key,
             "is_prefix": is_prefix,
         });
-        self.request(reqwest::Method::POST, "/api/v1/blobs/objects/move", Some(body))
-            .await
+        self.request(
+            reqwest::Method::POST,
+            "/api/v1/blobs/objects/move",
+            Some(body),
+        )
+        .await
     }
 
     /// Deletes all objects matching a prefix within a namespace.
@@ -889,18 +897,17 @@ impl AdminClient {
         let body = json!({
             "prefix": prefix,
         });
-        self.request(
-            reqwest::Method::POST,
-            &endpoint,
-            Some(body),
-        )
-        .await
+        self.request(reqwest::Method::POST, &endpoint, Some(body))
+            .await
     }
 
     /// Verifies cryptographic BLAKE3 integrity of an object on disk.
     pub async fn verify_blob(&self, namespace: &str, key: &str) -> Result<Value, String> {
         let sanitized_key = key.trim_start_matches('/');
-        let endpoint = format!("/api/v1/blobs/objects/{}/verify/{}", namespace, sanitized_key);
+        let endpoint = format!(
+            "/api/v1/blobs/objects/{}/verify/{}",
+            namespace, sanitized_key
+        );
         self.request(reqwest::Method::POST, &endpoint, None).await
     }
 

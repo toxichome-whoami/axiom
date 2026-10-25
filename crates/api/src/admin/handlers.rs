@@ -1128,7 +1128,9 @@ pub async fn get_audit_log(
             AxiomError::new("AUDIT_QUERY_FAILED", &e, StatusCode::INTERNAL_SERVER_ERROR)
         })?;
 
-    let total = MetadataStore::count_audit_log(search_term).await.unwrap_or(0);
+    let total = MetadataStore::count_audit_log(search_term)
+        .await
+        .unwrap_or(0);
 
     let has_more = offset + logs.len() < total as usize;
     let next_cursor = if has_more {

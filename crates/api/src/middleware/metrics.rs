@@ -32,8 +32,6 @@ pub fn normalize_path(path: &str) -> &'static str {
             return "/api/v1/db/:alias/:table/columns";
         } else if trimmed.contains("/columns/") {
             return "/api/v1/db/:alias/:table/columns/:column_name";
-
-
         } else if trimmed == "api/v1/db/databases" {
             return "/api/v1/db/databases";
         }

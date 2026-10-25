@@ -21,14 +21,8 @@ pub fn get_router() -> Router {
             get(get_public_blob_handler).head(head_public_blob_handler),
         )
         // 2. Namespaces & Storage Quota Headroom (Read-only in Data Plane; Mutations reserved for Admin API)
-        .route(
-            "/namespaces",
-            get(list_namespaces_handler),
-        )
-        .route(
-            "/namespaces/:namespace",
-            get(get_namespace_handler),
-        )
+        .route("/namespaces", get(list_namespaces_handler))
+        .route("/namespaces/:namespace", get(get_namespace_handler))
         .route(
             "/namespaces/:namespace/usage",
             get(get_namespace_usage_handler),
@@ -36,26 +30,14 @@ pub fn get_router() -> Router {
         // 3. Object Operations (First-Class REST Data Plane)
         .route("/objects/copy", post(copy_blob_handler))
         .route("/objects/move", post(move_blob_handler))
-        .route(
-            "/objects/:namespace/copy",
-            post(copy_blob_scoped_handler),
-        )
-        .route(
-            "/objects/:namespace/move",
-            post(move_blob_scoped_handler),
-        )
+        .route("/objects/:namespace/copy", post(copy_blob_scoped_handler))
+        .route("/objects/:namespace/move", post(move_blob_scoped_handler))
         .route(
             "/objects/:namespace/batch-delete",
             post(batch_delete_blobs_handler),
         )
-        .route(
-            "/objects/:namespace/verify/*key",
-            post(verify_blob_handler),
-        )
-        .route(
-            "/objects/:namespace",
-            get(list_blobs_handler),
-        )
+        .route("/objects/:namespace/verify/*key", post(verify_blob_handler))
+        .route("/objects/:namespace", get(list_blobs_handler))
         .route(
             "/objects/:namespace/*key",
             put(put_blob_handler)
@@ -64,14 +46,8 @@ pub fn get_router() -> Router {
                 .delete(delete_blob_handler),
         )
         // 4. Resumable & Direct Uploads
-        .route(
-            "/uploads/:namespace",
-            post(init_upload_handler),
-        )
-        .route(
-            "/uploads/:namespace/sign",
-            post(create_upload_link_handler),
-        )
+        .route("/uploads/:namespace", post(init_upload_handler))
+        .route("/uploads/:namespace/sign", post(create_upload_link_handler))
         .route(
             "/uploads/:namespace/:upload_id",
             get(get_upload_status_handler)

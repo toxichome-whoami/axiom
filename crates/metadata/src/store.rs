@@ -1697,7 +1697,10 @@ impl MetadataStore {
         // Parse cursor: "<created_at>_<id>"
         let parsed_cursor = cursor.and_then(|c| {
             c.split_once('_').and_then(|(ts_str, id_str)| {
-                ts_str.parse::<i64>().ok().map(|ts| (ts, id_str.to_string()))
+                ts_str
+                    .parse::<i64>()
+                    .ok()
+                    .map(|ts| (ts, id_str.to_string()))
             })
         });
 
@@ -1825,7 +1828,9 @@ impl MetadataStore {
 
         let next_cursor = if tickets.len() > safe_limit as usize {
             tickets.truncate(safe_limit as usize);
-            tickets.last().map(|last| format!("{}_{}", last.created_at, last.id))
+            tickets
+                .last()
+                .map(|last| format!("{}_{}", last.created_at, last.id))
         } else {
             None
         };
@@ -1834,7 +1839,9 @@ impl MetadataStore {
     }
 
     /// Finds the underlying cryptographic signature of a ticket given either its ID or signature.
-    pub async fn find_blob_ticket_signature(signature_or_id: &str) -> Result<Option<String>, String> {
+    pub async fn find_blob_ticket_signature(
+        signature_or_id: &str,
+    ) -> Result<Option<String>, String> {
         let conn = Self::get_conn().await?;
         let mut rows = match conn
             .query(
@@ -1856,7 +1863,10 @@ impl MetadataStore {
     }
 
     /// Finds exact ticket signature for a ticket within a specific namespace.
-    pub async fn find_blob_ticket_signature_scoped(namespace: &str, signature_or_id: &str) -> Result<Option<String>, String> {
+    pub async fn find_blob_ticket_signature_scoped(
+        namespace: &str,
+        signature_or_id: &str,
+    ) -> Result<Option<String>, String> {
         let conn = Self::get_conn().await?;
         let mut rows = match conn
             .query(
@@ -1893,7 +1903,10 @@ impl MetadataStore {
     }
 
     /// Revokes a blob capability ticket scoped to a specific namespace.
-    pub async fn revoke_blob_ticket_scoped(namespace: &str, signature_or_id: &str) -> Result<bool, String> {
+    pub async fn revoke_blob_ticket_scoped(
+        namespace: &str,
+        signature_or_id: &str,
+    ) -> Result<bool, String> {
         let conn = Self::get_conn().await?;
 
         let affected = conn
@@ -1923,7 +1936,10 @@ impl MetadataStore {
     }
 
     /// Re-enables / restores a revoked blob capability ticket scoped to a specific namespace.
-    pub async fn enable_blob_ticket_scoped(namespace: &str, signature_or_id: &str) -> Result<bool, String> {
+    pub async fn enable_blob_ticket_scoped(
+        namespace: &str,
+        signature_or_id: &str,
+    ) -> Result<bool, String> {
         let conn = Self::get_conn().await?;
 
         let affected = conn
@@ -1953,7 +1969,10 @@ impl MetadataStore {
     }
 
     /// Permanently deletes a blob capability ticket scoped to a specific namespace.
-    pub async fn delete_blob_ticket_scoped(namespace: &str, signature_or_id: &str) -> Result<bool, String> {
+    pub async fn delete_blob_ticket_scoped(
+        namespace: &str,
+        signature_or_id: &str,
+    ) -> Result<bool, String> {
         let conn = Self::get_conn().await?;
 
         let affected = conn
@@ -1998,7 +2017,9 @@ impl MetadataStore {
 
     /// Checks if a ticket signature has been explicitly revoked or deleted from registry.
     pub async fn is_blob_ticket_revoked(signature: &str) -> Result<bool, String> {
-        Self::is_blob_ticket_active(signature).await.map(|active| !active)
+        Self::is_blob_ticket_active(signature)
+            .await
+            .map(|active| !active)
     }
 
     /// Purges expired blob tickets older than 7 days from SQLite.

@@ -878,7 +878,6 @@ pub async fn copy_blob_handler(
     }
 }
 
-
 pub async fn move_blob_handler(
     Extension(auth): Extension<AuthContext>,
     Json(payload): Json<MoveBlobRequest>,
@@ -1049,7 +1048,11 @@ pub async fn create_ticket_handler(
 
     // Public namespaces do not support/require capability tickets for reading; public CDN URLs must be used.
     let engine = get_blob_engine()?;
-    if engine.is_namespace_public(&namespace).map_err(map_blob_error)? && op == "READ" {
+    if engine
+        .is_namespace_public(&namespace)
+        .map_err(map_blob_error)?
+        && op == "READ"
+    {
         return Err(AxiomError::new(
             "PUBLIC_NAMESPACE_TICKET_DISABLED",
             &format!(
@@ -1185,7 +1188,10 @@ pub async fn create_upload_link_handler(
     )
     .await
     {
-        tracing::error!("Failed to record upload capability ticket in database: {}", e);
+        tracing::error!(
+            "Failed to record upload capability ticket in database: {}",
+            e
+        );
         return Err(AxiomError::new(
             "TICKET_RECORD_FAILED",
             &format!("Failed to record capability ticket: {}", e),
@@ -1259,11 +1265,12 @@ pub async fn list_tickets_handler(
     let cursor = query.cursor.as_deref();
     let limit = query.limit;
 
-    let (tickets, next_cursor) = MetadataStore::list_blob_tickets(ns, key, include_expired, cursor, limit)
-        .await
-        .map_err(|e| {
-            AxiomError::new("TICKET_LIST_FAILED", &e, StatusCode::INTERNAL_SERVER_ERROR)
-        })?;
+    let (tickets, next_cursor) =
+        MetadataStore::list_blob_tickets(ns, key, include_expired, cursor, limit)
+            .await
+            .map_err(|e| {
+                AxiomError::new("TICKET_LIST_FAILED", &e, StatusCode::INTERNAL_SERVER_ERROR)
+            })?;
 
     let formatted: Vec<_> = tickets
         .into_iter()
@@ -1315,11 +1322,12 @@ pub async fn list_namespace_tickets_handler(
     let cursor = query.cursor.as_deref();
     let limit = query.limit;
 
-    let (tickets, next_cursor) = MetadataStore::list_blob_tickets(&namespace, key, include_expired, cursor, limit)
-        .await
-        .map_err(|e| {
-            AxiomError::new("TICKET_LIST_FAILED", &e, StatusCode::INTERNAL_SERVER_ERROR)
-        })?;
+    let (tickets, next_cursor) =
+        MetadataStore::list_blob_tickets(&namespace, key, include_expired, cursor, limit)
+            .await
+            .map_err(|e| {
+                AxiomError::new("TICKET_LIST_FAILED", &e, StatusCode::INTERNAL_SERVER_ERROR)
+            })?;
 
     let formatted: Vec<_> = tickets
         .into_iter()
@@ -2867,7 +2875,9 @@ pub async fn batch_delete_blobs_handler(
                         prefix_deleted_count = cnt;
                     }
                     Err(e) => {
-                        result.errors.push((pfx.clone(), format!("Prefix deletion error: {}", e)));
+                        result
+                            .errors
+                            .push((pfx.clone(), format!("Prefix deletion error: {}", e)));
                     }
                 }
             } else {
@@ -2931,10 +2941,15 @@ mod tests {
         assert_eq!(batch_del_req.keys.len(), 2);
         assert_eq!(batch_del_req.prefix.as_deref(), Some("tmp/"));
 
-        let upload_link_json = r#"{"key": "docs/manual.pdf", "content_type": "application/pdf", "ttl_seconds": 3600}"#;
-        let upload_link_req: CreateUploadLinkRequest = serde_json::from_str(upload_link_json).unwrap();
+        let upload_link_json =
+            r#"{"key": "docs/manual.pdf", "content_type": "application/pdf", "ttl_seconds": 3600}"#;
+        let upload_link_req: CreateUploadLinkRequest =
+            serde_json::from_str(upload_link_json).unwrap();
         assert_eq!(upload_link_req.key, "docs/manual.pdf");
-        assert_eq!(upload_link_req.content_type.as_deref(), Some("application/pdf"));
+        assert_eq!(
+            upload_link_req.content_type.as_deref(),
+            Some("application/pdf")
+        );
         assert_eq!(upload_link_req.ttl_seconds, Some(3600));
     }
 }

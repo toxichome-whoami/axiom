@@ -88,7 +88,11 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, A
         .or_else(|| path.strip_prefix("/blobs/"));
 
     let has_ticket_sig = stripped_blob_path.is_some()
-        && req.uri().query().map(|q| q.contains("ticket_sig=")).unwrap_or(false);
+        && req
+            .uri()
+            .query()
+            .map(|q| q.contains("ticket_sig="))
+            .unwrap_or(false);
 
     if let (Some(raw_stripped), true) = (stripped_blob_path, has_ticket_sig) {
         let stripped = raw_stripped
@@ -154,7 +158,9 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, A
         let secret = axiom_blob::tickets::get_ticket_secret();
 
         // 1. Verify cryptographic HMAC signature
-        if let Err(e) = axiom_blob::tickets::verify_ticket(secret, &decoded_ns, &decoded_key, op, exp, &sig) {
+        if let Err(e) =
+            axiom_blob::tickets::verify_ticket(secret, &decoded_ns, &decoded_key, op, exp, &sig)
+        {
             return Err(AxiomError::new(
                 "AUTH_TICKET_INVALID",
                 &format!("Capability ticket verification failed: {}", e),
@@ -164,7 +170,10 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, A
 
         // 2. Instant cache check: if marked revoked or deleted in RAM, reject immediately
         let cache_revoked_key = format!("ticket:revoked:{}", sig);
-        if axiom_cache::CacheEngine::get(&cache_revoked_key).await.is_some() {
+        if axiom_cache::CacheEngine::get(&cache_revoked_key)
+            .await
+            .is_some()
+        {
             return Err(AxiomError::new(
                 "AUTH_TICKET_REVOKED",
                 "Capability ticket has been revoked or deleted by an administrator",
@@ -174,7 +183,9 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, A
 
         // 3. Check active validity cache or SQLite registry
         let cache_valid_key = format!("ticket:valid:{}", sig);
-        let is_cached_valid = axiom_cache::CacheEngine::get(&cache_valid_key).await.is_some();
+        let is_cached_valid = axiom_cache::CacheEngine::get(&cache_valid_key)
+            .await
+            .is_some();
 
         if !is_cached_valid {
             let is_active = axiom_metadata::MetadataStore::is_blob_ticket_active(&sig)

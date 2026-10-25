@@ -726,7 +726,11 @@ pub enum BlobCommands {
             default_value = "true"
         )]
         all: bool,
-        #[arg(short, long, help = "Pagination cursor (opaque string from previous page)")]
+        #[arg(
+            short,
+            long,
+            help = "Pagination cursor (opaque string from previous page)"
+        )]
         cursor: Option<String>,
         #[arg(short, long, help = "Maximum items to return (1-500, default: 100)")]
         limit: Option<usize>,

@@ -2261,17 +2261,14 @@ pub async fn modify_column(
             )
         })?;
 
-    engine
-        .modify_column(&table_name, &req)
-        .await
-        .map_err(|e| {
-            tracing::error!("Modify column failed: {}", e);
-            AxiomError::new(
-                "MODIFY_COLUMN_FAILED",
-                "Failed to modify column",
-                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-            )
-        })?;
+    engine.modify_column(&table_name, &req).await.map_err(|e| {
+        tracing::error!("Modify column failed: {}", e);
+        AxiomError::new(
+            "MODIFY_COLUMN_FAILED",
+            "Failed to modify column",
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+        )
+    })?;
 
     invalidate_table_schema(&db_name, &table_name);
 
