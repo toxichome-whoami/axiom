@@ -305,6 +305,11 @@ pub async fn get_blob_handler(
             byte_range.start, byte_range.end, byte_range.total
         );
 
+        let is_media = is_inline
+            || meta.content_type.starts_with("video/")
+            || meta.content_type.starts_with("audio/")
+            || meta.content_type.starts_with("image/");
+
         let response_builder = Response::builder()
             .status(StatusCode::PARTIAL_CONTENT)
             .header(header::CONTENT_TYPE, meta.content_type)
@@ -313,7 +318,15 @@ pub async fn get_blob_handler(
             .header(header::ACCEPT_RANGES, "bytes")
             .header(header::ETAG, etag_val)
             .header(header::X_CONTENT_TYPE_OPTIONS, "nosniff")
-            .header(header::CONTENT_DISPOSITION, disposition);
+            .header(header::CONTENT_DISPOSITION, disposition.clone())
+            .header(
+                header::CONTENT_SECURITY_POLICY,
+                if is_media {
+                    "default-src 'none'; media-src 'self' * blob: data:; img-src 'self' * blob: data:; style-src 'unsafe-inline'; font-src 'self' data:;"
+                } else {
+                    "default-src 'none'; frame-ancestors 'none';"
+                },
+            );
 
         return match data {
             BlobData::Inline(bytes) => {
@@ -354,6 +367,11 @@ pub async fn get_blob_handler(
         }
     }
 
+    let is_media = is_inline
+        || meta.content_type.starts_with("video/")
+        || meta.content_type.starts_with("audio/")
+        || meta.content_type.starts_with("image/");
+
     let response_builder = Response::builder()
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, meta.content_type)
@@ -361,7 +379,15 @@ pub async fn get_blob_handler(
         .header(header::ACCEPT_RANGES, "bytes")
         .header(header::ETAG, etag_val)
         .header(header::X_CONTENT_TYPE_OPTIONS, "nosniff")
-        .header(header::CONTENT_DISPOSITION, disposition);
+        .header(header::CONTENT_DISPOSITION, disposition)
+        .header(
+            header::CONTENT_SECURITY_POLICY,
+            if is_media {
+                "default-src 'none'; media-src 'self' * blob: data:; img-src 'self' * blob: data:; style-src 'unsafe-inline'; font-src 'self' data:;"
+            } else {
+                "default-src 'none'; frame-ancestors 'none';"
+            },
+        );
 
     match data {
         BlobData::Inline(bytes) => {
@@ -2103,7 +2129,15 @@ pub async fn get_public_blob_handler(
             .header(header::ETAG, etag_val)
             .header(header::CACHE_CONTROL, "public, max-age=31536000, immutable")
             .header(header::X_CONTENT_TYPE_OPTIONS, "nosniff")
-            .header(header::CONTENT_DISPOSITION, disposition);
+            .header(header::CONTENT_DISPOSITION, disposition.clone())
+            .header(
+                header::CONTENT_SECURITY_POLICY,
+                if is_web_media {
+                    "default-src 'none'; media-src 'self' * blob: data:; img-src 'self' * blob: data:; style-src 'unsafe-inline'; font-src 'self' data:;"
+                } else {
+                    "default-src 'none'; frame-ancestors 'none';"
+                },
+            );
 
         let mut resp = match data {
             BlobData::Inline(bytes) => builder.body(Body::from(bytes)),
@@ -2144,6 +2178,14 @@ pub async fn get_public_blob_handler(
             .header(header::CACHE_CONTROL, "public, max-age=31536000, immutable")
             .header(header::X_CONTENT_TYPE_OPTIONS, "nosniff")
             .header(header::CONTENT_DISPOSITION, disposition)
+            .header(
+                header::CONTENT_SECURITY_POLICY,
+                if is_web_media {
+                    "default-src 'none'; media-src 'self' * blob: data:; img-src 'self' * blob: data:; style-src 'unsafe-inline'; font-src 'self' data:;"
+                } else {
+                    "default-src 'none'; frame-ancestors 'none';"
+                },
+            )
     };
 
     let (_, data) = engine.get(&namespace, &key).await.map_err(map_blob_error)?;

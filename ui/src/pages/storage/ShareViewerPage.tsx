@@ -16,7 +16,6 @@ import {
   AlertTriangle,
   HardDrive,
   Globe,
-  ArrowLeft,
   ExternalLink,
 } from 'lucide-react';
 import { MediaPlayer } from './MediaPlayer';
@@ -167,11 +166,11 @@ export function ShareViewerPage() {
 
   const streamUrl = params.isPublic
     ? `/api/v1/blobs/public/${encodeURIComponent(params.namespace)}/${sanitizedKey}?inline=1`
-    : `/api/v1/blobs/${encodeURIComponent(params.namespace)}/${encodeURIComponent(params.key)}?ticket_sig=${encodeURIComponent(params.ticket_sig || '')}&ticket_exp=${encodeURIComponent(params.ticket_exp || 0)}&inline=1`;
+    : `/api/v1/blobs/${encodeURIComponent(params.namespace)}/${sanitizedKey}?ticket_sig=${encodeURIComponent(params.ticket_sig || '')}&ticket_exp=${encodeURIComponent(params.ticket_exp || 0)}&inline=1`;
 
   const downloadUrl = params.isPublic
     ? `/api/v1/blobs/public/${encodeURIComponent(params.namespace)}/${sanitizedKey}`
-    : `/api/v1/blobs/${encodeURIComponent(params.namespace)}/${encodeURIComponent(params.key)}?ticket_sig=${encodeURIComponent(params.ticket_sig || '')}&ticket_exp=${encodeURIComponent(params.ticket_exp || 0)}`;
+    : `/api/v1/blobs/${encodeURIComponent(params.namespace)}/${sanitizedKey}?ticket_sig=${encodeURIComponent(params.ticket_sig || '')}&ticket_exp=${encodeURIComponent(params.ticket_exp || 0)}`;
 
   const handleCopyLink = () => {
     navigator.clipboard.writeText(window.location.href);
@@ -196,26 +195,9 @@ export function ShareViewerPage() {
   return (
     <div className="min-h-screen bg-[#09090b] text-white flex flex-col font-sans selection:bg-neutral-700 selection:text-white">
       {/* ─── Header: Navigation Bar (Google Drive dark previewer style) ─── */}
-      <header className="h-14 border-b border-[#1f1f1f] bg-[#0c0c0c]/95 backdrop-blur-md sticky top-0 z-40 px-3 sm:px-5 flex items-center justify-between shrink-0">
-        {/* Left: Back button + File icon + Title + Extension/Public Pill */}
+      <header className="h-16 border-b border-[#1f1f1f] bg-[#0c0c0c]/95 backdrop-blur-md sticky top-0 z-40 px-4 sm:px-6 flex items-center justify-between shrink-0">
+        {/* Left: File icon + Title + Extension/Public Pill */}
         <div className="flex items-center gap-3 min-w-0">
-          <button
-            type="button"
-            onClick={() => {
-              if (window.history.length > 1) {
-                window.history.back();
-              } else {
-                window.location.href = `/system/storage?ns=${encodeURIComponent(params.namespace)}`;
-              }
-            }}
-            title="Back to Storage"
-            className="w-8 h-8 rounded-full flex items-center justify-center text-[#a3a3a3] hover:text-white hover:bg-[#1a1a1a] transition-colors cursor-pointer shrink-0"
-          >
-            <ArrowLeft className="w-4 h-4" />
-          </button>
-
-          <div className="w-px h-5 bg-[#222222] shrink-0" />
-
           <div className="flex items-center gap-2.5 min-w-0">
             <div className="shrink-0 text-[#cccccc]">
               {getFileIcon(fileName, 'w-4 h-4')}
@@ -303,7 +285,7 @@ export function ShareViewerPage() {
       </main>
 
       {/* ─── Footer: Minimal Google Drive / Axiom Telemetry ─── */}
-      <footer className="h-10 border-t border-[#1a1a1a] bg-[#0c0c0c] px-4 md:px-6 text-[13px] text-[#8c8c8c] font-sans flex items-center justify-between shrink-0 select-none">
+      <footer className="h-12 border-t border-[#1a1a1a] bg-[#0c0c0c] px-4 md:px-6 text-[13px] text-[#8c8c8c] font-sans flex items-center justify-between shrink-0 select-none">
         <div className="flex items-center gap-2">
           {params.isPublic ? (
             <>
