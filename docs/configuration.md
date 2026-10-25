@@ -428,16 +428,16 @@ volumes:
 
 | Done | Setting | Why |
 |---|---|---|
-| ☐ | `server.host` set deliberately (`0.0.0.0` only behind a firewall or proxy) | Avoid unintended exposure |
-| ☐ | TLS enabled (`tls_cert` / `tls_key`) or terminated at a proxy | Protect API keys in transit |
-| ☐ | `cors_origins` limited to your app origins (not `["*"]`) | Block unwanted browser origins |
-| ☐ | `trusted_proxies` lists only your real proxies | Prevent `X-Forwarded-For` spoofing |
-| ☐ | `allowed_ips` kept minimal | Exempt IPs bypass rate limits and bans |
-| ☐ | `logging.format = "json"`, `level = "INFO"` or `"WARN"` | Machine-readable, low noise |
-| ☐ | `metadata.url`, `blob.path`, and `data/` on persistent storage | Survive restarts and redeploys |
-| ☐ | `body_limit` and `blob.max_object` sized for your workloads | Reject oversize uploads early |
-| ☐ | Tokens supplied via environment or secrets | Keep credentials out of version control |
-| ☐ | `axiom config show` reviewed after deploy | Confirm the effective values |
+| [ ] | `server.host` set deliberately (`0.0.0.0` only behind a firewall or proxy) | Avoid unintended exposure |
+| [ ] | TLS enabled (`tls_cert` / `tls_key`) or terminated at a proxy | Protect API keys in transit |
+| [ ] | `cors_origins` limited to your app origins (not `["*"]`) | Block unwanted browser origins |
+| [ ] | `trusted_proxies` lists only your real proxies | Prevent `X-Forwarded-For` spoofing |
+| [ ] | `allowed_ips` kept minimal | Exempt IPs bypass rate limits and bans |
+| [ ] | `logging.format = "json"`, `level = "INFO"` or `"WARN"` | Machine-readable, low noise |
+| [ ] | `metadata.url`, `blob.path`, and `data/` on persistent storage | Survive restarts and redeploys |
+| [ ] | `body_limit` and `blob.max_object` sized for your workloads | Reject oversize uploads early |
+| [ ] | Tokens supplied via environment or secrets | Keep credentials out of version control |
+| [ ] | `axiom config show` reviewed after deploy | Confirm the effective values |
 
 **Minimal production example**
 

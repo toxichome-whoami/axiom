@@ -213,10 +213,10 @@ Deep dive into the complete documentation suite:
 
 | Document | Description |
 |---|---|
-| 📖 **[API Reference](docs/api.md)** | Full REST endpoint specifications, query filters, capability tickets, and MCP reference |
-| ⚙️ **[Configuration Guide](docs/configuration.md)** | Complete `config.toml` options, module reference, `.env` overrides, and production checklist |
-| 🛠️ **[Build & Toolchain Guide](docs/building.md)** | Zero-bloat self-bootstrapping build pipeline with Zig (no MSVC / MinGW required) |
-| ⚡ **[Benchmark Report](docs/benchmarks.md)** | Empirical Criterion.rs micro-benchmarks across all hot paths and subsystems |
+| **[API Reference](docs/api.md)** | Full REST endpoint specifications, query filters, capability tickets, and MCP reference |
+| **[Configuration Guide](docs/configuration.md)** | Complete `config.toml` options, module reference, `.env` overrides, and production checklist |
+| **[Build & Toolchain Guide](docs/building.md)** | Zero-bloat self-bootstrapping build pipeline with Zig (no MSVC / MinGW required) |
+| **[Benchmark Report](docs/benchmarks.md)** | Empirical Criterion.rs micro-benchmarks across all hot paths and subsystems |
 
 ---
 
