@@ -197,6 +197,26 @@ export interface NamespaceInfo {
   cors_origins?: string[];
 }
 
+export interface NamespaceUsage {
+  namespace: string;
+  created_at: number;
+  is_public: boolean;
+  max_bytes: number | null;
+  used_bytes: number;
+  remaining_bytes: number | null;
+  percent_used: number | null;
+  total_objects: number;
+  is_quota_exceeded: boolean;
+}
+
+export interface UploadLinkResponse {
+  url: string;
+  method: string;
+  headers: Record<string, string>;
+  expires_at: number;
+  signature: string;
+}
+
 // ─── Table Editor & Schema Types ─────────────────────────────────────────────
 
 export interface ColumnInfoApi {

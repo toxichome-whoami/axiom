@@ -652,23 +652,36 @@ X-Axiom-Key: <TOKEN>
 
 Content-addressed object storage with automatic BLAKE3 deduplication, byte-range streaming, and capability tickets.
 
-### Endpoints Summary
+### First-Class URL Endpoints Summary
 | Method | Endpoint | Auth | Description |
 |---|---|---|---|
 | `GET` | `/api/v1/blobs/namespaces` | API Key / Session | List storage namespaces accessible by caller's role |
+| `GET` | `/api/v1/blobs/namespaces/:namespace` | API Key / Session | Get namespace configuration and quota limits |
+| `GET` | `/api/v1/blobs/namespaces/:namespace/usage` | API Key / Session | Inspect space left, used bytes, quota headroom, and object count |
 | `GET`, `HEAD` | `/api/v1/blobs/public/:namespace/*key` | Public | Unauthenticated direct media CDN fetch with 304 ETag caching |
-| `GET` | `/api/v1/blobs/:namespace` | API Key | List stored objects with `prefix`, `cursor`, `limit` |
-| `PUT` | `/api/v1/blobs/:namespace/*key` | API Key / Ticket | Upload object / create directory marker (ending with `/`) |
-| `GET`, `HEAD` | `/api/v1/blobs/:namespace/*key` | API Key / Ticket | Stream object (supports `Range: bytes=X-Y` and `?ticket=...`) |
-| `DELETE` | `/api/v1/blobs/:namespace/*key` | API Key | Delete single object and decrement content refcount |
-| `POST` | `/api/v1/blobs/:namespace/delete-objects` | API Key | Batch delete up to 1,000 objects in a single atomic request |
-| `POST` | `/api/v1/blobs/:namespace/ticket` | API Key | Mint a pre-signed capability ticket URL |
-| `POST` | `/api/v1/blobs/:namespace/uploads` | API Key | Initialize multipart / resumable upload session |
-| `PUT` | `/api/v1/blobs/:namespace/uploads/:upload_id/parts/:part` | API Key | Upload discrete part chunk in multipart workflow |
-| `POST` | `/api/v1/blobs/:namespace/uploads/:upload_id/complete` | API Key | Complete and atomically assemble multipart upload |
-| `PUT`, `PATCH`| `/api/v1/blobs/:namespace/uploads/:upload_id` | API Key | Resumable chunk upload with `Content-Range` header |
-| `GET` | `/api/v1/blobs/:namespace/uploads/:upload_id` | API Key | Probe resumable session status and uploaded byte slices |
-| `DELETE` | `/api/v1/blobs/:namespace/uploads/:upload_id` | API Key | Abort multipart/resumable upload session and reclaim storage |
+| `GET` | `/api/v1/blobs/objects/:namespace` | API Key | List stored objects with `prefix`, `cursor`, `limit` |
+| `PUT` | `/api/v1/blobs/objects/:namespace/*key` | API Key / Ticket | Upload object / create directory marker |
+| `GET`, `HEAD` | `/api/v1/blobs/objects/:namespace/*key` | API Key / Ticket | Stream object (supports `Range: bytes=X-Y` and capability tickets) |
+| `DELETE` | `/api/v1/blobs/objects/:namespace/*key` | API Key | Delete single object and decrement CAS refcount |
+| `POST` | `/api/v1/blobs/objects/copy` | API Key | Zero-copy server-side CAS clone (`src_namespace`, `src_key`, `dest_key`) |
+| `POST` | `/api/v1/blobs/objects/move` | API Key | Atomic rename / relocate (`src_namespace`, `src_key`, `dest_key`) |
+| `POST` | `/api/v1/blobs/objects/:namespace/batch-delete` | API Key | Unified batch delete by explicit key list or directory prefix |
+| `POST` | `/api/v1/blobs/objects/:namespace/verify/*key` | API Key / Session | Verify cryptographic BLAKE3 integrity of on-disk shard |
+| `POST` | `/api/v1/blobs/uploads/:namespace` | API Key | Initialize multipart / resumable upload session |
+| `POST` | `/api/v1/blobs/uploads/:namespace/sign` | API Key | Generate pre-signed direct upload capability URL |
+| `PUT`, `PATCH`| `/api/v1/blobs/uploads/:namespace/:upload_id` | API Key | Resumable chunk upload with `Content-Range` header |
+| `GET` | `/api/v1/blobs/uploads/:namespace/:upload_id` | API Key | Probe resumable session status and uploaded byte slices |
+| `DELETE` | `/api/v1/blobs/uploads/:namespace/:upload_id` | API Key | Abort multipart/resumable upload session |
+| `POST` | `/api/v1/blobs/uploads/:namespace/:upload_id/complete` | API Key | Complete and atomically assemble upload |
+| `GET` | `/api/v1/blobs/tickets` | API Key / Session | List capability tickets (filter by `namespace` query) |
+| `GET` | `/api/v1/blobs/namespaces/:namespace/tickets` | API Key | List capability tickets scoped to a namespace |
+| `POST` | `/api/v1/blobs/namespaces/:namespace/tickets` | API Key | Mint a pre-signed capability ticket URL |
+| `POST` | `/api/v1/blobs/tickets/:signature/revoke` | API Key / Session | Immediately revoke capability ticket in RAM & DB |
+| `POST` | `/api/v1/blobs/tickets/:signature/enable` | API Key / Session | Restore revoked capability ticket |
+| `DELETE` | `/api/v1/blobs/tickets/:signature` | API Key / Session | Permanently delete capability ticket |
+
+> [!NOTE]
+> All legacy endpoints (`/api/v1/blobs/:namespace/*key`, `/admin/v1/blobs/copy`, `/admin/v1/blobs/move`, etc.) remain fully supported as backward-compatible aliases.
 
 ---
 
@@ -698,6 +711,70 @@ X-Axiom-Key: <TOKEN>
       "default_ttl_seconds": 2592000
     }
   ],
+  "error": null
+}
+```
+
+---
+
+### Storage Space Left & Quota Headroom (`GET /api/v1/blobs/namespaces/:namespace/usage`)
+Returns exact byte consumption, allocated quota ceiling, remaining headroom, and object count.
+
+**Request**:
+```http
+GET /api/v1/blobs/namespaces/media/usage
+X-Axiom-Key: <TOKEN>
+```
+**Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "data": {
+    "namespace": "media",
+    "created_at": 1729800000,
+    "is_public": true,
+    "max_bytes": 10737418240,
+    "used_bytes": 2147483648,
+    "remaining_bytes": 8589934592,
+    "percent_used": 20.0,
+    "total_objects": 142,
+    "is_quota_exceeded": false
+  },
+  "error": null
+}
+```
+
+---
+
+### Pre-Signed Direct Upload Link (`POST /api/v1/blobs/uploads/:namespace/sign`)
+Generates a pre-signed capability URL for direct client upload without distributing root credentials.
+
+**Request**:
+```http
+POST /api/v1/blobs/uploads/media/sign
+X-Axiom-Key: <TOKEN>
+Content-Type: application/json
+```
+```json
+{
+  "key": "photos/avatar.jpg",
+  "content_type": "image/jpeg",
+  "ttl_seconds": 3600
+}
+```
+**Response (`201 Created`)**:
+```json
+{
+  "success": true,
+  "data": {
+    "url": "/api/v1/blobs/objects/media/photos/avatar.jpg?ticket_sig=...&ticket_exp=...",
+    "method": "PUT",
+    "headers": {
+      "Content-Type": "image/jpeg"
+    },
+    "expires_at": 1792950000,
+    "signature": "..."
+  },
   "error": null
 }
 ```

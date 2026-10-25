@@ -2881,3 +2881,150 @@ async fn test_cluster_ban_propagation_and_instant_rejection() {
     // IP is now unbanned
     assert!(!BanList::is_ip_banned(target_ip).0);
 }
+
+#[tokio::test]
+async fn test_first_class_blob_hierarchy_and_quota_usage() {
+    setup_test_metadata();
+    ensure_blob_engine().await;
+    axiom_cache::CacheEngine::delete("rl:ip:127.0.0.1").await;
+    axiom_cache::CacheEngine::delete("penalty:127.0.0.1").await;
+    let admin_token = BASE64_STANDARD.encode("admin_key:secret_admin");
+
+    // 1. Create a namespace with quota limit
+    let ns_name = "fc-blob-test";
+    let req = Request::post("/admin/v1/blobs/namespaces")
+        .header("Authorization", format!("Bearer {}", admin_token))
+        .header("Content-Type", "application/json")
+        .body(Body::from(
+            serde_json::to_vec(&serde_json::json!({
+                "name": ns_name,
+                "max_bytes": 1048576,
+                "is_public": false
+            }))
+            .unwrap(),
+        ))
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert!(res.status() == StatusCode::CREATED || res.status() == StatusCode::CONFLICT);
+
+    // 2. Put object using first-class REST URL: /api/v1/blobs/objects/:namespace/*key
+    let req = Request::put(format!("/api/v1/blobs/objects/{}/data/sample.txt", ns_name))
+        .header("X-Axiom-Key", &admin_token)
+        .header("Content-Type", "text/plain")
+        .body(Body::from("First-Class Axiom Blob Architecture"))
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::CREATED);
+
+    // 3. Query space-left and quota headroom via /api/v1/blobs/namespaces/:namespace/usage
+    let req = Request::get(format!("/api/v1/blobs/namespaces/{}/usage", ns_name))
+        .header("X-Axiom-Key", &admin_token)
+        .body(Body::empty())
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let body_bytes = axum::body::to_bytes(res.into_body(), 65536).await.unwrap();
+    let usage_json: Value = serde_json::from_slice(&body_bytes).unwrap();
+    assert_eq!(usage_json["success"], true);
+    let data = &usage_json["data"];
+    assert_eq!(data["namespace"], ns_name);
+    assert!(data["used_bytes"].as_u64().unwrap() > 0);
+    assert_eq!(data["max_bytes"], 1048576);
+    assert!(data["remaining_bytes"].as_u64().unwrap() < 1048576);
+    assert_eq!(data["is_quota_exceeded"], false);
+
+    // 4. Server-side zero-copy CAS clone via /api/v1/blobs/objects/copy
+    let req = Request::post("/api/v1/blobs/objects/copy")
+        .header("X-Axiom-Key", &admin_token)
+        .header("Content-Type", "application/json")
+        .body(Body::from(
+            serde_json::to_vec(&serde_json::json!({
+                "src_namespace": ns_name,
+                "src_key": "data/sample.txt",
+                "dest_key": "data/sample_copied.txt"
+            }))
+            .unwrap(),
+        ))
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    // 5. Atomic relocate via /api/v1/blobs/objects/move
+    let req = Request::post("/api/v1/blobs/objects/move")
+        .header("X-Axiom-Key", &admin_token)
+        .header("Content-Type", "application/json")
+        .body(Body::from(
+            serde_json::to_vec(&serde_json::json!({
+                "src_namespace": ns_name,
+                "src_key": "data/sample_copied.txt",
+                "dest_key": "data/sample_moved.txt"
+            }))
+            .unwrap(),
+        ))
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    // Verify source moved is gone and target exists
+    let req = Request::get(format!("/api/v1/blobs/objects/{}/data/sample_copied.txt", ns_name))
+        .header("X-Axiom-Key", &admin_token)
+        .body(Body::empty())
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::NOT_FOUND);
+
+    let req = Request::get(format!("/api/v1/blobs/objects/{}/data/sample_moved.txt", ns_name))
+        .header("X-Axiom-Key", &admin_token)
+        .body(Body::empty())
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    // 6. Pre-signed direct upload capability URL via /api/v1/blobs/uploads/:namespace/sign
+    let req = Request::post(format!("/api/v1/blobs/uploads/{}/sign", ns_name))
+        .header("X-Axiom-Key", &admin_token)
+        .header("Content-Type", "application/json")
+        .body(Body::from(
+            serde_json::to_vec(&serde_json::json!({
+                "key": "incoming/direct.txt",
+                "content_type": "text/plain",
+                "ttl_seconds": 600
+            }))
+            .unwrap(),
+        ))
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::CREATED);
+    let body_bytes = axum::body::to_bytes(res.into_body(), 65536).await.unwrap();
+    let sign_json: Value = serde_json::from_slice(&body_bytes).unwrap();
+    let presigned_url = sign_json["data"]["url"].as_str().unwrap().to_string();
+    assert!(presigned_url.contains("ticket_sig="));
+
+    // Upload using pre-signed capability URL directly WITHOUT Authorization header
+    let req = Request::put(&presigned_url)
+        .header("Content-Type", "text/plain")
+        .body(Body::from("Uploaded via Capability Ticket"))
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::CREATED);
+
+    // 7. Unified batch delete via /api/v1/blobs/objects/:namespace/batch-delete
+    let req = Request::post(format!("/api/v1/blobs/objects/{}/batch-delete", ns_name))
+        .header("X-Axiom-Key", &admin_token)
+        .header("Content-Type", "application/json")
+        .body(Body::from(
+            serde_json::to_vec(&serde_json::json!({
+                "keys": ["data/sample.txt", "data/sample_moved.txt"],
+                "prefix": "incoming/"
+            }))
+            .unwrap(),
+        ))
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let body_bytes = axum::body::to_bytes(res.into_body(), 65536).await.unwrap();
+    let batch_json: Value = serde_json::from_slice(&body_bytes).unwrap();
+    assert_eq!(batch_json["success"], true);
+    assert_eq!(batch_json["data"]["deleted"].as_array().unwrap().len(), 2);
+    assert_eq!(batch_json["data"]["prefix_deleted"], 1);
+}

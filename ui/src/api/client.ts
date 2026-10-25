@@ -159,6 +159,8 @@ import type {
   CreateBlobTicketResponse,
   ListBlobsResult,
   NamespaceInfo,
+  NamespaceUsage,
+  UploadLinkResponse,
   TableInfoApi,
   ColumnInfoApi,
   ForeignKeyInfoApi,
@@ -430,9 +432,13 @@ export const api = {
 
   // Native Blob Storage Subsystem
   getBlobStats: () => request<BlobStats>('/admin/v1/blobs/stats'),
-  listBlobNamespaces: () => request<NamespaceInfo[]>('/admin/v1/blobs/namespaces'),
+  listBlobNamespaces: () => request<NamespaceInfo[]>('/api/v1/blobs/namespaces'),
+  getBlobNamespace: (name: string) =>
+    request<NamespaceInfo>(`/api/v1/blobs/namespaces/${encodeURIComponent(name)}`),
+  getBlobNamespaceUsage: (name: string) =>
+    request<NamespaceUsage>(`/api/v1/blobs/namespaces/${encodeURIComponent(name)}/usage`),
   createBlobNamespace: (name: string, max_bytes?: number | null, is_public?: boolean, cors_origins?: string[]) =>
-    request<NamespaceInfo>('/admin/v1/blobs/namespaces', {
+    request<NamespaceInfo>('/api/v1/blobs/namespaces', {
       method: 'POST',
       body: JSON.stringify({
         name,
@@ -445,12 +451,12 @@ export const api = {
     name: string,
     data: { new_name?: string; max_bytes?: number | null; is_public?: boolean; cors_origins?: string[] }
   ) =>
-    request<NamespaceInfo>(`/admin/v1/blobs/namespaces/${encodeURIComponent(name)}`, {
+    request<NamespaceInfo>(`/api/v1/blobs/namespaces/${encodeURIComponent(name)}`, {
       method: 'PATCH',
       body: JSON.stringify(data),
     }),
   deleteBlobNamespace: (name: string) =>
-    request<{ deleted_objects: number }>(`/admin/v1/blobs/namespaces/${encodeURIComponent(name)}`, {
+    request<{ deleted_objects: number }>(`/api/v1/blobs/namespaces/${encodeURIComponent(name)}`, {
       method: 'DELETE',
     }),
   listBlobs: (namespace: string, prefix?: string, cursor?: string, limit?: number) => {
@@ -459,7 +465,7 @@ export const api = {
     if (cursor) params.set('cursor', cursor);
     if (limit) params.set('limit', String(limit));
     const qs = params.toString() ? `?${params.toString()}` : '';
-    return request<ListBlobsResult>(`/api/v1/blobs/${encodeURIComponent(namespace)}${qs}`);
+    return request<ListBlobsResult>(`/api/v1/blobs/objects/${encodeURIComponent(namespace)}${qs}`);
   },
   /**
    * Resumable chunked upload protocol implementation matching the backend
@@ -484,7 +490,7 @@ export const api = {
       namespace: string;
       key: string;
       total_size?: number;
-    }>(`/api/v1/blobs/${encodeURIComponent(namespace)}/uploads`, {
+    }>(`/api/v1/blobs/uploads/${encodeURIComponent(namespace)}`, {
       method: 'POST',
       body: JSON.stringify({
         key,
@@ -507,7 +513,7 @@ export const api = {
       const chunkEnd = Math.min(offset + chunkSize, totalSize) - 1;
       const chunk = file.slice(offset, chunkEnd + 1);
       const targetUrl = resolveEndpoint(
-        `/api/v1/blobs/${encodeURIComponent(namespace)}/uploads/${encodeURIComponent(uploadId)}`
+        `/api/v1/blobs/uploads/${encodeURIComponent(namespace)}/${encodeURIComponent(uploadId)}`
       );
 
       const headers: Record<string, string> = {
@@ -571,7 +577,7 @@ export const api = {
 
     // Step 3: Complete upload if not automatically completed
     return request<BlobMetadata>(
-      `/api/v1/blobs/${encodeURIComponent(namespace)}/uploads/${encodeURIComponent(uploadId)}/complete`,
+      `/api/v1/blobs/uploads/${encodeURIComponent(namespace)}/${encodeURIComponent(uploadId)}/complete`,
       {
         method: 'POST',
         signal,
@@ -592,7 +598,7 @@ export const api = {
     }
 
     const sanitizedKey = key.split('/').map(encodeURIComponent).join('/');
-    return request<BlobMetadata>(`/api/v1/blobs/${encodeURIComponent(namespace)}/${sanitizedKey}`, {
+    return request<BlobMetadata>(`/api/v1/blobs/objects/${encodeURIComponent(namespace)}/${sanitizedKey}`, {
       method: 'PUT',
       headers: {
         'Content-Type': contentType || 'application/octet-stream',
@@ -604,7 +610,7 @@ export const api = {
   },
   deleteBlob: (namespace: string, key: string) => {
     const sanitizedKey = key.split('/').map(encodeURIComponent).join('/');
-    return request<{ deleted: boolean }>(`/api/v1/blobs/${encodeURIComponent(namespace)}/${sanitizedKey}`, {
+    return request<{ deleted: boolean }>(`/api/v1/blobs/objects/${encodeURIComponent(namespace)}/${sanitizedKey}`, {
       method: 'DELETE',
     });
   },
@@ -615,7 +621,7 @@ export const api = {
     dest_namespace?: string,
     is_prefix?: boolean
   ) =>
-    request<BlobMetadata | { copied_count: number }>('/admin/v1/blobs/copy', {
+    request<BlobMetadata | { copied_count: number }>('/api/v1/blobs/objects/copy', {
       method: 'POST',
       body: JSON.stringify({
         src_namespace,
@@ -632,7 +638,7 @@ export const api = {
     dest_namespace?: string,
     is_prefix?: boolean
   ) =>
-    request<BlobMetadata | { moved_count: number }>('/admin/v1/blobs/move', {
+    request<BlobMetadata | { moved_count: number }>('/api/v1/blobs/objects/move', {
       method: 'POST',
       body: JSON.stringify({
         src_namespace,
@@ -643,13 +649,16 @@ export const api = {
       }),
     }),
   deleteBlobPrefix: (namespace: string, prefix: string) =>
-    request<{ deleted_objects: number }>('/admin/v1/blobs/delete-prefix', {
-      method: 'POST',
-      body: JSON.stringify({ namespace, prefix }),
-    }),
+    request<{ deleted: string[]; prefix_deleted?: number; errors: [string, string][] }>(
+      `/api/v1/blobs/objects/${encodeURIComponent(namespace)}/batch-delete`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ prefix }),
+      }
+    ),
   deleteBlobsBatch: (namespace: string, keys: string[]) =>
-    request<{ deleted: string[]; errors: [string, string][] }>(
-      `/api/v1/blobs/${encodeURIComponent(namespace)}/delete-objects`,
+    request<{ deleted: string[]; prefix_deleted?: number; errors: [string, string][] }>(
+      `/api/v1/blobs/objects/${encodeURIComponent(namespace)}/batch-delete`,
       {
         method: 'POST',
         body: JSON.stringify({ keys }),
@@ -657,7 +666,7 @@ export const api = {
     ),
   verifyBlob: (namespace: string, key: string) => {
     const sanitizedKey = key.split('/').map(encodeURIComponent).join('/');
-    return request<{ valid: boolean }>(`/admin/v1/blobs/verify/${encodeURIComponent(namespace)}/${sanitizedKey}`, {
+    return request<{ valid: boolean }>(`/api/v1/blobs/objects/${encodeURIComponent(namespace)}/verify/${sanitizedKey}`, {
       method: 'POST',
     });
   },
@@ -667,11 +676,25 @@ export const api = {
     operation: 'READ' | 'WRITE' = 'READ',
     ttl_seconds?: number
   ) =>
-    request<CreateBlobTicketResponse>(`/api/v1/blobs/${encodeURIComponent(namespace)}/ticket`, {
+    request<CreateBlobTicketResponse>(`/api/v1/blobs/namespaces/${encodeURIComponent(namespace)}/tickets`, {
       method: 'POST',
       body: JSON.stringify({
         key,
         operation,
+        ttl_seconds: ttl_seconds ?? 3600,
+      }),
+    }),
+  createUploadLink: (
+    namespace: string,
+    key: string,
+    contentType?: string,
+    ttl_seconds?: number
+  ) =>
+    request<UploadLinkResponse>(`/api/v1/blobs/uploads/${encodeURIComponent(namespace)}/sign`, {
+      method: 'POST',
+      body: JSON.stringify({
+        key,
+        content_type: contentType,
         ttl_seconds: ttl_seconds ?? 3600,
       }),
     }),
@@ -680,37 +703,37 @@ export const api = {
     if (namespace && namespace !== '*') params.set('namespace', namespace);
     if (key) params.set('key', key);
     if (all) params.set('all', 'true');
-    return request<BlobTicket[]>(`/admin/v1/blobs/tickets?${params.toString()}`);
+    return request<BlobTicket[]>(`/api/v1/blobs/tickets?${params.toString()}`);
   },
   revokeBlobTicket: (signature: string) =>
     request<{ revoked: boolean; signature: string }>(
-      `/admin/v1/blobs/tickets/${encodeURIComponent(signature)}/revoke`,
+      `/api/v1/blobs/tickets/${encodeURIComponent(signature)}/revoke`,
       {
         method: 'POST',
       }
     ),
   enableBlobTicket: (signature: string) =>
     request<{ revoked: boolean; signature: string }>(
-      `/admin/v1/blobs/tickets/${encodeURIComponent(signature)}/enable`,
+      `/api/v1/blobs/tickets/${encodeURIComponent(signature)}/enable`,
       {
         method: 'POST',
       }
     ),
   deleteBlobTicket: (signature: string) =>
     request<{ deleted: boolean }>(
-      `/admin/v1/blobs/tickets/${encodeURIComponent(signature)}`,
+      `/api/v1/blobs/tickets/${encodeURIComponent(signature)}`,
       {
         method: 'DELETE',
       }
     ),
   getBlobDownloadUrl: (namespace: string, key: string) => {
     const sanitizedKey = key.split('/').map(encodeURIComponent).join('/');
-    return `/api/v1/blobs/${encodeURIComponent(namespace)}/${sanitizedKey}`;
+    return `/api/v1/blobs/objects/${encodeURIComponent(namespace)}/${sanitizedKey}`;
   },
   downloadBlob: async (namespace: string, key: string) => {
     const token = getSessionToken();
     const sanitizedKey = key.split('/').map(encodeURIComponent).join('/');
-    const url = `/api/v1/blobs/${encodeURIComponent(namespace)}/${sanitizedKey}`;
+    const url = `/api/v1/blobs/objects/${encodeURIComponent(namespace)}/${sanitizedKey}`;
     const res = await fetch(url, {
       headers: token && token !== 'undefined' ? { Authorization: `Bearer ${token}` } : {},
     });

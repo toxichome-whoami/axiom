@@ -103,7 +103,7 @@ export function ShareViewerPage() {
       return;
     }
 
-    const headUrl = `/api/v1/blobs/${encodeURIComponent(params.namespace)}/${encodeURIComponent(params.key)}?ticket_sig=${encodeURIComponent(params.ticket_sig || '')}&ticket_exp=${encodeURIComponent(params.ticket_exp || 0)}&inline=1`;
+    const headUrl = `/api/v1/blobs/objects/${encodeURIComponent(params.namespace)}/${encodeURIComponent(params.key)}?ticket_sig=${encodeURIComponent(params.ticket_sig || '')}&ticket_exp=${encodeURIComponent(params.ticket_exp || 0)}&inline=1`;
 
     fetch(headUrl, { method: 'HEAD' })
       .then((res) => {
@@ -166,11 +166,11 @@ export function ShareViewerPage() {
 
   const streamUrl = params.isPublic
     ? `/api/v1/blobs/public/${encodeURIComponent(params.namespace)}/${sanitizedKey}?inline=1`
-    : `/api/v1/blobs/${encodeURIComponent(params.namespace)}/${sanitizedKey}?ticket_sig=${encodeURIComponent(params.ticket_sig || '')}&ticket_exp=${encodeURIComponent(params.ticket_exp || 0)}&inline=1`;
+    : `/api/v1/blobs/objects/${encodeURIComponent(params.namespace)}/${sanitizedKey}?ticket_sig=${encodeURIComponent(params.ticket_sig || '')}&ticket_exp=${encodeURIComponent(params.ticket_exp || 0)}&inline=1`;
 
   const downloadUrl = params.isPublic
     ? `/api/v1/blobs/public/${encodeURIComponent(params.namespace)}/${sanitizedKey}`
-    : `/api/v1/blobs/${encodeURIComponent(params.namespace)}/${sanitizedKey}?ticket_sig=${encodeURIComponent(params.ticket_sig || '')}&ticket_exp=${encodeURIComponent(params.ticket_exp || 0)}`;
+    : `/api/v1/blobs/objects/${encodeURIComponent(params.namespace)}/${sanitizedKey}?ticket_sig=${encodeURIComponent(params.ticket_sig || '')}&ticket_exp=${encodeURIComponent(params.ticket_exp || 0)}`;
 
   const handleCopyLink = () => {
     navigator.clipboard.writeText(window.location.href);

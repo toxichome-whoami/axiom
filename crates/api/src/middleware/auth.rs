@@ -90,7 +90,11 @@ pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, A
     let has_ticket_sig = stripped_blob_path.is_some()
         && req.uri().query().map(|q| q.contains("ticket_sig=")).unwrap_or(false);
 
-    if let (Some(stripped), true) = (stripped_blob_path, has_ticket_sig) {
+    if let (Some(raw_stripped), true) = (stripped_blob_path, has_ticket_sig) {
+        let stripped = raw_stripped
+            .strip_prefix("objects/")
+            .or_else(|| raw_stripped.strip_prefix("public/"))
+            .unwrap_or(raw_stripped);
         let query = req.uri().query().unwrap_or("");
         let mut ticket_sig: Option<String> = None;
         let mut ticket_exp_str: Option<String> = None;

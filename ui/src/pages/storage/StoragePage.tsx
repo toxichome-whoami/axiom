@@ -24,7 +24,7 @@ import {
   Copy,
 } from 'lucide-react';
 import { api } from '../../api/client';
-import { BlobEntry, BlobStats, NamespaceInfo, BlobTicket } from '../../types';
+import { BlobEntry, BlobStats, NamespaceInfo, BlobTicket, NamespaceUsage } from '../../types';
 import { StorageItem, StorageViewMode, ClipboardState, StorageTierFilter, UploadFileEntry } from './types';
 import { formatBytes, QUOTA_OPTIONS } from './format';
 import { sanitizeFolder, parentOf, joinKey, validateName } from './paths';
@@ -156,6 +156,7 @@ export function StoragePage() {
   // Telemetry & Core Subsystem Data
   const [stats, setStats] = useState<BlobStats | null>(null);
   const [namespaces, setNamespaces] = useState<NamespaceInfo[]>([]);
+  const [namespaceUsage, setNamespaceUsage] = useState<NamespaceUsage | null>(null);
   const [activeNamespace, setActiveNamespace] = useState<string>(initialStorage.ns);
   const [blobs, setBlobs] = useState<BlobEntry[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
@@ -536,22 +537,37 @@ export function StoragePage() {
 
       if (activeNs) {
         try {
-          const listRes = await api.listBlobs(activeNs, undefined, undefined, 100);
+          const [listRes, usageRes] = await Promise.allSettled([
+            api.listBlobs(activeNs, undefined, undefined, 100),
+            api.getBlobNamespaceUsage(activeNs),
+          ]);
           if (curGen === fetchGenRef.current) {
-            const items = listRes.items || [];
-            setBlobs(items);
-            setNextCursor(listRes.next_cursor || null);
+            if (listRes.status === 'fulfilled') {
+              const items = listRes.value.items || [];
+              setBlobs(items);
+              setNextCursor(listRes.value.next_cursor || null);
+            } else {
+              setBlobs([]);
+              setNextCursor(null);
+            }
+            if (usageRes.status === 'fulfilled') {
+              setNamespaceUsage(usageRes.value);
+            } else {
+              setNamespaceUsage(null);
+            }
           }
         } catch {
           if (curGen === fetchGenRef.current) {
             setBlobs([]);
             setNextCursor(null);
+            setNamespaceUsage(null);
           }
         }
       } else {
         if (curGen === fetchGenRef.current) {
           setBlobs([]);
           setNextCursor(null);
+          setNamespaceUsage(null);
         }
       }
     } catch (err: unknown) {
@@ -1858,6 +1874,7 @@ export function StoragePage() {
           onShareClick={handleOpenShare}
           onCreateUploadLink={() => setIsUploadLinkOpen(true)}
           isPublic={Boolean(currentNsInfo?.is_public)}
+          namespaceUsage={namespaceUsage}
           totalActiveTickets={totalActiveTickets}
           filterActiveLinksOnly={filterActiveLinksOnly}
           onToggleFilterActiveLinks={() => setFilterActiveLinksOnly((prev) => !prev)}
@@ -2104,6 +2121,7 @@ export function StoragePage() {
         selectedItem={inspectorItem}
         activeNamespace={activeNamespace}
         currentNsInfo={currentNsInfo}
+        namespaceUsage={namespaceUsage}
         onPreview={handleOpenPreview}
         onDownload={handleDownload}
         onShare={handleOpenShare}

@@ -20,6 +20,8 @@ import {
   Link as LinkIcon,
 } from 'lucide-react';
 import { StorageViewMode, StorageTierFilter, StorageItem } from './types';
+import { NamespaceUsage } from '../../types';
+import { formatBytes } from './format';
 
 export interface StorageToolbarProps {
   activeNamespace: string;
@@ -43,6 +45,7 @@ export interface StorageToolbarProps {
   onShareClick?: (item: StorageItem) => void;
   onCreateUploadLink?: () => void;
   isPublic?: boolean;
+  namespaceUsage?: NamespaceUsage | null;
   totalActiveTickets?: number;
   filterActiveLinksOnly?: boolean;
   onToggleFilterActiveLinks?: () => void;
@@ -70,6 +73,7 @@ export function StorageToolbar({
   onShareClick,
   onCreateUploadLink,
   isPublic,
+  namespaceUsage,
   totalActiveTickets,
   filterActiveLinksOnly,
   onToggleFilterActiveLinks,
@@ -304,6 +308,44 @@ export function StorageToolbar({
         >
           <PanelRight className="w-4 h-4" />
         </button>
+
+        {/* Storage Quota Headroom & Space Left Pill */}
+        {namespaceUsage && (
+          <div
+            className="hidden lg:flex items-center gap-2 h-8 px-2.5 rounded-[6px] bg-[#141414] border border-[#262626] text-[12.5px] text-[#8c8c8c] shrink-0 font-sans select-none"
+            title={
+              namespaceUsage.max_bytes !== null
+                ? `Used: ${formatBytes(namespaceUsage.used_bytes)} / ${formatBytes(namespaceUsage.max_bytes)} (${namespaceUsage.percent_used?.toFixed(1)}%)\nRemaining: ${formatBytes(namespaceUsage.remaining_bytes ?? 0)}\nTotal Objects: ${namespaceUsage.total_objects}`
+                : `Used: ${formatBytes(namespaceUsage.used_bytes)} (Unlimited Quota)\nTotal Objects: ${namespaceUsage.total_objects}`
+            }
+          >
+            <div className="flex items-center gap-1.5">
+              <span className="font-medium text-[#cccccc]">
+                {formatBytes(namespaceUsage.used_bytes)}
+              </span>
+              {namespaceUsage.max_bytes !== null ? (
+                <>
+                  <span className="text-[#555555]">/</span>
+                  <span className="text-[#8c8c8c]">{formatBytes(namespaceUsage.max_bytes)}</span>
+                  <div className="w-12 h-1.5 bg-[#222222] rounded-full overflow-hidden ml-1">
+                    <div
+                      className={`h-full rounded-full transition-all ${
+                        (namespaceUsage.percent_used || 0) >= 90
+                          ? 'bg-rose-500'
+                          : (namespaceUsage.percent_used || 0) >= 75
+                          ? 'bg-amber-500'
+                          : 'bg-emerald-500'
+                      }`}
+                      style={{ width: `${Math.min(namespaceUsage.percent_used || 0, 100)}%` }}
+                    />
+                  </div>
+                </>
+              ) : (
+                <span className="text-[#555555]">(Quota: &infin;)</span>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Active Capability Links Notification / Filter Pill */}
         {totalActiveTickets !== undefined && totalActiveTickets > 0 && onToggleFilterActiveLinks && (

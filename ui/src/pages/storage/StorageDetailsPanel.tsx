@@ -23,7 +23,7 @@ import {
   Eye,
 } from 'lucide-react';
 import { StorageItem } from './types';
-import { NamespaceInfo } from '../../types';
+import { NamespaceInfo, NamespaceUsage } from '../../types';
 import { getFileIcon } from './fileIcon';
 import { formatBytes } from './format';
 
@@ -35,6 +35,7 @@ export interface StorageDetailsPanelProps {
   selectedItem: StorageItem | null;
   activeNamespace: string;
   currentNsInfo: NamespaceInfo | null;
+  namespaceUsage?: NamespaceUsage | null;
   onPreview?: (item: StorageItem) => void;
   onDownload: (key: string) => void;
   onShare?: (item: StorageItem) => void;
@@ -57,6 +58,7 @@ export function StorageDetailsPanel({
   selectedItem,
   activeNamespace,
   currentNsInfo,
+  namespaceUsage,
   onPreview,
   onDownload,
   onShare,
@@ -432,11 +434,15 @@ export function StorageDetailsPanel({
               <div className="rounded-lg bg-[#111111] border border-[#222222] divide-y divide-[#1a1a1a] text-[13px] font-sans">
                 <div className="flex items-center justify-between px-3 py-2">
                   <span className="text-[#8c8c8c]">Total Objects</span>
-                  <span className="text-white tabular-nums">{currentNsInfo.total_objects}</span>
+                  <span className="text-white tabular-nums">
+                    {namespaceUsage ? namespaceUsage.total_objects : currentNsInfo.total_objects}
+                  </span>
                 </div>
                 <div className="flex items-center justify-between px-3 py-2">
-                  <span className="text-[#8c8c8c]">Consumed Bytes</span>
-                  <span className="text-white tabular-nums">{formatBytes(currentNsInfo.total_bytes)}</span>
+                  <span className="text-[#8c8c8c]">Consumed Space</span>
+                  <span className="text-white tabular-nums">
+                    {formatBytes(namespaceUsage ? namespaceUsage.used_bytes : currentNsInfo.total_bytes)}
+                  </span>
                 </div>
                 <div className="flex items-center justify-between px-3 py-2">
                   <span className="text-[#8c8c8c]">Allocated Quota</span>
@@ -444,6 +450,28 @@ export function StorageDetailsPanel({
                     {currentNsInfo.max_bytes ? formatBytes(currentNsInfo.max_bytes) : 'Unlimited'}
                   </span>
                 </div>
+                {namespaceUsage && namespaceUsage.max_bytes !== null && (
+                  <>
+                    <div className="flex items-center justify-between px-3 py-2">
+                      <span className="text-[#8c8c8c]">Space Remaining</span>
+                      <span className="text-emerald-400 font-medium tabular-nums">
+                        {formatBytes(namespaceUsage.remaining_bytes ?? 0)}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between px-3 py-2">
+                      <span className="text-[#8c8c8c]">Quota Utilized</span>
+                      <span className={`font-medium tabular-nums ${
+                        (namespaceUsage.percent_used || 0) >= 90
+                          ? 'text-red-400'
+                          : (namespaceUsage.percent_used || 0) >= 75
+                          ? 'text-amber-400'
+                          : 'text-[#cccccc]'
+                      }`}>
+                        {namespaceUsage.percent_used?.toFixed(1)}%
+                      </span>
+                    </div>
+                  </>
+                )}
               </div>
             )}
           </div>
