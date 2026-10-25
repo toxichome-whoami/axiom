@@ -729,19 +729,6 @@ export function MediaPlayer({
           >
             Fit
           </button>
-          {onDownload && (
-            <>
-              <div className="w-px h-4 bg-[#262626] mx-0.5" />
-              <button
-                type="button"
-                onClick={onDownload}
-                title="Download image"
-                className="w-7 h-7 flex items-center justify-center rounded-[4px] hover:bg-[#222222] text-[#cccccc] hover:text-white transition-colors cursor-pointer"
-              >
-                <Download className="w-3.5 h-3.5" />
-              </button>
-            </>
-          )}
         </div>
 
         {/* Image viewport with checkerboard pattern for alpha transparency, wheel zoom & drag to move */}
