@@ -137,7 +137,7 @@ export function StorageSidebar({
                     {activeNamespace || 'Select Namespace'}
                   </span>
                   {currentNsInfo?.is_public && (
-                    <span className="px-1.5 py-0.5 rounded-[4px] text-[11px] font-medium bg-[#30a46c]/15 border border-[#30a46c]/30 text-[#30a46c] shrink-0">
+                    <span className="px-1.5 py-0.5 rounded-[4px] text-[13px] font-medium bg-[#30a46c]/15 border border-[#30a46c]/30 text-[#30a46c] shrink-0 leading-tight">
                       Public
                     </span>
                   )}

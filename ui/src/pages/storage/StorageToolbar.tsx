@@ -93,7 +93,7 @@ export function StorageToolbar({
   return (
     <div className="h-12 shrink-0 px-3.5 border-b border-[#222222] bg-[#0c0c0c] flex items-center justify-between gap-3 select-none font-sans relative z-30 overflow-x-auto scrollbar-none whitespace-nowrap">
       {/* ─── Left: Interactive Breadcrumbs Navigator ─────────────── */}
-      <div className="flex items-center gap-1.5 text-sm overflow-x-auto scrollbar-none min-w-0 py-0.5 shrink-0">
+      <div className="flex items-center gap-1.5 text-[13px] overflow-x-auto scrollbar-none min-w-0 py-0.5 shrink-0">
         <button
           type="button"
           onClick={() => onNavigateToPrefix('')}
@@ -134,7 +134,7 @@ export function StorageToolbar({
           <span>{activeNamespace || 'Root'}</span>
           {activeNamespace && (
             <span
-              className={`px-1.5 py-0.5 rounded-[4px] text-[11px] font-medium ${
+              className={`px-1.5 py-0.5 rounded-[4px] text-[13px] font-medium leading-tight ${
                 isPublic
                   ? 'bg-[#30a46c]/15 border border-[#30a46c]/30 text-[#30a46c]'
                   : 'bg-[#161616] border border-[#262626] text-[#8c8c8c]'
@@ -223,7 +223,7 @@ export function StorageToolbar({
           <button
             type="button"
             onClick={() => onTierFilterChange('all')}
-            className={`px-2.5 py-1 rounded-[4px] text-xs font-medium transition-colors cursor-pointer ${
+            className={`px-2.5 py-1 rounded-[4px] text-[13px] font-medium transition-colors cursor-pointer ${
               tierFilter === 'all'
                 ? 'bg-[#1f1f1f] text-white shadow-xs'
                 : 'text-[#888888] hover:text-[#cccccc]'
@@ -234,7 +234,7 @@ export function StorageToolbar({
           <button
             type="button"
             onClick={() => onTierFilterChange('inline')}
-            className={`px-2.5 py-1 rounded-[4px] text-xs font-medium transition-colors cursor-pointer ${
+            className={`px-2.5 py-1 rounded-[4px] text-[13px] font-medium transition-colors cursor-pointer ${
               tierFilter === 'inline'
                 ? 'bg-[#1f1f1f] text-white shadow-xs'
                 : 'text-[#888888] hover:text-[#cccccc]'
@@ -245,7 +245,7 @@ export function StorageToolbar({
           <button
             type="button"
             onClick={() => onTierFilterChange('disk')}
-            className={`px-2.5 py-1 rounded-[4px] text-xs font-medium transition-colors cursor-pointer ${
+            className={`px-2.5 py-1 rounded-[4px] text-[13px] font-medium transition-colors cursor-pointer ${
               tierFilter === 'disk'
                 ? 'bg-[#1f1f1f] text-white shadow-xs'
                 : 'text-[#888888] hover:text-[#cccccc]'
@@ -261,7 +261,7 @@ export function StorageToolbar({
             type="button"
             onClick={() => onViewModeChange('grid')}
             title="Grid View"
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-[4px] text-xs font-medium transition-colors cursor-pointer ${
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-[4px] text-[13px] font-medium transition-colors cursor-pointer ${
               viewMode === 'grid'
                 ? 'bg-[#1f1f1f] text-white shadow-xs'
                 : 'text-[#888888] hover:text-[#cccccc]'
@@ -274,7 +274,7 @@ export function StorageToolbar({
             type="button"
             onClick={() => onViewModeChange('list')}
             title="Table View"
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-[4px] text-xs font-medium transition-colors cursor-pointer ${
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-[4px] text-[13px] font-medium transition-colors cursor-pointer ${
               viewMode === 'list'
                 ? 'bg-[#1f1f1f] text-white shadow-xs'
                 : 'text-[#888888] hover:text-[#cccccc]'
