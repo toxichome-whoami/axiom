@@ -157,14 +157,6 @@ export function ShareViewerPage() {
           <p className="text-[13px] text-[#8c8c8c] leading-relaxed">
             {metaError || 'Unable to load capability share link.'}
           </p>
-          <div className="pt-2">
-            <a
-              href="/system"
-              className="inline-flex items-center justify-center h-8 px-4 rounded-[6px] bg-[#141414] hover:bg-[#1a1a1a] text-white text-[13px] font-medium border border-[#262626] transition-colors"
-            >
-              Return to Axiom
-            </a>
-          </div>
         </div>
       </div>
     );
