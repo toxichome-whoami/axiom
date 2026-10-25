@@ -923,6 +923,19 @@ pub async fn create_ticket_handler(
         .map_err(|e| AxiomError::new("BAD_TICKET_OP", &e.to_string(), StatusCode::BAD_REQUEST))?;
     PolicyEngine::evaluate_blob(&auth, &namespace, &payload.key, &op)?;
 
+    // Public namespaces do not support/require capability tickets for reading; public CDN URLs must be used.
+    let engine = get_blob_engine()?;
+    if engine.is_namespace_public(&namespace).map_err(map_blob_error)? && op == "READ" {
+        return Err(AxiomError::new(
+            "PUBLIC_NAMESPACE_TICKET_DISABLED",
+            &format!(
+                "Namespace '{}' is public. Capability tickets are disabled for public namespaces; access objects directly via the public CDN endpoint (/api/v1/blobs/public/{}/...).",
+                namespace, namespace
+            ),
+            StatusCode::BAD_REQUEST,
+        ));
+    }
+
     let secret = axiom_blob::tickets::get_ticket_secret();
 
     let ttl = payload

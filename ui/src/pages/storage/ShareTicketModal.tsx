@@ -133,13 +133,20 @@ export function ShareTicketModal({
       setGeneratedTicket(null);
       setCreateError(null);
       setActiveTab(isPublicNamespace ? 'public' : 'create');
-      loadTickets();
+      if (!isPublicNamespace) {
+        loadTickets();
+      }
     }
   }, [isOpen, isPublicNamespace, loadTickets]);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!item || !namespace) return;
+
+    if (isPublicNamespace) {
+      setCreateError('Capability tickets cannot be created for a public namespace. Use direct public CDN links.');
+      return;
+    }
 
     let ttl = selectedTtl;
     if (ttl === 0) {
@@ -267,7 +274,7 @@ export function ShareTicketModal({
             <div className="flex items-center gap-2">
               <Share2 className="w-4 h-4 text-white" />
               <h3 className="text-[15px] font-sans font-medium text-white tracking-tight">
-                {isPublicNamespace ? 'Share Public Object' : 'Share Object'}
+                {isPublicNamespace ? 'Share Public Link' : 'Share Object'}
               </h3>
             </div>
             <p className="text-[13px] text-[#8c8c8c] font-mono truncate mt-0.5" title={`${namespace}/${item.fullKey}`}>
@@ -283,59 +290,46 @@ export function ShareTicketModal({
           </button>
         </div>
 
-        {/* Tab Navigation */}
-        <div className="px-5 py-3 border-b border-[#222222]">
-          <div className="inline-flex items-center p-0.5 rounded-[8px] bg-transparent border border-[#262626]">
-            {isPublicNamespace && (
+        {/* Tab Navigation - Only rendered for private namespaces */}
+        {!isPublicNamespace && (
+          <div className="px-5 py-3 border-b border-[#222222]">
+            <div className="inline-flex items-center p-0.5 rounded-[8px] bg-transparent border border-[#262626]">
               <button
                 type="button"
-                onClick={() => setActiveTab('public')}
+                onClick={() => setActiveTab('create')}
                 className={`flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[13px] font-sans font-medium transition-colors cursor-pointer outline-none border ${
-                  activeTab === 'public'
+                  activeTab === 'create'
                     ? 'bg-[#161616] text-white border-[#333333]'
                     : 'text-[#8c8c8c] hover:text-white hover:bg-[#141414] border-transparent'
                 }`}
               >
-                <Globe className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                <span>Public CDN Link</span>
+                <LinkIcon className="w-3.5 h-3.5 shrink-0" />
+                <span>Create Link</span>
               </button>
-            )}
 
-            <button
-              type="button"
-              onClick={() => setActiveTab('create')}
-              className={`flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[13px] font-sans font-medium transition-colors cursor-pointer outline-none border ${
-                activeTab === 'create'
-                  ? 'bg-[#161616] text-white border-[#333333]'
-                  : 'text-[#8c8c8c] hover:text-white hover:bg-[#141414] border-transparent'
-              }`}
-            >
-              <LinkIcon className="w-3.5 h-3.5 shrink-0" />
-              <span>{isPublicNamespace ? 'Expiring Link' : 'Create Link'}</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                setActiveTab('manage');
-                loadTickets();
-              }}
-              className={`flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[13px] font-sans font-medium transition-colors cursor-pointer outline-none border ${
-                activeTab === 'manage'
-                  ? 'bg-[#161616] text-white border-[#333333]'
-                  : 'text-[#8c8c8c] hover:text-white hover:bg-[#141414] border-transparent'
-              }`}
-            >
-              <Clock className="w-3.5 h-3.5 shrink-0" />
-              <span>Active Links</span>
-              {activeTicketCount > 0 && (
-                <span className="px-1.5 py-0.5 rounded-[4px] bg-[#222222] border border-[#333333] text-[#cccccc] text-[11px] font-mono leading-none">
-                  {activeTicketCount}
-                </span>
-              )}
-            </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTab('manage');
+                  loadTickets();
+                }}
+                className={`flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[13px] font-sans font-medium transition-colors cursor-pointer outline-none border ${
+                  activeTab === 'manage'
+                    ? 'bg-[#161616] text-white border-[#333333]'
+                    : 'text-[#8c8c8c] hover:text-white hover:bg-[#141414] border-transparent'
+                }`}
+              >
+                <Clock className="w-3.5 h-3.5 shrink-0" />
+                <span>Active Links</span>
+                {activeTicketCount > 0 && (
+                  <span className="px-1.5 py-0.5 rounded-[4px] bg-[#222222] border border-[#333333] text-[#cccccc] text-[11px] font-mono leading-none">
+                    {activeTicketCount}
+                  </span>
+                )}
+              </button>
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Body Content */}
         <div className="p-5 space-y-4">
@@ -472,16 +466,9 @@ export function ShareTicketModal({
                 </pre>
               </div>
 
-              <div className="flex items-center justify-between pt-2 border-t border-[#1a1a1a]">
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('create')}
-                  className="text-[12px] font-sans text-[#8c8c8c] hover:text-white transition-colors cursor-pointer"
-                >
-                  Need a temporary expiring link instead?
-                </button>
-                <Button type="button" variant="secondary" size="sm" onClick={onClose} className="h-8 px-3">
-                  Done
+              <div className="flex items-center justify-end pt-2 border-t border-[#1a1a1a]">
+                <Button type="button" variant="secondary" size="sm" onClick={onClose} className="h-8 px-4 text-[13px]">
+                  Close
                 </Button>
               </div>
             </div>
