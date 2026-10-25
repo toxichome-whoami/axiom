@@ -159,7 +159,7 @@ export function CreateUploadLinkModal({
   const handleRevoke = async (signature: string) => {
     setRevokingSigs((prev) => new Set(prev).add(signature));
     try {
-      await api.revokeBlobTicket(signature);
+      await api.revokeBlobTicket(namespace, signature);
       await loadTickets();
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : 'Failed to revoke upload link');
@@ -182,7 +182,7 @@ export function CreateUploadLinkModal({
     }
     setDeletingSigs((prev) => new Set(prev).add(signature));
     try {
-      await api.deleteBlobTicket(signature);
+      await api.deleteBlobTicket(namespace, signature);
       await loadTickets();
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : 'Failed to delete upload link');

@@ -676,7 +676,7 @@ export const api = {
     operation: 'READ' | 'WRITE' = 'READ',
     ttl_seconds?: number
   ) =>
-    request<CreateBlobTicketResponse>(`/api/v1/blobs/namespaces/${encodeURIComponent(namespace)}/tickets`, {
+    request<CreateBlobTicketResponse>(`/api/v1/blobs/tickets/${encodeURIComponent(namespace)}`, {
       method: 'POST',
       body: JSON.stringify({
         key,
@@ -700,28 +700,30 @@ export const api = {
     }),
   listBlobTickets: (namespace: string, key?: string, all = true) => {
     const params = new URLSearchParams();
-    if (namespace && namespace !== '*') params.set('namespace', namespace);
     if (key) params.set('key', key);
     if (all) params.set('all', 'true');
-    return request<BlobTicket[]>(`/api/v1/blobs/tickets?${params.toString()}`);
+    const q = params.toString();
+    return request<BlobTicket[]>(
+      `/api/v1/blobs/tickets/${encodeURIComponent(namespace)}${q ? `?${q}` : ''}`
+    );
   },
-  revokeBlobTicket: (signature: string) =>
+  revokeBlobTicket: (namespace: string, signature: string) =>
     request<{ revoked: boolean; signature: string }>(
-      `/api/v1/blobs/tickets/${encodeURIComponent(signature)}/revoke`,
+      `/api/v1/blobs/tickets/${encodeURIComponent(namespace)}/${encodeURIComponent(signature)}/revoke`,
       {
         method: 'POST',
       }
     ),
-  enableBlobTicket: (signature: string) =>
+  enableBlobTicket: (namespace: string, signature: string) =>
     request<{ revoked: boolean; signature: string }>(
-      `/api/v1/blobs/tickets/${encodeURIComponent(signature)}/enable`,
+      `/api/v1/blobs/tickets/${encodeURIComponent(namespace)}/${encodeURIComponent(signature)}/enable`,
       {
         method: 'POST',
       }
     ),
-  deleteBlobTicket: (signature: string) =>
+  deleteBlobTicket: (namespace: string, signature: string) =>
     request<{ deleted: boolean }>(
-      `/api/v1/blobs/tickets/${encodeURIComponent(signature)}`,
+      `/api/v1/blobs/tickets/${encodeURIComponent(namespace)}/${encodeURIComponent(signature)}`,
       {
         method: 'DELETE',
       }

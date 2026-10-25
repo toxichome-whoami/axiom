@@ -20,16 +20,14 @@ pub fn get_router() -> Router {
             "/public/:namespace/*key",
             get(get_public_blob_handler).head(head_public_blob_handler),
         )
-        // 2. Namespaces & Storage Quota Headroom
+        // 2. Namespaces & Storage Quota Headroom (Read-only in Data Plane; Mutations reserved for Admin API)
         .route(
             "/namespaces",
-            get(list_namespaces_handler).post(create_namespace_handler),
+            get(list_namespaces_handler),
         )
         .route(
             "/namespaces/:namespace",
-            get(get_namespace_handler)
-                .patch(update_namespace_handler)
-                .delete(delete_namespace_handler),
+            get(get_namespace_handler),
         )
         .route(
             "/namespaces/:namespace/usage",
@@ -89,23 +87,24 @@ pub fn get_router() -> Router {
             "/uploads/:namespace/:upload_id/complete",
             post(complete_upload_handler),
         )
-        // 5. Capability Tickets Governance
+        // 5. Capability Tickets (Namespace-Scoped Security Plane)
         .route(
-            "/tickets",
-            get(list_tickets_handler),
+            "/tickets/:namespace",
+            get(list_namespace_tickets_handler).post(create_ticket_handler),
         )
         .route(
-            "/tickets/:signature/revoke",
-            post(revoke_ticket_handler),
+            "/tickets/:namespace/:signature/revoke",
+            post(revoke_ticket_scoped_handler),
         )
         .route(
-            "/tickets/:signature/enable",
-            post(enable_ticket_handler),
+            "/tickets/:namespace/:signature/enable",
+            post(enable_ticket_scoped_handler),
         )
         .route(
-            "/tickets/:signature",
-            axum::routing::delete(delete_ticket_handler),
+            "/tickets/:namespace/:signature",
+            axum::routing::delete(delete_ticket_scoped_handler),
         )
+        // Backward compatibility alias for namespace tickets
         .route(
             "/namespaces/:namespace/tickets",
             get(list_namespace_tickets_handler).post(create_ticket_handler),

@@ -1786,6 +1786,28 @@ impl MetadataStore {
         }
     }
 
+    /// Finds exact ticket signature for a ticket within a specific namespace.
+    pub async fn find_blob_ticket_signature_scoped(namespace: &str, signature_or_id: &str) -> Result<Option<String>, String> {
+        let conn = Self::get_conn().await?;
+        let mut rows = match conn
+            .query(
+                "SELECT signature FROM blob_tickets WHERE namespace = ?1 AND (signature = ?2 OR id = ?2) LIMIT 1",
+                libsql::params![namespace, signature_or_id],
+            )
+            .await
+        {
+            Ok(r) => r,
+            Err(_) => return Ok(None),
+        };
+
+        if let Ok(Some(row)) = rows.next().await {
+            let sig: String = row.get(0).unwrap_or_default();
+            Ok(Some(sig))
+        } else {
+            Ok(None)
+        }
+    }
+
     /// Revokes a blob capability ticket by signature or id, immediately invalidating it.
     pub async fn revoke_blob_ticket(signature_or_id: &str) -> Result<bool, String> {
         let conn = Self::get_conn().await?;
@@ -1794,6 +1816,21 @@ impl MetadataStore {
             .execute(
                 "UPDATE blob_tickets SET revoked = 1 WHERE (signature = ?1 OR id = ?1) AND revoked = 0",
                 libsql::params![signature_or_id],
+            )
+            .await
+            .map_err(|e| format!("Failed to revoke blob ticket: {}", e))?;
+
+        Ok(affected > 0)
+    }
+
+    /// Revokes a blob capability ticket scoped to a specific namespace.
+    pub async fn revoke_blob_ticket_scoped(namespace: &str, signature_or_id: &str) -> Result<bool, String> {
+        let conn = Self::get_conn().await?;
+
+        let affected = conn
+            .execute(
+                "UPDATE blob_tickets SET revoked = 1 WHERE namespace = ?1 AND (signature = ?2 OR id = ?2) AND revoked = 0",
+                libsql::params![namespace, signature_or_id],
             )
             .await
             .map_err(|e| format!("Failed to revoke blob ticket: {}", e))?;
@@ -1816,6 +1853,21 @@ impl MetadataStore {
         Ok(affected > 0)
     }
 
+    /// Re-enables / restores a revoked blob capability ticket scoped to a specific namespace.
+    pub async fn enable_blob_ticket_scoped(namespace: &str, signature_or_id: &str) -> Result<bool, String> {
+        let conn = Self::get_conn().await?;
+
+        let affected = conn
+            .execute(
+                "UPDATE blob_tickets SET revoked = 0 WHERE namespace = ?1 AND (signature = ?2 OR id = ?2) AND revoked = 1",
+                libsql::params![namespace, signature_or_id],
+            )
+            .await
+            .map_err(|e| format!("Failed to enable blob ticket: {}", e))?;
+
+        Ok(affected > 0)
+    }
+
     /// Permanently deletes a blob capability ticket from SQLite.
     pub async fn delete_blob_ticket(signature_or_id: &str) -> Result<bool, String> {
         let conn = Self::get_conn().await?;
@@ -1824,6 +1876,21 @@ impl MetadataStore {
             .execute(
                 "DELETE FROM blob_tickets WHERE signature = ?1 OR id = ?1",
                 libsql::params![signature_or_id],
+            )
+            .await
+            .map_err(|e| format!("Failed to delete blob ticket: {}", e))?;
+
+        Ok(affected > 0)
+    }
+
+    /// Permanently deletes a blob capability ticket scoped to a specific namespace.
+    pub async fn delete_blob_ticket_scoped(namespace: &str, signature_or_id: &str) -> Result<bool, String> {
+        let conn = Self::get_conn().await?;
+
+        let affected = conn
+            .execute(
+                "DELETE FROM blob_tickets WHERE namespace = ?1 AND (signature = ?2 OR id = ?2)",
+                libsql::params![namespace, signature_or_id],
             )
             .await
             .map_err(|e| format!("Failed to delete blob ticket: {}", e))?;

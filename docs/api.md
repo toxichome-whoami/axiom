@@ -673,12 +673,11 @@ Content-addressed object storage with automatic BLAKE3 deduplication, byte-range
 | `GET` | `/api/v1/blobs/uploads/:namespace/:upload_id` | API Key | Probe resumable session status and uploaded byte slices |
 | `DELETE` | `/api/v1/blobs/uploads/:namespace/:upload_id` | API Key | Abort multipart/resumable upload session |
 | `POST` | `/api/v1/blobs/uploads/:namespace/:upload_id/complete` | API Key | Complete and atomically assemble upload |
-| `GET` | `/api/v1/blobs/tickets` | API Key / Session | List capability tickets (filter by `namespace` query) |
-| `GET` | `/api/v1/blobs/namespaces/:namespace/tickets` | API Key | List capability tickets scoped to a namespace |
-| `POST` | `/api/v1/blobs/namespaces/:namespace/tickets` | API Key | Mint a pre-signed capability ticket URL |
-| `POST` | `/api/v1/blobs/tickets/:signature/revoke` | API Key / Session | Immediately revoke capability ticket in RAM & DB |
-| `POST` | `/api/v1/blobs/tickets/:signature/enable` | API Key / Session | Restore revoked capability ticket |
-| `DELETE` | `/api/v1/blobs/tickets/:signature` | API Key / Session | Permanently delete capability ticket |
+| `GET` | `/api/v1/blobs/tickets/:namespace` | API Key / Session | List capability tickets scoped to a namespace |
+| `POST` | `/api/v1/blobs/tickets/:namespace` | API Key / Session | Mint a capability ticket URL scoped to namespace |
+| `POST` | `/api/v1/blobs/tickets/:namespace/:signature/revoke` | API Key / Session | Immediately revoke capability ticket in RAM & DB |
+| `POST` | `/api/v1/blobs/tickets/:namespace/:signature/enable` | API Key / Session | Restore revoked capability ticket |
+| `DELETE` | `/api/v1/blobs/tickets/:namespace/:signature` | API Key / Session | Permanently delete capability ticket |
 
 > [!NOTE]
 > All legacy endpoints (`/api/v1/blobs/:namespace/*key`, `/admin/v1/blobs/copy`, `/admin/v1/blobs/move`, etc.) remain fully supported as backward-compatible aliases.

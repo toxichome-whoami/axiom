@@ -3027,4 +3027,90 @@ async fn test_first_class_blob_hierarchy_and_quota_usage() {
     assert_eq!(batch_json["success"], true);
     assert_eq!(batch_json["data"]["deleted"].as_array().unwrap().len(), 2);
     assert_eq!(batch_json["data"]["prefix_deleted"], 1);
+
+    // 8. Verify Data Plane vs Admin Control Plane boundary:
+    // PATCH and DELETE on /api/v1/blobs/namespaces/:namespace must NOT be allowed on the data plane!
+    let req = Request::patch(format!("/api/v1/blobs/namespaces/{}", ns_name))
+        .header("X-Axiom-Key", &admin_token)
+        .header("Content-Type", "application/json")
+        .body(Body::from(r#"{"max_bytes": 2048}"#))
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::METHOD_NOT_ALLOWED);
+
+    let req = Request::delete(format!("/api/v1/blobs/namespaces/{}", ns_name))
+        .header("X-Axiom-Key", &admin_token)
+        .body(Body::empty())
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::METHOD_NOT_ALLOWED);
+
+    // POST on /api/v1/blobs/namespaces must NOT be allowed on the data plane!
+    let req = Request::post("/api/v1/blobs/namespaces")
+        .header("X-Axiom-Key", &admin_token)
+        .header("Content-Type", "application/json")
+        .body(Body::from(r#"{"name": "rogue-ns"}"#))
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::METHOD_NOT_ALLOWED);
+
+    // 9. Verify Scoped Capability Ticket Plane:
+    // Mint scoped ticket via POST /api/v1/blobs/tickets/:namespace
+    let req = Request::post(format!("/api/v1/blobs/tickets/{}", ns_name))
+        .header("X-Axiom-Key", &admin_token)
+        .header("Content-Type", "application/json")
+        .body(Body::from(
+            serde_json::to_vec(&serde_json::json!({
+                "key": "report.pdf",
+                "operation": "READ",
+                "ttl_seconds": 3600
+            }))
+            .unwrap(),
+        ))
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::CREATED);
+    let body_bytes = axum::body::to_bytes(res.into_body(), 65536).await.unwrap();
+    let ticket_json: Value = serde_json::from_slice(&body_bytes).unwrap();
+    let sig = ticket_json["data"]["signature"].as_str().unwrap().to_string();
+
+    // List scoped tickets via GET /api/v1/blobs/tickets/:namespace
+    let req = Request::get(format!("/api/v1/blobs/tickets/{}", ns_name))
+        .header("X-Axiom-Key", &admin_token)
+        .body(Body::empty())
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    // Cross-tenant protection: attempting to revoke with wrong namespace must return 404
+    let req = Request::post(format!("/api/v1/blobs/tickets/wrong-ns/{}/revoke", sig))
+        .header("X-Axiom-Key", &admin_token)
+        .body(Body::empty())
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::NOT_FOUND);
+
+    // Revoke ticket via POST /api/v1/blobs/tickets/:namespace/:signature/revoke
+    let req = Request::post(format!("/api/v1/blobs/tickets/{}/{}/revoke", ns_name, sig))
+        .header("X-Axiom-Key", &admin_token)
+        .body(Body::empty())
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    // Enable ticket back via POST /api/v1/blobs/tickets/:namespace/:signature/enable
+    let req = Request::post(format!("/api/v1/blobs/tickets/{}/{}/enable", ns_name, sig))
+        .header("X-Axiom-Key", &admin_token)
+        .body(Body::empty())
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    // Delete ticket permanently via DELETE /api/v1/blobs/tickets/:namespace/:signature
+    let req = Request::delete(format!("/api/v1/blobs/tickets/{}/{}", ns_name, sig))
+        .header("X-Axiom-Key", &admin_token)
+        .body(Body::empty())
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
 }

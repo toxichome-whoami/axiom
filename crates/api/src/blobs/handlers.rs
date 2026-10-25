@@ -1560,6 +1560,204 @@ pub async fn delete_ticket_handler(
     })))
 }
 
+/// Scoped handler for revoking a capability ticket within a specific namespace via /tickets/:namespace/:signature/revoke.
+pub async fn revoke_ticket_scoped_handler(
+    Path((namespace, signature_or_id)): Path<(String, String)>,
+    Extension(auth): Extension<AuthContext>,
+) -> Result<impl IntoResponse, AxiomError> {
+    if !auth.is_session && auth.role.as_deref() != Some("admin") {
+        PolicyEngine::evaluate_blob(&auth, &namespace, "*", "WRITE")?;
+    }
+
+    let ticket_sig = MetadataStore::find_blob_ticket_signature_scoped(&namespace, &signature_or_id)
+        .await
+        .unwrap_or(None);
+
+    let found = MetadataStore::revoke_blob_ticket_scoped(&namespace, &signature_or_id)
+        .await
+        .map_err(|e| {
+            AxiomError::new(
+                "TICKET_REVOCATION_FAILED",
+                &e,
+                StatusCode::INTERNAL_SERVER_ERROR,
+            )
+        })?;
+
+    if !found {
+        return Err(AxiomError::new(
+            "NOT_FOUND",
+            "Capability ticket not found or already revoked in this namespace",
+            StatusCode::NOT_FOUND,
+        ));
+    }
+
+    let mut sigs_to_invalidate = vec![signature_or_id.clone()];
+    if let Some(ref s) = ticket_sig {
+        if s != &signature_or_id {
+            sigs_to_invalidate.push(s.clone());
+        }
+    }
+    for s in &sigs_to_invalidate {
+        axiom_cache::CacheEngine::delete(&format!("ticket:valid:{}", s)).await;
+        axiom_cache::CacheEngine::set(
+            &format!("ticket:revoked:{}", s),
+            bytes::Bytes::from_static(b"1"),
+            86_400,
+            axiom_cache::Durability::MemoryOnly,
+        )
+        .await;
+    }
+
+    let actor = if auth.is_session {
+        "admin"
+    } else {
+        &auth.api_key_name
+    };
+    let _ = MetadataStore::record_audit(
+        actor,
+        "blob.ticket_revoked",
+        &format!("{}/{}", namespace, signature_or_id),
+        Some("Capability ticket revoked in namespace"),
+    )
+    .await;
+
+    Ok(Json(json!({
+        "success": true,
+        "data": { "revoked": true, "namespace": namespace },
+        "error": serde_json::Value::Null
+    })))
+}
+
+/// Scoped handler for re-enabling a revoked capability ticket within a specific namespace via /tickets/:namespace/:signature/enable.
+pub async fn enable_ticket_scoped_handler(
+    Path((namespace, signature_or_id)): Path<(String, String)>,
+    Extension(auth): Extension<AuthContext>,
+) -> Result<impl IntoResponse, AxiomError> {
+    if !auth.is_session && auth.role.as_deref() != Some("admin") {
+        PolicyEngine::evaluate_blob(&auth, &namespace, "*", "WRITE")?;
+    }
+
+    let ticket_sig = MetadataStore::find_blob_ticket_signature_scoped(&namespace, &signature_or_id)
+        .await
+        .unwrap_or(None);
+
+    let found = MetadataStore::enable_blob_ticket_scoped(&namespace, &signature_or_id)
+        .await
+        .map_err(|e| {
+            AxiomError::new(
+                "TICKET_ENABLE_FAILED",
+                &e,
+                StatusCode::INTERNAL_SERVER_ERROR,
+            )
+        })?;
+
+    if !found {
+        return Err(AxiomError::new(
+            "NOT_FOUND",
+            "Capability ticket not found or already active in this namespace",
+            StatusCode::NOT_FOUND,
+        ));
+    }
+
+    let mut sigs_to_clear = vec![signature_or_id.clone()];
+    if let Some(ref s) = ticket_sig {
+        if s != &signature_or_id {
+            sigs_to_clear.push(s.clone());
+        }
+    }
+    for s in &sigs_to_clear {
+        axiom_cache::CacheEngine::delete(&format!("ticket:revoked:{}", s)).await;
+        axiom_cache::CacheEngine::delete(&format!("ticket:valid:{}", s)).await;
+    }
+
+    let actor = if auth.is_session {
+        "admin"
+    } else {
+        &auth.api_key_name
+    };
+    let _ = MetadataStore::record_audit(
+        actor,
+        "blob.ticket_enabled",
+        &format!("{}/{}", namespace, signature_or_id),
+        Some("Capability ticket re-enabled in namespace"),
+    )
+    .await;
+
+    Ok(Json(json!({
+        "success": true,
+        "data": { "revoked": false, "namespace": namespace },
+        "error": serde_json::Value::Null
+    })))
+}
+
+/// Scoped handler for permanently deleting a capability ticket within a specific namespace via DELETE /tickets/:namespace/:signature.
+pub async fn delete_ticket_scoped_handler(
+    Path((namespace, signature_or_id)): Path<(String, String)>,
+    Extension(auth): Extension<AuthContext>,
+) -> Result<impl IntoResponse, AxiomError> {
+    if !auth.is_session && auth.role.as_deref() != Some("admin") {
+        PolicyEngine::evaluate_blob(&auth, &namespace, "*", "WRITE")?;
+    }
+
+    let ticket_sig = MetadataStore::find_blob_ticket_signature_scoped(&namespace, &signature_or_id)
+        .await
+        .unwrap_or(None);
+
+    let mut sigs_to_invalidate = vec![signature_or_id.clone()];
+    if let Some(ref s) = ticket_sig {
+        if s != &signature_or_id {
+            sigs_to_invalidate.push(s.clone());
+        }
+    }
+    for s in &sigs_to_invalidate {
+        axiom_cache::CacheEngine::delete(&format!("ticket:valid:{}", s)).await;
+        axiom_cache::CacheEngine::set(
+            &format!("ticket:revoked:{}", s),
+            bytes::Bytes::from_static(b"1"),
+            86_400,
+            axiom_cache::Durability::MemoryOnly,
+        )
+        .await;
+    }
+
+    let found = MetadataStore::delete_blob_ticket_scoped(&namespace, &signature_or_id)
+        .await
+        .map_err(|e| {
+            AxiomError::new(
+                "TICKET_DELETE_FAILED",
+                &e,
+                StatusCode::INTERNAL_SERVER_ERROR,
+            )
+        })?;
+
+    if !found {
+        return Err(AxiomError::new(
+            "NOT_FOUND",
+            "Capability ticket not found in this namespace",
+            StatusCode::NOT_FOUND,
+        ));
+    }
+
+    let actor = if auth.is_session {
+        "admin"
+    } else {
+        &auth.api_key_name
+    };
+    let _ = MetadataStore::record_audit(
+        actor,
+        "blob.ticket_deleted",
+        &format!("{}/{}", namespace, signature_or_id),
+        Some("Capability ticket deleted from namespace"),
+    )
+    .await;
+
+    Ok(Json(json!({
+        "success": true,
+        "data": { "deleted": true, "namespace": namespace },
+        "error": serde_json::Value::Null
+    })))
+}
+
 #[derive(Debug, Deserialize)]
 pub struct InitUploadRequest {
     pub key: String,

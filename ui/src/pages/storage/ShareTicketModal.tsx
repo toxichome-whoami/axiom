@@ -196,7 +196,7 @@ export function ShareTicketModal({
   const handleRevoke = async (signature: string) => {
     setRevokingSigs((prev) => new Set(prev).add(signature));
     try {
-      await api.revokeBlobTicket(signature);
+      await api.revokeBlobTicket(namespace, signature);
       await loadTickets();
       onTicketChanged?.();
     } catch (err: unknown) {
@@ -213,7 +213,7 @@ export function ShareTicketModal({
   const handleEnable = async (signature: string) => {
     setEnablingSigs((prev) => new Set(prev).add(signature));
     try {
-      await api.enableBlobTicket(signature);
+      await api.enableBlobTicket(namespace, signature);
       await loadTickets();
       onTicketChanged?.();
     } catch (err: unknown) {
@@ -232,7 +232,7 @@ export function ShareTicketModal({
     const sig = ticketToDelete.signature;
     setDeletingSigs((prev) => new Set(prev).add(sig));
     try {
-      await api.deleteBlobTicket(sig);
+      await api.deleteBlobTicket(namespace, sig);
       await loadTickets();
       onTicketChanged?.();
       setTicketToDelete(null);
