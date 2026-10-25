@@ -106,8 +106,11 @@ export function StorageSidebar({
 
   return (
     <aside
-      className={`w-full lg:w-64 shrink-0 flex flex-col bg-[#0a0a0a] border-b lg:border-b-0 lg:border-r border-[#222222] font-sans select-none relative ${isNsDropdownOpen ? 'z-50' : 'z-30'}`}
-      style={{ width: (typeof window !== 'undefined' && window.innerWidth >= 1024 && width) ? `${width}px` : undefined }}
+      className={`w-full lg:w-64 min-w-[260px] shrink-0 flex flex-col bg-[#0a0a0a] border-b lg:border-b-0 lg:border-r border-[#222222] font-sans select-none relative ${isNsDropdownOpen ? 'z-50' : 'z-30'}`}
+      style={{
+        width: (typeof window !== 'undefined' && window.innerWidth >= 1024 && width) ? `${Math.max(260, width)}px` : undefined,
+        minWidth: typeof window !== 'undefined' && window.innerWidth >= 1024 ? '260px' : undefined,
+      }}
     >
       {/* Draggable Resize Handle on Right Border */}
       {onResizeStart && (

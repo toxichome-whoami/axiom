@@ -119,9 +119,9 @@ export function StorageListView({
     >
       <table className="w-full text-left border-collapse">
         <thead>
-          <tr className="sticky top-0 z-10 h-11 bg-[#0a0a0a] border-b border-[#1f1f1f] text-[13.5px] font-medium text-[#8c8c8c]">
+          <tr className="sticky top-0 z-10 h-11 bg-[#0a0a0a] border-b border-[#222222] text-[13.5px] font-medium text-[#8c8c8c]">
             <th
-              className="w-12 px-3 py-2 text-center select-none cursor-pointer"
+              className="w-12 px-3 py-2.5 text-center select-none cursor-pointer border-r border-[#1f1f1f]"
               onClick={(e) => {
                 e.stopPropagation();
                 onSelectAll?.();
@@ -154,11 +154,11 @@ export function StorageListView({
                 </button>
               </div>
             </th>
-            <th className="px-3 font-medium">Name</th>
-            <th className="px-3 font-medium w-36">Storage Tier</th>
-            <th className="px-3 font-medium w-36 text-right">Size</th>
-            <th className="px-4 font-medium w-44 text-right hidden sm:table-cell">Uploaded</th>
-            <th className="px-3 w-20 text-right"><span className="sr-only">Actions</span></th>
+            <th className="px-3.5 py-2.5 font-medium border-r border-[#1f1f1f] text-[13.5px] text-left">Name</th>
+            <th className="px-3.5 py-2.5 font-medium w-36 border-r border-[#1f1f1f] text-[13.5px] text-left">Storage Tier</th>
+            <th className="px-3.5 py-2.5 font-medium w-36 text-right border-r border-[#1f1f1f] text-[13.5px]">Size</th>
+            <th className="px-4 py-2.5 font-medium w-44 text-right hidden sm:table-cell text-[13.5px]">Uploaded</th>
+            <th className="px-3 py-2.5 w-16 text-right"><span className="sr-only">Actions</span></th>
           </tr>
         </thead>
         <tbody className="divide-y divide-[#1a1a1a]">
@@ -244,7 +244,7 @@ export function StorageListView({
               >
                 {/* Custom Checkbox Button (Matching TableGridView.tsx) */}
                 <td
-                  className="w-12 px-3 py-2 text-center select-none cursor-pointer"
+                  className="w-12 px-3 py-2 text-center select-none cursor-pointer border-r border-[#151515]"
                   onClick={(e) => {
                     e.stopPropagation();
                     if (onToggleSelectItem) {
@@ -277,8 +277,8 @@ export function StorageListView({
                 </td>
 
                 {/* Column 1: Icon and Name */}
-                <td className="px-3 min-w-0 max-w-[280px] sm:max-w-md">
-                  <div className="flex items-center gap-2 truncate">
+                <td className="px-3.5 py-2 min-w-[200px] border-r border-[#151515]">
+                  <div className="flex items-center gap-2.5 truncate">
                     <div className="w-4 h-4 flex items-center justify-center shrink-0">
                       {isFolder ? (
                         <Folder className="w-4 h-4 text-[#8c8c8c]" />
@@ -291,7 +291,7 @@ export function StorageListView({
                 </td>
 
                 {/* Column 2: Storage Tier */}
-                <td className="px-3">
+                <td className="px-3.5 py-2 border-r border-[#151515]">
                   {isFolder ? (
                     <span className="text-[13.5px] text-[#8c8c8c] font-sans font-normal">dir</span>
                   ) : (
@@ -308,14 +308,14 @@ export function StorageListView({
                 </td>
 
                 {/* Column 3: Payload Size */}
-                <td className="px-3 text-right tabular-nums text-[13.5px] text-[#8c8c8c] font-sans font-normal">
+                <td className="px-3.5 py-2 text-right tabular-nums text-[13.5px] text-[#8c8c8c] font-sans font-normal border-r border-[#151515]">
                   {isFolder
                     ? `${item.itemCount || 0} items`
                     : formatBytes(item.size || 0)}
                 </td>
 
                 {/* Column 4: Uploaded / Created Date */}
-                <td className="px-4 text-right tabular-nums text-[13.5px] text-[#8c8c8c] font-sans font-normal hidden sm:table-cell">
+                <td className="px-4 py-2 text-right tabular-nums text-[13.5px] text-[#8c8c8c] font-sans font-normal hidden sm:table-cell">
                   {item.created_at
                     ? new Date(item.created_at * 1000).toLocaleDateString()
                     : '—'}

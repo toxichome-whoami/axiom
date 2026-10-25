@@ -166,7 +166,7 @@ export function StoragePage() {
   const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
     try {
       const saved = localStorage.getItem('axiom_storage_sidebar_width');
-      return saved ? Math.max(180, Math.min(600, parseInt(saved, 10))) : 260;
+      return saved ? Math.max(260, Math.min(600, parseInt(saved, 10))) : 260;
     } catch {
       return 260;
     }
@@ -202,7 +202,7 @@ export function StoragePage() {
 
       const handleMouseMove = (ev: MouseEvent) => {
         const delta = ev.clientX - startX;
-        const newWidth = Math.max(180, Math.min(600, startW + delta));
+        const newWidth = Math.max(260, Math.min(600, startW + delta));
         setSidebarWidth(newWidth);
       };
 

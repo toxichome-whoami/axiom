@@ -93,7 +93,7 @@ export function StorageToolbar({
   return (
     <div className="h-[54px] shrink-0 px-3.5 border-b border-[#222222] bg-[#0c0c0c] flex items-center justify-between gap-3 select-none font-sans relative z-30 overflow-x-auto scrollbar-none whitespace-nowrap">
       {/* ─── Left: Interactive Breadcrumbs Navigator ─────────────── */}
-      <div className="flex items-center gap-1.5 text-[13.5px] overflow-x-auto scrollbar-none min-w-0 py-0.5 shrink-0">
+      <div className="flex items-center gap-1.5 text-[13.5px] overflow-x-auto scrollbar-none min-w-0 shrink-0">
         <button
           type="button"
           onClick={() => onNavigateToPrefix('')}
@@ -123,11 +123,11 @@ export function StorageToolbar({
               await onDropOnFolder('', draggedItemRef.current);
             }
           }}
-          className={`hover:text-white transition-colors cursor-pointer font-medium shrink-0 h-9 px-3 flex items-center gap-2 rounded-[6px] text-[13.5px] ${
+          className={`hover:text-white transition-colors cursor-pointer font-medium shrink-0 h-9 px-3 flex items-center gap-2 rounded-[6px] text-[13.5px] border ${
             dragOverTargetKey === ''
               ? 'bg-blue-600/30 text-blue-300 ring-1 ring-blue-500/60'
               : currentPrefix === ''
-              ? 'text-white bg-[#1a1a1a]'
+              ? 'text-white bg-[#141414] border-[#262626]'
               : 'text-[#8c8c8c]'
           }`}
         >
@@ -180,11 +180,11 @@ export function StorageToolbar({
                     await onDropOnFolder(seg.prefix, draggedItemRef.current);
                   }
                 }}
-                className={`hover:text-white transition-colors cursor-pointer font-medium truncate max-w-[180px] shrink-0 h-9 px-3 flex items-center rounded-[6px] text-[13.5px] ${
+                className={`hover:text-white transition-colors cursor-pointer font-medium truncate max-w-[220px] shrink-0 h-9 px-3 flex items-center rounded-[6px] text-[13.5px] border ${
                   isDropTarget
                     ? 'bg-blue-600/30 text-blue-300 ring-1 ring-blue-500/60'
                     : isLast
-                    ? 'text-white bg-[#1a1a1a]'
+                    ? 'text-white bg-[#141414] border-[#262626]'
                     : 'text-[#8c8c8c]'
                 }`}
               >
@@ -198,7 +198,7 @@ export function StorageToolbar({
       {/* ─── Right: Search, Filter, View Mode, Details Toggle, Upload ─────────────── */}
       <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
         {/* Live Search Input */}
-        <div className="relative w-32 sm:w-48 md:w-60">
+        <div className="relative w-36 sm:w-64 md:w-80">
           <Search className="w-4 h-4 text-[#8c8c8c] absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
           <input
             type="text"
