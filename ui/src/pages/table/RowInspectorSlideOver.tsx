@@ -5,13 +5,13 @@
  * Invariants: Single source of draft edit state; strict dirty tracking (disabled Save when pristine or saving); edge-to-edge section dividers.
  */
 
-import React from 'react';
-import { Key, Trash2, RefreshCw } from 'lucide-react';
-import { ColumnInfoApi, ForeignKeyInfoApi } from '../../types';
-import { SlideOver } from '../../components/ui/SlideOver';
-import { CustomSelect } from '../../components/shared/CustomSelect';
-import { FieldEditorWrapper } from './FieldEditorWrapper';
-import { DateTimePickerInput } from './DateTimePickerPopovers';
+import React from "react";
+import { Key, Trash2, RefreshCw } from "lucide-react";
+import { ColumnInfoApi, ForeignKeyInfoApi } from "../../types";
+import { SlideOver } from "../../components/ui/SlideOver";
+import { CustomSelect } from "../../components/shared/CustomSelect";
+import { FieldEditorWrapper } from "./FieldEditorWrapper";
+import { DateTimePickerInput } from "./DateTimePickerPopovers";
 
 export interface RowInspectorSlideOverProps {
   isOpen: boolean;
@@ -23,9 +23,11 @@ export interface RowInspectorSlideOverProps {
   columns: ColumnInfoApi[];
   foreignKeys: ForeignKeyInfoApi[];
   rowEditValues: Record<string, unknown>;
-  setRowEditValues: React.Dispatch<React.SetStateAction<Record<string, unknown>>>;
-  inspectorTab: 'details' | 'danger';
-  setInspectorTab: (tab: 'details' | 'danger') => void;
+  setRowEditValues: React.Dispatch<
+    React.SetStateAction<Record<string, unknown>>
+  >;
+  inspectorTab: "details" | "danger";
+  setInspectorTab: (tab: "details" | "danger") => void;
   isSavingRow: boolean;
   hasRowChanges: boolean;
   handleSaveRowEdit: () => void;
@@ -61,7 +63,8 @@ export function RowInspectorSlideOver({
   onOpenFkPicker,
   isColReadOnly,
 }: RowInspectorSlideOverProps) {
-  const isIdOrPk = (c: ColumnInfoApi) => c.primary_key || c.name.toLowerCase() === 'id';
+  const isIdOrPk = (c: ColumnInfoApi) =>
+    c.primary_key || c.name.toLowerCase() === "id";
   const requiredCols = [
     ...columns.filter(isIdOrPk),
     ...columns.filter((c) => !isIdOrPk(c) && !c.nullable),
@@ -72,19 +75,19 @@ export function RowInspectorSlideOver({
     const val = rowEditValues[col.name];
     const isNull = val === null || val === undefined;
     const normType = col.type.toLowerCase();
-    const isAutoPk = col.primary_key && normType.includes('int');
+    const isAutoPk = col.primary_key && normType.includes("int");
     const isNumber =
-      normType.includes('int') ||
-      normType.includes('float') ||
-      normType.includes('double') ||
-      normType.includes('decimal') ||
-      normType.includes('numeric') ||
-      normType.includes('real') ||
-      normType.includes('serial') ||
-      normType.includes('money');
-    const isBool = normType.includes('bool') || normType === 'bit';
-    const isDate = normType === 'date';
-    const isTimestamp = normType.includes('time') || normType.includes('date');
+      normType.includes("int") ||
+      normType.includes("float") ||
+      normType.includes("double") ||
+      normType.includes("decimal") ||
+      normType.includes("numeric") ||
+      normType.includes("real") ||
+      normType.includes("serial") ||
+      normType.includes("money");
+    const isBool = normType.includes("bool") || normType === "bit";
+    const isDate = normType === "date";
+    const isTimestamp = normType.includes("time") || normType.includes("date");
     const disabled = !isInsert && isColReadOnly(col);
 
     return (
@@ -92,9 +95,13 @@ export function RowInspectorSlideOver({
         <div className="flex items-center justify-between">
           <label className="text-[13.5px] font-medium text-white flex items-center gap-1.5 font-sans">
             <span>{col.name}</span>
-            {col.primary_key && <Key className="w-3 h-3 text-amber-400 shrink-0" />}
+            {col.primary_key && (
+              <Key className="w-3 h-3 text-amber-400 shrink-0" />
+            )}
             {disabled && !col.primary_key && (
-              <span className="text-[11px] text-[#777777] font-normal">(Read-only)</span>
+              <span className="text-[11px] text-[#777777] font-normal">
+                (Read-only)
+              </span>
             )}
             {(() => {
               const fk = foreignKeys.find((f) => f.column === col.name);
@@ -108,7 +115,10 @@ export function RowInspectorSlideOver({
                       fk,
                       currentValue: val,
                       onSelect: (newVal) => {
-                        setRowEditValues((prev) => ({ ...prev, [col.name]: newVal }));
+                        setRowEditValues((prev) => ({
+                          ...prev,
+                          [col.name]: newVal,
+                        }));
                       },
                     });
                   }}
@@ -129,16 +139,16 @@ export function RowInspectorSlideOver({
           {isBool ? (
             <CustomSelect
               disabled={disabled}
-              value={isNull ? '' : String(val)}
+              value={isNull ? "" : String(val)}
               options={[
-                { value: '', label: isInsert ? 'NULL (Unset)' : 'NULL' },
-                { value: 'true', label: 'TRUE' },
-                { value: 'false', label: 'FALSE' },
+                { value: "", label: isInsert ? "NULL (Unset)" : "NULL" },
+                { value: "true", label: "TRUE" },
+                { value: "false", label: "FALSE" },
               ]}
               onChange={(v) => {
                 setRowEditValues((prev) => ({
                   ...prev,
-                  [col.name]: v === '' ? null : v === 'true',
+                  [col.name]: v === "" ? null : v === "true",
                 }));
               }}
               menuWidth="w-full"
@@ -148,15 +158,21 @@ export function RowInspectorSlideOver({
               label={col.name}
               type="number"
               step={
-                normType.includes('float') ||
-                normType.includes('double') ||
-                normType.includes('numeric') ||
-                normType.includes('decimal')
-                  ? 'any'
-                  : '1'
+                normType.includes("float") ||
+                normType.includes("double") ||
+                normType.includes("numeric") ||
+                normType.includes("decimal")
+                  ? "any"
+                  : "1"
               }
               disabled={disabled}
-              placeholder={isInsert && isAutoPk ? 'Auto-increment' : col.nullable ? 'Optional (NULL)' : 'Required'}
+              placeholder={
+                isInsert && isAutoPk
+                  ? "Auto-increment"
+                  : col.nullable
+                    ? "Optional (NULL)"
+                    : "Required"
+              }
               value={val}
               isNullable={col.nullable}
               onChange={(v) =>
@@ -168,7 +184,7 @@ export function RowInspectorSlideOver({
               value={isNull ? null : val}
               disabled={disabled}
               isDateOnly={isDate}
-              placeholder={isDate ? 'YYYY-MM-DD' : 'YYYY-MM-DD HH:mm:ss'}
+              placeholder={isDate ? "YYYY-MM-DD" : "YYYY-MM-DD HH:mm:ss"}
               onChange={(v) =>
                 setRowEditValues((prev) => ({ ...prev, [col.name]: v }))
               }
@@ -178,7 +194,7 @@ export function RowInspectorSlideOver({
               label={col.name}
               isMultiline={true}
               disabled={disabled}
-              placeholder={col.nullable ? 'Optional (NULL)' : 'Required'}
+              placeholder={col.nullable ? "Optional (NULL)" : "Required"}
               value={val}
               isNullable={col.nullable}
               onChange={(v) =>
@@ -198,17 +214,17 @@ export function RowInspectorSlideOver({
       width="w-[520px] max-w-full"
       title={
         isInsertMode
-          ? 'Insert New Row'
+          ? "Insert New Row"
           : activeRow
-          ? `Row #${selectedRowIndex! + 1}`
-          : ''
+            ? `Row #${selectedRowIndex! + 1}`
+            : ""
       }
       subtitle={
         isInsertMode
           ? `Add record to ${selectedTable}`
           : activeRow
-          ? `${selectedTable} · ${columns.length} columns`
-          : ''
+            ? `${selectedTable} · ${columns.length} columns`
+            : ""
       }
     >
       {/* Tab bar */}
@@ -217,22 +233,22 @@ export function RowInspectorSlideOver({
           <div className="inline-flex items-center p-0.5 rounded-[8px] bg-transparent border border-[#262626]">
             <button
               type="button"
-              onClick={() => setInspectorTab('details')}
+              onClick={() => setInspectorTab("details")}
               className={`flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[14px] font-medium transition-colors duration-75 cursor-pointer font-sans outline-none focus:outline-none border ${
-                inspectorTab === 'details'
-                  ? 'bg-[#161616] text-white border-[#333333]'
-                  : 'text-[#8c8c8c] hover:text-white hover:bg-[#141414] border-transparent'
+                inspectorTab === "details"
+                  ? "bg-[#161616] text-white border-[#333333]"
+                  : "text-[#8c8c8c] hover:text-white hover:bg-[#141414] border-transparent"
               }`}
             >
               <span>Record Values</span>
             </button>
             <button
               type="button"
-              onClick={() => setInspectorTab('danger')}
+              onClick={() => setInspectorTab("danger")}
               className={`flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[14px] font-medium transition-colors duration-75 cursor-pointer font-sans outline-none focus:outline-none border ${
-                inspectorTab === 'danger'
-                  ? 'bg-[#161616] text-white border-[#333333]'
-                  : 'text-[#8c8c8c] hover:text-white hover:bg-[#141414] border-transparent'
+                inspectorTab === "danger"
+                  ? "bg-[#161616] text-white border-[#333333]"
+                  : "text-[#8c8c8c] hover:text-white hover:bg-[#141414] border-transparent"
               }`}
             >
               <span>Danger</span>
@@ -246,7 +262,11 @@ export function RowInspectorSlideOver({
         {isInsertMode ? (
           <div className="space-y-4 font-sans">
             <div className="text-[13.5px] text-[#8c8c8c]">
-              Specify column values for the new record in <span className="font-mono text-white font-medium">{selectedTable}</span>.
+              Specify column values for the new record in{" "}
+              <span className="font-mono text-white font-medium">
+                {selectedTable}
+              </span>
+              .
             </div>
 
             <div className="space-y-4">
@@ -274,12 +294,19 @@ export function RowInspectorSlideOver({
               )}
             </div>
           </div>
-        ) : activeRow && inspectorTab === 'danger' ? (
+        ) : activeRow && inspectorTab === "danger" ? (
           <div className="space-y-4 font-sans">
             <div className="rounded-[8px] border border-[#3a1515] bg-[#0e0404] p-4">
-              <h3 className="text-[16px] font-medium text-[#e5484d] mb-1 font-sans">Delete Record</h3>
+              <h3 className="text-[16px] font-medium text-[#e5484d] mb-1 font-sans">
+                Delete Record
+              </h3>
               <p className="text-[13px] text-[#8c8c8c] mb-4 font-sans">
-                Permanently delete this row from <span className="text-white font-medium text-[13px] font-mono">{selectedTable}</span>. This action is irreversible and immediately executes against the database.
+                Permanently delete this row from{" "}
+                <span className="text-white font-medium text-[13px] font-mono">
+                  {selectedTable}
+                </span>
+                . This action is irreversible and immediately executes against
+                the database.
               </p>
               <button
                 type="button"
@@ -339,11 +366,16 @@ export function RowInspectorSlideOver({
           >
             Close
           </button>
-          {inspectorTab === 'details' && (
+          {inspectorTab === "details" && (
             <button
               type="button"
-              onClick={isInsertMode ? handleInsertRowFromPanel : handleSaveRowEdit}
-              disabled={isSavingRow || (isInsertMode ? columns.length === 0 : !hasRowChanges)}
+              onClick={
+                isInsertMode ? handleInsertRowFromPanel : handleSaveRowEdit
+              }
+              disabled={
+                isSavingRow ||
+                (isInsertMode ? columns.length === 0 : !hasRowChanges)
+              }
               className="group relative flex shrink-0 items-center justify-center h-9 px-4 rounded-[8px] font-medium text-white shadow-xs outline-none cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed overflow-hidden ring-1 ring-[#1d4ed8] bg-[#2563eb] font-sans"
             >
               <span
@@ -358,10 +390,10 @@ export function RowInspectorSlideOver({
                 {isSavingRow ? (
                   <>
                     <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                    <span>{isInsertMode ? 'Inserting...' : 'Saving...'}</span>
+                    <span>{isInsertMode ? "Inserting..." : "Saving..."}</span>
                   </>
                 ) : (
-                  <span>{isInsertMode ? 'Insert Row' : 'Save'}</span>
+                  <span>{isInsertMode ? "Insert Row" : "Save"}</span>
                 )}
               </span>
             </button>

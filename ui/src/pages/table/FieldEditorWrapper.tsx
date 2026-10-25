@@ -5,9 +5,9 @@
  * Invariants: Provides consistent editing and drawer expansion across row editing fields.
  */
 
-import React, { useState, useEffect, useRef } from 'react';
-import { Edit3 } from 'lucide-react';
-import { SlideOver } from '../../components/ui/SlideOver';
+import React, { useState, useEffect, useRef } from "react";
+import { Edit3 } from "lucide-react";
+import { SlideOver } from "../../components/ui/SlideOver";
 
 export interface FieldEditorWrapperProps {
   label: string;
@@ -17,7 +17,7 @@ export interface FieldEditorWrapperProps {
   isNullable?: boolean;
   isMultiline?: boolean;
   placeholder?: string;
-  type?: 'text' | 'number';
+  type?: "text" | "number";
   step?: string;
 }
 
@@ -29,16 +29,16 @@ export function FieldEditorWrapper({
   isNullable = true,
   isMultiline = false,
   placeholder,
-  type = 'text',
+  type = "text",
   step,
 }: FieldEditorWrapperProps) {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [modalDraft, setModalDraft] = useState('');
+  const [modalDraft, setModalDraft] = useState("");
   const menuRef = useRef<HTMLDivElement>(null);
 
   const isNull = value === null || value === undefined;
-  const strVal = isNull ? '' : String(value);
+  const strVal = isNull ? "" : String(value);
 
   useEffect(() => {
     if (!isMenuOpen) return;
@@ -47,8 +47,8 @@ export function FieldEditorWrapper({
         setIsMenuOpen(false);
       }
     };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [isMenuOpen]);
 
   const handleOpenExpand = () => {
@@ -58,7 +58,7 @@ export function FieldEditorWrapper({
   };
 
   const handleApplyModal = () => {
-    onChange(modalDraft === '' && isNullable ? null : modalDraft);
+    onChange(modalDraft === "" && isNullable ? null : modalDraft);
     setIsModalOpen(false);
   };
 
@@ -71,9 +71,13 @@ export function FieldEditorWrapper({
             disabled={disabled}
             value={strVal}
             placeholder={placeholder}
-            onChange={(e) => onChange(e.target.value === '' && isNullable ? null : e.target.value)}
+            onChange={(e) =>
+              onChange(
+                e.target.value === "" && isNullable ? null : e.target.value,
+              )
+            }
             className={`w-full h-[84px] rounded-[6px] border border-[#262626] bg-[#121212] p-2.5 pr-8 text-[14px] text-white font-sans focus:outline-none focus:border-[#3b82f6] transition-colors resize-none placeholder-[#555555] ${
-              disabled ? 'opacity-60 cursor-not-allowed bg-[#0d0d0d]' : ''
+              disabled ? "opacity-60 cursor-not-allowed bg-[#0d0d0d]" : ""
             }`}
           />
         ) : (
@@ -85,23 +89,25 @@ export function FieldEditorWrapper({
             placeholder={placeholder}
             onChange={(e) => {
               const v = e.target.value;
-              onChange(v === '' && isNullable ? null : v);
+              onChange(v === "" && isNullable ? null : v);
             }}
             className={`h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] pl-3 pr-8 text-[14px] text-white font-sans focus:outline-none focus:border-[#3b82f6] transition-colors placeholder-[#555555] ${
-              disabled ? 'opacity-60 cursor-not-allowed bg-[#0d0d0d]' : ''
+              disabled ? "opacity-60 cursor-not-allowed bg-[#0d0d0d]" : ""
             }`}
           />
         )}
 
         {/* Small rounded Edit icon button */}
         {!disabled && (
-          <div className={`absolute ${isMultiline ? 'right-2.5 top-2.5' : 'right-2 top-1/2 -translate-y-1/2'} z-10`}>
+          <div
+            className={`absolute ${isMultiline ? "right-2.5 top-2.5" : "right-2 top-1/2 -translate-y-1/2"} z-10`}
+          >
             <button
               type="button"
               onClick={() => setIsMenuOpen((prev) => !prev)}
               title="Field actions"
               className={`flex items-center justify-center w-5 h-5 rounded-[4px] border border-[#2a2a2a] bg-[#161616]/90 hover:bg-[#222222] text-[#8c8c8c] hover:text-white transition-colors cursor-pointer ${
-                isMenuOpen ? 'border-[#3b82f6] text-white bg-[#1a1a1a]' : ''
+                isMenuOpen ? "border-[#3b82f6] text-white bg-[#1a1a1a]" : ""
               }`}
             >
               <Edit3 className="w-3 h-3" />
@@ -149,7 +155,8 @@ export function FieldEditorWrapper({
                 Value
               </label>
               <span className="text-[12px] font-mono text-[#777777]">
-                {(modalDraft || '').length} chars · {(modalDraft || '').split('\n').length} lines
+                {(modalDraft || "").length} chars ·{" "}
+                {(modalDraft || "").split("\n").length} lines
               </span>
             </div>
             <textarea

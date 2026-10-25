@@ -6,5 +6,5 @@
  * Last structural change: Modularized into Drive-style storage architecture.
  */
 
-export { StoragePage as Storage } from './storage/StoragePage';
-export type { StorageItem } from './storage/types';
+export { StoragePage as Storage } from "./storage/StoragePage";
+export type { StorageItem } from "./storage/types";

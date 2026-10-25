@@ -6,8 +6,8 @@
  * Last structural change: Performance hardening per UI audit component F6.
  */
 
-import React, { useState, useRef, useEffect } from 'react';
-import { ArrowUpRight, ArrowDownRight } from 'lucide-react';
+import React, { useState, useRef, useEffect } from "react";
+import { ArrowUpRight, ArrowDownRight } from "lucide-react";
 
 export interface TelemetryHoverData {
   pct: number;
@@ -21,7 +21,7 @@ export interface TelemetryCardProps {
   value: string | number;
   badge?: {
     text: string;
-    icon?: 'up' | 'down' | 'none';
+    icon?: "up" | "down" | "none";
     color?: string;
     mlAuto?: boolean;
   };
@@ -38,7 +38,11 @@ export interface TelemetryCardProps {
   fillD?: string;
   yAxisLabels?: (string | number)[];
   tooltipMetricName?: string;
-  onHoverCompute?: (pct: number, svgX: number, exactYPct?: number) => TelemetryHoverData | null;
+  onHoverCompute?: (
+    pct: number,
+    svgX: number,
+    exactYPct?: number,
+  ) => TelemetryHoverData | null;
   noData?: boolean;
   noDataId?: string;
   isLoading?: boolean;
@@ -48,11 +52,24 @@ export function formatTimeFromPct(pct: number): string {
   const now = new Date();
   const pointTime = new Date(now.getTime() - (1 - pct) * 24 * 60 * 60 * 1000);
   const day = pointTime.getDate();
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sept', 'Oct', 'Nov', 'Dec'];
+  const months = [
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sept",
+    "Oct",
+    "Nov",
+    "Dec",
+  ];
   const month = months[pointTime.getMonth()];
-  const hh = String(pointTime.getHours()).padStart(2, '0');
-  const mm = String(pointTime.getMinutes()).padStart(2, '0');
-  const ss = String(pointTime.getSeconds()).padStart(2, '0');
+  const hh = String(pointTime.getHours()).padStart(2, "0");
+  const mm = String(pointTime.getMinutes()).padStart(2, "0");
+  const ss = String(pointTime.getSeconds()).padStart(2, "0");
   return `${day} ${month}, ${hh}:${mm}:${ss}`;
 }
 
@@ -61,7 +78,7 @@ export function cubicBezierY(
   p0: [number, number],
   p1: [number, number],
   p2: [number, number],
-  p3: [number, number]
+  p3: [number, number],
 ): number {
   let low = 0;
   let high = 1;
@@ -96,17 +113,17 @@ export const TelemetryCard: React.FC<TelemetryCardProps> = ({
   subLabel,
   onMenuClick,
   onClick,
-  className = '',
+  className = "",
   gradientId,
   strokeColor,
   gradientColor,
   pathD,
   fillD,
-  yAxisLabels = ['250', '150', '50', '0'],
+  yAxisLabels = ["250", "150", "50", "0"],
   tooltipMetricName,
   onHoverCompute,
   noData = false,
-  noDataId = 'nodata',
+  noDataId = "nodata",
   isLoading = false,
 }) => {
   const [hoverData, setHoverData] = useState<TelemetryHoverData | null>(null);
@@ -166,7 +183,10 @@ export const TelemetryCard: React.FC<TelemetryCardProps> = ({
       const svgX = pct * 1000;
 
       let calculatedYPct: number | null = null;
-      if (pathRef.current && typeof pathRef.current.getTotalLength === 'function') {
+      if (
+        pathRef.current &&
+        typeof pathRef.current.getTotalLength === "function"
+      ) {
         try {
           if (totalLengthRef.current === null) {
             totalLengthRef.current = pathRef.current.getTotalLength();
@@ -225,7 +245,7 @@ export const TelemetryCard: React.FC<TelemetryCardProps> = ({
   return (
     <div
       className={`analytics-card relative flex flex-col justify-between rounded-[8px] bg-[#0e0e0e] border border-[#222222] hover:border-[#383838] transition-colors h-[241px] overflow-hidden group select-none ${
-        onClick ? 'cursor-pointer' : ''
+        onClick ? "cursor-pointer" : ""
       } ${className}`}
       onClick={onClick}
     >
@@ -258,12 +278,16 @@ export const TelemetryCard: React.FC<TelemetryCardProps> = ({
           )}
           {badge && (
             <span
-              className={`text-[12px] font-medium flex items-center gap-0.5 font-sans ${badge.mlAuto ? 'ml-auto' : ''}`}
-              style={{ color: badge.color || (badge.icon === 'down' ? '#f59e0b' : '#30a46c') }}
+              className={`text-[12px] font-medium flex items-center gap-0.5 font-sans ${badge.mlAuto ? "ml-auto" : ""}`}
+              style={{
+                color:
+                  badge.color ||
+                  (badge.icon === "down" ? "#f59e0b" : "#30a46c"),
+              }}
             >
-              {badge.icon === 'down' ? (
+              {badge.icon === "down" ? (
                 <ArrowDownRight className="w-3.5 h-3.5 shrink-0" />
-              ) : badge.icon === 'none' ? null : (
+              ) : badge.icon === "none" ? null : (
                 <ArrowUpRight className="w-3.5 h-3.5 shrink-0" />
               )}
               <span>{badge.text}</span>
@@ -279,17 +303,57 @@ export const TelemetryCard: React.FC<TelemetryCardProps> = ({
           onMouseMove={handleMouseMove}
           onMouseLeave={handleMouseLeave}
         >
-          <svg className="w-full h-full block" viewBox="0 0 1000 130" preserveAspectRatio="none">
+          <svg
+            className="w-full h-full block"
+            viewBox="0 0 1000 130"
+            preserveAspectRatio="none"
+          >
             <defs>
               <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor={gColor} stopOpacity={noData ? '0.06' : '0.25'} />
+                <stop
+                  offset="0%"
+                  stopColor={gColor}
+                  stopOpacity={noData ? "0.06" : "0.25"}
+                />
                 <stop offset="100%" stopColor={gColor} stopOpacity="0.0" />
               </linearGradient>
             </defs>
-            <line className="chart-grid-line" x1="0" y1="14" x2="1000" y2="14" stroke="#1c1c1c" strokeWidth="1" />
-            <line className="chart-grid-line" x1="0" y1="48" x2="1000" y2="48" stroke="#1c1c1c" strokeWidth="1" />
-            <line className="chart-grid-line" x1="0" y1="82" x2="1000" y2="82" stroke="#1c1c1c" strokeWidth="1" />
-            <line className="chart-grid-line" x1="0" y1="116" x2="1000" y2="116" stroke="#262626" strokeWidth="1" />
+            <line
+              className="chart-grid-line"
+              x1="0"
+              y1="14"
+              x2="1000"
+              y2="14"
+              stroke="#1c1c1c"
+              strokeWidth="1"
+            />
+            <line
+              className="chart-grid-line"
+              x1="0"
+              y1="48"
+              x2="1000"
+              y2="48"
+              stroke="#1c1c1c"
+              strokeWidth="1"
+            />
+            <line
+              className="chart-grid-line"
+              x1="0"
+              y1="82"
+              x2="1000"
+              y2="82"
+              stroke="#1c1c1c"
+              strokeWidth="1"
+            />
+            <line
+              className="chart-grid-line"
+              x1="0"
+              y1="116"
+              x2="1000"
+              y2="116"
+              stroke="#262626"
+              strokeWidth="1"
+            />
 
             <path
               d={effectiveFillD}
@@ -309,66 +373,73 @@ export const TelemetryCard: React.FC<TelemetryCardProps> = ({
           </svg>
 
           {/* Tracking Guideline & Circular Riding Dot */}
-            {hoverData && (
-              <div className="chart-hover-overlay pointer-events-none">
-                <div
-                  className="absolute top-[10.8%] bottom-[10.8%] w-px border-r border-dashed border-[#666666] -translate-x-1/2 pointer-events-none z-10"
-                  style={{ left: `${hoverData.pct * 100}%` }}
-                />
-                <div
-                  className="absolute w-2.5 h-2.5 rounded-full border-[1.5px] border-white shadow-md pointer-events-none z-20 -translate-x-1/2 -translate-y-1/2"
-                  style={{
-                    left: `${hoverData.pct * 100}%`,
-                    top: `${hoverData.yPct * 100}%`,
-                    backgroundColor: strokeColor,
-                  }}
-                />
-                <div
-                  className={`absolute pointer-events-none z-30 select-none ${
-                    hoverData.pct > 0.5 ? '-translate-x-full pr-3' : 'pl-3'
-                  }`}
-                  style={{ left: `${hoverData.pct * 100}%`, top: '16px' }}
-                >
-                  <div className="bg-[#121212] rounded-lg shadow-2xl shadow-black/80 border border-[#2a2a2a] p-2.5 min-w-[145px] max-w-xs font-sans">
-                    <div className="text-[11px] font-normal text-white mb-1 tabular-nums font-sans">
-                      {hoverData.time}
-                    </div>
-                    <div className="flex items-center justify-between gap-3 py-0.5">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <span
-                          className="w-2.5 h-2.5 rounded-full shrink-0"
-                          style={{ backgroundColor: strokeColor }}
-                        />
-                        <span className="text-[12px] font-normal text-[#d4d4d8] truncate font-sans">
-                          {tooltipMetricName || title}
-                        </span>
-                      </div>
-                      <span className="text-[12px] font-normal text-white shrink-0 tabular-nums font-sans">
-                        {hoverData.value}
+          {hoverData && (
+            <div className="chart-hover-overlay pointer-events-none">
+              <div
+                className="absolute top-[10.8%] bottom-[10.8%] w-px border-r border-dashed border-[#666666] -translate-x-1/2 pointer-events-none z-10"
+                style={{ left: `${hoverData.pct * 100}%` }}
+              />
+              <div
+                className="absolute w-2.5 h-2.5 rounded-full border-[1.5px] border-white shadow-md pointer-events-none z-20 -translate-x-1/2 -translate-y-1/2"
+                style={{
+                  left: `${hoverData.pct * 100}%`,
+                  top: `${hoverData.yPct * 100}%`,
+                  backgroundColor: strokeColor,
+                }}
+              />
+              <div
+                className={`absolute pointer-events-none z-30 select-none ${
+                  hoverData.pct > 0.5 ? "-translate-x-full pr-3" : "pl-3"
+                }`}
+                style={{ left: `${hoverData.pct * 100}%`, top: "16px" }}
+              >
+                <div className="bg-[#121212] rounded-lg shadow-2xl shadow-black/80 border border-[#2a2a2a] p-2.5 min-w-[145px] max-w-xs font-sans">
+                  <div className="text-[11px] font-normal text-white mb-1 tabular-nums font-sans">
+                    {hoverData.time}
+                  </div>
+                  <div className="flex items-center justify-between gap-3 py-0.5">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span
+                        className="w-2.5 h-2.5 rounded-full shrink-0"
+                        style={{ backgroundColor: strokeColor }}
+                      />
+                      <span className="text-[12px] font-normal text-[#d4d4d8] truncate font-sans">
+                        {tooltipMetricName || title}
                       </span>
                     </div>
+                    <span className="text-[12px] font-normal text-white shrink-0 tabular-nums font-sans">
+                      {hoverData.value}
+                    </span>
                   </div>
                 </div>
               </div>
-            )}
-          </div>
-
-          {/* Y-Axis Labels */}
-          {yAxisLabels && yAxisLabels.length > 0 && (
-            <div className="chart-y-axis relative shrink-0 pl-2.5 text-[11px] text-[#8c8c8c] text-right font-normal pointer-events-none select-none tabular-nums flex flex-col justify-between pt-[10px] pb-[10px] font-sans">
-              {yAxisLabels.map((lbl, idx) => (
-                <span key={idx}>{lbl}</span>
-              ))}
             </div>
           )}
-
-          {/* Resize notch */}
-          <span className="absolute bottom-1 right-1 pointer-events-none opacity-40">
-            <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" fill="currentColor" viewBox="0 0 256 256" className="text-[#555555]">
-              <path d="M216.49,136.49l-80,80a12,12,0,1,1-17-17l80-80a12,12,0,1,1,17,17Zm-16-105a12,12,0,0,0-17,0l-152,152a12,12,0,0,0,17,17l152-152A12,12,0,0,0,200.49,31.51Z" />
-            </svg>
-          </span>
         </div>
+
+        {/* Y-Axis Labels */}
+        {yAxisLabels && yAxisLabels.length > 0 && (
+          <div className="chart-y-axis relative shrink-0 pl-2.5 text-[11px] text-[#8c8c8c] text-right font-normal pointer-events-none select-none tabular-nums flex flex-col justify-between pt-[10px] pb-[10px] font-sans">
+            {yAxisLabels.map((lbl, idx) => (
+              <span key={idx}>{lbl}</span>
+            ))}
+          </div>
+        )}
+
+        {/* Resize notch */}
+        <span className="absolute bottom-1 right-1 pointer-events-none opacity-40">
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="10"
+            height="10"
+            fill="currentColor"
+            viewBox="0 0 256 256"
+            className="text-[#555555]"
+          >
+            <path d="M216.49,136.49l-80,80a12,12,0,1,1-17-17l80-80a12,12,0,1,1,17,17Zm-16-105a12,12,0,0,0-17,0l-152,152a12,12,0,0,0,17,17l152-152A12,12,0,0,0,200.49,31.51Z" />
+          </svg>
+        </span>
+      </div>
     </div>
   );
 };

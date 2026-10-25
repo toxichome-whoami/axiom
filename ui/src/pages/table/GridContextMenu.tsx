@@ -9,8 +9,8 @@
  * Key deps: react, lucide-react
  */
 
-import React, { useEffect, useRef } from 'react';
-import { Copy, Edit3, Eye, Slash } from 'lucide-react';
+import React, { useEffect, useRef } from "react";
+import { Copy, Edit3, Eye, Slash } from "lucide-react";
 
 export interface GridContextMenuState {
   x: number;
@@ -50,14 +50,14 @@ export function GridContextMenu({
       }
     };
     const handleKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === "Escape") onClose();
     };
 
-    document.addEventListener('mousedown', handleDown);
-    window.addEventListener('keydown', handleKey);
+    document.addEventListener("mousedown", handleDown);
+    window.addEventListener("keydown", handleKey);
     return () => {
-      document.removeEventListener('mousedown', handleDown);
-      window.removeEventListener('keydown', handleKey);
+      document.removeEventListener("mousedown", handleDown);
+      window.removeEventListener("keydown", handleKey);
     };
   }, [menu, onClose]);
 
@@ -73,10 +73,10 @@ export function GridContextMenu({
     if (menu.rawValue !== undefined) {
       const text =
         menu.rawValue === null
-          ? 'null'
-          : typeof menu.rawValue === 'object'
-          ? JSON.stringify(menu.rawValue, null, 2)
-          : String(menu.rawValue);
+          ? "null"
+          : typeof menu.rawValue === "object"
+            ? JSON.stringify(menu.rawValue, null, 2)
+            : String(menu.rawValue);
       navigator.clipboard.writeText(text);
     }
     onClose();

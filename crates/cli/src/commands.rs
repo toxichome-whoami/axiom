@@ -726,6 +726,14 @@ pub enum BlobCommands {
             default_value = "true"
         )]
         all: bool,
+        #[arg(
+            short,
+            long,
+            help = "Pagination cursor (opaque string from previous page)"
+        )]
+        cursor: Option<String>,
+        #[arg(short, long, help = "Maximum items to return (1-500, default: 100)")]
+        limit: Option<usize>,
     },
     /// Revoke a capability ticket by signature or ID
     RevokeTicket {
@@ -1281,6 +1289,10 @@ mod tests {
             "assets",
             "-k",
             "report.pdf",
+            "--cursor",
+            "cur_123",
+            "--limit",
+            "50",
         ];
         let tickets_cli = Cli::try_parse_from(tickets_args).expect("Failed to parse blob tickets");
         match tickets_cli.command {
@@ -1290,10 +1302,14 @@ mod tests {
                         namespace,
                         key,
                         all,
+                        cursor,
+                        limit,
                     },
             }) => {
                 assert_eq!(namespace, Some("assets".to_string()));
                 assert_eq!(key, Some("report.pdf".to_string()));
+                assert_eq!(cursor, Some("cur_123".to_string()));
+                assert_eq!(limit, Some(50));
                 assert!(all);
             }
             _ => panic!("Expected Blob Tickets command"),

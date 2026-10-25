@@ -7,11 +7,24 @@
  * Invariants: Correct timezone handling, bounds checking, 24-hour time controls.
  */
 
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Calendar, Clock, ChevronUp, ChevronDown, Check, Maximize2 } from 'lucide-react';
-import { DayPicker } from '@daypicker/react';
-import { ColumnInfoApi } from '../../types';
-import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
+import React, {
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+  useMemo,
+} from "react";
+import {
+  Calendar,
+  Clock,
+  ChevronUp,
+  ChevronDown,
+  Check,
+  Maximize2,
+} from "lucide-react";
+import { DayPicker } from "@daypicker/react";
+import { ColumnInfoApi } from "../../types";
+import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 
 export interface InlineDateTimePickerPopoverProps {
   editingCell: {
@@ -39,24 +52,26 @@ export function InlineDateTimePickerPopover({
   const calendarModalRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const normType = editingCell.column?.type?.toLowerCase() || '';
-  const isDateOnly = normType === 'date';
-  const isTimeOnly = normType === 'time' || normType === 'timetz';
+  const normType = editingCell.column?.type?.toLowerCase() || "";
+  const isDateOnly = normType === "date";
+  const isTimeOnly = normType === "time" || normType === "timetz";
   const isNullable = editingCell.column?.nullable ?? true;
 
   const isInitialNull =
     editingCell.initialValue === null ||
     editingCell.initialValue === undefined ||
-    editingCell.currentValue === 'null';
+    editingCell.currentValue === "null";
 
   const [isNull, setIsNull] = useState<boolean>(
-    editingCell.initialValue === null && editingCell.currentValue === ''
+    editingCell.initialValue === null && editingCell.currentValue === "",
   );
 
   const [inputVal, setInputVal] = useState<string>(() => {
-    if (editingCell.initialValue === null && editingCell.currentValue === '') return '';
-    return editingCell.currentValue === null || editingCell.currentValue === undefined
-      ? ''
+    if (editingCell.initialValue === null && editingCell.currentValue === "")
+      return "";
+    return editingCell.currentValue === null ||
+      editingCell.currentValue === undefined
+      ? ""
       : String(editingCell.currentValue);
   });
 
@@ -73,57 +88,79 @@ export function InlineDateTimePickerPopover({
   // Baseline snapshot at mount to prevent false-positive dirty warnings
   const baselineValRef = useRef<string>(inputVal);
   const baselineNullRef = useRef<boolean>(isNull);
-  const isDirty = isNull !== baselineNullRef.current || (!isNull && inputVal.trim() !== baselineValRef.current.trim());
+  const isDirty =
+    isNull !== baselineNullRef.current ||
+    (!isNull && inputVal.trim() !== baselineValRef.current.trim());
 
-  const parseVal = useCallback((val: string) => {
-    if (!val.trim()) {
-      return { date: undefined, hours: '12', minutes: '00', seconds: '00', tz: '' };
-    }
+  const parseVal = useCallback(
+    (val: string) => {
+      if (!val.trim()) {
+        return {
+          date: undefined,
+          hours: "12",
+          minutes: "00",
+          seconds: "00",
+          tz: "",
+        };
+      }
 
-    let dateStr = '';
-    let timeFull = '';
+      let dateStr = "";
+      let timeFull = "";
 
-    if (isTimeOnly) {
-      timeFull = val.trim();
-    } else {
-      const parts = val.trim().split(/[T ]/);
-      dateStr = parts[0] || '';
-      timeFull = parts[1] || '';
-    }
+      if (isTimeOnly) {
+        timeFull = val.trim();
+      } else {
+        const parts = val.trim().split(/[T ]/);
+        dateStr = parts[0] || "";
+        timeFull = parts[1] || "";
+      }
 
-    let d: Date | undefined;
-    if (dateStr) {
-      const dateParts = dateStr.split('-').map(Number);
-      if (dateParts.length === 3 && dateParts.every((n) => !isNaN(n))) {
-        const parsedDate = new Date(dateParts[0], dateParts[1] - 1, dateParts[2]);
-        if (!isNaN(parsedDate.getTime())) {
-          d = parsedDate;
+      let d: Date | undefined;
+      if (dateStr) {
+        const dateParts = dateStr.split("-").map(Number);
+        if (dateParts.length === 3 && dateParts.every((n) => !isNaN(n))) {
+          const parsedDate = new Date(
+            dateParts[0],
+            dateParts[1] - 1,
+            dateParts[2],
+          );
+          if (!isNaN(parsedDate.getTime())) {
+            d = parsedDate;
+          }
         }
       }
-    }
 
-    let hours = '12';
-    let minutes = '00';
-    let seconds = '00';
-    let tz = '';
+      let hours = "12";
+      let minutes = "00";
+      let seconds = "00";
+      let tz = "";
 
-    if (timeFull) {
-      const tzMatch = timeFull.match(/([+-]\d{2}(?::?\d{2})?|Z|[A-Z]{2,4})$/i);
-      if (tzMatch) {
-        tz = tzMatch[0];
+      if (timeFull) {
+        const tzMatch = timeFull.match(
+          /([+-]\d{2}(?::?\d{2})?|Z|[A-Z]{2,4})$/i,
+        );
+        if (tzMatch) {
+          tz = tzMatch[0];
+        }
+        const timeWithoutTz = tz ? timeFull.slice(0, -tz.length) : timeFull;
+        const tParts = timeWithoutTz.split(":");
+        if (tParts[0] !== undefined) hours = tParts[0].padStart(2, "0");
+        if (tParts[1] !== undefined) minutes = tParts[1].padStart(2, "0");
+        if (tParts[2] !== undefined)
+          seconds = tParts[2].split(".")[0].padStart(2, "0");
       }
-      const timeWithoutTz = tz ? timeFull.slice(0, -tz.length) : timeFull;
-      const tParts = timeWithoutTz.split(':');
-      if (tParts[0] !== undefined) hours = tParts[0].padStart(2, '0');
-      if (tParts[1] !== undefined) minutes = tParts[1].padStart(2, '0');
-      if (tParts[2] !== undefined) seconds = tParts[2].split('.')[0].padStart(2, '0');
-    }
 
-    return { date: d, hours, minutes, seconds, tz };
-  }, [isTimeOnly]);
+      return { date: d, hours, minutes, seconds, tz };
+    },
+    [isTimeOnly],
+  );
 
-  const [selectedDate, setSelectedDate] = useState<Date | undefined>(() => parseVal(inputVal).date);
-  const [month, setMonth] = useState<Date>(() => parseVal(inputVal).date || new Date());
+  const [selectedDate, setSelectedDate] = useState<Date | undefined>(
+    () => parseVal(inputVal).date,
+  );
+  const [month, setMonth] = useState<Date>(
+    () => parseVal(inputVal).date || new Date(),
+  );
   const [timeState, setTimeState] = useState(() => {
     const p = parseVal(inputVal);
     return {
@@ -134,32 +171,35 @@ export function InlineDateTimePickerPopover({
     };
   });
 
-  const formatOutput = useCallback((
-    dateObj: Date | undefined,
-    timeObj: { hours: string; minutes: string; seconds: string; tz: string }
-  ): string => {
-    if (isTimeOnly) {
-      const h = String(timeObj.hours).padStart(2, '0');
-      const min = String(timeObj.minutes).padStart(2, '0');
-      const s = String(timeObj.seconds).padStart(2, '0');
-      const tzSuffix = timeObj.tz ? ` ${timeObj.tz}` : '';
-      return `${h}:${min}:${s}${tzSuffix}`;
-    }
-    if (!dateObj) return '';
-    const y = dateObj.getFullYear();
-    const m = String(dateObj.getMonth() + 1).padStart(2, '0');
-    const d = String(dateObj.getDate()).padStart(2, '0');
-    const datePart = `${y}-${m}-${d}`;
+  const formatOutput = useCallback(
+    (
+      dateObj: Date | undefined,
+      timeObj: { hours: string; minutes: string; seconds: string; tz: string },
+    ): string => {
+      if (isTimeOnly) {
+        const h = String(timeObj.hours).padStart(2, "0");
+        const min = String(timeObj.minutes).padStart(2, "0");
+        const s = String(timeObj.seconds).padStart(2, "0");
+        const tzSuffix = timeObj.tz ? ` ${timeObj.tz}` : "";
+        return `${h}:${min}:${s}${tzSuffix}`;
+      }
+      if (!dateObj) return "";
+      const y = dateObj.getFullYear();
+      const m = String(dateObj.getMonth() + 1).padStart(2, "0");
+      const d = String(dateObj.getDate()).padStart(2, "0");
+      const datePart = `${y}-${m}-${d}`;
 
-    if (isDateOnly) {
-      return datePart;
-    }
-    const h = String(timeObj.hours).padStart(2, '0');
-    const min = String(timeObj.minutes).padStart(2, '0');
-    const s = String(timeObj.seconds).padStart(2, '0');
-    const tzSuffix = timeObj.tz ? ` ${timeObj.tz}` : '';
-    return `${datePart} ${h}:${min}:${s}${tzSuffix}`;
-  }, [isDateOnly, isTimeOnly]);
+      if (isDateOnly) {
+        return datePart;
+      }
+      const h = String(timeObj.hours).padStart(2, "0");
+      const min = String(timeObj.minutes).padStart(2, "0");
+      const s = String(timeObj.seconds).padStart(2, "0");
+      const tzSuffix = timeObj.tz ? ` ${timeObj.tz}` : "";
+      return `${datePart} ${h}:${min}:${s}${tzSuffix}`;
+    },
+    [isDateOnly, isTimeOnly],
+  );
 
   const handleSelectDate = (date: Date | undefined) => {
     setSelectedDate(date);
@@ -173,9 +213,9 @@ export function InlineDateTimePickerPopover({
     const now = new Date();
     setSelectedDate(now);
     const newTime = {
-      hours: String(now.getHours()).padStart(2, '0'),
-      minutes: String(now.getMinutes()).padStart(2, '0'),
-      seconds: String(now.getSeconds()).padStart(2, '0'),
+      hours: String(now.getHours()).padStart(2, "0"),
+      minutes: String(now.getMinutes()).padStart(2, "0"),
+      seconds: String(now.getSeconds()).padStart(2, "0"),
       tz: timeState.tz,
     };
     setTimeState(newTime);
@@ -188,8 +228,8 @@ export function InlineDateTimePickerPopover({
   const handleSetNull = () => {
     setSelectedDate(undefined);
     setIsNull(true);
-    setInputVal('');
-    onChange?.('');
+    setInputVal("");
+    onChange?.("");
     setIsCalendarOpen(false);
   };
 
@@ -201,7 +241,7 @@ export function InlineDateTimePickerPopover({
       const offset = -d.getTimezoneOffset() / 60;
       return offset >= 0 ? `UTC+${offset}` : `UTC${offset}`;
     } catch {
-      return 'UTC';
+      return "UTC";
     }
   }, []);
 
@@ -232,16 +272,23 @@ export function InlineDateTimePickerPopover({
     const handleMouseDown = (e: MouseEvent) => {
       if (showDiscardConfirm) return;
       const target = e.target as HTMLElement | null;
-      if (target?.closest('[role="dialog"]') || target?.closest('.fixed.z-50.ConfirmDialog')) return;
+      if (
+        target?.closest('[role="dialog"]') ||
+        target?.closest(".fixed.z-50.ConfirmDialog")
+      )
+        return;
 
-      const inPopover = popoverRef.current && popoverRef.current.contains(target as Node);
-      const inCalendar = calendarModalRef.current && calendarModalRef.current.contains(target as Node);
+      const inPopover =
+        popoverRef.current && popoverRef.current.contains(target as Node);
+      const inCalendar =
+        calendarModalRef.current &&
+        calendarModalRef.current.contains(target as Node);
       if (!inPopover && !inCalendar) {
         handleAttemptClose();
       }
     };
-    document.addEventListener('mousedown', handleMouseDown);
-    return () => document.removeEventListener('mousedown', handleMouseDown);
+    document.addEventListener("mousedown", handleMouseDown);
+    return () => document.removeEventListener("mousedown", handleMouseDown);
   }, [handleAttemptClose, showDiscardConfirm]);
 
   useEffect(() => {
@@ -256,15 +303,15 @@ export function InlineDateTimePickerPopover({
       }
       handleAttemptClose();
     };
-    window.addEventListener('scroll', handleScroll, true);
-    return () => window.removeEventListener('scroll', handleScroll, true);
+    window.addEventListener("scroll", handleScroll, true);
+    return () => window.removeEventListener("scroll", handleScroll, true);
   }, [handleAttemptClose, showDiscardConfirm]);
 
   const handleInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') {
+    if (e.key === "Enter") {
       e.preventDefault();
       handleCommit();
-    } else if (e.key === 'Escape') {
+    } else if (e.key === "Escape") {
       e.preventDefault();
       if (isCalendarOpen) {
         setIsCalendarOpen(false);
@@ -295,8 +342,8 @@ export function InlineDateTimePickerPopover({
     if (!isNullable) return;
     if (!isNull) {
       setIsNull(true);
-      setInputVal('');
-      onChange?.('');
+      setInputVal("");
+      onChange?.("");
       setIsCalendarOpen(false);
     } else {
       setIsNull(false);
@@ -308,14 +355,27 @@ export function InlineDateTimePickerPopover({
   };
 
   // Safe popover positioning within viewport
-  const popoverWidth = Math.max(380, Math.min(500, editingCell.rect.width + 120));
-  const left = Math.max(8, Math.min(window.innerWidth - popoverWidth - 16, editingCell.rect.left));
-  const top = Math.max(8, Math.min(window.innerHeight - 150 - 16, editingCell.rect.top));
+  const popoverWidth = Math.max(
+    380,
+    Math.min(500, editingCell.rect.width + 120),
+  );
+  const left = Math.max(
+    8,
+    Math.min(window.innerWidth - popoverWidth - 16, editingCell.rect.left),
+  );
+  const top = Math.max(
+    8,
+    Math.min(window.innerHeight - 150 - 16, editingCell.rect.top),
+  );
 
   const calWidth = isTimeOnly ? 300 : 340;
   const calHeight = isTimeOnly ? 210 : isDateOnly ? 360 : 455;
-  const calLeft = Math.max(8, Math.min(window.innerWidth - calWidth - 16, left));
-  const showAbove = top + 140 + calHeight > window.innerHeight && top - calHeight > 8;
+  const calLeft = Math.max(
+    8,
+    Math.min(window.innerWidth - calWidth - 16, left),
+  );
+  const showAbove =
+    top + 140 + calHeight > window.innerHeight && top - calHeight > 8;
   const calTop = showAbove ? top - calHeight - 6 : top + 130;
 
   return (
@@ -333,7 +393,10 @@ export function InlineDateTimePickerPopover({
         {/* Top Header Bar */}
         <div className="flex items-center justify-between pb-2 px-1 select-none">
           <div className="flex items-center gap-1.5 min-w-0">
-            <span className="text-[13.5px] font-sans font-medium text-[#e0e0e0] truncate" title={editingCell.colName}>
+            <span
+              className="text-[13.5px] font-sans font-medium text-[#e0e0e0] truncate"
+              title={editingCell.colName}
+            >
               {editingCell.colName}
             </span>
           </div>
@@ -348,8 +411,8 @@ export function InlineDateTimePickerPopover({
                 onClick={toggleNull}
                 className={`px-2 py-0.5 rounded-[4px] text-[12px] font-sans font-medium border transition-colors cursor-pointer ${
                   isNull
-                    ? 'bg-[#1e1e1e] text-white border-[#333333] hover:bg-[#262626]'
-                    : 'bg-transparent text-[#888888] border-[#222222] hover:text-white hover:bg-[#181818]'
+                    ? "bg-[#1e1e1e] text-white border-[#333333] hover:bg-[#262626]"
+                    : "bg-transparent text-[#888888] border-[#222222] hover:text-white hover:bg-[#181818]"
                 }`}
               >
                 NULL
@@ -376,7 +439,13 @@ export function InlineDateTimePickerPopover({
               }}
               onKeyDown={handleInputKeyDown}
               spellCheck={false}
-              placeholder={isTimeOnly ? 'HH:MM:SS' : isDateOnly ? 'YYYY-MM-DD' : 'YYYY-MM-DD HH:MM:SS'}
+              placeholder={
+                isTimeOnly
+                  ? "HH:MM:SS"
+                  : isDateOnly
+                    ? "YYYY-MM-DD"
+                    : "YYYY-MM-DD HH:MM:SS"
+              }
               className="flex-1 min-w-0 bg-transparent px-2.5 py-1 text-[13.5px] font-sans text-white outline-none placeholder-[#555555]"
             />
           )}
@@ -386,14 +455,24 @@ export function InlineDateTimePickerPopover({
             type="button"
             tabIndex={-1}
             onClick={toggleCalendar}
-            title={isCalendarOpen ? 'Close picker' : isTimeOnly ? 'Open time picker' : 'Open date & time picker'}
+            title={
+              isCalendarOpen
+                ? "Close picker"
+                : isTimeOnly
+                  ? "Open time picker"
+                  : "Open date & time picker"
+            }
             className={`h-7 px-2.5 rounded-[5px] flex items-center justify-center border transition-colors cursor-pointer shrink-0 ${
               isCalendarOpen
-                ? 'bg-[#262626] border-[#383838] text-white'
-                : 'bg-[#141414] hover:bg-[#202020] border-[#282828] text-[#8c8c8c] hover:text-white'
+                ? "bg-[#262626] border-[#383838] text-white"
+                : "bg-[#141414] hover:bg-[#202020] border-[#282828] text-[#8c8c8c] hover:text-white"
             }`}
           >
-            {isTimeOnly ? <Clock className="w-3.5 h-3.5" /> : <Calendar className="w-3.5 h-3.5" />}
+            {isTimeOnly ? (
+              <Clock className="w-3.5 h-3.5" />
+            ) : (
+              <Calendar className="w-3.5 h-3.5" />
+            )}
           </button>
         </div>
 
@@ -455,7 +534,13 @@ export function InlineDateTimePickerPopover({
                 ) : (
                   <Calendar className="w-3.5 h-3.5 text-[#8c8c8c]" />
                 )}
-                <span>{isTimeOnly ? 'Select Time' : isDateOnly ? 'Select Date' : 'Select Date & Time'}</span>
+                <span>
+                  {isTimeOnly
+                    ? "Select Time"
+                    : isDateOnly
+                      ? "Select Date"
+                      : "Select Date & Time"}
+                </span>
               </span>
               <div className="flex items-center gap-1">
                 <button
@@ -495,11 +580,15 @@ export function InlineDateTimePickerPopover({
           {/* Detailed Time Selector */}
           {!isDateOnly && (
             <>
-              {!isTimeOnly && <div className="-mx-3.5 border-t border-[#222222] my-2" />}
+              {!isTimeOnly && (
+                <div className="-mx-3.5 border-t border-[#222222] my-2" />
+              )}
 
               <div className="pt-0.5">
                 <div className="flex items-center justify-between text-[12px] text-[#8c8c8c] mb-2">
-                  <span className="font-medium text-[#cccccc]">Time of Day</span>
+                  <span className="font-medium text-[#cccccc]">
+                    Time of Day
+                  </span>
                   <div className="flex items-center gap-1.5 font-mono text-[11px]">
                     <span className="text-[#cccccc] bg-[#141414] px-1.5 py-0.5 rounded border border-[#262626] font-medium">
                       {activeTz}
@@ -519,18 +608,30 @@ export function InlineDateTimePickerPopover({
                         pattern="[0-9]*"
                         value={timeState.hours}
                         onChange={(e) => {
-                          const val = e.target.value.replace(/\D/g, '').slice(0, 2);
+                          const val = e.target.value
+                            .replace(/\D/g, "")
+                            .slice(0, 2);
                           const num = Math.min(23, Number(val) || 0);
-                          const h = val === '' ? '' : String(num).padStart(2, '0');
-                          const newT = { ...timeState, hours: h || '00' };
+                          const h =
+                            val === "" ? "" : String(num).padStart(2, "0");
+                          const newT = { ...timeState, hours: h || "00" };
                           setTimeState(newT);
-                          setInputVal(formatOutput(selectedDate || new Date(), newT));
+                          setInputVal(
+                            formatOutput(selectedDate || new Date(), newT),
+                          );
                         }}
                         onBlur={() => {
-                          const h = String(Math.max(0, Math.min(23, Number(timeState.hours) || 0))).padStart(2, '0');
+                          const h = String(
+                            Math.max(
+                              0,
+                              Math.min(23, Number(timeState.hours) || 0),
+                            ),
+                          ).padStart(2, "0");
                           const newT = { ...timeState, hours: h };
                           setTimeState(newT);
-                          setInputVal(formatOutput(selectedDate || new Date(), newT));
+                          setInputVal(
+                            formatOutput(selectedDate || new Date(), newT),
+                          );
                         }}
                         className="h-8 w-full bg-transparent pl-2.5 pr-5 text-center text-[13px] text-white focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                       />
@@ -541,10 +642,12 @@ export function InlineDateTimePickerPopover({
                           onClick={() => {
                             const cur = Number(timeState.hours) || 0;
                             const next = cur >= 23 ? 0 : cur + 1;
-                            const h = String(next).padStart(2, '0');
+                            const h = String(next).padStart(2, "0");
                             const newT = { ...timeState, hours: h };
                             setTimeState(newT);
-                            setInputVal(formatOutput(selectedDate || new Date(), newT));
+                            setInputVal(
+                              formatOutput(selectedDate || new Date(), newT),
+                            );
                           }}
                           className="h-3.5 w-4 flex items-center justify-center text-[#777777] hover:text-white hover:bg-[#202020] rounded-[2px] transition-colors"
                         >
@@ -556,10 +659,12 @@ export function InlineDateTimePickerPopover({
                           onClick={() => {
                             const cur = Number(timeState.hours) || 0;
                             const next = cur <= 0 ? 23 : cur - 1;
-                            const h = String(next).padStart(2, '0');
+                            const h = String(next).padStart(2, "0");
                             const newT = { ...timeState, hours: h };
                             setTimeState(newT);
-                            setInputVal(formatOutput(selectedDate || new Date(), newT));
+                            setInputVal(
+                              formatOutput(selectedDate || new Date(), newT),
+                            );
                           }}
                           className="h-3.5 w-4 flex items-center justify-center text-[#777777] hover:text-white hover:bg-[#202020] rounded-[2px] transition-colors"
                         >
@@ -567,7 +672,9 @@ export function InlineDateTimePickerPopover({
                         </button>
                       </div>
                     </div>
-                    <span className="text-[10px] text-center text-[#777777] mt-1 font-sans">Hours (0-23)</span>
+                    <span className="text-[10px] text-center text-[#777777] mt-1 font-sans">
+                      Hours (0-23)
+                    </span>
                   </div>
 
                   {/* Minutes */}
@@ -579,18 +686,30 @@ export function InlineDateTimePickerPopover({
                         pattern="[0-9]*"
                         value={timeState.minutes}
                         onChange={(e) => {
-                          const val = e.target.value.replace(/\D/g, '').slice(0, 2);
+                          const val = e.target.value
+                            .replace(/\D/g, "")
+                            .slice(0, 2);
                           const num = Math.min(59, Number(val) || 0);
-                          const m = val === '' ? '' : String(num).padStart(2, '0');
-                          const newT = { ...timeState, minutes: m || '00' };
+                          const m =
+                            val === "" ? "" : String(num).padStart(2, "0");
+                          const newT = { ...timeState, minutes: m || "00" };
                           setTimeState(newT);
-                          setInputVal(formatOutput(selectedDate || new Date(), newT));
+                          setInputVal(
+                            formatOutput(selectedDate || new Date(), newT),
+                          );
                         }}
                         onBlur={() => {
-                          const m = String(Math.max(0, Math.min(59, Number(timeState.minutes) || 0))).padStart(2, '0');
+                          const m = String(
+                            Math.max(
+                              0,
+                              Math.min(59, Number(timeState.minutes) || 0),
+                            ),
+                          ).padStart(2, "0");
                           const newT = { ...timeState, minutes: m };
                           setTimeState(newT);
-                          setInputVal(formatOutput(selectedDate || new Date(), newT));
+                          setInputVal(
+                            formatOutput(selectedDate || new Date(), newT),
+                          );
                         }}
                         className="h-8 w-full bg-transparent pl-2.5 pr-5 text-center text-[13px] text-white focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                       />
@@ -601,10 +720,12 @@ export function InlineDateTimePickerPopover({
                           onClick={() => {
                             const cur = Number(timeState.minutes) || 0;
                             const next = cur >= 59 ? 0 : cur + 1;
-                            const m = String(next).padStart(2, '0');
+                            const m = String(next).padStart(2, "0");
                             const newT = { ...timeState, minutes: m };
                             setTimeState(newT);
-                            setInputVal(formatOutput(selectedDate || new Date(), newT));
+                            setInputVal(
+                              formatOutput(selectedDate || new Date(), newT),
+                            );
                           }}
                           className="h-3.5 w-4 flex items-center justify-center text-[#777777] hover:text-white hover:bg-[#202020] rounded-[2px] transition-colors"
                         >
@@ -616,10 +737,12 @@ export function InlineDateTimePickerPopover({
                           onClick={() => {
                             const cur = Number(timeState.minutes) || 0;
                             const next = cur <= 0 ? 59 : cur - 1;
-                            const m = String(next).padStart(2, '0');
+                            const m = String(next).padStart(2, "0");
                             const newT = { ...timeState, minutes: m };
                             setTimeState(newT);
-                            setInputVal(formatOutput(selectedDate || new Date(), newT));
+                            setInputVal(
+                              formatOutput(selectedDate || new Date(), newT),
+                            );
                           }}
                           className="h-3.5 w-4 flex items-center justify-center text-[#777777] hover:text-white hover:bg-[#202020] rounded-[2px] transition-colors"
                         >
@@ -627,7 +750,9 @@ export function InlineDateTimePickerPopover({
                         </button>
                       </div>
                     </div>
-                    <span className="text-[10px] text-center text-[#777777] mt-1 font-sans">Min (0-59)</span>
+                    <span className="text-[10px] text-center text-[#777777] mt-1 font-sans">
+                      Min (0-59)
+                    </span>
                   </div>
 
                   {/* Seconds */}
@@ -639,18 +764,30 @@ export function InlineDateTimePickerPopover({
                         pattern="[0-9]*"
                         value={timeState.seconds}
                         onChange={(e) => {
-                          const val = e.target.value.replace(/\D/g, '').slice(0, 2);
+                          const val = e.target.value
+                            .replace(/\D/g, "")
+                            .slice(0, 2);
                           const num = Math.min(59, Number(val) || 0);
-                          const s = val === '' ? '' : String(num).padStart(2, '0');
-                          const newT = { ...timeState, seconds: s || '00' };
+                          const s =
+                            val === "" ? "" : String(num).padStart(2, "0");
+                          const newT = { ...timeState, seconds: s || "00" };
                           setTimeState(newT);
-                          setInputVal(formatOutput(selectedDate || new Date(), newT));
+                          setInputVal(
+                            formatOutput(selectedDate || new Date(), newT),
+                          );
                         }}
                         onBlur={() => {
-                          const s = String(Math.max(0, Math.min(59, Number(timeState.seconds) || 0))).padStart(2, '0');
+                          const s = String(
+                            Math.max(
+                              0,
+                              Math.min(59, Number(timeState.seconds) || 0),
+                            ),
+                          ).padStart(2, "0");
                           const newT = { ...timeState, seconds: s };
                           setTimeState(newT);
-                          setInputVal(formatOutput(selectedDate || new Date(), newT));
+                          setInputVal(
+                            formatOutput(selectedDate || new Date(), newT),
+                          );
                         }}
                         className="h-8 w-full bg-transparent pl-2.5 pr-5 text-center text-[13px] text-white focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                       />
@@ -661,10 +798,12 @@ export function InlineDateTimePickerPopover({
                           onClick={() => {
                             const cur = Number(timeState.seconds) || 0;
                             const next = cur >= 59 ? 0 : cur + 1;
-                            const s = String(next).padStart(2, '0');
+                            const s = String(next).padStart(2, "0");
                             const newT = { ...timeState, seconds: s };
                             setTimeState(newT);
-                            setInputVal(formatOutput(selectedDate || new Date(), newT));
+                            setInputVal(
+                              formatOutput(selectedDate || new Date(), newT),
+                            );
                           }}
                           className="h-3.5 w-4 flex items-center justify-center text-[#777777] hover:text-white hover:bg-[#202020] rounded-[2px] transition-colors"
                         >
@@ -676,10 +815,12 @@ export function InlineDateTimePickerPopover({
                           onClick={() => {
                             const cur = Number(timeState.seconds) || 0;
                             const next = cur <= 0 ? 59 : cur - 1;
-                            const s = String(next).padStart(2, '0');
+                            const s = String(next).padStart(2, "0");
                             const newT = { ...timeState, seconds: s };
                             setTimeState(newT);
-                            setInputVal(formatOutput(selectedDate || new Date(), newT));
+                            setInputVal(
+                              formatOutput(selectedDate || new Date(), newT),
+                            );
                           }}
                           className="h-3.5 w-4 flex items-center justify-center text-[#777777] hover:text-white hover:bg-[#202020] rounded-[2px] transition-colors"
                         >
@@ -687,7 +828,9 @@ export function InlineDateTimePickerPopover({
                         </button>
                       </div>
                     </div>
-                    <span className="text-[10px] text-center text-[#777777] mt-1 font-sans">Sec (0-59)</span>
+                    <span className="text-[10px] text-center text-[#777777] mt-1 font-sans">
+                      Sec (0-59)
+                    </span>
                   </div>
                 </div>
               </div>
@@ -698,8 +841,11 @@ export function InlineDateTimePickerPopover({
 
           {/* Confirmation footer */}
           <div className="flex items-center justify-between pt-0.5">
-            <span className="text-[12px] text-[#8c8c8c] font-mono truncate max-w-[170px]" title={inputVal || 'NULL'}>
-              {inputVal || 'NULL'}
+            <span
+              className="text-[12px] text-[#8c8c8c] font-mono truncate max-w-[170px]"
+              title={inputVal || "NULL"}
+            >
+              {inputVal || "NULL"}
             </span>
             <div className="flex items-center gap-1.5">
               <button
@@ -747,18 +893,24 @@ export function DateTimePickerInput({
   const containerRef = useRef<HTMLDivElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
 
-  const strVal = value === null || value === undefined ? '' : String(value);
+  const strVal = value === null || value === undefined ? "" : String(value);
 
   const parseVal = useCallback((val: string) => {
     if (!val.trim()) {
-      return { date: undefined, hours: '12', minutes: '00', seconds: '00', tz: '' };
+      return {
+        date: undefined,
+        hours: "12",
+        minutes: "00",
+        seconds: "00",
+        tz: "",
+      };
     }
     const parts = val.trim().split(/[T ]/);
-    const dateStr = parts[0] || '';
-    const timeFull = parts[1] || '';
+    const dateStr = parts[0] || "";
+    const timeFull = parts[1] || "";
 
     let d: Date | undefined;
-    const dateParts = dateStr.split('-').map(Number);
+    const dateParts = dateStr.split("-").map(Number);
     if (dateParts.length === 3 && dateParts.every((n) => !isNaN(n))) {
       const parsedDate = new Date(dateParts[0], dateParts[1] - 1, dateParts[2]);
       if (!isNaN(parsedDate.getTime())) {
@@ -766,10 +918,10 @@ export function DateTimePickerInput({
       }
     }
 
-    let hours = '12';
-    let minutes = '00';
-    let seconds = '00';
-    let tz = '';
+    let hours = "12";
+    let minutes = "00";
+    let seconds = "00";
+    let tz = "";
 
     if (timeFull) {
       const tzMatch = timeFull.match(/([+-]\d{2}(?::?\d{2})?|Z|[A-Z]{2,4})$/i);
@@ -777,17 +929,22 @@ export function DateTimePickerInput({
         tz = tzMatch[0];
       }
       const timeWithoutTz = tz ? timeFull.slice(0, -tz.length) : timeFull;
-      const tParts = timeWithoutTz.split(':');
-      if (tParts[0] !== undefined) hours = tParts[0].padStart(2, '0');
-      if (tParts[1] !== undefined) minutes = tParts[1].padStart(2, '0');
-      if (tParts[2] !== undefined) seconds = tParts[2].split('.')[0].padStart(2, '0');
+      const tParts = timeWithoutTz.split(":");
+      if (tParts[0] !== undefined) hours = tParts[0].padStart(2, "0");
+      if (tParts[1] !== undefined) minutes = tParts[1].padStart(2, "0");
+      if (tParts[2] !== undefined)
+        seconds = tParts[2].split(".")[0].padStart(2, "0");
     }
 
     return { date: d, hours, minutes, seconds, tz };
   }, []);
 
-  const [selectedDate, setSelectedDate] = useState<Date | undefined>(() => parseVal(strVal).date);
-  const [month, setMonth] = useState<Date>(() => parseVal(strVal).date || new Date());
+  const [selectedDate, setSelectedDate] = useState<Date | undefined>(
+    () => parseVal(strVal).date,
+  );
+  const [month, setMonth] = useState<Date>(
+    () => parseVal(strVal).date || new Date(),
+  );
   const [timeState, setTimeState] = useState(() => {
     const p = parseVal(strVal);
     return {
@@ -823,22 +980,22 @@ export function DateTimePickerInput({
         setIsOpen(false);
       }
     };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [isOpen]);
 
   const commitValue = useCallback(
     (
       dateObj: Date | undefined,
-      timeObj: { hours: string; minutes: string; seconds: string; tz: string }
+      timeObj: { hours: string; minutes: string; seconds: string; tz: string },
     ) => {
       if (!dateObj) {
         onChange(null);
         return;
       }
       const y = dateObj.getFullYear();
-      const m = String(dateObj.getMonth() + 1).padStart(2, '0');
-      const d = String(dateObj.getDate()).padStart(2, '0');
+      const m = String(dateObj.getMonth() + 1).padStart(2, "0");
+      const d = String(dateObj.getDate()).padStart(2, "0");
       const datePart = `${y}-${m}-${d}`;
 
       if (isDateOnly) {
@@ -846,13 +1003,13 @@ export function DateTimePickerInput({
         return;
       }
 
-      const h = String(timeObj.hours).padStart(2, '0');
-      const min = String(timeObj.minutes).padStart(2, '0');
-      const s = String(timeObj.seconds).padStart(2, '0');
-      const tzSuffix = timeObj.tz ? ` ${timeObj.tz}` : '';
+      const h = String(timeObj.hours).padStart(2, "0");
+      const min = String(timeObj.minutes).padStart(2, "0");
+      const s = String(timeObj.seconds).padStart(2, "0");
+      const tzSuffix = timeObj.tz ? ` ${timeObj.tz}` : "";
       onChange(`${datePart} ${h}:${min}:${s}${tzSuffix}`);
     },
-    [isDateOnly, onChange]
+    [isDateOnly, onChange],
   );
 
   const handleSelectDate = (date: Date | undefined) => {
@@ -864,9 +1021,9 @@ export function DateTimePickerInput({
     const now = new Date();
     setSelectedDate(now);
     const newTime = {
-      hours: String(now.getHours()).padStart(2, '0'),
-      minutes: String(now.getMinutes()).padStart(2, '0'),
-      seconds: String(now.getSeconds()).padStart(2, '0'),
+      hours: String(now.getHours()).padStart(2, "0"),
+      minutes: String(now.getMinutes()).padStart(2, "0"),
+      seconds: String(now.getSeconds()).padStart(2, "0"),
       tz: timeState.tz,
     };
     setTimeState(newTime);
@@ -886,7 +1043,7 @@ export function DateTimePickerInput({
       const offset = -d.getTimezoneOffset() / 60;
       return offset >= 0 ? `UTC+${offset}` : `UTC${offset}`;
     } catch {
-      return 'UTC';
+      return "UTC";
     }
   }, []);
 
@@ -899,13 +1056,15 @@ export function DateTimePickerInput({
           type="text"
           disabled={disabled}
           value={strVal}
-          placeholder={placeholder || (isDateOnly ? 'YYYY-MM-DD' : 'YYYY-MM-DD HH:MM:SS')}
+          placeholder={
+            placeholder || (isDateOnly ? "YYYY-MM-DD" : "YYYY-MM-DD HH:MM:SS")
+          }
           onChange={(e) => {
             const v = e.target.value;
-            onChange(v === '' ? null : v);
+            onChange(v === "" ? null : v);
           }}
           className={`h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] pl-3 pr-10 text-[14px] text-white font-mono focus:outline-none focus:border-[#3b82f6] transition-colors placeholder-[#555555] ${
-            disabled ? 'opacity-60 cursor-not-allowed bg-[#0d0d0d]' : ''
+            disabled ? "opacity-60 cursor-not-allowed bg-[#0d0d0d]" : ""
           }`}
         />
         {!disabled && (
@@ -930,7 +1089,7 @@ export function DateTimePickerInput({
             <div className="flex items-center justify-between">
               <span className="text-[12.5px] font-semibold text-white flex items-center gap-1.5">
                 <Calendar className="w-3.5 h-3.5 text-[#8c8c8c]" />
-                <span>{isDateOnly ? 'Select Date' : 'Select Date & Time'}</span>
+                <span>{isDateOnly ? "Select Date" : "Select Date & Time"}</span>
               </span>
               <div className="flex items-center gap-1">
                 <button
@@ -970,7 +1129,9 @@ export function DateTimePickerInput({
               <div className="-mx-3 border-t border-[#222222] my-2" />
               <div className="pt-0.5">
                 <div className="flex items-center justify-between text-[11.5px] text-[#8c8c8c] mb-1.5">
-                  <span className="font-medium text-[#cccccc]">Time of Day</span>
+                  <span className="font-medium text-[#cccccc]">
+                    Time of Day
+                  </span>
                   <div className="flex items-center gap-1.5 font-mono text-[10.5px]">
                     <span className="text-[#cccccc] bg-[#141414] px-1.5 py-0.5 rounded border border-[#262626] font-medium">
                       {activeTz}
@@ -991,15 +1152,23 @@ export function DateTimePickerInput({
                         pattern="[0-9]*"
                         value={timeState.hours}
                         onChange={(e) => {
-                          const val = e.target.value.replace(/\D/g, '').slice(0, 2);
+                          const val = e.target.value
+                            .replace(/\D/g, "")
+                            .slice(0, 2);
                           const num = Math.min(23, Number(val) || 0);
-                          const h = val === '' ? '' : String(num).padStart(2, '0');
-                          const newT = { ...timeState, hours: h || '00' };
+                          const h =
+                            val === "" ? "" : String(num).padStart(2, "0");
+                          const newT = { ...timeState, hours: h || "00" };
                           setTimeState(newT);
                           commitValue(selectedDate || new Date(), newT);
                         }}
                         onBlur={() => {
-                          const h = String(Math.max(0, Math.min(23, Number(timeState.hours) || 0))).padStart(2, '0');
+                          const h = String(
+                            Math.max(
+                              0,
+                              Math.min(23, Number(timeState.hours) || 0),
+                            ),
+                          ).padStart(2, "0");
                           const newT = { ...timeState, hours: h };
                           setTimeState(newT);
                           commitValue(selectedDate || new Date(), newT);
@@ -1013,7 +1182,7 @@ export function DateTimePickerInput({
                           onClick={() => {
                             const cur = Number(timeState.hours) || 0;
                             const next = cur >= 23 ? 0 : cur + 1;
-                            const h = String(next).padStart(2, '0');
+                            const h = String(next).padStart(2, "0");
                             const newT = { ...timeState, hours: h };
                             setTimeState(newT);
                             commitValue(selectedDate || new Date(), newT);
@@ -1028,7 +1197,7 @@ export function DateTimePickerInput({
                           onClick={() => {
                             const cur = Number(timeState.hours) || 0;
                             const next = cur <= 0 ? 23 : cur - 1;
-                            const h = String(next).padStart(2, '0');
+                            const h = String(next).padStart(2, "0");
                             const newT = { ...timeState, hours: h };
                             setTimeState(newT);
                             commitValue(selectedDate || new Date(), newT);
@@ -1039,7 +1208,9 @@ export function DateTimePickerInput({
                         </button>
                       </div>
                     </div>
-                    <span className="text-[10px] text-center text-[#777777] mt-1 font-sans">Hours (0-23)</span>
+                    <span className="text-[10px] text-center text-[#777777] mt-1 font-sans">
+                      Hours (0-23)
+                    </span>
                   </div>
 
                   {/* Minutes */}
@@ -1051,15 +1222,23 @@ export function DateTimePickerInput({
                         pattern="[0-9]*"
                         value={timeState.minutes}
                         onChange={(e) => {
-                          const val = e.target.value.replace(/\D/g, '').slice(0, 2);
+                          const val = e.target.value
+                            .replace(/\D/g, "")
+                            .slice(0, 2);
                           const num = Math.min(59, Number(val) || 0);
-                          const m = val === '' ? '' : String(num).padStart(2, '0');
-                          const newT = { ...timeState, minutes: m || '00' };
+                          const m =
+                            val === "" ? "" : String(num).padStart(2, "0");
+                          const newT = { ...timeState, minutes: m || "00" };
                           setTimeState(newT);
                           commitValue(selectedDate || new Date(), newT);
                         }}
                         onBlur={() => {
-                          const m = String(Math.max(0, Math.min(59, Number(timeState.minutes) || 0))).padStart(2, '0');
+                          const m = String(
+                            Math.max(
+                              0,
+                              Math.min(59, Number(timeState.minutes) || 0),
+                            ),
+                          ).padStart(2, "0");
                           const newT = { ...timeState, minutes: m };
                           setTimeState(newT);
                           commitValue(selectedDate || new Date(), newT);
@@ -1073,7 +1252,7 @@ export function DateTimePickerInput({
                           onClick={() => {
                             const cur = Number(timeState.minutes) || 0;
                             const next = cur >= 59 ? 0 : cur + 1;
-                            const m = String(next).padStart(2, '0');
+                            const m = String(next).padStart(2, "0");
                             const newT = { ...timeState, minutes: m };
                             setTimeState(newT);
                             commitValue(selectedDate || new Date(), newT);
@@ -1088,7 +1267,7 @@ export function DateTimePickerInput({
                           onClick={() => {
                             const cur = Number(timeState.minutes) || 0;
                             const next = cur <= 0 ? 59 : cur - 1;
-                            const m = String(next).padStart(2, '0');
+                            const m = String(next).padStart(2, "0");
                             const newT = { ...timeState, minutes: m };
                             setTimeState(newT);
                             commitValue(selectedDate || new Date(), newT);
@@ -1099,7 +1278,9 @@ export function DateTimePickerInput({
                         </button>
                       </div>
                     </div>
-                    <span className="text-[10px] text-center text-[#777777] mt-1 font-sans">Min (0-59)</span>
+                    <span className="text-[10px] text-center text-[#777777] mt-1 font-sans">
+                      Min (0-59)
+                    </span>
                   </div>
 
                   {/* Seconds */}
@@ -1111,15 +1292,23 @@ export function DateTimePickerInput({
                         pattern="[0-9]*"
                         value={timeState.seconds}
                         onChange={(e) => {
-                          const val = e.target.value.replace(/\D/g, '').slice(0, 2);
+                          const val = e.target.value
+                            .replace(/\D/g, "")
+                            .slice(0, 2);
                           const num = Math.min(59, Number(val) || 0);
-                          const s = val === '' ? '' : String(num).padStart(2, '0');
-                          const newT = { ...timeState, seconds: s || '00' };
+                          const s =
+                            val === "" ? "" : String(num).padStart(2, "0");
+                          const newT = { ...timeState, seconds: s || "00" };
                           setTimeState(newT);
                           commitValue(selectedDate || new Date(), newT);
                         }}
                         onBlur={() => {
-                          const s = String(Math.max(0, Math.min(59, Number(timeState.seconds) || 0))).padStart(2, '0');
+                          const s = String(
+                            Math.max(
+                              0,
+                              Math.min(59, Number(timeState.seconds) || 0),
+                            ),
+                          ).padStart(2, "0");
                           const newT = { ...timeState, seconds: s };
                           setTimeState(newT);
                           commitValue(selectedDate || new Date(), newT);
@@ -1133,7 +1322,7 @@ export function DateTimePickerInput({
                           onClick={() => {
                             const cur = Number(timeState.seconds) || 0;
                             const next = cur >= 59 ? 0 : cur + 1;
-                            const s = String(next).padStart(2, '0');
+                            const s = String(next).padStart(2, "0");
                             const newT = { ...timeState, seconds: s };
                             setTimeState(newT);
                             commitValue(selectedDate || new Date(), newT);
@@ -1148,7 +1337,7 @@ export function DateTimePickerInput({
                           onClick={() => {
                             const cur = Number(timeState.seconds) || 0;
                             const next = cur <= 0 ? 59 : cur - 1;
-                            const s = String(next).padStart(2, '0');
+                            const s = String(next).padStart(2, "0");
                             const newT = { ...timeState, seconds: s };
                             setTimeState(newT);
                             commitValue(selectedDate || new Date(), newT);
@@ -1159,7 +1348,9 @@ export function DateTimePickerInput({
                         </button>
                       </div>
                     </div>
-                    <span className="text-[10px] text-center text-[#777777] mt-1 font-sans">Sec (0-59)</span>
+                    <span className="text-[10px] text-center text-[#777777] mt-1 font-sans">
+                      Sec (0-59)
+                    </span>
                   </div>
                 </div>
               </div>
@@ -1171,7 +1362,7 @@ export function DateTimePickerInput({
           {/* Footer */}
           <div className="flex items-center justify-between pt-0.5">
             <span className="text-[12px] text-[#8c8c8c] font-mono truncate max-w-[190px]">
-              {strVal || 'NULL'}
+              {strVal || "NULL"}
             </span>
             <button
               type="button"

@@ -6,10 +6,10 @@
  * Last structural change: Layout audit hardening per UI audit component F5.
  */
 
-import React, { useState, useRef, useEffect } from 'react';
-import { cn } from '../utils/cn';
-import { api } from '../api/client';
-import { getOperatorUser, clearSession } from '../api/session';
+import React, { useState, useRef, useEffect } from "react";
+import { cn } from "../utils/cn";
+import { api } from "../api/client";
+import { getOperatorUser, clearSession } from "../api/session";
 // MobileTabBar removed
 import {
   LayoutDashboard,
@@ -26,20 +26,19 @@ import {
   Table,
   Network,
   History,
-} from 'lucide-react';
+} from "lucide-react";
 
 export type NavPath =
-  | '/system'
-  | '/system/databases'
-  | '/system/tables'
-  | '/system/storage'
-  | '/system/cluster'
-  | '/system/keys'
-  | '/system/roles'
-  | '/system/audit'
-  | '/system/mcp'
-  | '/system/settings';
-
+  | "/system"
+  | "/system/databases"
+  | "/system/tables"
+  | "/system/storage"
+  | "/system/cluster"
+  | "/system/keys"
+  | "/system/roles"
+  | "/system/audit"
+  | "/system/mcp"
+  | "/system/settings";
 
 interface LayoutProps {
   currentPath: NavPath;
@@ -52,12 +51,18 @@ interface LayoutProps {
 /**
  * Main application shell wrapping content with top-level navigation, sidebar, and profile actions.
  */
-export function Layout({ currentPath, onNavigate, title, children, onLogout }: LayoutProps) {
+export function Layout({
+  currentPath,
+  onNavigate,
+  title,
+  children,
+  onLogout,
+}: LayoutProps) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [userOpen, setUserOpen] = useState(false);
   const [searchModalOpen, setSearchModalOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState("");
   const [searchSelectedIndex, setSearchSelectedIndex] = useState(0);
 
   const userRef = useRef<HTMLDivElement>(null);
@@ -65,27 +70,76 @@ export function Layout({ currentPath, onNavigate, title, children, onLogout }: L
 
   // Synchronize document title with active page view
   useEffect(() => {
-    document.title = title ? `${title} — Axiom Gateway` : 'Axiom Gateway';
+    document.title = title ? `${title} — Axiom Gateway` : "Axiom Gateway";
   }, [title]);
 
   const searchItems = [
-    { label: 'Overview', path: '/system' as NavPath, icon: LayoutDashboard, category: 'Overview' },
-    { label: 'Database Pools', path: '/system/databases' as NavPath, icon: Database, category: 'Data & Storage' },
-    { label: 'Table Editor', path: '/system/tables' as NavPath, icon: Table, category: 'Data & Storage' },
-    { label: 'Blob Storage', path: '/system/storage' as NavPath, icon: HardDrive, category: 'Data & Storage' },
-    { label: 'Cluster Mesh', path: '/system/cluster' as NavPath, icon: Network, category: 'Infrastructure' },
-    { label: 'API Keys', path: '/system/keys' as NavPath, icon: Key, category: 'Security & Access' },
-    { label: 'Roles', path: '/system/roles' as NavPath, icon: Shield, category: 'Security & Access' },
-    { label: 'Audit Log', path: '/system/audit' as NavPath, icon: History, category: 'Security & Access' },
-    { label: 'MCP Protocol', path: '/system/mcp' as NavPath, icon: Bot, category: 'Protocols & Tools' },
-    { label: 'Settings', path: '/system/settings' as NavPath, icon: Settings, category: 'Configuration' },
+    {
+      label: "Overview",
+      path: "/system" as NavPath,
+      icon: LayoutDashboard,
+      category: "Overview",
+    },
+    {
+      label: "Database Pools",
+      path: "/system/databases" as NavPath,
+      icon: Database,
+      category: "Data & Storage",
+    },
+    {
+      label: "Table Editor",
+      path: "/system/tables" as NavPath,
+      icon: Table,
+      category: "Data & Storage",
+    },
+    {
+      label: "Blob Storage",
+      path: "/system/storage" as NavPath,
+      icon: HardDrive,
+      category: "Data & Storage",
+    },
+    {
+      label: "Cluster Mesh",
+      path: "/system/cluster" as NavPath,
+      icon: Network,
+      category: "Infrastructure",
+    },
+    {
+      label: "API Keys",
+      path: "/system/keys" as NavPath,
+      icon: Key,
+      category: "Security & Access",
+    },
+    {
+      label: "Roles",
+      path: "/system/roles" as NavPath,
+      icon: Shield,
+      category: "Security & Access",
+    },
+    {
+      label: "Audit Log",
+      path: "/system/audit" as NavPath,
+      icon: History,
+      category: "Security & Access",
+    },
+    {
+      label: "MCP Protocol",
+      path: "/system/mcp" as NavPath,
+      icon: Bot,
+      category: "Protocols & Tools",
+    },
+    {
+      label: "Settings",
+      path: "/system/settings" as NavPath,
+      icon: Settings,
+      category: "Configuration",
+    },
   ];
-
 
   const filteredSearchItems = searchItems.filter(
     (item) =>
       item.label.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      item.category.toLowerCase().includes(searchQuery.toLowerCase())
+      item.category.toLowerCase().includes(searchQuery.toLowerCase()),
   );
 
   useEffect(() => {
@@ -94,26 +148,26 @@ export function Layout({ currentPath, onNavigate, title, children, onLogout }: L
         setUserOpen(false);
       }
     }
-    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener("mousedown", handleClickOutside);
     return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener("mousedown", handleClickOutside);
     };
   }, []);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
         setSearchModalOpen((prev) => !prev);
       }
     };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
   useEffect(() => {
     if (searchModalOpen) {
-      setSearchQuery('');
+      setSearchQuery("");
       setSearchSelectedIndex(0);
       setTimeout(() => searchInputRef.current?.focus(), 50);
     }
@@ -129,21 +183,27 @@ export function Layout({ currentPath, onNavigate, title, children, onLogout }: L
   };
 
   const handleModalKeyDown = (e: React.KeyboardEvent) => {
-    if (filteredSearchItems.length === 0 && (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Enter')) {
+    if (
+      filteredSearchItems.length === 0 &&
+      (e.key === "ArrowDown" || e.key === "ArrowUp" || e.key === "Enter")
+    ) {
       e.preventDefault();
       return;
     }
 
-    if (e.key === 'Escape') {
+    if (e.key === "Escape") {
       e.preventDefault();
       setSearchModalOpen(false);
-    } else if (e.key === 'ArrowDown') {
+    } else if (e.key === "ArrowDown") {
       e.preventDefault();
       setSearchSelectedIndex((prev) => (prev + 1) % filteredSearchItems.length);
-    } else if (e.key === 'ArrowUp') {
+    } else if (e.key === "ArrowUp") {
       e.preventDefault();
-      setSearchSelectedIndex((prev) => (prev - 1 + filteredSearchItems.length) % filteredSearchItems.length);
-    } else if (e.key === 'Enter') {
+      setSearchSelectedIndex(
+        (prev) =>
+          (prev - 1 + filteredSearchItems.length) % filteredSearchItems.length,
+      );
+    } else if (e.key === "Enter") {
       e.preventDefault();
       if (filteredSearchItems[searchSelectedIndex]) {
         handleSearchSelect(filteredSearchItems[searchSelectedIndex].path);
@@ -153,81 +213,81 @@ export function Layout({ currentPath, onNavigate, title, children, onLogout }: L
 
   const navSections = [
     {
-      title: '',
+      title: "",
       items: [
         {
-          path: '/system' as NavPath,
-          label: 'Overview',
+          path: "/system" as NavPath,
+          label: "Overview",
           icon: LayoutDashboard,
         },
       ],
     },
     {
-      title: 'Data & Storage',
+      title: "Data & Storage",
       items: [
         {
-          path: '/system/databases' as NavPath,
-          label: 'Database Pools',
+          path: "/system/databases" as NavPath,
+          label: "Database Pools",
           icon: Database,
         },
         {
-          path: '/system/tables' as NavPath,
-          label: 'Table Editor',
+          path: "/system/tables" as NavPath,
+          label: "Table Editor",
           icon: Table,
         },
         {
-          path: '/system/storage' as NavPath,
-          label: 'Blob Storage',
+          path: "/system/storage" as NavPath,
+          label: "Blob Storage",
           icon: HardDrive,
         },
       ],
     },
     {
-      title: 'Security & Access',
+      title: "Security & Access",
       items: [
         {
-          path: '/system/keys' as NavPath,
-          label: 'API Keys',
+          path: "/system/keys" as NavPath,
+          label: "API Keys",
           icon: Key,
         },
         {
-          path: '/system/roles' as NavPath,
-          label: 'Roles',
+          path: "/system/roles" as NavPath,
+          label: "Roles",
           icon: Shield,
         },
         {
-          path: '/system/audit' as NavPath,
-          label: 'Audit Log',
+          path: "/system/audit" as NavPath,
+          label: "Audit Log",
           icon: History,
         },
       ],
     },
     {
-      title: 'Infrastructure',
+      title: "Infrastructure",
       items: [
         {
-          path: '/system/cluster' as NavPath,
-          label: 'Cluster Mesh',
+          path: "/system/cluster" as NavPath,
+          label: "Cluster Mesh",
           icon: Network,
         },
       ],
     },
     {
-      title: 'Protocols & Tools',
+      title: "Protocols & Tools",
       items: [
         {
-          path: '/system/mcp' as NavPath,
-          label: 'MCP Protocol',
+          path: "/system/mcp" as NavPath,
+          label: "MCP Protocol",
           icon: Bot,
         },
       ],
     },
     {
-      title: 'Configuration',
+      title: "Configuration",
       items: [
         {
-          path: '/system/settings' as NavPath,
-          label: 'Settings',
+          path: "/system/settings" as NavPath,
+          label: "Settings",
           icon: Settings,
         },
       ],
@@ -235,11 +295,16 @@ export function Layout({ currentPath, onNavigate, title, children, onLogout }: L
   ];
 
   // When viewing full-canvas workspaces (Storage or Table Editor), fit 100% viewport and prevent layout double-scroll
-  const isFullPage = currentPath === '/system/storage' || currentPath === '/system/tables';
-
+  const isFullPage =
+    currentPath === "/system/storage" || currentPath === "/system/tables";
 
   return (
-    <div className={cn('flex min-h-screen min-h-dvh w-full bg-[#000000] text-[#f3f4f6] font-sans antialiased', isFullPage && 'h-screen h-dvh overflow-hidden')}>
+    <div
+      className={cn(
+        "flex min-h-screen min-h-dvh w-full bg-[#000000] text-[#f3f4f6] font-sans antialiased",
+        isFullPage && "h-screen h-dvh overflow-hidden",
+      )}
+    >
       {/* Mobile Drawer Backdrop */}
       {isSidebarOpen && (
         <div
@@ -252,23 +317,25 @@ export function Layout({ currentPath, onNavigate, title, children, onLogout }: L
       <aside
         data-sidebar="sidebar"
         className={cn(
-          'flex min-h-screen min-h-dvh shrink-0 flex-col bg-[#000000] border-r border-[#222222] transition-[width,transform] duration-200 select-none z-40',
-          isCollapsed ? 'w-[58px]' : 'w-[260px]',
-          'fixed md:sticky top-0 h-screen h-dvh',
-          isSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
+          "flex min-h-screen min-h-dvh shrink-0 flex-col bg-[#000000] border-r border-[#222222] transition-[width,transform] duration-200 select-none z-40",
+          isCollapsed ? "w-[58px]" : "w-[260px]",
+          "fixed md:sticky top-0 h-screen h-dvh",
+          isSidebarOpen
+            ? "translate-x-0"
+            : "-translate-x-full md:translate-x-0",
         )}
       >
         {/* Top Header: Brand Name and Version */}
         <div
           data-sidebar="header"
           className={cn(
-            'flex h-[58px] shrink-0 items-center justify-center border-b border-[#222222] transition-[padding] duration-200 select-none relative z-30 pt-safe',
-            isCollapsed ? 'px-2' : 'px-4'
+            "flex h-[58px] shrink-0 items-center justify-center border-b border-[#222222] transition-[padding] duration-200 select-none relative z-30 pt-safe",
+            isCollapsed ? "px-2" : "px-4",
           )}
         >
           <button
             onClick={() => {
-              onNavigate('/system');
+              onNavigate("/system");
               setIsSidebarOpen(false);
             }}
             aria-label="Axiom Gateway"
@@ -321,9 +388,12 @@ export function Layout({ currentPath, onNavigate, title, children, onLogout }: L
                   className="group items-center select-none border-0 rounded-[8px] bg-[#0c0c0c] text-[#d4d4d4] ring-1 ring-[#262626] hover:ring-[#3b82f6] flex h-8 text-sm font-normal shrink-0 w-full overflow-hidden px-3 gap-2.5 transition-all cursor-pointer text-left"
                 >
                   <Search className="w-3.5 h-3.5 text-[#8c8c8c] shrink-0 opacity-60" />
-                  <span className="w-full text-xs text-[#8c8c8c] font-normal flex-1">Quick search...</span>
+                  <span className="w-full text-xs text-[#8c8c8c] font-normal flex-1">
+                    Quick search...
+                  </span>
                   <kbd className="ml-auto font-sans text-xs font-semibold text-[#d4d4d4] whitespace-nowrap select-none pointer-events-none shrink-0">
-                    <span className="text-[#8c8c8c] font-medium">Ctrl</span>&nbsp;K
+                    <span className="text-[#8c8c8c] font-medium">Ctrl</span>
+                    &nbsp;K
                   </kbd>
                 </button>
               </div>
@@ -331,12 +401,22 @@ export function Layout({ currentPath, onNavigate, title, children, onLogout }: L
           </div>
 
           {/* Navigation Menu Tree */}
-          <ul data-sidebar="menu" className="m-0 flex min-w-0 list-none flex-col items-stretch gap-y-px p-0">
+          <ul
+            data-sidebar="menu"
+            className="m-0 flex min-w-0 list-none flex-col items-stretch gap-y-px p-0"
+          >
             {navSections.map((section, idx) => (
-              <div key={idx} data-sidebar="group" className="flex min-w-0 flex-col gap-y-px">
+              <div
+                key={idx}
+                data-sidebar="group"
+                className="flex min-w-0 flex-col gap-y-px"
+              >
                 {/* Section Group Label (Cloudflare title-case) */}
                 {!isCollapsed && section.title && (
-                  <div data-sidebar="group-label" className="grid overflow-hidden">
+                  <div
+                    data-sidebar="group-label"
+                    className="grid overflow-hidden"
+                  >
                     <div className="mt-4 mb-2 truncate px-3 text-sm font-medium text-[#8c8c8c]">
                       {section.title}
                     </div>
@@ -349,7 +429,11 @@ export function Layout({ currentPath, onNavigate, title, children, onLogout }: L
                   const isActive = currentPath === item.path;
 
                   return (
-                    <li key={item.path} data-sidebar="menu-item" className="relative">
+                    <li
+                      key={item.path}
+                      data-sidebar="menu-item"
+                      className="relative"
+                    >
                       <button
                         type="button"
                         onClick={() => {
@@ -358,20 +442,25 @@ export function Layout({ currentPath, onNavigate, title, children, onLogout }: L
                         }}
                         title={item.label}
                         className={cn(
-                          'group/menu-button relative flex w-full min-w-0 cursor-pointer items-center rounded-[8px] outline-none min-h-[34px] py-0 text-sm font-medium transition-colors duration-200',
-                          isCollapsed ? 'justify-center px-0' : 'gap-2.5 px-3',
+                          "group/menu-button relative flex w-full min-w-0 cursor-pointer items-center rounded-[8px] outline-none min-h-[34px] py-0 text-sm font-medium transition-colors duration-200",
+                          isCollapsed ? "justify-center px-0" : "gap-2.5 px-3",
                           isActive
-                            ? 'bg-[#111111] text-white'
-                            : 'bg-transparent text-[#d4d4d4] hover:bg-[#161616] hover:text-white'
+                            ? "bg-[#111111] text-white"
+                            : "bg-transparent text-[#d4d4d4] hover:bg-[#161616] hover:text-white",
                         )}
                       >
-                        <div className={cn('flex min-w-0 flex-1 items-center', isCollapsed ? 'justify-center' : 'gap-3')}>
+                        <div
+                          className={cn(
+                            "flex min-w-0 flex-1 items-center",
+                            isCollapsed ? "justify-center" : "gap-3",
+                          )}
+                        >
                           <Icon
                             className={cn(
-                              'w-4 h-4 shrink-0 transition duration-200',
+                              "w-4 h-4 shrink-0 transition duration-200",
                               isActive
-                                ? 'opacity-100 text-[#3b82f6]'
-                                : 'opacity-50 group-hover/menu-button:opacity-80'
+                                ? "opacity-100 text-[#3b82f6]"
+                                : "opacity-50 group-hover/menu-button:opacity-80",
                             )}
                           />
                           {!isCollapsed && (
@@ -393,15 +482,15 @@ export function Layout({ currentPath, onNavigate, title, children, onLogout }: L
         <div
           data-sidebar="footer"
           className={cn(
-            'flex h-12 min-h-[48px] shrink-0 items-center border-t border-[#222222] whitespace-nowrap bg-[#000000] sticky bottom-0 z-20 transition-all',
-            isCollapsed ? 'px-2 justify-center' : 'px-4'
+            "flex h-12 min-h-[48px] shrink-0 items-center border-t border-[#222222] whitespace-nowrap bg-[#000000] sticky bottom-0 z-20 transition-all",
+            isCollapsed ? "px-2 justify-center" : "px-4",
           )}
         >
           <button
             type="button"
             data-sidebar="trigger"
-            aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-            title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+            title={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
             onClick={() => setIsCollapsed(!isCollapsed)}
             className="flex w-[34px] h-[34px] shrink-0 items-center justify-center rounded-[8px] text-[#8c8c8c] hover:bg-[#161616] hover:text-neutral-200 cursor-pointer transition-colors"
           >
@@ -420,8 +509,8 @@ export function Layout({ currentPath, onNavigate, title, children, onLogout }: L
               <path
                 d="M6.25 7.25v9.5"
                 className={cn(
-                  'transition-transform duration-200',
-                  isCollapsed ? 'translate-x-1' : 'translate-x-px'
+                  "transition-transform duration-200",
+                  isCollapsed ? "translate-x-1" : "translate-x-px",
                 )}
               />
             </svg>
@@ -430,7 +519,12 @@ export function Layout({ currentPath, onNavigate, title, children, onLogout }: L
       </aside>
 
       {/* Main Workspace Frame */}
-      <div className={cn('flex-1 flex flex-col min-w-0 min-h-screen min-h-dvh bg-[#000000]', isFullPage && 'min-h-0 h-screen h-dvh overflow-hidden')}>
+      <div
+        className={cn(
+          "flex-1 flex flex-col min-w-0 min-h-screen min-h-dvh bg-[#000000]",
+          isFullPage && "min-h-0 h-screen h-dvh overflow-hidden",
+        )}
+      >
         {/* Top Header Bar */}
         <header className="h-[58px] bg-[#000000] shrink-0 border-b border-[#222222] flex items-center px-3 sm:px-6 z-20 sticky top-0 gap-2 select-none justify-between pt-safe">
           <div className="flex items-center gap-2 min-w-0">
@@ -443,7 +537,7 @@ export function Layout({ currentPath, onNavigate, title, children, onLogout }: L
               <Menu className="w-5 h-5" />
             </button>
             <span className="md:hidden text-[15px] font-semibold text-white tracking-tight truncate">
-              {title || 'Axiom'}
+              {title || "Axiom"}
             </span>
           </div>
 
@@ -471,10 +565,10 @@ export function Layout({ currentPath, onNavigate, title, children, onLogout }: L
                 type="button"
                 onClick={() => setUserOpen(!userOpen)}
                 className={cn(
-                  'group flex shrink-0 font-medium select-none border-0 focus:outline-none cursor-pointer gap-1.5 rounded-lg text-sm items-center justify-center p-0 shadow-none size-8 transition-colors',
+                  "group flex shrink-0 font-medium select-none border-0 focus:outline-none cursor-pointer gap-1.5 rounded-lg text-sm items-center justify-center p-0 shadow-none size-8 transition-colors",
                   userOpen
-                    ? 'text-white bg-[#1a1a1a]'
-                    : 'text-[#8c8c8c] hover:text-white hover:bg-[#161616]'
+                    ? "text-white bg-[#1a1a1a]"
+                    : "text-[#8c8c8c] hover:text-white hover:bg-[#161616]",
                 )}
                 aria-label="User menu"
               >
@@ -512,7 +606,7 @@ export function Layout({ currentPath, onNavigate, title, children, onLogout }: L
                     <button
                       type="button"
                       onClick={() => {
-                        onNavigate('/system/settings');
+                        onNavigate("/system/settings");
                         setUserOpen(false);
                       }}
                       className="w-full flex items-center gap-2.5 px-2.5 py-1.5 text-[14px] font-normal text-[#d4d4d4] hover:text-white hover:bg-[#1a1a1a] rounded-lg transition-colors cursor-pointer text-left"
@@ -523,7 +617,7 @@ export function Layout({ currentPath, onNavigate, title, children, onLogout }: L
                     <button
                       type="button"
                       onClick={() => {
-                        onNavigate('/system/keys');
+                        onNavigate("/system/keys");
                         setUserOpen(false);
                       }}
                       className="w-full flex items-center gap-2.5 px-2.5 py-1.5 text-[14px] font-normal text-[#d4d4d4] hover:text-white hover:bg-[#1a1a1a] rounded-lg transition-colors cursor-pointer text-left"
@@ -550,7 +644,7 @@ export function Layout({ currentPath, onNavigate, title, children, onLogout }: L
                         onLogout();
                       } else {
                         clearSession();
-                        window.location.href = '/system';
+                        window.location.href = "/system";
                       }
                     }}
                     className="w-full flex items-center gap-2.5 px-2.5 py-1.5 text-[14px] font-normal text-[#d4d4d4] hover:text-white hover:bg-[#1a1a1a] rounded-lg transition-colors cursor-pointer text-left"
@@ -568,8 +662,8 @@ export function Layout({ currentPath, onNavigate, title, children, onLogout }: L
         <main
           className={
             isFullPage
-              ? 'flex-1 w-full min-w-0 p-0 max-w-none h-[calc(100vh-58px)] max-h-[calc(100dvh-58px)] overflow-hidden flex flex-col pb-safe'
-              : 'flex-1 p-3 sm:p-6 w-full max-w-[1600px] mx-auto min-w-0 pb-safe'
+              ? "flex-1 w-full min-w-0 p-0 max-w-none h-[calc(100vh-58px)] max-h-[calc(100dvh-58px)] overflow-hidden flex flex-col pb-safe"
+              : "flex-1 p-3 sm:p-6 w-full max-w-[1600px] mx-auto min-w-0 pb-safe"
           }
         >
           {children}
@@ -596,7 +690,10 @@ export function Layout({ currentPath, onNavigate, title, children, onLogout }: L
                 </li>
 
                 {/* Divider */}
-                <li aria-hidden="true" className="h-3.5 w-px bg-[#262626] mx-3.5 shrink-0" />
+                <li
+                  aria-hidden="true"
+                  className="h-3.5 w-px bg-[#262626] mx-3.5 shrink-0"
+                />
 
                 {/* GitHub */}
                 <li className="flex items-center">
@@ -623,7 +720,10 @@ export function Layout({ currentPath, onNavigate, title, children, onLogout }: L
                 </li>
 
                 {/* Divider */}
-                <li aria-hidden="true" className="h-3.5 w-px bg-[#262626] mx-3.5 shrink-0" />
+                <li
+                  aria-hidden="true"
+                  className="h-3.5 w-px bg-[#262626] mx-3.5 shrink-0"
+                />
 
                 {/* Copyright */}
                 <li className="flex items-center">
@@ -683,20 +783,26 @@ export function Layout({ currentPath, onNavigate, title, children, onLogout }: L
                         type="button"
                         onClick={() => handleSearchSelect(item.path)}
                         className={cn(
-                          'w-full flex items-center px-3 sm:px-3.5 py-3 sm:py-2.5 rounded-lg text-sm transition-colors cursor-pointer text-left',
+                          "w-full flex items-center px-3 sm:px-3.5 py-3 sm:py-2.5 rounded-lg text-sm transition-colors cursor-pointer text-left",
                           index === searchSelectedIndex
-                            ? 'bg-[#1a1a1a] text-white'
-                            : 'text-[#8c8c8c] hover:bg-[#141414] hover:text-white'
+                            ? "bg-[#1a1a1a] text-white"
+                            : "text-[#8c8c8c] hover:bg-[#141414] hover:text-white",
                         )}
                       >
                         <Icon
                           className={cn(
-                            'w-4 h-4 mr-3 shrink-0',
-                            index === searchSelectedIndex ? 'text-[#3b82f6] opacity-100' : 'opacity-60'
+                            "w-4 h-4 mr-3 shrink-0",
+                            index === searchSelectedIndex
+                              ? "text-[#3b82f6] opacity-100"
+                              : "opacity-60",
                           )}
                         />
-                        <span className="flex-1 truncate font-medium">{item.label}</span>
-                        <span className="text-[11px] text-[#666666] font-normal">{item.category}</span>
+                        <span className="flex-1 truncate font-medium">
+                          {item.label}
+                        </span>
+                        <span className="text-[11px] text-[#666666] font-normal">
+                          {item.category}
+                        </span>
                       </button>
                     );
                   })

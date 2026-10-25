@@ -13,7 +13,7 @@ use axiom_metadata::MetadataStore;
 use axiom_policy::PolicyEngine;
 use axum::{
     body::Body,
-    extract::{Extension, Path, Query},
+    extract::{Extension, Path, Query, RawQuery},
     http::{header, HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     Json,
@@ -188,9 +188,10 @@ pub async fn put_blob_handler(
 /// CONTRACT:
 ///  - Precondition: Caller must be authorized for `READ` on `namespace/key`.
 ///  - Supports: HTTP 206 Partial Content via `Range: bytes=start-end`.
-///  - Enforces: `nosniff`, `attachment` disposition (stored XSS defense), ETag calculation.
+///  - Enforces: `nosniff`, `attachment` disposition by default (or `inline` when requested via `inline=1`), ETag calculation.
 pub async fn get_blob_handler(
     Path((namespace, key)): Path<(String, String)>,
+    RawQuery(raw_query): RawQuery,
     Extension(auth): Extension<AuthContext>,
     headers: HeaderMap,
 ) -> Result<Response, AxiomError> {
@@ -204,7 +205,18 @@ pub async fn get_blob_handler(
         .chars()
         .filter(|c| c.is_ascii_alphanumeric() || *c == '.' || *c == '-' || *c == '_')
         .collect();
-    let disposition = format!("attachment; filename=\"{}\"", safe_filename);
+
+    // Check if inline disposition is explicitly requested (e.g. video/audio streaming or preview)
+    let is_inline = raw_query
+        .as_deref()
+        .map(|q| q.contains("inline=1") || q.contains("inline=true"))
+        .unwrap_or(false);
+
+    let disposition = if is_inline {
+        format!("inline; filename=\"{}\"", safe_filename)
+    } else {
+        format!("attachment; filename=\"{}\"", safe_filename)
+    };
 
     // Check for HTTP Range header. Max single range: 256 MB (bandwidth/DoS cap, L-fix).
     // Malformed or multi-range headers fail closed with 416 (was: silent full 200).
@@ -293,6 +305,11 @@ pub async fn get_blob_handler(
             byte_range.start, byte_range.end, byte_range.total
         );
 
+        let is_media = is_inline
+            || meta.content_type.starts_with("video/")
+            || meta.content_type.starts_with("audio/")
+            || meta.content_type.starts_with("image/");
+
         let response_builder = Response::builder()
             .status(StatusCode::PARTIAL_CONTENT)
             .header(header::CONTENT_TYPE, meta.content_type)
@@ -301,7 +318,15 @@ pub async fn get_blob_handler(
             .header(header::ACCEPT_RANGES, "bytes")
             .header(header::ETAG, etag_val)
             .header(header::X_CONTENT_TYPE_OPTIONS, "nosniff")
-            .header(header::CONTENT_DISPOSITION, disposition);
+            .header(header::CONTENT_DISPOSITION, disposition.clone())
+            .header(
+                header::CONTENT_SECURITY_POLICY,
+                if is_media {
+                    "default-src 'none'; media-src 'self' * blob: data:; img-src 'self' * blob: data:; style-src 'unsafe-inline'; font-src 'self' data:;"
+                } else {
+                    "default-src 'none'; frame-ancestors 'none';"
+                },
+            );
 
         return match data {
             BlobData::Inline(bytes) => {
@@ -342,6 +367,11 @@ pub async fn get_blob_handler(
         }
     }
 
+    let is_media = is_inline
+        || meta.content_type.starts_with("video/")
+        || meta.content_type.starts_with("audio/")
+        || meta.content_type.starts_with("image/");
+
     let response_builder = Response::builder()
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, meta.content_type)
@@ -349,7 +379,15 @@ pub async fn get_blob_handler(
         .header(header::ACCEPT_RANGES, "bytes")
         .header(header::ETAG, etag_val)
         .header(header::X_CONTENT_TYPE_OPTIONS, "nosniff")
-        .header(header::CONTENT_DISPOSITION, disposition);
+        .header(header::CONTENT_DISPOSITION, disposition)
+        .header(
+            header::CONTENT_SECURITY_POLICY,
+            if is_media {
+                "default-src 'none'; media-src 'self' * blob: data:; img-src 'self' * blob: data:; style-src 'unsafe-inline'; font-src 'self' data:;"
+            } else {
+                "default-src 'none'; frame-ancestors 'none';"
+            },
+        );
 
     match data {
         BlobData::Inline(bytes) => {
@@ -542,6 +580,84 @@ pub async fn list_namespaces_handler(
     })))
 }
 
+/// Handler returning storage quota, used bytes, space left, and object count for a namespace.
+pub async fn get_namespace_usage_handler(
+    Path(namespace): Path<String>,
+    Extension(auth): Extension<AuthContext>,
+) -> Result<impl IntoResponse, AxiomError> {
+    if !auth.is_session && auth.role.as_deref() != Some("admin") {
+        PolicyEngine::evaluate_blob(&auth, &namespace, "*", "READ")?;
+    }
+
+    let engine = get_blob_engine()?;
+    let info = engine
+        .get_namespace(&namespace)
+        .map_err(map_blob_error)?
+        .ok_or_else(|| {
+            AxiomError::new(
+                "NAMESPACE_NOT_FOUND",
+                &format!("Namespace '{}' not found", namespace),
+                StatusCode::NOT_FOUND,
+            )
+        })?;
+
+    let max_bytes = info.max_bytes;
+    let used_bytes = info.total_bytes;
+    let remaining_bytes = max_bytes.map(|max| max.saturating_sub(used_bytes));
+    let percent_used = max_bytes.map(|max| {
+        if max > 0 {
+            ((used_bytes as f64 / max as f64) * 100.0).min(100.0)
+        } else {
+            0.0
+        }
+    });
+    let is_quota_exceeded = max_bytes.map(|max| used_bytes >= max).unwrap_or(false);
+
+    Ok(Json(json!({
+        "success": true,
+        "data": {
+            "namespace": info.name,
+            "created_at": info.created_at,
+            "is_public": info.is_public,
+            "max_bytes": max_bytes,
+            "used_bytes": used_bytes,
+            "remaining_bytes": remaining_bytes,
+            "percent_used": percent_used,
+            "total_objects": info.total_objects,
+            "is_quota_exceeded": is_quota_exceeded,
+        },
+        "error": serde_json::Value::Null
+    })))
+}
+
+/// Handler returning detailed metadata for a specific storage namespace.
+pub async fn get_namespace_handler(
+    Path(namespace): Path<String>,
+    Extension(auth): Extension<AuthContext>,
+) -> Result<impl IntoResponse, AxiomError> {
+    if !auth.is_session && auth.role.as_deref() != Some("admin") {
+        PolicyEngine::evaluate_blob(&auth, &namespace, "*", "READ")?;
+    }
+
+    let engine = get_blob_engine()?;
+    let info = engine
+        .get_namespace(&namespace)
+        .map_err(map_blob_error)?
+        .ok_or_else(|| {
+            AxiomError::new(
+                "NAMESPACE_NOT_FOUND",
+                &format!("Namespace '{}' not found", namespace),
+                StatusCode::NOT_FOUND,
+            )
+        })?;
+
+    Ok(Json(json!({
+        "success": true,
+        "data": info,
+        "error": serde_json::Value::Null
+    })))
+}
+
 /// Administrative handler creating a new storage namespace with an optional quota.
 pub async fn create_namespace_handler(
     Extension(auth): Extension<AuthContext>,
@@ -637,12 +753,8 @@ pub async fn verify_blob_handler(
     Path((namespace, key)): Path<(String, String)>,
     Extension(auth): Extension<AuthContext>,
 ) -> Result<impl IntoResponse, AxiomError> {
-    if !auth.is_session {
-        return Err(AxiomError::new(
-            "FORBIDDEN",
-            "Admin session required to verify object integrity",
-            StatusCode::FORBIDDEN,
-        ));
+    if !auth.is_session && auth.role.as_deref() != Some("admin") {
+        PolicyEngine::evaluate_blob(&auth, &namespace, &key, "READ")?;
     }
 
     let engine = get_blob_engine()?;
@@ -766,7 +878,6 @@ pub async fn copy_blob_handler(
     }
 }
 
-/// Handler moving or renaming an object or folder prefix.
 pub async fn move_blob_handler(
     Extension(auth): Extension<AuthContext>,
     Json(payload): Json<MoveBlobRequest>,
@@ -850,6 +961,30 @@ pub async fn move_blob_handler(
     }
 }
 
+/// Scoped handler for copying an object or prefix via /objects/:namespace/copy.
+pub async fn copy_blob_scoped_handler(
+    Path(namespace): Path<String>,
+    Extension(auth): Extension<AuthContext>,
+    Json(mut payload): Json<CopyBlobRequest>,
+) -> Result<impl IntoResponse, AxiomError> {
+    if payload.src_namespace.is_none() {
+        payload.src_namespace = Some(namespace);
+    }
+    copy_blob_handler(Extension(auth), Json(payload)).await
+}
+
+/// Scoped handler for moving or renaming an object or prefix via /objects/:namespace/move.
+pub async fn move_blob_scoped_handler(
+    Path(namespace): Path<String>,
+    Extension(auth): Extension<AuthContext>,
+    Json(mut payload): Json<MoveBlobRequest>,
+) -> Result<impl IntoResponse, AxiomError> {
+    if payload.src_namespace.is_none() {
+        payload.src_namespace = Some(namespace);
+    }
+    move_blob_handler(Extension(auth), Json(payload)).await
+}
+
 /// Handler deleting an entire directory/prefix.
 pub async fn delete_prefix_handler(
     Extension(auth): Extension<AuthContext>,
@@ -911,6 +1046,23 @@ pub async fn create_ticket_handler(
         .map_err(|e| AxiomError::new("BAD_TICKET_OP", &e.to_string(), StatusCode::BAD_REQUEST))?;
     PolicyEngine::evaluate_blob(&auth, &namespace, &payload.key, &op)?;
 
+    // Public namespaces do not support/require capability tickets for reading; public CDN URLs must be used.
+    let engine = get_blob_engine()?;
+    if engine
+        .is_namespace_public(&namespace)
+        .map_err(map_blob_error)?
+        && op == "READ"
+    {
+        return Err(AxiomError::new(
+            "PUBLIC_NAMESPACE_TICKET_DISABLED",
+            &format!(
+                "Namespace '{}' is public. Capability tickets are disabled for public namespaces; access objects directly via the public CDN endpoint (/api/v1/blobs/public/{}/...).",
+                namespace, namespace
+            ),
+            StatusCode::BAD_REQUEST,
+        ));
+    }
+
     let secret = axiom_blob::tickets::get_ticket_secret();
 
     let ttl = payload
@@ -960,7 +1112,7 @@ pub async fn create_ticket_handler(
     .await;
 
     let url = format!(
-        "/api/v1/blobs/{}/{}?ticket_sig={}&ticket_exp={}",
+        "/api/v1/blobs/objects/{}/{}?ticket_sig={}&ticket_exp={}",
         urlencoding::encode(&namespace),
         urlencoding::encode(&payload.key),
         ticket.signature,
@@ -988,13 +1140,112 @@ pub async fn create_ticket_handler(
 }
 
 #[derive(Debug, Deserialize)]
+pub struct CreateUploadLinkRequest {
+    pub key: String,
+    pub content_type: Option<String>,
+    pub ttl_seconds: Option<u64>,
+}
+
+/// Generates a pre-signed capability upload URL for direct browser or client upload.
+pub async fn create_upload_link_handler(
+    Path(namespace): Path<String>,
+    Extension(auth): Extension<AuthContext>,
+    Json(payload): Json<CreateUploadLinkRequest>,
+) -> Result<impl IntoResponse, AxiomError> {
+    if !auth.is_session && auth.role.as_deref() != Some("admin") {
+        PolicyEngine::evaluate_blob(&auth, &namespace, &payload.key, "WRITE")?;
+    }
+
+    let secret = axiom_blob::tickets::get_ticket_secret();
+    let ttl = payload
+        .ttl_seconds
+        .unwrap_or(axiom_blob::tickets::DEFAULT_TICKET_TTL_SECS)
+        .clamp(
+            axiom_blob::tickets::MIN_TICKET_TTL_SECS,
+            axiom_blob::tickets::MAX_TICKET_TTL_SECS,
+        );
+
+    let ticket = axiom_blob::generate_ticket(secret, &namespace, &payload.key, "WRITE", ttl);
+    let ticket_id = axiom_core::uuid7();
+    let creator = if auth.is_session {
+        if !auth.api_key_name.is_empty() {
+            &auth.api_key_name
+        } else {
+            "admin"
+        }
+    } else {
+        &auth.api_key_name
+    };
+
+    if let Err(e) = MetadataStore::record_blob_ticket(
+        &ticket_id,
+        &namespace,
+        &payload.key,
+        "WRITE",
+        ticket.expires_at,
+        &ticket.signature,
+        creator,
+    )
+    .await
+    {
+        tracing::error!(
+            "Failed to record upload capability ticket in database: {}",
+            e
+        );
+        return Err(AxiomError::new(
+            "TICKET_RECORD_FAILED",
+            &format!("Failed to record capability ticket: {}", e),
+            StatusCode::INTERNAL_SERVER_ERROR,
+        ));
+    }
+
+    let _ = MetadataStore::record_audit(
+        creator,
+        "blob.upload_link_created",
+        &format!("{}/{}", namespace, payload.key),
+        Some(&format!("expires_at={}", ticket.expires_at)),
+    )
+    .await;
+
+    let url = format!(
+        "/api/v1/blobs/objects/{}/{}?ticket_sig={}&ticket_exp={}",
+        urlencoding::encode(&namespace),
+        urlencoding::encode(&payload.key),
+        ticket.signature,
+        ticket.expires_at
+    );
+
+    let mut headers = serde_json::Map::new();
+    if let Some(ct) = payload.content_type {
+        headers.insert("Content-Type".to_string(), serde_json::Value::String(ct));
+    }
+
+    Ok((
+        StatusCode::CREATED,
+        Json(json!({
+            "success": true,
+            "data": {
+                "url": url,
+                "method": "PUT",
+                "headers": headers,
+                "expires_at": ticket.expires_at,
+                "signature": ticket.signature
+            },
+            "error": serde_json::Value::Null
+        })),
+    ))
+}
+
+#[derive(Debug, Deserialize)]
 pub struct ListTicketsQuery {
     pub namespace: Option<String>,
     pub key: Option<String>,
     pub all: Option<bool>,
+    pub cursor: Option<String>,
+    pub limit: Option<usize>,
 }
 
-/// Administrative handler listing active or all capability tickets.
+/// Administrative handler listing active or all capability tickets across the cluster with keyset pagination.
 pub async fn list_tickets_handler(
     Extension(auth): Extension<AuthContext>,
     Query(query): Query<ListTicketsQuery>,
@@ -1011,18 +1262,21 @@ pub async fn list_tickets_handler(
     let key = query.key.as_deref();
     // Default to true so active, revoked, and recently expired tickets are all returned to the dashboard
     let include_expired = query.all.unwrap_or(true);
+    let cursor = query.cursor.as_deref();
+    let limit = query.limit;
 
-    let tickets = MetadataStore::list_blob_tickets(ns, key, include_expired)
-        .await
-        .map_err(|e| {
-            AxiomError::new("TICKET_LIST_FAILED", &e, StatusCode::INTERNAL_SERVER_ERROR)
-        })?;
+    let (tickets, next_cursor) =
+        MetadataStore::list_blob_tickets(ns, key, include_expired, cursor, limit)
+            .await
+            .map_err(|e| {
+                AxiomError::new("TICKET_LIST_FAILED", &e, StatusCode::INTERNAL_SERVER_ERROR)
+            })?;
 
     let formatted: Vec<_> = tickets
         .into_iter()
         .map(|t| {
             let url = format!(
-                "/api/v1/blobs/{}/{}?ticket_sig={}&ticket_exp={}",
+                "/api/v1/blobs/objects/{}/{}?ticket_sig={}&ticket_exp={}",
                 urlencoding::encode(&t.namespace),
                 urlencoding::encode(&t.key),
                 t.signature,
@@ -1045,7 +1299,67 @@ pub async fn list_tickets_handler(
 
     Ok(Json(json!({
         "success": true,
-        "data": formatted,
+        "data": {
+            "items": formatted,
+            "next_cursor": next_cursor
+        },
+        "error": serde_json::Value::Null
+    })))
+}
+
+/// Handler listing capability tickets scoped to a specific namespace with keyset pagination.
+pub async fn list_namespace_tickets_handler(
+    Path(namespace): Path<String>,
+    Query(query): Query<ListTicketsQuery>,
+    Extension(auth): Extension<AuthContext>,
+) -> Result<impl IntoResponse, AxiomError> {
+    if !auth.is_session && auth.role.as_deref() != Some("admin") {
+        PolicyEngine::evaluate_blob(&auth, &namespace, "*", "READ")?;
+    }
+
+    let key = query.key.as_deref();
+    let include_expired = query.all.unwrap_or(true);
+    let cursor = query.cursor.as_deref();
+    let limit = query.limit;
+
+    let (tickets, next_cursor) =
+        MetadataStore::list_blob_tickets(&namespace, key, include_expired, cursor, limit)
+            .await
+            .map_err(|e| {
+                AxiomError::new("TICKET_LIST_FAILED", &e, StatusCode::INTERNAL_SERVER_ERROR)
+            })?;
+
+    let formatted: Vec<_> = tickets
+        .into_iter()
+        .map(|t| {
+            let url = format!(
+                "/api/v1/blobs/objects/{}/{}?ticket_sig={}&ticket_exp={}",
+                urlencoding::encode(&t.namespace),
+                urlencoding::encode(&t.key),
+                t.signature,
+                t.expires_at
+            );
+            json!({
+                "id": t.id,
+                "namespace": t.namespace,
+                "key": t.key,
+                "operation": t.operation,
+                "expires_at": t.expires_at,
+                "signature": t.signature,
+                "created_by": t.created_by,
+                "created_at": t.created_at,
+                "revoked": t.revoked,
+                "url": url,
+            })
+        })
+        .collect();
+
+    Ok(Json(json!({
+        "success": true,
+        "data": {
+            "items": formatted,
+            "next_cursor": next_cursor
+        },
         "error": serde_json::Value::Null
     })))
 }
@@ -1062,6 +1376,11 @@ pub async fn revoke_ticket_handler(
             StatusCode::FORBIDDEN,
         ));
     }
+
+    // Find the exact ticket signature before revoking in SQLite
+    let ticket_sig = MetadataStore::find_blob_ticket_signature(&signature_or_id)
+        .await
+        .unwrap_or(None);
 
     let found = MetadataStore::revoke_blob_ticket(&signature_or_id)
         .await
@@ -1081,15 +1400,23 @@ pub async fn revoke_ticket_handler(
         ));
     }
 
-    // Write instant revocation key to CacheEngine L1 RAM
-    let cache_key = format!("ticket:revoked:{}", signature_or_id);
-    axiom_cache::CacheEngine::set(
-        &cache_key,
-        bytes::Bytes::from_static(b"1"),
-        86_400,
-        axiom_cache::Durability::MemoryOnly,
-    )
-    .await;
+    // Write instant revocation key to CacheEngine L1 RAM for both ID and cryptographic signature
+    let mut sigs_to_invalidate = vec![signature_or_id.clone()];
+    if let Some(ref s) = ticket_sig {
+        if s != &signature_or_id {
+            sigs_to_invalidate.push(s.clone());
+        }
+    }
+    for s in &sigs_to_invalidate {
+        axiom_cache::CacheEngine::delete(&format!("ticket:valid:{}", s)).await;
+        axiom_cache::CacheEngine::set(
+            &format!("ticket:revoked:{}", s),
+            bytes::Bytes::from_static(b"1"),
+            86_400,
+            axiom_cache::Durability::MemoryOnly,
+        )
+        .await;
+    }
 
     let actor = if auth.is_session {
         "admin"
@@ -1111,6 +1438,74 @@ pub async fn revoke_ticket_handler(
     })))
 }
 
+/// Administrative handler re-enabling a revoked capability ticket.
+pub async fn enable_ticket_handler(
+    Path(signature_or_id): Path<String>,
+    Extension(auth): Extension<AuthContext>,
+) -> Result<impl IntoResponse, AxiomError> {
+    if !auth.is_session && auth.role.as_deref() != Some("admin") {
+        return Err(AxiomError::new(
+            "AUTH_FORBIDDEN",
+            "Enabling capability tickets requires administrative access",
+            StatusCode::FORBIDDEN,
+        ));
+    }
+
+    // Find the exact ticket signature before enabling in SQLite
+    let ticket_sig = MetadataStore::find_blob_ticket_signature(&signature_or_id)
+        .await
+        .unwrap_or(None);
+
+    let found = MetadataStore::enable_blob_ticket(&signature_or_id)
+        .await
+        .map_err(|e| {
+            AxiomError::new(
+                "TICKET_ENABLE_FAILED",
+                &e,
+                StatusCode::INTERNAL_SERVER_ERROR,
+            )
+        })?;
+
+    if !found {
+        return Err(AxiomError::new(
+            "NOT_FOUND",
+            "Capability ticket not found or already active",
+            StatusCode::NOT_FOUND,
+        ));
+    }
+
+    // Clear revocation tombstone from CacheEngine L1 RAM for both ID and cryptographic signature
+    let mut sigs_to_clear = vec![signature_or_id.clone()];
+    if let Some(ref s) = ticket_sig {
+        if s != &signature_or_id {
+            sigs_to_clear.push(s.clone());
+        }
+    }
+    for s in &sigs_to_clear {
+        axiom_cache::CacheEngine::delete(&format!("ticket:revoked:{}", s)).await;
+        axiom_cache::CacheEngine::delete(&format!("ticket:valid:{}", s)).await;
+    }
+
+    let actor = if auth.is_session {
+        "admin"
+    } else {
+        &auth.api_key_name
+    };
+    let _ = MetadataStore::record_audit(
+        actor,
+        "blob.ticket_enabled",
+        &signature_or_id,
+        Some("Capability ticket re-enabled"),
+    )
+    .await;
+
+    Ok(Json(json!({
+        "success": true,
+        "data": { "revoked": false },
+        "error": serde_json::Value::Null
+    })))
+}
+
 /// Administrative handler permanently deleting a capability ticket.
 pub async fn delete_ticket_handler(
     Path(signature_or_id): Path<String>,
@@ -1124,15 +1519,28 @@ pub async fn delete_ticket_handler(
         ));
     }
 
-    // Always invalidate in CacheEngine L1 RAM before deleting from SQLite
-    let cache_key = format!("ticket:revoked:{}", signature_or_id);
-    axiom_cache::CacheEngine::set(
-        &cache_key,
-        bytes::Bytes::from_static(b"1"),
-        86_400,
-        axiom_cache::Durability::MemoryOnly,
-    )
-    .await;
+    // Find the exact ticket signature before deleting from SQLite
+    let ticket_sig = MetadataStore::find_blob_ticket_signature(&signature_or_id)
+        .await
+        .unwrap_or(None);
+
+    // Invalidate in CacheEngine L1 RAM for both ID and cryptographic signature
+    let mut sigs_to_invalidate = vec![signature_or_id.clone()];
+    if let Some(ref s) = ticket_sig {
+        if s != &signature_or_id {
+            sigs_to_invalidate.push(s.clone());
+        }
+    }
+    for s in &sigs_to_invalidate {
+        axiom_cache::CacheEngine::delete(&format!("ticket:valid:{}", s)).await;
+        axiom_cache::CacheEngine::set(
+            &format!("ticket:revoked:{}", s),
+            bytes::Bytes::from_static(b"1"),
+            86_400,
+            axiom_cache::Durability::MemoryOnly,
+        )
+        .await;
+    }
 
     let found = MetadataStore::delete_blob_ticket(&signature_or_id)
         .await
@@ -1168,6 +1576,204 @@ pub async fn delete_ticket_handler(
     Ok(Json(json!({
         "success": true,
         "data": { "deleted": true },
+        "error": serde_json::Value::Null
+    })))
+}
+
+/// Scoped handler for revoking a capability ticket within a specific namespace via /tickets/:namespace/:signature/revoke.
+pub async fn revoke_ticket_scoped_handler(
+    Path((namespace, signature_or_id)): Path<(String, String)>,
+    Extension(auth): Extension<AuthContext>,
+) -> Result<impl IntoResponse, AxiomError> {
+    if !auth.is_session && auth.role.as_deref() != Some("admin") {
+        PolicyEngine::evaluate_blob(&auth, &namespace, "*", "WRITE")?;
+    }
+
+    let ticket_sig = MetadataStore::find_blob_ticket_signature_scoped(&namespace, &signature_or_id)
+        .await
+        .unwrap_or(None);
+
+    let found = MetadataStore::revoke_blob_ticket_scoped(&namespace, &signature_or_id)
+        .await
+        .map_err(|e| {
+            AxiomError::new(
+                "TICKET_REVOCATION_FAILED",
+                &e,
+                StatusCode::INTERNAL_SERVER_ERROR,
+            )
+        })?;
+
+    if !found {
+        return Err(AxiomError::new(
+            "NOT_FOUND",
+            "Capability ticket not found or already revoked in this namespace",
+            StatusCode::NOT_FOUND,
+        ));
+    }
+
+    let mut sigs_to_invalidate = vec![signature_or_id.clone()];
+    if let Some(ref s) = ticket_sig {
+        if s != &signature_or_id {
+            sigs_to_invalidate.push(s.clone());
+        }
+    }
+    for s in &sigs_to_invalidate {
+        axiom_cache::CacheEngine::delete(&format!("ticket:valid:{}", s)).await;
+        axiom_cache::CacheEngine::set(
+            &format!("ticket:revoked:{}", s),
+            bytes::Bytes::from_static(b"1"),
+            86_400,
+            axiom_cache::Durability::MemoryOnly,
+        )
+        .await;
+    }
+
+    let actor = if auth.is_session {
+        "admin"
+    } else {
+        &auth.api_key_name
+    };
+    let _ = MetadataStore::record_audit(
+        actor,
+        "blob.ticket_revoked",
+        &format!("{}/{}", namespace, signature_or_id),
+        Some("Capability ticket revoked in namespace"),
+    )
+    .await;
+
+    Ok(Json(json!({
+        "success": true,
+        "data": { "revoked": true, "namespace": namespace },
+        "error": serde_json::Value::Null
+    })))
+}
+
+/// Scoped handler for re-enabling a revoked capability ticket within a specific namespace via /tickets/:namespace/:signature/enable.
+pub async fn enable_ticket_scoped_handler(
+    Path((namespace, signature_or_id)): Path<(String, String)>,
+    Extension(auth): Extension<AuthContext>,
+) -> Result<impl IntoResponse, AxiomError> {
+    if !auth.is_session && auth.role.as_deref() != Some("admin") {
+        PolicyEngine::evaluate_blob(&auth, &namespace, "*", "WRITE")?;
+    }
+
+    let ticket_sig = MetadataStore::find_blob_ticket_signature_scoped(&namespace, &signature_or_id)
+        .await
+        .unwrap_or(None);
+
+    let found = MetadataStore::enable_blob_ticket_scoped(&namespace, &signature_or_id)
+        .await
+        .map_err(|e| {
+            AxiomError::new(
+                "TICKET_ENABLE_FAILED",
+                &e,
+                StatusCode::INTERNAL_SERVER_ERROR,
+            )
+        })?;
+
+    if !found {
+        return Err(AxiomError::new(
+            "NOT_FOUND",
+            "Capability ticket not found or already active in this namespace",
+            StatusCode::NOT_FOUND,
+        ));
+    }
+
+    let mut sigs_to_clear = vec![signature_or_id.clone()];
+    if let Some(ref s) = ticket_sig {
+        if s != &signature_or_id {
+            sigs_to_clear.push(s.clone());
+        }
+    }
+    for s in &sigs_to_clear {
+        axiom_cache::CacheEngine::delete(&format!("ticket:revoked:{}", s)).await;
+        axiom_cache::CacheEngine::delete(&format!("ticket:valid:{}", s)).await;
+    }
+
+    let actor = if auth.is_session {
+        "admin"
+    } else {
+        &auth.api_key_name
+    };
+    let _ = MetadataStore::record_audit(
+        actor,
+        "blob.ticket_enabled",
+        &format!("{}/{}", namespace, signature_or_id),
+        Some("Capability ticket re-enabled in namespace"),
+    )
+    .await;
+
+    Ok(Json(json!({
+        "success": true,
+        "data": { "revoked": false, "namespace": namespace },
+        "error": serde_json::Value::Null
+    })))
+}
+
+/// Scoped handler for permanently deleting a capability ticket within a specific namespace via DELETE /tickets/:namespace/:signature.
+pub async fn delete_ticket_scoped_handler(
+    Path((namespace, signature_or_id)): Path<(String, String)>,
+    Extension(auth): Extension<AuthContext>,
+) -> Result<impl IntoResponse, AxiomError> {
+    if !auth.is_session && auth.role.as_deref() != Some("admin") {
+        PolicyEngine::evaluate_blob(&auth, &namespace, "*", "WRITE")?;
+    }
+
+    let ticket_sig = MetadataStore::find_blob_ticket_signature_scoped(&namespace, &signature_or_id)
+        .await
+        .unwrap_or(None);
+
+    let mut sigs_to_invalidate = vec![signature_or_id.clone()];
+    if let Some(ref s) = ticket_sig {
+        if s != &signature_or_id {
+            sigs_to_invalidate.push(s.clone());
+        }
+    }
+    for s in &sigs_to_invalidate {
+        axiom_cache::CacheEngine::delete(&format!("ticket:valid:{}", s)).await;
+        axiom_cache::CacheEngine::set(
+            &format!("ticket:revoked:{}", s),
+            bytes::Bytes::from_static(b"1"),
+            86_400,
+            axiom_cache::Durability::MemoryOnly,
+        )
+        .await;
+    }
+
+    let found = MetadataStore::delete_blob_ticket_scoped(&namespace, &signature_or_id)
+        .await
+        .map_err(|e| {
+            AxiomError::new(
+                "TICKET_DELETE_FAILED",
+                &e,
+                StatusCode::INTERNAL_SERVER_ERROR,
+            )
+        })?;
+
+    if !found {
+        return Err(AxiomError::new(
+            "NOT_FOUND",
+            "Capability ticket not found in this namespace",
+            StatusCode::NOT_FOUND,
+        ));
+    }
+
+    let actor = if auth.is_session {
+        "admin"
+    } else {
+        &auth.api_key_name
+    };
+    let _ = MetadataStore::record_audit(
+        actor,
+        "blob.ticket_deleted",
+        &format!("{}/{}", namespace, signature_or_id),
+        Some("Capability ticket deleted from namespace"),
+    )
+    .await;
+
+    Ok(Json(json!({
+        "success": true,
+        "data": { "deleted": true, "namespace": namespace },
         "error": serde_json::Value::Null
     })))
 }
@@ -2052,7 +2658,15 @@ pub async fn get_public_blob_handler(
             .header(header::ETAG, etag_val)
             .header(header::CACHE_CONTROL, "public, max-age=31536000, immutable")
             .header(header::X_CONTENT_TYPE_OPTIONS, "nosniff")
-            .header(header::CONTENT_DISPOSITION, disposition);
+            .header(header::CONTENT_DISPOSITION, disposition.clone())
+            .header(
+                header::CONTENT_SECURITY_POLICY,
+                if is_web_media {
+                    "default-src 'none'; media-src 'self' * blob: data:; img-src 'self' * blob: data:; style-src 'unsafe-inline'; font-src 'self' data:;"
+                } else {
+                    "default-src 'none'; frame-ancestors 'none';"
+                },
+            );
 
         let mut resp = match data {
             BlobData::Inline(bytes) => builder.body(Body::from(bytes)),
@@ -2093,6 +2707,14 @@ pub async fn get_public_blob_handler(
             .header(header::CACHE_CONTROL, "public, max-age=31536000, immutable")
             .header(header::X_CONTENT_TYPE_OPTIONS, "nosniff")
             .header(header::CONTENT_DISPOSITION, disposition)
+            .header(
+                header::CONTENT_SECURITY_POLICY,
+                if is_web_media {
+                    "default-src 'none'; media-src 'self' * blob: data:; img-src 'self' * blob: data:; style-src 'unsafe-inline'; font-src 'self' data:;"
+                } else {
+                    "default-src 'none'; frame-ancestors 'none';"
+                },
+            )
     };
 
     let (_, data) = engine.get(&namespace, &key).await.map_err(map_blob_error)?;
@@ -2193,11 +2815,18 @@ pub async fn head_public_blob_handler(
     Ok(resp)
 }
 
-/// Batch multi-object deletion handler (S3 Multi-Object Delete).
+#[derive(Debug, Deserialize)]
+pub struct BatchDeleteBlobsPayload {
+    #[serde(default)]
+    pub keys: Vec<String>,
+    pub prefix: Option<String>,
+}
+
+/// Batch multi-object deletion handler supporting explicit keys or recursive prefix deletion.
 pub async fn batch_delete_blobs_handler(
     Path(namespace): Path<String>,
     Extension(auth): Extension<AuthContext>,
-    Json(payload): Json<axiom_blob::DeleteObjectsRequest>,
+    Json(payload): Json<BatchDeleteBlobsPayload>,
 ) -> Result<impl IntoResponse, AxiomError> {
     // S3 semantics: evaluate permissions per key. If user has wildcard '*' permission,
     // all keys can be deleted immediately. Otherwise, partition into permitted vs unauthorized keys.
@@ -2233,14 +2862,42 @@ pub async fn batch_delete_blobs_handler(
 
     result.errors.extend(denied_errors);
 
+    let mut prefix_deleted_count = 0;
+    if let Some(ref pfx) = payload.prefix {
+        if !pfx.is_empty() {
+            let can_delete_prefix = auth.is_session
+                || PolicyEngine::evaluate_blob(&auth, &namespace, "*", "DELETE").is_ok()
+                || PolicyEngine::evaluate_blob(&auth, &namespace, pfx, "DELETE").is_ok();
+
+            if can_delete_prefix {
+                match engine.delete_prefix(&namespace, pfx).await {
+                    Ok(cnt) => {
+                        prefix_deleted_count = cnt;
+                    }
+                    Err(e) => {
+                        result
+                            .errors
+                            .push((pfx.clone(), format!("Prefix deletion error: {}", e)));
+                    }
+                }
+            } else {
+                result.errors.push((
+                    pfx.clone(),
+                    "AccessDenied: Insufficient permissions to delete prefix".to_string(),
+                ));
+            }
+        }
+    }
+
     let actor = if auth.is_session {
         "admin"
     } else {
         &auth.api_key_name
     };
     let details = format!(
-        "deleted={}, errors={}",
+        "deleted={}, prefix_deleted={}, errors={}",
         result.deleted.len(),
+        prefix_deleted_count,
         result.errors.len()
     );
     let _ =
@@ -2248,7 +2905,11 @@ pub async fn batch_delete_blobs_handler(
 
     Ok(Json(json!({
         "success": true,
-        "data": result,
+        "data": {
+            "deleted": result.deleted,
+            "prefix_deleted": prefix_deleted_count,
+            "errors": result.errors
+        },
         "error": serde_json::Value::Null
     })))
 }
@@ -2274,5 +2935,21 @@ mod tests {
         let del_req: DeletePrefixRequest = serde_json::from_str(del_json).unwrap();
         assert!(del_req.namespace.is_none());
         assert_eq!(del_req.prefix, "folder/");
+
+        let batch_del_json = r#"{"keys": ["a.txt", "b.txt"], "prefix": "tmp/"}"#;
+        let batch_del_req: BatchDeleteBlobsPayload = serde_json::from_str(batch_del_json).unwrap();
+        assert_eq!(batch_del_req.keys.len(), 2);
+        assert_eq!(batch_del_req.prefix.as_deref(), Some("tmp/"));
+
+        let upload_link_json =
+            r#"{"key": "docs/manual.pdf", "content_type": "application/pdf", "ttl_seconds": 3600}"#;
+        let upload_link_req: CreateUploadLinkRequest =
+            serde_json::from_str(upload_link_json).unwrap();
+        assert_eq!(upload_link_req.key, "docs/manual.pdf");
+        assert_eq!(
+            upload_link_req.content_type.as_deref(),
+            Some("application/pdf")
+        );
+        assert_eq!(upload_link_req.ttl_seconds, Some(3600));
     }
 }

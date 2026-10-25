@@ -4,8 +4,8 @@
  * replacing native browser window.alert() popups.
  */
 
-import React, { useEffect, useRef, useState } from 'react';
-import { AlertTriangle, AlertCircle, Info, X } from 'lucide-react';
+import React, { useEffect, useRef, useState } from "react";
+import { AlertTriangle, AlertCircle, Info, X } from "lucide-react";
 
 export interface AlertDialogProps {
   isOpen: boolean;
@@ -13,7 +13,7 @@ export interface AlertDialogProps {
   title?: string;
   message: React.ReactNode;
   confirmLabel?: string;
-  variant?: 'danger' | 'warning' | 'info';
+  variant?: "danger" | "warning" | "info";
 }
 
 /**
@@ -21,14 +21,14 @@ export interface AlertDialogProps {
  */
 export function showAlertDialog(
   message: string,
-  title: string = 'Operation Failed',
-  variant: 'danger' | 'warning' | 'info' = 'danger'
+  title: string = "Operation Failed",
+  variant: "danger" | "warning" | "info" = "danger",
 ) {
-  if (typeof window !== 'undefined') {
+  if (typeof window !== "undefined") {
     window.dispatchEvent(
-      new CustomEvent('axiom:alert', {
+      new CustomEvent("axiom:alert", {
         detail: { title, message, variant },
-      })
+      }),
     );
   }
 }
@@ -39,10 +39,10 @@ export function showAlertDialog(
 export const AlertDialog: React.FC<AlertDialogProps> = ({
   isOpen,
   onClose,
-  title = 'Operation Notice',
+  title = "Operation Notice",
   message,
-  confirmLabel = 'OK',
-  variant = 'danger',
+  confirmLabel = "OK",
+  variant = "danger",
 }) => {
   const okButtonRef = useRef<HTMLButtonElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -69,16 +69,16 @@ export const AlertDialog: React.FC<AlertDialogProps> = ({
     if (!isOpen) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' || e.key === 'Enter') {
+      if (e.key === "Escape" || e.key === "Enter") {
         e.preventDefault();
         onClose();
         return;
       }
 
       // Focus trap
-      if (e.key === 'Tab' && dialogRef.current) {
+      if (e.key === "Tab" && dialogRef.current) {
         const focusable = dialogRef.current.querySelectorAll<HTMLElement>(
-          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
         );
         if (focusable.length === 0) return;
 
@@ -95,25 +95,25 @@ export const AlertDialog: React.FC<AlertDialogProps> = ({
       }
     };
 
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
   }, [isOpen, onClose]);
 
   if (!isOpen) return null;
 
-  const isWarning = variant === 'warning';
-  const isInfo = variant === 'info';
+  const isWarning = variant === "warning";
+  const isInfo = variant === "info";
 
-  const stringMsg = typeof message === 'string' ? message : '';
+  const stringMsg = typeof message === "string" ? message : "";
   const isForeignKeyError =
-    stringMsg.includes('1451') ||
-    stringMsg.toLowerCase().includes('foreign key constraint') ||
-    stringMsg.toLowerCase().includes('parent row');
+    stringMsg.includes("1451") ||
+    stringMsg.toLowerCase().includes("foreign key constraint") ||
+    stringMsg.toLowerCase().includes("parent row");
   const isDuplicateKeyError =
-    stringMsg.includes('1062') ||
-    stringMsg.includes('1061') ||
-    stringMsg.toLowerCase().includes('duplicate key') ||
-    stringMsg.toLowerCase().includes('duplicate entry');
+    stringMsg.includes("1062") ||
+    stringMsg.includes("1061") ||
+    stringMsg.toLowerCase().includes("duplicate key") ||
+    stringMsg.toLowerCase().includes("duplicate entry");
 
   return (
     <div
@@ -138,10 +138,10 @@ export const AlertDialog: React.FC<AlertDialogProps> = ({
             <div
               className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 ${
                 isInfo
-                  ? 'bg-[#0e1d33] border border-[#1d3b66] text-[#60a5fa]'
+                  ? "bg-[#0e1d33] border border-[#1d3b66] text-[#60a5fa]"
                   : isWarning
-                  ? 'bg-[#2a1708] border border-[#59300e] text-[#f5a623]'
-                  : 'bg-[#2a0e0e] border border-[#4a1919] text-[#e5484d]'
+                    ? "bg-[#2a1708] border border-[#59300e] text-[#f5a623]"
+                    : "bg-[#2a0e0e] border border-[#4a1919] text-[#e5484d]"
               }`}
             >
               {isInfo ? (
@@ -168,16 +168,20 @@ export const AlertDialog: React.FC<AlertDialogProps> = ({
               id="alert-dialog-title"
               className="text-[15px] font-semibold text-white tracking-tight leading-snug font-sans"
             >
-              {isForeignKeyError && title === 'Operation Failed' ? 'Foreign Key Constraint Violated' : title}
+              {isForeignKeyError && title === "Operation Failed"
+                ? "Foreign Key Constraint Violated"
+                : title}
             </h3>
 
             <div className="mt-2.5">
-              {typeof message === 'string' ? (
+              {typeof message === "string" ? (
                 <div className="p-3 rounded-[6px] bg-[#141414] border border-[#262626] text-[12.5px] font-mono text-rose-300/90 leading-relaxed break-words select-text">
                   {message}
                 </div>
               ) : (
-                <div className="text-[13px] text-[#8c8c8c] leading-relaxed font-sans">{message}</div>
+                <div className="text-[13px] text-[#8c8c8c] leading-relaxed font-sans">
+                  {message}
+                </div>
               )}
 
               {/* Helpful Hint Callouts */}
@@ -185,8 +189,9 @@ export const AlertDialog: React.FC<AlertDialogProps> = ({
                 <div className="mt-2.5 p-2.5 rounded-[6px] bg-amber-950/20 border border-amber-900/30 text-[12px] text-amber-300/90 leading-relaxed flex items-start gap-2">
                   <AlertCircle className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
                   <span>
-                    This record is referenced by another table. You must delete or reassign referencing child records
-                    before deleting this row.
+                    This record is referenced by another table. You must delete
+                    or reassign referencing child records before deleting this
+                    row.
                   </span>
                 </div>
               )}
@@ -194,7 +199,10 @@ export const AlertDialog: React.FC<AlertDialogProps> = ({
               {isDuplicateKeyError && (
                 <div className="mt-2.5 p-2.5 rounded-[6px] bg-amber-950/20 border border-amber-900/30 text-[12px] text-amber-300/90 leading-relaxed flex items-start gap-2">
                   <AlertCircle className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
-                  <span>A record or index with this unique identifier already exists.</span>
+                  <span>
+                    A record or index with this unique identifier already
+                    exists.
+                  </span>
                 </div>
               )}
             </div>
@@ -226,12 +234,12 @@ export const GlobalAlertDialog: React.FC = () => {
     isOpen: boolean;
     title: string;
     message: string;
-    variant: 'danger' | 'warning' | 'info';
+    variant: "danger" | "warning" | "info";
   }>({
     isOpen: false,
-    title: 'Operation Failed',
-    message: '',
-    variant: 'danger',
+    title: "Operation Failed",
+    message: "",
+    variant: "danger",
   });
 
   useEffect(() => {
@@ -240,9 +248,9 @@ export const GlobalAlertDialog: React.FC = () => {
     window.alert = (msg: unknown) => {
       setDialogState({
         isOpen: true,
-        title: 'Database Notice',
-        message: String(msg ?? ''),
-        variant: 'danger',
+        title: "Database Notice",
+        message: String(msg ?? ""),
+        variant: "danger",
       });
     };
 
@@ -250,23 +258,23 @@ export const GlobalAlertDialog: React.FC = () => {
       const customEvent = e as CustomEvent<{
         title?: string;
         message: string;
-        variant?: 'danger' | 'warning' | 'info';
+        variant?: "danger" | "warning" | "info";
       }>;
       if (customEvent.detail) {
         setDialogState({
           isOpen: true,
-          title: customEvent.detail.title || 'Operation Failed',
-          message: customEvent.detail.message || '',
-          variant: customEvent.detail.variant || 'danger',
+          title: customEvent.detail.title || "Operation Failed",
+          message: customEvent.detail.message || "",
+          variant: customEvent.detail.variant || "danger",
         });
       }
     };
 
-    window.addEventListener('axiom:alert', handleCustomAlert);
+    window.addEventListener("axiom:alert", handleCustomAlert);
 
     return () => {
       window.alert = originalAlert;
-      window.removeEventListener('axiom:alert', handleCustomAlert);
+      window.removeEventListener("axiom:alert", handleCustomAlert);
     };
   }, []);
 

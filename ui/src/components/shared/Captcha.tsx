@@ -15,7 +15,7 @@ import React, {
   useImperativeHandle,
   forwardRef,
   useCallback,
-} from 'react';
+} from "react";
 
 export interface CaptchaRef {
   refresh: () => void;
@@ -36,8 +36,8 @@ export interface CaptchaProps {
  * Excludes confusing chars (0, O, 1, I).
  */
 function generateCaptchaSvg(): { text: string; svgUrl: string } {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  let text = '';
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  let text = "";
   for (let i = 0; i < 5; i++) {
     text += chars.charAt(Math.floor(Math.random() * chars.length));
   }
@@ -46,25 +46,25 @@ function generateCaptchaSvg(): { text: string; svgUrl: string } {
   const height = 48;
 
   // Background noise patterns (circles)
-  let dots = '';
+  let dots = "";
   for (let i = 0; i < 55; i++) {
     const cx = Math.random() * width;
     const cy = Math.random() * height;
     const r = Math.random() * 2.2 + 0.5;
     const color = `rgba(${Math.floor(Math.random() * 100)}, ${Math.floor(
-      Math.random() * 100
+      Math.random() * 100,
     )}, ${Math.floor(Math.random() * 100)}, ${0.25 + Math.random() * 0.25})`;
     dots += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${color}" />`;
   }
 
   // Cross-hatch background lines (defeats Otsu thresholding / binarization in OCR)
-  let gridLines = '';
+  let gridLines = "";
   for (let x = -height; x < width + height; x += 15) {
     gridLines += `<line x1="${x}" y1="0" x2="${x + height}" y2="${height}" stroke="rgba(140,140,150,0.22)" stroke-width="1" />`;
   }
 
   // Background curves
-  let curves = '';
+  let curves = "";
   for (let i = 0; i < 12; i++) {
     const x1 = Math.random() * width;
     const y1 = Math.random() * height;
@@ -74,15 +74,22 @@ function generateCaptchaSvg(): { text: string; svgUrl: string } {
     const y2 = Math.random() * height;
     const strokeW = Math.random() * 1.6 + 0.6;
     const color = `rgba(${Math.floor(Math.random() * 110)}, ${Math.floor(
-      Math.random() * 110
+      Math.random() * 110,
     )}, ${Math.floor(Math.random() * 110)}, 0.45)`;
     curves += `<path d="M ${x1} ${y1} Q ${cx} ${cy} ${x2} ${y2}" stroke="${color}" stroke-width="${strokeW}" fill="none" />`;
   }
 
   // Character distortion: wavy baseline displacement, heavy rotation, affine skew, and varied kerning
-  let textChars = '';
-  const fonts = ['Arial', 'Courier New', 'Georgia', 'Verdana', 'Trebuchet MS', 'Impact'];
-  const weights = ['bold', '800', '900'];
+  let textChars = "";
+  const fonts = [
+    "Arial",
+    "Courier New",
+    "Georgia",
+    "Verdana",
+    "Trebuchet MS",
+    "Impact",
+  ];
+  const weights = ["bold", "800", "900"];
   const basePhase = Math.random() * Math.PI * 2;
 
   // Tighter spacing with jitter so characters slightly overlap at edges (defeats glyph segmentation)
@@ -108,7 +115,7 @@ function generateCaptchaSvg(): { text: string; svgUrl: string } {
   }
 
   // Foreground strike-through curves & lines slicing across glyphs
-  let strikes = '';
+  let strikes = "";
   // Wavy bezier strike lines
   for (let i = 0; i < 2; i++) {
     const y1 = 16 + Math.random() * 16;
@@ -134,19 +141,21 @@ function generateCaptchaSvg(): { text: string; svgUrl: string } {
 }
 
 export const Captcha = forwardRef<CaptchaRef, CaptchaProps>(function Captcha(
-  { onVerifyChange, className = '', disabled = false },
-  ref
+  { onVerifyChange, className = "", disabled = false },
+  ref,
 ) {
-  const [captchaData, setCaptchaData] = useState<{ text: string; svgUrl: string }>(() =>
-    generateCaptchaSvg()
-  );
-  const [captchaInput, setCaptchaInput] = useState<string>('');
+  const [captchaData, setCaptchaData] = useState<{
+    text: string;
+    svgUrl: string;
+  }>(() => generateCaptchaSvg());
+  const [captchaInput, setCaptchaInput] = useState<string>("");
   const [hasAttempted, setHasAttempted] = useState<boolean>(false);
   const captchaRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   const isFull = captchaInput.trim().length === 5;
   const isVerified =
-    isFull && captchaInput.trim().toUpperCase() === captchaData.text.toUpperCase();
+    isFull &&
+    captchaInput.trim().toUpperCase() === captchaData.text.toUpperCase();
   const isEvaluated = hasAttempted || isFull;
 
   // ─── Re-verification on input changes ───────────────────────────────────────
@@ -158,7 +167,7 @@ export const Captcha = forwardRef<CaptchaRef, CaptchaProps>(function Captcha(
   const reloadCaptcha = useCallback(() => {
     const next = generateCaptchaSvg();
     setCaptchaData(next);
-    setCaptchaInput('');
+    setCaptchaInput("");
     setHasAttempted(false);
     onVerifyChange?.(false);
     captchaRefs.current[0]?.focus();
@@ -173,7 +182,9 @@ export const Captcha = forwardRef<CaptchaRef, CaptchaProps>(function Captcha(
     if (!valid) {
       // Focus the first incorrect or empty cell
       const targetIdx = [0, 1, 2, 3, 4].find(
-        (i) => (captchaInput[i] || '').toUpperCase() !== captchaData.text[i]?.toUpperCase()
+        (i) =>
+          (captchaInput[i] || "").toUpperCase() !==
+          captchaData.text[i]?.toUpperCase(),
       );
       if (targetIdx !== undefined) {
         captchaRefs.current[targetIdx]?.focus();
@@ -189,7 +200,9 @@ export const Captcha = forwardRef<CaptchaRef, CaptchaProps>(function Captcha(
     shake: () => {
       setHasAttempted(true);
       const targetIdx = [0, 1, 2, 3, 4].find(
-        (i) => (captchaInput[i] || '').toUpperCase() !== captchaData.text[i]?.toUpperCase()
+        (i) =>
+          (captchaInput[i] || "").toUpperCase() !==
+          captchaData.text[i]?.toUpperCase(),
       );
       if (targetIdx !== undefined) {
         captchaRefs.current[targetIdx]?.focus();
@@ -236,28 +249,28 @@ export const Captcha = forwardRef<CaptchaRef, CaptchaProps>(function Captcha(
         {/* 5 Distinct Input Containers with per-character validation */}
         <div className="inline-flex items-center gap-1.5 flex-1">
           {[0, 1, 2, 3, 4].map((index) => {
-            const char = captchaInput[index] || '';
+            const char = captchaInput[index] || "";
             const enteredChar = char.toUpperCase();
             const expectedChar = captchaData.text[index]?.toUpperCase();
 
             // Default neutral styling
             let stateClasses =
-              'border border-[#262626] bg-[#0B0B0C] text-white focus:border-[#2f80ed] focus:ring-[1.5px] focus:ring-[#2f80ed]/50';
+              "border border-[#262626] bg-[#0B0B0C] text-white focus:border-[#2f80ed] focus:ring-[1.5px] focus:ring-[#2f80ed]/50";
 
             // Per-character validation: ONLY mark the specific cell red if it is wrong!
             if (isEvaluated) {
               if (enteredChar && enteredChar === expectedChar) {
                 // Correct character -> emerald
                 stateClasses =
-                  'border border-emerald-500 bg-[#0B0B0C] text-emerald-400 shadow-[0_0_10px_rgba(16,185,129,0.15)] focus:border-emerald-500 focus:ring-emerald-500/50';
+                  "border border-emerald-500 bg-[#0B0B0C] text-emerald-400 shadow-[0_0_10px_rgba(16,185,129,0.15)] focus:border-emerald-500 focus:ring-emerald-500/50";
               } else if (!enteredChar && hasAttempted) {
                 // Empty after submit attempt -> red border
                 stateClasses =
-                  'border border-red-500/60 bg-[#0B0B0C] text-red-400 focus:border-red-500 focus:ring-red-500/50';
+                  "border border-red-500/60 bg-[#0B0B0C] text-red-400 focus:border-red-500 focus:ring-red-500/50";
               } else if (enteredChar && enteredChar !== expectedChar) {
                 // Specifically incorrect character -> ONLY this box turns RED
                 stateClasses =
-                  'border border-red-500 bg-[#0B0B0C] text-red-400 shadow-[0_0_10px_rgba(239,68,68,0.2)] focus:border-red-500 focus:ring-red-500/50 animate-shake';
+                  "border border-red-500 bg-[#0B0B0C] text-red-400 shadow-[0_0_10px_rgba(239,68,68,0.2)] focus:border-red-500 focus:ring-red-500/50 animate-shake";
               }
             }
 
@@ -272,9 +285,9 @@ export const Captcha = forwardRef<CaptchaRef, CaptchaProps>(function Captcha(
                 onPaste={(e) => {
                   e.preventDefault();
                   const pasted = e.clipboardData
-                    .getData('text')
+                    .getData("text")
                     .toUpperCase()
-                    .replace(/[^A-Z0-9]/g, '')
+                    .replace(/[^A-Z0-9]/g, "")
                     .slice(0, 5);
                   if (pasted) {
                     setCaptchaInput(pasted);
@@ -282,21 +295,24 @@ export const Captcha = forwardRef<CaptchaRef, CaptchaProps>(function Captcha(
                   }
                 }}
                 onChange={(e) => {
-                  const val = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+                  const val = e.target.value
+                    .toUpperCase()
+                    .replace(/[^A-Z0-9]/g, "");
                   const lastChar = val.slice(-1);
-                  const newArr = captchaInput.padEnd(5, ' ').split('');
-                  newArr[index] = lastChar || ' ';
-                  const newStr = newArr.join('').trimEnd();
+                  const newArr = captchaInput.padEnd(5, " ").split("");
+                  newArr[index] = lastChar || " ";
+                  const newStr = newArr.join("").trimEnd();
                   setCaptchaInput(newStr);
-                  if (lastChar && index < 4) captchaRefs.current[index + 1]?.focus();
+                  if (lastChar && index < 4)
+                    captchaRefs.current[index + 1]?.focus();
                 }}
                 onKeyDown={(e) => {
-                  if (e.key === 'Backspace' && !char && index > 0) {
+                  if (e.key === "Backspace" && !char && index > 0) {
                     captchaRefs.current[index - 1]?.focus();
-                  } else if (e.key === 'ArrowLeft' && index > 0) {
+                  } else if (e.key === "ArrowLeft" && index > 0) {
                     e.preventDefault();
                     captchaRefs.current[index - 1]?.focus();
-                  } else if (e.key === 'ArrowRight' && index < 4) {
+                  } else if (e.key === "ArrowRight" && index < 4) {
                     e.preventDefault();
                     captchaRefs.current[index + 1]?.focus();
                   }

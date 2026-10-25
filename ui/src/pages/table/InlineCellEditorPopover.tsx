@@ -9,13 +9,22 @@
  * Key deps: react, lucide-react
  */
 
-import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Check } from 'lucide-react';
-import { ColumnInfoApi } from '../../types';
+import React, { useState, useEffect, useRef, useMemo } from "react";
+import { Check } from "lucide-react";
+import { ColumnInfoApi } from "../../types";
 
-export { InlineNumberPopover, type InlineNumberPopoverProps } from './InlineNumberPopover';
-export { InlineTextPopover, type InlineTextPopoverProps } from './InlineTextPopover';
-export { InlineJsonPopover, type InlineJsonPopoverProps } from './InlineJsonPopover';
+export {
+  InlineNumberPopover,
+  type InlineNumberPopoverProps,
+} from "./InlineNumberPopover";
+export {
+  InlineTextPopover,
+  type InlineTextPopoverProps,
+} from "./InlineTextPopover";
+export {
+  InlineJsonPopover,
+  type InlineJsonPopoverProps,
+} from "./InlineJsonPopover";
 
 export interface InlineCellEditorPopoverProps {
   editingCell: {
@@ -33,7 +42,7 @@ export interface InlineCellEditorPopoverProps {
 }
 
 // Re-export text popover as the standard InlineCellEditorPopover for backwards compatibility
-export { InlineTextPopover as InlineCellEditorPopover } from './InlineTextPopover';
+export { InlineTextPopover as InlineCellEditorPopover } from "./InlineTextPopover";
 
 export interface InlineBooleanPopoverProps {
   editingCell: {
@@ -55,16 +64,22 @@ export function InlineBooleanPopover({
 }: InlineBooleanPopoverProps) {
   const popoverRef = useRef<HTMLDivElement>(null);
 
-  const options: Array<{ label: string; value: boolean | null; isNull?: boolean }> = [
-    { label: 'true', value: true },
-    { label: 'false', value: false },
-    { label: 'null', value: null, isNull: true },
+  const options: Array<{
+    label: string;
+    value: boolean | null;
+    isNull?: boolean;
+  }> = [
+    { label: "true", value: true },
+    { label: "false", value: false },
+    { label: "null", value: null, isNull: true },
   ];
 
   const initialIndex = useMemo(() => {
     const raw = editingCell.initialValue;
-    if (raw === true || editingCell.currentValue.toLowerCase() === 'true') return 0;
-    if (raw === false || editingCell.currentValue.toLowerCase() === 'false') return 1;
+    if (raw === true || editingCell.currentValue.toLowerCase() === "true")
+      return 0;
+    if (raw === false || editingCell.currentValue.toLowerCase() === "false")
+      return 1;
     return 2;
   }, [editingCell.initialValue, editingCell.currentValue]);
 
@@ -72,37 +87,46 @@ export function InlineBooleanPopover({
 
   useEffect(() => {
     const handleMouseDown = (e: MouseEvent) => {
-      if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
+      if (
+        popoverRef.current &&
+        !popoverRef.current.contains(e.target as Node)
+      ) {
         onCancel();
       }
     };
-    document.addEventListener('mousedown', handleMouseDown);
-    return () => document.removeEventListener('mousedown', handleMouseDown);
+    document.addEventListener("mousedown", handleMouseDown);
+    return () => document.removeEventListener("mousedown", handleMouseDown);
   }, [onCancel]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'ArrowDown') {
+      if (e.key === "ArrowDown") {
         e.preventDefault();
         setFocusedIndex((prev) => (prev + 1) % options.length);
-      } else if (e.key === 'ArrowUp') {
+      } else if (e.key === "ArrowUp") {
         e.preventDefault();
         setFocusedIndex((prev) => (prev - 1 + options.length) % options.length);
-      } else if (e.key === 'Enter') {
+      } else if (e.key === "Enter") {
         e.preventDefault();
         const selected = options[focusedIndex];
         if (selected) onSave(selected.value);
-      } else if (e.key === 'Escape') {
+      } else if (e.key === "Escape") {
         e.preventDefault();
         onCancel();
       }
     };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
   }, [focusedIndex, options, onSave, onCancel]);
 
-  const top = Math.max(8, Math.min(window.innerHeight - 180, editingCell.rect.top));
-  const left = Math.max(8, Math.min(window.innerWidth - 180, editingCell.rect.left));
+  const top = Math.max(
+    8,
+    Math.min(window.innerHeight - 180, editingCell.rect.top),
+  );
+  const left = Math.max(
+    8,
+    Math.min(window.innerWidth - 180, editingCell.rect.left),
+  );
   const width = Math.max(editingCell.rect.width, 140);
 
   return (
@@ -119,12 +143,14 @@ export function InlineBooleanPopover({
         {options.map((opt, idx) => {
           const isSelected =
             opt.value === null
-              ? editingCell.initialValue === null || editingCell.initialValue === undefined
-                ? editingCell.currentValue === '' || editingCell.currentValue === 'null'
+              ? editingCell.initialValue === null ||
+                editingCell.initialValue === undefined
+                ? editingCell.currentValue === "" ||
+                  editingCell.currentValue === "null"
                 : false
-              : typeof editingCell.initialValue === 'boolean'
-              ? editingCell.initialValue === opt.value
-              : editingCell.currentValue.toLowerCase() === String(opt.value);
+              : typeof editingCell.initialValue === "boolean"
+                ? editingCell.initialValue === opt.value
+                : editingCell.currentValue.toLowerCase() === String(opt.value);
 
           const isFocused = idx === focusedIndex;
 
@@ -135,12 +161,16 @@ export function InlineBooleanPopover({
               onMouseEnter={() => setFocusedIndex(idx)}
               onClick={() => onSave(opt.value)}
               className={`flex items-center justify-between px-2.5 py-1.5 rounded-[5px] text-[13px] font-sans text-left transition-colors cursor-pointer ${
-                isFocused ? 'bg-[#1e1e1e] text-white' : 'text-[#a1a1a1] hover:text-white'
+                isFocused
+                  ? "bg-[#1e1e1e] text-white"
+                  : "text-[#a1a1a1] hover:text-white"
               }`}
             >
-              <span className={`font-sans text-[13px] ${
-                opt.isNull ? 'italic text-[#777777]' : 'text-[#e5e5e5]'
-              }`}>
+              <span
+                className={`font-sans text-[13px] ${
+                  opt.isNull ? "italic text-[#777777]" : "text-[#e5e5e5]"
+                }`}
+              >
                 {opt.label}
               </span>
               {isSelected && (

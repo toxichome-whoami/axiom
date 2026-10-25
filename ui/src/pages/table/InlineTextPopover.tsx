@@ -8,10 +8,16 @@
  * Owned by: ui/pages/table
  * Key deps: react, lucide-react
  */
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Maximize2, Check } from 'lucide-react';
-import { ColumnInfoApi } from '../../types';
-import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
+import React, {
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+  useMemo,
+} from "react";
+import { Maximize2, Check } from "lucide-react";
+import { ColumnInfoApi } from "../../types";
+import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 
 export interface InlineTextPopoverProps {
   editingCell: {
@@ -39,14 +45,15 @@ export function InlineTextPopover({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const isNullable = editingCell.column?.nullable ?? true;
-  const colType = editingCell.column?.type?.toUpperCase() || 'TEXT';
+  const colType = editingCell.column?.type?.toUpperCase() || "TEXT";
 
   const [isNull, setIsNull] = useState<boolean>(
-    editingCell.initialValue === null && editingCell.currentValue === ''
+    editingCell.initialValue === null && editingCell.currentValue === "",
   );
 
   const [localValue, setLocalValue] = useState<string>(() => {
-    if (editingCell.initialValue === null && editingCell.currentValue === '') return '';
+    if (editingCell.initialValue === null && editingCell.currentValue === "")
+      return "";
     return editingCell.currentValue;
   });
 
@@ -63,7 +70,9 @@ export function InlineTextPopover({
   const baselineNullRef = useRef<boolean>(isNull);
 
   // Check if user has modified the value
-  const isDirty = isNull !== baselineNullRef.current || (!isNull && localValue !== baselineValueRef.current);
+  const isDirty =
+    isNull !== baselineNullRef.current ||
+    (!isNull && localValue !== baselineValueRef.current);
 
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
 
@@ -73,10 +82,15 @@ export function InlineTextPopover({
         onSave(null);
         return;
       }
-      const finalVal = customVal !== undefined ? customVal : (textareaRef.current ? textareaRef.current.value : localValue);
+      const finalVal =
+        customVal !== undefined
+          ? customVal
+          : textareaRef.current
+            ? textareaRef.current.value
+            : localValue;
       onSave(finalVal);
     },
-    [isNull, localValue, onSave]
+    [isNull, localValue, onSave],
   );
 
   const handleAttemptClose = useCallback(() => {
@@ -91,55 +105,74 @@ export function InlineTextPopover({
   useEffect(() => {
     const handleMouseDown = (e: MouseEvent) => {
       if (showDiscardConfirm) return;
-      if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
+      if (
+        popoverRef.current &&
+        !popoverRef.current.contains(e.target as Node)
+      ) {
         // If clicking inside a confirmation dialog, ignore
         const target = e.target as HTMLElement | null;
-        if (target?.closest('[role="dialog"]') || target?.closest('.fixed.z-50')) return;
+        if (
+          target?.closest('[role="dialog"]') ||
+          target?.closest(".fixed.z-50")
+        )
+          return;
 
         handleAttemptClose();
       }
     };
-    document.addEventListener('mousedown', handleMouseDown);
-    return () => document.removeEventListener('mousedown', handleMouseDown);
+    document.addEventListener("mousedown", handleMouseDown);
+    return () => document.removeEventListener("mousedown", handleMouseDown);
   }, [handleAttemptClose, showDiscardConfirm]);
 
   // Scroll outside prompts for discard if dirty
   useEffect(() => {
     const handleScroll = (e: Event) => {
       if (showDiscardConfirm) return;
-      if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
+      if (
+        popoverRef.current &&
+        !popoverRef.current.contains(e.target as Node)
+      ) {
         handleAttemptClose();
       }
     };
-    window.addEventListener('scroll', handleScroll, true);
-    return () => window.removeEventListener('scroll', handleScroll, true);
+    window.addEventListener("scroll", handleScroll, true);
+    return () => window.removeEventListener("scroll", handleScroll, true);
   }, [handleAttemptClose, showDiscardConfirm]);
 
   const toggleNull = () => {
     if (!isNullable) return;
     if (!isNull) {
       setIsNull(true);
-      setLocalValue('');
-      onChange('');
+      setLocalValue("");
+      onChange("");
     } else {
       setIsNull(false);
-      setLocalValue('');
-      onChange('');
+      setLocalValue("");
+      onChange("");
     }
   };
 
   // Stats: char count and line count
   const stats = useMemo(() => {
     const charCount = localValue.length;
-    const lineCount = localValue === '' ? 1 : localValue.split('\n').length;
+    const lineCount = localValue === "" ? 1 : localValue.split("\n").length;
     return { charCount, lineCount };
   }, [localValue]);
 
   // Safe popover positioning within viewport
-  const popoverWidth = Math.max(380, Math.min(540, editingCell.rect.width + 140));
+  const popoverWidth = Math.max(
+    380,
+    Math.min(540, editingCell.rect.width + 140),
+  );
   const popoverHeight = 220;
-  const left = Math.max(8, Math.min(window.innerWidth - popoverWidth - 16, editingCell.rect.left));
-  const top = Math.max(8, Math.min(window.innerHeight - popoverHeight - 16, editingCell.rect.top));
+  const left = Math.max(
+    8,
+    Math.min(window.innerWidth - popoverWidth - 16, editingCell.rect.left),
+  );
+  const top = Math.max(
+    8,
+    Math.min(window.innerHeight - popoverHeight - 16, editingCell.rect.top),
+  );
 
   return (
     <div
@@ -154,14 +187,18 @@ export function InlineTextPopover({
       {/* Top Header Bar */}
       <div className="flex items-center justify-between pb-2 px-1 select-none">
         <div className="flex items-center gap-1.5 min-w-0">
-          <span className="text-[13.5px] font-sans font-medium text-[#e0e0e0] truncate" title={editingCell.colName}>
+          <span
+            className="text-[13.5px] font-sans font-medium text-[#e0e0e0] truncate"
+            title={editingCell.colName}
+          >
             {editingCell.colName}
           </span>
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
           <span className="text-[12px] text-[#666666] font-sans">
-            {stats.charCount} ch {stats.lineCount > 1 ? `• ${stats.lineCount} ln` : ''}
+            {stats.charCount} ch{" "}
+            {stats.lineCount > 1 ? `• ${stats.lineCount} ln` : ""}
           </span>
           {isNullable && (
             <button
@@ -169,8 +206,8 @@ export function InlineTextPopover({
               onClick={toggleNull}
               className={`px-2 py-0.5 rounded-[4px] text-[12px] font-sans font-medium border transition-colors cursor-pointer ${
                 isNull
-                  ? 'bg-[#1e1e1e] text-white border-[#333333] hover:bg-[#262626]'
-                  : 'bg-transparent text-[#888888] border-[#222222] hover:text-white hover:bg-[#181818]'
+                  ? "bg-[#1e1e1e] text-white border-[#333333] hover:bg-[#262626]"
+                  : "bg-transparent text-[#888888] border-[#222222] hover:text-white hover:bg-[#181818]"
               }`}
             >
               NULL
@@ -196,11 +233,11 @@ export function InlineTextPopover({
               onChange(v);
             }}
             onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
+              if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
                 e.stopPropagation();
                 handleCommit();
-              } else if (e.key === 'Escape') {
+              } else if (e.key === "Escape") {
                 e.preventDefault();
                 e.stopPropagation();
                 handleAttemptClose();

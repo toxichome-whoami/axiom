@@ -199,6 +199,7 @@ pub struct AuditQuery {
     pub offset: Option<usize>,
     pub cursor: Option<i64>,
     pub before_id: Option<i64>,
+    pub search: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1119,14 +1120,19 @@ pub async fn get_audit_log(
     let limit = query.limit.unwrap_or(50).clamp(1, 500);
     let offset = query.offset.unwrap_or(0);
     let before_id = query.cursor.or(query.before_id);
+    let search_term = query.search.as_deref().filter(|s| !s.trim().is_empty());
 
-    let logs = MetadataStore::query_audit_log_cursor(limit, offset, before_id)
+    let logs = MetadataStore::query_audit_log_cursor(limit, offset, before_id, search_term)
         .await
         .map_err(|e| {
             AxiomError::new("AUDIT_QUERY_FAILED", &e, StatusCode::INTERNAL_SERVER_ERROR)
         })?;
 
-    let has_more = logs.len() == limit;
+    let total = MetadataStore::count_audit_log(search_term)
+        .await
+        .unwrap_or(0);
+
+    let has_more = offset + logs.len() < total as usize;
     let next_cursor = if has_more {
         logs.last().map(|r| r.id)
     } else {
@@ -1135,10 +1141,15 @@ pub async fn get_audit_log(
 
     Ok(Json(json!({
         "success": true,
-        "data": logs,
+        "data": {
+            "records": logs,
+            "total": total,
+            "has_more": has_more
+        },
         "pagination": {
             "limit": limit,
             "offset": offset,
+            "total": total,
             "has_more": has_more,
             "next_offset": if has_more { Some(offset + limit) } else { None },
             "next_cursor": next_cursor

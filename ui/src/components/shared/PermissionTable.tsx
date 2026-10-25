@@ -7,7 +7,7 @@
  * Last structural change: Integrated native Blob Storage permissions with Cloudflare-style adaptive design.
  */
 
-import React, { useState } from 'react';
+import React, { useState } from "react";
 import {
   Plus,
   Trash2,
@@ -18,13 +18,13 @@ import {
   AlertCircle,
   AlertTriangle,
   Filter,
-} from 'lucide-react';
+} from "lucide-react";
 
 export interface DbPermissionRule {
   database: string;
   table: string;
   operations: string[];
-  resourceType?: 'database' | 'blob';
+  resourceType?: "database" | "blob";
   rls_filter?: string | null;
 }
 
@@ -36,8 +36,8 @@ export interface PermissionTableProps {
 
 export type AxiomPermissions = DbPermissionRule[];
 
-const DB_OPS = ['SELECT', 'INSERT', 'UPDATE', 'DELETE'] as const;
-const BLOB_OPS = ['READ', 'WRITE', 'DELETE'] as const;
+const DB_OPS = ["SELECT", "INSERT", "UPDATE", "DELETE"] as const;
+const BLOB_OPS = ["READ", "WRITE", "DELETE"] as const;
 const MAX_RULES = 100;
 const MAX_SPLIT = 50;
 
@@ -49,10 +49,12 @@ const MAX_SPLIT = 50;
  *  - Idempotent: Yes.
  */
 export function isBlobRule(rule: DbPermissionRule): boolean {
-  if (rule.resourceType === 'blob') return true;
-  if (rule.database.toLowerCase().startsWith('blob:')) return true;
+  if (rule.resourceType === "blob") return true;
+  if (rule.database.toLowerCase().startsWith("blob:")) return true;
   return rule.operations.some((op) =>
-    ['READ', 'WRITE', 'BLOB_READ', 'BLOB_WRITE', 'BLOB_DELETE'].includes(op.toUpperCase())
+    ["READ", "WRITE", "BLOB_READ", "BLOB_WRITE", "BLOB_DELETE"].includes(
+      op.toUpperCase(),
+    ),
   );
 }
 
@@ -60,13 +62,17 @@ export function isBlobRule(rule: DbPermissionRule): boolean {
  * Extracts a user-friendly display name for the blob namespace from `blob:<ns>`.
  */
 function getDisplayNamespace(rawDb: string): string {
-  if (rawDb.toLowerCase().startsWith('blob:')) {
+  if (rawDb.toLowerCase().startsWith("blob:")) {
     return rawDb.slice(5);
   }
   return rawDb;
 }
 
-export function PermissionTable({ value, onChange, readOnly = false }: PermissionTableProps) {
+export function PermissionTable({
+  value,
+  onChange,
+  readOnly = false,
+}: PermissionTableProps) {
   const [splitError, setSplitError] = useState<string | null>(null);
 
   function setRule(idx: number, patch: Partial<DbPermissionRule>) {
@@ -82,76 +88,87 @@ export function PermissionTable({ value, onChange, readOnly = false }: Permissio
       return;
     }
     setRule(idx, {
-      operations: has ? rule.operations.filter((o) => o !== op) : [...rule.operations, op],
+      operations: has
+        ? rule.operations.filter((o) => o !== op)
+        : [...rule.operations, op],
     });
   }
 
-  function switchResourceType(idx: number, targetType: 'database' | 'blob') {
+  function switchResourceType(idx: number, targetType: "database" | "blob") {
     const rule = value[idx];
     const currentIsBlob = isBlobRule(rule);
-    if ((targetType === 'blob' && currentIsBlob) || (targetType === 'database' && !currentIsBlob)) {
+    if (
+      (targetType === "blob" && currentIsBlob) ||
+      (targetType === "database" && !currentIsBlob)
+    ) {
       return;
     }
 
-    if (targetType === 'blob') {
-      const cleanDb = rule.database.replace(/^blob:/i, '').trim();
-      const newDb = cleanDb ? (cleanDb === '*' ? 'blob:*' : `blob:${cleanDb}`) : 'blob:';
-      const hasRead = rule.operations.includes('SELECT') || rule.operations.includes('READ');
+    if (targetType === "blob") {
+      const cleanDb = rule.database.replace(/^blob:/i, "").trim();
+      const newDb = cleanDb
+        ? cleanDb === "*"
+          ? "blob:*"
+          : `blob:${cleanDb}`
+        : "blob:";
+      const hasRead =
+        rule.operations.includes("SELECT") || rule.operations.includes("READ");
       const hasWrite =
-        rule.operations.includes('INSERT') ||
-        rule.operations.includes('UPDATE') ||
-        rule.operations.includes('WRITE');
+        rule.operations.includes("INSERT") ||
+        rule.operations.includes("UPDATE") ||
+        rule.operations.includes("WRITE");
       const ops: string[] = [];
-      if (hasRead) ops.push('READ');
-      if (hasWrite) ops.push('WRITE');
-      if (rule.operations.includes('DELETE')) ops.push('DELETE');
+      if (hasRead) ops.push("READ");
+      if (hasWrite) ops.push("WRITE");
+      if (rule.operations.includes("DELETE")) ops.push("DELETE");
 
       setRule(idx, {
-        resourceType: 'blob',
+        resourceType: "blob",
         database: newDb,
-        operations: ops.length > 0 ? ops : ['READ'],
+        operations: ops.length > 0 ? ops : ["READ"],
       });
     } else {
-      const cleanDb = rule.database.replace(/^blob:/i, '').trim();
-      const hasRead = rule.operations.includes('READ') || rule.operations.includes('SELECT');
-      const hasWrite = rule.operations.includes('WRITE');
+      const cleanDb = rule.database.replace(/^blob:/i, "").trim();
+      const hasRead =
+        rule.operations.includes("READ") || rule.operations.includes("SELECT");
+      const hasWrite = rule.operations.includes("WRITE");
       const ops: string[] = [];
-      if (hasRead) ops.push('SELECT');
+      if (hasRead) ops.push("SELECT");
       if (hasWrite) {
-        ops.push('INSERT');
-        ops.push('UPDATE');
+        ops.push("INSERT");
+        ops.push("UPDATE");
       }
-      if (rule.operations.includes('DELETE')) ops.push('DELETE');
+      if (rule.operations.includes("DELETE")) ops.push("DELETE");
 
       setRule(idx, {
-        resourceType: 'database',
+        resourceType: "database",
         database: cleanDb,
-        operations: ops.length > 0 ? ops : ['SELECT'],
+        operations: ops.length > 0 ? ops : ["SELECT"],
       });
     }
   }
 
-  function addRule(type: 'database' | 'blob' = 'database') {
+  function addRule(type: "database" | "blob" = "database") {
     if (!onChange || value.length >= MAX_RULES) return;
-    if (type === 'blob') {
+    if (type === "blob") {
       onChange([
         ...value,
         {
-          resourceType: 'blob',
-          database: 'blob:',
-          table: '*',
-          operations: ['READ'],
+          resourceType: "blob",
+          database: "blob:",
+          table: "*",
+          operations: ["READ"],
         },
       ]);
     } else {
       onChange([
         ...value,
         {
-          resourceType: 'database',
-          database: '',
-          table: '',
-          operations: ['SELECT'],
-          rls_filter: '',
+          resourceType: "database",
+          database: "",
+          table: "",
+          operations: ["SELECT"],
+          rls_filter: "",
         },
       ]);
     }
@@ -168,19 +185,29 @@ export function PermissionTable({ value, onChange, readOnly = false }: Permissio
     const rule = value[idx];
     const isBlob = isBlobRule(rule);
     const rawDb = isBlob ? getDisplayNamespace(rule.database) : rule.database;
-    const dbs = rawDb.split(',').map((s) => s.trim().slice(0, 64)).filter(Boolean);
-    const tbls = rule.table.split(',').map((s) => s.trim().slice(0, 64)).filter(Boolean);
-    const dbList = dbs.length > 0 ? dbs : ['*'];
-    const tblList = tbls.length > 0 ? tbls : ['*'];
+    const dbs = rawDb
+      .split(",")
+      .map((s) => s.trim().slice(0, 64))
+      .filter(Boolean);
+    const tbls = rule.table
+      .split(",")
+      .map((s) => s.trim().slice(0, 64))
+      .filter(Boolean);
+    const dbList = dbs.length > 0 ? dbs : ["*"];
+    const tblList = tbls.length > 0 ? tbls : ["*"];
 
     const totalNew = dbList.length * tblList.length;
     if (totalNew > MAX_SPLIT) {
-      setSplitError(`Cannot split rule: combination results in ${totalNew} rules (limit is ${MAX_SPLIT}).`);
+      setSplitError(
+        `Cannot split rule: combination results in ${totalNew} rules (limit is ${MAX_SPLIT}).`,
+      );
       return;
     }
 
     if (value.length - 1 + totalNew > MAX_RULES) {
-      setSplitError(`Cannot split rule: exceeds maximum limit of ${MAX_RULES} rules.`);
+      setSplitError(
+        `Cannot split rule: exceeds maximum limit of ${MAX_RULES} rules.`,
+      );
       return;
     }
 
@@ -188,8 +215,8 @@ export function PermissionTable({ value, onChange, readOnly = false }: Permissio
     for (const d of dbList) {
       for (const t of tblList) {
         newRules.push({
-          resourceType: isBlob ? 'blob' : 'database',
-          database: isBlob ? (d === '*' ? 'blob:*' : `blob:${d}`) : d,
+          resourceType: isBlob ? "blob" : "database",
+          database: isBlob ? (d === "*" ? "blob:*" : `blob:${d}`) : d,
           table: t,
           operations: [...rule.operations],
           rls_filter: rule.rls_filter,
@@ -206,13 +233,14 @@ export function PermissionTable({ value, onChange, readOnly = false }: Permissio
     return (
       <div className="space-y-3 font-sans">
         <div className="rounded-[8px] border border-dashed border-[#262626] bg-[#0c0c0c] p-5 text-center text-[13px] text-[#737373]">
-          No permission rules configured. Grant database or blob storage access below.
+          No permission rules configured. Grant database or blob storage access
+          below.
         </div>
         {!readOnly && (
           <div className="flex flex-col sm:flex-row gap-2 pt-1">
             <button
               type="button"
-              onClick={() => addRule('database')}
+              onClick={() => addRule("database")}
               className="flex-1 flex items-center justify-center gap-2 h-11 px-4 text-[13px] font-medium text-[#d4d4d4] hover:text-white border border-[#262626] hover:border-[#383838] bg-[#121212] hover:bg-[#18181b] rounded-[8px] transition-colors cursor-pointer touch-manipulation"
             >
               <Database className="w-4 h-4 text-[#3b82f6]" />
@@ -220,7 +248,7 @@ export function PermissionTable({ value, onChange, readOnly = false }: Permissio
             </button>
             <button
               type="button"
-              onClick={() => addRule('blob')}
+              onClick={() => addRule("blob")}
               className="flex-1 flex items-center justify-center gap-2 h-11 px-4 text-[13px] font-medium text-[#d4d4d4] hover:text-white border border-[#262626] hover:border-[#383838] bg-[#121212] hover:bg-[#18181b] rounded-[8px] transition-colors cursor-pointer touch-manipulation"
             >
               <Package className="w-4 h-4 text-[#8c8c8c]" />
@@ -246,23 +274,25 @@ export function PermissionTable({ value, onChange, readOnly = false }: Permissio
 
       {value.map((rule, idx) => {
         const isBlob = isBlobRule(rule);
-        const displayDb = isBlob ? getDisplayNamespace(rule.database) : rule.database;
-        const dbHasComma = displayDb.includes(',');
-        const tableHasComma = rule.table.includes(',');
+        const displayDb = isBlob
+          ? getDisplayNamespace(rule.database)
+          : rule.database;
+        const dbHasComma = displayDb.includes(",");
+        const tableHasComma = rule.table.includes(",");
         const hasCommaError = dbHasComma || tableHasComma;
         const isWildcard =
-          (rule.database.trim() === '*' || rule.database.trim() === 'blob:*') &&
-          rule.table.trim() === '*';
+          (rule.database.trim() === "*" || rule.database.trim() === "blob:*") &&
+          rule.table.trim() === "*";
 
         return (
           <div
             key={idx}
             className={`rounded-[8px] border bg-[#111111] p-4 space-y-3.5 transition-colors ${
               hasCommaError
-                ? 'border-[#e5484d]/50 shadow-xs'
+                ? "border-[#e5484d]/50 shadow-xs"
                 : isWildcard
-                ? 'border-[#383838]'
-                : 'border-[#262626] hover:border-[#383838]'
+                  ? "border-[#383838]"
+                  : "border-[#262626] hover:border-[#383838]"
             }`}
           >
             {/* Card Header: Resource Switcher & Rule Controls */}
@@ -277,11 +307,11 @@ export function PermissionTable({ value, onChange, readOnly = false }: Permissio
                   <div className="inline-flex items-center p-0.5 rounded-[6px] bg-[#0a0a0a] border border-[#222222]">
                     <button
                       type="button"
-                      onClick={() => switchResourceType(idx, 'database')}
+                      onClick={() => switchResourceType(idx, "database")}
                       className={`flex items-center gap-1.5 px-2.5 py-1 rounded-[5px] text-[11px] font-medium transition-colors cursor-pointer touch-manipulation ${
                         !isBlob
-                          ? 'bg-[#18181b] text-white border border-[#27272a] shadow-xs'
-                          : 'text-[#737373] hover:text-[#d4d4d4]'
+                          ? "bg-[#18181b] text-white border border-[#27272a] shadow-xs"
+                          : "text-[#737373] hover:text-[#d4d4d4]"
                       }`}
                     >
                       <Database className="w-3 h-3 text-[#8c8c8c]" />
@@ -289,11 +319,11 @@ export function PermissionTable({ value, onChange, readOnly = false }: Permissio
                     </button>
                     <button
                       type="button"
-                      onClick={() => switchResourceType(idx, 'blob')}
+                      onClick={() => switchResourceType(idx, "blob")}
                       className={`flex items-center gap-1.5 px-2.5 py-1 rounded-[5px] text-[11px] font-medium transition-colors cursor-pointer touch-manipulation ${
                         isBlob
-                          ? 'bg-[#18181b] text-white border border-[#27272a] shadow-xs'
-                          : 'text-[#737373] hover:text-[#d4d4d4]'
+                          ? "bg-[#18181b] text-white border border-[#27272a] shadow-xs"
+                          : "text-[#737373] hover:text-[#d4d4d4]"
                       }`}
                     >
                       <Package className="w-3 h-3 text-[#8c8c8c]" />
@@ -304,7 +334,8 @@ export function PermissionTable({ value, onChange, readOnly = false }: Permissio
                   <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-[5px] text-[11px] font-medium border bg-[#18181b] text-[#cccccc] border-[#27272a]">
                     {isBlob ? (
                       <>
-                        <Package className="w-3 h-3 text-[#8c8c8c]" /> Blob Storage
+                        <Package className="w-3 h-3 text-[#8c8c8c]" /> Blob
+                        Storage
                       </>
                     ) : (
                       <>
@@ -354,7 +385,7 @@ export function PermissionTable({ value, onChange, readOnly = false }: Permissio
                 </label>
                 {readOnly ? (
                   <div className="min-h-[40px] rounded-[6px] border border-[#262626] bg-[#0c0c0c] px-3 flex items-center text-[13px] text-white font-mono">
-                    {displayDb || '*'}
+                    {displayDb || "*"}
                   </div>
                 ) : (
                   <>
@@ -364,17 +395,21 @@ export function PermissionTable({ value, onChange, readOnly = false }: Permissio
                       onChange={(e) => {
                         const val = e.target.value;
                         const finalVal = isBlob
-                          ? val.trim() === '*'
-                            ? 'blob:*'
+                          ? val.trim() === "*"
+                            ? "blob:*"
                             : `blob:${val}`
                           : val;
                         setRule(idx, { database: finalVal });
                       }}
-                      placeholder={isBlob ? '* (all) or namespace_name' : '* (all) or database_alias'}
+                      placeholder={
+                        isBlob
+                          ? "* (all) or namespace_name"
+                          : "* (all) or database_alias"
+                      }
                       className={`min-h-[42px] w-full rounded-[6px] border bg-[#0c0c0c] px-3 text-[13px] font-mono placeholder-[#525252] focus:outline-none transition-colors ${
                         dbHasComma
-                          ? 'border-[#e5484d] text-[#e5484d] focus:border-[#e5484d]'
-                          : 'border-[#262626] text-white focus:border-[#2f80ed] hover:border-[#383838]'
+                          ? "border-[#e5484d] text-[#e5484d] focus:border-[#e5484d]"
+                          : "border-[#262626] text-white focus:border-[#2f80ed] hover:border-[#383838]"
                       }`}
                     />
                     {dbHasComma && (
@@ -416,7 +451,7 @@ export function PermissionTable({ value, onChange, readOnly = false }: Permissio
                 </label>
                 {readOnly ? (
                   <div className="min-h-[40px] rounded-[6px] border border-[#262626] bg-[#0c0c0c] px-3 flex items-center text-[13px] text-white font-mono">
-                    {rule.table || '*'}
+                    {rule.table || "*"}
                   </div>
                 ) : (
                   <>
@@ -424,11 +459,15 @@ export function PermissionTable({ value, onChange, readOnly = false }: Permissio
                       type="text"
                       value={rule.table}
                       onChange={(e) => setRule(idx, { table: e.target.value })}
-                      placeholder={isBlob ? '* (all) or uploads/* or doc.pdf' : '* (all) or table_name'}
+                      placeholder={
+                        isBlob
+                          ? "* (all) or uploads/* or doc.pdf"
+                          : "* (all) or table_name"
+                      }
                       className={`min-h-[42px] w-full rounded-[6px] border bg-[#0c0c0c] px-3 text-[13px] font-mono placeholder-[#525252] focus:outline-none transition-colors ${
                         tableHasComma
-                          ? 'border-[#e5484d] text-[#e5484d] focus:border-[#e5484d]'
-                          : 'border-[#262626] text-white focus:border-[#2f80ed] hover:border-[#383838]'
+                          ? "border-[#e5484d] text-[#e5484d] focus:border-[#e5484d]"
+                          : "border-[#262626] text-white focus:border-[#2f80ed] hover:border-[#383838]"
                       }`}
                     />
                     {tableHasComma && (
@@ -462,23 +501,34 @@ export function PermissionTable({ value, onChange, readOnly = false }: Permissio
                     <Filter className="w-3.5 h-3.5 text-[#8c8c8c]" />
                     <span>Row-Level Security (RLS SQL Filter)</span>
                   </label>
-                  <span className="text-[11px] text-[#737373] font-mono">Optional</span>
+                  <span className="text-[11px] text-[#737373] font-mono">
+                    Optional
+                  </span>
                 </div>
                 {readOnly ? (
                   <div className="min-h-[38px] rounded-[6px] border border-[#262626] bg-[#0c0c0c] px-3 flex items-center text-[12px] text-[#a3a3a3] font-mono">
-                    {rule.rls_filter ? rule.rls_filter : <span className="text-[#525252]">None (full table access)</span>}
+                    {rule.rls_filter ? (
+                      rule.rls_filter
+                    ) : (
+                      <span className="text-[#525252]">
+                        None (full table access)
+                      </span>
+                    )}
                   </div>
                 ) : (
                   <>
                     <input
                       type="text"
-                      value={rule.rls_filter || ''}
-                      onChange={(e) => setRule(idx, { rls_filter: e.target.value })}
+                      value={rule.rls_filter || ""}
+                      onChange={(e) =>
+                        setRule(idx, { rls_filter: e.target.value })
+                      }
                       placeholder="e.g. tenant_id = :auth_key OR department = 'billing'"
                       className="min-h-[38px] w-full rounded-[6px] border border-[#262626] bg-[#0c0c0c] px-3 text-[12px] font-mono text-white placeholder-[#525252] focus:outline-none focus:border-[#2f80ed] hover:border-[#383838] transition-colors"
                     />
                     <p className="mt-1 text-[11px] text-[#737373] font-sans">
-                      Automatically pushed down to SQL WHERE clause on SELECT, UPDATE, and DELETE.
+                      Automatically pushed down to SQL WHERE clause on SELECT,
+                      UPDATE, and DELETE.
                     </p>
                   </>
                 )}
@@ -499,10 +549,11 @@ export function PermissionTable({ value, onChange, readOnly = false }: Permissio
                 {(isBlob ? BLOB_OPS : DB_OPS).map((op) => {
                   const active =
                     rule.operations.includes(op) ||
-                    rule.operations.includes('*') ||
-                    (op === 'READ' && rule.operations.includes('SELECT')) ||
-                    (op === 'WRITE' &&
-                      (rule.operations.includes('INSERT') || rule.operations.includes('UPDATE')));
+                    rule.operations.includes("*") ||
+                    (op === "READ" && rule.operations.includes("SELECT")) ||
+                    (op === "WRITE" &&
+                      (rule.operations.includes("INSERT") ||
+                        rule.operations.includes("UPDATE")));
 
                   return (
                     <button
@@ -512,9 +563,9 @@ export function PermissionTable({ value, onChange, readOnly = false }: Permissio
                       onClick={() => !readOnly && toggleOp(idx, op)}
                       className={`flex items-center justify-center min-h-[38px] px-3.5 rounded-[6px] text-[12px] font-medium transition-all duration-100 cursor-pointer select-none border font-mono touch-manipulation ${
                         active
-                          ? 'bg-[#2563eb]/15 text-[#3b82f6] border-[#2563eb]/35 hover:bg-[#2563eb]/25'
-                          : 'bg-[#0c0c0c] text-[#737373] border-[#222222] hover:text-[#d4d4d4] hover:border-[#383838]'
-                      } ${readOnly ? 'cursor-default' : ''}`}
+                          ? "bg-[#2563eb]/15 text-[#3b82f6] border-[#2563eb]/35 hover:bg-[#2563eb]/25"
+                          : "bg-[#0c0c0c] text-[#737373] border-[#222222] hover:text-[#d4d4d4] hover:border-[#383838]"
+                      } ${readOnly ? "cursor-default" : ""}`}
                       title={active ? `Revoke ${op}` : `Grant ${op}`}
                     >
                       <span>{op}</span>
@@ -531,7 +582,7 @@ export function PermissionTable({ value, onChange, readOnly = false }: Permissio
         <div className="flex flex-col sm:flex-row gap-2 pt-1">
           <button
             type="button"
-            onClick={() => addRule('database')}
+            onClick={() => addRule("database")}
             className="flex-1 flex items-center justify-center gap-1.5 min-h-[42px] px-4 text-[13px] font-medium text-[#cccccc] hover:text-white border border-dashed border-[#262626] hover:border-[#383838] bg-[#0c0c0c] hover:bg-[#121212] rounded-[8px] transition-colors cursor-pointer touch-manipulation"
           >
             <Plus className="w-3.5 h-3.5 text-[#8c8c8c]" />
@@ -539,7 +590,7 @@ export function PermissionTable({ value, onChange, readOnly = false }: Permissio
           </button>
           <button
             type="button"
-            onClick={() => addRule('blob')}
+            onClick={() => addRule("blob")}
             className="flex-1 flex items-center justify-center gap-1.5 min-h-[42px] px-4 text-[13px] font-medium text-[#cccccc] hover:text-white border border-dashed border-[#262626] hover:border-[#383838] bg-[#0c0c0c] hover:bg-[#121212] rounded-[8px] transition-colors cursor-pointer touch-manipulation"
           >
             <Plus className="w-3.5 h-3.5 text-[#8c8c8c]" />

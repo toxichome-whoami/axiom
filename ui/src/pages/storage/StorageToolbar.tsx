@@ -4,7 +4,7 @@
  * Design reference: TableToolbar in TableEditor (exact h-[54px] height, pill switcher, and clean dark borders)
  */
 
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from "react";
 import {
   ChevronRight,
   ChevronDown,
@@ -17,8 +17,18 @@ import {
   Share2,
   FolderPlus,
   Files,
-} from 'lucide-react';
-import { StorageViewMode, StorageTierFilter, StorageItem } from './types';
+  Link as LinkIcon,
+  Filter,
+  Check,
+} from "lucide-react";
+import {
+  StorageViewMode,
+  StorageTierFilter,
+  StorageTypeFilter,
+  StorageItem,
+} from "./types";
+import { NamespaceUsage } from "../../types";
+import { formatBytes } from "./format";
 
 export interface StorageToolbarProps {
   activeNamespace: string;
@@ -29,19 +39,38 @@ export interface StorageToolbarProps {
   onViewModeChange: (mode: StorageViewMode) => void;
   tierFilter: StorageTierFilter;
   onTierFilterChange: (tier: StorageTierFilter) => void;
+  typeFilter?: StorageTypeFilter;
+  onTypeFilterChange?: (type: StorageTypeFilter) => void;
   searchQuery: string;
   onSearchChange: (query: string) => void;
   onUploadClick: () => void;
   onUploadFolderClick?: () => void;
   isDetailsOpen: boolean;
   onToggleDetails: () => void;
-  canDropOnFolder: (dragged: StorageItem | null, targetFolderKey: string) => boolean;
+  canDropOnFolder: (
+    dragged: StorageItem | null,
+    targetFolderKey: string,
+  ) => boolean;
   draggedItemRef: React.MutableRefObject<StorageItem | null>;
   onDropOnFolder: (targetFolderKey: string, item?: StorageItem) => void;
   selectedFileItem?: StorageItem | null;
   onShareClick?: (item: StorageItem) => void;
+  onCreateUploadLink?: () => void;
   isPublic?: boolean;
+  namespaceUsage?: NamespaceUsage | null;
+  totalActiveTickets?: number;
+  filterActiveLinksOnly?: boolean;
+  onToggleFilterActiveLinks?: () => void;
 }
+
+const FILE_TYPE_OPTIONS: Array<{ id: StorageTypeFilter; label: string }> = [
+  { id: "all", label: "All Files" },
+  { id: "image", label: "Images" },
+  { id: "video", label: "Videos" },
+  { id: "audio", label: "Audio" },
+  { id: "document", label: "Documents" },
+  { id: "code", label: "Code & Text" },
+];
 
 export function StorageToolbar({
   activeNamespace,
@@ -52,6 +81,8 @@ export function StorageToolbar({
   onViewModeChange,
   tierFilter,
   onTierFilterChange,
+  typeFilter = "all",
+  onTypeFilterChange,
   searchQuery,
   onSearchChange,
   onUploadClick,
@@ -63,51 +94,89 @@ export function StorageToolbar({
   onDropOnFolder,
   selectedFileItem,
   onShareClick,
+  onCreateUploadLink,
   isPublic,
+  namespaceUsage,
+  totalActiveTickets,
+  filterActiveLinksOnly,
+  onToggleFilterActiveLinks,
 }: StorageToolbarProps) {
-  const [dragOverTargetKey, setDragOverTargetKey] = useState<string | null>(null);
+  const [dragOverTargetKey, setDragOverTargetKey] = useState<string | null>(
+    null,
+  );
   const [isUploadMenuOpen, setIsUploadMenuOpen] = useState(false);
-  const uploadMenuRef = React.useRef<HTMLDivElement>(null);
+  const [isFilterMenuOpen, setIsFilterMenuOpen] = useState(false);
+  const uploadMenuRef = useRef<HTMLDivElement>(null);
+  const filterMenuRef = useRef<HTMLDivElement>(null);
 
-  React.useEffect(() => {
+  const isFilterActive = Boolean(typeFilter && typeFilter !== "all");
+
+  useEffect(() => {
+    if (!isFilterMenuOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (
+        filterMenuRef.current &&
+        !filterMenuRef.current.contains(e.target as Node)
+      ) {
+        setIsFilterMenuOpen(false);
+      }
+    };
+    const handleClose = () => setIsFilterMenuOpen(false);
+    document.addEventListener("mousedown", handleClickOutside);
+    window.addEventListener("resize", handleClose);
+    window.addEventListener("scroll", handleClose, true);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      window.removeEventListener("resize", handleClose);
+      window.removeEventListener("scroll", handleClose, true);
+    };
+  }, [isFilterMenuOpen]);
+
+  useEffect(() => {
     if (!isUploadMenuOpen) return;
     const handleClickOutside = (e: MouseEvent) => {
-      if (uploadMenuRef.current && !uploadMenuRef.current.contains(e.target as Node)) {
+      if (
+        uploadMenuRef.current &&
+        !uploadMenuRef.current.contains(e.target as Node)
+      ) {
         setIsUploadMenuOpen(false);
       }
     };
     const handleClose = () => setIsUploadMenuOpen(false);
-    document.addEventListener('mousedown', handleClickOutside);
-    window.addEventListener('resize', handleClose);
-    window.addEventListener('scroll', handleClose, true);
+    document.addEventListener("mousedown", handleClickOutside);
+    window.addEventListener("resize", handleClose);
+    window.addEventListener("scroll", handleClose, true);
     return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-      window.removeEventListener('resize', handleClose);
-      window.removeEventListener('scroll', handleClose, true);
+      document.removeEventListener("mousedown", handleClickOutside);
+      window.removeEventListener("resize", handleClose);
+      window.removeEventListener("scroll", handleClose, true);
     };
   }, [isUploadMenuOpen]);
 
   return (
-    <div className="h-[54px] shrink-0 px-4 border-b border-[#222222] bg-[#0c0c0c] flex items-center justify-between gap-3 select-none font-sans relative z-30 overflow-x-auto scrollbar-none whitespace-nowrap">
+    <div className="h-[54px] shrink-0 px-3.5 border-b border-[#222222] bg-[#0c0c0c] flex items-center justify-between gap-3 select-none font-sans relative z-30 overflow-x-auto scrollbar-none whitespace-nowrap">
       {/* ─── Left: Interactive Breadcrumbs Navigator ─────────────── */}
-      <div className="flex items-center gap-1.5 text-sm overflow-x-auto scrollbar-none min-w-0 py-0.5 shrink-0">
+      <div className="flex items-center gap-1.5 text-[13.5px] overflow-x-auto scrollbar-none min-w-0 shrink-0">
         <button
           type="button"
-          onClick={() => onNavigateToPrefix('')}
+          onClick={() => onNavigateToPrefix("")}
           onDragOver={(e) => {
-            if (draggedItemRef.current && canDropOnFolder(draggedItemRef.current, '')) {
+            if (
+              draggedItemRef.current &&
+              canDropOnFolder(draggedItemRef.current, "")
+            ) {
               e.preventDefault();
               e.stopPropagation();
-              e.dataTransfer.dropEffect = 'move';
-              if (dragOverTargetKey !== '') {
-                setDragOverTargetKey('');
+              e.dataTransfer.dropEffect = "move";
+              if (dragOverTargetKey !== "") {
+                setDragOverTargetKey("");
               }
             }
           }}
           onDragLeave={(e) => {
             e.stopPropagation();
             if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-              if (dragOverTargetKey === '') {
+              if (dragOverTargetKey === "") {
                 setDragOverTargetKey(null);
               }
             }
@@ -117,27 +186,27 @@ export function StorageToolbar({
             e.stopPropagation();
             setDragOverTargetKey(null);
             if (draggedItemRef.current) {
-              await onDropOnFolder('', draggedItemRef.current);
+              await onDropOnFolder("", draggedItemRef.current);
             }
           }}
-          className={`hover:text-white transition-colors cursor-pointer font-medium shrink-0 h-8 px-2.5 flex items-center gap-2 rounded-[6px] text-[13px] ${
-            dragOverTargetKey === ''
-              ? 'bg-blue-600/30 text-blue-300 ring-1 ring-blue-500/60'
-              : currentPrefix === ''
-              ? 'text-white bg-[#1a1a1a]'
-              : 'text-[#8c8c8c]'
+          className={`hover:text-white transition-colors cursor-pointer font-medium shrink-0 h-8 px-2.5 flex items-center gap-2 rounded-[6px] text-[13px] border ${
+            dragOverTargetKey === ""
+              ? "bg-blue-600/30 text-blue-300 ring-1 ring-blue-500/60"
+              : currentPrefix === ""
+                ? "text-white bg-[#141414] border-[#262626]"
+                : "text-[#8c8c8c]"
           }`}
         >
-          <span>{activeNamespace || 'Root'}</span>
+          <span>{activeNamespace || "Root"}</span>
           {activeNamespace && (
             <span
-              className={`px-1.5 py-0.5 rounded-[4px] text-[11px] font-medium ${
+              className={`px-2 py-0.5 rounded-[4px] text-[12px] font-sans font-medium leading-none ${
                 isPublic
-                  ? 'bg-[#30a46c]/15 border border-[#30a46c]/30 text-[#30a46c]'
-                  : 'bg-[#161616] border border-[#262626] text-[#8c8c8c]'
+                  ? "bg-[#161616] border border-[#2e2e2e] text-[#cccccc]"
+                  : "bg-[#161616] border border-[#262626] text-[#8c8c8c]"
               }`}
             >
-              {isPublic ? 'Public' : 'Private'}
+              {isPublic ? "Public" : "Private"}
             </span>
           )}
         </button>
@@ -152,10 +221,13 @@ export function StorageToolbar({
                 type="button"
                 onClick={() => onNavigateToPrefix(seg.prefix)}
                 onDragOver={(e) => {
-                  if (draggedItemRef.current && canDropOnFolder(draggedItemRef.current, seg.prefix)) {
+                  if (
+                    draggedItemRef.current &&
+                    canDropOnFolder(draggedItemRef.current, seg.prefix)
+                  ) {
                     e.preventDefault();
                     e.stopPropagation();
-                    e.dataTransfer.dropEffect = 'move';
+                    e.dataTransfer.dropEffect = "move";
                     if (dragOverTargetKey !== seg.prefix) {
                       setDragOverTargetKey(seg.prefix);
                     }
@@ -177,12 +249,12 @@ export function StorageToolbar({
                     await onDropOnFolder(seg.prefix, draggedItemRef.current);
                   }
                 }}
-                className={`hover:text-white transition-colors cursor-pointer font-medium truncate max-w-[180px] shrink-0 h-8 px-2.5 flex items-center rounded-[6px] text-[13px] ${
+                className={`hover:text-white transition-colors cursor-pointer font-medium truncate max-w-[220px] shrink-0 h-8 px-2.5 flex items-center rounded-[6px] text-[13px] border ${
                   isDropTarget
-                    ? 'bg-blue-600/30 text-blue-300 ring-1 ring-blue-500/60'
+                    ? "bg-blue-600/30 text-blue-300 ring-1 ring-blue-500/60"
                     : isLast
-                    ? 'text-white bg-[#1a1a1a]'
-                    : 'text-[#8c8c8c]'
+                      ? "text-white bg-[#141414] border-[#262626]"
+                      : "text-[#8c8c8c]"
                 }`}
               >
                 {seg.name}
@@ -195,7 +267,7 @@ export function StorageToolbar({
       {/* ─── Right: Search, Filter, View Mode, Details Toggle, Upload ─────────────── */}
       <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
         {/* Live Search Input */}
-        <div className="relative w-28 sm:w-44 md:w-56">
+        <div className="relative w-36 sm:w-64 md:w-80">
           <Search className="w-3.5 h-3.5 text-[#8c8c8c] absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
           <input
             type="text"
@@ -207,7 +279,7 @@ export function StorageToolbar({
           {searchQuery && (
             <button
               type="button"
-              onClick={() => onSearchChange('')}
+              onClick={() => onSearchChange("")}
               className="absolute right-2 top-1/2 -translate-y-1/2 text-[#8c8c8c] hover:text-white p-0.5 cursor-pointer"
             >
               <X className="w-3.5 h-3.5" />
@@ -215,53 +287,141 @@ export function StorageToolbar({
           )}
         </div>
 
-        {/* Storage Tier Filter Pill (Hidden on narrow screens to prevent overflow) */}
-        <div className="hidden md:flex items-center p-1 rounded-[7px] bg-[#141414] border border-[#262626] h-9">
+        {/* Filters dropdown button & popover (Matches Databases Display Options design) */}
+        {onTypeFilterChange && (
+          <div className="relative" ref={filterMenuRef}>
+            <button
+              type="button"
+              onClick={() => setIsFilterMenuOpen((prev) => !prev)}
+              className={`flex items-center gap-1.5 h-8 px-2.5 rounded-[6px] border text-[13px] font-medium transition-colors cursor-pointer shrink-0 font-sans ${
+                isFilterMenuOpen || isFilterActive
+                  ? "bg-[#1c1c1c] text-white border-[#383838]"
+                  : "bg-[#141414] text-[#cccccc] hover:text-white hover:bg-[#1c1c1c] border-[#262626] hover:border-[#383838]"
+              }`}
+              title="Filter by file type"
+            >
+              <Filter
+                className={`w-3.5 h-3.5 ${isFilterActive ? "text-blue-400" : "text-[#8c8c8c]"}`}
+              />
+              <span>Filters</span>
+              {isFilterActive && (
+                <span className="text-[12px] text-blue-400 font-medium">
+                  (
+                  {typeFilter === "code"
+                    ? "Code"
+                    : typeFilter.charAt(0).toUpperCase() + typeFilter.slice(1)}
+                  )
+                </span>
+              )}
+            </button>
+
+            {isFilterMenuOpen &&
+              (() => {
+                const rect = filterMenuRef.current?.getBoundingClientRect();
+                const top = (rect?.bottom ?? 0) + 4;
+                const left = Math.max(
+                  8,
+                  Math.min(
+                    window.innerWidth - 208 - 8,
+                    (rect?.right ?? 0) - 208,
+                  ),
+                );
+                return (
+                  <div
+                    style={{ top: `${top}px`, left: `${left}px` }}
+                    className="fixed w-52 rounded-[8px] bg-[#0c0c0c] border border-[#262626] shadow-2xl p-1 z-50 select-none font-sans animate-in fade-in duration-100"
+                  >
+                    {FILE_TYPE_OPTIONS.map((opt) => {
+                      const isSelected = (typeFilter || "all") === opt.id;
+                      return (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          onClick={() => {
+                            onTypeFilterChange(opt.id);
+                            setIsFilterMenuOpen(false);
+                          }}
+                          className="w-full flex items-center justify-between px-3 py-2 rounded-[6px] text-[13px] text-[#cccccc] hover:text-white hover:bg-[#141414] transition-colors cursor-pointer font-sans"
+                        >
+                          <span
+                            className={
+                              isSelected
+                                ? "text-white font-medium"
+                                : "text-[#8c8c8c]"
+                            }
+                          >
+                            {opt.label}
+                          </span>
+                          {isSelected && (
+                            <Check className="w-3.5 h-3.5 text-[#3b82f6] shrink-0" />
+                          )}
+                        </button>
+                      );
+                    })}
+                    <div className="-mx-1 my-1 border-t border-[#222222]" />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onTypeFilterChange("all");
+                        setIsFilterMenuOpen(false);
+                      }}
+                      className="w-full text-left px-3 py-2 rounded-[6px] text-[13px] text-[#8c8c8c] hover:text-white hover:bg-[#141414] transition-colors cursor-pointer font-sans"
+                    >
+                      Reset filter
+                    </button>
+                  </div>
+                );
+              })()}
+          </div>
+        )}
+
+        {/* Storage Tier Filter Pill */}
+        <div className="hidden md:flex items-center p-1 rounded-[7px] bg-[#141414] border border-[#262626] h-[35.99px]">
           <button
             type="button"
-            onClick={() => onTierFilterChange('all')}
+            onClick={() => onTierFilterChange("all")}
             className={`px-3 py-1 rounded-[5px] text-[13px] font-medium transition-colors cursor-pointer ${
-              tierFilter === 'all'
-                ? 'bg-[#222222] text-white shadow-sm'
-                : 'text-[#8c8c8c] hover:text-white'
+              tierFilter === "all"
+                ? "bg-[#222222] text-white shadow-sm"
+                : "text-[#8c8c8c] hover:text-white"
             }`}
           >
             All
           </button>
           <button
             type="button"
-            onClick={() => onTierFilterChange('inline')}
+            onClick={() => onTierFilterChange("inline")}
             className={`px-3 py-1 rounded-[5px] text-[13px] font-medium transition-colors cursor-pointer ${
-              tierFilter === 'inline'
-                ? 'bg-[#222222] text-white shadow-sm'
-                : 'text-[#8c8c8c] hover:text-white'
+              tierFilter === "inline"
+                ? "bg-[#222222] text-white shadow-sm"
+                : "text-[#8c8c8c] hover:text-white"
             }`}
           >
             LSM
           </button>
           <button
             type="button"
-            onClick={() => onTierFilterChange('disk')}
+            onClick={() => onTierFilterChange("disk")}
             className={`px-3 py-1 rounded-[5px] text-[13px] font-medium transition-colors cursor-pointer ${
-              tierFilter === 'disk'
-                ? 'bg-[#222222] text-white shadow-sm'
-                : 'text-[#8c8c8c] hover:text-white'
+              tierFilter === "disk"
+                ? "bg-[#222222] text-white shadow-sm"
+                : "text-[#8c8c8c] hover:text-white"
             }`}
           >
             Disk
           </button>
         </div>
 
-        {/* View Mode Switcher Pills (Matching TableToolbar design system, h-9 tabs, 13px font) */}
-        <div className="flex items-center p-1 rounded-[7px] bg-[#141414] border border-[#262626] h-9">
+        {/* View Mode Switcher Pills */}
+        <div className="flex items-center p-1 rounded-[7px] bg-[#141414] border border-[#262626] h-[35.99px]">
           <button
             type="button"
-            onClick={() => onViewModeChange('grid')}
+            onClick={() => onViewModeChange("grid")}
             title="Grid View"
             className={`flex items-center gap-1.5 px-3 py-1 rounded-[5px] text-[13px] font-medium transition-colors cursor-pointer ${
-              viewMode === 'grid'
-                ? 'bg-[#222222] text-white shadow-sm'
-                : 'text-[#8c8c8c] hover:text-white'
+              viewMode === "grid"
+                ? "bg-[#222222] text-white shadow-sm"
+                : "text-[#8c8c8c] hover:text-white"
             }`}
           >
             <LayoutGrid className="w-3.5 h-3.5" />
@@ -269,12 +429,12 @@ export function StorageToolbar({
           </button>
           <button
             type="button"
-            onClick={() => onViewModeChange('list')}
+            onClick={() => onViewModeChange("list")}
             title="Table View"
             className={`flex items-center gap-1.5 px-3 py-1 rounded-[5px] text-[13px] font-medium transition-colors cursor-pointer ${
-              viewMode === 'list'
-                ? 'bg-[#222222] text-white shadow-sm'
-                : 'text-[#8c8c8c] hover:text-white'
+              viewMode === "list"
+                ? "bg-[#222222] text-white shadow-sm"
+                : "text-[#8c8c8c] hover:text-white"
             }`}
           >
             <ListIcon className="w-3.5 h-3.5" />
@@ -286,31 +446,68 @@ export function StorageToolbar({
         <button
           type="button"
           onClick={onToggleDetails}
-          title={isDetailsOpen ? 'Hide Details Panel' : 'Show Details Panel'}
+          title={isDetailsOpen ? "Hide Details Panel" : "Show Details Panel"}
           className={`flex items-center justify-center w-8 h-8 rounded-[6px] border transition-colors cursor-pointer ${
             isDetailsOpen
-              ? 'bg-[#1c1c1c] text-white border-[#383838]'
-              : 'bg-[#141414] text-[#8c8c8c] hover:text-white border-[#262626] hover:border-[#383838]'
+              ? "bg-[#1c1c1c] text-white border-[#383838]"
+              : "bg-[#141414] text-[#8c8c8c] hover:text-white border-[#262626] hover:border-[#383838]"
           }`}
         >
-          <PanelRight className="w-3.5 h-3.5" />
+          <PanelRight className="w-4 h-4" />
         </button>
 
+        {/* Active Capability Links Notification / Filter Pill */}
+        {totalActiveTickets !== undefined &&
+          totalActiveTickets > 0 &&
+          onToggleFilterActiveLinks && (
+            <button
+              type="button"
+              onClick={onToggleFilterActiveLinks}
+              title={
+                filterActiveLinksOnly
+                  ? "Showing only objects with active share links. Click to show all."
+                  : "Filter to show objects with active capability share links"
+              }
+              className={`flex items-center gap-1.5 h-8 px-2.5 rounded-[6px] text-[12.5px] font-sans font-medium transition-colors cursor-pointer shrink-0 border ${
+                filterActiveLinksOnly
+                  ? "bg-blue-600 text-white border-blue-500 shadow-xs"
+                  : "bg-blue-500/15 hover:bg-blue-500/25 text-blue-400 hover:text-blue-300 border-blue-500/30"
+              }`}
+            >
+              <LinkIcon className="w-3.5 h-3.5 shrink-0" />
+              <span className="hidden sm:inline">
+                {totalActiveTickets} Active{" "}
+                {totalActiveTickets === 1 ? "Link" : "Links"}
+              </span>
+              <span className="sm:hidden font-mono text-[12px]">
+                {totalActiveTickets}
+              </span>
+              {filterActiveLinksOnly && (
+                <X className="w-3.5 h-3.5 ml-0.5 shrink-0" />
+              )}
+            </button>
+          )}
+
         {/* Quick Share Link CTA Button */}
-        {selectedFileItem && selectedFileItem.type === 'file' && onShareClick && (
-          <button
-            type="button"
-            onClick={() => onShareClick(selectedFileItem)}
-            title={`Share link for ${selectedFileItem.name}`}
-            className="flex items-center gap-1.5 h-8 px-2.5 rounded-[6px] text-[13px] font-medium text-white bg-[#141414] hover:bg-[#1c1c1c] border border-[#262626] hover:border-[#383838] transition-colors cursor-pointer shrink-0"
-          >
-            <Share2 className="w-3.5 h-3.5 text-white" />
-            <span className="hidden sm:inline">Share</span>
-          </button>
-        )}
+        {selectedFileItem &&
+          selectedFileItem.type === "file" &&
+          onShareClick && (
+            <button
+              type="button"
+              onClick={() => onShareClick(selectedFileItem)}
+              title={`Share link for ${selectedFileItem.name}`}
+              className="flex items-center gap-1.5 h-8 px-2.5 rounded-[6px] text-[13px] font-medium text-white bg-[#141414] hover:bg-[#1c1c1c] border border-[#262626] hover:border-[#383838] transition-colors cursor-pointer shrink-0"
+            >
+              <Share2 className="w-4 h-4 text-white" />
+              <span className="hidden sm:inline">Share</span>
+            </button>
+          )}
 
         {/* Direct Upload CTA Button with Dropdown for Folder & Multi-file Upload */}
-        <div className="relative inline-flex items-center shrink-0" ref={uploadMenuRef}>
+        <div
+          className="relative inline-flex items-center shrink-0"
+          ref={uploadMenuRef}
+        >
           <button
             type="button"
             onClick={onUploadClick}
@@ -318,7 +515,7 @@ export function StorageToolbar({
             title="Upload files into current directory"
             className="flex items-center gap-1.5 h-8 px-3 rounded-l-[6px] text-[13px] font-medium text-white bg-blue-600 hover:bg-blue-500 border border-blue-500/80 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            <Upload className="w-3.5 h-3.5" />
+            <Upload className="w-4 h-4" />
             <span className="hidden sm:inline">Upload</span>
           </button>
           <button
@@ -327,47 +524,70 @@ export function StorageToolbar({
             disabled={!activeNamespace}
             title="Upload options (files, folders for hosting)"
             aria-label="Upload options"
-            className="flex items-center justify-center h-8 px-2.5 rounded-r-[6px] text-white bg-blue-600 hover:bg-blue-500 border-t border-b border-r border-l border-blue-500/80 border-l-blue-700/70 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed select-none"
+            className="flex items-center justify-center h-8 px-2 rounded-r-[6px] text-white bg-blue-600 hover:bg-blue-500 border-t border-b border-r border-l border-blue-500/80 border-l-blue-700/70 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed select-none"
           >
-            <ChevronDown className="w-3.5 h-3.5" />
+            <ChevronDown className="w-4 h-4" />
           </button>
 
           {/* Upload Dropdown Menu */}
-          {isUploadMenuOpen && (() => {
-            const rect = uploadMenuRef.current?.getBoundingClientRect();
-            const top = (rect?.bottom ?? 0) + 4;
-            const left = Math.max(8, Math.min(window.innerWidth - 176 - 8, (rect?.right ?? 0) - 176));
-            return (
-              <div
-                style={{ top: `${top}px`, left: `${left}px` }}
-                className="fixed w-44 bg-[#111111] border border-[#262626] rounded-[8px] shadow-2xl p-1 z-50 animate-in fade-in zoom-in-95 duration-100 font-sans"
-              >
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsUploadMenuOpen(false);
-                    onUploadClick();
-                  }}
-                  className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-[6px] text-[13px] text-[#cccccc] hover:text-white hover:bg-[#1a1a1a] transition-colors cursor-pointer text-left"
+          {isUploadMenuOpen &&
+            (() => {
+              const rect = uploadMenuRef.current?.getBoundingClientRect();
+              const top = (rect?.bottom ?? 0) + 4;
+              const left = Math.max(
+                8,
+                Math.min(window.innerWidth - 176 - 8, (rect?.right ?? 0) - 176),
+              );
+              return (
+                <div
+                  style={{ top: `${top}px`, left: `${left}px` }}
+                  className="fixed w-44 bg-[#111111] border border-[#262626] rounded-[8px] shadow-2xl p-1 z-50 animate-in fade-in zoom-in-95 duration-100 font-sans"
                 >
-                  <Files className="w-3.5 h-3.5 text-blue-400 shrink-0" />
-                  <span>Upload files</span>
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsUploadMenuOpen(false);
+                      onUploadClick();
+                    }}
+                    className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-[6px] text-[13px] text-[#cccccc] hover:text-white hover:bg-[#1a1a1a] transition-colors cursor-pointer text-left"
+                  >
+                    <Files className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                    <span>Upload files</span>
+                  </button>
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsUploadMenuOpen(false);
-                    onUploadFolderClick ? onUploadFolderClick() : onUploadClick();
-                  }}
-                  className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-[6px] text-[13px] text-[#cccccc] hover:text-white hover:bg-[#1a1a1a] transition-colors cursor-pointer text-left"
-                >
-                  <FolderPlus className="w-3.5 h-3.5 text-[#eab308] shrink-0" />
-                  <span>Upload folder</span>
-                </button>
-              </div>
-            );
-          })()}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsUploadMenuOpen(false);
+                      onUploadFolderClick
+                        ? onUploadFolderClick()
+                        : onUploadClick();
+                    }}
+                    className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-[6px] text-[13px] text-[#cccccc] hover:text-white hover:bg-[#1a1a1a] transition-colors cursor-pointer text-left"
+                  >
+                    <FolderPlus className="w-3.5 h-3.5 text-[#8c8c8c] shrink-0" />
+                    <span>Upload folder</span>
+                  </button>
+
+                  {onCreateUploadLink && (
+                    <>
+                      <div className="my-1 border-t border-[#1f1f1f]" />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsUploadMenuOpen(false);
+                          onCreateUploadLink();
+                        }}
+                        className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-[6px] text-[13px] text-[#cccccc] hover:text-white hover:bg-[#1a1a1a] transition-colors cursor-pointer text-left"
+                      >
+                        <LinkIcon className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                        <span>Create upload link</span>
+                      </button>
+                    </>
+                  )}
+                </div>
+              );
+            })()}
         </div>
       </div>
     </div>

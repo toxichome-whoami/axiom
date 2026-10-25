@@ -36,6 +36,8 @@ use axiom_policy::PolicyEngine;
 /// Seeds an in-memory ArcSwap metadata snapshot with deterministic test identities.
 /// Idempotent — safe to call from every test without ordering concerns.
 fn setup_test_metadata() {
+    axiom_cache::CacheEngine::reset_ip_rate_limit("127.0.0.1");
+    BanList::unban_ip_local("127.0.0.1");
     let mut keys = HashMap::new();
     let mut roles = HashMap::new();
     let mut databases = HashMap::new();
@@ -1464,14 +1466,14 @@ async fn blob_storage_presigned_capability_ticket_download() {
         .unwrap();
     assert_eq!(&dl_bytes[..], b"Top secret capability test");
 
-    // 4. Download with tampered signature fails with 401 Unauthorized
+    // 4. Download with tampered signature fails with 403 Forbidden
     let bad_dl_url = format!(
         "/api/v1/blobs/secure/secret_doc.txt?ticket_sig=0000000000000000&ticket_exp={}",
         ticket_exp
     );
     let bad_dl_req = Request::get(&bad_dl_url).body(Body::empty()).unwrap();
     let bad_dl_res = create_app().oneshot(bad_dl_req).await.unwrap();
-    assert_eq!(bad_dl_res.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(bad_dl_res.status(), StatusCode::FORBIDDEN);
 }
 
 #[tokio::test]
@@ -1893,8 +1895,8 @@ async fn db_data_api_full_crud_pagination_and_column_lifecycle() {
     let add_col_res = create_app().oneshot(add_col_req).await.unwrap();
     assert_eq!(add_col_res.status(), StatusCode::OK);
 
-    // 8. Describe Table Schema
-    let schema_req = Request::get("/api/v1/db/testdb/items_crud/schema")
+    // 8. Describe Table Schema via Canonical /columns Endpoint
+    let schema_req = Request::get("/api/v1/db/testdb/items_crud/columns")
         .header("X-Axiom-Key", &admin_token)
         .body(Body::empty())
         .unwrap();
@@ -1908,6 +1910,86 @@ async fn db_data_api_full_crud_pagination_and_column_lifecycle() {
     .unwrap();
     let cols = schema_json["data"]["columns"].as_array().unwrap();
     assert!(cols.iter().any(|c| c["name"] == "barcode"));
+
+    // Verify deprecated /schema endpoint is completely removed (404 Not Found)
+    let legacy_schema_req = Request::get("/api/v1/db/testdb/items_crud/schema")
+        .header("X-Axiom-Key", &admin_token)
+        .body(Body::empty())
+        .unwrap();
+    let legacy_schema_res = create_app().oneshot(legacy_schema_req).await.unwrap();
+    assert_eq!(legacy_schema_res.status(), StatusCode::NOT_FOUND);
+
+    // Verify PATCH on collection root /columns without path parameter is rejected (405 Method Not Allowed)
+    let invalid_patch_req = Request::patch("/api/v1/db/testdb/items_crud/columns")
+        .header("X-Axiom-Key", &admin_token)
+        .header("Content-Type", "application/json")
+        .body(Body::from(r#"{"new_name":"barcode_code"}"#))
+        .unwrap();
+    let invalid_patch_res = create_app().oneshot(invalid_patch_req).await.unwrap();
+    assert_eq!(invalid_patch_res.status(), StatusCode::METHOD_NOT_ALLOWED);
+
+    // Modify/Rename Column via Canonical RESTful Path Parameter: PATCH /columns/:column_name
+    let modify_col_req = Request::patch("/api/v1/db/testdb/items_crud/columns/barcode")
+        .header("X-Axiom-Key", &admin_token)
+        .header("Content-Type", "application/json")
+        .body(Body::from(
+            serde_json::to_vec(&serde_json::json!({
+                "new_name": "barcode_code"
+            }))
+            .unwrap(),
+        ))
+        .unwrap();
+    let modify_col_res = create_app().oneshot(modify_col_req).await.unwrap();
+    assert_eq!(modify_col_res.status(), StatusCode::OK);
+
+    // Verify column was renamed to barcode_code
+    let check_renamed_req = Request::get("/api/v1/db/testdb/items_crud/columns")
+        .header("X-Axiom-Key", &admin_token)
+        .body(Body::empty())
+        .unwrap();
+    let check_renamed_res = create_app().oneshot(check_renamed_req).await.unwrap();
+    assert_eq!(check_renamed_res.status(), StatusCode::OK);
+    let check_renamed_json: Value = serde_json::from_slice(
+        &axum::body::to_bytes(check_renamed_res.into_body(), 65536)
+            .await
+            .unwrap(),
+    )
+    .unwrap();
+    let cols_renamed = check_renamed_json["data"]["columns"].as_array().unwrap();
+    assert!(cols_renamed.iter().any(|c| c["name"] == "barcode_code"));
+    assert!(!cols_renamed.iter().any(|c| c["name"] == "barcode"));
+
+    // Verify DELETE on collection root /columns without path parameter is rejected (405 Method Not Allowed)
+    let invalid_del_req = Request::delete("/api/v1/db/testdb/items_crud/columns")
+        .header("X-Axiom-Key", &admin_token)
+        .body(Body::empty())
+        .unwrap();
+    let invalid_del_res = create_app().oneshot(invalid_del_req).await.unwrap();
+    assert_eq!(invalid_del_res.status(), StatusCode::METHOD_NOT_ALLOWED);
+
+    // Dynamic Column Drop via Canonical RESTful Path Parameter
+    let drop_col_req = Request::delete("/api/v1/db/testdb/items_crud/columns/barcode_code")
+        .header("X-Axiom-Key", &admin_token)
+        .body(Body::empty())
+        .unwrap();
+    let drop_col_res = create_app().oneshot(drop_col_req).await.unwrap();
+    assert_eq!(drop_col_res.status(), StatusCode::OK);
+
+    // Verify column was dropped
+    let check_cols_req = Request::get("/api/v1/db/testdb/items_crud/columns")
+        .header("X-Axiom-Key", &admin_token)
+        .body(Body::empty())
+        .unwrap();
+    let check_cols_res = create_app().oneshot(check_cols_req).await.unwrap();
+    assert_eq!(check_cols_res.status(), StatusCode::OK);
+    let check_cols_json: Value = serde_json::from_slice(
+        &axum::body::to_bytes(check_cols_res.into_body(), 65536)
+            .await
+            .unwrap(),
+    )
+    .unwrap();
+    let cols_after = check_cols_json["data"]["columns"].as_array().unwrap();
+    assert!(!cols_after.iter().any(|c| c["name"] == "barcode_code"));
 
     // 9. List databases
     let list_dbs_req = Request::get("/api/v1/db/databases")
@@ -2479,6 +2561,7 @@ async fn ndjson_streaming_response() {
 
 #[tokio::test]
 async fn row_level_security_predicate_filtering() {
+    setup_test_metadata();
     ensure_metadata_store().await;
     ensure_test_items_table().await;
     let admin_token = BASE64_STANDARD.encode("admin_key:secret_admin");
@@ -2880,4 +2963,299 @@ async fn test_cluster_ban_propagation_and_instant_rejection() {
 
     // IP is now unbanned
     assert!(!BanList::is_ip_banned(target_ip).0);
+}
+
+#[tokio::test]
+async fn test_first_class_blob_hierarchy_and_quota_usage() {
+    setup_test_metadata();
+    ensure_blob_engine().await;
+    axiom_cache::CacheEngine::delete("rl:ip:127.0.0.1").await;
+    axiom_cache::CacheEngine::delete("penalty:127.0.0.1").await;
+    let admin_token = BASE64_STANDARD.encode("admin_key:secret_admin");
+
+    // 1. Create a namespace with quota limit
+    let ns_name = "fc-blob-test";
+    let req = Request::post("/admin/v1/blobs/namespaces")
+        .header("Authorization", format!("Bearer {}", admin_token))
+        .header("Content-Type", "application/json")
+        .body(Body::from(
+            serde_json::to_vec(&serde_json::json!({
+                "name": ns_name,
+                "max_bytes": 1048576,
+                "is_public": false
+            }))
+            .unwrap(),
+        ))
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert!(res.status() == StatusCode::CREATED || res.status() == StatusCode::CONFLICT);
+
+    // 2. Put object using first-class REST URL: /api/v1/blobs/objects/:namespace/*key
+    let req = Request::put(format!("/api/v1/blobs/objects/{}/data/sample.txt", ns_name))
+        .header("X-Axiom-Key", &admin_token)
+        .header("Content-Type", "text/plain")
+        .body(Body::from("First-Class Axiom Blob Architecture"))
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::CREATED);
+
+    // 3. Query space-left and quota headroom via /api/v1/blobs/namespaces/:namespace/usage
+    let req = Request::get(format!("/api/v1/blobs/namespaces/{}/usage", ns_name))
+        .header("X-Axiom-Key", &admin_token)
+        .body(Body::empty())
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let body_bytes = axum::body::to_bytes(res.into_body(), 65536).await.unwrap();
+    let usage_json: Value = serde_json::from_slice(&body_bytes).unwrap();
+    assert_eq!(usage_json["success"], true);
+    let data = &usage_json["data"];
+    assert_eq!(data["namespace"], ns_name);
+    assert!(data["used_bytes"].as_u64().unwrap() > 0);
+    assert_eq!(data["max_bytes"], 1048576);
+    assert!(data["remaining_bytes"].as_u64().unwrap() < 1048576);
+    assert_eq!(data["is_quota_exceeded"], false);
+
+    // 4. Server-side zero-copy CAS clone via /api/v1/blobs/objects/copy
+    let req = Request::post("/api/v1/blobs/objects/copy")
+        .header("X-Axiom-Key", &admin_token)
+        .header("Content-Type", "application/json")
+        .body(Body::from(
+            serde_json::to_vec(&serde_json::json!({
+                "src_namespace": ns_name,
+                "src_key": "data/sample.txt",
+                "dest_key": "data/sample_copied.txt"
+            }))
+            .unwrap(),
+        ))
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    // 5. Atomic relocate via /api/v1/blobs/objects/move
+    let req = Request::post("/api/v1/blobs/objects/move")
+        .header("X-Axiom-Key", &admin_token)
+        .header("Content-Type", "application/json")
+        .body(Body::from(
+            serde_json::to_vec(&serde_json::json!({
+                "src_namespace": ns_name,
+                "src_key": "data/sample_copied.txt",
+                "dest_key": "data/sample_moved.txt"
+            }))
+            .unwrap(),
+        ))
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    // Verify source moved is gone and target exists
+    let req = Request::get(format!(
+        "/api/v1/blobs/objects/{}/data/sample_copied.txt",
+        ns_name
+    ))
+    .header("X-Axiom-Key", &admin_token)
+    .body(Body::empty())
+    .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::NOT_FOUND);
+
+    let req = Request::get(format!(
+        "/api/v1/blobs/objects/{}/data/sample_moved.txt",
+        ns_name
+    ))
+    .header("X-Axiom-Key", &admin_token)
+    .body(Body::empty())
+    .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    // 6. Pre-signed direct upload capability URL via /api/v1/blobs/uploads/:namespace/sign
+    let req = Request::post(format!("/api/v1/blobs/uploads/{}/sign", ns_name))
+        .header("X-Axiom-Key", &admin_token)
+        .header("Content-Type", "application/json")
+        .body(Body::from(
+            serde_json::to_vec(&serde_json::json!({
+                "key": "incoming/direct.txt",
+                "content_type": "text/plain",
+                "ttl_seconds": 600
+            }))
+            .unwrap(),
+        ))
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::CREATED);
+    let body_bytes = axum::body::to_bytes(res.into_body(), 65536).await.unwrap();
+    let sign_json: Value = serde_json::from_slice(&body_bytes).unwrap();
+    let presigned_url = sign_json["data"]["url"].as_str().unwrap().to_string();
+    assert!(presigned_url.contains("ticket_sig="));
+
+    // Upload using pre-signed capability URL directly WITHOUT Authorization header
+    let req = Request::put(&presigned_url)
+        .header("Content-Type", "text/plain")
+        .body(Body::from("Uploaded via Capability Ticket"))
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::CREATED);
+
+    // 7. Unified batch delete via /api/v1/blobs/objects/:namespace/batch-delete
+    let req = Request::post(format!("/api/v1/blobs/objects/{}/batch-delete", ns_name))
+        .header("X-Axiom-Key", &admin_token)
+        .header("Content-Type", "application/json")
+        .body(Body::from(
+            serde_json::to_vec(&serde_json::json!({
+                "keys": ["data/sample.txt", "data/sample_moved.txt"],
+                "prefix": "incoming/"
+            }))
+            .unwrap(),
+        ))
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let body_bytes = axum::body::to_bytes(res.into_body(), 65536).await.unwrap();
+    let batch_json: Value = serde_json::from_slice(&body_bytes).unwrap();
+    assert_eq!(batch_json["success"], true);
+    assert_eq!(batch_json["data"]["deleted"].as_array().unwrap().len(), 2);
+    assert_eq!(batch_json["data"]["prefix_deleted"], 1);
+
+    // 8. Verify Data Plane vs Admin Control Plane boundary:
+    // PATCH and DELETE on /api/v1/blobs/namespaces/:namespace must NOT be allowed on the data plane!
+    let req = Request::patch(format!("/api/v1/blobs/namespaces/{}", ns_name))
+        .header("X-Axiom-Key", &admin_token)
+        .header("Content-Type", "application/json")
+        .body(Body::from(r#"{"max_bytes": 2048}"#))
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::METHOD_NOT_ALLOWED);
+
+    let req = Request::delete(format!("/api/v1/blobs/namespaces/{}", ns_name))
+        .header("X-Axiom-Key", &admin_token)
+        .body(Body::empty())
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::METHOD_NOT_ALLOWED);
+
+    // POST on /api/v1/blobs/namespaces must NOT be allowed on the data plane!
+    let req = Request::post("/api/v1/blobs/namespaces")
+        .header("X-Axiom-Key", &admin_token)
+        .header("Content-Type", "application/json")
+        .body(Body::from(r#"{"name": "rogue-ns"}"#))
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::METHOD_NOT_ALLOWED);
+
+    // 9. Verify Scoped Capability Ticket Plane:
+    // Mint scoped ticket via POST /api/v1/blobs/tickets/:namespace
+    let req = Request::post(format!("/api/v1/blobs/tickets/{}", ns_name))
+        .header("X-Axiom-Key", &admin_token)
+        .header("Content-Type", "application/json")
+        .body(Body::from(
+            serde_json::to_vec(&serde_json::json!({
+                "key": "report.pdf",
+                "operation": "READ",
+                "ttl_seconds": 3600
+            }))
+            .unwrap(),
+        ))
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::CREATED);
+    let body_bytes = axum::body::to_bytes(res.into_body(), 65536).await.unwrap();
+    let ticket_json: Value = serde_json::from_slice(&body_bytes).unwrap();
+    let sig = ticket_json["data"]["signature"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    // List scoped tickets via GET /api/v1/blobs/tickets/:namespace
+    let req = Request::get(format!("/api/v1/blobs/tickets/{}", ns_name))
+        .header("X-Axiom-Key", &admin_token)
+        .body(Body::empty())
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let body_bytes = axum::body::to_bytes(res.into_body(), 65536).await.unwrap();
+    let list_json: Value = serde_json::from_slice(&body_bytes).unwrap();
+    assert_eq!(list_json["success"], true);
+    let items = list_json["data"]["items"].as_array().unwrap();
+    assert_eq!(items.len(), 2);
+    assert!(items.iter().any(|t| t["signature"] == sig));
+
+    // Test Keyset Cursor Pagination: mint a third ticket
+    let req = Request::post(format!("/api/v1/blobs/tickets/{}", ns_name))
+        .header("X-Axiom-Key", &admin_token)
+        .header("Content-Type", "application/json")
+        .body(Body::from(
+            serde_json::to_vec(&serde_json::json!({
+                "key": "report_v2.pdf",
+                "operation": "READ",
+                "ttl_seconds": 3600
+            }))
+            .unwrap(),
+        ))
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::CREATED);
+
+    // Fetch page 1 with limit=2: expect 2 items and a next_cursor
+    let req = Request::get(format!("/api/v1/blobs/tickets/{}?limit=2", ns_name))
+        .header("X-Axiom-Key", &admin_token)
+        .body(Body::empty())
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let body_bytes = axum::body::to_bytes(res.into_body(), 65536).await.unwrap();
+    let page1_json: Value = serde_json::from_slice(&body_bytes).unwrap();
+    assert_eq!(page1_json["data"]["items"].as_array().unwrap().len(), 2);
+    let next_cur = page1_json["data"]["next_cursor"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert!(!next_cur.is_empty());
+
+    // Fetch page 2 with limit=2 and cursor: expect the remaining 1 item and next_cursor=null
+    let req = Request::get(format!(
+        "/api/v1/blobs/tickets/{}?limit=2&cursor={}",
+        ns_name, next_cur
+    ))
+    .header("X-Axiom-Key", &admin_token)
+    .body(Body::empty())
+    .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let body_bytes = axum::body::to_bytes(res.into_body(), 65536).await.unwrap();
+    let page2_json: Value = serde_json::from_slice(&body_bytes).unwrap();
+    assert_eq!(page2_json["data"]["items"].as_array().unwrap().len(), 1);
+    assert!(page2_json["data"]["next_cursor"].is_null());
+
+    // Cross-tenant protection: attempting to revoke with wrong namespace must return 404
+    let req = Request::post(format!("/api/v1/blobs/tickets/wrong-ns/{}/revoke", sig))
+        .header("X-Axiom-Key", &admin_token)
+        .body(Body::empty())
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::NOT_FOUND);
+
+    // Revoke ticket via POST /api/v1/blobs/tickets/:namespace/:signature/revoke
+    let req = Request::post(format!("/api/v1/blobs/tickets/{}/{}/revoke", ns_name, sig))
+        .header("X-Axiom-Key", &admin_token)
+        .body(Body::empty())
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    // Enable ticket back via POST /api/v1/blobs/tickets/:namespace/:signature/enable
+    let req = Request::post(format!("/api/v1/blobs/tickets/{}/{}/enable", ns_name, sig))
+        .header("X-Axiom-Key", &admin_token)
+        .body(Body::empty())
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    // Delete ticket permanently via DELETE /api/v1/blobs/tickets/:namespace/:signature
+    let req = Request::delete(format!("/api/v1/blobs/tickets/{}/{}", ns_name, sig))
+        .header("X-Axiom-Key", &admin_token)
+        .body(Body::empty())
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
 }

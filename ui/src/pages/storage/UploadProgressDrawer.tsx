@@ -5,7 +5,7 @@
  * Invariants: Operates non-blockingly in the background; allows collapsing, cancelling, and dismissing.
  */
 
-import React, { useState } from 'react';
+import React, { useState } from "react";
 import {
   ChevronDown,
   ChevronUp,
@@ -14,9 +14,9 @@ import {
   AlertCircle,
   XCircle,
   Loader2,
-} from 'lucide-react';
-import { getFileIcon } from './fileIcon';
-import { formatBytes } from './format';
+} from "lucide-react";
+import { getFileIcon } from "./fileIcon";
+import { formatBytes } from "./format";
 
 export interface UploadTask {
   id: string;
@@ -24,7 +24,7 @@ export interface UploadTask {
   size: number;
   key: string;
   namespace: string;
-  status: 'pending' | 'uploading' | 'completed' | 'failed' | 'cancelled';
+  status: "pending" | "uploading" | "completed" | "failed" | "cancelled";
   uploadedBytes?: number;
   error?: string;
   abortController?: AbortController;
@@ -50,49 +50,59 @@ export function UploadProgressDrawer({
 
   if (tasks.length === 0) return null;
 
-  const uploadingCount = tasks.filter((t) => t.status === 'uploading' || t.status === 'pending').length;
-  const completedCount = tasks.filter((t) => t.status === 'completed').length;
-  const failedCount = tasks.filter((t) => t.status === 'failed').length;
+  const uploadingCount = tasks.filter(
+    (t) => t.status === "uploading" || t.status === "pending",
+  ).length;
+  const completedCount = tasks.filter((t) => t.status === "completed").length;
+  const failedCount = tasks.filter((t) => t.status === "failed").length;
   const isAllDone = uploadingCount === 0;
 
   // Header Title
-  let title = `Uploading ${uploadingCount} item${uploadingCount > 1 ? 's' : ''}`;
+  let title = `Uploading ${uploadingCount} item${uploadingCount > 1 ? "s" : ""}`;
   if (isAllDone) {
     if (failedCount > 0 && completedCount > 0) {
       title = `${completedCount} uploaded, ${failedCount} failed`;
     } else if (failedCount > 0) {
-      title = `${failedCount} upload${failedCount > 1 ? 's' : ''} failed`;
+      title = `${failedCount} upload${failedCount > 1 ? "s" : ""} failed`;
     } else {
-      title = `${completedCount} upload${completedCount > 1 ? 's' : ''} complete`;
+      title = `${completedCount} upload${completedCount > 1 ? "s" : ""} complete`;
     }
   }
 
   return (
     <div
-      className="fixed bottom-4 right-4 z-50 w-80 sm:w-96 rounded-[10px] border border-[#2b2b2b] bg-[#141414] shadow-2xl overflow-hidden font-sans select-none animate-in fade-in slide-in-from-bottom-2 duration-150 ring-1 ring-blue-500/20"
+      className="fixed bottom-4 right-4 z-50 w-80 sm:w-96 rounded-[8px] border border-[#262626] bg-[#0c0c0c] shadow-2xl overflow-hidden font-sans select-none animate-in fade-in slide-in-from-bottom-2 duration-150"
       role="region"
       aria-label="Upload progress"
     >
       {/* ─── Top Header Bar ────────────────────────────────────────────── */}
-      <div className="h-10 px-3.5 bg-[#181818] border-b border-[#242424] flex items-center justify-between gap-2">
+      <div className="h-10 px-3.5 bg-[#111111] border-b border-[#1f1f1f] flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
-          <span className="text-[13.5px] font-medium text-white truncate">{title}</span>
+          <span className="text-[13px] font-sans font-medium text-white truncate">
+            {title}
+          </span>
         </div>
 
         <div className="flex items-center gap-1 shrink-0">
           <button
             type="button"
             onClick={() => setIsMinimized(!isMinimized)}
-            className="w-7 h-7 flex items-center justify-center rounded-md text-[#8c8c8c] hover:text-white hover:bg-[#242424] transition-colors cursor-pointer"
-            title={isMinimized ? 'Expand' : 'Collapse'}
-            aria-label={isMinimized ? 'Expand upload drawer' : 'Collapse upload drawer'}
+            className="w-7 h-7 flex items-center justify-center rounded-[6px] text-[#8c8c8c] hover:text-white hover:bg-[#1a1a1a] transition-colors cursor-pointer"
+            title={isMinimized ? "Expand" : "Collapse"}
+            aria-label={
+              isMinimized ? "Expand upload drawer" : "Collapse upload drawer"
+            }
           >
-            {isMinimized ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+            {isMinimized ? (
+              <ChevronUp className="w-4 h-4" />
+            ) : (
+              <ChevronDown className="w-4 h-4" />
+            )}
           </button>
           <button
             type="button"
             onClick={onDismiss}
-            className="w-7 h-7 flex items-center justify-center rounded-md text-[#8c8c8c] hover:text-white hover:bg-[#242424] transition-colors cursor-pointer"
+            className="w-7 h-7 flex items-center justify-center rounded-[6px] text-[#8c8c8c] hover:text-white hover:bg-[#1a1a1a] transition-colors cursor-pointer"
             title="Dismiss"
             aria-label="Dismiss upload drawer"
           >
@@ -105,21 +115,21 @@ export function UploadProgressDrawer({
       {!isMinimized && (
         <>
           {/* Subheader status bar */}
-          <div className="h-9 px-3.5 bg-[#151515] border-b border-[#222222] flex items-center justify-between text-[12.5px]">
+          <div className="h-9 px-3.5 bg-[#0e0e0e] border-b border-[#1c1c1c] flex items-center justify-between text-[12px] font-sans">
             <span className="text-[#8c8c8c] truncate">
               {uploadingCount > 0
                 ? completedCount > 0
                   ? `Uploaded ${completedCount} of ${tasks.length}...`
-                  : 'Starting upload...'
+                  : "Starting upload..."
                 : isAllDone && failedCount === 0
-                ? 'All files saved to storage'
-                : 'Upload finished with warnings'}
+                  ? "All files saved to storage"
+                  : "Upload finished with warnings"}
             </span>
             {uploadingCount > 0 ? (
               <button
                 type="button"
                 onClick={onCancelAll}
-                className="text-blue-400 hover:text-blue-300 hover:underline font-medium text-xs cursor-pointer transition-colors shrink-0 ml-2"
+                className="text-blue-400 hover:text-blue-300 font-medium text-[11px] cursor-pointer transition-colors shrink-0 ml-2"
               >
                 Cancel
               </button>
@@ -127,7 +137,7 @@ export function UploadProgressDrawer({
               <button
                 type="button"
                 onClick={onDismiss}
-                className="text-[#8c8c8c] hover:text-white text-xs cursor-pointer transition-colors shrink-0 ml-2"
+                className="text-[#8c8c8c] hover:text-white text-[11px] cursor-pointer transition-colors shrink-0 ml-2"
               >
                 Clear
               </button>
@@ -135,7 +145,7 @@ export function UploadProgressDrawer({
           </div>
 
           {/* Upload Queue Item List */}
-          <div className="max-h-56 overflow-y-auto divide-y divide-[#1c1c1c] bg-[#141414]">
+          <div className="max-h-56 overflow-y-auto divide-y divide-[#1a1a1a] bg-[#0c0c0c]">
             {tasks.map((task) => {
               const fileIcon = getFileIcon(task.name);
 
@@ -148,22 +158,34 @@ export function UploadProgressDrawer({
                   <div className="flex items-center gap-2.5 min-w-0 flex-1">
                     <span className="shrink-0">{fileIcon}</span>
                     <div className="min-w-0 flex-1">
-                      <div className="text-[13px] text-[#e5e7eb] truncate font-normal" title={task.name}>
+                      <div
+                        className="text-[13px] text-[#e5e7eb] truncate font-normal"
+                        title={task.name}
+                      >
                         {task.name}
                       </div>
                       <div className="text-[12px] text-[#71717a] flex items-center gap-1.5 truncate">
                         <span>{formatBytes(task.size)}</span>
-                        {task.status === 'uploading' && task.uploadedBytes !== undefined && task.size > 0 && (
-                          <span className="text-[#38bdf8] font-mono">
-                            • {Math.min(100, Math.round((task.uploadedBytes / task.size) * 100))}% ({formatBytes(task.uploadedBytes)})
-                          </span>
-                        )}
-                        {task.status === 'failed' && (
+                        {task.status === "uploading" &&
+                          task.uploadedBytes !== undefined &&
+                          task.size > 0 && (
+                            <span className="text-[#38bdf8] font-mono">
+                              •{" "}
+                              {Math.min(
+                                100,
+                                Math.round(
+                                  (task.uploadedBytes / task.size) * 100,
+                                ),
+                              )}
+                              % ({formatBytes(task.uploadedBytes)})
+                            </span>
+                          )}
+                        {task.status === "failed" && (
                           <span className="text-[#ef4444] truncate">
-                            • {task.error || 'Failed'}
+                            • {task.error || "Failed"}
                           </span>
                         )}
-                        {task.status === 'cancelled' && (
+                        {task.status === "cancelled" && (
                           <span className="text-[#a1a1aa]">• Cancelled</span>
                         )}
                       </div>
@@ -172,31 +194,34 @@ export function UploadProgressDrawer({
 
                   {/* Right: Progress indicator / Action */}
                   <div className="shrink-0 flex items-center">
-                    {task.status === 'uploading' && (
-                      <div className="relative w-4 h-4 flex items-center justify-center" title="Uploading...">
+                    {task.status === "uploading" && (
+                      <div
+                        className="relative w-4 h-4 flex items-center justify-center"
+                        title="Uploading..."
+                      >
                         <div className="w-3.5 h-3.5 rounded-full border-2 border-[#3f3f46] border-t-white animate-spin" />
                       </div>
                     )}
 
-                    {task.status === 'pending' && (
+                    {task.status === "pending" && (
                       <span title="Queued">
                         <div className="w-3.5 h-3.5 rounded-full border border-[#3f3f46] border-dashed" />
                       </span>
                     )}
 
-                    {task.status === 'completed' && (
+                    {task.status === "completed" && (
                       <span title="Completed">
                         <CheckCircle2 className="w-4 h-4 text-[#22c55e]" />
                       </span>
                     )}
 
-                    {task.status === 'failed' && (
-                      <span title={task.error || 'Failed'}>
+                    {task.status === "failed" && (
+                      <span title={task.error || "Failed"}>
                         <AlertCircle className="w-4 h-4 text-[#ef4444]" />
                       </span>
                     )}
 
-                    {task.status === 'cancelled' && (
+                    {task.status === "cancelled" && (
                       <span title="Cancelled">
                         <XCircle className="w-4 h-4 text-[#71717a]" />
                       </span>

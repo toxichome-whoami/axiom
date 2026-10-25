@@ -7,7 +7,13 @@
  * Invariants: Single selected value, keyboard dismiss, strict bounds checking.
  */
 
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, {
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+  useMemo,
+} from "react";
 import {
   RefreshCw,
   Search,
@@ -21,11 +27,12 @@ import {
   Key,
   Link2,
   Code2,
-} from 'lucide-react';
-import { api } from '../../api/client';
-import { ColumnInfoApi, ForeignKeyInfoApi } from '../../types';
-import { SlideOver } from '../../components/ui/SlideOver';
-import { getDefaultColumnWidth } from './format';
+} from "lucide-react";
+import { api } from "../../api/client";
+import { ColumnInfoApi, ForeignKeyInfoApi } from "../../types";
+import { SlideOver } from "../../components/ui/SlideOver";
+import { CustomSelect } from "../../components/shared/CustomSelect";
+import { getDefaultColumnWidth } from "./format";
 
 export interface ForeignKeyRecordPreviewPopoverProps {
   db: string;
@@ -62,7 +69,11 @@ export function ForeignKeyRecordPreviewPopover({
         const cols = schemaRes.columns || [];
         setColumns(cols);
 
-        if (currentValue === null || currentValue === undefined || currentValue === '') {
+        if (
+          currentValue === null ||
+          currentValue === undefined ||
+          currentValue === ""
+        ) {
           setHasRecord(false);
           setRow({});
           return;
@@ -87,7 +98,11 @@ export function ForeignKeyRecordPreviewPopover({
         }
       } catch (err) {
         if (!isMounted) return;
-        setError(err instanceof Error ? err.message : 'Failed to load referenced record');
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Failed to load referenced record",
+        );
       } finally {
         if (isMounted) setIsLoading(false);
       }
@@ -100,24 +115,30 @@ export function ForeignKeyRecordPreviewPopover({
 
   useEffect(() => {
     const handleMouseDown = (e: MouseEvent) => {
-      if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
+      if (
+        popoverRef.current &&
+        !popoverRef.current.contains(e.target as Node)
+      ) {
         onClose();
       }
     };
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
+      if (e.key === "Escape") {
         onClose();
       }
     };
-    document.addEventListener('mousedown', handleMouseDown);
-    window.addEventListener('keydown', handleKeyDown);
+    document.addEventListener("mousedown", handleMouseDown);
+    window.addEventListener("keydown", handleKeyDown);
     return () => {
-      document.removeEventListener('mousedown', handleMouseDown);
-      window.removeEventListener('keydown', handleKeyDown);
+      document.removeEventListener("mousedown", handleMouseDown);
+      window.removeEventListener("keydown", handleKeyDown);
     };
   }, [onClose]);
 
-  const popoverWidth = Math.min(440, typeof window !== 'undefined' ? window.innerWidth - 32 : 440);
+  const popoverWidth = Math.min(
+    440,
+    typeof window !== "undefined" ? window.innerWidth - 32 : 440,
+  );
   const anchorBottom = anchorRect.top + anchorRect.height;
   const spaceBelow = window.innerHeight - anchorBottom;
   const openUpward = spaceBelow < 220 && anchorRect.top > 220;
@@ -140,7 +161,9 @@ export function ForeignKeyRecordPreviewPopover({
     >
       <div className="text-[13px] text-[#a1a1a1] font-sans flex items-center gap-1.5 pb-1">
         <span>Referencing record from</span>
-        <span className="font-semibold text-white tracking-tight">{fk.referenced_table}:</span>
+        <span className="font-semibold text-white tracking-tight">
+          {fk.referenced_table}:
+        </span>
       </div>
 
       <div className="border border-[#222222] rounded-[8px] overflow-hidden bg-[#181818] mt-2 shadow-inner">
@@ -150,7 +173,9 @@ export function ForeignKeyRecordPreviewPopover({
             <span>Loading reference...</span>
           </div>
         ) : error ? (
-          <div className="p-4 text-center text-rose-400 text-[12.5px] font-sans">{error}</div>
+          <div className="p-4 text-center text-rose-400 text-[12.5px] font-sans">
+            {error}
+          </div>
         ) : (
           <div className="overflow-x-auto max-w-full">
             <table className="table-auto min-w-full border-collapse text-left font-sans text-[13.5px]">
@@ -163,7 +188,9 @@ export function ForeignKeyRecordPreviewPopover({
                     >
                       <div className="flex items-center gap-1.5">
                         <span className="text-[#999999]">{col.name}</span>
-                        {col.primary_key && <Key className="w-3 h-3 text-amber-400" />}
+                        {col.primary_key && (
+                          <Key className="w-3 h-3 text-amber-400" />
+                        )}
                       </div>
                     </th>
                   ))}
@@ -175,14 +202,16 @@ export function ForeignKeyRecordPreviewPopover({
                     {columns.map((col) => {
                       const val = row[col.name];
                       const isNull = val === null || val === undefined;
-                      const str = isNull ? 'null' : String(val);
+                      const str = isNull ? "null" : String(val);
                       return (
                         <td
                           key={col.name}
                           className="px-3.5 py-2 whitespace-nowrap font-sans text-[13.5px] border-r border-[#222222] last:border-r-0 text-white font-medium"
                         >
                           {isNull ? (
-                            <span className="text-[#555555] italic font-normal">null</span>
+                            <span className="text-[#555555] italic font-normal">
+                              null
+                            </span>
                           ) : (
                             str
                           )}
@@ -216,7 +245,9 @@ export function ForeignKeyRecordPreviewPopover({
         </button>
         <button
           type="button"
-          onClick={() => onOpenTable(fk.referenced_table, fk.referenced_column, currentValue)}
+          onClick={() =>
+            onOpenTable(fk.referenced_table, fk.referenced_column, currentValue)
+          }
           className="h-7 px-3.5 rounded-[5px] border border-[#2e2e2e] bg-[#1e1e1e] hover:bg-[#282828] text-white text-[12px] font-medium font-sans transition-colors cursor-pointer flex items-center gap-1.5 shadow-xs"
         >
           <span>Open table</span>
@@ -248,53 +279,67 @@ export function ForeignKeyPickerModal({
   const [cursor, setCursor] = useState<string | null>(null);
   const [cursorHistory, setCursorHistory] = useState<string[]>([]);
   const [hasNextPage, setHasNextPage] = useState(false);
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchTerm, setSearchTerm] = useState("");
   const [sortCol, setSortCol] = useState<string | null>(null);
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
   const [pageSize, setPageSize] = useState<number>(25);
   const [showPageSizePopover, setShowPageSizePopover] = useState(false);
   const pageSizePopoverRef = useRef<HTMLDivElement>(null);
   const [showSortPopover, setShowSortPopover] = useState(false);
   const sortPopoverRef = useRef<HTMLDivElement>(null);
-  const [selectedRecordVal, setSelectedRecordVal] = useState<unknown>(currentValue);
+  const [selectedRecordVal, setSelectedRecordVal] =
+    useState<unknown>(currentValue);
 
   useEffect(() => {
     if (!showSortPopover && !showPageSizePopover) return;
     const handleMouseDown = (e: MouseEvent) => {
-      if (sortPopoverRef.current && !sortPopoverRef.current.contains(e.target as Node)) {
+      if (
+        sortPopoverRef.current &&
+        !sortPopoverRef.current.contains(e.target as Node)
+      ) {
         setShowSortPopover(false);
       }
-      if (pageSizePopoverRef.current && !pageSizePopoverRef.current.contains(e.target as Node)) {
+      if (
+        pageSizePopoverRef.current &&
+        !pageSizePopoverRef.current.contains(e.target as Node)
+      ) {
         setShowPageSizePopover(false);
       }
     };
-    document.addEventListener('mousedown', handleMouseDown);
-    return () => document.removeEventListener('mousedown', handleMouseDown);
+    document.addEventListener("mousedown", handleMouseDown);
+    return () => document.removeEventListener("mousedown", handleMouseDown);
   }, [showSortPopover, showPageSizePopover]);
 
-  const loadData = useCallback(async (targetCursor?: string | null, sizeOverride?: number) => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      const schemaRes = await api.getTableSchema(db, fk.referenced_table);
-      setRefColumns(schemaRes.columns || []);
+  const loadData = useCallback(
+    async (targetCursor?: string | null, sizeOverride?: number) => {
+      setIsLoading(true);
+      setError(null);
+      try {
+        const schemaRes = await api.getTableSchema(db, fk.referenced_table);
+        setRefColumns(schemaRes.columns || []);
 
-      const effectiveLimit = sizeOverride || pageSize;
-      const rowsRes = await api.getTableRows(db, fk.referenced_table, {
-        limit: effectiveLimit,
-        cursor: targetCursor || undefined,
-        sort: sortCol || undefined,
-        order: sortOrder,
-      });
-      setRefRows(rowsRes.rows || []);
-      setHasNextPage(!!rowsRes.pagination?.has_more);
-      setCursor(rowsRes.pagination?.next_cursor || null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load referenced table');
-    } finally {
-      setIsLoading(false);
-    }
-  }, [db, fk.referenced_table, sortCol, sortOrder, pageSize]);
+        const effectiveLimit = sizeOverride || pageSize;
+        const rowsRes = await api.getTableRows(db, fk.referenced_table, {
+          limit: effectiveLimit,
+          cursor: targetCursor || undefined,
+          sort: sortCol || undefined,
+          order: sortOrder,
+        });
+        setRefRows(rowsRes.rows || []);
+        setHasNextPage(!!rowsRes.pagination?.has_more);
+        setCursor(rowsRes.pagination?.next_cursor || null);
+      } catch (err) {
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Failed to load referenced table",
+        );
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [db, fk.referenced_table, sortCol, sortOrder, pageSize],
+  );
 
   useEffect(() => {
     loadData(null);
@@ -319,7 +364,7 @@ export function ForeignKeyPickerModal({
     if (!searchTerm.trim()) return refRows;
     const q = searchTerm.toLowerCase();
     return refRows.filter((r) =>
-      Object.values(r).some((v) => String(v).toLowerCase().includes(q))
+      Object.values(r).some((v) => String(v).toLowerCase().includes(q)),
     );
   }, [refRows, searchTerm]);
 
@@ -341,7 +386,12 @@ export function ForeignKeyPickerModal({
       }
       subtitle={
         <span className="text-[13px] text-[#8c8c8c] font-sans">
-          Referencing <code className="text-[#cccccc] font-mono">{fk.referenced_column}</code> for column <code className="text-[#cccccc] font-mono">{fk.column}</code>
+          Referencing{" "}
+          <code className="text-[#cccccc] font-mono">
+            {fk.referenced_column}
+          </code>{" "}
+          for column{" "}
+          <code className="text-[#cccccc] font-mono">{fk.column}</code>
         </span>
       }
     >
@@ -361,7 +411,7 @@ export function ForeignKeyPickerModal({
               {searchTerm && (
                 <button
                   type="button"
-                  onClick={() => setSearchTerm('')}
+                  onClick={() => setSearchTerm("")}
                   className="absolute right-2 top-1/2 -translate-y-1/2 text-[#666666] hover:text-white cursor-pointer"
                 >
                   <X className="w-3 h-3" />
@@ -376,12 +426,12 @@ export function ForeignKeyPickerModal({
                 onClick={() => setShowSortPopover(!showSortPopover)}
                 className={`flex items-center gap-1.5 h-8 px-2.5 rounded-[6px] border text-[13px] font-medium transition-colors cursor-pointer ${
                   sortCol
-                    ? 'bg-blue-600/10 border-blue-500/30 text-blue-400 hover:bg-blue-600/20'
-                    : 'bg-[#141414] border-[#262626] text-[#cccccc] hover:text-white hover:border-[#383838]'
+                    ? "bg-blue-600/10 border-blue-500/30 text-blue-400 hover:bg-blue-600/20"
+                    : "bg-[#141414] border-[#262626] text-[#cccccc] hover:text-white hover:border-[#383838]"
                 }`}
               >
                 <ArrowUpDown className="w-3.5 h-3.5" />
-                <span>{sortCol ? `Sort: ${sortCol}` : 'Sort'}</span>
+                <span>{sortCol ? `Sort: ${sortCol}` : "Sort"}</span>
               </button>
 
               {showSortPopover && (
@@ -389,54 +439,59 @@ export function ForeignKeyPickerModal({
                   ref={sortPopoverRef}
                   className="absolute left-0 top-full mt-1.5 w-64 bg-[#111111] border border-[#262626] rounded-[8px] shadow-2xl p-3 z-50 font-sans"
                 >
-                  <div className="text-[13px] font-semibold text-white mb-2">Sort Records</div>
-                  <div className="space-y-2">
-                    <select
-                      value={sortCol || ''}
-                      onChange={(e) => setSortCol(e.target.value || null)}
-                      className="w-full h-8 px-2 bg-[#161616] border border-[#2c2c2c] rounded text-[13px] text-white outline-none cursor-pointer"
-                    >
-                      <option value="">Select column...</option>
-                      {refColumns.map((c) => (
-                        <option key={c.name} value={c.name}>
-                          {c.name}
-                        </option>
-                      ))}
-                    </select>
+                  <div className="text-[13px] font-semibold text-white mb-2.5">
+                    Sort Records
+                  </div>
+                  <div className="space-y-2.5">
+                    <CustomSelect
+                      size="sm"
+                      value={sortCol || ""}
+                      onChange={(val) => setSortCol(val || null)}
+                      placeholder="Select column..."
+                      options={[
+                        { value: "", label: "Select column..." },
+                        ...refColumns.map((c) => ({
+                          value: c.name,
+                          label: c.name,
+                        })),
+                      ]}
+                      menuWidth="w-full"
+                    />
 
                     <div className="flex gap-2">
                       <button
                         type="button"
-                        onClick={() => setSortOrder('asc')}
-                        className={`flex-1 h-7 rounded text-[12px] font-medium border cursor-pointer ${
-                          sortOrder === 'asc'
-                            ? 'bg-blue-600/20 border-blue-500 text-blue-400'
-                            : 'bg-[#161616] border-[#2c2c2c] text-[#8c8c8c]'
+                        onClick={() => setSortOrder("asc")}
+                        className={`flex-1 h-8 rounded-[6px] text-[12px] font-medium border transition-colors cursor-pointer ${
+                          sortOrder === "asc"
+                            ? "bg-[#1d4ed8]/20 border-[#3b82f6]/50 text-[#60a5fa]"
+                            : "bg-[#141414] border-[#2c2c2c] text-[#8c8c8c] hover:border-[#383838] hover:text-white"
                         }`}
                       >
                         ASC
                       </button>
                       <button
                         type="button"
-                        onClick={() => setSortOrder('desc')}
-                        className={`flex-1 h-7 rounded text-[12px] font-medium border cursor-pointer ${
-                          sortOrder === 'desc'
-                            ? 'bg-blue-600/20 border-blue-500 text-blue-400'
-                            : 'bg-[#161616] border-[#2c2c2c] text-[#8c8c8c]'
+                        onClick={() => setSortOrder("desc")}
+                        className={`flex-1 h-8 rounded-[6px] text-[12px] font-medium border transition-colors cursor-pointer ${
+                          sortOrder === "desc"
+                            ? "bg-[#1d4ed8]/20 border-[#3b82f6]/50 text-[#60a5fa]"
+                            : "bg-[#141414] border-[#2c2c2c] text-[#8c8c8c] hover:border-[#383838] hover:text-white"
                         }`}
                       >
                         DESC
                       </button>
                     </div>
 
-                    <div className="flex items-center justify-between pt-1">
+                    <div className="flex items-center justify-between pt-1.5">
                       <button
                         type="button"
                         onClick={() => {
                           setSortCol(null);
                           setShowSortPopover(false);
+                          loadData(null);
                         }}
-                        className="text-[12px] text-[#8c8c8c] hover:text-white cursor-pointer"
+                        className="text-[12px] font-medium text-[#8c8c8c] hover:text-white transition-colors cursor-pointer"
                       >
                         Reset
                       </button>
@@ -446,7 +501,7 @@ export function ForeignKeyPickerModal({
                           setShowSortPopover(false);
                           loadData(null);
                         }}
-                        className="px-2.5 py-1 bg-[#222222] hover:bg-[#2a2a2a] border border-[#333333] rounded text-[12px] font-medium text-white transition-colors cursor-pointer"
+                        className="px-2.5 py-1 bg-[#222222] hover:bg-[#2a2a2a] border border-[#333333] rounded-[6px] text-[12px] font-medium text-white transition-colors cursor-pointer"
                       >
                         Apply
                       </button>
@@ -463,7 +518,9 @@ export function ForeignKeyPickerModal({
               title="Refresh rows"
               className="w-8 h-8 flex items-center justify-center rounded-[6px] bg-[#141414] border border-[#262626] text-[#8c8c8c] hover:text-white hover:border-[#383838] transition-colors cursor-pointer disabled:opacity-50"
             >
-              <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+              <RefreshCw
+                className={`w-3.5 h-3.5 ${isLoading ? "animate-spin" : ""}`}
+              />
             </button>
           </div>
 
@@ -478,7 +535,7 @@ export function ForeignKeyPickerModal({
                 <span>{pageSize}</span>
                 <ChevronDown
                   className={`w-3.5 h-3.5 text-[#777777] transition-transform duration-150 ${
-                    showPageSizePopover ? 'rotate-180 text-white' : ''
+                    showPageSizePopover ? "rotate-180 text-white" : ""
                   }`}
                 />
               </button>
@@ -497,12 +554,14 @@ export function ForeignKeyPickerModal({
                       }}
                       className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-[6px] text-[13px] transition-colors cursor-pointer font-sans ${
                         pageSize === sz
-                          ? 'bg-blue-600/15 text-blue-400 font-medium'
-                          : 'text-[#cccccc] hover:bg-[#1a1a1a] hover:text-white'
+                          ? "bg-blue-600/15 text-blue-400 font-medium"
+                          : "text-[#cccccc] hover:bg-[#1a1a1a] hover:text-white"
                       }`}
                     >
                       <span>{sz}</span>
-                      {pageSize === sz && <Check className="w-3.5 h-3.5 text-blue-400" />}
+                      {pageSize === sz && (
+                        <Check className="w-3.5 h-3.5 text-blue-400" />
+                      )}
                     </button>
                   ))}
                 </div>
@@ -545,8 +604,12 @@ export function ForeignKeyPickerModal({
           ) : error ? (
             <div className="p-8 flex flex-col items-center justify-center text-center">
               <AlertCircle className="w-8 h-8 text-rose-500 mb-2" />
-              <p className="text-[14px] font-medium text-white mb-1">Failed to query table</p>
-              <p className="text-[12.5px] text-[#8c8c8c] max-w-md font-mono">{error}</p>
+              <p className="text-[14px] font-medium text-white mb-1">
+                Failed to query table
+              </p>
+              <p className="text-[12.5px] text-[#8c8c8c] max-w-md font-mono">
+                {error}
+              </p>
               <button
                 type="button"
                 onClick={() => loadData(null)}
@@ -557,18 +620,25 @@ export function ForeignKeyPickerModal({
             </div>
           ) : filteredRows.length === 0 ? (
             <div className="p-12 text-center text-[#777777] text-[14px]">
-              No records found in table <span className="font-sans font-medium text-white">{fk.referenced_table}</span>
+              No records found in table{" "}
+              <span className="font-sans font-medium text-white">
+                {fk.referenced_table}
+              </span>
             </div>
           ) : (
             <table
               className="border-collapse text-left select-text font-sans text-[14px] table-fixed"
-              style={{ width: 'max-content', minWidth: '100%' }}
+              style={{ width: "max-content", minWidth: "100%" }}
             >
               <thead>
                 <tr className="sticky top-0 z-10 bg-[#0a0a0a] border-b border-[#222222]">
                   <th
                     className="w-12 px-3 py-2 text-center bg-[#0a0a0a] sticky left-0 z-20 border-r border-[#1a1a1a] select-none text-[12px] font-mono text-[#666666]"
-                    style={{ width: '48px', minWidth: '48px', maxWidth: '48px' }}
+                    style={{
+                      width: "48px",
+                      minWidth: "48px",
+                      maxWidth: "48px",
+                    }}
                   >
                     #
                   </th>
@@ -579,22 +649,36 @@ export function ForeignKeyPickerModal({
                       <th
                         key={col.name}
                         className="relative px-3 py-2 text-[14px] font-medium text-[#cccccc] whitespace-nowrap border-r border-[#1a1a1a] select-none"
-                        style={{ width: `${width}px`, minWidth: `${Math.max(80, width)}px`, maxWidth: `${width}px` }}
+                        style={{
+                          width: `${width}px`,
+                          minWidth: `${Math.max(80, width)}px`,
+                          maxWidth: `${width}px`,
+                        }}
                       >
                         <div className="flex items-center gap-1.5 min-w-0 pr-2.5 overflow-hidden whitespace-nowrap">
-                          <span className="font-sans text-white text-[14px] whitespace-nowrap shrink-0" title={col.name}>
+                          <span
+                            className="font-sans text-white text-[14px] whitespace-nowrap shrink-0"
+                            title={col.name}
+                          >
                             {col.name}
                           </span>
                           {col.primary_key && (
-                            <span title="Primary Key" className="shrink-0 p-0.5 rounded bg-emerald-500/10 text-emerald-400">
+                            <span
+                              title="Primary Key"
+                              className="shrink-0 p-0.5 rounded bg-emerald-500/10 text-emerald-400"
+                            >
                               <Key className="w-3 h-3" />
                             </span>
                           )}
-                          {col.name === fk.referenced_column && !col.primary_key && (
-                            <span title="Referenced Column" className="shrink-0 p-0.5 rounded bg-blue-500/10 text-blue-400">
-                              <Link2 className="w-3 h-3" />
-                            </span>
-                          )}
+                          {col.name === fk.referenced_column &&
+                            !col.primary_key && (
+                              <span
+                                title="Referenced Column"
+                                className="shrink-0 p-0.5 rounded bg-blue-500/10 text-blue-400"
+                              >
+                                <Link2 className="w-3 h-3" />
+                              </span>
+                            )}
                         </div>
                       </th>
                     );
@@ -605,7 +689,9 @@ export function ForeignKeyPickerModal({
               <tbody className="divide-y divide-[#181818]">
                 {filteredRows.map((r, ri) => {
                   const refVal = r[fk.referenced_column];
-                  const isSelected = selectedRecordVal !== undefined && String(refVal) === String(selectedRecordVal);
+                  const isSelected =
+                    selectedRecordVal !== undefined &&
+                    String(refVal) === String(selectedRecordVal);
 
                   return (
                     <tr
@@ -614,25 +700,33 @@ export function ForeignKeyPickerModal({
                       onDoubleClick={() => onSelect(refVal)}
                       className={`transition-colors cursor-pointer group ${
                         isSelected
-                          ? 'bg-[#131b2e] ring-1 ring-inset ring-blue-500/40 text-white'
-                          : 'hover:bg-[#121212]'
+                          ? "bg-[#131b2e] ring-1 ring-inset ring-blue-500/40 text-white"
+                          : "hover:bg-[#121212]"
                       }`}
                     >
                       <td
                         className={`px-3 py-2 text-center select-none sticky left-0 z-10 border-r border-[#1a1a1a] transition-colors ${
-                          isSelected ? 'bg-[#131b2e]' : 'bg-[#0a0a0a] group-hover:bg-[#121212]'
+                          isSelected
+                            ? "bg-[#131b2e]"
+                            : "bg-[#0a0a0a] group-hover:bg-[#121212]"
                         }`}
-                        style={{ width: '48px', minWidth: '48px', maxWidth: '48px' }}
+                        style={{
+                          width: "48px",
+                          minWidth: "48px",
+                          maxWidth: "48px",
+                        }}
                       >
                         <div className="flex items-center justify-center">
                           <div
                             className={`w-4 h-4 rounded-full border flex items-center justify-center transition-colors ${
                               isSelected
-                                ? 'bg-blue-600 border-blue-500 text-white shadow-xs'
-                                : 'border-[#333333] bg-[#141414] group-hover:border-[#555555]'
+                                ? "bg-blue-600 border-blue-500 text-white shadow-xs"
+                                : "border-[#333333] bg-[#141414] group-hover:border-[#555555]"
                             }`}
                           >
-                            {isSelected && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                            {isSelected && (
+                              <div className="w-1.5 h-1.5 rounded-full bg-white" />
+                            )}
                           </div>
                         </div>
                       </td>
@@ -640,20 +734,32 @@ export function ForeignKeyPickerModal({
                       {refColumns.map((col) => {
                         const width = getDefaultColumnWidth(col.type, col.name);
                         const cellVal = r[col.name];
-                        const isNull = cellVal === null || cellVal === undefined;
-                        const isBool = typeof cellVal === 'boolean';
-                        const isObj = typeof cellVal === 'object' && cellVal !== null;
-                        const strVal = isNull ? 'null' : isObj ? JSON.stringify(cellVal) : String(cellVal);
+                        const isNull =
+                          cellVal === null || cellVal === undefined;
+                        const isBool = typeof cellVal === "boolean";
+                        const isObj =
+                          typeof cellVal === "object" && cellVal !== null;
+                        const strVal = isNull
+                          ? "null"
+                          : isObj
+                            ? JSON.stringify(cellVal)
+                            : String(cellVal);
 
                         return (
                           <td
                             key={col.name}
                             className="px-3 py-2 text-[#cccccc] text-[14px] whitespace-nowrap overflow-hidden border-r border-[#151515] relative transition-colors select-none"
-                            style={{ width: `${width}px`, minWidth: `${width}px`, maxWidth: `${width}px` }}
+                            style={{
+                              width: `${width}px`,
+                              minWidth: `${width}px`,
+                              maxWidth: `${width}px`,
+                            }}
                             title={strVal}
                           >
                             {isNull ? (
-                              <span className="text-[#555555] italic text-[12.5px]">null</span>
+                              <span className="text-[#555555] italic text-[12.5px]">
+                                null
+                              </span>
                             ) : isBool ? (
                               <span className="font-sans text-[13px] text-[#cccccc]">
                                 {String(cellVal)}
@@ -666,9 +772,10 @@ export function ForeignKeyPickerModal({
                             ) : (
                               <span
                                 className={`truncate ${
-                                  col.name === fk.referenced_column && isSelected
-                                    ? 'font-medium text-blue-400'
-                                    : ''
+                                  col.name === fk.referenced_column &&
+                                  isSelected
+                                    ? "font-medium text-blue-400"
+                                    : ""
                                 }`}
                               >
                                 {strVal}
@@ -689,9 +796,12 @@ export function ForeignKeyPickerModal({
         <div className="p-4 border-t border-[#222222] bg-[#0e0e0e] flex items-center justify-between font-sans shrink-0">
           <div className="flex items-center gap-2 text-[13px] text-[#888888]">
             <span>
-              Selected <span className="text-[#cccccc]">{fk.referenced_column}</span>:{' '}
+              Selected{" "}
+              <span className="text-[#cccccc]">{fk.referenced_column}</span>:{" "}
               <code className="text-white font-mono bg-[#161616] px-1.5 py-0.5 rounded border border-[#262626]">
-                {selectedRecordVal !== undefined && selectedRecordVal !== null ? String(selectedRecordVal) : 'None'}
+                {selectedRecordVal !== undefined && selectedRecordVal !== null
+                  ? String(selectedRecordVal)
+                  : "None"}
               </code>
             </span>
             <span className="text-[#444444]">·</span>

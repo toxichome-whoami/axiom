@@ -18,20 +18,25 @@ let memorySessionToken: string | null = null;
  *  - Side effects: Writes non-sensitive session metadata to sessionStorage / localStorage.
  *  - Idempotent: Yes.
  */
-export function setSession(token: string, expiresAt?: number, username?: string): void {
+export function setSession(
+  token: string,
+  expiresAt?: number,
+  username?: string,
+): void {
   memorySessionToken = token;
   if (token) {
-    localStorage.setItem('axiom_session_token', token);
+    localStorage.setItem("axiom_session_token", token);
   }
   if (expiresAt && expiresAt > 0) {
     // Standardize to seconds (detecting if backend sent ms)
-    const normalizedExp = expiresAt > 1e11 ? Math.floor(expiresAt / 1000) : expiresAt;
-    localStorage.setItem('axiom_session_expires_at', String(normalizedExp));
+    const normalizedExp =
+      expiresAt > 1e11 ? Math.floor(expiresAt / 1000) : expiresAt;
+    localStorage.setItem("axiom_session_expires_at", String(normalizedExp));
   }
   if (username) {
-    localStorage.setItem('axiom_operator_user', username);
+    localStorage.setItem("axiom_operator_user", username);
   }
-  localStorage.setItem('axiom_session_active', 'true');
+  localStorage.setItem("axiom_session_active", "true");
 }
 
 /**
@@ -46,14 +51,14 @@ export function getSessionToken(): string | null {
     clearSession();
     return null;
   }
-  return memorySessionToken || localStorage.getItem('axiom_session_token');
+  return memorySessionToken || localStorage.getItem("axiom_session_token");
 }
 
 /**
  * Returns the recorded administrative operator username.
  */
 export function getOperatorUser(): string {
-  return localStorage.getItem('axiom_operator_user') || 'admin';
+  return localStorage.getItem("axiom_operator_user") || "admin";
 }
 
 /**
@@ -61,7 +66,7 @@ export function getOperatorUser(): string {
  * Tolerates up to 30 seconds of clock skew between client and gateway.
  */
 export function isSessionExpired(): boolean {
-  const expStr = localStorage.getItem('axiom_session_expires_at');
+  const expStr = localStorage.getItem("axiom_session_expires_at");
   if (!expStr) return false;
   const exp = parseInt(expStr, 10);
   if (isNaN(exp)) return false;
@@ -78,7 +83,9 @@ export function hasActiveSession(): boolean {
     clearSession();
     return false;
   }
-  return Boolean(memorySessionToken || localStorage.getItem('axiom_session_active'));
+  return Boolean(
+    memorySessionToken || localStorage.getItem("axiom_session_active"),
+  );
 }
 
 /**
@@ -89,8 +96,8 @@ export function hasActiveSession(): boolean {
  */
 export function clearSession(): void {
   memorySessionToken = null;
-  localStorage.removeItem('axiom_session_token');
-  localStorage.removeItem('axiom_session_active');
-  localStorage.removeItem('axiom_session_expires_at');
-  localStorage.removeItem('axiom_operator_user');
+  localStorage.removeItem("axiom_session_token");
+  localStorage.removeItem("axiom_session_active");
+  localStorage.removeItem("axiom_session_expires_at");
+  localStorage.removeItem("axiom_operator_user");
 }

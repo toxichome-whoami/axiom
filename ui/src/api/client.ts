@@ -30,13 +30,13 @@ export interface SystemStatusData {
 }
 
 export interface HealthData {
-  status: 'healthy' | 'degraded';
+  status: "healthy" | "degraded";
   uptime_seconds: number;
   system: {
     cpu_percent: number;
     memory_used_mb: number;
   };
-  databases: Record<string, 'up' | 'down'>;
+  databases: Record<string, "up" | "down">;
 }
 
 export interface DatabaseRecordApi {
@@ -115,6 +115,12 @@ export interface AuditRecordApi {
   details: string | null;
 }
 
+export interface AuditLogResponseApi {
+  records: AuditRecordApi[];
+  total: number;
+  has_more: boolean;
+}
+
 export interface UserRecordApi {
   id: number;
   username: string;
@@ -133,7 +139,7 @@ export interface PeerNodeRecordApi {
   node_id: string;
   moniker: string;
   url: string;
-  status: 'connected' | 'unreachable' | 'pending';
+  status: "connected" | "unreachable" | "pending";
   last_ping_ms: number;
   last_seen_at: number;
   created_at: number;
@@ -145,40 +151,42 @@ export interface ConnectPeerRequestApi {
   moniker?: string;
 }
 
-import { getSessionToken, clearSession } from './session';
+import { getSessionToken, clearSession } from "./session";
 import type {
   BlobMetadata,
   BlobStats,
   BlobTicket,
+  ListBlobTicketsResult,
   CreateBlobTicketResponse,
   ListBlobsResult,
   NamespaceInfo,
+  NamespaceUsage,
+  UploadLinkResponse,
   TableInfoApi,
   ColumnInfoApi,
   ForeignKeyInfoApi,
   CreateColumnRequestApi,
   TableRowsResponse,
   QueryResultApi,
-} from '../types';
+} from "../types";
 
-
-const API_BASE = import.meta.env.VITE_API_URL ?? '';
+const API_BASE = import.meta.env.VITE_API_URL ?? "";
 
 const CODE_MAP: Record<string, string> = {
-  UNAUTHORIZED: 'Authentication required or session expired',
-  FORBIDDEN: 'Access denied: insufficient administrative privileges',
-  NOT_FOUND: 'Requested resource does not exist',
-  RATE_LIMIT_EXCEEDED: 'Rate limit exceeded. Please wait before retrying',
-  SERVICE_UNAVAILABLE: 'Upstream database or service temporarily unavailable',
-  DB_CONNECTION_FAILED: 'Could not connect to the specified database',
-  DB_QUERY_FAILED: 'Query execution failed on target database',
-  INVALID_CREDENTIALS: 'Invalid username or password',
-  SETUP_ALREADY_COMPLETED: 'Setup wizard is permanently finalized',
+  UNAUTHORIZED: "Authentication required or session expired",
+  FORBIDDEN: "Access denied: insufficient administrative privileges",
+  NOT_FOUND: "Requested resource does not exist",
+  RATE_LIMIT_EXCEEDED: "Rate limit exceeded. Please wait before retrying",
+  SERVICE_UNAVAILABLE: "Upstream database or service temporarily unavailable",
+  DB_CONNECTION_FAILED: "Could not connect to the specified database",
+  DB_QUERY_FAILED: "Query execution failed on target database",
+  INVALID_CREDENTIALS: "Invalid username or password",
+  SETUP_ALREADY_COMPLETED: "Setup wizard is permanently finalized",
 };
 
 function resolveEndpoint(endpoint: string): string {
-  if (endpoint.startsWith('http://') || endpoint.startsWith('https://')) {
-    throw new Error('Absolute URLs are prohibited for internal API calls');
+  if (endpoint.startsWith("http://") || endpoint.startsWith("https://")) {
+    throw new Error("Absolute URLs are prohibited for internal API calls");
   }
   return `${API_BASE}${endpoint}`;
 }
@@ -202,9 +210,9 @@ const inFlightRequests = new Map<string, Promise<unknown>>();
 
 async function request<T>(
   endpoint: string,
-  options: RequestInit & { timeoutMs?: number } = {}
+  options: RequestInit & { timeoutMs?: number } = {},
 ): Promise<T> {
-  const isGet = !options.method || options.method.toUpperCase() === 'GET';
+  const isGet = !options.method || options.method.toUpperCase() === "GET";
   const targetUrl = resolveEndpoint(endpoint);
   const cacheKey = isGet && !options.body ? targetUrl : null;
 
@@ -226,22 +234,27 @@ async function request<T>(
 
 async function executeRequest<T>(
   targetUrl: string,
-  options: RequestInit & { timeoutMs?: number } = {}
+  options: RequestInit & { timeoutMs?: number } = {},
 ): Promise<T> {
   const token = getSessionToken();
   const headers = new Headers(options.headers || {});
 
-  if (!headers.has('Content-Type') && !(options.body instanceof FormData)) {
-    headers.set('Content-Type', 'application/json');
+  if (!headers.has("Content-Type") && !(options.body instanceof FormData)) {
+    headers.set("Content-Type", "application/json");
   }
 
   // Disable aggressive browser caching for admin dashboard data
   if (options.cache === undefined) {
-    options.cache = 'no-store';
+    options.cache = "no-store";
   }
 
-  if (token && token !== 'undefined' && token !== 'null' && !headers.has('Authorization')) {
-    headers.set('Authorization', `Bearer ${token}`);
+  if (
+    token &&
+    token !== "undefined" &&
+    token !== "null" &&
+    !headers.has("Authorization")
+  ) {
+    headers.set("Authorization", `Bearer ${token}`);
   }
 
   // Configurable abort timeout prevents UI locks on hung network calls (defaults to 15s)
@@ -253,7 +266,7 @@ async function executeRequest<T>(
     if (options.signal.aborted) {
       controller.abort();
     } else {
-      options.signal.addEventListener('abort', () => controller.abort());
+      options.signal.addEventListener("abort", () => controller.abort());
     }
   }
 
@@ -262,14 +275,20 @@ async function executeRequest<T>(
       ...options,
       headers,
       signal: controller.signal,
-      credentials: 'include',
+      credentials: "include",
     });
 
-    if (res.status === 401 && !targetUrl.includes('/auth/logout')) {
+    if (res.status === 401 && !targetUrl.includes("/auth/logout")) {
       clearSession();
-      window.dispatchEvent(new CustomEvent('axiom:unauthorized', { detail: { status: res.status } }));
+      window.dispatchEvent(
+        new CustomEvent("axiom:unauthorized", {
+          detail: { status: res.status },
+        }),
+      );
     } else if (res.status === 429) {
-      window.dispatchEvent(new CustomEvent('axiom:rate_limited', { detail: { status: 429 } }));
+      window.dispatchEvent(
+        new CustomEvent("axiom:rate_limited", { detail: { status: 429 } }),
+      );
     }
 
     const text = await res.text();
@@ -283,16 +302,17 @@ async function executeRequest<T>(
     if (!res.ok || (json.success !== undefined && !json.success)) {
       const code = json.error?.code;
       const serverMsg = json.error?.message;
-      const sanitized = (serverMsg && serverMsg.trim())
-        ? serverMsg.trim()
-        : ((code && CODE_MAP[code]) || `Request failed (HTTP ${res.status})`);
+      const sanitized =
+        serverMsg && serverMsg.trim()
+          ? serverMsg.trim()
+          : (code && CODE_MAP[code]) || `Request failed (HTTP ${res.status})`;
       throw new Error(sanitized);
     }
 
     return (json.data !== undefined ? json.data : json) as T;
   } catch (err: unknown) {
-    if (err instanceof Error && err.name === 'AbortError') {
-      throw new Error('Request timed out. Please try again.');
+    if (err instanceof Error && err.name === "AbortError") {
+      throw new Error("Request timed out. Please try again.");
     }
     throw err;
   } finally {
@@ -304,118 +324,253 @@ async function executeRequest<T>(
 
 export const api = {
   // Status & Telemetry
-  getStatus: () => request<SystemStatusData>('/admin/v1/status'),
-  getHealth: () => request<HealthData>('/admin/v1/health'),
-  reloadMetadata: () => request<{ message: string; active_keys: number; active_databases: number }>('/admin/v1/reload', { method: 'POST' }),
+  getStatus: () => request<SystemStatusData>("/admin/v1/status"),
+  getHealth: () => request<HealthData>("/admin/v1/health"),
+  reloadMetadata: () =>
+    request<{ message: string; active_keys: number; active_databases: number }>(
+      "/admin/v1/reload",
+      { method: "POST" },
+    ),
 
   // Managed Databases
-  listDatabases: () => request<{ databases: DatabaseRecordApi[] }>('/admin/v1/databases'),
-  addDatabase: (data: { alias: string; url: string; engine?: string; token?: string; pool_min?: number; pool_max?: number; old_alias?: string }) =>
-    request<{ alias: string; message: string }>('/admin/v1/databases', {
-      method: 'POST',
+  listDatabases: () =>
+    request<{ databases: DatabaseRecordApi[] }>("/admin/v1/databases"),
+  addDatabase: (data: {
+    alias: string;
+    url: string;
+    engine?: string;
+    token?: string;
+    pool_min?: number;
+    pool_max?: number;
+    old_alias?: string;
+  }) =>
+    request<{ alias: string; message: string }>("/admin/v1/databases", {
+      method: "POST",
       body: JSON.stringify(data),
     }),
   deleteDatabase: (alias: string) =>
-    request<{ message: string }>(`/admin/v1/databases/${encodeURIComponent(alias)}`, {
-      method: 'DELETE',
-    }),
+    request<{ message: string }>(
+      `/admin/v1/databases/${encodeURIComponent(alias)}`,
+      {
+        method: "DELETE",
+      },
+    ),
   testDatabase: (alias: string) =>
-    request<{ alias: string; status: 'up' | 'down' | 'connected'; dialect: string }>(`/admin/v1/databases/${encodeURIComponent(alias)}/test`),
+    request<{
+      alias: string;
+      status: "up" | "down" | "connected";
+      dialect: string;
+    }>(`/admin/v1/databases/${encodeURIComponent(alias)}/test`),
 
   // API Key Vault
-  listKeys: () => request<{ keys: ApiKeyRecordApi[] }>('/admin/v1/keys'),
-  createKey: (data: { name: string; role?: string; secret?: string; rate_limit?: number; expires_at?: number | null }) =>
-    request<{ name: string; role?: string; token: string; secret: string; note: string }>('/admin/v1/keys', {
-      method: 'POST',
+  listKeys: () => request<{ keys: ApiKeyRecordApi[] }>("/admin/v1/keys"),
+  createKey: (data: {
+    name: string;
+    role?: string;
+    secret?: string;
+    rate_limit?: number;
+    expires_at?: number | null;
+  }) =>
+    request<{
+      name: string;
+      role?: string;
+      token: string;
+      secret: string;
+      note: string;
+    }>("/admin/v1/keys", {
+      method: "POST",
       body: JSON.stringify(data),
     }),
   rotateKey: (name: string) =>
-    request<{ name: string; token: string; secret: string; note: string }>(`/admin/v1/keys/${encodeURIComponent(name)}/rotate`, {
-      method: 'POST',
-    }),
+    request<{ name: string; token: string; secret: string; note: string }>(
+      `/admin/v1/keys/${encodeURIComponent(name)}/rotate`,
+      {
+        method: "POST",
+      },
+    ),
   deleteKey: (name: string) =>
     request<{ message: string }>(`/admin/v1/keys/${encodeURIComponent(name)}`, {
-      method: 'DELETE',
+      method: "DELETE",
     }),
 
   // Roles & RBAC
-  listRoles: () => request<{ roles: RoleRecordApi[] }>('/admin/v1/roles'),
-  createRole: (data: { name: string; description?: string; permissions: PermissionRecordApi[] }) =>
-    request<{ name: string; message: string }>('/admin/v1/roles', {
-      method: 'POST',
+  listRoles: () => request<{ roles: RoleRecordApi[] }>("/admin/v1/roles"),
+  createRole: (data: {
+    name: string;
+    description?: string;
+    permissions: PermissionRecordApi[];
+  }) =>
+    request<{ name: string; message: string }>("/admin/v1/roles", {
+      method: "POST",
       body: JSON.stringify(data),
     }),
-  updateRole: (name: string, data: { description?: string; permissions?: PermissionRecordApi[] }) =>
-    request<{ name: string; message: string }>(`/admin/v1/roles/${encodeURIComponent(name)}`, {
-      method: 'PATCH',
-      body: JSON.stringify(data),
-    }),
+  updateRole: (
+    name: string,
+    data: { description?: string; permissions?: PermissionRecordApi[] },
+  ) =>
+    request<{ name: string; message: string }>(
+      `/admin/v1/roles/${encodeURIComponent(name)}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify(data),
+      },
+    ),
   deleteRole: (name: string) =>
-    request<{ message: string }>(`/admin/v1/roles/${encodeURIComponent(name)}`, {
-      method: 'DELETE',
-    }),
+    request<{ message: string }>(
+      `/admin/v1/roles/${encodeURIComponent(name)}`,
+      {
+        method: "DELETE",
+      },
+    ),
 
   // Cache Engine
-  getCacheStats: () => request<CacheStatsApi>('/admin/v1/cache/stats'),
-  flushCache: () => request<{ message: string }>('/admin/v1/cache/flush', { method: 'POST' }),
+  getCacheStats: () => request<CacheStatsApi>("/admin/v1/cache/stats"),
+  flushCache: () =>
+    request<{ message: string }>("/admin/v1/cache/flush", { method: "POST" }),
 
   // Metrics & Observability
-  getMetricsSnapshot: () => request<MetricsSnapshotApi>('/admin/v1/metrics?format=json'),
-  getAuditLog: (limit = 50, offset = 0, cursor?: number) => {
-    const safeLimit = Math.max(1, Math.min(500, Math.floor(limit) || 50));
+  getMetricsSnapshot: () =>
+    request<MetricsSnapshotApi>("/admin/v1/metrics?format=json"),
+  getAuditLog: async (
+    limit = 25,
+    offset = 0,
+    cursor?: number,
+    search?: string,
+  ): Promise<AuditLogResponseApi> => {
+    const safeLimit = Math.max(1, Math.min(500, Math.floor(limit) || 25));
     const safeOffset = Math.max(0, Math.floor(offset) || 0);
-    const cursorParam = cursor != null ? `&cursor=${cursor}` : '';
-    return request<AuditRecordApi[]>(`/admin/v1/audit?limit=${safeLimit}&offset=${safeOffset}${cursorParam}`);
+    const cursorParam = cursor != null ? `&cursor=${cursor}` : "";
+    const searchParam =
+      search && search.trim()
+        ? `&search=${encodeURIComponent(search.trim())}`
+        : "";
+    const res = await request<any>(
+      `/admin/v1/audit?limit=${safeLimit}&offset=${safeOffset}${cursorParam}${searchParam}`,
+    );
+    if (Array.isArray(res)) {
+      return {
+        records: res as AuditRecordApi[],
+        total: res.length,
+        has_more: res.length === safeLimit,
+      };
+    }
+    if (res && Array.isArray(res.records)) {
+      return {
+        records: res.records as AuditRecordApi[],
+        total: typeof res.total === "number" ? res.total : res.records.length,
+        has_more: Boolean(res.has_more),
+      };
+    }
+    return { records: [] as AuditRecordApi[], total: 0, has_more: false };
   },
 
   // Users & Authentication
-  listUsers: () => request<UserRecordApi[]>('/admin/v1/users'),
+  listUsers: () => request<UserRecordApi[]>("/admin/v1/users"),
   login: async (credentials: { username: string; password: string }) => {
-    const res = await request<{ user?: { username: string }; username?: string; session_token?: string; token?: string; expires_at?: number }>('/admin/v1/auth/login', {
-      method: 'POST',
+    const res = await request<{
+      user?: { username: string };
+      username?: string;
+      session_token?: string;
+      token?: string;
+      expires_at?: number;
+    }>("/admin/v1/auth/login", {
+      method: "POST",
       body: JSON.stringify(credentials),
     });
-    const token = res.token || res.session_token || '';
+    const token = res.token || res.session_token || "";
     const username = res.user?.username || res.username || credentials.username;
-    return { username, token, session_token: token, expires_at: res.expires_at || 0 };
+    return {
+      username,
+      token,
+      session_token: token,
+      expires_at: res.expires_at || 0,
+    };
   },
   logout: () =>
-    request<{ message: string }>('/admin/v1/auth/logout', {
-      method: 'POST',
+    request<{ message: string }>("/admin/v1/auth/logout", {
+      method: "POST",
     }),
 
   // Setup Wizard
-  checkSetup: () => request<{ setup_required: boolean }>('/admin/v1/setup/begin', { method: 'POST' }),
-  setupAccount: async (data: { username: string; email?: string; password: string }) => {
-    const res = await request<{ user?: { username: string }; username?: string; session_token?: string; token?: string; expires_at?: number }>('/admin/v1/setup/account', {
-      method: 'POST',
+  checkSetup: () =>
+    request<{ setup_required: boolean }>("/admin/v1/setup/begin", {
+      method: "POST",
+    }),
+  setupAccount: async (data: {
+    username: string;
+    email?: string;
+    password: string;
+  }) => {
+    const res = await request<{
+      user?: { username: string };
+      username?: string;
+      session_token?: string;
+      token?: string;
+      expires_at?: number;
+    }>("/admin/v1/setup/account", {
+      method: "POST",
       body: JSON.stringify(data),
     });
-    const token = res.token || res.session_token || '';
+    const token = res.token || res.session_token || "";
     const username = res.user?.username || res.username || data.username;
-    return { username, token, session_token: token, expires_at: res.expires_at || 0 };
+    return {
+      username,
+      token,
+      session_token: token,
+      expires_at: res.expires_at || 0,
+    };
   },
-  setupDatabase: (data: { alias: string; url: string; engine?: string; token?: string }) =>
-    request<{ alias: string; message: string }>('/admin/v1/setup/database', {
-      method: 'POST',
+  setupDatabase: (data: {
+    alias: string;
+    url: string;
+    engine?: string;
+    token?: string;
+  }) =>
+    request<{ alias: string; message: string }>("/admin/v1/setup/database", {
+      method: "POST",
       body: JSON.stringify(data),
     }),
-  testDatabaseUrl: (url: string, alias?: string, engine?: string, token?: string) =>
-    request<{ status: string; dialect: string; message: string }>('/admin/v1/setup/database/test', {
-      method: 'POST',
-      body: JSON.stringify({ url, alias, engine, token }),
-    }),
+  testDatabaseUrl: (
+    url: string,
+    alias?: string,
+    engine?: string,
+    token?: string,
+  ) =>
+    request<{ status: string; dialect: string; message: string }>(
+      "/admin/v1/setup/database/test",
+      {
+        method: "POST",
+        body: JSON.stringify({ url, alias, engine, token }),
+      },
+    ),
   setupComplete: () =>
-    request<{ message: string; api_key: { name: string; token: string } }>('/admin/v1/setup/complete', {
-      method: 'POST',
-    }),
+    request<{ message: string; api_key: { name: string; token: string } }>(
+      "/admin/v1/setup/complete",
+      {
+        method: "POST",
+      },
+    ),
 
   // Native Blob Storage Subsystem
-  getBlobStats: () => request<BlobStats>('/admin/v1/blobs/stats'),
-  listBlobNamespaces: () => request<NamespaceInfo[]>('/admin/v1/blobs/namespaces'),
-  createBlobNamespace: (name: string, max_bytes?: number | null, is_public?: boolean, cors_origins?: string[]) =>
-    request<NamespaceInfo>('/admin/v1/blobs/namespaces', {
-      method: 'POST',
+  getBlobStats: () => request<BlobStats>("/admin/v1/blobs/stats"),
+  listBlobNamespaces: () =>
+    request<NamespaceInfo[]>("/api/v1/blobs/namespaces"),
+  getBlobNamespace: (name: string) =>
+    request<NamespaceInfo>(
+      `/api/v1/blobs/namespaces/${encodeURIComponent(name)}`,
+    ),
+  getBlobNamespaceUsage: (name: string) =>
+    request<NamespaceUsage>(
+      `/api/v1/blobs/namespaces/${encodeURIComponent(name)}/usage`,
+    ),
+  createBlobNamespace: (
+    name: string,
+    max_bytes?: number | null,
+    is_public?: boolean,
+    cors_origins?: string[],
+  ) =>
+    request<NamespaceInfo>("/api/v1/blobs/namespaces", {
+      method: "POST",
       body: JSON.stringify({
         name,
         max_bytes: max_bytes ?? null,
@@ -425,23 +580,41 @@ export const api = {
     }),
   updateBlobNamespace: (
     name: string,
-    data: { new_name?: string; max_bytes?: number | null; is_public?: boolean; cors_origins?: string[] }
+    data: {
+      new_name?: string;
+      max_bytes?: number | null;
+      is_public?: boolean;
+      cors_origins?: string[];
+    },
   ) =>
-    request<NamespaceInfo>(`/admin/v1/blobs/namespaces/${encodeURIComponent(name)}`, {
-      method: 'PATCH',
-      body: JSON.stringify(data),
-    }),
+    request<NamespaceInfo>(
+      `/api/v1/blobs/namespaces/${encodeURIComponent(name)}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify(data),
+      },
+    ),
   deleteBlobNamespace: (name: string) =>
-    request<{ deleted_objects: number }>(`/admin/v1/blobs/namespaces/${encodeURIComponent(name)}`, {
-      method: 'DELETE',
-    }),
-  listBlobs: (namespace: string, prefix?: string, cursor?: string, limit?: number) => {
+    request<{ deleted_objects: number }>(
+      `/api/v1/blobs/namespaces/${encodeURIComponent(name)}`,
+      {
+        method: "DELETE",
+      },
+    ),
+  listBlobs: (
+    namespace: string,
+    prefix?: string,
+    cursor?: string,
+    limit?: number,
+  ) => {
     const params = new URLSearchParams();
-    if (prefix) params.set('prefix', prefix);
-    if (cursor) params.set('cursor', cursor);
-    if (limit) params.set('limit', String(limit));
-    const qs = params.toString() ? `?${params.toString()}` : '';
-    return request<ListBlobsResult>(`/api/v1/blobs/${encodeURIComponent(namespace)}${qs}`);
+    if (prefix) params.set("prefix", prefix);
+    if (cursor) params.set("cursor", cursor);
+    if (limit) params.set("limit", String(limit));
+    const qs = params.toString() ? `?${params.toString()}` : "";
+    return request<ListBlobsResult>(
+      `/api/v1/blobs/objects/${encodeURIComponent(namespace)}${qs}`,
+    );
   },
   /**
    * Resumable chunked upload protocol implementation matching the backend
@@ -454,10 +627,10 @@ export const api = {
     file: Blob,
     contentType?: string,
     signal?: AbortSignal,
-    onProgress?: (uploadedBytes: number, totalBytes: number) => void
+    onProgress?: (uploadedBytes: number, totalBytes: number) => void,
   ): Promise<BlobMetadata> => {
     const totalSize = file.size;
-    const mime = contentType || file.type || 'application/octet-stream';
+    const mime = contentType || file.type || "application/octet-stream";
     const chunkSize = 8 * 1024 * 1024; // 8 MB chunks
 
     // Step 1: Initialize session
@@ -466,8 +639,8 @@ export const api = {
       namespace: string;
       key: string;
       total_size?: number;
-    }>(`/api/v1/blobs/${encodeURIComponent(namespace)}/uploads`, {
-      method: 'POST',
+    }>(`/api/v1/blobs/uploads/${encodeURIComponent(namespace)}`, {
+      method: "POST",
       body: JSON.stringify({
         key,
         content_type: mime,
@@ -483,42 +656,44 @@ export const api = {
     // Step 2: Upload chunks sequentially
     while (offset < totalSize) {
       if (signal?.aborted) {
-        throw new Error('Upload aborted by user');
+        throw new Error("Upload aborted by user");
       }
 
       const chunkEnd = Math.min(offset + chunkSize, totalSize) - 1;
       const chunk = file.slice(offset, chunkEnd + 1);
       const targetUrl = resolveEndpoint(
-        `/api/v1/blobs/${encodeURIComponent(namespace)}/uploads/${encodeURIComponent(uploadId)}`
+        `/api/v1/blobs/uploads/${encodeURIComponent(namespace)}/${encodeURIComponent(uploadId)}`,
       );
 
       const headers: Record<string, string> = {
-        'Content-Type': 'application/octet-stream',
-        'Content-Range': `bytes ${offset}-${chunkEnd}/${totalSize}`,
+        "Content-Type": "application/octet-stream",
+        "Content-Range": `bytes ${offset}-${chunkEnd}/${totalSize}`,
       };
-      if (token && token !== 'undefined' && token !== 'null') {
-        headers['Authorization'] = `Bearer ${token}`;
+      if (token && token !== "undefined" && token !== "null") {
+        headers["Authorization"] = `Bearer ${token}`;
       }
 
       let res: Response;
       try {
         res = await fetch(targetUrl, {
-          method: 'PUT',
+          method: "PUT",
           headers,
           body: chunk,
           signal,
-          credentials: 'include',
+          credentials: "include",
         });
       } catch (networkErr: unknown) {
         if (signal?.aborted) throw networkErr;
         // Probe offset from server on transient network interruption
         try {
           const statusRes = await fetch(targetUrl, {
-            method: 'GET',
+            method: "GET",
             headers: token ? { Authorization: `Bearer ${token}` } : {},
-            credentials: 'include',
+            credentials: "include",
           });
-          const offsetHdr = statusRes.headers.get('Upload-Offset') || statusRes.headers.get('X-Upload-Offset');
+          const offsetHdr =
+            statusRes.headers.get("Upload-Offset") ||
+            statusRes.headers.get("X-Upload-Offset");
           if (offsetHdr) {
             offset = parseInt(offsetHdr, 10);
             continue;
@@ -536,7 +711,9 @@ export const api = {
       }
 
       if (res.status === 308) {
-        const offsetHdr = res.headers.get('Upload-Offset') || res.headers.get('X-Upload-Offset');
+        const offsetHdr =
+          res.headers.get("Upload-Offset") ||
+          res.headers.get("X-Upload-Offset");
         if (offsetHdr) {
           offset = parseInt(offsetHdr, 10);
         } else {
@@ -547,17 +724,19 @@ export const api = {
         }
       } else {
         const errText = await res.text();
-        throw new Error(`Chunk upload failed with status ${res.status}: ${errText}`);
+        throw new Error(
+          `Chunk upload failed with status ${res.status}: ${errText}`,
+        );
       }
     }
 
     // Step 3: Complete upload if not automatically completed
     return request<BlobMetadata>(
-      `/api/v1/blobs/${encodeURIComponent(namespace)}/uploads/${encodeURIComponent(uploadId)}/complete`,
+      `/api/v1/blobs/uploads/${encodeURIComponent(namespace)}/${encodeURIComponent(uploadId)}/complete`,
       {
-        method: 'POST',
+        method: "POST",
         signal,
-      }
+      },
     );
   },
   uploadBlob: async (
@@ -566,128 +745,199 @@ export const api = {
     data: BodyInit,
     contentType?: string,
     signal?: AbortSignal,
-    onProgress?: (uploadedBytes: number, totalBytes: number) => void
+    onProgress?: (uploadedBytes: number, totalBytes: number) => void,
   ) => {
     // If payload is a File/Blob >= 8MB, delegate to chunked resumable upload protocol
-    if (typeof Blob !== 'undefined' && data instanceof Blob && data.size >= 8 * 1024 * 1024) {
-      return api.uploadBlobResumable(namespace, key, data, contentType, signal, onProgress);
+    if (
+      typeof Blob !== "undefined" &&
+      data instanceof Blob &&
+      data.size >= 8 * 1024 * 1024
+    ) {
+      return api.uploadBlobResumable(
+        namespace,
+        key,
+        data,
+        contentType,
+        signal,
+        onProgress,
+      );
     }
 
-    const sanitizedKey = key.split('/').map(encodeURIComponent).join('/');
-    return request<BlobMetadata>(`/api/v1/blobs/${encodeURIComponent(namespace)}/${sanitizedKey}`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': contentType || 'application/octet-stream',
+    const sanitizedKey = key.split("/").map(encodeURIComponent).join("/");
+    return request<BlobMetadata>(
+      `/api/v1/blobs/objects/${encodeURIComponent(namespace)}/${sanitizedKey}`,
+      {
+        method: "PUT",
+        headers: {
+          "Content-Type": contentType || "application/octet-stream",
+        },
+        body: data,
+        signal,
+        timeoutMs: 600_000, // 10-minute timeout allows large payloads
       },
-      body: data,
-      signal,
-      timeoutMs: 600_000, // 10-minute timeout allows large payloads
-    });
+    );
   },
   deleteBlob: (namespace: string, key: string) => {
-    const sanitizedKey = key.split('/').map(encodeURIComponent).join('/');
-    return request<{ deleted: boolean }>(`/api/v1/blobs/${encodeURIComponent(namespace)}/${sanitizedKey}`, {
-      method: 'DELETE',
-    });
+    const sanitizedKey = key.split("/").map(encodeURIComponent).join("/");
+    return request<{ deleted: boolean }>(
+      `/api/v1/blobs/objects/${encodeURIComponent(namespace)}/${sanitizedKey}`,
+      {
+        method: "DELETE",
+      },
+    );
   },
   copyBlob: (
     src_namespace: string,
     src_key: string,
     dest_key: string,
     dest_namespace?: string,
-    is_prefix?: boolean
+    is_prefix?: boolean,
   ) =>
-    request<BlobMetadata | { copied_count: number }>('/admin/v1/blobs/copy', {
-      method: 'POST',
-      body: JSON.stringify({
-        src_namespace,
-        src_key,
-        dest_namespace: dest_namespace || src_namespace,
-        dest_key,
-        is_prefix: !!is_prefix,
-      }),
-    }),
+    request<BlobMetadata | { copied_count: number }>(
+      "/api/v1/blobs/objects/copy",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          src_namespace,
+          src_key,
+          dest_namespace: dest_namespace || src_namespace,
+          dest_key,
+          is_prefix: !!is_prefix,
+        }),
+      },
+    ),
   moveBlob: (
     src_namespace: string,
     src_key: string,
     dest_key: string,
     dest_namespace?: string,
-    is_prefix?: boolean
+    is_prefix?: boolean,
   ) =>
-    request<BlobMetadata | { moved_count: number }>('/admin/v1/blobs/move', {
-      method: 'POST',
-      body: JSON.stringify({
-        src_namespace,
-        src_key,
-        dest_namespace: dest_namespace || src_namespace,
-        dest_key,
-        is_prefix: !!is_prefix,
-      }),
-    }),
+    request<BlobMetadata | { moved_count: number }>(
+      "/api/v1/blobs/objects/move",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          src_namespace,
+          src_key,
+          dest_namespace: dest_namespace || src_namespace,
+          dest_key,
+          is_prefix: !!is_prefix,
+        }),
+      },
+    ),
   deleteBlobPrefix: (namespace: string, prefix: string) =>
-    request<{ deleted_objects: number }>('/admin/v1/blobs/delete-prefix', {
-      method: 'POST',
-      body: JSON.stringify({ namespace, prefix }),
+    request<{
+      deleted: string[];
+      prefix_deleted?: number;
+      errors: [string, string][];
+    }>(`/api/v1/blobs/objects/${encodeURIComponent(namespace)}/batch-delete`, {
+      method: "POST",
+      body: JSON.stringify({ prefix }),
     }),
   deleteBlobsBatch: (namespace: string, keys: string[]) =>
-    request<{ deleted: string[]; errors: [string, string][] }>(
-      `/api/v1/blobs/${encodeURIComponent(namespace)}/delete-objects`,
-      {
-        method: 'POST',
-        body: JSON.stringify({ keys }),
-      }
-    ),
+    request<{
+      deleted: string[];
+      prefix_deleted?: number;
+      errors: [string, string][];
+    }>(`/api/v1/blobs/objects/${encodeURIComponent(namespace)}/batch-delete`, {
+      method: "POST",
+      body: JSON.stringify({ keys }),
+    }),
   verifyBlob: (namespace: string, key: string) => {
-    const sanitizedKey = key.split('/').map(encodeURIComponent).join('/');
-    return request<{ valid: boolean }>(`/admin/v1/blobs/verify/${encodeURIComponent(namespace)}/${sanitizedKey}`, {
-      method: 'POST',
-    });
+    const sanitizedKey = key.split("/").map(encodeURIComponent).join("/");
+    return request<{ valid: boolean }>(
+      `/api/v1/blobs/objects/${encodeURIComponent(namespace)}/verify/${sanitizedKey}`,
+      {
+        method: "POST",
+      },
+    );
   },
   createBlobTicket: (
     namespace: string,
     key: string,
-    operation: 'READ' | 'WRITE' = 'READ',
-    ttl_seconds?: number
+    operation: "READ" | "WRITE" = "READ",
+    ttl_seconds?: number,
   ) =>
-    request<CreateBlobTicketResponse>(`/api/v1/blobs/${encodeURIComponent(namespace)}/ticket`, {
-      method: 'POST',
-      body: JSON.stringify({
-        key,
-        operation,
-        ttl_seconds: ttl_seconds ?? 3600,
-      }),
-    }),
-  listBlobTickets: (namespace: string, key?: string, all = true) => {
-    const params = new URLSearchParams();
-    if (namespace && namespace !== '*') params.set('namespace', namespace);
-    if (key) params.set('key', key);
-    if (all) params.set('all', 'true');
-    return request<BlobTicket[]>(`/admin/v1/blobs/tickets?${params.toString()}`);
-  },
-  revokeBlobTicket: (signature: string) =>
-    request<{ revoked: boolean; signature: string }>(
-      `/admin/v1/blobs/tickets/${encodeURIComponent(signature)}/revoke`,
+    request<CreateBlobTicketResponse>(
+      `/api/v1/blobs/tickets/${encodeURIComponent(namespace)}`,
       {
-        method: 'POST',
-      }
+        method: "POST",
+        body: JSON.stringify({
+          key,
+          operation,
+          ttl_seconds: ttl_seconds ?? 3600,
+        }),
+      },
     ),
-  deleteBlobTicket: (signature: string) =>
-    request<{ deleted: boolean }>(
-      `/admin/v1/blobs/tickets/${encodeURIComponent(signature)}`,
+  createUploadLink: (
+    namespace: string,
+    key: string,
+    contentType?: string,
+    ttl_seconds?: number,
+  ) =>
+    request<UploadLinkResponse>(
+      `/api/v1/blobs/uploads/${encodeURIComponent(namespace)}/sign`,
       {
-        method: 'DELETE',
-      }
+        method: "POST",
+        body: JSON.stringify({
+          key,
+          content_type: contentType,
+          ttl_seconds: ttl_seconds ?? 3600,
+        }),
+      },
+    ),
+  listBlobTickets: (
+    namespace: string,
+    key?: string,
+    all = true,
+    cursor?: string,
+    limit?: number,
+  ) => {
+    const params = new URLSearchParams();
+    if (key) params.set("key", key);
+    if (all) params.set("all", "true");
+    if (cursor) params.set("cursor", cursor);
+    if (limit) params.set("limit", String(limit));
+    const q = params.toString();
+    return request<ListBlobTicketsResult | BlobTicket[]>(
+      `/api/v1/blobs/tickets/${encodeURIComponent(namespace)}${q ? `?${q}` : ""}`,
+    );
+  },
+  revokeBlobTicket: (namespace: string, signature: string) =>
+    request<{ revoked: boolean; signature: string }>(
+      `/api/v1/blobs/tickets/${encodeURIComponent(namespace)}/${encodeURIComponent(signature)}/revoke`,
+      {
+        method: "POST",
+      },
+    ),
+  enableBlobTicket: (namespace: string, signature: string) =>
+    request<{ revoked: boolean; signature: string }>(
+      `/api/v1/blobs/tickets/${encodeURIComponent(namespace)}/${encodeURIComponent(signature)}/enable`,
+      {
+        method: "POST",
+      },
+    ),
+  deleteBlobTicket: (namespace: string, signature: string) =>
+    request<{ deleted: boolean }>(
+      `/api/v1/blobs/tickets/${encodeURIComponent(namespace)}/${encodeURIComponent(signature)}`,
+      {
+        method: "DELETE",
+      },
     ),
   getBlobDownloadUrl: (namespace: string, key: string) => {
-    const sanitizedKey = key.split('/').map(encodeURIComponent).join('/');
-    return `/api/v1/blobs/${encodeURIComponent(namespace)}/${sanitizedKey}`;
+    const sanitizedKey = key.split("/").map(encodeURIComponent).join("/");
+    return `/api/v1/blobs/objects/${encodeURIComponent(namespace)}/${sanitizedKey}`;
   },
   downloadBlob: async (namespace: string, key: string) => {
     const token = getSessionToken();
-    const sanitizedKey = key.split('/').map(encodeURIComponent).join('/');
-    const url = `/api/v1/blobs/${encodeURIComponent(namespace)}/${sanitizedKey}`;
+    const sanitizedKey = key.split("/").map(encodeURIComponent).join("/");
+    const url = `/api/v1/blobs/objects/${encodeURIComponent(namespace)}/${sanitizedKey}`;
     const res = await fetch(url, {
-      headers: token && token !== 'undefined' ? { Authorization: `Bearer ${token}` } : {},
+      headers:
+        token && token !== "undefined"
+          ? { Authorization: `Bearer ${token}` }
+          : {},
     });
     if (!res.ok) {
       throw new Error(`Download failed with HTTP ${res.status}`);
@@ -698,94 +948,174 @@ export const api = {
   // ─── Table Editor & Schema API ─────────────────────────────────────────────
   getDatabaseTables: (db: string, cursor?: string, limit?: number) => {
     const params = new URLSearchParams();
-    if (cursor) params.set('cursor', cursor);
-    if (limit) params.set('limit', String(limit));
-    const qs = params.toString() ? `?${params.toString()}` : '';
-    return request<{ database: string; tables: TableInfoApi[] }>(`/api/v1/db/${encodeURIComponent(db)}/tables${qs}`);
+    if (cursor) params.set("cursor", cursor);
+    if (limit) params.set("limit", String(limit));
+    const qs = params.toString() ? `?${params.toString()}` : "";
+    return request<{ database: string; tables: TableInfoApi[] }>(
+      `/api/v1/db/${encodeURIComponent(db)}/tables${qs}`,
+    );
   },
 
   getTableSchema: (db: string, table: string) =>
-    request<{ database: string; table: string; columns: ColumnInfoApi[]; foreign_keys: ForeignKeyInfoApi[] }>(
-      `/api/v1/db/${encodeURIComponent(db)}/${encodeURIComponent(table)}/schema`
+    request<{
+      database: string;
+      table: string;
+      columns: ColumnInfoApi[];
+      foreign_keys: ForeignKeyInfoApi[];
+    }>(
+      `/api/v1/db/${encodeURIComponent(db)}/${encodeURIComponent(table)}/columns`,
     ),
 
   getTableRows: (
     db: string,
     table: string,
-    params?: { cursor?: string; limit?: number; sort?: string; order?: 'asc' | 'desc'; filter?: string }
+    params?: {
+      cursor?: string;
+      limit?: number;
+      sort?: string;
+      order?: "asc" | "desc";
+      filter?: string;
+    },
   ) => {
     const qs = new URLSearchParams();
-    if (params?.cursor) qs.set('cursor', params.cursor);
-    if (params?.limit) qs.set('limit', String(params.limit));
-    if (params?.sort) qs.set('sort', params.sort);
-    if (params?.order) qs.set('order', params.order);
-    if (params?.filter) qs.set('filter', params.filter);
-    const qStr = qs.toString() ? `?${qs.toString()}` : '';
+    if (params?.cursor) qs.set("cursor", params.cursor);
+    if (params?.limit) qs.set("limit", String(params.limit));
+    if (params?.sort) qs.set("sort", params.sort);
+    if (params?.order) qs.set("order", params.order);
+    if (params?.filter) qs.set("filter", params.filter);
+    const qStr = qs.toString() ? `?${qs.toString()}` : "";
     return request<TableRowsResponse>(
-      `/api/v1/db/${encodeURIComponent(db)}/${encodeURIComponent(table)}/rows${qStr}`
+      `/api/v1/db/${encodeURIComponent(db)}/${encodeURIComponent(table)}/rows${qStr}`,
     );
   },
 
   insertTableRow: (db: string, table: string, row: Record<string, unknown>) =>
-    request<{ affected_rows: number }>(`/api/v1/db/${encodeURIComponent(db)}/${encodeURIComponent(table)}/rows`, {
-      method: 'POST',
-      body: JSON.stringify({ row }),
-    }),
+    request<{ affected_rows: number }>(
+      `/api/v1/db/${encodeURIComponent(db)}/${encodeURIComponent(table)}/rows`,
+      {
+        method: "POST",
+        body: JSON.stringify({ row }),
+      },
+    ),
 
-  updateTableRow: (db: string, table: string, filter: Record<string, unknown>, update: Record<string, unknown>) =>
-    request<{ affected_rows: number }>(`/api/v1/db/${encodeURIComponent(db)}/${encodeURIComponent(table)}/rows`, {
-      method: 'PATCH',
-      body: JSON.stringify({ filter, update }),
-    }),
+  updateTableRow: (
+    db: string,
+    table: string,
+    filter: Record<string, unknown>,
+    update: Record<string, unknown>,
+  ) =>
+    request<{ affected_rows: number }>(
+      `/api/v1/db/${encodeURIComponent(db)}/${encodeURIComponent(table)}/rows`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({ filter, update }),
+      },
+    ),
 
-  deleteTableRow: (db: string, table: string, filter: Record<string, unknown>) =>
-    request<{ affected_rows: number }>(`/api/v1/db/${encodeURIComponent(db)}/${encodeURIComponent(table)}/rows`, {
-      method: 'DELETE',
-      body: JSON.stringify({ filter }),
-    }),
+  deleteTableRow: (
+    db: string,
+    table: string,
+    filter: Record<string, unknown>,
+  ) =>
+    request<{ affected_rows: number }>(
+      `/api/v1/db/${encodeURIComponent(db)}/${encodeURIComponent(table)}/rows`,
+      {
+        method: "DELETE",
+        body: JSON.stringify({ filter }),
+      },
+    ),
 
-  createTableColumn: (db: string, table: string, payload: CreateColumnRequestApi) =>
+  createTableColumn: (
+    db: string,
+    table: string,
+    payload: CreateColumnRequestApi,
+  ) =>
     request<{ database: string; table: string; column: string }>(
       `/api/v1/db/${encodeURIComponent(db)}/${encodeURIComponent(table)}/columns`,
       {
-        method: 'POST',
+        method: "POST",
         body: JSON.stringify(payload),
-      }
+      },
     ),
 
-  executeSqlQuery: (db: string, sql: string, params: unknown[] = [], timeout = 60) =>
+  deleteTableColumn: (db: string, table: string, column: string) =>
+    request<{ database: string; table: string; column: string }>(
+      `/api/v1/db/${encodeURIComponent(db)}/${encodeURIComponent(table)}/columns/${encodeURIComponent(column)}`,
+      {
+        method: "DELETE",
+      },
+    ),
+
+  modifyTableColumn: (
+    db: string,
+    table: string,
+    column: string,
+    payload: { new_name?: string; data_type?: string },
+  ) =>
+    request<{
+      database: string;
+      table: string;
+      column: string;
+      new_name?: string;
+      data_type?: string;
+    }>(
+      `/api/v1/db/${encodeURIComponent(db)}/${encodeURIComponent(table)}/columns/${encodeURIComponent(column)}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      },
+    ),
+
+  executeSqlQuery: (
+    db: string,
+    sql: string,
+    params: unknown[] = [],
+    timeout = 60,
+  ) =>
     request<QueryResultApi>(`/api/v1/db/${encodeURIComponent(db)}/query`, {
-      method: 'POST',
+      method: "POST",
       body: JSON.stringify({ sql, params, timeout }),
       timeoutMs: (Math.max(timeout, 60) + 30) * 1000,
     }),
 
   // ─── Cluster P2P Mesh API ──────────────────────────────────────────────────
-  getClusterStatus: () => request<ClusterStatusData>('/admin/v1/cluster/status'),
-  listClusterPeers: () => request<{ peers: PeerNodeRecordApi[] }>('/admin/v1/cluster/peers'),
+  getClusterStatus: () =>
+    request<ClusterStatusData>("/admin/v1/cluster/status"),
+  listClusterPeers: () =>
+    request<{ peers: PeerNodeRecordApi[] }>("/admin/v1/cluster/peers"),
   connectClusterPeer: (payload: ConnectPeerRequestApi) =>
-    request<PeerNodeRecordApi>('/admin/v1/cluster/peers', {
-      method: 'POST',
+    request<PeerNodeRecordApi>("/admin/v1/cluster/peers", {
+      method: "POST",
       body: JSON.stringify(payload),
     }),
   removeClusterPeer: (nodeId: string) =>
-    request<{ message: string }>(`/admin/v1/cluster/peers/${encodeURIComponent(nodeId)}`, {
-      method: 'DELETE',
-    }),
+    request<{ message: string }>(
+      `/admin/v1/cluster/peers/${encodeURIComponent(nodeId)}`,
+      {
+        method: "DELETE",
+      },
+    ),
   updateClusterMoniker: (moniker: string) =>
-    request<{ moniker: string }>('/admin/v1/cluster/moniker', {
-      method: 'PATCH',
+    request<{ moniker: string }>("/admin/v1/cluster/moniker", {
+      method: "PATCH",
       body: JSON.stringify({ moniker }),
     }),
-  updateClusterPeer: (nodeId: string, payload: { moniker?: string; url?: string; cluster_secret?: string }) =>
-    request<PeerNodeRecordApi>(`/admin/v1/cluster/peers/${encodeURIComponent(nodeId)}`, {
-      method: 'PATCH',
-      body: JSON.stringify(payload),
-    }),
+  updateClusterPeer: (
+    nodeId: string,
+    payload: { moniker?: string; url?: string; cluster_secret?: string },
+  ) =>
+    request<PeerNodeRecordApi>(
+      `/admin/v1/cluster/peers/${encodeURIComponent(nodeId)}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      },
+    ),
   pingClusterPeer: (nodeId: string) =>
-    request<PeerNodeRecordApi>(`/admin/v1/cluster/peers/${encodeURIComponent(nodeId)}/ping`, {
-      method: 'POST',
-    }),
+    request<PeerNodeRecordApi>(
+      `/admin/v1/cluster/peers/${encodeURIComponent(nodeId)}/ping`,
+      {
+        method: "POST",
+      },
+    ),
 };
-
-

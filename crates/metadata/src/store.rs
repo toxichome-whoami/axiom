@@ -199,6 +199,7 @@ impl MetadataStore {
             );",
             "CREATE INDEX IF NOT EXISTS idx_blob_tickets_lookup ON blob_tickets(namespace, key, revoked);",
             "CREATE INDEX IF NOT EXISTS idx_blob_tickets_sig ON blob_tickets(signature);",
+            "CREATE INDEX IF NOT EXISTS idx_blob_tickets_created ON blob_tickets(namespace, created_at, id);",
             "CREATE TABLE IF NOT EXISTS system_secrets (
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL,
@@ -1639,6 +1640,7 @@ impl MetadataStore {
             );",
             "CREATE INDEX IF NOT EXISTS idx_blob_tickets_lookup ON blob_tickets(namespace, key, revoked);",
             "CREATE INDEX IF NOT EXISTS idx_blob_tickets_sig ON blob_tickets(signature);",
+            "CREATE INDEX IF NOT EXISTS idx_blob_tickets_created ON blob_tickets(namespace, created_at, id);",
         ];
         for stmt in statements {
             let _ = conn.execute(stmt, ()).await;
@@ -1674,12 +1676,14 @@ impl MetadataStore {
         Ok(())
     }
 
-    /// Queries blob capability tickets matching an optional namespace and optional key filter.
+    /// Queries blob capability tickets matching an optional namespace and optional key filter with keyset cursor pagination.
     pub async fn list_blob_tickets(
         namespace: &str,
         key: Option<&str>,
         include_expired: bool,
-    ) -> Result<Vec<BlobTicketRecord>, String> {
+        cursor: Option<&str>,
+        limit: Option<usize>,
+    ) -> Result<(Vec<BlobTicketRecord>, Option<String>), String> {
         let conn = Self::get_conn().await?;
 
         let now_unix = SystemTime::now()
@@ -1687,49 +1691,110 @@ impl MetadataStore {
             .unwrap_or_default()
             .as_secs() as i64;
 
+        let safe_limit = limit.unwrap_or(100).clamp(1, 500) as i64;
+        let query_limit = safe_limit + 1;
+
+        // Parse cursor: "<created_at>_<id>"
+        let parsed_cursor = cursor.and_then(|c| {
+            c.split_once('_').and_then(|(ts_str, id_str)| {
+                ts_str
+                    .parse::<i64>()
+                    .ok()
+                    .map(|ts| (ts, id_str.to_string()))
+            })
+        });
+
         let clean_key = key.map(|k| k.trim_start_matches('/'));
-        let mut rows = match (key, clean_key, include_expired) {
-            (Some(raw_k), Some(clean_k), false) => {
+        let mut rows = match (key, clean_key, include_expired, parsed_cursor) {
+            (Some(raw_k), Some(clean_k), false, Some((cur_ts, cur_id))) => {
                 conn.query(
                     "SELECT id, namespace, key, operation, expires_at, signature, created_by, created_at, revoked \
                      FROM blob_tickets \
                      WHERE (?1 = '*' OR ?1 = '' OR namespace = ?1) \
                        AND (key = ?2 OR key = ?3 OR key = '/' || ?3) \
                        AND expires_at > ?4 \
-                     ORDER BY created_at DESC",
-                    libsql::params![namespace, raw_k, clean_k, now_unix],
+                       AND (created_at < ?5 OR (created_at = ?5 AND id < ?6)) \
+                     ORDER BY created_at DESC, id DESC LIMIT ?7",
+                    libsql::params![namespace, raw_k, clean_k, now_unix, cur_ts, cur_id, query_limit],
                 )
                 .await
             }
-            (Some(raw_k), Some(clean_k), true) => {
+            (Some(raw_k), Some(clean_k), false, None) => {
                 conn.query(
                     "SELECT id, namespace, key, operation, expires_at, signature, created_by, created_at, revoked \
                      FROM blob_tickets \
                      WHERE (?1 = '*' OR ?1 = '' OR namespace = ?1) \
                        AND (key = ?2 OR key = ?3 OR key = '/' || ?3) \
-                     ORDER BY created_at DESC",
-                    libsql::params![namespace, raw_k, clean_k],
+                       AND expires_at > ?4 \
+                     ORDER BY created_at DESC, id DESC LIMIT ?5",
+                    libsql::params![namespace, raw_k, clean_k, now_unix, query_limit],
                 )
                 .await
             }
-            _ if !include_expired => {
+            (Some(raw_k), Some(clean_k), true, Some((cur_ts, cur_id))) => {
+                conn.query(
+                    "SELECT id, namespace, key, operation, expires_at, signature, created_by, created_at, revoked \
+                     FROM blob_tickets \
+                     WHERE (?1 = '*' OR ?1 = '' OR namespace = ?1) \
+                       AND (key = ?2 OR key = ?3 OR key = '/' || ?3) \
+                       AND (created_at < ?4 OR (created_at = ?4 AND id < ?5)) \
+                     ORDER BY created_at DESC, id DESC LIMIT ?6",
+                    libsql::params![namespace, raw_k, clean_k, cur_ts, cur_id, query_limit],
+                )
+                .await
+            }
+            (Some(raw_k), Some(clean_k), true, None) => {
+                conn.query(
+                    "SELECT id, namespace, key, operation, expires_at, signature, created_by, created_at, revoked \
+                     FROM blob_tickets \
+                     WHERE (?1 = '*' OR ?1 = '' OR namespace = ?1) \
+                       AND (key = ?2 OR key = ?3 OR key = '/' || ?3) \
+                     ORDER BY created_at DESC, id DESC LIMIT ?4",
+                    libsql::params![namespace, raw_k, clean_k, query_limit],
+                )
+                .await
+            }
+            (_, _, false, Some((cur_ts, cur_id))) => {
                 conn.query(
                     "SELECT id, namespace, key, operation, expires_at, signature, created_by, created_at, revoked \
                      FROM blob_tickets \
                      WHERE (?1 = '*' OR ?1 = '' OR namespace = ?1) \
                        AND expires_at > ?2 \
-                     ORDER BY created_at DESC",
-                    libsql::params![namespace, now_unix],
+                       AND (created_at < ?3 OR (created_at = ?3 AND id < ?4)) \
+                     ORDER BY created_at DESC, id DESC LIMIT ?5",
+                    libsql::params![namespace, now_unix, cur_ts, cur_id, query_limit],
                 )
                 .await
             }
-            _ => {
+            (_, _, false, None) => {
                 conn.query(
                     "SELECT id, namespace, key, operation, expires_at, signature, created_by, created_at, revoked \
                      FROM blob_tickets \
                      WHERE (?1 = '*' OR ?1 = '' OR namespace = ?1) \
-                     ORDER BY created_at DESC",
-                    libsql::params![namespace],
+                       AND expires_at > ?2 \
+                     ORDER BY created_at DESC, id DESC LIMIT ?3",
+                    libsql::params![namespace, now_unix, query_limit],
+                )
+                .await
+            }
+            (_, _, true, Some((cur_ts, cur_id))) => {
+                conn.query(
+                    "SELECT id, namespace, key, operation, expires_at, signature, created_by, created_at, revoked \
+                     FROM blob_tickets \
+                     WHERE (?1 = '*' OR ?1 = '' OR namespace = ?1) \
+                       AND (created_at < ?2 OR (created_at = ?2 AND id < ?3)) \
+                     ORDER BY created_at DESC, id DESC LIMIT ?4",
+                    libsql::params![namespace, cur_ts, cur_id, query_limit],
+                )
+                .await
+            }
+            (_, _, true, None) => {
+                conn.query(
+                    "SELECT id, namespace, key, operation, expires_at, signature, created_by, created_at, revoked \
+                     FROM blob_tickets \
+                     WHERE (?1 = '*' OR ?1 = '' OR namespace = ?1) \
+                     ORDER BY created_at DESC, id DESC LIMIT ?2",
+                    libsql::params![namespace, query_limit],
                 )
                 .await
             }
@@ -1761,7 +1826,65 @@ impl MetadataStore {
             });
         }
 
-        Ok(tickets)
+        let next_cursor = if tickets.len() > safe_limit as usize {
+            tickets.truncate(safe_limit as usize);
+            tickets
+                .last()
+                .map(|last| format!("{}_{}", last.created_at, last.id))
+        } else {
+            None
+        };
+
+        Ok((tickets, next_cursor))
+    }
+
+    /// Finds the underlying cryptographic signature of a ticket given either its ID or signature.
+    pub async fn find_blob_ticket_signature(
+        signature_or_id: &str,
+    ) -> Result<Option<String>, String> {
+        let conn = Self::get_conn().await?;
+        let mut rows = match conn
+            .query(
+                "SELECT signature FROM blob_tickets WHERE signature = ?1 OR id = ?1 LIMIT 1",
+                libsql::params![signature_or_id],
+            )
+            .await
+        {
+            Ok(r) => r,
+            Err(_) => return Ok(None),
+        };
+
+        if let Ok(Some(row)) = rows.next().await {
+            let sig: String = row.get(0).unwrap_or_default();
+            Ok(Some(sig))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Finds exact ticket signature for a ticket within a specific namespace.
+    pub async fn find_blob_ticket_signature_scoped(
+        namespace: &str,
+        signature_or_id: &str,
+    ) -> Result<Option<String>, String> {
+        let conn = Self::get_conn().await?;
+        let mut rows = match conn
+            .query(
+                "SELECT signature FROM blob_tickets WHERE namespace = ?1 AND (signature = ?2 OR id = ?2) LIMIT 1",
+                libsql::params![namespace, signature_or_id],
+            )
+            .await
+        {
+            Ok(r) => r,
+            Err(_) => return Ok(None),
+        };
+
+        if let Ok(Some(row)) = rows.next().await {
+            let sig: String = row.get(0).unwrap_or_default();
+            Ok(Some(sig))
+        } else {
+            Ok(None)
+        }
     }
 
     /// Revokes a blob capability ticket by signature or id, immediately invalidating it.
@@ -1775,6 +1898,57 @@ impl MetadataStore {
             )
             .await
             .map_err(|e| format!("Failed to revoke blob ticket: {}", e))?;
+
+        Ok(affected > 0)
+    }
+
+    /// Revokes a blob capability ticket scoped to a specific namespace.
+    pub async fn revoke_blob_ticket_scoped(
+        namespace: &str,
+        signature_or_id: &str,
+    ) -> Result<bool, String> {
+        let conn = Self::get_conn().await?;
+
+        let affected = conn
+            .execute(
+                "UPDATE blob_tickets SET revoked = 1 WHERE namespace = ?1 AND (signature = ?2 OR id = ?2) AND revoked = 0",
+                libsql::params![namespace, signature_or_id],
+            )
+            .await
+            .map_err(|e| format!("Failed to revoke blob ticket: {}", e))?;
+
+        Ok(affected > 0)
+    }
+
+    /// Re-enables / restores a revoked blob capability ticket by signature or id.
+    pub async fn enable_blob_ticket(signature_or_id: &str) -> Result<bool, String> {
+        let conn = Self::get_conn().await?;
+
+        let affected = conn
+            .execute(
+                "UPDATE blob_tickets SET revoked = 0 WHERE (signature = ?1 OR id = ?1) AND revoked = 1",
+                libsql::params![signature_or_id],
+            )
+            .await
+            .map_err(|e| format!("Failed to enable blob ticket: {}", e))?;
+
+        Ok(affected > 0)
+    }
+
+    /// Re-enables / restores a revoked blob capability ticket scoped to a specific namespace.
+    pub async fn enable_blob_ticket_scoped(
+        namespace: &str,
+        signature_or_id: &str,
+    ) -> Result<bool, String> {
+        let conn = Self::get_conn().await?;
+
+        let affected = conn
+            .execute(
+                "UPDATE blob_tickets SET revoked = 0 WHERE namespace = ?1 AND (signature = ?2 OR id = ?2) AND revoked = 1",
+                libsql::params![namespace, signature_or_id],
+            )
+            .await
+            .map_err(|e| format!("Failed to enable blob ticket: {}", e))?;
 
         Ok(affected > 0)
     }
@@ -1794,13 +1968,31 @@ impl MetadataStore {
         Ok(affected > 0)
     }
 
-    /// Checks if a ticket signature has been explicitly revoked.
-    pub async fn is_blob_ticket_revoked(signature: &str) -> Result<bool, String> {
+    /// Permanently deletes a blob capability ticket scoped to a specific namespace.
+    pub async fn delete_blob_ticket_scoped(
+        namespace: &str,
+        signature_or_id: &str,
+    ) -> Result<bool, String> {
         let conn = Self::get_conn().await?;
 
+        let affected = conn
+            .execute(
+                "DELETE FROM blob_tickets WHERE namespace = ?1 AND (signature = ?2 OR id = ?2)",
+                libsql::params![namespace, signature_or_id],
+            )
+            .await
+            .map_err(|e| format!("Failed to delete blob ticket: {}", e))?;
+
+        Ok(affected > 0)
+    }
+
+    /// Validates whether a capability ticket signature is actively registered, unrevoked, and unexpired.
+    /// CONTRACT: Returns Ok(true) only if the ticket exists in the registry, revoked == 0, and expires_at > now.
+    pub async fn is_blob_ticket_active(signature: &str) -> Result<bool, String> {
+        let conn = Self::get_conn().await?;
         let mut rows = match conn
             .query(
-                "SELECT revoked FROM blob_tickets WHERE signature = ?1",
+                "SELECT revoked, expires_at FROM blob_tickets WHERE signature = ?1 LIMIT 1",
                 libsql::params![signature],
             )
             .await
@@ -1810,12 +2002,24 @@ impl MetadataStore {
         };
 
         if let Ok(Some(row)) = rows.next().await {
-            let revoked_int: i64 = row.get(0).unwrap_or(0);
-            Ok(revoked_int != 0)
+            let revoked_int: i64 = row.get(0).unwrap_or(1);
+            let expires_at: i64 = row.get(1).unwrap_or(0);
+            let now_unix = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs() as i64;
+            Ok(revoked_int == 0 && expires_at > now_unix)
         } else {
-            // Not in registry (or generated prior to persistence); not revoked
+            // Deleted from registry or never issued -> immediately invalid
             Ok(false)
         }
+    }
+
+    /// Checks if a ticket signature has been explicitly revoked or deleted from registry.
+    pub async fn is_blob_ticket_revoked(signature: &str) -> Result<bool, String> {
+        Self::is_blob_ticket_active(signature)
+            .await
+            .map(|active| !active)
     }
 
     /// Purges expired blob tickets older than 7 days from SQLite.
@@ -1963,6 +2167,42 @@ impl MetadataStore {
         Ok(())
     }
 
+    /// Returns the total count of audit log entries, optionally matching a search query.
+    /// CONTRACT:
+    ///  - Precondition: None.
+    ///  - Returns: `Result<i64, String>` total count of matching audit rows.
+    ///  - Side effects: None (read-only SQLite query).
+    ///  - Idempotency: Yes.
+    pub async fn count_audit_log(search: Option<&str>) -> Result<i64, String> {
+        let conn = Self::get_conn().await?;
+        let count: i64 = if let Some(q) = search {
+            let pattern = format!("%{}%", q);
+            let mut rows = conn
+                .query(
+                    "SELECT COUNT(*) FROM audit_log WHERE actor LIKE ?1 OR action LIKE ?1 OR target LIKE ?1 OR details LIKE ?1",
+                    libsql::params![pattern],
+                )
+                .await
+                .map_err(|e| format!("Count audit_log failed: {}", e))?;
+            if let Ok(Some(row)) = rows.next().await {
+                row.get(0).unwrap_or(0)
+            } else {
+                0
+            }
+        } else {
+            let mut rows = conn
+                .query("SELECT COUNT(*) FROM audit_log", ())
+                .await
+                .map_err(|e| format!("Count audit_log failed: {}", e))?;
+            if let Ok(Some(row)) = rows.next().await {
+                row.get(0).unwrap_or(0)
+            } else {
+                0
+            }
+        };
+        Ok(count)
+    }
+
     /// Retrieves paginated audit log entries documenting system administrative actions.
     ///
     /// CONTRACT:
@@ -1976,27 +2216,52 @@ impl MetadataStore {
         limit: usize,
         offset: usize,
         before_id: Option<i64>,
+        search: Option<&str>,
     ) -> Result<Vec<AuditRecord>, String> {
         let conn = Self::get_conn().await?;
         let safe_limit = limit.min(500) as i64;
 
         let mut rows = if let Some(cursor_id) = before_id {
-            conn.query(
-                "SELECT id, timestamp, actor, action, target, details \
-                 FROM audit_log WHERE id < ?1 ORDER BY id DESC LIMIT ?2",
-                libsql::params![cursor_id, safe_limit],
-            )
-            .await
-            .map_err(|e| format!("Query audit_log failed: {}", e))?
+            if let Some(q) = search {
+                let pattern = format!("%{}%", q);
+                conn.query(
+                    "SELECT id, timestamp, actor, action, target, details \
+                     FROM audit_log WHERE id < ?1 AND (actor LIKE ?2 OR action LIKE ?2 OR target LIKE ?2 OR details LIKE ?2) \
+                     ORDER BY id DESC LIMIT ?3",
+                    libsql::params![cursor_id, pattern, safe_limit],
+                )
+                .await
+                .map_err(|e| format!("Query audit_log failed: {}", e))?
+            } else {
+                conn.query(
+                    "SELECT id, timestamp, actor, action, target, details \
+                     FROM audit_log WHERE id < ?1 ORDER BY id DESC LIMIT ?2",
+                    libsql::params![cursor_id, safe_limit],
+                )
+                .await
+                .map_err(|e| format!("Query audit_log failed: {}", e))?
+            }
         } else {
             let safe_offset = offset as i64;
-            conn.query(
-                "SELECT id, timestamp, actor, action, target, details \
-                 FROM audit_log ORDER BY id DESC LIMIT ?1 OFFSET ?2",
-                libsql::params![safe_limit, safe_offset],
-            )
-            .await
-            .map_err(|e| format!("Query audit_log failed: {}", e))?
+            if let Some(q) = search {
+                let pattern = format!("%{}%", q);
+                conn.query(
+                    "SELECT id, timestamp, actor, action, target, details \
+                     FROM audit_log WHERE (actor LIKE ?1 OR action LIKE ?1 OR target LIKE ?1 OR details LIKE ?1) \
+                     ORDER BY id DESC LIMIT ?2 OFFSET ?3",
+                    libsql::params![pattern, safe_limit, safe_offset],
+                )
+                .await
+                .map_err(|e| format!("Query audit_log failed: {}", e))?
+            } else {
+                conn.query(
+                    "SELECT id, timestamp, actor, action, target, details \
+                     FROM audit_log ORDER BY id DESC LIMIT ?1 OFFSET ?2",
+                    libsql::params![safe_limit, safe_offset],
+                )
+                .await
+                .map_err(|e| format!("Query audit_log failed: {}", e))?
+            }
         };
 
         let mut records = Vec::new();
@@ -2023,7 +2288,7 @@ impl MetadataStore {
 
     /// Legacy offset-based query wrapper for audit logs.
     pub async fn query_audit_log(limit: usize, offset: usize) -> Result<Vec<AuditRecord>, String> {
-        Self::query_audit_log_cursor(limit, offset, None).await
+        Self::query_audit_log_cursor(limit, offset, None, None).await
     }
 
     // ─── Cluster P2P Mesh Management ──────────────────────────────────────────
@@ -2650,6 +2915,23 @@ mod tests {
         let check_row = check_rows.next().await.unwrap().unwrap();
         let check_revoked: i64 = check_row.get(0).unwrap();
         assert_eq!(check_revoked, 1);
+
+        // 4. Delete ticket
+        conn.execute(
+            "DELETE FROM blob_tickets WHERE signature = 'sig_abc_123'",
+            (),
+        )
+        .await
+        .unwrap();
+
+        let mut deleted_rows = conn
+            .query(
+                "SELECT revoked FROM blob_tickets WHERE signature = 'sig_abc_123'",
+                (),
+            )
+            .await
+            .unwrap();
+        assert!(deleted_rows.next().await.unwrap().is_none());
 
         let _ = std::fs::remove_file(db_path.replace("file:", ""));
     }

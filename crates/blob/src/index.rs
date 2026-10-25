@@ -116,20 +116,32 @@ impl BlobIndex {
     }
 
     /// Atomically records or replaces object metadata and increments the content refcount.
-    /// Returns the updated `ContentRef`.
+    /// Returns the updated `ContentRef` and an optional orphaned hash if the previous content
+    /// refcount dropped to zero and requires physical disk removal.
     pub fn commit_put(
         &self,
         namespace: &str,
         key: &str,
         metadata: &BlobMetadata,
-    ) -> Result<ContentRef, BlobError> {
+    ) -> Result<(ContentRef, Option<String>), BlobError> {
         let mk = Self::meta_key(namespace, key);
+        let mut orphaned_hash: Option<String> = None;
 
         // Check if previous metadata existed for this key; if so, decrement old hash refcount
         let old_size_opt = if let Some(old_slice) = self.meta_keyspace.get(&mk)? {
             if let Ok(old_meta) = serde_json::from_slice::<BlobMetadata>(&old_slice) {
                 if old_meta.hash != metadata.hash {
-                    let _ = self.decrement_refcount(&old_meta.hash)?;
+                    let should_delete = match self.decrement_refcount(&old_meta.hash)? {
+                        Some(r) => r.refcount == 0,
+                        None => true,
+                    };
+                    if should_delete {
+                        if old_meta.inline {
+                            let _ = self.inline_keyspace.remove(old_meta.hash.as_bytes());
+                        } else {
+                            orphaned_hash = Some(old_meta.hash);
+                        }
+                    }
                 }
                 Some(old_meta.size)
             } else {
@@ -156,7 +168,7 @@ impl BlobIndex {
             let _ = self.ensure_namespace(namespace);
         }
 
-        Ok(content_ref)
+        Ok((content_ref, orphaned_hash))
     }
 
     /// Removes an object metadata record and decrements its content refcount.

@@ -479,7 +479,7 @@ impl AdminClient {
 
     /// Fetches schema and foreign key definitions for a table.
     pub async fn get_table_schema(&self, alias: &str, table: &str) -> Result<Value, String> {
-        let endpoint = format!("/api/v1/db/{}/{}/schema", alias, table);
+        let endpoint = format!("/api/v1/db/{}/{}/columns", alias, table);
         self.request(reqwest::Method::GET, &endpoint, None).await
     }
 
@@ -859,8 +859,12 @@ impl AdminClient {
             "dest_key": dest_key,
             "is_prefix": is_prefix,
         });
-        self.request(reqwest::Method::POST, "/admin/v1/blobs/copy", Some(body))
-            .await
+        self.request(
+            reqwest::Method::POST,
+            "/api/v1/blobs/objects/copy",
+            Some(body),
+        )
+        .await
     }
 
     /// Moves or renames an object or directory prefix.
@@ -879,28 +883,31 @@ impl AdminClient {
             "dest_key": dest_key,
             "is_prefix": is_prefix,
         });
-        self.request(reqwest::Method::POST, "/admin/v1/blobs/move", Some(body))
-            .await
-    }
-
-    /// Deletes all objects matching a prefix within a namespace.
-    pub async fn delete_blob_prefix(&self, namespace: &str, prefix: &str) -> Result<Value, String> {
-        let body = json!({
-            "namespace": namespace,
-            "prefix": prefix,
-        });
         self.request(
             reqwest::Method::POST,
-            "/admin/v1/blobs/delete-prefix",
+            "/api/v1/blobs/objects/move",
             Some(body),
         )
         .await
     }
 
+    /// Deletes all objects matching a prefix within a namespace.
+    pub async fn delete_blob_prefix(&self, namespace: &str, prefix: &str) -> Result<Value, String> {
+        let endpoint = format!("/api/v1/blobs/objects/{}/batch-delete", namespace);
+        let body = json!({
+            "prefix": prefix,
+        });
+        self.request(reqwest::Method::POST, &endpoint, Some(body))
+            .await
+    }
+
     /// Verifies cryptographic BLAKE3 integrity of an object on disk.
     pub async fn verify_blob(&self, namespace: &str, key: &str) -> Result<Value, String> {
         let sanitized_key = key.trim_start_matches('/');
-        let endpoint = format!("/admin/v1/blobs/verify/{}/{}", namespace, sanitized_key);
+        let endpoint = format!(
+            "/api/v1/blobs/objects/{}/verify/{}",
+            namespace, sanitized_key
+        );
         self.request(reqwest::Method::POST, &endpoint, None).await
     }
 
@@ -1079,16 +1086,25 @@ impl AdminClient {
         namespace: Option<&str>,
         key: Option<&str>,
         all: bool,
+        cursor: Option<&str>,
+        limit: Option<usize>,
     ) -> Result<Value, String> {
-        let mut endpoint = "/admin/v1/blobs/tickets".to_string();
+        let mut endpoint = if let Some(ns) = namespace {
+            format!("/api/v1/blobs/tickets/{}", urlencode(ns))
+        } else {
+            "/admin/v1/blobs/tickets".to_string()
+        };
         let mut params = Vec::new();
-        if let Some(ns) = namespace {
-            params.push(format!("namespace={}", urlencode(ns)));
-        }
         if let Some(k) = key {
             params.push(format!("key={}", urlencode(k)));
         }
         params.push(format!("all={}", all));
+        if let Some(c) = cursor {
+            params.push(format!("cursor={}", urlencode(c)));
+        }
+        if let Some(l) = limit {
+            params.push(format!("limit={}", l));
+        }
         if !params.is_empty() {
             endpoint = format!("{}?{}", endpoint, params.join("&"));
         }

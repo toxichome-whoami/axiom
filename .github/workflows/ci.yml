@@ -5,16 +5,16 @@ on:
     branches:
       - main
     paths-ignore:
-      - 'docs/**'
-      - '**.md'
-      - 'LICENSE'
+      - "docs/**"
+      - "**.md"
+      - "LICENSE"
   pull_request:
     branches:
       - main
     paths-ignore:
-      - 'docs/**'
-      - '**.md'
-      - 'LICENSE'
+      - "docs/**"
+      - "**.md"
+      - "LICENSE"
 
 jobs:
   check:

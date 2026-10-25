@@ -6,9 +6,9 @@
  * Last structural change: Form controls hardening per UI audit component F6.
  */
 
-import React from 'react';
-import { Check } from 'lucide-react';
-import { cn } from '../../utils/cn';
+import React from "react";
+import { Check } from "lucide-react";
+import { cn } from "../../utils/cn";
 
 export interface StepItem {
   id: number;
@@ -26,7 +26,12 @@ interface StepperProps {
 /**
  * Renders an accessible visual stepper with interconnected progress indicators and milestone labels.
  */
-export function Stepper({ steps, currentStep, onStepClick, className }: StepperProps) {
+export function Stepper({
+  steps,
+  currentStep,
+  onStepClick,
+  className,
+}: StepperProps) {
   if (!steps || steps.length === 0) return null;
 
   const totalSteps = steps.length;
@@ -34,7 +39,7 @@ export function Stepper({ steps, currentStep, onStepClick, className }: StepperP
   const safeCurrent = Math.max(1, Math.min(currentStep, totalSteps));
 
   return (
-    <div className={cn('w-full max-w-md mx-auto py-4 select-none', className)}>
+    <div className={cn("w-full max-w-md mx-auto py-4 select-none", className)}>
       <div className="relative flex items-center justify-between">
         {/* Background track line behind the circles */}
         <div className="absolute left-4 right-4 top-1/2 -translate-y-1/2 h-[2px] bg-[#222222] z-0" />
@@ -50,8 +55,8 @@ export function Stepper({ steps, currentStep, onStepClick, className }: StepperP
               {index > 0 && (
                 <div
                   className={cn(
-                    'absolute h-[2px] transition-all duration-300 z-0',
-                    isCompleted || isActive ? 'bg-white' : 'bg-transparent'
+                    "absolute h-[2px] transition-all duration-300 z-0",
+                    isCompleted || isActive ? "bg-white" : "bg-transparent",
                   )}
                   style={{
                     left: `${((index - 1) / stepSpan) * 100}%`,
@@ -66,16 +71,16 @@ export function Stepper({ steps, currentStep, onStepClick, className }: StepperP
                 disabled={!onStepClick || isUpcoming}
                 onClick={() => onStepClick?.(step.id)}
                 className={cn(
-                  'relative z-10 flex size-8 items-center justify-center rounded-full text-[13px] font-semibold transition-all duration-200 outline-none',
+                  "relative z-10 flex size-8 items-center justify-center rounded-full text-[13px] font-semibold transition-all duration-200 outline-none",
                   isCompleted &&
-                    'bg-white text-black ring-4 ring-black cursor-pointer hover:bg-neutral-200',
+                    "bg-white text-black ring-4 ring-black cursor-pointer hover:bg-neutral-200",
                   isActive &&
-                    'bg-white text-black ring-4 ring-black shadow-[0_0_12px_rgba(255,255,255,0.4)] cursor-default',
+                    "bg-white text-black ring-4 ring-black shadow-[0_0_12px_rgba(255,255,255,0.4)] cursor-default",
                   isUpcoming &&
-                    'bg-[#121212] text-[#555555] border border-[#262626] ring-4 ring-black cursor-not-allowed'
+                    "bg-[#121212] text-[#555555] border border-[#262626] ring-4 ring-black cursor-not-allowed",
                 )}
-                aria-current={isActive ? 'step' : undefined}
-                aria-label={`Step ${step.id}${step.label ? `: ${step.label}` : ''}`}
+                aria-current={isActive ? "step" : undefined}
+                aria-label={`Step ${step.id}${step.label ? `: ${step.label}` : ""}`}
               >
                 {isCompleted ? (
                   <Check className="size-4 stroke-[3] text-black" />
@@ -98,8 +103,12 @@ export function Stepper({ steps, currentStep, onStepClick, className }: StepperP
               <div
                 key={step.id}
                 className={cn(
-                  'text-center text-[11px] font-medium transition-colors w-20 truncate',
-                  isActive ? 'text-white' : isCompleted ? 'text-[#a1a1a1]' : 'text-[#555555]'
+                  "text-center text-[11px] font-medium transition-colors w-20 truncate",
+                  isActive
+                    ? "text-white"
+                    : isCompleted
+                      ? "text-[#a1a1a1]"
+                      : "text-[#555555]",
                 )}
               >
                 {step.label}

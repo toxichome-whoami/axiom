@@ -5,7 +5,7 @@
  * Invariants: Clamped inside viewport bounds; dismisses on outside-click, scroll, or Escape.
  */
 
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef } from "react";
 import {
   Folder,
   Download,
@@ -19,9 +19,9 @@ import {
   RefreshCw,
   Copy,
   Share2,
-  Globe,
-} from 'lucide-react';
-import { StorageItem, ClipboardState } from './types';
+  Eye,
+} from "lucide-react";
+import { StorageItem, ClipboardState } from "./types";
 
 export interface ContextMenuPosition {
   x: number;
@@ -33,6 +33,7 @@ export interface ContextMenuProps {
   item: StorageItem | null;
   clipboard: ClipboardState | null;
   onClose: () => void;
+  onPreview?: (item: StorageItem) => void;
   onOpenFolder?: (item: StorageItem) => void;
   onDownload?: (item: StorageItem) => void;
   onShare?: (item: StorageItem) => void;
@@ -54,6 +55,7 @@ export function ContextMenu({
   item,
   clipboard,
   onClose,
+  onPreview,
   onOpenFolder,
   onDownload,
   onShare,
@@ -78,7 +80,7 @@ export function ContextMenu({
       }
     }
     function handleKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape') {
+      if (e.key === "Escape") {
         onClose();
       }
     }
@@ -87,17 +89,17 @@ export function ContextMenu({
     }
 
     if (position) {
-      document.addEventListener('mousedown', handleClickOutside);
-      document.addEventListener('keydown', handleKeyDown);
-      window.addEventListener('resize', handleScrollOrResize);
-      window.addEventListener('scroll', handleScrollOrResize, true);
+      document.addEventListener("mousedown", handleClickOutside);
+      document.addEventListener("keydown", handleKeyDown);
+      window.addEventListener("resize", handleScrollOrResize);
+      window.addEventListener("scroll", handleScrollOrResize, true);
     }
 
     return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-      document.removeEventListener('keydown', handleKeyDown);
-      window.removeEventListener('resize', handleScrollOrResize);
-      window.removeEventListener('scroll', handleScrollOrResize, true);
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("resize", handleScrollOrResize);
+      window.removeEventListener("scroll", handleScrollOrResize, true);
     };
   }, [position, onClose]);
 
@@ -112,7 +114,10 @@ export function ContextMenu({
   return (
     <div
       ref={menuRef}
-      style={{ top: `${Math.max(10, clampedY)}px`, left: `${Math.max(10, clampedX)}px` }}
+      style={{
+        top: `${Math.max(10, clampedY)}px`,
+        left: `${Math.max(10, clampedX)}px`,
+      }}
       className="fixed z-50 w-52 bg-[#111111] border border-[#262626] rounded-md shadow-2xl p-1 font-sans select-none animate-in fade-in zoom-in-95 duration-100"
       onClick={(e) => e.stopPropagation()}
     >
@@ -123,7 +128,7 @@ export function ContextMenu({
             {item.name}
           </div>
 
-          {item.type === 'folder' && onOpenFolder && (
+          {item.type === "folder" && onOpenFolder && (
             <button
               type="button"
               onClick={() => {
@@ -132,12 +137,26 @@ export function ContextMenu({
               }}
               className="w-full flex items-center gap-2.5 px-2.5 py-1.5 text-[13px] text-[#d4d4d4] hover:text-white hover:bg-[#1a1a1a] rounded-md transition-colors cursor-pointer text-left"
             >
-              <Folder className="w-4 h-4 text-[#eab308] shrink-0" />
+              <Folder className="w-4 h-4 text-[#8c8c8c] shrink-0" />
               <span>Open Folder</span>
             </button>
           )}
 
-          {item.type === 'file' && onDownload && (
+          {item.type === "file" && onPreview && (
+            <button
+              type="button"
+              onClick={() => {
+                onPreview(item);
+                onClose();
+              }}
+              className="w-full flex items-center gap-2.5 px-2.5 py-1.5 text-[13px] text-white hover:bg-[#1a1a1a] rounded-md transition-colors cursor-pointer text-left"
+            >
+              <Eye className="w-4 h-4 text-blue-400 shrink-0" />
+              <span>Preview</span>
+            </button>
+          )}
+
+          {item.type === "file" && onDownload && (
             <button
               type="button"
               onClick={() => {
@@ -151,7 +170,7 @@ export function ContextMenu({
             </button>
           )}
 
-          {item.type === 'file' && onShare && (
+          {item.type === "file" && onShare && (
             <button
               type="button"
               onClick={() => {
@@ -162,20 +181,6 @@ export function ContextMenu({
             >
               <Share2 className="w-4 h-4 text-white shrink-0" />
               <span>Share Link...</span>
-            </button>
-          )}
-
-          {item.type === 'file' && isPublicNamespace && onCopyPublicUrl && (
-            <button
-              type="button"
-              onClick={() => {
-                onCopyPublicUrl(item);
-                onClose();
-              }}
-              className="w-full flex items-center gap-2.5 px-2.5 py-1.5 text-[13px] text-emerald-400 hover:text-emerald-300 hover:bg-emerald-950/20 rounded-md transition-colors cursor-pointer text-left"
-            >
-              <Globe className="w-4 h-4 text-emerald-400 shrink-0" />
-              <span>Copy Public Link</span>
             </button>
           )}
 
@@ -264,7 +269,7 @@ export function ContextMenu({
               }}
               className="w-full flex items-center gap-2.5 px-2.5 py-1.5 text-[13px] text-[#d4d4d4] hover:text-white hover:bg-[#1a1a1a] rounded-md transition-colors cursor-pointer text-left"
             >
-              <FolderPlus className="w-4 h-4 text-[#eab308] shrink-0" />
+              <FolderPlus className="w-4 h-4 text-[#8c8c8c] shrink-0" />
               <span>New Folder</span>
             </button>
           )}

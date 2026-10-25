@@ -2884,14 +2884,27 @@ async fn handle_blob_command(
             namespace,
             key,
             all,
+            cursor,
+            limit,
         } => {
             let resp = client
-                .list_blob_tickets(namespace.as_deref(), key.as_deref(), all)
+                .list_blob_tickets(
+                    namespace.as_deref(),
+                    key.as_deref(),
+                    all,
+                    cursor.as_deref(),
+                    limit,
+                )
                 .await?;
             if format == OutputFormat::Json {
                 println!("{}", serde_json::to_string_pretty(&resp)?);
             } else if format == OutputFormat::Jsonl {
-                if let Some(tickets) = resp.get("data").and_then(|d| d.as_array()) {
+                let tickets = resp.get("data").and_then(|d| {
+                    d.get("items")
+                        .and_then(|i| i.as_array())
+                        .or_else(|| d.as_array())
+                });
+                if let Some(tickets) = tickets {
                     for t in tickets {
                         println!("{}", serde_json::to_string(t)?);
                     }
@@ -2899,7 +2912,11 @@ async fn handle_blob_command(
                     println!("{}", serde_json::to_string(&resp)?);
                 }
             } else {
-                let tickets = resp.get("data").and_then(|d| d.as_array());
+                let tickets = resp.get("data").and_then(|d| {
+                    d.get("items")
+                        .and_then(|i| i.as_array())
+                        .or_else(|| d.as_array())
+                });
                 match tickets {
                     Some(list) if !list.is_empty() => {
                         println!(
@@ -2935,6 +2952,13 @@ async fn handle_blob_command(
                                 "{:<6} {:<16} {:<24} {:<6} {:<10} {:<12}",
                                 id, ns, k, op, status, exp_str
                             );
+                        }
+                        if let Some(next_cur) = resp
+                            .get("data")
+                            .and_then(|d| d.get("next_cursor"))
+                            .and_then(|c| c.as_str())
+                        {
+                            println!("\nNext cursor: {}", next_cur);
                         }
                     }
                     _ => {

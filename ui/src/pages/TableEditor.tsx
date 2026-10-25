@@ -6,111 +6,109 @@
  * Architecture: Decomposed into modular domain hooks and view components matching ui/pages/storage pattern.
  */
 
-import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { ConfirmDialog } from '../components/ui/ConfirmDialog';
-import { AlertDialog, showAlertDialog } from '../components/ui/AlertDialog';
-import { SlideOver } from '../components/ui/SlideOver';
-import { ColumnInfoApi } from '../types';
-import { api } from '../api/client';
-import {
-  mapSqlTypeToFormValue,
-  exportTableData,
-} from './table/format';
+import React, { useState, useMemo, useRef, useEffect } from "react";
+import { ConfirmDialog } from "../components/ui/ConfirmDialog";
+import { AlertDialog, showAlertDialog } from "../components/ui/AlertDialog";
+import { SlideOver } from "../components/ui/SlideOver";
+import { ColumnInfoApi } from "../types";
+import { api } from "../api/client";
+import { mapSqlTypeToFormValue, exportTableData } from "./table/format";
 import {
   InlineCellEditorPopover,
   InlineBooleanPopover,
   InlineNumberPopover,
   InlineJsonPopover,
   InlineTextPopover,
-} from './table/InlineCellEditorPopover';
-import {
-  InlineDateTimePickerPopover,
-} from './table/DateTimePickerPopovers';
+} from "./table/InlineCellEditorPopover";
+import { InlineDateTimePickerPopover } from "./table/DateTimePickerPopovers";
 import {
   ForeignKeyRecordPreviewPopover,
   ForeignKeyPickerModal,
-} from './table/ForeignKeyModals';
-import { RowInspectorSlideOver } from './table/RowInspectorSlideOver';
-import { ColumnSlideOver } from './table/ColumnSlideOver';
-import { TableEditSlideOver } from './table/TableEditSlideOver';
-import { TableSidebar } from './table/TableSidebar';
-import { TableToolbar } from './table/TableToolbar';
-import { TableGridView } from './table/TableGridView';
-import { SchemaView } from './table/SchemaView';
-import { SqlConsoleView } from './table/SqlConsoleView';
-import { ColumnContextMenu } from './table/ColumnContextMenu';
-import { GridContextMenu, GridContextMenuState } from './table/GridContextMenu';
-import { SQL_KEYWORDS } from './table/SqlCodeEditor';
+} from "./table/ForeignKeyModals";
+import { RowInspectorSlideOver } from "./table/RowInspectorSlideOver";
+import { ColumnSlideOver } from "./table/ColumnSlideOver";
+import { TableEditSlideOver } from "./table/TableEditSlideOver";
+import { TableSidebar } from "./table/TableSidebar";
+import { TableToolbar } from "./table/TableToolbar";
+import { TableGridView } from "./table/TableGridView";
+import { SchemaView } from "./table/SchemaView";
+import { SqlConsoleView } from "./table/SqlConsoleView";
+import { ColumnContextMenu } from "./table/ColumnContextMenu";
+import { GridContextMenu, GridContextMenuState } from "./table/GridContextMenu";
+import { SQL_KEYWORDS } from "./table/SqlCodeEditor";
 
 // Domain Custom Hooks
-import { useTableData } from './table/useTableData';
-import { useColumnResizer } from './table/useColumnResizer';
-import { useCellEditor } from './table/useCellEditor';
-import { useColumnOperations } from './table/useColumnOperations';
-import { useRowOperations } from './table/useRowOperations';
-import { useSqlConsole } from './table/useSqlConsole';
+import { useTableData } from "./table/useTableData";
+import { useColumnResizer } from "./table/useColumnResizer";
+import { useCellEditor } from "./table/useCellEditor";
+import { useColumnOperations } from "./table/useColumnOperations";
+import { useRowOperations } from "./table/useRowOperations";
+import { useSqlConsole } from "./table/useSqlConsole";
 
 export function TableEditor() {
   const [selectedDb, setSelectedDb] = useState<string>(() => {
     try {
       const urlParams = new URLSearchParams(window.location.search);
-      return urlParams.get('db') || localStorage.getItem('axiom_selected_db') || '';
+      return (
+        urlParams.get("db") || localStorage.getItem("axiom_selected_db") || ""
+      );
     } catch {
-      return '';
+      return "";
     }
   });
-  const [viewMode, setViewMode] = useState<'grid' | 'schema' | 'sql'>(() => {
+  const [viewMode, setViewMode] = useState<"grid" | "schema" | "sql">(() => {
     try {
       const urlParams = new URLSearchParams(window.location.search);
-      const v = urlParams.get('view');
-      if (v === 'grid' || v === 'schema' || v === 'sql') return v;
-      const saved = localStorage.getItem('axiom_view_mode');
-      if (saved === 'grid' || saved === 'schema' || saved === 'sql') return saved;
+      const v = urlParams.get("view");
+      if (v === "grid" || v === "schema" || v === "sql") return v;
+      const saved = localStorage.getItem("axiom_view_mode");
+      if (saved === "grid" || saved === "schema" || saved === "sql")
+        return saved;
     } catch {
       // Ignore
     }
-    return 'grid';
+    return "grid";
   });
-  const [gridSubTab, setGridSubTab] = useState<'data' | 'definition'>(() => {
+  const [gridSubTab, setGridSubTab] = useState<"data" | "definition">(() => {
     try {
       const urlParams = new URLSearchParams(window.location.search);
-      const tab = urlParams.get('subtab');
-      if (tab === 'data' || tab === 'definition') return tab;
-      const saved = localStorage.getItem('axiom_grid_subtab');
-      if (saved === 'data' || saved === 'definition') return saved;
+      const tab = urlParams.get("subtab");
+      if (tab === "data" || tab === "definition") return tab;
+      const saved = localStorage.getItem("axiom_grid_subtab");
+      if (saved === "data" || saved === "definition") return saved;
     } catch {
       // Ignore
     }
-    return 'data';
+    return "data";
   });
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
   // Sync viewMode and gridSubTab to URL search params and localStorage
   useEffect(() => {
     try {
-      localStorage.setItem('axiom_view_mode', viewMode);
-      localStorage.setItem('axiom_grid_subtab', gridSubTab);
+      localStorage.setItem("axiom_view_mode", viewMode);
+      localStorage.setItem("axiom_grid_subtab", gridSubTab);
 
       const url = new URL(window.location.href);
       let changed = false;
-      if (url.searchParams.get('view') !== viewMode) {
-        url.searchParams.set('view', viewMode);
+      if (url.searchParams.get("view") !== viewMode) {
+        url.searchParams.set("view", viewMode);
         changed = true;
       }
-      if (viewMode === 'grid') {
-        if (url.searchParams.get('subtab') !== gridSubTab) {
-          url.searchParams.set('subtab', gridSubTab);
+      if (viewMode === "grid") {
+        if (url.searchParams.get("subtab") !== gridSubTab) {
+          url.searchParams.set("subtab", gridSubTab);
           changed = true;
         }
       } else {
-        if (url.searchParams.has('subtab')) {
-          url.searchParams.delete('subtab');
+        if (url.searchParams.has("subtab")) {
+          url.searchParams.delete("subtab");
           changed = true;
         }
       }
 
       if (changed) {
-        window.history.replaceState(null, '', url.pathname + url.search);
+        window.history.replaceState(null, "", url.pathname + url.search);
       }
     } catch {
       // Ignore
@@ -122,20 +120,20 @@ export function TableEditor() {
     const handlePopState = () => {
       try {
         const urlParams = new URLSearchParams(window.location.search);
-        const v = urlParams.get('view');
-        if (v === 'grid' || v === 'schema' || v === 'sql') {
+        const v = urlParams.get("view");
+        if (v === "grid" || v === "schema" || v === "sql") {
           setViewMode(v);
         }
-        const tab = urlParams.get('subtab');
-        if (tab === 'data' || tab === 'definition') {
+        const tab = urlParams.get("subtab");
+        if (tab === "data" || tab === "definition") {
           setGridSubTab(tab);
         }
       } catch {
         // Ignore
       }
     };
-    window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
   }, []);
 
   // 1. Core Table & Schema Data Pipeline Hook
@@ -354,14 +352,17 @@ export function TableEditor() {
       if (hasDdl) {
         const freshTables = await fetchTables(selectedDb);
         // If current selectedTable still exists in the refreshed catalog, reload its schema & data
-        const currentStillExists = selectedTable && freshTables.some((t) => t.name === selectedTable);
+        const currentStillExists =
+          selectedTable && freshTables.some((t) => t.name === selectedTable);
         if (currentStillExists) {
           loadTableData({ reloadSchema: true });
         }
       } else {
         // Data mutations (INSERT, UPDATE, DELETE): refresh rows for active table
         const MUTATION_REGEX = /\b(INSERT|UPDATE|DELETE)\b/i;
-        const hasMutation = executedStatements.some((s) => MUTATION_REGEX.test(s));
+        const hasMutation = executedStatements.some((s) =>
+          MUTATION_REGEX.test(s),
+        );
         if (hasMutation && selectedTable) {
           loadTableData({ reloadSchema: false });
         }
@@ -370,14 +371,16 @@ export function TableEditor() {
   });
 
   // SQL Workspace Layout mode ('side-by-side' | 'stacked' | 'editor-only' | 'results-only')
-  const [sqlLayoutMode, setSqlLayoutMode] = useState<'side-by-side' | 'stacked' | 'editor-only' | 'results-only'>('side-by-side');
+  const [sqlLayoutMode, setSqlLayoutMode] = useState<
+    "side-by-side" | "stacked" | "editor-only" | "results-only"
+  >("side-by-side");
 
   // Format SQL keywords
   const handleFormatSql = () => {
     if (!sqlQuery.trim()) return;
     let formatted = sqlQuery;
     SQL_KEYWORDS.forEach((kw) => {
-      const rx = new RegExp(`\\b${kw}\\b`, 'gi');
+      const rx = new RegExp(`\\b${kw}\\b`, "gi");
       formatted = formatted.replace(rx, kw);
     });
     setSqlQuery(formatted);
@@ -391,22 +394,33 @@ export function TableEditor() {
 
   // Discard changes confirmation dialog states for Row Inspector, Column Editor, and Expand Cell Editor
   const [isDiscardRowConfirmOpen, setIsDiscardRowConfirmOpen] = useState(false);
-  const [isDiscardColumnConfirmOpen, setIsDiscardColumnConfirmOpen] = useState(false);
-  const [isDiscardExpandedCellConfirmOpen, setIsDiscardExpandedCellConfirmOpen] = useState(false);
+  const [isDiscardColumnConfirmOpen, setIsDiscardColumnConfirmOpen] =
+    useState(false);
+  const [
+    isDiscardExpandedCellConfirmOpen,
+    setIsDiscardExpandedCellConfirmOpen,
+  ] = useState(false);
 
   // Row and Cell Right-Click Context Menu state
-  const [gridContextMenu, setGridContextMenu] = useState<GridContextMenuState | null>(null);
+  const [gridContextMenu, setGridContextMenu] =
+    useState<GridContextMenuState | null>(null);
 
   // Schema view states & controls
-  const [schemaSearchTerm, setSchemaSearchTerm] = useState('');
-  const [schemaTransform, setSchemaTransform] = useState({ x: 60, y: 60, scale: 0.95 });
+  const [schemaSearchTerm, setSchemaSearchTerm] = useState("");
+  const [schemaTransform, setSchemaTransform] = useState({
+    x: 60,
+    y: 60,
+    scale: 0.95,
+  });
   const [schemaAutoLayoutTrigger, setSchemaAutoLayoutTrigger] = useState(0);
   const [schemaResetViewTrigger, setSchemaResetViewTrigger] = useState(0);
 
   // Table Edit SlideOver state
   const [isTableEditOpen, setIsTableEditOpen] = useState(false);
-  const [editingTableTarget, setEditingTableTarget] = useState<string>('');
-  const [deleteTableTarget, setDeleteTableTarget] = useState<string | null>(null);
+  const [editingTableTarget, setEditingTableTarget] = useState<string>("");
+  const [deleteTableTarget, setDeleteTableTarget] = useState<string | null>(
+    null,
+  );
   const [isDeletingTable, setIsDeletingTable] = useState(false);
 
   const handleDeleteTable = async () => {
@@ -414,13 +428,16 @@ export function TableEditor() {
     setIsDeletingTable(true);
     try {
       const currentDb = databases.find((d) => d.alias === selectedDb);
-      const engineType = currentDb?.engine?.toLowerCase() || '';
+      const engineType = currentDb?.engine?.toLowerCase() || "";
 
-      let dropSql = '';
-      if (engineType.includes('mysql') || engineType.includes('mariadb')) {
-        dropSql = `DROP TABLE \`${deleteTableTarget.replace(/`/g, '``')}\`;`;
-      } else if (engineType.includes('mssql') || engineType.includes('sqlserver')) {
-        dropSql = `DROP TABLE [${deleteTableTarget.replace(/]/g, ']]')}];`;
+      let dropSql = "";
+      if (engineType.includes("mysql") || engineType.includes("mariadb")) {
+        dropSql = `DROP TABLE \`${deleteTableTarget.replace(/`/g, "``")}\`;`;
+      } else if (
+        engineType.includes("mssql") ||
+        engineType.includes("sqlserver")
+      ) {
+        dropSql = `DROP TABLE [${deleteTableTarget.replace(/]/g, "]]")}];`;
       } else {
         dropSql = `DROP TABLE "${deleteTableTarget.replace(/"/g, '""')}";`;
       }
@@ -432,7 +449,7 @@ export function TableEditor() {
       const target = deleteTableTarget;
       setDeleteTableTarget(null);
       setIsTableEditOpen(false);
-      setEditingTableTarget('');
+      setEditingTableTarget("");
 
       const freshTables = await fetchTables(selectedDb);
 
@@ -440,12 +457,15 @@ export function TableEditor() {
         if (freshTables.length > 0) {
           setSelectedTable(freshTables[0].name);
         } else {
-          setSelectedTable('');
+          setSelectedTable("");
           setRows([]);
         }
       }
     } catch (err) {
-      showAlertDialog(err instanceof Error ? err.message : 'Failed to delete table', 'Failed to Delete Table');
+      showAlertDialog(
+        err instanceof Error ? err.message : "Failed to delete table",
+        "Failed to Delete Table",
+      );
     } finally {
       setIsDeletingTable(false);
     }
@@ -453,36 +473,44 @@ export function TableEditor() {
 
   // Full SQL DDL generator for Schema view Copy as SQL
   const fullSqlDdl = useMemo(() => {
-    let ddl = '';
+    let ddl = "";
     tables.forEach((t) => {
-      const tData = allDbTablesSchema[t.name] || { columns: [], foreign_keys: [] };
+      const tData = allDbTablesSchema[t.name] || {
+        columns: [],
+        foreign_keys: [],
+      };
       ddl += `CREATE TABLE ${t.name} (\n`;
       const colLines = tData.columns.map((c) => {
         let line = `  ${c.name} ${c.type}`;
-        if (c.primary_key) line += ' PRIMARY KEY';
-        if (!c.nullable) line += ' NOT NULL';
+        if (c.primary_key) line += " PRIMARY KEY";
+        if (!c.nullable) line += " NOT NULL";
         return line;
       });
       if (tData.foreign_keys && tData.foreign_keys.length > 0) {
         tData.foreign_keys.forEach((fk) => {
-          colLines.push(`  CONSTRAINT fk_${fk.column} FOREIGN KEY (${fk.column}) REFERENCES ${fk.referenced_table} (${fk.referenced_column})`);
+          colLines.push(
+            `  CONSTRAINT fk_${fk.column} FOREIGN KEY (${fk.column}) REFERENCES ${fk.referenced_table} (${fk.referenced_column})`,
+          );
         });
       }
-      ddl += colLines.join(',\n') + '\n);\n\n';
+      ddl += colLines.join(",\n") + "\n);\n\n";
     });
     return ddl.trim();
   }, [tables, allDbTablesSchema]);
 
   // Full Markdown Schema generator for Schema view Copy as Markdown
   const fullMarkdownSchema = useMemo(() => {
-    let md = `# Database Schema: ${selectedDb || 'public'}\n\n`;
+    let md = `# Database Schema: ${selectedDb || "public"}\n\n`;
     tables.forEach((t) => {
-      const tData = allDbTablesSchema[t.name] || { columns: [], foreign_keys: [] };
+      const tData = allDbTablesSchema[t.name] || {
+        columns: [],
+        foreign_keys: [],
+      };
       md += `## Table \`${t.name}\`\n\n`;
       md += `| Column | Type | Nullable | Primary Key | Default |\n`;
       md += `| :--- | :--- | :--- | :--- | :--- |\n`;
       tData.columns.forEach((c) => {
-        md += `| \`${c.name}\` | \`${c.type}\` | ${c.nullable ? 'Yes' : 'No'} | ${c.primary_key ? 'Yes' : 'No'} | ${c.default_value ?? '-'} |\n`;
+        md += `| \`${c.name}\` | \`${c.type}\` | ${c.nullable ? "Yes" : "No"} | ${c.primary_key ? "Yes" : "No"} | ${c.default_value ?? "-"} |\n`;
       });
       if (tData.foreign_keys && tData.foreign_keys.length > 0) {
         md += `\n**Foreign Keys:**\n\n`;
@@ -497,13 +525,17 @@ export function TableEditor() {
 
   const handleDownloadSvg = () => {
     try {
-      const svgEl = document.querySelector('#axiom-schema-canvas svg') || document.querySelector('svg');
+      const svgEl =
+        document.querySelector("#axiom-schema-canvas svg") ||
+        document.querySelector("svg");
       // Create a clean standalone SVG of the schema diagrams
-      const schemaPlane = document.querySelector('.origin-top-left') as HTMLElement | null;
+      const schemaPlane = document.querySelector(
+        ".origin-top-left",
+      ) as HTMLElement | null;
       if (!schemaPlane) return;
 
       const serializer = new XMLSerializer();
-      const svgElements = schemaPlane.querySelectorAll('svg');
+      const svgElements = schemaPlane.querySelectorAll("svg");
       let combinedSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" style="background:#09090b;font-family:Inter,sans-serif;">`;
       combinedSvg += `<style>text { font-family: Inter, sans-serif; fill: #ffffff; }</style>`;
       svgElements.forEach((s) => {
@@ -511,38 +543,42 @@ export function TableEditor() {
       });
       combinedSvg += `</svg>`;
 
-      const blob = new Blob([combinedSvg], { type: 'image/svg+xml;charset=utf-8' });
+      const blob = new Blob([combinedSvg], {
+        type: "image/svg+xml;charset=utf-8",
+      });
       const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
+      const a = document.createElement("a");
       a.href = url;
-      a.download = `${selectedDb || 'schema'}-diagram.svg`;
+      a.download = `${selectedDb || "schema"}-diagram.svg`;
       a.click();
       URL.revokeObjectURL(url);
-      setCopiedKey('schema_svg');
+      setCopiedKey("schema_svg");
       setTimeout(() => setCopiedKey(null), 2000);
     } catch (err) {
-      console.error('Failed to export SVG:', err);
+      console.error("Failed to export SVG:", err);
     }
   };
 
   const handleDownloadPng = () => {
     try {
-      const schemaPlane = document.querySelector('.origin-top-left') as HTMLElement | null;
+      const schemaPlane = document.querySelector(
+        ".origin-top-left",
+      ) as HTMLElement | null;
       if (!schemaPlane) return;
 
-      const canvas = document.createElement('canvas');
+      const canvas = document.createElement("canvas");
       canvas.width = 1920;
       canvas.height = 1080;
-      const ctx = canvas.getContext('2d');
+      const ctx = canvas.getContext("2d");
       if (!ctx) return;
 
       // Dark background
-      ctx.fillStyle = '#09090b';
+      ctx.fillStyle = "#09090b";
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
       // Serialize SVG
       const serializer = new XMLSerializer();
-      const svgElements = schemaPlane.querySelectorAll('svg');
+      const svgElements = schemaPlane.querySelectorAll("svg");
       let combinedSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" style="background:#09090b;font-family:Inter,sans-serif;">`;
       combinedSvg += `<style>text { font-family: Inter, sans-serif; fill: #ffffff; }</style>`;
       svgElements.forEach((s) => {
@@ -551,7 +587,9 @@ export function TableEditor() {
       combinedSvg += `</svg>`;
 
       const img = new Image();
-      const svgBlob = new Blob([combinedSvg], { type: 'image/svg+xml;charset=utf-8' });
+      const svgBlob = new Blob([combinedSvg], {
+        type: "image/svg+xml;charset=utf-8",
+      });
       const url = URL.createObjectURL(svgBlob);
       img.onload = () => {
         ctx.drawImage(img, 0, 0);
@@ -559,18 +597,18 @@ export function TableEditor() {
         canvas.toBlob((pngBlob) => {
           if (!pngBlob) return;
           const pngUrl = URL.createObjectURL(pngBlob);
-          const a = document.createElement('a');
+          const a = document.createElement("a");
           a.href = pngUrl;
-          a.download = `${selectedDb || 'schema'}-diagram.png`;
+          a.download = `${selectedDb || "schema"}-diagram.png`;
           a.click();
           URL.revokeObjectURL(pngUrl);
-          setCopiedKey('schema_png');
+          setCopiedKey("schema_png");
           setTimeout(() => setCopiedKey(null), 2000);
         });
       };
       img.src = url;
     } catch (err) {
-      console.error('Failed to export PNG:', err);
+      console.error("Failed to export PNG:", err);
     }
   };
 
@@ -580,24 +618,33 @@ export function TableEditor() {
     setTimeout(() => setCopiedKey(null), 2000);
   };
 
-  const handleOpenReferencedTable = (targetTable: string, column?: string, value?: unknown) => {
+  const handleOpenReferencedTable = (
+    targetTable: string,
+    column?: string,
+    value?: unknown,
+  ) => {
     setFkPreviewTarget(null);
     setSelectedTable(targetTable);
     setSelectedRowIndex(0);
     setSelectedCell(null);
-    setViewMode('grid');
+    setViewMode("grid");
 
-    if (column && value !== undefined && value !== null && value !== '') {
-      const parsedNum = typeof value === 'number' ? value : (!isNaN(Number(value)) && String(value).trim() !== '' ? Number(value) : null);
+    if (column && value !== undefined && value !== null && value !== "") {
+      const parsedNum =
+        typeof value === "number"
+          ? value
+          : !isNaN(Number(value)) && String(value).trim() !== ""
+            ? Number(value)
+            : null;
       const valToUse = parsedNum !== null ? parsedNum : value;
       setFilterCol(column);
-      setFilterOp('eq');
+      setFilterOp("eq");
       setFilterVal(String(value));
-      setActiveFilter({ col: column, op: 'eq', val: valToUse });
+      setActiveFilter({ col: column, op: "eq", val: valToUse });
     } else {
       setActiveFilter(null);
-      setFilterCol('');
-      setFilterVal('');
+      setFilterCol("");
+      setFilterVal("");
     }
   };
 
@@ -606,7 +653,9 @@ export function TableEditor() {
   // Track if user has modified anything in Row Inspector (for disabling Save when untouched)
   const hasRowChanges = useMemo(() => {
     if (isInsertModeInPanel) {
-      return Object.values(rowEditValues).some((v) => v !== undefined && v !== '' && v !== null);
+      return Object.values(rowEditValues).some(
+        (v) => v !== undefined && v !== "" && v !== null,
+      );
     }
     if (!activeRow) return false;
     return columns.some((col) => {
@@ -629,10 +678,10 @@ export function TableEditor() {
     const originalVal = originalRow[expandedInlineCell.colName];
     const originalStr =
       originalVal === null || originalVal === undefined
-        ? ''
-        : typeof originalVal === 'object'
-        ? JSON.stringify(originalVal)
-        : String(originalVal);
+        ? ""
+        : typeof originalVal === "object"
+          ? JSON.stringify(originalVal)
+          : String(originalVal);
     return expandedInlineCell.value !== originalStr;
   }, [expandedInlineCell, rows]);
 
@@ -656,7 +705,7 @@ export function TableEditor() {
           setSelectedTable(tableName);
           setSelectedRowIndex(null);
           setIsInsertModeInPanel(false);
-          if (viewMode === 'sql' && !sqlQuery) {
+          if (viewMode === "sql" && !sqlQuery) {
             setSqlQuery(`SELECT * FROM ${tableName} LIMIT 25;`);
           }
         }}
@@ -665,14 +714,17 @@ export function TableEditor() {
         isTablesLoading={isTablesLoading}
         onRefreshTables={() => fetchTables(selectedDb)}
         onCreateTable={() => {
-          setEditingTableTarget('');
+          setEditingTableTarget("");
           setIsTableEditOpen(true);
         }}
         onEditTable={async (tableName) => {
           if (tableName !== selectedTable) {
             setSelectedTable(tableName);
             const dbTableKey = `${selectedDb}:${tableName}`;
-            if (!schemaCacheRef.current[dbTableKey] && !allDbTablesSchema[tableName]) {
+            if (
+              !schemaCacheRef.current[dbTableKey] &&
+              !allDbTablesSchema[tableName]
+            ) {
               try {
                 const schema = await api.getTableSchema(selectedDb, tableName);
                 const entry = {
@@ -680,7 +732,10 @@ export function TableEditor() {
                   foreign_keys: schema.foreign_keys,
                 };
                 schemaCacheRef.current[dbTableKey] = entry;
-                setAllDbTablesSchema((prev) => ({ ...prev, [tableName]: entry }));
+                setAllDbTablesSchema((prev) => ({
+                  ...prev,
+                  [tableName]: entry,
+                }));
               } catch (e) {
                 console.error(e);
               }
@@ -701,8 +756,8 @@ export function TableEditor() {
           viewMode={viewMode}
           setViewMode={(mode) => {
             setViewMode(mode);
-            if (mode === 'schema') {
-              setSelectedTable('');
+            if (mode === "schema") {
+              setSelectedTable("");
             }
           }}
           gridSubTab={gridSubTab}
@@ -714,7 +769,9 @@ export function TableEditor() {
           onExportSelected={(format) => {
             const rowsToExport =
               selectedRowIndices.size > 0
-                ? Array.from(selectedRowIndices).map((idx) => rows[idx]).filter(Boolean)
+                ? Array.from(selectedRowIndices)
+                    .map((idx) => rows[idx])
+                    .filter(Boolean)
                 : rows;
             exportTableData(format, selectedTable, rowsToExport, columns);
           }}
@@ -798,7 +855,7 @@ export function TableEditor() {
           isRowsLoading={isRowsLoading}
           isSchemaLoading={isSchemaLoading}
           onSelectSqlMode={() => {
-            setViewMode('sql');
+            setViewMode("sql");
             if (!sqlQuery && selectedTable) {
               setSqlQuery(`SELECT * FROM ${selectedTable} LIMIT 25;`);
             }
@@ -806,8 +863,10 @@ export function TableEditor() {
           schemaSearchTerm={schemaSearchTerm}
           setSchemaSearchTerm={setSchemaSearchTerm}
           activeSchema="public"
-          onCopySql={(_format) => handleCopy(fullSqlDdl, 'schema_sql')}
-          onCopyMarkdown={() => handleCopy(fullMarkdownSchema, 'schema_markdown')}
+          onCopySql={(_format) => handleCopy(fullSqlDdl, "schema_sql")}
+          onCopyMarkdown={() =>
+            handleCopy(fullMarkdownSchema, "schema_markdown")
+          }
           onDownloadPng={handleDownloadPng}
           onDownloadSvg={handleDownloadSvg}
           copiedKey={copiedKey}
@@ -815,7 +874,10 @@ export function TableEditor() {
           zoomScale={schemaTransform.scale}
           onZoomIn={() =>
             setSchemaTransform((prev) => {
-              const newScale = Math.min(Number((prev.scale + 0.15).toFixed(3)), 2.2);
+              const newScale = Math.min(
+                Number((prev.scale + 0.15).toFixed(3)),
+                2.2,
+              );
               const ratio = newScale / prev.scale;
               const cx = (window.innerWidth - 260) / 2;
               const cy = (window.innerHeight - 140) / 2;
@@ -828,7 +890,10 @@ export function TableEditor() {
           }
           onZoomOut={() =>
             setSchemaTransform((prev) => {
-              const newScale = Math.max(Number((prev.scale - 0.15).toFixed(3)), 0.3);
+              const newScale = Math.max(
+                Number((prev.scale - 0.15).toFixed(3)),
+                0.3,
+              );
               const ratio = newScale / prev.scale;
               const cx = (window.innerWidth - 260) / 2;
               const cy = (window.innerHeight - 140) / 2;
@@ -851,7 +916,7 @@ export function TableEditor() {
         />
 
         {/* Mode 1: Table Grid (Spreadsheet Editor) */}
-        {viewMode === 'grid' && (
+        {viewMode === "grid" && (
           <TableGridView
             selectedTable={selectedTable}
             columns={columns}
@@ -870,7 +935,9 @@ export function TableEditor() {
             onToggleAllRows={handleToggleAllRows}
             selectedCell={selectedCell}
             onSelectCell={(cell) => setSelectedCell(cell)}
-            onStartCellEdit={(rowIndex, colName, cellEl) => handleStartCellEdit(rowIndex, colName, cellEl)}
+            onStartCellEdit={(rowIndex, colName, cellEl) =>
+              handleStartCellEdit(rowIndex, colName, cellEl)
+            }
             isColReadOnly={(col) => isColReadOnly(col)}
             onCellContextMenu={(e, rowIndex, colName, rawValue, isReadOnly) => {
               setGridContextMenu({
@@ -884,7 +951,9 @@ export function TableEditor() {
             }}
             activeColumnMenu={activeColumnMenu}
             onOpenColumnMenu={(menu) => setActiveColumnMenu(menu)}
-            onResizeStart={(e, colName, width) => handleResizeStart(e, colName, width)}
+            onResizeStart={(e, colName, width) =>
+              handleResizeStart(e, colName, width)
+            }
             onOpenAddColumn={openAddColumn}
             onOpenInsertRow={handleOpenInsertRow}
             onOpenFkPicker={(target) => setFkPickerTarget(target)}
@@ -895,13 +964,13 @@ export function TableEditor() {
             setGridSubTab={setGridSubTab}
             onOpenInSqlEditor={(ddl: string) => {
               setSqlQuery(ddl);
-              setViewMode('sql');
+              setViewMode("sql");
             }}
           />
         )}
 
         {/* Mode 2: Schema & ER (Connected Table Relations) */}
-        {viewMode === 'schema' && (
+        {viewMode === "schema" && (
           <SchemaView
             selectedDb={selectedDb}
             selectedTable={selectedTable}
@@ -913,7 +982,7 @@ export function TableEditor() {
             handleCopy={handleCopy}
             onSelectTable={(tableName) => {
               if (selectedTable === tableName) {
-                setSelectedTable('');
+                setSelectedTable("");
               } else {
                 setSelectedTable(tableName);
               }
@@ -931,20 +1000,21 @@ export function TableEditor() {
             }}
             onEditColumn={(tableName, col) => {
               setSelectedTable(tableName);
-              const tableFks = allDbTablesSchema[tableName]?.foreign_keys || foreignKeys;
+              const tableFks =
+                allDbTablesSchema[tableName]?.foreign_keys || foreignKeys;
               const fk = tableFks.find((f) => f.column === col.name);
               openEditColumn(col, fk);
             }}
             onViewInTableEditor={(tableName) => {
               setSelectedTable(tableName);
-              setViewMode('grid');
-              setGridSubTab('data');
+              setViewMode("grid");
+              setGridSubTab("data");
             }}
           />
         )}
 
         {/* Mode 3: SQL Console */}
-        {viewMode === 'sql' && (
+        {viewMode === "sql" && (
           <SqlConsoleView
             selectedDb={selectedDb}
             selectedTable={selectedTable}
@@ -968,14 +1038,14 @@ export function TableEditor() {
 
       {/* ─── PANE 3: RIGHT OVERFLOW DRAWER PANEL (Row Inspector) ─── */}
       <RowInspectorSlideOver
-        isOpen={isDetailsOpen && viewMode === 'grid'}
+        isOpen={isDetailsOpen && viewMode === "grid"}
         onClose={() => {
           if (hasRowChanges) {
             setIsDiscardRowConfirmOpen(true);
           } else {
             setIsDetailsOpen(false);
             setIsInsertModeInPanel(false);
-            setInspectorTab('details');
+            setInspectorTab("details");
           }
         }}
         isInsertMode={isInsertModeInPanel}
@@ -1013,7 +1083,7 @@ export function TableEditor() {
           setIsDiscardRowConfirmOpen(false);
           setIsDetailsOpen(false);
           setIsInsertModeInPanel(false);
-          setInspectorTab('details');
+          setInspectorTab("details");
           if (activeRow) {
             setRowEditValues({ ...activeRow });
           } else {
@@ -1037,8 +1107,8 @@ export function TableEditor() {
       {/* ─── Delete Selected Rows (Batch Delete) Confirm Dialog ─── */}
       <ConfirmDialog
         isOpen={isDeleteBatchConfirmOpen}
-        title={`Delete ${selectedRowIndices.size} Selected Row${selectedRowIndices.size > 1 ? 's' : ''}`}
-        description={`Are you sure you want to permanently delete ${selectedRowIndices.size} selected row${selectedRowIndices.size > 1 ? 's' : ''}? This action cannot be reversed.`}
+        title={`Delete ${selectedRowIndices.size} Selected Row${selectedRowIndices.size > 1 ? "s" : ""}`}
+        description={`Are you sure you want to permanently delete ${selectedRowIndices.size} selected row${selectedRowIndices.size > 1 ? "s" : ""}? This action cannot be reversed.`}
         confirmLabel={isBatchDeleting ? "Deleting..." : "Delete Selected"}
         variant="danger"
         onConfirm={handleDeleteSelectedRows}
@@ -1046,41 +1116,123 @@ export function TableEditor() {
       />
 
       {/* ─── Inline Cell Popover Editor ─── */}
-      {editingCell && (() => {
-        const normType = editingCell.column?.type?.toLowerCase() || '';
-        const isBool = normType.includes('bool') || normType === 'bit' || typeof editingCell.initialValue === 'boolean';
-        const isDate = normType === 'date';
-        const isTimeOrTimestamp = normType.includes('time') || normType.includes('timestamp');
-        const isDateTime = isDate || isTimeOrTimestamp;
-        const isJson =
-          normType.includes('json') ||
-          (typeof editingCell.initialValue === 'object' && editingCell.initialValue !== null);
-        const isNumeric =
-          normType.includes('int') ||
-          normType.includes('float') ||
-          normType.includes('double') ||
-          normType.includes('decimal') ||
-          normType.includes('numeric') ||
-          normType.includes('real') ||
-          normType.includes('serial') ||
-          typeof editingCell.initialValue === 'number';
+      {editingCell &&
+        (() => {
+          const normType = editingCell.column?.type?.toLowerCase() || "";
+          const isBool =
+            normType.includes("bool") ||
+            normType === "bit" ||
+            typeof editingCell.initialValue === "boolean";
+          const isDate = normType === "date";
+          const isTimeOrTimestamp =
+            normType.includes("time") || normType.includes("timestamp");
+          const isDateTime = isDate || isTimeOrTimestamp;
+          const isJson =
+            normType.includes("json") ||
+            (typeof editingCell.initialValue === "object" &&
+              editingCell.initialValue !== null);
+          const isNumeric =
+            normType.includes("int") ||
+            normType.includes("float") ||
+            normType.includes("double") ||
+            normType.includes("decimal") ||
+            normType.includes("numeric") ||
+            normType.includes("real") ||
+            normType.includes("serial") ||
+            typeof editingCell.initialValue === "number";
 
-        if (isBool) {
-          return (
-            <InlineBooleanPopover
-              editingCell={editingCell}
-              onSave={handleCommitCellEdit}
-              onCancel={() => setEditingCell(null)}
-            />
-          );
-        }
+          if (isBool) {
+            return (
+              <InlineBooleanPopover
+                editingCell={editingCell}
+                onSave={handleCommitCellEdit}
+                onCancel={() => setEditingCell(null)}
+              />
+            );
+          }
 
-        if (isNumeric) {
+          if (isNumeric) {
+            return (
+              <InlineNumberPopover
+                editingCell={editingCell}
+                onChange={(val) =>
+                  setEditingCell((prev) =>
+                    prev ? { ...prev, currentValue: val } : null,
+                  )
+                }
+                onSave={handleCommitCellEdit}
+                onCancel={() => setEditingCell(null)}
+                onExpand={() => {
+                  const current = editingCell;
+                  setEditingCell(null);
+                  setExpandedInlineCell({
+                    rowIndex: current.rowIndex,
+                    colName: current.colName,
+                    value: current.currentValue,
+                    initialValue: current.currentValue,
+                  });
+                }}
+              />
+            );
+          }
+
+          if (isJson) {
+            return (
+              <InlineJsonPopover
+                editingCell={editingCell}
+                onChange={(val) =>
+                  setEditingCell((prev) =>
+                    prev ? { ...prev, currentValue: val } : null,
+                  )
+                }
+                onSave={handleCommitCellEdit}
+                onCancel={() => setEditingCell(null)}
+                onExpand={() => {
+                  const current = editingCell;
+                  setEditingCell(null);
+                  setExpandedInlineCell({
+                    rowIndex: current.rowIndex,
+                    colName: current.colName,
+                    value: current.currentValue,
+                    initialValue: current.currentValue,
+                  });
+                }}
+              />
+            );
+          }
+
+          if (isDateTime) {
+            return (
+              <InlineDateTimePickerPopover
+                editingCell={editingCell}
+                onChange={(val) =>
+                  setEditingCell((prev) =>
+                    prev ? { ...prev, currentValue: val } : null,
+                  )
+                }
+                onSave={handleCommitCellEdit}
+                onCancel={() => setEditingCell(null)}
+                onExpand={() => {
+                  const current = editingCell;
+                  setEditingCell(null);
+                  setExpandedInlineCell({
+                    rowIndex: current.rowIndex,
+                    colName: current.colName,
+                    value: current.currentValue,
+                    initialValue: current.currentValue,
+                  });
+                }}
+              />
+            );
+          }
+
           return (
-            <InlineNumberPopover
+            <InlineTextPopover
               editingCell={editingCell}
               onChange={(val) =>
-                setEditingCell((prev) => (prev ? { ...prev, currentValue: val } : null))
+                setEditingCell((prev) =>
+                  prev ? { ...prev, currentValue: val } : null,
+                )
               }
               onSave={handleCommitCellEdit}
               onCancel={() => setEditingCell(null)}
@@ -1096,75 +1248,7 @@ export function TableEditor() {
               }}
             />
           );
-        }
-
-        if (isJson) {
-          return (
-            <InlineJsonPopover
-              editingCell={editingCell}
-              onChange={(val) =>
-                setEditingCell((prev) => (prev ? { ...prev, currentValue: val } : null))
-              }
-              onSave={handleCommitCellEdit}
-              onCancel={() => setEditingCell(null)}
-              onExpand={() => {
-                const current = editingCell;
-                setEditingCell(null);
-                setExpandedInlineCell({
-                  rowIndex: current.rowIndex,
-                  colName: current.colName,
-                  value: current.currentValue,
-                  initialValue: current.currentValue,
-                });
-              }}
-            />
-          );
-        }
-
-        if (isDateTime) {
-          return (
-            <InlineDateTimePickerPopover
-              editingCell={editingCell}
-              onChange={(val) =>
-                setEditingCell((prev) => (prev ? { ...prev, currentValue: val } : null))
-              }
-              onSave={handleCommitCellEdit}
-              onCancel={() => setEditingCell(null)}
-              onExpand={() => {
-                const current = editingCell;
-                setEditingCell(null);
-                setExpandedInlineCell({
-                  rowIndex: current.rowIndex,
-                  colName: current.colName,
-                  value: current.currentValue,
-                  initialValue: current.currentValue,
-                });
-              }}
-            />
-          );
-        }
-
-        return (
-          <InlineTextPopover
-            editingCell={editingCell}
-            onChange={(val) =>
-              setEditingCell((prev) => (prev ? { ...prev, currentValue: val } : null))
-            }
-            onSave={handleCommitCellEdit}
-            onCancel={() => setEditingCell(null)}
-            onExpand={() => {
-              const current = editingCell;
-              setEditingCell(null);
-              setExpandedInlineCell({
-                rowIndex: current.rowIndex,
-                colName: current.colName,
-                value: current.currentValue,
-                initialValue: current.currentValue,
-              });
-            }}
-          />
-        );
-      })()}
+        })()}
 
       {/* ─── Expanded Inline Cell SlideOver Panel ─── */}
       <SlideOver
@@ -1177,7 +1261,7 @@ export function TableEditor() {
           }
         }}
         width="w-[520px] max-w-full"
-        title={expandedInlineCell?.colName || 'Field'}
+        title={expandedInlineCell?.colName || "Field"}
         subtitle="Edit field value"
       >
         <div className="flex-1 flex flex-col min-h-0 bg-[#0e0e0e] overflow-hidden font-sans">
@@ -1187,14 +1271,15 @@ export function TableEditor() {
                 Value
               </label>
               <span className="text-[12px] font-sans text-[#777777]">
-                {(expandedInlineCell?.value || '').length} chars · {(expandedInlineCell?.value || '').split('\n').length} lines
+                {(expandedInlineCell?.value || "").length} chars ·{" "}
+                {(expandedInlineCell?.value || "").split("\n").length} lines
               </span>
             </div>
             <textarea
-              value={expandedInlineCell?.value || ''}
+              value={expandedInlineCell?.value || ""}
               onChange={(e) =>
                 setExpandedInlineCell((prev) =>
-                  prev ? { ...prev, value: e.target.value } : null
+                  prev ? { ...prev, value: e.target.value } : null,
                 )
               }
               autoFocus
@@ -1238,7 +1323,7 @@ export function TableEditor() {
       <ConfirmDialog
         isOpen={isDiscardExpandedCellConfirmOpen}
         title="Discard Cell Edits?"
-        description={`You have unsaved changes in "${expandedInlineCell?.colName || 'field'}". Are you sure you want to discard your edits?`}
+        description={`You have unsaved changes in "${expandedInlineCell?.colName || "field"}". Are you sure you want to discard your edits?`}
         confirmLabel="Discard"
         cancelLabel="Keep Editing"
         variant="warning"
@@ -1321,7 +1406,9 @@ export function TableEditor() {
       {/* ─── Discard Column Changes Confirm Dialog ─── */}
       <ConfirmDialog
         isOpen={isDiscardColumnConfirmOpen}
-        title={editingColumn ? "Discard Column Changes?" : "Discard New Column?"}
+        title={
+          editingColumn ? "Discard Column Changes?" : "Discard New Column?"
+        }
         description={
           editingColumn
             ? `You have unsaved changes for column "${editingColumn.name}". If you discard, these changes will not be applied.`
@@ -1388,7 +1475,10 @@ export function TableEditor() {
               delete next[colName];
               if (selectedDb && selectedTable) {
                 try {
-                  localStorage.setItem('axiom:col_widths:' + selectedDb + ':' + selectedTable, JSON.stringify(next));
+                  localStorage.setItem(
+                    "axiom:col_widths:" + selectedDb + ":" + selectedTable,
+                    JSON.stringify(next),
+                  );
                 } catch {}
               }
               return next;
@@ -1406,7 +1496,7 @@ export function TableEditor() {
           onClose={() => setGridContextMenu(null)}
           onEditCell={(rowIndex, colName) => {
             const cellEl = document.querySelector(
-              `[data-cell-row="${rowIndex}"][data-cell-col="${colName}"]`
+              `[data-cell-row="${rowIndex}"][data-cell-col="${colName}"]`,
             ) as HTMLElement;
             if (cellEl) {
               handleStartCellEdit(rowIndex, colName, cellEl);
@@ -1432,7 +1522,7 @@ export function TableEditor() {
         isOpen={!!deleteColumnTarget}
         title={`Delete column "${deleteColumnTarget?.name}"?`}
         description={`Are you sure you want to delete the column "${deleteColumnTarget?.name}" from table "${selectedTable}"? All data in this column will be permanently deleted. This action cannot be undone.`}
-        confirmLabel={isDeletingColumn ? 'Deleting...' : 'Delete column'}
+        confirmLabel={isDeletingColumn ? "Deleting..." : "Delete column"}
         cancelLabel="Cancel"
         variant="danger"
         onConfirm={handleDeleteColumn}
@@ -1444,7 +1534,7 @@ export function TableEditor() {
         isOpen={!!deleteTableTarget}
         title={`Delete table "${deleteTableTarget}"?`}
         description={`Are you sure you want to delete table "${deleteTableTarget}" from database "${selectedDb}"? All records, constraints, and schemas in this table will be permanently deleted. This action cannot be undone.`}
-        confirmLabel={isDeletingTable ? 'Deleting...' : 'Delete table'}
+        confirmLabel={isDeletingTable ? "Deleting..." : "Delete table"}
         cancelLabel="Cancel"
         variant="danger"
         onConfirm={handleDeleteTable}
@@ -1457,67 +1547,101 @@ export function TableEditor() {
           isOpen={isTableEditOpen}
           onClose={() => {
             setIsTableEditOpen(false);
-            setEditingTableTarget('');
+            setEditingTableTarget("");
           }}
           selectedDb={selectedDb}
           tableName={editingTableTarget}
           tables={tables}
-          columns={editingTableTarget ? (allDbTablesSchema[editingTableTarget]?.columns || schemaCacheRef.current[editingTableTarget]?.columns || columns) : []}
-          foreignKeys={editingTableTarget ? (allDbTablesSchema[editingTableTarget]?.foreign_keys || schemaCacheRef.current[editingTableTarget]?.foreign_keys || foreignKeys) : []}
+          columns={
+            editingTableTarget
+              ? allDbTablesSchema[editingTableTarget]?.columns ||
+                schemaCacheRef.current[editingTableTarget]?.columns ||
+                columns
+              : []
+          }
+          foreignKeys={
+            editingTableTarget
+              ? allDbTablesSchema[editingTableTarget]?.foreign_keys ||
+                schemaCacheRef.current[editingTableTarget]?.foreign_keys ||
+                foreignKeys
+              : []
+          }
           onRequestDeleteTable={(tbl) => setDeleteTableTarget(tbl)}
-          onSave={async ({ newName, columns: updatedCols, foreignKeys: updatedFks }) => {
+          onSave={async ({
+            newName,
+            columns: updatedCols,
+            foreignKeys: updatedFks,
+          }) => {
             const oldName = editingTableTarget;
             const currentDb = databases.find((d) => d.alias === selectedDb);
-            const engineType = currentDb?.engine?.toLowerCase() || '';
+            const engineType = currentDb?.engine?.toLowerCase() || "";
 
             // Handle CREATE TABLE mode
             if (!oldName) {
               const colDefs = updatedCols.map((c) => {
                 const normType = c.type.toLowerCase();
-                const isIntPk = c.primaryKey && (normType.includes('int') || normType.includes('serial'));
-                const hasExplicitDefault = c.defaultValue && c.defaultValue.trim() !== '' && c.defaultValue.toUpperCase() !== 'NULL';
+                const isIntPk =
+                  c.primaryKey &&
+                  (normType.includes("int") || normType.includes("serial"));
+                const hasExplicitDefault =
+                  c.defaultValue &&
+                  c.defaultValue.trim() !== "" &&
+                  c.defaultValue.toUpperCase() !== "NULL";
 
-                let def = '';
-                if (engineType.includes('mysql') || engineType.includes('mariadb')) {
+                let def = "";
+                if (
+                  engineType.includes("mysql") ||
+                  engineType.includes("mariadb")
+                ) {
                   if (isIntPk && !hasExplicitDefault) {
-                    def = `\`${c.name.replace(/`/g, '``')}\` ${c.type} AUTO_INCREMENT PRIMARY KEY`;
+                    def = `\`${c.name.replace(/`/g, "``")}\` ${c.type} AUTO_INCREMENT PRIMARY KEY`;
                   } else {
-                    def = `\`${c.name.replace(/`/g, '``')}\` ${c.type}`;
-                    if (c.primaryKey) def += ' PRIMARY KEY';
-                    if (!c.nullable) def += ' NOT NULL';
-                    if (c.unique && !c.primaryKey) def += ' UNIQUE';
+                    def = `\`${c.name.replace(/`/g, "``")}\` ${c.type}`;
+                    if (c.primaryKey) def += " PRIMARY KEY";
+                    if (!c.nullable) def += " NOT NULL";
+                    if (c.unique && !c.primaryKey) def += " UNIQUE";
                     if (hasExplicitDefault) def += ` DEFAULT ${c.defaultValue}`;
                   }
-                } else if (engineType.includes('mssql') || engineType.includes('sqlserver')) {
+                } else if (
+                  engineType.includes("mssql") ||
+                  engineType.includes("sqlserver")
+                ) {
                   if (isIntPk && !hasExplicitDefault) {
-                    def = `[${c.name.replace(/]/g, ']]')}] ${c.type} IDENTITY(1,1) PRIMARY KEY`;
+                    def = `[${c.name.replace(/]/g, "]]")}] ${c.type} IDENTITY(1,1) PRIMARY KEY`;
                   } else {
-                    def = `[${c.name.replace(/]/g, ']]')}] ${c.type}`;
-                    if (c.primaryKey) def += ' PRIMARY KEY';
-                    if (!c.nullable) def += ' NOT NULL';
-                    if (c.unique && !c.primaryKey) def += ' UNIQUE';
+                    def = `[${c.name.replace(/]/g, "]]")}] ${c.type}`;
+                    if (c.primaryKey) def += " PRIMARY KEY";
+                    if (!c.nullable) def += " NOT NULL";
+                    if (c.unique && !c.primaryKey) def += " UNIQUE";
                     if (hasExplicitDefault) def += ` DEFAULT ${c.defaultValue}`;
                   }
-                } else if (engineType.includes('sqlite') || engineType.includes('libsql')) {
+                } else if (
+                  engineType.includes("sqlite") ||
+                  engineType.includes("libsql")
+                ) {
                   if (isIntPk && !hasExplicitDefault) {
                     def = `"${c.name.replace(/"/g, '""')}" INTEGER PRIMARY KEY AUTOINCREMENT`;
                   } else {
                     def = `"${c.name.replace(/"/g, '""')}" ${c.type}`;
-                    if (c.primaryKey) def += ' PRIMARY KEY';
-                    if (!c.nullable) def += ' NOT NULL';
-                    if (c.unique && !c.primaryKey) def += ' UNIQUE';
+                    if (c.primaryKey) def += " PRIMARY KEY";
+                    if (!c.nullable) def += " NOT NULL";
+                    if (c.unique && !c.primaryKey) def += " UNIQUE";
                     if (hasExplicitDefault) def += ` DEFAULT ${c.defaultValue}`;
                   }
                 } else {
                   // PostgreSQL & Default
                   if (isIntPk && !hasExplicitDefault) {
-                    const pgType = normType.includes('8') ? 'bigint' : normType.includes('2') ? 'smallint' : 'integer';
+                    const pgType = normType.includes("8")
+                      ? "bigint"
+                      : normType.includes("2")
+                        ? "smallint"
+                        : "integer";
                     def = `"${c.name.replace(/"/g, '""')}" ${pgType} GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY`;
                   } else {
                     def = `"${c.name.replace(/"/g, '""')}" ${c.type}`;
-                    if (c.primaryKey) def += ' PRIMARY KEY';
-                    if (!c.nullable) def += ' NOT NULL';
-                    if (c.unique && !c.primaryKey) def += ' UNIQUE';
+                    if (c.primaryKey) def += " PRIMARY KEY";
+                    if (!c.nullable) def += " NOT NULL";
+                    if (c.unique && !c.primaryKey) def += " UNIQUE";
                     if (hasExplicitDefault) def += ` DEFAULT ${c.defaultValue}`;
                   }
                 }
@@ -1525,21 +1649,33 @@ export function TableEditor() {
               });
 
               const fkDefs = updatedFks.map((fk) => {
-                if (engineType.includes('mysql') || engineType.includes('mariadb')) {
+                if (
+                  engineType.includes("mysql") ||
+                  engineType.includes("mariadb")
+                ) {
                   return `CONSTRAINT \`fk_${newName}_${fk.column}\` FOREIGN KEY (\`${fk.column}\`) REFERENCES \`${fk.referenced_table}\` (\`${fk.referenced_column}\`)`;
-                } else if (engineType.includes('mssql') || engineType.includes('sqlserver')) {
+                } else if (
+                  engineType.includes("mssql") ||
+                  engineType.includes("sqlserver")
+                ) {
                   return `CONSTRAINT [fk_${newName}_${fk.column}] FOREIGN KEY ([${fk.column}]) REFERENCES [${fk.referenced_table}] ([${fk.referenced_column}])`;
                 } else {
                   return `CONSTRAINT "fk_${newName}_${fk.column}" FOREIGN KEY ("${fk.column}") REFERENCES "${fk.referenced_table}" ("${fk.referenced_column}")`;
                 }
               });
 
-              const allDefs = [...colDefs, ...fkDefs].join(',\n  ');
-              let createSql = '';
-              if (engineType.includes('mysql') || engineType.includes('mariadb')) {
-                createSql = `CREATE TABLE \`${newName.replace(/`/g, '``')}\` (\n  ${allDefs}\n);`;
-              } else if (engineType.includes('mssql') || engineType.includes('sqlserver')) {
-                createSql = `CREATE TABLE [${newName.replace(/]/g, ']]')}] (\n  ${allDefs}\n);`;
+              const allDefs = [...colDefs, ...fkDefs].join(",\n  ");
+              let createSql = "";
+              if (
+                engineType.includes("mysql") ||
+                engineType.includes("mariadb")
+              ) {
+                createSql = `CREATE TABLE \`${newName.replace(/`/g, "``")}\` (\n  ${allDefs}\n);`;
+              } else if (
+                engineType.includes("mssql") ||
+                engineType.includes("sqlserver")
+              ) {
+                createSql = `CREATE TABLE [${newName.replace(/]/g, "]]")}] (\n  ${allDefs}\n);`;
               } else {
                 createSql = `CREATE TABLE "${newName.replace(/"/g, '""')}" (\n  ${allDefs}\n);`;
               }
@@ -1549,12 +1685,15 @@ export function TableEditor() {
               setSelectedTable(newName);
               await loadTableData({ reloadSchema: true });
               setIsTableEditOpen(false);
-              setEditingTableTarget('');
+              setEditingTableTarget("");
               return;
             }
 
             // Handle ALTER TABLE mode
-            const currentTableData = allDbTablesSchema[oldName] || { columns: [], foreign_keys: [] };
+            const currentTableData = allDbTablesSchema[oldName] || {
+              columns: [],
+              foreign_keys: [],
+            };
             const existingCols = currentTableData.columns || [];
             const existingFks = currentTableData.foreign_keys || [];
 
@@ -1563,12 +1702,24 @@ export function TableEditor() {
 
             // 1. Table rename if name changed
             if (newName !== oldName) {
-              if (engineType.includes('mysql') || engineType.includes('mariadb')) {
-                statements.push(`ALTER TABLE \`${oldName.replace(/`/g, '``')}\` RENAME TO \`${newName.replace(/`/g, '``')}\`;`);
-              } else if (engineType.includes('mssql') || engineType.includes('sqlserver')) {
-                statements.push(`EXEC sp_rename '${oldName.replace(/'/g, "''")}', '${newName.replace(/'/g, "''")}';`);
+              if (
+                engineType.includes("mysql") ||
+                engineType.includes("mariadb")
+              ) {
+                statements.push(
+                  `ALTER TABLE \`${oldName.replace(/`/g, "``")}\` RENAME TO \`${newName.replace(/`/g, "``")}\`;`,
+                );
+              } else if (
+                engineType.includes("mssql") ||
+                engineType.includes("sqlserver")
+              ) {
+                statements.push(
+                  `EXEC sp_rename '${oldName.replace(/'/g, "''")}', '${newName.replace(/'/g, "''")}';`,
+                );
               } else {
-                statements.push(`ALTER TABLE "${oldName.replace(/"/g, '""')}" RENAME TO "${newName.replace(/"/g, '""')}";`);
+                statements.push(
+                  `ALTER TABLE "${oldName.replace(/"/g, '""')}" RENAME TO "${newName.replace(/"/g, '""')}";`,
+                );
               }
             }
 
@@ -1576,16 +1727,28 @@ export function TableEditor() {
 
             // 2. Identify dropped columns
             const updatedColOriginalNames = new Set(
-              updatedCols.map((c) => c.originalName).filter(Boolean)
+              updatedCols.map((c) => c.originalName).filter(Boolean),
             );
             for (const ec of existingCols) {
               if (!updatedColOriginalNames.has(ec.name)) {
-                if (engineType.includes('mysql') || engineType.includes('mariadb')) {
-                  statements.push(`ALTER TABLE \`${activeTableName.replace(/`/g, '``')}\` DROP COLUMN \`${ec.name.replace(/`/g, '``')}\`;`);
-                } else if (engineType.includes('mssql') || engineType.includes('sqlserver')) {
-                  statements.push(`ALTER TABLE [${activeTableName.replace(/]/g, ']]')}] DROP COLUMN [${ec.name.replace(/]/g, ']]')}];`);
+                if (
+                  engineType.includes("mysql") ||
+                  engineType.includes("mariadb")
+                ) {
+                  statements.push(
+                    `ALTER TABLE \`${activeTableName.replace(/`/g, "``")}\` DROP COLUMN \`${ec.name.replace(/`/g, "``")}\`;`,
+                  );
+                } else if (
+                  engineType.includes("mssql") ||
+                  engineType.includes("sqlserver")
+                ) {
+                  statements.push(
+                    `ALTER TABLE [${activeTableName.replace(/]/g, "]]")}] DROP COLUMN [${ec.name.replace(/]/g, "]]")}];`,
+                  );
                 } else {
-                  statements.push(`ALTER TABLE "${activeTableName.replace(/"/g, '""')}" DROP COLUMN "${ec.name.replace(/"/g, '""')}";`);
+                  statements.push(
+                    `ALTER TABLE "${activeTableName.replace(/"/g, '""')}" DROP COLUMN "${ec.name.replace(/"/g, '""')}";`,
+                  );
                 }
               }
             }
@@ -1593,49 +1756,82 @@ export function TableEditor() {
             // 3. Identify added columns
             for (const uc of updatedCols) {
               if (!uc.originalName) {
-                let colDef = '';
-                if (engineType.includes('mysql') || engineType.includes('mariadb')) {
-                  colDef = `\`${uc.name.replace(/`/g, '``')}\` ${uc.type}`;
-                } else if (engineType.includes('mssql') || engineType.includes('sqlserver')) {
-                  colDef = `[${uc.name.replace(/]/g, ']]')}] ${uc.type}`;
+                let colDef = "";
+                if (
+                  engineType.includes("mysql") ||
+                  engineType.includes("mariadb")
+                ) {
+                  colDef = `\`${uc.name.replace(/`/g, "``")}\` ${uc.type}`;
+                } else if (
+                  engineType.includes("mssql") ||
+                  engineType.includes("sqlserver")
+                ) {
+                  colDef = `[${uc.name.replace(/]/g, "]]")}] ${uc.type}`;
                 } else {
                   colDef = `"${uc.name.replace(/"/g, '""')}" ${uc.type}`;
                 }
-                if (uc.primaryKey) colDef += ' PRIMARY KEY';
-                if (!uc.nullable) colDef += ' NOT NULL';
-                if (uc.defaultValue && uc.defaultValue.toUpperCase() !== 'NULL') {
+                if (uc.primaryKey) colDef += " PRIMARY KEY";
+                if (!uc.nullable) colDef += " NOT NULL";
+                if (
+                  uc.defaultValue &&
+                  uc.defaultValue.toUpperCase() !== "NULL"
+                ) {
                   colDef += ` DEFAULT ${uc.defaultValue}`;
                 }
 
-                if (engineType.includes('mysql') || engineType.includes('mariadb')) {
-                  statements.push(`ALTER TABLE \`${activeTableName.replace(/`/g, '``')}\` ADD COLUMN ${colDef};`);
-                } else if (engineType.includes('mssql') || engineType.includes('sqlserver')) {
-                  statements.push(`ALTER TABLE [${activeTableName.replace(/]/g, ']]')}] ADD ${colDef};`);
+                if (
+                  engineType.includes("mysql") ||
+                  engineType.includes("mariadb")
+                ) {
+                  statements.push(
+                    `ALTER TABLE \`${activeTableName.replace(/`/g, "``")}\` ADD COLUMN ${colDef};`,
+                  );
+                } else if (
+                  engineType.includes("mssql") ||
+                  engineType.includes("sqlserver")
+                ) {
+                  statements.push(
+                    `ALTER TABLE [${activeTableName.replace(/]/g, "]]")}] ADD ${colDef};`,
+                  );
                 } else {
-                  statements.push(`ALTER TABLE "${activeTableName.replace(/"/g, '""')}" ADD COLUMN ${colDef};`);
+                  statements.push(
+                    `ALTER TABLE "${activeTableName.replace(/"/g, '""')}" ADD COLUMN ${colDef};`,
+                  );
                 }
               }
             }
 
             // 4. Identify dropped, modified, or added foreign keys
-            const existingFkMap = new Map(existingFks.map((f) => [f.column, f]));
+            const existingFkMap = new Map(
+              existingFks.map((f) => [f.column, f]),
+            );
             const updatedFkMap = new Map(updatedFks.map((f) => [f.column, f]));
 
             // Dropped or modified FKs: drop old constraint
             for (const ef of existingFks) {
               const uf = updatedFkMap.get(ef.column);
-              if (!uf || uf.referenced_table !== ef.referenced_table || uf.referenced_column !== ef.referenced_column) {
-                if (engineType.includes('mysql') || engineType.includes('mariadb')) {
+              if (
+                !uf ||
+                uf.referenced_table !== ef.referenced_table ||
+                uf.referenced_column !== ef.referenced_column
+              ) {
+                if (
+                  engineType.includes("mysql") ||
+                  engineType.includes("mariadb")
+                ) {
                   statements.push(
-                    `ALTER TABLE \`${activeTableName.replace(/`/g, '``')}\` DROP FOREIGN KEY \`${oldName}_${ef.column}_fkey\`;`
+                    `ALTER TABLE \`${activeTableName.replace(/`/g, "``")}\` DROP FOREIGN KEY \`${oldName}_${ef.column}_fkey\`;`,
                   );
-                } else if (engineType.includes('mssql') || engineType.includes('sqlserver')) {
+                } else if (
+                  engineType.includes("mssql") ||
+                  engineType.includes("sqlserver")
+                ) {
                   statements.push(
-                    `ALTER TABLE [${activeTableName.replace(/]/g, ']]')}] DROP CONSTRAINT [${oldName}_${ef.column}_fkey];`
+                    `ALTER TABLE [${activeTableName.replace(/]/g, "]]")}] DROP CONSTRAINT [${oldName}_${ef.column}_fkey];`,
                   );
                 } else {
                   statements.push(
-                    `ALTER TABLE "${activeTableName.replace(/"/g, '""')}" DROP CONSTRAINT IF EXISTS "${oldName}_${ef.column}_fkey";`
+                    `ALTER TABLE "${activeTableName.replace(/"/g, '""')}" DROP CONSTRAINT IF EXISTS "${oldName}_${ef.column}_fkey";`,
                   );
                 }
               }
@@ -1644,19 +1840,29 @@ export function TableEditor() {
             // Added or modified FKs: add constraint
             for (const uf of updatedFks) {
               const ef = existingFkMap.get(uf.column);
-              if (!ef || ef.referenced_table !== uf.referenced_table || ef.referenced_column !== uf.referenced_column) {
+              if (
+                !ef ||
+                ef.referenced_table !== uf.referenced_table ||
+                ef.referenced_column !== uf.referenced_column
+              ) {
                 const constraintName = `${activeTableName}_${uf.column}_fkey`;
-                if (engineType.includes('mysql') || engineType.includes('mariadb')) {
+                if (
+                  engineType.includes("mysql") ||
+                  engineType.includes("mariadb")
+                ) {
                   statements.push(
-                    `ALTER TABLE \`${activeTableName.replace(/`/g, '``')}\` ADD CONSTRAINT \`${constraintName}\` FOREIGN KEY (\`${uf.column}\`) REFERENCES \`${uf.referenced_table}\` (\`${uf.referenced_column}\`);`
+                    `ALTER TABLE \`${activeTableName.replace(/`/g, "``")}\` ADD CONSTRAINT \`${constraintName}\` FOREIGN KEY (\`${uf.column}\`) REFERENCES \`${uf.referenced_table}\` (\`${uf.referenced_column}\`);`,
                   );
-                } else if (engineType.includes('mssql') || engineType.includes('sqlserver')) {
+                } else if (
+                  engineType.includes("mssql") ||
+                  engineType.includes("sqlserver")
+                ) {
                   statements.push(
-                    `ALTER TABLE [${activeTableName.replace(/]/g, ']]')}] ADD CONSTRAINT [${constraintName}] FOREIGN KEY ([${uf.column}]) REFERENCES [${uf.referenced_table}] ([${uf.referenced_column}]);`
+                    `ALTER TABLE [${activeTableName.replace(/]/g, "]]")}] ADD CONSTRAINT [${constraintName}] FOREIGN KEY ([${uf.column}]) REFERENCES [${uf.referenced_table}] ([${uf.referenced_column}]);`,
                   );
                 } else {
                   statements.push(
-                    `ALTER TABLE "${activeTableName.replace(/"/g, '""')}" ADD CONSTRAINT "${constraintName}" FOREIGN KEY ("${uf.column}") REFERENCES "${uf.referenced_table}" ("${uf.referenced_column}");`
+                    `ALTER TABLE "${activeTableName.replace(/"/g, '""')}" ADD CONSTRAINT "${constraintName}" FOREIGN KEY ("${uf.column}") REFERENCES "${uf.referenced_table}" ("${uf.referenced_column}");`,
                   );
                 }
               }
@@ -1664,7 +1870,7 @@ export function TableEditor() {
 
             // 5. Execute DDL statements
             if (statements.length > 0) {
-              const fullDdl = statements.join('\n');
+              const fullDdl = statements.join("\n");
               await api.executeSqlQuery(selectedDb, fullDdl);
             }
 
@@ -1675,7 +1881,7 @@ export function TableEditor() {
             }
             await loadTableData({ reloadSchema: true });
             setIsTableEditOpen(false);
-            setEditingTableTarget('');
+            setEditingTableTarget("");
           }}
         />
       )}

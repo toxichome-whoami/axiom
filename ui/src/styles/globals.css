@@ -4,8 +4,9 @@
 
 @layer base {
   :root {
-    --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
-    --font-mono: 'JetBrains Mono', Consolas, monospace;
+    --font-sans:
+      "Inter", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    --font-mono: "JetBrains Mono", Consolas, monospace;
   }
 
   html {
@@ -13,7 +14,7 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
-    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
     font-optical-sizing: auto;
     background-color: #000000;
     color: #f3f4f6;
@@ -26,7 +27,7 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
-    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
     font-optical-sizing: auto;
     background-color: #000000;
     color: #f3f4f6;
@@ -39,7 +40,12 @@
     padding-right: env(safe-area-inset-right);
   }
 
-  button, input, optgroup, select, textarea, a[href] {
+  button,
+  input,
+  optgroup,
+  select,
+  textarea,
+  a[href] {
     font-family: inherit;
     font-feature-settings: inherit;
     letter-spacing: inherit;
@@ -353,14 +359,18 @@
   box-shadow: 0 1px 3px rgba(37, 99, 235, 0.4);
 }
 .axiom-datepicker-wrapper .rdp-today:not(.rdp-selected) .rdp-day_button,
-.axiom-datepicker-wrapper .rdp-day[data-today="true"]:not([data-selected="true"]) .rdp-day_button {
+.axiom-datepicker-wrapper
+  .rdp-day[data-today="true"]:not([data-selected="true"])
+  .rdp-day_button {
   color: #3b82f6 !important;
   font-weight: 600;
   position: relative;
 }
 .axiom-datepicker-wrapper .rdp-today:not(.rdp-selected) .rdp-day_button::after,
-.axiom-datepicker-wrapper .rdp-day[data-today="true"]:not([data-selected="true"]) .rdp-day_button::after {
-  content: '';
+.axiom-datepicker-wrapper
+  .rdp-day[data-today="true"]:not([data-selected="true"])
+  .rdp-day_button::after {
+  content: "";
   position: absolute;
   bottom: 2px;
   left: 50%;
@@ -389,9 +399,18 @@
 }
 
 @keyframes shake {
-  0%, 100% { transform: translateX(0); }
-  20%, 60% { transform: translateX(-4px); }
-  40%, 80% { transform: translateX(4px); }
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  20%,
+  60% {
+    transform: translateX(-4px);
+  }
+  40%,
+  80% {
+    transform: translateX(4px);
+  }
 }
 
 .animate-shake {
@@ -399,11 +418,16 @@
 }
 
 @keyframes fadeIn {
-  from { opacity: 0; transform: translateY(-2px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(-2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .animate-fadeIn {
   animation: fadeIn 0.2s ease-out;
 }
-

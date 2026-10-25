@@ -6,17 +6,30 @@
  * Last structural change: Added dialect-aware connection URL format validation.
  */
 
-import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { DatabasePool, EngineType, formatEngine } from '../types';
-import { DataTable, Column } from '../components/shared/DataTable';
-import { SlideOver } from '../components/ui/SlideOver';
-import { Button } from '../components/ui/Button';
-import { ConfirmDialog } from '../components/ui/ConfirmDialog';
-import { CustomSelect } from '../components/shared/CustomSelect';
-import { Database, Plus, CheckCircle2, Search, Trash2, RefreshCw, AlertTriangle, AlertCircle, Check, Eye, EyeOff, Table } from 'lucide-react';
-import { api, DatabaseRecordApi } from '../api/client';
-import { validateCleanName } from '../utils/validation';
-import { FilterRule, matchesRule } from '../utils/filters';
+import React, { useState, useMemo, useRef, useEffect } from "react";
+import { DatabasePool, EngineType, formatEngine } from "../types";
+import { DataTable, Column } from "../components/shared/DataTable";
+import { SlideOver } from "../components/ui/SlideOver";
+import { Button } from "../components/ui/Button";
+import { ConfirmDialog } from "../components/ui/ConfirmDialog";
+import { CustomSelect } from "../components/shared/CustomSelect";
+import {
+  Database,
+  Plus,
+  CheckCircle2,
+  Search,
+  Trash2,
+  RefreshCw,
+  AlertTriangle,
+  AlertCircle,
+  Check,
+  Eye,
+  EyeOff,
+  Table,
+} from "lucide-react";
+import { api, DatabaseRecordApi } from "../api/client";
+import { validateCleanName } from "../utils/validation";
+import { FilterRule, matchesRule } from "../utils/filters";
 
 export { validateCleanName };
 export type { FilterRule };
@@ -25,100 +38,115 @@ export type { FilterRule };
  * Expected URL prefix mappings and examples per database engine dialect.
  * Contract: Matches the connection routing table implemented in crates/db/src/pool.rs.
  */
-export const ENGINE_URL_SCHEMES: Record<string, { prefixes: string[]; example: string }> = {
+export const ENGINE_URL_SCHEMES: Record<
+  string,
+  { prefixes: string[]; example: string }
+> = {
   postgresql: {
-    prefixes: ['postgres://', 'postgresql://'],
-    example: 'postgres://user:secret@host:5432/dbname',
+    prefixes: ["postgres://", "postgresql://"],
+    example: "postgres://user:secret@host:5432/dbname",
   },
   mysql: {
-    prefixes: ['mysql://', 'mariadb://'],
-    example: 'mysql://user:secret@host:3306/dbname',
+    prefixes: ["mysql://", "mariadb://"],
+    example: "mysql://user:secret@host:3306/dbname",
   },
   mssql: {
-    prefixes: ['mssql://', 'sqlserver://'],
-    example: 'mssql://user:secret@host:1433/dbname',
+    prefixes: ["mssql://", "sqlserver://"],
+    example: "mssql://user:secret@host:1433/dbname",
   },
   clickhouse: {
-    prefixes: ['clickhouse://', 'clickhouse+https://', 'http://', 'https://'],
-    example: 'clickhouse://user:secret@host:8123/default',
+    prefixes: ["clickhouse://", "clickhouse+https://", "http://", "https://"],
+    example: "clickhouse://user:secret@host:8123/default",
   },
   libsql: {
-    prefixes: ['libsql://', 'sqlite://', 'file:', 'https://'],
-    example: 'libsql://database.turso.io, https://database.turso.io, or leave blank',
+    prefixes: ["libsql://", "sqlite://", "file:", "https://"],
+    example:
+      "libsql://database.turso.io, https://database.turso.io, or leave blank",
   },
   snowflake: {
-    prefixes: ['snowflake://', 'snowflake+https://', 'https://'],
-    example: 'snowflake://user:secret@account.snowflakecomputing.com?warehouse=COMPUTE_WH&database=DB&schema=PUBLIC',
+    prefixes: ["snowflake://", "snowflake+https://", "https://"],
+    example:
+      "snowflake://user:secret@account.snowflakecomputing.com?warehouse=COMPUTE_WH&database=DB&schema=PUBLIC",
   },
   oracle: {
-    prefixes: ['oracle://', 'oracle+tcp://', 'ords://', 'ords+https://'],
-    example: 'oracle://user:secret@host:1521/service or ords+https://host/ords/schema',
+    prefixes: ["oracle://", "oracle+tcp://", "ords://", "ords+https://"],
+    example:
+      "oracle://user:secret@host:1521/service or ords+https://host/ords/schema",
   },
 };
 
-export type SslMode = 'prefer' | 'require' | 'disable' | 'verify-ca' | 'verify-full';
+export type SslMode =
+  "prefer" | "require" | "disable" | "verify-ca" | "verify-full";
 
 export const SSL_MODE_OPTIONS: { value: SslMode; label: string }[] = [
-  { value: 'prefer', label: 'Prefer (default)' },
-  { value: 'require', label: 'Require' },
-  { value: 'disable', label: 'Disable' },
-  { value: 'verify-ca', label: 'Verify CA' },
-  { value: 'verify-full', label: 'Verify Full' },
+  { value: "prefer", label: "Prefer (default)" },
+  { value: "require", label: "Require" },
+  { value: "disable", label: "Disable" },
+  { value: "verify-ca", label: "Verify CA" },
+  { value: "verify-full", label: "Verify Full" },
 ];
 
 /**
  * Extracts the current SSL mode from a database connection URL.
  */
 export function extractSslModeFromUrl(url: string, engine: string): SslMode {
-  const normEngine = (engine || '').toLowerCase();
-  if (normEngine !== 'postgresql' && normEngine !== 'mysql') {
-    return 'prefer';
+  const normEngine = (engine || "").toLowerCase();
+  if (normEngine !== "postgresql" && normEngine !== "mysql") {
+    return "prefer";
   }
-  const qIdx = url.indexOf('?');
-  if (qIdx === -1) return 'prefer';
+  const qIdx = url.indexOf("?");
+  if (qIdx === -1) return "prefer";
   const queryString = url.slice(qIdx + 1);
   const params = new URLSearchParams(queryString);
-  const val = (params.get('sslmode') || params.get('ssl-mode') || '').toLowerCase();
-  if (val === 'require' || val === 'required') return 'require';
-  if (val === 'disable' || val === 'disabled') return 'disable';
-  if (val === 'verify-ca') return 'verify-ca';
-  if (val === 'verify-full' || val === 'verify_identity') return 'verify-full';
-  return 'prefer';
+  const val = (
+    params.get("sslmode") ||
+    params.get("ssl-mode") ||
+    ""
+  ).toLowerCase();
+  if (val === "require" || val === "required") return "require";
+  if (val === "disable" || val === "disabled") return "disable";
+  if (val === "verify-ca") return "verify-ca";
+  if (val === "verify-full" || val === "verify_identity") return "verify-full";
+  return "prefer";
 }
 
 /**
  * Updates or removes the SSL mode parameter in a database connection URL.
  */
-export function applySslModeToUrl(url: string, engine: string, mode: SslMode): string {
-  const normEngine = (engine || '').toLowerCase();
-  if (normEngine !== 'postgresql' && normEngine !== 'mysql') {
+export function applySslModeToUrl(
+  url: string,
+  engine: string,
+  mode: SslMode,
+): string {
+  const normEngine = (engine || "").toLowerCase();
+  if (normEngine !== "postgresql" && normEngine !== "mysql") {
     return url;
   }
   const trimmed = url.trim();
   if (!trimmed) return trimmed;
 
-  const qIdx = trimmed.indexOf('?');
+  const qIdx = trimmed.indexOf("?");
   const base = qIdx === -1 ? trimmed : trimmed.slice(0, qIdx);
-  const queryString = qIdx === -1 ? '' : trimmed.slice(qIdx + 1);
+  const queryString = qIdx === -1 ? "" : trimmed.slice(qIdx + 1);
   const params = new URLSearchParams(queryString);
 
   // Remove existing sslmode / ssl-mode params
-  params.delete('sslmode');
-  params.delete('ssl-mode');
+  params.delete("sslmode");
+  params.delete("ssl-mode");
 
   // If mode is not default 'prefer', set the appropriate param
-  if (mode !== 'prefer') {
-    if (normEngine === 'mysql') {
+  if (mode !== "prefer") {
+    if (normEngine === "mysql") {
       const mysqlModeMap: Record<SslMode, string> = {
-        prefer: 'PREFERRED',
-        require: 'REQUIRED',
-        disable: 'DISABLED',
-        'verify-ca': 'VERIFY_CA',
-        'verify-full': 'VERIFY_IDENTITY',
+        prefer: "PREFERRED",
+        require: "REQUIRED",
+        disable: "DISABLED",
+        "verify-ca": "VERIFY_CA",
+        "verify-full": "VERIFY_IDENTITY",
       };
-      params.set('ssl-mode', mysqlModeMap[mode] || mode);
+      params.set("ssl-mode", mysqlModeMap[mode] || mode);
     } else {
-      params.set('sslmode', mode);
+      params.set("sslmode", mode);
     }
   }
 
@@ -136,51 +164,59 @@ export function applySslModeToUrl(url: string, engine: string, mode: SslMode): s
  * @param engine - Dialect identifier (e.g. 'PostgreSQL', 'MySQL', 'LibSQL')
  * @param rawUrl - Input URI string to validate
  */
-export function validateDatabaseUrl(engine: string, rawUrl: string): { valid: boolean; error?: string } {
+export function validateDatabaseUrl(
+  engine: string,
+  rawUrl: string,
+): { valid: boolean; error?: string } {
   const trimmed = rawUrl.trim();
   const normEngine = engine.toLowerCase().trim();
 
   // LibSQL / SQLite allows blank URL to auto-create sqlite://data/{alias}.db
   if (!trimmed) {
-    if (normEngine === 'libsql' || normEngine === 'sqlite') {
+    if (normEngine === "libsql" || normEngine === "sqlite") {
       return { valid: true };
     }
-    return { valid: false, error: 'Connection URL is required.' };
+    return { valid: false, error: "Connection URL is required." };
   }
 
   // Security jailing checks for local LibSQL / SQLite
-  if (normEngine === 'libsql' || normEngine === 'sqlite') {
-    if (trimmed.includes('..')) {
+  if (normEngine === "libsql" || normEngine === "sqlite") {
+    if (trimmed.includes("..")) {
       return {
         valid: false,
-        error: "Directory traversal ('..') is prohibited. Local databases are restricted to the 'data/' directory.",
+        error:
+          "Directory traversal ('..') is prohibited. Local databases are restricted to the 'data/' directory.",
       };
     }
-    if (/^[a-zA-Z]:/.test(trimmed) || (trimmed.startsWith('/') && !trimmed.startsWith('//'))) {
+    if (
+      /^[a-zA-Z]:/.test(trimmed) ||
+      (trimmed.startsWith("/") && !trimmed.startsWith("//"))
+    ) {
       return {
         valid: false,
-        error: "Absolute drive and root paths are prohibited. Local databases are restricted to the 'data/' directory.",
+        error:
+          "Absolute drive and root paths are prohibited. Local databases are restricted to the 'data/' directory.",
       };
     }
   }
 
   const spec = ENGINE_URL_SCHEMES[normEngine];
   if (!spec) {
-    return { valid: trimmed.includes('://') || trimmed.startsWith('file:') };
+    return { valid: trimmed.includes("://") || trimmed.startsWith("file:") };
   }
 
   const lowerUrl = trimmed.toLowerCase();
   const matched = spec.prefixes.some((p) => lowerUrl.startsWith(p));
   if (!matched) {
     // For LibSQL/SQLite, plain relative file names (e.g. mydb.db or data/mydb.db) are valid
-    if (normEngine === 'libsql' || normEngine === 'sqlite') {
-      if (!trimmed.includes('://')) {
+    if (normEngine === "libsql" || normEngine === "sqlite") {
+      if (!trimmed.includes("://")) {
         return { valid: true };
       }
     }
     return {
       valid: false,
-      error: `Invalid URL protocol for ${formatEngine(engine)}. Expected prefix: ${spec.prefixes.join(' or ')}`,
+      error: `Invalid URL protocol for ${formatEngine(engine)}. Expected prefix: ${spec.prefixes.join(" or ")}`,
     };
   }
 
@@ -189,15 +225,20 @@ export function validateDatabaseUrl(engine: string, rawUrl: string): { valid: bo
   if (!remainder) {
     return {
       valid: false,
-      error: 'URL is missing host or target path after protocol prefix.',
+      error: "URL is missing host or target path after protocol prefix.",
     };
   }
 
   return { valid: true };
 }
 
-function toSafeInt(val: unknown, fallback: number, min: number, max: number): number {
-  const n = typeof val === 'number' ? val : parseInt(String(val), 10);
+function toSafeInt(
+  val: unknown,
+  fallback: number,
+  min: number,
+  max: number,
+): number {
+  const n = typeof val === "number" ? val : parseInt(String(val), 10);
   if (isNaN(n)) return fallback;
   return Math.max(min, Math.min(max, n));
 }
@@ -225,22 +266,23 @@ export function Databases() {
 
       if (curGen !== fetchGenRef.current) return;
 
-      if (dbRes.status === 'fulfilled') {
+      if (dbRes.status === "fulfilled") {
         const dbList: DatabaseRecordApi[] = dbRes.value.databases;
-        const healthMap = healthRes.status === 'fulfilled' ? healthRes.value.databases : {};
+        const healthMap =
+          healthRes.status === "fulfilled" ? healthRes.value.databases : {};
 
         const loadedPools: DatabasePool[] = dbList.map((db) => {
-          const isUp = healthMap[db.alias] === 'up';
+          const isUp = healthMap[db.alias] === "up";
           return {
             alias: db.alias,
-            engine: (db.engine || 'PostgreSQL') as EngineType,
+            engine: (db.engine || "PostgreSQL") as EngineType,
             version: `${db.engine} (live)`,
-            url: '••••••••••••••••',
+            url: "••••••••••••••••",
             minConnections: db.pool_min || 1,
             maxConnections: db.pool_max || 10,
             idleTimeoutSeconds: 30,
             readonly: false,
-            status: isUp ? 'Ready' : 'Degraded',
+            status: isUp ? "Ready" : "Degraded",
             latencyMs: isUp ? 0.45 : 12.0,
           };
         });
@@ -252,11 +294,17 @@ export function Databases() {
           return found ? found : prev;
         });
       } else {
-        setLoadError(dbRes.reason?.message || 'Failed to load database connections');
+        setLoadError(
+          dbRes.reason?.message || "Failed to load database connections",
+        );
       }
     } catch (err: unknown) {
       if (curGen === fetchGenRef.current) {
-        setLoadError(err instanceof Error ? err.message : 'Unexpected error loading databases');
+        setLoadError(
+          err instanceof Error
+            ? err.message
+            : "Unexpected error loading databases",
+        );
       }
     } finally {
       if (curGen === fetchGenRef.current) {
@@ -271,16 +319,18 @@ export function Databases() {
   }, []);
 
   // Toolbar & Filtering State
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState("");
   const [showFilters, setShowFilters] = useState(false);
   const filtersRef = useRef<HTMLDivElement | null>(null);
 
   const [showDisplayOptions, setShowDisplayOptions] = useState(false);
   const displayOptionsRef = useRef<HTMLDivElement | null>(null);
 
-  const [matchMode, setMatchMode] = useState<'all' | 'any'>('all');
+  const [matchMode, setMatchMode] = useState<"all" | "any">("all");
   const [filterRules, setFilterRules] = useState<FilterRule[]>([]);
-  const [appliedFilterRules, setAppliedFilterRules] = useState<FilterRule[]>([]);
+  const [appliedFilterRules, setAppliedFilterRules] = useState<FilterRule[]>(
+    [],
+  );
 
   // Visible columns map
   const [visibleCols, setVisibleCols] = useState<Record<string, boolean>>({
@@ -295,25 +345,33 @@ export function Databases() {
     if (!showFilters && !showDisplayOptions) return;
     const handleClickOutside = (e: MouseEvent) => {
       const target = e.target as Node;
-      if (showFilters && filtersRef.current && !filtersRef.current.contains(target)) {
+      if (
+        showFilters &&
+        filtersRef.current &&
+        !filtersRef.current.contains(target)
+      ) {
         setShowFilters(false);
       }
-      if (showDisplayOptions && displayOptionsRef.current && !displayOptionsRef.current.contains(target)) {
+      if (
+        showDisplayOptions &&
+        displayOptionsRef.current &&
+        !displayOptionsRef.current.contains(target)
+      ) {
         setShowDisplayOptions(false);
       }
     };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [showFilters, showDisplayOptions]);
 
   // Attach DB SlideOver State
   const [attachOpen, setAttachOpen] = useState(false);
-  const [newAlias, setNewAlias] = useState('');
-  const [newEngine, setNewEngine] = useState<string>('PostgreSQL');
-  const [newUrl, setNewUrl] = useState('');
-  const [newSslMode, setNewSslMode] = useState<SslMode>('prefer');
+  const [newAlias, setNewAlias] = useState("");
+  const [newEngine, setNewEngine] = useState<string>("PostgreSQL");
+  const [newUrl, setNewUrl] = useState("");
+  const [newSslMode, setNewSslMode] = useState<SslMode>("prefer");
   const [showNewUrl, setShowNewUrl] = useState(false);
-  const [newToken, setNewToken] = useState('');
+  const [newToken, setNewToken] = useState("");
   const [showNewToken, setShowNewToken] = useState(false);
   const [newMin, setNewMin] = useState(1);
   const [newMax, setNewMax] = useState(10);
@@ -324,92 +382,127 @@ export function Databases() {
 
   // Manage DB SlideOver State
   const [manageOpen, setManageOpen] = useState(false);
-  const [manageTab, setManageTab] = useState<'details' | 'danger'>('details');
+  const [manageTab, setManageTab] = useState<"details" | "danger">("details");
   const [selectedPool, setSelectedPool] = useState<DatabasePool | null>(null);
-  const [editAlias, setEditAlias] = useState('');
-  const [editEngine, setEditEngine] = useState<EngineType>('PostgreSQL');
-  const [editUrl, setEditUrl] = useState('');
-  const [editSslMode, setEditSslMode] = useState<SslMode>('prefer');
+  const [editAlias, setEditAlias] = useState("");
+  const [editEngine, setEditEngine] = useState<EngineType>("PostgreSQL");
+  const [editUrl, setEditUrl] = useState("");
+  const [editSslMode, setEditSslMode] = useState<SslMode>("prefer");
   const [showEditUrl, setShowEditUrl] = useState(false);
-  const [editToken, setEditToken] = useState('');
+  const [editToken, setEditToken] = useState("");
   const [showEditToken, setShowEditToken] = useState(false);
   const [editMin, setEditMin] = useState(1);
   const [editMax, setEditMax] = useState(10);
   const [editTimeout, setEditTimeout] = useState(30);
-  const [manageTestResult, setManageTestResult] = useState<'testing' | 'success' | 'fail' | null>(null);
+  const [manageTestResult, setManageTestResult] = useState<
+    "testing" | "success" | "fail" | null
+  >(null);
   const [manageError, setManageError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [confirmDisconnectOpen, setConfirmDisconnectOpen] = useState(false);
-  const [confirmDiscardAttachOpen, setConfirmDiscardAttachOpen] = useState(false);
+  const [confirmDiscardAttachOpen, setConfirmDiscardAttachOpen] =
+    useState(false);
   const [confirmDiscardEditOpen, setConfirmDiscardEditOpen] = useState(false);
 
   async function handleTestConnection() {
     const validation = validateDatabaseUrl(newEngine, newUrl);
     if (!validation.valid) {
-      setAttachError(validation.error || 'Invalid URL format for selected engine.');
-      setTestResult('fail');
+      setAttachError(
+        validation.error || "Invalid URL format for selected engine.",
+      );
+      setTestResult("fail");
       return;
     }
 
     setAttachError(null);
-    setTestResult('testing');
+    setTestResult("testing");
     try {
-      await api.testDatabaseUrl(newUrl.trim(), newAlias.trim() || undefined, newEngine, newToken.trim() || undefined);
-      setTestResult('success');
+      await api.testDatabaseUrl(
+        newUrl.trim(),
+        newAlias.trim() || undefined,
+        newEngine,
+        newToken.trim() || undefined,
+      );
+      setTestResult("success");
     } catch (err: unknown) {
-      setTestResult('fail');
-      setAttachError(err instanceof Error ? err.message : 'Connection test failed.');
+      setTestResult("fail");
+      setAttachError(
+        err instanceof Error ? err.message : "Connection test failed.",
+      );
     }
   }
 
   async function handleManageTestConnection() {
     if (!selectedPool) return;
     setManageError(null);
-    setManageTestResult('testing');
+    setManageTestResult("testing");
     try {
       if (urlChanged || editToken.trim().length > 0) {
         const validation = validateDatabaseUrl(editEngine, editUrl);
         if (!validation.valid) {
-          setManageTestResult('fail');
-          setManageError(validation.error || 'Invalid URL format for selected engine.');
+          setManageTestResult("fail");
+          setManageError(
+            validation.error || "Invalid URL format for selected engine.",
+          );
           return;
         }
-        await api.testDatabaseUrl(editUrl.trim(), selectedPool.alias, editEngine, editToken.trim() || undefined);
-        setManageTestResult('success');
-        setSelectedPool((prev) => (prev ? { ...prev, status: 'Ready' } : null));
+        await api.testDatabaseUrl(
+          editUrl.trim(),
+          selectedPool.alias,
+          editEngine,
+          editToken.trim() || undefined,
+        );
+        setManageTestResult("success");
+        setSelectedPool((prev) => (prev ? { ...prev, status: "Ready" } : null));
         setPools((prev) =>
-          prev.map((p) => (p.alias === selectedPool.alias ? { ...p, status: 'Ready' } : p))
+          prev.map((p) =>
+            p.alias === selectedPool.alias ? { ...p, status: "Ready" } : p,
+          ),
         );
       } else {
         const test = await api.testDatabase(selectedPool.alias);
-        if (test.status === 'up' || test.status === 'connected') {
-          setManageTestResult('success');
-          setSelectedPool((prev) => (prev ? { ...prev, status: 'Ready' } : null));
+        if (test.status === "up" || test.status === "connected") {
+          setManageTestResult("success");
+          setSelectedPool((prev) =>
+            prev ? { ...prev, status: "Ready" } : null,
+          );
           setPools((prev) =>
-            prev.map((p) => (p.alias === selectedPool.alias ? { ...p, status: 'Ready' } : p))
+            prev.map((p) =>
+              p.alias === selectedPool.alias ? { ...p, status: "Ready" } : p,
+            ),
           );
         } else {
-          setManageTestResult('fail');
-          setManageError('Target reported down during health probe.');
-          setSelectedPool((prev) => (prev ? { ...prev, status: 'Degraded' } : null));
+          setManageTestResult("fail");
+          setManageError("Target reported down during health probe.");
+          setSelectedPool((prev) =>
+            prev ? { ...prev, status: "Degraded" } : null,
+          );
           setPools((prev) =>
-            prev.map((p) => (p.alias === selectedPool.alias ? { ...p, status: 'Degraded' } : p))
+            prev.map((p) =>
+              p.alias === selectedPool.alias ? { ...p, status: "Degraded" } : p,
+            ),
           );
         }
       }
     } catch (err: unknown) {
-      setManageTestResult('fail');
-      const msg = err instanceof Error ? err.message : 'Database test failed.';
+      setManageTestResult("fail");
+      const msg = err instanceof Error ? err.message : "Database test failed.";
       setManageError(msg);
-      setSelectedPool((prev) => (prev ? { ...prev, status: 'Degraded' } : null));
+      setSelectedPool((prev) =>
+        prev ? { ...prev, status: "Degraded" } : null,
+      );
       setPools((prev) =>
-        prev.map((p) => (p.alias === selectedPool.alias ? { ...p, status: 'Degraded' } : p))
+        prev.map((p) =>
+          p.alias === selectedPool.alias ? { ...p, status: "Degraded" } : p,
+        ),
       );
     }
   }
 
   const urlChanged = Boolean(editUrl.trim().length > 0);
-  const editUrlValidation = urlChanged ? validateDatabaseUrl(editEngine, editUrl) : { valid: true };
+  const editUrlValidation = urlChanged
+    ? validateDatabaseUrl(editEngine, editUrl)
+    : { valid: true };
 
   const poolOk = newMin >= 0 && newMax >= newMin && newTimeout >= 1;
   const editPoolOk = editMin >= 0 && editMax >= editMin && editTimeout >= 1;
@@ -420,16 +513,16 @@ export function Databases() {
   }, [searchQuery, appliedFilterRules, matchMode]);
 
   const isChanged = Boolean(
-    selectedPool && (
-      editAlias.trim() !== selectedPool.alias ||
+    selectedPool &&
+    (editAlias.trim() !== selectedPool.alias ||
       editEngine !== selectedPool.engine ||
       urlChanged ||
       editToken.trim().length > 0 ||
       editMin !== selectedPool.minConnections ||
       editMax !== selectedPool.maxConnections ||
       editTimeout !== selectedPool.idleTimeoutSeconds ||
-      editSslMode !== extractSslModeFromUrl(selectedPool.url, selectedPool.engine)
-    )
+      editSslMode !==
+        extractSslModeFromUrl(selectedPool.url, selectedPool.engine)),
   );
 
   const aliasValidation = validateCleanName(newAlias);
@@ -442,18 +535,18 @@ export function Databases() {
     editUrlValidation.valid &&
     editPoolOk &&
     !isSaving &&
-    manageTestResult !== 'testing'
+    manageTestResult !== "testing",
   );
 
   const isAttachDirty = Boolean(
     newAlias.trim().length > 0 ||
     newUrl.trim().length > 0 ||
     newToken.trim().length > 0 ||
-    newEngine !== 'PostgreSQL' ||
-    newSslMode !== 'prefer' ||
+    newEngine !== "PostgreSQL" ||
+    newSslMode !== "prefer" ||
     newMin !== 1 ||
     newMax !== 10 ||
-    newTimeout !== 30
+    newTimeout !== 30,
   );
 
   const canAttach = Boolean(
@@ -461,7 +554,9 @@ export function Databases() {
     newAlias.trim().length > 0 &&
     aliasValidation.valid &&
     poolOk &&
-    (newEngine.toLowerCase() === 'libsql' ? true : newUrl.trim().length > 0 && urlValidation.valid)
+    (newEngine.toLowerCase() === "libsql"
+      ? true
+      : newUrl.trim().length > 0 && urlValidation.valid),
   );
 
   function requestCloseAttach() {
@@ -475,11 +570,11 @@ export function Databases() {
   function forceCloseAttach() {
     setConfirmDiscardAttachOpen(false);
     setAttachOpen(false);
-    setNewAlias('');
-    setNewUrl('');
-    setNewSslMode('prefer');
-    setNewToken('');
-    setNewEngine('PostgreSQL');
+    setNewAlias("");
+    setNewUrl("");
+    setNewSslMode("prefer");
+    setNewToken("");
+    setNewEngine("PostgreSQL");
     setNewMin(1);
     setNewMax(10);
     setNewTimeout(30);
@@ -498,7 +593,7 @@ export function Databases() {
   function forceCloseManage() {
     setConfirmDiscardEditOpen(false);
     setManageOpen(false);
-    setManageTab('details');
+    setManageTab("details");
     setManageError(null);
     setManageTestResult(null);
   }
@@ -506,25 +601,32 @@ export function Databases() {
   async function handleAttach() {
     if (!newAlias.trim() || !poolOk) return;
     if (!aliasValidation.valid) {
-      setAttachError(aliasValidation.error || 'Invalid alias format.');
-      setTestResult('fail');
+      setAttachError(aliasValidation.error || "Invalid alias format.");
+      setTestResult("fail");
       return;
     }
     const validation = validateDatabaseUrl(newEngine, newUrl);
     if (!validation.valid) {
-      setAttachError(validation.error || 'Invalid URL format for selected engine.');
-      setTestResult('fail');
+      setAttachError(
+        validation.error || "Invalid URL format for selected engine.",
+      );
+      setTestResult("fail");
       return;
     }
 
     setAttachError(null);
-    setTestResult('testing');
+    setTestResult("testing");
     setIsAttaching(true);
 
     try {
       // 1. Mandatory live connection check every time when adding
-      await api.testDatabaseUrl(newUrl.trim(), newAlias.trim() || undefined, newEngine, newToken.trim() || undefined);
-      setTestResult('success');
+      await api.testDatabaseUrl(
+        newUrl.trim(),
+        newAlias.trim() || undefined,
+        newEngine,
+        newToken.trim() || undefined,
+      );
+      setTestResult("success");
 
       // 2. Register database once connection is verified
       await api.addDatabase({
@@ -537,9 +639,9 @@ export function Databases() {
       });
       await loadDatabases();
       setAttachOpen(false);
-      setNewAlias('');
-      setNewUrl('');
-      setNewToken('');
+      setNewAlias("");
+      setNewUrl("");
+      setNewToken("");
       setShowNewToken(false);
       setNewMin(1);
       setNewMax(10);
@@ -547,8 +649,12 @@ export function Databases() {
       setTestResult(null);
       setAttachError(null);
     } catch (err: unknown) {
-      setTestResult('fail');
-      setAttachError(err instanceof Error ? err.message : 'Database connection test failed. Please verify URL.');
+      setTestResult("fail");
+      setAttachError(
+        err instanceof Error
+          ? err.message
+          : "Database connection test failed. Please verify URL.",
+      );
     } finally {
       setIsAttaching(false);
     }
@@ -558,22 +664,27 @@ export function Databases() {
     if (!selectedPool || !canSave) return;
     const oldAlias = selectedPool.alias;
     const updatedAlias = editAlias.trim();
-    const updatedUrl = urlChanged ? editUrl.trim() : '';
+    const updatedUrl = urlChanged ? editUrl.trim() : "";
     setManageError(null);
-    setManageTestResult('testing');
+    setManageTestResult("testing");
     setIsSaving(true);
 
     try {
       // 1. Mandatory live connection check every time when updating
       if (urlChanged || editToken.trim().length > 0) {
-        await api.testDatabaseUrl(updatedUrl, selectedPool.alias, editEngine, editToken.trim() || undefined);
+        await api.testDatabaseUrl(
+          updatedUrl,
+          selectedPool.alias,
+          editEngine,
+          editToken.trim() || undefined,
+        );
       } else {
         const test = await api.testDatabase(oldAlias);
-        if (test.status !== 'up' && test.status !== 'connected') {
-          throw new Error('Target database connection check failed.');
+        if (test.status !== "up" && test.status !== "connected") {
+          throw new Error("Target database connection check failed.");
         }
       }
-      setManageTestResult('success');
+      setManageTestResult("success");
 
       // 2. Persist updated configuration once connection is verified
       await api.addDatabase({
@@ -590,45 +701,57 @@ export function Databases() {
       }
       await loadDatabases();
       setManageOpen(false);
-      setEditToken('');
+      setEditToken("");
       setShowEditToken(false);
     } catch (err: unknown) {
-      setManageTestResult('fail');
-      setManageError(err instanceof Error ? err.message : 'Database connection test failed. Unable to save.');
+      setManageTestResult("fail");
+      setManageError(
+        err instanceof Error
+          ? err.message
+          : "Database connection test failed. Unable to save.",
+      );
     } finally {
       setIsSaving(false);
     }
   }
 
   const engineOptions: { value: EngineType; label: string }[] = [
-    { value: 'PostgreSQL', label: 'PostgreSQL 14 / 15 / 16 (sqlx driver)' },
-    { value: 'MySQL', label: 'MySQL 8.0 / MariaDB (sqlx driver)' },
-    { value: 'MSSQL', label: 'Microsoft SQL Server (tiberius TDS)' },
-    { value: 'ClickHouse', label: 'ClickHouse OLAP (HTTP engine)' },
-    { value: 'LibSQL', label: 'LibSQL / SQLite (Turso & local)' },
-    { value: 'Snowflake', label: 'Snowflake Cloud Data Warehouse (REST v2)' },
-    { value: 'Oracle', label: 'Oracle Database 19c / 21c / 23ai (Thin / ORDS)' },
+    { value: "PostgreSQL", label: "PostgreSQL 14 / 15 / 16 (sqlx driver)" },
+    { value: "MySQL", label: "MySQL 8.0 / MariaDB (sqlx driver)" },
+    { value: "MSSQL", label: "Microsoft SQL Server (tiberius TDS)" },
+    { value: "ClickHouse", label: "ClickHouse OLAP (HTTP engine)" },
+    { value: "LibSQL", label: "LibSQL / SQLite (Turso & local)" },
+    { value: "Snowflake", label: "Snowflake Cloud Data Warehouse (REST v2)" },
+    {
+      value: "Oracle",
+      label: "Oracle Database 19c / 21c / 23ai (Thin / ORDS)",
+    },
   ];
 
   const filterFieldOptions = [
-    { value: 'alias', label: 'Pool Alias' },
-    { value: 'engine', label: 'Engine' },
-    { value: 'status', label: 'Status' },
+    { value: "alias", label: "Pool Alias" },
+    { value: "engine", label: "Engine" },
+    { value: "status", label: "Status" },
   ];
 
   const displayColumnOptions = [
-    { id: 'status', label: 'Status' },
-    { id: 'alias', label: 'Pool Alias' },
-    { id: 'engine', label: 'Engine' },
-    { id: 'conns', label: 'Connection Limits' },
-    { id: 'latency', label: 'Ping Latency' },
+    { id: "status", label: "Status" },
+    { id: "alias", label: "Pool Alias" },
+    { id: "engine", label: "Engine" },
+    { id: "conns", label: "Connection Limits" },
+    { id: "latency", label: "Ping Latency" },
   ];
 
   const handleAddRule = () => {
     const newId = String(Date.now());
     setFilterRules((prev) => [
       ...prev,
-      { id: newId, field: filterFieldOptions[0].value, operator: 'contains', value: '' },
+      {
+        id: newId,
+        field: filterFieldOptions[0].value,
+        operator: "contains",
+        value: "",
+      },
     ]);
   };
 
@@ -638,12 +761,12 @@ export function Databases() {
 
   const handleUpdateRule = (id: string, updates: Partial<FilterRule>) => {
     setFilterRules((prev) =>
-      prev.map((r) => (r.id === id ? { ...r, ...updates } : r))
+      prev.map((r) => (r.id === id ? { ...r, ...updates } : r)),
     );
   };
 
   const handleApplyFilters = () => {
-    setAppliedFilterRules(filterRules.filter((r) => r.value.trim() !== ''));
+    setAppliedFilterRules(filterRules.filter((r) => r.value.trim() !== ""));
     setShowFilters(false);
   };
 
@@ -658,22 +781,34 @@ export function Databases() {
   };
 
   const handleResetColumns = () => {
-    setVisibleCols({ status: true, alias: true, engine: true, conns: true, latency: true });
+    setVisibleCols({
+      status: true,
+      alias: true,
+      engine: true,
+      conns: true,
+      latency: true,
+    });
   };
 
   const filteredPools = useMemo(() => {
     let list = pools;
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
-      list = list.filter((p) => p.alias.toLowerCase().includes(q) || p.engine.toLowerCase().includes(q));
+      list = list.filter(
+        (p) =>
+          p.alias.toLowerCase().includes(q) ||
+          p.engine.toLowerCase().includes(q),
+      );
     }
     if (appliedFilterRules.length > 0) {
       list = list.filter((p) => {
         const tests = appliedFilterRules.map((rule) => {
-          const val = String((p as unknown as Record<string, unknown>)[rule.field] ?? '');
+          const val = String(
+            (p as unknown as Record<string, unknown>)[rule.field] ?? "",
+          );
           return matchesRule(val, rule.operator, rule.value);
         });
-        return matchMode === 'any' ? tests.some(Boolean) : tests.every(Boolean);
+        return matchMode === "any" ? tests.some(Boolean) : tests.every(Boolean);
       });
     }
     return list;
@@ -681,21 +816,24 @@ export function Databases() {
 
   const columns: Column<DatabasePool>[] = [
     {
-      id: 'status',
-      header: 'Status',
-      accessorKey: 'status',
+      id: "status",
+      header: "Status",
+      accessorKey: "status",
       width: 130,
       isResizable: true,
-      className: 'pl-4 pr-3',
+      className: "pl-4 pr-3",
       cell: (row) => (
-        <div className="flex items-center gap-2 text-[14px] text-white font-normal truncate whitespace-nowrap" title={row.status}>
+        <div
+          className="flex items-center gap-2 text-[14px] text-white font-normal truncate whitespace-nowrap"
+          title={row.status}
+        >
           <span
             className={`size-1.5 rounded-full shrink-0 ${
-              row.status === 'Ready'
-                ? 'bg-[#30a46c]'
-                : row.status === 'Degraded'
-                ? 'bg-[#f59e0b]'
-                : 'bg-[#e5484d]'
+              row.status === "Ready"
+                ? "bg-[#30a46c]"
+                : row.status === "Degraded"
+                  ? "bg-[#f59e0b]"
+                  : "bg-[#e5484d]"
             }`}
           />
           <span className="truncate whitespace-nowrap">{row.status}</span>
@@ -703,69 +841,87 @@ export function Databases() {
       ),
     },
     {
-      id: 'alias',
-      header: 'Pool Alias',
-      accessorKey: 'alias',
+      id: "alias",
+      header: "Pool Alias",
+      accessorKey: "alias",
       isSortable: true,
       isResizable: true,
       width: 220,
-      className: 'px-3',
+      className: "px-3",
       cell: (row) => (
         <div className="flex items-center gap-2.5 min-w-0">
           <Database className="w-4 h-4 text-[#8c8c8c] shrink-0" />
-          <span className="font-medium text-white text-[14px] truncate whitespace-nowrap" title={row.alias}>{row.alias}</span>
+          <span
+            className="font-medium text-white text-[14px] truncate whitespace-nowrap"
+            title={row.alias}
+          >
+            {row.alias}
+          </span>
         </div>
       ),
     },
     {
-      id: 'engine',
-      header: 'Engine',
-      accessorKey: 'engine',
+      id: "engine",
+      header: "Engine",
+      accessorKey: "engine",
       width: 170,
       isResizable: true,
-      className: 'px-3',
+      className: "px-3",
       cell: (row) => (
-        <span className="text-[14px] text-[#cccccc] font-normal truncate whitespace-nowrap block" title={formatEngine(row.engine)}>
+        <span
+          className="text-[14px] text-[#cccccc] font-normal truncate whitespace-nowrap block"
+          title={formatEngine(row.engine)}
+        >
           {formatEngine(row.engine)}
         </span>
       ),
     },
     {
-      id: 'conns',
-      header: 'Connection Limits',
+      id: "conns",
+      header: "Connection Limits",
       width: 180,
       isResizable: true,
-      className: 'px-3',
+      className: "px-3",
       cell: (row) => (
-        <span className="tabular-nums text-[14px] text-[#d4d4d4] font-normal truncate whitespace-nowrap block" title={`${row.minConnections} min / ${row.maxConnections} max`}>
+        <span
+          className="tabular-nums text-[14px] text-[#d4d4d4] font-normal truncate whitespace-nowrap block"
+          title={`${row.minConnections} min / ${row.maxConnections} max`}
+        >
           {row.minConnections} min / {row.maxConnections} max
         </span>
       ),
     },
     {
-      id: 'latency',
-      header: 'Ping Latency',
+      id: "latency",
+      header: "Ping Latency",
       width: 140,
-      className: 'px-3',
+      className: "px-3",
       cell: (row) => (
-        <span className="tabular-nums text-[14px] text-[#8c8c8c] font-normal truncate whitespace-nowrap block" title={`${row.latencyMs} ms`}>
+        <span
+          className="tabular-nums text-[14px] text-[#8c8c8c] font-normal truncate whitespace-nowrap block"
+          title={`${row.latencyMs} ms`}
+        >
           {row.latencyMs} ms
         </span>
       ),
     },
     {
-      id: 'actions',
+      id: "actions",
       header: <span className="sr-only">Actions</span>,
       isFlex: true,
-      headerClassName: 'justify-end pr-4 text-right',
-      className: 'pl-3 pr-4 justify-end',
+      headerClassName: "justify-end pr-4 text-right",
+      className: "pl-3 pr-4 justify-end",
       cell: (row) => (
         <div className="flex items-center justify-end gap-2 w-full">
           <button
             type="button"
             onClick={() => {
-              window.history.pushState(null, '', `/system/tables?db=${encodeURIComponent(row.alias)}`);
-              window.dispatchEvent(new PopStateEvent('popstate'));
+              window.history.pushState(
+                null,
+                "",
+                `/system/tables?db=${encodeURIComponent(row.alias)}`,
+              );
+              window.dispatchEvent(new PopStateEvent("popstate"));
             }}
             className="inline-flex items-center justify-center gap-1.5 h-7 px-2.5 rounded-[6px] text-[13px] font-medium leading-none text-[#8c8c8c] hover:text-white bg-transparent hover:bg-[#1a1a1a] border border-[#262626] hover:border-[#383838] transition-colors cursor-pointer shrink-0"
             title="Open in Table & Schema Editor"
@@ -779,16 +935,16 @@ export function Databases() {
               setSelectedPool(row);
               setEditAlias(row.alias);
               setEditEngine(row.engine);
-              setEditUrl('');
-              setEditSslMode(extractSslModeFromUrl(row.url || '', row.engine));
-              setEditToken('');
+              setEditUrl("");
+              setEditSslMode(extractSslModeFromUrl(row.url || "", row.engine));
+              setEditToken("");
               setShowEditToken(false);
               setEditMin(row.minConnections);
               setEditMax(row.maxConnections);
               setEditTimeout(row.idleTimeoutSeconds);
               setManageTestResult(null);
               setManageError(null);
-              setManageTab('details');
+              setManageTab("details");
               setManageOpen(true);
             }}
             className="inline-flex items-center justify-center h-7 px-3 rounded-[6px] text-[13px] font-medium leading-none text-[#8c8c8c] hover:text-white bg-transparent hover:bg-[#1a1a1a] border border-[#262626] hover:border-[#383838] transition-colors cursor-pointer shrink-0"
@@ -800,13 +956,19 @@ export function Databases() {
     },
   ];
 
-
   const activeColumns = useMemo(() => {
-    const visible = columns.filter((col) => col.id === 'actions' || visibleCols[col.id] !== false);
-    const lastDataId = [...visible].reverse().find((c) => c.id !== 'actions')?.id;
+    const visible = columns.filter(
+      (col) => col.id === "actions" || visibleCols[col.id] !== false,
+    );
+    const lastDataId = [...visible]
+      .reverse()
+      .find((c) => c.id !== "actions")?.id;
     return visible.map((col) => ({
       ...col,
-      isResizable: col.id !== 'actions' && col.id !== lastDataId && Boolean(col.isResizable),
+      isResizable:
+        col.id !== "actions" &&
+        col.id !== lastDataId &&
+        Boolean(col.isResizable),
     }));
   }, [columns, visibleCols]);
 
@@ -815,7 +977,9 @@ export function Databases() {
       {/* Top Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-[16px] font-medium text-white tracking-tight">Databases</h1>
+          <h1 className="text-[16px] font-medium text-white tracking-tight">
+            Databases
+          </h1>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -827,7 +991,9 @@ export function Databases() {
             title="Refresh database pools"
             className="flex items-center justify-center h-8 w-8 text-[#8c8c8c] hover:text-white rounded-[8px] bg-[#0c0c0c] hover:bg-[#141414] border border-[#262626] hover:border-[#383838] transition-colors cursor-pointer shrink-0"
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin opacity-50' : ''}`} />
+            <RefreshCw
+              className={`w-3.5 h-3.5 ${isRefreshing ? "animate-spin opacity-50" : ""}`}
+            />
           </button>
           <Button
             variant="primary"
@@ -835,9 +1001,9 @@ export function Databases() {
             onClick={() => {
               setTestResult(null);
               setAttachError(null);
-              setNewAlias('');
-              setNewUrl('');
-              setNewToken('');
+              setNewAlias("");
+              setNewUrl("");
+              setNewToken("");
               setShowNewToken(false);
               setNewMin(1);
               setNewMax(10);
@@ -868,7 +1034,7 @@ export function Databases() {
           {searchQuery && (
             <button
               type="button"
-              onClick={() => setSearchQuery('')}
+              onClick={() => setSearchQuery("")}
               className="flex items-center justify-center w-5 h-5 rounded hover:bg-[#222222] text-[#8c8c8c] hover:text-white transition-colors cursor-pointer shrink-0 font-sans"
               title="Clear search"
             >
@@ -891,7 +1057,12 @@ export function Databases() {
                       setFilterRules(appliedFilterRules.map((r) => ({ ...r })));
                     } else if (filterRules.length === 0) {
                       setFilterRules([
-                        { id: '1', field: filterFieldOptions[0].value, operator: 'contains', value: '' },
+                        {
+                          id: "1",
+                          field: filterFieldOptions[0].value,
+                          operator: "contains",
+                          value: "",
+                        },
                       ]);
                     }
                   }
@@ -900,8 +1071,8 @@ export function Databases() {
               }}
               className={`flex items-center gap-1.5 h-9 px-3 rounded-[8px] bg-transparent border text-[14px] font-medium transition-colors cursor-pointer shrink-0 font-sans ${
                 showFilters || appliedFilterRules.length > 0
-                  ? 'border-[#444444] text-white bg-[#141414]'
-                  : 'border-[#262626] text-white hover:bg-[#141414] hover:border-[#383838]'
+                  ? "border-[#444444] text-white bg-[#141414]"
+                  : "border-[#262626] text-white hover:bg-[#141414] hover:border-[#383838]"
               }`}
               title="Filter database pools"
             >
@@ -928,14 +1099,20 @@ export function Databases() {
                 {/* Header */}
                 <div className="flex items-center justify-between pb-3">
                   <div className="flex items-center gap-2">
-                    <span className="text-[14px] font-medium text-white font-sans">Database Filters</span>
+                    <span className="text-[14px] font-medium text-white font-sans">
+                      Database Filters
+                    </span>
                     {filterRules.length >= 2 && (
                       <button
                         type="button"
-                        onClick={() => setMatchMode((prev) => (prev === 'any' ? 'all' : 'any'))}
+                        onClick={() =>
+                          setMatchMode((prev) =>
+                            prev === "any" ? "all" : "any",
+                          )
+                        }
                         className="px-2.5 py-0.5 rounded text-[13px] text-[#cccccc] hover:text-white bg-[#141414] border border-[#2e2e2e] hover:border-[#444444] transition-colors cursor-pointer font-sans"
                       >
-                        Match {matchMode === 'any' ? 'any (OR)' : 'all (AND)'}
+                        Match {matchMode === "any" ? "any (OR)" : "all (AND)"}
                       </button>
                     )}
                   </div>
@@ -950,13 +1127,17 @@ export function Databases() {
                 </div>
 
                 {/* Rules List */}
-                <div className={`space-y-2.5 ${filterRules.length > 3 ? 'max-h-[320px] overflow-y-auto pr-0.5' : ''}`}>
+                <div
+                  className={`space-y-2.5 ${filterRules.length > 3 ? "max-h-[320px] overflow-y-auto pr-0.5" : ""}`}
+                >
                   {filterRules.map((rule) => (
                     <div key={rule.id} className="flex items-center gap-2">
                       <CustomSelect
                         value={rule.field}
                         options={filterFieldOptions}
-                        onChange={(val) => handleUpdateRule(rule.id, { field: val })}
+                        onChange={(val) =>
+                          handleUpdateRule(rule.id, { field: val })
+                        }
                         className="w-32 sm:w-36 shrink-0"
                         menuWidth="w-40"
                       />
@@ -964,11 +1145,16 @@ export function Databases() {
                       <CustomSelect
                         value={rule.operator}
                         options={[
-                          { value: 'contains', label: 'contains' },
-                          { value: 'equals', label: 'equals' },
-                          { value: 'starts_with', label: 'starts with' },
+                          { value: "contains", label: "contains" },
+                          { value: "equals", label: "equals" },
+                          { value: "starts_with", label: "starts with" },
                         ]}
-                        onChange={(val) => handleUpdateRule(rule.id, { operator: val as 'contains' | 'equals' | 'starts_with' })}
+                        onChange={(val) =>
+                          handleUpdateRule(rule.id, {
+                            operator: val as
+                              "contains" | "equals" | "starts_with",
+                          })
+                        }
                         className="w-32 sm:w-36 shrink-0"
                         menuWidth="w-44"
                       />
@@ -976,9 +1162,11 @@ export function Databases() {
                       <input
                         type="text"
                         value={rule.value}
-                        onChange={(e) => handleUpdateRule(rule.id, { value: e.target.value })}
+                        onChange={(e) =>
+                          handleUpdateRule(rule.id, { value: e.target.value })
+                        }
                         onKeyDown={(e) => {
-                          if (e.key === 'Enter') handleApplyFilters();
+                          if (e.key === "Enter") handleApplyFilters();
                         }}
                         placeholder="Filter value..."
                         className="flex-1 min-w-0 h-9 px-3 rounded-[8px] bg-[#141414] border border-[#262626] hover:border-[#383838] focus:border-[#2f80ed] text-[14px] text-white placeholder-[#555555] outline-none transition-colors font-sans"
@@ -990,7 +1178,13 @@ export function Databases() {
                         className="w-8 h-8 flex items-center justify-center text-[#777777] hover:text-white cursor-pointer transition-colors shrink-0"
                         title="Delete filter rule"
                       >
-                        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="currentColor" viewBox="0 0 256 256">
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          width="15"
+                          height="15"
+                          fill="currentColor"
+                          viewBox="0 0 256 256"
+                        >
                           <path d="M216,48H176V40a24,24,0,0,0-24-24H104A24,24,0,0,0,80,40v8H40a8,8,0,0,0,0,16h8V208a16,16,0,0,0,16,16H192a16,16,0,0,0,16-16V64h8a8,8,0,0,0,0-16ZM96,40a8,8,0,0,1,8-8h48a8,8,0,0,1,8,8v8H96Zm96,168H64V64H192ZM112,104v64a8,8,0,0,1-16,0V104a8,8,0,0,1,16,0Zm48,0v64a8,8,0,0,1-16,0V104a8,8,0,0,1,16,0Z" />
                         </svg>
                       </button>
@@ -1008,7 +1202,9 @@ export function Databases() {
                     <span>+ Add filter</span>
                   </button>
                   <div className="flex items-center gap-3">
-                    <span className="text-[12px] text-[#666666] font-sans">Press Enter to apply</span>
+                    <span className="text-[12px] text-[#666666] font-sans">
+                      Press Enter to apply
+                    </span>
                     {appliedFilterRules.length > 0 && (
                       <button
                         type="button"
@@ -1023,8 +1219,14 @@ export function Databases() {
                       onClick={handleApplyFilters}
                       className="group relative flex shrink-0 items-center justify-center h-8 px-3.5 rounded-[8px] font-medium text-white shadow-xs outline-none cursor-pointer disabled:opacity-50 overflow-hidden ring-1 ring-[#1d4ed8] bg-[#2563eb] font-sans"
                     >
-                      <span aria-hidden="true" className="pointer-events-none absolute inset-0 rounded-[inherit] bg-gradient-to-b from-[#3b82f6] to-[#2563eb] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2)]" />
-                      <span aria-hidden="true" className="pointer-events-none absolute inset-0 rounded-[inherit] bg-black opacity-0 group-hover:opacity-15 transition-opacity duration-200" />
+                      <span
+                        aria-hidden="true"
+                        className="pointer-events-none absolute inset-0 rounded-[inherit] bg-gradient-to-b from-[#3b82f6] to-[#2563eb] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2)]"
+                      />
+                      <span
+                        aria-hidden="true"
+                        className="pointer-events-none absolute inset-0 rounded-[inherit] bg-black opacity-0 group-hover:opacity-15 transition-opacity duration-200"
+                      />
                       <span className="relative flex items-center gap-1.5 text-[14px] font-sans">
                         Apply filters
                       </span>
@@ -1045,12 +1247,19 @@ export function Databases() {
               }}
               className={`flex items-center gap-1.5 h-9 px-3 rounded-[8px] bg-transparent border text-[14px] font-medium transition-colors cursor-pointer shrink-0 font-sans ${
                 showDisplayOptions
-                  ? 'border-[#444444] text-white bg-[#141414]'
-                  : 'border-[#262626] text-white hover:bg-[#141414] hover:border-[#383838]'
+                  ? "border-[#444444] text-white bg-[#141414]"
+                  : "border-[#262626] text-white hover:bg-[#141414] hover:border-[#383838]"
               }`}
               title="Toggle visible table columns"
             >
-              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 256 256" className="text-[#8c8c8c] shrink-0">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="14"
+                height="14"
+                fill="currentColor"
+                viewBox="0 0 256 256"
+                className="text-[#8c8c8c] shrink-0"
+              >
                 <path d="M222.87,74.56,134.87,23.75a16,16,0,0,0-15.74,0L31.13,74.56A16,16,0,0,0,23.26,88.4v101.6a16,16,0,0,0,7.87,13.84l88,50.81a16,16,0,0,0,15.74,0l88-50.81a16,16,0,0,0,7.87-13.84V88.4A16,16,0,0,0,222.87,74.56ZM127,160a32,32,0,1,1,32-32A32,32,0,0,1,127,160Z" />
               </svg>
               <span>Display options</span>
@@ -1067,7 +1276,13 @@ export function Databases() {
                       onClick={() => toggleColVisibility(col.id)}
                       className="w-full flex items-center justify-between px-3 py-2 rounded-[6px] text-[14px] text-[#cccccc] hover:text-white hover:bg-[#141414] transition-colors cursor-pointer font-sans"
                     >
-                      <span className={isVisible ? 'text-white font-medium' : 'text-[#8c8c8c]'}>
+                      <span
+                        className={
+                          isVisible
+                            ? "text-white font-medium"
+                            : "text-[#8c8c8c]"
+                        }
+                      >
                         {col.label}
                       </span>
                       {isVisible && (
@@ -1125,18 +1340,27 @@ export function Databases() {
       >
         <div className="flex-1 p-5 overflow-y-auto space-y-4">
           <div>
-            <h3 className="text-[16px] font-medium text-white tracking-tight">Pool Configuration</h3>
-            <p className="text-[13px] text-[#8c8c8c] mt-0.5">Provide connection endpoint, dialect engine, and credential URI.</p>
+            <h3 className="text-[16px] font-medium text-white tracking-tight">
+              Pool Configuration
+            </h3>
+            <p className="text-[13px] text-[#8c8c8c] mt-0.5">
+              Provide connection endpoint, dialect engine, and credential URI.
+            </p>
           </div>
 
           <div>
-            <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">Database Engine</label>
+            <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">
+              Database Engine
+            </label>
             <CustomSelect
               value={newEngine}
               options={engineOptions}
               onChange={(val) => {
                 setNewEngine(val);
-                if (val.toLowerCase() === 'postgresql' || val.toLowerCase() === 'mysql') {
+                if (
+                  val.toLowerCase() === "postgresql" ||
+                  val.toLowerCase() === "mysql"
+                ) {
                   setNewSslMode(extractSslModeFromUrl(newUrl, val));
                 }
                 setTestResult(null);
@@ -1153,12 +1377,14 @@ export function Databases() {
             <input
               type="text"
               value={newAlias}
-              onChange={(e) => setNewAlias(e.target.value.toLowerCase().replace(/\s+/g, '_'))}
+              onChange={(e) =>
+                setNewAlias(e.target.value.toLowerCase().replace(/\s+/g, "_"))
+              }
               placeholder="e.g. analytics_warehouse"
               className={`h-9 w-full rounded-[6px] border px-3 text-[14px] text-white focus:outline-none font-mono lowercase transition-colors ${
                 newAlias.trim().length > 0 && !aliasValidation.valid
-                  ? 'border-[#e5484d] bg-[#1a0f0f] focus:border-[#e5484d] focus:ring-1 focus:ring-[#e5484d]/40'
-                  : 'border-[#262626] bg-[#121212] focus:border-[#3b82f6]'
+                  ? "border-[#e5484d] bg-[#1a0f0f] focus:border-[#e5484d] focus:ring-1 focus:ring-[#e5484d]/40"
+                  : "border-[#262626] bg-[#121212] focus:border-[#3b82f6]"
               }`}
             />
             {newAlias.trim().length > 0 && !aliasValidation.valid ? (
@@ -1168,7 +1394,11 @@ export function Databases() {
               </div>
             ) : (
               <p className="mt-1.5 text-[12px] text-[#737373]">
-                Unique endpoint identifier used in API routes (e.g. <span className="font-mono text-[#a3a3a3]">analytics_warehouse</span>).
+                Unique endpoint identifier used in API routes (e.g.{" "}
+                <span className="font-mono text-[#a3a3a3]">
+                  analytics_warehouse
+                </span>
+                ).
               </p>
             )}
           </div>
@@ -1176,34 +1406,44 @@ export function Databases() {
           <div>
             <div className="flex items-center justify-between mb-1.5">
               <label className="block text-[13px] font-medium text-[#cccccc]">
-                Connection URL {newEngine.toLowerCase() !== 'libsql' && <span className="text-[#e5484d]">*</span>}
+                Connection URL{" "}
+                {newEngine.toLowerCase() !== "libsql" && (
+                  <span className="text-[#e5484d]">*</span>
+                )}
               </label>
-              {newEngine.toLowerCase() === 'libsql' && (
-                <span className="text-[11px] text-[#888888]">Optional for local DB</span>
+              {newEngine.toLowerCase() === "libsql" && (
+                <span className="text-[11px] text-[#888888]">
+                  Optional for local DB
+                </span>
               )}
             </div>
             <div className="relative">
               <input
-                type={showNewUrl ? 'text' : 'password'}
+                type={showNewUrl ? "text" : "password"}
                 value={newUrl}
                 onChange={(e) => {
                   const val = e.target.value;
                   setNewUrl(val);
-                  if (newEngine.toLowerCase() === 'postgresql' || newEngine.toLowerCase() === 'mysql') {
+                  if (
+                    newEngine.toLowerCase() === "postgresql" ||
+                    newEngine.toLowerCase() === "mysql"
+                  ) {
                     setNewSslMode(extractSslModeFromUrl(val, newEngine));
                   }
                   setTestResult(null);
                   setAttachError(null);
                 }}
                 placeholder={
-                  newEngine.toLowerCase() === 'libsql'
-                    ? `Leave blank to create data/${newAlias.trim() || 'database'}.db`
-                    : ENGINE_URL_SCHEMES[newEngine.toLowerCase()]?.example || 'postgres://user:secret@host:5432/dbname'
+                  newEngine.toLowerCase() === "libsql"
+                    ? `Leave blank to create data/${newAlias.trim() || "database"}.db`
+                    : ENGINE_URL_SCHEMES[newEngine.toLowerCase()]?.example ||
+                      "postgres://user:secret@host:5432/dbname"
                 }
                 className={`h-9 w-full rounded-[6px] border pl-3 pr-10 text-[14px] text-white focus:outline-none font-mono transition-colors ${
-                  newUrl.trim().length > 0 && !validateDatabaseUrl(newEngine, newUrl).valid
-                    ? 'border-[#e5484d] bg-[#1a0f0f] focus:border-[#e5484d] focus:ring-1 focus:ring-[#e5484d]/40'
-                    : 'border-[#262626] bg-[#121212] focus:border-[#3b82f6]'
+                  newUrl.trim().length > 0 &&
+                  !validateDatabaseUrl(newEngine, newUrl).valid
+                    ? "border-[#e5484d] bg-[#1a0f0f] focus:border-[#e5484d] focus:ring-1 focus:ring-[#e5484d]/40"
+                    : "border-[#262626] bg-[#121212] focus:border-[#3b82f6]"
                 }`}
               />
               <button
@@ -1211,13 +1451,17 @@ export function Databases() {
                 onClick={() => setShowNewUrl(!showNewUrl)}
                 className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#777777] hover:text-[#cccccc] transition-colors cursor-pointer"
                 tabIndex={-1}
-                aria-label={showNewUrl ? 'Hide password' : 'Show password'}
+                aria-label={showNewUrl ? "Hide password" : "Show password"}
               >
-                {showNewUrl ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                {showNewUrl ? (
+                  <EyeOff className="w-3.5 h-3.5" />
+                ) : (
+                  <Eye className="w-3.5 h-3.5" />
+                )}
               </button>
             </div>
-            {newUrl.trim().length > 0 && (
-              validateDatabaseUrl(newEngine, newUrl).valid ? (
+            {newUrl.trim().length > 0 &&
+              (validateDatabaseUrl(newEngine, newUrl).valid ? (
                 <div className="mt-1.5 flex items-center gap-1.5 text-[12px] text-[#30a46c]">
                   <Check className="w-3.5 h-3.5 shrink-0" />
                   <span>Valid connection scheme</span>
@@ -1225,36 +1469,55 @@ export function Databases() {
               ) : (
                 <div className="mt-1.5 flex items-center gap-1.5 text-[12px] text-[#e5484d]">
                   <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                  <span>Invalid {formatEngine(newEngine)} scheme. Expected prefix: <code className="font-mono text-[#ff8080]">{ENGINE_URL_SCHEMES[newEngine.toLowerCase()]?.prefixes.join(', ')}</code></span>
+                  <span>
+                    Invalid {formatEngine(newEngine)} scheme. Expected prefix:{" "}
+                    <code className="font-mono text-[#ff8080]">
+                      {ENGINE_URL_SCHEMES[
+                        newEngine.toLowerCase()
+                      ]?.prefixes.join(", ")}
+                    </code>
+                  </span>
                 </div>
-              )
-            )}
+              ))}
             {newUrl.trim().length === 0 && (
               <p className="mt-1.5 text-[12px] text-[#737373]">
-                {newEngine.toLowerCase() === 'libsql' ? (
+                {newEngine.toLowerCase() === "libsql" ? (
                   <span>
-                    Leave blank to automatically create <code className="font-mono text-[#a3a3a3]">data/{newAlias.trim() || 'database'}.db</code> inside the protected <code className="font-mono text-[#a3a3a3]">data/</code> directory.
+                    Leave blank to automatically create{" "}
+                    <code className="font-mono text-[#a3a3a3]">
+                      data/{newAlias.trim() || "database"}.db
+                    </code>{" "}
+                    inside the protected{" "}
+                    <code className="font-mono text-[#a3a3a3]">data/</code>{" "}
+                    directory.
                   </span>
                 ) : (
                   <span>
-                    Must start with <code className="font-mono text-[#a3a3a3]">{newEngine.toLowerCase()}://</code> or supported protocol.
+                    Must start with{" "}
+                    <code className="font-mono text-[#a3a3a3]">
+                      {newEngine.toLowerCase()}://
+                    </code>{" "}
+                    or supported protocol.
                   </span>
                 )}
               </p>
             )}
           </div>
 
-          {newEngine.toLowerCase() === 'libsql' && (
+          {newEngine.toLowerCase() === "libsql" && (
             <div>
               <div className="flex items-center justify-between mb-1.5">
                 <label className="block text-[13px] font-medium text-[#cccccc]">
-                  Auth Token <span className="text-[11px] font-normal text-[#888888]">(Turso / Remote LibSQL)</span>
+                  Auth Token{" "}
+                  <span className="text-[11px] font-normal text-[#888888]">
+                    (Turso / Remote LibSQL)
+                  </span>
                 </label>
                 <span className="text-[11px] text-[#666666]">Optional</span>
               </div>
               <div className="relative">
                 <input
-                  type={showNewToken ? 'text' : 'password'}
+                  type={showNewToken ? "text" : "password"}
                   value={newToken}
                   onChange={(e) => {
                     setNewToken(e.target.value);
@@ -1269,18 +1532,24 @@ export function Databases() {
                   onClick={() => setShowNewToken(!showNewToken)}
                   className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#777777] hover:text-[#cccccc] transition-colors cursor-pointer"
                   tabIndex={-1}
-                  aria-label={showNewToken ? 'Hide token' : 'Show token'}
+                  aria-label={showNewToken ? "Hide token" : "Show token"}
                 >
-                  {showNewToken ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                  {showNewToken ? (
+                    <EyeOff className="w-3.5 h-3.5" />
+                  ) : (
+                    <Eye className="w-3.5 h-3.5" />
+                  )}
                 </button>
               </div>
               <p className="mt-1.5 text-[12px] text-[#737373]">
-                JWT auth token required for remote Turso cloud databases. Leave blank for local files.
+                JWT auth token required for remote Turso cloud databases. Leave
+                blank for local files.
               </p>
             </div>
           )}
 
-          {(newEngine.toLowerCase() === 'postgresql' || newEngine.toLowerCase() === 'mysql') && (
+          {(newEngine.toLowerCase() === "postgresql" ||
+            newEngine.toLowerCase() === "mysql") && (
             <div>
               <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">
                 SSL mode
@@ -1298,7 +1567,8 @@ export function Databases() {
                 menuWidth="w-full"
               />
               <p className="mt-1.5 text-[12px] text-[#737373]">
-                Use &quot;Require&quot; for hosted databases such as RDS, Supabase or Neon.
+                Use &quot;Require&quot; for hosted databases such as RDS,
+                Supabase or Neon.
               </p>
             </div>
           )}
@@ -1306,100 +1576,128 @@ export function Databases() {
           <div>
             <button
               type="button"
-              disabled={testResult === 'testing' || (!newUrl.trim() && newEngine.toLowerCase() !== 'libsql')}
+              disabled={
+                testResult === "testing" ||
+                (!newUrl.trim() && newEngine.toLowerCase() !== "libsql")
+              }
               onClick={handleTestConnection}
               className={`h-8 px-3 rounded-[6px] text-[13px] font-medium border transition-colors inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50 ${
-                testResult === 'success'
-                  ? 'border-[#30a46c]/40 bg-[#30a46c]/10 text-[#30a46c] hover:bg-[#30a46c]/20'
-                  : testResult === 'fail'
-                  ? 'border-[#e5484d]/40 bg-[#e5484d]/10 text-[#e5484d] hover:bg-[#e5484d]/20'
-                  : 'border-[#262626] bg-[#161616] text-[#cccccc] hover:text-white hover:border-[#383838]'
+                testResult === "success"
+                  ? "border-[#30a46c]/40 bg-[#30a46c]/10 text-[#30a46c] hover:bg-[#30a46c]/20"
+                  : testResult === "fail"
+                    ? "border-[#e5484d]/40 bg-[#e5484d]/10 text-[#e5484d] hover:bg-[#e5484d]/20"
+                    : "border-[#262626] bg-[#161616] text-[#cccccc] hover:text-white hover:border-[#383838]"
               }`}
             >
-              {testResult === 'testing' ? (
+              {testResult === "testing" ? (
                 <RefreshCw className="w-3.5 h-3.5 animate-spin text-[#3b82f6]" />
-              ) : testResult === 'success' ? (
+              ) : testResult === "success" ? (
                 <CheckCircle2 className="w-3.5 h-3.5 text-[#30a46c]" />
-              ) : testResult === 'fail' ? (
+              ) : testResult === "fail" ? (
                 <AlertTriangle className="w-3.5 h-3.5 text-[#e5484d]" />
               ) : (
                 <RefreshCw className="w-3.5 h-3.5" />
               )}
               <span>
-                {testResult === 'testing'
-                  ? 'Testing Connection...'
-                  : testResult === 'success'
-                  ? 'Connection Verified'
-                  : testResult === 'fail'
-                  ? 'Test Failed · Retry'
-                  : 'Test Connection Handshake'}
+                {testResult === "testing"
+                  ? "Testing Connection..."
+                  : testResult === "success"
+                    ? "Connection Verified"
+                    : testResult === "fail"
+                      ? "Test Failed · Retry"
+                      : "Test Connection Handshake"}
               </span>
             </button>
           </div>
 
-          {testResult === 'testing' && (
+          {testResult === "testing" && (
             <div className="rounded-[6px] border border-[#262626] bg-[#141414] p-3 text-[13px] text-[#8c8c8c] flex items-center gap-2">
               <RefreshCw className="w-3.5 h-3.5 animate-spin text-[#3b82f6] shrink-0" />
-              <span>Probing TCP handshake and validating dialect authentication...</span>
+              <span>
+                Probing TCP handshake and validating dialect authentication...
+              </span>
             </div>
           )}
 
-          {testResult === 'success' && (
+          {testResult === "success" && (
             <div className="rounded-[6px] border border-[#30a46c]/30 bg-[#30a46c]/10 p-3 text-[13px] text-[#30a46c] font-medium flex items-center gap-2">
               <CheckCircle2 className="w-4 h-4 shrink-0" />
-              <span>Connection handshake verified. Database target is reachable and credentials are valid.</span>
+              <span>
+                Connection handshake verified. Database target is reachable and
+                credentials are valid.
+              </span>
             </div>
           )}
 
-          {testResult === 'fail' && (
+          {testResult === "fail" && (
             <div className="rounded-[6px] border border-[#e5484d]/30 bg-[#e5484d]/10 p-3 text-[13px] text-[#e5484d] font-medium flex items-center gap-2">
               <AlertTriangle className="w-4 h-4 shrink-0" />
-              <span>{attachError || 'Connection failed. Invalid URL format for selected engine.'}</span>
+              <span>
+                {attachError ||
+                  "Connection failed. Invalid URL format for selected engine."}
+              </span>
             </div>
           )}
 
           <div className="pt-2">
-            <h3 className="text-[16px] font-medium text-white tracking-tight">Connection Bounds</h3>
-            <p className="text-[13px] text-[#8c8c8c] mt-0.5">Configure scaling limits and idle timeout thresholds.</p>
+            <h3 className="text-[16px] font-medium text-white tracking-tight">
+              Connection Bounds
+            </h3>
+            <p className="text-[13px] text-[#8c8c8c] mt-0.5">
+              Configure scaling limits and idle timeout thresholds.
+            </p>
           </div>
 
           <div className="space-y-3.5">
             <div>
-              <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">Min Connections</label>
+              <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">
+                Min Connections
+              </label>
               <input
                 type="number"
                 min={0}
                 max={1000}
                 value={newMin}
-                onChange={(e) => setNewMin(toSafeInt(e.target.value, 1, 0, 1000))}
+                onChange={(e) =>
+                  setNewMin(toSafeInt(e.target.value, 1, 0, 1000))
+                }
                 className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] px-3 text-[14px] text-white focus:outline-none focus:border-[#3b82f6]"
               />
             </div>
             <div>
-              <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">Max Connections</label>
+              <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">
+                Max Connections
+              </label>
               <input
                 type="number"
                 min={0}
                 max={1000}
                 value={newMax}
-                onChange={(e) => setNewMax(toSafeInt(e.target.value, 10, 0, 1000))}
+                onChange={(e) =>
+                  setNewMax(toSafeInt(e.target.value, 10, 0, 1000))
+                }
                 className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] px-3 text-[14px] text-white focus:outline-none focus:border-[#3b82f6]"
               />
             </div>
             <div>
-              <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">Idle Timeout (seconds)</label>
+              <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">
+                Idle Timeout (seconds)
+              </label>
               <input
                 type="number"
                 min={1}
                 max={3600}
                 value={newTimeout}
-                onChange={(e) => setNewTimeout(toSafeInt(e.target.value, 30, 1, 3600))}
+                onChange={(e) =>
+                  setNewTimeout(toSafeInt(e.target.value, 30, 1, 3600))
+                }
                 className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] px-3 text-[14px] text-white focus:outline-none focus:border-[#3b82f6]"
               />
             </div>
             {!poolOk && (
               <p className="text-[12px] text-[#f87171] leading-relaxed">
-                Pool bounds violation: Min must be ≥ 0, Max must be ≥ Min ({newMin}), and Timeout must be ≥ 1.
+                Pool bounds violation: Min must be ≥ 0, Max must be ≥ Min (
+                {newMin}), and Timeout must be ≥ 1.
               </p>
             )}
           </div>
@@ -1419,8 +1717,14 @@ export function Databases() {
             disabled={!canAttach}
             className="group relative flex shrink-0 items-center justify-center h-9 px-4 rounded-[8px] font-medium text-white shadow-xs outline-none cursor-pointer overflow-hidden ring-1 ring-[#1d4ed8] bg-[#2563eb] font-sans disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <span aria-hidden="true" className="pointer-events-none absolute inset-0 rounded-[inherit] bg-gradient-to-b from-[#3b82f6] to-[#2563eb] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2)]" />
-            <span aria-hidden="true" className="pointer-events-none absolute inset-0 rounded-[inherit] bg-black opacity-0 group-hover:opacity-15 transition-opacity duration-200" />
+            <span
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-0 rounded-[inherit] bg-gradient-to-b from-[#3b82f6] to-[#2563eb] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2)]"
+            />
+            <span
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-0 rounded-[inherit] bg-black opacity-0 group-hover:opacity-15 transition-opacity duration-200"
+            />
             <span className="relative flex items-center gap-1.5 text-[14px] font-sans">
               {isAttaching ? (
                 <>
@@ -1439,30 +1743,32 @@ export function Databases() {
       <SlideOver
         isOpen={manageOpen}
         onClose={requestCloseManage}
-        title={selectedPool?.alias ?? ''}
-        subtitle={selectedPool ? `${selectedPool.engine} · ${selectedPool.status}` : ''}
+        title={selectedPool?.alias ?? ""}
+        subtitle={
+          selectedPool ? `${selectedPool.engine} · ${selectedPool.status}` : ""
+        }
       >
         {/* Tab bar (Segmented control matching dashboard) */}
         <div className="px-5 py-3 border-b border-[#222222] bg-[#0e0e0e]">
           <div className="inline-flex items-center p-0.5 rounded-[8px] bg-transparent border border-[#262626]">
             <button
               type="button"
-              onClick={() => setManageTab('details')}
+              onClick={() => setManageTab("details")}
               className={`flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[14px] font-medium transition-colors duration-75 cursor-pointer font-sans outline-none focus:outline-none border ${
-                manageTab === 'details'
-                  ? 'bg-[#161616] text-white border-[#333333]'
-                  : 'text-[#8c8c8c] hover:text-white hover:bg-[#141414] border-transparent'
+                manageTab === "details"
+                  ? "bg-[#161616] text-white border-[#333333]"
+                  : "text-[#8c8c8c] hover:text-white hover:bg-[#141414] border-transparent"
               }`}
             >
               <span>Connection</span>
             </button>
             <button
               type="button"
-              onClick={() => setManageTab('danger')}
+              onClick={() => setManageTab("danger")}
               className={`flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[14px] font-medium transition-colors duration-75 cursor-pointer font-sans outline-none focus:outline-none border ${
-                manageTab === 'danger'
-                  ? 'bg-[#161616] text-white border-[#333333]'
-                  : 'text-[#8c8c8c] hover:text-white hover:bg-[#141414] border-transparent'
+                manageTab === "danger"
+                  ? "bg-[#161616] text-white border-[#333333]"
+                  : "text-[#8c8c8c] hover:text-white hover:bg-[#141414] border-transparent"
               }`}
             >
               <span>Danger</span>
@@ -1470,13 +1776,18 @@ export function Databases() {
           </div>
         </div>
 
-        {manageTab === 'details' && (
+        {manageTab === "details" && (
           <div className="flex-1 p-5 overflow-y-auto space-y-5">
             {/* Pool Settings */}
             <div className="space-y-4">
               <div>
-                <h3 className="text-[16px] font-medium text-white tracking-tight">Pool Settings</h3>
-                <p className="text-[13px] text-[#8c8c8c] mt-0.5">Configure pool identity, engine dialect, and connection target.</p>
+                <h3 className="text-[16px] font-medium text-white tracking-tight">
+                  Pool Settings
+                </h3>
+                <p className="text-[13px] text-[#8c8c8c] mt-0.5">
+                  Configure pool identity, engine dialect, and connection
+                  target.
+                </p>
               </div>
 
               <div className="space-y-3.5">
@@ -1487,12 +1798,16 @@ export function Databases() {
                   <input
                     type="text"
                     value={editAlias}
-                    onChange={(e) => setEditAlias(e.target.value.toLowerCase().replace(/\s+/g, '_'))}
+                    onChange={(e) =>
+                      setEditAlias(
+                        e.target.value.toLowerCase().replace(/\s+/g, "_"),
+                      )
+                    }
                     placeholder="e.g. analytics_warehouse"
                     className={`h-9 w-full rounded-[6px] border px-3 text-[14px] text-white focus:outline-none font-mono lowercase transition-colors ${
                       editAlias.trim().length > 0 && !editAliasValidation.valid
-                        ? 'border-[#e5484d] bg-[#1a0f0f] focus:border-[#e5484d] focus:ring-1 focus:ring-[#e5484d]/40'
-                        : 'border-[#262626] bg-[#121212] focus:border-[#3b82f6]'
+                        ? "border-[#e5484d] bg-[#1a0f0f] focus:border-[#e5484d] focus:ring-1 focus:ring-[#e5484d]/40"
+                        : "border-[#262626] bg-[#121212] focus:border-[#3b82f6]"
                     }`}
                   />
                   {editAlias.trim().length > 0 && !editAliasValidation.valid ? (
@@ -1508,14 +1823,19 @@ export function Databases() {
                 </div>
 
                 <div>
-                  <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">Database Engine</label>
+                  <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">
+                    Database Engine
+                  </label>
                   <CustomSelect
                     value={editEngine}
                     options={engineOptions}
                     onChange={(val) => {
                       const eng = val as EngineType;
                       setEditEngine(eng);
-                      if (eng.toLowerCase() === 'postgresql' || eng.toLowerCase() === 'mysql') {
+                      if (
+                        eng.toLowerCase() === "postgresql" ||
+                        eng.toLowerCase() === "mysql"
+                      ) {
                         setEditSslMode(extractSslModeFromUrl(editUrl, eng));
                       }
                       setManageTestResult(null);
@@ -1531,13 +1851,18 @@ export function Databases() {
                   </label>
                   <div className="relative">
                     <input
-                      type={showEditUrl ? 'text' : 'password'}
+                      type={showEditUrl ? "text" : "password"}
                       value={editUrl}
                       onChange={(e) => {
                         const val = e.target.value;
                         setEditUrl(val);
-                        if (editEngine.toLowerCase() === 'postgresql' || editEngine.toLowerCase() === 'mysql') {
-                          setEditSslMode(extractSslModeFromUrl(val, editEngine));
+                        if (
+                          editEngine.toLowerCase() === "postgresql" ||
+                          editEngine.toLowerCase() === "mysql"
+                        ) {
+                          setEditSslMode(
+                            extractSslModeFromUrl(val, editEngine),
+                          );
                         }
                         setManageTestResult(null);
                         setManageError(null);
@@ -1545,8 +1870,8 @@ export function Databases() {
                       placeholder="Leave blank to keep the existing"
                       className={`h-9 w-full rounded-[6px] border pl-3 pr-10 text-[14px] text-white focus:outline-none font-mono transition-colors ${
                         urlChanged && !editUrlValidation.valid
-                          ? 'border-[#e5484d] bg-[#1a0f0f] focus:border-[#e5484d] focus:ring-1 focus:ring-[#e5484d]/40'
-                          : 'border-[#262626] bg-[#121212] focus:border-[#3b82f6]'
+                          ? "border-[#e5484d] bg-[#1a0f0f] focus:border-[#e5484d] focus:ring-1 focus:ring-[#e5484d]/40"
+                          : "border-[#262626] bg-[#121212] focus:border-[#3b82f6]"
                       }`}
                     />
                     <button
@@ -1554,42 +1879,63 @@ export function Databases() {
                       onClick={() => setShowEditUrl(!showEditUrl)}
                       className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#777777] hover:text-[#cccccc] transition-colors cursor-pointer"
                       tabIndex={-1}
-                      aria-label={showEditUrl ? 'Hide password' : 'Show password'}
+                      aria-label={
+                        showEditUrl ? "Hide password" : "Show password"
+                      }
                     >
-                      {showEditUrl ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                      {showEditUrl ? (
+                        <EyeOff className="w-3.5 h-3.5" />
+                      ) : (
+                        <Eye className="w-3.5 h-3.5" />
+                      )}
                     </button>
                   </div>
-                  {urlChanged && (
-                    editUrlValidation.valid ? (
+                  {urlChanged &&
+                    (editUrlValidation.valid ? (
                       <div className="mt-1.5 flex items-center gap-1.5 text-[12px] text-[#f59e0b]">
                         <Check className="w-3.5 h-3.5 shrink-0" />
-                        <span>New URI configured · Test required before saving</span>
+                        <span>
+                          New URI configured · Test required before saving
+                        </span>
                       </div>
                     ) : (
                       <div className="mt-1.5 flex items-center gap-1.5 text-[12px] text-[#e5484d]">
                         <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                        <span>Invalid {formatEngine(editEngine)} scheme. Expected prefix: <code className="font-mono text-[#ff8080]">{ENGINE_URL_SCHEMES[editEngine.toLowerCase()]?.prefixes.join(', ')}</code></span>
+                        <span>
+                          Invalid {formatEngine(editEngine)} scheme. Expected
+                          prefix:{" "}
+                          <code className="font-mono text-[#ff8080]">
+                            {ENGINE_URL_SCHEMES[
+                              editEngine.toLowerCase()
+                            ]?.prefixes.join(", ")}
+                          </code>
+                        </span>
                       </div>
-                    )
-                  )}
+                    ))}
                   {!urlChanged && (
                     <p className="mt-1.5 text-[12px] text-[#737373]">
-                      Leave empty to keep existing password and connection credentials.
+                      Leave empty to keep existing password and connection
+                      credentials.
                     </p>
                   )}
                 </div>
 
-                {editEngine.toLowerCase() === 'libsql' && (
+                {editEngine.toLowerCase() === "libsql" && (
                   <div>
                     <div className="flex items-center justify-between mb-1.5">
                       <label className="block text-[13px] font-medium text-[#cccccc]">
-                        Auth Token <span className="text-[11px] font-normal text-[#888888]">(Turso / Remote LibSQL)</span>
+                        Auth Token{" "}
+                        <span className="text-[11px] font-normal text-[#888888]">
+                          (Turso / Remote LibSQL)
+                        </span>
                       </label>
-                      <span className="text-[11px] text-[#666666]">Optional</span>
+                      <span className="text-[11px] text-[#666666]">
+                        Optional
+                      </span>
                     </div>
                     <div className="relative">
                       <input
-                        type={showEditToken ? 'text' : 'password'}
+                        type={showEditToken ? "text" : "password"}
                         value={editToken}
                         onChange={(e) => {
                           setEditToken(e.target.value);
@@ -1604,18 +1950,24 @@ export function Databases() {
                         onClick={() => setShowEditToken(!showEditToken)}
                         className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#777777] hover:text-[#cccccc] transition-colors cursor-pointer"
                         tabIndex={-1}
-                        aria-label={showEditToken ? 'Hide token' : 'Show token'}
+                        aria-label={showEditToken ? "Hide token" : "Show token"}
                       >
-                        {showEditToken ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                        {showEditToken ? (
+                          <EyeOff className="w-3.5 h-3.5" />
+                        ) : (
+                          <Eye className="w-3.5 h-3.5" />
+                        )}
                       </button>
                     </div>
                     <p className="mt-1.5 text-[12px] text-[#737373]">
-                      Update auth token for Turso. Leave empty to preserve existing credentials.
+                      Update auth token for Turso. Leave empty to preserve
+                      existing credentials.
                     </p>
                   </div>
                 )}
 
-                {(editEngine.toLowerCase() === 'postgresql' || editEngine.toLowerCase() === 'mysql') && (
+                {(editEngine.toLowerCase() === "postgresql" ||
+                  editEngine.toLowerCase() === "mysql") && (
                   <div>
                     <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">
                       SSL mode
@@ -1626,14 +1978,17 @@ export function Databases() {
                       onChange={(val) => {
                         const mode = val as SslMode;
                         setEditSslMode(mode);
-                        setEditUrl((prev) => applySslModeToUrl(prev, editEngine, mode));
+                        setEditUrl((prev) =>
+                          applySslModeToUrl(prev, editEngine, mode),
+                        );
                         setManageTestResult(null);
                         setManageError(null);
                       }}
                       menuWidth="w-full"
                     />
                     <p className="mt-1.5 text-[12px] text-[#737373]">
-                      Use &quot;Require&quot; for hosted databases such as RDS, Supabase or Neon.
+                      Use &quot;Require&quot; for hosted databases such as RDS,
+                      Supabase or Neon.
                     </p>
                   </div>
                 )}
@@ -1641,69 +1996,83 @@ export function Databases() {
                 <div>
                   <button
                     type="button"
-                    disabled={manageTestResult === 'testing'}
+                    disabled={manageTestResult === "testing"}
                     onClick={handleManageTestConnection}
                     className={`h-8 px-3 rounded-[6px] text-[13px] font-medium border transition-colors inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50 ${
-                      manageTestResult === 'success'
-                        ? 'border-[#30a46c]/40 bg-[#30a46c]/10 text-[#30a46c] hover:bg-[#30a46c]/20'
-                        : manageTestResult === 'fail'
-                        ? 'border-[#e5484d]/40 bg-[#e5484d]/10 text-[#e5484d] hover:bg-[#e5484d]/20'
-                        : 'border-[#262626] bg-[#161616] text-[#cccccc] hover:text-white hover:border-[#383838]'
+                      manageTestResult === "success"
+                        ? "border-[#30a46c]/40 bg-[#30a46c]/10 text-[#30a46c] hover:bg-[#30a46c]/20"
+                        : manageTestResult === "fail"
+                          ? "border-[#e5484d]/40 bg-[#e5484d]/10 text-[#e5484d] hover:bg-[#e5484d]/20"
+                          : "border-[#262626] bg-[#161616] text-[#cccccc] hover:text-white hover:border-[#383838]"
                     }`}
                   >
-                    {manageTestResult === 'testing' ? (
+                    {manageTestResult === "testing" ? (
                       <RefreshCw className="w-3.5 h-3.5 animate-spin text-[#3b82f6]" />
-                    ) : manageTestResult === 'success' ? (
+                    ) : manageTestResult === "success" ? (
                       <CheckCircle2 className="w-3.5 h-3.5 text-[#30a46c]" />
-                    ) : manageTestResult === 'fail' ? (
+                    ) : manageTestResult === "fail" ? (
                       <AlertTriangle className="w-3.5 h-3.5 text-[#e5484d]" />
                     ) : (
                       <RefreshCw className="w-3.5 h-3.5" />
                     )}
                     <span>
-                      {manageTestResult === 'testing'
-                        ? 'Testing Connection...'
-                        : manageTestResult === 'success'
-                        ? 'Connection Verified'
-                        : manageTestResult === 'fail'
-                        ? 'Test Failed · Retry'
-                        : urlChanged
-                        ? 'Test New Connection'
-                        : 'Test Connection Handshake'}
+                      {manageTestResult === "testing"
+                        ? "Testing Connection..."
+                        : manageTestResult === "success"
+                          ? "Connection Verified"
+                          : manageTestResult === "fail"
+                            ? "Test Failed · Retry"
+                            : urlChanged
+                              ? "Test New Connection"
+                              : "Test Connection Handshake"}
                     </span>
                   </button>
                 </div>
 
-                {manageTestResult === 'testing' && (
+                {manageTestResult === "testing" && (
                   <div className="rounded-[6px] border border-[#262626] bg-[#141414] p-3 text-[13px] text-[#8c8c8c] flex items-center gap-2">
                     <RefreshCw className="w-3.5 h-3.5 animate-spin text-[#3b82f6] shrink-0" />
-                    <span>Probing TCP handshake and validating dialect authentication...</span>
+                    <span>
+                      Probing TCP handshake and validating dialect
+                      authentication...
+                    </span>
                   </div>
                 )}
 
-                {manageTestResult === 'success' && (
+                {manageTestResult === "success" && (
                   <div className="rounded-[6px] border border-[#30a46c]/30 bg-[#30a46c]/10 p-3 text-[13px] text-[#30a46c] font-medium flex items-center gap-2">
                     <CheckCircle2 className="w-4 h-4 shrink-0" />
-                    <span>Connection handshake verified. Round-trip: 0.94 ms.</span>
+                    <span>
+                      Connection handshake verified. Round-trip: 0.94 ms.
+                    </span>
                   </div>
                 )}
 
-                {manageTestResult === 'fail' && (
+                {manageTestResult === "fail" && (
                   <div className="rounded-[6px] border border-[#e5484d]/30 bg-[#e5484d]/10 p-3 text-[13px] text-[#e5484d] font-medium flex items-center gap-2">
                     <AlertTriangle className="w-4 h-4 shrink-0" />
-                    <span>{manageError || 'Connection failed. Unable to reach database host or invalid credentials.'}</span>
+                    <span>
+                      {manageError ||
+                        "Connection failed. Unable to reach database host or invalid credentials."}
+                    </span>
                   </div>
                 )}
               </div>
 
               <div className="pt-2">
-                <h3 className="text-[16px] font-medium text-white tracking-tight">Connection Bounds</h3>
-                <p className="text-[13px] text-[#8c8c8c] mt-0.5">Configure scaling limits and idle timeout thresholds.</p>
+                <h3 className="text-[16px] font-medium text-white tracking-tight">
+                  Connection Bounds
+                </h3>
+                <p className="text-[13px] text-[#8c8c8c] mt-0.5">
+                  Configure scaling limits and idle timeout thresholds.
+                </p>
               </div>
 
               <div className="space-y-3.5">
                 <div>
-                  <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">Min Connections</label>
+                  <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">
+                    Min Connections
+                  </label>
                   <input
                     type="number"
                     value={editMin}
@@ -1712,7 +2081,9 @@ export function Databases() {
                   />
                 </div>
                 <div>
-                  <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">Max Connections</label>
+                  <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">
+                    Max Connections
+                  </label>
                   <input
                     type="number"
                     value={editMax}
@@ -1721,7 +2092,9 @@ export function Databases() {
                   />
                 </div>
                 <div>
-                  <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">Idle Timeout (seconds)</label>
+                  <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">
+                    Idle Timeout (seconds)
+                  </label>
                   <input
                     type="number"
                     value={editTimeout}
@@ -1734,12 +2107,18 @@ export function Databases() {
           </div>
         )}
 
-        {manageTab === 'danger' && (
+        {manageTab === "danger" && (
           <div className="flex-1 p-5 overflow-y-auto">
             <div className="rounded-[8px] border border-[#3a1515] bg-[#0e0404] p-4">
-              <h3 className="text-[16px] font-medium text-[#e5484d] mb-1">Disconnect Pool</h3>
+              <h3 className="text-[16px] font-medium text-[#e5484d] mb-1">
+                Disconnect Pool
+              </h3>
               <p className="text-[13px] text-[#8c8c8c] mb-4">
-                Permanently remove <span className="text-white font-medium text-[13px]">{selectedPool?.alias}</span> from the gateway. All active connections will be terminated.
+                Permanently remove{" "}
+                <span className="text-white font-medium text-[13px]">
+                  {selectedPool?.alias}
+                </span>{" "}
+                from the gateway. All active connections will be terminated.
               </p>
               <button
                 type="button"
@@ -1763,7 +2142,7 @@ export function Databases() {
         )}
 
         {/* Footer */}
-        {manageTab === 'details' && (
+        {manageTab === "details" && (
           <div className="p-4 border-t border-[#222222] bg-[#0e0e0e] flex items-center justify-end gap-2.5 font-sans">
             <button
               type="button"
@@ -1778,8 +2157,14 @@ export function Databases() {
               onClick={handleSaveEdit}
               className="group relative flex shrink-0 items-center justify-center h-9 px-4 rounded-[8px] font-medium text-white shadow-xs outline-none cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed overflow-hidden ring-1 ring-[#1d4ed8] bg-[#2563eb] font-sans"
             >
-              <span aria-hidden="true" className="pointer-events-none absolute inset-0 rounded-[inherit] bg-gradient-to-b from-[#3b82f6] to-[#2563eb] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2)]" />
-              <span aria-hidden="true" className="pointer-events-none absolute inset-0 rounded-[inherit] bg-black opacity-0 group-hover:opacity-15 transition-opacity duration-200" />
+              <span
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-0 rounded-[inherit] bg-gradient-to-b from-[#3b82f6] to-[#2563eb] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2)]"
+              />
+              <span
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-0 rounded-[inherit] bg-black opacity-0 group-hover:opacity-15 transition-opacity duration-200"
+              />
               <span className="relative flex items-center gap-1.5 text-[14px] font-sans">
                 {isSaving ? (
                   <>
@@ -1805,7 +2190,7 @@ export function Databases() {
               await api.deleteDatabase(selectedPool.alias);
               await loadDatabases();
             } catch (err) {
-              console.error('Failed to disconnect database pool:', err);
+              console.error("Failed to disconnect database pool:", err);
             }
           }
           setConfirmDisconnectOpen(false);
@@ -1814,8 +2199,10 @@ export function Databases() {
         title="Disconnect Database Pool"
         description={
           <>
-            Permanently remove database pool{' '}
-            <span className="text-white font-medium">{selectedPool?.alias}</span>{' '}
+            Permanently remove database pool{" "}
+            <span className="text-white font-medium">
+              {selectedPool?.alias}
+            </span>{" "}
             from the gateway? All active connections will be terminated.
           </>
         }

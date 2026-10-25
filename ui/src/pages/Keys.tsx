@@ -7,14 +7,14 @@
  * - Table rendering is paginated client-side to prevent DOM saturation.
  */
 
-import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { ApiKey } from '../types';
-import { DataTable, Column } from '../components/shared/DataTable';
-import { SlideOver } from '../components/ui/SlideOver';
-import { Button } from '../components/ui/Button';
-import { ConfirmDialog } from '../components/ui/ConfirmDialog';
-import { CustomSelect } from '../components/shared/CustomSelect';
-import { DatePicker } from '../components/shared/DatePicker';
+import React, { useState, useMemo, useRef, useEffect } from "react";
+import { ApiKey } from "../types";
+import { DataTable, Column } from "../components/shared/DataTable";
+import { SlideOver } from "../components/ui/SlideOver";
+import { Button } from "../components/ui/Button";
+import { ConfirmDialog } from "../components/ui/ConfirmDialog";
+import { CustomSelect } from "../components/shared/CustomSelect";
+import { DatePicker } from "../components/shared/DatePicker";
 import {
   Key,
   Plus,
@@ -28,22 +28,26 @@ import {
   EyeOff,
   AlertCircle,
   AlertTriangle,
-} from 'lucide-react';
-import { api, ApiKeyRecordApi, RoleRecordApi } from '../api/client';
-import { validateCleanName } from '../utils/validation';
-import { FilterRule, matchesRule } from '../utils/filters';
+} from "lucide-react";
+import { api, ApiKeyRecordApi, RoleRecordApi } from "../api/client";
+import { validateCleanName } from "../utils/validation";
+import { FilterRule, matchesRule } from "../utils/filters";
 
 export type { FilterRule };
 
-const STATUS_OPTIONS: { value: 'Active' | 'Revoked'; label: string; icon: React.ReactNode }[] = [
+const STATUS_OPTIONS: {
+  value: "Active" | "Revoked";
+  label: string;
+  icon: React.ReactNode;
+}[] = [
   {
-    value: 'Active',
-    label: 'Active',
+    value: "Active",
+    label: "Active",
     icon: <span className="size-2 rounded-full shrink-0 bg-[#30a46c]" />,
   },
   {
-    value: 'Revoked',
-    label: 'Revoked',
+    value: "Revoked",
+    label: "Revoked",
     icon: <span className="size-2 rounded-full shrink-0 bg-[#e5484d]" />,
   },
 ];
@@ -51,7 +55,9 @@ const STATUS_OPTIONS: { value: 'Active' | 'Revoked'; label: string; icon: React.
 export function Keys() {
   const [keys, setKeys] = useState<ApiKey[]>([]);
   const [rolesMap, setRolesMap] = useState<Record<string, RoleRecordApi>>({});
-  const [roleOptions, setRoleOptions] = useState<{ value: string; label: string }[]>([]);
+  const [roleOptions, setRoleOptions] = useState<
+    { value: string; label: string }[]
+  >([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -73,7 +79,7 @@ export function Keys() {
 
       if (curGen !== fetchGenRef.current) return;
 
-      if (roleRes.status === 'fulfilled') {
+      if (roleRes.status === "fulfilled") {
         const customRoles = roleRes.value.roles || [];
         const rMap: Record<string, RoleRecordApi> = {};
         customRoles.forEach((r) => {
@@ -86,36 +92,46 @@ export function Keys() {
             customRoles.map((r) => ({
               value: r.name,
               label: r.name,
-            }))
+            })),
           );
         } else {
           setRoleOptions([]);
         }
       }
 
-      if (keyRes.status === 'fulfilled') {
+      if (keyRes.status === "fulfilled") {
         const keyList: ApiKeyRecordApi[] = keyRes.value.keys;
         const formatted: ApiKey[] = keyList.map((k) => {
-          const isExpired = k.expires_at ? k.expires_at * 1000 < Date.now() : false;
+          const isExpired = k.expires_at
+            ? k.expires_at * 1000 < Date.now()
+            : false;
           return {
             name: k.name,
-            role: k.role_name || '',
+            role: k.role_name || "",
             rateLimit: k.rate_limit || 0,
-            status: isExpired ? 'Expired' : 'Active',
-            expiresAt: k.expires_at ? new Date(k.expires_at * 1000).toISOString().split('T')[0] : null,
-            createdAt: new Date(k.created_at * 1000).toISOString().split('T')[0],
-            currentSecretMasked: 'axk_••••••••••••••••',
+            status: isExpired ? "Expired" : "Active",
+            expiresAt: k.expires_at
+              ? new Date(k.expires_at * 1000).toISOString().split("T")[0]
+              : null,
+            createdAt: new Date(k.created_at * 1000)
+              .toISOString()
+              .split("T")[0],
+            currentSecretMasked: "axk_••••••••••••••••",
             retiringSecret: null,
           };
         });
         setKeys(formatted);
-        setSelectedKey((prev) => (prev ? formatted.find((k) => k.name === prev.name) || prev : null));
+        setSelectedKey((prev) =>
+          prev ? formatted.find((k) => k.name === prev.name) || prev : null,
+        );
       } else {
-        setLoadError(keyRes.reason?.message || 'Failed to load API keys');
+        setLoadError(keyRes.reason?.message || "Failed to load API keys");
       }
     } catch (err: unknown) {
       if (curGen === fetchGenRef.current) {
-        setLoadError(err instanceof Error ? err.message : 'Unexpected error loading keys');
+        setLoadError(
+          err instanceof Error ? err.message : "Unexpected error loading keys",
+        );
       }
     } finally {
       if (curGen === fetchGenRef.current) {
@@ -130,16 +146,18 @@ export function Keys() {
   }, []);
 
   // Toolbar & Filtering State
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState("");
   const [showFilters, setShowFilters] = useState(false);
   const filtersRef = useRef<HTMLDivElement | null>(null);
 
   const [showDisplayOptions, setShowDisplayOptions] = useState(false);
   const displayOptionsRef = useRef<HTMLDivElement | null>(null);
 
-  const [matchMode, setMatchMode] = useState<'all' | 'any'>('all');
+  const [matchMode, setMatchMode] = useState<"all" | "any">("all");
   const [filterRules, setFilterRules] = useState<FilterRule[]>([]);
-  const [appliedFilterRules, setAppliedFilterRules] = useState<FilterRule[]>([]);
+  const [appliedFilterRules, setAppliedFilterRules] = useState<FilterRule[]>(
+    [],
+  );
 
   // Visible columns map
   const [visibleCols, setVisibleCols] = useState<Record<string, boolean>>({
@@ -155,38 +173,51 @@ export function Keys() {
     if (!showFilters && !showDisplayOptions) return;
     const handleClickOutside = (e: MouseEvent) => {
       const target = e.target as Node;
-      if (showFilters && filtersRef.current && !filtersRef.current.contains(target)) {
+      if (
+        showFilters &&
+        filtersRef.current &&
+        !filtersRef.current.contains(target)
+      ) {
         setShowFilters(false);
       }
-      if (showDisplayOptions && displayOptionsRef.current && !displayOptionsRef.current.contains(target)) {
+      if (
+        showDisplayOptions &&
+        displayOptionsRef.current &&
+        !displayOptionsRef.current.contains(target)
+      ) {
         setShowDisplayOptions(false);
       }
     };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [showFilters, showDisplayOptions]);
 
   const filterFieldOptions = [
-    { value: 'name', label: 'Key Identifier' },
-    { value: 'role', label: 'Assigned Role' },
-    { value: 'status', label: 'Status' },
-    { value: 'rateLimit', label: 'Rate Limit' },
+    { value: "name", label: "Key Identifier" },
+    { value: "role", label: "Assigned Role" },
+    { value: "status", label: "Status" },
+    { value: "rateLimit", label: "Rate Limit" },
   ];
 
   const displayColumnOptions = [
-    { id: 'status', label: 'Status' },
-    { id: 'name', label: 'Key Identifier' },
-    { id: 'role', label: 'Assigned Role' },
-    { id: 'rateLimit', label: 'Rate Limit' },
-    { id: 'expiresAt', label: 'Expiry Date' },
-    { id: 'createdAt', label: 'Created Date' },
+    { id: "status", label: "Status" },
+    { id: "name", label: "Key Identifier" },
+    { id: "role", label: "Assigned Role" },
+    { id: "rateLimit", label: "Rate Limit" },
+    { id: "expiresAt", label: "Expiry Date" },
+    { id: "createdAt", label: "Created Date" },
   ];
 
   const handleAddRule = () => {
     const newId = String(Date.now());
     setFilterRules((prev) => [
       ...prev,
-      { id: newId, field: filterFieldOptions[0].value, operator: 'contains', value: '' },
+      {
+        id: newId,
+        field: filterFieldOptions[0].value,
+        operator: "contains",
+        value: "",
+      },
     ]);
   };
 
@@ -196,12 +227,12 @@ export function Keys() {
 
   const handleUpdateRule = (id: string, updates: Partial<FilterRule>) => {
     setFilterRules((prev) =>
-      prev.map((r) => (r.id === id ? { ...r, ...updates } : r))
+      prev.map((r) => (r.id === id ? { ...r, ...updates } : r)),
     );
   };
 
   const handleApplyFilters = () => {
-    setAppliedFilterRules(filterRules.filter((r) => r.value.trim() !== ''));
+    setAppliedFilterRules(filterRules.filter((r) => r.value.trim() !== ""));
     setShowFilters(false);
   };
 
@@ -235,20 +266,20 @@ export function Keys() {
           k.name.toLowerCase().includes(q) ||
           k.role.toLowerCase().includes(q) ||
           k.status.toLowerCase().includes(q) ||
-          String(k.rateLimit).includes(q)
+          String(k.rateLimit).includes(q),
       );
     }
     if (appliedFilterRules.length > 0) {
       list = list.filter((k) => {
         const tests = appliedFilterRules.map((rule) => {
-          let val = '';
-          if (rule.field === 'name') val = k.name;
-          else if (rule.field === 'role') val = k.role;
-          else if (rule.field === 'status') val = k.status;
-          else if (rule.field === 'rateLimit') val = String(k.rateLimit);
+          let val = "";
+          if (rule.field === "name") val = k.name;
+          else if (rule.field === "role") val = k.role;
+          else if (rule.field === "status") val = k.status;
+          else if (rule.field === "rateLimit") val = String(k.rateLimit);
           return matchesRule(val, rule.operator, rule.value);
         });
-        return matchMode === 'any' ? tests.some(Boolean) : tests.every(Boolean);
+        return matchMode === "any" ? tests.some(Boolean) : tests.every(Boolean);
       });
     }
     return list;
@@ -261,8 +292,8 @@ export function Keys() {
 
   // Create Key SlideOver State
   const [createOpen, setCreateOpen] = useState(false);
-  const [newName, setNewName] = useState('');
-  const [newRole, setNewRole] = useState('');
+  const [newName, setNewName] = useState("");
+  const [newRole, setNewRole] = useState("");
   const [newRateLimit, setNewRateLimit] = useState(1000);
   const [newExpiresAt, setNewExpiresAt] = useState<string | null>(null);
   const [createdSecret, setCreatedSecret] = useState<string | null>(null);
@@ -271,23 +302,29 @@ export function Keys() {
 
   // Manage SlideOver State
   const [manageOpen, setManageOpen] = useState(false);
-  const [manageTab, setManageTab] = useState<'edit' | 'rotate' | 'danger'>('edit');
+  const [manageTab, setManageTab] = useState<"edit" | "rotate" | "danger">(
+    "edit",
+  );
   const [selectedKey, setSelectedKey] = useState<ApiKey | null>(null);
-  const [editStatus, setEditStatus] = useState<'Active' | 'Revoked'>('Active');
-  const [editName, setEditName] = useState('');
-  const [editRole, setEditRole] = useState('');
+  const [editStatus, setEditStatus] = useState<"Active" | "Revoked">("Active");
+  const [editName, setEditName] = useState("");
+  const [editRole, setEditRole] = useState("");
   const [editRate, setEditRate] = useState(10000);
   const [editExpiresAt, setEditExpiresAt] = useState<string | null>(null);
   const [confirmRevokeOpen, setConfirmRevokeOpen] = useState(false);
   const [confirmRotateOpen, setConfirmRotateOpen] = useState(false);
-  const [confirmDiscardCreateOpen, setConfirmDiscardCreateOpen] = useState(false);
-  const [confirmDiscardManageOpen, setConfirmDiscardManageOpen] = useState(false);
+  const [confirmDiscardCreateOpen, setConfirmDiscardCreateOpen] =
+    useState(false);
+  const [confirmDiscardManageOpen, setConfirmDiscardManageOpen] =
+    useState(false);
   const [isRotating, setIsRotating] = useState(false);
   const [rotateError, setRotateError] = useState<string | null>(null);
 
   // Secret Rotation Dialog State
   const [rotateDialogOpen, setRotateDialogOpen] = useState(false);
-  const [newlyRotatedSecret, setNewlyRotatedSecret] = useState<string | null>(null);
+  const [newlyRotatedSecret, setNewlyRotatedSecret] = useState<string | null>(
+    null,
+  );
   const [showRotatedSecret, setShowRotatedSecret] = useState(false);
   const [copiedRotatedKey, setCopiedRotatedKey] = useState(false);
 
@@ -296,21 +333,21 @@ export function Keys() {
 
   const isModified = Boolean(
     selectedKey &&
-      editName.trim() !== '' &&
-      editNameValidation.valid &&
-      editRole.trim() !== '' &&
-      (editName.trim() !== selectedKey.name ||
-        editStatus !== selectedKey.status ||
-        editRole !== selectedKey.role ||
-        editRate !== selectedKey.rateLimit ||
-        editExpiresAt !== selectedKey.expiresAt)
+    editName.trim() !== "" &&
+    editNameValidation.valid &&
+    editRole.trim() !== "" &&
+    (editName.trim() !== selectedKey.name ||
+      editStatus !== selectedKey.status ||
+      editRole !== selectedKey.role ||
+      editRate !== selectedKey.rateLimit ||
+      editExpiresAt !== selectedKey.expiresAt),
   );
 
   const isCreateDirty = Boolean(
     newName.trim().length > 0 ||
     newRole.trim().length > 0 ||
     newExpiresAt !== null ||
-    newRateLimit !== 1000
+    newRateLimit !== 1000,
   );
 
   function requestCloseCreate() {
@@ -327,7 +364,7 @@ export function Keys() {
   }
 
   function requestCloseManage() {
-    if (manageTab === 'edit' && isModified) {
+    if (manageTab === "edit" && isModified) {
       setConfirmDiscardManageOpen(true);
     } else {
       forceCloseManage();
@@ -337,14 +374,14 @@ export function Keys() {
   function forceCloseManage() {
     setConfirmDiscardManageOpen(false);
     setManageOpen(false);
-    setManageTab('edit');
+    setManageTab("edit");
   }
 
   function closeCreate() {
     setCreateOpen(false);
     setCreatedSecret(null);
     setShowCreatedSecret(false);
-    setNewName('');
+    setNewName("");
     setNewExpiresAt(null);
   }
 
@@ -374,12 +411,18 @@ export function Keys() {
       setShowCreatedSecret(false);
       await loadKeys();
     } catch (err: unknown) {
-      console.error('Failed to create key:', err);
+      console.error("Failed to create key:", err);
     }
   }
 
   function handleSaveEdit() {
-    if (!selectedKey || !editName.trim() || !editNameValidation.valid || !editRole.trim()) return;
+    if (
+      !selectedKey ||
+      !editName.trim() ||
+      !editNameValidation.valid ||
+      !editRole.trim()
+    )
+      return;
     setManageOpen(false);
   }
 
@@ -402,8 +445,9 @@ export function Keys() {
       setRotateDialogOpen(true);
       await loadKeys();
     } catch (err: unknown) {
-      console.error('Failed to rotate key:', err);
-      const msg = err instanceof Error ? err.message : 'Failed to rotate secret';
+      console.error("Failed to rotate key:", err);
+      const msg =
+        err instanceof Error ? err.message : "Failed to rotate secret";
       setRotateError(msg);
       setConfirmRotateOpen(false);
     } finally {
@@ -414,21 +458,24 @@ export function Keys() {
   // 1. Status, 2. Name, 3. Role, 4. Rate Limit, 5. Expiry Date, 6. Created Date
   const columns: Column<ApiKey>[] = [
     {
-      id: 'status',
-      header: 'Status',
-      accessorKey: 'status',
+      id: "status",
+      header: "Status",
+      accessorKey: "status",
       width: 130,
       isResizable: true,
-      className: 'pl-4 pr-3',
+      className: "pl-4 pr-3",
       cell: (row) => (
-        <div className="flex items-center gap-2 text-[13px] text-[#cccccc] font-normal truncate whitespace-nowrap" title={row.status}>
+        <div
+          className="flex items-center gap-2 text-[13px] text-[#cccccc] font-normal truncate whitespace-nowrap"
+          title={row.status}
+        >
           <span
             className={`size-1.5 rounded-full shrink-0 ${
-              row.status === 'Active'
-                ? 'bg-[#30a46c]'
-                : row.status === 'Expired'
-                ? 'bg-[#f59e0b]'
-                : 'bg-[#e5484d]'
+              row.status === "Active"
+                ? "bg-[#30a46c]"
+                : row.status === "Expired"
+                  ? "bg-[#f59e0b]"
+                  : "bg-[#e5484d]"
             }`}
           />
           <span className="truncate whitespace-nowrap">{row.status}</span>
@@ -436,73 +483,93 @@ export function Keys() {
       ),
     },
     {
-      id: 'name',
-      header: 'Key Identifier',
-      accessorKey: 'name',
+      id: "name",
+      header: "Key Identifier",
+      accessorKey: "name",
       isSortable: true,
       isResizable: true,
       width: 220,
-      className: 'px-3',
+      className: "px-3",
       cell: (row) => (
         <div className="flex items-center gap-2.5 min-w-0">
           <Key className="w-4 h-4 text-[#8c8c8c] shrink-0" />
-          <span className="font-medium text-white text-[14px] truncate whitespace-nowrap" title={row.name}>{row.name}</span>
+          <span
+            className="font-medium text-white text-[14px] truncate whitespace-nowrap"
+            title={row.name}
+          >
+            {row.name}
+          </span>
         </div>
       ),
     },
     {
-      id: 'role',
-      header: 'Assigned Role',
-      accessorKey: 'role',
+      id: "role",
+      header: "Assigned Role",
+      accessorKey: "role",
       isResizable: true,
       width: 170,
-      className: 'px-3',
+      className: "px-3",
       cell: (row) => (
         <span
           className="text-[13px] text-[#cccccc] font-normal truncate whitespace-nowrap block"
-          title={row.role || 'None'}
+          title={row.role || "None"}
         >
           {row.role || <span className="text-[#737373] italic">None</span>}
         </span>
       ),
     },
     {
-      id: 'rateLimit',
-      header: 'Rate Limit',
-      accessorKey: 'rateLimit',
+      id: "rateLimit",
+      header: "Rate Limit",
+      accessorKey: "rateLimit",
       isResizable: true,
       width: 160,
-      className: 'px-3',
+      className: "px-3",
       cell: (row) => (
-        <span className="tabular-nums text-[13px] text-[#8c8c8c] font-normal truncate whitespace-nowrap block" title={`${row.rateLimit.toLocaleString()} req/min`}>
+        <span
+          className="tabular-nums text-[13px] text-[#8c8c8c] font-normal truncate whitespace-nowrap block"
+          title={`${row.rateLimit.toLocaleString()} req/min`}
+        >
           {row.rateLimit.toLocaleString()} req/min
         </span>
       ),
     },
     {
-      id: 'expiresAt',
-      header: 'Expiry Date',
-      accessorKey: 'expiresAt',
+      id: "expiresAt",
+      header: "Expiry Date",
+      accessorKey: "expiresAt",
       isResizable: true,
       width: 155,
-      className: 'px-3',
+      className: "px-3",
       cell: (row) => {
         const isExpired = Boolean(
-          row.status === 'Expired' ||
-          (row.expiresAt && new Date(row.expiresAt + 'T23:59:59') < new Date())
+          row.status === "Expired" ||
+          (row.expiresAt && new Date(row.expiresAt + "T23:59:59") < new Date()),
         );
         if (!row.expiresAt) {
           return (
-            <span className="tabular-nums text-[13px] text-[#666666] font-normal truncate whitespace-nowrap block" title="Never expires">
+            <span
+              className="tabular-nums text-[13px] text-[#666666] font-normal truncate whitespace-nowrap block"
+              title="Never expires"
+            >
               Never
             </span>
           );
         }
         return (
-          <div className="flex items-center gap-1.5 truncate whitespace-nowrap" title={isExpired ? `Expired on ${row.expiresAt} at 12:00 AM` : `Expires on ${row.expiresAt} at 12:00 AM`}>
+          <div
+            className="flex items-center gap-1.5 truncate whitespace-nowrap"
+            title={
+              isExpired
+                ? `Expired on ${row.expiresAt} at 12:00 AM`
+                : `Expires on ${row.expiresAt} at 12:00 AM`
+            }
+          >
             <span
               className={`tabular-nums text-[13px] font-normal truncate ${
-                isExpired ? 'text-[#737373] line-through decoration-[#8c8c8c]/70' : 'text-[#8c8c8c]'
+                isExpired
+                  ? "text-[#737373] line-through decoration-[#8c8c8c]/70"
+                  : "text-[#8c8c8c]"
               }`}
             >
               {row.expiresAt}
@@ -517,23 +584,26 @@ export function Keys() {
       },
     },
     {
-      id: 'createdAt',
-      header: 'Created Date',
-      accessorKey: 'createdAt',
+      id: "createdAt",
+      header: "Created Date",
+      accessorKey: "createdAt",
       width: 140,
-      className: 'px-3',
+      className: "px-3",
       cell: (row) => (
-        <span className="tabular-nums text-[13px] text-[#8c8c8c] font-normal truncate whitespace-nowrap block" title={row.createdAt}>
+        <span
+          className="tabular-nums text-[13px] text-[#8c8c8c] font-normal truncate whitespace-nowrap block"
+          title={row.createdAt}
+        >
           {row.createdAt}
         </span>
       ),
     },
     {
-      id: 'actions',
+      id: "actions",
       header: <span className="sr-only">Actions</span>,
       isFlex: true,
-      headerClassName: 'justify-end pr-4 text-right',
-      className: 'pl-3 pr-4 justify-end',
+      headerClassName: "justify-end pr-4 text-right",
+      className: "pl-3 pr-4 justify-end",
       cell: (row) => (
         <div className="flex items-center justify-end w-full">
           <button
@@ -541,11 +611,14 @@ export function Keys() {
             onClick={() => {
               setSelectedKey(row);
               setEditName(row.name);
-              setEditStatus(row.status === 'Revoked' ? 'Revoked' : 'Active');
-              setEditRole(row.role || (roleOptions.length > 0 ? roleOptions[0].value : ''));
+              setEditStatus(row.status === "Revoked" ? "Revoked" : "Active");
+              setEditRole(
+                row.role ||
+                  (roleOptions.length > 0 ? roleOptions[0].value : ""),
+              );
               setEditRate(row.rateLimit);
               setEditExpiresAt(row.expiresAt);
-              setManageTab('edit');
+              setManageTab("edit");
               setManageOpen(true);
             }}
             className="inline-flex items-center justify-center h-7 px-3 rounded-[6px] text-[13px] font-medium leading-none text-[#8c8c8c] hover:text-white bg-transparent hover:bg-[#1a1a1a] border border-[#262626] hover:border-[#383838] transition-colors cursor-pointer shrink-0"
@@ -558,11 +631,18 @@ export function Keys() {
   ];
 
   const activeColumns = useMemo(() => {
-    const visible = columns.filter((col) => col.id === 'actions' || visibleCols[col.id] !== false);
-    const lastDataId = [...visible].reverse().find((c) => c.id !== 'actions')?.id;
+    const visible = columns.filter(
+      (col) => col.id === "actions" || visibleCols[col.id] !== false,
+    );
+    const lastDataId = [...visible]
+      .reverse()
+      .find((c) => c.id !== "actions")?.id;
     return visible.map((col) => ({
       ...col,
-      isResizable: col.id !== 'actions' && col.id !== lastDataId && Boolean(col.isResizable),
+      isResizable:
+        col.id !== "actions" &&
+        col.id !== lastDataId &&
+        Boolean(col.isResizable),
     }));
   }, [columns, visibleCols]);
 
@@ -571,7 +651,9 @@ export function Keys() {
       {/* Top Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-[16px] font-medium text-white tracking-tight">API Keys</h1>
+          <h1 className="text-[16px] font-medium text-white tracking-tight">
+            API Keys
+          </h1>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -583,15 +665,17 @@ export function Keys() {
             title="Refresh API keys"
             className="flex items-center justify-center h-8 w-8 text-[#8c8c8c] hover:text-white rounded-[8px] bg-[#0c0c0c] hover:bg-[#141414] border border-[#262626] hover:border-[#383838] transition-colors cursor-pointer shrink-0"
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin opacity-50' : ''}`} />
+            <RefreshCw
+              className={`w-3.5 h-3.5 ${isRefreshing ? "animate-spin opacity-50" : ""}`}
+            />
           </button>
           <Button
             variant="primary"
             size="sm"
             onClick={() => {
               setCreatedSecret(null);
-              setNewName('');
-              setNewRole(roleOptions.length > 0 ? roleOptions[0].value : '');
+              setNewName("");
+              setNewRole(roleOptions.length > 0 ? roleOptions[0].value : "");
               setNewRateLimit(1000);
               setNewExpiresAt(null);
               setCopiedKey(false);
@@ -621,7 +705,7 @@ export function Keys() {
           {searchQuery && (
             <button
               type="button"
-              onClick={() => setSearchQuery('')}
+              onClick={() => setSearchQuery("")}
               className="flex items-center justify-center w-5 h-5 rounded hover:bg-[#222222] text-[#8c8c8c] hover:text-white transition-colors cursor-pointer shrink-0 font-sans"
               title="Clear search"
             >
@@ -644,7 +728,12 @@ export function Keys() {
                       setFilterRules(appliedFilterRules.map((r) => ({ ...r })));
                     } else if (filterRules.length === 0) {
                       setFilterRules([
-                        { id: '1', field: filterFieldOptions[0].value, operator: 'contains', value: '' },
+                        {
+                          id: "1",
+                          field: filterFieldOptions[0].value,
+                          operator: "contains",
+                          value: "",
+                        },
                       ]);
                     }
                   }
@@ -653,8 +742,8 @@ export function Keys() {
               }}
               className={`flex items-center gap-1.5 h-9 px-3 rounded-[8px] bg-transparent border text-[14px] font-medium transition-colors cursor-pointer shrink-0 font-sans ${
                 showFilters || appliedFilterRules.length > 0
-                  ? 'border-[#444444] text-white bg-[#141414]'
-                  : 'border-[#262626] text-white hover:bg-[#141414] hover:border-[#383838]'
+                  ? "border-[#444444] text-white bg-[#141414]"
+                  : "border-[#262626] text-white hover:bg-[#141414] hover:border-[#383838]"
               }`}
               title="Filter API keys"
             >
@@ -681,14 +770,20 @@ export function Keys() {
                 {/* Header */}
                 <div className="flex items-center justify-between pb-3">
                   <div className="flex items-center gap-2">
-                    <span className="text-[14px] font-medium text-white font-sans">API Key Filters</span>
+                    <span className="text-[14px] font-medium text-white font-sans">
+                      API Key Filters
+                    </span>
                     {filterRules.length >= 2 && (
                       <button
                         type="button"
-                        onClick={() => setMatchMode((prev) => (prev === 'any' ? 'all' : 'any'))}
+                        onClick={() =>
+                          setMatchMode((prev) =>
+                            prev === "any" ? "all" : "any",
+                          )
+                        }
                         className="px-2.5 py-0.5 rounded text-[13px] text-[#cccccc] hover:text-white bg-[#141414] border border-[#2e2e2e] hover:border-[#444444] transition-colors cursor-pointer font-sans"
                       >
-                        Match {matchMode === 'any' ? 'any (OR)' : 'all (AND)'}
+                        Match {matchMode === "any" ? "any (OR)" : "all (AND)"}
                       </button>
                     )}
                   </div>
@@ -703,13 +798,17 @@ export function Keys() {
                 </div>
 
                 {/* Rules List */}
-                <div className={`space-y-2.5 ${filterRules.length > 3 ? 'max-h-[320px] overflow-y-auto pr-0.5' : ''}`}>
+                <div
+                  className={`space-y-2.5 ${filterRules.length > 3 ? "max-h-[320px] overflow-y-auto pr-0.5" : ""}`}
+                >
                   {filterRules.map((rule) => (
                     <div key={rule.id} className="flex items-center gap-2">
                       <CustomSelect
                         value={rule.field}
                         options={filterFieldOptions}
-                        onChange={(val) => handleUpdateRule(rule.id, { field: val })}
+                        onChange={(val) =>
+                          handleUpdateRule(rule.id, { field: val })
+                        }
                         className="w-36 shrink-0"
                         menuWidth="w-44"
                       />
@@ -717,11 +816,16 @@ export function Keys() {
                       <CustomSelect
                         value={rule.operator}
                         options={[
-                          { value: 'contains', label: 'contains' },
-                          { value: 'equals', label: 'equals' },
-                          { value: 'starts_with', label: 'starts with' },
+                          { value: "contains", label: "contains" },
+                          { value: "equals", label: "equals" },
+                          { value: "starts_with", label: "starts with" },
                         ]}
-                        onChange={(val) => handleUpdateRule(rule.id, { operator: val as 'contains' | 'equals' | 'starts_with' })}
+                        onChange={(val) =>
+                          handleUpdateRule(rule.id, {
+                            operator: val as
+                              "contains" | "equals" | "starts_with",
+                          })
+                        }
                         className="w-32 sm:w-36 shrink-0"
                         menuWidth="w-44"
                       />
@@ -729,9 +833,11 @@ export function Keys() {
                       <input
                         type="text"
                         value={rule.value}
-                        onChange={(e) => handleUpdateRule(rule.id, { value: e.target.value })}
+                        onChange={(e) =>
+                          handleUpdateRule(rule.id, { value: e.target.value })
+                        }
                         onKeyDown={(e) => {
-                          if (e.key === 'Enter') handleApplyFilters();
+                          if (e.key === "Enter") handleApplyFilters();
                         }}
                         placeholder="Filter value..."
                         className="flex-1 min-w-0 h-9 px-3 rounded-[8px] bg-[#141414] border border-[#262626] hover:border-[#383838] focus:border-[#2f80ed] text-[14px] text-white placeholder-[#555555] outline-none transition-colors font-sans"
@@ -743,7 +849,13 @@ export function Keys() {
                         className="w-8 h-8 flex items-center justify-center text-[#777777] hover:text-white cursor-pointer transition-colors shrink-0"
                         title="Delete filter rule"
                       >
-                        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="currentColor" viewBox="0 0 256 256">
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          width="15"
+                          height="15"
+                          fill="currentColor"
+                          viewBox="0 0 256 256"
+                        >
                           <path d="M216,48H176V40a24,24,0,0,0-24-24H104A24,24,0,0,0,80,40v8H40a8,8,0,0,0,0,16h8V208a16,16,0,0,0,16,16H192a16,16,0,0,0,16-16V64h8a8,8,0,0,0,0-16ZM96,40a8,8,0,0,1,8-8h48a8,8,0,0,1,8,8v8H96Zm96,168H64V64H192ZM112,104v64a8,8,0,0,1-16,0V104a8,8,0,0,1,16,0Zm48,0v64a8,8,0,0,1-16,0V104a8,8,0,0,1,16,0Z" />
                         </svg>
                       </button>
@@ -761,7 +873,9 @@ export function Keys() {
                     <span>+ Add filter</span>
                   </button>
                   <div className="flex items-center gap-3">
-                    <span className="text-[12px] text-[#666666] font-sans">Press Enter to apply</span>
+                    <span className="text-[12px] text-[#666666] font-sans">
+                      Press Enter to apply
+                    </span>
                     {appliedFilterRules.length > 0 && (
                       <button
                         type="button"
@@ -776,8 +890,14 @@ export function Keys() {
                       onClick={handleApplyFilters}
                       className="group relative flex shrink-0 items-center justify-center h-8 px-3.5 rounded-[8px] font-medium text-white shadow-xs outline-none cursor-pointer disabled:opacity-50 overflow-hidden ring-1 ring-[#1d4ed8] bg-[#2563eb] font-sans"
                     >
-                      <span aria-hidden="true" className="pointer-events-none absolute inset-0 rounded-[inherit] bg-gradient-to-b from-[#3b82f6] to-[#2563eb] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2)]" />
-                      <span aria-hidden="true" className="pointer-events-none absolute inset-0 rounded-[inherit] bg-black opacity-0 group-hover:opacity-15 transition-opacity duration-200" />
+                      <span
+                        aria-hidden="true"
+                        className="pointer-events-none absolute inset-0 rounded-[inherit] bg-gradient-to-b from-[#3b82f6] to-[#2563eb] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2)]"
+                      />
+                      <span
+                        aria-hidden="true"
+                        className="pointer-events-none absolute inset-0 rounded-[inherit] bg-black opacity-0 group-hover:opacity-15 transition-opacity duration-200"
+                      />
                       <span className="relative flex items-center gap-1.5 text-[14px] font-sans">
                         Apply filters
                       </span>
@@ -798,12 +918,19 @@ export function Keys() {
               }}
               className={`flex items-center gap-1.5 h-9 px-3 rounded-[8px] bg-transparent border text-[14px] font-medium transition-colors cursor-pointer shrink-0 font-sans ${
                 showDisplayOptions
-                  ? 'border-[#444444] text-white bg-[#141414]'
-                  : 'border-[#262626] text-white hover:bg-[#141414] hover:border-[#383838]'
+                  ? "border-[#444444] text-white bg-[#141414]"
+                  : "border-[#262626] text-white hover:bg-[#141414] hover:border-[#383838]"
               }`}
               title="Toggle visible table columns"
             >
-              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 256 256" className="text-[#8c8c8c] shrink-0">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="14"
+                height="14"
+                fill="currentColor"
+                viewBox="0 0 256 256"
+                className="text-[#8c8c8c] shrink-0"
+              >
                 <path d="M222.87,74.56,134.87,23.75a16,16,0,0,0-15.74,0L31.13,74.56A16,16,0,0,0,23.26,88.4v101.6a16,16,0,0,0,7.87,13.84l88,50.81a16,16,0,0,0,15.74,0l88-50.81a16,16,0,0,0,7.87-13.84V88.4A16,16,0,0,0,222.87,74.56ZM127,160a32,32,0,1,1,32-32A32,32,0,0,1,127,160Z" />
               </svg>
               <span>Display options</span>
@@ -820,7 +947,13 @@ export function Keys() {
                       onClick={() => toggleColVisibility(col.id)}
                       className="w-full flex items-center justify-between px-3 py-2 rounded-[6px] text-[14px] text-[#cccccc] hover:text-white hover:bg-[#141414] transition-colors cursor-pointer font-sans"
                     >
-                      <span className={isVisible ? 'text-white font-medium' : 'text-[#8c8c8c]'}>
+                      <span
+                        className={
+                          isVisible
+                            ? "text-white font-medium"
+                            : "text-[#8c8c8c]"
+                        }
+                      >
                         {col.label}
                       </span>
                       {isVisible && (
@@ -885,7 +1018,8 @@ export function Keys() {
                   Key Generated Successfully
                 </span>
                 <p className="text-[12px] text-[#cccccc] leading-relaxed">
-                  Store this secret securely now. Axiom uses irreversible BLAKE3 hashing and cannot recover this plaintext value later.
+                  Store this secret securely now. Axiom uses irreversible BLAKE3
+                  hashing and cannot recover this plaintext value later.
                 </p>
                 <div className="flex items-center gap-2 pt-1">
                   <input
@@ -900,7 +1034,11 @@ export function Keys() {
                     className="h-9 px-2.5 rounded-md border border-[#262626] bg-[#141414] hover:bg-[#1c1c1c] text-[#8c8c8c] hover:text-white text-[12px] flex items-center justify-center cursor-pointer transition-colors"
                     title={showCreatedSecret ? "Hide secret" : "Show secret"}
                   >
-                    {showCreatedSecret ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    {showCreatedSecret ? (
+                      <EyeOff className="w-4 h-4" />
+                    ) : (
+                      <Eye className="w-4 h-4" />
+                    )}
                   </button>
                   <Button
                     variant="secondary"
@@ -915,8 +1053,12 @@ export function Keys() {
                       }
                     }}
                   >
-                    {copiedKey ? <Check className="w-3.5 h-3.5 text-[#30a46c]" /> : <Copy className="w-3.5 h-3.5" />}
-                    <span>{copiedKey ? 'Copied' : 'Copy'}</span>
+                    {copiedKey ? (
+                      <Check className="w-3.5 h-3.5 text-[#30a46c]" />
+                    ) : (
+                      <Copy className="w-3.5 h-3.5" />
+                    )}
+                    <span>{copiedKey ? "Copied" : "Copy"}</span>
                   </Button>
                 </div>
               </div>
@@ -924,8 +1066,13 @@ export function Keys() {
           ) : (
             <div className="space-y-4">
               <div>
-                <h3 className="text-[16px] font-medium text-white tracking-tight">Key Configuration</h3>
-                <p className="text-[13px] text-[#8c8c8c] mt-0.5">Provide key identifier, assigned RBAC permissions, and usage limits.</p>
+                <h3 className="text-[16px] font-medium text-white tracking-tight">
+                  Key Configuration
+                </h3>
+                <p className="text-[13px] text-[#8c8c8c] mt-0.5">
+                  Provide key identifier, assigned RBAC permissions, and usage
+                  limits.
+                </p>
               </div>
 
               {/* 1. Name */}
@@ -936,12 +1083,16 @@ export function Keys() {
                 <input
                   type="text"
                   value={newName}
-                  onChange={(e) => setNewName(e.target.value.toLowerCase().replace(/\s+/g, '_'))}
+                  onChange={(e) =>
+                    setNewName(
+                      e.target.value.toLowerCase().replace(/\s+/g, "_"),
+                    )
+                  }
                   placeholder="e.g. payment_service_prod"
                   className={`h-9 w-full rounded-[6px] border px-3 text-[14px] text-white focus:outline-none font-mono lowercase transition-colors ${
                     newName.trim().length > 0 && !keyNameValidation.valid
-                      ? 'border-[#e5484d] bg-[#1a0f0f] focus:border-[#e5484d] focus:ring-1 focus:ring-[#e5484d]/40'
-                      : 'border-[#262626] bg-[#121212] focus:border-[#3b82f6]'
+                      ? "border-[#e5484d] bg-[#1a0f0f] focus:border-[#e5484d] focus:ring-1 focus:ring-[#e5484d]/40"
+                      : "border-[#262626] bg-[#121212] focus:border-[#3b82f6]"
                   }`}
                 />
                 {newName.trim().length > 0 && !keyNameValidation.valid ? (
@@ -951,7 +1102,11 @@ export function Keys() {
                   </div>
                 ) : (
                   <p className="mt-1.5 text-[12px] text-[#737373]">
-                    Lowercase alphanumeric with hyphens or underscores (e.g. <span className="font-mono text-[#a3a3a3]">payment_service_prod</span>).
+                    Lowercase alphanumeric with hyphens or underscores (e.g.{" "}
+                    <span className="font-mono text-[#a3a3a3]">
+                      payment_service_prod
+                    </span>
+                    ).
                   </p>
                 )}
               </div>
@@ -970,14 +1125,17 @@ export function Keys() {
                 />
                 {roleOptions.length === 0 && (
                   <p className="text-[12px] text-[#e5484d] mt-1.5">
-                    No custom RBAC roles have been created yet. You must create a role in the Roles tab first.
+                    No custom RBAC roles have been created yet. You must create
+                    a role in the Roles tab first.
                   </p>
                 )}
               </div>
 
               {/* 3. Rate Limit */}
               <div>
-                <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">Rate Limit Threshold (req/min)</label>
+                <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">
+                  Rate Limit Threshold (req/min)
+                </label>
                 <input
                   type="number"
                   value={newRateLimit}
@@ -985,20 +1143,24 @@ export function Keys() {
                   className="h-9 w-full rounded-[6px] border border-[#262626] bg-[#121212] px-3 text-[14px] text-white focus:outline-none focus:border-[#3b82f6] tabular-nums"
                 />
                 <p className="mt-1.5 text-[12px] text-[#737373]">
-                  Maximum allowed API requests per minute. Set to 0 for unlimited.
+                  Maximum allowed API requests per minute. Set to 0 for
+                  unlimited.
                 </p>
               </div>
 
               {/* 4. Expiry Date */}
               <div>
-                <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">Expiry Date</label>
+                <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">
+                  Expiry Date
+                </label>
                 <DatePicker
                   value={newExpiresAt}
                   onChange={(val) => setNewExpiresAt(val)}
                   placeholder="No expiry (Never)"
                 />
                 <p className="mt-1.5 text-[12px] text-[#737373]">
-                  Optional. Leave empty or choose Never to keep key valid indefinitely.
+                  Optional. Leave empty or choose Never to keep key valid
+                  indefinitely.
                 </p>
               </div>
             </div>
@@ -1012,8 +1174,14 @@ export function Keys() {
               onClick={closeCreate}
               className="group relative flex shrink-0 items-center justify-center h-9 px-4 rounded-[8px] font-medium text-white shadow-xs outline-none cursor-pointer overflow-hidden ring-1 ring-[#1d4ed8] bg-[#2563eb] font-sans text-[14px]"
             >
-              <span aria-hidden="true" className="pointer-events-none absolute inset-0 rounded-[inherit] bg-gradient-to-b from-[#3b82f6] to-[#2563eb] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2)]" />
-              <span aria-hidden="true" className="pointer-events-none absolute inset-0 rounded-[inherit] bg-black opacity-0 group-hover:opacity-15 transition-opacity duration-200" />
+              <span
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-0 rounded-[inherit] bg-gradient-to-b from-[#3b82f6] to-[#2563eb] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2)]"
+              />
+              <span
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-0 rounded-[inherit] bg-black opacity-0 group-hover:opacity-15 transition-opacity duration-200"
+              />
               <span className="relative flex items-center gap-1.5 font-sans">
                 Done
               </span>
@@ -1030,11 +1198,19 @@ export function Keys() {
               <button
                 type="button"
                 onClick={handleCreateKey}
-                disabled={!newName.trim() || !keyNameValidation.valid || !newRole}
+                disabled={
+                  !newName.trim() || !keyNameValidation.valid || !newRole
+                }
                 className="group relative flex shrink-0 items-center justify-center h-9 px-4 rounded-[8px] font-medium text-white shadow-xs outline-none cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed overflow-hidden ring-1 ring-[#1d4ed8] bg-[#2563eb] font-sans text-[14px]"
               >
-                <span aria-hidden="true" className="pointer-events-none absolute inset-0 rounded-[inherit] bg-gradient-to-b from-[#3b82f6] to-[#2563eb] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2)]" />
-                <span aria-hidden="true" className="pointer-events-none absolute inset-0 rounded-[inherit] bg-black opacity-0 group-hover:opacity-15 transition-opacity duration-200" />
+                <span
+                  aria-hidden="true"
+                  className="pointer-events-none absolute inset-0 rounded-[inherit] bg-gradient-to-b from-[#3b82f6] to-[#2563eb] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2)]"
+                />
+                <span
+                  aria-hidden="true"
+                  className="pointer-events-none absolute inset-0 rounded-[inherit] bg-black opacity-0 group-hover:opacity-15 transition-opacity duration-200"
+                />
                 <span className="relative flex items-center gap-1.5 font-sans">
                   Generate Secret
                 </span>
@@ -1048,41 +1224,43 @@ export function Keys() {
       <SlideOver
         isOpen={manageOpen}
         onClose={requestCloseManage}
-        title={selectedKey?.name ?? ''}
-        subtitle={selectedKey ? `Role: ${selectedKey.role} · ${selectedKey.status}` : ''}
+        title={selectedKey?.name ?? ""}
+        subtitle={
+          selectedKey ? `Role: ${selectedKey.role} · ${selectedKey.status}` : ""
+        }
       >
         {/* Tab bar (Segmented control matching dashboard) */}
         <div className="px-5 py-3 border-b border-[#222222] bg-[#0e0e0e]">
           <div className="inline-flex items-center p-0.5 rounded-[8px] bg-transparent border border-[#262626]">
             <button
               type="button"
-              onClick={() => setManageTab('edit')}
+              onClick={() => setManageTab("edit")}
               className={`flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[14px] font-medium transition-colors duration-75 cursor-pointer font-sans outline-none focus:outline-none border ${
-                manageTab === 'edit'
-                  ? 'bg-[#161616] text-white border-[#333333]'
-                  : 'text-[#8c8c8c] hover:text-white hover:bg-[#141414] border-transparent'
+                manageTab === "edit"
+                  ? "bg-[#161616] text-white border-[#333333]"
+                  : "text-[#8c8c8c] hover:text-white hover:bg-[#141414] border-transparent"
               }`}
             >
               <span>Settings</span>
             </button>
             <button
               type="button"
-              onClick={() => setManageTab('rotate')}
+              onClick={() => setManageTab("rotate")}
               className={`flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[14px] font-medium transition-colors duration-75 cursor-pointer font-sans outline-none focus:outline-none border ${
-                manageTab === 'rotate'
-                  ? 'bg-[#161616] text-white border-[#333333]'
-                  : 'text-[#8c8c8c] hover:text-white hover:bg-[#141414] border-transparent'
+                manageTab === "rotate"
+                  ? "bg-[#161616] text-white border-[#333333]"
+                  : "text-[#8c8c8c] hover:text-white hover:bg-[#141414] border-transparent"
               }`}
             >
               <span>Rotate Secret</span>
             </button>
             <button
               type="button"
-              onClick={() => setManageTab('danger')}
+              onClick={() => setManageTab("danger")}
               className={`flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[14px] font-medium transition-colors duration-75 cursor-pointer font-sans outline-none focus:outline-none border ${
-                manageTab === 'danger'
-                  ? 'bg-[#161616] text-white border-[#333333]'
-                  : 'text-[#8c8c8c] hover:text-white hover:bg-[#141414] border-transparent'
+                manageTab === "danger"
+                  ? "bg-[#161616] text-white border-[#333333]"
+                  : "text-[#8c8c8c] hover:text-white hover:bg-[#141414] border-transparent"
               }`}
             >
               <span>Danger</span>
@@ -1090,16 +1268,23 @@ export function Keys() {
           </div>
         </div>
 
-        {manageTab === 'edit' && (
+        {manageTab === "edit" && (
           <div className="flex-1 p-5 overflow-y-auto space-y-4">
             <div>
-              <h3 className="text-[16px] font-medium text-white tracking-tight">Key Settings</h3>
-              <p className="text-[13px] text-[#8c8c8c] mt-0.5">Update key lifecycle status, assigned role, rate threshold, and expiry.</p>
+              <h3 className="text-[16px] font-medium text-white tracking-tight">
+                Key Settings
+              </h3>
+              <p className="text-[13px] text-[#8c8c8c] mt-0.5">
+                Update key lifecycle status, assigned role, rate threshold, and
+                expiry.
+              </p>
             </div>
 
             {/* 1. Status */}
             <div>
-              <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">Status</label>
+              <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">
+                Status
+              </label>
               <CustomSelect
                 value={editStatus}
                 options={STATUS_OPTIONS}
@@ -1116,12 +1301,14 @@ export function Keys() {
               <input
                 type="text"
                 value={editName}
-                onChange={(e) => setEditName(e.target.value.toLowerCase().replace(/\s+/g, '_'))}
+                onChange={(e) =>
+                  setEditName(e.target.value.toLowerCase().replace(/\s+/g, "_"))
+                }
                 placeholder="e.g. payment_service_prod"
                 className={`h-9 w-full rounded-[6px] border px-3 text-[14px] text-white focus:outline-none font-mono lowercase transition-colors ${
                   editName.trim().length > 0 && !editNameValidation.valid
-                    ? 'border-[#e5484d] bg-[#1a0f0f] focus:border-[#e5484d] focus:ring-1 focus:ring-[#e5484d]/40'
-                    : 'border-[#262626] bg-[#121212] focus:border-[#3b82f6]'
+                    ? "border-[#e5484d] bg-[#1a0f0f] focus:border-[#e5484d] focus:ring-1 focus:ring-[#e5484d]/40"
+                    : "border-[#262626] bg-[#121212] focus:border-[#3b82f6]"
                 }`}
               />
               {editName.trim().length > 0 && !editNameValidation.valid ? (
@@ -1152,7 +1339,9 @@ export function Keys() {
 
             {/* 4. Rate Limit */}
             <div>
-              <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">Rate Limit Threshold (req/min)</label>
+              <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">
+                Rate Limit Threshold (req/min)
+              </label>
               <input
                 type="number"
                 value={editRate}
@@ -1166,22 +1355,27 @@ export function Keys() {
 
             {/* 5. Expiry Date */}
             <div>
-              <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">Expiry Date</label>
+              <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">
+                Expiry Date
+              </label>
               <DatePicker
                 value={editExpiresAt}
                 onChange={(val) => setEditExpiresAt(val)}
                 placeholder="No expiry (Never)"
               />
               <p className="mt-1.5 text-[12px] text-[#737373]">
-                Optional. Leave empty or choose Never to keep key valid indefinitely.
+                Optional. Leave empty or choose Never to keep key valid
+                indefinitely.
               </p>
             </div>
 
             {/* 6. Created Date */}
             <div>
-              <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">Created Date</label>
+              <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">
+                Created Date
+              </label>
               <div className="h-9 w-full rounded-[6px] border border-[#262626]/60 bg-[#0e0e0e] px-3 flex items-center text-[13px] text-[#8c8c8c] tabular-nums">
-                {selectedKey?.createdAt ?? '—'}
+                {selectedKey?.createdAt ?? "—"}
               </div>
               <p className="text-[12px] text-[#8c8c8c] mt-1">
                 Creation timestamp is immutable.
@@ -1190,10 +1384,12 @@ export function Keys() {
           </div>
         )}
 
-        {manageTab === 'rotate' && (
+        {manageTab === "rotate" && (
           <div className="flex-1 p-5 overflow-y-auto space-y-5 font-sans">
             <div>
-              <h3 className="text-[16px] font-medium text-white tracking-tight">Rotate Key Secret</h3>
+              <h3 className="text-[16px] font-medium text-white tracking-tight">
+                Rotate Key Secret
+              </h3>
               <p className="text-[13px] text-[#8c8c8c] mt-0.5">
                 Generate a new cryptographic secret for this API key.
               </p>
@@ -1216,18 +1412,27 @@ export function Keys() {
                 <span>Immediate Invalidation</span>
               </div>
               <p className="text-[12px] text-[#d4af37] leading-relaxed">
-                Rotating this secret immediately invalidates the current credential. Any active clients or services using the previous token will receive <code className="text-white bg-black/40 px-1 py-0.5 rounded font-mono text-[11px]">401 Unauthorized</code> until updated.
+                Rotating this secret immediately invalidates the current
+                credential. Any active clients or services using the previous
+                token will receive{" "}
+                <code className="text-white bg-black/40 px-1 py-0.5 rounded font-mono text-[11px]">
+                  401 Unauthorized
+                </code>{" "}
+                until updated.
               </p>
             </div>
 
             {/* Current Active Secret */}
             <div className="space-y-2">
-              <label className="block text-[13px] font-medium text-[#cccccc]">Current Key</label>
+              <label className="block text-[13px] font-medium text-[#cccccc]">
+                Current Key
+              </label>
               <div className="rounded-[8px] border border-[#262626] bg-[#121212] p-3.5 flex items-center justify-between gap-3">
                 <div className="space-y-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <span className="font-mono text-[13px] text-white font-medium truncate">
-                      {selectedKey?.currentSecretMasked || 'axk_••••••••••••••••'}
+                      {selectedKey?.currentSecretMasked ||
+                        "axk_••••••••••••••••"}
                     </span>
                     <span className="text-[11px] font-medium text-[#30a46c] bg-[#30a46c]/10 border border-[#30a46c]/20 px-1.5 py-0.5 rounded flex items-center gap-1 shrink-0">
                       <span className="size-1.5 rounded-full bg-[#30a46c]" />
@@ -1248,19 +1453,27 @@ export function Keys() {
                 disabled={isRotating}
                 className="h-9 px-4 rounded-[6px] text-[13px] font-medium border border-[#262626] bg-[#161616] text-white hover:bg-[#202020] hover:border-[#383838] disabled:opacity-50 disabled:cursor-not-allowed transition-colors inline-flex items-center gap-2 cursor-pointer shadow-xs"
               >
-                <RefreshCw className={`w-3.5 h-3.5 text-[#3b82f6] ${isRotating ? 'animate-spin' : ''}`} />
-                <span>{isRotating ? 'Rotating...' : 'Rotate Secret'}</span>
+                <RefreshCw
+                  className={`w-3.5 h-3.5 text-[#3b82f6] ${isRotating ? "animate-spin" : ""}`}
+                />
+                <span>{isRotating ? "Rotating..." : "Rotate Secret"}</span>
               </button>
             </div>
           </div>
         )}
 
-        {manageTab === 'danger' && (
+        {manageTab === "danger" && (
           <div className="flex-1 p-5 overflow-y-auto">
             <div className="rounded-[8px] border border-[#3a1515] bg-[#0e0404] p-4">
-              <div className="text-[16px] font-medium text-[#e5484d] tracking-tight mb-1">Revoke API Key</div>
+              <div className="text-[16px] font-medium text-[#e5484d] tracking-tight mb-1">
+                Revoke API Key
+              </div>
               <div className="text-[13px] text-[#8c8c8c] leading-relaxed mb-4">
-                Permanently revoke <span className="text-white font-medium">{selectedKey?.name}</span>. All requests using this key will immediately fail.
+                Permanently revoke{" "}
+                <span className="text-white font-medium">
+                  {selectedKey?.name}
+                </span>
+                . All requests using this key will immediately fail.
               </div>
               <button
                 type="button"
@@ -1284,7 +1497,7 @@ export function Keys() {
         )}
 
         {/* Footer */}
-        {manageTab === 'edit' && (
+        {manageTab === "edit" && (
           <div className="p-4 border-t border-[#222222] bg-[#0e0e0e] flex items-center justify-end gap-2.5 font-sans">
             <button
               type="button"
@@ -1299,8 +1512,14 @@ export function Keys() {
               onClick={handleSaveEdit}
               className="group relative flex shrink-0 items-center justify-center h-9 px-4 rounded-[8px] font-medium text-white shadow-xs outline-none cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed overflow-hidden ring-1 ring-[#1d4ed8] bg-[#2563eb] font-sans text-[14px]"
             >
-              <span aria-hidden="true" className="pointer-events-none absolute inset-0 rounded-[inherit] bg-gradient-to-b from-[#3b82f6] to-[#2563eb] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2)]" />
-              <span aria-hidden="true" className="pointer-events-none absolute inset-0 rounded-[inherit] bg-black opacity-0 group-hover:opacity-15 transition-opacity duration-200" />
+              <span
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-0 rounded-[inherit] bg-gradient-to-b from-[#3b82f6] to-[#2563eb] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2)]"
+              />
+              <span
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-0 rounded-[inherit] bg-black opacity-0 group-hover:opacity-15 transition-opacity duration-200"
+              />
               <span className="relative flex items-center gap-1.5 font-sans">
                 Save
               </span>
@@ -1319,7 +1538,7 @@ export function Keys() {
               await api.deleteKey(selectedKey.name);
               await loadKeys();
             } catch (err) {
-              console.error('Failed to revoke API key:', err);
+              console.error("Failed to revoke API key:", err);
             }
           }
           setConfirmRevokeOpen(false);
@@ -1328,9 +1547,10 @@ export function Keys() {
         title="Revoke API Key"
         description={
           <>
-            Permanently revoke API key{' '}
+            Permanently revoke API key{" "}
             <span className="text-white font-medium">{selectedKey?.name}</span>?
-            All client applications and services using this secret will immediately fail authorization.
+            All client applications and services using this secret will
+            immediately fail authorization.
           </>
         }
         confirmLabel="Revoke Key"
@@ -1345,9 +1565,10 @@ export function Keys() {
         title="Rotate API Key Secret"
         description={
           <>
-            Are you sure you want to rotate the secret for key{' '}
+            Are you sure you want to rotate the secret for key{" "}
             <span className="text-white font-medium">{selectedKey?.name}</span>?
-            The current secret will be immediately invalidated and cannot be recovered.
+            The current secret will be immediately invalidated and cannot be
+            recovered.
           </>
         }
         confirmLabel={isRotating ? "Rotating..." : "Rotate Secret"}
@@ -1386,7 +1607,8 @@ export function Keys() {
               </div>
 
               <div className="text-[13px] text-[#8c8c8c] leading-relaxed font-sans">
-                Save your new API token now. The previous secret has been invalidated and cannot be recovered.
+                Save your new API token now. The previous secret has been
+                invalidated and cannot be recovered.
               </div>
 
               <div className="flex items-center gap-2">
@@ -1402,7 +1624,11 @@ export function Keys() {
                   className="h-9 px-2.5 rounded-[6px] border border-[#262626] bg-[#141414] hover:bg-[#1c1c1c] text-[#8c8c8c] hover:text-white text-[13px] flex items-center justify-center cursor-pointer transition-colors shrink-0"
                   title={showRotatedSecret ? "Hide secret" : "Show secret"}
                 >
-                  {showRotatedSecret ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  {showRotatedSecret ? (
+                    <EyeOff className="w-4 h-4" />
+                  ) : (
+                    <Eye className="w-4 h-4" />
+                  )}
                 </button>
                 <button
                   type="button"
@@ -1417,8 +1643,12 @@ export function Keys() {
                   }}
                   className="h-9 px-3 rounded-[6px] border border-[#262626] bg-[#141414] hover:bg-[#1c1c1c] text-[#cccccc] hover:text-white text-[13px] font-medium transition-colors flex items-center gap-1.5 cursor-pointer shrink-0"
                 >
-                  {copiedRotatedKey ? <Check className="w-3.5 h-3.5 text-[#30a46c]" /> : <Copy className="w-3.5 h-3.5" />}
-                  <span>{copiedRotatedKey ? 'Copied' : 'Copy'}</span>
+                  {copiedRotatedKey ? (
+                    <Check className="w-3.5 h-3.5 text-[#30a46c]" />
+                  ) : (
+                    <Copy className="w-3.5 h-3.5" />
+                  )}
+                  <span>{copiedRotatedKey ? "Copied" : "Copy"}</span>
                 </button>
               </div>
             </div>
@@ -1472,4 +1702,3 @@ export function Keys() {
     </div>
   );
 }
-

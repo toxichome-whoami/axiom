@@ -3,70 +3,120 @@ name: Release
 on:
   push:
     tags:
-      - 'v*'
+      - "v*"
   workflow_dispatch:
     inputs:
       tag_name:
-        description: 'Tag name to release (e.g. v1.0.0)'
+        description: "Existing tag to release (e.g. v1.0.0)"
         required: true
 
+# Never run two releases for the same tag at once; don't cancel one mid-publish.
+concurrency:
+  group: release-${{ github.event.inputs.tag_name || github.ref_name }}
+  cancel-in-progress: false
+
+# Least privilege by default; the publish job opts into more.
 permissions:
-  contents: write
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  BIN_NAME: axiom
 
 jobs:
+  # Resolve and validate the tag once, instead of repeating it in every step.
+  prepare:
+    name: Prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+      prerelease: ${{ steps.meta.outputs.prerelease }}
+    steps:
+      - name: Resolve tag
+        id: meta
+        shell: bash
+        env:
+          # Passed via env (not inlined into the script) to avoid script injection.
+          INPUT_TAG: ${{ inputs.tag_name }}
+          REF_NAME: ${{ github.ref_name }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            TAG="$INPUT_TAG"
+          else
+            TAG="$REF_NAME"
+          fi
+
+          if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::'$TAG' is not a valid version tag (expected vMAJOR.MINOR.PATCH[-prerelease])"
+            exit 1
+          fi
+
+          # v1.2.3-rc.1, v1.2.3-beta, etc. => prerelease
+          if [[ "$TAG" == *-* ]]; then
+            PRE=true
+          else
+            PRE=false
+          fi
+
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$PRE" >> "$GITHUB_OUTPUT"
+
   build-release:
     name: Build (${{ matrix.platform }})
+    needs: prepare
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
         include:
-          # Linux amd64
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             platform: linux_amd64
             bin: axiom
             archive: tar.gz
 
-          # Linux arm64
           - os: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
             platform: linux_arm64
             bin: axiom
             archive: tar.gz
 
-          # Darwin amd64 (macOS Intel)
+          # macOS Intel (cross-compiled from the Apple Silicon runner)
           - os: macos-14
             target: x86_64-apple-darwin
             platform: darwin_amd64
             bin: axiom
             archive: tar.gz
 
-          # Darwin arm64 (macOS Apple Silicon)
+          # macOS Apple Silicon
           - os: macos-14
             target: aarch64-apple-darwin
             platform: darwin_arm64
             bin: axiom
             archive: tar.gz
 
-          # Windows amd64
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             platform: windows_amd64
             bin: axiom.exe
             archive: zip
 
-          # Windows arm64
           - os: windows-latest
             target: aarch64-pc-windows-msvc
             platform: windows_arm64
             bin: axiom.exe
             archive: zip
 
-    runs-on: ${{ matrix.os }}
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          # On manual runs, build the requested tag, not the default branch.
+          ref: ${{ needs.prepare.outputs.tag }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -80,7 +130,7 @@ jobs:
         env:
           VITE_RELEASE: "true"
         run: |
-          npm install
+          npm ci
           npm run build:release
 
       - name: Setup Rust
@@ -88,60 +138,61 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
-      - name: Build Release Binary
-        run: cargo build --release --target ${{ matrix.target }}
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
 
-      - name: Package (Linux / macOS)
-        if: matrix.archive == 'tar.gz'
+      # --locked: fail if Cargo.lock is out of date, so releases are reproducible.
+      # -p axiom: target only the production binary crate, avoiding non-target tests/benchmarks during cross-compilation.
+      - name: Build release binary
+        run: cargo build --release --locked -p axiom --target ${{ matrix.target }}
+
+      # One packaging step for every OS (Git Bash is available on Windows runners).
+      - name: Package
         shell: bash
+        env:
+          TAG: ${{ needs.prepare.outputs.tag }}
+          PLATFORM: ${{ matrix.platform }}
+          TARGET: ${{ matrix.target }}
+          BIN: ${{ matrix.bin }}
+          ARCHIVE: ${{ matrix.archive }}
         run: |
-          set -e
-          TAG="${{ github.ref_name }}"
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            TAG="${{ inputs.tag_name }}"
-          fi
-          
-          PKG="axiom_${TAG}_${{ matrix.platform }}"
+          set -euo pipefail
+          PKG="${BIN_NAME}_${TAG}_${PLATFORM}"
+
           mkdir -p "staging/${PKG}"
-          
-          cp "target/${{ matrix.target }}/release/${{ matrix.bin }}" "staging/${PKG}/"
-          cp README.md LICENSE "staging/${PKG}/" 2>/dev/null || true
-          
+          cp "target/${TARGET}/release/${BIN}" "staging/${PKG}/"
+          for f in README.md LICENSE; do
+            [ -f "$f" ] && cp "$f" "staging/${PKG}/"
+          done
+
           cd staging
-          tar -czvf "../${PKG}.tar.gz" "${PKG}"
+          if [ "$ARCHIVE" = "zip" ]; then
+            7z a -tzip "../${PKG}.zip" "${PKG}" > /dev/null
+          else
+            tar -czf "../${PKG}.tar.gz" "${PKG}"
+          fi
           cd ..
+          ls -l "${PKG}".*
 
-      - name: Package (Windows)
-        if: matrix.archive == 'zip'
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-          $TAG = "${{ github.ref_name }}"
-          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
-            $TAG = "${{ inputs.tag_name }}"
-          }
-          
-          $PKG = "axiom_${TAG}_${{ matrix.platform }}"
-          New-Item -ItemType Directory -Force -Path "staging/${PKG}" | Out-Null
-          
-          Copy-Item "target/${{ matrix.target }}/release/${{ matrix.bin }}" "staging/${PKG}/"
-          Copy-Item "README.md", "LICENSE" "staging/${PKG}/" -ErrorAction SilentlyContinue
-          
-          tar.exe -a -cf "${PKG}.zip" -C staging "${PKG}"
-
-      - name: Upload Package Artifact
+      - name: Upload package artifact
         uses: actions/upload-artifact@v4
         with:
           name: package-${{ matrix.platform }}
-          path: |
-            axiom_*.tar.gz
-            axiom_*.zip
+          path: ${{ env.BIN_NAME }}_*.${{ matrix.archive }}
+          if-no-files-found: error
           retention-days: 1
 
   publish-release:
     name: Publish Release
-    needs: build-release
+    needs: [prepare, build-release]
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write # create the release and upload assets
+      id-token: write # build provenance attestation
+      attestations: write
     steps:
       - name: Download all package artifacts
         uses: actions/download-artifact@v4
@@ -149,14 +200,30 @@ jobs:
           pattern: package-*
           merge-multiple: true
 
+      - name: Generate checksums
+        run: |
+          set -euo pipefail
+          sha256sum ${{ env.BIN_NAME }}_* > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        continue-on-error: true
+        with:
+          subject-path: |
+            *.tar.gz
+            *.zip
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.tag_name || github.ref_name }}
+          tag_name: ${{ needs.prepare.outputs.tag }}
+          name: ${{ needs.prepare.outputs.tag }}
           files: |
             *.tar.gz
             *.zip
+            SHA256SUMS.txt
+          fail_on_unmatched_files: true
           draft: false
-          prerelease: false
-          generate_release_notes: false
-          body: ""
+          prerelease: ${{ needs.prepare.outputs.prerelease == 'true' }}
+          generate_release_notes: true

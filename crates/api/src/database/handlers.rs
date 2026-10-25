@@ -2123,32 +2123,12 @@ pub async fn add_column(
     })))
 }
 
-#[derive(Debug, serde::Deserialize)]
-pub struct DropColumnParams {
-    pub name: Option<String>,
-}
-
+/// Drops a column from a table using a RESTful path parameter.
+/// CONTRACT:
+///  - Precondition: Valid AuthContext with DDL permission; valid database, table, and column names.
+///  - Sanitizes column name to [a-zA-Z0-9_].
+///  - Side effects: Invalidates cached schema for the table.
 pub async fn drop_column(
-    axum::extract::Path((db_name, table_name)): axum::extract::Path<(String, String)>,
-    axum::extract::Extension(auth): axum::extract::Extension<AuthContext>,
-    axum::extract::Query(query): axum::extract::Query<DropColumnParams>,
-    payload: Option<axum::Json<axiom_core::DropColumnRequest>>,
-) -> Result<axum::Json<serde_json::Value>, AxiomError> {
-    let col_name = query
-        .name
-        .or_else(|| payload.map(|p| p.0.name))
-        .ok_or_else(|| {
-            AxiomError::new(
-                "MISSING_COLUMN_NAME",
-                "Column name must be provided in query ?name= or JSON body",
-                axum::http::StatusCode::BAD_REQUEST,
-            )
-        })?;
-
-    drop_column_internal(&db_name, &table_name, &col_name, &auth).await
-}
-
-pub async fn drop_column_by_path(
     axum::extract::Path((db_name, table_name, column_name)): axum::extract::Path<(
         String,
         String,
@@ -2156,16 +2136,7 @@ pub async fn drop_column_by_path(
     )>,
     axum::extract::Extension(auth): axum::extract::Extension<AuthContext>,
 ) -> Result<axum::Json<serde_json::Value>, AxiomError> {
-    drop_column_internal(&db_name, &table_name, &column_name, &auth).await
-}
-
-async fn drop_column_internal(
-    db_name: &str,
-    table_name: &str,
-    column_name: &str,
-    auth: &AuthContext,
-) -> Result<axum::Json<serde_json::Value>, AxiomError> {
-    PolicyEngine::evaluate(auth, db_name, table_name, "DDL")?;
+    PolicyEngine::evaluate(&auth, &db_name, &table_name, "DDL")?;
 
     let clean: String = column_name
         .chars()
@@ -2175,81 +2146,6 @@ async fn drop_column_internal(
         return Err(AxiomError::new(
             "INVALID_COLUMN_NAME",
             "Column name must contain only alphanumeric characters and underscores",
-            axum::http::StatusCode::BAD_REQUEST,
-        ));
-    }
-
-    let _db_cfg = get_db_config(db_name, auth).await?;
-    let engine = DatabasePoolManager::get_engine(db_name)
-        .await
-        .ok_or_else(|| {
-            AxiomError::new(
-                "DB_NOT_FOUND",
-                "Database not found",
-                axum::http::StatusCode::NOT_FOUND,
-            )
-        })?;
-
-    engine.drop_column(table_name, &clean).await.map_err(|e| {
-        tracing::error!("Drop column failed: {}", e);
-        AxiomError::new(
-            "DROP_COLUMN_FAILED",
-            "Failed to drop column",
-            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-        )
-    })?;
-
-    invalidate_table_schema(db_name, table_name);
-
-    Ok(axum::Json(serde_json::json!({
-        "success": true,
-        "data": {
-            "database": db_name,
-            "table": table_name,
-            "column": clean
-        },
-        "error": serde_json::Value::Null
-    })))
-}
-
-pub async fn modify_column(
-    axum::extract::Path((db_name, table_name)): axum::extract::Path<(String, String)>,
-    axum::extract::Extension(auth): axum::extract::Extension<AuthContext>,
-    axum::Json(payload): axum::Json<axiom_core::ModifyColumnRequest>,
-) -> Result<axum::Json<serde_json::Value>, AxiomError> {
-    PolicyEngine::evaluate(&auth, &db_name, &table_name, "DDL")?;
-
-    let clean_name: String = payload
-        .name
-        .chars()
-        .filter(|c| c.is_alphanumeric() || *c == '_')
-        .collect();
-    if clean_name.is_empty() || clean_name != payload.name {
-        return Err(AxiomError::new(
-            "INVALID_COLUMN_NAME",
-            "Column name must contain only alphanumeric characters and underscores",
-            axum::http::StatusCode::BAD_REQUEST,
-        ));
-    }
-
-    if let Some(ref new_name) = payload.new_name {
-        let clean_new: String = new_name
-            .chars()
-            .filter(|c| c.is_alphanumeric() || *c == '_')
-            .collect();
-        if clean_new.is_empty() || clean_new != *new_name {
-            return Err(AxiomError::new(
-                "INVALID_COLUMN_NAME",
-                "New column name must contain only alphanumeric characters and underscores",
-                axum::http::StatusCode::BAD_REQUEST,
-            ));
-        }
-    }
-
-    if payload.new_name.is_none() && payload.data_type.is_none() {
-        return Err(AxiomError::new(
-            "INVALID_PAYLOAD",
-            "Either new_name or data_type must be specified to modify a column",
             axum::http::StatusCode::BAD_REQUEST,
         ));
     }
@@ -2265,17 +2161,14 @@ pub async fn modify_column(
             )
         })?;
 
-    engine
-        .modify_column(&table_name, &payload)
-        .await
-        .map_err(|e| {
-            tracing::error!("Modify column failed: {}", e);
-            AxiomError::new(
-                "MODIFY_COLUMN_FAILED",
-                "Failed to modify column",
-                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-            )
-        })?;
+    engine.drop_column(&table_name, &clean).await.map_err(|e| {
+        tracing::error!("Drop column failed: {}", e);
+        AxiomError::new(
+            "DROP_COLUMN_FAILED",
+            "Failed to drop column",
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+        )
+    })?;
 
     invalidate_table_schema(&db_name, &table_name);
 
@@ -2284,8 +2177,108 @@ pub async fn modify_column(
         "data": {
             "database": db_name,
             "table": table_name,
-            "column": payload.name,
-            "new_name": payload.new_name,
+            "column": clean
+        },
+        "error": serde_json::Value::Null
+    })))
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct ModifyColumnPayload {
+    #[serde(default)]
+    pub new_name: Option<String>,
+    #[serde(default)]
+    pub data_type: Option<String>,
+}
+
+/// Modifies a column's name or datatype using a canonical RESTful path parameter.
+/// CONTRACT:
+///  - Precondition: Valid AuthContext with DDL permission; valid database, table, and column names.
+///  - Target column is identified by path `:column_name`.
+///  - Sanitizes existing and new column names to [a-zA-Z0-9_].
+///  - Side effects: Invalidates cached schema for the table.
+pub async fn modify_column(
+    axum::extract::Path((db_name, table_name, column_name)): axum::extract::Path<(
+        String,
+        String,
+        String,
+    )>,
+    axum::extract::Extension(auth): axum::extract::Extension<AuthContext>,
+    axum::Json(payload): axum::Json<ModifyColumnPayload>,
+) -> Result<axum::Json<serde_json::Value>, AxiomError> {
+    PolicyEngine::evaluate(&auth, &db_name, &table_name, "DDL")?;
+
+    let clean_name: String = column_name
+        .chars()
+        .filter(|c| c.is_alphanumeric() || *c == '_')
+        .collect();
+    if clean_name.is_empty() || clean_name != column_name {
+        return Err(AxiomError::new(
+            "INVALID_COLUMN_NAME",
+            "Column name must contain only alphanumeric characters and underscores",
+            axum::http::StatusCode::BAD_REQUEST,
+        ));
+    }
+
+    let mut clean_new_opt = None;
+    if let Some(ref new_name) = payload.new_name {
+        let clean_new: String = new_name
+            .chars()
+            .filter(|c| c.is_alphanumeric() || *c == '_')
+            .collect();
+        if clean_new.is_empty() || clean_new != *new_name {
+            return Err(AxiomError::new(
+                "INVALID_COLUMN_NAME",
+                "New column name must contain only alphanumeric characters and underscores",
+                axum::http::StatusCode::BAD_REQUEST,
+            ));
+        }
+        clean_new_opt = Some(clean_new);
+    }
+
+    if clean_new_opt.is_none() && payload.data_type.is_none() {
+        return Err(AxiomError::new(
+            "INVALID_PAYLOAD",
+            "Either new_name or data_type must be specified to modify a column",
+            axum::http::StatusCode::BAD_REQUEST,
+        ));
+    }
+
+    let req = axiom_core::ModifyColumnRequest {
+        name: clean_name.clone(),
+        new_name: clean_new_opt.clone(),
+        data_type: payload.data_type.clone(),
+    };
+
+    let _db_cfg = get_db_config(&db_name, &auth).await?;
+    let engine = DatabasePoolManager::get_engine(&db_name)
+        .await
+        .ok_or_else(|| {
+            AxiomError::new(
+                "DB_NOT_FOUND",
+                "Database not found",
+                axum::http::StatusCode::NOT_FOUND,
+            )
+        })?;
+
+    engine.modify_column(&table_name, &req).await.map_err(|e| {
+        tracing::error!("Modify column failed: {}", e);
+        AxiomError::new(
+            "MODIFY_COLUMN_FAILED",
+            "Failed to modify column",
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+        )
+    })?;
+
+    invalidate_table_schema(&db_name, &table_name);
+
+    Ok(axum::Json(serde_json::json!({
+        "success": true,
+        "data": {
+            "database": db_name,
+            "table": table_name,
+            "column": clean_name,
+            "new_name": clean_new_opt,
             "data_type": payload.data_type
         },
         "error": serde_json::Value::Null
@@ -2540,18 +2533,5 @@ mod tests {
         } else {
             panic!("Expected query");
         }
-    }
-
-    #[test]
-    fn test_drop_column_params_deserialization() {
-        use super::DropColumnParams;
-
-        let json = r#"{"name": "status_code"}"#;
-        let params: DropColumnParams = serde_json::from_str(json).unwrap();
-        assert_eq!(params.name.as_deref(), Some("status_code"));
-
-        let empty_json = "{}";
-        let empty_params: DropColumnParams = serde_json::from_str(empty_json).unwrap();
-        assert!(empty_params.name.is_none());
     }
 }

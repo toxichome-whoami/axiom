@@ -321,6 +321,17 @@ impl CacheEngine {
         }
     }
 
+    /// Resets rate-limiting and penalty counters for a specific IP address in L1 memory.
+    pub fn reset_ip_rate_limit(ip: &str) {
+        L1_CACHE.remove(&format!("rl:ip:{}", ip));
+        L1_CACHE.remove(&format!("penalty:{}", ip));
+    }
+
+    /// Resets all active rate-limiting and penalty counters from L1 memory.
+    pub fn reset_rate_limits() {
+        L1_CACHE.retain(|k, _| !k.starts_with("rl:") && !k.starts_with("penalty:"));
+    }
+
     /// Hard wipe of all entries across L1 and L2 regardless of namespace.
     pub async fn flush_all() {
         L1_CACHE.clear();

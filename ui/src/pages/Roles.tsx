@@ -5,14 +5,18 @@
  * Invariants: Roles enforce granular database/table/operation permissions with BLAKE3 snapshot consistency.
  */
 
-import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { RbacRole } from '../types';
-import { DataTable, Column } from '../components/shared/DataTable';
-import { PermissionTable, DbPermissionRule, isBlobRule } from '../components/shared/PermissionTable';
-import { SlideOver } from '../components/ui/SlideOver';
-import { Button } from '../components/ui/Button';
-import { ConfirmDialog } from '../components/ui/ConfirmDialog';
-import { CustomSelect } from '../components/shared/CustomSelect';
+import React, { useState, useMemo, useRef, useEffect } from "react";
+import { RbacRole } from "../types";
+import { DataTable, Column } from "../components/shared/DataTable";
+import {
+  PermissionTable,
+  DbPermissionRule,
+  isBlobRule,
+} from "../components/shared/PermissionTable";
+import { SlideOver } from "../components/ui/SlideOver";
+import { Button } from "../components/ui/Button";
+import { ConfirmDialog } from "../components/ui/ConfirmDialog";
+import { CustomSelect } from "../components/shared/CustomSelect";
 import {
   Shield,
   Plus,
@@ -24,15 +28,15 @@ import {
   Database,
   Package,
   Sparkles,
-} from 'lucide-react';
-import { api, RoleRecordApi, PermissionRecordApi } from '../api/client';
-import { validateCleanName } from '../utils/validation';
-import { FilterRule, matchesRule } from '../utils/filters';
+} from "lucide-react";
+import { api, RoleRecordApi, PermissionRecordApi } from "../api/client";
+import { validateCleanName } from "../utils/validation";
+import { FilterRule, matchesRule } from "../utils/filters";
 
 export type { FilterRule };
 
 const READONLY_RULES: DbPermissionRule[] = [
-  { database: '', table: '', operations: ['SELECT'], resourceType: 'database' },
+  { database: "", table: "", operations: ["SELECT"], resourceType: "database" },
 ];
 
 const ROLE_PRESETS: {
@@ -42,59 +46,76 @@ const ROLE_PRESETS: {
   rules: DbPermissionRule[];
 }[] = [
   {
-    label: 'DB Read-Only',
-    name: 'db_readonly',
-    description: 'Read-only SELECT access across all relational databases',
-    rules: [{ database: '*', table: '*', operations: ['SELECT'], resourceType: 'database' }],
-  },
-  {
-    label: 'DB Read-Write',
-    name: 'db_readwrite',
-    description: 'Full CRUD mutations across all relational databases',
+    label: "DB Read-Only",
+    name: "db_readonly",
+    description: "Read-only SELECT access across all relational databases",
     rules: [
       {
-        database: '*',
-        table: '*',
-        operations: ['SELECT', 'INSERT', 'UPDATE', 'DELETE'],
-        resourceType: 'database',
+        database: "*",
+        table: "*",
+        operations: ["SELECT"],
+        resourceType: "database",
       },
     ],
   },
   {
-    label: 'Blob Read-Only',
-    name: 'blob_viewer',
-    description: 'Download, range stream, and view objects across all blob namespaces',
-    rules: [{ database: 'blob:*', table: '*', operations: ['READ'], resourceType: 'blob' }],
-  },
-  {
-    label: 'Blob Full Access',
-    name: 'blob_manager',
-    description: 'Upload, multipart, range stream, and delete blob storage objects',
+    label: "DB Read-Write",
+    name: "db_readwrite",
+    description: "Full CRUD mutations across all relational databases",
     rules: [
       {
-        database: 'blob:*',
-        table: '*',
-        operations: ['READ', 'WRITE', 'DELETE'],
-        resourceType: 'blob',
+        database: "*",
+        table: "*",
+        operations: ["SELECT", "INSERT", "UPDATE", "DELETE"],
+        resourceType: "database",
       },
     ],
   },
   {
-    label: 'Universal Admin',
-    name: 'universal_admin',
-    description: 'Full administrative access to both SQL databases and native blob storage',
+    label: "Blob Read-Only",
+    name: "blob_viewer",
+    description:
+      "Download, range stream, and view objects across all blob namespaces",
     rules: [
       {
-        database: '*',
-        table: '*',
-        operations: ['SELECT', 'INSERT', 'UPDATE', 'DELETE'],
-        resourceType: 'database',
+        database: "blob:*",
+        table: "*",
+        operations: ["READ"],
+        resourceType: "blob",
+      },
+    ],
+  },
+  {
+    label: "Blob Full Access",
+    name: "blob_manager",
+    description:
+      "Upload, multipart, range stream, and delete blob storage objects",
+    rules: [
+      {
+        database: "blob:*",
+        table: "*",
+        operations: ["READ", "WRITE", "DELETE"],
+        resourceType: "blob",
+      },
+    ],
+  },
+  {
+    label: "Universal Admin",
+    name: "universal_admin",
+    description:
+      "Full administrative access to both SQL databases and native blob storage",
+    rules: [
+      {
+        database: "*",
+        table: "*",
+        operations: ["SELECT", "INSERT", "UPDATE", "DELETE"],
+        resourceType: "database",
       },
       {
-        database: 'blob:*',
-        table: '*',
-        operations: ['READ', 'WRITE', 'DELETE'],
-        resourceType: 'blob',
+        database: "blob:*",
+        table: "*",
+        operations: ["READ", "WRITE", "DELETE"],
+        resourceType: "blob",
       },
     ],
   },
@@ -107,7 +128,8 @@ function areRulesEqual(a: DbPermissionRule[], b: DbPermissionRule[]): boolean {
     const rB = b[i];
     if (rA.database.trim() !== rB.database.trim()) return false;
     if (rA.table.trim() !== rB.table.trim()) return false;
-    if ((rA.rls_filter?.trim() || '') !== (rB.rls_filter?.trim() || '')) return false;
+    if ((rA.rls_filter?.trim() || "") !== (rB.rls_filter?.trim() || ""))
+      return false;
 
     const opsA = [...rA.operations].sort();
     const opsB = [...rB.operations].sort();
@@ -139,8 +161,8 @@ export function Roles() {
       if (curGen !== fetchGenRef.current) return;
       const loaded: RbacRole[] = res.roles.map((r) => ({
         name: r.name,
-        description: r.description || '',
-        createdAt: new Date(r.created_at * 1000).toISOString().split('T')[0],
+        description: r.description || "",
+        createdAt: new Date(r.created_at * 1000).toISOString().split("T")[0],
         permissions: (r.permissions || []).map((p) => ({
           database: p.database,
           table: p.table_name,
@@ -151,7 +173,9 @@ export function Roles() {
       setRoles(loaded);
     } catch (err: unknown) {
       if (curGen === fetchGenRef.current) {
-        setLoadError(err instanceof Error ? err.message : 'Failed to load RBAC roles');
+        setLoadError(
+          err instanceof Error ? err.message : "Failed to load RBAC roles",
+        );
       }
     } finally {
       if (curGen === fetchGenRef.current) {
@@ -166,16 +190,18 @@ export function Roles() {
   }, []);
 
   // Toolbar & Filtering State
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState("");
   const [showFilters, setShowFilters] = useState(false);
   const filtersRef = useRef<HTMLDivElement | null>(null);
 
   const [showDisplayOptions, setShowDisplayOptions] = useState(false);
   const displayOptionsRef = useRef<HTMLDivElement | null>(null);
 
-  const [matchMode, setMatchMode] = useState<'all' | 'any'>('all');
+  const [matchMode, setMatchMode] = useState<"all" | "any">("all");
   const [filterRules, setFilterRules] = useState<FilterRule[]>([]);
-  const [appliedFilterRules, setAppliedFilterRules] = useState<FilterRule[]>([]);
+  const [appliedFilterRules, setAppliedFilterRules] = useState<FilterRule[]>(
+    [],
+  );
 
   // Visible columns map
   const [visibleCols, setVisibleCols] = useState<Record<string, boolean>>({
@@ -189,15 +215,23 @@ export function Roles() {
     if (!showFilters && !showDisplayOptions) return;
     const handleClickOutside = (e: MouseEvent) => {
       const target = e.target as Node;
-      if (showFilters && filtersRef.current && !filtersRef.current.contains(target)) {
+      if (
+        showFilters &&
+        filtersRef.current &&
+        !filtersRef.current.contains(target)
+      ) {
         setShowFilters(false);
       }
-      if (showDisplayOptions && displayOptionsRef.current && !displayOptionsRef.current.contains(target)) {
+      if (
+        showDisplayOptions &&
+        displayOptionsRef.current &&
+        !displayOptionsRef.current.contains(target)
+      ) {
         setShowDisplayOptions(false);
       }
     };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [showFilters, showDisplayOptions]);
 
   // Reset pagination on query or filter changes (F-06)
@@ -207,22 +241,26 @@ export function Roles() {
 
   // Manage panel state
   const [manageOpen, setManageOpen] = useState(false);
-  const [manageTab, setManageTab] = useState<'edit' | 'danger'>('edit');
+  const [manageTab, setManageTab] = useState<"edit" | "danger">("edit");
   const [selectedRole, setSelectedRole] = useState<RbacRole | null>(null);
-  const [editRoleName, setEditRoleName] = useState('');
-  const [editRoleDesc, setEditRoleDesc] = useState('');
+  const [editRoleName, setEditRoleName] = useState("");
+  const [editRoleDesc, setEditRoleDesc] = useState("");
   const [editPerms, setEditPerms] = useState<DbPermissionRule[]>([]);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
-  const [confirmDiscardCreateOpen, setConfirmDiscardCreateOpen] = useState(false);
-  const [confirmDiscardManageOpen, setConfirmDiscardManageOpen] = useState(false);
+  const [confirmDiscardCreateOpen, setConfirmDiscardCreateOpen] =
+    useState(false);
+  const [confirmDiscardManageOpen, setConfirmDiscardManageOpen] =
+    useState(false);
   const [isCreatingRole, setIsCreatingRole] = useState(false);
   const [isSavingRole, setIsSavingRole] = useState(false);
 
   // Create panel state
   const [createOpen, setCreateOpen] = useState(false);
-  const [newRoleName, setNewRoleName] = useState('');
-  const [newRoleDesc, setNewRoleDesc] = useState('');
-  const [newPerms, setNewPerms] = useState<DbPermissionRule[]>([...READONLY_RULES]);
+  const [newRoleName, setNewRoleName] = useState("");
+  const [newRoleDesc, setNewRoleDesc] = useState("");
+  const [newPerms, setNewPerms] = useState<DbPermissionRule[]>([
+    ...READONLY_RULES,
+  ]);
 
   const initialManageStateRef = useRef<{
     name: string;
@@ -233,15 +271,17 @@ export function Roles() {
   function openManage(role: RbacRole) {
     setSelectedRole(role);
     setEditRoleName(role.name);
-    const desc = role.description || '';
+    const desc = role.description || "";
     setEditRoleDesc(desc);
-    const initialRules: DbPermissionRule[] = (role.permissions || []).map((p) => ({
-      database: p.database || '',
-      table: p.table || '',
-      operations: [...p.operations],
-      rls_filter: p.rls_filter || '',
-      resourceType: isBlobRule(p) ? 'blob' : 'database',
-    }));
+    const initialRules: DbPermissionRule[] = (role.permissions || []).map(
+      (p) => ({
+        database: p.database || "",
+        table: p.table || "",
+        operations: [...p.operations],
+        rls_filter: p.rls_filter || "",
+        resourceType: isBlobRule(p) ? "blob" : "database",
+      }),
+    );
     setEditPerms(initialRules);
     initialManageStateRef.current = {
       name: role.name,
@@ -250,22 +290,24 @@ export function Roles() {
         database: r.database,
         table: r.table,
         operations: [...r.operations],
-        rls_filter: r.rls_filter || '',
+        rls_filter: r.rls_filter || "",
         resourceType: r.resourceType,
       })),
     };
-    setManageTab('edit');
+    setManageTab("edit");
     setManageOpen(true);
   }
 
   const hasEditPermErrors = useMemo(
-    () => editPerms.some((p) => p.database.includes(',') || p.table.includes(',')),
-    [editPerms]
+    () =>
+      editPerms.some((p) => p.database.includes(",") || p.table.includes(",")),
+    [editPerms],
   );
 
   const hasNewPermErrors = useMemo(
-    () => newPerms.some((p) => p.database.includes(',') || p.table.includes(',')),
-    [newPerms]
+    () =>
+      newPerms.some((p) => p.database.includes(",") || p.table.includes(",")),
+    [newPerms],
   );
 
   const roleNameValidation = validateCleanName(newRoleName);
@@ -275,10 +317,10 @@ export function Roles() {
     newRoleName.trim().length > 0 ||
     newRoleDesc.trim().length > 0 ||
     newPerms.length !== 1 ||
-    newPerms[0].database !== '' ||
-    newPerms[0].table !== '' ||
+    newPerms[0].database !== "" ||
+    newPerms[0].table !== "" ||
     newPerms[0].operations.length !== 1 ||
-    newPerms[0].operations[0] !== 'SELECT'
+    newPerms[0].operations[0] !== "SELECT",
   );
 
   function requestCloseCreate() {
@@ -292,13 +334,13 @@ export function Roles() {
   function forceCloseCreate() {
     setConfirmDiscardCreateOpen(false);
     setCreateOpen(false);
-    setNewRoleName('');
-    setNewRoleDesc('');
+    setNewRoleName("");
+    setNewRoleDesc("");
     setNewPerms([...READONLY_RULES]);
   }
 
   function requestCloseManage() {
-    if (manageTab === 'edit' && isModified) {
+    if (manageTab === "edit" && isModified) {
       setConfirmDiscardManageOpen(true);
     } else {
       forceCloseManage();
@@ -308,19 +350,30 @@ export function Roles() {
   function forceCloseManage() {
     setConfirmDiscardManageOpen(false);
     setManageOpen(false);
-    setManageTab('edit');
+    setManageTab("edit");
     initialManageStateRef.current = null;
   }
 
   const isModified = useMemo(() => {
     if (!selectedRole || !initialManageStateRef.current) return false;
-    if (editRoleName.trim() !== initialManageStateRef.current.name.trim()) return true;
-    if (editRoleDesc.trim() !== initialManageStateRef.current.description.trim()) return true;
+    if (editRoleName.trim() !== initialManageStateRef.current.name.trim())
+      return true;
+    if (
+      editRoleDesc.trim() !== initialManageStateRef.current.description.trim()
+    )
+      return true;
     return !areRulesEqual(editPerms, initialManageStateRef.current.perms);
   }, [selectedRole, editRoleName, editRoleDesc, editPerms]);
 
   async function handleSaveEdit() {
-    if (!selectedRole || !editRoleName.trim() || !editRoleNameValidation.valid || hasEditPermErrors || isSavingRole) return;
+    if (
+      !selectedRole ||
+      !editRoleName.trim() ||
+      !editRoleNameValidation.valid ||
+      hasEditPermErrors ||
+      isSavingRole
+    )
+      return;
     try {
       setIsSavingRole(true);
       const permPayload: PermissionRecordApi[] = editPerms.map((p) => ({
@@ -336,14 +389,21 @@ export function Roles() {
       await loadRoles();
       forceCloseManage();
     } catch (err) {
-      console.error('Failed to update role:', err);
+      console.error("Failed to update role:", err);
     } finally {
       setIsSavingRole(false);
     }
   }
 
   async function handleCreateRole() {
-    if (!newRoleName.trim() || !roleNameValidation.valid || hasNewPermErrors || newPerms.length === 0 || isCreatingRole) return;
+    if (
+      !newRoleName.trim() ||
+      !roleNameValidation.valid ||
+      hasNewPermErrors ||
+      newPerms.length === 0 ||
+      isCreatingRole
+    )
+      return;
     try {
       setIsCreatingRole(true);
       const permPayload: PermissionRecordApi[] = newPerms.map((p) => ({
@@ -359,35 +419,40 @@ export function Roles() {
       });
       await loadRoles();
       setCreateOpen(false);
-      setNewRoleName('');
-      setNewRoleDesc('');
+      setNewRoleName("");
+      setNewRoleDesc("");
       setNewPerms([...READONLY_RULES]);
     } catch (err) {
-      console.error('Failed to create role:', err);
+      console.error("Failed to create role:", err);
     } finally {
       setIsCreatingRole(false);
     }
   }
 
   const filterFieldOptions = [
-    { value: 'name', label: 'Role Name' },
-    { value: 'description', label: 'Description' },
-    { value: 'rules', label: 'Rules Count' },
-    { value: 'createdAt', label: 'Created Date' },
+    { value: "name", label: "Role Name" },
+    { value: "description", label: "Description" },
+    { value: "rules", label: "Rules Count" },
+    { value: "createdAt", label: "Created Date" },
   ];
 
   const displayColumnOptions = [
-    { id: 'name', label: 'Role Name' },
-    { id: 'description', label: 'Description' },
-    { id: 'rules', label: 'Rules Count' },
-    { id: 'createdAt', label: 'Created Date' },
+    { id: "name", label: "Role Name" },
+    { id: "description", label: "Description" },
+    { id: "rules", label: "Rules Count" },
+    { id: "createdAt", label: "Created Date" },
   ];
 
   const handleAddRule = () => {
     const newId = String(Date.now());
     setFilterRules((prev) => [
       ...prev,
-      { id: newId, field: filterFieldOptions[0].value, operator: 'contains', value: '' },
+      {
+        id: newId,
+        field: filterFieldOptions[0].value,
+        operator: "contains",
+        value: "",
+      },
     ]);
   };
 
@@ -397,12 +462,12 @@ export function Roles() {
 
   const handleUpdateRule = (id: string, updates: Partial<FilterRule>) => {
     setFilterRules((prev) =>
-      prev.map((r) => (r.id === id ? { ...r, ...updates } : r))
+      prev.map((r) => (r.id === id ? { ...r, ...updates } : r)),
     );
   };
 
   const handleApplyFilters = () => {
-    setAppliedFilterRules(filterRules.filter((r) => r.value.trim() !== ''));
+    setAppliedFilterRules(filterRules.filter((r) => r.value.trim() !== ""));
     setShowFilters(false);
   };
 
@@ -434,20 +499,20 @@ export function Roles() {
           r.name.toLowerCase().includes(q) ||
           r.description.toLowerCase().includes(q) ||
           String(r.permissions.length).includes(q) ||
-          r.createdAt.includes(q)
+          r.createdAt.includes(q),
       );
     }
     if (appliedFilterRules.length > 0) {
       list = list.filter((r) => {
         const tests = appliedFilterRules.map((rule) => {
-          let val = '';
-          if (rule.field === 'name') val = r.name;
-          else if (rule.field === 'description') val = r.description;
-          else if (rule.field === 'rules') val = String(r.permissions.length);
-          else if (rule.field === 'createdAt') val = r.createdAt;
+          let val = "";
+          if (rule.field === "name") val = r.name;
+          else if (rule.field === "description") val = r.description;
+          else if (rule.field === "rules") val = String(r.permissions.length);
+          else if (rule.field === "createdAt") val = r.createdAt;
           return matchesRule(val, rule.operator, rule.value);
         });
-        return matchMode === 'any' ? tests.some(Boolean) : tests.every(Boolean);
+        return matchMode === "any" ? tests.some(Boolean) : tests.every(Boolean);
       });
     }
     return list;
@@ -455,51 +520,63 @@ export function Roles() {
 
   const columns: Column<RbacRole>[] = [
     {
-      id: 'name',
-      header: 'Role',
-      accessorKey: 'name',
+      id: "name",
+      header: "Role",
+      accessorKey: "name",
       isSortable: true,
       isResizable: true,
       width: 190,
       minWidth: 130,
       maxWidth: 320,
-      className: 'pl-4 pr-3',
+      className: "pl-4 pr-3",
       cell: (row) => (
         <div className="flex items-center gap-2.5 min-w-0">
           <Shield className="w-4 h-4 text-[#8c8c8c] shrink-0" />
-          <span className="font-medium text-white text-[14px] truncate whitespace-nowrap" title={row.name}>
+          <span
+            className="font-medium text-white text-[14px] truncate whitespace-nowrap"
+            title={row.name}
+          >
             {row.name}
           </span>
         </div>
       ),
     },
     {
-      id: 'description',
-      header: 'Description',
-      accessorKey: 'description',
+      id: "description",
+      header: "Description",
+      accessorKey: "description",
       width: 360,
       minWidth: 180,
       maxWidth: 700,
       isResizable: true,
-      className: 'px-3',
+      className: "px-3",
       cell: (row) => (
-        <span className="text-[13px] text-[#8c8c8c] font-normal truncate block" title={row.description}>
+        <span
+          className="text-[13px] text-[#8c8c8c] font-normal truncate block"
+          title={row.description}
+        >
           {row.description}
         </span>
       ),
     },
     {
-      id: 'rules',
-      header: 'Rules',
+      id: "rules",
+      header: "Rules",
       width: 190,
       minWidth: 160,
       maxWidth: 280,
       isResizable: true,
-      className: 'px-3',
+      className: "px-3",
       cell: (row) => {
-        const dbCount = row.permissions.filter((p) => !p.database.toLowerCase().startsWith('blob:')).length;
-        const blobCount = row.permissions.filter((p) => p.database.toLowerCase().startsWith('blob:')).length;
-        const rlsCount = row.permissions.filter((p) => Boolean(p.rls_filter && p.rls_filter.trim().length > 0)).length;
+        const dbCount = row.permissions.filter(
+          (p) => !p.database.toLowerCase().startsWith("blob:"),
+        ).length;
+        const blobCount = row.permissions.filter((p) =>
+          p.database.toLowerCase().startsWith("blob:"),
+        ).length;
+        const rlsCount = row.permissions.filter((p) =>
+          Boolean(p.rls_filter && p.rls_filter.trim().length > 0),
+        ).length;
         return (
           <div className="flex items-center gap-1.5 shrink-0 whitespace-nowrap font-sans">
             {dbCount > 0 && (
@@ -517,7 +594,7 @@ export function Roles() {
             {rlsCount > 0 && (
               <span
                 className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-[#18181b] text-[#cccccc] border border-[#27272a] shrink-0"
-                title={`${rlsCount} rule${rlsCount > 1 ? 's have' : ' has'} Row-Level Security predicate filter`}
+                title={`${rlsCount} rule${rlsCount > 1 ? "s have" : " has"} Row-Level Security predicate filter`}
               >
                 <Shield className="w-3 h-3 text-[#8c8c8c] shrink-0" />
                 <span>{rlsCount} RLS</span>
@@ -531,24 +608,26 @@ export function Roles() {
       },
     },
     {
-      id: 'createdAt',
-      header: 'Created Date',
-      accessorKey: 'createdAt',
+      id: "createdAt",
+      header: "Created Date",
+      accessorKey: "createdAt",
       width: 140,
       minWidth: 110,
       maxWidth: 220,
       isResizable: true,
-      className: 'px-3',
+      className: "px-3",
       cell: (row) => (
-        <span className="tabular-nums text-[13px] text-[#8c8c8c] font-normal">{row.createdAt}</span>
+        <span className="tabular-nums text-[13px] text-[#8c8c8c] font-normal">
+          {row.createdAt}
+        </span>
       ),
     },
     {
-      id: 'actions',
+      id: "actions",
       header: <span className="sr-only">Actions</span>,
       isFlex: true,
-      headerClassName: 'justify-end pr-4 text-right',
-      className: 'pl-3 pr-4 justify-end',
+      headerClassName: "justify-end pr-4 text-right",
+      className: "pl-3 pr-4 justify-end",
       cell: (row) => (
         <div className="flex items-center justify-end w-full">
           <button
@@ -564,11 +643,18 @@ export function Roles() {
   ];
 
   const activeColumns = useMemo(() => {
-    const visible = columns.filter((col) => col.id === 'actions' || visibleCols[col.id] !== false);
-    const lastDataId = [...visible].reverse().find((c) => c.id !== 'actions')?.id;
+    const visible = columns.filter(
+      (col) => col.id === "actions" || visibleCols[col.id] !== false,
+    );
+    const lastDataId = [...visible]
+      .reverse()
+      .find((c) => c.id !== "actions")?.id;
     return visible.map((col) => ({
       ...col,
-      isResizable: col.id !== 'actions' && col.id !== lastDataId && Boolean(col.isResizable),
+      isResizable:
+        col.id !== "actions" &&
+        col.id !== lastDataId &&
+        Boolean(col.isResizable),
     }));
   }, [columns, visibleCols]);
 
@@ -577,7 +663,9 @@ export function Roles() {
       {/* Top Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-[16px] font-medium text-white tracking-tight">Roles</h1>
+          <h1 className="text-[16px] font-medium text-white tracking-tight">
+            Roles
+          </h1>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -589,14 +677,16 @@ export function Roles() {
             title="Refresh roles"
             className="flex items-center justify-center h-8 w-8 text-[#8c8c8c] hover:text-white rounded-[8px] bg-[#0c0c0c] hover:bg-[#141414] border border-[#262626] hover:border-[#383838] transition-colors cursor-pointer shrink-0"
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin opacity-50' : ''}`} />
+            <RefreshCw
+              className={`w-3.5 h-3.5 ${isRefreshing ? "animate-spin opacity-50" : ""}`}
+            />
           </button>
           <Button
             variant="primary"
             size="sm"
             onClick={() => {
-              setNewRoleName('');
-              setNewRoleDesc('');
+              setNewRoleName("");
+              setNewRoleDesc("");
               setNewPerms([...READONLY_RULES]);
               setCreateOpen(true);
             }}
@@ -624,7 +714,7 @@ export function Roles() {
           {searchQuery && (
             <button
               type="button"
-              onClick={() => setSearchQuery('')}
+              onClick={() => setSearchQuery("")}
               className="flex items-center justify-center w-5 h-5 rounded hover:bg-[#222222] text-[#8c8c8c] hover:text-white transition-colors cursor-pointer shrink-0 font-sans"
               title="Clear search"
             >
@@ -647,7 +737,12 @@ export function Roles() {
                       setFilterRules(appliedFilterRules.map((r) => ({ ...r })));
                     } else if (filterRules.length === 0) {
                       setFilterRules([
-                        { id: '1', field: filterFieldOptions[0].value, operator: 'contains', value: '' },
+                        {
+                          id: "1",
+                          field: filterFieldOptions[0].value,
+                          operator: "contains",
+                          value: "",
+                        },
                       ]);
                     }
                   }
@@ -656,8 +751,8 @@ export function Roles() {
               }}
               className={`flex items-center gap-1.5 h-9 px-3 rounded-[8px] bg-transparent border text-[14px] font-medium transition-colors cursor-pointer shrink-0 font-sans ${
                 showFilters || appliedFilterRules.length > 0
-                  ? 'border-[#444444] text-white bg-[#141414]'
-                  : 'border-[#262626] text-white hover:bg-[#141414] hover:border-[#383838]'
+                  ? "border-[#444444] text-white bg-[#141414]"
+                  : "border-[#262626] text-white hover:bg-[#141414] hover:border-[#383838]"
               }`}
               title="Filter roles"
             >
@@ -684,14 +779,20 @@ export function Roles() {
                 {/* Header */}
                 <div className="flex items-center justify-between pb-3">
                   <div className="flex items-center gap-2">
-                    <span className="text-[14px] font-medium text-white font-sans">Role Filters</span>
+                    <span className="text-[14px] font-medium text-white font-sans">
+                      Role Filters
+                    </span>
                     {filterRules.length >= 2 && (
                       <button
                         type="button"
-                        onClick={() => setMatchMode((prev) => (prev === 'any' ? 'all' : 'any'))}
+                        onClick={() =>
+                          setMatchMode((prev) =>
+                            prev === "any" ? "all" : "any",
+                          )
+                        }
                         className="px-2.5 py-0.5 rounded text-[13px] text-[#cccccc] hover:text-white bg-[#141414] border border-[#2e2e2e] hover:border-[#444444] transition-colors cursor-pointer font-sans"
                       >
-                        Match {matchMode === 'any' ? 'any (OR)' : 'all (AND)'}
+                        Match {matchMode === "any" ? "any (OR)" : "all (AND)"}
                       </button>
                     )}
                   </div>
@@ -706,13 +807,17 @@ export function Roles() {
                 </div>
 
                 {/* Rules List */}
-                <div className={`space-y-2.5 ${filterRules.length > 3 ? 'max-h-[320px] overflow-y-auto pr-0.5' : ''}`}>
+                <div
+                  className={`space-y-2.5 ${filterRules.length > 3 ? "max-h-[320px] overflow-y-auto pr-0.5" : ""}`}
+                >
                   {filterRules.map((rule) => (
                     <div key={rule.id} className="flex items-center gap-2">
                       <CustomSelect
                         value={rule.field}
                         options={filterFieldOptions}
-                        onChange={(val) => handleUpdateRule(rule.id, { field: val })}
+                        onChange={(val) =>
+                          handleUpdateRule(rule.id, { field: val })
+                        }
                         className="w-36 shrink-0"
                         menuWidth="w-44"
                       />
@@ -720,11 +825,16 @@ export function Roles() {
                       <CustomSelect
                         value={rule.operator}
                         options={[
-                          { value: 'contains', label: 'contains' },
-                          { value: 'equals', label: 'equals' },
-                          { value: 'starts_with', label: 'starts with' },
+                          { value: "contains", label: "contains" },
+                          { value: "equals", label: "equals" },
+                          { value: "starts_with", label: "starts with" },
                         ]}
-                        onChange={(val) => handleUpdateRule(rule.id, { operator: val as 'contains' | 'equals' | 'starts_with' })}
+                        onChange={(val) =>
+                          handleUpdateRule(rule.id, {
+                            operator: val as
+                              "contains" | "equals" | "starts_with",
+                          })
+                        }
                         className="w-32 sm:w-36 shrink-0"
                         menuWidth="w-44"
                       />
@@ -732,9 +842,11 @@ export function Roles() {
                       <input
                         type="text"
                         value={rule.value}
-                        onChange={(e) => handleUpdateRule(rule.id, { value: e.target.value })}
+                        onChange={(e) =>
+                          handleUpdateRule(rule.id, { value: e.target.value })
+                        }
                         onKeyDown={(e) => {
-                          if (e.key === 'Enter') handleApplyFilters();
+                          if (e.key === "Enter") handleApplyFilters();
                         }}
                         placeholder="Filter value..."
                         className="flex-1 min-w-0 h-9 px-3 rounded-[8px] bg-[#141414] border border-[#262626] hover:border-[#383838] focus:border-[#2f80ed] text-[14px] text-white placeholder-[#555555] outline-none transition-colors font-sans"
@@ -746,7 +858,13 @@ export function Roles() {
                         className="w-8 h-8 flex items-center justify-center text-[#777777] hover:text-white cursor-pointer transition-colors shrink-0"
                         title="Delete filter rule"
                       >
-                        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="currentColor" viewBox="0 0 256 256">
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          width="15"
+                          height="15"
+                          fill="currentColor"
+                          viewBox="0 0 256 256"
+                        >
                           <path d="M216,48H176V40a24,24,0,0,0-24-24H104A24,24,0,0,0,80,40v8H40a8,8,0,0,0,0,16h8V208a16,16,0,0,0,16,16H192a16,16,0,0,0,16-16V64h8a8,8,0,0,0,0-16ZM96,40a8,8,0,0,1,8-8h48a8,8,0,0,1,8,8v8H96Zm96,168H64V64H192ZM112,104v64a8,8,0,0,1-16,0V104a8,8,0,0,1,16,0Zm48,0v64a8,8,0,0,1-16,0V104a8,8,0,0,1,16,0Z" />
                         </svg>
                       </button>
@@ -764,7 +882,9 @@ export function Roles() {
                     <span>+ Add filter</span>
                   </button>
                   <div className="flex items-center gap-3">
-                    <span className="text-[12px] text-[#666666] font-sans">Press Enter to apply</span>
+                    <span className="text-[12px] text-[#666666] font-sans">
+                      Press Enter to apply
+                    </span>
                     {appliedFilterRules.length > 0 && (
                       <button
                         type="button"
@@ -779,8 +899,14 @@ export function Roles() {
                       onClick={handleApplyFilters}
                       className="group relative flex shrink-0 items-center justify-center h-8 px-3.5 rounded-[8px] font-medium text-white shadow-xs outline-none cursor-pointer disabled:opacity-50 overflow-hidden ring-1 ring-[#1d4ed8] bg-[#2563eb] font-sans"
                     >
-                      <span aria-hidden="true" className="pointer-events-none absolute inset-0 rounded-[inherit] bg-gradient-to-b from-[#3b82f6] to-[#2563eb] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2)]" />
-                      <span aria-hidden="true" className="pointer-events-none absolute inset-0 rounded-[inherit] bg-black opacity-0 group-hover:opacity-15 transition-opacity duration-200" />
+                      <span
+                        aria-hidden="true"
+                        className="pointer-events-none absolute inset-0 rounded-[inherit] bg-gradient-to-b from-[#3b82f6] to-[#2563eb] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2)]"
+                      />
+                      <span
+                        aria-hidden="true"
+                        className="pointer-events-none absolute inset-0 rounded-[inherit] bg-black opacity-0 group-hover:opacity-15 transition-opacity duration-200"
+                      />
                       <span className="relative flex items-center gap-1.5 text-[14px] font-sans">
                         Apply filters
                       </span>
@@ -801,12 +927,19 @@ export function Roles() {
               }}
               className={`flex items-center gap-1.5 h-9 px-3 rounded-[8px] bg-transparent border text-[14px] font-medium transition-colors cursor-pointer shrink-0 font-sans ${
                 showDisplayOptions
-                  ? 'border-[#444444] text-white bg-[#141414]'
-                  : 'border-[#262626] text-white hover:bg-[#141414] hover:border-[#383838]'
+                  ? "border-[#444444] text-white bg-[#141414]"
+                  : "border-[#262626] text-white hover:bg-[#141414] hover:border-[#383838]"
               }`}
               title="Toggle visible table columns"
             >
-              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 256 256" className="text-[#8c8c8c] shrink-0">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="14"
+                height="14"
+                fill="currentColor"
+                viewBox="0 0 256 256"
+                className="text-[#8c8c8c] shrink-0"
+              >
                 <path d="M222.87,74.56,134.87,23.75a16,16,0,0,0-15.74,0L31.13,74.56A16,16,0,0,0,23.26,88.4v101.6a16,16,0,0,0,7.87,13.84l88,50.81a16,16,0,0,0,15.74,0l88-50.81a16,16,0,0,0,7.87-13.84V88.4A16,16,0,0,0,222.87,74.56ZM127,160a32,32,0,1,1,32-32A32,32,0,0,1,127,160Z" />
               </svg>
               <span>Display options</span>
@@ -823,7 +956,13 @@ export function Roles() {
                       onClick={() => toggleColVisibility(col.id)}
                       className="w-full flex items-center justify-between px-3 py-2 rounded-[6px] text-[14px] text-[#cccccc] hover:text-white hover:bg-[#141414] transition-colors cursor-pointer font-sans"
                     >
-                      <span className={isVisible ? 'text-white font-medium' : 'text-[#8c8c8c]'}>
+                      <span
+                        className={
+                          isVisible
+                            ? "text-white font-medium"
+                            : "text-[#8c8c8c]"
+                        }
+                      >
                         {col.label}
                       </span>
                       {isVisible && (
@@ -876,8 +1015,8 @@ export function Roles() {
       <SlideOver
         isOpen={manageOpen}
         onClose={requestCloseManage}
-        title={selectedRole?.name ?? ''}
-        subtitle={selectedRole?.description ?? ''}
+        title={selectedRole?.name ?? ""}
+        subtitle={selectedRole?.description ?? ""}
         width="w-[620px] max-w-full"
       >
         {/* Navigation Tabs */}
@@ -885,22 +1024,22 @@ export function Roles() {
           <div className="inline-flex items-center p-0.5 rounded-[8px] bg-transparent border border-[#262626]">
             <button
               type="button"
-              onClick={() => setManageTab('edit')}
+              onClick={() => setManageTab("edit")}
               className={`flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[13px] font-medium transition-colors duration-75 cursor-pointer font-sans outline-none focus:outline-none border ${
-                manageTab === 'edit'
-                  ? 'bg-[#161616] text-white border-[#333333]'
-                  : 'text-[#8c8c8c] hover:text-white hover:bg-[#141414] border-transparent'
+                manageTab === "edit"
+                  ? "bg-[#161616] text-white border-[#333333]"
+                  : "text-[#8c8c8c] hover:text-white hover:bg-[#141414] border-transparent"
               }`}
             >
               <span>Configuration</span>
             </button>
             <button
               type="button"
-              onClick={() => setManageTab('danger')}
+              onClick={() => setManageTab("danger")}
               className={`flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[13px] font-medium transition-colors duration-75 cursor-pointer font-sans outline-none focus:outline-none border ${
-                manageTab === 'danger'
-                  ? 'bg-[#161616] text-white border-[#333333]'
-                  : 'text-[#8c8c8c] hover:text-white hover:bg-[#141414] border-transparent'
+                manageTab === "danger"
+                  ? "bg-[#161616] text-white border-[#333333]"
+                  : "text-[#8c8c8c] hover:text-white hover:bg-[#141414] border-transparent"
               }`}
             >
               <span>Danger</span>
@@ -908,18 +1047,23 @@ export function Roles() {
           </div>
         </div>
 
-        {manageTab === 'edit' && (
+        {manageTab === "edit" && (
           <div className="flex-1 p-5 overflow-y-auto space-y-5">
             <div>
-              <h3 className="text-[16px] font-medium text-white tracking-tight">Role Configuration</h3>
+              <h3 className="text-[16px] font-medium text-white tracking-tight">
+                Role Configuration
+              </h3>
               <p className="text-[13px] text-[#8c8c8c] mt-0.5">
-                Update role identifier, descriptive summary, and database access permissions.
+                Update role identifier, descriptive summary, and database access
+                permissions.
               </p>
             </div>
 
             <div className="space-y-4">
               <div>
-                <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">Role Name</label>
+                <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">
+                  Role Name
+                </label>
                 <input
                   type="text"
                   value={editRoleName}
@@ -932,7 +1076,9 @@ export function Roles() {
               </div>
 
               <div>
-                <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">Description</label>
+                <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">
+                  Description
+                </label>
                 <textarea
                   rows={2}
                   value={editRoleDesc}
@@ -948,30 +1094,40 @@ export function Roles() {
             <div className="space-y-3">
               <div>
                 <div className="flex items-center justify-between">
-                  <h4 className="text-[16px] font-medium text-white tracking-tight">Access Scope & Rules</h4>
+                  <h4 className="text-[16px] font-medium text-white tracking-tight">
+                    Access Scope & Rules
+                  </h4>
                   <span className="text-[13px] text-[#8c8c8c] bg-[#141414] border border-[#262626] px-2 py-0.5 rounded-full font-sans">
-                    {editPerms.length} {editPerms.length === 1 ? 'rule' : 'rules'}
+                    {editPerms.length}{" "}
+                    {editPerms.length === 1 ? "rule" : "rules"}
                   </span>
                 </div>
                 <p className="text-[13px] text-[#8c8c8c] mt-0.5">
-                  Granular CRUD permissions for SQL databases and native blob storage. Use <code className="text-[#3b82f6] font-mono">*</code> for wildcards or prefix matching.
+                  Granular CRUD permissions for SQL databases and native blob
+                  storage. Use{" "}
+                  <code className="text-[#3b82f6] font-mono">*</code> for
+                  wildcards or prefix matching.
                 </p>
               </div>
 
-              <PermissionTable
-                value={editPerms}
-                onChange={setEditPerms}
-              />
+              <PermissionTable value={editPerms} onChange={setEditPerms} />
             </div>
           </div>
         )}
 
-        {manageTab === 'danger' && (
+        {manageTab === "danger" && (
           <div className="flex-1 p-5 overflow-y-auto">
             <div className="rounded-[8px] border border-[#3a1515] bg-[#0e0404] p-4">
-              <div className="text-[16px] font-medium text-[#e5484d] tracking-tight mb-1">Delete Role</div>
+              <div className="text-[16px] font-medium text-[#e5484d] tracking-tight mb-1">
+                Delete Role
+              </div>
               <div className="text-[13px] text-[#8c8c8c] leading-relaxed mb-4">
-                Permanently delete role <span className="text-white font-medium">{selectedRole?.name}</span>. All API keys and identities assigned to this role will lose database permissions.
+                Permanently delete role{" "}
+                <span className="text-white font-medium">
+                  {selectedRole?.name}
+                </span>
+                . All API keys and identities assigned to this role will lose
+                database permissions.
               </div>
               <button
                 type="button"
@@ -995,7 +1151,7 @@ export function Roles() {
         )}
 
         {/* Footer for Edit tab */}
-        {manageTab === 'edit' && (
+        {manageTab === "edit" && (
           <div className="p-4 border-t border-[#222222] bg-[#0e0e0e] flex items-center justify-between gap-2.5 font-sans">
             {hasEditPermErrors ? (
               <span className="text-[12px] text-[#e5484d] flex items-center gap-1 font-sans">
@@ -1015,7 +1171,12 @@ export function Roles() {
               </button>
               <button
                 type="button"
-                disabled={!isModified || hasEditPermErrors || !editRoleNameValidation.valid || isSavingRole}
+                disabled={
+                  !isModified ||
+                  hasEditPermErrors ||
+                  !editRoleNameValidation.valid ||
+                  isSavingRole
+                }
                 onClick={handleSaveEdit}
                 className="group relative flex shrink-0 items-center justify-center h-8 px-4 rounded-[8px] font-medium text-white shadow-xs outline-none cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed overflow-hidden ring-1 ring-[#1d4ed8] bg-[#2563eb] font-sans text-[13px]"
               >
@@ -1046,7 +1207,9 @@ export function Roles() {
       >
         <div className="flex-1 p-5 overflow-y-auto space-y-5">
           <div>
-            <h3 className="text-[16px] font-medium text-white tracking-tight">Role Details</h3>
+            <h3 className="text-[16px] font-medium text-white tracking-tight">
+              Role Details
+            </h3>
             <p className="text-[13px] text-[#8c8c8c] mt-0.5">
               Specify role identifier, description, and permission grant rules.
             </p>
@@ -1066,7 +1229,12 @@ export function Roles() {
                   onClick={() => {
                     if (!newRoleName.trim()) setNewRoleName(preset.name);
                     if (!newRoleDesc.trim()) setNewRoleDesc(preset.description);
-                    setNewPerms(preset.rules.map((r) => ({ ...r, operations: [...r.operations] })));
+                    setNewPerms(
+                      preset.rules.map((r) => ({
+                        ...r,
+                        operations: [...r.operations],
+                      })),
+                    );
                   }}
                   className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-[6px] text-[12px] font-medium bg-[#141414] hover:bg-[#1a1a1a] border border-[#262626] hover:border-[#383838] text-[#cccccc] hover:text-white transition-colors cursor-pointer touch-manipulation font-sans"
                 >
@@ -1084,12 +1252,16 @@ export function Roles() {
               <input
                 type="text"
                 value={newRoleName}
-                onChange={(e) => setNewRoleName(e.target.value.toLowerCase().replace(/\s+/g, '_'))}
+                onChange={(e) =>
+                  setNewRoleName(
+                    e.target.value.toLowerCase().replace(/\s+/g, "_"),
+                  )
+                }
                 placeholder="e.g. analytics_reader or blob_uploader"
                 className={`h-9 w-full rounded-[8px] border px-3 text-[14px] text-white placeholder-[#666666] focus:outline-none hover:border-[#383838] transition-colors font-mono lowercase ${
                   newRoleName.trim().length > 0 && !roleNameValidation.valid
-                    ? 'border-[#e5484d] bg-[#1a0f0f] focus:border-[#e5484d] focus:ring-1 focus:ring-[#e5484d]/40'
-                    : 'border-[#262626] bg-[#121212] focus:border-[#2f80ed]'
+                    ? "border-[#e5484d] bg-[#1a0f0f] focus:border-[#e5484d] focus:ring-1 focus:ring-[#e5484d]/40"
+                    : "border-[#262626] bg-[#121212] focus:border-[#2f80ed]"
                 }`}
               />
               {newRoleName.trim().length > 0 && !roleNameValidation.valid ? (
@@ -1099,13 +1271,19 @@ export function Roles() {
                 </div>
               ) : (
                 <p className="mt-1.5 text-[12px] text-[#737373]">
-                  Unique lowercase identifier for RBAC role assignment (e.g. <span className="font-mono text-[#a3a3a3]">analytics_reader</span>).
+                  Unique lowercase identifier for RBAC role assignment (e.g.{" "}
+                  <span className="font-mono text-[#a3a3a3]">
+                    analytics_reader
+                  </span>
+                  ).
                 </p>
               )}
             </div>
 
             <div>
-              <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">Description</label>
+              <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">
+                Description
+              </label>
               <textarea
                 rows={2}
                 value={newRoleDesc}
@@ -1122,13 +1300,17 @@ export function Roles() {
           <div className="space-y-3">
             <div>
               <div className="flex items-center justify-between">
-                <h4 className="text-[16px] font-medium text-white tracking-tight">Access Scope & Rules</h4>
+                <h4 className="text-[16px] font-medium text-white tracking-tight">
+                  Access Scope & Rules
+                </h4>
                 <span className="text-[13px] text-[#8c8c8c] bg-[#141414] border border-[#262626] px-2 py-0.5 rounded-full font-sans">
-                  {newPerms.length} {newPerms.length === 1 ? 'rule' : 'rules'}
+                  {newPerms.length} {newPerms.length === 1 ? "rule" : "rules"}
                 </span>
               </div>
               <p className="text-[13px] text-[#8c8c8c] mt-0.5">
-                Configure database CRUD and native blob storage permissions. Use <code className="text-[#3b82f6] font-mono">*</code> for wildcards or prefix matching.
+                Configure database CRUD and native blob storage permissions. Use{" "}
+                <code className="text-[#3b82f6] font-mono">*</code> for
+                wildcards or prefix matching.
               </p>
             </div>
             <PermissionTable value={newPerms} onChange={setNewPerms} />
@@ -1155,7 +1337,13 @@ export function Roles() {
             </button>
             <button
               type="button"
-              disabled={!newRoleName.trim() || !roleNameValidation.valid || hasNewPermErrors || newPerms.length === 0 || isCreatingRole}
+              disabled={
+                !newRoleName.trim() ||
+                !roleNameValidation.valid ||
+                hasNewPermErrors ||
+                newPerms.length === 0 ||
+                isCreatingRole
+              }
               onClick={handleCreateRole}
               className="group relative flex shrink-0 items-center justify-center h-8 px-4 rounded-[8px] font-medium text-white shadow-xs outline-none cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed overflow-hidden ring-1 ring-[#1d4ed8] bg-[#2563eb] font-sans text-[13px]"
             >
@@ -1185,7 +1373,7 @@ export function Roles() {
               await api.deleteRole(selectedRole.name);
               await loadRoles();
             } catch (err) {
-              console.error('Failed to delete role:', err);
+              console.error("Failed to delete role:", err);
             }
           }
           setConfirmDeleteOpen(false);
@@ -1194,9 +1382,10 @@ export function Roles() {
         title="Delete Role"
         description={
           <>
-            Permanently delete role{' '}
-            <span className="text-white font-medium">{selectedRole?.name}</span>?
-            All API keys and client identities assigned to this role will lose database permissions.
+            Permanently delete role{" "}
+            <span className="text-white font-medium">{selectedRole?.name}</span>
+            ? All API keys and client identities assigned to this role will lose
+            database permissions.
           </>
         }
         confirmLabel="Delete Role"

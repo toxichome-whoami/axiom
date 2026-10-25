@@ -5,16 +5,16 @@
  * ref-counts body scroll locks, restores focus on close, and wires proper ARIA attributes.
  */
 
-import React, { useEffect, useRef } from 'react';
-import { cn } from '../../utils/cn';
+import React, { useEffect, useRef } from "react";
+import { cn } from "../../utils/cn";
 
 let scrollLockCount = 0;
-let originalOverflow = '';
+let originalOverflow = "";
 
 function lockScroll() {
   if (scrollLockCount === 0) {
     originalOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
+    document.body.style.overflow = "hidden";
   }
   scrollLockCount++;
 }
@@ -22,7 +22,7 @@ function lockScroll() {
 function unlockScroll() {
   scrollLockCount = Math.max(0, scrollLockCount - 1);
   if (scrollLockCount === 0) {
-    document.body.style.overflow = originalOverflow || '';
+    document.body.style.overflow = originalOverflow || "";
   }
 }
 
@@ -42,8 +42,8 @@ export const SlideOver: React.FC<SlideOverProps> = ({
   title,
   subtitle,
   children,
-  width = 'w-[520px] max-w-full',
-  zIndex = 'z-50',
+  width = "w-[520px] max-w-full",
+  zIndex = "z-50",
 }) => {
   const panelRef = useRef<HTMLDivElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
@@ -66,13 +66,13 @@ export const SlideOver: React.FC<SlideOverProps> = ({
     if (!isOpen) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
+      if (e.key === "Escape") {
         onClose();
       }
     };
-    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener("keydown", handleKeyDown);
     return () => {
-      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener("keydown", handleKeyDown);
     };
   }, [isOpen, onClose]);
 
@@ -118,14 +118,14 @@ export const SlideOver: React.FC<SlideOverProps> = ({
       isEdgeSwipe = false;
     };
 
-    panel.addEventListener('touchstart', handleTouchStart, { passive: true });
-    panel.addEventListener('touchmove', handleTouchMove, { passive: true });
-    panel.addEventListener('touchend', handleTouchEnd);
+    panel.addEventListener("touchstart", handleTouchStart, { passive: true });
+    panel.addEventListener("touchmove", handleTouchMove, { passive: true });
+    panel.addEventListener("touchend", handleTouchEnd);
 
     return () => {
-      panel.removeEventListener('touchstart', handleTouchStart);
-      panel.removeEventListener('touchmove', handleTouchMove);
-      panel.removeEventListener('touchend', handleTouchEnd);
+      panel.removeEventListener("touchstart", handleTouchStart);
+      panel.removeEventListener("touchmove", handleTouchMove);
+      panel.removeEventListener("touchend", handleTouchEnd);
     };
   }, [isOpen, onClose]);
 
@@ -133,7 +133,10 @@ export const SlideOver: React.FC<SlideOverProps> = ({
 
   return (
     <div
-      className={cn("fixed inset-0 overflow-hidden select-none font-sans", zIndex)}
+      className={cn(
+        "fixed inset-0 overflow-hidden select-none font-sans",
+        zIndex,
+      )}
       role="dialog"
       aria-modal="true"
       aria-labelledby="slideover-title"
@@ -148,8 +151,8 @@ export const SlideOver: React.FC<SlideOverProps> = ({
         <div
           ref={panelRef}
           className={cn(
-            'w-screen h-full pointer-events-auto bg-black border-l border-[#222222] shadow-2xl flex flex-col animate-in slide-in-from-right duration-200 ease-out select-text overflow-hidden font-sans pt-safe pb-safe',
-            width
+            "w-screen h-full pointer-events-auto bg-black border-l border-[#222222] shadow-2xl flex flex-col animate-in slide-in-from-right duration-200 ease-out select-text overflow-hidden font-sans pt-safe pb-safe",
+            width,
           )}
         >
           {/* Outer Header Bar (Title & metadata on pure black frame) */}
@@ -158,11 +161,15 @@ export const SlideOver: React.FC<SlideOverProps> = ({
               <h2
                 id="slideover-title"
                 className="text-[16px] font-medium text-white tracking-[-0.015em] leading-snug font-sans truncate"
-                title={typeof title === 'string' ? title : undefined}
+                title={typeof title === "string" ? title : undefined}
               >
                 {title}
               </h2>
-              {subtitle && <div className="mt-0.5 text-[13px] text-[#8c8c8c] font-sans">{subtitle}</div>}
+              {subtitle && (
+                <div className="mt-0.5 text-[13px] text-[#8c8c8c] font-sans">
+                  {subtitle}
+                </div>
+              )}
             </div>
             <button
               onClick={onClose}
