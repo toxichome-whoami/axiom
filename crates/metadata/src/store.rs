@@ -2009,31 +2009,86 @@ impl MetadataStore {
     ///  - Returns: `Result<Vec<AuditRecord>, String>` containing historical audit rows.
     ///  - Side effects: None (read-only SQLite query).
     ///  - Idempotency: Yes.
+    pub async fn count_audit_log(search: Option<&str>) -> Result<i64, String> {
+        let conn = Self::get_conn().await?;
+        let count: i64 = if let Some(q) = search {
+            let pattern = format!("%{}%", q);
+            let mut rows = conn
+                .query(
+                    "SELECT COUNT(*) FROM audit_log WHERE actor LIKE ?1 OR action LIKE ?1 OR target LIKE ?1 OR details LIKE ?1",
+                    libsql::params![pattern],
+                )
+                .await
+                .map_err(|e| format!("Count audit_log failed: {}", e))?;
+            if let Ok(Some(row)) = rows.next().await {
+                row.get(0).unwrap_or(0)
+            } else {
+                0
+            }
+        } else {
+            let mut rows = conn
+                .query("SELECT COUNT(*) FROM audit_log", ())
+                .await
+                .map_err(|e| format!("Count audit_log failed: {}", e))?;
+            if let Ok(Some(row)) = rows.next().await {
+                row.get(0).unwrap_or(0)
+            } else {
+                0
+            }
+        };
+        Ok(count)
+    }
+
     pub async fn query_audit_log_cursor(
         limit: usize,
         offset: usize,
         before_id: Option<i64>,
+        search: Option<&str>,
     ) -> Result<Vec<AuditRecord>, String> {
         let conn = Self::get_conn().await?;
         let safe_limit = limit.min(500) as i64;
 
         let mut rows = if let Some(cursor_id) = before_id {
-            conn.query(
-                "SELECT id, timestamp, actor, action, target, details \
-                 FROM audit_log WHERE id < ?1 ORDER BY id DESC LIMIT ?2",
-                libsql::params![cursor_id, safe_limit],
-            )
-            .await
-            .map_err(|e| format!("Query audit_log failed: {}", e))?
+            if let Some(q) = search {
+                let pattern = format!("%{}%", q);
+                conn.query(
+                    "SELECT id, timestamp, actor, action, target, details \
+                     FROM audit_log WHERE id < ?1 AND (actor LIKE ?2 OR action LIKE ?2 OR target LIKE ?2 OR details LIKE ?2) \
+                     ORDER BY id DESC LIMIT ?3",
+                    libsql::params![cursor_id, pattern, safe_limit],
+                )
+                .await
+                .map_err(|e| format!("Query audit_log failed: {}", e))?
+            } else {
+                conn.query(
+                    "SELECT id, timestamp, actor, action, target, details \
+                     FROM audit_log WHERE id < ?1 ORDER BY id DESC LIMIT ?2",
+                    libsql::params![cursor_id, safe_limit],
+                )
+                .await
+                .map_err(|e| format!("Query audit_log failed: {}", e))?
+            }
         } else {
             let safe_offset = offset as i64;
-            conn.query(
-                "SELECT id, timestamp, actor, action, target, details \
-                 FROM audit_log ORDER BY id DESC LIMIT ?1 OFFSET ?2",
-                libsql::params![safe_limit, safe_offset],
-            )
-            .await
-            .map_err(|e| format!("Query audit_log failed: {}", e))?
+            if let Some(q) = search {
+                let pattern = format!("%{}%", q);
+                conn.query(
+                    "SELECT id, timestamp, actor, action, target, details \
+                     FROM audit_log WHERE (actor LIKE ?1 OR action LIKE ?1 OR target LIKE ?1 OR details LIKE ?1) \
+                     ORDER BY id DESC LIMIT ?2 OFFSET ?3",
+                    libsql::params![pattern, safe_limit, safe_offset],
+                )
+                .await
+                .map_err(|e| format!("Query audit_log failed: {}", e))?
+            } else {
+                conn.query(
+                    "SELECT id, timestamp, actor, action, target, details \
+                     FROM audit_log ORDER BY id DESC LIMIT ?1 OFFSET ?2",
+                    libsql::params![safe_limit, safe_offset],
+                )
+                .await
+                .map_err(|e| format!("Query audit_log failed: {}", e))?
+            }
         };
 
         let mut records = Vec::new();
@@ -2060,7 +2115,7 @@ impl MetadataStore {
 
     /// Legacy offset-based query wrapper for audit logs.
     pub async fn query_audit_log(limit: usize, offset: usize) -> Result<Vec<AuditRecord>, String> {
-        Self::query_audit_log_cursor(limit, offset, None).await
+        Self::query_audit_log_cursor(limit, offset, None, None).await
     }
 
     // ─── Cluster P2P Mesh Management ──────────────────────────────────────────

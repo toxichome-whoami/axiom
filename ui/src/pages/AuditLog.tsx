@@ -5,7 +5,7 @@
  * Invariants: Read-only control plane audit logs; adheres to the Axiom design system (Inter font, normal text transforms, sleek modern aesthetic).
  */
 
-import React, { useState, useMemo, useRef, useEffect } from 'react';
+import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { DataTable, Column } from '../components/shared/DataTable';
 import { SlideOver } from '../components/ui/SlideOver';
 import { CustomSelect } from '../components/shared/CustomSelect';
@@ -66,12 +66,35 @@ export function AuditLog() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const fetchGenRef = useRef(0);
 
-  // Pagination State
+  // Pagination State (persisted to localStorage)
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(25);
+  const [pageSize, setPageSize] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('axiom_audit_page_size');
+      if (saved) {
+        const parsed = parseInt(saved, 10);
+        if ([10, 25, 50, 100].includes(parsed)) {
+          return parsed;
+        }
+      }
+    } catch {
+      // Ignore localStorage errors
+    }
+    return 25;
+  });
+  const [totalCount, setTotalCount] = useState(0);
 
   // Toolbar & Filtering State
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+
+  // Debounce search input to avoid redundant requests while typing
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+    }, 250);
+    return () => clearTimeout(handler);
+  }, [searchQuery]);
   const [showFilters, setShowFilters] = useState(false);
   const filtersRef = useRef<HTMLDivElement | null>(null);
 
@@ -119,14 +142,16 @@ export function AuditLog() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [showFilters, showDisplayOptions, showExportMenu]);
 
-  // Load audit records from backend
-  const loadAuditRecords = async () => {
+  // Load audit records from backend matching selected pageSize & page
+  const loadAuditRecords = useCallback(async (targetPage = page, targetPageSize = pageSize, targetSearch = debouncedSearch) => {
     const curGen = ++fetchGenRef.current;
     setLoadError(null);
     try {
-      const logs = await api.getAuditLog(500, 0);
+      const offset = (targetPage - 1) * targetPageSize;
+      const res = await api.getAuditLog(targetPageSize, offset, undefined, targetSearch);
       if (curGen !== fetchGenRef.current) return;
-      setRecords(logs || []);
+      setRecords(res.records || []);
+      setTotalCount(res.total || 0);
     } catch (err: unknown) {
       if (curGen === fetchGenRef.current) {
         setLoadError(err instanceof Error ? err.message : 'Failed to retrieve control-plane audit log');
@@ -137,16 +162,16 @@ export function AuditLog() {
         setIsRefreshing(false);
       }
     }
-  };
+  }, [page, pageSize, debouncedSearch]);
 
   useEffect(() => {
-    loadAuditRecords();
-  }, []);
+    loadAuditRecords(page, pageSize, debouncedSearch);
+  }, [page, pageSize, debouncedSearch]);
 
   // Reset pagination on search query or filter changes
   useEffect(() => {
     setPage(1);
-  }, [searchQuery, appliedFilterRules, matchMode]);
+  }, [debouncedSearch, appliedFilterRules, matchMode]);
 
   const handleAddRule = () => {
     const newId = String(Date.now());
@@ -707,11 +732,18 @@ export function AuditLog() {
         pagination={{
           page,
           pageSize,
-          totalCount: filteredRecords.length,
-          onPageChange: setPage,
+          totalCount: appliedFilterRules.length > 0 ? filteredRecords.length : totalCount,
+          onPageChange: (newPage) => {
+            setPage(newPage);
+          },
           onPageSizeChange: (newSize) => {
             setPageSize(newSize);
             setPage(1);
+            try {
+              localStorage.setItem('axiom_audit_page_size', String(newSize));
+            } catch {
+              // Ignore
+            }
           },
           pageSizeOptions: [10, 25, 50, 100],
         }}

@@ -115,6 +115,12 @@ export interface AuditRecordApi {
   details: string | null;
 }
 
+export interface AuditLogResponseApi {
+  records: AuditRecordApi[];
+  total: number;
+  has_more: boolean;
+}
+
 export interface UserRecordApi {
   id: number;
   username: string;
@@ -361,11 +367,23 @@ export const api = {
 
   // Metrics & Observability
   getMetricsSnapshot: () => request<MetricsSnapshotApi>('/admin/v1/metrics?format=json'),
-  getAuditLog: (limit = 50, offset = 0, cursor?: number) => {
-    const safeLimit = Math.max(1, Math.min(500, Math.floor(limit) || 50));
+  getAuditLog: async (limit = 25, offset = 0, cursor?: number, search?: string): Promise<AuditLogResponseApi> => {
+    const safeLimit = Math.max(1, Math.min(500, Math.floor(limit) || 25));
     const safeOffset = Math.max(0, Math.floor(offset) || 0);
     const cursorParam = cursor != null ? `&cursor=${cursor}` : '';
-    return request<AuditRecordApi[]>(`/admin/v1/audit?limit=${safeLimit}&offset=${safeOffset}${cursorParam}`);
+    const searchParam = search && search.trim() ? `&search=${encodeURIComponent(search.trim())}` : '';
+    const res = await request<any>(`/admin/v1/audit?limit=${safeLimit}&offset=${safeOffset}${cursorParam}${searchParam}`);
+    if (Array.isArray(res)) {
+      return { records: res as AuditRecordApi[], total: res.length, has_more: res.length === safeLimit };
+    }
+    if (res && Array.isArray(res.records)) {
+      return {
+        records: res.records as AuditRecordApi[],
+        total: typeof res.total === 'number' ? res.total : res.records.length,
+        has_more: Boolean(res.has_more),
+      };
+    }
+    return { records: [] as AuditRecordApi[], total: 0, has_more: false };
   },
 
   // Users & Authentication
