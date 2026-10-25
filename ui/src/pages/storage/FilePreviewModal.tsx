@@ -20,7 +20,6 @@ import { StorageItem } from './types';
 import { MediaPlayer } from './MediaPlayer';
 import { formatBytes } from './format';
 import { getFileIcon, getFileExtension } from './fileIcon';
-import { api } from '../../api/client';
 
 export interface FilePreviewModalProps {
   isOpen: boolean;
@@ -42,8 +41,6 @@ export function FilePreviewModal({
   onShare,
 }: FilePreviewModalProps) {
   const [streamUrl, setStreamUrl] = useState<string | null>(null);
-  const [ticketSig, setTicketSig] = useState<string | null>(null);
-  const [ticketExp, setTicketExp] = useState<number | null>(null);
   const [isLoadingStream, setIsLoadingStream] = useState(false);
   const [streamError, setStreamError] = useState<string | null>(null);
   const [copiedLink, setCopiedLink] = useState(false);
@@ -51,49 +48,21 @@ export function FilePreviewModal({
   useEffect(() => {
     if (!isOpen || !item || item.type !== 'file') {
       setStreamUrl(null);
-      setTicketSig(null);
-      setTicketExp(null);
       setStreamError(null);
+      setIsLoadingStream(false);
       return;
     }
 
     const sanitizedKeyPath = item.fullKey.split('/').map(encodeURIComponent).join('/');
 
-    // If namespace is public: stream directly from public CDN without ticket overhead
-    if (isPublic) {
-      setStreamUrl(`/api/v1/blobs/public/${encodeURIComponent(namespace)}/${sanitizedKeyPath}?inline=1`);
-      setTicketSig(null);
-      setTicketExp(null);
-      setIsLoadingStream(false);
-      return;
-    }
+    // Stream directly via ambient authentication (zero tickets created on preview)
+    const url = isPublic
+      ? `/api/v1/blobs/public/${encodeURIComponent(namespace)}/${sanitizedKeyPath}?inline=1`
+      : `/api/v1/blobs/${encodeURIComponent(namespace)}/${sanitizedKeyPath}?inline=1`;
 
-    // If private: request 1-hour signed capability ticket for streaming
-    let isSubscribed = true;
-    setIsLoadingStream(true);
+    setStreamUrl(url);
     setStreamError(null);
-
-    api
-      .createBlobTicket(namespace, item.fullKey, 'READ', 3600)
-      .then((res) => {
-        if (!isSubscribed) return;
-        const rawUrl = res.url || '';
-        const inlineUrl = `${rawUrl}&inline=1`;
-        setStreamUrl(inlineUrl);
-        setTicketSig(res.signature || null);
-        setTicketExp(res.expires_at ?? null);
-      })
-      .catch((err) => {
-        if (!isSubscribed) return;
-        setStreamError(err instanceof Error ? err.message : 'Failed to authorize media stream');
-      })
-      .finally(() => {
-        if (isSubscribed) setIsLoadingStream(false);
-      });
-
-    return () => {
-      isSubscribed = false;
-    };
+    setIsLoadingStream(false);
   }, [isOpen, item, namespace, isPublic]);
 
   // Handle Escape key
@@ -112,8 +81,6 @@ export function FilePreviewModal({
 
   const previewShareUrl = isPublic
     ? `${window.location.origin}/system/preview?ns=${encodeURIComponent(namespace)}&key=${encodeURIComponent(item.fullKey)}`
-    : ticketSig && ticketExp
-    ? `${window.location.origin}/system/preview?ns=${encodeURIComponent(namespace)}&key=${encodeURIComponent(item.fullKey)}&ticket_sig=${encodeURIComponent(ticketSig)}&ticket_exp=${encodeURIComponent(ticketExp)}`
     : '';
 
   const handleCopyLink = () => {
