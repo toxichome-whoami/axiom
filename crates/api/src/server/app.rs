@@ -179,7 +179,7 @@ pub fn create_app() -> Router {
     // video playback, audio, and multi-gigabyte downloads over slow networks do not abort mid-stream.
     let api_routes = Router::new()
         .route("/health", get(health_check))
-        .nest("/db", crate::database::router::get_router().layer(query_timeout.clone()))
+        .nest("/db", crate::database::router::get_router().layer(query_timeout))
         .nest(
             "/blobs",
             crate::blobs::get_router().layer(axum::extract::DefaultBodyLimit::disable()),
@@ -189,12 +189,12 @@ pub fn create_app() -> Router {
 
     // Admin API versioning wrapper (auth applied inside get_router for protected routes)
     let admin_routes = crate::admin::get_router()
-        .layer(query_timeout.clone())
+        .layer(query_timeout)
         .layer(middleware::from_fn(rate_limit_middleware));
 
     // Model Context Protocol (MCP) versioning wrapper
     let mcp_routes = crate::mcp::router::get_router()
-        .layer(query_timeout.clone())
+        .layer(query_timeout)
         .layer(middleware::from_fn(auth_middleware))
         .layer(middleware::from_fn(rate_limit_middleware));
 

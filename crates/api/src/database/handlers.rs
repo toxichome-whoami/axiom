@@ -74,11 +74,12 @@ static AST_CACHE: once_cell::sync::Lazy<dashmap::DashMap<String, Arc<CachedAstIn
 
 const MAX_AST_CACHE_ENTRIES: usize = 4096;
 
+type CachedSchemaEntry = (Arc<Vec<axiom_core::ColumnInfo>>, i64);
+
 /// In-memory schema catalog caching table column definitions: "{db_name}:{table_name}" -> (Arc<Vec<ColumnInfo>>, expires_at_unix)
 /// Eliminates redundant database-level information_schema roundtrips and zero-copy schema reuse on CRUD hot-paths.
-static SCHEMA_CATALOG: once_cell::sync::Lazy<
-    dashmap::DashMap<String, (Arc<Vec<axiom_core::ColumnInfo>>, i64)>,
-> = once_cell::sync::Lazy::new(dashmap::DashMap::new);
+static SCHEMA_CATALOG: once_cell::sync::Lazy<dashmap::DashMap<String, CachedSchemaEntry>> =
+    once_cell::sync::Lazy::new(dashmap::DashMap::new);
 
 const SCHEMA_CACHE_TTL_SECS: i64 = 300; // 5-minute in-memory schema TTL
 
