@@ -55,6 +55,19 @@ pub fn render_output<T: serde::Serialize>(
     Ok(())
 }
 
+/// Reads a password or secret input securely, falling back to standard input
+/// when running in non-interactive, piped, or pseudo-terminal environments where /dev/tty is absent.
+pub fn read_secret_input() -> Result<String, Box<dyn std::error::Error>> {
+    match rpassword::read_password() {
+        Ok(pass) => Ok(pass),
+        Err(_) => {
+            let mut line = String::new();
+            std::io::stdin().read_line(&mut line)?;
+            Ok(line.trim_end_matches(['\r', '\n']).to_string())
+        }
+    }
+}
+
 /// Dispatches CLI commands provided via command-line arguments.
 /// CONTRACT:
 ///  - Returns `Ok(false)` if the server daemon should start.
@@ -73,7 +86,27 @@ pub async fn run() -> Result<bool, Box<dyn std::error::Error>> {
         return Ok(false);
     }
 
-    let cli = Cli::parse();
+    // Intelligent argument normalization:
+    // If user ran `axiom -h <subcommand>` or `axiom --help <subcommand>`,
+    // re-order so clap prints help for that specific subcommand instead of root help.
+    let mut normalized_args = Vec::new();
+    let mut pending_help = false;
+    for (i, arg) in args.iter().enumerate() {
+        if i == 0 {
+            normalized_args.push(arg.clone());
+            continue;
+        }
+        if (arg == "-h" || arg == "--help") && i == 1 && args.len() > 2 && !args[2].starts_with('-') {
+            pending_help = true;
+            continue;
+        }
+        normalized_args.push(arg.clone());
+    }
+    if pending_help {
+        normalized_args.push("--help".to_string());
+    }
+
+    let cli = Cli::parse_from(&normalized_args);
     let format = if cli.jsonl {
         OutputFormat::Jsonl
     } else if cli.json {
@@ -329,7 +362,7 @@ async fn handle_user_command(
                 Some(p) if !p.is_empty() => p,
                 _ => {
                     eprint!("Enter password for admin '{}': ", username);
-                    rpassword::read_password()?
+                    read_secret_input()?
                 }
             };
 
@@ -360,8 +393,8 @@ async fn handle_user_command(
             let pass_input = match password {
                 Some(p) if !p.trim().is_empty() => Some(p),
                 _ if email.is_none() => {
-                    eprint!("Enter new password for admin '{}': ", username);
-                    let p = rpassword::read_password()?;
+                    eprint!("Enter new password for admin '{}' (leave blank to keep current): ", username);
+                    let p = read_secret_input()?;
                     if p.trim().is_empty() {
                         None
                     } else {
@@ -372,6 +405,11 @@ async fn handle_user_command(
             };
 
             let email_opt = email.as_deref().map(Some);
+            if email_opt.is_none() && pass_input.is_none() {
+                eprintln!("No updates specified for admin '{}'. Use --email <EMAIL> or --password <PASS>.", username);
+                return Ok(());
+            }
+
             let updated = MetadataStore::update_user(&username, email_opt, pass_input.as_deref())
                 .await
                 .map_err(|e| format!("User update failed: {}", e))?;
@@ -2223,7 +2261,6 @@ idempotency_ttl = 86400          # 24-hour retention for Idempotency-Key retry r
 
 # ─── Upstream Fault Tolerance (Circuit Breaker) ──────────────────────────────
 [circuit_breaker]
-enabled = true
 failure_threshold = 5            # Consecutive database dropouts before tripping breaker open
 recovery_time = 15               # Cool-down period before attempting a probe request (seconds)
 half_open_max_requests = 5       # Number of trial probes allowed in half-open state before closing
@@ -3222,7 +3259,7 @@ async fn handle_login_command(
         Some(p) if !p.is_empty() => p,
         _ => {
             eprint!("Enter password for admin '{}': ", username);
-            rpassword::read_password()?
+            read_secret_input()?
         }
     };
 
@@ -3296,7 +3333,7 @@ async fn handle_setup_command(
                 Some(p) if !p.is_empty() => p,
                 _ => {
                     eprint!("Enter password for new admin '{}': ", username);
-                    rpassword::read_password()?
+                    read_secret_input()?
                 }
             };
             let resp = client.setup_account(&username, &pass).await?;
@@ -3383,7 +3420,7 @@ async fn handle_setup_command(
             };
 
             eprint!("2. Enter password (min 8 chars): ");
-            let pass = rpassword::read_password()?;
+            let pass = read_secret_input()?;
             if pass.len() < 8 {
                 return Err("Password must be at least 8 characters".into());
             }
