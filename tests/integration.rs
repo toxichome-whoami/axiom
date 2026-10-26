@@ -3506,3 +3506,59 @@ async fn test_db_zero_copy_streaming_and_etag_caching() {
         "application/x-ndjson"
     );
 }
+
+#[tokio::test]
+async fn test_admin_delete_blob_namespace_lifecycle() {
+    setup_test_metadata();
+    ensure_blob_engine().await;
+    axiom_cache::CacheEngine::delete("rl:ip:127.0.0.1").await;
+    axiom_cache::CacheEngine::delete("penalty:127.0.0.1").await;
+    let admin_token = BASE64_STANDARD.encode("admin_key:secret_admin");
+
+    let ns_name = "test-delete-ns";
+
+    // 1. Create the namespace via Admin API
+    let req = Request::post("/admin/v1/blobs/namespaces")
+        .header("Authorization", format!("Bearer {}", admin_token))
+        .header("Content-Type", "application/json")
+        .body(Body::from(
+            serde_json::to_vec(&serde_json::json!({
+                "name": ns_name,
+                "max_bytes": 1048576,
+                "is_public": false
+            }))
+            .unwrap(),
+        ))
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::CREATED);
+
+    // 2. Put an object into this namespace
+    let req = Request::put(format!("/api/v1/blobs/{}/doc.txt", ns_name))
+        .header("X-Axiom-Key", &admin_token)
+        .header("Content-Type", "text/plain")
+        .body(Body::from("hello world"))
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::CREATED);
+
+    // 3. Delete namespace via Admin API: DELETE /admin/v1/blobs/namespaces/:namespace
+    let req = Request::delete(format!("/admin/v1/blobs/namespaces/{}", ns_name))
+        .header("Authorization", format!("Bearer {}", admin_token))
+        .body(Body::empty())
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    let body = axum::body::to_bytes(res.into_body(), 65536).await.unwrap();
+    let resp_json: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(resp_json["data"]["deleted_objects"], 1);
+
+    // 4. Verify subsequent lookup returns 404 NOT_FOUND
+    let req = Request::get(format!("/admin/v1/blobs/namespaces/{}", ns_name))
+        .header("Authorization", format!("Bearer {}", admin_token))
+        .body(Body::empty())
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::NOT_FOUND);
+}

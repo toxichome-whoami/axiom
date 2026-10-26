@@ -569,7 +569,7 @@ export const api = {
     is_public?: boolean,
     cors_origins?: string[],
   ) =>
-    request<NamespaceInfo>("/api/v1/blobs/namespaces", {
+    request<NamespaceInfo>("/admin/v1/blobs/namespaces", {
       method: "POST",
       body: JSON.stringify({
         name,
@@ -588,7 +588,7 @@ export const api = {
     },
   ) =>
     request<NamespaceInfo>(
-      `/api/v1/blobs/namespaces/${encodeURIComponent(name)}`,
+      `/admin/v1/blobs/namespaces/${encodeURIComponent(name)}`,
       {
         method: "PATCH",
         body: JSON.stringify(data),
@@ -596,7 +596,7 @@ export const api = {
     ),
   deleteBlobNamespace: (name: string) =>
     request<{ deleted_objects: number }>(
-      `/api/v1/blobs/namespaces/${encodeURIComponent(name)}`,
+      `/admin/v1/blobs/namespaces/${encodeURIComponent(name)}`,
       {
         method: "DELETE",
       },
