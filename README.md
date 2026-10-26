@@ -25,8 +25,6 @@ Single Static Binary · Zero-Lock RBAC · Embedded Blob Store · Sub-10MB RAM Fo
 
 </div>
 
----
-
 ## Highlights
 
 - **Universal Database REST API**: Instantly expose auto-introspected CRUD endpoints, keyset pagination, and AST-guarded parameterized SQL queries across **7 major database engines**.
@@ -35,8 +33,6 @@ Single Static Binary · Zero-Lock RBAC · Embedded Blob Store · Sub-10MB RAM Fo
 - **Built-in Model Context Protocol (MCP)**: Governed tool and resource access (`/mcp/v1`) for AI coding agents like Claude Code, Cursor, Windsurf, and Copilot.
 - **Zero-Lock Hot Path**: Authentication and RBAC evaluated in **sub-microsecond** time via `ArcSwap` memory snapshots, eliminating database lock contention.
 - **Single Portable Binary**: Everything runs in one sub-15MB executable (<10MB idle RAM) with an embedded Web UI, self-bootstrapping Zig build pipeline, and P2P cluster mesh.
-
----
 
 ## Supported Databases
 
@@ -51,8 +47,6 @@ Axiom automatically inspects schemas and adapts dialects across upstream databas
 | **ClickHouse**           | 22+ (Analytical HTTP) | `clickhouse://user:password@localhost:8123/default`                                 |
 | **Snowflake**            | Cloud Data Warehouse  | `snowflake://user:pass@org-account.snowflakecomputing.com?warehouse=WH&database=DB` |
 | **Oracle Database**      | 19c, 21c, 23ai        | `oracle://user:pass@localhost:1521/XEPDB1` or `ords+https://ords-host/ords/schema`  |
-
----
 
 ## Quick Start
 
@@ -116,8 +110,6 @@ curl -X POST "http://localhost:4500/api/v1/db/main_db/query" \
   -d '{"query": "SELECT id, email FROM users WHERE status = $1", "params": ["active"]}'
 ```
 
----
-
 ## AI Agent Integration (MCP)
 
 Axiom runs a native [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server at `/mcp/v1`, exposing 15 governed database and blob tools to AI coding assistants:
@@ -143,8 +135,6 @@ Add to `mcp.json`:
 }
 ```
 
----
-
 ## Performance Highlights
 
 All figures are empirical micro-benchmarks measured via Criterion.rs ([Full Benchmark Report](docs/benchmarks.md)):
@@ -159,8 +149,6 @@ All figures are empirical micro-benchmarks measured via Criterion.rs ([Full Benc
 | **Constant-Time Key Auth Hit**     | **529.5 ns**           | `< 5 µs`         | Base64 decode + BLAKE3 hash verification         |
 | **Capability Ticket Verification** | **586.1 ns**           | `< 2 µs`         | Stateless HMAC-BLAKE3 capability token           |
 | **Full HTTP Request Pipeline**     | **13.4 µs** (0.013 ms) | `< 50 µs`        | Full Axum router, WAF, and middleware dispatch   |
-
----
 
 ## Architecture at a Glance
 
@@ -195,8 +183,6 @@ flowchart LR
     BLOB --> DISK
 ```
 
----
-
 ## Architectural Comparison
 
 | Dimension                 | Axiom Gateway                       | FaucetDB          | PostgREST            | Hasura v2/v3         | Supabase               |
@@ -212,8 +198,6 @@ flowchart LR
 | **Embedded Admin UI**     | **Built-in** (Vite + TS + Tailwind) | Embedded (Preact) | None                 | Web Console          | Supabase Studio        |
 | **Supported SQL Engines** | **7 Engines**                       | 6 Engines         | Postgres only        | Postgres + plugins   | Postgres only          |
 
----
-
 ## Documentation
 
 Deep dive into the complete documentation suite:
@@ -224,8 +208,6 @@ Deep dive into the complete documentation suite:
 | **[Configuration Guide](docs/configuration.md)** | Complete `config.toml` options, module reference, `.env` overrides, and production checklist |
 | **[Build & Toolchain Guide](docs/building.md)**  | Zero-bloat self-bootstrapping build pipeline with Zig (no MSVC / MinGW required)             |
 | **[Benchmark Report](docs/benchmarks.md)**       | Empirical Criterion.rs micro-benchmarks across all hot paths and subsystems                  |
-
----
 
 ## License
 

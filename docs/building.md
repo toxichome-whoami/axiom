@@ -14,8 +14,6 @@
 
 </div>
 
----
-
 ## Contents
 
 1. [Overview](#1-overview)
@@ -26,8 +24,6 @@
 6. [Release Optimization & Binary Footprint](#6-release-optimization--binary-footprint)
 7. [Directory Lifecycle & Clean-Up](#7-directory-lifecycle--clean-up)
 8. [Troubleshooting & FAQ](#8-troubleshooting--faq)
-
----
 
 ## 1. Overview
 
@@ -51,8 +47,6 @@ Axiom replaces both with a **native, self-bootstrapping build pipeline powered b
 | **System pollution**  | Visual Studio installers, system PATH bloat | **Zero** (in-memory PATH injection, local shims) |
 | **Cross-compilation** | Requires separate target SDKs               | **Built-in** (`zig cc -target ...`)              |
 | **Resulting binary**  | Often statically links heavy runtime DLLs   | **Sub-15 MB standalone binary**                  |
-
----
 
 ## 2. Quick Start
 
@@ -91,8 +85,6 @@ Verify the output:
 
 > [!NOTE]
 > If you are not modifying the Admin Web UI, step 2 can be skipped after the initial build, as assets in `ui/dist/` are embedded directly into the Rust binary via `rust-embed`.
-
----
 
 ## 3. Toolchain Architecture
 
@@ -134,8 +126,6 @@ flowchart TD
 3. **Windows `cp` Utility (`tools/zig/cp.zig`)**:
    A native Zig file-copy utility that replaces MSYS64 Unix coreutils during `libsql-ffi` amalgamation builds.
 
----
-
 ## 4. Development & Build Commands
 
 For day-to-day development, use `zig build` or the compiled `tools/zig/runner` binary:
@@ -158,8 +148,6 @@ For day-to-day development, use `zig build` or the compiled `tools/zig/runner` b
 
 > [!TIP]
 > On Windows, invoke `tools\zig\runner.exe <cmd>`. On Linux and macOS, use `./tools/zig/runner <cmd>`. Both behave identically.
-
----
 
 ## 5. Direct Cargo Usage
 
@@ -195,8 +183,6 @@ cargo test --workspace
 cargo build --release
 ```
 
----
-
 ## 6. Release Optimization & Binary Footprint
 
 Axiom enforces aggressive release profile settings in the root `Cargo.toml` to produce a minimal, self-contained single binary:
@@ -224,8 +210,6 @@ The resulting executable includes:
 - High-concurrency SQL query engine and AST transpiler
 - In-memory / hybrid query and response caches
 
----
-
 ## 7. Directory Lifecycle & Clean-Up
 
 Axiom keeps generated toolchain artifacts cleanly partitioned:
@@ -239,8 +223,6 @@ Axiom keeps generated toolchain artifacts cleanly partitioned:
 
 > [!NOTE]
 > If `.tools/` is ever deleted, running any `zig build` or `tools/zig/runner` command automatically detects its absence and regenerates all shims on-the-fly.
-
----
 
 ## 8. Troubleshooting & FAQ
 

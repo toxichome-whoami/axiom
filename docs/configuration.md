@@ -13,8 +13,6 @@
 
 </div>
 
----
-
 ## Contents
 
 1. [Overview](#1-overview)
@@ -25,8 +23,6 @@
 6. [Module Reference](#6-module-reference)
 7. [Environment Variable Overrides](#7-environment-variable-overrides)
 8. [Production Checklist](#8-production-checklist)
-
----
 
 ## 1. Overview
 
@@ -50,8 +46,6 @@
 | Sizes     | String with unit    | `"10mb"`, `"5gb"`, `"64kb"` |
 | Toggles   | Boolean             | `true`, `false`             |
 
----
-
 ## 2. Quick Start
 
 Axiom runs with **no config file at all**: it boots on compiled defaults and binds to `127.0.0.1:4500`.
@@ -70,8 +64,6 @@ host = "0.0.0.0"
 ```
 
 or, without editing the file: `SERVER__HOST=0.0.0.0 axiom server run`
-
----
 
 ## 3. Configuration Model & Precedence
 
@@ -100,8 +92,6 @@ flowchart TD
 - **Lock-free.** Handlers read config through `Arc` clones with no mutex contention.
 - **Not the same as `/admin/v1/reload`.** That endpoint refreshes the _metadata_ snapshot (keys, roles, pools) from disk. It never re-reads `config.toml`.
 
----
-
 ## 4. File Discovery & CLI Tools
 
 **Default:** `axiom server run` looks for `config.toml` in the current working directory.
@@ -121,8 +111,6 @@ axiom server run -c /etc/axiom/production.toml
 | `axiom config show`   | Validate and inspect configuration values from `config.toml` (`-c` path)                   |
 
 > Run `axiom config show` to validate syntax and inspect active TOML configuration values.
-
----
 
 ## 5. Full `config.toml` Blueprint
 
@@ -213,8 +201,6 @@ max_object = "5gb"                 # Max single object / multipart upload size
 verify_reads = false               # Recompute BLAKE3 on every read
 ```
 
----
-
 ## 6. Module Reference
 
 ### 6.1 `[server]`: network, limits, TLS, CORS
@@ -240,8 +226,6 @@ verify_reads = false               # Recompute BLAKE3 on every read
 > [!NOTE]
 > Set `tls_cert` and `tls_key` together. If you terminate TLS at a reverse proxy instead, leave both empty and set `trusted_proxies` to the proxy's address.
 
----
-
 ### 6.2 `[logging]`
 
 | Key             | Type    | Default    | Range / values                        | Description                                         |
@@ -256,8 +240,6 @@ verify_reads = false               # Recompute BLAKE3 on every read
 | `stdout`        | bool    | `true`     |                                       | Also write logs to stdout/stderr.                   |
 
 > In containers, keep `stdout = true` and `format = "json"` so your runtime's log collector picks up records.
-
----
 
 ### 6.3 `[rate_limit]`
 
@@ -276,8 +258,6 @@ Limits apply **per IP and per API key**. IPs in `server.allowed_ips` are exempt.
 | `penalty_cooldown`  | integer (s) | `300`                  | `10`–`86400`       | How long a ban lasts.                                              |
 
 **How it behaves with defaults:** a client may make 100 requests per 60 s (plus a burst of 20). After 10 violations it is blocked for 5 minutes. Exceeding limits returns `429 RATE_LIMITED`.
-
----
 
 ### 6.4 `[cache]`
 
@@ -298,8 +278,6 @@ Limits apply **per IP and per API key**. IPs in `server.allowed_ips` are exempt.
 > [!TIP]
 > Cached responses report `"cached": true` in the response `meta`. Flush all caches at runtime with `POST /admin/v1/cache/flush`; no restart is needed.
 
----
-
 ### 6.5 `[performance]`
 
 | Key                     | Type    | Default | Range         | Description                              |
@@ -309,8 +287,6 @@ Limits apply **per IP and per API key**. IPs in `server.allowed_ips` are exempt.
 | `rate_limit_cache_size` | integer | `256`   | `16`–`4096`   | Slots for rate-limit identity lookups.   |
 
 Defaults suit most deployments. Raise the first two only if you run a very large variety of distinct queries.
-
----
 
 ### 6.6 `[circuit_breaker]`
 
@@ -330,8 +306,6 @@ HALF-OPEN ──(any failure)──▶ OPEN
 | `success_threshold` | integer     | `3`     | `1`–`20`  | Successful probes needed in HALF-OPEN to close.                   |
 | `timeout`           | integer (s) | `30`    | `1`–`300` | Cooldown before probing recovery.                                 |
 
----
-
 ### 6.7 `[metadata]`
 
 The store behind API keys, users, roles, and database pools.
@@ -344,8 +318,6 @@ The store behind API keys, users, roles, and database pools.
 
 > Changes made through the CLI or Admin API reach running request handlers within `reload_interval` seconds, or immediately via `POST /admin/v1/reload`.
 
----
-
 ### 6.8 `[blob]`
 
 | Key            | Type | Default        | Range / values     | Description                                               |
@@ -357,8 +329,6 @@ The store behind API keys, users, roles, and database pools.
 
 > [!NOTE]
 > Without `verify_reads`, integrity is checked on demand via `POST /api/v1/blobs/objects/:ns/verify/*key` (single object) or `POST /admin/v1/blobs/scrub` (cluster-wide).
-
----
 
 ## 7. Environment Variable Overrides
 
@@ -422,8 +392,6 @@ volumes:
 ```
 
 > Point `METADATA__URL` and `BLOB__PATH` at the mounted volume; otherwise keys, roles, and blobs are lost when the container is replaced.
-
----
 
 ## 8. Production Checklist
 

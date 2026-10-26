@@ -14,8 +14,6 @@
 
 </div>
 
----
-
 ## Contents
 
 1. [Test Environment](#1-test-environment)
@@ -24,8 +22,6 @@
 4. [Detailed Micro-Benchmark Metrics](#4-detailed-micro-benchmark-metrics)
 5. [Axum HTTP Pipeline Latency](#5-axum-http-pipeline-latency)
 6. [Architectural Comparison](#6-architectural-comparison)
-
----
 
 ## 1. Test Environment
 
@@ -38,8 +34,6 @@ All micro-benchmarks are empirical and run using [Criterion.rs 0.5](https://bhei
 | **OS**            | Windows 11 Pro (x86_64)                                                |
 | **Rust Compiler** | `rustc 1.99.0` (`x86_64-pc-windows-gnu`)                               |
 | **Allocator**     | `mimalloc` (thread-local hardened freelist)                            |
-
----
 
 ## 2. Reproducibility
 
@@ -60,8 +54,6 @@ cargo test -p axiom-benches --bench pipeline -- --bench http_pipeline
 cargo test -p axiom-benches --bench pipeline -- --bench blob
 ```
 
----
-
 ## 3. Performance Highlights
 
 Key hot-path latencies at a glance (p50):
@@ -78,8 +70,6 @@ Key hot-path latencies at a glance (p50):
 | **API Key Authentication Hit**     | **529.5 ns**           | `< 5 µs`         | Base64 decode, BLAKE3 hash check, role resolution     |
 | **Capability Ticket Verification** | **586.1 ns**           | `< 2 µs`         | Cryptographic HMAC-BLAKE3 verification                |
 | **Full HTTP Request Pipeline**     | **13.4 µs** (0.013 ms) | `< 50 µs`        | Ready probe through Axum router and middleware        |
-
----
 
 ## 4. Detailed Micro-Benchmark Metrics
 
@@ -143,8 +133,6 @@ SQL statements are validated and parsed into Abstract Syntax Trees using `sqlpar
 | `blob/ticket_generation`            | `< 2 µs`   | **745.0 ns**   | `[714.46 ns ... 777.82 ns]` | Pre-signed capability ticket generation      |
 | `blob/blake3_chunk_hash_64kb`       | `< 15 µs`  | **10.88 µs**   | `[10.82 µs ... 10.94 µs]`   | Cryptographic content hashing of 64 KB chunk |
 
----
-
 ## 5. Axum HTTP Pipeline Latency
 
 End-to-end request/response latency through the Axum router, WAF, authentication, and hoisted runtime state:
@@ -156,8 +144,6 @@ End-to-end request/response latency through the Axum router, WAF, authentication
 | `http_pipeline/get_health_endpoint`          | `< 50 µs`      | **18.0 µs** (0.018 ms) | `[17.78 µs ... 18.31 µs]` |
 | `http_pipeline/unauthorized_admin_rejection` | `< 50 µs`      | **19.7 µs** (0.020 ms) | `[19.46 µs ... 20.01 µs]` |
 | `http_pipeline/unauthorized_blob_rejection`  | `< 50 µs`      | **22.5 µs** (0.023 ms) | `[21.87 µs ... 23.38 µs]` |
-
----
 
 ## 6. Architectural Comparison
 
