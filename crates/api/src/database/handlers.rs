@@ -74,10 +74,10 @@ static AST_CACHE: once_cell::sync::Lazy<dashmap::DashMap<String, Arc<CachedAstIn
 
 const MAX_AST_CACHE_ENTRIES: usize = 4096;
 
-/// In-memory schema catalog caching table column definitions: "{db_name}:{table_name}" -> (Vec<ColumnInfo>, expires_at_unix)
-/// Eliminates redundant database-level information_schema roundtrips on CRUD hot-paths.
+/// In-memory schema catalog caching table column definitions: "{db_name}:{table_name}" -> (Arc<Vec<ColumnInfo>>, expires_at_unix)
+/// Eliminates redundant database-level information_schema roundtrips and zero-copy schema reuse on CRUD hot-paths.
 static SCHEMA_CATALOG: once_cell::sync::Lazy<
-    dashmap::DashMap<String, (Vec<axiom_core::ColumnInfo>, i64)>,
+    dashmap::DashMap<String, (Arc<Vec<axiom_core::ColumnInfo>>, i64)>,
 > = once_cell::sync::Lazy::new(dashmap::DashMap::new);
 
 const SCHEMA_CACHE_TTL_SECS: i64 = 300; // 5-minute in-memory schema TTL
@@ -87,7 +87,7 @@ pub async fn get_cached_table_columns(
     engine: &std::sync::Arc<dyn axiom_db::DatabaseEngine>,
     db_name: &str,
     table_name: &str,
-) -> Option<Vec<axiom_core::ColumnInfo>> {
+) -> Option<Arc<Vec<axiom_core::ColumnInfo>>> {
     let key = format!("{}:{}", db_name, table_name);
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -113,8 +113,9 @@ pub async fn get_cached_table_columns(
                 SCHEMA_CATALOG.remove(&k);
             }
         }
-        SCHEMA_CATALOG.insert(key, (cols.clone(), now + SCHEMA_CACHE_TTL_SECS));
-        Some(cols)
+        let arc_cols = Arc::new(cols);
+        SCHEMA_CATALOG.insert(key, (arc_cols.clone(), now + SCHEMA_CACHE_TTL_SECS));
+        Some(arc_cols)
     } else {
         None
     }
@@ -688,7 +689,8 @@ impl QueryExecutionPipeline {
 
         // Cache miss or mutation. Check AST Cache before falling back to full sqlparser.
         let dialect_name = engine.dialect();
-        let ast_cache_key = format!("{}:{}", dialect_name, sql);
+        let trimmed_sql = sql.trim();
+        let ast_cache_key = format!("{}:{}", dialect_name, trimmed_sql);
 
         let (is_mutation, formatted_sql, multiple_statements) = if let Some(cached) =
             AST_CACHE.get(&ast_cache_key)
@@ -1264,7 +1266,9 @@ impl QueryExecutionPipeline {
         if let Some(ref key) = cache_key {
             IN_FLIGHT_QUERIES.remove(key);
             if let Some(tx) = in_flight_tx {
-                let _ = tx.send(outcome.clone());
+                if tx.receiver_count() > 0 {
+                    let _ = tx.send(outcome.clone());
+                }
             }
         }
 
@@ -1679,10 +1683,8 @@ pub async fn fetch_rows(
     let (result, _) =
         QueryExecutionPipeline::run_query(&db_name, &sql, values, &auth, &db_cfg).await?;
 
-    let result_inner = Arc::try_unwrap(result).unwrap_or_else(|arc| (*arc).clone());
-
     let mut next_cursor = None;
-    if let Some(ref rows) = result_inner.rows {
+    if let Some(ref rows) = result.rows {
         if !rows.is_empty() && rows.len() == limit as usize {
             if let Some(last_row) = rows.last() {
                 if let Some((ref order_col, _)) = order_col_opt {
@@ -1698,7 +1700,8 @@ pub async fn fetch_rows(
         }
     }
 
-    let rows_data = result_inner.rows.unwrap_or_default();
+    let empty_vec = Vec::new();
+    let rows_ref = result.rows.as_deref().unwrap_or(&empty_vec);
 
     let is_ndjson = headers
         .get(axum::http::header::ACCEPT)
@@ -1713,11 +1716,16 @@ pub async fn fetch_rows(
     });
 
     if is_ndjson {
-        let stream = crate::database::streaming::stream_ndjson_rows(rows_data);
+        let shared_rows = Arc::new(result.rows.clone().unwrap_or_default());
+        let stream = crate::database::streaming::stream_ndjson_rows_shared(shared_rows);
         let body = axum::body::Body::from_stream(stream);
         axum::response::Response::builder()
             .status(axum::http::StatusCode::OK)
             .header(axum::http::header::CONTENT_TYPE, "application/x-ndjson")
+            .header(
+                axum::http::header::CACHE_CONTROL,
+                "private, max-age=5, must-revalidate",
+            )
             .body(body)
             .map_err(|e| {
                 tracing::error!("Response build error: {}", e);
@@ -1727,13 +1735,18 @@ pub async fn fetch_rows(
                     axum::http::StatusCode::INTERNAL_SERVER_ERROR,
                 )
             })
-    } else if params.stream == Some(true) || rows_data.len() > 100 {
+    } else if params.stream == Some(true) || rows_ref.len() > 100 {
+        let shared_rows = Arc::new(result.rows.clone().unwrap_or_default());
         let stream =
-            crate::database::streaming::stream_json_array_envelope(rows_data, pagination_meta);
+            crate::database::streaming::stream_json_array_envelope_shared(shared_rows, pagination_meta);
         let body = axum::body::Body::from_stream(stream);
         axum::response::Response::builder()
             .status(axum::http::StatusCode::OK)
             .header(axum::http::header::CONTENT_TYPE, "application/json")
+            .header(
+                axum::http::header::CACHE_CONTROL,
+                "private, max-age=5, must-revalidate",
+            )
             .body(body)
             .map_err(|e| {
                 tracing::error!("Response build error: {}", e);
@@ -1747,7 +1760,7 @@ pub async fn fetch_rows(
         let envelope = serde_json::json!({
             "success": true,
             "data": {
-                "rows": rows_data,
+                "rows": rows_ref,
                 "pagination": pagination_meta
             },
             "pagination": pagination_meta,
@@ -1761,9 +1774,40 @@ pub async fn fetch_rows(
                 axum::http::StatusCode::INTERNAL_SERVER_ERROR,
             )
         })?;
+
+        // HTTP 304 conditional validation: fast BLAKE3 ETag check
+        let etag_val = format!("\"{}\"", blake3::hash(&bytes).to_hex());
+        if let Some(inm) = headers
+            .get(axum::http::header::IF_NONE_MATCH)
+            .and_then(|v| v.to_str().ok())
+        {
+            if inm.trim() == etag_val || inm.trim() == "*" {
+                return axum::response::Response::builder()
+                    .status(axum::http::StatusCode::NOT_MODIFIED)
+                    .header(axum::http::header::ETAG, &etag_val)
+                    .header(
+                        axum::http::header::CACHE_CONTROL,
+                        "private, max-age=5, must-revalidate",
+                    )
+                    .body(axum::body::Body::empty())
+                    .map_err(|e| {
+                        AxiomError::new(
+                            "RESPONSE_BUILD_FAILED",
+                            &e.to_string(),
+                            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                        )
+                    });
+            }
+        }
+
         axum::response::Response::builder()
             .status(axum::http::StatusCode::OK)
             .header(axum::http::header::CONTENT_TYPE, "application/json")
+            .header(axum::http::header::ETAG, &etag_val)
+            .header(
+                axum::http::header::CACHE_CONTROL,
+                "private, max-age=5, must-revalidate",
+            )
             .body(axum::body::Body::from(bytes))
             .map_err(|e| {
                 tracing::error!("Response build error: {}", e);
@@ -1935,14 +1979,14 @@ pub async fn describe_table(
     {
         cols
     } else {
-        engine.describe_table(&table_name).await.map_err(|e| {
+        Arc::new(engine.describe_table(&table_name).await.map_err(|e| {
             tracing::error!("Describe failed: {}", e);
             AxiomError::new(
                 "DESCRIBE_FAILED",
                 "Failed to retrieve table schema",
                 axum::http::StatusCode::INTERNAL_SERVER_ERROR,
             )
-        })?
+        })?)
     };
 
     let foreign_keys = engine.get_foreign_keys(&table_name).await.map_err(|e| {

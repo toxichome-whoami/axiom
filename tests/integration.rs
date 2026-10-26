@@ -824,9 +824,9 @@ async fn brute_force_api_key_bad_secrets_ban_attacker_ip_not_key() {
 #[tokio::test]
 async fn distributed_credential_stuffing_account_lockout() {
     ensure_metadata_store().await;
-    let username = "target_victim_unique_lockout";
+    let username = format!("victim_{}", uuid::Uuid::new_v4().simple());
     let _ =
-        axiom_metadata::MetadataStore::create_user(username, None, "ValidVictimP@ssw0rd!").await;
+        axiom_metadata::MetadataStore::create_user(&username, None, "ValidVictimP@ssw0rd!").await;
 
     // Simulate 5 failed login attempts from 5 distinct IP addresses
     for i in 1..=5 {
@@ -3416,4 +3416,84 @@ async fn test_zero_overhead_upload_inlining_and_header_preflight_rejection() {
         .unwrap();
     let res = create_app().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::PAYLOAD_TOO_LARGE);
+}
+
+#[tokio::test]
+async fn test_db_zero_copy_streaming_and_etag_caching() {
+    setup_test_metadata();
+    ensure_test_items_table().await;
+    axiom_cache::CacheEngine::delete("rl:ip:127.0.0.1").await;
+    axiom_cache::CacheEngine::delete("penalty:127.0.0.1").await;
+    let admin_token = BASE64_STANDARD.encode("admin_key:secret_admin");
+
+    // 1. Fetch rows from testdb/items/rows -> verify 200 OK with ETag & Cache-Control headers
+    let req = Request::get("/api/v1/db/testdb/items/rows?limit=10")
+        .header("X-Axiom-Key", &admin_token)
+        .body(Body::empty())
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let etag = res
+        .headers()
+        .get("etag")
+        .expect("ETag header must be present on row responses")
+        .to_str()
+        .unwrap()
+        .to_string();
+    assert!(res.headers().contains_key("cache-control"));
+
+    // 2. Conditional request with matching If-None-Match -> must return 304 Not Modified with 0 body bytes
+    let req = Request::get("/api/v1/db/testdb/items/rows?limit=10")
+        .header("X-Axiom-Key", &admin_token)
+        .header("If-None-Match", &etag)
+        .body(Body::empty())
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::NOT_MODIFIED);
+    let body_bytes = axum::body::to_bytes(res.into_body(), 65536).await.unwrap();
+    assert!(body_bytes.is_empty(), "304 Not Modified body must be empty");
+
+    // 3. Raw query endpoint /api/v1/db/testdb/query -> verify ETag & 304 conditional validation
+    let query_payload = serde_json::json!({
+        "sql": "SELECT id, name FROM items LIMIT 5"
+    });
+    let req = Request::post("/api/v1/db/testdb/query")
+        .header("X-Axiom-Key", &admin_token)
+        .header("Content-Type", "application/json")
+        .body(Body::from(serde_json::to_vec(&query_payload).unwrap()))
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let query_etag = res
+        .headers()
+        .get("etag")
+        .expect("ETag header must be present on query responses")
+        .to_str()
+        .unwrap()
+        .to_string();
+
+    // Conditional repeat request to /query with If-None-Match
+    let req = Request::post("/api/v1/db/testdb/query")
+        .header("X-Axiom-Key", &admin_token)
+        .header("Content-Type", "application/json")
+        .header("If-None-Match", &query_etag)
+        .body(Body::from(serde_json::to_vec(&query_payload).unwrap()))
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::NOT_MODIFIED);
+    let query_body_bytes = axum::body::to_bytes(res.into_body(), 65536).await.unwrap();
+    assert!(query_body_bytes.is_empty());
+
+    // 4. Test NDJSON streaming output format
+    let req = Request::get("/api/v1/db/testdb/items/rows?limit=5")
+        .header("X-Axiom-Key", &admin_token)
+        .header("Accept", "application/x-ndjson")
+        .body(Body::empty())
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    assert_eq!(
+        res.headers().get("content-type").unwrap(),
+        "application/x-ndjson"
+    );
 }

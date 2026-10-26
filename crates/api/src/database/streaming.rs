@@ -10,26 +10,26 @@ use bytes::{Bytes, BytesMut};
 use futures::stream::Stream;
 use serde_json::Value;
 use std::io;
+use std::sync::Arc;
 
-pub const STREAM_CHUNK_SIZE: usize = 65536; // 64 KB
+/// High-throughput 128 KB async buffer size for database row streaming (NDJSON & JSON chunks).
+/// Reduces syscalls, Tokio task yields, and TCP window starvation compared to 64 KB buffers.
+pub const STREAM_CHUNK_SIZE: usize = 128 * 1024; // 128 KB
 
-/// Streams database rows formatted as Newline-Delimited JSON (NDJSON).
-/// Each row is serialized as an independent JSON line terminated by `\n`.
-/// CONTRACT:
-///  - Precondition: `rows` is a vector of row JSON values.
-///  - Output: Stream of `Result<Bytes, io::Error>` where each chunk is <= 64KB (plus single row overflow if a row exceeds 64KB).
-///  - Invariant: Memory consumption is bounded by buffer size.
-pub fn stream_ndjson_rows(
-    rows: Vec<Value>,
+/// Streams database rows formatted as Newline-Delimited JSON (NDJSON) from an Arc-wrapped row vector without cloning.
+pub fn stream_ndjson_rows_shared(
+    rows: Arc<Vec<Value>>,
 ) -> impl Stream<Item = Result<Bytes, io::Error>> + Send + 'static {
     futures::stream::unfold(
-        (rows.into_iter(), BytesMut::with_capacity(STREAM_CHUNK_SIZE)),
+        (rows, 0usize, BytesMut::with_capacity(STREAM_CHUNK_SIZE)),
         |mut state| async move {
-            let (ref mut iter, ref mut buf) = state;
+            let (ref rows, ref mut idx, ref mut buf) = state;
             buf.clear();
 
-            for row in iter.by_ref() {
-                if let Ok(serialized) = serde_json::to_vec(&row) {
+            while *idx < rows.len() {
+                let row = &rows[*idx];
+                *idx += 1;
+                if let Ok(serialized) = serde_json::to_vec(row) {
                     buf.extend_from_slice(&serialized);
                     buf.extend_from_slice(b"\n");
                 }
@@ -49,13 +49,17 @@ pub fn stream_ndjson_rows(
     )
 }
 
-/// Streams database rows inside the standard Axiom JSON response envelope:
-/// `{"success":true,"data":{"rows":[...],"pagination":{...}},"pagination":{...},"error":null}`
-/// CONTRACT:
-///  - Emits JSON byte chunks without buffering the full dataset in memory.
-///  - Output is byte-equivalent to the monolithic serializer.
-pub fn stream_json_array_envelope(
+/// Streams database rows formatted as Newline-Delimited JSON (NDJSON).
+/// Each row is serialized as an independent JSON line terminated by `\n`.
+pub fn stream_ndjson_rows(
     rows: Vec<Value>,
+) -> impl Stream<Item = Result<Bytes, io::Error>> + Send + 'static {
+    stream_ndjson_rows_shared(Arc::new(rows))
+}
+
+/// Streams database rows inside the standard Axiom JSON response envelope from an Arc-wrapped vector without cloning.
+pub fn stream_json_array_envelope_shared(
+    rows: Arc<Vec<Value>>,
     pagination: Value,
 ) -> impl Stream<Item = Result<Bytes, io::Error>> + Send + 'static {
     enum StreamStage {
@@ -67,7 +71,8 @@ pub fn stream_json_array_envelope(
 
     struct StreamState {
         stage: StreamStage,
-        iter: std::vec::IntoIter<Value>,
+        rows: Arc<Vec<Value>>,
+        index: usize,
         first_row: bool,
         pagination: Value,
         buf: BytesMut,
@@ -75,7 +80,8 @@ pub fn stream_json_array_envelope(
 
     let initial_state = StreamState {
         stage: StreamStage::Header,
-        iter: rows.into_iter(),
+        rows,
+        index: 0,
         first_row: true,
         pagination,
         buf: BytesMut::with_capacity(STREAM_CHUNK_SIZE),
@@ -98,14 +104,17 @@ pub fn stream_json_array_envelope(
                 }
                 StreamStage::Rows => {
                     let mut yielded = false;
-                    for row in state.iter.by_ref() {
+                    while state.index < state.rows.len() {
+                        let row = &state.rows[state.index];
+                        state.index += 1;
+
                         if !state.first_row {
                             state.buf.extend_from_slice(b",");
                         } else {
                             state.first_row = false;
                         }
 
-                        if let Ok(row_bytes) = serde_json::to_vec(&row) {
+                        if let Ok(row_bytes) = serde_json::to_vec(row) {
                             state.buf.extend_from_slice(&row_bytes);
                         }
 
@@ -147,6 +156,18 @@ pub fn stream_json_array_envelope(
             }
         }
     })
+}
+
+/// Streams database rows inside the standard Axiom JSON response envelope:
+/// `{"success":true,"data":{"rows":[...],"pagination":{...}},"pagination":{...},"error":null}`
+/// CONTRACT:
+///  - Emits JSON byte chunks without buffering the full dataset in memory.
+///  - Output is byte-equivalent to the monolithic serializer.
+pub fn stream_json_array_envelope(
+    rows: Vec<Value>,
+    pagination: Value,
+) -> impl Stream<Item = Result<Bytes, io::Error>> + Send + 'static {
+    stream_json_array_envelope_shared(Arc::new(rows), pagination)
 }
 
 #[cfg(test)]
@@ -234,5 +255,32 @@ mod tests {
             "Large row set must be split into multiple bounded chunks"
         );
         assert!(total_bytes > 2000 * 100);
+    }
+
+    #[tokio::test]
+    async fn test_stream_shared_arc_no_cloning() {
+        let mut rows = Vec::new();
+        for i in 0..5 {
+            rows.push(serde_json::json!({ "id": i, "val": "shared" }));
+        }
+        let shared_rows = Arc::new(rows);
+        let pagination = serde_json::json!({"limit": 5, "has_more": false, "next_cursor": null});
+
+        let mut stream = Box::pin(stream_json_array_envelope_shared(shared_rows.clone(), pagination));
+        let mut combined = Vec::new();
+        while let Some(Ok(chunk)) = stream.next().await {
+            combined.extend_from_slice(&chunk);
+        }
+        let parsed: Value = serde_json::from_slice(&combined).unwrap();
+        assert_eq!(parsed["data"]["rows"].as_array().unwrap().len(), 5);
+
+        // Also test NDJSON shared
+        let mut ndjson_stream = Box::pin(stream_ndjson_rows_shared(shared_rows));
+        let mut ndjson_bytes = Vec::new();
+        while let Some(Ok(chunk)) = ndjson_stream.next().await {
+            ndjson_bytes.extend_from_slice(&chunk);
+        }
+        let lines: Vec<&str> = std::str::from_utf8(&ndjson_bytes).unwrap().trim().split('\n').collect();
+        assert_eq!(lines.len(), 5);
     }
 }
