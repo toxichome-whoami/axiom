@@ -133,6 +133,10 @@ pub fn get_admin_router() -> Router {
                 .patch(update_namespace_handler)
                 .delete(delete_namespace_handler),
         )
+        .route(
+            "/namespaces/:namespace/tickets",
+            get(list_namespace_tickets_handler).post(create_ticket_handler),
+        )
         .route("/tickets", get(list_tickets_handler))
         .route("/tickets/:signature/revoke", post(revoke_ticket_handler))
         .route("/tickets/:signature/enable", post(enable_ticket_handler))

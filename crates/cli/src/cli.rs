@@ -82,6 +82,46 @@ pub async fn run() -> Result<bool, Box<dyn std::error::Error>> {
         OutputFormat::Table
     };
 
+    if cli.brief {
+        let brief_data = json!({
+            "name": "axiom",
+            "version": env!("CARGO_PKG_VERSION"),
+            "description": "Axiom API Gateway & Data Access Platform CLI",
+            "capabilities": [
+                "server",
+                "user",
+                "key",
+                "role",
+                "db",
+                "blob",
+                "cluster",
+                "mcp",
+                "cache",
+                "audit",
+                "health",
+                "metrics",
+                "benchmark",
+                "doctor",
+                "config",
+                "completions"
+            ],
+            "docs": "https://github.com/Toxichome/axiom"
+        });
+        if format == OutputFormat::Json {
+            println!("{}", serde_json::to_string_pretty(&brief_data)?);
+        } else if format == OutputFormat::Jsonl {
+            println!("{}", serde_json::to_string(&brief_data)?);
+        } else {
+            println!(
+                "Axiom CLI v{} — High-Performance API Gateway & Data Platform",
+                env!("CARGO_PKG_VERSION")
+            );
+            println!("Unified data federation, distributed blob storage, cluster mesh, and Model Context Protocol (MCP) server.");
+            println!("Run 'axiom --help' for full subcommand documentation or 'axiom completions <shell>' for autocompletion.");
+        }
+        return Ok(true);
+    }
+
     match cli.command {
         None | Some(Commands::Server(_)) => Ok(false),
 
@@ -233,6 +273,18 @@ pub async fn run() -> Result<bool, Box<dyn std::error::Error>> {
 
         Some(Commands::Config { command }) => {
             handle_config_command(command, format).await?;
+            Ok(true)
+        }
+
+        Some(Commands::Mcp { command }) => {
+            let client = AdminClient::new(&cli.url, cli.key);
+            handle_mcp_command(client, command, format).await?;
+            Ok(true)
+        }
+
+        Some(Commands::Completions { shell }) => {
+            let mut cmd = <Cli as clap::CommandFactory>::command();
+            clap_complete::generate(shell, &mut cmd, "axiom", &mut std::io::stdout());
             Ok(true)
         }
     }
@@ -2487,13 +2539,18 @@ async fn handle_blob_command(
                     }
                 } else {
                     println!(
-                        "{:<20} {:<12} {:<18} {:<16}",
-                        "NAMESPACE", "OBJECTS", "TOTAL SIZE", "QUOTA"
+                        "{:<22} {:<12} {:<10} {:<18} {:<16}",
+                        "NAMESPACE", "VISIBILITY", "OBJECTS", "TOTAL SIZE", "QUOTA"
                     );
-                    println!("{:-<70}", "");
+                    println!("{:-<80}", "");
                     if let Some(list) = resp.get("data").and_then(|d| d.as_array()) {
                         for ns in list {
                             let name = ns.get("name").and_then(|n| n.as_str()).unwrap_or("-");
+                            let is_pub = ns
+                                .get("is_public")
+                                .and_then(|p| p.as_bool())
+                                .unwrap_or(false);
+                            let vis = if is_pub { "public" } else { "private" };
                             let objects =
                                 ns.get("object_count").and_then(|c| c.as_u64()).unwrap_or(0);
                             let bytes = ns.get("total_bytes").and_then(|b| b.as_u64()).unwrap_or(0);
@@ -2504,8 +2561,9 @@ async fn handle_blob_command(
                                     "unlimited".to_string()
                                 };
                             println!(
-                                "{:<20} {:<12} {:<18} {:<16}",
+                                "{:<22} {:<12} {:<10} {:<18} {:<16}",
                                 name,
+                                vis,
                                 objects,
                                 format_bytes(bytes),
                                 quota_str
@@ -2514,23 +2572,142 @@ async fn handle_blob_command(
                     }
                 }
             }
-            BlobNsCommands::Create { name, max_bytes } => {
-                let resp = client.create_blob_namespace(&name, max_bytes).await?;
+            BlobNsCommands::Get { name } => {
+                let resp = client.get_blob_namespace(&name).await?;
                 if format == OutputFormat::Json {
                     println!("{}", serde_json::to_string_pretty(&resp)?);
                 } else if format == OutputFormat::Jsonl {
                     println!("{}", serde_json::to_string(&resp)?);
                 } else {
-                    println!("Namespace '{}' created successfully.", name);
+                    let data = resp.get("data").cloned().unwrap_or(resp);
+                    let ns_name = data.get("name").and_then(|n| n.as_str()).unwrap_or(&name);
+                    let is_pub = data
+                        .get("is_public")
+                        .and_then(|p| p.as_bool())
+                        .unwrap_or(false);
+                    let vis = if is_pub { "public" } else { "private" };
+                    let objects = data
+                        .get("object_count")
+                        .and_then(|c| c.as_u64())
+                        .unwrap_or(0);
+                    let bytes = data
+                        .get("total_bytes")
+                        .and_then(|b| b.as_u64())
+                        .unwrap_or(0);
+                    let quota_str = if let Some(q) = data.get("max_bytes").and_then(|m| m.as_u64())
+                    {
+                        format_bytes(q)
+                    } else {
+                        "unlimited".to_string()
+                    };
+                    let created = data.get("created_at").and_then(|c| c.as_i64()).unwrap_or(0);
+
+                    println!("Storage Namespace: {}", ns_name);
+                    println!("{:-<45}", "");
+                    println!("{:<20} {}", "Visibility:", vis);
+                    println!("{:<20} {}", "Object Count:", objects);
+                    println!(
+                        "{:<20} {} ({} bytes)",
+                        "Total Size:",
+                        format_bytes(bytes),
+                        bytes
+                    );
+                    println!("{:<20} {}", "Storage Quota:", quota_str);
+                    println!("{:<20} {}", "Created At (UNIX):", created);
+                }
+            }
+            BlobNsCommands::Usage { name } => {
+                let resp = client.get_blob_namespace_usage(&name).await?;
+                if format == OutputFormat::Json {
+                    println!("{}", serde_json::to_string_pretty(&resp)?);
+                } else if format == OutputFormat::Jsonl {
+                    println!("{}", serde_json::to_string(&resp)?);
+                } else {
+                    let data = resp.get("data").cloned().unwrap_or(resp);
+                    let ns_name = data
+                        .get("namespace")
+                        .and_then(|n| n.as_str())
+                        .unwrap_or(&name);
+                    let is_pub = data
+                        .get("is_public")
+                        .and_then(|p| p.as_bool())
+                        .unwrap_or(false);
+                    let vis = if is_pub { "public" } else { "private" };
+                    let objects = data
+                        .get("object_count")
+                        .and_then(|c| c.as_u64())
+                        .unwrap_or(0);
+                    let used_bytes = data.get("used_bytes").and_then(|b| b.as_u64()).unwrap_or(0);
+                    let max_str = if let Some(m) = data.get("max_bytes").and_then(|q| q.as_u64()) {
+                        format_bytes(m)
+                    } else {
+                        "unlimited".to_string()
+                    };
+                    let rem_str =
+                        if let Some(r) = data.get("remaining_bytes").and_then(|q| q.as_u64()) {
+                            format_bytes(r)
+                        } else {
+                            "unlimited".to_string()
+                        };
+                    let pct_str =
+                        if let Some(p) = data.get("percent_used").and_then(|pct| pct.as_f64()) {
+                            format!("{:.2}%", p)
+                        } else {
+                            "N/A".to_string()
+                        };
+                    let exceeded = data
+                        .get("is_quota_exceeded")
+                        .and_then(|e| e.as_bool())
+                        .unwrap_or(false);
+
+                    println!("Namespace Storage Usage & Quota Headroom: {}", ns_name);
+                    println!("{:-<50}", "");
+                    println!("{:<22} {}", "Visibility:", vis);
+                    println!("{:<22} {}", "Stored Objects:", objects);
+                    println!(
+                        "{:<22} {} ({} bytes)",
+                        "Used Storage:",
+                        format_bytes(used_bytes),
+                        used_bytes
+                    );
+                    println!("{:<22} {}", "Quota Limit:", max_str);
+                    println!("{:<22} {}", "Remaining Headroom:", rem_str);
+                    println!("{:<22} {}", "Quota Utilization:", pct_str);
+                    println!(
+                        "{:<22} {}",
+                        "Quota Status:",
+                        if exceeded { "EXCEEDED" } else { "HEALTHY" }
+                    );
+                }
+            }
+            BlobNsCommands::Create {
+                name,
+                max_bytes,
+                public,
+            } => {
+                let resp = client
+                    .create_blob_namespace(&name, max_bytes, Some(public))
+                    .await?;
+                if format == OutputFormat::Json {
+                    println!("{}", serde_json::to_string_pretty(&resp)?);
+                } else if format == OutputFormat::Jsonl {
+                    println!("{}", serde_json::to_string(&resp)?);
+                } else {
+                    let vis_desc = if public { "public" } else { "private" };
+                    println!(
+                        "Namespace '{}' created successfully (visibility: {}).",
+                        name, vis_desc
+                    );
                 }
             }
             BlobNsCommands::Update {
                 name,
                 new_name,
                 max_bytes,
+                public,
             } => {
                 let resp = client
-                    .update_blob_namespace(&name, new_name.as_deref(), max_bytes)
+                    .update_blob_namespace(&name, new_name.as_deref(), max_bytes, public)
                     .await?;
                 if format == OutputFormat::Json {
                     println!("{}", serde_json::to_string_pretty(&resp)?);
@@ -2978,6 +3155,57 @@ async fn handle_blob_command(
                 println!("Capability ticket '{}' successfully revoked.", signature);
             }
         }
+
+        BlobCommands::BatchDelete { namespace, keys } => {
+            let resp = client.batch_delete_blobs(&namespace, &keys).await?;
+            if format == OutputFormat::Json {
+                println!("{}", serde_json::to_string_pretty(&resp)?);
+            } else if format == OutputFormat::Jsonl {
+                println!("{}", serde_json::to_string(&resp)?);
+            } else {
+                let data = resp.get("data").cloned().unwrap_or(resp);
+                let deleted = data
+                    .get("deleted_count")
+                    .and_then(|c| c.as_u64())
+                    .or_else(|| {
+                        data.get("deleted")
+                            .and_then(|d| d.as_array())
+                            .map(|a| a.len() as u64)
+                    })
+                    .unwrap_or(0);
+                let errors = data
+                    .get("errors")
+                    .and_then(|e| e.as_array())
+                    .map(|a| a.len())
+                    .unwrap_or(0);
+                println!(
+                    "Batch Delete Complete in '{}': {} deleted, {} errors.",
+                    namespace, deleted, errors
+                );
+            }
+        }
+
+        BlobCommands::EnableTicket { signature } => {
+            let resp = client.enable_blob_ticket(&signature).await?;
+            if format == OutputFormat::Json {
+                println!("{}", serde_json::to_string_pretty(&resp)?);
+            } else if format == OutputFormat::Jsonl {
+                println!("{}", serde_json::to_string(&resp)?);
+            } else {
+                println!("Capability ticket '{}' successfully enabled.", signature);
+            }
+        }
+
+        BlobCommands::DeleteTicket { signature } => {
+            let resp = client.delete_blob_ticket(&signature).await?;
+            if format == OutputFormat::Json {
+                println!("{}", serde_json::to_string_pretty(&resp)?);
+            } else if format == OutputFormat::Jsonl {
+                println!("{}", serde_json::to_string(&resp)?);
+            } else {
+                println!("Capability ticket '{}' permanently deleted.", signature);
+            }
+        }
     }
     Ok(())
 }
@@ -3213,6 +3441,176 @@ async fn handle_setup_command(
             println!("\n===============================================");
             println!("   Axiom Gateway setup completed successfully! ");
             println!("===============================================");
+        }
+    }
+    Ok(())
+}
+
+// ─── Model Context Protocol (MCP) Command Handlers ─────────────────────────
+
+async fn handle_mcp_command(
+    client: AdminClient,
+    command: crate::commands::McpCommands,
+    format: OutputFormat,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use crate::commands::McpCommands;
+    match command {
+        McpCommands::Tools => {
+            let resp = client.mcp_list_tools().await?;
+            if format == OutputFormat::Json {
+                println!("{}", serde_json::to_string_pretty(&resp)?);
+            } else if format == OutputFormat::Jsonl {
+                if let Some(tools) = resp
+                    .get("result")
+                    .and_then(|r| r.get("tools"))
+                    .and_then(|t| t.as_array())
+                {
+                    for tool in tools {
+                        println!("{}", serde_json::to_string(tool)?);
+                    }
+                } else {
+                    println!("{}", serde_json::to_string(&resp)?);
+                }
+            } else {
+                println!("{:<24} {:<56}", "TOOL", "DESCRIPTION");
+                println!("{:-<80}", "");
+                if let Some(tools) = resp
+                    .get("result")
+                    .and_then(|r| r.get("tools"))
+                    .and_then(|t| t.as_array())
+                {
+                    for tool in tools {
+                        let name = tool.get("name").and_then(|n| n.as_str()).unwrap_or("-");
+                        let desc = tool
+                            .get("description")
+                            .and_then(|d| d.as_str())
+                            .unwrap_or("-");
+                        println!("{:<24} {:<56}", name, desc);
+                    }
+                } else {
+                    println!("No MCP tools discovered or unexpected response format.");
+                }
+            }
+        }
+
+        McpCommands::Call { tool, args } => {
+            let args_val = if let Some(a) = args {
+                serde_json::from_str::<Value>(&a)
+                    .map_err(|e| format!("Invalid JSON arguments for tool '{}': {}", tool, e))?
+            } else {
+                json!({})
+            };
+            let resp = client.mcp_call_tool(&tool, Some(args_val)).await?;
+            if format == OutputFormat::Json {
+                println!("{}", serde_json::to_string_pretty(&resp)?);
+            } else if format == OutputFormat::Jsonl {
+                println!("{}", serde_json::to_string(&resp)?);
+            } else if let Some(content) = resp
+                .get("result")
+                .and_then(|r| r.get("content"))
+                .and_then(|c| c.as_array())
+            {
+                for item in content {
+                    if let Some(text) = item.get("text").and_then(|t| t.as_str()) {
+                        println!("{}", text);
+                    } else {
+                        println!("{}", serde_json::to_string_pretty(item)?);
+                    }
+                }
+            } else if let Some(err) = resp.get("error") {
+                eprintln!("MCP Error: {}", serde_json::to_string_pretty(err)?);
+            } else {
+                println!("{}", serde_json::to_string_pretty(&resp)?);
+            }
+        }
+
+        McpCommands::Resources => {
+            let resp = client.mcp_list_resources().await?;
+            if format == OutputFormat::Json {
+                println!("{}", serde_json::to_string_pretty(&resp)?);
+            } else if format == OutputFormat::Jsonl {
+                if let Some(resources) = resp
+                    .get("result")
+                    .and_then(|r| r.get("resources"))
+                    .and_then(|res| res.as_array())
+                {
+                    for item in resources {
+                        println!("{}", serde_json::to_string(item)?);
+                    }
+                } else {
+                    println!("{}", serde_json::to_string(&resp)?);
+                }
+            } else {
+                println!("{:<32} {:<24} {:<24}", "URI", "NAME", "MIME TYPE");
+                println!("{:-<80}", "");
+                if let Some(resources) = resp
+                    .get("result")
+                    .and_then(|r| r.get("resources"))
+                    .and_then(|res| res.as_array())
+                {
+                    for item in resources {
+                        let uri = item.get("uri").and_then(|u| u.as_str()).unwrap_or("-");
+                        let name = item.get("name").and_then(|n| n.as_str()).unwrap_or("-");
+                        let mime = item.get("mimeType").and_then(|m| m.as_str()).unwrap_or("-");
+                        println!("{:<32} {:<24} {:<24}", uri, name, mime);
+                    }
+                } else {
+                    println!("No MCP resources found.");
+                }
+            }
+        }
+
+        McpCommands::Serve { .. } => {
+            use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+            let stdin = tokio::io::stdin();
+            let mut reader = BufReader::new(stdin).lines();
+            let mut stdout = tokio::io::stdout();
+
+            while let Some(line) = reader.next_line().await? {
+                let trimmed = line.trim();
+                if trimmed.is_empty() {
+                    continue;
+                }
+
+                let parsed: Value = match serde_json::from_str(trimmed) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        let err_resp = json!({
+                            "jsonrpc": "2.0",
+                            "id": null,
+                            "error": {
+                                "code": -32700,
+                                "message": format!("Parse error: {}", e)
+                            }
+                        });
+                        let mut out = serde_json::to_vec(&err_resp)?;
+                        out.push(b'\n');
+                        stdout.write_all(&out).await?;
+                        stdout.flush().await?;
+                        continue;
+                    }
+                };
+
+                let resp = match client.mcp_dispatch(parsed.clone()).await {
+                    Ok(val) => val,
+                    Err(err_msg) => {
+                        let id = parsed.get("id").cloned().unwrap_or(Value::Null);
+                        json!({
+                            "jsonrpc": "2.0",
+                            "id": id,
+                            "error": {
+                                "code": -32603,
+                                "message": format!("Axiom MCP gateway error: {}", err_msg)
+                            }
+                        })
+                    }
+                };
+
+                let mut out = serde_json::to_vec(&resp)?;
+                out.push(b'\n');
+                stdout.write_all(&out).await?;
+                stdout.flush().await?;
+            }
         }
     }
     Ok(())

@@ -7,7 +7,7 @@
 **Put a secure REST API & MCP layer between your applications and SQL databases.**  
 Single Static Binary · Zero-Lock RBAC · Embedded Blob Store · Sub-10MB RAM Footprint
 
-[![Version](https://img.shields.io/badge/version-0.1.18-111827.svg?style=flat-square)](https://github.com/toxichome-whoami/axiom/releases)
+[![Version](https://img.shields.io/badge/version-0.1.19-111827.svg?style=flat-square)](https://github.com/toxichome-whoami/axiom/releases)
 [![Rust](https://img.shields.io/badge/rust-1.88%2B-b7410e.svg?style=flat-square&logo=rust&logoColor=white)](https://www.rust-lang.org)
 [![Zig](https://img.shields.io/badge/zig-0.13%2B-f7a41d.svg?style=flat-square&logo=zig&logoColor=white)](https://ziglang.org)
 [![License: MIT](https://img.shields.io/badge/license-MIT-111827.svg?style=flat-square)](./LICENSE)
@@ -67,7 +67,7 @@ irm https://raw.githubusercontent.com/toxichome-whoami/axiom/main/install.ps1 | 
 **Docker:**
 
 ```bash
-docker run -d -p 4500:4500 -v axiom-data:/app/data --name axiom ghcr.io/toxichome-whoami/axiom:0.1.18
+docker run -d -p 4500:4500 -v axiom-data:/app/data --name axiom ghcr.io/toxichome-whoami/axiom:0.1.19
 ```
 
 ### 2. Launch the Gateway
@@ -120,16 +120,16 @@ Axiom runs a native [Model Context Protocol (MCP)](https://modelcontextprotocol.
 claude mcp add --transport http axiom http://localhost:4500/mcp/v1 --header "X-Axiom-Key: YOUR_KEY"
 ```
 
-### Cursor & Windsurf
+### Cursor, Claude Desktop & Windsurf (Stdio Bridge)
 
-Add to `mcp.json`:
+Add to `mcp.json` or `claude_desktop_config.json`:
 
 ```json
 {
   "mcpServers": {
     "axiom": {
-      "url": "http://localhost:4500/mcp/v1",
-      "headers": { "X-Axiom-Key": "YOUR_KEY" }
+      "command": "axiom",
+      "args": ["mcp", "serve", "--key", "YOUR_KEY"]
     }
   }
 }

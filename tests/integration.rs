@@ -3506,3 +3506,396 @@ async fn test_db_zero_copy_streaming_and_etag_caching() {
         "application/x-ndjson"
     );
 }
+
+#[tokio::test]
+async fn test_admin_delete_blob_namespace_lifecycle() {
+    setup_test_metadata();
+    ensure_blob_engine().await;
+    axiom_cache::CacheEngine::delete("rl:ip:127.0.0.1").await;
+    axiom_cache::CacheEngine::delete("penalty:127.0.0.1").await;
+    let admin_token = BASE64_STANDARD.encode("admin_key:secret_admin");
+
+    let ns_name = "test-delete-ns";
+
+    // 1. Create the namespace via Admin API
+    let req = Request::post("/admin/v1/blobs/namespaces")
+        .header("Authorization", format!("Bearer {}", admin_token))
+        .header("Content-Type", "application/json")
+        .body(Body::from(
+            serde_json::to_vec(&serde_json::json!({
+                "name": ns_name,
+                "max_bytes": 1048576,
+                "is_public": false
+            }))
+            .unwrap(),
+        ))
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::CREATED);
+
+    // 2. Put an object into this namespace
+    let req = Request::put(format!("/api/v1/blobs/{}/doc.txt", ns_name))
+        .header("X-Axiom-Key", &admin_token)
+        .header("Content-Type", "text/plain")
+        .body(Body::from("hello world"))
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::CREATED);
+
+    // 3. Delete namespace via Admin API: DELETE /admin/v1/blobs/namespaces/:namespace
+    let req = Request::delete(format!("/admin/v1/blobs/namespaces/{}", ns_name))
+        .header("Authorization", format!("Bearer {}", admin_token))
+        .body(Body::empty())
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    let body = axum::body::to_bytes(res.into_body(), 65536).await.unwrap();
+    let resp_json: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(resp_json["data"]["deleted_objects"], 1);
+
+    // 4. Verify subsequent lookup returns 404 NOT_FOUND
+    let req = Request::get(format!("/admin/v1/blobs/namespaces/{}", ns_name))
+        .header("Authorization", format!("Bearer {}", admin_token))
+        .body(Body::empty())
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn test_master_end_to_end_crud_simulation() {
+    setup_test_metadata();
+    ensure_blob_engine().await;
+    axiom_cache::CacheEngine::delete("rl:ip:127.0.0.1").await;
+    axiom_cache::CacheEngine::delete("penalty:127.0.0.1").await;
+    let admin_token = BASE64_STANDARD.encode("admin_key:secret_admin");
+
+    // 0. Authenticate Operator Session for Admin Control Plane
+    let _ = axiom_metadata::MetadataStore::create_user("super_admin_ops", None, "SecretP@ss12345!")
+        .await;
+    let login_req = Request::post("/admin/v1/auth/login")
+        .header("Content-Type", "application/json")
+        .body(Body::from(
+            serde_json::to_vec(&serde_json::json!({
+                "username": "super_admin_ops",
+                "password": "SecretP@ss12345!"
+            }))
+            .unwrap(),
+        ))
+        .unwrap();
+    let login_res = create_app().oneshot(login_req).await.unwrap();
+    assert_eq!(login_res.status(), StatusCode::OK);
+    let login_json: Value = serde_json::from_slice(
+        &axum::body::to_bytes(login_res.into_body(), 65536)
+            .await
+            .unwrap(),
+    )
+    .unwrap();
+    let session_token = login_json["data"]["token"].as_str().unwrap().to_string();
+
+    // ── Phase 1: Blob Namespace CRUD & Data Plane Protection ────────────
+    let ns = "master-sim-ns";
+
+    // 1a. Verify Data Plane rejects mutation methods with 405 Method Not Allowed
+    let req = Request::post("/api/v1/blobs/namespaces")
+        .header("Authorization", format!("Bearer {}", session_token))
+        .header("Content-Type", "application/json")
+        .body(Body::from(r#"{"name":"guard-ns"}"#))
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::METHOD_NOT_ALLOWED);
+
+    let req = Request::patch(format!("/api/v1/blobs/namespaces/{}", ns))
+        .header("Authorization", format!("Bearer {}", session_token))
+        .header("Content-Type", "application/json")
+        .body(Body::from(r#"{"is_public":true}"#))
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::METHOD_NOT_ALLOWED);
+
+    let req = Request::delete(format!("/api/v1/blobs/namespaces/{}", ns))
+        .header("Authorization", format!("Bearer {}", session_token))
+        .body(Body::empty())
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::METHOD_NOT_ALLOWED);
+
+    // 1b. Create Namespace via Admin API (POST)
+    let req = Request::post("/admin/v1/blobs/namespaces")
+        .header("Authorization", format!("Bearer {}", session_token))
+        .header("Content-Type", "application/json")
+        .body(Body::from(
+            serde_json::to_vec(&serde_json::json!({
+                "name": ns,
+                "max_bytes": 5242880,
+                "is_public": false
+            }))
+            .unwrap(),
+        ))
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::CREATED);
+
+    // 1c. Read Namespace metadata & usage headroom (GET)
+    let req = Request::get(format!("/admin/v1/blobs/namespaces/{}", ns))
+        .header("Authorization", format!("Bearer {}", session_token))
+        .body(Body::empty())
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    let req = Request::get(format!("/api/v1/blobs/namespaces/{}/usage", ns))
+        .header("X-Axiom-Key", &admin_token)
+        .body(Body::empty())
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    // 1d. Update Namespace quota & visibility (PATCH)
+    let req = Request::patch(format!("/admin/v1/blobs/namespaces/{}", ns))
+        .header("Authorization", format!("Bearer {}", session_token))
+        .header("Content-Type", "application/json")
+        .body(Body::from(
+            serde_json::to_vec(&serde_json::json!({
+                "max_bytes": 10485760,
+                "is_public": false
+            }))
+            .unwrap(),
+        ))
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    // ── Phase 2: Blob Object Full CRUD Lifecycle ─────────────────────────
+    let doc_key = "docs/manifest.json";
+    let doc_content = r#"{"axiom":"simulated_master_node","version":"0.1.18"}"#;
+
+    // 2a. PUT Blob Object
+    let req = Request::put(format!("/api/v1/blobs/{}/{}", ns, doc_key))
+        .header("X-Axiom-Key", &admin_token)
+        .header("Content-Type", "application/json")
+        .body(Body::from(doc_content))
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::CREATED);
+
+    // 2b. HEAD Blob Object
+    let req = Request::head(format!("/api/v1/blobs/{}/{}", ns, doc_key))
+        .header("X-Axiom-Key", &admin_token)
+        .body(Body::empty())
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    // 2c. GET Blob Object
+    let req = Request::get(format!("/api/v1/blobs/{}/{}", ns, doc_key))
+        .header("X-Axiom-Key", &admin_token)
+        .body(Body::empty())
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(res.into_body(), 65536).await.unwrap();
+    assert_eq!(body, doc_content.as_bytes());
+
+    // 2d. Copy Blob Object
+    let copy_key = "docs/manifest_copy.json";
+    let req = Request::post("/api/v1/blobs/objects/copy")
+        .header("X-Axiom-Key", &admin_token)
+        .header("Content-Type", "application/json")
+        .body(Body::from(
+            serde_json::to_vec(&serde_json::json!({
+                "src_namespace": ns,
+                "src_key": doc_key,
+                "dest_namespace": ns,
+                "dest_key": copy_key
+            }))
+            .unwrap(),
+        ))
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    // 2e. Move Blob Object
+    let moved_key = "docs/manifest_archived.json";
+    let req = Request::post("/api/v1/blobs/objects/move")
+        .header("X-Axiom-Key", &admin_token)
+        .header("Content-Type", "application/json")
+        .body(Body::from(
+            serde_json::to_vec(&serde_json::json!({
+                "src_namespace": ns,
+                "src_key": copy_key,
+                "dest_namespace": ns,
+                "dest_key": moved_key
+            }))
+            .unwrap(),
+        ))
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    // 2f. Verify BLAKE3 Checksum
+    let req = Request::post(format!("/api/v1/blobs/objects/{}/verify/{}", ns, doc_key))
+        .header("X-Axiom-Key", &admin_token)
+        .body(Body::empty())
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    // ── Phase 3: Capability Tickets Full CRUD Lifecycle ──────────────────
+    // 3a. Issue Capability Ticket (POST)
+    let req = Request::post(format!("/admin/v1/blobs/namespaces/{}/tickets", ns))
+        .header("Authorization", format!("Bearer {}", session_token))
+        .header("Content-Type", "application/json")
+        .body(Body::from(
+            serde_json::to_vec(&serde_json::json!({
+                "key": doc_key,
+                "operation": "READ",
+                "ttl_seconds": 3600
+            }))
+            .unwrap(),
+        ))
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::CREATED);
+    let body = axum::body::to_bytes(res.into_body(), 65536).await.unwrap();
+    let tkt_json: Value = serde_json::from_slice(&body).unwrap();
+    let tkt_url = tkt_json["data"]["url"].as_str().unwrap().to_string();
+    let tkt_sig = tkt_json["data"]["signature"].as_str().unwrap().to_string();
+
+    // 3b. Download using capability ticket without any Authorization header
+    let req = Request::get(&tkt_url).body(Body::empty()).unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(res.into_body(), 65536).await.unwrap();
+    assert_eq!(body, doc_content.as_bytes());
+
+    // 3c. Revoke ticket (POST revoke)
+    let req = Request::post(format!("/admin/v1/blobs/tickets/{}/revoke", tkt_sig))
+        .header("Authorization", format!("Bearer {}", session_token))
+        .body(Body::empty())
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    // 3d. Download with revoked ticket must return 403 Forbidden
+    let req = Request::get(&tkt_url).body(Body::empty()).unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::FORBIDDEN);
+
+    // 3e. Re-enable ticket (POST enable)
+    let req = Request::post(format!("/admin/v1/blobs/tickets/{}/enable", tkt_sig))
+        .header("Authorization", format!("Bearer {}", session_token))
+        .body(Body::empty())
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    // 3f. Download with re-enabled ticket must succeed
+    let req = Request::get(&tkt_url).body(Body::empty()).unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    // 3g. Delete ticket (DELETE)
+    let req = Request::delete(format!("/admin/v1/blobs/tickets/{}", tkt_sig))
+        .header("Authorization", format!("Bearer {}", session_token))
+        .body(Body::empty())
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    // 3h. Download with deleted ticket must return 403 Forbidden
+    let req = Request::get(&tkt_url).body(Body::empty()).unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::FORBIDDEN);
+
+    // ── Phase 4: Batch Delete & Cascading Namespace Deletion ─────────────
+    // 4a. Batch Delete objects
+    let req = Request::post(format!("/api/v1/blobs/objects/{}/batch-delete", ns))
+        .header("X-Axiom-Key", &admin_token)
+        .header("Content-Type", "application/json")
+        .body(Body::from(
+            serde_json::to_vec(&serde_json::json!({
+                "keys": [moved_key]
+            }))
+            .unwrap(),
+        ))
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    // 4b. Delete Namespace via Admin API (DELETE)
+    let req = Request::delete(format!("/admin/v1/blobs/namespaces/{}", ns))
+        .header("Authorization", format!("Bearer {}", session_token))
+        .body(Body::empty())
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    // 4c. Verify subsequent GET returns 404 NOT_FOUND
+    let req = Request::get(format!("/admin/v1/blobs/namespaces/{}", ns))
+        .header("Authorization", format!("Bearer {}", session_token))
+        .body(Body::empty())
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::NOT_FOUND);
+
+    // ── Phase 5: RBAC Role & Key Lifecycle ───────────────────────────────
+    let role_name = "sim_temp_role";
+    let key_name = "sim_temp_key";
+
+    // 5a. Create Role (POST)
+    let req = Request::post("/admin/v1/roles")
+        .header("Authorization", format!("Bearer {}", session_token))
+        .header("Content-Type", "application/json")
+        .body(Body::from(
+            serde_json::to_vec(&serde_json::json!({
+                "name": role_name,
+                "description": "Simulation temp role",
+                "permissions": []
+            }))
+            .unwrap(),
+        ))
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::CREATED);
+
+    // 5b. Create Key (POST)
+    let req = Request::post("/admin/v1/keys")
+        .header("Authorization", format!("Bearer {}", session_token))
+        .header("Content-Type", "application/json")
+        .body(Body::from(
+            serde_json::to_vec(&serde_json::json!({
+                "name": key_name,
+                "role": role_name
+            }))
+            .unwrap(),
+        ))
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::CREATED);
+
+    // 5c. Rotate Key (POST rotate)
+    let req = Request::post(format!("/admin/v1/keys/{}/rotate", key_name))
+        .header("Authorization", format!("Bearer {}", session_token))
+        .body(Body::empty())
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    // 5d. Delete Key (DELETE)
+    let req = Request::delete(format!("/admin/v1/keys/{}", key_name))
+        .header("Authorization", format!("Bearer {}", session_token))
+        .body(Body::empty())
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    // 5e. Delete Role (DELETE)
+    let req = Request::delete(format!("/admin/v1/roles/{}", role_name))
+        .header("Authorization", format!("Bearer {}", session_token))
+        .body(Body::empty())
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+}
