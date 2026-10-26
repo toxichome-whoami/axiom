@@ -26,6 +26,7 @@ once_cell = { workspace = true }
 sqlparser = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
+chrono = { workspace = true }
 tracing = { workspace = true }
 urlencoding = { workspace = true }
 sysinfo = { workspace = true }
@@ -36,5 +37,3 @@ rand = { workspace = true }
 futures = { workspace = true }
 reqwest = { workspace = true }
 uuid = { workspace = true }
-
-

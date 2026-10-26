@@ -119,6 +119,7 @@ export function MediaPlayer({
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [bufferedEnd, setBufferedEnd] = useState(0);
+  const [isBuffering, setIsBuffering] = useState(false);
   const [volume, setVolume] = useState(1);
   const [isMuted, setIsMuted] = useState(false);
   const [playbackRate, setPlaybackRate] = useState(1);
@@ -450,13 +451,37 @@ export function MediaPlayer({
                 onLoadedMetadata={handleLoadedMetadata}
                 onPlay={() => setIsPlaying(true)}
                 onPause={() => setIsPlaying(false)}
-                onError={() => setVideoError("Error decoding video")}
+                onWaiting={() => setIsBuffering(true)}
+                onPlaying={() => {
+                  setIsPlaying(true);
+                  setIsBuffering(false);
+                }}
+                onCanPlay={() => setIsBuffering(false)}
+                onSeeked={() => setIsBuffering(false)}
+                onError={() => {
+                  const video = videoRef.current;
+                  if (video && video.currentTime > 0) {
+                    const savedTime = video.currentTime;
+                    video.load();
+                    video.currentTime = savedTime;
+                    video.play().catch(() => setVideoError("Error decoding video or stream interrupted"));
+                  } else {
+                    setVideoError("Error decoding video");
+                  }
+                }}
                 className="max-h-[72vh] w-auto max-w-full object-contain mx-auto"
                 style={{ maxHeight: isFullscreen ? "100vh" : "72vh" }}
               />
 
-              {/* Minimal Center Play Indicator when paused */}
-              {!isPlaying && (
+              {/* Minimal Center Buffering Indicator */}
+              {isBuffering && (
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none bg-black/25 backdrop-blur-xs z-10">
+                  <div className="w-10 h-10 rounded-full border-2 border-white/20 border-t-white animate-spin shadow-xl" />
+                </div>
+              )}
+
+              {/* Minimal Center Play Indicator when paused and not buffering */}
+              {!isPlaying && !isBuffering && (
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none bg-black/20">
                   <div className="w-12 h-12 rounded-full bg-white/10 border border-white/20 backdrop-blur-xs flex items-center justify-center text-white shadow-xl">
                     <Play className="w-5 h-5 fill-white translate-x-0.5" />
@@ -856,6 +881,8 @@ export function MediaPlayer({
           <img
             src={url}
             alt={name}
+            loading="lazy"
+            decoding="async"
             style={{
               transform: `translate3d(${panPosition.x}px, ${panPosition.y}px, 0px) scale(${zoomLevel})`,
               transformOrigin: "center center",

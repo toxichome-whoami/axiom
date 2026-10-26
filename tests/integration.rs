@@ -36,7 +36,7 @@ use axiom_policy::PolicyEngine;
 /// Seeds an in-memory ArcSwap metadata snapshot with deterministic test identities.
 /// Idempotent — safe to call from every test without ordering concerns.
 fn setup_test_metadata() {
-    axiom_cache::CacheEngine::reset_ip_rate_limit("127.0.0.1");
+    axiom_cache::CacheEngine::reset_rate_limits();
     BanList::unban_ip_local("127.0.0.1");
     let mut keys = HashMap::new();
     let mut roles = HashMap::new();
@@ -1414,6 +1414,99 @@ async fn blob_storage_range_requests_partial_content() {
 }
 
 #[tokio::test]
+async fn blob_storage_media_streaming_and_caching_rfcs() {
+    setup_test_metadata();
+    ensure_blob_engine().await;
+
+    let admin_token = BASE64_STANDARD.encode("admin_key:secret_admin");
+
+    // 1. Upload a 256 KB test video payload
+    let payload = vec![0xABu8; 256 * 1024];
+    let put_req = Request::put("/api/v1/blobs/media/sample_stream.mp4")
+        .header("X-Axiom-Key", &admin_token)
+        .header("Content-Type", "video/mp4")
+        .body(Body::from(payload.clone()))
+        .unwrap();
+    let put_res = create_app().oneshot(put_req).await.unwrap();
+    assert_eq!(put_res.status(), StatusCode::CREATED);
+
+    // 2. Full GET: verify Cache-Control for media, Last-Modified, Accept-Ranges, and ETag
+    let get_req = Request::get("/api/v1/blobs/media/sample_stream.mp4")
+        .header("X-Axiom-Key", &admin_token)
+        .body(Body::empty())
+        .unwrap();
+    let get_res = create_app().oneshot(get_req).await.unwrap();
+    assert_eq!(get_res.status(), StatusCode::OK);
+    assert_eq!(
+        get_res.headers().get("Cache-Control").unwrap(),
+        "public, max-age=86400, stale-while-revalidate=604800"
+    );
+    assert!(get_res.headers().contains_key("Last-Modified"));
+    assert_eq!(get_res.headers().get("Accept-Ranges").unwrap(), "bytes");
+    let etag = get_res.headers().get("ETag").unwrap().to_str().unwrap().to_string();
+
+    // 3. Conditional GET with If-Modified-Since in future -> 304 Not Modified
+    let future_date = "Wed, 21 Oct 2099 07:28:00 GMT";
+    let cond_req = Request::get("/api/v1/blobs/media/sample_stream.mp4")
+        .header("X-Axiom-Key", &admin_token)
+        .header("If-Modified-Since", future_date)
+        .body(Body::empty())
+        .unwrap();
+    let cond_res = create_app().oneshot(cond_req).await.unwrap();
+    assert_eq!(cond_res.status(), StatusCode::NOT_MODIFIED);
+
+    // 4. High-throughput 128 KB range streaming: bytes=0-131071 (131072 bytes)
+    let range_req = Request::get("/api/v1/blobs/media/sample_stream.mp4")
+        .header("X-Axiom-Key", &admin_token)
+        .header("Range", "bytes=0-131071")
+        .body(Body::empty())
+        .unwrap();
+    let range_res = create_app().oneshot(range_req).await.unwrap();
+    assert_eq!(range_res.status(), StatusCode::PARTIAL_CONTENT);
+    assert_eq!(
+        range_res.headers().get("Content-Range").unwrap(),
+        "bytes 0-131071/262144"
+    );
+    assert_eq!(range_res.headers().get("Content-Length").unwrap(), "131072");
+    assert_eq!(
+        range_res.headers().get("Cache-Control").unwrap(),
+        "public, max-age=86400, stale-while-revalidate=604800"
+    );
+    let chunk_bytes = axum::body::to_bytes(range_res.into_body(), 256 * 1024)
+        .await
+        .unwrap();
+    assert_eq!(chunk_bytes.len(), 131072);
+
+    // 5. RFC 9110 If-Range matching current ETag -> 206 Partial Content
+    let if_range_match_req = Request::get("/api/v1/blobs/media/sample_stream.mp4")
+        .header("X-Axiom-Key", &admin_token)
+        .header("Range", "bytes=0-1023")
+        .header("If-Range", &etag)
+        .body(Body::empty())
+        .unwrap();
+    let if_range_match_res = create_app().oneshot(if_range_match_req).await.unwrap();
+    assert_eq!(if_range_match_res.status(), StatusCode::PARTIAL_CONTENT);
+    assert_eq!(
+        if_range_match_res.headers().get("Content-Range").unwrap(),
+        "bytes 0-1023/262144"
+    );
+
+    // 6. RFC 9110 If-Range mismatch -> must IGNORE Range and return 200 OK with full representation
+    let if_range_mismatch_req = Request::get("/api/v1/blobs/media/sample_stream.mp4")
+        .header("X-Axiom-Key", &admin_token)
+        .header("Range", "bytes=0-1023")
+        .header("If-Range", "\"stale-non-matching-etag\"")
+        .body(Body::empty())
+        .unwrap();
+    let if_range_mismatch_res = create_app().oneshot(if_range_mismatch_req).await.unwrap();
+    assert_eq!(if_range_mismatch_res.status(), StatusCode::OK);
+    assert_eq!(
+        if_range_mismatch_res.headers().get("Content-Length").unwrap(),
+        "262144"
+    );
+}
+
+#[tokio::test]
 async fn blob_storage_presigned_capability_ticket_download() {
     ensure_blob_engine().await;
     setup_test_metadata();
@@ -2300,6 +2393,7 @@ async fn admin_api_full_control_plane_lifecycle() {
 
 #[tokio::test]
 async fn circuit_breaker_repeated_failure_tripping() {
+    setup_test_metadata();
     ensure_metadata_store().await;
     let admin_token = BASE64_STANDARD.encode("admin_key:secret_admin");
 

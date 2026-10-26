@@ -15,6 +15,8 @@ use axum::http::header;
 use axum::{http::StatusCode, middleware, response::IntoResponse, routing::get, Json, Router};
 use serde_json::json;
 use tower_http::{
+    compression::predicate::{DefaultPredicate, NotForContentType, Predicate},
+    compression::CompressionLayer,
     cors::{Any, CorsLayer},
     set_header::SetResponseHeaderLayer,
 };
@@ -102,7 +104,7 @@ pub fn create_app() -> Router {
         axum::http::Method::OPTIONS,
     ];
 
-    // CORS Request Headers: Support media streaming (Range), cache validation (If-None-Match),
+    // CORS Request Headers: Support media streaming (Range, If-Range), cache validation (If-None-Match, If-Modified-Since),
     // and resumable blob uploads (x-upload-offset)
     let allowed_headers = [
         header::CONTENT_TYPE,
@@ -110,8 +112,10 @@ pub fn create_app() -> Router {
         header::ACCEPT,
         header::ORIGIN,
         header::RANGE,
+        header::IF_RANGE,
         header::IF_NONE_MATCH,
         header::IF_MATCH,
+        header::IF_MODIFIED_SINCE,
         header::HeaderName::from_static("x-axiom-key"),
         header::HeaderName::from_static("x-api-key"),
         header::HeaderName::from_static("idempotency-key"),
@@ -119,12 +123,14 @@ pub fn create_app() -> Router {
         header::HeaderName::from_static("x-upload-offset"),
     ];
 
-    // CORS Exposed Response Headers: Expose ETag and Content-Range so browsers can handle media ranges and caching
+    // CORS Exposed Response Headers: Expose ETag, Cache-Control, Last-Modified, and Content-Range so browsers/players can handle media ranges and caching
     let exposed_headers = [
         header::ETAG,
         header::CONTENT_RANGE,
         header::ACCEPT_RANGES,
         header::CONTENT_LENGTH,
+        header::CACHE_CONTROL,
+        header::LAST_MODIFIED,
         header::HeaderName::from_static("x-request-id"),
         header::HeaderName::from_static("x-idempotency-hit"),
         header::HeaderName::from_static("x-ratelimit-limit"),
@@ -160,10 +166,20 @@ pub fn create_app() -> Router {
     // Core Routes
     let core_routes = crate::core::health::get_router();
 
-    // API versioning wrapper
+    let query_timeout_secs = if config.server.request_timeout > 0 {
+        config.server.request_timeout as u64
+    } else {
+        30
+    };
+    let query_timeout = tower_http::timeout::TimeoutLayer::new(std::time::Duration::from_secs(query_timeout_secs));
+
+    // API versioning wrapper:
+    // /db, /admin, and /mcp are bounded by the database query timeout.
+    // /blobs is deliberately exempted from the short 30s query timeout so long streaming
+    // video playback, audio, and multi-gigabyte downloads over slow networks do not abort mid-stream.
     let api_routes = Router::new()
         .route("/health", get(health_check))
-        .nest("/db", crate::database::router::get_router())
+        .nest("/db", crate::database::router::get_router().layer(query_timeout.clone()))
         .nest(
             "/blobs",
             crate::blobs::get_router().layer(axum::extract::DefaultBodyLimit::disable()),
@@ -172,15 +188,30 @@ pub fn create_app() -> Router {
         .layer(middleware::from_fn(rate_limit_middleware));
 
     // Admin API versioning wrapper (auth applied inside get_router for protected routes)
-    let admin_routes = crate::admin::get_router().layer(middleware::from_fn(rate_limit_middleware));
+    let admin_routes = crate::admin::get_router()
+        .layer(query_timeout.clone())
+        .layer(middleware::from_fn(rate_limit_middleware));
 
     // Model Context Protocol (MCP) versioning wrapper
     let mcp_routes = crate::mcp::router::get_router()
+        .layer(query_timeout.clone())
         .layer(middleware::from_fn(auth_middleware))
         .layer(middleware::from_fn(rate_limit_middleware));
 
     // Web UI router
     let ui_routes = crate::ui::get_router();
+
+    // High-performance selective compression predicate:
+    // Compress text, JSON, HTML, CSS, JavaScript, and SVG for 70-85% bandwidth reduction.
+    // Explicitly bypass pre-compressed media formats (video, audio, JPEG, PNG, WebP, AVIF)
+    // to preserve 100% of server CPU resources without wasting cycles on uncompressible streams.
+    let compression_predicate = DefaultPredicate::new()
+        .and(NotForContentType::new("video/"))
+        .and(NotForContentType::new("audio/"))
+        .and(NotForContentType::new("image/jpeg"))
+        .and(NotForContentType::new("image/png"))
+        .and(NotForContentType::new("image/webp"))
+        .and(NotForContentType::new("image/avif"));
 
     Router::new()
         .nest("/api/v1", api_routes)
@@ -204,13 +235,7 @@ pub fn create_app() -> Router {
             crate::middleware::metrics::metrics_middleware,
         ))
         .layer(cors)
-        .layer(tower_http::timeout::TimeoutLayer::new(
-            std::time::Duration::from_secs(if config.server.request_timeout > 0 {
-                config.server.request_timeout as u64
-            } else {
-                30
-            }),
-        ))
+        .layer(CompressionLayer::new().compress_when(compression_predicate))
         .layer(SetResponseHeaderLayer::overriding(
             header::X_CONTENT_TYPE_OPTIONS,
             header::HeaderValue::from_static("nosniff"),
