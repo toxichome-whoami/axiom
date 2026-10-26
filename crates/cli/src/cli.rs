@@ -402,7 +402,9 @@ async fn handle_user_command(
             let email_val = match email {
                 Some(e) if !e.trim().is_empty() => Some(e),
                 _ if std::io::stdout().is_terminal() => {
+                    use std::io::Write;
                     eprint!("Enter email for admin '{}' (optional, press Enter to skip): ", username);
+                    let _ = std::io::stderr().flush();
                     let mut line = String::new();
                     let _ = std::io::stdin().read_line(&mut line);
                     let trimmed = line.trim();
@@ -418,7 +420,9 @@ async fn handle_user_command(
             let pass = match password {
                 Some(p) if !p.is_empty() => p,
                 _ => {
+                    use std::io::Write;
                     eprint!("Enter password for admin '{}': ", username);
+                    let _ = std::io::stderr().flush();
                     read_secret_input()?
                 }
             };
