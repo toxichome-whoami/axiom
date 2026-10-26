@@ -6,7 +6,7 @@
 
 **No MSYS64 · No MinGW · No Visual Studio Build Tools · Sub-15MB Binary**
 
-[![Version](https://img.shields.io/badge/version-0.1.17%2B-111827.svg?style=flat-square)](https://github.com/toxichome-whoami/axiom/releases)
+[![Version](https://img.shields.io/badge/version-0.1.18%2B-111827.svg?style=flat-square)](https://github.com/toxichome-whoami/axiom/releases)
 [![Rust](https://img.shields.io/badge/rust-1.88%2B-b7410e.svg?style=flat-square&logo=rust&logoColor=white)](https://www.rust-lang.org)
 [![Zig](https://img.shields.io/badge/zig-0.13%2B-f7a41d.svg?style=flat-square&logo=zig&logoColor=white)](https://ziglang.org)
 [![License: MIT](https://img.shields.io/badge/license-MIT-111827.svg?style=flat-square)](../LICENSE)

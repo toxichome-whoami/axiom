@@ -16,7 +16,7 @@ default-members = ["crates/server"]
 resolver = "2"
 
 [workspace.package]
-version = "0.1.17"
+version = "0.1.18"
 edition = "2021"
 authors = ["Toxichome"]
 license = "MIT"
@@ -60,7 +60,7 @@ sqlx = { version = "0.7.4", features = ["runtime-tokio-rustls", "any", "postgres
 rust_decimal = { version = "1.35", features = ["serde-float"] }
 async-trait = "0.1.80"
 futures = "0.3.30"
-tokio-stream = "0.1.17"
+tokio-stream = "0.1.18"
 bytes = "1.6"
 figment = { version = "0.10.19", features = ["toml", "env"] }
 dotenvy = "0.15.7"

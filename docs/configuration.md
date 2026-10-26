@@ -6,7 +6,7 @@
 
 **Single Binary Gateway · Immutable Startup Configuration · Lock-Free Arc Access**
 
-[![Version](https://img.shields.io/badge/version-0.1.17%2B-111827.svg?style=flat-square)](https://github.com/toxichome-whoami/axiom/releases)
+[![Version](https://img.shields.io/badge/version-0.1.18%2B-111827.svg?style=flat-square)](https://github.com/toxichome-whoami/axiom/releases)
 [![Rust](https://img.shields.io/badge/rust-1.88%2B-b7410e.svg?style=flat-square&logo=rust&logoColor=white)](https://www.rust-lang.org)
 [![License: MIT](https://img.shields.io/badge/license-MIT-111827.svg?style=flat-square)](../LICENSE)
 [![Platforms](https://img.shields.io/badge/platform-linux%20%C2%B7%20macos%20%C2%B7%20windows-111827.svg?style=flat-square)](https://github.com/toxichome-whoami/axiom/releases)
@@ -367,7 +367,7 @@ docker run -d \
   -e METADATA__URL=file:/app/data/axiom.db \
   -v axiom_data:/app/data \
   --name axiom \
-  ghcr.io/toxichome-whoami/axiom:0.1.17
+  ghcr.io/toxichome-whoami/axiom:0.1.18
 ```
 
 ### Docker Compose
@@ -375,7 +375,7 @@ docker run -d \
 ```yaml
 services:
   axiom:
-    image: ghcr.io/toxichome-whoami/axiom:0.1.17
+    image: ghcr.io/toxichome-whoami/axiom:0.1.18
     ports:
       - "4500:4500"
     environment:
