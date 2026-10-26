@@ -213,3 +213,11 @@ Deep dive into the complete documentation suite:
 
 Axiom is open-source software licensed under the **[MIT License](./LICENSE)**.  
 Maintained by [Toxichome](https://toxichome.cc).
+
+## Support & Sponsor
+
+If Axiom is valuable to your projects, consider supporting its open-source development:
+
+[![Support on SupportKori](https://img.shields.io/badge/Support_Me-SupportKori-FF5E5B?style=for-the-badge&logo=heart&logoColor=white)](https://www.supportkori.com/mrtx)
+
+Every contribution directly supports ongoing development, benchmarks, and maintenance. You can sponsor directly at [supportkori.com/mrtx](https://www.supportkori.com/mrtx).
