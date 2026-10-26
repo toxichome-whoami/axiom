@@ -12,9 +12,8 @@ const MAX_NAMESPACE_LEN: usize = 64;
 const MAX_KEY_LEN: usize = 1024;
 
 const WINDOWS_RESERVED_NAMES: &[&str] = &[
-    "CON", "PRN", "AUX", "NUL",
-    "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
-    "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+    "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8",
+    "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
 ];
 
 /// Validates a blob storage namespace identifier.
@@ -102,7 +101,8 @@ pub fn validate_key(key: &str) -> Result<(), BlobError> {
     // Reject Windows Alternate Data Streams and drive letter colons (SEC-3.2)
     if key.contains(':') {
         return Err(BlobError::InvalidKey(
-            "Alternate data streams and drive prefixes (':') are strictly forbidden in object keys".to_string(),
+            "Alternate data streams and drive prefixes (':') are strictly forbidden in object keys"
+                .to_string(),
         ));
     }
 

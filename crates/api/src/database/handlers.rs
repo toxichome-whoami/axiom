@@ -1738,8 +1738,10 @@ pub async fn fetch_rows(
             })
     } else if params.stream == Some(true) || rows_ref.len() > 100 {
         let shared_rows = Arc::new(result.rows.clone().unwrap_or_default());
-        let stream =
-            crate::database::streaming::stream_json_array_envelope_shared(shared_rows, pagination_meta);
+        let stream = crate::database::streaming::stream_json_array_envelope_shared(
+            shared_rows,
+            pagination_meta,
+        );
         let body = axum::body::Body::from_stream(stream);
         axum::response::Response::builder()
             .status(axum::http::StatusCode::OK)

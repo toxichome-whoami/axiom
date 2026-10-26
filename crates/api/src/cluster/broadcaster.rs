@@ -202,12 +202,8 @@ impl ClusterBroadcaster {
                     }
                     Err(e) => {
                         tracing::warn!("Failed to broadcast event to peer {}: {}", peer_node_id, e);
-                        let _ = MetadataStore::update_peer_status(
-                            &peer_node_id,
-                            "unreachable",
-                            0,
-                        )
-                        .await;
+                        let _ = MetadataStore::update_peer_status(&peer_node_id, "unreachable", 0)
+                            .await;
                     }
                 }
             });

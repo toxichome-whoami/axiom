@@ -171,7 +171,8 @@ pub fn create_app() -> Router {
     } else {
         30
     };
-    let query_timeout = tower_http::timeout::TimeoutLayer::new(std::time::Duration::from_secs(query_timeout_secs));
+    let query_timeout =
+        tower_http::timeout::TimeoutLayer::new(std::time::Duration::from_secs(query_timeout_secs));
 
     // API versioning wrapper:
     // /db, /admin, and /mcp are bounded by the database query timeout.
@@ -179,7 +180,10 @@ pub fn create_app() -> Router {
     // video playback, audio, and multi-gigabyte downloads over slow networks do not abort mid-stream.
     let api_routes = Router::new()
         .route("/health", get(health_check))
-        .nest("/db", crate::database::router::get_router().layer(query_timeout))
+        .nest(
+            "/db",
+            crate::database::router::get_router().layer(query_timeout),
+        )
         .nest(
             "/blobs",
             crate::blobs::get_router().layer(axum::extract::DefaultBodyLimit::disable()),

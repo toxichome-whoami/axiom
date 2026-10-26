@@ -1443,7 +1443,13 @@ async fn blob_storage_media_streaming_and_caching_rfcs() {
     );
     assert!(get_res.headers().contains_key("Last-Modified"));
     assert_eq!(get_res.headers().get("Accept-Ranges").unwrap(), "bytes");
-    let etag = get_res.headers().get("ETag").unwrap().to_str().unwrap().to_string();
+    let etag = get_res
+        .headers()
+        .get("ETag")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_string();
 
     // 3. Conditional GET with If-Modified-Since in future -> 304 Not Modified
     let future_date = "Wed, 21 Oct 2099 07:28:00 GMT";
@@ -1501,7 +1507,10 @@ async fn blob_storage_media_streaming_and_caching_rfcs() {
     let if_range_mismatch_res = create_app().oneshot(if_range_mismatch_req).await.unwrap();
     assert_eq!(if_range_mismatch_res.status(), StatusCode::OK);
     assert_eq!(
-        if_range_mismatch_res.headers().get("Content-Length").unwrap(),
+        if_range_mismatch_res
+            .headers()
+            .get("Content-Length")
+            .unwrap(),
         "262144"
     );
 }

@@ -222,6 +222,9 @@ mod tests {
         assert_eq!(infer_mime_type_from_key("movie.mp4"), "video/mp4");
         assert_eq!(infer_mime_type_from_key("audio.mp3"), "audio/mpeg");
         assert_eq!(infer_mime_type_from_key("vector.svg"), "image/svg+xml");
-        assert_eq!(infer_mime_type_from_key("no_ext"), "application/octet-stream");
+        assert_eq!(
+            infer_mime_type_from_key("no_ext"),
+            "application/octet-stream"
+        );
     }
 }

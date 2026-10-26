@@ -330,7 +330,9 @@ impl CacheEngine {
     /// Resets all active request rate-limiting and penalty counters from L1 memory.
     /// Preserves account-level lockout states across concurrent test setup runs.
     pub fn reset_rate_limits() {
-        L1_CACHE.retain(|k, _| !k.starts_with("rl:ip:") && !k.starts_with("rl:key:") && !k.starts_with("penalty:"));
+        L1_CACHE.retain(|k, _| {
+            !k.starts_with("rl:ip:") && !k.starts_with("rl:key:") && !k.starts_with("penalty:")
+        });
     }
 
     /// Hard wipe of all entries across L1 and L2 regardless of namespace.

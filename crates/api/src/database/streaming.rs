@@ -266,7 +266,10 @@ mod tests {
         let shared_rows = Arc::new(rows);
         let pagination = serde_json::json!({"limit": 5, "has_more": false, "next_cursor": null});
 
-        let mut stream = Box::pin(stream_json_array_envelope_shared(shared_rows.clone(), pagination));
+        let mut stream = Box::pin(stream_json_array_envelope_shared(
+            shared_rows.clone(),
+            pagination,
+        ));
         let mut combined = Vec::new();
         while let Some(Ok(chunk)) = stream.next().await {
             combined.extend_from_slice(&chunk);
@@ -280,7 +283,11 @@ mod tests {
         while let Some(Ok(chunk)) = ndjson_stream.next().await {
             ndjson_bytes.extend_from_slice(&chunk);
         }
-        let lines: Vec<&str> = std::str::from_utf8(&ndjson_bytes).unwrap().trim().split('\n').collect();
+        let lines: Vec<&str> = std::str::from_utf8(&ndjson_bytes)
+            .unwrap()
+            .trim()
+            .split('\n')
+            .collect();
         assert_eq!(lines.len(), 5);
     }
 }

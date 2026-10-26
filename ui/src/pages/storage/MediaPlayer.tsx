@@ -464,7 +464,13 @@ export function MediaPlayer({
                     const savedTime = video.currentTime;
                     video.load();
                     video.currentTime = savedTime;
-                    video.play().catch(() => setVideoError("Error decoding video or stream interrupted"));
+                    video
+                      .play()
+                      .catch(() =>
+                        setVideoError(
+                          "Error decoding video or stream interrupted",
+                        ),
+                      );
                   } else {
                     setVideoError("Error decoding video");
                   }

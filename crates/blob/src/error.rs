@@ -99,9 +99,11 @@ impl std::error::Error for BlobError {}
 impl From<std::io::Error> for BlobError {
     fn from(err: std::io::Error) -> Self {
         #[cfg(target_os = "windows")]
-        let is_disk_full = err.raw_os_error() == Some(112) || err.kind() == std::io::ErrorKind::StorageFull;
+        let is_disk_full =
+            err.raw_os_error() == Some(112) || err.kind() == std::io::ErrorKind::StorageFull;
         #[cfg(not(target_os = "windows"))]
-        let is_disk_full = err.raw_os_error() == Some(28) || err.kind() == std::io::ErrorKind::StorageFull;
+        let is_disk_full =
+            err.raw_os_error() == Some(28) || err.kind() == std::io::ErrorKind::StorageFull;
 
         let msg = err.to_string();
         let is_disk_full_msg = msg.contains("not enough space")

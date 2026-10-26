@@ -148,10 +148,7 @@ pub async fn put_blob_handler(
 
         if let Ok(Some(ns_info)) = engine.get_namespace(&namespace) {
             if let Some(max_quota) = ns_info.max_bytes {
-                let existing_size = engine
-                    .head(&namespace, &key)
-                    .map(|m| m.size)
-                    .unwrap_or(0);
+                let existing_size = engine.head(&namespace, &key).map(|m| m.size).unwrap_or(0);
                 let net_bytes = ns_info.total_bytes.saturating_sub(existing_size);
                 if net_bytes + content_length > max_quota {
                     return Err(AxiomError::new(
@@ -252,7 +249,8 @@ pub async fn get_blob_handler(
     // 1. Fetch metadata first to evaluate conditional caching and validators before reading body
     let meta = engine.head(&namespace, &key).map_err(map_blob_error)?;
     let etag_val = format!("\"{}\"", meta.hash);
-    let last_modified = chrono::DateTime::from_timestamp(meta.created_at, 0).map(|dt| dt.to_rfc2822());
+    let last_modified =
+        chrono::DateTime::from_timestamp(meta.created_at, 0).map(|dt| dt.to_rfc2822());
 
     // 2. Conditional GET: check If-None-Match for cache revalidation
     if let Some(inm) = headers
@@ -267,7 +265,11 @@ pub async fn get_blob_handler(
                 res_builder = res_builder.header(header::LAST_MODIFIED, lm.as_str());
             }
             return res_builder.body(Body::empty()).map_err(|e| {
-                AxiomError::new("RESPONSE_BUILD_FAILED", &e.to_string(), StatusCode::INTERNAL_SERVER_ERROR)
+                AxiomError::new(
+                    "RESPONSE_BUILD_FAILED",
+                    &e.to_string(),
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                )
             });
         }
     }
@@ -286,7 +288,11 @@ pub async fn get_blob_handler(
                     res_builder = res_builder.header(header::LAST_MODIFIED, lm.as_str());
                 }
                 return res_builder.body(Body::empty()).map_err(|e| {
-                    AxiomError::new("RESPONSE_BUILD_FAILED", &e.to_string(), StatusCode::INTERNAL_SERVER_ERROR)
+                    AxiomError::new(
+                        "RESPONSE_BUILD_FAILED",
+                        &e.to_string(),
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                    )
                 });
             }
         }
@@ -335,12 +341,13 @@ pub async fn get_blob_handler(
     };
 
     // 4. RFC 9110 §13.1.2: If-Range validator check
-    let if_range_matches = if let Some(ir) = headers.get(header::IF_RANGE).and_then(|h| h.to_str().ok()) {
-        let ir = ir.trim();
-        ir == etag_val || ir == meta.hash || last_modified.as_deref() == Some(ir)
-    } else {
-        true
-    };
+    let if_range_matches =
+        if let Some(ir) = headers.get(header::IF_RANGE).and_then(|h| h.to_str().ok()) {
+            let ir = ir.trim();
+            ir == etag_val || ir == meta.hash || last_modified.as_deref() == Some(ir)
+        } else {
+            true
+        };
 
     // Check for HTTP Range header. Max single range: 256 MB (bandwidth/DoS cap, L-fix).
     const MAX_RANGE_BYTES: u64 = 256 * 1024 * 1024;
@@ -2639,7 +2646,8 @@ pub async fn get_public_blob_handler(
     // 2. Fetch metadata to evaluate conditional caching (If-None-Match & If-Modified-Since)
     let meta = engine.head(&namespace, &key).map_err(map_blob_error)?;
     let etag_val = format!("\"{}\"", meta.hash);
-    let last_modified = chrono::DateTime::from_timestamp(meta.created_at, 0).map(|dt| dt.to_rfc2822());
+    let last_modified =
+        chrono::DateTime::from_timestamp(meta.created_at, 0).map(|dt| dt.to_rfc2822());
 
     if let Some(inm) = headers
         .get(header::IF_NONE_MATCH)
@@ -2713,12 +2721,13 @@ pub async fn get_public_blob_handler(
 
     // Range handling & RFC 9110 §13.1.2 If-Range validator check
     const MAX_RANGE_BYTES: u64 = 256 * 1024 * 1024;
-    let if_range_matches = if let Some(ir) = headers.get(header::IF_RANGE).and_then(|h| h.to_str().ok()) {
-        let ir = ir.trim();
-        ir == etag_val || ir == meta.hash || last_modified.as_deref() == Some(ir)
-    } else {
-        true
-    };
+    let if_range_matches =
+        if let Some(ir) = headers.get(header::IF_RANGE).and_then(|h| h.to_str().ok()) {
+            let ir = ir.trim();
+            ir == etag_val || ir == meta.hash || last_modified.as_deref() == Some(ir)
+        } else {
+            true
+        };
 
     let range_hdr = headers.get(header::RANGE).and_then(|h| h.to_str().ok());
     let parsed_range = if range_hdr.is_some() && !if_range_matches {

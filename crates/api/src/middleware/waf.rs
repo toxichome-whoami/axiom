@@ -312,7 +312,11 @@ mod tests {
     async fn test_waf_unicode_homoglyph_traversal_blocked() {
         let app = build_waf_test_app();
         let res = app
-            .oneshot(Request::get("/test/\u{ff0e}\u{ff0e}/etc/passwd").body(Body::empty()).unwrap())
+            .oneshot(
+                Request::get("/test/\u{ff0e}\u{ff0e}/etc/passwd")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
             .await
             .unwrap();
         assert_eq!(res.status(), StatusCode::BAD_REQUEST);
