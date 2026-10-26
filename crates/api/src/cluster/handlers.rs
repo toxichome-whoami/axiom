@@ -107,6 +107,75 @@ pub async fn handle_handshake(Json(req): Json<HandshakeRequest>) -> impl IntoRes
     )
 }
 
+// ─── Fast In-Memory Deduplication & Auth Extraction ───────────────────────
+
+static SEEN_CLUSTER_EVENTS: once_cell::sync::Lazy<dashmap::DashMap<String, i64>> =
+    once_cell::sync::Lazy::new(dashmap::DashMap::new);
+
+/// Marks an outbound or processed event as seen in the in-memory deduplication registry.
+pub fn mark_cluster_event_seen(event_id: &str, now_unix: i64) {
+    if SEEN_CLUSTER_EVENTS.len() > 2000 {
+        SEEN_CLUSTER_EVENTS.retain(|_, &mut exp| exp > now_unix);
+    }
+    SEEN_CLUSTER_EVENTS.insert(event_id.to_string(), now_unix + 600);
+}
+
+/// Checks whether an event ID was previously processed; if not, registers it in memory.
+fn check_and_mark_cluster_event(event_id: &str, now_unix: i64) -> bool {
+    if SEEN_CLUSTER_EVENTS.len() > 2000 {
+        SEEN_CLUSTER_EVENTS.retain(|_, &mut exp| exp > now_unix);
+    }
+    if SEEN_CLUSTER_EVENTS.contains_key(event_id) {
+        return true;
+    }
+    SEEN_CLUSTER_EVENTS.insert(event_id.to_string(), now_unix + 600);
+    false
+}
+
+/// Zero-copy borrowed extractor for internal cluster cryptographic headers.
+#[derive(Debug)]
+pub struct ClusterAuthHeaders<'a> {
+    pub node_id: &'a str,
+    pub timestamp: i64,
+    pub nonce: &'a str,
+    pub signature: &'a str,
+}
+
+impl<'a> ClusterAuthHeaders<'a> {
+    pub fn extract(headers: &'a HeaderMap) -> Result<Self, (StatusCode, &'static str)> {
+        let node_id = headers
+            .get("X-Axiom-Node-Id")
+            .and_then(|h| h.to_str().ok())
+            .ok_or((StatusCode::BAD_REQUEST, "Missing X-Axiom-Node-Id header"))?;
+
+        let timestamp: i64 = headers
+            .get("X-Axiom-Timestamp")
+            .and_then(|h| h.to_str().ok())
+            .and_then(|s| s.parse().ok())
+            .ok_or((
+                StatusCode::BAD_REQUEST,
+                "Missing or invalid X-Axiom-Timestamp header",
+            ))?;
+
+        let nonce = headers
+            .get("X-Axiom-Nonce")
+            .and_then(|h| h.to_str().ok())
+            .ok_or((StatusCode::BAD_REQUEST, "Missing X-Axiom-Nonce header"))?;
+
+        let signature = headers
+            .get("X-Axiom-Signature")
+            .and_then(|h| h.to_str().ok())
+            .ok_or((StatusCode::BAD_REQUEST, "Missing X-Axiom-Signature header"))?;
+
+        Ok(Self {
+            node_id,
+            timestamp,
+            nonce,
+            signature,
+        })
+    }
+}
+
 /// Heartbeat ping endpoint: verifies signature and confirms peer liveness.
 pub async fn handle_ping(headers: HeaderMap) -> impl IntoResponse {
     let identity = match MetadataStore::get_or_create_cluster_identity().await {
@@ -120,56 +189,21 @@ pub async fn handle_ping(headers: HeaderMap) -> impl IntoResponse {
     };
     let (my_node_id, _moniker, cluster_secret) = identity;
 
-    let node_id = match headers.get("X-Axiom-Node-Id").and_then(|h| h.to_str().ok()) {
-        Some(id) => id,
-        None => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(serde_json::json!({ "error": "Missing X-Axiom-Node-Id header" })),
-            );
+    let auth = match ClusterAuthHeaders::extract(&headers) {
+        Ok(a) => a,
+        Err((status, msg)) => {
+            return (status, Json(serde_json::json!({ "error": msg })));
         }
     };
 
-    let timestamp: i64 = match headers
-        .get("X-Axiom-Timestamp")
-        .and_then(|h| h.to_str().ok())
-        .and_then(|s| s.parse().ok())
-    {
-        Some(ts) => ts,
-        None => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(serde_json::json!({ "error": "Missing or invalid X-Axiom-Timestamp header" })),
-            );
-        }
-    };
-
-    let nonce = match headers.get("X-Axiom-Nonce").and_then(|h| h.to_str().ok()) {
-        Some(n) => n,
-        None => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(serde_json::json!({ "error": "Missing X-Axiom-Nonce header" })),
-            );
-        }
-    };
-
-    let signature = match headers
-        .get("X-Axiom-Signature")
-        .and_then(|h| h.to_str().ok())
-    {
-        Some(s) => s,
-        None => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(serde_json::json!({ "error": "Missing X-Axiom-Signature header" })),
-            );
-        }
-    };
-
-    if let Err(err) =
-        verify_inbound_packet(node_id, &cluster_secret, timestamp, nonce, b"", signature)
-    {
+    if let Err(err) = verify_inbound_packet(
+        auth.node_id,
+        &cluster_secret,
+        auth.timestamp,
+        auth.nonce,
+        b"",
+        auth.signature,
+    ) {
         return (
             StatusCode::UNAUTHORIZED,
             Json(serde_json::json!({ "error": err.to_string() })),
@@ -204,56 +238,21 @@ pub async fn handle_event(headers: HeaderMap, body: Bytes) -> impl IntoResponse 
     };
     let (_my_node_id, _moniker, cluster_secret) = identity;
 
-    let node_id = match headers.get("X-Axiom-Node-Id").and_then(|h| h.to_str().ok()) {
-        Some(id) => id,
-        None => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(serde_json::json!({ "error": "Missing X-Axiom-Node-Id header" })),
-            );
+    let auth = match ClusterAuthHeaders::extract(&headers) {
+        Ok(a) => a,
+        Err((status, msg)) => {
+            return (status, Json(serde_json::json!({ "error": msg })));
         }
     };
 
-    let timestamp: i64 = match headers
-        .get("X-Axiom-Timestamp")
-        .and_then(|h| h.to_str().ok())
-        .and_then(|s| s.parse().ok())
-    {
-        Some(ts) => ts,
-        None => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(serde_json::json!({ "error": "Missing or invalid X-Axiom-Timestamp header" })),
-            );
-        }
-    };
-
-    let nonce = match headers.get("X-Axiom-Nonce").and_then(|h| h.to_str().ok()) {
-        Some(n) => n,
-        None => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(serde_json::json!({ "error": "Missing X-Axiom-Nonce header" })),
-            );
-        }
-    };
-
-    let signature = match headers
-        .get("X-Axiom-Signature")
-        .and_then(|h| h.to_str().ok())
-    {
-        Some(s) => s,
-        None => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(serde_json::json!({ "error": "Missing X-Axiom-Signature header" })),
-            );
-        }
-    };
-
-    if let Err(err) =
-        verify_inbound_packet(node_id, &cluster_secret, timestamp, nonce, &body, signature)
-    {
+    if let Err(err) = verify_inbound_packet(
+        auth.node_id,
+        &cluster_secret,
+        auth.timestamp,
+        auth.nonce,
+        &body,
+        auth.signature,
+    ) {
         return (
             StatusCode::UNAUTHORIZED,
             Json(serde_json::json!({ "error": err.to_string() })),
@@ -270,30 +269,33 @@ pub async fn handle_event(headers: HeaderMap, body: Bytes) -> impl IntoResponse 
         }
     };
 
-    // Deduplicate event to prevent loops or repeated executions
-    let is_new = match MetadataStore::record_cluster_event(
-        &packet.event_id,
-        &packet.event_type,
-        &packet.payload.to_string(),
-        &packet.origin_node_id,
-    )
-    .await
-    {
-        Ok(res) => res,
-        Err(e) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({ "error": format!("Failed to record event: {}", e) })),
-            );
-        }
-    };
+    let now_unix = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
 
-    if !is_new {
+    // Fast in-memory deduplication check: rejects loops or retransmissions without hitting SQLite disk
+    if check_and_mark_cluster_event(&packet.event_id, now_unix) {
         return (
             StatusCode::OK,
             Json(serde_json::json!({ "status": "duplicate_ignored", "event_id": packet.event_id })),
         );
     }
+
+    // Persist event record in SQLite asynchronously
+    let event_id_clone = packet.event_id.clone();
+    let event_type_clone = packet.event_type.clone();
+    let payload_str = packet.payload.to_string();
+    let origin_id = packet.origin_node_id.clone();
+    tokio::spawn(async move {
+        let _ = MetadataStore::record_cluster_event(
+            &event_id_clone,
+            &event_type_clone,
+            &payload_str,
+            &origin_id,
+        )
+        .await;
+    });
 
     // Process event based on type
     match packet.event_type.as_str() {
@@ -383,56 +385,21 @@ pub async fn handle_sync(headers: HeaderMap) -> impl IntoResponse {
     };
     let (my_node_id, _moniker, cluster_secret) = identity;
 
-    let node_id = match headers.get("X-Axiom-Node-Id").and_then(|h| h.to_str().ok()) {
-        Some(id) => id,
-        None => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(serde_json::json!({ "error": "Missing X-Axiom-Node-Id header" })),
-            );
+    let auth = match ClusterAuthHeaders::extract(&headers) {
+        Ok(a) => a,
+        Err((status, msg)) => {
+            return (status, Json(serde_json::json!({ "error": msg })));
         }
     };
 
-    let timestamp: i64 = match headers
-        .get("X-Axiom-Timestamp")
-        .and_then(|h| h.to_str().ok())
-        .and_then(|s| s.parse().ok())
-    {
-        Some(ts) => ts,
-        None => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(serde_json::json!({ "error": "Missing or invalid X-Axiom-Timestamp header" })),
-            );
-        }
-    };
-
-    let nonce = match headers.get("X-Axiom-Nonce").and_then(|h| h.to_str().ok()) {
-        Some(n) => n,
-        None => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(serde_json::json!({ "error": "Missing X-Axiom-Nonce header" })),
-            );
-        }
-    };
-
-    let signature = match headers
-        .get("X-Axiom-Signature")
-        .and_then(|h| h.to_str().ok())
-    {
-        Some(s) => s,
-        None => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(serde_json::json!({ "error": "Missing X-Axiom-Signature header" })),
-            );
-        }
-    };
-
-    if let Err(err) =
-        verify_inbound_packet(node_id, &cluster_secret, timestamp, nonce, b"", signature)
-    {
+    if let Err(err) = verify_inbound_packet(
+        auth.node_id,
+        &cluster_secret,
+        auth.timestamp,
+        auth.nonce,
+        b"",
+        auth.signature,
+    ) {
         return (
             StatusCode::UNAUTHORIZED,
             Json(serde_json::json!({ "error": err.to_string() })),
@@ -500,4 +467,45 @@ pub async fn handle_sync(headers: HeaderMap) -> impl IntoResponse {
     };
 
     (StatusCode::OK, Json(serde_json::json!(payload)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::http::HeaderValue;
+
+    #[test]
+    fn test_cluster_auth_headers_extraction_success() {
+        let mut headers = HeaderMap::new();
+        headers.insert("X-Axiom-Node-Id", HeaderValue::from_static("node_1"));
+        headers.insert("X-Axiom-Timestamp", HeaderValue::from_static("1700000000"));
+        headers.insert("X-Axiom-Nonce", HeaderValue::from_static("nonce_xyz"));
+        headers.insert("X-Axiom-Signature", HeaderValue::from_static("sig_123"));
+
+        let auth = ClusterAuthHeaders::extract(&headers).expect("should extract valid headers");
+        assert_eq!(auth.node_id, "node_1");
+        assert_eq!(auth.timestamp, 1700000000);
+        assert_eq!(auth.nonce, "nonce_xyz");
+        assert_eq!(auth.signature, "sig_123");
+    }
+
+    #[test]
+    fn test_cluster_auth_headers_missing_rejection() {
+        let mut headers = HeaderMap::new();
+        headers.insert("X-Axiom-Node-Id", HeaderValue::from_static("node_1"));
+        // Missing timestamp, nonce, signature
+
+        let err = ClusterAuthHeaders::extract(&headers).unwrap_err();
+        assert_eq!(err.0, StatusCode::BAD_REQUEST);
+        assert!(err.1.contains("Timestamp"));
+    }
+
+    #[test]
+    fn test_in_memory_event_deduplication() {
+        let event_id = format!("test_evt_{}", uuid::Uuid::new_v4());
+        let now = 1700000000;
+
+        assert!(!check_and_mark_cluster_event(&event_id, now));
+        assert!(check_and_mark_cluster_event(&event_id, now));
+    }
 }

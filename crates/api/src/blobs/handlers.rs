@@ -24,6 +24,10 @@ use serde::Deserialize;
 use serde_json::json;
 use tokio_util::io::{ReaderStream, StreamReader};
 
+/// High-throughput 128 KB async buffer size for blob streaming (video, audio, downloads).
+/// Reduces syscalls, Tokio wakeups, and TCP window starvation by ~16x compared to default 8 KB chunks.
+const STREAM_CHUNK_BUFFER_SIZE: usize = 128 * 1024;
+
 /// Converts internal `BlobError` into an appropriate public `AxiomError` HTTP response.
 fn map_blob_error(err: BlobError) -> AxiomError {
     match err {
@@ -89,6 +93,11 @@ fn map_blob_error(err: BlobError) -> AxiomError {
             &format!("Upload offset mismatch: expected offset {}, but received {}", expected, actual),
             StatusCode::CONFLICT,
         ),
+        BlobError::InsufficientStorage(msg) => AxiomError::new(
+            "INSUFFICIENT_STORAGE",
+            &format!("Host filesystem out of disk space: {}", msg),
+            StatusCode::INSUFFICIENT_STORAGE,
+        ),
         BlobError::Io(msg) => AxiomError::new(
             "STORAGE_IO_ERROR",
             &format!("Storage I/O error: {}", msg),
@@ -116,6 +125,44 @@ pub async fn put_blob_handler(
     PolicyEngine::evaluate_blob(&auth, &namespace, &key, "WRITE")?;
 
     let engine = get_blob_engine()?;
+
+    // Fast-path header pre-flight verification:
+    // If client supplied Content-Length, validate against maximum object limit and namespace quota headroom
+    // upfront to reject oversized requests immediately in 0 ms without consuming socket buffers or disk I/O.
+    if let Some(content_length) = headers
+        .get(header::CONTENT_LENGTH)
+        .and_then(|h| h.to_str().ok())
+        .and_then(|v| v.parse::<u64>().ok())
+    {
+        if content_length > engine.max_object_bytes() {
+            return Err(AxiomError::new(
+                "PAYLOAD_TOO_LARGE",
+                &format!(
+                    "Payload size {} exceeds allowed max of {} bytes",
+                    content_length,
+                    engine.max_object_bytes()
+                ),
+                StatusCode::PAYLOAD_TOO_LARGE,
+            ));
+        }
+
+        if let Ok(Some(ns_info)) = engine.get_namespace(&namespace) {
+            if let Some(max_quota) = ns_info.max_bytes {
+                let existing_size = engine.head(&namespace, &key).map(|m| m.size).unwrap_or(0);
+                let net_bytes = ns_info.total_bytes.saturating_sub(existing_size);
+                if net_bytes + content_length > max_quota {
+                    return Err(AxiomError::new(
+                        "QUOTA_EXCEEDED",
+                        &format!(
+                            "Namespace '{}' storage quota exceeded (current: {} B, requested: {} B, quota: {} B)",
+                            namespace, net_bytes, content_length, max_quota
+                        ),
+                        StatusCode::INSUFFICIENT_STORAGE,
+                    ));
+                }
+            }
+        }
+    }
 
     let content_type = headers
         .get(header::CONTENT_TYPE)
@@ -199,6 +246,58 @@ pub async fn get_blob_handler(
 
     let engine = get_blob_engine()?;
 
+    // 1. Fetch metadata first to evaluate conditional caching and validators before reading body
+    let meta = engine.head(&namespace, &key).map_err(map_blob_error)?;
+    let etag_val = format!("\"{}\"", meta.hash);
+    let last_modified =
+        chrono::DateTime::from_timestamp(meta.created_at, 0).map(|dt| dt.to_rfc2822());
+
+    // 2. Conditional GET: check If-None-Match for cache revalidation
+    if let Some(inm) = headers
+        .get(header::IF_NONE_MATCH)
+        .and_then(|h| h.to_str().ok())
+    {
+        if inm.trim() == etag_val.as_str() || inm.trim() == meta.hash.as_str() {
+            let mut res_builder = Response::builder()
+                .status(StatusCode::NOT_MODIFIED)
+                .header(header::ETAG, &etag_val);
+            if let Some(ref lm) = last_modified {
+                res_builder = res_builder.header(header::LAST_MODIFIED, lm.as_str());
+            }
+            return res_builder.body(Body::empty()).map_err(|e| {
+                AxiomError::new(
+                    "RESPONSE_BUILD_FAILED",
+                    &e.to_string(),
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                )
+            });
+        }
+    }
+
+    // 3. Conditional GET: check If-Modified-Since
+    if let Some(ims) = headers
+        .get(header::IF_MODIFIED_SINCE)
+        .and_then(|h| h.to_str().ok())
+    {
+        if let Ok(client_time) = chrono::DateTime::parse_from_rfc2822(ims) {
+            if meta.created_at <= client_time.timestamp() {
+                let mut res_builder = Response::builder()
+                    .status(StatusCode::NOT_MODIFIED)
+                    .header(header::ETAG, &etag_val);
+                if let Some(ref lm) = last_modified {
+                    res_builder = res_builder.header(header::LAST_MODIFIED, lm.as_str());
+                }
+                return res_builder.body(Body::empty()).map_err(|e| {
+                    AxiomError::new(
+                        "RESPONSE_BUILD_FAILED",
+                        &e.to_string(),
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                    )
+                });
+            }
+        }
+    }
+
     // Determine filename for safe Content-Disposition
     let filename = key.rsplit(['/', '\\']).next().unwrap_or("blob.bin");
     let safe_filename: String = filename
@@ -212,17 +311,51 @@ pub async fn get_blob_handler(
         .map(|q| q.contains("inline=1") || q.contains("inline=true"))
         .unwrap_or(false);
 
-    let disposition = if is_inline {
+    // SECURITY (SEC-3.2 / XSS): Active or executable file formats (HTML, SVG, XML, scripts)
+    // MUST NEVER be rendered inline in the browser origin to prevent stored XSS attacks.
+    let is_dangerous_type = meta.content_type.contains("html")
+        || meta.content_type.contains("xml")
+        || meta.content_type.contains("svg")
+        || meta.content_type.contains("javascript")
+        || meta.content_type.contains("json")
+        || meta.content_type.contains("x-sh")
+        || meta.content_type.contains("x-executable");
+
+    let is_safe_media = !is_dangerous_type
+        && (meta.content_type.starts_with("video/")
+            || meta.content_type.starts_with("audio/")
+            || (meta.content_type.starts_with("image/") && !meta.content_type.contains("svg")));
+
+    let is_media = is_safe_media || (is_inline && !is_dangerous_type);
+
+    let disposition = if is_media {
         format!("inline; filename=\"{}\"", safe_filename)
     } else {
         format!("attachment; filename=\"{}\"", safe_filename)
     };
 
+    let cache_control = if is_media {
+        "public, max-age=86400, stale-while-revalidate=604800"
+    } else {
+        "public, max-age=3600, must-revalidate"
+    };
+
+    // 4. RFC 9110 §13.1.2: If-Range validator check
+    let if_range_matches =
+        if let Some(ir) = headers.get(header::IF_RANGE).and_then(|h| h.to_str().ok()) {
+            let ir = ir.trim();
+            ir == etag_val || ir == meta.hash || last_modified.as_deref() == Some(ir)
+        } else {
+            true
+        };
+
     // Check for HTTP Range header. Max single range: 256 MB (bandwidth/DoS cap, L-fix).
-    // Malformed or multi-range headers fail closed with 416 (was: silent full 200).
     const MAX_RANGE_BYTES: u64 = 256 * 1024 * 1024;
     let range_hdr = headers.get(header::RANGE).and_then(|h| h.to_str().ok());
-    let parsed_range = if let Some(r) = range_hdr {
+    let parsed_range = if range_hdr.is_some() && !if_range_matches {
+        // RFC 9110: If If-Range validator does not match current representation, ignore Range and serve entire 200 OK
+        None
+    } else if let Some(r) = range_hdr {
         if r.contains(',') {
             return Err(AxiomError::new(
                 "RANGE_NOT_SATISFIABLE",
@@ -239,8 +372,7 @@ pub async fn get_blob_handler(
                 // Suffix range: bytes=-500 (last 500 bytes), capped at 256 MB.
                 if let Ok(suffix) = end_str.parse::<u64>() {
                     let suffix = suffix.min(MAX_RANGE_BYTES);
-                    let total = engine.head(&namespace, &key).map_err(map_blob_error)?.size;
-                    let start = total.saturating_sub(suffix);
+                    let start = meta.size.saturating_sub(suffix);
                     Some((start, None))
                 } else {
                     return Err(AxiomError::new(
@@ -298,25 +430,20 @@ pub async fn get_blob_handler(
             .await
             .map_err(map_blob_error)?;
 
-        let etag_val = format!("\"{}\"", meta.hash);
         let range_len = byte_range.length();
         let content_range = format!(
             "bytes {}-{}/{}",
             byte_range.start, byte_range.end, byte_range.total
         );
 
-        let is_media = is_inline
-            || meta.content_type.starts_with("video/")
-            || meta.content_type.starts_with("audio/")
-            || meta.content_type.starts_with("image/");
-
-        let response_builder = Response::builder()
+        let mut response_builder = Response::builder()
             .status(StatusCode::PARTIAL_CONTENT)
             .header(header::CONTENT_TYPE, meta.content_type)
             .header(header::CONTENT_LENGTH, range_len.to_string())
             .header(header::CONTENT_RANGE, content_range)
             .header(header::ACCEPT_RANGES, "bytes")
             .header(header::ETAG, etag_val)
+            .header(header::CACHE_CONTROL, cache_control)
             .header(header::X_CONTENT_TYPE_OPTIONS, "nosniff")
             .header(header::CONTENT_DISPOSITION, disposition.clone())
             .header(
@@ -327,6 +454,10 @@ pub async fn get_blob_handler(
                     "default-src 'none'; frame-ancestors 'none';"
                 },
             );
+
+        if let Some(ref lm) = last_modified {
+            response_builder = response_builder.header(header::LAST_MODIFIED, lm.as_str());
+        }
 
         return match data {
             BlobData::Inline(bytes) => {
@@ -341,7 +472,7 @@ pub async fn get_blob_handler(
             }
             BlobData::File(file, len) => {
                 use tokio::io::AsyncReadExt;
-                let stream = ReaderStream::new(file.take(len));
+                let stream = ReaderStream::with_capacity(file.take(len), STREAM_CHUNK_BUFFER_SIZE);
                 let body = Body::from_stream(stream);
                 response_builder.body(body).map_err(|e| {
                     AxiomError::new(
@@ -355,29 +486,14 @@ pub async fn get_blob_handler(
     }
 
     let (meta, data) = engine.get(&namespace, &key).await.map_err(map_blob_error)?;
-    let etag_val = format!("\"{}\"", meta.hash);
 
-    // Conditional GET: check If-None-Match for cache revalidation
-    if let Some(inm) = headers
-        .get(header::IF_NONE_MATCH)
-        .and_then(|h| h.to_str().ok())
-    {
-        if inm.trim() == etag_val.as_str() || inm.trim() == meta.hash.as_str() {
-            return Ok(StatusCode::NOT_MODIFIED.into_response());
-        }
-    }
-
-    let is_media = is_inline
-        || meta.content_type.starts_with("video/")
-        || meta.content_type.starts_with("audio/")
-        || meta.content_type.starts_with("image/");
-
-    let response_builder = Response::builder()
+    let mut response_builder = Response::builder()
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, meta.content_type)
         .header(header::CONTENT_LENGTH, meta.size.to_string())
         .header(header::ACCEPT_RANGES, "bytes")
         .header(header::ETAG, etag_val)
+        .header(header::CACHE_CONTROL, cache_control)
         .header(header::X_CONTENT_TYPE_OPTIONS, "nosniff")
         .header(header::CONTENT_DISPOSITION, disposition)
         .header(
@@ -388,6 +504,10 @@ pub async fn get_blob_handler(
                 "default-src 'none'; frame-ancestors 'none';"
             },
         );
+
+    if let Some(ref lm) = last_modified {
+        response_builder = response_builder.header(header::LAST_MODIFIED, lm.as_str());
+    }
 
     match data {
         BlobData::Inline(bytes) => {
@@ -402,7 +522,7 @@ pub async fn get_blob_handler(
         }
         BlobData::File(file, len) => {
             use tokio::io::AsyncReadExt;
-            let stream = ReaderStream::new(file.take(len));
+            let stream = ReaderStream::with_capacity(file.take(len), STREAM_CHUNK_BUFFER_SIZE);
             let body = Body::from_stream(stream);
             response_builder.body(body).map_err(|e| {
                 AxiomError::new(
@@ -2523,21 +2643,51 @@ pub async fn get_public_blob_handler(
         ));
     }
 
-    // 2. Fetch metadata to evaluate conditional caching (If-None-Match)
+    // 2. Fetch metadata to evaluate conditional caching (If-None-Match & If-Modified-Since)
     let meta = engine.head(&namespace, &key).map_err(map_blob_error)?;
     let etag_val = format!("\"{}\"", meta.hash);
+    let last_modified =
+        chrono::DateTime::from_timestamp(meta.created_at, 0).map(|dt| dt.to_rfc2822());
 
     if let Some(inm) = headers
         .get(header::IF_NONE_MATCH)
         .and_then(|h| h.to_str().ok())
     {
         if inm.trim() == etag_val || inm.trim() == meta.hash {
-            let mut resp = Response::builder()
+            let mut resp_builder = Response::builder()
                 .status(StatusCode::NOT_MODIFIED)
-                .header(header::ETAG, etag_val)
-                .header(header::CACHE_CONTROL, "public, max-age=31536000, immutable")
-                .body(Body::empty())
-                .map_err(|e| {
+                .header(header::ETAG, &etag_val)
+                .header(header::CACHE_CONTROL, "public, max-age=31536000, immutable");
+            if let Some(ref lm) = last_modified {
+                resp_builder = resp_builder.header(header::LAST_MODIFIED, lm.as_str());
+            }
+            let mut resp = resp_builder.body(Body::empty()).map_err(|e| {
+                tracing::error!("Response build error: {}", e);
+                AxiomError::new(
+                    "INTERNAL_ERROR",
+                    "Failed to build response",
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                )
+            })?;
+            apply_cors_headers(&mut resp, &engine, &namespace);
+            return Ok(resp);
+        }
+    }
+
+    if let Some(ims) = headers
+        .get(header::IF_MODIFIED_SINCE)
+        .and_then(|h| h.to_str().ok())
+    {
+        if let Ok(client_time) = chrono::DateTime::parse_from_rfc2822(ims) {
+            if meta.created_at <= client_time.timestamp() {
+                let mut resp_builder = Response::builder()
+                    .status(StatusCode::NOT_MODIFIED)
+                    .header(header::ETAG, &etag_val)
+                    .header(header::CACHE_CONTROL, "public, max-age=31536000, immutable");
+                if let Some(ref lm) = last_modified {
+                    resp_builder = resp_builder.header(header::LAST_MODIFIED, lm.as_str());
+                }
+                let mut resp = resp_builder.body(Body::empty()).map_err(|e| {
                     tracing::error!("Response build error: {}", e);
                     AxiomError::new(
                         "INTERNAL_ERROR",
@@ -2545,8 +2695,9 @@ pub async fn get_public_blob_handler(
                         StatusCode::INTERNAL_SERVER_ERROR,
                     )
                 })?;
-            apply_cors_headers(&mut resp, &engine, &namespace);
-            return Ok(resp);
+                apply_cors_headers(&mut resp, &engine, &namespace);
+                return Ok(resp);
+            }
         }
     }
 
@@ -2568,10 +2719,21 @@ pub async fn get_public_blob_handler(
         format!("attachment; filename=\"{}\"", safe_filename)
     };
 
-    // Range handling (max single range: 256 MB)
+    // Range handling & RFC 9110 §13.1.2 If-Range validator check
     const MAX_RANGE_BYTES: u64 = 256 * 1024 * 1024;
+    let if_range_matches =
+        if let Some(ir) = headers.get(header::IF_RANGE).and_then(|h| h.to_str().ok()) {
+            let ir = ir.trim();
+            ir == etag_val || ir == meta.hash || last_modified.as_deref() == Some(ir)
+        } else {
+            true
+        };
+
     let range_hdr = headers.get(header::RANGE).and_then(|h| h.to_str().ok());
-    let parsed_range = if let Some(r) = range_hdr {
+    let parsed_range = if range_hdr.is_some() && !if_range_matches {
+        // RFC 9110: If If-Range validator does not match current representation, ignore Range and serve entire 200 OK
+        None
+    } else if let Some(r) = range_hdr {
         if r.contains(',') {
             return Err(AxiomError::new(
                 "RANGE_NOT_SATISFIABLE",
@@ -2649,13 +2811,13 @@ pub async fn get_public_blob_handler(
             byte_range.start, byte_range.end, byte_range.total
         );
 
-        let builder = Response::builder()
+        let mut builder = Response::builder()
             .status(StatusCode::PARTIAL_CONTENT)
             .header(header::CONTENT_TYPE, meta.content_type)
             .header(header::CONTENT_LENGTH, range_len.to_string())
             .header(header::CONTENT_RANGE, content_range)
             .header(header::ACCEPT_RANGES, "bytes")
-            .header(header::ETAG, etag_val)
+            .header(header::ETAG, &etag_val)
             .header(header::CACHE_CONTROL, "public, max-age=31536000, immutable")
             .header(header::X_CONTENT_TYPE_OPTIONS, "nosniff")
             .header(header::CONTENT_DISPOSITION, disposition.clone())
@@ -2668,11 +2830,15 @@ pub async fn get_public_blob_handler(
                 },
             );
 
+        if let Some(ref lm) = last_modified {
+            builder = builder.header(header::LAST_MODIFIED, lm.as_str());
+        }
+
         let mut resp = match data {
             BlobData::Inline(bytes) => builder.body(Body::from(bytes)),
             BlobData::File(file, len) => {
                 use tokio::io::AsyncReadExt;
-                let stream = ReaderStream::new(file.take(len));
+                let stream = ReaderStream::with_capacity(file.take(len), STREAM_CHUNK_BUFFER_SIZE);
                 builder.body(Body::from_stream(stream))
             }
         }
@@ -2698,12 +2864,12 @@ pub async fn get_public_blob_handler(
         apply_cors_headers(&mut resp, &engine, &namespace);
         return Ok(resp);
     } else {
-        Response::builder()
+        let mut builder = Response::builder()
             .status(StatusCode::OK)
             .header(header::CONTENT_TYPE, meta.content_type.clone())
             .header(header::CONTENT_LENGTH, meta.size.to_string())
             .header(header::ACCEPT_RANGES, "bytes")
-            .header(header::ETAG, etag_val)
+            .header(header::ETAG, &etag_val)
             .header(header::CACHE_CONTROL, "public, max-age=31536000, immutable")
             .header(header::X_CONTENT_TYPE_OPTIONS, "nosniff")
             .header(header::CONTENT_DISPOSITION, disposition)
@@ -2714,7 +2880,12 @@ pub async fn get_public_blob_handler(
                 } else {
                     "default-src 'none'; frame-ancestors 'none';"
                 },
-            )
+            );
+
+        if let Some(ref lm) = last_modified {
+            builder = builder.header(header::LAST_MODIFIED, lm.as_str());
+        }
+        builder
     };
 
     let (_, data) = engine.get(&namespace, &key).await.map_err(map_blob_error)?;
@@ -2722,7 +2893,7 @@ pub async fn get_public_blob_handler(
         BlobData::Inline(bytes) => response_builder.body(Body::from(bytes)),
         BlobData::File(file, len) => {
             use tokio::io::AsyncReadExt;
-            let stream = ReaderStream::new(file.take(len));
+            let stream = ReaderStream::with_capacity(file.take(len), STREAM_CHUNK_BUFFER_SIZE);
             response_builder.body(Body::from_stream(stream))
         }
     }
@@ -2951,5 +3122,13 @@ mod tests {
             Some("application/pdf")
         );
         assert_eq!(upload_link_req.ttl_seconds, Some(3600));
+    }
+
+    #[test]
+    fn test_map_blob_error_insufficient_storage() {
+        let err = BlobError::InsufficientStorage("disk full".to_string());
+        let axiom_err = map_blob_error(err);
+        assert_eq!(axiom_err.status, StatusCode::INSUFFICIENT_STORAGE);
+        assert_eq!(axiom_err.code, "INSUFFICIENT_STORAGE");
     }
 }

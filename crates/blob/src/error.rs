@@ -2,8 +2,8 @@
  * Strongly-typed domain error definitions for native embedded blob storage operations.
  * Owned by: blob
  * Key deps: std::fmt, std::io
- * Invariants: Error messages must never expose raw host filesystem paths to unprivileged callers.
- * Last structural change: Initial implementation of Phase 1 Blob Engine.
+ * Invariants: Error messages must never expose raw host filesystem paths to unprivileged callers; disk exhaustion maps cleanly to InsufficientStorage (HTTP 507).
+ * Last structural change: Security hardening mapping disk exhaustion to InsufficientStorage.
  */
 
 use std::fmt;
@@ -39,6 +39,8 @@ pub enum BlobError {
     UploadSessionNotFound(String),
     /// Upload offset mismatch during resumable upload.
     OffsetMismatch { expected: u64, actual: u64 },
+    /// Host filesystem disk space exhausted (ENOSPC / ERROR_DISK_FULL).
+    InsufficientStorage(String),
     /// Host filesystem input/output failure.
     Io(String),
     /// Underlying LSM database or indexing failure.
@@ -85,6 +87,7 @@ impl fmt::Display for BlobError {
                 "Upload offset mismatch: expected offset {}, but received {}",
                 expected, actual
             ),
+            Self::InsufficientStorage(msg) => write!(f, "Host storage full: {}", msg),
             Self::Io(msg) => write!(f, "Storage I/O failure: {}", msg),
             Self::Engine(msg) => write!(f, "Storage engine error: {}", msg),
         }
@@ -95,7 +98,23 @@ impl std::error::Error for BlobError {}
 
 impl From<std::io::Error> for BlobError {
     fn from(err: std::io::Error) -> Self {
-        Self::Io(err.to_string())
+        #[cfg(target_os = "windows")]
+        let is_disk_full =
+            err.raw_os_error() == Some(112) || err.kind() == std::io::ErrorKind::StorageFull;
+        #[cfg(not(target_os = "windows"))]
+        let is_disk_full =
+            err.raw_os_error() == Some(28) || err.kind() == std::io::ErrorKind::StorageFull;
+
+        let msg = err.to_string();
+        let is_disk_full_msg = msg.contains("not enough space")
+            || msg.contains("No space left")
+            || msg.contains("disk full");
+
+        if is_disk_full || is_disk_full_msg {
+            Self::InsufficientStorage(msg)
+        } else {
+            Self::Io(msg)
+        }
     }
 }
 

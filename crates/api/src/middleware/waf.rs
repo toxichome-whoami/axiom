@@ -212,6 +212,7 @@ pub async fn waf_middleware(req: Request, next: Next) -> Result<Response, AxiomE
         || query.contains('\t')
         || query.contains(';')
         || raw_uri.contains("..")
+        || raw_uri.contains('\u{ff0e}')
     {
         let mut combined = format!("{}?{}", path, query).to_lowercase();
         // Decode up to 5 times to prevent multi-encoding bypasses (cap length to avoid DoS)
@@ -236,7 +237,13 @@ pub async fn waf_middleware(req: Request, next: Next) -> Result<Response, AxiomE
             ));
         }
 
-        if combined.contains("..") || raw_uri.contains("..") {
+        // Normalize Unicode homoglyphs / fullwidth characters attempting traversal evasion (SEC-5.1)
+        let combined = combined
+            .replace('\u{ff0e}', ".")
+            .replace('\u{ff0f}', "/")
+            .replace('\u{ff3c}', "\\");
+
+        if combined.contains("..") || raw_uri.contains("..") || raw_uri.contains('\u{ff0e}') {
             return Err(AxiomError::new(
                 "WAF_PATH_TRAVERSAL",
                 "Path traversal attempt detected",
@@ -299,6 +306,20 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(res.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn test_waf_unicode_homoglyph_traversal_blocked() {
+        let app = build_waf_test_app();
+        let res = app
+            .oneshot(
+                Request::get("/test/\u{ff0e}\u{ff0e}/etc/passwd")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::BAD_REQUEST);
     }
 
     #[tokio::test]

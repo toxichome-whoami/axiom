@@ -41,7 +41,7 @@ impl std::fmt::Display for ClusterAuthError {
     }
 }
 
-/// Computes a BLAKE3 keyed hash over canonical packet metadata and payload.
+/// Computes a BLAKE3 keyed hash over canonical packet metadata and payload with zero intermediate allocations.
 /// Format: `node_id:timestamp:nonce:body_blake3_hex`
 pub fn compute_cluster_mac(
     node_id: &str,
@@ -52,10 +52,26 @@ pub fn compute_cluster_mac(
 ) -> String {
     let key_hash = blake3::hash(secret.as_bytes());
     let body_hash_hex = blake3::hash(body).to_hex();
-    let canonical = format!("{}:{}:{}:{}", node_id, timestamp, nonce, body_hash_hex);
 
-    let mac = blake3::keyed_hash(key_hash.as_bytes(), canonical.as_bytes());
-    mac.to_hex().to_string()
+    let mut ts_buf = [0u8; 32];
+    let ts_bytes = {
+        use std::io::Write;
+        let mut cursor = std::io::Cursor::new(&mut ts_buf[..]);
+        let _ = write!(cursor, "{}", timestamp);
+        let len = cursor.position() as usize;
+        &ts_buf[..len]
+    };
+
+    let mut hasher = blake3::Hasher::new_keyed(key_hash.as_bytes());
+    hasher.update(node_id.as_bytes());
+    hasher.update(b":");
+    hasher.update(ts_bytes);
+    hasher.update(b":");
+    hasher.update(nonce.as_bytes());
+    hasher.update(b":");
+    hasher.update(body_hash_hex.as_bytes());
+
+    hasher.finalize().to_hex().to_string()
 }
 
 /// Generates headers `(X-Axiom-Node-Id, X-Axiom-Timestamp, X-Axiom-Nonce, X-Axiom-Signature)` for an outbound cluster packet.

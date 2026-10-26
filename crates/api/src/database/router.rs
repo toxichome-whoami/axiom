@@ -276,6 +276,33 @@ async fn execute_query(
         }
     }
 
+    let etag_val = format!("\"{}\"", blake3::hash(&json_bytes).to_hex());
+
+    // HTTP 304 conditional check: if client representation matches current ETag, return immediately with 0 body bytes
+    if let Some(inm) = headers
+        .get(axum::http::header::IF_NONE_MATCH)
+        .and_then(|v| v.to_str().ok())
+    {
+        if inm.trim() == etag_val || inm.trim() == "*" {
+            return axum::response::Response::builder()
+                .status(axum::http::StatusCode::NOT_MODIFIED)
+                .header(axum::http::header::ETAG, &etag_val)
+                .header(
+                    axum::http::header::CACHE_CONTROL,
+                    "private, max-age=5, must-revalidate",
+                )
+                .body(axum::body::Body::empty())
+                .map_err(|e| {
+                    tracing::error!("Response build failed: {}", e);
+                    AxiomError::new(
+                        "INTERNAL_ERROR",
+                        "Failed to build response",
+                        axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                    )
+                });
+        }
+    }
+
     let is_ndjson = headers
         .get(axum::http::header::ACCEPT)
         .and_then(|v| v.to_str().ok())
@@ -287,6 +314,11 @@ async fn execute_query(
         let stream = crate::database::streaming::stream_ndjson_rows(rows);
         return axum::response::Response::builder()
             .header("content-type", "application/x-ndjson")
+            .header(axum::http::header::ETAG, &etag_val)
+            .header(
+                axum::http::header::CACHE_CONTROL,
+                "private, max-age=5, must-revalidate",
+            )
             .body(axum::body::Body::from_stream(stream))
             .map_err(|e| {
                 tracing::error!("Response build failed: {}", e);
@@ -300,6 +332,11 @@ async fn execute_query(
 
     axum::response::Response::builder()
         .header("content-type", "application/json")
+        .header(axum::http::header::ETAG, &etag_val)
+        .header(
+            axum::http::header::CACHE_CONTROL,
+            "private, max-age=5, must-revalidate",
+        )
         .body(axum::body::Body::from(json_bytes))
         .map_err(|e| {
             tracing::error!("Response build failed: {}", e);

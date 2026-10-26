@@ -4,14 +4,12 @@
 
 ### Unified REST Data API, Blob Storage, Admin Control Plane, and MCP Specification
 
-[![Version](https://img.shields.io/badge/version-0.1.17%2B-111827.svg?style=flat-square)](https://github.com/toxichome-whoami/axiom/releases)
+[![Version](https://img.shields.io/badge/version-0.1.18%2B-111827.svg?style=flat-square)](https://github.com/toxichome-whoami/axiom/releases)
 [![Rust](https://img.shields.io/badge/rust-1.88%2B-b7410e.svg?style=flat-square&logo=rust&logoColor=white)](https://www.rust-lang.org)
 [![License: MIT](https://img.shields.io/badge/license-MIT-111827.svg?style=flat-square)](../LICENSE)
 [![MCP](https://img.shields.io/badge/MCP-2024--11--05-111827.svg?style=flat-square)](https://modelcontextprotocol.io)
 
 </div>
-
----
 
 ## Contents
 
@@ -23,8 +21,6 @@
 6. [Blob Storage API](#6-blob-storage-api-apiv1blobs)
 7. [Model Context Protocol (MCP)](#7-model-context-protocol-mcp)
 8. [Errors](#8-errors)
-
----
 
 ## 1. Quick Start
 
@@ -45,8 +41,6 @@ curl http://127.0.0.1:4500/api/v1/db/databases -H "X-Axiom-Key: $AXIOM_KEY"
 
 > Examples below use `<TOKEN>` as a placeholder for the value of `$AXIOM_KEY`.
 
----
-
 ## 2. Authentication
 
 Axiom has four planes, each with its own credential.
@@ -57,8 +51,6 @@ Axiom has four planes, each with its own credential.
 | **Control**           | `/admin/v1/*`    | `Authorization: Bearer <session-token>`  | 32-character token from `POST /admin/v1/auth/login` |
 | **Cluster mesh**      | `/internal/v1/*` | `X-Axiom-Signature: <hex(HMAC-SHA256)>`  | Node-to-node only; not for application use          |
 | **Capability ticket** | blob URLs        | `?ticket=v1.<ns>.<key>.<op>.<exp>.<sig>` | Pre-signed, time-limited, delegated access          |
-
----
 
 ## 3. Conventions
 
@@ -113,8 +105,6 @@ List endpoints use **keyset (cursor) pagination**: pass `limit` and `cursor`; re
 - `PATCH` and `DELETE` on `/rows` **require a filter**, which prevents accidental full-table writes.
 - SQL sent to `/query` passes through an AST safety firewall; rejected statements return `AST_VALIDATION_ERROR`.
 - Always use `$1, $2, ...` placeholders with `params`; never interpolate values into `sql`.
-
----
 
 ## 4. Endpoint Index
 
@@ -211,8 +201,6 @@ List endpoints use **keyset (cursor) pagination**: pass `limit` and `cursor`; re
 |               | POST                 | `/blobs/tickets/:signature/revoke` | Emergency cluster-wide revoke                                       |
 |               | POST                 | `/blobs/tickets/:signature/enable` | Cluster-wide restore                                                |
 |               | DELETE               | `/blobs/tickets/:signature`        | Purge the ticket record from the cluster                            |
-
----
 
 ## 5. Database Data API (`/api/v1/db`)
 
@@ -384,8 +372,6 @@ X-Axiom-Key: <TOKEN>
 
 > DDL is destructive and immediate. Restrict these routes to trusted roles via RBAC.
 
----
-
 ## 6. Blob Storage API (`/api/v1/blobs`)
 
 Storage is **content-addressed (CAS)**: identical bytes are stored once (BLAKE3 hash), copies are zero-copy, and deleting an object only decrements a reference count.
@@ -467,8 +453,6 @@ Content-Type: application/json
 
 Lifecycle: **active → revoked** (`/revoke`) → **active** again (`/enable`), or permanently removed (`DELETE`). Administrators can do the same cluster-wide under `/admin/v1/blobs/tickets`.
 
----
-
 ## 7. Model Context Protocol (MCP)
 
 Axiom exposes database and storage capabilities to AI agents over JSON-RPC 2.0 at `POST /mcp/v1`, authenticated with `X-Axiom-Key`. Protocol version: `2024-11-05`.
@@ -498,8 +482,6 @@ Content-Type: application/json
 | Blob Storage      | `axiom_list_blob_namespaces`, `axiom_list_blobs`, `axiom_get_blob_metadata`, `axiom_read_blob`, `axiom_write_blob`, `axiom_delete_blob`, `axiom_create_download_ticket` |
 
 MCP calls run under the key's role, so RBAC applies exactly as for REST. Give agents a dedicated, least-privilege key.
-
----
 
 ## 8. Errors
 

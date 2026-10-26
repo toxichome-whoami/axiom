@@ -36,7 +36,7 @@ use axiom_policy::PolicyEngine;
 /// Seeds an in-memory ArcSwap metadata snapshot with deterministic test identities.
 /// Idempotent — safe to call from every test without ordering concerns.
 fn setup_test_metadata() {
-    axiom_cache::CacheEngine::reset_ip_rate_limit("127.0.0.1");
+    axiom_cache::CacheEngine::reset_rate_limits();
     BanList::unban_ip_local("127.0.0.1");
     let mut keys = HashMap::new();
     let mut roles = HashMap::new();
@@ -824,9 +824,9 @@ async fn brute_force_api_key_bad_secrets_ban_attacker_ip_not_key() {
 #[tokio::test]
 async fn distributed_credential_stuffing_account_lockout() {
     ensure_metadata_store().await;
-    let username = "target_victim_unique_lockout";
+    let username = format!("victim_{}", uuid::Uuid::new_v4().simple());
     let _ =
-        axiom_metadata::MetadataStore::create_user(username, None, "ValidVictimP@ssw0rd!").await;
+        axiom_metadata::MetadataStore::create_user(&username, None, "ValidVictimP@ssw0rd!").await;
 
     // Simulate 5 failed login attempts from 5 distinct IP addresses
     for i in 1..=5 {
@@ -1411,6 +1411,108 @@ async fn blob_storage_range_requests_partial_content() {
         .unwrap();
     let invalid_res = create_app().oneshot(invalid_range).await.unwrap();
     assert_eq!(invalid_res.status(), StatusCode::RANGE_NOT_SATISFIABLE);
+}
+
+#[tokio::test]
+async fn blob_storage_media_streaming_and_caching_rfcs() {
+    setup_test_metadata();
+    ensure_blob_engine().await;
+
+    let admin_token = BASE64_STANDARD.encode("admin_key:secret_admin");
+
+    // 1. Upload a 256 KB test video payload
+    let payload = vec![0xABu8; 256 * 1024];
+    let put_req = Request::put("/api/v1/blobs/media/sample_stream.mp4")
+        .header("X-Axiom-Key", &admin_token)
+        .header("Content-Type", "video/mp4")
+        .body(Body::from(payload.clone()))
+        .unwrap();
+    let put_res = create_app().oneshot(put_req).await.unwrap();
+    assert_eq!(put_res.status(), StatusCode::CREATED);
+
+    // 2. Full GET: verify Cache-Control for media, Last-Modified, Accept-Ranges, and ETag
+    let get_req = Request::get("/api/v1/blobs/media/sample_stream.mp4")
+        .header("X-Axiom-Key", &admin_token)
+        .body(Body::empty())
+        .unwrap();
+    let get_res = create_app().oneshot(get_req).await.unwrap();
+    assert_eq!(get_res.status(), StatusCode::OK);
+    assert_eq!(
+        get_res.headers().get("Cache-Control").unwrap(),
+        "public, max-age=86400, stale-while-revalidate=604800"
+    );
+    assert!(get_res.headers().contains_key("Last-Modified"));
+    assert_eq!(get_res.headers().get("Accept-Ranges").unwrap(), "bytes");
+    let etag = get_res
+        .headers()
+        .get("ETag")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_string();
+
+    // 3. Conditional GET with If-Modified-Since in future -> 304 Not Modified
+    let future_date = "Wed, 21 Oct 2099 07:28:00 GMT";
+    let cond_req = Request::get("/api/v1/blobs/media/sample_stream.mp4")
+        .header("X-Axiom-Key", &admin_token)
+        .header("If-Modified-Since", future_date)
+        .body(Body::empty())
+        .unwrap();
+    let cond_res = create_app().oneshot(cond_req).await.unwrap();
+    assert_eq!(cond_res.status(), StatusCode::NOT_MODIFIED);
+
+    // 4. High-throughput 128 KB range streaming: bytes=0-131071 (131072 bytes)
+    let range_req = Request::get("/api/v1/blobs/media/sample_stream.mp4")
+        .header("X-Axiom-Key", &admin_token)
+        .header("Range", "bytes=0-131071")
+        .body(Body::empty())
+        .unwrap();
+    let range_res = create_app().oneshot(range_req).await.unwrap();
+    assert_eq!(range_res.status(), StatusCode::PARTIAL_CONTENT);
+    assert_eq!(
+        range_res.headers().get("Content-Range").unwrap(),
+        "bytes 0-131071/262144"
+    );
+    assert_eq!(range_res.headers().get("Content-Length").unwrap(), "131072");
+    assert_eq!(
+        range_res.headers().get("Cache-Control").unwrap(),
+        "public, max-age=86400, stale-while-revalidate=604800"
+    );
+    let chunk_bytes = axum::body::to_bytes(range_res.into_body(), 256 * 1024)
+        .await
+        .unwrap();
+    assert_eq!(chunk_bytes.len(), 131072);
+
+    // 5. RFC 9110 If-Range matching current ETag -> 206 Partial Content
+    let if_range_match_req = Request::get("/api/v1/blobs/media/sample_stream.mp4")
+        .header("X-Axiom-Key", &admin_token)
+        .header("Range", "bytes=0-1023")
+        .header("If-Range", &etag)
+        .body(Body::empty())
+        .unwrap();
+    let if_range_match_res = create_app().oneshot(if_range_match_req).await.unwrap();
+    assert_eq!(if_range_match_res.status(), StatusCode::PARTIAL_CONTENT);
+    assert_eq!(
+        if_range_match_res.headers().get("Content-Range").unwrap(),
+        "bytes 0-1023/262144"
+    );
+
+    // 6. RFC 9110 If-Range mismatch -> must IGNORE Range and return 200 OK with full representation
+    let if_range_mismatch_req = Request::get("/api/v1/blobs/media/sample_stream.mp4")
+        .header("X-Axiom-Key", &admin_token)
+        .header("Range", "bytes=0-1023")
+        .header("If-Range", "\"stale-non-matching-etag\"")
+        .body(Body::empty())
+        .unwrap();
+    let if_range_mismatch_res = create_app().oneshot(if_range_mismatch_req).await.unwrap();
+    assert_eq!(if_range_mismatch_res.status(), StatusCode::OK);
+    assert_eq!(
+        if_range_mismatch_res
+            .headers()
+            .get("Content-Length")
+            .unwrap(),
+        "262144"
+    );
 }
 
 #[tokio::test]
@@ -2300,6 +2402,7 @@ async fn admin_api_full_control_plane_lifecycle() {
 
 #[tokio::test]
 async fn circuit_breaker_repeated_failure_tripping() {
+    setup_test_metadata();
     ensure_metadata_store().await;
     let admin_token = BASE64_STANDARD.encode("admin_key:secret_admin");
 
@@ -3258,4 +3361,148 @@ async fn test_first_class_blob_hierarchy_and_quota_usage() {
         .unwrap();
     let res = create_app().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn test_zero_overhead_upload_inlining_and_header_preflight_rejection() {
+    setup_test_metadata();
+    ensure_blob_engine().await;
+    axiom_cache::CacheEngine::delete("rl:ip:127.0.0.1").await;
+    axiom_cache::CacheEngine::delete("penalty:127.0.0.1").await;
+    let admin_token = BASE64_STANDARD.encode("admin_key:secret_admin");
+
+    let ns_name = "zero-io-test";
+    // 1. Create a namespace with 10 KB quota ceiling
+    let req = Request::post("/admin/v1/blobs/namespaces")
+        .header("Authorization", format!("Bearer {}", admin_token))
+        .header("Content-Type", "application/json")
+        .body(Body::from(
+            serde_json::to_vec(&serde_json::json!({
+                "name": ns_name,
+                "max_bytes": 10240,
+                "is_public": true
+            }))
+            .unwrap(),
+        ))
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::CREATED);
+
+    // 2. Upload small payload (256 bytes) -> must inline directly into LSM (zero disk file I/O)
+    let payload = vec![0x42u8; 256];
+    let req = Request::put(format!("/api/v1/blobs/{}/small.bin", ns_name))
+        .header("X-Axiom-Key", &admin_token)
+        .header("Content-Type", "application/octet-stream")
+        .header("Content-Length", payload.len().to_string())
+        .body(Body::from(payload.clone()))
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::CREATED);
+
+    let put_body = axum::body::to_bytes(res.into_body(), 65536).await.unwrap();
+    let put_json: Value = serde_json::from_slice(&put_body).unwrap();
+    assert_eq!(put_json["data"]["inline"], true);
+    assert_eq!(put_json["data"]["size"], 256);
+
+    // 3. Fast-path upfront rejection: Content-Length exceeding namespace quota ceiling (15 KB > 10 KB quota)
+    // Must reject with 507 INSUFFICIENT_STORAGE in 0 ms without reading body
+    let req = Request::put(format!("/api/v1/blobs/{}/quota_overflow.bin", ns_name))
+        .header("X-Axiom-Key", &admin_token)
+        .header("Content-Type", "application/octet-stream")
+        .header("Content-Length", "15360")
+        .body(Body::empty())
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::INSUFFICIENT_STORAGE);
+
+    // 4. Fast-path upfront rejection: Content-Length exceeding global max object limit (e.g. 500 GB)
+    // Must reject with 413 PAYLOAD_TOO_LARGE in 0 ms without reading body
+    let req = Request::put(format!("/api/v1/blobs/{}/oversized.bin", ns_name))
+        .header("X-Axiom-Key", &admin_token)
+        .header("Content-Type", "application/octet-stream")
+        .header("Content-Length", (500 * 1024 * 1024 * 1024u64).to_string())
+        .body(Body::empty())
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::PAYLOAD_TOO_LARGE);
+}
+
+#[tokio::test]
+async fn test_db_zero_copy_streaming_and_etag_caching() {
+    setup_test_metadata();
+    ensure_test_items_table().await;
+    axiom_cache::CacheEngine::delete("rl:ip:127.0.0.1").await;
+    axiom_cache::CacheEngine::delete("penalty:127.0.0.1").await;
+    let admin_token = BASE64_STANDARD.encode("admin_key:secret_admin");
+
+    // 1. Fetch rows from testdb/items/rows -> verify 200 OK with ETag & Cache-Control headers
+    let req = Request::get("/api/v1/db/testdb/items/rows?limit=10")
+        .header("X-Axiom-Key", &admin_token)
+        .body(Body::empty())
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let etag = res
+        .headers()
+        .get("etag")
+        .expect("ETag header must be present on row responses")
+        .to_str()
+        .unwrap()
+        .to_string();
+    assert!(res.headers().contains_key("cache-control"));
+
+    // 2. Conditional request with matching If-None-Match -> must return 304 Not Modified with 0 body bytes
+    let req = Request::get("/api/v1/db/testdb/items/rows?limit=10")
+        .header("X-Axiom-Key", &admin_token)
+        .header("If-None-Match", &etag)
+        .body(Body::empty())
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::NOT_MODIFIED);
+    let body_bytes = axum::body::to_bytes(res.into_body(), 65536).await.unwrap();
+    assert!(body_bytes.is_empty(), "304 Not Modified body must be empty");
+
+    // 3. Raw query endpoint /api/v1/db/testdb/query -> verify ETag & 304 conditional validation
+    let query_payload = serde_json::json!({
+        "sql": "SELECT id, name FROM items LIMIT 5"
+    });
+    let req = Request::post("/api/v1/db/testdb/query")
+        .header("X-Axiom-Key", &admin_token)
+        .header("Content-Type", "application/json")
+        .body(Body::from(serde_json::to_vec(&query_payload).unwrap()))
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let query_etag = res
+        .headers()
+        .get("etag")
+        .expect("ETag header must be present on query responses")
+        .to_str()
+        .unwrap()
+        .to_string();
+
+    // Conditional repeat request to /query with If-None-Match
+    let req = Request::post("/api/v1/db/testdb/query")
+        .header("X-Axiom-Key", &admin_token)
+        .header("Content-Type", "application/json")
+        .header("If-None-Match", &query_etag)
+        .body(Body::from(serde_json::to_vec(&query_payload).unwrap()))
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::NOT_MODIFIED);
+    let query_body_bytes = axum::body::to_bytes(res.into_body(), 65536).await.unwrap();
+    assert!(query_body_bytes.is_empty());
+
+    // 4. Test NDJSON streaming output format
+    let req = Request::get("/api/v1/db/testdb/items/rows?limit=5")
+        .header("X-Axiom-Key", &admin_token)
+        .header("Accept", "application/x-ndjson")
+        .body(Body::empty())
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    assert_eq!(
+        res.headers().get("content-type").unwrap(),
+        "application/x-ndjson"
+    );
 }

@@ -16,8 +16,7 @@ use crate::database::filter_builder;
 use crate::database::handlers::{get_db_config, QueryExecutionPipeline};
 use crate::mcp::schema::{
     JsonRpcRequest, JsonRpcResponse, McpCapabilities, McpInitializeResult, McpResource,
-    McpResourceContent, McpResourceReadResult, McpResourcesCapability, McpServerInfo, McpTool,
-    McpToolCallResult, McpToolsCapability,
+    McpResourcesCapability, McpServerInfo, McpTool, McpToolsCapability,
 };
 use axiom_core::AuthContext;
 use axiom_core::AxiomError;
@@ -36,20 +35,17 @@ use axiom_policy::PolicyEngine;
 ///  - Idempotent: Depends on dispatched method (discovery is idempotent; mutation is not).
 pub async fn handle_mcp(
     Extension(auth): Extension<AuthContext>,
-    Json(payload): Json<Value>,
-) -> Result<Json<Value>, AxiomError> {
-    let req: JsonRpcRequest = match serde_json::from_value(payload) {
+    body: axum::body::Bytes,
+) -> Result<Json<JsonRpcResponse>, AxiomError> {
+    let req: JsonRpcRequest = match serde_json::from_slice(&body) {
         Ok(r) => r,
         Err(e) => {
-            return Ok(Json(
-                serde_json::to_value(JsonRpcResponse::error(
-                    None,
-                    -32600,
-                    format!("Invalid Request: {}", e),
-                    None,
-                ))
-                .unwrap_or_default(),
-            ));
+            return Ok(Json(JsonRpcResponse::error(
+                None,
+                -32600,
+                format!("Invalid Request: {}", e),
+                None,
+            )));
         }
     };
 
@@ -79,12 +75,12 @@ pub async fn handle_mcp(
         ),
     };
 
-    Ok(Json(serde_json::to_value(response).unwrap_or_default()))
+    Ok(Json(response))
 }
 
 // ─── Protocol Discovery Handlers ───────────────────────────────────────────
 
-fn handle_initialize(id: Option<Value>) -> JsonRpcResponse {
+static STATIC_INITIALIZE_RESULT: std::sync::LazyLock<Value> = std::sync::LazyLock::new(|| {
     let result = McpInitializeResult {
         protocol_version: "2024-11-05".to_string(),
         capabilities: McpCapabilities {
@@ -101,10 +97,14 @@ fn handle_initialize(id: Option<Value>) -> JsonRpcResponse {
             version: env!("CARGO_PKG_VERSION").to_string(),
         },
     };
-    JsonRpcResponse::success(id, serde_json::to_value(result).unwrap_or_default())
+    serde_json::to_value(result).unwrap_or_default()
+});
+
+fn handle_initialize(id: Option<Value>) -> JsonRpcResponse {
+    JsonRpcResponse::success(id, STATIC_INITIALIZE_RESULT.clone())
 }
 
-fn handle_tools_list(id: Option<Value>, _auth: &AuthContext) -> JsonRpcResponse {
+static STATIC_TOOLS_LIST: std::sync::LazyLock<Value> = std::sync::LazyLock::new(|| {
     let tools = vec![
         McpTool {
             name: "axiom_list_services".to_string(),
@@ -317,7 +317,11 @@ fn handle_tools_list(id: Option<Value>, _auth: &AuthContext) -> JsonRpcResponse 
         },
     ];
 
-    JsonRpcResponse::success(id, json!({ "tools": tools }))
+    json!({ "tools": tools })
+});
+
+fn handle_tools_list(id: Option<Value>, _auth: &AuthContext) -> JsonRpcResponse {
+    JsonRpcResponse::success(id, STATIC_TOOLS_LIST.clone())
 }
 
 // ─── Tool Call Execution Dispatcher ────────────────────────────────────────
@@ -398,12 +402,24 @@ async fn handle_tools_call(
             };
             JsonRpcResponse::success(
                 id,
-                serde_json::to_value(McpToolCallResult::success(text)).unwrap_or_default(),
+                json!({
+                    "content": [{
+                        "type": "text",
+                        "text": text
+                    }],
+                    "isError": false
+                }),
             )
         }
         Err(err_msg) => JsonRpcResponse::success(
             id,
-            serde_json::to_value(McpToolCallResult::error(err_msg)).unwrap_or_default(),
+            json!({
+                "content": [{
+                    "type": "text",
+                    "text": err_msg
+                }],
+                "isError": true
+            }),
         ),
     }
 }
@@ -620,8 +636,8 @@ async fn exec_query(
     Ok(json!({
         "database": db,
         "table": table,
-        "columns": result.columns.clone(),
-        "rows": result.rows.clone().unwrap_or_default(),
+        "columns": &result.columns,
+        "rows": result.rows.as_deref().unwrap_or(&[]),
     }))
 }
 
@@ -833,8 +849,8 @@ async fn exec_raw_sql(
         .map_err(|e| e.to_string())?;
 
     Ok(json!({
-        "columns": result.columns.clone(),
-        "rows": result.rows.clone().unwrap_or_default(),
+        "columns": &result.columns,
+        "rows": result.rows.as_deref().unwrap_or(&[]),
         "affected_rows": result.affected_rows,
     }))
 }
@@ -981,12 +997,12 @@ async fn exec_read_blob(
     let (data_str, actual_encoding) = if encoding == "base64" {
         (BASE64_STANDARD.encode(&bytes), "base64")
     } else {
-        match String::from_utf8(bytes.clone()) {
+        match String::from_utf8(bytes) {
             Ok(s) => (s, "utf8"),
-            Err(_) => {
+            Err(e) => {
                 // WHY: When binary data (images, PDFs) is requested with utf8, fallback to base64
                 // rather than corrupting byte sequences or erroring out.
-                (BASE64_STANDARD.encode(&bytes), "base64")
+                (BASE64_STANDARD.encode(e.as_bytes()), "base64")
             }
         }
     };
@@ -1034,17 +1050,19 @@ async fn exec_write_blob(
 
     PolicyEngine::evaluate_blob(auth, ns, key, "WRITE").map_err(|e| e.to_string())?;
 
-    let raw_bytes = if encoding == "base64" {
-        BASE64_STANDARD
+    let decoded_storage;
+    let slice_to_write = if encoding == "base64" {
+        decoded_storage = BASE64_STANDARD
             .decode(content.trim())
-            .map_err(|e| format!("Invalid base64 payload: {}", e))?
+            .map_err(|e| format!("Invalid base64 payload: {}", e))?;
+        decoded_storage.as_slice()
     } else {
-        content.as_bytes().to_vec()
+        content.as_bytes()
     };
 
     let engine = crate::blobs::get_blob_engine().map_err(|e| e.to_string())?;
     let meta = engine
-        .put_with_options(ns, key, content_type, &raw_bytes, ttl_seconds, None)
+        .put_with_options(ns, key, content_type, slice_to_write, ttl_seconds, None)
         .await
         .map_err(|e| e.to_string())?;
 
@@ -1211,17 +1229,16 @@ async fn handle_resources_read(
     if uri == "axiom://services" {
         match exec_list_services(auth).await {
             Ok(val) => {
-                let content = McpResourceContent {
-                    uri,
-                    mime_type: "application/json".to_string(),
-                    text: serde_json::to_string_pretty(&val).unwrap_or_default(),
-                };
+                let text = serde_json::to_string(&val).unwrap_or_default();
                 JsonRpcResponse::success(
                     id,
-                    serde_json::to_value(McpResourceReadResult {
-                        contents: vec![content],
-                    })
-                    .unwrap_or_default(),
+                    json!({
+                        "contents": [{
+                            "uri": uri,
+                            "mimeType": "application/json",
+                            "text": text
+                        }]
+                    }),
                 )
             }
             Err(e) => {
@@ -1233,17 +1250,16 @@ async fn handle_resources_read(
         map.insert("database".to_string(), Value::String(service.to_string()));
         match exec_list_tables(auth, &map).await {
             Ok(tables_val) => {
-                let content = McpResourceContent {
-                    uri,
-                    mime_type: "application/json".to_string(),
-                    text: serde_json::to_string_pretty(&tables_val).unwrap_or_default(),
-                };
+                let text = serde_json::to_string(&tables_val).unwrap_or_default();
                 JsonRpcResponse::success(
                     id,
-                    serde_json::to_value(McpResourceReadResult {
-                        contents: vec![content],
-                    })
-                    .unwrap_or_default(),
+                    json!({
+                        "contents": [{
+                            "uri": uri,
+                            "mimeType": "application/json",
+                            "text": text
+                        }]
+                    }),
                 )
             }
             Err(e) => {
@@ -1253,17 +1269,16 @@ async fn handle_resources_read(
     } else if uri == "axiom://blobs" {
         match exec_list_blob_namespaces(auth).await {
             Ok(val) => {
-                let content = McpResourceContent {
-                    uri,
-                    mime_type: "application/json".to_string(),
-                    text: serde_json::to_string_pretty(&val).unwrap_or_default(),
-                };
+                let text = serde_json::to_string(&val).unwrap_or_default();
                 JsonRpcResponse::success(
                     id,
-                    serde_json::to_value(McpResourceReadResult {
-                        contents: vec![content],
-                    })
-                    .unwrap_or_default(),
+                    json!({
+                        "contents": [{
+                            "uri": uri,
+                            "mimeType": "application/json",
+                            "text": text
+                        }]
+                    }),
                 )
             }
             Err(e) => JsonRpcResponse::error(
@@ -1294,17 +1309,15 @@ async fn handle_resources_read(
                         .and_then(|d| d.as_str())
                         .unwrap_or_default()
                         .to_string();
-                    let content = McpResourceContent {
-                        uri,
-                        mime_type: content_type,
-                        text,
-                    };
                     JsonRpcResponse::success(
                         id,
-                        serde_json::to_value(McpResourceReadResult {
-                            contents: vec![content],
-                        })
-                        .unwrap_or_default(),
+                        json!({
+                            "contents": [{
+                                "uri": uri,
+                                "mimeType": content_type,
+                                "text": text
+                            }]
+                        }),
                     )
                 }
                 Err(e) => JsonRpcResponse::error(
@@ -1320,17 +1333,16 @@ async fn handle_resources_read(
             map.insert("namespace".to_string(), Value::String(path.to_string()));
             match exec_list_blobs(auth, &map).await {
                 Ok(val) => {
-                    let content = McpResourceContent {
-                        uri,
-                        mime_type: "application/json".to_string(),
-                        text: serde_json::to_string_pretty(&val).unwrap_or_default(),
-                    };
+                    let text = serde_json::to_string(&val).unwrap_or_default();
                     JsonRpcResponse::success(
                         id,
-                        serde_json::to_value(McpResourceReadResult {
-                            contents: vec![content],
-                        })
-                        .unwrap_or_default(),
+                        json!({
+                            "contents": [{
+                                "uri": uri,
+                                "mimeType": "application/json",
+                                "text": text
+                            }]
+                        }),
                     )
                 }
                 Err(e) => JsonRpcResponse::error(
@@ -1567,23 +1579,42 @@ mod tests {
                     is_session: true,
                     ..Default::default()
                 }),
-                axum::Json(rpc),
+                axum::body::Bytes::from(serde_json::to_vec(&rpc).unwrap()),
             )
             .await;
 
             let body = resp.expect("handle_mcp should succeed").0;
             assert!(
-                body.get("error").is_none() || body.get("error").unwrap().is_null(),
+                body.error.is_none(),
                 "Method '{}' returned error: {:?}",
                 method,
-                body.get("error")
+                body.error
             );
             assert!(
-                body.get("result").is_some(),
+                body.result.is_some(),
                 "Method '{}' returned no result",
                 method
             );
         }
+    }
+
+    #[tokio::test]
+    async fn test_mcp_invalid_json_rpc_request_returns_32600() {
+        let resp = handle_mcp(
+            axum::extract::Extension(AuthContext {
+                api_key_name: "test_key".to_string(),
+                is_session: true,
+                ..Default::default()
+            }),
+            axum::body::Bytes::from("invalid-json{]"),
+        )
+        .await;
+
+        let body = resp.expect("handle_mcp should succeed").0;
+        assert!(body.result.is_none());
+        let err = body.error.expect("expected error object");
+        assert_eq!(err.code, -32600);
+        assert!(err.message.contains("Invalid Request"));
     }
 
     #[tokio::test]

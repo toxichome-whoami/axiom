@@ -245,7 +245,7 @@ impl FileStore {
             bytes_written += n as u64;
         }
 
-        file.sync_data().await?;
+        // Avoid blocking hardware fsync during intermediate chunk writes; OS buffers dirty pages.
         Ok(bytes_written)
     }
 
@@ -430,7 +430,7 @@ impl FileStore {
             }
         }
 
-        dest_file.sync_data().await?;
+        // Drop file handle cleanly before atomic rename; avoid blocking fsync pipeline stall.
         drop(dest_file);
 
         let hash = hasher.finalize_hex();
