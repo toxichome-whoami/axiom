@@ -1,596 +1,401 @@
-# Axiom CLI Reference Manual
+<div align="center">
 
-Axiom includes a full-featured, zero-dependency Command Line Interface (CLI) built directly into the single binary. The CLI provides complete administration for users, upstream databases, object storage, API keys, RBAC roles, cluster meshes, configuration, and diagnostics.
+# Axiom CLI Reference
 
-Every command supports **dual-mode ergonomics**: you can supply arguments either positionally for rapid manual execution or through intuitive single-letter short flags (`-u`, `-e`, `-p`, `-a`, `-c`, `-k`, `-f`, etc.) for robust, readable shell scripting and CI/CD pipelines.
+### Command-Line Administration, Data Operations, and Tool Automation
 
----
+[![Version](https://img.shields.io/badge/version-0.1.19%2B-111827.svg?style=flat-square)](https://github.com/toxichome-whoami/axiom/releases)
+[![Rust](https://img.shields.io/badge/rust-1.88%2B-b7410e.svg?style=flat-square&logo=rust&logoColor=white)](https://www.rust-lang.org)
+[![License: MIT](https://img.shields.io/badge/license-MIT-111827.svg?style=flat-square)](../LICENSE)
 
-## Global Options
+</div>
 
-Global options apply to all subcommands and can be placed before or after the subcommand.
+## Contents
 
-| Option | Flag | Description | Default |
-| :--- | :--- | :--- | :--- |
-| `--url` | `-U` | Base URL of the Axiom server instance | `http://127.0.0.1:4500` |
-| `--api-key` | *(none, alias: `--token`)* | Admin API key or machine token for authenticated operations | None |
-| `--json` | *(none)* | Format output as indented JSON | `false` |
-| `--jsonl` | *(none)* | Format output as single-line JSON Lines (streaming / log ingestion) | `false` |
-| `--brief` | *(none)* | Print concise summary output and exit | `false` |
-| `--help` | `-h` | Display help and usage information for command or subcommand | |
-| `--version` | `-V` | Display Axiom version | |
-
----
-
-## Command Matrix Summary
-
-| Command | Aliases | Description |
-| :--- | :--- | :--- |
-| [`axiom server`](#server) | `start`, `run` | Start the Axiom gateway daemon and API server |
-| [`axiom user`](#user) | | Direct administrative user management (offline SQLite metadata DB) |
-| [`axiom login`](#login) | | Authenticate as admin user against running gateway and receive session token |
-| [`axiom setup`](#setup) | | Command-line first-run onboarding wizard |
-| [`axiom db`](#db) | | Upstream database connections, schema reflection, and SQL execution |
-| [`axiom blob`](#blob) | | Native blob storage operations, transfers, hashes, and capability tickets |
-| [`axiom blob ns`](#blob-namespaces) | | Storage namespace quotas and lifecycle management |
-| [`axiom key`](#key) | | Machine API key lifecycle, scoping, rate limits, and rotation |
-| [`axiom role`](#role) | | RBAC roles and granular JSON permissions |
-| [`axiom cluster`](#cluster) | | Multi-node cluster mesh topology, peer registration, and health |
-| [`axiom mcp`](#mcp) | | Model Context Protocol tool execution, discovery, and stdio bridge |
-| [`axiom doctor`](#doctor) | | Diagnose host environment, ports, and database reachability |
-| [`axiom health`](#health) | `status` | Query running server health status |
-| [`axiom metrics`](#metrics) | | Export Prometheus metrics |
-| [`axiom benchmark`](#benchmark) | `bench` | Run built-in HTTP pipeline latency and throughput test |
-| [`axiom cache`](#cache) | | Inspect cache hit rates and flush L1/L2 caches |
-| [`axiom reload`](#reload) | | Force hot-reload and synchronization of metadata snapshots |
-| [`axiom config`](#config) | | Initialize, inspect, or export configuration to `.env` |
-| [`axiom completions`](#completions) | | Generate shell completion scripts (bash, zsh, fish, powershell, elvish) |
+1. [Quick Start](#1-quick-start)
+2. [Global Options](#2-global-options)
+3. [Command Index](#3-command-index)
+4. [User Management (`axiom user`)](#4-user-management-axiom-user)
+5. [Setup & Auth (`axiom setup`, `axiom login`)](#5-setup--auth-axiom-setup-axiom-login)
+6. [Databases (`axiom db`)](#6-databases-axiom-db)
+7. [Blob Storage (`axiom blob`)](#7-blob-storage-axiom-blob)
+8. [Access Control (`axiom key`, `axiom role`)](#8-access-control-axiom-key-axiom-role)
+9. [Cluster Mesh (`axiom cluster`)](#9-cluster-mesh-axiom-cluster)
+10. [AI & MCP (`axiom mcp`)](#10-ai--mcp-axiom-mcp)
+11. [Diagnostics & Ops](#11-diagnostics--ops)
+12. [Configuration & Shell](#12-configuration--shell)
 
 ---
 
-## Server
+## 1. Quick Start
 
-Starts the HTTP/REST API gateway, embedded blob engine, and MCP server.
+All commands support **dual syntax**: positional arguments for fast typing, or short flags (`-u`, `-e`, `-p`, `-a`, `-c`, `-k`, `-f`) for non-interactive scripting.
 
 ```bash
-# Start with default settings (reads ./config.toml if present)
+# 1. Start gateway
 axiom server run
 
-# Start with a specific configuration file
-axiom server run -c /etc/axiom/production.toml
+# 2. Add admin user (interactive prompt or flags)
+axiom user add admin -p "s3cur3_pass!" -e admin@example.com
 
-# Start and override host or port
-axiom server run --host 0.0.0.0 --port 8080
+# 3. Connect database
+axiom db add main_db -c "postgres://postgres:postgres@localhost:5432/app_db"
+
+# 4. Create role and issue scoped API key
+axiom role create app_role -p '[{"database":"main_db","table_name":"*","operations":["SELECT"]}]'
+axiom key create web_app -r app_role
+
+# 5. Upload blob
+axiom blob put docs guide.pdf -f ./guide.pdf
 ```
-
-### Options
-
-| Flag | Long | Description |
-| :--- | :--- | :--- |
-| `-c` | `--config` | Path to custom `config.toml` |
-| | `--host` | Host address to bind (`0.0.0.0` or `127.0.0.1`) |
-| | `--port` | Port to listen on (default: `4500`) |
 
 ---
 
-## User
+## 2. Global Options
 
-Administrative human accounts have access to the Admin Web UI (`/system`) and REST endpoints. Unlike API keys, `axiom user` operates directly against the local metadata SQLite database, making it functional even when the server daemon is stopped.
+Apply to all subcommands. Can be placed before or after the command.
 
-### `axiom user add`
-Create a new admin user.
+| Flag | Long | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `-U` | `--url` | `http://127.0.0.1:4500` | Gateway base URL |
+| | `--api-key` | *(none)* | Machine API key or token (alias: `--token`) |
+| | `--json` | `false` | Output as formatted JSON |
+| | `--jsonl` | `false` | Output as single-line JSON Lines |
+| | `--brief` | `false` | Output concise single-line summary |
+| `-h` | `--help` | | Print command help |
+| `-V` | `--version` | | Print version |
+
+---
+
+## 3. Command Index
+
+| Category | Command | Aliases | Purpose |
+| :--- | :--- | :--- | :--- |
+| **Daemon** | `axiom server` | `start`, `run` | Run the HTTP gateway and storage daemon |
+| **Security** | `axiom user` | | Admin human user accounts (direct SQLite access) |
+| | `axiom login` | | Authenticate against gateway and get bearer session |
+| | `axiom key` | | Scoped machine API keys and tokens |
+| | `axiom role` | | RBAC permission policies |
+| | `axiom audit` | | Query audit logs |
+| **Data** | `axiom db` | | Upstream SQL databases, queries, and schema reflection |
+| | `axiom blob` | | Object storage, streaming, tickets, and deduplication |
+| | `axiom blob ns` | | Storage namespace quotas and lifecycle |
+| **Operations** | `axiom setup` | | Headless first-run configuration wizard |
+| | `axiom cluster` | | Distributed node mesh and latency pings |
+| | `axiom doctor` | | Host environment and upstream connectivity checks |
+| | `axiom health` | `status` | Query live server health endpoint |
+| | `axiom metrics` | | Prometheus exposition metrics |
+| | `axiom benchmark` | `bench` | Built-in HTTP pipeline latency and throughput test |
+| | `axiom cache` | | Hit/miss telemetry and cache purge |
+| | `axiom reload` | | Force sync of metadata snapshots |
+| | `axiom config` | | Generate, inspect, or export `config.toml` |
+| **Integration**| `axiom mcp` | | Model Context Protocol tool execution & stdio bridge |
+| | `axiom completions` | | Shell autocompletion scripts |
+
+---
+
+## 4. User Management (`axiom user`)
+
+Operates directly against the local metadata store. Works even when the server daemon is stopped.
 
 ```bash
-# Interactive password prompt (secure, terminal-safe with automatic echo restoration)
-axiom user add alice -e alice@example.com
+# Add admin user
+axiom user add admin -p "secret123!" -e admin@example.com
+axiom user add -u bob -p "secret123!"
 
-# Non-interactive / scripted (using flags)
-axiom user add -u bob -e bob@example.com -p "P@ssw0rd123!"
+# Update user
+axiom user update admin -p "newsecret!"
+axiom user update -u admin -e new@example.com
 
-# Dual positional syntax with short password flag
-axiom user add charlie -p "SecurePass987!"
+# List users
+axiom user list
+axiom user ls --json
+
+# Delete user
+axiom user remove bob
+axiom user rm -u bob
 ```
+
+### Flags (`user add`, `user update`)
 
 | Flag | Long | Positional | Description |
 | :--- | :--- | :--- | :--- |
 | `-u` | `--user`, `--username` | Yes (1st) | Admin username |
-| `-e` | `--email` | | Admin email address (optional) |
-| `-p` | `--password`, `--pass` | | Plaintext password (prompts securely if omitted) |
-| `-c` | `--config` | | Custom config path to locate metadata database |
-
-### `axiom user update`
-Update password or email of an existing admin user.
-
-```bash
-axiom user update alice -p "NewPassword456!"
-axiom user update -u alice -e newalice@example.com
-```
-
-### `axiom user list` (alias: `ls`)
-List all registered admin users.
-
-```bash
-axiom user list
-axiom user ls --json
-```
-
-### `axiom user remove` (aliases: `delete`, `rm`)
-Delete an administrative user.
-
-```bash
-axiom user remove alice
-axiom user rm -u bob
-```
+| `-e` | `--email` | | Admin email address |
+| `-p` | `--password`, `--pass` | | Password (prompts securely if omitted) |
+| `-c` | `--config` | | Custom config path |
 
 ---
 
-## Login
+## 5. Setup & Auth (`axiom setup`, `axiom login`)
 
-Authenticate administrative credentials against a running Axiom gateway to retrieve a scoped bearer session token.
+### Setup Wizard (`axiom setup`)
+
+Non-interactive bootstrapping sequence for CI/CD or headless servers:
+
+```bash
+axiom setup begin
+axiom setup account -u admin -e admin@example.com -p "Secret123!"
+axiom setup database -a main_db -c "postgres://postgres:postgres@localhost:5432/app"
+axiom setup role -n admin_role -p '[{"database":"*","table_name":"*","operations":["*"]}]'
+axiom setup key -n root_key -r admin_role
+axiom setup finish
+```
+
+### Gateway Login (`axiom login`)
 
 ```bash
 # Interactive password prompt
 axiom login -u admin
 
 # Direct password flag
-axiom login -u admin -p "P@ssw0rd123!" -U http://127.0.0.1:4500
+axiom login -u admin -p "Secret123!" -U http://127.0.0.1:4500
 ```
 
 ---
 
-## Setup
+## 6. Databases (`axiom db`)
 
-Axiom includes a CLI setup sequence for headless first-run bootstrapping without a browser.
+Connect upstream SQL engines, run queries, introspect schema, and fetch rows.
 
-```bash
-# 1. Check if setup is needed
-axiom setup begin
-
-# 2. Create primary admin
-axiom setup account -u admin -e admin@example.com -p "AdminPass123!"
-
-# 3. Connect initial database
-axiom setup database -a primary -c "postgres://postgres:postgres@localhost:5432/app"
-
-# 4. Create base role
-axiom setup role -n full_access -p '[{"database":"*","table_name":"*","operations":["*"]}]'
-
-# 5. Issue initial root API key
-axiom setup key -n primary_key -r full_access
-
-# 6. Finalize setup
-axiom setup finish
-```
-
----
-
-## DB
-
-Manage upstream SQL database connections, run queries, introspect schema, and paginate table rows.
-
-### `axiom db add` (alias: `create`)
-Register a new upstream database connection pool.
+### Connections
 
 ```bash
-# Positional syntax
-axiom db add main_db -c "postgres://postgres:secret@localhost:5432/production"
+# Register database (positional alias or flags)
+axiom db add main_db -c "postgres://postgres:pass@localhost:5432/app"
+axiom db add -a analytics -c "clickhouse://default:@localhost:9000/db" -e clickhouse -m 2 -M 20
 
-# Flag syntax
-axiom db add -a analytics -c "clickhouse://default:@localhost:9000/default" -e clickhouse -m 2 -M 20
-```
-
-| Flag | Long | Positional | Description |
-| :--- | :--- | :--- | :--- |
-| `-a` | `--alias` | Yes (1st) | Unique identifier for this database connection |
-| `-c` | `--conn`, `--connection-url` | | Database connection string URI |
-| `-e` | `--engine`, `--dialect` | | Dialect: `postgres`, `mysql`, `sqlite`, `mssql`, `clickhouse`, `snowflake`, `oracle` |
-| `-m` | `--min`, `--pool-min` | | Minimum connection pool size |
-| `-M` | `--max`, `--pool-max` | | Maximum connection pool size |
-
-### `axiom db test`
-Verify network reachability and authentication for a registered database alias.
-
-```bash
+# Test connection
 axiom db test main_db
-axiom db test -a analytics
-```
+axiom db test-url -c "postgres://postgres:pass@localhost:5432/test"
 
-### `axiom db test-url`
-Validate a raw database connection string without saving it.
-
-```bash
-axiom db test-url -c "postgres://postgres:secret@localhost:5432/test"
-```
-
-### `axiom db list` (alias: `ls`)
-List all registered upstream database connections.
-
-```bash
+# List connections
 axiom db list
-```
 
-### `axiom db query`
-Run a read query through the Axiom gateway dialect abstraction layer.
+# Update or rename
+axiom db update main_db -c "postgres://newuser:pass@localhost:5432/app" -M 40
+axiom db update -a old_db -n new_db
 
-```bash
-# Positional syntax
-axiom db query main_db "SELECT id, email, created_at FROM users WHERE status = $1" -p '["active"]'
-
-# Flag syntax
-axiom db query -a main_db -q "SELECT count(*) FROM orders" -t 15
-```
-
-| Flag | Long | Positional | Description |
-| :--- | :--- | :--- | :--- |
-| `-a` | `--alias` | Yes (1st) | Target database alias |
-| `-q` | `--query`, `--sql` | Yes (2nd) | SQL query string |
-| `-p` | `--params` | | JSON parameters array, e.g. `[1, "text"]` |
-| `-t` | `--timeout` | | Query execution timeout in seconds (default: 30) |
-
-### `axiom db exec`
-Execute an insert, update, or DDL command and return affected row counts.
-
-```bash
-axiom db exec main_db "UPDATE users SET status = $1 WHERE last_login < $2" -p '["inactive", "2025-01-01"]'
-```
-
-### `axiom db rows`
-Fetch paginated rows from a table with automated filtering and sorting.
-
-```bash
-# Fetch first 20 rows
-axiom db rows main_db users --limit 20
-
-# Filter, sort, and paginate
-axiom db rows main_db users -l 50 -o 100 -s created_at -d desc -w '{"status":"active"}'
-```
-
-| Flag | Long | Positional | Description |
-| :--- | :--- | :--- | :--- |
-| `-a` | `--alias` | Yes (1st) | Target database alias |
-| `-t` | `--table` | Yes (2nd) | Table name |
-| `-l` | `--limit` | | Max rows to return (default: 50) |
-| `-o` | `--offset` | | Row offset for pagination |
-| `-s` | `--sort` | | Column name to sort by |
-| `-d` | `--order` | | Sort direction: `asc` or `desc` |
-| `-w` | `--where` | | JSON filter conditions, e.g. `'{"status":"active"}'` |
-| | `--fields` | | Comma-separated list of columns to select |
-
-### `axiom db schema` & Introspection
-Introspect upstream schema objects:
-
-```bash
-# List all tables in a database
-axiom db tables main_db
-
-# Describe column types and nullability for a table
-axiom db schema main_db users
-
-# Inspect table indexes
-axiom db indexes main_db users
-
-# Inspect foreign keys
-axiom db foreign-keys main_db orders
-
-# Inspect primary key definition
-axiom db primary-key main_db users
-```
-
-### `axiom db update`
-Update connection parameters or rename a database alias.
-
-```bash
-axiom db update main_db -c "postgres://newuser:newpass@localhost:5432/production" -M 50
-axiom db update -a old_alias -n new_alias
-```
-
-### `axiom db remove` (aliases: `delete`, `rm`)
-Deregister an upstream database connection.
-
-```bash
+# Remove connection
 axiom db remove old_db
-axiom db rm -a old_db
+```
+
+#### Flags (`db add`, `db update`)
+
+| Flag | Long | Positional | Description |
+| :--- | :--- | :--- | :--- |
+| `-a` | `--alias` | Yes (1st) | Database identifier |
+| `-c` | `--conn`, `--connection-url` | | Connection string URI |
+| `-e` | `--engine`, `--dialect` | | Dialect: `postgres`, `mysql`, `sqlite`, `mssql`, `clickhouse`, `snowflake`, `oracle` |
+| `-m` | `--min`, `--pool-min` | | Min pool size |
+| `-M` | `--max`, `--pool-max` | | Max pool size |
+| `-n` | `--new-alias`, `--rename` | | Rename alias (`update` only) |
+
+### Queries & Rows
+
+```bash
+# Parameterized read query
+axiom db query main_db "SELECT id, name FROM users WHERE status = $1" -p '["active"]'
+
+# Execute modification (returns affected rows)
+axiom db exec main_db "UPDATE users SET active = false WHERE id = $1" -p '[42]'
+
+# Paginated row scan
+axiom db rows main_db users -l 20 -o 0 -s id -d desc -w '{"active":true}'
+```
+
+#### Flags (`db query`, `db exec`, `db rows`)
+
+| Flag | Long | Description |
+| :--- | :--- | :--- |
+| `-a` | `--alias` | Target database alias |
+| `-q` | `--query`, `--sql` | SQL query string |
+| `-p` | `--params` | JSON parameters array, e.g. `["val"]` |
+| `-t` | `--table` | Table name (`rows` only) |
+| `-l` | `--limit` | Row count limit (default: 50) |
+| `-o` | `--offset` | Pagination offset |
+| `-s` | `--sort` | Column name to sort by |
+| `-d` | `--order` | `asc` or `desc` |
+| `-w` | `--where` | JSON key-value filter conditions |
+
+### Schema Reflection
+
+```bash
+axiom db tables main_db               # List all tables
+axiom db schema main_db users         # Columns, types, nullability
+axiom db indexes main_db users        # Index definitions
+axiom db foreign-keys main_db orders  # Foreign key constraints
+axiom db primary-key main_db users    # Primary key columns
 ```
 
 ---
 
-## Blob
+## 7. Blob Storage (`axiom blob`)
 
-Axiom includes native, high-performance object storage with BLAKE3 content-addressable deduplication, LSM metadata indexing, streaming transfers, and capability tickets.
+Content-addressable object storage with BLAKE3 dedup and pre-signed capability tickets.
 
-### `axiom blob put` (alias: `upload`)
-Upload a file or stream standard input to a storage namespace.
+### Object Operations
 
 ```bash
-# Positional syntax
-axiom blob put documents reports/q1.pdf ./q1.pdf
+# Upload file (or stdin via '-')
+axiom blob put docs report.pdf -f ./report.pdf -t "application/pdf"
+cat dump.sql | axiom blob put backups db.sql -f -
 
-# Flag syntax
-axiom blob put -n documents -k reports/q1.pdf -f ./q1.pdf -t "application/pdf"
+# Download file (or stdout via '-')
+axiom blob get docs report.pdf -o ./downloaded.pdf
+axiom blob get docs report.pdf -o - > out.pdf
 
-# Upload from standard input (stdin)
-cat log.txt | axiom blob put -n logs -k today.log -f -
+# Inspect metadata (size, hash, headers)
+axiom blob head docs report.pdf
+
+# List objects with prefix
+axiom blob list docs -p "2026/" -l 50
+
+# Copy & Move (zero byte re-upload)
+axiom blob copy -n docs -k original.pdf -K copy.pdf
+axiom blob move -n docs -k old.pdf -N archive -K old.pdf
+
+# Delete objects
+axiom blob delete docs report.pdf
+axiom blob batch-delete -n docs file1.txt file2.txt file3.txt
+axiom blob delete-prefix -n logs -p "2025-"
 ```
+
+#### Flags (`blob put`, `blob get`)
 
 | Flag | Long | Positional | Description |
 | :--- | :--- | :--- | :--- |
-| `-n` | `--ns`, `--namespace` | Yes (1st) | Target storage namespace |
-| `-k` | `--key` | Yes (2nd) | Object key (storage path) |
-| `-f` | `--file`, `--input` | Yes (3rd) | Local file path to read (or `-` for stdin) |
-| `-t` | `--type`, `--content-type` | | Explicit MIME content type |
-| | `--ttl` | | Object time-to-live in seconds (expires automatically) |
+| `-n` | `--ns`, `--namespace` | Yes (1st) | Storage namespace |
+| `-k` | `--key` | Yes (2nd) | Object key (path) |
+| `-f` | `--file`, `--input` | Yes (3rd) | Local file path (`-` for stdin, `put` only) |
+| `-o` | `--out`, `--output` | | Destination path (`-` for stdout, `get` only) |
+| `-t` | `--type`, `--content-type` | | MIME content type |
+| | `--ttl` | | Time-to-live in seconds |
 
-### `axiom blob get` (alias: `download`)
-Download an object from a namespace.
+### Capability Tickets
+
+Time-limited, pre-signed tokens for direct download access without API keys.
 
 ```bash
-# Download to local file
-axiom blob get documents reports/q1.pdf -o ./downloaded_q1.pdf
+# Generate ticket valid for 1 hour (3600 seconds)
+axiom blob ticket docs report.pdf --ttl 3600
 
-# Stream to stdout
-axiom blob get -n documents -k reports/q1.pdf -o -
+# Manage tickets
+axiom blob tickets            # List active tickets
+axiom blob revoke-ticket <SIG> # Revoke ticket
+axiom blob enable-ticket <SIG> # Re-enable ticket
+axiom blob delete-ticket <SIG> # Delete ticket permanently
 ```
 
-| Flag | Long | Positional | Description |
-| :--- | :--- | :--- | :--- |
-| `-n` | `--ns`, `--namespace` | Yes (1st) | Target storage namespace |
-| `-k` | `--key` | Yes (2nd) | Object key |
-| `-o` | `--out`, `--output` | | Destination file path (or `-` for stdout) |
-
-### `axiom blob head`
-Inspect object metadata including size, BLAKE3 hash, MIME type, and expiration without downloading the content payload.
+### Maintenance
 
 ```bash
-axiom blob head documents reports/q1.pdf
+axiom blob stats   # Telemetry and byte usage
+axiom blob verify docs report.pdf # Cryptographic BLAKE3 verification
+axiom blob scrub   # Full cluster bitrot audit
+axiom blob sweep   # Manually trigger expired TTL purge
 ```
 
-### `axiom blob list` (alias: `ls`)
-List objects in a namespace with optional prefix filtering.
+### Namespaces (`axiom blob ns`)
 
 ```bash
-axiom blob list documents
-axiom blob list -n documents -p "reports/" -l 50
-```
-
-### `axiom blob delete` (aliases: `remove`, `rm`)
-Delete an individual object.
-
-```bash
-axiom blob delete documents reports/old_report.pdf
-```
-
-### `axiom blob batch-delete`
-Delete multiple objects atomically.
-
-```bash
-axiom blob batch-delete -n documents key1.txt key2.txt key3.txt
-```
-
-### `axiom blob copy` & `move`
-Copy or rename objects across keys or namespaces without re-uploading bytes over the wire.
-
-```bash
-# Copy within namespace
-axiom blob copy -n docs -k source.txt -K backup.txt
-
-# Move across namespaces
-axiom blob move -n staging -k image.png -N production -K image.png
-```
-
-### `axiom blob ticket`
-Generate a cryptographically pre-signed capability download ticket.
-
-```bash
-# Generate pre-signed download ticket valid for 3600 seconds (1 hour)
-axiom blob ticket documents reports/q1.pdf --ttl 3600
-```
-
-### `axiom blob verify` & `scrub`
-Verify disk integrity:
-
-```bash
-# Verify a single object against stored BLAKE3 hash
-axiom blob verify documents reports/q1.pdf
-
-# Scrub entire storage cluster for bitrot or silent disk corruption
-axiom blob scrub
+axiom blob ns list                                           # List namespaces
+axiom blob ns create -n assets --max-bytes 50gb --max-objects 50000 # Create namespace
+axiom blob ns get assets                                     # View configuration
+axiom blob ns usage assets                                   # Live quota headroom
+axiom blob ns update assets --max-bytes 100gb                # Adjust quotas
+axiom blob ns delete assets                                  # Remove namespace
 ```
 
 ---
 
-## Blob Namespaces
+## 8. Access Control (`axiom key`, `axiom role`)
 
-Manage storage partitions and byte/object quotas.
+### API Keys (`axiom key`)
 
-```bash
-# List all namespaces
-axiom blob ns list
-
-# Create a new namespace with 50 GB storage limit
-axiom blob ns create -n media --max-bytes 53687091200 --max-objects 100000
-
-# Inspect namespace configuration and live quota usage
-axiom blob ns get media
-axiom blob ns usage media
-
-# Update quota
-axiom blob ns update media --max-bytes 107374182400
-
-# Delete an empty namespace
-axiom blob ns delete media
-```
-
----
-
-## Key
-
-Machine API keys authenticate HTTP REST requests and MCP sessions using the `X-Axiom-Key` header.
-
-### `axiom key create` (alias: `add`)
-Issue a new scoped API key.
+Machine tokens for HTTP REST and MCP clients. Header: `X-Axiom-Key`.
 
 ```bash
-# Positional syntax
-axiom key create frontend_app -r read_only
+# Create key
+axiom key create web_client -r read_only
+axiom key create -n worker -r ingest_role -l 5000 -e 1767225600
 
-# Flag syntax with rate limiting and expiration timestamp
-axiom key create -n payment_worker -r backend_service -l 1000 -e 1767225600
-```
-
-| Flag | Long | Positional | Description |
-| :--- | :--- | :--- | :--- |
-| `-n` | `--name` | Yes (1st) | Unique key identifier |
-| `-r` | `--role` | | Attached RBAC role name |
-| `-s` | `--secret` | | Custom secret string (if omitted, high-entropy secret is generated) |
-| `-l` | `--limit`, `--rate-limit` | | Requests allowed per minute (0 = unlimited) |
-| `-e` | `--expires`, `--expires-at` | | Expiration timestamp in seconds since UNIX epoch |
-
-### `axiom key list` (alias: `ls`)
-List active API keys and their assigned roles.
-
-```bash
+# List, rotate, update, remove
 axiom key list
+axiom key rotate web_client
+axiom key update web_client -r read_write -l 10000
+axiom key remove web_client
 ```
 
-### `axiom key rotate`
-Rotate the secret for an existing key without changing its ID or permissions.
+#### Flags (`key create`, `key update`)
+
+| Flag | Long | Positional | Description |
+| :--- | :--- | :--- | :--- |
+| `-n` | `--name` | Yes (1st) | Key name |
+| `-r` | `--role` | | Attached RBAC role |
+| `-s` | `--secret` | | Custom secret string (auto-generated if omitted) |
+| `-l` | `--limit`, `--rate-limit` | | Requests per minute (0 = unconstrained) |
+| `-e` | `--expires`, `--expires-at` | | Expiration UNIX timestamp |
+
+### RBAC Roles (`axiom role`)
+
+Fine-grained database and table permission policies.
 
 ```bash
-axiom key rotate frontend_app
-```
-
-### `axiom key update`
-Change role attachment or adjust rate limits.
-
-```bash
-axiom key update frontend_app -r read_write -l 5000
-```
-
-### `axiom key remove` (aliases: `delete`, `rm`, `revoke`)
-Revoke an API key immediately.
-
-```bash
-axiom key remove frontend_app
-```
-
----
-
-## Role
-
-Role-Based Access Control (RBAC) grants fine-grained permissions across databases, tables, and operations.
-
-### `axiom role create` (alias: `add`)
-Create a new role with a JSON permission ruleset.
-
-```bash
-# Positional name with permission flag
+# Create role with wildcard permission
 axiom role create read_only \
   -p '[{"database":"*","table_name":"*","operations":["SELECT"]}]' \
-  -d "Read-only access across all databases"
+  -d "Read-only access"
 
 # Scoped table permissions
 axiom role create app_role \
-  -p '[{"database":"main_db","table_name":"users","operations":["SELECT","INSERT","UPDATE"]}]'
-```
+  -p '[{"database":"app","table_name":"users","operations":["SELECT","INSERT","UPDATE"]}]'
 
-### `axiom role list` (alias: `ls`)
-List all registered roles and their permission matrices.
-
-```bash
+# List, update, remove
 axiom role list
-```
-
-### `axiom role update`
-Update role description or permission definitions.
-
-```bash
-axiom role update read_only -d "Updated description" -p '[...]'
-```
-
-### `axiom role remove` (aliases: `delete`, `rm`)
-Delete an RBAC role.
-
-```bash
+axiom role update read_only -d "Updated description"
 axiom role remove app_role
 ```
 
 ---
 
-## Cluster
+## 9. Cluster Mesh (`axiom cluster`)
 
-Axiom nodes form a peer-to-peer (P2P) mesh network for distributed health telemetry and synchronized metadata replication.
-
-### `axiom cluster status`
-Show local node identity, cluster secret hash, and peer health.
+Multi-node peer-to-peer discovery and synchronized metadata state.
 
 ```bash
-axiom cluster status
-```
-
-### `axiom cluster peers` (alias: `list`, `ls`)
-List all connected peer nodes in the cluster.
-
-```bash
-axiom cluster peers
-```
-
-### `axiom cluster connect` (alias: `add`)
-Join a remote peer node into the local mesh.
-
-```bash
-axiom cluster connect -t http://10.0.0.2:4500 --secret "cluster_shared_secret"
-```
-
-### `axiom cluster ping`
-Probe network round-trip latency to a cluster peer node.
-
-```bash
-axiom cluster ping node-1234abcd
-```
-
-### `axiom cluster remove` (aliases: `disconnect`, `delete`, `rm`)
-Deregister a peer node from the cluster mesh.
-
-```bash
-axiom cluster remove -i node-1234abcd
+axiom cluster status                                          # Node identity & health
+axiom cluster peers                                           # List registered peers
+axiom cluster connect -t http://10.0.0.2:4500 --secret "tok"  # Join remote peer
+axiom cluster ping node-1234                                  # Round-trip latency
+axiom cluster remove -i node-1234                             # Disconnect peer
 ```
 
 ---
 
-## MCP
+## 10. AI & MCP (`axiom mcp`)
 
-Axiom implements the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) specification, allowing AI agents like Claude Code, Cursor, Windsurf, and Claude Desktop to interact with your databases and blob storage securely.
-
-### `axiom mcp tools`
-List all tools exposed by the Axiom MCP server.
+Native [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server exposing governed SQL and blob operations to AI agents.
 
 ```bash
+# List exposed tools
 axiom mcp tools
-```
 
-### `axiom mcp call`
-Execute an MCP tool directly from the terminal with JSON arguments.
-
-```bash
+# Direct tool execution
 axiom mcp call -t db_query -a '{"database":"main_db","query":"SELECT 1"}'
+
+# Stdio bridge for Claude Desktop / Cursor
+axiom --api-key "YOUR_KEY" mcp serve --stdio
 ```
 
-### `axiom mcp serve`
-Start the MCP stdio bridge for local AI assistant integration.
-
-```bash
-# Stdio mode for Claude Desktop / Cursor
-axiom --api-key "YOUR_AXIOM_KEY" mcp serve --stdio
-```
-
-Configuration example for `claude_desktop_config.json`:
+### Assistant Config (`claude_desktop_config.json` / `mcp.json`)
 
 ```json
 {
   "mcpServers": {
     "axiom": {
       "command": "axiom",
-      "args": ["--api-key", "YOUR_AXIOM_KEY", "mcp", "serve"]
+      "args": ["--api-key", "YOUR_KEY", "mcp", "serve"]
     }
   }
 }
@@ -598,163 +403,50 @@ Configuration example for `claude_desktop_config.json`:
 
 ---
 
-## Doctor
-
-Runs comprehensive health, environment, network socket, and upstream database diagnostic checks.
+## 11. Diagnostics & Ops
 
 ```bash
-# Check standard environment
+# Environment & upstream health check
 axiom doctor
-
-# Check custom config
 axiom doctor -c /etc/axiom/config.toml
-```
 
-Checks performed:
-- Metadata SQLite database accessibility and write permissions
-- Port 4500 binding availability
-- Storage directory accessibility and disk space
-- Upstream database reachability for all registered connections
-- OpenSSL / crypto provider readiness
-
----
-
-## Health
-
-Queries the live health status of a running Axiom server daemon over HTTP.
-
-```bash
+# Gateway status ping
 axiom health
 axiom health -U http://192.168.1.100:4500
-```
 
----
-
-## Metrics
-
-Exports live metrics in Prometheus exposition format.
-
-```bash
+# Prometheus metrics
 axiom metrics
-```
 
----
-
-## Benchmark
-
-Runs a high-performance HTTP pipeline stress test against the running Axiom gateway.
-
-```bash
-# Run benchmark with 50 concurrent connections for 10 seconds
+# Built-in pipeline throughput & latency benchmark
 axiom benchmark -c 50 -d 10
+axiom benchmark -c 100 -d 30 --path "/api/v1/db/main/users/rows" --api-key "KEY"
 
-# Benchmark specific path with custom API key
-axiom benchmark -c 100 -d 30 --path "/api/v1/db/main_db/users/rows" --api-key "YOUR_KEY"
-```
-
----
-
-## Cache
-
-Inspect or flush the multi-tiered caching engine (L1 In-Memory LRU + L2 Persistent Cache).
-
-```bash
-# Inspect hit rates, miss counts, and memory footprint
+# Cache telemetry & purge
 axiom cache stats
-
-# Invalidate and flush all cache entries
 axiom cache flush
-```
 
----
-
-## Reload
-
-Forces immediate synchronization and dynamic reload of cached metadata, user roles, API keys, and connection pools across worker threads.
-
-```bash
+# Force metadata snapshot reload
 axiom reload
 ```
 
 ---
 
-## Config
+## 12. Configuration & Shell
 
-Utilities for creating and validating Axiom `config.toml` files and generating environment variable templates.
+### Config Commands (`axiom config`)
 
 ```bash
-# Generate a standard config.toml with defaults
-axiom config init
-
-# Generate config at custom path, overwriting if exists
-axiom config init -p ./my-config.toml -f
-
-# Inspect and validate configuration values
-axiom config show -c ./config.toml
-
-# Convert config.toml to .env format for container deployments
-axiom config to-env -i ./config.toml -o ./.env
+axiom config init            # Write config.toml with defaults
+axiom config init -p ./c.toml -f # Custom path, overwrite
+axiom config show -c ./c.toml    # Validate and inspect values
+axiom config to-env -i ./c.toml  # Export TOML to .env format
 ```
 
----
-
-## Completions
-
-Generates shell completion scripts for auto-completing commands, subcommands, and flags.
+### Shell Completions (`axiom completions`)
 
 ```bash
-# Bash (Linux)
 axiom completions bash > /etc/bash_completion.d/axiom
-
-# Zsh (macOS / Linux)
 axiom completions zsh > "${fpath[1]}/_axiom"
-
-# Fish
 axiom completions fish > ~/.config/fish/completions/axiom.fish
-
-# PowerShell (Windows)
 axiom completions powershell | Out-String | Invoke-Expression
-```
-
----
-
-## Scripting & Automation Patterns
-
-### Bash CI/CD Pipeline Deployment
-
-```bash
-#!/usr/bin/env bash
-set -euo pipefail
-
-AXIOM_URL="http://127.0.0.1:4500"
-CONFIG="/etc/axiom/config.toml"
-
-# 1. Create root admin if not already present
-axiom user add -u ci_admin -e ci@example.com -p "${ADMIN_PASSWORD}" -c "${CONFIG}" || true
-
-# 2. Add application database
-axiom db add -a app_db -c "${DATABASE_URL}" -e postgres -m 5 -M 25
-
-# 3. Create read-write application role
-axiom role create app_rw \
-  -p '[{"database":"app_db","table_name":"*","operations":["SELECT","INSERT","UPDATE","DELETE"]}]' \
-  -d "Automated application role"
-
-# 4. Generate key and extract secret via JSON output
-API_KEY=$(axiom key create app_service -r app_rw --json | jq -r '.key')
-echo "Exported API Key: ${API_KEY}"
-```
-
-### PowerShell Deployment
-
-```powershell
-# 1. Add database connection
-axiom db add app_db -c "$env:DATABASE_URL" -e postgres
-
-# 2. Upload deployment asset to blob storage
-axiom blob put -n releases -k "v1.2.0/app.zip" -f "./dist/app.zip"
-
-# 3. Generate pre-signed capability download ticket
-$ticket = axiom blob ticket releases "v1.2.0/app.zip" --ttl 7200 --json | ConvertFrom-Json
-Write-Host "Download URL: $($ticket.ticket_url)"
 ```
