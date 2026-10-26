@@ -58,9 +58,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         builder.build()?
     };
     rt.block_on(async {
-        let ran_cli = axiom_cli::run().await?;
-        if !ran_cli {
-            server_runner::run_server().await?;
+        match axiom_cli::run().await {
+            Ok(false) => {
+                server_runner::run_server().await?;
+            }
+            Ok(true) => {}
+            Err(e) => {
+                eprintln!("Error: {}", e);
+                std::process::exit(1);
+            }
         }
         Ok(())
     })

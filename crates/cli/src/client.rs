@@ -139,6 +139,12 @@ impl AdminClient {
         let res = match req.send().await {
             Ok(r) => r,
             Err(e) => {
+                if e.is_connect() {
+                    return Err(format!(
+                        "Cannot connect to Axiom daemon at '{}'.\n  -> Is the server running? Start it with: axiom server\n  -> Or specify a custom target URL with: axiom --url <URL>",
+                        self.base_url
+                    ));
+                }
                 return Err(format!("Network request to '{}' failed: {}", url, e));
             }
         };
@@ -173,6 +179,21 @@ impl AdminClient {
                 .and_then(|e| e.get("message"))
                 .and_then(|m| m.as_str())
                 .unwrap_or("Unknown server error");
+
+            if status == reqwest::StatusCode::UNAUTHORIZED {
+                return Err(format!(
+                    "Authentication required (HTTP 401 Unauthorized): {}\n  -> Run 'axiom login' to authenticate your admin session\n  -> Or supply an API key using '--key <KEY>' or the AXIOM_KEY environment variable",
+                    error_msg
+                ));
+            }
+
+            if status == reqwest::StatusCode::FORBIDDEN {
+                return Err(format!(
+                    "Access forbidden (HTTP 403 Forbidden): {}\n  -> Ensure your API key or role has sufficient RBAC permissions",
+                    error_msg
+                ));
+            }
+
             return Err(format!(
                 "Server returned HTTP {} ({}): {}",
                 status.as_u16(),

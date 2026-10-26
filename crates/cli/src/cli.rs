@@ -8,6 +8,7 @@
 
 use clap::Parser;
 use serde_json::{json, Value};
+use std::io::IsTerminal;
 use std::path::Path;
 
 use crate::client::{clear_saved_session, save_session, AdminClient};
@@ -68,6 +69,25 @@ pub fn read_secret_input() -> Result<String, Box<dyn std::error::Error>> {
     }
 }
 
+/// Prints the interactive quickstart banner and guided workflow overview for bare terminal execution.
+pub fn print_quickstart_guide() {
+    println!("Axiom API Gateway & Data Access Platform (v{})", env!("CARGO_PKG_VERSION"));
+    println!("High-performance multi-dialect gateway, embedded metadata, and native blob storage.\n");
+    println!("QUICKSTART WORKFLOWS:");
+    println!("  1. Initialize Setup:    axiom setup           (Bootstrap master admin account)");
+    println!("  2. Start Gateway:       axiom server          (Launch daemon on http://127.0.0.1:4500)");
+    println!("  3. Check Diagnostics:   axiom doctor          (Validate environment, ports & database connectivity)");
+    println!("  4. Authenticate:        axiom login <USER>    (Store session token for authenticated operations)");
+    println!("  5. Inspect State:       axiom status          (View live gateway health and auth context)\n");
+    println!("PRIMARY COMMANDS:");
+    println!("  axiom db [ls|add|query]       Upstream databases, migrations & direct query proxy");
+    println!("  axiom blob [ls|put|get]       Native object storage, uploads, transfers & namespaces");
+    println!("  axiom user [ls|add|update]    Admin user management (direct host metadata DB access)");
+    println!("  axiom key [ls|create|rotate]  Machine API keys, rate limits, and tokens");
+    println!("  axiom role [ls|create|update] RBAC permissions and role assignments\n");
+    println!("Run 'axiom --help' for the complete command reference, flags, and options.");
+}
+
 /// Dispatches CLI commands provided via command-line arguments.
 /// CONTRACT:
 ///  - Returns `Ok(false)` if the server daemon should start.
@@ -76,9 +96,15 @@ pub fn read_secret_input() -> Result<String, Box<dyn std::error::Error>> {
 ///  - Side effects: Modifies console output; may modify metadata store or make HTTP requests.
 pub async fn run() -> Result<bool, Box<dyn std::error::Error>> {
     let args: Vec<String> = std::env::args().collect();
-    // Fast-path: If no subcommands or flags were given, continue to launch server daemon
+    // Fast-path: In interactive terminals, bare invocation displays the quickstart guide.
+    // In headless/piped environments (e.g. Docker container entrypoints), launch the server daemon.
     if args.len() <= 1 {
-        return Ok(false);
+        if std::io::stdout().is_terminal() {
+            print_quickstart_guide();
+            return Ok(true);
+        } else {
+            return Ok(false);
+        }
     }
 
     // Intercept version flag handled upstream
@@ -155,7 +181,7 @@ pub async fn run() -> Result<bool, Box<dyn std::error::Error>> {
         return Ok(true);
     }
 
-    match cli.command {
+    let dispatch_result: Result<bool, Box<dyn std::error::Error>> = match cli.command {
         None | Some(Commands::Server(_)) => Ok(false),
 
         Some(Commands::User { command }) => {
@@ -242,9 +268,15 @@ pub async fn run() -> Result<bool, Box<dyn std::error::Error>> {
                         .get("uptime_seconds")
                         .and_then(|u| u.as_i64())
                         .unwrap_or(0);
-                    println!("Axiom Gateway Health: {}", status.to_uppercase());
+                    println!("Gateway Target:  {}", cli.url);
+                    println!("Axiom Status:    {}", status.to_uppercase());
                     println!("{:-<50}", "");
-                    println!("Uptime:       {} seconds", uptime);
+                    println!("Uptime:          {} seconds", uptime);
+                    if client.auth_key().is_some() {
+                        println!("Auth Context:    Active (authenticated session token)");
+                    } else {
+                        println!("Auth Context:    Unauthenticated (run 'axiom login' to authenticate)");
+                    }
                     if let Some(sys) = d.get("system") {
                         let cpu = sys
                             .get("cpu_percent")
@@ -254,11 +286,11 @@ pub async fn run() -> Result<bool, Box<dyn std::error::Error>> {
                             .get("memory_used_mb")
                             .and_then(|v| v.as_i64())
                             .unwrap_or(0);
-                        println!("System:       CPU: {:.1}% | Memory: {} MB", cpu, mem);
+                        println!("System:          CPU: {:.1}% | Memory: {} MB", cpu, mem);
                     }
                     if let Some(dbs) = d.get("databases").and_then(|v| v.as_object()) {
                         if !dbs.is_empty() {
-                            println!("\nDatabases:");
+                            println!("\nDatabases ({} registered):", dbs.len());
                             for (alias, st) in dbs {
                                 let st_str = st.as_str().unwrap_or("unknown");
                                 println!("  - {:<18}: {}", alias, st_str.to_uppercase());
@@ -266,9 +298,10 @@ pub async fn run() -> Result<bool, Box<dyn std::error::Error>> {
                         }
                     }
                 } else {
-                    println!("Axiom Gateway Health: ONLINE");
+                    println!("Gateway Target:  {}", cli.url);
+                    println!("Axiom Status:    ONLINE");
                     if let Some(status) = resp.get("status") {
-                        println!("Status: {}", status);
+                        println!("Details:         {}", status);
                     }
                 }
             })?;
@@ -319,6 +352,14 @@ pub async fn run() -> Result<bool, Box<dyn std::error::Error>> {
             let mut cmd = <Cli as clap::CommandFactory>::command();
             clap_complete::generate(shell, &mut cmd, "axiom", &mut std::io::stdout());
             Ok(true)
+        }
+    };
+
+    match dispatch_result {
+        Ok(should_run) => Ok(should_run),
+        Err(e) => {
+            eprintln!("Error: {}", e);
+            std::process::exit(1);
         }
     }
 }
@@ -450,6 +491,7 @@ async fn handle_user_command(
                     "ID", "USERNAME", "EMAIL", "CREATED AT (UNIX)"
                 );
                 println!("{:-<78}", "");
+                let count = users.len();
                 for u in users {
                     println!(
                         "{:<6} {:<20} {:<28} {:<20}",
@@ -459,6 +501,8 @@ async fn handle_user_command(
                         u.created_at
                     );
                 }
+                println!("{:-<78}", "");
+                println!("Total: {} user(s)", count);
             }
         }
 
@@ -820,6 +864,8 @@ async fn handle_db_command(
                         let p_max = db.get("pool_max").and_then(|p| p.as_i64()).unwrap_or(10);
                         println!("{:<20} {:<16} {:<10} {:<10}", alias, engine, p_min, p_max);
                     }
+                    println!("{:-<60}", "");
+                    println!("Total: {} database(s)", dbs.len());
                 }
             }
         }
@@ -2827,6 +2873,8 @@ async fn handle_blob_command(
                             created
                         );
                     }
+                    println!("{:-<92}", "");
+                    println!("Total: {} object(s)", items.len());
                 }
                 if let Some(next) = resp
                     .get("data")

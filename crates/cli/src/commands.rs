@@ -6,14 +6,69 @@
  * Last structural change: Phase 3 initial implementation of CLI subcommand tree.
  */
 
+use clap::builder::styling::{AnsiColor, Effects, Styles};
 use clap::{Args, Parser, Subcommand};
+
+/// Provides ANSI terminal styles for help menus, headers, and parameter descriptions.
+pub fn cli_styles() -> Styles {
+    Styles::styled()
+        .header(AnsiColor::Green.on_default().effects(Effects::BOLD))
+        .usage(AnsiColor::Green.on_default().effects(Effects::BOLD))
+        .literal(AnsiColor::Cyan.on_default().effects(Effects::BOLD))
+        .placeholder(AnsiColor::Yellow.on_default())
+}
+
+/// Clean, categorized workflow help template grouping subcommands into 5 distinct operational domains.
+pub const ROOT_HELP_TEMPLATE: &str = "\
+Axiom API Gateway & Data Access Platform (v{version})
+
+Usage:
+  axiom [OPTIONS] [COMMAND]
+
+CORE WORKFLOWS:
+  setup        First-time setup wizard operations
+  server       Start the Axiom gateway daemon (alias: start)
+  login        Authenticate administrative credentials and issue a session token
+  logout       Invalidate administrative session
+  status       Check server health, cluster state, and active auth context (alias: health)
+
+DATA & STORAGE:
+  db           Upstream database connections, migrations, and direct query execution
+  blob         Native blob storage management, object transfers, and namespaces
+
+SECURITY & ACCESS:
+  user         Administrative user management (direct host metadata DB access)
+  key          Machine API keys (rate limits, roles, secrets, tokens)
+  role         RBAC roles and granular permission management
+  audit        Query administrative audit logs
+
+OPERATIONS & DIAGNOSTICS:
+  doctor       Diagnose system environment, ports, and database reachability
+  health       Check server health and status (alias: status)
+  metrics      Dump Prometheus exposition metrics
+  benchmark    Run built-in HTTP pipeline latency and throughput benchmark (alias: bench)
+  cache        Cache engine inspection and cache flush/purge (aliases: clear, purge)
+  cluster      Cluster mesh topology, peer nodes, and latency ping
+  reload       Force dynamic reload and synchronization of metadata snapshots
+  config       Configuration initialization, conversion (.env), and inspection
+
+INTEGRATIONS & UTILITIES:
+  mcp          Model Context Protocol (MCP) tool execution, discovery, and stdio bridge
+  completions  Generate shell completion scripts (bash, zsh, fish, powershell, elvish)
+  help         Print this message or the help of the given subcommand(s)
+
+Options:
+{options}
+";
 
 #[derive(Parser, Debug, Clone)]
 #[command(
     name = "axiom",
     author = "Toxichome",
     version = env!("CARGO_PKG_VERSION"),
-    about = "Axiom API Gateway & Data Access Platform"
+    about = "Axiom API Gateway & Data Access Platform",
+    styles = cli_styles(),
+    help_template = ROOT_HELP_TEMPLATE
 )]
 pub struct Cli {
     #[arg(
@@ -53,6 +108,7 @@ pub struct Cli {
 #[derive(Subcommand, Debug, Clone)]
 pub enum Commands {
     /// Start the Axiom gateway daemon
+    #[command(alias = "start", alias = "run")]
     Server(ServerArgs),
 
     /// Administrative user management (direct metadata DB access)
@@ -129,12 +185,14 @@ pub enum Commands {
     Reload,
 
     /// Check server health and status
+    #[command(alias = "status")]
     Health,
 
     /// Dump Prometheus exposition metrics
     Metrics,
 
     /// Run built-in HTTP pipeline latency and throughput benchmark
+    #[command(alias = "bench")]
     Benchmark {
         #[arg(
             short,
@@ -228,6 +286,7 @@ pub enum CacheCommands {
     /// Display cache hit/miss statistics and memory usage
     Stats,
     /// Flush all cache entries from L1 RAM and L2 persistent storage
+    #[command(alias = "clear", alias = "purge")]
     Flush,
 }
 
@@ -237,7 +296,7 @@ pub enum ClusterCommands {
     Status,
 
     /// List all registered peer nodes in the cluster mesh
-    #[command(alias = "list")]
+    #[command(alias = "list", alias = "ls")]
     Peers,
 
     /// Connect/add a remote cluster peer node
@@ -251,7 +310,7 @@ pub enum ClusterCommands {
     },
 
     /// Disconnect and unregister a peer node from the cluster mesh
-    #[command(alias = "disconnect", alias = "delete")]
+    #[command(alias = "disconnect", alias = "delete", alias = "rm")]
     Remove {
         #[arg(help = "Node ID of the peer to remove")]
         node_id: String,
@@ -333,12 +392,13 @@ pub enum UserCommands {
         config: Option<String>,
     },
     /// List all administrative users
+    #[command(alias = "ls")]
     List {
         #[arg(short, long, help = "Path to config file")]
         config: Option<String>,
     },
     /// Delete/remove an administrative user
-    #[command(alias = "delete")]
+    #[command(alias = "delete", alias = "rm")]
     Remove {
         #[arg(help = "Admin username to delete")]
         username: String,
@@ -384,9 +444,10 @@ pub enum KeyCommands {
         name: String,
     },
     /// List all API keys
+    #[command(alias = "ls")]
     List,
     /// Delete/remove an API key
-    #[command(alias = "delete")]
+    #[command(alias = "delete", alias = "rm", alias = "revoke")]
     Remove {
         #[arg(help = "Key name")]
         name: String,
@@ -423,9 +484,10 @@ pub enum RoleCommands {
         permissions: Option<String>,
     },
     /// List all RBAC roles and their permissions
+    #[command(alias = "ls")]
     List,
     /// Delete/remove an RBAC role
-    #[command(alias = "delete")]
+    #[command(alias = "delete", alias = "rm")]
     Remove {
         #[arg(help = "Role name")]
         name: String,
@@ -492,9 +554,10 @@ pub enum DbCommands {
         alias: Option<String>,
     },
     /// List all registered database connections
+    #[command(alias = "ls")]
     List,
     /// Remove an upstream database connection
-    #[command(alias = "delete")]
+    #[command(alias = "delete", alias = "rm")]
     Remove {
         #[arg(help = "Database alias")]
         alias: String,
@@ -621,6 +684,7 @@ pub enum BlobCommands {
         command: BlobNsCommands,
     },
     /// List objects in a namespace
+    #[command(alias = "ls")]
     List {
         #[arg(help = "Storage namespace")]
         namespace: String,
@@ -632,6 +696,7 @@ pub enum BlobCommands {
         limit: Option<usize>,
     },
     /// Upload a file or binary payload to a namespace
+    #[command(alias = "upload")]
     Put {
         #[arg(help = "Storage namespace")]
         namespace: String,
@@ -649,6 +714,7 @@ pub enum BlobCommands {
         ttl: Option<u64>,
     },
     /// Download an object from a namespace
+    #[command(alias = "download")]
     Get {
         #[arg(help = "Storage namespace")]
         namespace: String,
@@ -671,6 +737,7 @@ pub enum BlobCommands {
         object_key: String,
     },
     /// Delete an object from a namespace
+    #[command(alias = "remove", alias = "rm")]
     Delete {
         #[arg(help = "Storage namespace")]
         namespace: String,
@@ -784,6 +851,7 @@ pub enum BlobCommands {
 #[derive(Subcommand, Debug, Clone)]
 pub enum BlobNsCommands {
     /// List all storage namespaces and quotas
+    #[command(alias = "ls")]
     List,
     /// Inspect metadata and settings for a specific namespace
     Get {
@@ -796,6 +864,7 @@ pub enum BlobNsCommands {
         name: String,
     },
     /// Create a new storage namespace
+    #[command(alias = "add")]
     Create {
         #[arg(help = "Namespace name")]
         name: String,
@@ -819,6 +888,7 @@ pub enum BlobNsCommands {
         public: Option<bool>,
     },
     /// Delete a namespace and all contained objects
+    #[command(alias = "remove", alias = "rm")]
     Delete {
         #[arg(help = "Namespace name")]
         name: String,
@@ -1947,6 +2017,146 @@ mod tests {
             cli.command,
             Some(Commands::Role {
                 command: RoleCommands::Remove { .. }
+            })
+        ));
+    }
+
+    #[test]
+    fn test_cli_modern_aliases_and_ergonomics() {
+        // Root aliases
+        let cli = Cli::try_parse_from(["axiom", "start"]).expect("parse start");
+        assert!(matches!(cli.command, Some(Commands::Server(_))));
+
+        let cli = Cli::try_parse_from(["axiom", "status"]).expect("parse status");
+        assert!(matches!(cli.command, Some(Commands::Health)));
+
+        let cli = Cli::try_parse_from(["axiom", "bench"]).expect("parse bench");
+        assert!(matches!(cli.command, Some(Commands::Benchmark { .. })));
+
+        // User ls and rm
+        let cli = Cli::try_parse_from(["axiom", "user", "ls"]).expect("parse user ls");
+        assert!(matches!(
+            cli.command,
+            Some(Commands::User {
+                command: UserCommands::List { .. }
+            })
+        ));
+
+        let cli = Cli::try_parse_from(["axiom", "user", "rm", "admin"]).expect("parse user rm");
+        assert!(matches!(
+            cli.command,
+            Some(Commands::User {
+                command: UserCommands::Remove { .. }
+            })
+        ));
+
+        // Db ls and rm
+        let cli = Cli::try_parse_from(["axiom", "db", "ls"]).expect("parse db ls");
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Db {
+                command: DbCommands::List
+            })
+        ));
+
+        let cli = Cli::try_parse_from(["axiom", "db", "rm", "staging"]).expect("parse db rm");
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Db {
+                command: DbCommands::Remove { .. }
+            })
+        ));
+
+        // Blob upload, download, ls, rm
+        let cli = Cli::try_parse_from(["axiom", "blob", "ls", "media"]).expect("parse blob ls");
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Blob {
+                command: BlobCommands::List { .. }
+            })
+        ));
+
+        let cli = Cli::try_parse_from(["axiom", "blob", "upload", "media", "doc.pdf", "local.pdf"])
+            .expect("parse blob upload");
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Blob {
+                command: BlobCommands::Put { .. }
+            })
+        ));
+
+        let cli = Cli::try_parse_from(["axiom", "blob", "download", "media", "doc.pdf"])
+            .expect("parse blob download");
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Blob {
+                command: BlobCommands::Get { .. }
+            })
+        ));
+
+        let cli = Cli::try_parse_from(["axiom", "blob", "rm", "media", "doc.pdf"])
+            .expect("parse blob rm");
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Blob {
+                command: BlobCommands::Delete { .. }
+            })
+        ));
+
+        // Blob Ns ls and rm
+        let cli = Cli::try_parse_from(["axiom", "blob", "ns", "ls"]).expect("parse blob ns ls");
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Blob {
+                command: BlobCommands::Ns {
+                    command: BlobNsCommands::List
+                }
+            })
+        ));
+
+        let cli = Cli::try_parse_from(["axiom", "blob", "ns", "rm", "old_ns"])
+            .expect("parse blob ns rm");
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Blob {
+                command: BlobCommands::Ns {
+                    command: BlobNsCommands::Delete { .. }
+                }
+            })
+        ));
+
+        // Cache clear / purge
+        let cli = Cli::try_parse_from(["axiom", "cache", "clear"]).expect("parse cache clear");
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Cache {
+                command: CacheCommands::Flush
+            })
+        ));
+
+        let cli = Cli::try_parse_from(["axiom", "cache", "purge"]).expect("parse cache purge");
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Cache {
+                command: CacheCommands::Flush
+            })
+        ));
+
+        // Cluster peers ls and rm
+        let cli = Cli::try_parse_from(["axiom", "cluster", "peers"]).expect("parse cluster peers");
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Cluster {
+                command: ClusterCommands::Peers
+            })
+        ));
+
+        let cli = Cli::try_parse_from(["axiom", "cluster", "rm", "node_99"])
+            .expect("parse cluster rm");
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Cluster {
+                command: ClusterCommands::Remove { .. }
             })
         ));
     }
