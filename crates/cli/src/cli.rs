@@ -628,11 +628,13 @@ async fn handle_key_command(
     match command {
         KeyCommands::Create {
             name,
+            name_flag,
             role,
             secret,
             rate_limit,
             expires_at,
         } => {
+            let name = name.or(name_flag).ok_or("API key name is required (positional or via -n/--name)")?;
             let resp = client
                 .create_key(
                     &name,
@@ -698,7 +700,8 @@ async fn handle_key_command(
             }
         }
 
-        KeyCommands::Rotate { name } => {
+        KeyCommands::Rotate { name, name_flag } => {
+            let name = name.or(name_flag).ok_or("API key name is required (positional or via -n/--name)")?;
             let resp = client.rotate_key(&name).await?;
             if format == OutputFormat::Json {
                 println!("{}", serde_json::to_string_pretty(&resp)?);
@@ -720,10 +723,12 @@ async fn handle_key_command(
 
         KeyCommands::Update {
             name,
+            name_flag,
             role,
             rate_limit,
             expires_at,
         } => {
+            let name = name.or(name_flag).ok_or("API key name is required (positional or via -n/--name)")?;
             let resp = client
                 .update_key(&name, role.as_deref(), rate_limit, expires_at)
                 .await?;
@@ -732,7 +737,8 @@ async fn handle_key_command(
             })?;
         }
 
-        KeyCommands::Remove { name } => {
+        KeyCommands::Remove { name, name_flag } => {
+            let name = name.or(name_flag).ok_or("API key name is required (positional or via -n/--name)")?;
             let resp = client.delete_key(&name).await?;
             render_output(format, &resp, |_| {
                 println!("API Key '{}' deleted successfully.", name);
@@ -752,9 +758,11 @@ async fn handle_role_command(
     match command {
         RoleCommands::Create {
             name,
+            name_flag,
             description,
             permissions,
         } => {
+            let name = name.or(name_flag).ok_or("Role name is required (positional or via -n/--name)")?;
             let perms_val: Value = match permissions {
                 Some(p_str) => serde_json::from_str(&p_str)
                     .map_err(|e| format!("Invalid JSON permissions array: {}", e))?,
@@ -816,9 +824,11 @@ async fn handle_role_command(
 
         RoleCommands::Update {
             name,
+            name_flag,
             description,
             permissions,
         } => {
+            let name = name.or(name_flag).ok_or("Role name is required (positional or via -n/--name)")?;
             let perms_val: Option<Value> = match permissions {
                 Some(p_str) => Some(
                     serde_json::from_str(&p_str)
@@ -839,7 +849,8 @@ async fn handle_role_command(
             }
         }
 
-        RoleCommands::Remove { name } => {
+        RoleCommands::Remove { name, name_flag } => {
+            let name = name.or(name_flag).ok_or("Role name is required (positional or via -n/--name)")?;
             let resp = client.delete_role(&name).await?;
             if format == OutputFormat::Json {
                 println!("{}", serde_json::to_string_pretty(&resp)?);
@@ -863,11 +874,13 @@ async fn handle_db_command(
     match command {
         DbCommands::Add {
             alias,
+            alias_flag,
             connection_url,
             engine,
             pool_min,
             pool_max,
         } => {
+            let alias = alias.or(alias_flag).ok_or("Database alias is required (positional or via -a/--alias)")?;
             let resp = client
                 .add_database(
                     &alias,
@@ -889,12 +902,14 @@ async fn handle_db_command(
 
         DbCommands::Update {
             alias,
+            alias_flag,
             new_alias,
             connection_url,
             engine,
             pool_min,
             pool_max,
         } => {
+            let alias = alias.or(alias_flag).ok_or("Database alias is required (positional or via -a/--alias)")?;
             let resp = client
                 .update_database(
                     &alias,
@@ -959,7 +974,8 @@ async fn handle_db_command(
             }
         }
 
-        DbCommands::Test { alias } => {
+        DbCommands::Test { alias, alias_flag } => {
+            let alias = alias.or(alias_flag).ok_or("Database alias is required (positional or via -a/--alias)")?;
             let resp = client.test_database(&alias).await?;
             if format == OutputFormat::Json {
                 println!("{}", serde_json::to_string_pretty(&resp)?);
@@ -981,7 +997,8 @@ async fn handle_db_command(
             }
         }
 
-        DbCommands::TestUrl { url, alias } => {
+        DbCommands::TestUrl { url, url_flag, alias } => {
+            let url = url.or(url_flag).ok_or("Database URL is required (positional or via -c/--conn/--url)")?;
             let resp = client.test_database_url(&url, alias.as_deref()).await?;
             if format == OutputFormat::Json {
                 println!("{}", serde_json::to_string_pretty(&resp)?);
@@ -1009,7 +1026,8 @@ async fn handle_db_command(
             }
         }
 
-        DbCommands::Remove { alias } => {
+        DbCommands::Remove { alias, alias_flag } => {
+            let alias = alias.or(alias_flag).ok_or("Database alias is required (positional or via -a/--alias)")?;
             let resp = client.delete_database(&alias).await?;
             if format == OutputFormat::Json {
                 println!("{}", serde_json::to_string_pretty(&resp)?);
@@ -1022,10 +1040,14 @@ async fn handle_db_command(
 
         DbCommands::Query {
             alias,
+            alias_flag,
             sql,
+            query_flag,
             params,
             timeout,
         } => {
+            let alias = alias.or(alias_flag).ok_or("Database alias is required (positional or via -a/--alias)")?;
+            let sql = sql.or(query_flag).ok_or("SQL query is required (positional or via -q/--query)")?;
             let params_val: Option<Value> = match params {
                 Some(p_str) => Some(
                     serde_json::from_str(&p_str)
@@ -1062,9 +1084,11 @@ async fn handle_db_command(
 
         DbCommands::Tables {
             alias,
+            alias_flag,
             cursor,
             limit,
         } => {
+            let alias = alias.or(alias_flag).ok_or("Database alias is required (positional or via -a/--alias)")?;
             let resp = client.list_database_tables(&alias, cursor, limit).await?;
             if format == OutputFormat::Json {
                 println!("{}", serde_json::to_string_pretty(&resp)?);
@@ -1112,7 +1136,9 @@ async fn handle_db_command(
             }
         }
 
-        DbCommands::Schema { alias, table } => {
+        DbCommands::Schema { alias, alias_flag, table, table_flag } => {
+            let alias = alias.or(alias_flag).ok_or("Database alias is required (positional or via -a/--alias)")?;
+            let table = table.or(table_flag).ok_or("Table name is required (positional or via -t/--table)")?;
             let resp = client.get_table_schema(&alias, &table).await?;
             if format == OutputFormat::Json {
                 println!("{}", serde_json::to_string_pretty(&resp)?);
@@ -1198,13 +1224,17 @@ async fn handle_db_command(
 
         DbCommands::Rows {
             alias,
+            alias_flag,
             table,
+            table_flag,
             cursor,
             limit,
             sort,
             order,
             filter,
         } => {
+            let alias = alias.or(alias_flag).ok_or("Database alias is required (positional or via -a/--alias)")?;
+            let table = table.or(table_flag).ok_or("Table name is required (positional or via -t/--table)")?;
             let resp = client
                 .fetch_table_rows(
                     &alias,
@@ -1237,11 +1267,15 @@ async fn handle_db_command(
 
         DbCommands::Insert {
             alias,
+            alias_flag,
             table,
+            table_flag,
             data,
             row,
             rows,
         } => {
+            let alias = alias.or(alias_flag).ok_or("Database alias is required (positional or via -a/--alias)")?;
+            let table = table.or(table_flag).ok_or("Table name is required (positional or via -t/--table)")?;
             let (row_val, rows_val) = if let Some(d_str) = data {
                 let parsed: Value = serde_json::from_str(&d_str)
                     .map_err(|e| format!("Invalid JSON data: {}", e))?;
@@ -1290,14 +1324,23 @@ async fn handle_db_command(
 
         DbCommands::UpdateRows {
             alias,
+            alias_flag,
             table,
+            table_flag,
             filter,
+            filter_flag,
             update,
+            update_flag,
         } => {
+            let alias = alias.or(alias_flag).ok_or("Database alias is required (positional or via -a/--alias)")?;
+            let table = table.or(table_flag).ok_or("Table name is required (positional or via -t/--table)")?;
+            let filter_str = filter.or(filter_flag).ok_or("Filter condition is required (positional or via -f/--filter)")?;
+            let update_str = update.or(update_flag).ok_or("Update values are required (positional or via -u/--update/--data)")?;
+
             let filter_val: Value =
-                serde_json::from_str(&filter).map_err(|e| format!("Invalid JSON filter: {}", e))?;
+                serde_json::from_str(&filter_str).map_err(|e| format!("Invalid JSON filter: {}", e))?;
             let update_val: Value =
-                serde_json::from_str(&update).map_err(|e| format!("Invalid JSON update: {}", e))?;
+                serde_json::from_str(&update_str).map_err(|e| format!("Invalid JSON update: {}", e))?;
 
             let resp = client
                 .update_table_row(&alias, &table, filter_val, update_val)
@@ -1321,11 +1364,18 @@ async fn handle_db_command(
 
         DbCommands::DeleteRows {
             alias,
+            alias_flag,
             table,
+            table_flag,
             filter,
+            filter_flag,
         } => {
+            let alias = alias.or(alias_flag).ok_or("Database alias is required (positional or via -a/--alias)")?;
+            let table = table.or(table_flag).ok_or("Table name is required (positional or via -t/--table)")?;
+            let filter_str = filter.or(filter_flag).ok_or("Filter condition is required (positional or via -f/--filter)")?;
+
             let filter_val: Value =
-                serde_json::from_str(&filter).map_err(|e| format!("Invalid JSON filter: {}", e))?;
+                serde_json::from_str(&filter_str).map_err(|e| format!("Invalid JSON filter: {}", e))?;
 
             let resp = client.delete_table_row(&alias, &table, filter_val).await?;
             if format == OutputFormat::Json {
@@ -1347,12 +1397,21 @@ async fn handle_db_command(
 
         DbCommands::AddColumn {
             alias,
+            alias_flag,
             table,
+            table_flag,
             column,
+            column_flag,
             data_type,
+            data_type_flag,
             nullable,
             default_val,
         } => {
+            let alias = alias.or(alias_flag).ok_or("Database alias is required (positional or via -a/--alias)")?;
+            let table = table.or(table_flag).ok_or("Table name is required (positional or via -t/--table)")?;
+            let column = column.or(column_flag).ok_or("Column name is required (positional or via -c/--column)")?;
+            let data_type = data_type.or(data_type_flag).ok_or("Data type is required (positional or via -d/--type)")?;
+
             let resp = client
                 .add_table_column(
                     &alias,
@@ -1643,7 +1702,14 @@ async fn handle_cluster_command(
             }
         }
 
-        ClusterCommands::Connect { target_url, secret } => {
+        ClusterCommands::Connect {
+            target_url,
+            url_flag,
+            secret,
+        } => {
+            let target_url = target_url
+                .or(url_flag)
+                .ok_or("Remote peer URL is required (--url, -t, or positional)")?;
             let resp = client.connect_cluster_peer(&target_url, &secret).await?;
             if format == OutputFormat::Json {
                 println!("{}", serde_json::to_string_pretty(&resp)?);
@@ -1665,7 +1731,10 @@ async fn handle_cluster_command(
             }
         }
 
-        ClusterCommands::Remove { node_id } => {
+        ClusterCommands::Remove { node_id, id_flag } => {
+            let node_id = node_id
+                .or(id_flag)
+                .ok_or("Peer node ID is required (--id, -i, or positional)")?;
             let resp = client.remove_cluster_peer(&node_id).await?;
             if format == OutputFormat::Json {
                 println!("{}", serde_json::to_string_pretty(&resp)?);
@@ -1681,10 +1750,14 @@ async fn handle_cluster_command(
 
         ClusterCommands::Update {
             node_id,
+            id_flag,
             moniker,
             url,
             secret,
         } => {
+            let node_id = node_id
+                .or(id_flag)
+                .ok_or("Peer node ID is required (--id, -i, or positional)")?;
             let resp = client
                 .update_cluster_peer(
                     &node_id,
@@ -1705,7 +1778,10 @@ async fn handle_cluster_command(
             }
         }
 
-        ClusterCommands::Ping { node_id } => {
+        ClusterCommands::Ping { node_id, id_flag } => {
+            let node_id = node_id
+                .or(id_flag)
+                .ok_or("Peer node ID is required (--id, -i, or positional)")?;
             let resp = client.ping_cluster_peer(&node_id).await?;
             if format == OutputFormat::Json {
                 println!("{}", serde_json::to_string_pretty(&resp)?);
@@ -1733,7 +1809,13 @@ async fn handle_cluster_command(
             }
         }
 
-        ClusterCommands::Moniker { moniker } => {
+        ClusterCommands::Moniker {
+            moniker,
+            moniker_flag,
+        } => {
+            let moniker = moniker
+                .or(moniker_flag)
+                .ok_or("Cluster moniker is required (--moniker, -m, or positional)")?;
             let resp = client.update_cluster_moniker(&moniker).await?;
             if format == OutputFormat::Json {
                 println!("{}", serde_json::to_string_pretty(&resp)?);
@@ -2744,7 +2826,10 @@ async fn handle_blob_command(
                     }
                 }
             }
-            BlobNsCommands::Get { name } => {
+            BlobNsCommands::Get { name, name_flag } => {
+                let name = name
+                    .or(name_flag)
+                    .ok_or("Namespace name is required (--name, -n, or positional)")?;
                 let resp = client.get_blob_namespace(&name).await?;
                 if format == OutputFormat::Json {
                     println!("{}", serde_json::to_string_pretty(&resp)?);
@@ -2788,7 +2873,10 @@ async fn handle_blob_command(
                     println!("{:<20} {}", "Created At (UNIX):", created);
                 }
             }
-            BlobNsCommands::Usage { name } => {
+            BlobNsCommands::Usage { name, name_flag } => {
+                let name = name
+                    .or(name_flag)
+                    .ok_or("Namespace name is required (--name, -n, or positional)")?;
                 let resp = client.get_blob_namespace_usage(&name).await?;
                 if format == OutputFormat::Json {
                     println!("{}", serde_json::to_string_pretty(&resp)?);
@@ -2854,9 +2942,13 @@ async fn handle_blob_command(
             }
             BlobNsCommands::Create {
                 name,
+                name_flag,
                 max_bytes,
                 public,
             } => {
+                let name = name
+                    .or(name_flag)
+                    .ok_or("Namespace name is required (--name, -n, or positional)")?;
                 let resp = client
                     .create_blob_namespace(&name, max_bytes, Some(public))
                     .await?;
@@ -2874,10 +2966,14 @@ async fn handle_blob_command(
             }
             BlobNsCommands::Update {
                 name,
+                name_flag,
                 new_name,
                 max_bytes,
                 public,
             } => {
+                let name = name
+                    .or(name_flag)
+                    .ok_or("Namespace name is required (--name, -n, or positional)")?;
                 let resp = client
                     .update_blob_namespace(&name, new_name.as_deref(), max_bytes, public)
                     .await?;
@@ -2889,7 +2985,10 @@ async fn handle_blob_command(
                     println!("Namespace '{}' updated successfully.", name);
                 }
             }
-            BlobNsCommands::Delete { name } => {
+            BlobNsCommands::Delete { name, name_flag } => {
+                let name = name
+                    .or(name_flag)
+                    .ok_or("Namespace name is required (--name, -n, or positional)")?;
                 let resp = client.delete_blob_namespace(&name).await?;
                 if format == OutputFormat::Json {
                     println!("{}", serde_json::to_string_pretty(&resp)?);
@@ -2911,10 +3010,14 @@ async fn handle_blob_command(
 
         BlobCommands::List {
             namespace,
+            namespace_flag,
             prefix,
             cursor,
             limit,
         } => {
+            let namespace = namespace
+                .or(namespace_flag)
+                .ok_or("Storage namespace is required (--ns, -n, or positional)")?;
             let resp = client
                 .list_blobs(&namespace, prefix.as_deref(), cursor.as_deref(), limit)
                 .await?;
@@ -2977,11 +3080,23 @@ async fn handle_blob_command(
 
         BlobCommands::Put {
             namespace,
+            namespace_flag,
             object_key,
+            key_flag,
             file,
+            file_flag,
             content_type,
             ttl,
         } => {
+            let namespace = namespace
+                .or(namespace_flag)
+                .ok_or("Storage namespace is required (--ns, -n, or positional)")?;
+            let object_key = object_key
+                .or(key_flag)
+                .ok_or("Object key is required (--key, -k, or positional)")?;
+            let file = file
+                .or(file_flag)
+                .ok_or("File path is required (--file, -f, or positional)")?;
             let data = if file == "-" {
                 use std::io::Read;
                 let mut buf = Vec::new();
@@ -3019,10 +3134,18 @@ async fn handle_blob_command(
 
         BlobCommands::Get {
             namespace,
+            namespace_flag,
             object_key,
+            key_flag,
             output,
             ticket,
         } => {
+            let namespace = namespace
+                .or(namespace_flag)
+                .ok_or("Storage namespace is required (--ns, -n, or positional)")?;
+            let object_key = object_key
+                .or(key_flag)
+                .ok_or("Object key is required (--key, -k, or positional)")?;
             let (bytes, content_type) = client
                 .get_blob(&namespace, &object_key, ticket.as_deref())
                 .await?;
@@ -3064,8 +3187,16 @@ async fn handle_blob_command(
 
         BlobCommands::Head {
             namespace,
+            namespace_flag,
             object_key,
+            key_flag,
         } => {
+            let namespace = namespace
+                .or(namespace_flag)
+                .ok_or("Storage namespace is required (--ns, -n, or positional)")?;
+            let object_key = object_key
+                .or(key_flag)
+                .ok_or("Object key is required (--key, -k, or positional)")?;
             let resp = client.head_blob(&namespace, &object_key).await?;
             if format == OutputFormat::Json {
                 println!("{}", serde_json::to_string_pretty(&resp)?);
@@ -3085,8 +3216,16 @@ async fn handle_blob_command(
 
         BlobCommands::Delete {
             namespace,
+            namespace_flag,
             object_key,
+            key_flag,
         } => {
+            let namespace = namespace
+                .or(namespace_flag)
+                .ok_or("Storage namespace is required (--ns, -n, or positional)")?;
+            let object_key = object_key
+                .or(key_flag)
+                .ok_or("Object key is required (--key, -k, or positional)")?;
             let resp = client.delete_blob(&namespace, &object_key).await?;
             if format == OutputFormat::Json {
                 println!("{}", serde_json::to_string_pretty(&resp)?);
@@ -3099,11 +3238,23 @@ async fn handle_blob_command(
 
         BlobCommands::Copy {
             src_namespace,
+            src_ns_flag,
             src_key,
+            src_key_flag,
             dest_key,
+            dest_key_flag,
             dest_namespace,
             prefix,
         } => {
+            let src_namespace = src_namespace
+                .or(src_ns_flag)
+                .ok_or("Source namespace is required (--src-ns, -s, or positional)")?;
+            let src_key = src_key
+                .or(src_key_flag)
+                .ok_or("Source key is required (--src-key, -k, or positional)")?;
+            let dest_key = dest_key
+                .or(dest_key_flag)
+                .ok_or("Destination key is required (--dest-key, -K, or positional)")?;
             let resp = client
                 .copy_blob(
                     &src_namespace,
@@ -3128,11 +3279,23 @@ async fn handle_blob_command(
 
         BlobCommands::Move {
             src_namespace,
+            src_ns_flag,
             src_key,
+            src_key_flag,
             dest_key,
+            dest_key_flag,
             dest_namespace,
             prefix,
         } => {
+            let src_namespace = src_namespace
+                .or(src_ns_flag)
+                .ok_or("Source namespace is required (--src-ns, -s, or positional)")?;
+            let src_key = src_key
+                .or(src_key_flag)
+                .ok_or("Source key is required (--src-key, -k, or positional)")?;
+            let dest_key = dest_key
+                .or(dest_key_flag)
+                .ok_or("Destination key is required (--dest-key, -K, or positional)")?;
             let resp = client
                 .move_blob(
                     &src_namespace,
@@ -3155,7 +3318,18 @@ async fn handle_blob_command(
             }
         }
 
-        BlobCommands::DeletePrefix { namespace, prefix } => {
+        BlobCommands::DeletePrefix {
+            namespace,
+            namespace_flag,
+            prefix,
+            prefix_flag,
+        } => {
+            let namespace = namespace
+                .or(namespace_flag)
+                .ok_or("Storage namespace is required (--ns, -n, or positional)")?;
+            let prefix = prefix
+                .or(prefix_flag)
+                .ok_or("Key prefix is required (--prefix, -p, or positional)")?;
             let resp = client.delete_blob_prefix(&namespace, &prefix).await?;
             if format == OutputFormat::Json {
                 println!("{}", serde_json::to_string_pretty(&resp)?);
@@ -3176,8 +3350,16 @@ async fn handle_blob_command(
 
         BlobCommands::Verify {
             namespace,
+            namespace_flag,
             object_key,
+            key_flag,
         } => {
+            let namespace = namespace
+                .or(namespace_flag)
+                .ok_or("Storage namespace is required (--ns, -n, or positional)")?;
+            let object_key = object_key
+                .or(key_flag)
+                .ok_or("Object key is required (--key, -k, or positional)")?;
             let resp = client.verify_blob(&namespace, &object_key).await?;
             if format == OutputFormat::Json {
                 println!("{}", serde_json::to_string_pretty(&resp)?);
@@ -3199,10 +3381,18 @@ async fn handle_blob_command(
 
         BlobCommands::Ticket {
             namespace,
+            namespace_flag,
             object_key,
+            key_flag,
             operation,
             ttl,
         } => {
+            let namespace = namespace
+                .or(namespace_flag)
+                .ok_or("Storage namespace is required (--ns, -n, or positional)")?;
+            let object_key = object_key
+                .or(key_flag)
+                .ok_or("Object key is required (--key, -k, or positional)")?;
             let resp = client
                 .create_blob_ticket(&namespace, &object_key, operation.as_deref(), ttl)
                 .await?;
@@ -3319,7 +3509,13 @@ async fn handle_blob_command(
             }
         }
 
-        BlobCommands::RevokeTicket { signature } => {
+        BlobCommands::RevokeTicket {
+            signature,
+            signature_flag,
+        } => {
+            let signature = signature
+                .or(signature_flag)
+                .ok_or("Capability ticket signature is required (--sig, -s, or positional)")?;
             let resp = client.revoke_blob_ticket(&signature).await?;
             if format == OutputFormat::Json {
                 println!("{}", serde_json::to_string_pretty(&resp)?);
@@ -3331,7 +3527,19 @@ async fn handle_blob_command(
         }
 
         BlobCommands::BatchDelete { namespace, keys } => {
-            let resp = client.batch_delete_blobs(&namespace, &keys).await?;
+            let (ns, target_keys) = match namespace {
+                Some(n) => (n, keys),
+                None => {
+                    if keys.is_empty() {
+                        return Err("Storage namespace is required (--ns, -n, or positional)".into());
+                    }
+                    (keys[0].clone(), keys[1..].to_vec())
+                }
+            };
+            if target_keys.is_empty() {
+                return Err("At least one object key must be specified for batch deletion".into());
+            }
+            let resp = client.batch_delete_blobs(&ns, &target_keys).await?;
             if format == OutputFormat::Json {
                 println!("{}", serde_json::to_string_pretty(&resp)?);
             } else if format == OutputFormat::Jsonl {
@@ -3354,12 +3562,18 @@ async fn handle_blob_command(
                     .unwrap_or(0);
                 println!(
                     "Batch Delete Complete in '{}': {} deleted, {} errors.",
-                    namespace, deleted, errors
+                    ns, deleted, errors
                 );
             }
         }
 
-        BlobCommands::EnableTicket { signature } => {
+        BlobCommands::EnableTicket {
+            signature,
+            signature_flag,
+        } => {
+            let signature = signature
+                .or(signature_flag)
+                .ok_or("Capability ticket signature is required (--sig, -s, or positional)")?;
             let resp = client.enable_blob_ticket(&signature).await?;
             if format == OutputFormat::Json {
                 println!("{}", serde_json::to_string_pretty(&resp)?);
@@ -3370,7 +3584,13 @@ async fn handle_blob_command(
             }
         }
 
-        BlobCommands::DeleteTicket { signature } => {
+        BlobCommands::DeleteTicket {
+            signature,
+            signature_flag,
+        } => {
+            let signature = signature
+                .or(signature_flag)
+                .ok_or("Capability ticket signature is required (--sig, -s, or positional)")?;
             let resp = client.delete_blob_ticket(&signature).await?;
             if format == OutputFormat::Json {
                 println!("{}", serde_json::to_string_pretty(&resp)?);
@@ -3522,7 +3742,19 @@ async fn handle_setup_command(
             }
         }
 
-        Some(SetupCommands::Database { alias, url, engine }) => {
+        Some(SetupCommands::Database {
+            alias,
+            alias_flag,
+            url,
+            url_flag,
+            engine,
+        }) => {
+            let alias = alias
+                .or(alias_flag)
+                .ok_or("Database alias is required (--alias, -a, or positional)")?;
+            let url = url
+                .or(url_flag)
+                .ok_or("Database connection URL is required (--conn, -c, or positional)")?;
             let resp = client
                 .setup_database(&alias, &url, engine.as_deref())
                 .await?;
@@ -3700,7 +3932,14 @@ async fn handle_mcp_command(
             }
         }
 
-        McpCommands::Call { tool, args } => {
+        McpCommands::Call {
+            tool,
+            tool_flag,
+            args,
+        } => {
+            let tool = tool
+                .or(tool_flag)
+                .ok_or("Tool name is required (--tool, -t, or positional)")?;
             let args_val = if let Some(a) = args {
                 serde_json::from_str::<Value>(&a)
                     .map_err(|e| format!("Invalid JSON arguments for tool '{}': {}", tool, e))?
