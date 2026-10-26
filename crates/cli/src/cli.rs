@@ -56,17 +56,51 @@ pub fn render_output<T: serde::Serialize>(
     Ok(())
 }
 
+/// Resets Windows console mode to standard interactive settings (line input + echo input + processed input)
+/// to ensure any previous abnormal termination or raw terminal mode leaves console input working normally.
+#[cfg(windows)]
+pub fn reset_windows_console_mode() {
+    unsafe {
+        #[link(name = "kernel32")]
+        extern "system" {
+            fn GetStdHandle(nStdHandle: u32) -> *mut std::ffi::c_void;
+            fn GetConsoleMode(hConsoleHandle: *mut std::ffi::c_void, lpMode: *mut u32) -> i32;
+            fn SetConsoleMode(hConsoleHandle: *mut std::ffi::c_void, dwMode: u32) -> i32;
+        }
+        const STD_INPUT_HANDLE: u32 = -10i32 as u32;
+        const ENABLE_PROCESSED_INPUT: u32 = 0x0001;
+        const ENABLE_LINE_INPUT: u32 = 0x0002;
+        const ENABLE_ECHO_INPUT: u32 = 0x0004;
+        const ENABLE_EXTENDED_FLAGS: u32 = 0x0080;
+        const ENABLE_QUICK_EDIT_MODE: u32 = 0x0040;
+
+        let handle = GetStdHandle(STD_INPUT_HANDLE);
+        if !handle.is_null() && handle != (-1isize as *mut std::ffi::c_void) {
+            let mut mode = 0u32;
+            if GetConsoleMode(handle, &mut mode) != 0 {
+                let new_mode = mode | ENABLE_PROCESSED_INPUT | ENABLE_LINE_INPUT | ENABLE_ECHO_INPUT | ENABLE_EXTENDED_FLAGS | ENABLE_QUICK_EDIT_MODE;
+                let _ = SetConsoleMode(handle, new_mode);
+            }
+        }
+    }
+}
+
+#[cfg(not(windows))]
+pub fn reset_windows_console_mode() {}
+
 /// Reads a password or secret input securely, falling back to standard input
 /// when running in non-interactive, piped, or pseudo-terminal environments where /dev/tty is absent.
 pub fn read_secret_input() -> Result<String, Box<dyn std::error::Error>> {
-    match rpassword::read_password() {
+    let res = match rpassword::read_password() {
         Ok(pass) => Ok(pass),
         Err(_) => {
             let mut line = String::new();
             std::io::stdin().read_line(&mut line)?;
             Ok(line.trim_end_matches(['\r', '\n']).to_string())
         }
-    }
+    };
+    reset_windows_console_mode();
+    res
 }
 
 /// Prints the interactive quickstart banner and guided workflow overview for bare terminal execution.
@@ -95,6 +129,7 @@ pub fn print_quickstart_guide() {
 ///  - Returns `Err` on unrecoverable command or network failure.
 ///  - Side effects: Modifies console output; may modify metadata store or make HTTP requests.
 pub async fn run() -> Result<bool, Box<dyn std::error::Error>> {
+    reset_windows_console_mode();
     let args: Vec<String> = std::env::args().collect();
     // Fast-path: In interactive terminals, bare invocation displays the quickstart guide.
     // In headless/piped environments (e.g. Docker container entrypoints), launch the server daemon.
@@ -423,6 +458,7 @@ async fn handle_user_command(
                 Some(u) if !u.trim().is_empty() => u,
                 _ => {
                     use std::io::Write;
+                    reset_windows_console_mode();
                     eprint!("Enter username for new admin: ");
                     let _ = std::io::stderr().flush();
                     let mut buf = String::new();
@@ -435,23 +471,7 @@ async fn handle_user_command(
                 }
             };
 
-            let email_val = match email {
-                Some(e) if !e.trim().is_empty() => Some(e),
-                _ if std::io::stdout().is_terminal() => {
-                    use std::io::Write;
-                    eprint!("Enter email for admin '{}' (optional, press Enter to skip): ", username);
-                    let _ = std::io::stderr().flush();
-                    let mut line = String::new();
-                    let _ = std::io::stdin().read_line(&mut line);
-                    let trimmed = line.trim();
-                    if trimmed.is_empty() {
-                        None
-                    } else {
-                        Some(trimmed.to_string())
-                    }
-                }
-                _ => None,
-            };
+            let email_val = email.filter(|e| !e.trim().is_empty());
 
             let pass = match password {
                 Some(p) if !p.is_empty() => p,
