@@ -121,6 +121,47 @@ pub async fn put_blob_handler(
 
     let engine = get_blob_engine()?;
 
+    // Fast-path header pre-flight verification:
+    // If client supplied Content-Length, validate against maximum object limit and namespace quota headroom
+    // upfront to reject oversized requests immediately in 0 ms without consuming socket buffers or disk I/O.
+    if let Some(content_length) = headers
+        .get(header::CONTENT_LENGTH)
+        .and_then(|h| h.to_str().ok())
+        .and_then(|v| v.parse::<u64>().ok())
+    {
+        if content_length > engine.max_object_bytes() {
+            return Err(AxiomError::new(
+                "PAYLOAD_TOO_LARGE",
+                &format!(
+                    "Payload size {} exceeds allowed max of {} bytes",
+                    content_length,
+                    engine.max_object_bytes()
+                ),
+                StatusCode::PAYLOAD_TOO_LARGE,
+            ));
+        }
+
+        if let Ok(Some(ns_info)) = engine.get_namespace(&namespace) {
+            if let Some(max_quota) = ns_info.max_bytes {
+                let existing_size = engine
+                    .head(&namespace, &key)
+                    .map(|m| m.size)
+                    .unwrap_or(0);
+                let net_bytes = ns_info.total_bytes.saturating_sub(existing_size);
+                if net_bytes + content_length > max_quota {
+                    return Err(AxiomError::new(
+                        "QUOTA_EXCEEDED",
+                        &format!(
+                            "Namespace '{}' storage quota exceeded (current: {} B, requested: {} B, quota: {} B)",
+                            namespace, net_bytes, content_length, max_quota
+                        ),
+                        StatusCode::INSUFFICIENT_STORAGE,
+                    ));
+                }
+            }
+        }
+    }
+
     let content_type = headers
         .get(header::CONTENT_TYPE)
         .and_then(|h| h.to_str().ok())

@@ -3353,3 +3353,67 @@ async fn test_first_class_blob_hierarchy_and_quota_usage() {
     let res = create_app().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
 }
+
+#[tokio::test]
+async fn test_zero_overhead_upload_inlining_and_header_preflight_rejection() {
+    setup_test_metadata();
+    ensure_blob_engine().await;
+    axiom_cache::CacheEngine::delete("rl:ip:127.0.0.1").await;
+    axiom_cache::CacheEngine::delete("penalty:127.0.0.1").await;
+    let admin_token = BASE64_STANDARD.encode("admin_key:secret_admin");
+
+    let ns_name = "zero-io-test";
+    // 1. Create a namespace with 10 KB quota ceiling
+    let req = Request::post("/admin/v1/blobs/namespaces")
+        .header("Authorization", format!("Bearer {}", admin_token))
+        .header("Content-Type", "application/json")
+        .body(Body::from(
+            serde_json::to_vec(&serde_json::json!({
+                "name": ns_name,
+                "max_bytes": 10240,
+                "is_public": true
+            }))
+            .unwrap(),
+        ))
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::CREATED);
+
+    // 2. Upload small payload (256 bytes) -> must inline directly into LSM (zero disk file I/O)
+    let payload = vec![0x42u8; 256];
+    let req = Request::put(format!("/api/v1/blobs/{}/small.bin", ns_name))
+        .header("X-Axiom-Key", &admin_token)
+        .header("Content-Type", "application/octet-stream")
+        .header("Content-Length", payload.len().to_string())
+        .body(Body::from(payload.clone()))
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::CREATED);
+
+    let put_body = axum::body::to_bytes(res.into_body(), 65536).await.unwrap();
+    let put_json: Value = serde_json::from_slice(&put_body).unwrap();
+    assert_eq!(put_json["data"]["inline"], true);
+    assert_eq!(put_json["data"]["size"], 256);
+
+    // 3. Fast-path upfront rejection: Content-Length exceeding namespace quota ceiling (15 KB > 10 KB quota)
+    // Must reject with 507 INSUFFICIENT_STORAGE in 0 ms without reading body
+    let req = Request::put(format!("/api/v1/blobs/{}/quota_overflow.bin", ns_name))
+        .header("X-Axiom-Key", &admin_token)
+        .header("Content-Type", "application/octet-stream")
+        .header("Content-Length", "15360")
+        .body(Body::empty())
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::INSUFFICIENT_STORAGE);
+
+    // 4. Fast-path upfront rejection: Content-Length exceeding global max object limit (e.g. 500 GB)
+    // Must reject with 413 PAYLOAD_TOO_LARGE in 0 ms without reading body
+    let req = Request::put(format!("/api/v1/blobs/{}/oversized.bin", ns_name))
+        .header("X-Axiom-Key", &admin_token)
+        .header("Content-Type", "application/octet-stream")
+        .header("Content-Length", (500 * 1024 * 1024 * 1024u64).to_string())
+        .body(Body::empty())
+        .unwrap();
+    let res = create_app().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::PAYLOAD_TOO_LARGE);
+}

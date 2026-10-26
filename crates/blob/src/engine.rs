@@ -91,11 +91,22 @@ impl BlobEngine {
             .clone()
     }
 
+    /// Returns the maximum allowed single object size in bytes.
+    pub fn max_object_bytes(&self) -> u64 {
+        self.max_object_bytes
+    }
+
+    /// Returns the maximum threshold in bytes for inlining payloads directly into LSM.
+    pub fn inline_max_bytes(&self) -> u64 {
+        self.inline_max_bytes
+    }
+
     /// Stores a streamed binary payload under the specified namespace and key.
     /// CONTRACT:
     ///  - Single-pass hashing during receipt.
-    ///  - Inlined into LSM if <= inline_max_bytes; persisted to CAS file if > inline_max_bytes.
-    ///  - O(1) memory footprint.
+    ///  - Inlined into LSM directly in memory if <= inline_max_bytes (zero disk I/O).
+    ///  - Spilled to temporary CAS file without blocking fsync if > inline_max_bytes.
+    ///  - O(1) memory footprint with 128 KB streaming chunks.
     pub async fn put_stream<R: tokio::io::AsyncRead + Unpin>(
         &self,
         namespace: &str,
@@ -111,13 +122,8 @@ impl BlobEngine {
         let mut hasher = crate::hash::Blake3StreamHasher::new();
         let mut hashing_reader = crate::hash::HashingAsyncReader::new(reader, &mut hasher);
 
-        let temp_filename = format!("upload_stream_{}.tmp", uuid::Uuid::new_v4());
-        let temp_path = self.store.base_dir().join("tmp").join(temp_filename);
-        if let Some(parent) = temp_path.parent() {
-            tokio::fs::create_dir_all(parent).await?;
-        }
-
-        let mut file = tokio::fs::File::create(&temp_path).await?;
+        let mut inline_buffer: Vec<u8> = Vec::new();
+        let mut temp_file: Option<(tokio::fs::File, std::path::PathBuf)> = None;
         let mut buffer = vec![0u8; 128 * 1024];
         let mut size = 0u64;
 
@@ -127,19 +133,47 @@ impl BlobEngine {
             if n == 0 {
                 break;
             }
-            if size + (n as u64) > self.max_object_bytes {
-                let _ = tokio::fs::remove_file(&temp_path).await;
+            let new_size = size + (n as u64);
+            if new_size > self.max_object_bytes {
+                if let Some((_, ref temp_path)) = temp_file {
+                    let _ = tokio::fs::remove_file(temp_path).await;
+                }
                 return Err(BlobError::PayloadTooLarge {
-                    size: size + (n as u64),
+                    size: new_size,
                     max: self.max_object_bytes,
                 });
             }
-            file.write_all(&buffer[..n]).await?;
-            size += n as u64;
+
+            if let Some((ref mut file, _)) = temp_file {
+                file.write_all(&buffer[..n]).await?;
+            } else if new_size <= self.inline_max_bytes {
+                inline_buffer.extend_from_slice(&buffer[..n]);
+            } else {
+                // Exceeded inline threshold: spill over to temporary staging file on disk
+                let temp_filename = format!("upload_stream_{}.tmp", uuid::Uuid::new_v4());
+                let temp_path = self.store.base_dir().join("tmp").join(temp_filename);
+                if let Some(parent) = temp_path.parent() {
+                    tokio::fs::create_dir_all(parent).await?;
+                }
+                let mut file = tokio::fs::File::create(&temp_path).await?;
+                if !inline_buffer.is_empty() {
+                    file.write_all(&inline_buffer).await?;
+                    inline_buffer.clear();
+                    inline_buffer.shrink_to_fit();
+                }
+                file.write_all(&buffer[..n]).await?;
+                temp_file = Some((file, temp_path));
+            }
+            size = new_size;
         }
 
-        file.sync_data().await?;
-        drop(file);
+        // Release file handle before potential rename or deletion
+        let temp_path_opt = if let Some((file, path)) = temp_file {
+            drop(file);
+            Some(path)
+        } else {
+            None
+        };
 
         let hash = hasher.finalize_hex();
 
@@ -153,7 +187,9 @@ impl BlobEngine {
                     .unwrap_or(0);
                 let net_bytes = info.total_bytes.saturating_sub(existing_size);
                 if net_bytes + size > max_quota {
-                    let _ = tokio::fs::remove_file(&temp_path).await;
+                    if let Some(ref temp_path) = temp_path_opt {
+                        let _ = tokio::fs::remove_file(temp_path).await;
+                    }
                     return Err(BlobError::QuotaExceeded {
                         namespace: namespace.to_string(),
                         current: net_bytes,
@@ -168,13 +204,12 @@ impl BlobEngine {
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs() as i64;
-        let is_inline = size <= self.inline_max_bytes;
+        let is_inline = temp_path_opt.is_none();
 
         if is_inline {
-            let data = tokio::fs::read(&temp_path).await?;
-            self.index.put_inline_payload(&hash, &data)?;
-            let _ = tokio::fs::remove_file(&temp_path).await;
+            self.index.put_inline_payload(&hash, &inline_buffer)?;
         } else {
+            let temp_path = temp_path_opt.unwrap();
             let target_path = self.store.content_path(&hash)?;
             if tokio::fs::try_exists(&target_path).await.unwrap_or(false) {
                 let _ = tokio::fs::remove_file(&temp_path).await;
