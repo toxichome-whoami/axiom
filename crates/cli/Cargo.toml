@@ -10,6 +10,7 @@ description = "Axiom CLI commands, client, and argument parser library"
 axiom-core = { workspace = true }
 axiom-metadata = { workspace = true }
 clap = { workspace = true }
+clap_complete = { workspace = true }
 rpassword = { workspace = true }
 reqwest = { workspace = true }
 rustls = { workspace = true }

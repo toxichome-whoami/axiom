@@ -120,16 +120,16 @@ Axiom runs a native [Model Context Protocol (MCP)](https://modelcontextprotocol.
 claude mcp add --transport http axiom http://localhost:4500/mcp/v1 --header "X-Axiom-Key: YOUR_KEY"
 ```
 
-### Cursor & Windsurf
+### Cursor, Claude Desktop & Windsurf (Stdio Bridge)
 
-Add to `mcp.json`:
+Add to `mcp.json` or `claude_desktop_config.json`:
 
 ```json
 {
   "mcpServers": {
     "axiom": {
-      "url": "http://localhost:4500/mcp/v1",
-      "headers": { "X-Axiom-Key": "YOUR_KEY" }
+      "command": "axiom",
+      "args": ["mcp", "serve", "--key", "YOUR_KEY"]
     }
   }
 }

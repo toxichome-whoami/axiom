@@ -39,6 +39,9 @@ pub struct Cli {
     #[arg(long, global = true, help = "Format output as JSON Lines (JSONL)")]
     pub jsonl: bool,
 
+    #[arg(long, global = true, help = "Print brief summary of Axiom CLI capabilities and exit")]
+    pub brief: bool,
+
     #[command(subcommand)]
     pub command: Option<Commands>,
 }
@@ -153,6 +156,18 @@ pub enum Commands {
     Config {
         #[command(subcommand)]
         command: ConfigCommands,
+    },
+
+    /// Model Context Protocol (MCP) tool execution, discovery, and stdio bridge
+    Mcp {
+        #[command(subcommand)]
+        command: McpCommands,
+    },
+
+    /// Generate shell completion scripts (bash, zsh, fish, powershell, elvish)
+    Completions {
+        #[arg(value_enum, help = "Target shell")]
+        shell: clap_complete::Shell,
     },
 }
 
@@ -740,12 +755,42 @@ pub enum BlobCommands {
         #[arg(help = "Capability ticket signature or ID to revoke")]
         signature: String,
     },
+    /// Batch delete multiple objects by key within a namespace
+    #[command(name = "batch-delete", alias = "batch_delete")]
+    BatchDelete {
+        #[arg(help = "Storage namespace")]
+        namespace: String,
+        #[arg(required = true, help = "Object keys to delete")]
+        keys: Vec<String>,
+    },
+    /// Re-enable a revoked capability ticket
+    #[command(name = "enable-ticket", alias = "enable_ticket")]
+    EnableTicket {
+        #[arg(help = "Capability ticket signature to re-enable")]
+        signature: String,
+    },
+    /// Permanently delete a capability ticket
+    #[command(name = "delete-ticket", alias = "delete_ticket")]
+    DeleteTicket {
+        #[arg(help = "Capability ticket signature or ID to permanently delete")]
+        signature: String,
+    },
 }
 
 #[derive(Subcommand, Debug, Clone)]
 pub enum BlobNsCommands {
     /// List all storage namespaces and quotas
     List,
+    /// Inspect metadata and settings for a specific namespace
+    Get {
+        #[arg(help = "Namespace name")]
+        name: String,
+    },
+    /// Query live storage quota headroom and consumption statistics
+    Usage {
+        #[arg(help = "Namespace name")]
+        name: String,
+    },
     /// Create a new storage namespace
     Create {
         #[arg(help = "Namespace name")]
@@ -755,8 +800,10 @@ pub enum BlobNsCommands {
             help = "Maximum storage quota in bytes (e.g. 1073741824 for 1GB)"
         )]
         max_bytes: Option<u64>,
+        #[arg(long, help = "Expose namespace publicly without authentication")]
+        public: bool,
     },
-    /// Update an existing namespace quota or rename it
+    /// Update an existing namespace quota, visibility, or rename it
     Update {
         #[arg(help = "Current namespace name")]
         name: String,
@@ -764,11 +811,37 @@ pub enum BlobNsCommands {
         new_name: Option<String>,
         #[arg(long, help = "New maximum storage quota in bytes (0 = unlimited)")]
         max_bytes: Option<u64>,
+        #[arg(long, help = "Update public visibility (true or false)")]
+        public: Option<bool>,
     },
     /// Delete a namespace and all contained objects
     Delete {
         #[arg(help = "Namespace name")]
         name: String,
+    },
+}
+
+#[derive(Subcommand, Debug, Clone)]
+pub enum McpCommands {
+    /// List all tools exposed by the Axiom MCP server
+    Tools,
+    /// Call an Axiom MCP tool with JSON arguments
+    Call {
+        #[arg(help = "Tool name (e.g. db_query, blob_list, db_schema)")]
+        tool: String,
+        #[arg(
+            short,
+            long,
+            help = r#"Arguments JSON object string, e.g. '{"database":"main","query":"SELECT 1"}'"#
+        )]
+        args: Option<String>,
+    },
+    /// List all resources exposed by the Axiom MCP server
+    Resources,
+    /// Run the stdio MCP bridge server for Claude Desktop, Cursor, or agent runtimes
+    Serve {
+        #[arg(long, help = "Run in stdio mode (default)", default_value = "true")]
+        stdio: bool,
     },
 }
 
@@ -1326,6 +1399,145 @@ mod tests {
             }
             _ => panic!("Expected Blob RevokeTicket command"),
         }
+
+        // Batch delete and ticket enable/delete
+        let batch_del_args = [
+            "axiom", "blob", "batch-delete", "assets", "file1.png", "file2.png",
+        ];
+        let batch_del_cli =
+            Cli::try_parse_from(batch_del_args).expect("Failed to parse blob batch-delete");
+        match batch_del_cli.command {
+            Some(Commands::Blob {
+                command: BlobCommands::BatchDelete { namespace, keys },
+            }) => {
+                assert_eq!(namespace, "assets");
+                assert_eq!(keys, vec!["file1.png".to_string(), "file2.png".to_string()]);
+            }
+            _ => panic!("Expected Blob BatchDelete command"),
+        }
+
+        let enable_ticket_args = ["axiom", "blob", "enable-ticket", "sig_xyz_123"];
+        let enable_cli =
+            Cli::try_parse_from(enable_ticket_args).expect("Failed to parse enable-ticket");
+        match enable_cli.command {
+            Some(Commands::Blob {
+                command: BlobCommands::EnableTicket { signature },
+            }) => {
+                assert_eq!(signature, "sig_xyz_123");
+            }
+            _ => panic!("Expected Blob EnableTicket command"),
+        }
+
+        let delete_ticket_args = ["axiom", "blob", "delete-ticket", "sig_xyz_123"];
+        let del_cli =
+            Cli::try_parse_from(delete_ticket_args).expect("Failed to parse delete-ticket");
+        match del_cli.command {
+            Some(Commands::Blob {
+                command: BlobCommands::DeleteTicket { signature },
+            }) => {
+                assert_eq!(signature, "sig_xyz_123");
+            }
+            _ => panic!("Expected Blob DeleteTicket command"),
+        }
+
+        // Namespace commands: Create (with --public), Update, Get, Usage
+        let ns_create_args = [
+            "axiom", "blob", "ns", "create", "public-media", "--max-bytes", "10485760", "--public",
+        ];
+        let ns_create_cli =
+            Cli::try_parse_from(ns_create_args).expect("Failed to parse blob ns create");
+        match ns_create_cli.command {
+            Some(Commands::Blob {
+                command:
+                    BlobCommands::Ns {
+                        command:
+                            BlobNsCommands::Create {
+                                name,
+                                max_bytes,
+                                public,
+                            },
+                    },
+            }) => {
+                assert_eq!(name, "public-media");
+                assert_eq!(max_bytes, Some(10485760));
+                assert!(public);
+            }
+            _ => panic!("Expected Blob Ns Create command"),
+        }
+
+        let ns_usage_args = ["axiom", "blob", "ns", "usage", "public-media"];
+        let ns_usage_cli =
+            Cli::try_parse_from(ns_usage_args).expect("Failed to parse blob ns usage");
+        match ns_usage_cli.command {
+            Some(Commands::Blob {
+                command:
+                    BlobCommands::Ns {
+                        command: BlobNsCommands::Usage { name },
+                    },
+            }) => {
+                assert_eq!(name, "public-media");
+            }
+            _ => panic!("Expected Blob Ns Usage command"),
+        }
+    }
+
+    #[test]
+    fn test_cli_parse_mcp_commands() {
+        let tools_args = ["axiom", "mcp", "tools"];
+        let tools_cli = Cli::try_parse_from(tools_args).expect("Failed to parse mcp tools");
+        assert!(matches!(
+            tools_cli.command,
+            Some(Commands::Mcp {
+                command: McpCommands::Tools
+            })
+        ));
+
+        let call_args = [
+            "axiom",
+            "mcp",
+            "call",
+            "db_query",
+            "-a",
+            "{\"database\":\"main\",\"query\":\"SELECT 1\"}",
+        ];
+        let call_cli = Cli::try_parse_from(call_args).expect("Failed to parse mcp call");
+        match call_cli.command {
+            Some(Commands::Mcp {
+                command: McpCommands::Call { tool, args },
+            }) => {
+                assert_eq!(tool, "db_query");
+                assert_eq!(
+                    args,
+                    Some("{\"database\":\"main\",\"query\":\"SELECT 1\"}".to_string())
+                );
+            }
+            _ => panic!("Expected Mcp Call command"),
+        }
+
+        let serve_args = ["axiom", "mcp", "serve"];
+        let serve_cli = Cli::try_parse_from(serve_args).expect("Failed to parse mcp serve");
+        assert!(matches!(
+            serve_cli.command,
+            Some(Commands::Mcp {
+                command: McpCommands::Serve { stdio: true }
+            })
+        ));
+    }
+
+    #[test]
+    fn test_cli_parse_completions_and_brief() {
+        let comp_args = ["axiom", "completions", "bash"];
+        let comp_cli = Cli::try_parse_from(comp_args).expect("Failed to parse completions");
+        assert!(matches!(
+            comp_cli.command,
+            Some(Commands::Completions {
+                shell: clap_complete::Shell::Bash
+            })
+        ));
+
+        let brief_args = ["axiom", "--brief"];
+        let brief_cli = Cli::try_parse_from(brief_args).expect("Failed to parse --brief");
+        assert!(brief_cli.brief);
     }
 
     #[test]

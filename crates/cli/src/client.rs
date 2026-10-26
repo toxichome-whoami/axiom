@@ -621,16 +621,20 @@ impl AdminClient {
             .await
     }
 
-    /// Creates a new storage namespace with an optional quota.
+    /// Creates a new storage namespace with an optional quota and public visibility flag.
     pub async fn create_blob_namespace(
         &self,
         name: &str,
         max_bytes: Option<u64>,
+        public: Option<bool>,
     ) -> Result<Value, String> {
-        let body = json!({
+        let mut body = json!({
             "name": name,
             "max_bytes": max_bytes,
         });
+        if let Some(p) = public {
+            body["public"] = json!(p);
+        }
         self.request(
             reqwest::Method::POST,
             "/admin/v1/blobs/namespaces",
@@ -639,26 +643,56 @@ impl AdminClient {
         .await
     }
 
-    /// Updates an existing storage namespace name or quota.
+    /// Updates an existing storage namespace name, quota, or public visibility.
     pub async fn update_blob_namespace(
         &self,
         name: &str,
         new_name: Option<&str>,
         max_bytes: Option<u64>,
+        public: Option<bool>,
     ) -> Result<Value, String> {
-        let body = json!({
+        let mut body = json!({
             "new_name": new_name,
             "max_bytes": max_bytes,
         });
+        if let Some(p) = public {
+            body["public"] = json!(p);
+        }
         let endpoint = format!("/admin/v1/blobs/namespaces/{}", name);
         self.request(reqwest::Method::PATCH, &endpoint, Some(body))
             .await
+    }
+
+    /// Retrieves metadata and configuration for a specific storage namespace.
+    pub async fn get_blob_namespace(&self, name: &str) -> Result<Value, String> {
+        let endpoint = format!("/admin/v1/blobs/namespaces/{}", name);
+        self.request(reqwest::Method::GET, &endpoint, None).await
+    }
+
+    /// Retrieves live storage quota headroom and consumption statistics for a namespace.
+    pub async fn get_blob_namespace_usage(&self, name: &str) -> Result<Value, String> {
+        let endpoint = format!("/api/v1/blobs/namespaces/{}/usage", name);
+        self.request(reqwest::Method::GET, &endpoint, None).await
     }
 
     /// Deletes a storage namespace and all contained objects.
     pub async fn delete_blob_namespace(&self, name: &str) -> Result<Value, String> {
         let endpoint = format!("/admin/v1/blobs/namespaces/{}", name);
         self.request(reqwest::Method::DELETE, &endpoint, None).await
+    }
+
+    /// Batch deletes multiple objects by key within a namespace.
+    pub async fn batch_delete_blobs(
+        &self,
+        namespace: &str,
+        keys: &[String],
+    ) -> Result<Value, String> {
+        let endpoint = format!("/api/v1/blobs/objects/{}/batch-delete", namespace);
+        let body = json!({
+            "keys": keys,
+        });
+        self.request(reqwest::Method::POST, &endpoint, Some(body))
+            .await
     }
 
     /// Lists objects within a storage namespace.
@@ -1114,5 +1148,59 @@ impl AdminClient {
     pub async fn revoke_blob_ticket(&self, signature: &str) -> Result<Value, String> {
         let endpoint = format!("/admin/v1/blobs/tickets/{}/revoke", urlencode(signature));
         self.request(reqwest::Method::POST, &endpoint, None).await
+    }
+
+    /// Re-enables a revoked capability ticket.
+    pub async fn enable_blob_ticket(&self, signature: &str) -> Result<Value, String> {
+        let endpoint = format!("/admin/v1/blobs/tickets/{}/enable", urlencode(signature));
+        self.request(reqwest::Method::POST, &endpoint, None).await
+    }
+
+    /// Permanently deletes a capability ticket.
+    pub async fn delete_blob_ticket(&self, signature: &str) -> Result<Value, String> {
+        let endpoint = format!("/admin/v1/blobs/tickets/{}", urlencode(signature));
+        self.request(reqwest::Method::DELETE, &endpoint, None).await
+    }
+
+    /// Dispatches a raw JSON-RPC 2.0 payload to the Axiom MCP server.
+    pub async fn mcp_dispatch(&self, payload: Value) -> Result<Value, String> {
+        self.request(reqwest::Method::POST, "/mcp", Some(payload))
+            .await
+    }
+
+    /// Lists all tools exposed by the Axiom MCP server.
+    pub async fn mcp_list_tools(&self) -> Result<Value, String> {
+        let payload = json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/list",
+            "params": {}
+        });
+        self.mcp_dispatch(payload).await
+    }
+
+    /// Calls an Axiom MCP tool with structured JSON arguments.
+    pub async fn mcp_call_tool(&self, name: &str, arguments: Option<Value>) -> Result<Value, String> {
+        let payload = json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {
+                "name": name,
+                "arguments": arguments.unwrap_or_else(|| json!({}))
+            }
+        });
+        self.mcp_dispatch(payload).await
+    }
+
+    /// Lists all context resources exposed by the Axiom MCP server.
+    pub async fn mcp_list_resources(&self) -> Result<Value, String> {
+        let payload = json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "resources/list",
+            "params": {}
+        });
+        self.mcp_dispatch(payload).await
     }
 }
