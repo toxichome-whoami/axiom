@@ -83,15 +83,15 @@ Axiom starts immediately on `http://localhost:4500` with zero configuration requ
 Open **`http://localhost:4500/system`** in your browser for the first-run setup wizard, or configure via CLI:
 
 ```bash
-# 1. Create root admin
-axiom user add admin --password "s3cur3_pass!"
+# 1. Create root admin (interactive prompt or flags)
+axiom user add admin -p "s3cur3_pass!" -e admin@example.com
 
-# 2. Register upstream database
-axiom db add --alias main_db --conn "postgres://postgres:postgres@localhost:5432/app_db"
+# 2. Register upstream database (positional alias or flags)
+axiom db add main_db -c "postgres://postgres:postgres@localhost:5432/app_db"
 
 # 3. Create role and issue scoped API key
-axiom role create --name app_role --permissions '[{"database":"main_db","table_name":"*","operations":["SELECT","INSERT","UPDATE"]}]'
-axiom key create --name web_client --role app_role
+axiom role create app_role -p '[{"database":"main_db","table_name":"*","operations":["SELECT","INSERT","UPDATE"]}]'
+axiom key create web_client -r app_role
 ```
 
 ### 4. Query Over HTTP
@@ -129,7 +129,7 @@ Add to `mcp.json` or `claude_desktop_config.json`:
   "mcpServers": {
     "axiom": {
       "command": "axiom",
-      "args": ["mcp", "serve", "--key", "YOUR_KEY"]
+      "args": ["--api-key", "YOUR_KEY", "mcp", "serve"]
     }
   }
 }
@@ -204,6 +204,7 @@ Deep dive into the complete documentation suite:
 
 | Document                                         | Description                                                                                  |
 | ------------------------------------------------ | -------------------------------------------------------------------------------------------- |
+| **[CLI Reference](docs/cli.md)**                 | Complete CLI manual, short flags, dual positional/flag syntax, scripting, and shell examples |
 | **[API Reference](docs/api.md)**                 | Full REST endpoint specifications, query filters, capability tickets, and MCP reference      |
 | **[Configuration Guide](docs/configuration.md)** | Complete `config.toml` options, module reference, `.env` overrides, and production checklist |
 | **[Build & Toolchain Guide](docs/building.md)**  | Zero-bloat self-bootstrapping build pipeline with Zig (no MSVC / MinGW required)             |

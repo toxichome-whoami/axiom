@@ -36,7 +36,7 @@
 | Metadata store location             | Cluster mesh peers                               |
 
 > [!IMPORTANT]
-> Database connections, API keys, roles, and cluster peers **cannot** be set in `config.toml`. Manage them with the Admin Web UI (`/system`), the CLI (`axiom db`, `axiom key`, `axiom role`, `axiom cluster`), or the [Admin REST API](./api.md).
+> Database connections, API keys, roles, and cluster peers **cannot** be set in `config.toml`. Manage them with the Admin Web UI (`/system`), the [CLI Reference](./cli.md) (`axiom db`, `axiom key`, `axiom role`, `axiom cluster`), or the [Admin REST API](./api.md).
 
 **Value formats used throughout this document**
 
