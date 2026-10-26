@@ -96,11 +96,11 @@ fn readFileAlloc(allocator: std.mem.Allocator, path: []const u8) ![]u8 {
     path_z[path.len] = 0;
 
     const GENERIC_READ: u32 = 0x80000000;
-    const FILE_SHARE_READ: u32 = 1;
+    const FILE_SHARE_ALL: u32 = 1 | 2 | 4;
     const OPEN_EXISTING: u32 = 3;
     const FILE_ATTRIBUTE_NORMAL: u32 = 0x80;
 
-    const h = CreateFileA(&path_z, GENERIC_READ, FILE_SHARE_READ, null, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, null);
+    const h = CreateFileA(&path_z, GENERIC_READ, FILE_SHARE_ALL, null, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, null);
     if (h == null or @intFromPtr(h.?) == 0xFFFFFFFFFFFFFFFF) return error.FileNotFound;
     defer _ = CloseHandle(h);
 
@@ -121,10 +121,11 @@ fn writeFile(path: []const u8, content: []const u8) !void {
     path_z[path.len] = 0;
 
     const GENERIC_WRITE: u32 = 0x40000000;
+    const FILE_SHARE_ALL: u32 = 1 | 2 | 4;
     const CREATE_ALWAYS: u32 = 2;
     const FILE_ATTRIBUTE_NORMAL: u32 = 0x80;
 
-    const h = CreateFileA(&path_z, GENERIC_WRITE, 0, null, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, null);
+    const h = CreateFileA(&path_z, GENERIC_WRITE, FILE_SHARE_ALL, null, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, null);
     if (h == null or @intFromPtr(h.?) == 0xFFFFFFFFFFFFFFFF) return error.WriteError;
     defer _ = CloseHandle(h);
 
@@ -159,6 +160,8 @@ fn extractJsonField(json_str: []const u8, field_name: []const u8) ?[]const u8 {
     return json_str[val_start..val_end];
 }
 
+var global_req_counter: u32 = 0;
+
 fn executeHttp(
     allocator: std.mem.Allocator,
     method: []const u8,
@@ -167,6 +170,14 @@ fn executeHttp(
     header1: ?[]const u8,
     header2: ?[]const u8,
 ) !HttpResponse {
+    global_req_counter += 1;
+    const req_id = global_req_counter;
+
+    var req_file_buf: [64]u8 = undefined;
+    const req_file = try std.fmt.bufPrint(&req_file_buf, "test_e2e_run/req_{d}.json", .{req_id});
+    var out_file_buf: [64]u8 = undefined;
+    const out_file = try std.fmt.bufPrint(&out_file_buf, "test_e2e_run/out_{d}.txt", .{req_id});
+
     var h1_part: []const u8 = "";
     if (header1) |h| {
         h1_part = try std.fmt.allocPrint(allocator, " -H \"{s}\"", .{h});
@@ -177,21 +188,27 @@ fn executeHttp(
     }
     var body_part: []const u8 = "";
     if (body) |b| {
-        try writeFile("test_e2e_run/req_body.json", b);
-        body_part = " -H \"Content-Type: application/json\" --data-binary @test_e2e_run/req_body.json";
+        try writeFile(req_file, b);
+        const has_ct = (header1 != null and std.mem.indexOf(u8, header1.?, "Content-Type") != null) or
+            (header2 != null and std.mem.indexOf(u8, header2.?, "Content-Type") != null);
+        if (has_ct) {
+            body_part = try std.fmt.allocPrint(allocator, " --data-binary @{s}", .{req_file});
+        } else {
+            body_part = try std.fmt.allocPrint(allocator, " -H \"Content-Type: application/json\" --data-binary @{s}", .{req_file});
+        }
     }
 
     const cmd_z = try std.fmt.allocPrintSentinel(
         allocator,
-        "curl.exe -s -w \"\\nHTTP_STATUS:%{{http_code}}\" -X {s} \"{s}\"{s}{s}{s} > test_e2e_run/http_out.txt 2>nul",
-        .{ method, url, h1_part, h2_part, body_part },
+        "curl.exe -s -w \"\\nHTTP_STATUS:%{{http_code}}\" -X {s} \"{s}\"{s}{s}{s} > {s} 2>nul",
+        .{ method, url, h1_part, h2_part, body_part, out_file },
         0,
     );
     defer allocator.free(cmd_z);
 
     _ = system(cmd_z.ptr);
 
-    const out_data = readFileAlloc(allocator, "test_e2e_run/http_out.txt") catch "";
+    const out_data = readFileAlloc(allocator, out_file) catch "";
     const marker = "\nHTTP_STATUS:";
     if (std.mem.lastIndexOf(u8, out_data, marker)) |idx| {
         const status_str = out_data[idx + marker.len ..];
@@ -242,6 +259,7 @@ pub fn main() !void {
     _ = system("del /f /q data\\test_app_e2e.db 2>nul");
     _ = CreateDirectoryA("test_e2e_run", null);
     _ = CreateDirectoryA("test_e2e_run/data", null);
+    _ = CreateDirectoryA("test_e2e_run/data/blobs", null);
     _ = CreateDirectoryA("test_e2e_run/logs", null);
 
     // 2. Generate test configuration
@@ -287,6 +305,12 @@ pub fn main() !void {
         \\url = "file:test_e2e_run/data/axiom.db"
         \\token = ""
         \\reload_interval = 5
+        \\
+        \\[blob]
+        \\path = "test_e2e_run/data/blobs"
+        \\inline_max = "64kb"
+        \\max_object = "5gb"
+        \\verify_reads = false
         \\
     ;
     try writeFile("test_e2e_run/config.toml", config_toml);
@@ -457,6 +481,14 @@ pub fn main() !void {
         const rc_clp = try executeCli(allocator, try std.fmt.allocPrint(allocator, "-u http://127.0.0.1:4598 -k {s} cluster peers --json", .{active_token}));
         if (rc_clp != 0) return error.CliClusterPeersFailed;
         logPass("CLI: axiom cluster peers --json executed successfully");
+
+        const rc_bns = try executeCli(allocator, try std.fmt.allocPrint(allocator, "-u http://127.0.0.1:4598 -k {s} blob ns list", .{active_token}));
+        if (rc_bns != 0) return error.CliBlobNsListFailed;
+        logPass("CLI: axiom blob ns list executed successfully");
+
+        const rc_comp = try executeCli(allocator, "completions bash");
+        if (rc_comp != 0) return error.CliCompletionsFailed;
+        logPass("CLI: axiom completions bash executed successfully");
     }
 
     // ─── Phase 4: Data API & CRUD Operations Simulation ────────────────────────
@@ -475,10 +507,15 @@ pub fn main() !void {
         if (r_tbls.status != 200 or std.mem.indexOf(u8, r_tbls.body, "products") == null) return error.ListTablesFailed;
         logPass("GET /api/v1/db/testdb/tables confirmed 'products' exists (200 OK)");
 
-        // 3. Describe Schema
-        const r_sch = try executeHttp(allocator, "GET", "http://127.0.0.1:4598/api/v1/db/testdb/products/schema", null, admin_hdr, null);
+        // 3. Describe Columns via RESTful Endpoint
+        const r_sch = try executeHttp(allocator, "GET", "http://127.0.0.1:4598/api/v1/db/testdb/products/columns", null, admin_hdr, null);
         if (r_sch.status != 200) return error.SchemaDescribeFailed;
-        logPass("GET /api/v1/db/testdb/products/schema introspected columns (200 OK)");
+        logPass("GET /api/v1/db/testdb/products/columns introspected columns (200 OK)");
+
+        // 3b. Verify Deprecated /schema Route Returns 404 Not Found
+        const r_sch_dep = try executeHttp(allocator, "GET", "http://127.0.0.1:4598/api/v1/db/testdb/products/schema", null, admin_hdr, null);
+        if (r_sch_dep.status != 404) return error.DeprecatedSchemaNot404;
+        logPass("GET /api/v1/db/testdb/products/schema confirmed deprecated (404 Not Found)");
 
         // 4. Insert Rows
         const ins_payload =
@@ -602,6 +639,21 @@ pub fn main() !void {
         const r_dis_tbl = try executeHttp(allocator, "POST", "http://127.0.0.1:4598/api/v1/db/testdb/query", q_dis_tbl, key_hdr, null);
         if (r_dis_tbl.status != 403) return error.DisallowedTableNotBlocked;
         logPass("API Key: Disallowed table access blocked with 403 Forbidden");
+
+        // 10. Rotate API Key -> 200 OK
+        const r_rot = try executeHttp(allocator, "POST", "http://127.0.0.1:4598/admin/v1/keys/catalog_reader_key/rotate", null, admin_hdr, null);
+        if (r_rot.status != 200) return error.RotateKeyFailed;
+        logPass("POST /admin/v1/keys/catalog_reader_key/rotate rotated key credentials (200 OK)");
+
+        // 11. Delete API Key -> 200 OK
+        const r_del_k = try executeHttp(allocator, "DELETE", "http://127.0.0.1:4598/admin/v1/keys/catalog_reader_key", null, admin_hdr, null);
+        if (r_del_k.status != 200) return error.DeleteKeyFailed;
+        logPass("DELETE /admin/v1/keys/catalog_reader_key deleted key (200 OK)");
+
+        // 12. Delete Role -> 200 OK
+        const r_del_r = try executeHttp(allocator, "DELETE", "http://127.0.0.1:4598/admin/v1/roles/catalog_reader", null, admin_hdr, null);
+        if (r_del_r.status != 200) return error.DeleteRoleFailed;
+        logPass("DELETE /admin/v1/roles/catalog_reader deleted role (200 OK)");
     }
 
     // ─── Phase 6: Cluster Mesh Simulation ──────────────────────────────────────
@@ -624,15 +676,174 @@ pub fn main() !void {
     }
 
     // ─── Phase 7: Blob Storage Simulation ──────────────────────────────────────
-    logInfo("Step 9: Simulating Native Blob Storage Endpoints...");
+    logInfo("Step 9: Simulating Native Blob Storage & Ticket CRUD Lifecycle...");
     {
-        const r_bns = try executeHttp(allocator, "GET", "http://127.0.0.1:4598/admin/v1/blobs/namespaces", null, admin_hdr, null);
-        if (r_bns.status != 200) return error.BlobNamespacesFailed;
-        logPass("GET /admin/v1/blobs/namespaces returned 200 OK");
+        // 1. Data-Plane Route Guard: Ensure mutation methods return 405 Method Not Allowed on /api/v1/blobs/namespaces
+        const dummy_ns_payload = "{\"name\":\"guard_ns\"}";
+        const r_post_dp = try executeHttp(allocator, "POST", "http://127.0.0.1:4598/api/v1/blobs/namespaces", dummy_ns_payload, admin_hdr, null);
+        if (r_post_dp.status != 405) return error.DataPlaneNamespacePostNotBlocked;
+        logPass("Data Plane: POST /api/v1/blobs/namespaces rejected with 405 Method Not Allowed");
 
-        const r_btk = try executeHttp(allocator, "GET", "http://127.0.0.1:4598/admin/v1/blobs/tickets", null, admin_hdr, null);
-        if (r_btk.status != 200) return error.BlobTicketsFailed;
-        logPass("GET /admin/v1/blobs/tickets returned 200 OK");
+        const r_patch_dp = try executeHttp(allocator, "PATCH", "http://127.0.0.1:4598/api/v1/blobs/namespaces/guard_ns", dummy_ns_payload, admin_hdr, null);
+        if (r_patch_dp.status != 405) return error.DataPlaneNamespacePatchNotBlocked;
+        logPass("Data Plane: PATCH /api/v1/blobs/namespaces/guard_ns rejected with 405 Method Not Allowed");
+
+        const r_del_dp = try executeHttp(allocator, "DELETE", "http://127.0.0.1:4598/api/v1/blobs/namespaces/guard_ns", null, admin_hdr, null);
+        if (r_del_dp.status != 405) return error.DataPlaneNamespaceDeleteNotBlocked;
+        logPass("Data Plane: DELETE /api/v1/blobs/namespaces/guard_ns rejected with 405 Method Not Allowed");
+
+        // 2. Control Plane: Create Namespaces via Admin API
+        const create_ns_payload =
+            \\{"name":"sim_ns","max_bytes":10485760,"is_public":false}
+        ;
+        const r_cns = try executeHttp(allocator, "POST", "http://127.0.0.1:4598/admin/v1/blobs/namespaces", create_ns_payload, admin_hdr, null);
+        if (r_cns.status != 200 and r_cns.status != 201) return error.CreateNamespaceFailed;
+        logPass("Admin API: POST /admin/v1/blobs/namespaces created 'sim_ns' (201 Created)");
+
+        const create_priv_payload =
+            \\{"name":"sim_priv","max_bytes":5242880,"is_public":false}
+        ;
+        const r_cpriv = try executeHttp(allocator, "POST", "http://127.0.0.1:4598/admin/v1/blobs/namespaces", create_priv_payload, admin_hdr, null);
+        if (r_cpriv.status != 200 and r_cpriv.status != 201) return error.CreateNamespaceFailed;
+        logPass("Admin API: POST /admin/v1/blobs/namespaces created 'sim_priv' (201 Created)");
+
+        // 3. Control Plane: Inspect Namespace & Usage Headroom
+        const r_gns = try executeHttp(allocator, "GET", "http://127.0.0.1:4598/admin/v1/blobs/namespaces/sim_ns", null, admin_hdr, null);
+        if (r_gns.status != 200) return error.GetNamespaceFailed;
+        logPass("Admin API: GET /admin/v1/blobs/namespaces/sim_ns fetched metadata (200 OK)");
+
+        const r_usg = try executeHttp(allocator, "GET", "http://127.0.0.1:4598/api/v1/blobs/namespaces/sim_ns/usage", null, admin_hdr, null);
+        if (r_usg.status != 200) return error.GetUsageFailed;
+        logPass("Data Plane: GET /api/v1/blobs/namespaces/sim_ns/usage checked headroom (200 OK)");
+
+        // 4. Control Plane: Update Namespace Quota & Visibility
+        const upd_ns_payload =
+            \\{"max_bytes":20971520,"is_public":true}
+        ;
+        const r_uns = try executeHttp(allocator, "PATCH", "http://127.0.0.1:4598/admin/v1/blobs/namespaces/sim_ns", upd_ns_payload, admin_hdr, null);
+        if (r_uns.status != 200) return error.UpdateNamespaceFailed;
+        logPass("Admin API: PATCH /admin/v1/blobs/namespaces/sim_ns updated quota & visibility (200 OK)");
+
+        // 5. Data Plane: PUT Blob Objects
+        const r_put1 = try executeHttp(allocator, "PUT", "http://127.0.0.1:4598/api/v1/blobs/sim_ns/report.txt", "Axiom Mission Critical Telemetry Data", admin_hdr, "Content-Type: text/plain");
+        if (r_put1.status != 200 and r_put1.status != 201) return error.PutBlobFailed;
+        logPass("Data Plane: PUT /api/v1/blobs/sim_ns/report.txt stored object (201 Created)");
+
+        const r_put2 = try executeHttp(allocator, "PUT", "http://127.0.0.1:4598/api/v1/blobs/sim_ns/data/metrics.bin", "metrics-binary-payload-12345", admin_hdr, "Content-Type: application/octet-stream");
+        if (r_put2.status != 200 and r_put2.status != 201) return error.PutBlobFailed;
+        logPass("Data Plane: PUT /api/v1/blobs/sim_ns/data/metrics.bin stored nested object (201 Created)");
+
+        const r_put3 = try executeHttp(allocator, "PUT", "http://127.0.0.1:4598/api/v1/blobs/sim_priv/vault_secret.txt", "TopSecretEnterpriseEncryptionKey", admin_hdr, "Content-Type: text/plain");
+        if (r_put3.status != 200 and r_put3.status != 201) return error.PutBlobFailed;
+        logPass("Data Plane: PUT /api/v1/blobs/sim_priv/vault_secret.txt stored private object (201 Created)");
+
+        // 6. Data Plane: GET Blob Objects and Verify Payload Integrity
+        const r_get1 = try executeHttp(allocator, "GET", "http://127.0.0.1:4598/api/v1/blobs/sim_ns/report.txt", null, admin_hdr, null);
+        if (r_get1.status != 200 or std.mem.indexOf(u8, r_get1.body, "Axiom Mission Critical Telemetry Data") == null) return error.GetBlobFailed;
+        logPass("Data Plane: GET /api/v1/blobs/sim_ns/report.txt verified payload integrity (200 OK)");
+
+        // 7. Object Copy & Move
+        const copy_payload =
+            \\{"src_namespace":"sim_ns","src_key":"report.txt","dest_namespace":"sim_ns","dest_key":"report_copy.txt"}
+        ;
+        const r_cp = try executeHttp(allocator, "POST", "http://127.0.0.1:4598/api/v1/blobs/objects/copy", copy_payload, admin_hdr, null);
+        if (r_cp.status != 200) return error.CopyBlobFailed;
+        logPass("Data Plane: POST /api/v1/blobs/objects/copy copied object (200 OK)");
+
+        const move_payload =
+            \\{"src_namespace":"sim_ns","src_key":"report_copy.txt","dest_namespace":"sim_ns","dest_key":"report_archived.txt"}
+        ;
+        const r_mv = try executeHttp(allocator, "POST", "http://127.0.0.1:4598/api/v1/blobs/objects/move", move_payload, admin_hdr, null);
+        if (r_mv.status != 200) return error.MoveBlobFailed;
+        logPass("Data Plane: POST /api/v1/blobs/objects/move moved object (200 OK)");
+
+        // 8. Object BLAKE3 Checksum Verification
+        const r_vfy = try executeHttp(allocator, "POST", "http://127.0.0.1:4598/api/v1/blobs/objects/sim_ns/verify/report.txt", null, admin_hdr, null);
+        if (r_vfy.status != 200) return error.VerifyBlobFailed;
+        logPass("Data Plane: POST /api/v1/blobs/objects/sim_ns/verify/report.txt validated BLAKE3 checksum (200 OK)");
+
+        // 9. List Objects
+        const r_lo = try executeHttp(allocator, "GET", "http://127.0.0.1:4598/api/v1/blobs/objects/sim_ns", null, admin_hdr, null);
+        if (r_lo.status != 200) return error.ListObjectsFailed;
+        logPass("Data Plane: GET /api/v1/blobs/objects/sim_ns listed namespace objects (200 OK)");
+
+        // 10. Capability Ticket Lifecycle (Issue -> Public Download -> Revoke -> Blocked -> Enable -> Allowed -> Delete -> Blocked)
+        const tkt_payload =
+            \\{"key":"vault_secret.txt","operation":"READ","ttl_seconds":3600}
+        ;
+        const r_tkt = try executeHttp(allocator, "POST", "http://127.0.0.1:4598/admin/v1/blobs/namespaces/sim_priv/tickets", tkt_payload, admin_hdr, null);
+        if (r_tkt.status != 200 and r_tkt.status != 201) return error.CreateTicketFailed;
+        const tkt_url = extractJsonField(r_tkt.body, "url") orelse return error.MissingTicketUrl;
+        const tkt_sig = extractJsonField(r_tkt.body, "signature") orelse return error.MissingTicketSig;
+        logPass("Capability Ticket: Issued ticket for private object (201 Created)");
+
+        // 10a. Download without ANY credentials using signed URL
+        var dl_url_buf: [512]u8 = undefined;
+        const dl_url = try std.fmt.bufPrint(&dl_url_buf, "http://127.0.0.1:4598{s}", .{tkt_url});
+        const r_dl1 = try executeHttp(allocator, "GET", dl_url, null, null, null);
+        if (r_dl1.status != 200 or std.mem.indexOf(u8, r_dl1.body, "TopSecretEnterpriseEncryptionKey") == null) return error.TicketDownloadFailed;
+        logPass("Capability Ticket: Valid signed ticket granted access without auth credentials (200 OK)");
+
+        // 10b. Revoke ticket
+        var rev_url_buf: [256]u8 = undefined;
+        const rev_url = try std.fmt.bufPrint(&rev_url_buf, "http://127.0.0.1:4598/admin/v1/blobs/tickets/{s}/revoke", .{tkt_sig});
+        const r_rev = try executeHttp(allocator, "POST", rev_url, null, admin_hdr, null);
+        if (r_rev.status != 200) return error.RevokeTicketFailed;
+        logPass("Capability Ticket: POST /admin/v1/blobs/tickets/:sig/revoke revoked ticket (200 OK)");
+
+        // 10c. Download should now return 403 Forbidden
+        const r_dl2 = try executeHttp(allocator, "GET", dl_url, null, null, null);
+        if (r_dl2.status != 403) return error.RevokedTicketNotBlocked;
+        logPass("Capability Ticket: Revoked ticket blocked with 403 Forbidden");
+
+        // 10d. Re-enable ticket
+        var en_url_buf: [256]u8 = undefined;
+        const en_url = try std.fmt.bufPrint(&en_url_buf, "http://127.0.0.1:4598/admin/v1/blobs/tickets/{s}/enable", .{tkt_sig});
+        const r_en = try executeHttp(allocator, "POST", en_url, null, admin_hdr, null);
+        if (r_en.status != 200) return error.EnableTicketFailed;
+        logPass("Capability Ticket: POST /admin/v1/blobs/tickets/:sig/enable re-enabled ticket (200 OK)");
+
+        // 10e. Download should succeed again
+        const r_dl3 = try executeHttp(allocator, "GET", dl_url, null, null, null);
+        if (r_dl3.status != 200) return error.ReenabledTicketFailed;
+        logPass("Capability Ticket: Re-enabled ticket downloaded object successfully (200 OK)");
+
+        // 10f. Delete ticket
+        var del_tkt_buf: [256]u8 = undefined;
+        const del_tkt_url = try std.fmt.bufPrint(&del_tkt_buf, "http://127.0.0.1:4598/admin/v1/blobs/tickets/{s}", .{tkt_sig});
+        const r_dt = try executeHttp(allocator, "DELETE", del_tkt_url, null, admin_hdr, null);
+        if (r_dt.status != 200) return error.DeleteTicketFailed;
+        logPass("Capability Ticket: DELETE /admin/v1/blobs/tickets/:sig deleted ticket (200 OK)");
+
+        // 10g. Download should permanently return 403 Forbidden
+        const r_dl4 = try executeHttp(allocator, "GET", dl_url, null, null, null);
+        if (r_dl4.status != 403) return error.DeletedTicketNotBlocked;
+        logPass("Capability Ticket: Deleted ticket permanently rejected with 403 Forbidden");
+
+        // 11. Batch Delete Objects
+        const bdel_payload =
+            \\{"keys":["report_archived.txt","data/metrics.bin"]}
+        ;
+        const r_bdel = try executeHttp(allocator, "POST", "http://127.0.0.1:4598/api/v1/blobs/objects/sim_ns/batch-delete", bdel_payload, admin_hdr, null);
+        if (r_bdel.status != 200) return error.BatchDeleteFailed;
+        logPass("Data Plane: POST /api/v1/blobs/objects/sim_ns/batch-delete deleted 2 objects (200 OK)");
+
+        // 12. Cascading Delete of Namespaces via Admin API
+        const r_dns1 = try executeHttp(allocator, "DELETE", "http://127.0.0.1:4598/admin/v1/blobs/namespaces/sim_priv", null, admin_hdr, null);
+        if (r_dns1.status != 200) return error.DeleteNamespaceFailed;
+        logPass("Admin API: DELETE /admin/v1/blobs/namespaces/sim_priv purged namespace & objects (200 OK)");
+
+        const r_gpriv_del = try executeHttp(allocator, "GET", "http://127.0.0.1:4598/admin/v1/blobs/namespaces/sim_priv", null, admin_hdr, null);
+        if (r_gpriv_del.status != 404) return error.DeletedNamespaceNot404;
+        logPass("Admin API: GET /admin/v1/blobs/namespaces/sim_priv confirmed 404 Not Found");
+
+        const r_dns2 = try executeHttp(allocator, "DELETE", "http://127.0.0.1:4598/admin/v1/blobs/namespaces/sim_ns", null, admin_hdr, null);
+        if (r_dns2.status != 200) return error.DeleteNamespaceFailed;
+        logPass("Admin API: DELETE /admin/v1/blobs/namespaces/sim_ns purged namespace & objects (200 OK)");
+
+        const r_gns_del = try executeHttp(allocator, "GET", "http://127.0.0.1:4598/admin/v1/blobs/namespaces/sim_ns", null, admin_hdr, null);
+        if (r_gns_del.status != 404) return error.DeletedNamespaceNot404;
+        logPass("Admin API: GET /admin/v1/blobs/namespaces/sim_ns confirmed 404 Not Found");
     }
 
     // ─── Phase 8: Admin & Monitoring Endpoints Simulation ──────────────────────
