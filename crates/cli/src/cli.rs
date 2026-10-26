@@ -112,7 +112,10 @@ pub async fn run() -> Result<bool, Box<dyn std::error::Error>> {
         } else if format == OutputFormat::Jsonl {
             println!("{}", serde_json::to_string(&brief_data)?);
         } else {
-            println!("Axiom CLI v{} — High-Performance API Gateway & Data Platform", env!("CARGO_PKG_VERSION"));
+            println!(
+                "Axiom CLI v{} — High-Performance API Gateway & Data Platform",
+                env!("CARGO_PKG_VERSION")
+            );
             println!("Unified data federation, distributed blob storage, cluster mesh, and Model Context Protocol (MCP) server.");
             println!("Run 'axiom --help' for full subcommand documentation or 'axiom completions <shell>' for autocompletion.");
         }
@@ -2543,7 +2546,10 @@ async fn handle_blob_command(
                     if let Some(list) = resp.get("data").and_then(|d| d.as_array()) {
                         for ns in list {
                             let name = ns.get("name").and_then(|n| n.as_str()).unwrap_or("-");
-                            let is_pub = ns.get("is_public").and_then(|p| p.as_bool()).unwrap_or(false);
+                            let is_pub = ns
+                                .get("is_public")
+                                .and_then(|p| p.as_bool())
+                                .unwrap_or(false);
                             let vis = if is_pub { "public" } else { "private" };
                             let objects =
                                 ns.get("object_count").and_then(|c| c.as_u64()).unwrap_or(0);
@@ -2575,11 +2581,21 @@ async fn handle_blob_command(
                 } else {
                     let data = resp.get("data").cloned().unwrap_or(resp);
                     let ns_name = data.get("name").and_then(|n| n.as_str()).unwrap_or(&name);
-                    let is_pub = data.get("is_public").and_then(|p| p.as_bool()).unwrap_or(false);
+                    let is_pub = data
+                        .get("is_public")
+                        .and_then(|p| p.as_bool())
+                        .unwrap_or(false);
                     let vis = if is_pub { "public" } else { "private" };
-                    let objects = data.get("object_count").and_then(|c| c.as_u64()).unwrap_or(0);
-                    let bytes = data.get("total_bytes").and_then(|b| b.as_u64()).unwrap_or(0);
-                    let quota_str = if let Some(q) = data.get("max_bytes").and_then(|m| m.as_u64()) {
+                    let objects = data
+                        .get("object_count")
+                        .and_then(|c| c.as_u64())
+                        .unwrap_or(0);
+                    let bytes = data
+                        .get("total_bytes")
+                        .and_then(|b| b.as_u64())
+                        .unwrap_or(0);
+                    let quota_str = if let Some(q) = data.get("max_bytes").and_then(|m| m.as_u64())
+                    {
                         format_bytes(q)
                     } else {
                         "unlimited".to_string()
@@ -2590,7 +2606,12 @@ async fn handle_blob_command(
                     println!("{:-<45}", "");
                     println!("{:<20} {}", "Visibility:", vis);
                     println!("{:<20} {}", "Object Count:", objects);
-                    println!("{:<20} {} ({} bytes)", "Total Size:", format_bytes(bytes), bytes);
+                    println!(
+                        "{:<20} {} ({} bytes)",
+                        "Total Size:",
+                        format_bytes(bytes),
+                        bytes
+                    );
                     println!("{:<20} {}", "Storage Quota:", quota_str);
                     println!("{:<20} {}", "Created At (UNIX):", created);
                 }
@@ -2603,48 +2624,80 @@ async fn handle_blob_command(
                     println!("{}", serde_json::to_string(&resp)?);
                 } else {
                     let data = resp.get("data").cloned().unwrap_or(resp);
-                    let ns_name = data.get("namespace").and_then(|n| n.as_str()).unwrap_or(&name);
-                    let is_pub = data.get("is_public").and_then(|p| p.as_bool()).unwrap_or(false);
+                    let ns_name = data
+                        .get("namespace")
+                        .and_then(|n| n.as_str())
+                        .unwrap_or(&name);
+                    let is_pub = data
+                        .get("is_public")
+                        .and_then(|p| p.as_bool())
+                        .unwrap_or(false);
                     let vis = if is_pub { "public" } else { "private" };
-                    let objects = data.get("object_count").and_then(|c| c.as_u64()).unwrap_or(0);
+                    let objects = data
+                        .get("object_count")
+                        .and_then(|c| c.as_u64())
+                        .unwrap_or(0);
                     let used_bytes = data.get("used_bytes").and_then(|b| b.as_u64()).unwrap_or(0);
                     let max_str = if let Some(m) = data.get("max_bytes").and_then(|q| q.as_u64()) {
                         format_bytes(m)
                     } else {
                         "unlimited".to_string()
                     };
-                    let rem_str = if let Some(r) = data.get("remaining_bytes").and_then(|q| q.as_u64()) {
-                        format_bytes(r)
-                    } else {
-                        "unlimited".to_string()
-                    };
-                    let pct_str = if let Some(p) = data.get("percent_used").and_then(|pct| pct.as_f64()) {
-                        format!("{:.2}%", p)
-                    } else {
-                        "N/A".to_string()
-                    };
-                    let exceeded = data.get("is_quota_exceeded").and_then(|e| e.as_bool()).unwrap_or(false);
+                    let rem_str =
+                        if let Some(r) = data.get("remaining_bytes").and_then(|q| q.as_u64()) {
+                            format_bytes(r)
+                        } else {
+                            "unlimited".to_string()
+                        };
+                    let pct_str =
+                        if let Some(p) = data.get("percent_used").and_then(|pct| pct.as_f64()) {
+                            format!("{:.2}%", p)
+                        } else {
+                            "N/A".to_string()
+                        };
+                    let exceeded = data
+                        .get("is_quota_exceeded")
+                        .and_then(|e| e.as_bool())
+                        .unwrap_or(false);
 
                     println!("Namespace Storage Usage & Quota Headroom: {}", ns_name);
                     println!("{:-<50}", "");
                     println!("{:<22} {}", "Visibility:", vis);
                     println!("{:<22} {}", "Stored Objects:", objects);
-                    println!("{:<22} {} ({} bytes)", "Used Storage:", format_bytes(used_bytes), used_bytes);
+                    println!(
+                        "{:<22} {} ({} bytes)",
+                        "Used Storage:",
+                        format_bytes(used_bytes),
+                        used_bytes
+                    );
                     println!("{:<22} {}", "Quota Limit:", max_str);
                     println!("{:<22} {}", "Remaining Headroom:", rem_str);
                     println!("{:<22} {}", "Quota Utilization:", pct_str);
-                    println!("{:<22} {}", "Quota Status:", if exceeded { "EXCEEDED" } else { "HEALTHY" });
+                    println!(
+                        "{:<22} {}",
+                        "Quota Status:",
+                        if exceeded { "EXCEEDED" } else { "HEALTHY" }
+                    );
                 }
             }
-            BlobNsCommands::Create { name, max_bytes, public } => {
-                let resp = client.create_blob_namespace(&name, max_bytes, Some(public)).await?;
+            BlobNsCommands::Create {
+                name,
+                max_bytes,
+                public,
+            } => {
+                let resp = client
+                    .create_blob_namespace(&name, max_bytes, Some(public))
+                    .await?;
                 if format == OutputFormat::Json {
                     println!("{}", serde_json::to_string_pretty(&resp)?);
                 } else if format == OutputFormat::Jsonl {
                     println!("{}", serde_json::to_string(&resp)?);
                 } else {
                     let vis_desc = if public { "public" } else { "private" };
-                    println!("Namespace '{}' created successfully (visibility: {}).", name, vis_desc);
+                    println!(
+                        "Namespace '{}' created successfully (visibility: {}).",
+                        name, vis_desc
+                    );
                 }
             }
             BlobNsCommands::Update {
@@ -3428,7 +3481,10 @@ async fn handle_mcp_command(
                 {
                     for tool in tools {
                         let name = tool.get("name").and_then(|n| n.as_str()).unwrap_or("-");
-                        let desc = tool.get("description").and_then(|d| d.as_str()).unwrap_or("-");
+                        let desc = tool
+                            .get("description")
+                            .and_then(|d| d.as_str())
+                            .unwrap_or("-");
                         println!("{:<24} {:<56}", name, desc);
                     }
                 } else {

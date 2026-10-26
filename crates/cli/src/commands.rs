@@ -39,7 +39,11 @@ pub struct Cli {
     #[arg(long, global = true, help = "Format output as JSON Lines (JSONL)")]
     pub jsonl: bool,
 
-    #[arg(long, global = true, help = "Print brief summary of Axiom CLI capabilities and exit")]
+    #[arg(
+        long,
+        global = true,
+        help = "Print brief summary of Axiom CLI capabilities and exit"
+    )]
     pub brief: bool,
 
     #[command(subcommand)]
@@ -1402,7 +1406,12 @@ mod tests {
 
         // Batch delete and ticket enable/delete
         let batch_del_args = [
-            "axiom", "blob", "batch-delete", "assets", "file1.png", "file2.png",
+            "axiom",
+            "blob",
+            "batch-delete",
+            "assets",
+            "file1.png",
+            "file2.png",
         ];
         let batch_del_cli =
             Cli::try_parse_from(batch_del_args).expect("Failed to parse blob batch-delete");
@@ -1442,7 +1451,14 @@ mod tests {
 
         // Namespace commands: Create (with --public), Update, Get, Usage
         let ns_create_args = [
-            "axiom", "blob", "ns", "create", "public-media", "--max-bytes", "10485760", "--public",
+            "axiom",
+            "blob",
+            "ns",
+            "create",
+            "public-media",
+            "--max-bytes",
+            "10485760",
+            "--public",
         ];
         let ns_create_cli =
             Cli::try_parse_from(ns_create_args).expect("Failed to parse blob ns create");

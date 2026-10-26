@@ -3572,7 +3572,8 @@ async fn test_master_end_to_end_crud_simulation() {
     let admin_token = BASE64_STANDARD.encode("admin_key:secret_admin");
 
     // 0. Authenticate Operator Session for Admin Control Plane
-    let _ = axiom_metadata::MetadataStore::create_user("super_admin_ops", None, "SecretP@ss12345!").await;
+    let _ = axiom_metadata::MetadataStore::create_user("super_admin_ops", None, "SecretP@ss12345!")
+        .await;
     let login_req = Request::post("/admin/v1/auth/login")
         .header("Content-Type", "application/json")
         .body(Body::from(

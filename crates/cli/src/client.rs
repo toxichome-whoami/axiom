@@ -1180,7 +1180,11 @@ impl AdminClient {
     }
 
     /// Calls an Axiom MCP tool with structured JSON arguments.
-    pub async fn mcp_call_tool(&self, name: &str, arguments: Option<Value>) -> Result<Value, String> {
+    pub async fn mcp_call_tool(
+        &self,
+        name: &str,
+        arguments: Option<Value>,
+    ) -> Result<Value, String> {
         let payload = json!({
             "jsonrpc": "2.0",
             "id": 1,
