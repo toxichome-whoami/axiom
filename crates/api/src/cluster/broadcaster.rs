@@ -127,14 +127,23 @@ impl ClusterBroadcaster {
 
         let event_id = format!("evt_{}", uuid::Uuid::new_v4().to_string().replace('-', ""));
 
-        // Deduplicate locally so this node never re-executes its own event if reflected
-        let _ = MetadataStore::record_cluster_event(
-            &event_id,
-            event_type,
-            &payload.to_string(),
-            &my_node_id,
-        )
-        .await;
+        // Mark in-memory deduplication so reflection never re-executes
+        crate::cluster::handlers::mark_cluster_event_seen(&event_id, now_unix);
+
+        // Record to metadata store in background without blocking broadcast fanout
+        let event_id_clone = event_id.clone();
+        let event_type_owned = event_type.to_string();
+        let payload_str = payload.to_string();
+        let my_id_clone = my_node_id.clone();
+        tokio::spawn(async move {
+            let _ = MetadataStore::record_cluster_event(
+                &event_id_clone,
+                &event_type_owned,
+                &payload_str,
+                &my_id_clone,
+            )
+            .await;
+        });
 
         let packet = json!({
             "event_id": event_id,
@@ -168,7 +177,6 @@ impl ClusterBroadcaster {
                 let (node_header, ts_header, nonce_header, sig_header) =
                     sign_outbound_packet(&my_id, &secret, &payload_bytes);
 
-                let start = Instant::now();
                 let res = HTTP_CLIENT
                     .post(&target_url)
                     .header("X-Axiom-Node-Id", node_header)
@@ -180,16 +188,10 @@ impl ClusterBroadcaster {
                     .send()
                     .await;
 
-                let latency_ms = start.elapsed().as_millis() as i64;
-
                 match res {
                     Ok(resp) if resp.status().is_success() => {
-                        let _ = MetadataStore::update_peer_status(
-                            &peer_node_id,
-                            "connected",
-                            latency_ms,
-                        )
-                        .await;
+                        // Success: node is healthy. Decouple disk writes from high-speed broadcasts;
+                        // periodic latency/uptime telemetry is maintained by run_heartbeat_loop.
                     }
                     Ok(resp) => {
                         tracing::warn!(
@@ -203,7 +205,7 @@ impl ClusterBroadcaster {
                         let _ = MetadataStore::update_peer_status(
                             &peer_node_id,
                             "unreachable",
-                            latency_ms,
+                            0,
                         )
                         .await;
                     }

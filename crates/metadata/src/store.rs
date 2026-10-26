@@ -27,6 +27,11 @@ use crate::snapshot::{
 static METADATA_CONN: OnceCell<Arc<Mutex<Connection>>> = OnceCell::const_new();
 static AUDIT_CHANNEL: OnceCell<tokio::sync::mpsc::Sender<AuditTask>> = OnceCell::const_new();
 
+// In-memory cache for cluster node identity (node_id, moniker, cluster_secret).
+// Eliminates 3 separate SQLite queries on every cluster ping/event/handshake hot-path.
+static CLUSTER_IDENTITY_CACHE: Lazy<tokio::sync::RwLock<Option<(String, String, String)>>> =
+    Lazy::new(|| tokio::sync::RwLock::new(None));
+
 struct AuditTask {
     timestamp: i64,
     actor: String,
@@ -2294,12 +2299,32 @@ impl MetadataStore {
     // ─── Cluster P2P Mesh Management ──────────────────────────────────────────
     // Coordinates zero-config peer-to-peer discovery, mutual TLS/HMAC pairings, and state synchronization.
 
+    /// Resets the in-memory cluster identity cache (useful for test isolation).
+    pub async fn reset_cluster_identity_cache() {
+        let mut guard = CLUSTER_IDENTITY_CACHE.write().await;
+        *guard = None;
+    }
+
     /// Retrieves or securely generates the local node's cluster identity (node_id, moniker, cluster_secret).
     /// CONTRACT:
     ///  - Postcondition: Returns `(node_id, moniker, cluster_secret)`.
+    ///  - Invariants: Uses in-memory caching to eliminate repeated SQLite queries on cluster packet hot-paths.
     ///  - Side effects: Persists missing identity tokens into `system_secrets`.
     ///  - Idempotency: Yes.
     pub async fn get_or_create_cluster_identity() -> Result<(String, String, String), String> {
+        // Fast in-memory check
+        {
+            let guard = CLUSTER_IDENTITY_CACHE.read().await;
+            if let Some(ref id) = *guard {
+                return Ok(id.clone());
+            }
+        }
+
+        let mut guard = CLUSTER_IDENTITY_CACHE.write().await;
+        if let Some(ref id) = *guard {
+            return Ok(id.clone());
+        }
+
         let conn = Self::get_conn().await?;
 
         let now_unix = SystemTime::now()
@@ -2380,7 +2405,9 @@ impl MetadataStore {
             generated_secret
         };
 
-        Ok((node_id, moniker, cluster_secret))
+        let identity = (node_id, moniker, cluster_secret);
+        *guard = Some(identity.clone());
+        Ok(identity)
     }
 
     /// Sets or updates the human-readable moniker for the local cluster node.
@@ -2399,6 +2426,12 @@ impl MetadataStore {
         )
         .await
         .map_err(|e| format!("Failed to set cluster_moniker: {}", e))?;
+
+        // Synchronize in-memory cache
+        let mut guard = CLUSTER_IDENTITY_CACHE.write().await;
+        if let Some((_, ref mut cached_moniker, _)) = *guard {
+            *cached_moniker = moniker.to_string();
+        }
 
         Ok(())
     }
