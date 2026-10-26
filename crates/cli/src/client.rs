@@ -1009,11 +1009,19 @@ impl AdminClient {
     }
 
     /// Creates the initial administrative account during setup.
-    pub async fn setup_account(&self, username: &str, password: &str) -> Result<Value, String> {
-        let body = json!({
+    pub async fn setup_account(
+        &self,
+        username: &str,
+        email: Option<&str>,
+        password: &str,
+    ) -> Result<Value, String> {
+        let mut body = json!({
             "username": username,
             "password": password,
         });
+        if let Some(e) = email {
+            body["email"] = json!(e);
+        }
         self.request(reqwest::Method::POST, "/admin/v1/setup/account", Some(body))
             .await
     }

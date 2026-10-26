@@ -927,6 +927,8 @@ pub enum SetupCommands {
     Account {
         #[arg(help = "Admin username")]
         username: String,
+        #[arg(short, long, help = "Admin email address")]
+        email: Option<String>,
         #[arg(
             short,
             long,
@@ -1649,7 +1651,7 @@ mod tests {
         let setup_cli = Cli::try_parse_from(setup_args).expect("Failed to parse setup account");
         match setup_cli.command {
             Some(Commands::Setup {
-                command: Some(SetupCommands::Account { username, password }),
+                command: Some(SetupCommands::Account { username, email: _, password }),
             }) => {
                 assert_eq!(username, "superadmin");
                 assert_eq!(password, Some("longsecretpass".to_string()));

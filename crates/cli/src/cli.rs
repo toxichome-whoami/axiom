@@ -399,6 +399,22 @@ async fn handle_user_command(
             password,
             ..
         } => {
+            let email_val = match email {
+                Some(e) if !e.trim().is_empty() => Some(e),
+                _ if std::io::stdout().is_terminal() => {
+                    eprint!("Enter email for admin '{}' (optional, press Enter to skip): ", username);
+                    let mut line = String::new();
+                    let _ = std::io::stdin().read_line(&mut line);
+                    let trimmed = line.trim();
+                    if trimmed.is_empty() {
+                        None
+                    } else {
+                        Some(trimmed.to_string())
+                    }
+                }
+                _ => None,
+            };
+
             let pass = match password {
                 Some(p) if !p.is_empty() => p,
                 _ => {
@@ -411,7 +427,7 @@ async fn handle_user_command(
                 return Err("Password cannot be empty".into());
             }
 
-            MetadataStore::create_user(&username, email.as_deref(), &pass)
+            MetadataStore::create_user(&username, email_val.as_deref(), &pass)
                 .await
                 .map_err(|e| format!("User creation failed: {}", e))?;
 
@@ -3376,7 +3392,7 @@ async fn handle_setup_command(
             }
         }
 
-        Some(SetupCommands::Account { username, password }) => {
+        Some(SetupCommands::Account { username, email, password }) => {
             let pass = match password {
                 Some(p) if !p.is_empty() => p,
                 _ => {
@@ -3384,7 +3400,7 @@ async fn handle_setup_command(
                     read_secret_input()?
                 }
             };
-            let resp = client.setup_account(&username, &pass).await?;
+            let resp = client.setup_account(&username, email.as_deref(), &pass).await?;
             if let Some(token) = resp
                 .get("data")
                 .and_then(|d| d.get("token"))
@@ -3467,14 +3483,25 @@ async fn handle_setup_command(
                 username
             };
 
-            eprint!("2. Enter password (min 8 chars): ");
+            print!("2. Enter email for admin '{}' (optional): ", username);
+            stdout().flush()?;
+            let mut email_buf = String::new();
+            stdin().read_line(&mut email_buf)?;
+            let email_trimmed = email_buf.trim();
+            let email_opt = if email_trimmed.is_empty() {
+                None
+            } else {
+                Some(email_trimmed)
+            };
+
+            eprint!("3. Enter password (min 8 chars): ");
             let pass = read_secret_input()?;
             if pass.len() < 8 {
                 return Err("Password must be at least 8 characters".into());
             }
 
             println!("\nCreating initial admin account...");
-            let acc_resp = client.setup_account(username, &pass).await?;
+            let acc_resp = client.setup_account(username, email_opt, &pass).await?;
             if let Some(token) = acc_resp
                 .get("data")
                 .and_then(|d| d.get("token"))
