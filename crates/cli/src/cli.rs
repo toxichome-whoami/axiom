@@ -78,7 +78,12 @@ pub fn reset_windows_console_mode() {
         if !handle.is_null() && handle != (-1isize as *mut std::ffi::c_void) {
             let mut mode = 0u32;
             if GetConsoleMode(handle, &mut mode) != 0 {
-                let new_mode = mode | ENABLE_PROCESSED_INPUT | ENABLE_LINE_INPUT | ENABLE_ECHO_INPUT | ENABLE_EXTENDED_FLAGS | ENABLE_QUICK_EDIT_MODE;
+                let new_mode = mode
+                    | ENABLE_PROCESSED_INPUT
+                    | ENABLE_LINE_INPUT
+                    | ENABLE_ECHO_INPUT
+                    | ENABLE_EXTENDED_FLAGS
+                    | ENABLE_QUICK_EDIT_MODE;
                 let _ = SetConsoleMode(handle, new_mode);
             }
         }
@@ -105,18 +110,29 @@ pub fn read_secret_input() -> Result<String, Box<dyn std::error::Error>> {
 
 /// Prints the interactive quickstart banner and guided workflow overview for bare terminal execution.
 pub fn print_quickstart_guide() {
-    println!("Axiom API Gateway & Data Access Platform (v{})", env!("CARGO_PKG_VERSION"));
-    println!("High-performance multi-dialect gateway, embedded metadata, and native blob storage.\n");
+    println!(
+        "Axiom API Gateway & Data Access Platform (v{})",
+        env!("CARGO_PKG_VERSION")
+    );
+    println!(
+        "High-performance multi-dialect gateway, embedded metadata, and native blob storage.\n"
+    );
     println!("QUICKSTART WORKFLOWS:");
     println!("  1. Initialize Setup:    axiom setup           (Bootstrap master admin account)");
-    println!("  2. Start Gateway:       axiom server          (Launch daemon on http://127.0.0.1:4500)");
+    println!(
+        "  2. Start Gateway:       axiom server          (Launch daemon on http://127.0.0.1:4500)"
+    );
     println!("  3. Check Diagnostics:   axiom doctor          (Validate environment, ports & database connectivity)");
     println!("  4. Authenticate:        axiom login <USER>    (Store session token for authenticated operations)");
     println!("  5. Inspect State:       axiom status          (View live gateway health and auth context)\n");
     println!("PRIMARY COMMANDS:");
     println!("  axiom db [ls|add|query]       Upstream databases, migrations & direct query proxy");
-    println!("  axiom blob [ls|put|get]       Native object storage, uploads, transfers & namespaces");
-    println!("  axiom user [ls|add|update]    Admin user management (direct host metadata DB access)");
+    println!(
+        "  axiom blob [ls|put|get]       Native object storage, uploads, transfers & namespaces"
+    );
+    println!(
+        "  axiom user [ls|add|update]    Admin user management (direct host metadata DB access)"
+    );
     println!("  axiom key [ls|create|rotate]  Machine API keys, rate limits, and tokens");
     println!("  axiom role [ls|create|update] RBAC permissions and role assignments\n");
     println!("Run 'axiom --help' for the complete command reference, flags, and options.");
@@ -157,7 +173,8 @@ pub async fn run() -> Result<bool, Box<dyn std::error::Error>> {
             normalized_args.push(arg.clone());
             continue;
         }
-        if (arg == "-h" || arg == "--help") && i == 1 && args.len() > 2 && !args[2].starts_with('-') {
+        if (arg == "-h" || arg == "--help") && i == 1 && args.len() > 2 && !args[2].starts_with('-')
+        {
             pending_help = true;
             continue;
         }
@@ -257,7 +274,7 @@ pub async fn run() -> Result<bool, Box<dyn std::error::Error>> {
             let effective_username = match username.or(user) {
                 Some(u) if !u.trim().is_empty() => u,
                 _ => {
-                    use std::io::{stdin, stderr, Write};
+                    use std::io::{stderr, stdin, Write};
                     eprint!("Enter admin username: ");
                     let _ = stderr().flush();
                     let mut buf = String::new();
@@ -329,7 +346,9 @@ pub async fn run() -> Result<bool, Box<dyn std::error::Error>> {
                     if client.auth_key().is_some() {
                         println!("Auth Context:    Active (authenticated session token)");
                     } else {
-                        println!("Auth Context:    Unauthenticated (run 'axiom login' to authenticate)");
+                        println!(
+                            "Auth Context:    Unauthenticated (run 'axiom login' to authenticate)"
+                        );
                     }
                     if let Some(sys) = d.get("system") {
                         let cpu = sys
@@ -533,7 +552,10 @@ async fn handle_user_command(
             let pass_input = match password {
                 Some(p) if !p.trim().is_empty() => Some(p),
                 _ if email.is_none() => {
-                    eprint!("Enter new password for admin '{}' (leave blank to keep current): ", username);
+                    eprint!(
+                        "Enter new password for admin '{}' (leave blank to keep current): ",
+                        username
+                    );
                     let p = read_secret_input()?;
                     if p.trim().is_empty() {
                         None
@@ -660,7 +682,9 @@ async fn handle_key_command(
             rate_limit,
             expires_at,
         } => {
-            let name = name.or(name_flag).ok_or("API key name is required (positional or via -n/--name)")?;
+            let name = name
+                .or(name_flag)
+                .ok_or("API key name is required (positional or via -n/--name)")?;
             let resp = client
                 .create_key(
                     &name,
@@ -727,7 +751,9 @@ async fn handle_key_command(
         }
 
         KeyCommands::Rotate { name, name_flag } => {
-            let name = name.or(name_flag).ok_or("API key name is required (positional or via -n/--name)")?;
+            let name = name
+                .or(name_flag)
+                .ok_or("API key name is required (positional or via -n/--name)")?;
             let resp = client.rotate_key(&name).await?;
             if format == OutputFormat::Json {
                 println!("{}", serde_json::to_string_pretty(&resp)?);
@@ -754,7 +780,9 @@ async fn handle_key_command(
             rate_limit,
             expires_at,
         } => {
-            let name = name.or(name_flag).ok_or("API key name is required (positional or via -n/--name)")?;
+            let name = name
+                .or(name_flag)
+                .ok_or("API key name is required (positional or via -n/--name)")?;
             let resp = client
                 .update_key(&name, role.as_deref(), rate_limit, expires_at)
                 .await?;
@@ -764,7 +792,9 @@ async fn handle_key_command(
         }
 
         KeyCommands::Remove { name, name_flag } => {
-            let name = name.or(name_flag).ok_or("API key name is required (positional or via -n/--name)")?;
+            let name = name
+                .or(name_flag)
+                .ok_or("API key name is required (positional or via -n/--name)")?;
             let resp = client.delete_key(&name).await?;
             render_output(format, &resp, |_| {
                 println!("API Key '{}' deleted successfully.", name);
@@ -788,7 +818,9 @@ async fn handle_role_command(
             description,
             permissions,
         } => {
-            let name = name.or(name_flag).ok_or("Role name is required (positional or via -n/--name)")?;
+            let name = name
+                .or(name_flag)
+                .ok_or("Role name is required (positional or via -n/--name)")?;
             let perms_val: Value = match permissions {
                 Some(p_str) => serde_json::from_str(&p_str)
                     .map_err(|e| format!("Invalid JSON permissions array: {}", e))?,
@@ -854,7 +886,9 @@ async fn handle_role_command(
             description,
             permissions,
         } => {
-            let name = name.or(name_flag).ok_or("Role name is required (positional or via -n/--name)")?;
+            let name = name
+                .or(name_flag)
+                .ok_or("Role name is required (positional or via -n/--name)")?;
             let perms_val: Option<Value> = match permissions {
                 Some(p_str) => Some(
                     serde_json::from_str(&p_str)
@@ -876,7 +910,9 @@ async fn handle_role_command(
         }
 
         RoleCommands::Remove { name, name_flag } => {
-            let name = name.or(name_flag).ok_or("Role name is required (positional or via -n/--name)")?;
+            let name = name
+                .or(name_flag)
+                .ok_or("Role name is required (positional or via -n/--name)")?;
             let resp = client.delete_role(&name).await?;
             if format == OutputFormat::Json {
                 println!("{}", serde_json::to_string_pretty(&resp)?);
@@ -906,7 +942,9 @@ async fn handle_db_command(
             pool_min,
             pool_max,
         } => {
-            let alias = alias.or(alias_flag).ok_or("Database alias is required (positional or via -a/--alias)")?;
+            let alias = alias
+                .or(alias_flag)
+                .ok_or("Database alias is required (positional or via -a/--alias)")?;
             let resp = client
                 .add_database(
                     &alias,
@@ -935,7 +973,9 @@ async fn handle_db_command(
             pool_min,
             pool_max,
         } => {
-            let alias = alias.or(alias_flag).ok_or("Database alias is required (positional or via -a/--alias)")?;
+            let alias = alias
+                .or(alias_flag)
+                .ok_or("Database alias is required (positional or via -a/--alias)")?;
             let resp = client
                 .update_database(
                     &alias,
@@ -1001,7 +1041,9 @@ async fn handle_db_command(
         }
 
         DbCommands::Test { alias, alias_flag } => {
-            let alias = alias.or(alias_flag).ok_or("Database alias is required (positional or via -a/--alias)")?;
+            let alias = alias
+                .or(alias_flag)
+                .ok_or("Database alias is required (positional or via -a/--alias)")?;
             let resp = client.test_database(&alias).await?;
             if format == OutputFormat::Json {
                 println!("{}", serde_json::to_string_pretty(&resp)?);
@@ -1023,8 +1065,14 @@ async fn handle_db_command(
             }
         }
 
-        DbCommands::TestUrl { url, url_flag, alias } => {
-            let url = url.or(url_flag).ok_or("Database URL is required (positional or via -c/--conn/--url)")?;
+        DbCommands::TestUrl {
+            url,
+            url_flag,
+            alias,
+        } => {
+            let url = url
+                .or(url_flag)
+                .ok_or("Database URL is required (positional or via -c/--conn/--url)")?;
             let resp = client.test_database_url(&url, alias.as_deref()).await?;
             if format == OutputFormat::Json {
                 println!("{}", serde_json::to_string_pretty(&resp)?);
@@ -1053,7 +1101,9 @@ async fn handle_db_command(
         }
 
         DbCommands::Remove { alias, alias_flag } => {
-            let alias = alias.or(alias_flag).ok_or("Database alias is required (positional or via -a/--alias)")?;
+            let alias = alias
+                .or(alias_flag)
+                .ok_or("Database alias is required (positional or via -a/--alias)")?;
             let resp = client.delete_database(&alias).await?;
             if format == OutputFormat::Json {
                 println!("{}", serde_json::to_string_pretty(&resp)?);
@@ -1072,8 +1122,12 @@ async fn handle_db_command(
             params,
             timeout,
         } => {
-            let alias = alias.or(alias_flag).ok_or("Database alias is required (positional or via -a/--alias)")?;
-            let sql = sql.or(query_flag).ok_or("SQL query is required (positional or via -q/--query)")?;
+            let alias = alias
+                .or(alias_flag)
+                .ok_or("Database alias is required (positional or via -a/--alias)")?;
+            let sql = sql
+                .or(query_flag)
+                .ok_or("SQL query is required (positional or via -q/--query)")?;
             let params_val: Option<Value> = match params {
                 Some(p_str) => Some(
                     serde_json::from_str(&p_str)
@@ -1114,7 +1168,9 @@ async fn handle_db_command(
             cursor,
             limit,
         } => {
-            let alias = alias.or(alias_flag).ok_or("Database alias is required (positional or via -a/--alias)")?;
+            let alias = alias
+                .or(alias_flag)
+                .ok_or("Database alias is required (positional or via -a/--alias)")?;
             let resp = client.list_database_tables(&alias, cursor, limit).await?;
             if format == OutputFormat::Json {
                 println!("{}", serde_json::to_string_pretty(&resp)?);
@@ -1162,9 +1218,18 @@ async fn handle_db_command(
             }
         }
 
-        DbCommands::Schema { alias, alias_flag, table, table_flag } => {
-            let alias = alias.or(alias_flag).ok_or("Database alias is required (positional or via -a/--alias)")?;
-            let table = table.or(table_flag).ok_or("Table name is required (positional or via -t/--table)")?;
+        DbCommands::Schema {
+            alias,
+            alias_flag,
+            table,
+            table_flag,
+        } => {
+            let alias = alias
+                .or(alias_flag)
+                .ok_or("Database alias is required (positional or via -a/--alias)")?;
+            let table = table
+                .or(table_flag)
+                .ok_or("Table name is required (positional or via -t/--table)")?;
             let resp = client.get_table_schema(&alias, &table).await?;
             if format == OutputFormat::Json {
                 println!("{}", serde_json::to_string_pretty(&resp)?);
@@ -1259,8 +1324,12 @@ async fn handle_db_command(
             order,
             filter,
         } => {
-            let alias = alias.or(alias_flag).ok_or("Database alias is required (positional or via -a/--alias)")?;
-            let table = table.or(table_flag).ok_or("Table name is required (positional or via -t/--table)")?;
+            let alias = alias
+                .or(alias_flag)
+                .ok_or("Database alias is required (positional or via -a/--alias)")?;
+            let table = table
+                .or(table_flag)
+                .ok_or("Table name is required (positional or via -t/--table)")?;
             let resp = client
                 .fetch_table_rows(
                     &alias,
@@ -1300,8 +1369,12 @@ async fn handle_db_command(
             row,
             rows,
         } => {
-            let alias = alias.or(alias_flag).ok_or("Database alias is required (positional or via -a/--alias)")?;
-            let table = table.or(table_flag).ok_or("Table name is required (positional or via -t/--table)")?;
+            let alias = alias
+                .or(alias_flag)
+                .ok_or("Database alias is required (positional or via -a/--alias)")?;
+            let table = table
+                .or(table_flag)
+                .ok_or("Table name is required (positional or via -t/--table)")?;
             let (row_val, rows_val) = if let Some(d_str) = data {
                 let parsed: Value = serde_json::from_str(&d_str)
                     .map_err(|e| format!("Invalid JSON data: {}", e))?;
@@ -1358,15 +1431,23 @@ async fn handle_db_command(
             update,
             update_flag,
         } => {
-            let alias = alias.or(alias_flag).ok_or("Database alias is required (positional or via -a/--alias)")?;
-            let table = table.or(table_flag).ok_or("Table name is required (positional or via -t/--table)")?;
-            let filter_str = filter.or(filter_flag).ok_or("Filter condition is required (positional or via -f/--filter)")?;
-            let update_str = update.or(update_flag).ok_or("Update values are required (positional or via -u/--update/--data)")?;
+            let alias = alias
+                .or(alias_flag)
+                .ok_or("Database alias is required (positional or via -a/--alias)")?;
+            let table = table
+                .or(table_flag)
+                .ok_or("Table name is required (positional or via -t/--table)")?;
+            let filter_str = filter
+                .or(filter_flag)
+                .ok_or("Filter condition is required (positional or via -f/--filter)")?;
+            let update_str = update
+                .or(update_flag)
+                .ok_or("Update values are required (positional or via -u/--update/--data)")?;
 
-            let filter_val: Value =
-                serde_json::from_str(&filter_str).map_err(|e| format!("Invalid JSON filter: {}", e))?;
-            let update_val: Value =
-                serde_json::from_str(&update_str).map_err(|e| format!("Invalid JSON update: {}", e))?;
+            let filter_val: Value = serde_json::from_str(&filter_str)
+                .map_err(|e| format!("Invalid JSON filter: {}", e))?;
+            let update_val: Value = serde_json::from_str(&update_str)
+                .map_err(|e| format!("Invalid JSON update: {}", e))?;
 
             let resp = client
                 .update_table_row(&alias, &table, filter_val, update_val)
@@ -1396,12 +1477,18 @@ async fn handle_db_command(
             filter,
             filter_flag,
         } => {
-            let alias = alias.or(alias_flag).ok_or("Database alias is required (positional or via -a/--alias)")?;
-            let table = table.or(table_flag).ok_or("Table name is required (positional or via -t/--table)")?;
-            let filter_str = filter.or(filter_flag).ok_or("Filter condition is required (positional or via -f/--filter)")?;
+            let alias = alias
+                .or(alias_flag)
+                .ok_or("Database alias is required (positional or via -a/--alias)")?;
+            let table = table
+                .or(table_flag)
+                .ok_or("Table name is required (positional or via -t/--table)")?;
+            let filter_str = filter
+                .or(filter_flag)
+                .ok_or("Filter condition is required (positional or via -f/--filter)")?;
 
-            let filter_val: Value =
-                serde_json::from_str(&filter_str).map_err(|e| format!("Invalid JSON filter: {}", e))?;
+            let filter_val: Value = serde_json::from_str(&filter_str)
+                .map_err(|e| format!("Invalid JSON filter: {}", e))?;
 
             let resp = client.delete_table_row(&alias, &table, filter_val).await?;
             if format == OutputFormat::Json {
@@ -1433,10 +1520,18 @@ async fn handle_db_command(
             nullable,
             default_val,
         } => {
-            let alias = alias.or(alias_flag).ok_or("Database alias is required (positional or via -a/--alias)")?;
-            let table = table.or(table_flag).ok_or("Table name is required (positional or via -t/--table)")?;
-            let column = column.or(column_flag).ok_or("Column name is required (positional or via -c/--column)")?;
-            let data_type = data_type.or(data_type_flag).ok_or("Data type is required (positional or via -d/--type)")?;
+            let alias = alias
+                .or(alias_flag)
+                .ok_or("Database alias is required (positional or via -a/--alias)")?;
+            let table = table
+                .or(table_flag)
+                .ok_or("Table name is required (positional or via -t/--table)")?;
+            let column = column
+                .or(column_flag)
+                .ok_or("Column name is required (positional or via -c/--column)")?;
+            let data_type = data_type
+                .or(data_type_flag)
+                .ok_or("Data type is required (positional or via -d/--type)")?;
 
             let resp = client
                 .add_table_column(
@@ -3557,7 +3652,9 @@ async fn handle_blob_command(
                 Some(n) => (n, keys),
                 None => {
                     if keys.is_empty() {
-                        return Err("Storage namespace is required (--ns, -n, or positional)".into());
+                        return Err(
+                            "Storage namespace is required (--ns, -n, or positional)".into()
+                        );
                     }
                     (keys[0].clone(), keys[1..].to_vec())
                 }
@@ -3741,7 +3838,9 @@ async fn handle_setup_command(
                     read_secret_input()?
                 }
             };
-            let resp = client.setup_account(&username, email.as_deref(), &pass).await?;
+            let resp = client
+                .setup_account(&username, email.as_deref(), &pass)
+                .await?;
             if let Some(token) = resp
                 .get("data")
                 .and_then(|d| d.get("token"))

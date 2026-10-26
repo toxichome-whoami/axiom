@@ -313,10 +313,18 @@ pub enum ClusterCommands {
     /// Connect/add a remote cluster peer node
     #[command(alias = "add")]
     Connect {
-        #[arg(value_name = "TARGET_URL", help = "Remote peer URL (positional or via -t/--target/--peer-url)")]
+        #[arg(
+            value_name = "TARGET_URL",
+            help = "Remote peer URL (positional or via -t/--target/--peer-url)"
+        )]
         target_url: Option<String>,
 
-        #[arg(short = 't', long = "target", alias = "peer-url", help = "Remote peer URL (e.g. http://10.0.0.2:4500)")]
+        #[arg(
+            short = 't',
+            long = "target",
+            alias = "peer-url",
+            help = "Remote peer URL (e.g. http://10.0.0.2:4500)"
+        )]
         url_flag: Option<String>,
 
         #[arg(short, long, help = "Shared cluster secret for mutual authentication")]
@@ -326,25 +334,46 @@ pub enum ClusterCommands {
     /// Disconnect and unregister a peer node from the cluster mesh
     #[command(alias = "disconnect", alias = "delete", alias = "rm")]
     Remove {
-        #[arg(value_name = "NODE_ID", help = "Node ID of the peer to remove (positional or via -i/--id)")]
+        #[arg(
+            value_name = "NODE_ID",
+            help = "Node ID of the peer to remove (positional or via -i/--id)"
+        )]
         node_id: Option<String>,
 
-        #[arg(short = 'i', long = "id", alias = "node-id", help = "Node ID of the peer to remove")]
+        #[arg(
+            short = 'i',
+            long = "id",
+            alias = "node-id",
+            help = "Node ID of the peer to remove"
+        )]
         id_flag: Option<String>,
     },
 
     /// Update configuration for an existing registered peer node
     Update {
-        #[arg(value_name = "NODE_ID", help = "Node ID of the peer to update (positional or via -i/--id)")]
+        #[arg(
+            value_name = "NODE_ID",
+            help = "Node ID of the peer to update (positional or via -i/--id)"
+        )]
         node_id: Option<String>,
 
-        #[arg(short = 'i', long = "id", alias = "node-id", help = "Node ID of the peer to update")]
+        #[arg(
+            short = 'i',
+            long = "id",
+            alias = "node-id",
+            help = "Node ID of the peer to update"
+        )]
         id_flag: Option<String>,
 
         #[arg(short, long, help = "Updated peer display moniker")]
         moniker: Option<String>,
 
-        #[arg(short = 't', long = "target", alias = "peer-url", help = "Updated peer URL endpoint")]
+        #[arg(
+            short = 't',
+            long = "target",
+            alias = "peer-url",
+            help = "Updated peer URL endpoint"
+        )]
         url: Option<String>,
 
         #[arg(short, long, help = "Updated shared secret")]
@@ -353,19 +382,34 @@ pub enum ClusterCommands {
 
     /// Send a live ping probe to verify connectivity and measure latency to a peer node
     Ping {
-        #[arg(value_name = "NODE_ID", help = "Node ID of the peer to ping (positional or via -i/--id)")]
+        #[arg(
+            value_name = "NODE_ID",
+            help = "Node ID of the peer to ping (positional or via -i/--id)"
+        )]
         node_id: Option<String>,
 
-        #[arg(short = 'i', long = "id", alias = "node-id", help = "Node ID of the peer to ping")]
+        #[arg(
+            short = 'i',
+            long = "id",
+            alias = "node-id",
+            help = "Node ID of the peer to ping"
+        )]
         id_flag: Option<String>,
     },
 
     /// Update the local node's cluster moniker
     Moniker {
-        #[arg(value_name = "MONIKER", help = "New moniker for this local cluster node (positional or via -m/--moniker)")]
+        #[arg(
+            value_name = "MONIKER",
+            help = "New moniker for this local cluster node (positional or via -m/--moniker)"
+        )]
         moniker: Option<String>,
 
-        #[arg(short = 'm', long = "moniker", help = "New moniker for this local cluster node")]
+        #[arg(
+            short = 'm',
+            long = "moniker",
+            help = "New moniker for this local cluster node"
+        )]
         moniker_flag: Option<String>,
     },
 }
@@ -482,9 +526,19 @@ pub enum KeyCommands {
             help = "Custom secret (if omitted, high-entropy secret is generated)"
         )]
         secret: Option<String>,
-        #[arg(short = 'l', long = "limit", alias = "rate-limit", help = "Rate limit per minute (0 = default)")]
+        #[arg(
+            short = 'l',
+            long = "limit",
+            alias = "rate-limit",
+            help = "Rate limit per minute (0 = default)"
+        )]
         rate_limit: Option<i64>,
-        #[arg(short = 'e', long = "expires", alias = "expires-at", help = "Expiration Unix timestamp")]
+        #[arg(
+            short = 'e',
+            long = "expires",
+            alias = "expires-at",
+            help = "Expiration Unix timestamp"
+        )]
         expires_at: Option<i64>,
     },
     /// Update an existing API key's role, rate limit, or expiration
@@ -495,9 +549,19 @@ pub enum KeyCommands {
         name_flag: Option<String>,
         #[arg(short = 'r', long = "role", help = "Updated role name")]
         role: Option<String>,
-        #[arg(short = 'l', long = "limit", alias = "rate-limit", help = "Updated rate limit per minute (0 = unconstrained)")]
+        #[arg(
+            short = 'l',
+            long = "limit",
+            alias = "rate-limit",
+            help = "Updated rate limit per minute (0 = unconstrained)"
+        )]
         rate_limit: Option<i64>,
-        #[arg(short = 'e', long = "expires", alias = "expires-at", help = "Updated expiration Unix timestamp")]
+        #[arg(
+            short = 'e',
+            long = "expires",
+            alias = "expires-at",
+            help = "Updated expiration Unix timestamp"
+        )]
         expires_at: Option<i64>,
     },
     /// Rotate the secret for an existing API key
@@ -529,7 +593,12 @@ pub enum RoleCommands {
         name: Option<String>,
         #[arg(short = 'n', long = "name", help = "Role name")]
         name_flag: Option<String>,
-        #[arg(short = 'd', long = "description", alias = "desc", help = "Role description")]
+        #[arg(
+            short = 'd',
+            long = "description",
+            alias = "desc",
+            help = "Role description"
+        )]
         description: Option<String>,
         #[arg(
             short = 'p',
@@ -545,7 +614,12 @@ pub enum RoleCommands {
         name: Option<String>,
         #[arg(short = 'n', long = "name", help = "Role name")]
         name_flag: Option<String>,
-        #[arg(short = 'd', long = "description", alias = "desc", help = "Role description")]
+        #[arg(
+            short = 'd',
+            long = "description",
+            alias = "desc",
+            help = "Role description"
+        )]
         description: Option<String>,
         #[arg(
             short = 'p',
@@ -573,7 +647,10 @@ pub enum DbCommands {
     /// Register a new upstream database connection
     #[command(alias = "create")]
     Add {
-        #[arg(value_name = "ALIAS", help = "Database alias (positional or via -a/--alias)")]
+        #[arg(
+            value_name = "ALIAS",
+            help = "Database alias (positional or via -a/--alias)"
+        )]
         alias: Option<String>,
         #[arg(short = 'a', long = "alias", help = "Database alias")]
         alias_flag: Option<String>,
@@ -591,18 +668,36 @@ pub enum DbCommands {
             help = "Dialect/engine (e.g. postgres, mysql, sqlite, mssql, clickhouse, snowflake, oracle)"
         )]
         engine: Option<String>,
-        #[arg(short = 'm', long = "min", alias = "pool-min", help = "Minimum connection pool size")]
+        #[arg(
+            short = 'm',
+            long = "min",
+            alias = "pool-min",
+            help = "Minimum connection pool size"
+        )]
         pool_min: Option<i64>,
-        #[arg(short = 'M', long = "max", alias = "pool-max", help = "Maximum connection pool size")]
+        #[arg(
+            short = 'M',
+            long = "max",
+            alias = "pool-max",
+            help = "Maximum connection pool size"
+        )]
         pool_max: Option<i64>,
     },
     /// Update an existing upstream database connection configuration
     Update {
-        #[arg(value_name = "ALIAS", help = "Database alias to update (positional or via -a/--alias)")]
+        #[arg(
+            value_name = "ALIAS",
+            help = "Database alias to update (positional or via -a/--alias)"
+        )]
         alias: Option<String>,
         #[arg(short = 'a', long = "alias", help = "Database alias to update")]
         alias_flag: Option<String>,
-        #[arg(short = 'n', long = "new-alias", alias = "rename", help = "Rename database alias")]
+        #[arg(
+            short = 'n',
+            long = "new-alias",
+            alias = "rename",
+            help = "Rename database alias"
+        )]
         new_alias: Option<String>,
         #[arg(
             short = 'c',
@@ -611,25 +706,51 @@ pub enum DbCommands {
             help = "Updated database connection URL"
         )]
         connection_url: Option<String>,
-        #[arg(short = 'e', long = "engine", alias = "dialect", help = "Updated dialect/engine")]
+        #[arg(
+            short = 'e',
+            long = "engine",
+            alias = "dialect",
+            help = "Updated dialect/engine"
+        )]
         engine: Option<String>,
-        #[arg(short = 'm', long = "min", alias = "pool-min", help = "Updated minimum connection pool size")]
+        #[arg(
+            short = 'm',
+            long = "min",
+            alias = "pool-min",
+            help = "Updated minimum connection pool size"
+        )]
         pool_min: Option<i64>,
-        #[arg(short = 'M', long = "max", alias = "pool-max", help = "Updated maximum connection pool size")]
+        #[arg(
+            short = 'M',
+            long = "max",
+            alias = "pool-max",
+            help = "Updated maximum connection pool size"
+        )]
         pool_max: Option<i64>,
     },
     /// Test connection to an upstream database
     Test {
-        #[arg(value_name = "ALIAS", help = "Database alias (positional or via -a/--alias)")]
+        #[arg(
+            value_name = "ALIAS",
+            help = "Database alias (positional or via -a/--alias)"
+        )]
         alias: Option<String>,
         #[arg(short = 'a', long = "alias", help = "Database alias")]
         alias_flag: Option<String>,
     },
     /// Test connection to a raw database URL before registering
     TestUrl {
-        #[arg(value_name = "URL", help = "Database connection URL to probe (positional or via -c/--conn)")]
+        #[arg(
+            value_name = "URL",
+            help = "Database connection URL to probe (positional or via -c/--conn)"
+        )]
         url: Option<String>,
-        #[arg(short = 'c', long = "conn", alias = "connection-url", help = "Database connection URL to probe")]
+        #[arg(
+            short = 'c',
+            long = "conn",
+            alias = "connection-url",
+            help = "Database connection URL to probe"
+        )]
         url_flag: Option<String>,
         #[arg(
             short = 'a',
@@ -644,18 +765,27 @@ pub enum DbCommands {
     /// Remove an upstream database connection
     #[command(alias = "delete", alias = "rm")]
     Remove {
-        #[arg(value_name = "ALIAS", help = "Database alias (positional or via -a/--alias)")]
+        #[arg(
+            value_name = "ALIAS",
+            help = "Database alias (positional or via -a/--alias)"
+        )]
         alias: Option<String>,
         #[arg(short = 'a', long = "alias", help = "Database alias")]
         alias_flag: Option<String>,
     },
     /// Execute a SQL query against an upstream database
     Query {
-        #[arg(value_name = "ALIAS", help = "Database alias (positional or via -a/--alias)")]
+        #[arg(
+            value_name = "ALIAS",
+            help = "Database alias (positional or via -a/--alias)"
+        )]
         alias: Option<String>,
         #[arg(short = 'a', long = "alias", help = "Database alias")]
         alias_flag: Option<String>,
-        #[arg(value_name = "SQL", help = "SQL query string (positional or via -q/--query)")]
+        #[arg(
+            value_name = "SQL",
+            help = "SQL query string (positional or via -q/--query)"
+        )]
         sql: Option<String>,
         #[arg(short = 'q', long = "query", alias = "sql", help = "SQL query string")]
         query_flag: Option<String>,
@@ -665,12 +795,20 @@ pub enum DbCommands {
             help = r#"JSON parameters array or object, e.g. '[1, "active"]'"#
         )]
         params: Option<String>,
-        #[arg(short = 't', long = "timeout", help = "Query timeout in seconds", default_value = "30")]
+        #[arg(
+            short = 't',
+            long = "timeout",
+            help = "Query timeout in seconds",
+            default_value = "30"
+        )]
         timeout: Option<u64>,
     },
     /// List tables in an upstream database
     Tables {
-        #[arg(value_name = "ALIAS", help = "Database alias (positional or via -a/--alias)")]
+        #[arg(
+            value_name = "ALIAS",
+            help = "Database alias (positional or via -a/--alias)"
+        )]
         alias: Option<String>,
         #[arg(short = 'a', long = "alias", help = "Database alias")]
         alias_flag: Option<String>,
@@ -681,37 +819,68 @@ pub enum DbCommands {
             default_value = "0"
         )]
         cursor: Option<i64>,
-        #[arg(short = 'l', long = "limit", help = "Maximum tables to return", default_value = "100")]
+        #[arg(
+            short = 'l',
+            long = "limit",
+            help = "Maximum tables to return",
+            default_value = "100"
+        )]
         limit: Option<usize>,
     },
     /// Describe schema and foreign keys for a database table
     Schema {
-        #[arg(value_name = "ALIAS", help = "Database alias (positional or via -a/--alias)")]
+        #[arg(
+            value_name = "ALIAS",
+            help = "Database alias (positional or via -a/--alias)"
+        )]
         alias: Option<String>,
         #[arg(short = 'a', long = "alias", help = "Database alias")]
         alias_flag: Option<String>,
-        #[arg(value_name = "TABLE", help = "Table name (positional or via -t/--table)")]
+        #[arg(
+            value_name = "TABLE",
+            help = "Table name (positional or via -t/--table)"
+        )]
         table: Option<String>,
         #[arg(short = 't', long = "table", help = "Table name")]
         table_flag: Option<String>,
     },
     /// Fetch and filter rows from a database table
     Rows {
-        #[arg(value_name = "ALIAS", help = "Database alias (positional or via -a/--alias)")]
+        #[arg(
+            value_name = "ALIAS",
+            help = "Database alias (positional or via -a/--alias)"
+        )]
         alias: Option<String>,
         #[arg(short = 'a', long = "alias", help = "Database alias")]
         alias_flag: Option<String>,
-        #[arg(value_name = "TABLE", help = "Table name (positional or via -t/--table)")]
+        #[arg(
+            value_name = "TABLE",
+            help = "Table name (positional or via -t/--table)"
+        )]
         table: Option<String>,
         #[arg(short = 't', long = "table", help = "Table name")]
         table_flag: Option<String>,
-        #[arg(short = 'c', long = "cursor", help = "Pagination cursor (primary key value)")]
+        #[arg(
+            short = 'c',
+            long = "cursor",
+            help = "Pagination cursor (primary key value)"
+        )]
         cursor: Option<String>,
-        #[arg(short = 'l', long = "limit", help = "Maximum rows to return", default_value = "100")]
+        #[arg(
+            short = 'l',
+            long = "limit",
+            help = "Maximum rows to return",
+            default_value = "100"
+        )]
         limit: Option<usize>,
         #[arg(short = 's', long = "sort", help = "Sort column")]
         sort: Option<String>,
-        #[arg(short = 'o', long = "order", help = "Sort order (asc or desc)", default_value = "asc")]
+        #[arg(
+            short = 'o',
+            long = "order",
+            help = "Sort order (asc or desc)",
+            default_value = "asc"
+        )]
         order: Option<String>,
         #[arg(
             short = 'f',
@@ -722,11 +891,17 @@ pub enum DbCommands {
     },
     /// Insert row(s) into a database table
     Insert {
-        #[arg(value_name = "ALIAS", help = "Database alias (positional or via -a/--alias)")]
+        #[arg(
+            value_name = "ALIAS",
+            help = "Database alias (positional or via -a/--alias)"
+        )]
         alias: Option<String>,
         #[arg(short = 'a', long = "alias", help = "Database alias")]
         alias_flag: Option<String>,
-        #[arg(value_name = "TABLE", help = "Table name (positional or via -t/--table)")]
+        #[arg(
+            value_name = "TABLE",
+            help = "Table name (positional or via -t/--table)"
+        )]
         table: Option<String>,
         #[arg(short = 't', long = "table", help = "Table name")]
         table_flag: Option<String>,
@@ -740,59 +915,112 @@ pub enum DbCommands {
     /// Update row(s) matching filter in a database table
     #[command(name = "update-rows", alias = "update_rows")]
     UpdateRows {
-        #[arg(value_name = "ALIAS", help = "Database alias (positional or via -a/--alias)")]
+        #[arg(
+            value_name = "ALIAS",
+            help = "Database alias (positional or via -a/--alias)"
+        )]
         alias: Option<String>,
         #[arg(short = 'a', long = "alias", help = "Database alias")]
         alias_flag: Option<String>,
-        #[arg(value_name = "TABLE", help = "Table name (positional or via -t/--table)")]
+        #[arg(
+            value_name = "TABLE",
+            help = "Table name (positional or via -t/--table)"
+        )]
         table: Option<String>,
         #[arg(short = 't', long = "table", help = "Table name")]
         table_flag: Option<String>,
-        #[arg(value_name = "FILTER", help = r#"JSON filter condition, e.g. '{"id":{"eq":1}}' (positional or via -f/--filter)"#)]
+        #[arg(
+            value_name = "FILTER",
+            help = r#"JSON filter condition, e.g. '{"id":{"eq":1}}' (positional or via -f/--filter)"#
+        )]
         filter: Option<String>,
         #[arg(short = 'f', long = "filter", help = "JSON filter condition")]
         filter_flag: Option<String>,
-        #[arg(value_name = "UPDATE", help = r#"JSON update values, e.g. '{"status":"inactive"}' (positional or via -u/--update/--data)"#)]
+        #[arg(
+            value_name = "UPDATE",
+            help = r#"JSON update values, e.g. '{"status":"inactive"}' (positional or via -u/--update/--data)"#
+        )]
         update: Option<String>,
-        #[arg(short = 'u', long = "update", alias = "data", help = "JSON update values")]
+        #[arg(
+            short = 'u',
+            long = "update",
+            alias = "data",
+            help = "JSON update values"
+        )]
         update_flag: Option<String>,
     },
     /// Delete row(s) matching filter in a database table
     DeleteRows {
-        #[arg(value_name = "ALIAS", help = "Database alias (positional or via -a/--alias)")]
+        #[arg(
+            value_name = "ALIAS",
+            help = "Database alias (positional or via -a/--alias)"
+        )]
         alias: Option<String>,
         #[arg(short = 'a', long = "alias", help = "Database alias")]
         alias_flag: Option<String>,
-        #[arg(value_name = "TABLE", help = "Table name (positional or via -t/--table)")]
+        #[arg(
+            value_name = "TABLE",
+            help = "Table name (positional or via -t/--table)"
+        )]
         table: Option<String>,
         #[arg(short = 't', long = "table", help = "Table name")]
         table_flag: Option<String>,
-        #[arg(value_name = "FILTER", help = r#"JSON filter condition, e.g. '{"id":{"eq":1}}' (positional or via -f/--filter)"#)]
+        #[arg(
+            value_name = "FILTER",
+            help = r#"JSON filter condition, e.g. '{"id":{"eq":1}}' (positional or via -f/--filter)"#
+        )]
         filter: Option<String>,
         #[arg(short = 'f', long = "filter", help = "JSON filter condition")]
         filter_flag: Option<String>,
     },
     /// Add a new column to a database table
     AddColumn {
-        #[arg(value_name = "ALIAS", help = "Database alias (positional or via -a/--alias)")]
+        #[arg(
+            value_name = "ALIAS",
+            help = "Database alias (positional or via -a/--alias)"
+        )]
         alias: Option<String>,
         #[arg(short = 'a', long = "alias", help = "Database alias")]
         alias_flag: Option<String>,
-        #[arg(value_name = "TABLE", help = "Table name (positional or via -t/--table)")]
+        #[arg(
+            value_name = "TABLE",
+            help = "Table name (positional or via -t/--table)"
+        )]
         table: Option<String>,
         #[arg(short = 't', long = "table", help = "Table name")]
         table_flag: Option<String>,
-        #[arg(value_name = "COLUMN", help = "Column name (positional or via -c/--column)")]
+        #[arg(
+            value_name = "COLUMN",
+            help = "Column name (positional or via -c/--column)"
+        )]
         column: Option<String>,
         #[arg(short = 'c', long = "column", help = "Column name")]
         column_flag: Option<String>,
-        #[arg(value_name = "DATA_TYPE", help = "Column data type (positional or via -d/--type)")]
+        #[arg(
+            value_name = "DATA_TYPE",
+            help = "Column data type (positional or via -d/--type)"
+        )]
         data_type: Option<String>,
-        #[arg(short = 'd', long = "type", alias = "data-type", help = "Column data type (e.g. TEXT, INTEGER, VARCHAR(255))")]
+        #[arg(
+            short = 'd',
+            long = "type",
+            alias = "data-type",
+            help = "Column data type (e.g. TEXT, INTEGER, VARCHAR(255))"
+        )]
         data_type_flag: Option<String>,
-        #[arg(short = 'N', long = "null", alias = "nullable", help = "Allow null values")]
+        #[arg(
+            short = 'N',
+            long = "null",
+            alias = "nullable",
+            help = "Allow null values"
+        )]
         nullable: bool,
-        #[arg(short = 'D', long = "default", alias = "default-val", help = "Default value expression")]
+        #[arg(
+            short = 'D',
+            long = "default",
+            alias = "default-val",
+            help = "Default value expression"
+        )]
         default_val: Option<String>,
     },
 }
@@ -813,9 +1041,17 @@ pub enum BlobCommands {
     /// List objects in a namespace
     #[command(alias = "ls")]
     List {
-        #[arg(value_name = "NAMESPACE", help = "Storage namespace (positional or via -n/--ns)")]
+        #[arg(
+            value_name = "NAMESPACE",
+            help = "Storage namespace (positional or via -n/--ns)"
+        )]
         namespace: Option<String>,
-        #[arg(short = 'n', long = "ns", alias = "namespace", help = "Storage namespace")]
+        #[arg(
+            short = 'n',
+            long = "ns",
+            alias = "namespace",
+            help = "Storage namespace"
+        )]
         namespace_flag: Option<String>,
         #[arg(short, long, help = "Filter by key prefix")]
         prefix: Option<String>,
@@ -827,17 +1063,36 @@ pub enum BlobCommands {
     /// Upload a file or binary payload to a namespace
     #[command(alias = "upload")]
     Put {
-        #[arg(value_name = "NAMESPACE", help = "Storage namespace (positional or via -n/--ns)")]
+        #[arg(
+            value_name = "NAMESPACE",
+            help = "Storage namespace (positional or via -n/--ns)"
+        )]
         namespace: Option<String>,
-        #[arg(short = 'n', long = "ns", alias = "namespace", help = "Storage namespace")]
+        #[arg(
+            short = 'n',
+            long = "ns",
+            alias = "namespace",
+            help = "Storage namespace"
+        )]
         namespace_flag: Option<String>,
-        #[arg(value_name = "KEY", help = "Object key/path (positional or via -k/--key)")]
+        #[arg(
+            value_name = "KEY",
+            help = "Object key/path (positional or via -k/--key)"
+        )]
         object_key: Option<String>,
         #[arg(short = 'k', long = "key", help = "Object key (path)")]
         key_flag: Option<String>,
-        #[arg(value_name = "FILE", help = "Path to local file to upload, or '-' for stdin (positional or via -f/--file)")]
+        #[arg(
+            value_name = "FILE",
+            help = "Path to local file to upload, or '-' for stdin (positional or via -f/--file)"
+        )]
         file: Option<String>,
-        #[arg(short = 'f', long = "file", alias = "input", help = "Path to local file to upload (or '-' for stdin)")]
+        #[arg(
+            short = 'f',
+            long = "file",
+            alias = "input",
+            help = "Path to local file to upload (or '-' for stdin)"
+        )]
         file_flag: Option<String>,
         #[arg(
             short = 't',
@@ -852,11 +1107,22 @@ pub enum BlobCommands {
     /// Download an object from a namespace
     #[command(alias = "download")]
     Get {
-        #[arg(value_name = "NAMESPACE", help = "Storage namespace (positional or via -n/--ns)")]
+        #[arg(
+            value_name = "NAMESPACE",
+            help = "Storage namespace (positional or via -n/--ns)"
+        )]
         namespace: Option<String>,
-        #[arg(short = 'n', long = "ns", alias = "namespace", help = "Storage namespace")]
+        #[arg(
+            short = 'n',
+            long = "ns",
+            alias = "namespace",
+            help = "Storage namespace"
+        )]
         namespace_flag: Option<String>,
-        #[arg(value_name = "KEY", help = "Object key/path (positional or via -k/--key)")]
+        #[arg(
+            value_name = "KEY",
+            help = "Object key/path (positional or via -k/--key)"
+        )]
         object_key: Option<String>,
         #[arg(short = 'k', long = "key", help = "Object key (path)")]
         key_flag: Option<String>,
@@ -866,16 +1132,31 @@ pub enum BlobCommands {
             help = "Output file path (or '-' for stdout). Defaults to key filename"
         )]
         output: Option<String>,
-        #[arg(short = 't', long = "ticket", help = "Capability ticket signature for pre-signed download")]
+        #[arg(
+            short = 't',
+            long = "ticket",
+            help = "Capability ticket signature for pre-signed download"
+        )]
         ticket: Option<String>,
     },
     /// Inspect object metadata (headers, size, BLAKE3 hash, TTL)
     Head {
-        #[arg(value_name = "NAMESPACE", help = "Storage namespace (positional or via -n/--ns)")]
+        #[arg(
+            value_name = "NAMESPACE",
+            help = "Storage namespace (positional or via -n/--ns)"
+        )]
         namespace: Option<String>,
-        #[arg(short = 'n', long = "ns", alias = "namespace", help = "Storage namespace")]
+        #[arg(
+            short = 'n',
+            long = "ns",
+            alias = "namespace",
+            help = "Storage namespace"
+        )]
         namespace_flag: Option<String>,
-        #[arg(value_name = "KEY", help = "Object key/path (positional or via -k/--key)")]
+        #[arg(
+            value_name = "KEY",
+            help = "Object key/path (positional or via -k/--key)"
+        )]
         object_key: Option<String>,
         #[arg(short = 'k', long = "key", help = "Object key (path)")]
         key_flag: Option<String>,
@@ -883,82 +1164,194 @@ pub enum BlobCommands {
     /// Delete an object from a namespace
     #[command(alias = "remove", alias = "rm")]
     Delete {
-        #[arg(value_name = "NAMESPACE", help = "Storage namespace (positional or via -n/--ns)")]
+        #[arg(
+            value_name = "NAMESPACE",
+            help = "Storage namespace (positional or via -n/--ns)"
+        )]
         namespace: Option<String>,
-        #[arg(short = 'n', long = "ns", alias = "namespace", help = "Storage namespace")]
+        #[arg(
+            short = 'n',
+            long = "ns",
+            alias = "namespace",
+            help = "Storage namespace"
+        )]
         namespace_flag: Option<String>,
-        #[arg(value_name = "KEY", help = "Object key/path (positional or via -k/--key)")]
+        #[arg(
+            value_name = "KEY",
+            help = "Object key/path (positional or via -k/--key)"
+        )]
         object_key: Option<String>,
         #[arg(short = 'k', long = "key", help = "Object key (path)")]
         key_flag: Option<String>,
     },
     /// Copy an object or directory prefix
     Copy {
-        #[arg(value_name = "SRC_NAMESPACE", help = "Source namespace (positional or via -s/--src-ns)")]
+        #[arg(
+            value_name = "SRC_NAMESPACE",
+            help = "Source namespace (positional or via -s/--src-ns)"
+        )]
         src_namespace: Option<String>,
-        #[arg(short = 's', long = "src-ns", alias = "from-ns", help = "Source namespace")]
+        #[arg(
+            short = 's',
+            long = "src-ns",
+            alias = "from-ns",
+            help = "Source namespace"
+        )]
         src_ns_flag: Option<String>,
-        #[arg(value_name = "SRC_KEY", help = "Source key or prefix (positional or via -k/--src-key)")]
+        #[arg(
+            value_name = "SRC_KEY",
+            help = "Source key or prefix (positional or via -k/--src-key)"
+        )]
         src_key: Option<String>,
-        #[arg(short = 'k', long = "src-key", alias = "from-key", help = "Source key (or prefix)")]
+        #[arg(
+            short = 'k',
+            long = "src-key",
+            alias = "from-key",
+            help = "Source key (or prefix)"
+        )]
         src_key_flag: Option<String>,
-        #[arg(value_name = "DEST_KEY", help = "Destination key or prefix (positional or via -K/--dest-key)")]
+        #[arg(
+            value_name = "DEST_KEY",
+            help = "Destination key or prefix (positional or via -K/--dest-key)"
+        )]
         dest_key: Option<String>,
-        #[arg(short = 'K', long = "dest-key", alias = "to-key", help = "Destination key (or prefix)")]
+        #[arg(
+            short = 'K',
+            long = "dest-key",
+            alias = "to-key",
+            help = "Destination key (or prefix)"
+        )]
         dest_key_flag: Option<String>,
-        #[arg(short = 'd', long = "dest-ns", alias = "to-ns", alias = "dest-namespace", help = "Destination namespace (defaults to source namespace)")]
+        #[arg(
+            short = 'd',
+            long = "dest-ns",
+            alias = "to-ns",
+            alias = "dest-namespace",
+            help = "Destination namespace (defaults to source namespace)"
+        )]
         dest_namespace: Option<String>,
-        #[arg(short = 'p', long = "prefix", help = "Copy all objects with matching prefix")]
+        #[arg(
+            short = 'p',
+            long = "prefix",
+            help = "Copy all objects with matching prefix"
+        )]
         prefix: bool,
     },
     /// Move or rename an object or directory prefix
     Move {
-        #[arg(value_name = "SRC_NAMESPACE", help = "Source namespace (positional or via -s/--src-ns)")]
+        #[arg(
+            value_name = "SRC_NAMESPACE",
+            help = "Source namespace (positional or via -s/--src-ns)"
+        )]
         src_namespace: Option<String>,
-        #[arg(short = 's', long = "src-ns", alias = "from-ns", help = "Source namespace")]
+        #[arg(
+            short = 's',
+            long = "src-ns",
+            alias = "from-ns",
+            help = "Source namespace"
+        )]
         src_ns_flag: Option<String>,
-        #[arg(value_name = "SRC_KEY", help = "Source key or prefix (positional or via -k/--src-key)")]
+        #[arg(
+            value_name = "SRC_KEY",
+            help = "Source key or prefix (positional or via -k/--src-key)"
+        )]
         src_key: Option<String>,
-        #[arg(short = 'k', long = "src-key", alias = "from-key", help = "Source key (or prefix)")]
+        #[arg(
+            short = 'k',
+            long = "src-key",
+            alias = "from-key",
+            help = "Source key (or prefix)"
+        )]
         src_key_flag: Option<String>,
-        #[arg(value_name = "DEST_KEY", help = "Destination key or prefix (positional or via -K/--dest-key)")]
+        #[arg(
+            value_name = "DEST_KEY",
+            help = "Destination key or prefix (positional or via -K/--dest-key)"
+        )]
         dest_key: Option<String>,
-        #[arg(short = 'K', long = "dest-key", alias = "to-key", help = "Destination key (or prefix)")]
+        #[arg(
+            short = 'K',
+            long = "dest-key",
+            alias = "to-key",
+            help = "Destination key (or prefix)"
+        )]
         dest_key_flag: Option<String>,
-        #[arg(short = 'd', long = "dest-ns", alias = "to-ns", alias = "dest-namespace", help = "Destination namespace (defaults to source namespace)")]
+        #[arg(
+            short = 'd',
+            long = "dest-ns",
+            alias = "to-ns",
+            alias = "dest-namespace",
+            help = "Destination namespace (defaults to source namespace)"
+        )]
         dest_namespace: Option<String>,
-        #[arg(short = 'p', long = "prefix", help = "Move all objects with matching prefix")]
+        #[arg(
+            short = 'p',
+            long = "prefix",
+            help = "Move all objects with matching prefix"
+        )]
         prefix: bool,
     },
     /// Delete all objects matching a prefix
     DeletePrefix {
-        #[arg(value_name = "NAMESPACE", help = "Storage namespace (positional or via -n/--ns)")]
+        #[arg(
+            value_name = "NAMESPACE",
+            help = "Storage namespace (positional or via -n/--ns)"
+        )]
         namespace: Option<String>,
-        #[arg(short = 'n', long = "ns", alias = "namespace", help = "Storage namespace")]
+        #[arg(
+            short = 'n',
+            long = "ns",
+            alias = "namespace",
+            help = "Storage namespace"
+        )]
         namespace_flag: Option<String>,
-        #[arg(value_name = "PREFIX", help = "Key prefix to delete (positional or via -p/--prefix)")]
+        #[arg(
+            value_name = "PREFIX",
+            help = "Key prefix to delete (positional or via -p/--prefix)"
+        )]
         prefix: Option<String>,
         #[arg(short = 'p', long = "prefix", help = "Key prefix to delete")]
         prefix_flag: Option<String>,
     },
     /// Cryptographically verify blob integrity on disk
     Verify {
-        #[arg(value_name = "NAMESPACE", help = "Storage namespace (positional or via -n/--ns)")]
+        #[arg(
+            value_name = "NAMESPACE",
+            help = "Storage namespace (positional or via -n/--ns)"
+        )]
         namespace: Option<String>,
-        #[arg(short = 'n', long = "ns", alias = "namespace", help = "Storage namespace")]
+        #[arg(
+            short = 'n',
+            long = "ns",
+            alias = "namespace",
+            help = "Storage namespace"
+        )]
         namespace_flag: Option<String>,
-        #[arg(value_name = "KEY", help = "Object key/path (positional or via -k/--key)")]
+        #[arg(
+            value_name = "KEY",
+            help = "Object key/path (positional or via -k/--key)"
+        )]
         object_key: Option<String>,
         #[arg(short = 'k', long = "key", help = "Object key (path)")]
         key_flag: Option<String>,
     },
     /// Generate a pre-signed capability download ticket URL
     Ticket {
-        #[arg(value_name = "NAMESPACE", help = "Storage namespace (positional or via -n/--ns)")]
+        #[arg(
+            value_name = "NAMESPACE",
+            help = "Storage namespace (positional or via -n/--ns)"
+        )]
         namespace: Option<String>,
-        #[arg(short = 'n', long = "ns", alias = "namespace", help = "Storage namespace")]
+        #[arg(
+            short = 'n',
+            long = "ns",
+            alias = "namespace",
+            help = "Storage namespace"
+        )]
         namespace_flag: Option<String>,
-        #[arg(value_name = "KEY", help = "Object key/path (positional or via -k/--key)")]
+        #[arg(
+            value_name = "KEY",
+            help = "Object key/path (positional or via -k/--key)"
+        )]
         object_key: Option<String>,
         #[arg(short = 'k', long = "key", help = "Object key (path)")]
         key_flag: Option<String>,
@@ -970,12 +1363,22 @@ pub enum BlobCommands {
             default_value = "READ"
         )]
         operation: Option<String>,
-        #[arg(short = 't', long = "ttl", help = "Ticket time-to-live in seconds", default_value = "3600")]
+        #[arg(
+            short = 't',
+            long = "ttl",
+            help = "Ticket time-to-live in seconds",
+            default_value = "3600"
+        )]
         ttl: Option<u64>,
     },
     /// List capability download/upload tickets (via Admin API)
     Tickets {
-        #[arg(short = 'n', long = "ns", alias = "namespace", help = "Filter by namespace (defaults to all '*')")]
+        #[arg(
+            short = 'n',
+            long = "ns",
+            alias = "namespace",
+            help = "Filter by namespace (defaults to all '*')"
+        )]
         namespace: Option<String>,
         #[arg(short = 'k', long = "key", help = "Filter by object key")]
         key: Option<String>,
@@ -997,15 +1400,28 @@ pub enum BlobCommands {
     },
     /// Revoke a capability ticket by signature or ID
     RevokeTicket {
-        #[arg(value_name = "SIGNATURE", help = "Capability ticket signature or ID to revoke (positional or via -s/--sig)")]
+        #[arg(
+            value_name = "SIGNATURE",
+            help = "Capability ticket signature or ID to revoke (positional or via -s/--sig)"
+        )]
         signature: Option<String>,
-        #[arg(short = 's', long = "sig", alias = "ticket", help = "Capability ticket signature or ID")]
+        #[arg(
+            short = 's',
+            long = "sig",
+            alias = "ticket",
+            help = "Capability ticket signature or ID"
+        )]
         signature_flag: Option<String>,
     },
     /// Batch delete multiple objects by key within a namespace
     #[command(name = "batch-delete", alias = "batch_delete")]
     BatchDelete {
-        #[arg(short = 'n', long = "ns", alias = "namespace", help = "Storage namespace (via -n/--ns or first positional argument)")]
+        #[arg(
+            short = 'n',
+            long = "ns",
+            alias = "namespace",
+            help = "Storage namespace (via -n/--ns or first positional argument)"
+        )]
         namespace: Option<String>,
         #[arg(help = "Namespace followed by object keys, or keys when using -n/--ns")]
         keys: Vec<String>,
@@ -1013,17 +1429,33 @@ pub enum BlobCommands {
     /// Re-enable a revoked capability ticket
     #[command(name = "enable-ticket", alias = "enable_ticket")]
     EnableTicket {
-        #[arg(value_name = "SIGNATURE", help = "Capability ticket signature to re-enable (positional or via -s/--sig)")]
+        #[arg(
+            value_name = "SIGNATURE",
+            help = "Capability ticket signature to re-enable (positional or via -s/--sig)"
+        )]
         signature: Option<String>,
-        #[arg(short = 's', long = "sig", alias = "ticket", help = "Capability ticket signature")]
+        #[arg(
+            short = 's',
+            long = "sig",
+            alias = "ticket",
+            help = "Capability ticket signature"
+        )]
         signature_flag: Option<String>,
     },
     /// Permanently delete a capability ticket
     #[command(name = "delete-ticket", alias = "delete_ticket")]
     DeleteTicket {
-        #[arg(value_name = "SIGNATURE", help = "Capability ticket signature or ID to permanently delete (positional or via -s/--sig)")]
+        #[arg(
+            value_name = "SIGNATURE",
+            help = "Capability ticket signature or ID to permanently delete (positional or via -s/--sig)"
+        )]
         signature: Option<String>,
-        #[arg(short = 's', long = "sig", alias = "ticket", help = "Capability ticket signature or ID")]
+        #[arg(
+            short = 's',
+            long = "sig",
+            alias = "ticket",
+            help = "Capability ticket signature or ID"
+        )]
         signature_flag: Option<String>,
     },
 }
@@ -1035,14 +1467,20 @@ pub enum BlobNsCommands {
     List,
     /// Inspect metadata and settings for a specific namespace
     Get {
-        #[arg(value_name = "NAME", help = "Namespace name (positional or via -n/--name)")]
+        #[arg(
+            value_name = "NAME",
+            help = "Namespace name (positional or via -n/--name)"
+        )]
         name: Option<String>,
         #[arg(short = 'n', long = "name", help = "Namespace name")]
         name_flag: Option<String>,
     },
     /// Query live storage quota headroom and consumption statistics
     Usage {
-        #[arg(value_name = "NAME", help = "Namespace name (positional or via -n/--name)")]
+        #[arg(
+            value_name = "NAME",
+            help = "Namespace name (positional or via -n/--name)"
+        )]
         name: Option<String>,
         #[arg(short = 'n', long = "name", help = "Namespace name")]
         name_flag: Option<String>,
@@ -1050,7 +1488,10 @@ pub enum BlobNsCommands {
     /// Create a new storage namespace
     #[command(alias = "add")]
     Create {
-        #[arg(value_name = "NAME", help = "Namespace name (positional or via -n/--name)")]
+        #[arg(
+            value_name = "NAME",
+            help = "Namespace name (positional or via -n/--name)"
+        )]
         name: Option<String>,
         #[arg(short = 'n', long = "name", help = "Namespace name")]
         name_flag: Option<String>,
@@ -1062,26 +1503,50 @@ pub enum BlobNsCommands {
             help = "Maximum storage quota in bytes (e.g. 1073741824 for 1GB)"
         )]
         max_bytes: Option<u64>,
-        #[arg(short = 'p', long = "public", help = "Expose namespace publicly without authentication")]
+        #[arg(
+            short = 'p',
+            long = "public",
+            help = "Expose namespace publicly without authentication"
+        )]
         public: bool,
     },
     /// Update an existing namespace quota, visibility, or rename it
     Update {
-        #[arg(value_name = "NAME", help = "Current namespace name (positional or via -n/--name)")]
+        #[arg(
+            value_name = "NAME",
+            help = "Current namespace name (positional or via -n/--name)"
+        )]
         name: Option<String>,
         #[arg(short = 'n', long = "name", help = "Current namespace name")]
         name_flag: Option<String>,
-        #[arg(short = 'N', long = "new-name", alias = "rename", help = "New namespace name")]
+        #[arg(
+            short = 'N',
+            long = "new-name",
+            alias = "rename",
+            help = "New namespace name"
+        )]
         new_name: Option<String>,
-        #[arg(short = 'b', long = "bytes", alias = "max-bytes", help = "New maximum storage quota in bytes (0 = unlimited)")]
+        #[arg(
+            short = 'b',
+            long = "bytes",
+            alias = "max-bytes",
+            help = "New maximum storage quota in bytes (0 = unlimited)"
+        )]
         max_bytes: Option<u64>,
-        #[arg(short = 'p', long = "public", help = "Update public visibility (true or false)")]
+        #[arg(
+            short = 'p',
+            long = "public",
+            help = "Update public visibility (true or false)"
+        )]
         public: Option<bool>,
     },
     /// Delete a namespace and all contained objects
     #[command(alias = "remove", alias = "rm")]
     Delete {
-        #[arg(value_name = "NAME", help = "Namespace name (positional or via -n/--name)")]
+        #[arg(
+            value_name = "NAME",
+            help = "Namespace name (positional or via -n/--name)"
+        )]
         name: Option<String>,
         #[arg(short = 'n', long = "name", help = "Namespace name")]
         name_flag: Option<String>,
@@ -1096,7 +1561,11 @@ pub enum McpCommands {
     Call {
         #[arg(value_name = "TOOL", help = "Tool name (positional or via -t/--tool)")]
         tool: Option<String>,
-        #[arg(short = 't', long = "tool", help = "Tool name (e.g. db_query, blob_list, db_schema)")]
+        #[arg(
+            short = 't',
+            long = "tool",
+            help = "Tool name (e.g. db_query, blob_list, db_schema)"
+        )]
         tool_flag: Option<String>,
         #[arg(
             short = 'a',
@@ -1109,7 +1578,12 @@ pub enum McpCommands {
     Resources,
     /// Run the stdio MCP bridge server for Claude Desktop, Cursor, or agent runtimes
     Serve {
-        #[arg(short = 's', long = "stdio", help = "Run in stdio mode (default)", default_value = "true")]
+        #[arg(
+            short = 's',
+            long = "stdio",
+            help = "Run in stdio mode (default)",
+            default_value = "true"
+        )]
         stdio: bool,
     },
 }
@@ -1144,15 +1618,31 @@ pub enum SetupCommands {
     },
     /// Register the first upstream database during setup
     Database {
-        #[arg(value_name = "ALIAS", help = "Database alias (positional or via -a/--alias)")]
+        #[arg(
+            value_name = "ALIAS",
+            help = "Database alias (positional or via -a/--alias)"
+        )]
         alias: Option<String>,
         #[arg(short = 'a', long = "alias", help = "Database alias")]
         alias_flag: Option<String>,
-        #[arg(value_name = "URL", help = "Database connection URL (positional or via -c/--conn)")]
+        #[arg(
+            value_name = "URL",
+            help = "Database connection URL (positional or via -c/--conn)"
+        )]
         url: Option<String>,
-        #[arg(short = 'c', long = "conn", alias = "connection-url", help = "Database connection URL")]
+        #[arg(
+            short = 'c',
+            long = "conn",
+            alias = "connection-url",
+            help = "Database connection URL"
+        )]
         url_flag: Option<String>,
-        #[arg(short = 'e', long = "engine", alias = "dialect", help = "Engine dialect")]
+        #[arg(
+            short = 'e',
+            long = "engine",
+            alias = "dialect",
+            help = "Engine dialect"
+        )]
         engine: Option<String>,
     },
     /// Finalize and permanently seal the setup wizard
@@ -1169,7 +1659,13 @@ mod tests {
         let cli = Cli::try_parse_from(args).expect("Failed to parse key create");
         match cli.command {
             Some(Commands::Key {
-                command: KeyCommands::Create { name, name_flag, role, .. },
+                command:
+                    KeyCommands::Create {
+                        name,
+                        name_flag,
+                        role,
+                        ..
+                    },
             }) => {
                 assert_eq!(name.or(name_flag).as_deref(), Some("app_key"));
                 assert_eq!(role.as_deref(), Some("readonly"));
@@ -1269,7 +1765,8 @@ mod tests {
             "-p",
             "pass456",
         ];
-        let cli_flags = Cli::try_parse_from(args_flags).expect("Failed to parse user add with flags");
+        let cli_flags =
+            Cli::try_parse_from(args_flags).expect("Failed to parse user add with flags");
         match cli_flags.command {
             Some(Commands::User {
                 command:
@@ -1395,7 +1892,12 @@ mod tests {
         let cli = Cli::try_parse_from(args).expect("Failed to parse db test-url");
         match cli.command {
             Some(Commands::Db {
-                command: DbCommands::TestUrl { url, url_flag, alias },
+                command:
+                    DbCommands::TestUrl {
+                        url,
+                        url_flag,
+                        alias,
+                    },
             }) => {
                 assert_eq!(url.or(url_flag).as_deref(), Some("sqlite://data/custom.db"));
                 assert!(alias.is_none());
@@ -1519,7 +2021,13 @@ mod tests {
         let cli = Cli::try_parse_from(args).expect("Failed to parse db tables");
         match cli.command {
             Some(Commands::Db {
-                command: DbCommands::Tables { alias, alias_flag, limit, .. },
+                command:
+                    DbCommands::Tables {
+                        alias,
+                        alias_flag,
+                        limit,
+                        ..
+                    },
             }) => {
                 assert_eq!(alias.or(alias_flag).as_deref(), Some("analytics_db"));
                 assert_eq!(limit, Some(50));
@@ -1531,7 +2039,13 @@ mod tests {
         let schema_cli = Cli::try_parse_from(schema_args).expect("Failed to parse db schema");
         match schema_cli.command {
             Some(Commands::Db {
-                command: DbCommands::Schema { alias, alias_flag, table, table_flag },
+                command:
+                    DbCommands::Schema {
+                        alias,
+                        alias_flag,
+                        table,
+                        table_flag,
+                    },
             }) => {
                 assert_eq!(alias.or(alias_flag).as_deref(), Some("analytics_db"));
                 assert_eq!(table.or(table_flag).as_deref(), Some("events"));
@@ -1725,7 +2239,11 @@ mod tests {
             Cli::try_parse_from(revoke_args).expect("Failed to parse blob revoke-ticket");
         match revoke_cli.command {
             Some(Commands::Blob {
-                command: BlobCommands::RevokeTicket { signature, signature_flag },
+                command:
+                    BlobCommands::RevokeTicket {
+                        signature,
+                        signature_flag,
+                    },
             }) => {
                 assert_eq!(signature.or(signature_flag).as_deref(), Some("sig_xyz_123"));
             }
@@ -1748,7 +2266,14 @@ mod tests {
                 command: BlobCommands::BatchDelete { namespace, keys },
             }) => {
                 assert!(namespace.is_none());
-                assert_eq!(keys, vec!["assets".to_string(), "file1.png".to_string(), "file2.png".to_string()]);
+                assert_eq!(
+                    keys,
+                    vec![
+                        "assets".to_string(),
+                        "file1.png".to_string(),
+                        "file2.png".to_string()
+                    ]
+                );
             }
             _ => panic!("Expected Blob BatchDelete command"),
         }
@@ -1762,8 +2287,8 @@ mod tests {
             "file1.png",
             "file2.png",
         ];
-        let batch_del_flag_cli =
-            Cli::try_parse_from(batch_del_flag_args).expect("Failed to parse blob batch-delete with -n");
+        let batch_del_flag_cli = Cli::try_parse_from(batch_del_flag_args)
+            .expect("Failed to parse blob batch-delete with -n");
         match batch_del_flag_cli.command {
             Some(Commands::Blob {
                 command: BlobCommands::BatchDelete { namespace, keys },
@@ -1779,7 +2304,11 @@ mod tests {
             Cli::try_parse_from(enable_ticket_args).expect("Failed to parse enable-ticket");
         match enable_cli.command {
             Some(Commands::Blob {
-                command: BlobCommands::EnableTicket { signature, signature_flag },
+                command:
+                    BlobCommands::EnableTicket {
+                        signature,
+                        signature_flag,
+                    },
             }) => {
                 assert_eq!(signature.or(signature_flag).as_deref(), Some("sig_xyz_123"));
             }
@@ -1791,7 +2320,11 @@ mod tests {
             Cli::try_parse_from(delete_ticket_args).expect("Failed to parse delete-ticket");
         match del_cli.command {
             Some(Commands::Blob {
-                command: BlobCommands::DeleteTicket { signature, signature_flag },
+                command:
+                    BlobCommands::DeleteTicket {
+                        signature,
+                        signature_flag,
+                    },
             }) => {
                 assert_eq!(signature.or(signature_flag).as_deref(), Some("sig_xyz_123"));
             }
@@ -1869,7 +2402,12 @@ mod tests {
         let call_cli = Cli::try_parse_from(call_args).expect("Failed to parse mcp call");
         match call_cli.command {
             Some(Commands::Mcp {
-                command: McpCommands::Call { tool, tool_flag, args },
+                command:
+                    McpCommands::Call {
+                        tool,
+                        tool_flag,
+                        args,
+                    },
             }) => {
                 assert_eq!(tool.or(tool_flag).as_deref(), Some("db_query"));
                 assert_eq!(
@@ -1911,7 +2449,11 @@ mod tests {
         let login_args = ["axiom", "login", "admin", "-p", "mypassword123"];
         let login_cli = Cli::try_parse_from(login_args).expect("Failed to parse login");
         match login_cli.command {
-            Some(Commands::Login { username, user, password }) => {
+            Some(Commands::Login {
+                username,
+                user,
+                password,
+            }) => {
                 assert_eq!(username.or(user), Some("admin".to_string()));
                 assert_eq!(password, Some("mypassword123".to_string()));
             }
@@ -1920,9 +2462,14 @@ mod tests {
 
         // Test login with -u flag
         let login_flag_args = ["axiom", "login", "-u", "admin_flag", "-p", "pass123"];
-        let login_flag_cli = Cli::try_parse_from(login_flag_args).expect("Failed to parse login with -u");
+        let login_flag_cli =
+            Cli::try_parse_from(login_flag_args).expect("Failed to parse login with -u");
         match login_flag_cli.command {
-            Some(Commands::Login { username, user, password }) => {
+            Some(Commands::Login {
+                username,
+                user,
+                password,
+            }) => {
                 assert_eq!(username.or(user), Some("admin_flag".to_string()));
                 assert_eq!(password, Some("pass123".to_string()));
             }
@@ -1940,7 +2487,13 @@ mod tests {
         let setup_cli = Cli::try_parse_from(setup_args).expect("Failed to parse setup account");
         match setup_cli.command {
             Some(Commands::Setup {
-                command: Some(SetupCommands::Account { username, user, email: _, password }),
+                command:
+                    Some(SetupCommands::Account {
+                        username,
+                        user,
+                        email: _,
+                        password,
+                    }),
             }) => {
                 assert_eq!(username.or(user), Some("superadmin".to_string()));
                 assert_eq!(password, Some("longsecretpass".to_string()));
@@ -1960,10 +2513,17 @@ mod tests {
             "-p",
             "flagpass789",
         ];
-        let setup_flag_cli = Cli::try_parse_from(setup_flag_args).expect("Failed to parse setup account with flags");
+        let setup_flag_cli =
+            Cli::try_parse_from(setup_flag_args).expect("Failed to parse setup account with flags");
         match setup_flag_cli.command {
             Some(Commands::Setup {
-                command: Some(SetupCommands::Account { username, user, email, password }),
+                command:
+                    Some(SetupCommands::Account {
+                        username,
+                        user,
+                        email,
+                        password,
+                    }),
             }) => {
                 assert_eq!(username.or(user), Some("superadmin_flag".to_string()));
                 assert_eq!(email, Some("super@axiom.local".to_string()));
@@ -2016,9 +2576,17 @@ mod tests {
         let cli = Cli::try_parse_from(args).expect("Failed to parse cluster connect");
         match cli.command {
             Some(Commands::Cluster {
-                command: ClusterCommands::Connect { target_url, url_flag, secret },
+                command:
+                    ClusterCommands::Connect {
+                        target_url,
+                        url_flag,
+                        secret,
+                    },
             }) => {
-                assert_eq!(target_url.or(url_flag).as_deref(), Some("http://10.0.0.2:4500"));
+                assert_eq!(
+                    target_url.or(url_flag).as_deref(),
+                    Some("http://10.0.0.2:4500")
+                );
                 assert_eq!(secret, "shared_secret_123");
             }
             _ => panic!("Expected Cluster Connect command"),
@@ -2095,9 +2663,16 @@ mod tests {
         let cli = Cli::try_parse_from(args).expect("Failed to parse cluster moniker");
         match cli.command {
             Some(Commands::Cluster {
-                command: ClusterCommands::Moniker { moniker, moniker_flag },
+                command:
+                    ClusterCommands::Moniker {
+                        moniker,
+                        moniker_flag,
+                    },
             }) => {
-                assert_eq!(moniker.or(moniker_flag).as_deref(), Some("local-gateway-primary"));
+                assert_eq!(
+                    moniker.or(moniker_flag).as_deref(),
+                    Some("local-gateway-primary")
+                );
             }
             _ => panic!("Expected Cluster Moniker command"),
         }
@@ -2433,8 +3008,8 @@ mod tests {
             })
         ));
 
-        let cli = Cli::try_parse_from(["axiom", "blob", "ns", "rm", "old_ns"])
-            .expect("parse blob ns rm");
+        let cli =
+            Cli::try_parse_from(["axiom", "blob", "ns", "rm", "old_ns"]).expect("parse blob ns rm");
         assert!(matches!(
             cli.command,
             Some(Commands::Blob {
@@ -2470,8 +3045,8 @@ mod tests {
             })
         ));
 
-        let cli = Cli::try_parse_from(["axiom", "cluster", "rm", "node_99"])
-            .expect("parse cluster rm");
+        let cli =
+            Cli::try_parse_from(["axiom", "cluster", "rm", "node_99"]).expect("parse cluster rm");
         assert!(matches!(
             cli.command,
             Some(Commands::Cluster {
