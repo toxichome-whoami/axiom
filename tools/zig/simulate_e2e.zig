@@ -454,35 +454,35 @@ pub fn main() !void {
         if (rc_ul != 0) return error.CliUserListFailed;
         logPass("CLI: axiom user list --json executed successfully");
 
-        const rc_dl = try executeCli(allocator, try std.fmt.allocPrint(allocator, "-u http://127.0.0.1:4598 -k {s} db list --json", .{active_token}));
+        const rc_dl = try executeCli(allocator, try std.fmt.allocPrint(allocator, "--url http://127.0.0.1:4598 -k {s} db list --json", .{active_token}));
         if (rc_dl != 0) return error.CliDbListFailed;
         logPass("CLI: axiom db list --json executed successfully");
 
-        const rc_rl = try executeCli(allocator, try std.fmt.allocPrint(allocator, "-u http://127.0.0.1:4598 -k {s} role list --json", .{active_token}));
+        const rc_rl = try executeCli(allocator, try std.fmt.allocPrint(allocator, "--url http://127.0.0.1:4598 -k {s} role list --json", .{active_token}));
         if (rc_rl != 0) return error.CliRoleListFailed;
         logPass("CLI: axiom role list --json executed successfully");
 
-        const rc_kl = try executeCli(allocator, try std.fmt.allocPrint(allocator, "-u http://127.0.0.1:4598 -k {s} key list --json", .{active_token}));
+        const rc_kl = try executeCli(allocator, try std.fmt.allocPrint(allocator, "--url http://127.0.0.1:4598 -k {s} key list --json", .{active_token}));
         if (rc_kl != 0) return error.CliKeyListFailed;
         logPass("CLI: axiom key list --json executed successfully");
 
-        const rc_cs = try executeCli(allocator, try std.fmt.allocPrint(allocator, "-u http://127.0.0.1:4598 -k {s} cache stats --json", .{active_token}));
+        const rc_cs = try executeCli(allocator, try std.fmt.allocPrint(allocator, "--url http://127.0.0.1:4598 -k {s} cache stats --json", .{active_token}));
         if (rc_cs != 0) return error.CliCacheStatsFailed;
         logPass("CLI: axiom cache stats --json executed successfully");
 
-        const rc_cf = try executeCli(allocator, try std.fmt.allocPrint(allocator, "-u http://127.0.0.1:4598 -k {s} cache flush", .{active_token}));
+        const rc_cf = try executeCli(allocator, try std.fmt.allocPrint(allocator, "--url http://127.0.0.1:4598 -k {s} cache flush", .{active_token}));
         if (rc_cf != 0) return error.CliCacheFlushFailed;
         logPass("CLI: axiom cache flush executed successfully");
 
-        const rc_cls = try executeCli(allocator, try std.fmt.allocPrint(allocator, "-u http://127.0.0.1:4598 -k {s} cluster status --json", .{active_token}));
+        const rc_cls = try executeCli(allocator, try std.fmt.allocPrint(allocator, "--url http://127.0.0.1:4598 -k {s} cluster status --json", .{active_token}));
         if (rc_cls != 0) return error.CliClusterStatusFailed;
         logPass("CLI: axiom cluster status --json executed successfully");
 
-        const rc_clp = try executeCli(allocator, try std.fmt.allocPrint(allocator, "-u http://127.0.0.1:4598 -k {s} cluster peers --json", .{active_token}));
+        const rc_clp = try executeCli(allocator, try std.fmt.allocPrint(allocator, "--url http://127.0.0.1:4598 -k {s} cluster peers --json", .{active_token}));
         if (rc_clp != 0) return error.CliClusterPeersFailed;
         logPass("CLI: axiom cluster peers --json executed successfully");
 
-        const rc_bns = try executeCli(allocator, try std.fmt.allocPrint(allocator, "-u http://127.0.0.1:4598 -k {s} blob ns list", .{active_token}));
+        const rc_bns = try executeCli(allocator, try std.fmt.allocPrint(allocator, "--url http://127.0.0.1:4598 -k {s} blob ns list", .{active_token}));
         if (rc_bns != 0) return error.CliBlobNsListFailed;
         logPass("CLI: axiom blob ns list executed successfully");
 

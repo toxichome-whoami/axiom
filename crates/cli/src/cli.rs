@@ -213,9 +213,28 @@ pub async fn run() -> Result<bool, Box<dyn std::error::Error>> {
             Ok(true)
         }
 
-        Some(Commands::Login { username, password }) => {
+        Some(Commands::Login {
+            username,
+            user,
+            password,
+        }) => {
             let client = AdminClient::new(&cli.url, cli.key);
-            handle_login_command(client, username, password, format).await?;
+            let effective_username = match username.or(user) {
+                Some(u) if !u.trim().is_empty() => u,
+                _ => {
+                    use std::io::{stdin, stderr, Write};
+                    eprint!("Enter admin username: ");
+                    let _ = stderr().flush();
+                    let mut buf = String::new();
+                    stdin().read_line(&mut buf)?;
+                    let trimmed = buf.trim();
+                    if trimmed.is_empty() {
+                        return Err("Admin username cannot be empty".into());
+                    }
+                    trimmed.to_string()
+                }
+            };
+            handle_login_command(client, effective_username, password, format).await?;
             Ok(true)
         }
 
@@ -395,10 +414,27 @@ async fn handle_user_command(
     match command {
         UserCommands::Add {
             username,
+            user,
             email,
             password,
             ..
         } => {
+            let username = match username.or(user) {
+                Some(u) if !u.trim().is_empty() => u,
+                _ => {
+                    use std::io::Write;
+                    eprint!("Enter username for new admin: ");
+                    let _ = std::io::stderr().flush();
+                    let mut buf = String::new();
+                    std::io::stdin().read_line(&mut buf)?;
+                    let trimmed = buf.trim();
+                    if trimmed.is_empty() {
+                        return Err("Username cannot be empty".into());
+                    }
+                    trimmed.to_string()
+                }
+            };
+
             let email_val = match email {
                 Some(e) if !e.trim().is_empty() => Some(e),
                 _ if std::io::stdout().is_terminal() => {
@@ -447,10 +483,27 @@ async fn handle_user_command(
 
         UserCommands::Update {
             username,
+            user,
             email,
             password,
             ..
         } => {
+            let username = match username.or(user) {
+                Some(u) if !u.trim().is_empty() => u,
+                _ => {
+                    use std::io::Write;
+                    eprint!("Enter admin username to update: ");
+                    let _ = std::io::stderr().flush();
+                    let mut buf = String::new();
+                    std::io::stdin().read_line(&mut buf)?;
+                    let trimmed = buf.trim();
+                    if trimmed.is_empty() {
+                        return Err("Username cannot be empty".into());
+                    }
+                    trimmed.to_string()
+                }
+            };
+
             let pass_input = match password {
                 Some(p) if !p.trim().is_empty() => Some(p),
                 _ if email.is_none() => {
@@ -526,7 +579,23 @@ async fn handle_user_command(
             }
         }
 
-        UserCommands::Remove { username, .. } => {
+        UserCommands::Remove { username, user, .. } => {
+            let username = match username.or(user) {
+                Some(u) if !u.trim().is_empty() => u,
+                _ => {
+                    use std::io::Write;
+                    eprint!("Enter admin username to delete: ");
+                    let _ = std::io::stderr().flush();
+                    let mut buf = String::new();
+                    std::io::stdin().read_line(&mut buf)?;
+                    let trimmed = buf.trim();
+                    if trimmed.is_empty() {
+                        return Err("Username cannot be empty".into());
+                    }
+                    trimmed.to_string()
+                }
+            };
+
             let deleted = MetadataStore::delete_user(&username)
                 .await
                 .map_err(|e| format!("Failed to delete user: {}", e))?;
@@ -3396,7 +3465,29 @@ async fn handle_setup_command(
             }
         }
 
-        Some(SetupCommands::Account { username, email, password }) => {
+        Some(SetupCommands::Account {
+            username,
+            user,
+            email,
+            password,
+        }) => {
+            let username = match username.or(user) {
+                Some(u) if !u.trim().is_empty() => u,
+                _ => {
+                    use std::io::Write;
+                    eprint!("Enter username for new admin [admin]: ");
+                    let _ = std::io::stderr().flush();
+                    let mut buf = String::new();
+                    std::io::stdin().read_line(&mut buf)?;
+                    let trimmed = buf.trim();
+                    if trimmed.is_empty() {
+                        "admin".to_string()
+                    } else {
+                        trimmed.to_string()
+                    }
+                }
+            };
+
             let pass = match password {
                 Some(p) if !p.is_empty() => p,
                 _ => {

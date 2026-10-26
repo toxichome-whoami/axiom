@@ -72,7 +72,7 @@ Options:
 )]
 pub struct Cli {
     #[arg(
-        short,
+        short = 'U',
         long,
         global = true,
         default_value = "http://127.0.0.1:4500",
@@ -143,11 +143,22 @@ pub enum Commands {
 
     /// Authenticate administrative credentials and issue a session token
     Login {
-        #[arg(help = "Admin username")]
-        username: String,
         #[arg(
-            short,
-            long,
+            value_name = "USERNAME",
+            help = "Admin username (positional or via -u/--user)"
+        )]
+        username: Option<String>,
+        #[arg(
+            short = 'u',
+            long = "user",
+            alias = "username",
+            help = "Admin username"
+        )]
+        user: Option<String>,
+        #[arg(
+            short = 'p',
+            long = "password",
+            alias = "pass",
             help = "Admin password (if omitted, interactive prompt is used)"
         )]
         password: Option<String>,
@@ -363,46 +374,78 @@ pub enum UserCommands {
     /// Create a new administrative human user
     #[command(alias = "create")]
     Add {
-        #[arg(help = "Admin username")]
-        username: String,
-        #[arg(short, long, help = "Admin email address")]
+        #[arg(
+            value_name = "USERNAME",
+            help = "Admin username (positional or via -u/--user)"
+        )]
+        username: Option<String>,
+        #[arg(
+            short = 'u',
+            long = "user",
+            alias = "username",
+            help = "Admin username"
+        )]
+        user: Option<String>,
+        #[arg(short = 'e', long = "email", help = "Admin email address")]
         email: Option<String>,
         #[arg(
-            short,
-            long,
+            short = 'p',
+            long = "password",
+            alias = "pass",
             help = "Password (if omitted, interactive prompt is used)"
         )]
         password: Option<String>,
-        #[arg(short, long, help = "Path to config file")]
+        #[arg(short = 'c', long = "config", help = "Path to config file")]
         config: Option<String>,
     },
     /// Update an administrative user's email or password
     Update {
-        #[arg(help = "Admin username to update")]
-        username: String,
-        #[arg(short, long, help = "Updated admin email address")]
+        #[arg(
+            value_name = "USERNAME",
+            help = "Admin username to update (positional or via -u/--user)"
+        )]
+        username: Option<String>,
+        #[arg(
+            short = 'u',
+            long = "user",
+            alias = "username",
+            help = "Admin username to update"
+        )]
+        user: Option<String>,
+        #[arg(short = 'e', long = "email", help = "Updated admin email address")]
         email: Option<String>,
         #[arg(
-            short,
-            long,
+            short = 'p',
+            long = "password",
+            alias = "pass",
             help = "Updated password (if omitted and --email is omitted, prompt is shown)"
         )]
         password: Option<String>,
-        #[arg(short, long, help = "Path to config file")]
+        #[arg(short = 'c', long = "config", help = "Path to config file")]
         config: Option<String>,
     },
     /// List all administrative users
     #[command(alias = "ls")]
     List {
-        #[arg(short, long, help = "Path to config file")]
+        #[arg(short = 'c', long = "config", help = "Path to config file")]
         config: Option<String>,
     },
     /// Delete/remove an administrative user
     #[command(alias = "delete", alias = "rm")]
     Remove {
-        #[arg(help = "Admin username to delete")]
-        username: String,
-        #[arg(short, long, help = "Path to config file")]
+        #[arg(
+            value_name = "USERNAME",
+            help = "Admin username to delete (positional or via -u/--user)"
+        )]
+        username: Option<String>,
+        #[arg(
+            short = 'u',
+            long = "user",
+            alias = "username",
+            help = "Admin username to delete"
+        )]
+        user: Option<String>,
+        #[arg(short = 'c', long = "config", help = "Path to config file")]
         config: Option<String>,
     },
 }
@@ -925,13 +968,24 @@ pub enum SetupCommands {
     Begin,
     /// Create the primary admin account
     Account {
-        #[arg(help = "Admin username")]
-        username: String,
-        #[arg(short, long, help = "Admin email address")]
+        #[arg(
+            value_name = "USERNAME",
+            help = "Admin username (positional or via -u/--user)"
+        )]
+        username: Option<String>,
+        #[arg(
+            short = 'u',
+            long = "user",
+            alias = "username",
+            help = "Admin username"
+        )]
+        user: Option<String>,
+        #[arg(short = 'e', long = "email", help = "Admin email address")]
         email: Option<String>,
         #[arg(
-            short,
-            long,
+            short = 'p',
+            long = "password",
+            alias = "pass",
             help = "Admin password (if omitted, interactive prompt is used)"
         )]
         password: Option<String>,
@@ -1033,16 +1087,48 @@ mod tests {
                 command:
                     UserCommands::Add {
                         username,
+                        user,
                         email,
                         password,
                         ..
                     },
             }) => {
-                assert_eq!(username, "ops_admin");
+                assert_eq!(username.or(user), Some("ops_admin".to_string()));
                 assert_eq!(email, Some("ops@axiom.local".to_string()));
                 assert_eq!(password, Some("secret123".to_string()));
             }
             _ => panic!("Expected User Add command"),
+        }
+
+        // Test with short flags -u -e -p
+        let args_flags = [
+            "axiom",
+            "user",
+            "add",
+            "-u",
+            "flag_user",
+            "-e",
+            "flag@axiom.local",
+            "-p",
+            "pass456",
+        ];
+        let cli_flags = Cli::try_parse_from(args_flags).expect("Failed to parse user add with flags");
+        match cli_flags.command {
+            Some(Commands::User {
+                command:
+                    UserCommands::Add {
+                        username,
+                        user,
+                        email,
+                        password,
+                        ..
+                    },
+            }) => {
+                assert_eq!(username.or(user), Some("flag_user".to_string()));
+                assert_eq!(email, Some("flag@axiom.local".to_string()));
+                assert_eq!(password, Some("pass456".to_string()));
+            }
+            _ => panic!("Expected User Add command with flags"),
         }
     }
 
@@ -1633,11 +1719,22 @@ mod tests {
         let login_args = ["axiom", "login", "admin", "-p", "mypassword123"];
         let login_cli = Cli::try_parse_from(login_args).expect("Failed to parse login");
         match login_cli.command {
-            Some(Commands::Login { username, password }) => {
-                assert_eq!(username, "admin");
+            Some(Commands::Login { username, user, password }) => {
+                assert_eq!(username.or(user), Some("admin".to_string()));
                 assert_eq!(password, Some("mypassword123".to_string()));
             }
             _ => panic!("Expected Login command"),
+        }
+
+        // Test login with -u flag
+        let login_flag_args = ["axiom", "login", "-u", "admin_flag", "-p", "pass123"];
+        let login_flag_cli = Cli::try_parse_from(login_flag_args).expect("Failed to parse login with -u");
+        match login_flag_cli.command {
+            Some(Commands::Login { username, user, password }) => {
+                assert_eq!(username.or(user), Some("admin_flag".to_string()));
+                assert_eq!(password, Some("pass123".to_string()));
+            }
+            _ => panic!("Expected Login command with -u"),
         }
 
         let setup_args = [
@@ -1651,12 +1748,36 @@ mod tests {
         let setup_cli = Cli::try_parse_from(setup_args).expect("Failed to parse setup account");
         match setup_cli.command {
             Some(Commands::Setup {
-                command: Some(SetupCommands::Account { username, email: _, password }),
+                command: Some(SetupCommands::Account { username, user, email: _, password }),
             }) => {
-                assert_eq!(username, "superadmin");
+                assert_eq!(username.or(user), Some("superadmin".to_string()));
                 assert_eq!(password, Some("longsecretpass".to_string()));
             }
             _ => panic!("Expected Setup Account command"),
+        }
+
+        // Test setup account with -u and -e and -p
+        let setup_flag_args = [
+            "axiom",
+            "setup",
+            "account",
+            "-u",
+            "superadmin_flag",
+            "-e",
+            "super@axiom.local",
+            "-p",
+            "flagpass789",
+        ];
+        let setup_flag_cli = Cli::try_parse_from(setup_flag_args).expect("Failed to parse setup account with flags");
+        match setup_flag_cli.command {
+            Some(Commands::Setup {
+                command: Some(SetupCommands::Account { username, user, email, password }),
+            }) => {
+                assert_eq!(username.or(user), Some("superadmin_flag".to_string()));
+                assert_eq!(email, Some("super@axiom.local".to_string()));
+                assert_eq!(password, Some("flagpass789".to_string()));
+            }
+            _ => panic!("Expected Setup Account command with flags"),
         }
     }
 
@@ -1840,12 +1961,13 @@ mod tests {
                 command:
                     UserCommands::Update {
                         username,
+                        user,
                         email,
                         password,
                         ..
                     },
             }) => {
-                assert_eq!(username, "alice");
+                assert_eq!(username.or(user), Some("alice".to_string()));
                 assert_eq!(email, Some("new_alice@example.com".to_string()));
                 assert_eq!(password, Some("newpass123".to_string()));
             }
