@@ -489,7 +489,13 @@ async fn handle_user_command(
 
             MetadataStore::create_user(&username, email_val.as_deref(), &pass)
                 .await
-                .map_err(|e| format!("User creation failed: {}", e))?;
+                .map_err(|e| {
+                    if e.contains("already exists") {
+                        format!("{}. Use 'axiom user update {} -p <PASS>' to update its password, or choose a different username.", e, username)
+                    } else {
+                        format!("User creation failed: {}", e)
+                    }
+                })?;
 
             let res = json!({
                 "success": true,

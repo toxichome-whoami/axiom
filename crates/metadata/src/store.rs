@@ -1169,7 +1169,16 @@ impl MetadataStore {
             libsql::params![clean_username, clean_email, password_hash.as_str(), now_unix],
         )
         .await
-        .map_err(|e| format!("Failed to create user: {}", e))?;
+        .map_err(|e| {
+            let err_str = e.to_string();
+            if err_str.contains("UNIQUE constraint failed: users.username") {
+                format!("User '{}' already exists", clean_username)
+            } else if err_str.contains("UNIQUE constraint failed: users.email") {
+                "An account with this email address already exists".to_string()
+            } else {
+                format!("Failed to create user: {}", e)
+            }
+        })?;
 
         let _ = conn
             .execute(

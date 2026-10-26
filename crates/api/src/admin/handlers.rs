@@ -1356,11 +1356,12 @@ pub async fn setup_account(
     MetadataStore::create_user(&payload.username, clean_email, &payload.password)
         .await
         .map_err(|e| {
-            AxiomError::new(
-                "USER_CREATION_FAILED",
-                &e,
-                StatusCode::INTERNAL_SERVER_ERROR,
-            )
+            let status = if e.contains("already exists") {
+                StatusCode::CONFLICT
+            } else {
+                StatusCode::INTERNAL_SERVER_ERROR
+            };
+            AxiomError::new("USER_CREATION_FAILED", &e, status)
         })?;
 
     let session_id = MetadataStore::create_session(&payload.username, SETUP_SESSION_TTL_SECS)
