@@ -93,6 +93,11 @@ fn map_blob_error(err: BlobError) -> AxiomError {
             &format!("Upload offset mismatch: expected offset {}, but received {}", expected, actual),
             StatusCode::CONFLICT,
         ),
+        BlobError::InsufficientStorage(msg) => AxiomError::new(
+            "INSUFFICIENT_STORAGE",
+            &format!("Host filesystem out of disk space: {}", msg),
+            StatusCode::INSUFFICIENT_STORAGE,
+        ),
         BlobError::Io(msg) => AxiomError::new(
             "STORAGE_IO_ERROR",
             &format!("Storage I/O error: {}", msg),
@@ -300,12 +305,24 @@ pub async fn get_blob_handler(
         .map(|q| q.contains("inline=1") || q.contains("inline=true"))
         .unwrap_or(false);
 
-    let is_media = is_inline
-        || meta.content_type.starts_with("video/")
-        || meta.content_type.starts_with("audio/")
-        || meta.content_type.starts_with("image/");
+    // SECURITY (SEC-3.2 / XSS): Active or executable file formats (HTML, SVG, XML, scripts)
+    // MUST NEVER be rendered inline in the browser origin to prevent stored XSS attacks.
+    let is_dangerous_type = meta.content_type.contains("html")
+        || meta.content_type.contains("xml")
+        || meta.content_type.contains("svg")
+        || meta.content_type.contains("javascript")
+        || meta.content_type.contains("json")
+        || meta.content_type.contains("x-sh")
+        || meta.content_type.contains("x-executable");
 
-    let disposition = if is_inline || is_media {
+    let is_safe_media = !is_dangerous_type
+        && (meta.content_type.starts_with("video/")
+            || meta.content_type.starts_with("audio/")
+            || (meta.content_type.starts_with("image/") && !meta.content_type.contains("svg")));
+
+    let is_media = is_safe_media || (is_inline && !is_dangerous_type);
+
+    let disposition = if is_media {
         format!("inline; filename=\"{}\"", safe_filename)
     } else {
         format!("attachment; filename=\"{}\"", safe_filename)
@@ -3096,5 +3113,13 @@ mod tests {
             Some("application/pdf")
         );
         assert_eq!(upload_link_req.ttl_seconds, Some(3600));
+    }
+
+    #[test]
+    fn test_map_blob_error_insufficient_storage() {
+        let err = BlobError::InsufficientStorage("disk full".to_string());
+        let axiom_err = map_blob_error(err);
+        assert_eq!(axiom_err.status, StatusCode::INSUFFICIENT_STORAGE);
+        assert_eq!(axiom_err.code, "INSUFFICIENT_STORAGE");
     }
 }

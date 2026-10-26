@@ -176,3 +176,52 @@ pub struct DeleteObjectsResult {
     pub deleted: Vec<String>,
     pub errors: Vec<(String, String)>,
 }
+
+/// Infers the canonical MIME media type from the object key file extension.
+/// Prevents generic octet-stream falling through when serving web assets and media.
+pub fn infer_mime_type_from_key(key: &str) -> &'static str {
+    let ext = key.rsplit('.').next().unwrap_or("").to_ascii_lowercase();
+    match ext.as_str() {
+        "jpg" | "jpeg" => "image/jpeg",
+        "png" => "image/png",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "avif" => "image/avif",
+        "bmp" => "image/bmp",
+        "tiff" | "tif" => "image/tiff",
+        "svg" => "image/svg+xml",
+        "mp4" => "video/mp4",
+        "webm" => "video/webm",
+        "mov" => "video/quicktime",
+        "mkv" => "video/x-matroska",
+        "mp3" => "audio/mpeg",
+        "wav" => "audio/wav",
+        "ogg" => "audio/ogg",
+        "flac" => "audio/flac",
+        "aac" => "audio/aac",
+        "m4a" => "audio/mp4",
+        "pdf" => "application/pdf",
+        "json" => "application/json",
+        "txt" => "text/plain; charset=utf-8",
+        "csv" => "text/csv; charset=utf-8",
+        "html" | "htm" => "text/html; charset=utf-8",
+        "xml" => "application/xml",
+        "wasm" => "application/wasm",
+        _ => "application/octet-stream",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_infer_mime_type() {
+        assert_eq!(infer_mime_type_from_key("photo.jpg"), "image/jpeg");
+        assert_eq!(infer_mime_type_from_key("avatar.PNG"), "image/png");
+        assert_eq!(infer_mime_type_from_key("movie.mp4"), "video/mp4");
+        assert_eq!(infer_mime_type_from_key("audio.mp3"), "audio/mpeg");
+        assert_eq!(infer_mime_type_from_key("vector.svg"), "image/svg+xml");
+        assert_eq!(infer_mime_type_from_key("no_ext"), "application/octet-stream");
+    }
+}
