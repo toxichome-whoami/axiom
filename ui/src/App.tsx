@@ -225,7 +225,7 @@ export function App() {
       case "/system/cluster":
         return { title: "Cluster Mesh", component: <Cluster /> };
       case "/system/users":
-        return { title: "Administrators & Access", component: <Users /> };
+        return { title: "Users", component: <Users /> };
 
       case "/system/keys":
         return { title: "API Keys", component: <Keys /> };

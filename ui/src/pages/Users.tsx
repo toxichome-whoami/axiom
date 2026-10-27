@@ -9,6 +9,7 @@
  */
 
 import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import { createPortal } from "react-dom";
 import {
   UserRecordApi,
   UserPermissionSet,
@@ -22,6 +23,9 @@ import { DataTable, Column } from "../components/shared/DataTable";
 import { SlideOver } from "../components/ui/SlideOver";
 import { Button } from "../components/ui/Button";
 import { ConfirmDialog } from "../components/ui/ConfirmDialog";
+import { Skeleton } from "../components/ui/Skeleton";
+import { CustomSelect } from "../components/shared/CustomSelect";
+import { FilterRule, matchesRule } from "../utils/filters";
 import {
   Users as UsersIcon,
   Plus,
@@ -33,7 +37,6 @@ import {
   HardDrive,
   Lock,
   Trash2,
-  Edit2,
   Key,
   Activity,
   Sliders,
@@ -41,7 +44,6 @@ import {
   AlertTriangle,
   Info,
   Check,
-  Sparkles,
 } from "lucide-react";
 
 interface CapabilityGroup {
@@ -106,13 +108,13 @@ const CAPABILITY_GROUPS: CapabilityGroup[] = [
   },
   {
     id: "users",
-    name: "Administrators",
+    name: "Users",
     icon: UsersIcon,
     permissions: [
-      { id: "users.view", label: "View", description: "List administrative user accounts and assignments" },
-      { id: "users.create", label: "Create", description: "Provision new administrative accounts" },
+      { id: "users.view", label: "View", description: "List user accounts and assignments" },
+      { id: "users.create", label: "Create", description: "Provision new user accounts" },
       { id: "users.update", label: "Update", description: "Modify operator credentials and PBAC permissions" },
-      { id: "users.delete", label: "Delete", description: "Remove administrative accounts" },
+      { id: "users.delete", label: "Delete", description: "Remove user accounts" },
     ],
   },
   {
@@ -131,21 +133,70 @@ const ALL_SYSTEM_PERMS = CAPABILITY_GROUPS.flatMap((g) => g.permissions.map((p) 
 const DB_OPERATIONS = ["SELECT", "INSERT", "UPDATE", "DELETE", "DDL"];
 const BLOB_OPERATIONS = ["READ", "WRITE", "DELETE", "MANAGE_NS"];
 
-function getMonogramColor(str: string): string {
-  const colors = [
-    "from-blue-600 to-indigo-700",
-    "from-emerald-600 to-teal-700",
-    "from-purple-600 to-violet-700",
-    "from-amber-600 to-orange-700",
-    "from-cyan-600 to-blue-700",
-    "from-rose-600 to-pink-700",
-  ];
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    hash = str.charCodeAt(i) + ((hash << 5) - hash);
+const filterFieldOptions = [
+  { value: "username", label: "Username" },
+  { value: "email", label: "Email" },
+  { value: "role", label: "Access Level" },
+];
+
+const displayColumnOptions = [
+  { id: "username", label: "Username" },
+  { id: "email", label: "Email" },
+  { id: "permissions", label: "Permissions" },
+  { id: "createdAt", label: "Creation Date" },
+  { id: "updatedAt", label: "Last Update Date" },
+];
+
+function formatDate(epochSec?: number): string {
+  if (!epochSec || epochSec <= 0) return "—";
+  return new Date(epochSec * 1000).toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+}
+
+function resolveDependencies(perms: UserPermissionSet): UserPermissionSet {
+  const sys = new Set(perms.system || []);
+
+  // Database dependencies: any db rule or mutation requires db.view
+  const hasDbRules = Boolean(perms.databases && perms.databases.length > 0);
+  const hasDbOps = sys.has("db.create") || sys.has("db.update") || hasDbRules;
+  if (hasDbOps) {
+    sys.add("db.view");
   }
-  const idx = Math.abs(hash) % colors.length;
-  return colors[idx];
+
+  // Blob dependencies: any blob rule or mutation requires blob.view
+  const hasBlobRules = Boolean(perms.blobs && perms.blobs.length > 0);
+  const hasBlobOps = sys.has("blob.create") || sys.has("blob.delete") || hasBlobRules;
+  if (hasBlobOps) {
+    sys.add("blob.view");
+  }
+
+  // Users module dependencies
+  if (sys.has("users.create") || sys.has("users.update") || sys.has("users.delete")) {
+    sys.add("users.view");
+  }
+
+  // Roles module dependencies
+  if (sys.has("roles.create") || sys.has("roles.update") || sys.has("roles.delete")) {
+    sys.add("roles.view");
+  }
+
+  // Keys module dependencies
+  if (sys.has("keys.create") || sys.has("keys.update") || sys.has("keys.delete")) {
+    sys.add("keys.view");
+  }
+
+  // Cluster module dependencies
+  if (sys.has("cluster.manage")) {
+    sys.add("cluster.view");
+  }
+
+  return {
+    ...perms,
+    system: Array.from(sys),
+  };
 }
 
 export function Users() {
@@ -156,15 +207,95 @@ export function Users() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Search & Filter State
+  // Search, Filters & Display Options State
   const [searchQuery, setSearchQuery] = useState("");
-  const [filterTab, setFilterTab] = useState<"all" | "root" | "pbac">("all");
+  const [showFilters, setShowFilters] = useState(false);
+  const filtersRef = useRef<HTMLDivElement | null>(null);
+
+  const [showDisplayOptions, setShowDisplayOptions] = useState(false);
+  const displayOptionsRef = useRef<HTMLDivElement | null>(null);
+
+  const [matchMode, setMatchMode] = useState<"all" | "any">("all");
+  const [filterRules, setFilterRules] = useState<FilterRule[]>([]);
+  const [appliedFilterRules, setAppliedFilterRules] = useState<FilterRule[]>([]);
+
+  // Visible columns map
+  const [visibleCols, setVisibleCols] = useState<Record<string, boolean>>({
+    username: true,
+    email: true,
+    permissions: true,
+    createdAt: true,
+    updatedAt: true,
+  });
+
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
+
+  useEffect(() => {
+    if (!showFilters && !showDisplayOptions) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (
+        showFilters &&
+        filtersRef.current &&
+        !filtersRef.current.contains(target)
+      ) {
+        setShowFilters(false);
+      }
+      if (
+        showDisplayOptions &&
+        displayOptionsRef.current &&
+        !displayOptionsRef.current.contains(target)
+      ) {
+        setShowDisplayOptions(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [showFilters, showDisplayOptions]);
+
+  // Reset pagination on query or filter changes
+  useEffect(() => {
+    setPage(1);
+  }, [searchQuery, appliedFilterRules, matchMode]);
+
+  // Hover Popover State for Permissions Badge
+  const [hoveredPerms, setHoveredPerms] = useState<{
+    user: UserRecordApi;
+    rect: DOMRect;
+  } | null>(null);
+  const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const handlePermBadgeMouseEnter = (user: UserRecordApi, e: React.MouseEvent<HTMLElement>) => {
+    if (hoverTimeoutRef.current) {
+      clearTimeout(hoverTimeoutRef.current);
+      hoverTimeoutRef.current = null;
+    }
+    const rect = e.currentTarget.getBoundingClientRect();
+    setHoveredPerms({ user, rect });
+  };
+
+  const handlePermBadgeMouseLeave = () => {
+    hoverTimeoutRef.current = setTimeout(() => {
+      setHoveredPerms(null);
+    }, 120);
+  };
+
+  const handlePopoverMouseEnter = () => {
+    if (hoverTimeoutRef.current) {
+      clearTimeout(hoverTimeoutRef.current);
+      hoverTimeoutRef.current = null;
+    }
+  };
+
+  const handlePopoverMouseLeave = () => {
+    setHoveredPerms(null);
+  };
 
   // SlideOver / Form State
   const [slideOverOpen, setSlideOverOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<UserRecordApi | null>(null);
+  const [drawerTab, setDrawerTab] = useState<"edit" | "danger">("edit");
   const [formUsername, setFormUsername] = useState("");
   const [formEmail, setFormEmail] = useState("");
   const [formPassword, setFormPassword] = useState("");
@@ -175,6 +306,21 @@ export function Users() {
   });
   const [formError, setFormError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Options for Dropdown Selectors
+  const dbOptions = useMemo(() => {
+    return [
+      { value: "*", label: "* (All Databases)" },
+      ...databaseAliases.map((alias) => ({ value: alias, label: alias })),
+    ];
+  }, [databaseAliases]);
+
+  const blobOptions = useMemo(() => {
+    return [
+      { value: "*", label: "* (All Namespaces)" },
+      ...blobNamespaces.map((ns) => ({ value: ns, label: ns })),
+    ];
+  }, [blobNamespaces]);
 
   // Delete Confirmation State
   const [deleteTarget, setDeleteTarget] = useState<UserRecordApi | null>(null);
@@ -237,15 +383,19 @@ export function Users() {
   // Open Create Drawer
   const handleOpenCreate = () => {
     setEditingUser(null);
+    setDrawerTab("edit");
     setFormUsername("");
     setFormEmail("");
     setFormPassword("");
     setFormPermissions({
       system: [
-        "databases.view",
-        "keys.view",
-        "roles.view",
         "cluster.view",
+        "db.view",
+        "blob.view",
+        "table.view",
+        "roles.view",
+        "keys.view",
+        "users.view",
         "audit.view",
         "settings.view",
       ],
@@ -259,77 +409,19 @@ export function Users() {
   // Open Edit Drawer
   const handleOpenEdit = (user: UserRecordApi) => {
     setEditingUser(user);
+    setDrawerTab("edit");
     setFormUsername(user.username);
     setFormEmail(user.email || "");
     setFormPassword("");
-    setFormPermissions({
-      system: user.permissions?.system || [],
-      databases: user.permissions?.databases ? JSON.parse(JSON.stringify(user.permissions.databases)) : [],
-      blobs: user.permissions?.blobs ? JSON.parse(JSON.stringify(user.permissions.blobs)) : [],
-    });
+    setFormPermissions(
+      resolveDependencies({
+        system: user.permissions?.system || [],
+        databases: user.permissions?.databases ? JSON.parse(JSON.stringify(user.permissions.databases)) : [],
+        blobs: user.permissions?.blobs ? JSON.parse(JSON.stringify(user.permissions.blobs)) : [],
+      }),
+    );
     setFormError(null);
     setSlideOverOpen(true);
-  };
-
-  // Apply Capability Preset
-  const applyPreset = (preset: "viewer" | "developer" | "security" | "full" | "clear") => {
-    switch (preset) {
-      case "viewer":
-        setFormPermissions((prev) => ({
-          ...prev,
-          system: [
-            "databases.view",
-            "keys.view",
-            "roles.view",
-            "cluster.view",
-            "audit.view",
-            "users.view",
-            "settings.view",
-          ],
-        }));
-        break;
-      case "developer":
-        setFormPermissions((prev) => ({
-          ...prev,
-          system: [
-            "databases.view",
-            "databases.create",
-            "databases.update",
-            "keys.view",
-            "keys.create",
-            "keys.rotate",
-            "roles.view",
-            "cluster.view",
-            "settings.view",
-          ],
-        }));
-        break;
-      case "security":
-        setFormPermissions((prev) => ({
-          ...prev,
-          system: [
-            "audit.view",
-            "keys.view",
-            "roles.view",
-            "users.view",
-            "cluster.view",
-            "settings.view",
-          ],
-        }));
-        break;
-      case "full":
-        setFormPermissions((prev) => ({
-          ...prev,
-          system: [...ALL_SYSTEM_PERMS],
-        }));
-        break;
-      case "clear":
-        setFormPermissions((prev) => ({
-          ...prev,
-          system: [],
-        }));
-        break;
-    }
   };
 
   // Submit Form (Create or Update)
@@ -356,18 +448,19 @@ export function Users() {
 
     setIsSubmitting(true);
     try {
+      const sanitizedPerms = resolveDependencies(formPermissions);
       if (isEdit && editingUser) {
         await api.updateUser(editingUser.id, {
           email: formEmail.trim() || undefined,
           password: formPassword || undefined,
-          permissions: editingUser.id === 1 ? undefined : formPermissions,
+          permissions: editingUser.id === 1 ? undefined : sanitizedPerms,
         });
       } else {
         await api.createUser({
           username: formUsername.trim(),
           email: formEmail.trim() || undefined,
           password: formPassword,
-          permissions: formPermissions,
+          permissions: sanitizedPerms,
         });
       }
 
@@ -388,6 +481,7 @@ export function Users() {
     try {
       await api.deleteUser(deleteTarget.id);
       setDeleteTarget(null);
+      setSlideOverOpen(false);
       await loadData();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Failed to delete user account";
@@ -397,15 +491,63 @@ export function Users() {
     }
   };
 
-  // Toggle Single Permission
+  // Toggle Single Permission with Dependency Resolution
   const togglePermission = (permId: string) => {
     setFormPermissions((prev) => {
       const current = prev.system || [];
       const has = current.includes(permId);
-      return {
-        ...prev,
-        system: has ? current.filter((c) => c !== permId) : [...current, permId],
-      };
+      if (has) {
+        // Disabling permission
+        const nextSystem = current.filter((c) => c !== permId);
+        if (permId === "db.view") {
+          return {
+            ...prev,
+            system: nextSystem.filter((p) => !p.startsWith("db.")),
+            databases: [], // Revoking db.view removes downstream SQL execution rules
+          };
+        }
+        if (permId === "blob.view") {
+          return {
+            ...prev,
+            system: nextSystem.filter((p) => !p.startsWith("blob.")),
+            blobs: [], // Revoking blob.view removes downstream blob storage rules
+          };
+        }
+        if (permId === "users.view") {
+          return {
+            ...prev,
+            system: nextSystem.filter((p) => !p.startsWith("users.")),
+          };
+        }
+        if (permId === "roles.view") {
+          return {
+            ...prev,
+            system: nextSystem.filter((p) => !p.startsWith("roles.")),
+          };
+        }
+        if (permId === "keys.view") {
+          return {
+            ...prev,
+            system: nextSystem.filter((p) => !p.startsWith("keys.")),
+          };
+        }
+        if (permId === "cluster.view") {
+          return {
+            ...prev,
+            system: nextSystem.filter((p) => !p.startsWith("cluster.")),
+          };
+        }
+        return {
+          ...prev,
+          system: nextSystem,
+        };
+      } else {
+        // Enabling permission (automatically satisfies prerequisites)
+        return resolveDependencies({
+          ...prev,
+          system: [...current, permId],
+        });
+      }
     });
   };
 
@@ -415,27 +557,48 @@ export function Users() {
       const current = prev.system || [];
       const groupPermIds = group.permissions.map((p) => p.id);
       const allSelected = groupPermIds.every((id) => current.includes(id));
-      const next = allSelected
-        ? current.filter((id) => !groupPermIds.includes(id))
-        : Array.from(new Set([...current, ...groupPermIds]));
-      return { ...prev, system: next };
+      if (allSelected) {
+        const nextSystem = current.filter((id) => !groupPermIds.includes(id));
+        if (group.id === "databases") {
+          return {
+            ...prev,
+            system: nextSystem.filter((p) => !p.startsWith("db.")),
+            databases: [],
+          };
+        }
+        if (group.id === "blob") {
+          return {
+            ...prev,
+            system: nextSystem.filter((p) => !p.startsWith("blob.")),
+            blobs: [],
+          };
+        }
+        return { ...prev, system: nextSystem };
+      } else {
+        return resolveDependencies({
+          ...prev,
+          system: Array.from(new Set([...current, ...groupPermIds])),
+        });
+      }
     });
   };
 
-  // Database Rules Mutators
+  // Database Rules Mutators (Auto-grant db.view prerequisite)
   const addDatabaseRule = () => {
     const defaultDb = databaseAliases[0] || "*";
-    setFormPermissions((prev) => ({
-      ...prev,
-      databases: [
-        ...prev.databases,
-        {
-          database: defaultDb,
-          table_name: "*",
-          operations: ["SELECT"],
-        },
-      ],
-    }));
+    setFormPermissions((prev) =>
+      resolveDependencies({
+        ...prev,
+        databases: [
+          ...prev.databases,
+          {
+            database: defaultDb,
+            table_name: "*",
+            operations: ["SELECT"],
+          },
+        ],
+      }),
+    );
   };
 
   const removeDatabaseRule = (index: number) => {
@@ -464,23 +627,25 @@ export function Users() {
       const has = curOps.includes(op);
       const updatedOps = has ? curOps.filter((o) => o !== op) : [...curOps, op];
       next[index] = { ...next[index], operations: updatedOps };
-      return { ...prev, databases: next };
+      return resolveDependencies({ ...prev, databases: next });
     });
   };
 
-  // Blob Rules Mutators
+  // Blob Rules Mutators (Auto-grant blob.view prerequisite)
   const addBlobRule = () => {
     const defaultNs = blobNamespaces[0] || "*";
-    setFormPermissions((prev) => ({
-      ...prev,
-      blobs: [
-        ...prev.blobs,
-        {
-          namespace: defaultNs,
-          operations: ["READ"],
-        },
-      ],
-    }));
+    setFormPermissions((prev) =>
+      resolveDependencies({
+        ...prev,
+        blobs: [
+          ...prev.blobs,
+          {
+            namespace: defaultNs,
+            operations: ["READ"],
+          },
+        ],
+      }),
+    );
   };
 
   const removeBlobRule = (index: number) => {
@@ -513,154 +678,274 @@ export function Users() {
     });
   };
 
+  const handleAddRule = () => {
+    const newId = String(Date.now());
+    setFilterRules((prev) => [
+      ...prev,
+      {
+        id: newId,
+        field: filterFieldOptions[0].value,
+        operator: "contains",
+        value: "",
+      },
+    ]);
+  };
+
+  const handleRemoveRule = (id: string) => {
+    setFilterRules((prev) => prev.filter((r) => r.id !== id));
+  };
+
+  const handleUpdateRule = (id: string, updates: Partial<FilterRule>) => {
+    setFilterRules((prev) =>
+      prev.map((r) => (r.id === id ? { ...r, ...updates } : r)),
+    );
+  };
+
+  const handleApplyFilters = () => {
+    setAppliedFilterRules(filterRules.filter((r) => r.value.trim() !== ""));
+    setShowFilters(false);
+  };
+
+  const handleClearFilters = () => {
+    setFilterRules([]);
+    setAppliedFilterRules([]);
+    setShowFilters(false);
+  };
+
+  const toggleColVisibility = (colId: string) => {
+    setVisibleCols((prev) => ({ ...prev, [colId]: !prev[colId] }));
+  };
+
+  const handleResetColumns = () => {
+    setVisibleCols({
+      username: true,
+      email: true,
+      permissions: true,
+      createdAt: true,
+      updatedAt: true,
+    });
+  };
+
   // Filtered Users List
   const filteredUsers = useMemo(() => {
-    return users.filter((u) => {
-      const query = searchQuery.toLowerCase().trim();
-      const matchQuery =
-        !query ||
-        u.username.toLowerCase().includes(query) ||
-        (u.email && u.email.toLowerCase().includes(query));
+    let list = users;
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      list = list.filter(
+        (u) =>
+          u.username.toLowerCase().includes(q) ||
+          (u.email ? u.email.toLowerCase().includes(q) : false),
+      );
+    }
 
-      if (!matchQuery) return false;
+    if (appliedFilterRules.length > 0) {
+      list = list.filter((u) => {
+        const tests = appliedFilterRules.map((rule) => {
+          let val = "";
+          if (rule.field === "username") val = u.username;
+          else if (rule.field === "email") val = u.email || "";
+          else if (rule.field === "role") val = (u.id === 1 || u.is_super_admin) ? "root super admin" : "pbac operator";
+          return matchesRule(val, rule.operator, rule.value);
+        });
+        return matchMode === "any" ? tests.some(Boolean) : tests.every(Boolean);
+      });
+    }
 
-      if (filterTab === "root") return u.id === 1 || u.is_super_admin;
-      if (filterTab === "pbac") return u.id !== 1 && !u.is_super_admin;
-      return true;
-    });
-  }, [users, searchQuery, filterTab]);
+    return list;
+  }, [users, searchQuery, appliedFilterRules, matchMode]);
 
   const totalCount = users.length;
   const rootCount = users.filter((u) => u.id === 1 || u.is_super_admin).length;
   const pbacCount = users.filter((u) => u.id !== 1 && !u.is_super_admin).length;
 
+  const sysAdminCount = useMemo(() => {
+    return users.filter(
+      (u) =>
+        u.id === 1 ||
+        u.is_super_admin ||
+        (u.permissions?.system &&
+          u.permissions.system.some((p) =>
+            ["cluster.", "roles.", "keys.", "audit.", "users."].some((prefix) =>
+              p.startsWith(prefix)
+            )
+          ))
+    ).length;
+  }, [users]);
+
+  const dbAccessCount = useMemo(() => {
+    return users.filter(
+      (u) =>
+        u.id === 1 ||
+        u.is_super_admin ||
+        (u.permissions?.databases && u.permissions.databases.length > 0) ||
+        (u.permissions?.system &&
+          u.permissions.system.some((p) => p.startsWith("db.")))
+    ).length;
+  }, [users]);
+
+  const blobAccessCount = useMemo(() => {
+    return users.filter(
+      (u) =>
+        u.id === 1 ||
+        u.is_super_admin ||
+        (u.permissions?.blobs && u.permissions.blobs.length > 0) ||
+        (u.permissions?.system &&
+          u.permissions.system.some((p) => p.startsWith("blob.")))
+    ).length;
+  }, [users]);
+
   const isEditingRoot = editingUser?.id === 1;
 
+  // Helper to extract categorized permissions for popover
+  const getPopoverCategories = (user: UserRecordApi) => {
+    if (user.id === 1 || user.is_super_admin) {
+      return { isRoot: true, groups: [], dbRules: [], blobRules: [], totalCount: 0 };
+    }
+
+    const userSys = new Set(user.permissions?.system || []);
+    const groupsWithGranted = CAPABILITY_GROUPS.map((group) => {
+      const granted = group.permissions.filter((p) => userSys.has(p.id));
+      return {
+        ...group,
+        granted,
+      };
+    }).filter((g) => g.granted.length > 0);
+
+    const dbRules = user.permissions?.databases || [];
+    const blobRules = user.permissions?.blobs || [];
+    const totalCount = userSys.size + dbRules.length + blobRules.length;
+
+    return {
+      isRoot: false,
+      groups: groupsWithGranted,
+      dbRules,
+      blobRules,
+      totalCount,
+    };
+  };
+
   // Table Columns Definition
-  const columns: Column<UserRecordApi>[] = [
+  const columns: Column<UserRecordApi>[] = useMemo(() => [
     {
       id: "username",
-      header: "Administrator",
-      isFlex: true,
+      header: "Username",
+      accessorKey: "username",
+      width: 220,
+      minWidth: 160,
+      maxWidth: 360,
+      isResizable: true,
       className: "pl-4 pr-3",
-      cell: (row) => {
-        const isRoot = row.id === 1;
-        const monogramColor = getMonogramColor(row.username);
-
-        return (
-          <div className="flex items-center gap-3 min-w-0">
-            <div
-              className={`w-7 h-7 rounded-full bg-gradient-to-br ${monogramColor} flex items-center justify-center text-white text-[11px] font-semibold tracking-wider shrink-0 shadow-sm`}
-            >
-              {row.username.slice(0, 2).toUpperCase()}
-            </div>
-            <div className="min-w-0 flex flex-col">
-              <div className="flex items-center gap-2">
-                <span className="text-[13px] font-medium text-white truncate">
-                  {row.username}
-                </span>
-                {isRoot && (
-                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-500/10 text-amber-300 border border-amber-500/30 shrink-0">
-                    <ShieldCheck className="w-3 h-3 text-amber-400" />
-                    Root Super Admin
-                  </span>
-                )}
-              </div>
-              {row.email && (
-                <span className="text-[11px] text-[#8c8c8c] truncate">
-                  {row.email}
-                </span>
-              )}
-            </div>
-          </div>
-        );
-      },
+      cell: (row) => (
+        <span
+          className="text-[13px] font-medium text-white truncate"
+          title={row.username}
+        >
+          {row.username}
+        </span>
+      ),
     },
     {
-      id: "type",
-      header: "Access Model",
-      isFlex: true,
+      id: "email",
+      header: "Email",
+      accessorKey: "email",
+      width: 220,
+      minWidth: 160,
+      maxWidth: 380,
+      isResizable: true,
+      className: "px-3",
+      cell: (row) => (
+        <span
+          className="text-[13px] text-[#8c8c8c] font-normal truncate block"
+          title={row.email || undefined}
+        >
+          {row.email || "—"}
+        </span>
+      ),
+    },
+    {
+      id: "permissions",
+      header: "Permissions",
+      width: 250,
+      minWidth: 190,
+      maxWidth: 420,
+      isResizable: true,
       className: "px-3",
       cell: (row) => {
-        const isRoot = row.id === 1;
+        const isRoot = row.id === 1 || row.is_super_admin;
         if (isRoot) {
           return (
-            <span className="inline-flex items-center gap-1.5 text-[12px] font-medium text-amber-400">
-              <Lock className="w-3.5 h-3.5" />
-              Root Sovereign (Immutable)
-            </span>
-          );
-        }
-
-        return (
-          <span className="inline-flex items-center gap-1.5 text-[12px] font-medium text-blue-400">
-            <Shield className="w-3.5 h-3.5" />
-            PBAC Custom Scoped
-          </span>
-        );
-      },
-    },
-    {
-      id: "capabilities",
-      header: "Assigned Capabilities",
-      isFlex: true,
-      className: "px-3",
-      cell: (row) => {
-        if (row.id === 1 || row.is_super_admin) {
-          return (
-            <span className="text-[12px] text-amber-400/90 font-medium">
-              Full Bypass (Unrestricted Global Access)
-            </span>
+            <div
+              className="relative inline-flex items-center cursor-pointer select-none"
+              onMouseEnter={(e) => handlePermBadgeMouseEnter(row, e)}
+              onMouseLeave={handlePermBadgeMouseLeave}
+            >
+              <span className="inline-flex items-center gap-1.5 text-[11px] font-medium px-2.5 py-0.5 rounded-full bg-amber-500/10 text-amber-300 border border-amber-500/30 shrink-0 hover:bg-amber-500/20 transition-colors">
+                <ShieldCheck className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                <span>full</span>
+              </span>
+            </div>
           );
         }
 
         const sysCount = row.permissions?.system?.length || 0;
         const dbCount = row.permissions?.databases?.length || 0;
         const blobCount = row.permissions?.blobs?.length || 0;
+        const total = sysCount + dbCount + blobCount;
 
-        if (sysCount === 0 && dbCount === 0 && blobCount === 0) {
+        if (total === 0) {
           return (
-            <span className="text-[12px] text-[#737373] italic">
-              Restricted (Zero Permissions)
-            </span>
+            <div
+              className="relative inline-flex items-center cursor-pointer select-none"
+              onMouseEnter={(e) => handlePermBadgeMouseEnter(row, e)}
+              onMouseLeave={handlePermBadgeMouseLeave}
+            >
+              <span className="inline-flex items-center gap-1.5 text-[11px] font-medium px-2.5 py-0.5 rounded-full bg-[#18181b] text-[#8c8c8c] border border-[#27272a] shrink-0 hover:border-[#383838] transition-colors">
+                <Lock className="w-3.5 h-3.5 text-[#8c8c8c] shrink-0" />
+                <span>0</span>
+              </span>
+            </div>
           );
         }
 
         return (
-          <div className="flex items-center gap-1.5 flex-wrap">
-            {sysCount > 0 && (
-              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-medium bg-[#1e1e1e] text-[#d4d4d4] border border-[#2e2e2e]">
-                {sysCount} system {sysCount === 1 ? "permission" : "permissions"}
-              </span>
-            )}
-            {dbCount > 0 && (
-              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-medium bg-[#1e1e1e] text-[#d4d4d4] border border-[#2e2e2e]">
-                {dbCount} {dbCount === 1 ? "db rule" : "db rules"}
-              </span>
-            )}
-            {blobCount > 0 && (
-              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-medium bg-[#1e1e1e] text-[#d4d4d4] border border-[#2e2e2e]">
-                {blobCount} {blobCount === 1 ? "blob rule" : "blob rules"}
-              </span>
-            )}
+          <div
+            className="relative inline-flex items-center cursor-pointer select-none"
+            onMouseEnter={(e) => handlePermBadgeMouseEnter(row, e)}
+            onMouseLeave={handlePermBadgeMouseLeave}
+          >
+            <span className="inline-flex items-center gap-1.5 text-[11px] font-medium px-2.5 py-0.5 rounded-full bg-[#18181b] text-[#cccccc] border border-[#27272a] hover:border-[#3f3f46] hover:text-white transition-colors shrink-0">
+              <Shield className="w-3.5 h-3.5 text-[#8c8c8c] shrink-0" />
+              <span>{total}</span>
+            </span>
           </div>
         );
       },
     },
     {
-      id: "created",
-      header: "Created Date",
-      isFlex: true,
+      id: "createdAt",
+      header: "Creation Date",
+      width: 140,
+      minWidth: 120,
+      maxWidth: 200,
+      isResizable: true,
       className: "px-3",
       cell: (row) => (
-        <span className="tabular-nums text-[12px] text-[#8c8c8c]">
-          {row.created_at
-            ? new Date(row.created_at * 1000).toLocaleDateString(undefined, {
-                year: "numeric",
-                month: "short",
-                day: "numeric",
-              })
-            : "—"}
+        <span className="tabular-nums text-[13px] text-[#8c8c8c] font-normal">
+          {formatDate(row.created_at)}
+        </span>
+      ),
+    },
+    {
+      id: "updatedAt",
+      header: "Last Update Date",
+      width: 150,
+      minWidth: 120,
+      maxWidth: 220,
+      isResizable: true,
+      className: "px-3",
+      cell: (row) => (
+        <span className="tabular-nums text-[13px] text-[#8c8c8c] font-normal">
+          {formatDate(row.updated_at || row.created_at)}
         </span>
       ),
     },
@@ -670,46 +955,36 @@ export function Users() {
       isFlex: true,
       headerClassName: "justify-end pr-4 text-right",
       className: "pl-3 pr-4 justify-end",
-      cell: (row) => {
-        const isRoot = row.id === 1;
-
-        return (
-          <div className="flex items-center justify-end gap-1.5 w-full">
-            <button
-              type="button"
-              disabled={!canUpdate}
-              onClick={() => handleOpenEdit(row)}
-              className="inline-flex items-center justify-center h-7 px-2.5 rounded-[6px] text-[12px] font-medium text-[#8c8c8c] hover:text-white bg-transparent hover:bg-[#1a1a1a] border border-[#262626] hover:border-[#383838] transition-colors cursor-pointer shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
-              title="Edit administrator permissions and settings"
-            >
-              <Edit2 className="w-3.5 h-3.5 mr-1" />
-              Manage
-            </button>
-            {isRoot ? (
-              <button
-                type="button"
-                disabled
-                className="inline-flex items-center justify-center h-7 px-2 rounded-[6px] text-[12px] font-medium text-[#525252] bg-transparent border border-[#222222] opacity-50 cursor-not-allowed shrink-0"
-                title="Root administrator account is permanent and cannot be deleted"
-              >
-                <Lock className="w-3.5 h-3.5" />
-              </button>
-            ) : (
-              <button
-                type="button"
-                disabled={!canDelete}
-                onClick={() => setDeleteTarget(row)}
-                className="inline-flex items-center justify-center h-7 px-2 rounded-[6px] text-[12px] font-medium text-[#f87171] hover:text-white bg-transparent hover:bg-[#451013] border border-[#3b1216] hover:border-[#7f1d1d] transition-colors cursor-pointer shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
-                title="Delete administrator account"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-              </button>
-            )}
-          </div>
-        );
-      },
+      cell: (row) => (
+        <div className="flex items-center justify-end w-full">
+          <button
+            type="button"
+            disabled={!canUpdate}
+            onClick={() => handleOpenEdit(row)}
+            className="inline-flex items-center justify-center h-7 px-3 rounded-[6px] text-[13px] font-medium leading-none text-[#8c8c8c] hover:text-white bg-transparent hover:bg-[#1a1a1a] border border-[#262626] hover:border-[#383838] transition-colors cursor-pointer shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            Manage
+          </button>
+        </div>
+      ),
     },
-  ];
+  ], [canUpdate, canDelete]);
+
+  const activeColumns = useMemo(() => {
+    const visible = columns.filter(
+      (col) => col.id === "actions" || visibleCols[col.id] !== false,
+    );
+    const lastDataId = [...visible]
+      .reverse()
+      .find((c) => c.id !== "actions")?.id;
+    return visible.map((col) => ({
+      ...col,
+      isResizable:
+        col.id !== "actions" &&
+        col.id !== lastDataId &&
+        Boolean(col.isResizable),
+    }));
+  }, [columns, visibleCols]);
 
   return (
     <div className="space-y-6">
@@ -717,17 +992,14 @@ export function Users() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-[16px] font-medium text-white tracking-tight">
-            Administrators & Access
+            Users
           </h1>
-          <p className="text-[13px] text-[#8c8c8c] mt-0.5">
-            Permission-Based Access Control (PBAC) for operator accounts. The root account (#1) is the immutable Super Admin.
-          </p>
         </div>
         <div className="flex items-center gap-2">
           <button
             type="button"
             onClick={handleManualRefresh}
-            title="Refresh accounts"
+            title="Refresh users"
             className="flex items-center justify-center h-8 w-8 text-[#8c8c8c] hover:text-white rounded-[8px] bg-[#0c0c0c] hover:bg-[#141414] border border-[#262626] hover:border-[#383838] transition-colors cursor-pointer shrink-0"
           >
             <RefreshCw
@@ -740,8 +1012,8 @@ export function Users() {
             disabled={!canCreate}
             onClick={handleOpenCreate}
           >
-            <Plus className="w-3.5 h-3.5 mr-1.5" />
-            Add Administrator
+            <Plus className="w-3.5 h-3.5 mr-1" />
+            Add User
           </Button>
         </div>
       </div>
@@ -753,114 +1025,401 @@ export function Users() {
         </div>
       )}
 
-      {/* KPI Overview Cards */}
-      <div className="rounded-lg border border-[#262626] bg-[#0e0e0e]">
-        <div className="grid grid-cols-1 md:grid-cols-4 divide-y md:divide-y-0 md:divide-x divide-[#222222]">
-          <div className="px-4 py-3.5 min-w-0">
-            <span className="block text-[12px] text-[#8c8c8c] font-medium mb-1.5">
-              Total Administrators
+      {/* Metric Stat Cards Grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="rounded-[8px] border border-[#262626] bg-[#0c0c0c] p-4 flex flex-col justify-between hover:border-[#333333] transition-colors">
+          <div className="flex items-center justify-between">
+            <span className="text-[12px] font-normal text-[#8c8c8c] block">
+              Total users
             </span>
-            <div className="flex items-center gap-2">
-              <UsersIcon className="w-4 h-4 text-[#a3a3a3]" />
-              <span className="text-[18px] font-semibold text-white tabular-nums">
+            <div className="p-1.5 rounded-[6px] bg-[#141414] border border-[#222222] text-[#8c8c8c]">
+              <UsersIcon className="w-3.5 h-3.5" />
+            </div>
+          </div>
+          <div className="my-2">
+            {isLoading ? (
+              <Skeleton className="h-7 w-16" />
+            ) : (
+              <div className="text-[22px] font-semibold text-white tracking-[-0.02em] leading-tight tabular-nums">
                 {totalCount}
-              </span>
-            </div>
+              </div>
+            )}
           </div>
-          <div className="px-4 py-3.5 min-w-0">
-            <span className="block text-[12px] text-[#8c8c8c] font-medium mb-1.5">
-              Root Super Admin
+          <span className="text-[12px] text-[#737373] block">
+            {rootCount} super-admin · {pbacCount} scoped
+          </span>
+        </div>
+
+        <div className="rounded-[8px] border border-[#262626] bg-[#0c0c0c] p-4 flex flex-col justify-between hover:border-[#333333] transition-colors">
+          <div className="flex items-center justify-between">
+            <span className="text-[12px] font-normal text-[#8c8c8c] block">
+              System operators
             </span>
-            <div className="flex items-center gap-2">
-              <ShieldCheck className="w-4 h-4 text-amber-400" />
-              <span className="text-[18px] font-semibold text-amber-300 tabular-nums">
-                {rootCount}
-              </span>
-              <span className="text-[11px] text-[#8c8c8c]">(Immutable Account #1)</span>
+            <div className="p-1.5 rounded-[6px] bg-[#141414] border border-[#222222] text-[#8c8c8c]">
+              <Shield className="w-3.5 h-3.5" />
             </div>
           </div>
-          <div className="px-4 py-3.5 min-w-0">
-            <span className="block text-[12px] text-[#8c8c8c] font-medium mb-1.5">
-              PBAC Scoped Operators
+          <div className="my-2">
+            {isLoading ? (
+              <Skeleton className="h-7 w-16" />
+            ) : (
+              <div className="text-[22px] font-semibold text-white tracking-[-0.02em] leading-tight tabular-nums">
+                {sysAdminCount}
+              </div>
+            )}
+          </div>
+          <span className="text-[12px] text-[#737373] block">
+            Cluster, keys, audit & roles
+          </span>
+        </div>
+
+        <div className="rounded-[8px] border border-[#262626] bg-[#0c0c0c] p-4 flex flex-col justify-between hover:border-[#333333] transition-colors">
+          <div className="flex items-center justify-between">
+            <span className="text-[12px] font-normal text-[#8c8c8c] block">
+              Database access
             </span>
-            <div className="flex items-center gap-2">
-              <Shield className="w-4 h-4 text-blue-400" />
-              <span className="text-[18px] font-semibold text-blue-300 tabular-nums">
-                {pbacCount}
-              </span>
-              <span className="text-[11px] text-[#8c8c8c]">(Fine-Grained Capabilities)</span>
+            <div className="p-1.5 rounded-[6px] bg-[#141414] border border-[#222222] text-[#8c8c8c]">
+              <Database className="w-3.5 h-3.5" />
             </div>
           </div>
-          <div className="px-4 py-3.5 min-w-0">
-            <span className="block text-[12px] text-[#8c8c8c] font-medium mb-1.5">
-              Security Invariant
+          <div className="my-2">
+            {isLoading ? (
+              <Skeleton className="h-7 w-16" />
+            ) : (
+              <div className="text-[22px] font-semibold text-white tracking-[-0.02em] leading-tight tabular-nums">
+                {dbAccessCount}
+              </div>
+            )}
+          </div>
+          <span className="text-[12px] text-[#737373] block">
+            SQL queries & table execution
+          </span>
+        </div>
+
+        <div className="rounded-[8px] border border-[#262626] bg-[#0c0c0c] p-4 flex flex-col justify-between hover:border-[#333333] transition-colors">
+          <div className="flex items-center justify-between">
+            <span className="text-[12px] font-normal text-[#8c8c8c] block">
+              Storage access
             </span>
-            <div className="flex items-center gap-1.5 text-emerald-400 text-[13px] font-medium">
-              <Lock className="w-3.5 h-3.5" />
-              <span>Strict Single Super-Admin</span>
+            <div className="p-1.5 rounded-[6px] bg-[#141414] border border-[#222222] text-[#8c8c8c]">
+              <HardDrive className="w-3.5 h-3.5" />
             </div>
           </div>
+          <div className="my-2">
+            {isLoading ? (
+              <Skeleton className="h-7 w-16" />
+            ) : (
+              <div className="text-[22px] font-semibold text-white tracking-[-0.02em] leading-tight tabular-nums">
+                {blobAccessCount}
+              </div>
+            )}
+          </div>
+          <span className="text-[12px] text-[#737373] block">
+            Object buckets & namespaces
+          </span>
         </div>
       </div>
 
-      {/* Toolbar & Filters */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        {/* Filter Tabs */}
-        <div className="flex items-center gap-1 bg-[#121212] p-1 rounded-[8px] border border-[#222222] w-fit">
-          <button
-            type="button"
-            onClick={() => setFilterTab("all")}
-            className={`px-3 py-1 rounded-[6px] text-[12px] font-medium transition-colors ${
-              filterTab === "all"
-                ? "bg-[#222222] text-white"
-                : "text-[#8c8c8c] hover:text-[#d4d4d4]"
-            }`}
-          >
-            All Accounts ({totalCount})
-          </button>
-          <button
-            type="button"
-            onClick={() => setFilterTab("root")}
-            className={`px-3 py-1 rounded-[6px] text-[12px] font-medium transition-colors ${
-              filterTab === "root"
-                ? "bg-[#222222] text-white"
-                : "text-[#8c8c8c] hover:text-[#d4d4d4]"
-            }`}
-          >
-            Root Super Admin ({rootCount})
-          </button>
-          <button
-            type="button"
-            onClick={() => setFilterTab("pbac")}
-            className={`px-3 py-1 rounded-[6px] text-[12px] font-medium transition-colors ${
-              filterTab === "pbac"
-                ? "bg-[#222222] text-white"
-                : "text-[#8c8c8c] hover:text-[#d4d4d4]"
-            }`}
-          >
-            PBAC Operators ({pbacCount})
-          </button>
-        </div>
-
-        {/* Search Input */}
-        <div className="relative w-full sm:w-64">
-          <Search className="w-3.5 h-3.5 text-[#8c8c8c] absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+      {/* Table Controls Toolbar (Search & Filter Tabs) */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 select-none font-sans">
+        <label
+          title="Search users..."
+          className="relative flex items-center h-9 rounded-[8px] bg-transparent border border-[#262626] focus-within:border-[#2f80ed] transition-colors px-3 gap-2 w-full sm:w-[260px] md:w-[300px]"
+        >
+          <Search className="w-3.5 h-3.5 text-[#8c8c8c] shrink-0" />
           <input
             type="text"
-            placeholder="Search administrators..."
             value={searchQuery}
             onChange={(e) => {
               setSearchQuery(e.target.value);
               setPage(1);
             }}
-            className="w-full h-8 pl-8 pr-3 text-[12px] bg-[#0c0c0c] text-white rounded-[8px] border border-[#262626] focus:border-blue-500 focus:outline-none"
+            placeholder="Search users..."
+            className="w-full bg-transparent border-0 text-[14px] text-white placeholder-[#8c8c8c] outline-none font-normal font-sans"
           />
+          {searchQuery && (
+            <button
+              type="button"
+              onClick={() => {
+                setSearchQuery("");
+                setPage(1);
+              }}
+              className="flex items-center justify-center w-5 h-5 rounded hover:bg-[#222222] text-[#8c8c8c] hover:text-white transition-colors cursor-pointer shrink-0 font-sans"
+              title="Clear search"
+            >
+              ✕
+            </button>
+          )}
+        </label>
+
+        {/* Controls on Right: Filters and Display Options */}
+        <div className="flex flex-wrap items-center gap-2 font-sans">
+          {/* Filters dropdown button & popover */}
+          <div className="relative" ref={filtersRef}>
+            <button
+              type="button"
+              onClick={() => {
+                setShowFilters((prev) => {
+                  const next = !prev;
+                  if (next) {
+                    setShowDisplayOptions(false);
+                    if (appliedFilterRules.length > 0) {
+                      setFilterRules(appliedFilterRules.map((r) => ({ ...r })));
+                    } else if (filterRules.length === 0) {
+                      setFilterRules([
+                        {
+                          id: "1",
+                          field: filterFieldOptions[0].value,
+                          operator: "contains",
+                          value: "",
+                        },
+                      ]);
+                    }
+                  }
+                  return next;
+                });
+              }}
+              className={`flex items-center gap-1.5 h-9 px-3 rounded-[8px] bg-transparent border text-[14px] font-medium transition-colors cursor-pointer shrink-0 font-sans ${
+                showFilters || appliedFilterRules.length > 0
+                  ? "border-[#444444] text-white bg-[#141414]"
+                  : "border-[#262626] text-white hover:bg-[#141414] hover:border-[#383838]"
+              }`}
+              title="Filter users"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="14"
+                height="14"
+                fill="currentColor"
+                viewBox="0 0 256 256"
+                className="text-[#8c8c8c] shrink-0"
+              >
+                <path d="M230.6,49.53A15.81,15.81,0,0,0,216,40H40A16,16,0,0,0,28.19,66.76l.08.09L96,139.17V216a16,16,0,0,0,24.87,13.32l32-21.34A16,16,0,0,0,160,194.66V139.17l67.74-72.32.08-.09A15.8,15.8,0,0,0,230.6,49.53ZM40,56h0Zm106.18,74.58A8,8,0,0,0,144,136v58.66L112,216V136a8,8,0,0,0-2.16-5.47L40,56H216Z" />
+              </svg>
+              <span>Filters</span>
+              {appliedFilterRules.length > 0 && (
+                <span className="text-[12px] text-[#8c8c8c] font-normal">
+                  ({appliedFilterRules.length})
+                </span>
+              )}
+            </button>
+
+            {showFilters && (
+              <div className="absolute right-0 top-10 w-[540px] max-w-[calc(100vw-32px)] rounded-[8px] bg-[#0c0c0c] border border-[#262626] shadow-2xl p-4 z-50 select-none animate-in fade-in font-sans">
+                {/* Header */}
+                <div className="flex items-center justify-between pb-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[14px] font-medium text-white font-sans">
+                      User Filters
+                    </span>
+                    {filterRules.length >= 2 && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setMatchMode((prev) =>
+                            prev === "any" ? "all" : "any",
+                          )
+                        }
+                        className="px-2.5 py-0.5 rounded text-[13px] text-[#cccccc] hover:text-white bg-[#141414] border border-[#2e2e2e] hover:border-[#444444] transition-colors cursor-pointer font-sans"
+                      >
+                        Match {matchMode === "any" ? "any (OR)" : "all (AND)"}
+                      </button>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowFilters(false)}
+                    className="text-[#888888] hover:text-white transition-colors cursor-pointer text-[14px] p-1 leading-none"
+                    title="Close filters"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                {/* Rules List */}
+                <div
+                  className={`space-y-2.5 ${filterRules.length > 3 ? "max-h-[320px] overflow-y-auto pr-0.5" : ""}`}
+                >
+                  {filterRules.map((rule) => (
+                    <div key={rule.id} className="flex items-center gap-2">
+                      <CustomSelect
+                        value={rule.field}
+                        options={filterFieldOptions}
+                        onChange={(val) =>
+                          handleUpdateRule(rule.id, { field: val })
+                        }
+                        className="w-36 shrink-0"
+                        menuWidth="w-44"
+                      />
+
+                      <CustomSelect
+                        value={rule.operator}
+                        options={[
+                          { value: "contains", label: "contains" },
+                          { value: "equals", label: "equals" },
+                          { value: "starts_with", label: "starts with" },
+                        ]}
+                        onChange={(val) =>
+                          handleUpdateRule(rule.id, {
+                            operator: val as
+                              | "contains"
+                              | "equals"
+                              | "starts_with",
+                          })
+                        }
+                        className="w-32 sm:w-36 shrink-0"
+                        menuWidth="w-44"
+                      />
+
+                      <input
+                        type="text"
+                        value={rule.value}
+                        onChange={(e) =>
+                          handleUpdateRule(rule.id, { value: e.target.value })
+                        }
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") handleApplyFilters();
+                        }}
+                        placeholder="Filter value..."
+                        className="flex-1 min-w-0 h-9 px-3 rounded-[8px] bg-[#141414] border border-[#262626] hover:border-[#383838] focus:border-[#2f80ed] text-[14px] text-white placeholder-[#555555] outline-none transition-colors font-sans"
+                      />
+
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveRule(rule.id)}
+                        className="w-8 h-8 flex items-center justify-center text-[#777777] hover:text-white cursor-pointer transition-colors shrink-0"
+                        title="Delete filter rule"
+                      >
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          width="15"
+                          height="15"
+                          fill="currentColor"
+                          viewBox="0 0 256 256"
+                        >
+                          <path d="M216,48H176V40a24,24,0,0,0-24-24H104A24,24,0,0,0,80,40v8H40a8,8,0,0,0,0,16h8V208a16,16,0,0,0,16,16H192a16,16,0,0,0,16-16V64h8a8,8,0,0,0,0-16ZM96,40a8,8,0,0,1,8-8h48a8,8,0,0,1,8,8v8H96Zm96,168H64V64H192ZM112,104v64a8,8,0,0,1-16,0V104a8,8,0,0,1,16,0Zm48,0v64a8,8,0,0,1-16,0V104a8,8,0,0,1,16,0Z" />
+                        </svg>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Footer Controls */}
+                <div className="flex items-center justify-between pt-2.5 mt-1 font-sans">
+                  <button
+                    type="button"
+                    onClick={handleAddRule}
+                    className="text-[14px] text-white hover:text-[#2f80ed] font-medium flex items-center gap-1.5 transition-colors cursor-pointer font-sans"
+                  >
+                    <span>+ Add filter</span>
+                  </button>
+                  <div className="flex items-center gap-3">
+                    <span className="text-[12px] text-[#666666] font-sans">
+                      Press Enter to apply
+                    </span>
+                    {appliedFilterRules.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={handleClearFilters}
+                        className="text-[14px] text-[#888888] hover:text-white transition-colors cursor-pointer font-sans"
+                      >
+                        Clear
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={handleApplyFilters}
+                      className="group relative flex shrink-0 items-center justify-center h-8 px-3.5 rounded-[8px] font-medium text-white shadow-xs outline-none cursor-pointer disabled:opacity-50 overflow-hidden ring-1 ring-[#1d4ed8] bg-[#2563eb] font-sans"
+                    >
+                      <span
+                        aria-hidden="true"
+                        className="pointer-events-none absolute inset-0 rounded-[inherit] bg-gradient-to-b from-[#3b82f6] to-[#2563eb] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2)]"
+                      />
+                      <span
+                        aria-hidden="true"
+                        className="pointer-events-none absolute inset-0 rounded-[inherit] bg-black opacity-0 group-hover:opacity-15 transition-opacity duration-200"
+                      />
+                      <span className="relative flex items-center gap-1.5 text-[14px] font-sans">
+                        Apply filters
+                      </span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Display options dropdown */}
+          <div className="relative" ref={displayOptionsRef}>
+            <button
+              type="button"
+              onClick={() => {
+                setShowDisplayOptions((prev) => !prev);
+                setShowFilters(false);
+              }}
+              className={`flex items-center gap-1.5 h-9 px-3 rounded-[8px] bg-transparent border text-[14px] font-medium transition-colors cursor-pointer shrink-0 font-sans ${
+                showDisplayOptions
+                  ? "border-[#444444] text-white bg-[#141414]"
+                  : "border-[#262626] text-white hover:bg-[#141414] hover:border-[#383838]"
+              }`}
+              title="Toggle visible table columns"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="14"
+                height="14"
+                fill="currentColor"
+                viewBox="0 0 256 256"
+                className="text-[#8c8c8c] shrink-0"
+              >
+                <path d="M222.87,74.56,134.87,23.75a16,16,0,0,0-15.74,0L31.13,74.56A16,16,0,0,0,23.26,88.4v101.6a16,16,0,0,0,7.87,13.84l88,50.81a16,16,0,0,0,15.74,0l88-50.81a16,16,0,0,0,7.87-13.84V88.4A16,16,0,0,0,222.87,74.56ZM127,160a32,32,0,1,1,32-32A32,32,0,0,1,127,160Z" />
+              </svg>
+              <span>Display options</span>
+            </button>
+
+            {showDisplayOptions && (
+              <div className="absolute right-0 top-[calc(100%+4px)] w-52 rounded-[8px] bg-[#0c0c0c] border border-[#262626] shadow-2xl p-1 z-50 select-none font-sans animate-in fade-in duration-100">
+                {displayColumnOptions.map((col) => {
+                  const isVisible = visibleCols[col.id] !== false;
+                  return (
+                    <button
+                      key={col.id}
+                      type="button"
+                      onClick={() => toggleColVisibility(col.id)}
+                      className="w-full flex items-center justify-between px-3 py-2 rounded-[6px] text-[14px] text-[#cccccc] hover:text-white hover:bg-[#141414] transition-colors cursor-pointer font-sans"
+                    >
+                      <span
+                        className={
+                          isVisible
+                            ? "text-white font-medium"
+                            : "text-[#8c8c8c]"
+                        }
+                      >
+                        {col.label}
+                      </span>
+                      {isVisible && (
+                        <Check className="w-3.5 h-3.5 text-[#3b82f6] shrink-0" />
+                      )}
+                    </button>
+                  );
+                })}
+                <div className="-mx-1 my-1 border-t border-[#222222]" />
+                <button
+                  type="button"
+                  onClick={handleResetColumns}
+                  className="w-full text-left px-3 py-2 rounded-[6px] text-[13px] text-[#8c8c8c] hover:text-white hover:bg-[#141414] transition-colors cursor-pointer font-sans"
+                >
+                  Reset to default
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
       {/* Accounts Table */}
       <DataTable
-        columns={columns}
+        columns={activeColumns}
         data={filteredUsers}
         keyExtractor={(item) => String(item.id)}
         pagination={{
@@ -868,19 +1427,22 @@ export function Users() {
           pageSize,
           totalCount: filteredUsers.length,
           onPageChange: setPage,
-          onPageSizeChange: setPageSize,
+          onPageSizeChange: (newSize) => {
+            setPageSize(newSize);
+            setPage(1);
+          },
         }}
         isLoading={isLoading}
         emptyMessage={
           <div className="flex flex-col items-center justify-center p-8 text-center">
             <UsersIcon className="w-8 h-8 text-[#525252] mb-2" />
             <span className="text-[13px] font-medium text-white mb-1">
-              No administrator accounts found
+              No users found
             </span>
             <span className="text-[12px] text-[#8c8c8c]">
               {searchQuery
                 ? "Try adjusting your search criteria"
-                : "Add an administrator account to begin"}
+                : "Add a user account to begin"}
             </span>
           </div>
         }
@@ -890,472 +1452,674 @@ export function Users() {
       <SlideOver
         isOpen={slideOverOpen}
         onClose={() => setSlideOverOpen(false)}
-        title={editingUser ? `Manage Administrator: ${editingUser.username}` : "New Administrator"}
+        title={editingUser ? `Manage User: ${editingUser.username}` : "New User"}
         subtitle="Configure credentials and granular PBAC capabilities"
-        width="max-w-2xl"
+        width="w-[640px] max-w-full"
       >
-        <form onSubmit={handleSubmitForm} className="space-y-6">
-          {formError && (
-            <div className="flex items-center gap-2 p-3 rounded-lg bg-[#2a1113] border border-[#5c1d24] text-[#f87171] text-[13px]">
-              <AlertTriangle className="w-4 h-4 shrink-0 text-[#ef4444]" />
-              <span>{formError}</span>
-            </div>
-          )}
-
-          {/* Root Super Admin Notice OR PBAC Scoped Notice */}
-          {isEditingRoot ? (
-            <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3.5 space-y-1.5">
-              <div className="flex items-center gap-2 text-amber-300 font-semibold text-[13px]">
-                <ShieldCheck className="w-4 h-4 text-amber-400" />
-                <span>Root Super-Administrator (Account #1)</span>
-              </div>
-              <p className="text-[12px] text-amber-200/80 leading-relaxed">
-                This founding account was created during server onboarding. It maintains permanent, unrestricted root privileges that cannot be demoted, deleted, or constrained. You may update account credentials below.
-              </p>
-            </div>
-          ) : (
-            <div className="rounded-lg border border-[#262626] bg-[#121212] p-3.5 space-y-1.5">
-              <div className="flex items-center gap-2 text-white font-medium text-[13px]">
-                <Shield className="w-4 h-4 text-blue-400" />
-                <span>Scoped PBAC Operator</span>
-              </div>
-              <p className="text-[12px] text-[#8c8c8c] leading-relaxed">
-                Server super-administrator authority strictly belongs to Account #1. All secondary accounts are granted explicit capability permissions below.
-              </p>
-            </div>
-          )}
-
-          {/* Account Credentials */}
-          <div className="space-y-4">
-            <h3 className="text-[13px] font-semibold text-white tracking-wide uppercase text-opacity-80">
-              Account Credentials
-            </h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-[12px] font-medium text-[#a3a3a3] mb-1">
-                  Username <span className="text-red-400">*</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  disabled={Boolean(editingUser)}
-                  value={formUsername}
-                  onChange={(e) => setFormUsername(e.target.value)}
-                  placeholder="e.g. dev_operator"
-                  className="w-full h-8 px-2.5 text-[12px] bg-[#141414] text-white rounded-[6px] border border-[#262626] focus:border-blue-500 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
-                />
-              </div>
-              <div>
-                <label className="block text-[12px] font-medium text-[#a3a3a3] mb-1">
-                  Email Address
-                </label>
-                <input
-                  type="email"
-                  value={formEmail}
-                  onChange={(e) => setFormEmail(e.target.value)}
-                  placeholder="e.g. operator@company.com"
-                  className="w-full h-8 px-2.5 text-[12px] bg-[#141414] text-white rounded-[6px] border border-[#262626] focus:border-blue-500 focus:outline-none"
-                />
-              </div>
-            </div>
-            <div>
-              <label className="block text-[12px] font-medium text-[#a3a3a3] mb-1">
-                Password {editingUser ? "(Leave blank to keep unchanged)" : <span className="text-red-400">*</span>}
-              </label>
-              <input
-                type="password"
-                required={!editingUser}
-                value={formPassword}
-                onChange={(e) => setFormPassword(e.target.value)}
-                placeholder={editingUser ? "••••••••••••" : "Minimum 8 characters"}
-                className="w-full h-8 px-2.5 text-[12px] bg-[#141414] text-white rounded-[6px] border border-[#262626] focus:border-blue-500 focus:outline-none"
-              />
+        {/* Navigation Tabs (Only when editing non-root users) */}
+        {editingUser && editingUser.id !== 1 && canDelete && (
+          <div className="border-b border-[#222222] px-5 py-2.5 bg-[#0e0e0e] shrink-0 font-sans">
+            <div className="inline-flex items-center p-0.5 rounded-[8px] bg-transparent border border-[#262626]">
+              <button
+                type="button"
+                onClick={() => setDrawerTab("edit")}
+                className={`flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[13px] font-medium transition-colors duration-75 cursor-pointer font-sans outline-none focus:outline-none border ${
+                  drawerTab === "edit"
+                    ? "bg-[#161616] text-white border-[#333333]"
+                    : "text-[#8c8c8c] hover:text-white hover:bg-[#141414] border-transparent"
+                }`}
+              >
+                <span>Configuration</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setDrawerTab("danger")}
+                className={`flex items-center gap-1.5 h-8 px-3 rounded-[6px] text-[13px] font-medium transition-colors duration-75 cursor-pointer font-sans outline-none focus:outline-none border ${
+                  drawerTab === "danger"
+                    ? "bg-[#161616] text-white border-[#333333]"
+                    : "text-[#8c8c8c] hover:text-white hover:bg-[#141414] border-transparent"
+                }`}
+              >
+                <span>Danger</span>
+              </button>
             </div>
           </div>
+        )}
 
-          {/* Granular Permission Matrix (Hidden for root account) */}
-          {!isEditingRoot && (
-            <>
-              <hr className="border-[#222222]" />
-
-              {/* Presets Toolbar */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-[12px] font-semibold text-white tracking-wide uppercase text-opacity-80 flex items-center gap-1.5">
-                    <Sparkles className="w-3.5 h-3.5 text-blue-400" />
-                    Permission Presets
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => applyPreset("clear")}
-                    className="text-[11px] text-[#8c8c8c] hover:text-white transition-colors"
-                  >
-                    Clear All
-                  </button>
+        {/* Danger Tab */}
+        {editingUser && editingUser.id !== 1 && drawerTab === "danger" ? (
+          <div className="flex-1 p-5 overflow-y-auto font-sans">
+            <div className="rounded-[8px] border border-[#3a1515] bg-[#0e0404] p-4">
+              <div className="text-[16px] font-medium text-[#e5484d] tracking-tight mb-1">
+                Delete User
+              </div>
+              <div className="text-[13px] text-[#8c8c8c] leading-relaxed mb-4">
+                Permanently delete user{" "}
+                <span className="text-white font-medium">
+                  {editingUser.username}
+                </span>
+                . All assigned capabilities and active sessions will be revoked.
+              </div>
+              <button
+                type="button"
+                disabled={!canDelete}
+                onClick={() => setDeleteTarget(editingUser)}
+                className="group relative flex shrink-0 items-center justify-center h-8 px-3.5 rounded-[8px] font-medium text-white shadow-xs outline-none cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed overflow-hidden ring-1 ring-[#be123c] bg-[#e11d48] font-sans text-[13px]"
+              >
+                <span
+                  aria-hidden="true"
+                  className="pointer-events-none absolute inset-0 rounded-[inherit] bg-gradient-to-b from-[#f43f5e] to-[#e11d48] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2)]"
+                />
+                <span
+                  aria-hidden="true"
+                  className="pointer-events-none absolute inset-0 rounded-[inherit] bg-black opacity-0 group-hover:opacity-15 transition-opacity duration-200"
+                />
+                <span className="relative flex items-center gap-1.5 font-sans">
+                  Delete User
+                </span>
+              </button>
+            </div>
+          </div>
+        ) : (
+          /* Configuration Tab Form */
+          <form onSubmit={handleSubmitForm} className="flex-1 flex flex-col min-h-0">
+            <div className="flex-1 p-5 overflow-y-auto space-y-5 font-sans">
+              {formError && (
+                <div className="flex items-center gap-2 p-3 rounded-[8px] bg-[#2a1113] border border-[#5c1d24] text-[#f87171] text-[13px]">
+                  <AlertTriangle className="w-4 h-4 shrink-0 text-[#ef4444]" />
+                  <span>{formError}</span>
                 </div>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => applyPreset("viewer")}
-                    className="px-2.5 py-1.5 rounded-[6px] text-[11px] font-medium bg-[#141414] hover:bg-[#1f1f1f] border border-[#262626] hover:border-[#383838] text-[#d4d4d4] transition-colors text-center"
-                  >
-                    Read-Only Viewer
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => applyPreset("developer")}
-                    className="px-2.5 py-1.5 rounded-[6px] text-[11px] font-medium bg-[#141414] hover:bg-[#1f1f1f] border border-[#262626] hover:border-[#383838] text-[#d4d4d4] transition-colors text-center"
-                  >
-                    Developer Operator
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => applyPreset("security")}
-                    className="px-2.5 py-1.5 rounded-[6px] text-[11px] font-medium bg-[#141414] hover:bg-[#1f1f1f] border border-[#262626] hover:border-[#383838] text-[#d4d4d4] transition-colors text-center"
-                  >
-                    Security Auditor
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => applyPreset("full")}
-                    className="px-2.5 py-1.5 rounded-[6px] text-[11px] font-medium bg-[#141414] hover:bg-[#1f1f1f] border border-[#262626] hover:border-[#383838] text-[#d4d4d4] transition-colors text-center"
-                  >
-                    Full Operator
-                  </button>
+              )}
+
+              {/* Account Credentials */}
+              <div className="space-y-3.5">
+                <div>
+                  <h3 className="text-[15px] font-medium text-white tracking-tight">
+                    Account Credentials
+                  </h3>
+                  <p className="text-[13px] text-[#8c8c8c] mt-0.5">
+                    Operator identity and authentication credentials
+                  </p>
+                </div>
+                <div className="space-y-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">
+                        Username <span className="text-[#e5484d]">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        disabled={Boolean(editingUser)}
+                        value={formUsername}
+                        onChange={(e) =>
+                          setFormUsername(e.target.value.toLowerCase().replace(/\s+/g, "_"))
+                        }
+                        placeholder="e.g. dev_operator"
+                        className="h-9 w-full rounded-[8px] border border-[#262626] bg-[#121212] px-3 text-[14px] text-white placeholder-[#666666] focus:outline-none focus:border-[#2f80ed] hover:border-[#383838] transition-colors font-mono lowercase disabled:opacity-50 disabled:cursor-not-allowed"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">
+                        Email Address
+                      </label>
+                      <input
+                        type="email"
+                        value={formEmail}
+                        onChange={(e) => setFormEmail(e.target.value)}
+                        placeholder="e.g. operator@company.com"
+                        className="h-9 w-full rounded-[8px] border border-[#262626] bg-[#121212] px-3 text-[14px] text-white placeholder-[#666666] focus:outline-none focus:border-[#2f80ed] hover:border-[#383838] transition-colors font-sans"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-[13px] font-medium text-[#cccccc] mb-1.5">
+                      Password{" "}
+                      {editingUser ? (
+                        <span className="text-[12px] text-[#737373] font-normal">
+                          (Leave blank to keep current)
+                        </span>
+                      ) : (
+                        <span className="text-[#e5484d]">*</span>
+                      )}
+                    </label>
+                    <input
+                      type="password"
+                      required={!editingUser}
+                      value={formPassword}
+                      onChange={(e) => setFormPassword(e.target.value)}
+                      placeholder={editingUser ? "••••••••••••" : "Minimum 8 characters"}
+                      className="h-9 w-full rounded-[8px] border border-[#262626] bg-[#121212] px-3 text-[14px] text-white placeholder-[#666666] focus:outline-none focus:border-[#2f80ed] hover:border-[#383838] transition-colors font-sans"
+                    />
+                  </div>
                 </div>
               </div>
 
-              {/* Capability Categories */}
-              <div className="space-y-4 pt-1">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-[13px] font-semibold text-white tracking-wide uppercase text-opacity-80">
-                    Module Permissions
-                  </h3>
-                  <span className="text-[11px] text-[#8c8c8c]">
-                    Select explicit actions allowed for this operator
-                  </span>
-                </div>
+              {/* Granular PBAC Capabilities (Scoped non-root only) */}
+              {!isEditingRoot && (
+                <>
+                  <div className="-mx-5 border-t border-[#222222]" />
 
-                <div className="space-y-3">
-                  {CAPABILITY_GROUPS.map((group) => {
-                    const GroupIcon = group.icon;
-                    const groupPermIds = group.permissions.map((p) => p.id);
-                    const selectedCount = groupPermIds.filter((id) =>
-                      formPermissions.system.includes(id),
-                    ).length;
-                    const isAllSelected = selectedCount === groupPermIds.length;
+                  {/* Module Capabilities */}
+                  <div className="space-y-3.5">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h4 className="text-[15px] font-medium text-white tracking-tight">
+                          Module Capabilities
+                        </h4>
+                        <p className="text-[13px] text-[#8c8c8c] mt-0.5">
+                          Configure administrative and functional module privileges
+                        </p>
+                      </div>
+                      <span className="text-[12px] text-[#8c8c8c] bg-[#141414] border border-[#262626] px-2 py-0.5 rounded-full font-sans tabular-nums">
+                        {formPermissions.system.length}/{ALL_SYSTEM_PERMS.length}
+                      </span>
+                    </div>
 
-                    return (
-                      <div
-                        key={group.id}
-                        className="rounded-lg border border-[#242424] bg-[#121212] overflow-hidden"
-                      >
-                        {/* Group Header */}
-                        <div className="flex items-center justify-between px-3.5 py-2.5 bg-[#171717] border-b border-[#242424]">
-                          <div className="flex items-center gap-2">
-                            <GroupIcon className="w-4 h-4 text-blue-400 shrink-0" />
-                            <span className="text-[12px] font-medium text-white">
-                              {group.name}
-                            </span>
-                            <span className="text-[11px] text-[#737373] tabular-nums">
-                              ({selectedCount}/{groupPermIds.length})
-                            </span>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => toggleGroup(group)}
-                            className="text-[11px] text-blue-400 hover:text-blue-300 font-medium transition-colors"
+                    <div className="space-y-3">
+                      {CAPABILITY_GROUPS.map((group) => {
+                        const GroupIcon = group.icon;
+                        const groupPermIds = group.permissions.map((p) => p.id);
+                        const selectedCount = groupPermIds.filter((id) =>
+                          formPermissions.system.includes(id),
+                        ).length;
+                        const isAllSelected = selectedCount === groupPermIds.length;
+
+                        return (
+                          <div
+                            key={group.id}
+                            className="rounded-[8px] border border-[#262626] bg-[#0c0c0c] overflow-hidden"
                           >
-                            {isAllSelected ? "Deselect All" : "Select All"}
-                          </button>
-                        </div>
-
-                        {/* Group Permissions List */}
-                        <div className="p-2.5 grid grid-cols-1 sm:grid-cols-2 gap-2">
-                          {group.permissions.map((perm) => {
-                            const isChecked = formPermissions.system.includes(perm.id);
-
-                            return (
-                              <div
-                                key={perm.id}
-                                onClick={() => togglePermission(perm.id)}
-                                className={`p-2 rounded-[6px] border transition-all cursor-pointer flex items-start gap-2.5 ${
-                                  isChecked
-                                    ? "bg-blue-600/10 border-blue-500/40 text-white"
-                                    : "bg-[#141414] border-[#262626] text-[#a3a3a3] hover:border-[#383838]"
-                                }`}
+                            <div className="flex items-center justify-between px-3.5 py-2.5 bg-[#141414] border-b border-[#222222]">
+                              <div className="flex items-center gap-2">
+                                <GroupIcon className="w-3.5 h-3.5 text-[#8c8c8c] shrink-0" />
+                                <span className="text-[13px] font-medium text-white">
+                                  {group.name}
+                                </span>
+                                <span className="text-[11px] text-[#737373] tabular-nums">
+                                  ({selectedCount}/{groupPermIds.length})
+                                </span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => toggleGroup(group)}
+                                className="text-[12px] text-[#8c8c8c] hover:text-white font-medium transition-colors cursor-pointer"
                               >
-                                <div
-                                  className={`w-3.5 h-3.5 rounded mt-0.5 flex items-center justify-center shrink-0 border transition-colors ${
-                                    isChecked
-                                      ? "bg-blue-600 border-blue-500 text-white"
-                                      : "border-[#404040] bg-[#1a1a1a]"
-                                  }`}
-                                >
-                                  {isChecked && <Check className="w-2.5 h-2.5 stroke-[3]" />}
-                                </div>
-                                <div className="space-y-0.5 min-w-0">
-                                  <div className="flex items-center gap-1.5">
-                                    <span className="text-[12px] font-medium text-white truncate">
-                                      {perm.label}
-                                    </span>
-                                    <span className="text-[10px] font-mono text-[#737373]">
-                                      {perm.id}
-                                    </span>
+                                {isAllSelected ? "Deselect All" : "Select All"}
+                              </button>
+                            </div>
+
+                            <div className="p-2.5 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                              {group.permissions.map((perm) => {
+                                const isChecked = formPermissions.system.includes(perm.id);
+                                const isLockedDependency =
+                                  (perm.id === "db.view" && formPermissions.databases.length > 0) ||
+                                  (perm.id === "blob.view" && formPermissions.blobs.length > 0);
+
+                                return (
+                                  <div
+                                    key={perm.id}
+                                    onClick={() => togglePermission(perm.id)}
+                                    className={`p-2.5 rounded-[6px] border transition-all cursor-pointer flex items-start gap-2.5 select-none ${
+                                      isChecked
+                                        ? "bg-[#18181b] border-[#444444] text-white"
+                                        : "bg-[#141414] border-[#222222] text-[#8c8c8c] hover:border-[#383838]"
+                                    }`}
+                                  >
+                                    <div
+                                      className={`w-4 h-4 rounded mt-0.5 flex items-center justify-center shrink-0 border transition-colors ${
+                                        isChecked
+                                          ? "bg-white border-white text-black"
+                                          : "border-[#404040] bg-[#1a1a1a]"
+                                      }`}
+                                    >
+                                      {isChecked && <Check className="w-3 h-3 stroke-[3]" />}
+                                    </div>
+                                    <div className="space-y-0.5 min-w-0 flex-1">
+                                      <div className="flex items-center justify-between gap-1">
+                                        <span className="text-[13px] font-medium text-white truncate">
+                                          {perm.label}
+                                        </span>
+                                        {isLockedDependency && (
+                                          <span className="text-[10px] text-[#8c8c8c] bg-[#222222] px-1.5 py-0.2 rounded font-sans">
+                                            auto
+                                          </span>
+                                        )}
+                                      </div>
+                                      <p className="text-[11px] text-[#737373] leading-snug">
+                                        {perm.description}
+                                      </p>
+                                    </div>
                                   </div>
-                                  <p className="text-[11px] text-[#8c8c8c] leading-tight">
-                                    {perm.description}
-                                  </p>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="-mx-5 border-t border-[#222222]" />
+
+                  {/* Database & Table Scopes */}
+                  <div className="space-y-3.5">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h4 className="text-[15px] font-medium text-white tracking-tight">
+                            Database & Table Scopes
+                          </h4>
+                          <span className="text-[12px] text-[#8c8c8c] bg-[#141414] border border-[#262626] px-2 py-0.5 rounded-full font-sans tabular-nums">
+                            {formPermissions.databases.length}{" "}
+                            {formPermissions.databases.length === 1 ? "rule" : "rules"}
+                          </span>
+                        </div>
+                        <p className="text-[13px] text-[#8c8c8c] mt-0.5">
+                          Configure upstream database aliases, tables, and SQL operation grants
+                        </p>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        onClick={addDatabaseRule}
+                      >
+                        <Plus className="w-3.5 h-3.5 mr-1" />
+                        Add DB Scope
+                      </Button>
+                    </div>
+
+                    {formPermissions.databases.length === 0 ? (
+                      <div className="p-6 rounded-[8px] border border-dashed border-[#262626] bg-[#0c0c0c] text-center">
+                        <Database className="w-5 h-5 text-[#525252] mx-auto mb-1.5" />
+                        <div className="text-[13px] font-medium text-white mb-0.5">
+                          No database access rules
+                        </div>
+                        <p className="text-[12px] text-[#737373]">
+                          This operator will have zero SQL query or table privileges.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {formPermissions.databases.map((rule, idx) => (
+                          <div
+                            key={idx}
+                            className="p-3.5 rounded-[8px] border border-[#262626] bg-[#0c0c0c] space-y-3"
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 flex-1 min-w-0">
+                                <div>
+                                  <label className="block text-[12px] font-medium text-[#8c8c8c] mb-1.5">
+                                    Database Pool
+                                  </label>
+                                  <CustomSelect
+                                    value={rule.database}
+                                    options={dbOptions}
+                                    onChange={(val) => updateDatabaseRule(idx, "database", val)}
+                                    className="w-full"
+                                    menuWidth="w-full"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-[12px] font-medium text-[#8c8c8c] mb-1.5">
+                                    Table Scope
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={rule.table_name}
+                                    onChange={(e) =>
+                                      updateDatabaseRule(idx, "table_name", e.target.value)
+                                    }
+                                    placeholder="* (All Tables)"
+                                    className="h-9 w-full rounded-[8px] border border-[#262626] bg-[#121212] px-3 text-[13px] text-white placeholder-[#666666] focus:outline-none focus:border-[#2f80ed] hover:border-[#383838] transition-colors font-mono"
+                                  />
                                 </div>
                               </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Database & Table Scope Rules */}
-              <div className="space-y-3 pt-2">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="text-[13px] font-semibold text-white tracking-wide uppercase text-opacity-80">
-                      Database & Table Rules
-                    </h3>
-                    <p className="text-[11px] text-[#8c8c8c]">
-                      Specify permitted SQL dialects, aliases, and table operations
-                    </p>
-                  </div>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    onClick={addDatabaseRule}
-                  >
-                    <Plus className="w-3 h-3 mr-1" />
-                    Add DB Scope
-                  </Button>
-                </div>
-
-                {formPermissions.databases.length === 0 ? (
-                  <div className="p-4 rounded-lg border border-dashed border-[#262626] bg-[#0c0c0c] text-center">
-                    <Database className="w-5 h-5 text-[#525252] mx-auto mb-1" />
-                    <span className="text-[12px] text-[#8c8c8c]">
-                      No database access rules defined. SQL queries will be rejected.
-                    </span>
-                  </div>
-                ) : (
-                  <div className="space-y-2.5">
-                    {formPermissions.databases.map((rule, idx) => (
-                      <div
-                        key={idx}
-                        className="p-3 rounded-lg border border-[#262626] bg-[#121212] space-y-3"
-                      >
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="grid grid-cols-2 gap-2 flex-1">
-                            <div>
-                              <label className="block text-[11px] text-[#8c8c8c] mb-1">
-                                Database Pool
-                              </label>
-                              <select
-                                value={rule.database}
-                                onChange={(e) =>
-                                  updateDatabaseRule(idx, "database", e.target.value)
-                                }
-                                className="w-full h-7 px-2 text-[12px] bg-[#1a1a1a] text-white rounded border border-[#2e2e2e] focus:border-blue-500 focus:outline-none"
+                              <button
+                                type="button"
+                                onClick={() => removeDatabaseRule(idx)}
+                                className="mt-6 w-8 h-8 rounded-[6px] flex items-center justify-center text-[#777777] hover:text-[#f87171] hover:bg-[#1a0f0f] border border-transparent hover:border-[#3b1216] transition-colors cursor-pointer shrink-0"
+                                title="Remove database scope"
                               >
-                                <option value="*">* (All Databases)</option>
-                                {databaseAliases.map((alias) => (
-                                  <option key={alias} value={alias}>
-                                    {alias}
-                                  </option>
-                                ))}
-                              </select>
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
                             </div>
-                            <div>
-                              <label className="block text-[11px] text-[#8c8c8c] mb-1">
-                                Table Name (* for all)
-                              </label>
-                              <input
-                                type="text"
-                                value={rule.table_name}
-                                onChange={(e) =>
-                                  updateDatabaseRule(idx, "table_name", e.target.value)
-                                }
-                                placeholder="*"
-                                className="w-full h-7 px-2 text-[12px] bg-[#1a1a1a] text-white rounded border border-[#2e2e2e] focus:border-blue-500 focus:outline-none"
-                              />
+
+                            <div className="pt-1 flex items-center gap-1.5 flex-wrap">
+                              <span className="text-[12px] text-[#737373] mr-1">Permitted:</span>
+                              {DB_OPERATIONS.map((op) => {
+                                const isAllowed = rule.operations?.includes(op);
+                                return (
+                                  <button
+                                    key={op}
+                                    type="button"
+                                    onClick={() => toggleDbOperation(idx, op)}
+                                    className={`px-2.5 py-1 rounded-[6px] text-[11px] font-mono transition-colors cursor-pointer border ${
+                                      isAllowed
+                                        ? "bg-[#222222] text-white border-[#444444]"
+                                        : "bg-[#141414] text-[#737373] border-[#262626] hover:text-white hover:border-[#383838]"
+                                    }`}
+                                  >
+                                    {op}
+                                  </button>
+                                );
+                              })}
                             </div>
                           </div>
-                          <button
-                            type="button"
-                            onClick={() => removeDatabaseRule(idx)}
-                            className="p-1 text-[#8c8c8c] hover:text-[#f87171] transition-colors"
-                            title="Remove database rule"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-
-                        {/* Operations Checkboxes */}
-                        <div className="flex items-center gap-1.5 flex-wrap pt-1">
-                          <span className="text-[11px] text-[#737373] mr-1">Permitted:</span>
-                          {DB_OPERATIONS.map((op) => {
-                            const isAllowed = rule.operations?.includes(op);
-                            return (
-                              <button
-                                key={op}
-                                type="button"
-                                onClick={() => toggleDbOperation(idx, op)}
-                                className={`px-2 py-0.5 rounded text-[11px] font-mono transition-colors ${
-                                  isAllowed
-                                    ? "bg-blue-600/20 text-blue-300 border border-blue-500/30"
-                                    : "bg-[#181818] text-[#737373] border border-[#262626] hover:text-[#d4d4d4]"
-                                }`}
-                              >
-                                {op}
-                              </button>
-                            );
-                          })}
-                        </div>
+                        ))}
                       </div>
-                    ))}
+                    )}
                   </div>
-                )}
-              </div>
 
-              {/* Blob Storage Scope Rules */}
-              <div className="space-y-3 pt-2">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="text-[13px] font-semibold text-white tracking-wide uppercase text-opacity-80">
-                      Blob Storage Scopes
-                    </h3>
-                    <p className="text-[11px] text-[#8c8c8c]">
-                      Control access to binary object namespaces and transfers
-                    </p>
-                  </div>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    onClick={addBlobRule}
-                  >
-                    <Plus className="w-3 h-3 mr-1" />
-                    Add Blob Scope
-                  </Button>
-                </div>
+                  <div className="-mx-5 border-t border-[#222222]" />
 
-                {formPermissions.blobs.length === 0 ? (
-                  <div className="p-4 rounded-lg border border-dashed border-[#262626] bg-[#0c0c0c] text-center">
-                    <HardDrive className="w-5 h-5 text-[#525252] mx-auto mb-1" />
-                    <span className="text-[12px] text-[#8c8c8c]">
-                      No blob storage rules defined. Object downloads and uploads will be rejected.
-                    </span>
-                  </div>
-                ) : (
-                  <div className="space-y-2.5">
-                    {formPermissions.blobs.map((rule, idx) => (
-                      <div
-                        key={idx}
-                        className="p-3 rounded-lg border border-[#262626] bg-[#121212] space-y-3"
+                  {/* Blob Storage Scopes */}
+                  <div className="space-y-3.5">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h4 className="text-[15px] font-medium text-white tracking-tight">
+                            Blob Storage Scopes
+                          </h4>
+                          <span className="text-[12px] text-[#8c8c8c] bg-[#141414] border border-[#262626] px-2 py-0.5 rounded-full font-sans tabular-nums">
+                            {formPermissions.blobs.length}{" "}
+                            {formPermissions.blobs.length === 1 ? "rule" : "rules"}
+                          </span>
+                        </div>
+                        <p className="text-[13px] text-[#8c8c8c] mt-0.5">
+                          Configure binary bucket namespaces and transfer permissions
+                        </p>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        onClick={addBlobRule}
                       >
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="flex-1">
-                            <label className="block text-[11px] text-[#8c8c8c] mb-1">
-                              Blob Namespace
-                            </label>
-                            <select
-                              value={rule.namespace}
-                              onChange={(e) =>
-                                updateBlobRule(idx, "namespace", e.target.value)
-                              }
-                              className="w-full h-7 px-2 text-[12px] bg-[#1a1a1a] text-white rounded border border-[#2e2e2e] focus:border-blue-500 focus:outline-none"
-                            >
-                              <option value="*">* (All Namespaces)</option>
-                              {blobNamespaces.map((ns) => (
-                                <option key={ns} value={ns}>
-                                  {ns}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => removeBlobRule(idx)}
-                            className="p-1 text-[#8c8c8c] hover:text-[#f87171] transition-colors"
-                            title="Remove blob rule"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
+                        <Plus className="w-3.5 h-3.5 mr-1" />
+                        Add Blob Scope
+                      </Button>
+                    </div>
 
-                        {/* Operations Checkboxes */}
-                        <div className="flex items-center gap-1.5 flex-wrap pt-1">
-                          <span className="text-[11px] text-[#737373] mr-1">Permitted:</span>
-                          {BLOB_OPERATIONS.map((op) => {
-                            const isAllowed = rule.operations?.includes(op);
-                            return (
-                              <button
-                                key={op}
-                                type="button"
-                                onClick={() => toggleBlobOperation(idx, op)}
-                                className={`px-2 py-0.5 rounded text-[11px] font-mono transition-colors ${
-                                  isAllowed
-                                    ? "bg-emerald-600/20 text-emerald-300 border border-emerald-500/30"
-                                    : "bg-[#181818] text-[#737373] border border-[#262626] hover:text-[#d4d4d4]"
-                                }`}
-                              >
-                                {op}
-                              </button>
-                            );
-                          })}
+                    {formPermissions.blobs.length === 0 ? (
+                      <div className="p-6 rounded-[8px] border border-dashed border-[#262626] bg-[#0c0c0c] text-center">
+                        <HardDrive className="w-5 h-5 text-[#525252] mx-auto mb-1.5" />
+                        <div className="text-[13px] font-medium text-white mb-0.5">
+                          No blob storage rules
                         </div>
+                        <p className="text-[12px] text-[#737373]">
+                          This operator will have zero object upload or download privileges.
+                        </p>
                       </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </>
-          )}
+                    ) : (
+                      <div className="space-y-3">
+                        {formPermissions.blobs.map((rule, idx) => (
+                          <div
+                            key={idx}
+                            className="p-3.5 rounded-[8px] border border-[#262626] bg-[#0c0c0c] space-y-3"
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="flex-1 min-w-0">
+                                <label className="block text-[12px] font-medium text-[#8c8c8c] mb-1.5">
+                                  Blob Namespace
+                                </label>
+                                <CustomSelect
+                                  value={rule.namespace}
+                                  options={blobOptions}
+                                  onChange={(val) => updateBlobRule(idx, "namespace", val)}
+                                  className="w-full"
+                                  menuWidth="w-full"
+                                />
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => removeBlobRule(idx)}
+                                className="mt-6 w-8 h-8 rounded-[6px] flex items-center justify-center text-[#777777] hover:text-[#f87171] hover:bg-[#1a0f0f] border border-transparent hover:border-[#3b1216] transition-colors cursor-pointer shrink-0"
+                                title="Remove blob scope"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
 
-          {/* Form Actions Footer */}
-          <div className="flex items-center justify-end gap-3 pt-4 border-t border-[#222222]">
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => setSlideOverOpen(false)}
-            >
-              Cancel
-            </Button>
-            <Button type="submit" variant="primary" disabled={isSubmitting}>
-              {isSubmitting ? (
-                <div className="flex items-center gap-2">
-                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                  <span>Saving...</span>
-                </div>
-              ) : editingUser ? (
-                "Save Changes"
-              ) : (
-                "Create Administrator"
+                            <div className="pt-1 flex items-center gap-1.5 flex-wrap">
+                              <span className="text-[12px] text-[#737373] mr-1">Permitted:</span>
+                              {BLOB_OPERATIONS.map((op) => {
+                                const isAllowed = rule.operations?.includes(op);
+                                return (
+                                  <button
+                                    key={op}
+                                    type="button"
+                                    onClick={() => toggleBlobOperation(idx, op)}
+                                    className={`px-2.5 py-1 rounded-[6px] text-[11px] font-mono transition-colors cursor-pointer border ${
+                                      isAllowed
+                                        ? "bg-[#222222] text-white border-[#444444]"
+                                        : "bg-[#141414] text-[#737373] border-[#262626] hover:text-white hover:border-[#383838]"
+                                    }`}
+                                  >
+                                    {op}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </>
               )}
-            </Button>
-          </div>
-        </form>
+            </div>
+
+            {/* Bottom Sticky Footer */}
+            <div className="border-t border-[#222222] px-5 py-3.5 bg-[#0a0a0a] flex items-center justify-end gap-2 shrink-0 font-sans">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => setSlideOverOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" variant="primary" disabled={isSubmitting}>
+                {isSubmitting ? (
+                  <div className="flex items-center gap-2">
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Saving...</span>
+                  </div>
+                ) : editingUser ? (
+                  "Save Changes"
+                ) : (
+                  "Create User"
+                )}
+              </Button>
+            </div>
+          </form>
+        )}
       </SlideOver>
 
       {/* Delete Confirmation Dialog */}
       <ConfirmDialog
         isOpen={Boolean(deleteTarget)}
-        title="Delete Administrator Account"
-        description={`Are you sure you want to permanently delete '${deleteTarget?.username}'? This action cannot be undone and will immediately revoke active sessions.`}
+        title="Delete User Account"
+        description={`Are you sure you want to permanently delete user '${deleteTarget?.username}'? This action cannot be undone and will immediately revoke active sessions.`}
         confirmLabel={isDeleting ? "Deleting..." : "Delete Account"}
         variant="danger"
         onConfirm={handleConfirmDelete}
         onClose={() => setDeleteTarget(null)}
       />
+
+      {/* Floating Hover Popover for Permissions */}
+      {hoveredPerms &&
+        createPortal(
+          <div
+            style={{
+              top: `${Math.max(
+                12,
+                hoveredPerms.rect.bottom + 6 + 320 > window.innerHeight
+                  ? hoveredPerms.rect.top - 310
+                  : hoveredPerms.rect.bottom + 6,
+              )}px`,
+              left: `${Math.max(
+                16,
+                Math.min(window.innerWidth - 340, hoveredPerms.rect.left),
+              )}px`,
+            }}
+            className="fixed z-50 w-80 max-h-[340px] flex flex-col rounded-[10px] bg-[#101012] border border-[#27272a] shadow-2xl font-sans text-left animate-in fade-in duration-150"
+            onMouseEnter={handlePopoverMouseEnter}
+            onMouseLeave={handlePopoverMouseLeave}
+          >
+            {/* Popover Header */}
+            <div className="flex items-center justify-between px-3.5 py-2.5 border-b border-[#222225] bg-[#141416]/90 shrink-0">
+              <div className="flex items-center gap-2 min-w-0">
+                {hoveredPerms.user.id === 1 || hoveredPerms.user.is_super_admin ? (
+                  <ShieldCheck className="w-4 h-4 text-amber-400 shrink-0" />
+                ) : (
+                  <Shield className="w-4 h-4 text-[#3b82f6] shrink-0" />
+                )}
+                <span className="text-[12px] font-semibold text-white truncate">
+                  {hoveredPerms.user.username}
+                </span>
+              </div>
+              {hoveredPerms.user.id === 1 || hoveredPerms.user.is_super_admin ? (
+                <span className="text-[10px] font-medium text-[#d4d4d8] bg-[#1c1c20] border border-[#27272a] px-2 py-0.5 rounded-full shrink-0">
+                  Super Admin
+                </span>
+              ) : (
+                <span className="text-[10px] font-medium text-[#a1a1aa] bg-[#1c1c20] px-2 py-0.5 rounded-full border border-[#27272a] shrink-0">
+                  {(hoveredPerms.user.permissions?.system?.length || 0) +
+                    (hoveredPerms.user.permissions?.databases?.length || 0) +
+                    (hoveredPerms.user.permissions?.blobs?.length || 0)}{" "}
+                  granted
+                </span>
+              )}
+            </div>
+
+            {/* Popover Content */}
+            <div className="p-3 overflow-y-auto space-y-3 max-h-[280px] scrollbar-thin scrollbar-thumb-[#262626]">
+              {(() => {
+                const data = getPopoverCategories(hoveredPerms.user);
+
+                if (data.isRoot) {
+                  return (
+                    <div className="space-y-2.5">
+                      <p className="text-[11px] text-[#a1a1aa] leading-relaxed">
+                        Sovereign root account. Bypasses all PBAC restrictions with unrestricted global system authority.
+                      </p>
+                      <div className="grid grid-cols-2 gap-1.5 text-[11px]">
+                        <div className="flex items-center gap-1.5 text-[#e4e4e7] bg-[#18181b] px-2 py-1 rounded border border-[#27272a]">
+                          <Check className="w-3 h-3 text-[#a1a1aa] shrink-0" /> Databases
+                        </div>
+                        <div className="flex items-center gap-1.5 text-[#e4e4e7] bg-[#18181b] px-2 py-1 rounded border border-[#27272a]">
+                          <Check className="w-3 h-3 text-[#a1a1aa] shrink-0" /> Table DDL
+                        </div>
+                        <div className="flex items-center gap-1.5 text-[#e4e4e7] bg-[#18181b] px-2 py-1 rounded border border-[#27272a]">
+                          <Check className="w-3 h-3 text-[#a1a1aa] shrink-0" /> Blob Storage
+                        </div>
+                        <div className="flex items-center gap-1.5 text-[#e4e4e7] bg-[#18181b] px-2 py-1 rounded border border-[#27272a]">
+                          <Check className="w-3 h-3 text-[#a1a1aa] shrink-0" /> API Keys
+                        </div>
+                        <div className="flex items-center gap-1.5 text-[#e4e4e7] bg-[#18181b] px-2 py-1 rounded border border-[#27272a]">
+                          <Check className="w-3 h-3 text-[#a1a1aa] shrink-0" /> Roles & RBAC
+                        </div>
+                        <div className="flex items-center gap-1.5 text-[#e4e4e7] bg-[#18181b] px-2 py-1 rounded border border-[#27272a]">
+                          <Check className="w-3 h-3 text-[#a1a1aa] shrink-0" /> Cluster Mesh
+                        </div>
+                      </div>
+                    </div>
+                  );
+                }
+
+                if (data.totalCount === 0) {
+                  return (
+                    <div className="py-4 text-center">
+                      <Lock className="w-4 h-4 text-[#52525b] mx-auto mb-1.5" />
+                      <p className="text-[11px] text-[#71717a]">Zero permissions assigned</p>
+                      <p className="text-[10px] text-[#52525b]">This operator cannot perform administrative operations</p>
+                    </div>
+                  );
+                }
+
+                return (
+                  <>
+                    {/* System Capabilities by Category */}
+                    {data.groups.map((grp) => {
+                      const GrpIcon = grp.icon;
+                      return (
+                        <div key={grp.id} className="space-y-1.5">
+                          <div className="flex items-center gap-1.5 text-[11px] font-medium text-[#d4d4d8]">
+                            <GrpIcon className="w-3 h-3 text-[#71717a] shrink-0" />
+                            <span>{grp.name}</span>
+                          </div>
+                          <div className="flex flex-wrap gap-1 pl-4">
+                            {grp.granted.map((p) => (
+                              <span
+                                key={p.id}
+                                className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-[#18181b] text-[#e4e4e7] border border-[#27272a]"
+                              >
+                                {p.label}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+
+                    {/* Database & Table Rules */}
+                    {data.dbRules.length > 0 && (
+                      <div className="space-y-1.5">
+                        <div className="flex items-center gap-1.5 text-[11px] font-medium text-[#d4d4d8]">
+                          <Database className="w-3 h-3 text-[#71717a] shrink-0" />
+                          <span>Database & SQL Rules</span>
+                        </div>
+                        <div className="space-y-1 pl-4">
+                          {data.dbRules.map((rule, idx) => (
+                            <div
+                              key={idx}
+                              className="text-[10px] font-mono bg-[#18181b] p-1.5 rounded border border-[#27272a] flex items-center justify-between gap-2"
+                            >
+                              <span className="text-white truncate">
+                                {rule.database}.{rule.table_name || "*"}
+                              </span>
+                              <span className="text-[#a1a1aa] shrink-0">
+                                [{rule.operations.join(", ")}]
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Blob Rules */}
+                    {data.blobRules.length > 0 && (
+                      <div className="space-y-1.5">
+                        <div className="flex items-center gap-1.5 text-[11px] font-medium text-[#d4d4d8]">
+                          <HardDrive className="w-3 h-3 text-[#71717a] shrink-0" />
+                          <span>Blob Storage Rules</span>
+                        </div>
+                        <div className="space-y-1 pl-4">
+                          {data.blobRules.map((rule, idx) => (
+                            <div
+                              key={idx}
+                              className="text-[10px] font-mono bg-[#18181b] p-1.5 rounded border border-[#27272a] flex items-center justify-between gap-2"
+                            >
+                              <span className="text-white truncate">
+                                {rule.namespace}
+                              </span>
+                              <span className="text-[#a1a1aa] shrink-0">
+                                [{rule.operations.join(", ")}]
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
+            </div>
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }

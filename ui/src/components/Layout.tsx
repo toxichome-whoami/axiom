@@ -127,7 +127,7 @@ export function Layout({
       category: "Infrastructure",
     },
     {
-      label: "Administrators",
+      label: "Users",
       path: "/system/users" as NavPath,
       icon: Users,
       category: "Security & Access",
@@ -275,7 +275,7 @@ export function Layout({
       items: [
         {
           path: "/system/users" as NavPath,
-          label: "Administrators",
+          label: "Users",
           icon: Users,
         },
         {
